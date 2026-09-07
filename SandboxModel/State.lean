@@ -12,6 +12,7 @@ structure SandboxRecord where
   generation : Generation
   currentVm : Option VmId
   workspace : FsId
+  workspaceMode : WorkspaceMode
   durableSnapshot : Option SnapshotId
   /-- Snapshot selected atomically by AcceptResume; later commands cannot swap it. -/
   restoreFrom : Option SnapshotId

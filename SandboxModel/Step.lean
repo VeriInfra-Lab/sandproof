@@ -26,6 +26,7 @@ def beginCreate (world : World) (sid : SandboxId) (owner : TenantId)
     generation := generation
     currentVm := none
     workspace := workspace
+    workspaceMode := .readWrite
     durableSnapshot := none
     restoreFrom := none
     netSlot := none
@@ -87,7 +88,8 @@ def publishRunning (world : World) (sid : SandboxId) (record : SandboxRecord)
     currentOperation := record.currentOperation.map
       (fun (op : Operation) => { op with status := .succeeded })
   }
-  let authority := .running sid base.generation slot.vm base.workspace slotId base.policy
+  let authority := .running sid base.generation slot.vm base.workspace
+    base.workspaceMode slotId base.policy
   let running := { base with desired := authority, effective := authority }
   setSandbox (setNetSlot world slotId { slot with active := true }) sid running
 
@@ -420,17 +422,21 @@ inductive Step : World → Event → World → Prop where
 
   | fileRead
       (found : world.sandboxes sid = some record)
+      (running : record.phase = .running)
+      (currentGeneration : generation = record.generation)
       (auth : authorized actor record.owner)
       (capability : record.effective.allows
-        (.fileRead sid record.generation record.workspace)) :
-      Step world (.fileRead actor sid) world
+        (.fileRead sid generation record.workspace record.workspaceMode)) :
+      Step world (.fileRead actor sid generation) world
 
   | fileWrite
       (found : world.sandboxes sid = some record)
+      (running : record.phase = .running)
+      (currentGeneration : generation = record.generation)
       (auth : authorized actor record.owner)
       (capability : record.effective.allows
-        (.fileWrite sid record.generation record.workspace)) :
-      Step world (.fileWrite actor sid) world
+        (.fileWrite sid generation record.workspace record.workspaceMode)) :
+      Step world (.fileWrite actor sid generation) world
 
   | ingress
       (found : world.sandboxes sid = some record)

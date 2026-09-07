@@ -1,6 +1,6 @@
 # 研究计划：沙箱生命周期中的执行权、资源与精化
 
-版本：0.4，2026-09-07。状态：Lean 参数化规范的完整 `Safe`、正常生命周期轨迹与关键规则反例均已机器证明；尚无 production controller、refinement 或 Firecracker 实机结论。
+版本：0.5，2026-09-07。状态：Lean 参数化规范的完整 `Safe`、workspace authority 性质、正常生命周期轨迹与关键规则反例均已机器证明；尚无 production controller、refinement 或 Firecracker 实机结论。
 
 ## 1. 收缩后的研究问题
 
@@ -18,13 +18,14 @@
 | 部署 | 单节点、一个 controller、一个受控 worker；controller 可 crash/restart |
 | 沙箱 | 多 tenant / 多 sandbox；每个 sandbox 一个不可变 owner |
 | 资源 | 每代一个 VM、独占 workspace、不可变 durable snapshot、独占 network slot |
+| Workspace 权限 | 首版只有封闭类型 `WorkspaceMode.readWrite`；不引入 ACL 或独立读写布尔值 |
 | 生命周期 | create、managed exec、pause、resume、kill、operation timeout/query 语义 |
 | 快照 | 全量内存 + VM state + 独立磁盘副本；本地持久介质与原子 manifest |
 | 网络 | `denyAll` 或静态 L3/L4 allowlist；管理入口与 guest 业务网络在模型中分开 |
 | 权限 | Exec、FileRead/Write、Ingress/Egress、Resume 均绑定 sid；数据面再绑定 generation 与资源 |
 | 故障 | 命令重复/乱序/延迟、回执丢失、RPC timeout、controller crash/recover |
 
-不进入首篇：多节点调度与迁移、HA 共识、共享卷、POSIX ACL、host mount、DNS/SNI 动态策略、snapshot fork/clone API、容器逃逸或 KVM 证明、恶意宿主、配额计费、完整 E2B 功能兼容。
+不进入首篇：多节点调度与迁移、HA 共识、共享卷、路径级权限、文件内容、UID/GID、POSIX ACL、host mount、DNS/SNI 动态策略、snapshot fork/clone API、容器逃逸或 KVM 证明、恶意宿主、配额计费、完整 E2B 功能兼容。
 
 Docker 只可用于离线制作 rootfs，不作为替代运行时。固定 Firecracker 是为了保留 freeze、snapshot、load、activate 与物理执行权交接的语义。
 
@@ -71,9 +72,25 @@ World 的映射和自然数身份均不设有限上界。Python BFS 与旧报告
 theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
 ```
 
-它由 `emptyWorld_safe` 和 `step_preserves_safe` 归纳得到。`Safe` 包含十六项顶层条件：四类资源归属、workspace 反向绑定、当前 VM/slot 的 owner/sid/generation 绑定、单执行 VM、单活动网络槽、活动槽与当前记录绑定、Durable 快照不可变、权限形状、fence 合法顺序、撤销 fence 关闭权限、有效权限对应真实 VM/网络事实、Paused/Destroyed 静止、terminal 与 Revoking/Destroyed 的双向一致性、Paused snapshot 的完整绑定、Starting 恢复源绑定，以及 operation/epoch/phase/result 一致性。
+它由 `emptyWorld_safe` 和 `step_preserves_safe` 归纳得到。`Safe` 包含十七项顶层条件：四类资源归属、workspace 反向绑定、固定 `readWrite` 模式、当前 VM/slot 的 owner/sid/generation 绑定、单执行 VM、单活动网络槽、活动槽与当前记录绑定、Durable 快照不可变、权限形状、fence 合法顺序、撤销 fence 关闭权限、有效权限对应真实 VM/网络事实、Paused/Destroyed 静止、terminal 与 Revoking/Destroyed 的双向一致性、Paused snapshot 的完整绑定、Starting 恢复源绑定，以及 operation/epoch/phase/result 一致性。
 
 事件策略由另外的逐步定理覆盖：`step_event_authorized`、`step_egress_policy_enforced`、`step_file_event_workspace_bound`、`rpcTimeout_marks_outcome_unknown` 和 `step_keeps_destroyed`。`step_never_clears_terminal` 单独给出 tombstone 的逐步单调性。
+
+侧边讨论提出的 workspace authority 要求已逐项落到命名定理：
+
+| 要求 | 形式化结果 |
+|---|---|
+| WorkspaceIdentityStable | `step_workspaceIdentityStable`：已有 sandbox 的 workspace 不被任何 Step 换绑 |
+| WorkspaceModeStable | `step_workspaceModeStable`，并由 `WorkspaceModeFixed` 将首版限制为 `readWrite` |
+| RunningWorkspaceAuthorityExact | `reachable_runningWorkspaceAuthorityExact`：Running 权限精确绑定当前 sid/generation/workspace/mode |
+| NoFileAuthorityOutsideRunning | `noFileAuthorityOutsideRunning`；Pausing/Revoking fence 后另由 `reachable_revocationFenceClosesFileAuthority` 关闭 effective authority |
+| ResumeReissuesWorkspaceAuthority | `resumeReissuesWorkspaceAuthority`：PublishRunning 从当前 controller 记录构造权限 |
+| SnapshotCarriesNoAuthority | `snapshotCarriesNoAuthority`：AcceptResume 只选择 restore source，新 generation 的 desired/effective 均为 closed |
+| StaleGenerationCannotAccessWorkspace | `staleGenerationCannotAccessWorkspace`：旧代 read/write 事件不能成为 Step |
+
+这里有意区分 controller admission 和 worker 的物理撤销窗口。进入 Pausing 后，controller 不再接收新的 managed 文件请求；fence 尚未到达时旧 worker 权限可能短暂存在，fence 到达后 Lean 证明 effective authority 必为 closed。
+
+“文件权限不丢失”只在 controller 层证明：workspace 仍是同一个对象，模式仍是 `readWrite`，新代权限由当前记录签发。Linux 层的内容、mode bits、owner 和 ACL 由 storage adapter 契约承担：`restore(manifest, workspace)` 成功时必须忠实实现 manifest 及下游承诺保存的元数据。Lean 只检查交给 adapter 的 snapshot 来源、workspace 和 generation 身份，不证明 ext4、Firecracker 或 Linux 内部行为。
 
 证明过程发现并修正了三组协议/规范缺口：迟到的 create/resume fence 原本可能在 Running 中关闭当前权限；已有 fence 原本可以超前于当前 epoch；Safe 原本只在 effective authority 打开时检查资源，没有直接约束关闭窗口中的 current VM/slot、活动路由和已选恢复源。现在启动 fence 与撤销 fence 是不同转移，`FenceWellFormed` 约束 fence 来源与顺序，新增资源、活动路由和恢复源不变量覆盖关闭窗口。`PublishRunning` 仍必须证明该 sid 没有旧活动槽。
 
@@ -111,7 +128,7 @@ reduce(state, event) -> Result<(state', effects), Reject>
 | 阶段 | 交付物 | 通过条件 |
 |---|---|---|
 | G0 规范 | 当前 Lean World/Step/Safety | 范围、完成点、故障模型可评审；核心定理无占位证明 |
-| G1 安全闭合 | `Reachable → Safe`、正常 trace、mutation | 已完成：16 项 Safe、完整生命周期轨迹、4 个关键反例 |
+| G1 安全闭合 | `Reachable → Safe`、workspace authority、正常 trace、mutation | 已完成：17 项 Safe、7 组 workspace 定理、完整生命周期轨迹、4 个关键反例及旧代文件访问拒绝实例 |
 | G2 reducer 精化 | Rust reducer + Aeneas + Lean simulation | 每个 reducer 分支对应一个 Step 或明确 Reject/stutter |
 | G3 runtime contract | journal/worker/storage/FC adapters | 关键 fence 与 durability 假设可由故障注入支持 |
 | G4 E2B 对照 | 固定 SHA/profile 的 histories | 区分契约差异、未知与可复现违反 |

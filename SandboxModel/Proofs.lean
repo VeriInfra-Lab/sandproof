@@ -554,6 +554,7 @@ theorem resourceOwnership_beginCreate
     generation := 1
     currentVm := none
     workspace := workspace
+    workspaceMode := .readWrite
     durableSnapshot := none
     restoreFrom := none
     netSlot := none
@@ -643,7 +644,7 @@ theorem resourceOwnership_publishRunning
       (fun (op : Operation) => { op with status := .succeeded })
   }
   let authority : Authority :=
-    .running sid base.generation slot.vm base.workspace slotId base.policy
+    .running sid base.generation slot.vm base.workspace base.workspaceMode slotId base.policy
   let running := { base with desired := authority, effective := authority }
   have foundAfterSlot :
       (setNetSlot world slotId activated).sandboxes sid = some record := by
@@ -865,6 +866,22 @@ theorem step_preserves_workspaceBindingValid {world next : World} {event : Event
       stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
       markOutcomeUnknown, setSandbox, setFence, setVm,
       setSnapshot, setNetSlot, enqueue, put] <;>
+    grind
+
+theorem emptyWorld_workspaceModeFixed : WorkspaceModeFixed emptyWorld := by
+  simp [WorkspaceModeFixed, emptyWorld]
+
+set_option maxHeartbeats 1000000 in
+theorem step_preserves_workspaceModeFixed {world next : World} {event : Event}
+    (_invariant : WorkspaceModeFixed world) (step : Step world event next) :
+    WorkspaceModeFixed next := by
+  cases step <;>
+    simp_all [WorkspaceModeFixed, beginCreate, applyStartFence,
+      applyRevocationFence, prepareResources, configureSlot, activateResource,
+      publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
+      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      markOutcomeUnknown, Authority.withoutResume, setSandbox, setFilesystem,
+      setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
     grind
 
 theorem emptyWorld_uniqueActiveSlot : UniqueActiveSlot emptyWorld := by
@@ -1703,6 +1720,7 @@ theorem step_preserves_currentOperationValid {world next : World} {event : Event
 theorem emptyWorld_safe : Safe emptyWorld := by
   exact ⟨emptyWorld_resourceOwnership,
     emptyWorld_workspaceBindingValid,
+    emptyWorld_workspaceModeFixed,
     emptyWorld_currentResourcesValid,
     emptyWorld_uniqueExecution,
     emptyWorld_uniqueActiveSlot,
@@ -1721,11 +1739,12 @@ theorem emptyWorld_safe : Safe emptyWorld := by
 theorem step_preserves_safe {world next : World} {event : Event}
     (safe : Safe world) (step : Step world event next) : Safe next := by
   rcases safe with
-    ⟨resources, workspace, currentResources, unique, activeSlot, activeSlotValid,
+    ⟨resources, workspace, workspaceMode, currentResources, unique, activeSlot, activeSlotValid,
       durable, shape, fenceWellFormed, fenceClosed, runtime, stable, terminal,
       pausedSnapshot, restoreSource, currentOperation⟩
   exact ⟨step_preserves_resourceOwnership resources step,
     step_preserves_workspaceBindingValid workspace step,
+    step_preserves_workspaceModeFixed workspaceMode step,
     step_preserves_currentResourcesValid currentResources step,
     step_preserves_uniqueExecution unique step,
     step_preserves_uniqueActiveSlot activeSlot step,
@@ -1747,5 +1766,161 @@ theorem reachable_safe {world : World} (reachable : Reachable world) : Safe worl
   | initial => exact emptyWorld_safe
   | step _ transition inductionHypothesis =>
       exact step_preserves_safe inductionHypothesis transition
+
+/-! ## Workspace authority claims
+
+These theorems expose the research claims directly. They are consequences of
+the same `Step` relation used by `reachable_safe`, rather than tests over a
+finite collection of traces. -/
+
+set_option maxHeartbeats 1200000 in
+theorem step_workspaceIdentityStable {world next : World} {event : Event}
+    (transition : Step world event next) : WorkspaceIdentityStable world next := by
+  cases transition
+  case installRevocationFence =>
+    have sourceFound := ‹world.sandboxes _ = some _›
+    intro target oldRecord newRecord oldFound newFound
+    simp only [applyRevocationFence_sandboxes] at newFound
+    rw [put_eq_some_iff] at newFound
+    rcases newFound with ⟨same, closed⟩ | ⟨different, unchanged⟩
+    · subst target
+      have oldEq := Option.some.inj (oldFound.symm.trans sourceFound)
+      subst oldRecord
+      subst newRecord
+      rfl
+    · rw [oldFound] at unchanged
+      cases unchanged
+      rfl
+  all_goals
+    simp_all [WorkspaceIdentityStable, beginCreate, applyStartFence,
+      prepareResources, configureSlot, activateResource,
+      publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
+      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      markOutcomeUnknown, Authority.withoutResume, setSandbox, setFilesystem,
+      setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
+    grind
+
+set_option maxHeartbeats 1200000 in
+theorem step_workspaceModeStable {world next : World} {event : Event}
+    (_transition : Step world event next) : WorkspaceModeStable world next := by
+  intro _ oldRecord newRecord _ _
+  cases oldRecord.workspaceMode
+  cases newRecord.workspaceMode
+  rfl
+
+theorem authorityShape_runningWorkspaceAuthorityExact
+    (shape : AuthorityShape world) : RunningWorkspaceAuthorityExact world := by
+  intro sid record found running
+  have current := shape sid record found
+  rw [running] at current
+  rcases current with ⟨vmId, slotId, currentVm, currentSlot, _, effective⟩
+  refine ⟨vmId, slotId, currentVm, currentSlot, effective, ?_, ?_⟩ <;>
+    simp [effective, Authority.allows]
+
+theorem reachable_runningWorkspaceAuthorityExact {world : World}
+    (reachable : Reachable world) : RunningWorkspaceAuthorityExact world := by
+  rcases reachable_safe reachable with
+    ⟨_, _, _, _, _, _, _, _, shape, _⟩
+  exact authorityShape_runningWorkspaceAuthorityExact shape
+
+theorem fileRead_requires_running_current_generation
+    (transition : Step world (.fileRead actor sid generation) next) :
+    ∃ record, world.sandboxes sid = some record ∧
+      record.phase = .running ∧ generation = record.generation := by
+  cases transition
+  case fileRead => grind
+
+theorem fileWrite_requires_running_current_generation
+    (transition : Step world (.fileWrite actor sid generation) next) :
+    ∃ record, world.sandboxes sid = some record ∧
+      record.phase = .running ∧ generation = record.generation := by
+  cases transition
+  case fileWrite => grind
+
+theorem noFileAuthorityOutsideRunning
+    (found : world.sandboxes sid = some record)
+    (outside : record.phase ≠ .running) :
+    (¬ Step world (.fileRead actor sid generation) next) ∧
+      ¬ Step world (.fileWrite actor sid generation) next := by
+  constructor
+  · intro transition
+    rcases fileRead_requires_running_current_generation transition with
+      ⟨current, currentFound, running, _⟩
+    rw [found] at currentFound
+    cases currentFound
+    exact outside running
+  · intro transition
+    rcases fileWrite_requires_running_current_generation transition with
+      ⟨current, currentFound, running, _⟩
+    rw [found] at currentFound
+    cases currentFound
+    exact outside running
+
+theorem staleGenerationCannotAccessWorkspace
+    (found : world.sandboxes sid = some record)
+    (stale : generation ≠ record.generation) :
+    (¬ Step world (.fileRead actor sid generation) next) ∧
+      ¬ Step world (.fileWrite actor sid generation) next := by
+  constructor
+  · intro transition
+    rcases fileRead_requires_running_current_generation transition with
+      ⟨current, currentFound, _, currentGeneration⟩
+    rw [found] at currentFound
+    cases currentFound
+    exact stale currentGeneration
+  · intro transition
+    rcases fileWrite_requires_running_current_generation transition with
+      ⟨current, currentFound, _, currentGeneration⟩
+    rw [found] at currentFound
+    cases currentFound
+    exact stale currentGeneration
+
+/-- Accepting resume selects data provenance but starts the new generation with
+    both desired and effective authority closed. -/
+theorem snapshotCarriesNoAuthority
+    (transition : Step world (.acceptResume actor sid operationId) next) :
+    ∃ oldRecord newRecord snapshotId,
+      world.sandboxes sid = some oldRecord ∧
+      oldRecord.durableSnapshot = some snapshotId ∧
+      next.sandboxes sid = some newRecord ∧
+      newRecord.workspace = oldRecord.workspace ∧
+      newRecord.workspaceMode = oldRecord.workspaceMode ∧
+      newRecord.generation = oldRecord.generation + 1 ∧
+      newRecord.restoreFrom = some snapshotId ∧
+      newRecord.desired = .closed ∧ newRecord.effective = .closed := by
+  cases transition
+  case acceptResume =>
+    simp_all [beginResume, enqueue, setSandbox, put]
+
+/-- Publication creates fresh file authority from the current controller
+    record. This covers resume publication; the snapshot is absent from the
+    authority constructor and cannot override workspace, mode, or generation. -/
+theorem resumeReissuesWorkspaceAuthority
+    (transition : Step world (.publishRunning sid) next) :
+    ∃ record vmId slotId,
+      next.sandboxes sid = some record ∧ record.phase = .running ∧
+      record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
+      record.desired = .running sid record.generation vmId
+        record.workspace record.workspaceMode slotId record.policy ∧
+      record.effective = record.desired ∧
+      record.effective.allows
+        (.fileRead sid record.generation record.workspace record.workspaceMode) ∧
+      record.effective.allows
+        (.fileWrite sid record.generation record.workspace record.workspaceMode) := by
+  cases transition
+  case publishRunning =>
+    simp_all [publishRunning, setSandbox, setNetSlot, put, Authority.allows]
+
+/-- Once the worker acknowledges the current pause/kill fence, even lingering
+    effective authority is closed. -/
+theorem reachable_revocationFenceClosesFileAuthority
+    (reachable : Reachable world)
+    (found : world.sandboxes sid = some record)
+    (fenced : world.workerFences sid = some ⟨record.epoch, record.terminal⟩)
+    (revoking : record.phase = .pausing ∨ record.phase = .revoking) :
+    record.effective = .closed := by
+  rcases reachable_safe reachable with
+    ⟨_, _, _, _, _, _, _, _, _, _, fenceClosed, _⟩
+  exact fenceClosed sid record found fenced revoking
 
 end SandboxModel

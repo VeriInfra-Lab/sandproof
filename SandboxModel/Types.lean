@@ -65,6 +65,11 @@ inductive SnapshotStage where
   | durable
   deriving DecidableEq, Repr
 
+/-! The first artifact deliberately supports one workspace policy constructor. -/
+inductive WorkspaceMode where
+  | readWrite
+  deriving DecidableEq, Repr
+
 inductive Protocol where
   | tcp
   | udp
@@ -106,7 +111,9 @@ structure Operation where
 inductive Capability where
   | exec (sid : SandboxId) (generation : Generation) (vm : VmId)
   | fileRead (sid : SandboxId) (generation : Generation) (fs : FsId)
+      (mode : WorkspaceMode)
   | fileWrite (sid : SandboxId) (generation : Generation) (fs : FsId)
+      (mode : WorkspaceMode)
   | ingress (sid : SandboxId) (generation : Generation) (vm : VmId)
       (slot : NetSlotId)
   | egress (sid : SandboxId) (generation : Generation) (vm : VmId)
@@ -117,16 +124,17 @@ inductive Capability where
 inductive Authority where
   | closed
   | running (sid : SandboxId) (generation : Generation) (vm : VmId)
-      (workspace : FsId) (slot : NetSlotId) (policy : NetworkPolicy)
+      (workspace : FsId) (mode : WorkspaceMode) (slot : NetSlotId)
+      (policy : NetworkPolicy)
   | paused (sid : SandboxId) (snapshot : SnapshotId)
   deriving DecidableEq, Repr
 
 def Authority.allows : Authority → Capability → Prop
   | .closed, _ => False
-  | .running sid generation vm workspace slot policy, capability =>
+  | .running sid generation vm workspace mode slot policy, capability =>
       capability = .exec sid generation vm ∨
-      capability = .fileRead sid generation workspace ∨
-      capability = .fileWrite sid generation workspace ∨
+      capability = .fileRead sid generation workspace mode ∨
+      capability = .fileWrite sid generation workspace mode ∨
       capability = .ingress sid generation vm slot ∨
       capability = .egress sid generation vm slot policy
   | .paused sid snapshot, capability => capability = .resume sid snapshot
@@ -174,8 +182,8 @@ inductive Event where
   | controllerRecover
   | duplicateOrLateDelivery (command : Command)
   | exec (actor : Actor) (sid : SandboxId)
-  | fileRead (actor : Actor) (sid : SandboxId)
-  | fileWrite (actor : Actor) (sid : SandboxId)
+  | fileRead (actor : Actor) (sid : SandboxId) (generation : Generation)
+  | fileWrite (actor : Actor) (sid : SandboxId) (generation : Generation)
   | ingress (actor : Actor) (sid : SandboxId)
   | egress (sid : SandboxId) (destination : Endpoint)
   deriving DecidableEq, Repr

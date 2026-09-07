@@ -37,6 +37,13 @@ def WorkspaceBindingValid (world : World) : Prop :=
     ∃ filesystem, world.filesystems record.workspace = some filesystem ∧
       filesystem.owner = record.owner ∧ filesystem.sandbox = sid
 
+/-- Version one deliberately has a single-constructor workspace policy. Keeping the
+    mode in controller state makes later extension possible without admitting
+    meaningless combinations of independent read/write flags. -/
+def WorkspaceModeFixed (world : World) : Prop :=
+  ∀ sid record, world.sandboxes sid = some record →
+    record.workspaceMode = .readWrite
+
 /-- References stored in a sandbox record cannot silently point at another
     sandbox's VM or network slot, including while authority is closed. -/
 def CurrentResourcesValid (world : World) : Prop :=
@@ -86,14 +93,14 @@ def AuthorityShape (world : World) : Prop :=
     | .running => ∃ vmId slotId,
         record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
         record.desired = .running sid record.generation vmId
-          record.workspace slotId record.policy ∧
+          record.workspace record.workspaceMode slotId record.policy ∧
         record.effective = .running sid record.generation vmId
-          record.workspace slotId record.policy
+          record.workspace record.workspaceMode slotId record.policy
     | .pausing => record.desired = .closed ∧
         (record.effective = .closed ∨ ∃ vmId slotId,
           record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
           record.effective = .running sid record.generation vmId
-            record.workspace slotId record.policy)
+            record.workspace record.workspaceMode slotId record.policy)
     | .paused => ∃ snapshotId,
         record.durableSnapshot = some snapshotId ∧
         record.desired = .paused sid snapshotId ∧
@@ -102,7 +109,7 @@ def AuthorityShape (world : World) : Prop :=
         (record.effective = .closed ∨ ∃ vmId slotId,
           record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
           record.effective = .running sid record.generation vmId
-            record.workspace slotId record.policy)
+            record.workspace record.workspaceMode slotId record.policy)
     | .destroyed => record.desired = .closed ∧ record.effective = .closed
 
 def FenceClosesAuthority (world : World) : Prop :=
@@ -180,6 +187,32 @@ def CurrentOperationValid (world : World) : Prop :=
     ∃ operation, record.currentOperation = some operation ∧
       operation.epoch = record.epoch ∧ OperationMatchesPhase operation record.phase
 
+/-! Workspace authority specifications. These names mirror the research claims
+    so each claim can be inspected independently of the bundled `Safe` theorem. -/
+
+def WorkspaceIdentityStable (before after : World) : Prop :=
+  ∀ sid oldRecord newRecord,
+    before.sandboxes sid = some oldRecord →
+    after.sandboxes sid = some newRecord →
+    oldRecord.workspace = newRecord.workspace
+
+def WorkspaceModeStable (before after : World) : Prop :=
+  ∀ sid oldRecord newRecord,
+    before.sandboxes sid = some oldRecord →
+    after.sandboxes sid = some newRecord →
+    oldRecord.workspaceMode = newRecord.workspaceMode
+
+def RunningWorkspaceAuthorityExact (world : World) : Prop :=
+  ∀ sid record, world.sandboxes sid = some record → record.phase = .running →
+    ∃ vmId slotId,
+      record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
+      record.effective = .running sid record.generation vmId
+        record.workspace record.workspaceMode slotId record.policy ∧
+      record.effective.allows
+        (.fileRead sid record.generation record.workspace record.workspaceMode) ∧
+      record.effective.allows
+        (.fileWrite sid record.generation record.workspace record.workspaceMode)
+
 /-! Policy properties belong to transitions because they speak about the event being admitted. -/
 
 def EventAuthorized (world : World) : Event → Prop
@@ -188,9 +221,10 @@ def EventAuthorized (world : World) : Event → Prop
   | .acceptResume actor sid _
   | .acceptKill actor sid _
   | .exec actor sid
-  | .fileRead actor sid
-  | .fileWrite actor sid
   | .ingress actor sid =>
+      ∃ record, world.sandboxes sid = some record ∧ authorized actor record.owner
+  | .fileRead actor sid _
+  | .fileWrite actor sid _ =>
       ∃ record, world.sandboxes sid = some record ∧ authorized actor record.owner
   | _ => True
 
@@ -204,8 +238,8 @@ def EgressPolicyEnforced (world : World) : Event → Prop
   | _ => True
 
 def FileEventWorkspaceBound (world : World) : Event → Prop
-  | .fileRead _ sid
-  | .fileWrite _ sid =>
+  | .fileRead _ sid _
+  | .fileWrite _ sid _ =>
       ∃ record filesystem,
         world.sandboxes sid = some record ∧
         world.filesystems record.workspace = some filesystem ∧
@@ -215,6 +249,7 @@ def FileEventWorkspaceBound (world : World) : Event → Prop
 def Safe (world : World) : Prop :=
   ResourceOwnership world ∧
   WorkspaceBindingValid world ∧
+  WorkspaceModeFixed world ∧
   CurrentResourcesValid world ∧
   UniqueExecution world ∧
   UniqueActiveSlot world ∧

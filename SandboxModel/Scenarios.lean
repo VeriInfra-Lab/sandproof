@@ -34,6 +34,7 @@ def createdRecord : SandboxRecord := {
   generation := 1
   currentVm := none
   workspace := workspace
+  workspaceMode := .readWrite
   durableSnapshot := none
   restoreFrom := none
   netSlot := none
@@ -72,8 +73,8 @@ def runningRecord : SandboxRecord := {
   phase := .running
   terminal := false
   restoreFrom := none
-  desired := .running sid 1 firstVm workspace firstSlot policy
-  effective := .running sid 1 firstVm workspace firstSlot policy
+  desired := .running sid 1 firstVm workspace .readWrite firstSlot policy
+  effective := .running sid 1 firstVm workspace .readWrite firstSlot policy
   currentOperation := some ⟨createOperation, 1, .create, .succeeded⟩
 }
 
@@ -376,8 +377,8 @@ def resumedRunningRecord : SandboxRecord := {
   phase := .running
   terminal := false
   restoreFrom := none
-  desired := .running sid 2 secondVm workspace secondSlot policy
-  effective := .running sid 2 secondVm workspace secondSlot policy
+  desired := .running sid 2 secondVm workspace .readWrite secondSlot policy
+  effective := .running sid 2 secondVm workspace .readWrite secondSlot policy
   currentOperation := some ⟨resumeOperation, 3, .resume, .succeeded⟩
 }
 

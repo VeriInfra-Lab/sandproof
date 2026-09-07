@@ -133,4 +133,17 @@ theorem durable_foreign_snapshot_breaks_restore_source_validity :
     resumingRecord, pausedRecord, pausingClosedRecord, pausingRecord,
     runningRecord, preparedRecord, createdRecord] using owner)
 
+/-- A concrete check of the generation fence: after generation 2 is published,
+    a generation 1 file request cannot be a protocol step. -/
+theorem resumed_sandbox_rejects_previous_generation_file_access :
+    (¬ Step wResumedRunning (.fileRead (.tenant tenant) sid 1) wResumedRunning) ∧
+      ¬ Step wResumedRunning (.fileWrite (.tenant tenant) sid 1) wResumedRunning := by
+  apply staleGenerationCannotAccessWorkspace
+    (record := resumedRunningRecord)
+  · simp [wResumedRunning, publishRunning, resumedRunningRecord,
+      secondPreparedRecord, secondConfiguredSlot, secondUnconfiguredSlot,
+      resumingRecord, pausedRecord, pausingClosedRecord, pausingRecord,
+      runningRecord, preparedRecord, createdRecord, setSandbox, setNetSlot, put]
+  · decide
+
 end SandboxModel.Counterexamples

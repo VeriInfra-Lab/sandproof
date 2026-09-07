@@ -2,7 +2,7 @@
 
 本仓库研究 **Firecracker 沙箱在 create、pause、resume、kill 交接中的执行权安全**。核心问题是：当命令重复或迟到、RPC 结果未知、controller 崩溃时，如何保证旧工作不能重新获得执行权，并且 Paused/Destroyed 的发布有足够的运行时证据。
 
-研究边界固定为单台 Linux/KVM 主机、一个 controller、一个 worker、Firecracker v1.16.1、每个沙箱独占 workspace 与网络槽。网络策略只建模 `deny-all` 或静态 L3/L4 allowlist。首阶段不处理多节点迁移、共享卷、DNS/SNI 策略、恶意宿主、完整 E2B 兼容或活性证明。
+研究边界固定为单台 Linux/KVM 主机、一个 controller、一个 worker、Firecracker v1.16.1、每个沙箱独占 workspace 与网络槽。首版 workspace 模式固定为 `readWrite`；不建模路径、内容、UID/GID、ACL 或 Linux 文件系统内部行为。网络策略只建模 `deny-all` 或静态 L3/L4 allowlist。首阶段不处理多节点迁移、共享卷、DNS/SNI 策略、恶意宿主、完整 E2B 兼容或活性证明。
 
 ## 当前实现
 
@@ -22,11 +22,13 @@ Lean 4 是规范与证明的唯一权威来源：
 theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
 ```
 
-`Safe` 的十六项条件均已证明逐步保持：资源归属、workspace 双向绑定、当前 VM/网络槽绑定、单 VM 执行、单活动网络槽、活动槽不悬空、快照不可变、权限形状、fence 顺序、fence 后权限关闭、有效权限的真实运行时依据、稳定态静止、terminal 与终态的一致性、Paused 快照绑定、Starting 恢复源绑定，以及 operation/epoch/phase 一致性。转移级定理还证明所有带 actor 的事件经过 owner/system 授权、egress 只能命中静态 allowlist、文件事件使用归属正确的 workspace、RPC timeout 只写入 `outcomeUnknown`、Destroyed 不会离开 Destroyed，以及 tombstone 不会被清除。证明不含 `sorry`、`admit`、新增 `axiom` 或有限状态枚举。
+`Safe` 的十七项条件均已证明逐步保持：资源归属、workspace 双向绑定、固定 `readWrite` 模式、当前 VM/网络槽绑定、单 VM 执行、单活动网络槽、活动槽不悬空、快照不可变、权限形状、fence 顺序、fence 后权限关闭、有效权限的真实运行时依据、稳定态静止、terminal 与终态的一致性、Paused 快照绑定、Starting 恢复源绑定，以及 operation/epoch/phase 一致性。
 
-[`Scenarios.lean`](SandboxModel/Scenarios.lean) 构造了完整 create→pause→resume→kill 可达轨迹，证明规范并非靠拒绝所有动作获得安全；[`Counterexamples.lean`](SandboxModel/Counterexamples.lean) 机器检查了四个删弱规则后的反例：双 VM 执行、双活动路由、VM 未停却发布 Paused，以及跨 sandbox 的 durable 快照被选为恢复源。
+Workspace 权限另外有七组显式定理：生命周期步骤保持 workspace 身份和模式；Running 权限精确绑定 sid、generation、workspace 与 mode；非 Running 状态不接收新的 managed 文件请求；resume 以关闭权限进入新 generation，并在 PublishRunning 时按 controller 当前记录重签；snapshot 只给出数据来源，不携带权限；旧 generation 的读写请求不能形成合法转移。Pausing 在 worker fence 到达后的有效权限关闭也有单独定理。证明不含 `sorry`、`admit`、新增 `axiom` 或有限状态枚举。
 
-这个结论只覆盖 Lean 中定义的抽象协议。它尚未证明某个 controller、E2B、Firecracker、Linux/KVM、文件系统或网络栈实现了这些 `Step`；实现到规范的 refinement 与 adapter 实验仍是后续工作。
+[`Scenarios.lean`](SandboxModel/Scenarios.lean) 构造了完整 create→pause→resume→kill 可达轨迹，证明规范并非靠拒绝所有动作获得安全；[`Counterexamples.lean`](SandboxModel/Counterexamples.lean) 机器检查了四个删弱规则后的反例，并具体证明 generation 2 恢复完成后，generation 1 的文件读写请求会被拒绝。
+
+这个结论只覆盖 Lean 中定义的抽象协议。controller 级的 workspace 身份、模式和权限签发在证明范围内；snapshot/restore 是否忠实保留文件内容、mode、owner 与 ACL 是 storage adapter 契约。它尚未证明某个 controller、E2B、Firecracker、Linux/KVM、文件系统或网络栈实现了这些 `Step`；实现到规范的 refinement 与 adapter 实验仍是后续工作。
 
 ## 验证
 

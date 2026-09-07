@@ -82,9 +82,10 @@ runner 必须满足：
 | FC freeze | 成功表示精确 VM 的 vCPU 已暂停 |
 | stop/wait | 返回确认时精确 VM 不再执行 |
 | snapshot store | 同源 bundle 先写入，最后原子提交 immutable manifest；Durable 属于声明故障域 |
+| workspace restore | `restore(manifest, workspace)` 成功时忠实恢复 manifest 指定的数据，以及下游承诺保留的内容、mode、owner、ACL 元数据 |
 | network slot | 独占绑定 sid/generation/VM；configured 后才能 active；fence 可关闭 active |
 
-底层 KVM、Firecracker、文件系统与编译器正确性不在证明内部，但必须固定版本并通过故障实验支持契约。
+Lean 证明 controller 传给 adapter 的 snapshot 来源、workspace、generation 和当前 `readWrite` policy 身份正确。底层 KVM、Firecracker、文件系统与编译器正确性不在证明内部；特别是 ext4/Linux 是否忠实保存内容和权限元数据，只能由固定版本、实现审计与故障实验支持上述契约。
 
 ## 7. Aeneas 使用约束
 
