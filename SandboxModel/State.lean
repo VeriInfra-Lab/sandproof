@@ -17,8 +17,8 @@ structure SandboxRecord where
   restoreFrom : Option SnapshotId
   netSlot : Option NetSlotId
   policy : NetworkPolicy
-  desired : Capability → Prop
-  effective : Capability → Prop
+  desired : Authority
+  effective : Authority
   currentOperation : Option Operation
 
 structure Vm where
@@ -83,32 +83,6 @@ def put [DecidableEq α] (store : α → Option β) (key : α) (value : β) : α
 
 def addCommand (inflight : Command → Prop) (command : Command) : Command → Prop :=
   fun candidate => candidate = command ∨ inflight candidate
-
-def noCapabilities : Capability → Prop := fun _ => False
-
-def runningCapabilities (sid : SandboxId) (record : SandboxRecord) : Capability → Prop
-  | .exec target generation vm =>
-      target = sid ∧ generation = record.generation ∧ record.currentVm = some vm
-  | .fileRead target generation fs =>
-      target = sid ∧ generation = record.generation ∧ fs = record.workspace
-  | .fileWrite target generation fs =>
-      target = sid ∧ generation = record.generation ∧ fs = record.workspace
-  | .ingress target generation vm slot =>
-      target = sid ∧ generation = record.generation ∧
-        record.currentVm = some vm ∧ record.netSlot = some slot
-  | .egress target generation vm slot policy =>
-      target = sid ∧ generation = record.generation ∧
-        record.currentVm = some vm ∧ record.netSlot = some slot ∧
-        policy = record.policy
-  | .resume _ _ => False
-
-def pausedCapabilities (sid : SandboxId) (snapshot : SnapshotId) : Capability → Prop
-  | .resume target candidate => target = sid ∧ candidate = snapshot
-  | _ => False
-
-def withoutResume (caps : Capability → Prop) : Capability → Prop
-  | .resume _ _ => False
-  | capability => caps capability
 
 def setSandbox (world : World) (sid : SandboxId) (record : SandboxRecord) : World :=
   { world with sandboxes := put world.sandboxes sid record }

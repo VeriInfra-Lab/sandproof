@@ -36,7 +36,9 @@ Lean 为 tenant、sandbox、VM、filesystem、snapshot、network slot 和 operat
 | `inflight` | 可重复、延迟、乱序交付的 command 集合 |
 | `controllerUp` | controller crash/recover 的易失状态 |
 
-`desired` 表示 controller 要达到的权限，`effective` 表示当前实际可用的权限。pause/kill 接受时先关闭 desired；worker 安装 fence 后才清除 effective，因此模型保留了真实的撤销窗口。
+`desired` 表示 controller 要达到的权限，`effective` 表示当前实际可用的权限。权限不是任意布尔集合，而是只有三种构造：`closed`、绑定 sid/generation/VM/workspace/network slot/policy 的 `running`，以及绑定 sid/snapshot 的 `paused`。因此“不合法的权限组合”无法靠一串 `if/else` 拼出来。
+
+pause/kill 接受时先关闭 desired；worker 安装撤销 fence 后才清除 effective，因此模型保留了真实的撤销窗口。启动 fence 与撤销 fence 是两个不同的 Step：启动 fence 只登记 epoch，撤销 fence 才有权关闭 effective 和网络槽。这个区分阻止迟到的 create/resume fence 在 Running 中误撤销当前权限。
 
 ## 4. Phase 与 capability
 
@@ -70,7 +72,7 @@ inductive Reachable : World → Prop
 
 | 路径 | 分解的事件 | 关键 guard / 发布条件 |
 |---|---|---|
-| create | AcceptCreate → InstallFence → DispatchPrepare → PrepareVm → ConfigureNetwork → ActivateVm → PublishRunning | sid/workspace/VM/slot 新鲜；worker fence 当前；激活前同 sid 无 executing VM |
+| create | AcceptCreate → InstallFence → DispatchPrepare → PrepareVm → ConfigureNetwork → ActivateVm → PublishRunning | sid/workspace/VM/slot 新鲜；worker fence 当前；激活前同 sid 无 executing VM；发布前同 sid 无旧 active slot |
 | pause | AcceptPause → InstallFence → FreezeVm → SealSnapshot → CommitSnapshot → StopVm → PublishPaused | fence 先关闭权限；snapshot durable+immutable 且绑定 owner/sid/generation/workspace；无 executing VM 和 active slot |
 | resume | AcceptResume → InstallFence → create 的准备/激活路径 | snapshot 必须 durable、immutable 且归属正确；新 epoch/generation；旧命令不能匹配新记录 |
 | kill | AcceptKill → InstallFence → StopVm → PublishDestroyed | terminal 在接受时写入；Destroyed 仅在 terminal fence、无 executing VM、无 active slot 后发布 |
@@ -81,21 +83,54 @@ controller crash 只改变 `controllerUp`，不会抹掉持久状态、worker fe
 
 ## 6. 安全目标
 
-[`Safety.lean`](../SandboxModel/Safety.lean) 中的完整 `Safe` 包含：
+[`Safety.lean`](../SandboxModel/Safety.lean) 中的完整 `Safe` 包含十二项条件：
 
 1. 所有 VM、workspace、snapshot、network slot 的 owner/sandbox 归属一致。
-2. 同一 sandbox 至多一个 executing VM。
-3. Durable snapshot 必为 immutable。
-4. effective capability 与 phase、generation、具体资源完全匹配。
-5. Pausing/Revoking 的当前 worker fence 会关闭 effective authority。
-6. 任何 data-plane capability 都有 executing VM 与 configured/active network slot 作为事实依据。
-7. Paused/Destroyed 中无 executing VM 与 active slot。
-8. terminal 只对应 Revoking/Destroyed，且不会被任何一步清除。
-9. Paused 指向归属、代、workspace、durability 都正确的 snapshot。
+2. 每个 sandbox 记录指向的 workspace 真实存在，并反向绑定同一个 owner/sid。
+3. 同一 sandbox 至多一个 executing VM。
+4. 同一 sandbox 至多一个 active network slot。
+5. Durable snapshot 必为 immutable。
+6. effective authority 与 phase、generation、具体资源完全匹配。
+7. worker fence 来自现存 sandbox，epoch 不超前，terminal fence 不会凭空出现。
+8. Pausing/Revoking 的当前 worker fence 会关闭 effective authority。
+9. 非关闭、非 Paused 的 effective authority 有 executing VM 与 configured/active network slot 作为事实依据。
+10. Paused/Destroyed 中无 executing VM 与 active slot。
+11. terminal 为真当且仅当 phase 是 Revoking/Destroyed。
+12. Paused 指向归属、代、workspace、durability 都正确的 snapshot。
 
-当前 `reachable_core_safe` 已对任意可达 World 证明第 2、3、8 项的状态部分；`step_never_clears_terminal` 单独证明 terminal 的逐步单调性。其余项保留在同一个定义中作为下一轮证明义务，避免把计划写成已经完成的结论。
+`emptyWorld_safe` 证明初始状态满足全部条件；`step_preserves_safe` 证明任意合法一步同时保持全部条件；最终由可达性归纳得到：
 
-## 7. 设计上刻意保留的窗口
+```lean
+theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
+```
+
+这不是有限场景搜索。`World` 中的标识、资源数量和轨迹长度都没有预设上限。转移级定理另外证明：带 actor 的事件经过 owner/system 授权、egress 目标属于静态 allowlist、文件事件使用归属正确的 workspace、RPC timeout 只把 pending operation 写成 `outcomeUnknown`、Destroyed 不会离开 Destroyed，已有 terminal tombstone 也不会被任何一步清除。所有证明均不含 `sorry`、`admit` 或新增 `axiom`。
+
+## 7. 用简单比喻理解边界
+
+可以把一个 sandbox 想成一间实验室：
+
+- `SandboxRecord` 是前台登记簿；VM、workspace、snapshot 和 network slot 是实际钥匙与设备。
+- `generation` 是本轮钥匙的批次号。恢复后会换一批钥匙，旧钥匙不能打开新设备。
+- `effective authority` 是眼下真正能开门的钥匙，不是前台“希望门关上”的记录。
+- `worker fence` 是门卫已经执行到哪个命令的盖章。只有撤销盖章完成，系统才能把实验室发布为 Paused 或 Destroyed。
+
+Lean 已证明：只要每一次真实动作都确实属于 `Step` 允许的动作，上述十二条规则永远不会被打破。Lean 没有证明真实门卫一定照做；把 controller、worker、Firecracker 和 Linux 的动作对应到 `Step`，属于后续 refinement 与 adapter 验证。
+
+具体边界如下：
+
+| 模型内已证明 | 模型外仍需验证 |
+|---|---|
+| 任意多个 tenant/sandbox、任意有限长度的合法 Step 历史 | controller/worker 代码是否只产生这些 Step |
+| 重复/迟到命令、RPC outcome unknown、controller crash/recover | host/worker 永久故障后的活性与最终恢复 |
+| owner/sid/generation/resource 绑定与静态 L3/L4 策略 | KVM/Firecracker、Linux 内核、nftables/netlink 没有 bug |
+| workspace 是私有资源，Committed snapshot 不可变 | POSIX ACL、路径穿越、symlink/hardlink、host mount 的具体实现 |
+| pause/kill 完成时无 executing VM 与 active slot | 内存清零、磁盘安全擦除、侧信道与恶意宿主 |
+| 单节点 controller/worker 协议安全 | 多节点调度、迁移、共识、共享卷、动态 DNS/SNI 策略 |
+
+“任意历史”也有限定：`Reachable` 表示任意**有限**步数。证明是 safety，即坏状态永远到不了；它不保证某个请求一定最终完成，也不保证系统不会一直等待。
+
+## 8. 设计上刻意保留的窗口
 
 - `AcceptPause` 或 `AcceptKill` 与 `InstallFence` 分开。在 fence 生效前旧 VM 可能继续执行，所以此时不能发布 Paused/Destroyed。
 - `SealSnapshot` 与 `CommitSnapshot` 分开。本地封口不等于持久且不可变。

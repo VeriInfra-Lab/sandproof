@@ -114,9 +114,26 @@ inductive Capability where
   | resume (sid : SandboxId) (snapshot : SnapshotId)
   deriving DecidableEq, Repr
 
-def Capability.isDataPlane : Capability → Bool
-  | .resume _ _ => false
-  | _ => true
+inductive Authority where
+  | closed
+  | running (sid : SandboxId) (generation : Generation) (vm : VmId)
+      (workspace : FsId) (slot : NetSlotId) (policy : NetworkPolicy)
+  | paused (sid : SandboxId) (snapshot : SnapshotId)
+  deriving DecidableEq, Repr
+
+def Authority.allows : Authority → Capability → Prop
+  | .closed, _ => False
+  | .running sid generation vm workspace slot policy, capability =>
+      capability = .exec sid generation vm ∨
+      capability = .fileRead sid generation workspace ∨
+      capability = .fileWrite sid generation workspace ∨
+      capability = .ingress sid generation vm slot ∨
+      capability = .egress sid generation vm slot policy
+  | .paused sid snapshot, capability => capability = .resume sid snapshot
+
+def Authority.withoutResume : Authority → Authority
+  | .paused _ _ => .closed
+  | authority => authority
 
 def authorized (actor : Actor) (owner : TenantId) : Prop :=
   actor = .tenant owner ∨ actor = .systemController

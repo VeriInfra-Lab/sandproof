@@ -30,25 +30,30 @@ def beginCreate (world : World) (sid : SandboxId) (owner : TenantId)
     restoreFrom := none
     netSlot := none
     policy := policy
-    desired := noCapabilities
-    effective := noCapabilities
+    desired := .closed
+    effective := .closed
     currentOperation := some operation
   }
   let filesystem : Filesystem := ⟨owner, sid, generation⟩
   enqueue (setSandbox (setFilesystem world workspace filesystem) sid record)
     (.installFence sid epoch false)
 
-/-- Installing a fence closes effective authority and the current network slot. -/
-def applyFence (world : World) (sid : SandboxId) (record : SandboxRecord) : World :=
-  let closed := { record with effective := noCapabilities }
-  let withRecord := setFence (setSandbox world sid closed) sid
-    ⟨record.epoch, record.terminal⟩
+/-- A start fence installs the new epoch before resources are prepared. -/
+def applyStartFence (world : World) (sid : SandboxId)
+    (record : SandboxRecord) : World :=
+  setFence world sid ⟨record.epoch, false⟩
+
+/-- A pause/kill fence closes authority and the current network slot. -/
+def applyRevocationFence (world : World) (sid : SandboxId)
+    (record : SandboxRecord) : World :=
+  let closed := setFence (setSandbox world sid { record with effective := .closed })
+    sid ⟨record.epoch, record.terminal⟩
   match record.netSlot with
-  | none => withRecord
+  | none => closed
   | some slotId =>
       match world.netSlots slotId with
-      | none => withRecord
-      | some slot => setNetSlot withRecord slotId { slot with active := false }
+      | none => closed
+      | some slot => setNetSlot closed slotId { slot with active := false }
 
 def prepareResources (world : World) (sid : SandboxId) (record : SandboxRecord)
     (vmId : VmId) (slotId : NetSlotId) : World :=
@@ -82,10 +87,8 @@ def publishRunning (world : World) (sid : SandboxId) (record : SandboxRecord)
     currentOperation := record.currentOperation.map
       (fun (op : Operation) => { op with status := .succeeded })
   }
-  let running := { base with
-    desired := runningCapabilities sid base
-    effective := runningCapabilities sid base
-  }
+  let authority := .running sid base.generation slot.vm base.workspace slotId base.policy
+  let running := { base with desired := authority, effective := authority }
   setSandbox (setNetSlot world slotId { slot with active := true }) sid running
 
 /-- Pause first closes desired authority; effective authority closes at the fence. -/
@@ -96,7 +99,7 @@ def beginPause (world : World) (sid : SandboxId) (record : SandboxRecord)
   let updated := { record with
     phase := .pausing
     epoch := epoch
-    desired := noCapabilities
+    desired := .closed
     currentOperation := some operation
   }
   enqueue (enqueue (setSandbox world sid updated) (.installFence sid epoch false))
@@ -133,10 +136,8 @@ def publishPaused (world : World) (sid : SandboxId) (record : SandboxRecord)
     currentOperation := record.currentOperation.map
       (fun (op : Operation) => { op with status := .succeeded })
   }
-  let paused := { base with
-    desired := pausedCapabilities sid snapshotId
-    effective := pausedCapabilities sid snapshotId
-  }
+  let authority := .paused sid snapshotId
+  let paused := { base with desired := authority, effective := authority }
   setSandbox world sid paused
 
 /-- Resume atomically selects its source and allocates a new epoch and generation. -/
@@ -152,8 +153,8 @@ def beginResume (world : World) (sid : SandboxId) (record : SandboxRecord)
     currentVm := none
     restoreFrom := some snapshotId
     netSlot := none
-    desired := noCapabilities
-    effective := noCapabilities
+    desired := .closed
+    effective := .closed
     currentOperation := some operation
   }
   enqueue (setSandbox world sid updated) (.installFence sid epoch false)
@@ -167,8 +168,8 @@ def beginKill (world : World) (sid : SandboxId) (record : SandboxRecord)
     phase := .revoking
     terminal := true
     epoch := epoch
-    desired := noCapabilities
-    effective := withoutResume record.effective
+    desired := .closed
+    effective := record.effective.withoutResume
     currentOperation := some operation
   }
   enqueue (setSandbox world sid updated) (.installFence sid epoch true)
@@ -179,8 +180,8 @@ def publishDestroyed (world : World) (sid : SandboxId) (record : SandboxRecord) 
     terminal := true
     currentVm := none
     netSlot := none
-    desired := noCapabilities
-    effective := noCapabilities
+    desired := .closed
+    effective := .closed
     currentOperation := record.currentOperation.map
       (fun (op : Operation) => { op with status := .succeeded })
   }
@@ -213,10 +214,20 @@ inductive Step : World → Event → World → Prop where
       Step world (.acceptCreate actor owner sid workspace policy operationId)
         (beginCreate world sid owner workspace policy operationId)
 
-  | installFence
+  | installStartFence
       (queued : world.inflight (.installFence sid record.epoch record.terminal))
-      (found : world.sandboxes sid = some record) :
-      Step world (.installFence sid) (applyFence world sid record)
+      (found : world.sandboxes sid = some record)
+      (starting : record.phase = .starting)
+      (live : record.terminal = false) :
+      Step world (.installFence sid) (applyStartFence world sid record)
+
+  | installRevocationFence
+      (queued : world.inflight (.installFence sid record.epoch record.terminal))
+      (found : world.sandboxes sid = some record)
+      (revoking : record.phase = .pausing ∨ record.phase = .revoking)
+      (slotIdentity : ∀ slotId, record.netSlot = some slotId →
+        ∃ slot, world.netSlots slotId = some slot ∧ slot.sandbox = sid) :
+      Step world (.installFence sid) (applyRevocationFence world sid record)
 
   | dispatchPrepare
       (up : world.controllerUp = true)
@@ -286,6 +297,7 @@ inductive Step : World → Event → World → Prop where
       (slotReady : slot.owner = record.owner ∧ slot.sandbox = sid ∧
         slot.generation = record.generation ∧ slot.vm = vmId ∧
         slot.policy = record.policy ∧ slot.configured = true ∧ slot.active = false)
+      (exclusiveNetwork : noActiveSlot world sid)
       (fenced : world.workerFences sid = some ⟨record.epoch, false⟩) :
       Step world (.publishRunning sid) (publishRunning world sid record slotId slot)
 
@@ -403,32 +415,33 @@ inductive Step : World → Event → World → Prop where
   | exec
       (found : world.sandboxes sid = some record)
       (auth : authorized actor record.owner)
-      (capability : record.effective (.exec sid record.generation vmId)) :
+      (capability : record.effective.allows (.exec sid record.generation vmId)) :
       Step world (.exec actor sid) world
 
   | fileRead
       (found : world.sandboxes sid = some record)
       (auth : authorized actor record.owner)
-      (capability : record.effective
+      (capability : record.effective.allows
         (.fileRead sid record.generation record.workspace)) :
       Step world (.fileRead actor sid) world
 
   | fileWrite
       (found : world.sandboxes sid = some record)
       (auth : authorized actor record.owner)
-      (capability : record.effective
+      (capability : record.effective.allows
         (.fileWrite sid record.generation record.workspace)) :
       Step world (.fileWrite actor sid) world
 
   | ingress
       (found : world.sandboxes sid = some record)
       (auth : authorized actor record.owner)
-      (capability : record.effective (.ingress sid record.generation vmId slotId)) :
+      (capability : record.effective.allows
+        (.ingress sid record.generation vmId slotId)) :
       Step world (.ingress actor sid) world
 
   | egress
       (found : world.sandboxes sid = some record)
-      (capability : record.effective
+      (capability : record.effective.allows
         (.egress sid record.generation vmId slotId record.policy))
       (allowed : record.policy = .staticAllowlist endpoints ∧ destination ∈ endpoints) :
       Step world (.egress sid destination) world

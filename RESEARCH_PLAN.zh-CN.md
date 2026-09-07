@@ -1,6 +1,6 @@
 # 研究计划：沙箱生命周期中的执行权、资源与精化
 
-版本：0.2，2026-09-07。状态：Lean 参数化规范已经建立，核心不变量已开始机器证明；尚无 production controller 或 Firecracker 实机结论。
+版本：0.3，2026-09-07。状态：Lean 参数化规范的完整 `Safe` 已机器证明；尚无 production controller、refinement 或 Firecracker 实机结论。
 
 ## 1. 收缩后的研究问题
 
@@ -63,29 +63,21 @@ World 的映射和自然数身份均不设有限上界。Python BFS 与旧报告
 
 已经由 Lean 4.30.0 检查，且没有 `sorry`、`admit` 或新增 `axiom`：
 
-| 定理 | 含义 |
-|---|---|
-| `reachable_unique_execution` | 任意可达 World 中，同一 sid 至多一个 executing VM |
-| `reachable_durable_snapshots_are_immutable` | 任意可达 World 中，Durable snapshot 必为 immutable |
-| `reachable_terminal_consistent` | terminal 对象只能处于 Revoking/Destroyed |
-| `step_never_clears_terminal` | 任意合法一步都不能清除已有 terminal tombstone |
-| `reachable_core_safe` | 汇总前三项状态不变量 |
+主定理是：
 
-完整 `Safe` 已写成正式目标，但资源归属、capability 形状、worker fence、有效权限的运行时依据、稳定态静止和 Paused snapshot 绑定仍待逐项证明。本阶段宁可明确显示证明缺口，也不通过缩弱定义或假设把它隐藏掉。
+```lean
+theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
+```
 
-## 6. 下一阶段：先闭合 Safe，再写 controller
+它由 `emptyWorld_safe` 和 `step_preserves_safe` 归纳得到。`Safe` 包含十二项条件：四类资源归属、workspace 反向绑定、单执行 VM、单活动网络槽、Durable 快照不可变、权限形状、fence 合法顺序、撤销 fence 关闭权限、有效权限对应真实 VM/网络事实、Paused/Destroyed 静止、terminal 与 Revoking/Destroyed 的双向一致性，以及 Paused snapshot 的完整绑定。
 
-按依赖顺序完成：
+事件策略由另外的逐步定理覆盖：`step_event_authorized`、`step_egress_policy_enforced`、`step_file_event_workspace_bound`、`rpcTimeout_marks_outcome_unknown` 和 `step_keeps_destroyed`。`step_never_clears_terminal` 单独给出 tombstone 的逐步单调性。
 
-1. 证明资源表的 owner/sid 归属在每个 Step 后保持。
-2. 证明 capability 的 phase/generation/resource 形状。
-3. 证明当前 Pausing/Revoking fence 清除 effective authority。
-4. 证明 data-plane authority 必有 executing VM 与 active/configured network slot。
-5. 证明 Paused/Destroyed quiescence 与 Paused snapshot binding。
-6. 得到 `Reachable world → Safe world` 的总定理。
-7. 增加正常 create→pause→resume→kill 的构造性可达 trace，排除“全拒绝所以安全”。
+证明过程发现并修正了两个协议缺口：迟到的 create/resume fence 原本可能在 Running 中关闭当前权限；以及模型原本没有约束已有 fence 不能超前于当前 epoch。现在启动 fence 与撤销 fence 是不同转移，`FenceWellFormed` 明确约束 fence 的来源和顺序。为覆盖旧路由，`PublishRunning` 还必须证明该 sid 没有旧活动槽。
 
-若某个义务不能成立，先修改状态机和 guard；不在证明中加入针对实现缺陷的无依据假设。
+## 6. 当前阶段：冻结系统开发，继续审计规范
+
+`Reachable world → Safe world` 已闭合。按当前决定，暂不实现 controller。下一批工作仍限定在 formal artifact：增加正常 create→pause→resume→kill 的构造性可达 trace，加入故意删 guard 的 mutation 反例，并审计每个 `Step` 与 E2B/Firecracker 事件的观察映射。这些工作验证规范有用且不退化，但不改变已经完成的 safety 定理。
 
 ## 7. Rust 与 Aeneas 精化路线
 
@@ -117,7 +109,7 @@ reduce(state, event) -> Result<(state', effects), Reject>
 | 阶段 | 交付物 | 通过条件 |
 |---|---|---|
 | G0 规范 | 当前 Lean World/Step/Safety | 范围、完成点、故障模型可评审；核心定理无占位证明 |
-| G1 安全闭合 | `Reachable → Safe` 与正常 trace | 每项不变量逐 Step 保持；mutation 能破坏相应 guard |
+| G1 安全闭合 | `Reachable → Safe`、正常 trace、mutation | safety 总定理已完成；trace 与 mutation 仍待补充 |
 | G2 reducer 精化 | Rust reducer + Aeneas + Lean simulation | 每个 reducer 分支对应一个 Step 或明确 Reject/stutter |
 | G3 runtime contract | journal/worker/storage/FC adapters | 关键 fence 与 durability 假设可由故障注入支持 |
 | G4 E2B 对照 | 固定 SHA/profile 的 histories | 区分契约差异、未知与可复现违反 |

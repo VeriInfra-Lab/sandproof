@@ -1,6 +1,6 @@
 # Refinement：Lean 规范到 Rust controller 核心
 
-状态：路线已确定；Lean 协议规范与部分安全证明已经实现，Rust/Aeneas 尚未开始。
+状态：路线已确定；Lean 协议规范的完整 `Safe` 已证明，Rust/Aeneas 尚未开始。
 
 ## 1. 单一权威来源
 
@@ -16,7 +16,7 @@ flowchart LR
     W --> F[Firecracker v1.16.1 / storage / network]
 ```
 
-当前只实现了图中的 A 与 P。必须先闭合 `Reachable world → Safe world`，再冻结 reducer 接口。
+当前只实现了图中的 A 与 P，并已证明 `Reachable world → Safe world`。按当前研究安排，暂不实现 reducer；下面保留的是后续 refinement 边界。
 
 ## 2. 最小 Rust reducer
 
@@ -106,4 +106,4 @@ runner 必须满足：
 - adapter 假设逐项列明，并有对应的故障注入证据；
 - 正常 create→pause→resume→kill 可达，避免退化成拒绝所有操作。
 
-在此之前，准确名称是“Lean protocol model with partial machine-checked invariants”。
+当前准确名称是“fully proved Lean protocol safety model”。只有上述实现、simulation 和 adapter 条件也完成后，才能称为 verified controller core。
