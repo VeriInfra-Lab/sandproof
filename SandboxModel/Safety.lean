@@ -37,6 +37,20 @@ def WorkspaceBindingValid (world : World) : Prop :=
     ∃ filesystem, world.filesystems record.workspace = some filesystem ∧
       filesystem.owner = record.owner ∧ filesystem.sandbox = sid
 
+/-- References stored in a sandbox record cannot silently point at another
+    sandbox's VM or network slot, including while authority is closed. -/
+def CurrentResourcesValid (world : World) : Prop :=
+  ∀ sid record, world.sandboxes sid = some record →
+    (∀ vmId, record.currentVm = some vmId →
+      ∃ vm, world.vms vmId = some vm ∧
+        vm.owner = record.owner ∧ vm.sandbox = sid ∧
+        vm.generation = record.generation) ∧
+    (∀ slotId, record.netSlot = some slotId →
+      ∃ slot, world.netSlots slotId = some slot ∧
+        slot.owner = record.owner ∧ slot.sandbox = sid ∧
+        slot.generation = record.generation ∧
+        record.currentVm = some slot.vm ∧ slot.policy = record.policy)
+
 def UniqueExecution (world : World) : Prop :=
   ∀ vmId₁ vm₁ vmId₂ vm₂,
     world.vms vmId₁ = some vm₁ → vm₁.status = .executing →
@@ -48,6 +62,18 @@ def UniqueActiveSlot (world : World) : Prop :=
     world.netSlots slotId₁ = some slot₁ → slot₁.active = true →
     world.netSlots slotId₂ = some slot₂ → slot₂.active = true →
     slot₁.sandbox = slot₂.sandbox → slotId₁ = slotId₂
+
+/-- An active route is never orphaned: it is configured and is still the
+    current generation/VM/slot named by its sandbox record. -/
+def ActiveSlotValid (world : World) : Prop :=
+  ∀ slotId slot, world.netSlots slotId = some slot → slot.active = true →
+    ∃ record,
+      world.sandboxes slot.sandbox = some record ∧
+      record.netSlot = some slotId ∧ record.currentVm = some slot.vm ∧
+      record.generation = slot.generation ∧ record.policy = slot.policy ∧
+      (record.phase = .running ∨ record.phase = .pausing ∨
+        record.phase = .revoking) ∧
+      slot.configured = true
 
 def DurableSnapshotsImmutable (world : World) : Prop :=
   ∀ snapshotId snapshot, world.snapshots snapshotId = some snapshot →
@@ -122,6 +148,38 @@ def PausedSnapshotValid (world : World) : Prop :=
       snapshot.workspace = record.workspace ∧
       snapshot.stage = .durable ∧ snapshot.immutable = true
 
+/-- A resumed Starting state remembers exactly one sealed source from the
+    preceding generation. Fresh creates have no restore source. -/
+def RestoreSourceValid (world : World) : Prop :=
+  ∀ sid record snapshotId, world.sandboxes sid = some record →
+    record.phase = .starting → record.restoreFrom = some snapshotId →
+    ∃ snapshot, world.snapshots snapshotId = some snapshot ∧
+      snapshot.owner = record.owner ∧ snapshot.sandbox = sid ∧
+      snapshot.workspace = record.workspace ∧ snapshot.stage = .durable ∧
+      snapshot.immutable = true ∧
+      snapshot.sourceGeneration + 1 = record.generation
+
+def OperationMatchesPhase (operation : Operation) : Phase → Prop
+  | .starting =>
+      (operation.kind = .create ∨ operation.kind = .resume) ∧
+      (operation.status = .pending ∨ operation.status = .outcomeUnknown)
+  | .running =>
+      (operation.kind = .create ∨ operation.kind = .resume) ∧
+      operation.status = .succeeded
+  | .pausing => operation.kind = .pause ∧
+      (operation.status = .pending ∨ operation.status = .outcomeUnknown)
+  | .paused => operation.kind = .pause ∧ operation.status = .succeeded
+  | .revoking => operation.kind = .kill ∧
+      (operation.status = .pending ∨ operation.status = .outcomeUnknown)
+  | .destroyed => operation.kind = .kill ∧ operation.status = .succeeded
+
+/-- Every live sandbox record carries one operation whose epoch and result
+    agree with the lifecycle phase. This makes timeout semantics part of Safe. -/
+def CurrentOperationValid (world : World) : Prop :=
+  ∀ sid record, world.sandboxes sid = some record →
+    ∃ operation, record.currentOperation = some operation ∧
+      operation.epoch = record.epoch ∧ OperationMatchesPhase operation record.phase
+
 /-! Policy properties belong to transitions because they speak about the event being admitted. -/
 
 def EventAuthorized (world : World) : Event → Prop
@@ -157,8 +215,10 @@ def FileEventWorkspaceBound (world : World) : Event → Prop
 def Safe (world : World) : Prop :=
   ResourceOwnership world ∧
   WorkspaceBindingValid world ∧
+  CurrentResourcesValid world ∧
   UniqueExecution world ∧
   UniqueActiveSlot world ∧
+  ActiveSlotValid world ∧
   DurableSnapshotsImmutable world ∧
   AuthorityShape world ∧
   FenceWellFormed world ∧
@@ -166,6 +226,8 @@ def Safe (world : World) : Prop :=
   EffectiveRuntimeValid world ∧
   StableStatesQuiescent world ∧
   TerminalConsistent world ∧
-  PausedSnapshotValid world
+  PausedSnapshotValid world ∧
+  RestoreSourceValid world ∧
+  CurrentOperationValid world
 
 end SandboxModel

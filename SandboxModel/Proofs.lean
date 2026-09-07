@@ -1450,11 +1450,263 @@ theorem step_keeps_destroyed {world next : World} {event : Event}
       setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
     grind
 
+theorem emptyWorld_currentResourcesValid : CurrentResourcesValid emptyWorld := by
+  simp [CurrentResourcesValid, emptyWorld]
+
+theorem currentResourcesValid_applyRevocationFence
+    (invariant : CurrentResourcesValid world)
+    (found : world.sandboxes sid = some record)
+    (slotIdentity : ∀ slotId, record.netSlot = some slotId →
+      ∃ slot, world.netSlots slotId = some slot ∧ slot.sandbox = sid) :
+    CurrentResourcesValid (applyRevocationFence world sid record) := by
+  intro target current currentFound
+  by_cases same : target = sid
+  · subst target
+    have currentEq : current = { record with effective := .closed } := by
+      simp [applyRevocationFence_sandboxes, put] at currentFound
+      exact currentFound.symm
+    subst current
+    rcases invariant sid record found with ⟨vmValid, slotValid⟩
+    constructor
+    · simpa only [applyRevocationFence_vms] using vmValid
+    · intro slotId currentSlot
+      rcases slotValid slotId currentSlot with
+        ⟨slot, slotFound, owner, sandbox, generation, currentVm, policy⟩
+      refine ⟨{ slot with active := false }, ?_, owner, sandbox, generation,
+        currentVm, policy⟩
+      rw [applyRevocationFence_netSlots]
+      change record.netSlot = some slotId at currentSlot
+      simp [currentSlot, slotFound, put]
+  · have oldFound : world.sandboxes target = some current := by
+      simpa [applyRevocationFence_sandboxes, put, same] using currentFound
+    rcases invariant target current oldFound with ⟨vmValid, slotValid⟩
+    constructor
+    · simpa only [applyRevocationFence_vms] using vmValid
+    · intro slotId currentSlot
+      rcases slotValid slotId currentSlot with
+        ⟨slot, slotFound, owner, sandbox, generation, currentVm, policy⟩
+      refine ⟨slot, ?_, owner, sandbox, generation, currentVm, policy⟩
+      rw [applyRevocationFence_netSlots]
+      cases choice : record.netSlot with
+      | none => simp [slotFound]
+      | some closedId =>
+          cases closedFound : world.netSlots closedId with
+          | none =>
+              simpa [closedFound] using slotFound
+          | some closedSlot =>
+              have different : slotId ≠ closedId := by
+                intro equal
+                subst closedId
+                have slotEq : closedSlot = slot :=
+                  Option.some.inj (closedFound.symm.trans slotFound)
+                subst closedSlot
+                rcases slotIdentity slotId choice with ⟨witness, witnessFound, owned⟩
+                have witnessEq : witness = slot :=
+                  Option.some.inj (witnessFound.symm.trans slotFound)
+                subst witness
+                exact same (sandbox.symm.trans owned)
+              simpa [closedFound, put, different] using slotFound
+
+theorem currentResourcesValid_prepareResources
+    (invariant : CurrentResourcesValid world)
+    (freshVm : world.vms vmId = none)
+    (freshSlot : world.netSlots slotId = none) :
+    CurrentResourcesValid (prepareResources world sid record vmId slotId) := by
+  intro target current currentFound
+  by_cases same : target = sid
+  · subst target
+    simp [prepareResources, enqueue, setSandbox, setVm, setNetSlot, put] at currentFound
+    subst current
+    constructor
+    · intro candidate currentVm
+      simp at currentVm
+      subst candidate
+      let newVm : Vm := ⟨record.owner, sid, record.generation, .prepared⟩
+      exact ⟨newVm, by simp [newVm, prepareResources, enqueue, setSandbox,
+        setVm, setNetSlot, put]⟩
+    · intro candidate currentSlot
+      simp at currentSlot
+      subst candidate
+      let newSlot : NetSlot := {
+        owner := record.owner
+        sandbox := sid
+        generation := record.generation
+        vm := vmId
+        policy := record.policy
+        configured := false
+        active := false
+      }
+      exact ⟨newSlot, by simp [newSlot, prepareResources, enqueue, setSandbox,
+        setVm, setNetSlot, put]⟩
+  · have oldFound : world.sandboxes target = some current := by
+      simpa [prepareResources, enqueue, setSandbox, setVm, setNetSlot, put, same]
+        using currentFound
+    rcases invariant target current oldFound with ⟨vmValid, slotValid⟩
+    constructor
+    · intro candidate currentVm
+      rcases vmValid candidate currentVm with ⟨vm, vmFound, owner, sandbox, generation⟩
+      have different : candidate ≠ vmId := by
+        intro equal
+        subst candidate
+        rw [freshVm] at vmFound
+        contradiction
+      exact ⟨vm, by simpa [prepareResources, enqueue, setSandbox, setVm,
+        setNetSlot, put, different] using vmFound, owner, sandbox, generation⟩
+    · intro candidate currentSlot
+      rcases slotValid candidate currentSlot with
+        ⟨slot, slotFound, owner, sandbox, generation, currentVm, policy⟩
+      have different : candidate ≠ slotId := by
+        intro equal
+        subst candidate
+        rw [freshSlot] at slotFound
+        contradiction
+      exact ⟨slot, by simpa [prepareResources, enqueue, setSandbox, setVm,
+        setNetSlot, put, different] using slotFound,
+        owner, sandbox, generation, currentVm, policy⟩
+
+set_option maxHeartbeats 1200000 in
+theorem step_preserves_currentResourcesValid {world next : World} {event : Event}
+    (invariant : CurrentResourcesValid world) (step : Step world event next) :
+    CurrentResourcesValid next := by
+  cases step
+  case installRevocationFence =>
+    exact currentResourcesValid_applyRevocationFence invariant (by assumption) (by assumption)
+  case prepareVm =>
+    exact currentResourcesValid_prepareResources invariant (by assumption) (by assumption)
+  all_goals
+    simp_all [CurrentResourcesValid, beginCreate, applyStartFence,
+      configureSlot, activateResource,
+      publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
+      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      markOutcomeUnknown, setSandbox, setFilesystem, setFence, setVm,
+      setSnapshot, setNetSlot, enqueue, put] <;>
+    grind
+
+theorem emptyWorld_activeSlotValid : ActiveSlotValid emptyWorld := by
+  simp [ActiveSlotValid, emptyWorld]
+
+set_option maxHeartbeats 1200000 in
+theorem activeSlotValid_applyRevocationFence
+    (invariant : ActiveSlotValid world)
+    (found : world.sandboxes sid = some record) :
+    ActiveSlotValid (applyRevocationFence world sid record) := by
+  unfold applyRevocationFence
+  cases choice : record.netSlot with
+  | none =>
+      simp_all [ActiveSlotValid, setFence, setSandbox, put] <;> grind
+  | some closedId =>
+      cases closedFound : world.netSlots closedId with
+      | none =>
+          simp_all [ActiveSlotValid, setFence, setSandbox, put] <;> grind
+      | some closedSlot =>
+          simp_all [ActiveSlotValid, setFence, setSandbox, setNetSlot, put] <;>
+            grind
+
+set_option maxHeartbeats 1600000 in
+theorem step_preserves_activeSlotValid {world next : World} {event : Event}
+    (stable : StableStatesQuiescent world)
+    (invariant : ActiveSlotValid world) (step : Step world event next) :
+    ActiveSlotValid next := by
+  cases step
+  case installRevocationFence =>
+    exact activeSlotValid_applyRevocationFence invariant (by assumption)
+  all_goals
+    simp_all [ActiveSlotValid, beginCreate, applyStartFence,
+      prepareResources, configureSlot, activateResource,
+      publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
+      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      markOutcomeUnknown, Authority.withoutResume, StableStatesQuiescent,
+      noActiveSlot, setSandbox, setFilesystem,
+      setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
+    grind
+
+theorem emptyWorld_currentOperationValid : CurrentOperationValid emptyWorld := by
+  simp [CurrentOperationValid, emptyWorld]
+
+theorem emptyWorld_restoreSourceValid : RestoreSourceValid emptyWorld := by
+  simp [RestoreSourceValid, emptyWorld]
+
+theorem restoreSourceValid_applyRevocationFence
+    (invariant : RestoreSourceValid world)
+    (found : world.sandboxes sid = some record) :
+    RestoreSourceValid (applyRevocationFence world sid record) := by
+  intro target current snapshotId currentFound starting restore
+  by_cases same : target = sid
+  · subst target
+    have currentEq : current = { record with effective := .closed } := by
+      simp [applyRevocationFence_sandboxes, put] at currentFound
+      exact currentFound.symm
+    subst current
+    rcases invariant sid record snapshotId found starting restore with
+      ⟨snapshot, snapshotFound, owner, sandbox, workspace, stage, immutable, generation⟩
+    exact ⟨snapshot, by simpa only [applyRevocationFence_snapshots] using snapshotFound,
+      owner, sandbox, workspace, stage, immutable, generation⟩
+  · have oldFound : world.sandboxes target = some current := by
+      simpa [applyRevocationFence_sandboxes, put, same] using currentFound
+    rcases invariant target current snapshotId oldFound starting restore with
+      ⟨snapshot, snapshotFound, owner, sandbox, workspace, stage, immutable, generation⟩
+    exact ⟨snapshot, by simpa only [applyRevocationFence_snapshots] using snapshotFound,
+      owner, sandbox, workspace, stage, immutable, generation⟩
+
+set_option maxHeartbeats 1400000 in
+theorem step_preserves_restoreSourceValid {world next : World} {event : Event}
+    (pausedSnapshot : PausedSnapshotValid world)
+    (invariant : RestoreSourceValid world) (step : Step world event next) :
+    RestoreSourceValid next := by
+  cases step
+  case installRevocationFence =>
+    exact restoreSourceValid_applyRevocationFence invariant (by assumption)
+  all_goals
+    simp_all [RestoreSourceValid, PausedSnapshotValid,
+      beginCreate, applyStartFence, prepareResources,
+      configureSlot, activateResource, publishRunning, beginPause,
+      sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
+      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      Authority.withoutResume, setSandbox, setFilesystem, setFence, setVm,
+      setSnapshot, setNetSlot, enqueue, put] <;>
+    grind
+
+theorem currentOperationValid_applyRevocationFence
+    (invariant : CurrentOperationValid world)
+    (found : world.sandboxes sid = some record) :
+    CurrentOperationValid (applyRevocationFence world sid record) := by
+  intro target current currentFound
+  by_cases same : target = sid
+  · subst target
+    have currentEq : current = { record with effective := .closed } := by
+      simp [applyRevocationFence_sandboxes, put] at currentFound
+      exact currentFound.symm
+    subst current
+    rcases invariant sid record found with ⟨operation, currentOperation, epoch, phase⟩
+    exact ⟨operation, currentOperation, epoch, phase⟩
+  · have oldFound : world.sandboxes target = some current := by
+      simpa [applyRevocationFence_sandboxes, put, same] using currentFound
+    exact invariant target current oldFound
+
+set_option maxHeartbeats 1200000 in
+theorem step_preserves_currentOperationValid {world next : World} {event : Event}
+    (invariant : CurrentOperationValid world) (step : Step world event next) :
+    CurrentOperationValid next := by
+  cases step
+  case installRevocationFence =>
+    exact currentOperationValid_applyRevocationFence invariant (by assumption)
+  all_goals
+    simp_all [CurrentOperationValid, OperationMatchesPhase,
+      beginCreate, applyStartFence, prepareResources,
+      configureSlot, activateResource, publishRunning, beginPause,
+      sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
+      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      Authority.withoutResume, setSandbox, setFilesystem, setFence, setVm,
+      setSnapshot, setNetSlot, enqueue, put] <;>
+    grind
+
 theorem emptyWorld_safe : Safe emptyWorld := by
   exact ⟨emptyWorld_resourceOwnership,
     emptyWorld_workspaceBindingValid,
+    emptyWorld_currentResourcesValid,
     emptyWorld_uniqueExecution,
     emptyWorld_uniqueActiveSlot,
+    emptyWorld_activeSlotValid,
     emptyWorld_durableSnapshotsImmutable,
     emptyWorld_authorityShape,
     emptyWorld_fenceWellFormed,
@@ -1462,17 +1714,22 @@ theorem emptyWorld_safe : Safe emptyWorld := by
     emptyWorld_effectiveRuntimeValid,
     emptyWorld_stableStatesQuiescent,
     emptyWorld_terminalConsistent,
-    emptyWorld_pausedSnapshotValid⟩
+    emptyWorld_pausedSnapshotValid,
+    emptyWorld_restoreSourceValid,
+    emptyWorld_currentOperationValid⟩
 
 theorem step_preserves_safe {world next : World} {event : Event}
     (safe : Safe world) (step : Step world event next) : Safe next := by
   rcases safe with
-    ⟨resources, workspace, unique, activeSlot, durable, shape, fenceWellFormed, fenceClosed,
-      runtime, stable, terminal, pausedSnapshot⟩
+    ⟨resources, workspace, currentResources, unique, activeSlot, activeSlotValid,
+      durable, shape, fenceWellFormed, fenceClosed, runtime, stable, terminal,
+      pausedSnapshot, restoreSource, currentOperation⟩
   exact ⟨step_preserves_resourceOwnership resources step,
     step_preserves_workspaceBindingValid workspace step,
+    step_preserves_currentResourcesValid currentResources step,
     step_preserves_uniqueExecution unique step,
     step_preserves_uniqueActiveSlot activeSlot step,
+    step_preserves_activeSlotValid stable activeSlotValid step,
     step_preserves_durableSnapshotsImmutable durable step,
     step_preserves_authorityShape shape step,
     step_preserves_fenceWellFormed fenceWellFormed step,
@@ -1480,7 +1737,9 @@ theorem step_preserves_safe {world next : World} {event : Event}
     step_preserves_effectiveRuntimeValid shape terminal fenceClosed runtime step,
     step_preserves_stableStatesQuiescent stable step,
     step_preserves_terminalConsistent terminal step,
-    step_preserves_pausedSnapshotValid pausedSnapshot step⟩
+    step_preserves_pausedSnapshotValid pausedSnapshot step,
+    step_preserves_restoreSourceValid pausedSnapshot restoreSource step,
+    step_preserves_currentOperationValid currentOperation step⟩
 
 /-- Every finite protocol history generated by `Step` satisfies every predicate in `Safe`. -/
 theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world := by

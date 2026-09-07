@@ -83,20 +83,24 @@ controller crash 只改变 `controllerUp`，不会抹掉持久状态、worker fe
 
 ## 6. 安全目标
 
-[`Safety.lean`](../SandboxModel/Safety.lean) 中的完整 `Safe` 包含十二项条件：
+[`Safety.lean`](../SandboxModel/Safety.lean) 中的完整 `Safe` 包含十六项条件：
 
 1. 所有 VM、workspace、snapshot、network slot 的 owner/sandbox 归属一致。
 2. 每个 sandbox 记录指向的 workspace 真实存在，并反向绑定同一个 owner/sid。
-3. 同一 sandbox 至多一个 executing VM。
-4. 同一 sandbox 至多一个 active network slot。
-5. Durable snapshot 必为 immutable。
-6. effective authority 与 phase、generation、具体资源完全匹配。
-7. worker fence 来自现存 sandbox，epoch 不超前，terminal fence 不会凭空出现。
-8. Pausing/Revoking 的当前 worker fence 会关闭 effective authority。
-9. 非关闭、非 Paused 的 effective authority 有 executing VM 与 configured/active network slot 作为事实依据。
-10. Paused/Destroyed 中无 executing VM 与 active slot。
-11. terminal 为真当且仅当 phase 是 Revoking/Destroyed。
-12. Paused 指向归属、代、workspace、durability 都正确的 snapshot。
+3. `currentVm` 与 `netSlot` 即使在权限关闭窗口也必须存在且绑定当前 owner/sid/generation；slot 还必须绑定 current VM 与固定 policy。
+4. 同一 sandbox 至多一个 executing VM。
+5. 同一 sandbox 至多一个 active network slot。
+6. 每个 active slot 都是其 sandbox 当前记录中的 configured slot，不允许旧路由悬空。
+7. Durable snapshot 必为 immutable。
+8. effective authority 与 phase、generation、具体资源完全匹配。
+9. worker fence 来自现存 sandbox，epoch 不超前，terminal fence 不会凭空出现。
+10. Pausing/Revoking 的当前 worker fence 会关闭 effective authority。
+11. 非关闭、非 Paused 的 effective authority 有 executing VM 与 configured/active network slot 作为事实依据。
+12. Paused/Destroyed 中无 executing VM 与 active slot。
+13. terminal 为真当且仅当 phase 是 Revoking/Destroyed。
+14. Paused 指向归属、代、workspace、durability 都正确的 snapshot。
+15. resume 后 Starting 中的 `restoreFrom` 必须属于同 owner/sid/workspace、durable+immutable，且来源代正好是当前代的前一代。
+16. 当前 operation 的 epoch、kind、pending/unknown/succeeded 结果与 phase 一致。
 
 `emptyWorld_safe` 证明初始状态满足全部条件；`step_preserves_safe` 证明任意合法一步同时保持全部条件；最终由可达性归纳得到：
 
@@ -104,7 +108,7 @@ controller crash 只改变 `controllerUp`，不会抹掉持久状态、worker fe
 theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
 ```
 
-这不是有限场景搜索。`World` 中的标识、资源数量和轨迹长度都没有预设上限。转移级定理另外证明：带 actor 的事件经过 owner/system 授权、egress 目标属于静态 allowlist、文件事件使用归属正确的 workspace、RPC timeout 只把 pending operation 写成 `outcomeUnknown`、Destroyed 不会离开 Destroyed，已有 terminal tombstone 也不会被任何一步清除。所有证明均不含 `sorry`、`admit` 或新增 `axiom`。
+这不是有限场景搜索。`World` 中的标识、资源数量和轨迹长度都没有预设上限。转移级定理另外证明：带 actor 的事件经过 owner/system 授权、egress 目标属于静态 allowlist、文件事件使用归属正确的 workspace、RPC timeout 只把 pending operation 写成 `outcomeUnknown`、Destroyed 不会离开 Destroyed，已有 terminal tombstone 也不会被任何一步清除。`Scenarios.lean` 还构造了完整正常轨迹；`Counterexamples.lean` 证明删除 VM/网络互斥、静止发布或恢复源身份检查会分别打破对应性质。所有证明均不含 `sorry`、`admit` 或新增 `axiom`。
 
 ## 7. 用简单比喻理解边界
 
@@ -115,7 +119,7 @@ theorem reachable_safe {world : World} (reachable : Reachable world) : Safe worl
 - `effective authority` 是眼下真正能开门的钥匙，不是前台“希望门关上”的记录。
 - `worker fence` 是门卫已经执行到哪个命令的盖章。只有撤销盖章完成，系统才能把实验室发布为 Paused 或 Destroyed。
 
-Lean 已证明：只要每一次真实动作都确实属于 `Step` 允许的动作，上述十二条规则永远不会被打破。Lean 没有证明真实门卫一定照做；把 controller、worker、Firecracker 和 Linux 的动作对应到 `Step`，属于后续 refinement 与 adapter 验证。
+Lean 已证明：只要每一次真实动作都确实属于 `Step` 允许的动作，上述十六条规则永远不会被打破。Lean 没有证明真实门卫一定照做；把 controller、worker、Firecracker 和 Linux 的动作对应到 `Step`，属于后续 refinement 与 adapter 验证。
 
 具体边界如下：
 

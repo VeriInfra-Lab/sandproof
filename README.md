@@ -13,6 +13,8 @@ Lean 4 是规范与证明的唯一权威来源：
 - [`Step.lean`](SandboxModel/Step.lean)：异步事件关系 `Step : World → Event → World → Prop` 与无界可达性定义。
 - [`Safety.lean`](SandboxModel/Safety.lean)：完整安全目标。
 - [`Proofs.lean`](SandboxModel/Proofs.lean)：对任意可达状态的归纳证明。
+- [`Scenarios.lean`](SandboxModel/Scenarios.lean)：完整正常生命周期的构造性可达证明。
+- [`Counterexamples.lean`](SandboxModel/Counterexamples.lean)：删弱关键规则后的反例证明。
 
 总定理 `reachable_safe` 已由 Lean 机器检查：
 
@@ -20,7 +22,9 @@ Lean 4 是规范与证明的唯一权威来源：
 theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
 ```
 
-`Safe` 的十二项条件均已证明逐步保持：资源归属、workspace 双向绑定、单 VM 执行、单活动网络槽、快照不可变、权限形状、fence 顺序、fence 后权限关闭、有效权限的真实运行时依据、稳定态静止、terminal 与终态的一致性，以及 Paused 快照绑定。转移级定理还证明所有带 actor 的事件经过 owner/system 授权、egress 只能命中静态 allowlist、文件事件使用归属正确的 workspace、RPC timeout 只写入 `outcomeUnknown`、Destroyed 不会离开 Destroyed，以及 tombstone 不会被清除。证明不含 `sorry`、`admit`、新增 `axiom` 或有限状态枚举。
+`Safe` 的十六项条件均已证明逐步保持：资源归属、workspace 双向绑定、当前 VM/网络槽绑定、单 VM 执行、单活动网络槽、活动槽不悬空、快照不可变、权限形状、fence 顺序、fence 后权限关闭、有效权限的真实运行时依据、稳定态静止、terminal 与终态的一致性、Paused 快照绑定、Starting 恢复源绑定，以及 operation/epoch/phase 一致性。转移级定理还证明所有带 actor 的事件经过 owner/system 授权、egress 只能命中静态 allowlist、文件事件使用归属正确的 workspace、RPC timeout 只写入 `outcomeUnknown`、Destroyed 不会离开 Destroyed，以及 tombstone 不会被清除。证明不含 `sorry`、`admit`、新增 `axiom` 或有限状态枚举。
+
+[`Scenarios.lean`](SandboxModel/Scenarios.lean) 构造了完整 create→pause→resume→kill 可达轨迹，证明规范并非靠拒绝所有动作获得安全；[`Counterexamples.lean`](SandboxModel/Counterexamples.lean) 机器检查了四个删弱规则后的反例：双 VM 执行、双活动路由、VM 未停却发布 Paused，以及跨 sandbox 的 durable 快照被选为恢复源。
 
 这个结论只覆盖 Lean 中定义的抽象协议。它尚未证明某个 controller、E2B、Firecracker、Linux/KVM、文件系统或网络栈实现了这些 `Step`；实现到规范的 refinement 与 adapter 实验仍是后续工作。
 
