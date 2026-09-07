@@ -1,161 +1,173 @@
-# 状态机：generation-scoped capability lifecycle
+# 状态机与清晰边界
 
-本文描述当前 Lean 实现。规范的核心不是一个生命周期枚举，而是 **沙箱逻辑状态、资源事实、执行权限和 worker fence 的乘积状态**。快照保存计算状态；是否还能执行由当前 controller 记录和 worker fence 决定，旧快照不能携带永久执行权。
+这份状态机解决一个很具体的问题：沙箱暂停、恢复或销毁时，即使旧命令晚到、相同请求重发、controller 中途重启，也不能让旧实例重新获得权限，不能把错误的 workspace 或 snapshot 接到新实例上，也不能让旧清理任务误删当前资源。
 
-## 1. 固定范围
+它不是 Linux、Firecracker 或 E2B 的完整模型。它是 controller 与 worker 之间的安全协议。
 
-首版固定：单台 Linux/KVM 主机、一个 controller、一个 worker、Firecracker v1.16.1；支持多个 tenant 和多个 sandbox。每个 sandbox 有独占 workspace、VM、snapshot 和 network slot。Workspace 访问模式只有 `WorkspaceMode.readWrite`。
+## 1. 用门卡理解模型
 
-纳入 create、pause、resume、kill、managed exec、文件读写、业务 ingress/egress、RPC timeout、controller crash/recover，以及命令重复或迟到。
+可以把一个 sandbox 想成一间实验室：
 
-暂不纳入多节点迁移、共享卷、路径与文件内容、UID/GID、POSIX ACL、host mount、独立 snapshot/fork API、DNS/SNI 动态策略、任意 egress proxy、恶意宿主、资源配额、计费和 liveness。网络策略只有 `denyAll` 或固定 Endpoint 列表；Endpoint 是 address/prefix、TCP/UDP 与 port 的 L3/L4 条目。
+- `SandboxId` 是房间号。
+- `workspace` 是这间实验室专属的资料柜。
+- `generation` 是门卡批次。每次 resume 都发行新批次，旧批次失效。
+- `epoch` 是管理员最新命令的版本号。pause、resume、kill 都会提高它。
+- `worker fence` 是门卫已执行到哪个版本的盖章。
+- `effective authority` 是现在真正能开门的卡。
+- `snapshot` 是资料与机器状态的封存包。它保存数据来源，不是一张门卡。
 
-## 2. 为什么身份和代必须分开
+所以 resume 不是“从 snapshot 取出旧门卡”。它先选择一个合法封存包，再为新 generation 重新准备资源、应用 controller 当前保存的策略，最后签发新门卡。
 
-Lean 为 tenant、sandbox、VM、filesystem、snapshot、network slot 和 operation 使用不同类型。所有集合都用函数映射表示，没有固定数量上界。
+## 2. 固定范围
 
-每个 sandbox 同时带两个单调量：
+首版固定：
 
-- `epoch`：一次生命周期意图的版本。worker 只接受与当前 `(epoch, terminal)` 一致的副作用。
-- `generation`：一次可运行实例的代。resume 会增加 generation；exec、文件和网络 capability 都绑定 generation 与具体资源。
+- 单台 Linux/KVM 主机；
+- 一个 controller、一个 worker；
+- Firecracker v1.16.1；
+- 每个 sandbox 独占 workspace、VM 和网络槽；
+- managed 文件 API 只有完整读写模式 `WorkspaceApiAccess.managedReadWrite`；
+- 网络只有 `denyAll` 或静态 L3/L4 endpoint allowlist。
 
-`terminal` 是 tombstone。kill 接受时立即置为 true；后续 fence 和资源清理可以异步完成，但任何转移都不能再清除它。
+纳入 create、pause、resume、kill、managed exec/file/network 请求、operation 重试和查询、RPC timeout、controller crash/recover、effect 重复派发，以及旧 VM/slot 的延迟清理。
 
-## 3. World
+不纳入多节点迁移、共享卷、路径级 ACL、文件内容、UID/GID、POSIX ACL、host mount、symlink/hardlink 语义、DNS/SNI 动态策略、恶意宿主、资源计费和 liveness。
 
-`World` 是参数化全局状态：
+## 3. 四层必须分开
+
+| 层 | 模型里的对象 | 它回答的问题 |
+|---|---|---|
+| 受管 API 权限 | `WorkspaceApiAccess.managedReadWrite` 与 generation capability | 当前调用者能否提交受管文件读写请求？ |
+| 下游权限策略 | `FilePolicyRef` | worker 应用的是不是 controller 当前指定的那一份策略？ |
+| snapshot 数据身份 | `SnapshotManifestRef` | pause 封存和 resume 恢复的是不是同一份清单？ |
+| Linux 实际行为 | adapter contract | chmod、owner、ACL、内容和文件系统恢复是否真的正确？ |
+
+`FilePolicyRef` 和 `SnapshotManifestRef` 都是不透明摘要。Lean 只比较身份，不打开它们解释内部规则。这样能够证明“没有拿错策略或清单”，又不会把研究扩大成 Linux 文件系统验证。
+
+## 4. World 保存什么
 
 | 字段 | 含义 |
 |---|---|
-| `sandboxes` | owner、phase、terminal、epoch、generation、workspace/mode、资源引用、网络策略、desired/effective capability、当前 operation |
-| `vms` | VM 的 owner、sandbox、generation 与 prepared/executing/frozen/stopped 状态 |
-| `filesystems` | 独占 workspace 的 owner、sandbox 与 generation |
-| `snapshots` | owner、sandbox、source generation、workspace、LocalSealed/Durable 与 immutable |
-| `netSlots` | owner、sandbox、generation、VM、策略、configured/active |
+| `sandboxes` | owner、phase、terminal、epoch、generation、workspace、file policy、资源引用、authority、当前 operation |
+| `vms` | VM 的 owner、sid、generation 与 prepared/executing/frozen/stopped/reclaimed 状态 |
+| `filesystems` | workspace 的 owner、sid 与创建 generation |
+| `snapshots` | owner、sid、来源 generation、workspace、manifest、durability 与 immutable 标志 |
+| `netSlots` | owner、sid、generation、VM、网络策略及 configured/active/reclaimed 状态 |
+| `appliedFilePolicies` | worker 最近成功应用的 sid、generation、workspace 与 policy |
 | `workerFences` | worker 已安装的 `(epoch, terminal)` |
-| `inflight` | 可重复、延迟、乱序交付的 command 集合 |
-| `controllerUp` | controller crash/recover 的易失状态 |
+| `operations` | 以 `(sid, operationId)` 为键的输入、状态与最终结果账本 |
+| `effects` | 以完整命令为确定性 ID 的 committed/dispatched/acknowledged 账本 |
+| `inflight` | 可重复、延迟、乱序出现的传输记录；它不授予执行资格 |
+| `controllerUp` | controller 当前是否在线 |
 
-`desired` 表示 controller 要达到的权限，`effective` 表示当前实际可用的权限。权限不是任意布尔集合，而是只有三种构造：`closed`、绑定 sid/generation/VM/workspace/mode/network slot/policy 的 `running`，以及绑定 sid/snapshot 的 `paused`。`WorkspaceMode` 首版也只有 `readWrite` 一个构造，不会出现“可写但不可读”一类需要额外解释的布尔组合。
+`effects` 是持久权威。`inflight` 只表示消息可能再次出现。worker 步骤同时要求消息存在且对应 effect 已进入 `dispatched`，因此一条没有持久提交的消息不能执行。
 
-pause/kill 接受时先关闭 desired；worker 安装撤销 fence 后才清除 effective，因此模型保留了真实的撤销窗口。启动 fence 与撤销 fence 是两个不同的 Step：启动 fence 只登记 epoch，撤销 fence 才有权关闭 effective 和网络槽。这个区分阻止迟到的 create/resume fence 在 Running 中误撤销当前权限。
+EffectId 在数学模型中直接包含完整命令，包括适用的 sid、epoch、generation、资源 ID、workspace、policy 或 manifest 身份。这比在规范里使用可能碰撞的哈希更清楚；真实实现可用确定性编码加抗碰撞摘要，并把编码正确性列入 refinement。
 
-## 4. Phase 与 capability
+## 5. 生命周期
 
 ```mermaid
 stateDiagram-v2
     [*] --> Starting: create accepted
-    Starting --> Running: VM executing + network configured + publish
+    Starting --> Running: resources + policy receipt + exact ack
     Running --> Pausing: pause accepted; epoch++
-    Pausing --> Paused: fence + frozen + durable snapshot + stopped
+    Pausing --> Paused: fence + durable manifest + VM stopped
     Paused --> Starting: resume accepted; epoch++, generation++
     Starting --> Revoking: kill accepted
     Running --> Revoking: kill accepted
     Pausing --> Revoking: kill accepted
     Paused --> Revoking: kill accepted
-    Revoking --> Destroyed: terminal fence + quiescence
-    Destroyed --> Destroyed: stale delivery / observation
+    Revoking --> Destroyed: terminal fence + no execution/network
 ```
 
-Running 的 capability 包含当前 generation/VM 的 exec，当前 generation/workspace/mode 的 file read/write，以及当前 generation/VM/network slot/policy 的 ingress/egress。文件请求本身携带 generation；若它不是 controller 当前 generation，就没有对应 Step。Paused 只保留绑定 durable snapshot 的 resume capability。Starting 与 Destroyed 没有 effective capability；Pausing/Revoking 在 fence 生效前可暂时保留旧 data-plane capability。
+Running 的发布条件很严格：当前 VM 已 executing；当前 slot 已 configured 且没有旧 active slot；worker 已为精确的 `sid + generation + workspace + current filePolicy` 写入应用记录；对应 `applyFilePolicy` effect 已被精确确认；当前 operation 在持久账本中仍是未完成记录。发布动作才同时打开 exec、file 和 network authority，并写入稳定操作结果。
 
-## 5. 异步转移
+pause 接受时先关闭 controller 的 `desired` authority。worker 安装撤销 fence 后才关闭 `effective` authority和网络槽，所以模型保留真实的短暂撤销窗口。Paused 只能在 snapshot 已 durable/immutable、manifest 身份正确、VM 已停止且网络已关闭后发布。
 
-规范使用：
+resume 只从 `durableSnapshot` 选择精确的 `RestoreSource(snapshot, manifest)`。新 generation 从关闭权限开始，之后重新应用 controller 当前 `filePolicy`。snapshot 本身没有 authority 字段，也不能绕过重新签发。
 
-```lean
-inductive Step : World → Event → World → Prop
-inductive Reachable : World → Prop
+kill 接受时立即写入不可逆 `terminal = true`。资源可以随后异步停止和回收，但 Destroyed 只有在 terminal fence、无 executing VM、无 active slot后才能发布。
+
+## 6. Operation 与 effect 为什么要有两个账本
+
+Operation 是用户看到的请求，例如“暂停 S”。Effect 是 controller 发给 worker 的具体动作，例如“冻结 generation 3 的 VM V”。一个 operation 通常会产生多个 effect。
+
+Operation ledger 保证：
+
+- 键是 `(SandboxId, OperationId)`；
+- 相同 ID 的重试必须有相同 kind 和完整输入；
+- 重试不会创建第二个生命周期决定；
+- query 只返回已持久记录；
+- 最终结果一旦存在，任何合法步骤都不能改变它；
+- `failed` 已从首版删除，因为当前协议没有定义失败补偿路径。
+
+Effect ledger 的顺序是：
+
+```mermaid
+flowchart LR
+    C[committed in journal] --> D[dispatched]
+    D --> W[worker checks exact identity and fence]
+    W --> A[acknowledged with result]
 ```
 
-每个构造子都是一个带 guard 的原子协议事件。主要路径如下：
+模型证明没有 committed 记录就不能 dispatch；ack 只能从精确 EffectId 的 dispatched 状态产生；一个 effect 的 ack 不改变另一个 effect；已确认结果不会回退；重复或迟到 delivery 是幂等 stutter。
 
-| 路径 | 分解的事件 | 关键 guard / 发布条件 |
-|---|---|---|
-| create | AcceptCreate → InstallFence → DispatchPrepare → PrepareVm → ConfigureNetwork → ActivateVm → PublishRunning | sid/workspace/VM/slot 新鲜；worker fence 当前；激活前同 sid 无 executing VM；发布前同 sid 无旧 active slot |
-| pause | AcceptPause → InstallFence → FreezeVm → SealSnapshot → CommitSnapshot → StopVm → PublishPaused | fence 先关闭权限；snapshot durable+immutable 且绑定 owner/sid/generation/workspace；无 executing VM 和 active slot |
-| resume | AcceptResume → InstallFence → create 的准备/激活路径 | snapshot 必须 durable、immutable 且归属正确；新 epoch/generation；旧命令不能匹配新记录 |
-| kill | AcceptKill → InstallFence → StopVm → PublishDestroyed | terminal 在接受时写入；Destroyed 仅在 terminal fence、无 executing VM、无 active slot 后发布 |
+## 7. 旧资源清理
 
-controller crash 只改变 `controllerUp`，不会抹掉持久状态、worker fence 或在途命令。RPC timeout 只把当前 operation 标为 `outcomeUnknown`，不反向修改 VM、快照或 phase。重复/迟到命令可以 stutter；真正产生副作用的 worker 事件仍要重新核对 epoch、generation、资源身份和 fence。
+清理命令不是“删除 sandbox S”，而是：
 
-文件与网络操作是自循环事件：它们不改变 World，但只有 owner/systemController 获得正确 capability 时才能发生。Managed 文件读写还必须处在 Running，并携带当前 generation。进入 Pausing 后 controller admission 立即停止；fence 到达前旧 worker 的 effective authority 可能短暂存在，fence 到达后它必须关闭。Egress 还要求目标属于当前静态 allowlist；`denyAll` 不产生合法 egress 转移。
-
-## 6. 安全目标
-
-[`Safety.lean`](../SandboxModel/Safety.lean) 中的完整 `Safe` 包含十七项条件：
-
-1. 所有 VM、workspace、snapshot、network slot 的 owner/sandbox 归属一致。
-2. 每个 sandbox 记录指向的 workspace 真实存在，并反向绑定同一个 owner/sid。
-3. Workspace 模式固定为 `readWrite`。
-4. `currentVm` 与 `netSlot` 即使在权限关闭窗口也必须存在且绑定当前 owner/sid/generation；slot 还必须绑定 current VM 与固定 policy。
-5. 同一 sandbox 至多一个 executing VM。
-6. 同一 sandbox 至多一个 active network slot。
-7. 每个 active slot 都是其 sandbox 当前记录中的 configured slot，不允许旧路由悬空。
-8. Durable snapshot 必为 immutable。
-9. effective authority 与 phase、generation、workspace、mode 和具体资源完全匹配。
-10. worker fence 来自现存 sandbox，epoch 不超前，terminal fence 不会凭空出现。
-11. Pausing/Revoking 的当前 worker fence 会关闭 effective authority。
-12. 非关闭、非 Paused 的 effective authority 有 executing VM 与 configured/active network slot 作为事实依据。
-13. Paused/Destroyed 中无 executing VM 与 active slot。
-14. terminal 为真当且仅当 phase 是 Revoking/Destroyed。
-15. Paused 指向归属、代、workspace、durability 都正确的 snapshot。
-16. resume 后 Starting 中的 `restoreFrom` 必须属于同 owner/sid/workspace、durable+immutable，且来源代正好是当前代的前一代。
-17. 当前 operation 的 epoch、kind、pending/unknown/succeeded 结果与 phase 一致。
-
-`emptyWorld_safe` 证明初始状态满足全部条件；`step_preserves_safe` 证明任意合法一步同时保持全部条件；最终由可达性归纳得到：
-
-```lean
-theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
+```text
+cleanupVm(sid, epoch, generation, vmId)
+cleanupSlot(sid, epoch, generation, slotId)
 ```
 
-这不是有限场景搜索。`World` 中的标识、资源数量和轨迹长度都没有预设上限。转移级定理另外证明：带 actor 的事件经过 owner/system 授权、egress 目标属于静态 allowlist、文件事件使用归属正确的 workspace、RPC timeout 只把 pending operation 写成 `outcomeUnknown`、Destroyed 不会离开 Destroyed，已有 terminal tombstone 也不会被任何一步清除。`Scenarios.lean` 还构造了完整正常轨迹；`Counterexamples.lean` 证明删除 VM/网络互斥、静止发布或恢复源身份检查会分别打破对应性质，并检查恢复到 generation 2 后 generation 1 文件请求被拒绝。所有证明均不含 `sorry`、`admit` 或新增 `axiom`。
+worker 在删除点重新检查资源的 sid、generation、具体 ID、停止/关闭状态，并要求它不是当前记录引用的资源。Lean 直接证明 cleanup 只把这个精确资源改成 reclaimed，sandbox 表不变，步骤完成后该资源仍不是 current；`reachable_reclaimedResourcesNotCurrent` 进一步证明这个结论在任意长的合法历史中持续成立。场景证明还覆盖 generation 1 的清理延迟到 generation 2 已运行时，generation 2 的 VM 保持不变。
 
-七个 workspace 要求有独立、可检索的证明名：
+## 8. 已证明的合同
 
-| 性质 | 模型中的含义 |
+状态不变量由 `reachable_safe` 对任意可达 World 证明，包括资源归属、workspace 双向绑定、当前资源身份、单执行 VM、单活动 slot、snapshot 不可变、authority 形状、fence 合法、terminal 与稳定状态要求、恢复源及当前 operation 一致性。
+
+`reachable_protocol_secure` 在此基础上加入合法 policy receipt、Running 的精确 policy receipt、operation ledger 身份、当前 operation 的账本存在性、effect identity，以及所有 reclaimed 资源都不是 current。其余跨历史性质以一步定理表达，因为它们本来就需要比较前后状态：
+
+- `step_epochMonotone`
+- `step_generationMonotone`
+- `step_workerFenceMonotone`
+- `step_never_clears_terminal`
+- `step_workspaceIdentityStable`
+- `step_workspaceApiAccessStable`
+- `step_filePolicyStable`
+- `step_snapshotManifestStable`
+- `step_operationIdentityStable`
+- `step_operationResultStable`
+- `step_effectResultStable`
+- `step_ackCannotChangeAnotherEffect`
+
+`step_protocol_secure` 将状态保持、事件授权、文件/网络准入、effect 的 commit/dispatch/ack 准入、cleanup 的精确资源准入，以及所有单调与稳定性质汇总成一个 `ProtocolStepSecurity before event after` 合同，便于评审每个合法步骤。
+
+准入和身份定理还覆盖 Running authority 精确绑定、非 Running 不接受新 managed file 请求、旧 generation 文件请求被拒绝、resume 重签权限、snapshot 不携带 authority、旧 file-policy 命令被拒绝、commit-before-dispatch、ack 精确匹配及 cleanup 精确寻址。
+
+把历史性质保留为 `Step before event after` 定理是有意的：单个 `World` 无法单独表达“没有倒退”。顶层单状态结构没有假装包含这些历史结论。
+
+## 9. Lean 证明到哪里为止
+
+| Lean 已证明 | 仍需 refinement 或 adapter 证据 |
 |---|---|
-| `WorkspaceIdentityStable` | 对已有 sandbox，任意一步前后的逻辑 workspace 相同；destroy 也保留记录中的审计身份 |
-| `WorkspaceModeStable` | 任意一步不改变 mode，且首版唯一合法值是 `readWrite` |
-| `RunningWorkspaceAuthorityExact` | Running 的文件权限精确绑定当前 sid、generation、workspace 和 mode |
-| `noFileAuthorityOutsideRunning` | Starting、Pausing、Paused、Revoking、Destroyed 都不接收新的 managed 文件请求 |
-| `resumeReissuesWorkspaceAuthority` | PublishRunning 使用 controller 当前记录重新构造权限 |
-| `snapshotCarriesNoAuthority` | AcceptResume 只选择数据来源；新 generation 以 desired/effective `closed` 开始 |
-| `staleGenerationCannotAccessWorkspace` | 请求 generation 与当前记录不同，则读和写都不能成为合法 Step |
+| 任意有限合法历史中的身份、代、权限和资源关系 | controller/worker 实现的每个分支确实对应合法 `Step` |
+| controller crash 不丢持久 operation/effect 记录 | journal 的原子性与断电持久性 |
+| policy/manifest 的精确引用传递 | Linux 是否忠实应用策略并恢复内容、mode、owner、ACL |
+| 当前 generation 才能获得 managed authority | 网关、worker 和 Firecracker adapter 是否执行相同检查 |
+| fence、terminal、operation/effect 结果不倒退 | worker fence 的真实序列化和取消语义 |
+| cleanup 只指向精确旧资源 | 实际 delete/stop API 是否只影响该 VM 或 slot |
+| Paused/Destroyed 发布需要无执行与无活动网络 | KVM、Firecracker、内核和网络栈的底层正确性 |
 
-`reachable_revocationFenceClosesFileAuthority` 再补足物理撤销边界：Pausing 或 Revoking 收到当前 fence 后，effective authority 必须为 `closed`。
+`Reachable` 覆盖任意有限步数，证明的是 safety：坏状态到不了。它不保证请求最终完成，也不保证永久故障后自动恢复。
 
-## 7. 用简单比喻理解边界
+storage adapter 的关键假设是：
 
-可以把一个 sandbox 想成一间实验室：
+> `restore(manifest, workspace)` 成功时，恢复后的文件系统忠实实现该 manifest，包括下游承诺保存的内容和权限元数据。
 
-- `SandboxRecord` 是前台登记簿；VM、workspace、snapshot 和 network slot 是实际钥匙与设备。
-- `generation` 是本轮钥匙的批次号。恢复后会换一批钥匙，旧钥匙不能打开新设备。
-- `effective authority` 是眼下真正能开门的钥匙，不是前台“希望门关上”的记录。
-- `worker fence` 是门卫已经执行到哪个命令的盖章。只有撤销盖章完成，系统才能把实验室发布为 Paused 或 Destroyed。
+policy adapter 的关键假设是：
 
-Lean 已证明：只要每一次真实动作都确实属于 `Step` 允许的动作，上述十七条规则永远不会被打破。Lean 没有证明真实门卫一定照做；把 controller、worker、Firecracker 和 Linux 的动作对应到 `Step`，属于后续 refinement 与 adapter 验证。
+> `applyPolicy(policy, sid, generation, workspace)` 成功时，目标 workspace 对该 sandbox generation 的实际 Linux 权限与 policy 所描述的配置一致。
 
-具体边界如下：
-
-| 模型内已证明 | 模型外仍需验证 |
-|---|---|
-| 任意多个 tenant/sandbox、任意有限长度的合法 Step 历史 | controller/worker 代码是否只产生这些 Step |
-| 重复/迟到命令、RPC outcome unknown、controller crash/recover | host/worker 永久故障后的活性与最终恢复 |
-| owner/sid/generation/resource 绑定与静态 L3/L4 策略 | KVM/Firecracker、Linux 内核、nftables/netlink 没有 bug |
-| workspace 身份与 `readWrite` controller policy 保持，旧代请求被拒绝 | 文件内容、mode、owner、ACL、路径穿越、symlink/hardlink、host mount 的具体实现 |
-| pause/kill 完成时无 executing VM 与 active slot | 内存清零、磁盘安全擦除、侧信道与恶意宿主 |
-| 单节点 controller/worker 协议安全 | 多节点调度、迁移、共识、共享卷、动态 DNS/SNI 策略 |
-
-“任意历史”也有限定：`Reachable` 表示任意**有限**步数。证明是 safety，即坏状态永远到不了；它不保证某个请求一定最终完成，也不保证系统不会一直等待。
-
-Snapshot 在 Lean 中只含 owner、sandbox、source generation、workspace、stage 与 immutable 标记，没有 authority 或 workspace mode 字段。Linux 权限元数据是否在落盘和恢复后保持正确，采用 adapter 假设：`restore(manifest, workspace)` 成功时，恢复后的文件系统忠实实现 manifest，包括下游承诺保存的内容和权限元数据。Lean 验证传入 adapter 的 snapshot/workspace/generation 身份，不验证 ext4、Firecracker 或 Linux 的复制与恢复实现。
-
-## 8. 设计上刻意保留的窗口
-
-- `AcceptPause` 或 `AcceptKill` 与 `InstallFence` 分开。在 fence 生效前旧 VM 可能继续执行，所以此时不能发布 Paused/Destroyed。
-- `SealSnapshot` 与 `CommitSnapshot` 分开。本地封口不等于持久且不可变。
-- `ActivateVm` 与 `PublishRunning` 分开。VM 可能已经执行而回执未知；timeout 不能把对象伪装回 Paused。
-- controller 判断命令 current 还不够。worker 必须在实际副作用处检查 fence；否则旧命令即使不回调也能启动 VM。
-
-这些窗口让规范能够表达真正危险的交错，同时把首篇工作限制在一个可证明的单节点协议内。
+Lean 验证这些调用携带正确身份及其成功回执；它不证明假设内部的 Linux 行为。

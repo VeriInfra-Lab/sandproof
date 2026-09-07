@@ -1,149 +1,160 @@
 import SandboxModel.Scenarios
 
 /-!
-Small, machine-checked counterexamples for rules that are easy to omit in an
-implementation.  These are not alternate specifications: each `unsafe*`
-helper represents one deliberately weakened protocol action.
+Machine-checked mutants.  Each helper deliberately bypasses one `Step` guard;
+the theorem records the concrete safety fact that then fails.
 -/
 
 namespace SandboxModel.Counterexamples
 
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySimpa false
+
 open Scenarios
 
-set_option linter.unusedSimpArgs false
+/-- Mutant: publish directly, without an applied-policy receipt or exact ack. -/
+def unsafePolicyBase : World := {
+  readyToPublish with
+  vms := put readyToPublish.vms firstVm firstExecutingVm
+}
 
-def executionBefore : World :=
-  setVm (setVm emptyWorld firstVm firstExecutingVm) secondVm secondPreparedVm
+def unsafeRunningWithoutPolicy : World :=
+  publishRunning unsafePolicyBase sid preparedRecord firstSlot firstConfiguredSlot
 
-def executionAfterUnsafeActivate : World :=
-  activateResource executionBefore secondVm secondPreparedVm
-
-theorem execution_before_is_unique : UniqueExecution executionBefore := by
-  simp [UniqueExecution, executionBefore, firstVm, secondVm,
-    firstExecutingVm, secondPreparedVm, setVm, put, emptyWorld] <;> grind
-
-/-- Removing `noExecutingVm` from ActivateVm admits two executing generations. -/
-theorem unsafe_activate_breaks_unique_execution :
-    ¬ UniqueExecution executionAfterUnsafeActivate := by
-  intro unique
-  have equal := unique firstVm firstExecutingVm secondVm secondExecutingVm
-    (by simp [executionAfterUnsafeActivate, executionBefore, activateResource,
-      firstVm, secondVm, firstExecutingVm, secondPreparedVm, setVm, put,
-      emptyWorld]) rfl
-    (by simp [executionAfterUnsafeActivate, executionBefore, activateResource,
-      firstVm, secondVm, firstExecutingVm, secondPreparedVm,
-      secondExecutingVm, setVm, put, emptyWorld]) rfl rfl
-  simp [firstVm, secondVm] at equal
-
-def networkBefore : World :=
-  setNetSlot (setNetSlot emptyWorld firstSlot firstActiveSlot)
-    secondSlot secondConfiguredSlot
-
-def networkAfterUnsafePublish : World :=
-  setNetSlot networkBefore secondSlot secondActiveSlot
-
-theorem network_before_is_unique : UniqueActiveSlot networkBefore := by
-  simp [UniqueActiveSlot, networkBefore, firstSlot, secondSlot, firstActiveSlot,
-    firstConfiguredSlot, firstUnconfiguredSlot, secondConfiguredSlot,
-    secondUnconfiguredSlot, setNetSlot, put, emptyWorld] <;> grind
-
-/-- Removing `noActiveSlot` from PublishRunning admits two live routes. -/
-theorem unsafe_publish_breaks_unique_active_slot :
-    ¬ UniqueActiveSlot networkAfterUnsafePublish := by
-  intro unique
-  have equal := unique firstSlot firstActiveSlot secondSlot secondActiveSlot
-    (by simp [networkAfterUnsafePublish, networkBefore, firstSlot, secondSlot,
-      firstActiveSlot, firstConfiguredSlot, firstUnconfiguredSlot,
-      secondActiveSlot, secondConfiguredSlot, secondUnconfiguredSlot,
-      setNetSlot, put, emptyWorld]) rfl
-    (by simp [networkAfterUnsafePublish, networkBefore, firstSlot, secondSlot,
-      firstActiveSlot, firstConfiguredSlot, firstUnconfiguredSlot,
-      secondActiveSlot, secondConfiguredSlot, secondUnconfiguredSlot,
-      setNetSlot, put, emptyWorld]) rfl rfl
-  simp [firstSlot, secondSlot] at equal
-
-def prematurePauseBefore : World :=
-  setSandbox (setVm emptyWorld firstVm firstExecutingVm) sid pausingClosedRecord
-
-def prematurePauseAfter : World :=
-  publishPaused prematurePauseBefore sid pausingClosedRecord snapshot
-
-theorem premature_pause_before_satisfies_stable_rule :
-    StableStatesQuiescent prematurePauseBefore := by
-  simp [StableStatesQuiescent, prematurePauseBefore, pausingClosedRecord,
-    pausingRecord, runningRecord, preparedRecord, createdRecord, setSandbox,
-    setVm, put, emptyWorld]
-
-/-- Publishing Paused without `noExecutingVm` would label a running VM paused. -/
-theorem unsafe_pause_publish_breaks_quiescence :
-    ¬ StableStatesQuiescent prematurePauseAfter := by
-  intro stable
-  have quiet := stable sid
-    { pausingClosedRecord with
-      phase := .paused
-      currentVm := none
-      durableSnapshot := some snapshot
+/-- Deleting the publish guard admits Running while the applied-policy store is empty. -/
+theorem missing_policy_guard_breaks_running_contract :
+    ¬ RunningRequiresAppliedFilePolicy unsafeRunningWithoutPolicy := by
+  intro invariant
+  have receipt := invariant sid
+    { preparedRecord with
+      phase := .running
+      currentVm := some firstConfiguredSlot.vm
       restoreFrom := none
-      netSlot := none
-      currentOperation := pausingClosedRecord.currentOperation.map
-        (fun operation => { operation with status := .succeeded })
-      desired := .paused sid snapshot
-      effective := .paused sid snapshot }
-    (by simp [prematurePauseAfter, prematurePauseBefore, publishPaused,
-      setSandbox, setVm, put, sid, firstVm, emptyWorld]) (Or.inl rfl)
-  have stopped := quiet.1 firstVm firstExecutingVm
-    (by simp [prematurePauseAfter, prematurePauseBefore, publishPaused,
-      setSandbox, setVm, put, sid, firstVm, firstExecutingVm, emptyWorld]) rfl
-  exact stopped rfl
+      desired := .running sid preparedRecord.generation firstConfiguredSlot.vm
+        preparedRecord.workspace preparedRecord.workspaceAccess firstSlot
+        preparedRecord.policy
+      effective := .running sid preparedRecord.generation firstConfiguredSlot.vm
+        preparedRecord.workspace preparedRecord.workspaceAccess firstSlot
+        preparedRecord.policy
+      currentOperation := preparedRecord.currentOperation.map
+        (fun operation => { operation with status := .succeeded }) }
+    (by simp [unsafeRunningWithoutPolicy, unsafePolicyBase, readyToPublish,
+      preparedRecord, createdRecord, firstConfiguredSlot,
+      publishRunning, setSandbox, setNetSlot, setVm, put, emptyWorld]) rfl
+  simp [unsafeRunningWithoutPolicy, unsafePolicyBase, readyToPublish,
+    publishRunning, setSandbox, setNetSlot, setVm, put, emptyWorld] at receipt
 
-def foreignTenant : TenantId := ⟨1⟩
-def foreignSid : SandboxId := ⟨1⟩
+/-- Mutant: call the worker update helper with a stale controller record. -/
+def generationTwoRecord : SandboxRecord :=
+  { preparedRecord with generation := 2 }
 
-def wrongRestoreRecord : SandboxRecord := {
-  resumingRecord with restoreFrom := some snapshot
+def stalePolicyWorld : World := {
+  emptyWorld with
+  sandboxes := put emptyWorld.sandboxes sid generationTwoRecord
 }
 
-def wrongRestoreSnapshot : Snapshot := {
-  owner := foreignTenant
-  sandbox := foreignSid
-  sourceGeneration := 1
-  workspace := workspace
-  stage := .durable
-  immutable := true
-}
+def stalePolicyApplied : World :=
+  applyFilePolicyResult stalePolicyWorld sid preparedRecord
 
-def wrongRestoreWorld : World :=
-  setSnapshot (setSandbox emptyWorld sid wrongRestoreRecord)
-    snapshot wrongRestoreSnapshot
+theorem deleting_policy_generation_guard_records_stale_generation :
+    stalePolicyApplied.appliedFilePolicies sid =
+      some ⟨sid, 1, workspace, filePolicy⟩ := by
+  simp [stalePolicyApplied, stalePolicyWorld, applyFilePolicyResult,
+    preparedRecord, createdRecord, setAppliedFilePolicy, put, emptyWorld]
 
-/-- Merely checking durability cannot replace owner/sandbox/source binding. -/
-theorem durable_foreign_snapshot_breaks_restore_source_validity :
-    ¬ RestoreSourceValid wrongRestoreWorld := by
-  intro valid
-  rcases valid sid wrongRestoreRecord snapshot
-    (by simp [wrongRestoreWorld, setSnapshot, setSandbox, put, sid]) rfl rfl with
-    ⟨foundSnapshot, present, owner, sandboxOwner, workspaceOwner, stage,
-      immutable, generation⟩
-  have same : foundSnapshot = wrongRestoreSnapshot := by
-    simpa [wrongRestoreWorld, setSnapshot, setSandbox, put, snapshot]
-      using present.symm
-  subst foundSnapshot
-  have different : foreignTenant ≠ tenant := by decide
-  exact different (by simpa [wrongRestoreSnapshot, wrongRestoreRecord,
-    resumingRecord, pausedRecord, pausingClosedRecord, pausingRecord,
-    runningRecord, preparedRecord, createdRecord] using owner)
-
-/-- A concrete check of the generation fence: after generation 2 is published,
-    a generation 1 file request cannot be a protocol step. -/
-theorem resumed_sandbox_rejects_previous_generation_file_access :
-    (¬ Step wResumedRunning (.fileRead (.tenant tenant) sid 1) wResumedRunning) ∧
-      ¬ Step wResumedRunning (.fileWrite (.tenant tenant) sid 1) wResumedRunning := by
-  apply staleGenerationCannotAccessWorkspace
-    (record := resumedRunningRecord)
-  · simp [wResumedRunning, publishRunning, resumedRunningRecord,
-      secondPreparedRecord, secondConfiguredSlot, secondUnconfiguredSlot,
-      resumingRecord, pausedRecord, pausingClosedRecord, pausingRecord,
-      runningRecord, preparedRecord, createdRecord, setSandbox, setNetSlot, put]
+/-- The real relation rejects exactly that stale generation. -/
+theorem real_policy_step_rejects_stale_generation :
+    ¬ Step stalePolicyWorld (.applyFilePolicy sid 1) stalePolicyApplied := by
+  apply staleFilePolicyCommandRejected (record := generationTwoRecord)
+  · simp [stalePolicyWorld, generationTwoRecord, put, emptyWorld]
   · decide
+
+abbrev foreignWorkspace : FsId := ⟨99⟩
+
+def wrongManifestSnapshot : Snapshot :=
+  ⟨tenant, sid, 1, foreignWorkspace, manifest, .durable, true⟩
+
+def wrongManifestRecord : SandboxRecord := {
+  preparedRecord with
+  phase := .paused
+  currentVm := none
+  durableSnapshot := some source
+  netSlot := none
+  desired := .paused sid source
+  effective := .paused sid source
+}
+
+def wrongManifestWorld : World := {
+  emptyWorld with
+  sandboxes := put emptyWorld.sandboxes sid wrongManifestRecord
+  snapshots := put emptyWorld.snapshots snapshot wrongManifestSnapshot
+}
+
+/-- Durability alone cannot authorize restore from a manifest bound to another workspace. -/
+theorem durability_without_manifest_source_check_is_unsound :
+    ¬ usableSnapshot wrongManifestWorld sid wrongManifestRecord source := by
+  intro usable
+  rcases usable with ⟨found, present, owner, sandbox, workspaceBound,
+    manifestBound, durable, immutable⟩
+  have exactSnapshot : found = wrongManifestSnapshot := by
+    simpa [wrongManifestWorld, put, emptyWorld] using present.symm
+  subst found
+  have different : foreignWorkspace ≠ workspace := by decide
+  exact different (by simpa [wrongManifestSnapshot, wrongManifestRecord,
+    preparedRecord, createdRecord] using workspaceBound)
+
+abbrev orphanEffect : EffectId := effectId (.activateVm sid 8 4 secondVm)
+
+def unsafeDispatchedWithoutCommit : World := dispatchEffect emptyWorld orphanEffect
+
+/-- An unguarded dispatch helper can manufacture `dispatched`; `Step.dispatchEffect` cannot. -/
+theorem deleting_commit_before_dispatch_guard_is_visible :
+    emptyWorld.effects orphanEffect = none ∧
+      unsafeDispatchedWithoutCommit.effects orphanEffect = some .dispatched := by
+  simp [unsafeDispatchedWithoutCommit, orphanEffect, dispatchEffect,
+    setEffect, put, emptyWorld]
+
+theorem real_relation_rejects_uncommitted_dispatch :
+    ¬ Step emptyWorld (.dispatchEffect orphanEffect) unsafeDispatchedWithoutCommit := by
+  apply uncommittedEffectCannotDispatch
+  simp [orphanEffect, emptyWorld]
+
+/-- Mutant: reclaim the VM that the generation-2 record still names as current. -/
+def currentVm : Vm := ⟨tenant, sid, 2, .stopped⟩
+def currentRecord : SandboxRecord :=
+  { preparedRecord with generation := 2, currentVm := some secondVm }
+def cleanupCurrentBefore : World := {
+  emptyWorld with
+  sandboxes := put emptyWorld.sandboxes sid currentRecord
+  vms := put emptyWorld.vms secondVm currentVm
+}
+def cleanupCurrentAfter : World := reclaimVm cleanupCurrentBefore secondVm currentVm
+
+theorem deleting_cleanup_notCurrent_guard_breaks_reclaimed_contract :
+    ¬ ReclaimedResourcesNotCurrent cleanupCurrentAfter := by
+  intro safe
+  have notCurrent := safe.1 secondVm
+    { currentVm with status := .reclaimed }
+    (by simp [cleanupCurrentAfter, cleanupCurrentBefore, reclaimVm,
+      currentVm, setVm, put, emptyWorld]) rfl currentRecord
+    (by simp [cleanupCurrentAfter, cleanupCurrentBefore, reclaimVm,
+      currentRecord, currentVm, preparedRecord, createdRecord,
+      setVm, put, emptyWorld])
+  exact notCurrent rfl
+
+/-- Mutant: overwrite a terminal epoch-5 fence with a nonterminal epoch-4 fence. -/
+def fenceBefore : World :=
+  setFence emptyWorld sid ⟨5, true⟩
+def fenceAfterRollback : World :=
+  setFence fenceBefore sid ⟨4, false⟩
+
+theorem deleting_fence_monotonicity_admits_rollback :
+    ¬ WorkerFenceMonotone fenceBefore fenceAfterRollback := by
+  intro monotone
+  have result := monotone sid ⟨5, true⟩ ⟨4, false⟩
+    (by simp [fenceBefore, setFence, put, emptyWorld])
+    (by simp [fenceAfterRollback, fenceBefore, setFence, put, emptyWorld])
+  have impossible : 5 ≤ 4 := by simpa using result.1
+  omega
 
 end SandboxModel.Counterexamples

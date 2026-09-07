@@ -1,52 +1,75 @@
 # Sandbox Lifecycle Refinement
 
-本仓库研究 **Firecracker 沙箱在 create、pause、resume、kill 交接中的执行权安全**。核心问题是：当命令重复或迟到、RPC 结果未知、controller 崩溃时，如何保证旧工作不能重新获得执行权，并且 Paused/Destroyed 的发布有足够的运行时证据。
+本仓库研究单节点 Firecracker 沙箱在 `create → pause → resume → kill` 过程中的控制协议。目标是在命令重复或迟到、RPC 结果未知、controller 崩溃恢复和旧资源延迟清理时，仍保证旧 generation 不能重新获得执行、文件或网络权限。
 
-研究边界固定为单台 Linux/KVM 主机、一个 controller、一个 worker、Firecracker v1.16.1、每个沙箱独占 workspace 与网络槽。首版 workspace 模式固定为 `readWrite`；不建模路径、内容、UID/GID、ACL 或 Linux 文件系统内部行为。网络策略只建模 `deny-all` 或静态 L3/L4 allowlist。首阶段不处理多节点迁移、共享卷、DNS/SNI 策略、恶意宿主、完整 E2B 兼容或活性证明。
+研究范围固定为单台 Linux/KVM 主机、一个 controller、一个 worker、Firecracker v1.16.1，以及每个 sandbox 独占的 workspace 和网络槽。模型支持多个 tenant 和 sandbox，但不处理多节点迁移、共享卷、动态 DNS/SNI 策略、恶意宿主或活性证明。
 
-## 当前实现
+## 当前结果
 
-Lean 4 是规范与证明的唯一权威来源：
+Lean 4 是唯一规范来源：
 
-- [`Types.lean`](SandboxModel/Types.lean)：有类型的身份、生命周期 phase、capability、command 与 event。
-- [`State.lean`](SandboxModel/State.lean)：参数化 `World`，包含多租户沙箱、VM、文件系统、快照、网络槽、worker fence 与在途命令。
-- [`Step.lean`](SandboxModel/Step.lean)：异步事件关系 `Step : World → Event → World → Prop` 与无界可达性定义。
-- [`Safety.lean`](SandboxModel/Safety.lean)：完整安全目标。
-- [`Proofs.lean`](SandboxModel/Proofs.lean)：对任意可达状态的归纳证明。
-- [`Scenarios.lean`](SandboxModel/Scenarios.lean)：完整正常生命周期的构造性可达证明。
-- [`Counterexamples.lean`](SandboxModel/Counterexamples.lean)：删弱关键规则后的反例证明。
+- [`Types.lean`](SandboxModel/Types.lean)：身份、phase、authority、operation、effect、manifest 和命令类型。
+- [`State.lean`](SandboxModel/State.lean)：controller、worker、资源、operation ledger 与 effect ledger 的持久状态。
+- [`Step.lean`](SandboxModel/Step.lean)：所有合法异步协议步骤及其 guard。
+- [`Safety.lean`](SandboxModel/Safety.lean)：状态、准入和跨步骤安全性质。
+- [`Proofs.lean`](SandboxModel/Proofs.lean)：对任意可达状态和任意合法一步的证明。
+- [`Scenarios.lean`](SandboxModel/Scenarios.lean)：正常生命周期、崩溃重放和迟到清理场景。
+- [`Counterexamples.lean`](SandboxModel/Counterexamples.lean)：删除关键 guard 后的机器检查反例。
 
-总定理 `reachable_safe` 已由 Lean 机器检查：
+顶层定理已经通过 Lean 检查：
 
 ```lean
-theorem reachable_safe {world : World} (reachable : Reachable world) : Safe world
+theorem reachable_protocol_secure {world : World}
+    (reachable : Reachable world) : ProtocolSecurity world
+
+theorem step_protocol_secure
+    (transition : Step world event next) :
+    ProtocolStepSecurity world event next
 ```
 
-`Safe` 的十七项条件均已证明逐步保持：资源归属、workspace 双向绑定、固定 `readWrite` 模式、当前 VM/网络槽绑定、单 VM 执行、单活动网络槽、活动槽不悬空、快照不可变、权限形状、fence 顺序、fence 后权限关闭、有效权限的真实运行时依据、稳定态静止、terminal 与终态的一致性、Paused 快照绑定、Starting 恢复源绑定，以及 operation/epoch/phase 一致性。
+第一个定理汇总所有可达状态的安全，包括 policy receipt、operation/effect 账本身份、当前 operation 的账本存在性，以及已回收资源永不再成为 current；第二个定理汇总每一步的用户准入、effect/cleanup 准入、状态保持、单调性以及 operation/effect 结果稳定性。
 
-Workspace 权限另外有七组显式定理：生命周期步骤保持 workspace 身份和模式；Running 权限精确绑定 sid、generation、workspace 与 mode；非 Running 状态不接收新的 managed 文件请求；resume 以关闭权限进入新 generation，并在 PublishRunning 时按 controller 当前记录重签；snapshot 只给出数据来源，不携带权限；旧 generation 的读写请求不能形成合法转移。Pausing 在 worker fence 到达后的有效权限关闭也有单独定理。证明不含 `sorry`、`admit`、新增 `axiom` 或有限状态枚举。
+它包含原有资源归属、单执行 VM、单活动网络槽、terminal 不可逆、snapshot 和恢复源合法等状态不变量，并加入：
 
-[`Scenarios.lean`](SandboxModel/Scenarios.lean) 构造了完整 create→pause→resume→kill 可达轨迹，证明规范并非靠拒绝所有动作获得安全；[`Counterexamples.lean`](SandboxModel/Counterexamples.lean) 机器检查了四个删弱规则后的反例，并具体证明 generation 2 恢复完成后，generation 1 的文件读写请求会被拒绝。
+- Running 前必须存在与当前 `sid + generation + workspace + FilePolicyRef` 完全相同的 worker 应用记录和已确认 effect；
+- operation 以 `(SandboxId, OperationId)` 为键，重试只能使用相同 kind 与输入，查询返回持久结果；
+- operation 的 kind、epoch 和输入在同一账本键下不可改写；最终结果一旦写入，后续任何合法步骤也不能覆盖；
+- effect 必须先持久提交再派发，ack 必须对应精确 EffectId，确认结果不会回退；
+- snapshot 绑定不透明 `SnapshotManifestRef`，resume 使用被选中的同一个 manifest；
+- cleanup 命令精确绑定 sid、generation 和 VM/slot ID；全局不变量保证任意时刻所有 reclaimed VM/slot 都不是 current，迟到清理不能回收或复活当前资源；
+- epoch、generation、worker fence、workspace、file policy 和 snapshot manifest 满足相应单调或稳定性质。
 
-这个结论只覆盖 Lean 中定义的抽象协议。controller 级的 workspace 身份、模式和权限签发在证明范围内；snapshot/restore 是否忠实保留文件内容、mode、owner 与 ACL 是 storage adapter 契约。它尚未证明某个 controller、E2B、Firecracker、Linux/KVM、文件系统或网络栈实现了这些 `Step`；实现到规范的 refinement 与 adapter 实验仍是后续工作。
+证明针对无界标识集合和任意有限长度的合法历史，不是有限状态枚举；源码中没有 `sorry`、`admit` 或新增 `axiom`。
+
+## 文件权限的边界
+
+模型有意区分三个概念：
+
+1. `WorkspaceApiAccess.managedReadWrite`：调用者能否通过受管 API 请求文件读写。
+2. `FilePolicyRef`：controller 要求 Linux/worker 应用的具体权限配置之不透明身份。
+3. `SnapshotManifestRef`：snapshot 数据和权限元数据清单之不透明身份。
+
+Lean 证明 controller 和 worker 在生命周期交接中使用了正确的身份、generation、策略与 manifest。它不解释路径、文件内容、mode bits、UID/GID、ACL、symlink 或 ext4 行为。`applyPolicy(policy)` 与 `restore(manifest, workspace)` 是否忠实实现这些引用，是明确列出的 adapter 契约，需要用固定实现审计和故障实验验证。
+
+因此，当前成果的准确名称是“已完整证明的 Lean 抽象协议安全模型”，还不是“已验证的 E2B、Firecracker、Linux 或 controller 实现”。实现到规范的 refinement 是下一阶段。
 
 ## 验证
 
-需要 Lean 4.30.0；`lean-toolchain` 会固定版本。
+项目固定 Lean 4.30.0。完整检查只需：
 
 ```sh
 lake build
 ```
 
-构建不需要 Python，也没有保留旧的有限 BFS 模型或报告。
+构建不依赖 Python，也没有保留旧的有限 BFS 模型。
 
 ## 文档
 
 1. [研究计划](RESEARCH_PLAN.zh-CN.md)
-2. [状态机设计](docs/state-machine.md)
+2. [状态机与清晰边界](docs/state-machine.md)
 3. [E2B 源码分析](docs/e2b-code-audit.md)
-4. [Lean → Rust/Aeneas refinement 路线](docs/refinement-plan.md)
-5. [实验与判定协议](docs/evaluation.md)
+4. [Lean 到 Rust/adapter 的 refinement 路线](docs/refinement-plan.md)
+5. [场景、反例与实验协议](docs/evaluation.md)
 6. [固定源码证据](references/code-evidence.md)
 
-E2B 代码阅读基线为 `e2b-dev/infra@82f6529660ea98087d7a479247c789905b0a3867`。本项目目前没有声称发现 E2B 漏洞，也没有声称验证整个 E2B 或 Firecracker。
+E2B 阅读基线为 `e2b-dev/infra@82f6529660ea98087d7a479247c789905b0a3867`。本项目目前没有声称发现 E2B 漏洞，也没有声称验证整个 E2B 或 Firecracker。

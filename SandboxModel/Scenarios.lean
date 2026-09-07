@@ -1,30 +1,39 @@
 import SandboxModel.Proofs
 
 /-!
-Constructive validation artifacts.
-
-The safety theorem alone could be vacuous if the protocol admitted no useful
-history.  This file builds a concrete create/pause/resume/kill history and
-small counterexamples for deliberately weakened rules.
+Machine-checked normal protocol fragments.  The global theorems quantify over
+all finite `Step` histories; these examples additionally show that the central
+guards allow useful create, policy publication, manifest, resume, retry, crash,
+and cleanup behavior.
 -/
 
 namespace SandboxModel.Scenarios
 
 set_option linter.unusedSimpArgs false
 
-def tenant : TenantId := ⟨0⟩
-def sid : SandboxId := ⟨0⟩
-def workspace : FsId := ⟨0⟩
-def firstVm : VmId := ⟨0⟩
-def secondVm : VmId := ⟨1⟩
-def firstSlot : NetSlotId := ⟨0⟩
-def secondSlot : NetSlotId := ⟨1⟩
-def snapshot : SnapshotId := ⟨0⟩
-def createOperation : OperationId := ⟨0⟩
-def pauseOperation : OperationId := ⟨1⟩
-def resumeOperation : OperationId := ⟨2⟩
-def killOperation : OperationId := ⟨3⟩
-def policy : NetworkPolicy := .denyAll
+abbrev tenant : TenantId := ⟨0⟩
+abbrev sid : SandboxId := ⟨0⟩
+abbrev workspace : FsId := ⟨0⟩
+abbrev firstVm : VmId := ⟨0⟩
+abbrev secondVm : VmId := ⟨1⟩
+abbrev firstSlot : NetSlotId := ⟨0⟩
+abbrev secondSlot : NetSlotId := ⟨1⟩
+abbrev snapshot : SnapshotId := ⟨0⟩
+abbrev createOperation : OperationId := ⟨0⟩
+abbrev pauseOperation : OperationId := ⟨1⟩
+abbrev resumeOperation : OperationId := ⟨2⟩
+abbrev killOperation : OperationId := ⟨3⟩
+abbrev filePolicy : FilePolicyRef := ⟨⟨7⟩⟩
+abbrev manifest : SnapshotManifestRef := ⟨⟨9⟩⟩
+abbrev source : RestoreSource := ⟨snapshot, manifest⟩
+abbrev policy : NetworkPolicy := .denyAll
+abbrev effectResult : ResultDigest := ⟨11⟩
+
+abbrev createOpPending : Operation := ⟨createOperation, 1, .create, .pending⟩
+abbrev createOpSucceeded : Operation := ⟨createOperation, 1, .create, .succeeded⟩
+abbrev createInput : OperationInput := .create workspace policy filePolicy
+abbrev createLedgerPending : OperationLedgerRecord :=
+  ⟨sid, createOpPending, createInput, none⟩
 
 def createdRecord : SandboxRecord := {
   owner := tenant
@@ -34,679 +43,305 @@ def createdRecord : SandboxRecord := {
   generation := 1
   currentVm := none
   workspace := workspace
-  workspaceMode := .readWrite
+  workspaceAccess := .managedReadWrite
+  filePolicy := filePolicy
   durableSnapshot := none
   restoreFrom := none
   netSlot := none
   policy := policy
   desired := .closed
   effective := .closed
-  currentOperation := some ⟨createOperation, 1, .create, .pending⟩
+  currentOperation := some createOpPending
 }
+
+def wCreate : World :=
+  beginCreate emptyWorld sid tenant workspace filePolicy policy createOperation
+
+/-- Create atomically stores the sandbox decision, operation, and first effect. -/
+theorem create_step : Step emptyWorld
+    (.acceptCreate (.tenant tenant) tenant sid workspace filePolicy policy createOperation)
+    wCreate := by
+  apply Step.acceptCreate <;>
+    simp [wCreate, authorized, operationKey, emptyWorld]
+
+theorem create_is_reachable : Reachable wCreate :=
+  Reachable.step Reachable.initial create_step
+
+abbrev policyCommand : Command := .applyFilePolicy sid 1 1 workspace filePolicy
+abbrev activateCommand : Command := .activateVm sid 1 1 firstVm
 
 def preparedRecord : SandboxRecord :=
   { createdRecord with currentVm := some firstVm, netSlot := some firstSlot }
 
 def firstPreparedVm : Vm := ⟨tenant, sid, 1, .prepared⟩
 def firstExecutingVm : Vm := ⟨tenant, sid, 1, .executing⟩
-def firstFrozenVm : Vm := ⟨tenant, sid, 1, .frozen⟩
-def firstStoppedVm : Vm := ⟨tenant, sid, 1, .stopped⟩
 
-def firstUnconfiguredSlot : NetSlot := {
+def firstConfiguredSlot : NetSlot := {
   owner := tenant
   sandbox := sid
   generation := 1
   vm := firstVm
   policy := policy
-  configured := false
+  configured := true
   active := false
+  reclaimed := false
 }
 
-def firstConfiguredSlot : NetSlot :=
-  { firstUnconfiguredSlot with configured := true }
-
-def firstActiveSlot : NetSlot :=
-  { firstConfiguredSlot with active := true }
-
-def runningRecord : SandboxRecord := {
-  preparedRecord with
-  phase := .running
-  terminal := false
-  restoreFrom := none
-  desired := .running sid 1 firstVm workspace .readWrite firstSlot policy
-  effective := .running sid 1 firstVm workspace .readWrite firstSlot policy
-  currentOperation := some ⟨createOperation, 1, .create, .succeeded⟩
+def readyToPublish : World := {
+  emptyWorld with
+  sandboxes := put emptyWorld.sandboxes sid preparedRecord
+  vms := put emptyWorld.vms firstVm firstPreparedVm
+  filesystems := put emptyWorld.filesystems workspace ⟨tenant, sid, 1⟩
+  netSlots := put emptyWorld.netSlots firstSlot firstConfiguredSlot
+  workerFences := put emptyWorld.workerFences sid ⟨1, false⟩
+  operations := put emptyWorld.operations (operationKey sid createOperation)
+    createLedgerPending
+  effects := put
+    (put emptyWorld.effects (effectId policyCommand) .dispatched)
+    (effectId activateCommand) .dispatched
+  inflight := addCommand (addCommand emptyWorld.inflight policyCommand) activateCommand
 }
 
-def wCreate : World :=
-  beginCreate emptyWorld sid tenant workspace policy createOperation
-def wStartFenced : World := applyStartFence wCreate sid createdRecord
-def wPrepareDispatched : World := enqueue wStartFenced
-  (.prepareVm sid 1 1 firstVm firstSlot none)
-def wPrepared : World :=
-  prepareResources wPrepareDispatched sid createdRecord firstVm firstSlot
-def wNetworkConfigured : World :=
-  configureSlot wPrepared firstSlot firstUnconfiguredSlot
-def wActivated : World := activateResource wNetworkConfigured firstVm firstPreparedVm
-def wRunning : World :=
-  publishRunning wActivated sid preparedRecord firstSlot firstConfiguredSlot
+def policyApplied : World := applyFilePolicyResult readyToPublish sid preparedRecord
+def policyAcknowledged : World :=
+  acknowledgeEffect policyApplied (effectId policyCommand) effectResult
+def vmActivated : World := activateResource policyAcknowledged firstVm firstPreparedVm
+def running : World :=
+  publishRunning vmActivated sid preparedRecord firstSlot firstConfiguredSlot
 
-theorem create_step : Step emptyWorld
-    (.acceptCreate (.tenant tenant) tenant sid workspace policy createOperation) wCreate := by
-  apply Step.acceptCreate <;>
-    simp_all [wCreate, tenant, sid, workspace, policy, authorized, emptyWorld]
+theorem apply_policy_step :
+    Step readyToPublish (.applyFilePolicy sid 1) policyApplied := by
+  apply Step.applyFilePolicy (record := preparedRecord) <;>
+    simp [readyToPublish, preparedRecord, createdRecord, policyCommand,
+      effectDispatched, effectHasStatus, applyFilePolicyResult, setAppliedFilePolicy,
+      addCommand, setEffect, put, emptyWorld]
 
-theorem start_fence_step : Step wCreate (.installFence sid) wStartFenced := by
-  apply Step.installStartFence (record := createdRecord) <;>
-    simp_all [wCreate, wStartFenced, createdRecord, beginCreate, tenant, sid,
-      workspace, policy, createOperation, enqueue, addCommand, setSandbox,
-      setFilesystem, put, applyStartFence]
+theorem acknowledge_policy_step : Step policyApplied
+    (.acknowledgeEffect (effectId policyCommand) effectResult)
+    policyAcknowledged := by
+  apply Step.acknowledgeEffect <;>
+    simp [policyAcknowledged, policyApplied, readyToPublish, policyCommand,
+      preparedRecord, createdRecord, commandResultPresent,
+      applyFilePolicyResult, acknowledgeEffect,
+      effectId, setAppliedFilePolicy, setEffect, addCommand, put, emptyWorld]
 
-theorem dispatch_first_prepare_step : Step wStartFenced
-    (.dispatchPrepare sid firstVm firstSlot none) wPrepareDispatched := by
-  apply Step.dispatchPrepare (record := createdRecord) <;>
-    simp_all [wStartFenced, wPrepareDispatched, wCreate, createdRecord, beginCreate,
-      applyStartFence, tenant, sid, workspace, policy, createOperation,
-      firstVm, firstSlot, enqueue, addCommand, setFence, setSandbox,
-      setFilesystem, put, usableSnapshot, emptyWorld]
-
-theorem prepare_first_vm_step : Step wPrepareDispatched
-    (.prepareVm sid firstVm firstSlot none) wPrepared := by
-  apply Step.prepareVm (record := createdRecord) <;>
-    simp_all [wPrepareDispatched, wPrepared, wStartFenced, wCreate, createdRecord,
-      beginCreate, applyStartFence, prepareResources, tenant, sid, workspace,
-      policy, createOperation, firstVm, firstSlot, enqueue, addCommand,
-      setFence, setSandbox, setFilesystem, setVm, setNetSlot, put,
-      usableSnapshot, emptyWorld]
-
-theorem configure_first_network_step : Step wPrepared
-    (.configureNetwork sid firstSlot) wNetworkConfigured := by
-  apply Step.configureNetwork (record := preparedRecord)
-      (slot := firstUnconfiguredSlot) (vmId := firstVm) <;>
-    simp_all [wPrepared, wNetworkConfigured, wPrepareDispatched, wStartFenced,
-      wCreate, createdRecord, preparedRecord, firstUnconfiguredSlot,
-      beginCreate, applyStartFence, prepareResources, configureSlot, tenant,
-      sid, workspace, policy, createOperation, firstVm, firstSlot, enqueue,
-      addCommand, setFence, setSandbox, setFilesystem, setVm, setNetSlot, put]
-
-theorem activate_first_vm_step : Step wNetworkConfigured
-    (.activateVm sid firstVm) wActivated := by
+theorem activate_vm_step :
+    Step policyAcknowledged (.activateVm sid firstVm) vmActivated := by
   apply Step.activateVm (record := preparedRecord) (vm := firstPreparedVm) <;>
-    simp_all [wActivated, wNetworkConfigured, wPrepared, wPrepareDispatched,
-      wStartFenced, wCreate, createdRecord, preparedRecord, firstPreparedVm,
-      firstUnconfiguredSlot, firstConfiguredSlot, beginCreate, applyStartFence,
-      prepareResources, configureSlot, activateResource, tenant, sid,
-      workspace, policy, createOperation, firstVm, firstSlot, enqueue,
-      addCommand, setFence, setSandbox, setFilesystem, setVm, setNetSlot, put,
-      noExecutingVm, emptyWorld] <;> grind
+    simp [vmActivated, policyAcknowledged, policyApplied, readyToPublish,
+      preparedRecord, createdRecord, firstPreparedVm, firstConfiguredSlot,
+      activateCommand, effectDispatched, effectHasStatus, activateResource,
+      applyFilePolicyResult, acknowledgeEffect, setAppliedFilePolicy, setEffect,
+      effectId, setVm, addCommand, put, noExecutingVm, emptyWorld] <;> grind
 
-theorem publish_first_running_step : Step wActivated
-    (.publishRunning sid) wRunning := by
+theorem publish_running_step : Step vmActivated (.publishRunning sid) running := by
   apply Step.publishRunning (record := preparedRecord) (vm := firstExecutingVm)
       (vmId := firstVm) (slotId := firstSlot) (slot := firstConfiguredSlot)
+      (operation := createOpPending) (ledger := createLedgerPending)
   all_goals
-    simp [wRunning, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, createdRecord, preparedRecord,
-      firstPreparedVm, firstExecutingVm, firstUnconfiguredSlot,
-      firstConfiguredSlot, beginCreate, applyStartFence, prepareResources,
-      configureSlot, activateResource, publishRunning, tenant, sid, workspace,
-      policy, createOperation, firstVm, firstSlot, enqueue, addCommand,
-      setFence, setSandbox, setFilesystem, setVm, setNetSlot, put,
+    simp [running, vmActivated, policyAcknowledged, policyApplied,
+      readyToPublish, preparedRecord, createdRecord, firstPreparedVm,
+      firstExecutingVm, firstConfiguredSlot, policyCommand,
+      createLedgerPending, createInput, createOpPending,
+      activateResource, applyFilePolicyResult, acknowledgeEffect,
+      effectAcknowledged, effectHasStatus, publishRunning,
+      updateCurrentOperation, setAppliedFilePolicy, setEffect, setSandbox,
+      effectId, setVm, setNetSlot, addCommand, operationKey, put,
       noActiveSlot, emptyWorld] <;> grind
 
-theorem running_is_reachable : Reachable wRunning := by
-  exact Reachable.step
-    (Reachable.step
-      (Reachable.step
-        (Reachable.step
-          (Reachable.step
-            (Reachable.step
-              (Reachable.step Reachable.initial create_step)
-              start_fence_step)
-            dispatch_first_prepare_step)
-          prepare_first_vm_step)
-        configure_first_network_step)
-      activate_first_vm_step)
-    publish_first_running_step
+/-- This fragment witnesses the critical policy guard: apply, exact ack, then Running. -/
+theorem policy_to_running_trace :
+    Step readyToPublish (.applyFilePolicy sid 1) policyApplied ∧
+    Step policyApplied (.acknowledgeEffect (effectId policyCommand) effectResult)
+      policyAcknowledged ∧
+    Step policyAcknowledged (.activateVm sid firstVm) vmActivated ∧
+    Step vmActivated (.publishRunning sid) running :=
+  ⟨apply_policy_step, acknowledge_policy_step, activate_vm_step,
+    publish_running_step⟩
+
+abbrev pauseOpPending : Operation := ⟨pauseOperation, 2, .pause, .pending⟩
+abbrev pauseLedgerPending : OperationLedgerRecord :=
+  ⟨sid, pauseOpPending, .pause 1, none⟩
 
 def pausingRecord : SandboxRecord := {
-  runningRecord with
+  preparedRecord with
   phase := .pausing
   epoch := 2
   desired := .closed
-  currentOperation := some ⟨pauseOperation, 2, .pause, .pending⟩
+  effective := .closed
+  currentOperation := some pauseOpPending
 }
 
-def pausingClosedRecord : SandboxRecord :=
-  { pausingRecord with effective := .closed }
-
-def localSnapshot : Snapshot := {
-  owner := tenant
-  sandbox := sid
-  sourceGeneration := 1
-  workspace := workspace
-  stage := .localSealed
-  immutable := false
-}
-
+def frozenVm : Vm := ⟨tenant, sid, 1, .frozen⟩
+def stoppedVm : Vm := ⟨tenant, sid, 1, .stopped⟩
+def sealedSnapshot : Snapshot :=
+  ⟨tenant, sid, 1, workspace, manifest, .localSealed, false⟩
 def durableSnapshot : Snapshot :=
-  { localSnapshot with stage := .durable, immutable := true }
+  ⟨tenant, sid, 1, workspace, manifest, .durable, true⟩
 
-def pausedRecord : SandboxRecord := {
-  pausingClosedRecord with
-  phase := .paused
-  currentVm := none
-  durableSnapshot := some snapshot
-  restoreFrom := none
-  netSlot := none
-  desired := .paused sid snapshot
-  effective := .paused sid snapshot
-  currentOperation := some ⟨pauseOperation, 2, .pause, .succeeded⟩
+def readyToSeal : World := {
+  emptyWorld with
+  sandboxes := put emptyWorld.sandboxes sid pausingRecord
+  vms := put emptyWorld.vms firstVm frozenVm
+  filesystems := put emptyWorld.filesystems workspace ⟨tenant, sid, 1⟩
+  workerFences := put emptyWorld.workerFences sid ⟨2, false⟩
+  operations := put emptyWorld.operations (operationKey sid pauseOperation)
+    pauseLedgerPending
 }
 
-def wPauseAccepted : World :=
-  beginPause wRunning sid runningRecord pauseOperation firstVm
-def wPauseFenced : World := applyRevocationFence wPauseAccepted sid pausingRecord
-def wFrozen : World := setVm wPauseFenced firstVm firstFrozenVm
-def wSnapshotSealed : World := sealSnapshot wFrozen snapshot pausingClosedRecord sid
-def wSnapshotDurable : World :=
-  makeSnapshotDurable wSnapshotSealed snapshot localSnapshot
-def wFirstStopped : World := stopResource wSnapshotDurable firstVm firstFrozenVm
-def wPaused : World := publishPaused wFirstStopped sid pausingClosedRecord snapshot
+def snapshotSealed : World := sealSnapshot readyToSeal snapshot manifest pausingRecord sid
+def snapshotDurable : World := makeSnapshotDurable snapshotSealed snapshot sealedSnapshot
+def vmStopped : World := stopResource snapshotDurable firstVm frozenVm
+def paused : World := publishPaused vmStopped sid pausingRecord source
 
-theorem accept_pause_step : Step wRunning
-    (.acceptPause (.tenant tenant) sid pauseOperation) wPauseAccepted := by
-  apply Step.acceptPause (record := runningRecord) (vmId := firstVm) <;>
-    simp_all [wPauseAccepted, wRunning, runningRecord, preparedRecord,
-      createdRecord, firstActiveSlot, firstConfiguredSlot,
-      firstUnconfiguredSlot, firstExecutingVm, beginPause, publishRunning,
-      wActivated, wNetworkConfigured, wPrepared, wPrepareDispatched,
-      wStartFenced, wCreate, beginCreate, applyStartFence, prepareResources,
-      configureSlot, activateResource, tenant, sid, workspace, policy,
-      createOperation, pauseOperation, firstVm, firstSlot, authorized,
-      enqueue, addCommand, setFence, setSandbox, setFilesystem, setVm,
-      setNetSlot, put, emptyWorld]
+theorem seal_manifest_step :
+    Step readyToSeal (.sealSnapshot sid snapshot manifest) snapshotSealed := by
+  apply Step.sealSnapshot (record := pausingRecord) (vmId := firstVm)
+      (vm := frozenVm) <;>
+    simp [readyToSeal, snapshotSealed, pausingRecord, preparedRecord,
+      createdRecord, frozenVm, sealSnapshot, setSnapshot, put, emptyWorld]
 
-theorem pause_fence_step : Step wPauseAccepted
-    (.installFence sid) wPauseFenced := by
-  apply Step.installRevocationFence (record := pausingRecord) <;>
-    simp_all [wPauseFenced, wPauseAccepted, wRunning, pausingRecord,
-      runningRecord, preparedRecord, createdRecord, firstActiveSlot,
-      firstConfiguredSlot, firstUnconfiguredSlot, firstExecutingVm,
-      beginPause, applyRevocationFence, publishRunning, wActivated,
-      wNetworkConfigured, wPrepared, wPrepareDispatched, wStartFenced,
-      wCreate, beginCreate, applyStartFence, prepareResources, configureSlot,
-      activateResource, tenant, sid, workspace, policy, createOperation,
-      pauseOperation, firstVm, firstSlot, enqueue, addCommand, setFence,
-      setSandbox, setFilesystem, setVm, setNetSlot, put, emptyWorld] <;> grind
+theorem commit_manifest_step :
+    Step snapshotSealed (.commitSnapshot snapshot) snapshotDurable := by
+  apply Step.commitSnapshot (snapshot := sealedSnapshot) <;>
+    simp [snapshotSealed, snapshotDurable, readyToSeal, sealedSnapshot,
+      pausingRecord, preparedRecord, createdRecord, sealSnapshot,
+      makeSnapshotDurable, setSnapshot, put, emptyWorld]
 
-theorem freeze_first_vm_step : Step wPauseFenced
-    (.freezeVm sid firstVm) wFrozen := by
-  apply Step.freezeVm (record := pausingClosedRecord) (vm := firstExecutingVm) <;>
-    simp_all [wFrozen, wPauseFenced, wPauseAccepted, wRunning,
-      pausingClosedRecord, pausingRecord, runningRecord, preparedRecord,
-      createdRecord, firstActiveSlot, firstConfiguredSlot,
-      firstUnconfiguredSlot, firstPreparedVm, firstExecutingVm, firstFrozenVm, beginPause,
-      applyRevocationFence, publishRunning, wActivated, wNetworkConfigured,
-      wPrepared, wPrepareDispatched, wStartFenced, wCreate, beginCreate,
-      applyStartFence, prepareResources, configureSlot, activateResource,
-      tenant, sid, workspace, policy, createOperation, pauseOperation,
-      firstVm, firstSlot, enqueue, addCommand, setFence, setSandbox,
-      setFilesystem, setVm, setNetSlot, put, emptyWorld]
+theorem stop_for_pause_step :
+    Step snapshotDurable (.stopVm sid firstVm) vmStopped := by
+  apply Step.stopVm (vm := frozenVm) <;>
+    simp [snapshotDurable, snapshotSealed, readyToSeal, frozenVm,
+      sealedSnapshot, pausingRecord, preparedRecord, createdRecord,
+      sealSnapshot, makeSnapshotDurable, stopResource,
+      setSnapshot, setVm, put, emptyWorld]
 
-theorem seal_snapshot_step : Step wFrozen
-    (.sealSnapshot sid snapshot) wSnapshotSealed := by
-  apply Step.sealSnapshot (record := pausingClosedRecord) (vmId := firstVm)
-      (vm := firstFrozenVm) <;>
-    simp_all [wSnapshotSealed, wFrozen, wPauseFenced, wPauseAccepted,
-      wRunning, localSnapshot, pausingClosedRecord, pausingRecord,
-      runningRecord, preparedRecord, createdRecord, firstActiveSlot,
-      firstConfiguredSlot, firstUnconfiguredSlot, firstExecutingVm,
-      firstFrozenVm, beginPause, applyRevocationFence, publishRunning,
-      sealSnapshot, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, beginCreate, applyStartFence,
-      prepareResources, configureSlot, activateResource, tenant, sid,
-      workspace, policy, createOperation, pauseOperation, firstVm, firstSlot,
-      snapshot, enqueue, addCommand, setFence, setSandbox, setFilesystem,
-      setVm, setSnapshot, setNetSlot, put, emptyWorld]
+theorem publish_paused_step : Step vmStopped (.publishPaused sid snapshot) paused := by
+  apply Step.publishPaused (record := pausingRecord) (source := source)
+      (snapshot := durableSnapshot) (operation := pauseOpPending)
+      (ledger := pauseLedgerPending) <;>
+    simp [paused, vmStopped, snapshotDurable, snapshotSealed, readyToSeal,
+      pausingRecord, preparedRecord, createdRecord, frozenVm, stoppedVm,
+      sealedSnapshot, durableSnapshot, source, pauseOpPending,
+      pauseLedgerPending, sealSnapshot,
+      makeSnapshotDurable, stopResource, publishPaused,
+      updateCurrentOperation, setSnapshot, setVm, setSandbox, operationKey,
+      put, noExecutingVm, noActiveSlot, emptyWorld] <;> grind
 
-theorem commit_snapshot_step : Step wSnapshotSealed
-    (.commitSnapshot snapshot) wSnapshotDurable := by
-  apply Step.commitSnapshot (snapshot := localSnapshot) <;>
-    simp_all [wSnapshotDurable, wSnapshotSealed, localSnapshot,
-      makeSnapshotDurable, sealSnapshot, wFrozen, wPauseFenced,
-      wPauseAccepted, wRunning, pausingClosedRecord, pausingRecord,
-      runningRecord, preparedRecord, createdRecord, firstActiveSlot,
-      firstConfiguredSlot, firstUnconfiguredSlot, firstExecutingVm,
-      firstFrozenVm, beginPause, applyRevocationFence, publishRunning,
-      wActivated, wNetworkConfigured, wPrepared, wPrepareDispatched,
-      wStartFenced, wCreate, beginCreate, applyStartFence, prepareResources,
-      configureSlot, activateResource, tenant, sid, workspace, policy,
-      createOperation, pauseOperation, firstVm, firstSlot, snapshot, enqueue,
-      addCommand, setFence, setSandbox, setFilesystem, setVm, setSnapshot,
-      setNetSlot, put, emptyWorld]
+/-- A committed manifest leads to Paused with the exact `(snapshot, manifest)` source. -/
+theorem manifest_to_paused_trace :
+    Step readyToSeal (.sealSnapshot sid snapshot manifest) snapshotSealed ∧
+    Step snapshotSealed (.commitSnapshot snapshot) snapshotDurable ∧
+    Step snapshotDurable (.stopVm sid firstVm) vmStopped ∧
+    Step vmStopped (.publishPaused sid snapshot) paused :=
+  ⟨seal_manifest_step, commit_manifest_step, stop_for_pause_step,
+    publish_paused_step⟩
 
-theorem stop_first_vm_step : Step wSnapshotDurable
-    (.stopVm sid firstVm) wFirstStopped := by
-  apply Step.stopVm (vm := firstFrozenVm) <;>
-    simp_all [wFirstStopped, wSnapshotDurable, wSnapshotSealed, wFrozen,
-      wPauseFenced, wPauseAccepted, wRunning, localSnapshot, durableSnapshot,
-      pausingClosedRecord, pausingRecord, runningRecord, preparedRecord,
-      createdRecord, firstActiveSlot, firstConfiguredSlot,
-      firstUnconfiguredSlot, firstExecutingVm, firstFrozenVm, beginPause,
-      applyRevocationFence, publishRunning, sealSnapshot,
-      makeSnapshotDurable, stopResource, wActivated, wNetworkConfigured,
-      wPrepared, wPrepareDispatched, wStartFenced, wCreate, beginCreate,
-      applyStartFence, prepareResources, configureSlot, activateResource,
-      tenant, sid, workspace, policy, createOperation, pauseOperation,
-      firstVm, firstSlot, snapshot, enqueue, addCommand, setFence, setSandbox,
-      setFilesystem, setVm, setSnapshot, setNetSlot, put, emptyWorld]
+theorem accept_resume_step :
+    Step paused (.acceptResume (.tenant tenant) sid resumeOperation)
+      (beginResume paused sid
+        { pausingRecord with
+          phase := .paused
+          currentVm := none
+          durableSnapshot := some source
+          restoreFrom := none
+          netSlot := none
+          desired := .paused sid source
+          effective := .paused sid source
+          currentOperation := some { pauseOpPending with status := .succeeded } }
+        resumeOperation source) := by
+  apply Step.acceptResume <;>
+    simp [paused, vmStopped, snapshotDurable, snapshotSealed, readyToSeal,
+      pausingRecord, preparedRecord, createdRecord, pauseOpPending,
+      sealedSnapshot, durableSnapshot, source, sealSnapshot,
+      makeSnapshotDurable, stopResource, publishPaused,
+      updateCurrentOperation, usableSnapshot, setSnapshot, setVm, setSandbox,
+      operationKey, put, authorized, emptyWorld]
 
-theorem publish_paused_step : Step wFirstStopped
-    (.publishPaused sid snapshot) wPaused := by
-  apply Step.publishPaused (record := pausingClosedRecord)
-      (snapshot := durableSnapshot) <;>
-    simp_all [wPaused, wFirstStopped, wSnapshotDurable, wSnapshotSealed,
-      wFrozen, wPauseFenced, wPauseAccepted, wRunning, localSnapshot,
-      durableSnapshot, pausedRecord, pausingClosedRecord, pausingRecord,
-      runningRecord, preparedRecord, createdRecord, firstActiveSlot,
-      firstConfiguredSlot, firstUnconfiguredSlot, firstExecutingVm,
-      firstFrozenVm, firstStoppedVm, beginPause, applyRevocationFence,
-      publishRunning, sealSnapshot, makeSnapshotDurable, stopResource,
-      publishPaused, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, beginCreate, applyStartFence,
-      prepareResources, configureSlot, activateResource, tenant, sid,
-      workspace, policy, createOperation, pauseOperation, firstVm, firstSlot,
-      snapshot, enqueue, addCommand, setFence, setSandbox, setFilesystem,
-      setVm, setSnapshot, setNetSlot, put, noExecutingVm, noActiveSlot,
-      emptyWorld] <;> grind
+/-- Retry and query are read-only views of the persisted operation decision. -/
+def runningLedger : OperationLedgerRecord :=
+  ⟨sid, createOpSucceeded, createInput, some (.running 1)⟩
 
-theorem paused_is_reachable : Reachable wPaused := by
-  exact Reachable.step
-    (Reachable.step
-      (Reachable.step
-        (Reachable.step
-          (Reachable.step
-            (Reachable.step
-              (Reachable.step running_is_reachable accept_pause_step)
-              pause_fence_step)
-            freeze_first_vm_step)
-          seal_snapshot_step)
-        commit_snapshot_step)
-      stop_first_vm_step)
-    publish_paused_step
-
-def resumingRecord : SandboxRecord := {
-  pausedRecord with
-  phase := .starting
-  epoch := 3
-  generation := 2
-  currentVm := none
-  restoreFrom := some snapshot
-  netSlot := none
-  desired := .closed
-  effective := .closed
-  currentOperation := some ⟨resumeOperation, 3, .resume, .pending⟩
-}
-
-def secondPreparedRecord : SandboxRecord :=
-  { resumingRecord with currentVm := some secondVm, netSlot := some secondSlot }
-
-def secondPreparedVm : Vm := ⟨tenant, sid, 2, .prepared⟩
-def secondExecutingVm : Vm := ⟨tenant, sid, 2, .executing⟩
-def secondStoppedVm : Vm := ⟨tenant, sid, 2, .stopped⟩
-
-def secondUnconfiguredSlot : NetSlot := {
-  owner := tenant
-  sandbox := sid
-  generation := 2
-  vm := secondVm
-  policy := policy
-  configured := false
-  active := false
-}
-
-def secondConfiguredSlot : NetSlot :=
-  { secondUnconfiguredSlot with configured := true }
-
-def secondActiveSlot : NetSlot :=
-  { secondConfiguredSlot with active := true }
-
-def resumedRunningRecord : SandboxRecord := {
-  secondPreparedRecord with
+def operationRecord : SandboxRecord := {
+  preparedRecord with
   phase := .running
-  terminal := false
-  restoreFrom := none
-  desired := .running sid 2 secondVm workspace .readWrite secondSlot policy
-  effective := .running sid 2 secondVm workspace .readWrite secondSlot policy
-  currentOperation := some ⟨resumeOperation, 3, .resume, .succeeded⟩
+  desired := .running sid 1 firstVm workspace .managedReadWrite firstSlot policy
+  effective := .running sid 1 firstVm workspace .managedReadWrite firstSlot policy
+  currentOperation := some createOpSucceeded
 }
 
-def wResumeAccepted : World :=
-  beginResume wPaused sid pausedRecord resumeOperation snapshot
-def wResumeFenced : World := applyStartFence wResumeAccepted sid resumingRecord
-def wSecondPrepareDispatched : World := enqueue wResumeFenced
-  (.prepareVm sid 3 2 secondVm secondSlot (some snapshot))
-def wSecondPrepared : World :=
-  prepareResources wSecondPrepareDispatched sid resumingRecord secondVm secondSlot
-def wSecondNetworkConfigured : World :=
-  configureSlot wSecondPrepared secondSlot secondUnconfiguredSlot
-def wSecondActivated : World :=
-  activateResource wSecondNetworkConfigured secondVm secondPreparedVm
-def wResumedRunning : World :=
-  publishRunning wSecondActivated sid secondPreparedRecord secondSlot
-    secondConfiguredSlot
+def operationWorld : World := {
+  emptyWorld with
+  sandboxes := put emptyWorld.sandboxes sid operationRecord
+  operations := put emptyWorld.operations (operationKey sid createOperation)
+    runningLedger
+}
 
-theorem accept_resume_step : Step wPaused
-    (.acceptResume (.tenant tenant) sid resumeOperation) wResumeAccepted := by
-  apply Step.acceptResume (record := pausedRecord) (snapshotId := snapshot) <;>
-    simp_all [wResumeAccepted, wPaused, pausedRecord, pausingClosedRecord,
-      pausingRecord, runningRecord, preparedRecord, createdRecord,
-      durableSnapshot, localSnapshot, wFirstStopped, wSnapshotDurable,
-      wSnapshotSealed, wFrozen, wPauseFenced, wPauseAccepted, wRunning,
-      beginResume, publishPaused, stopResource, makeSnapshotDurable,
-      sealSnapshot, beginPause, applyRevocationFence, publishRunning,
-      wActivated, wNetworkConfigured, wPrepared, wPrepareDispatched,
-      wStartFenced, wCreate, beginCreate, applyStartFence, prepareResources,
-      configureSlot, activateResource, tenant, sid, workspace, policy,
-      createOperation, pauseOperation, resumeOperation, firstVm, firstSlot,
-      snapshot, firstPreparedVm, firstExecutingVm, firstFrozenVm,
-      firstUnconfiguredSlot, firstConfiguredSlot, authorized, usableSnapshot,
-      enqueue, addCommand, setFence, setSandbox, setFilesystem, setVm,
-      setSnapshot, setNetSlot, put, emptyWorld]
+theorem retry_is_idempotent : Step operationWorld
+    (.retryOperation (.tenant tenant) sid createOperation .create createInput)
+    operationWorld := by
+  exact Step.retryOperation (record := operationRecord) (ledger := runningLedger)
+    (by simp [operationWorld, operationRecord, put, emptyWorld])
+    (by simp [operationRecord, preparedRecord, createdRecord, authorized])
+    (by simp [operationWorld, runningLedger, operationKey, put, emptyWorld])
+    rfl rfl
 
-theorem resume_fence_step : Step wResumeAccepted
-    (.installFence sid) wResumeFenced := by
-  apply Step.installStartFence (record := resumingRecord) <;>
-    simp_all [wResumeFenced, wResumeAccepted, resumingRecord, wPaused,
-      pausedRecord, pausingClosedRecord, pausingRecord, runningRecord,
-      preparedRecord, createdRecord, durableSnapshot, localSnapshot,
-      wFirstStopped, wSnapshotDurable, wSnapshotSealed, wFrozen,
-      wPauseFenced, wPauseAccepted, wRunning, beginResume, publishPaused,
-      stopResource, makeSnapshotDurable, sealSnapshot, beginPause,
-      applyRevocationFence, publishRunning, wActivated, wNetworkConfigured,
-      wPrepared, wPrepareDispatched, wStartFenced, wCreate, beginCreate,
-      applyStartFence, prepareResources, configureSlot, activateResource,
-      tenant, sid, workspace, policy, createOperation, pauseOperation,
-      resumeOperation, firstVm, firstSlot, snapshot, firstPreparedVm,
-      firstExecutingVm, firstFrozenVm, firstUnconfiguredSlot,
-      firstConfiguredSlot, enqueue, addCommand, setFence, setSandbox,
-      setFilesystem, setVm, setSnapshot, setNetSlot, put, emptyWorld]
+theorem query_returns_saved_result : Step operationWorld
+    (.queryOperation (.tenant tenant) sid createOperation .succeeded
+      (some (.running 1))) operationWorld := by
+  exact Step.queryOperation (record := operationRecord) (ledger := runningLedger)
+    (by simp [operationWorld, operationRecord, put, emptyWorld])
+    (by simp [operationRecord, preparedRecord, createdRecord, authorized])
+    (by simp [operationWorld, runningLedger, operationKey, put, emptyWorld])
+    rfl rfl
 
-theorem dispatch_second_prepare_step : Step wResumeFenced
-    (.dispatchPrepare sid secondVm secondSlot (some snapshot))
-    wSecondPrepareDispatched := by
-  apply Step.dispatchPrepare (record := resumingRecord) <;>
-    simp_all [wSecondPrepareDispatched, wResumeFenced, wResumeAccepted,
-      resumingRecord, wPaused, pausedRecord, pausingClosedRecord,
-      pausingRecord, runningRecord, preparedRecord, createdRecord,
-      durableSnapshot, localSnapshot, wFirstStopped, wSnapshotDurable,
-      wSnapshotSealed, wFrozen, wPauseFenced, wPauseAccepted, wRunning,
-      beginResume, publishPaused, stopResource, makeSnapshotDurable,
-      sealSnapshot, beginPause, applyRevocationFence, publishRunning,
-      wActivated, wNetworkConfigured, wPrepared, wPrepareDispatched,
-      wStartFenced, wCreate, beginCreate, applyStartFence, prepareResources,
-      configureSlot, activateResource, tenant, sid, workspace, policy,
-      createOperation, pauseOperation, resumeOperation, firstVm, secondVm,
-      firstSlot, secondSlot, snapshot, firstPreparedVm, firstExecutingVm,
-      firstFrozenVm, firstUnconfiguredSlot, firstConfiguredSlot,
-      usableSnapshot, enqueue, addCommand, setFence, setSandbox,
-      setFilesystem, setVm, setSnapshot, setNetSlot, put, emptyWorld]
+/-- Journal commit survives a controller crash before dispatch. -/
+def crashedAfterCommit : World := { wCreate with controllerUp := false }
+def recoveredAfterCommit : World := { crashedAfterCommit with controllerUp := true }
 
-theorem prepare_second_vm_step : Step wSecondPrepareDispatched
-    (.prepareVm sid secondVm secondSlot (some snapshot)) wSecondPrepared := by
-  apply Step.prepareVm (record := resumingRecord) <;>
-    simp_all [wSecondPrepared, wSecondPrepareDispatched, wResumeFenced,
-      wResumeAccepted, resumingRecord, wPaused, pausedRecord,
-      pausingClosedRecord, pausingRecord, runningRecord, preparedRecord,
-      createdRecord, durableSnapshot, localSnapshot, wFirstStopped,
-      wSnapshotDurable, wSnapshotSealed, wFrozen, wPauseFenced,
-      wPauseAccepted, wRunning, beginResume, publishPaused, stopResource,
-      makeSnapshotDurable, sealSnapshot, beginPause, applyRevocationFence,
-      publishRunning, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, beginCreate, applyStartFence,
-      prepareResources, configureSlot, activateResource, tenant, sid,
-      workspace, policy, createOperation, pauseOperation, resumeOperation,
-      firstVm, secondVm, firstSlot, secondSlot, snapshot, firstPreparedVm,
-      firstExecutingVm, firstFrozenVm, firstUnconfiguredSlot,
-      firstConfiguredSlot, usableSnapshot, enqueue, addCommand, setFence,
-      setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot, put,
-      emptyWorld]
+theorem crash_after_commit_step : Step wCreate .controllerCrash crashedAfterCommit := by
+  apply Step.controllerCrash
+  simp [wCreate, beginCreate, enqueue, commitEffect, storeNewOperation,
+    setOperation, setEffect, setSandbox, setFilesystem, operationKey,
+    put, emptyWorld]
 
-theorem configure_second_network_step : Step wSecondPrepared
-    (.configureNetwork sid secondSlot) wSecondNetworkConfigured := by
-  apply Step.configureNetwork (record := secondPreparedRecord)
-      (slot := secondUnconfiguredSlot) (vmId := secondVm) <;>
-    simp_all [wSecondNetworkConfigured, wSecondPrepared,
-      wSecondPrepareDispatched, wResumeFenced, wResumeAccepted,
-      secondPreparedRecord, secondUnconfiguredSlot, resumingRecord, wPaused,
-      pausedRecord, pausingClosedRecord, pausingRecord, runningRecord,
-      preparedRecord, createdRecord, durableSnapshot, localSnapshot,
-      wFirstStopped, wSnapshotDurable, wSnapshotSealed, wFrozen,
-      wPauseFenced, wPauseAccepted, wRunning, beginResume, publishPaused,
-      stopResource, makeSnapshotDurable, sealSnapshot, beginPause,
-      applyRevocationFence, publishRunning, wActivated, wNetworkConfigured,
-      wPrepared, wPrepareDispatched, wStartFenced, wCreate, beginCreate,
-      applyStartFence, prepareResources, configureSlot, activateResource,
-      tenant, sid, workspace, policy, createOperation, pauseOperation,
-      resumeOperation, firstVm, secondVm, firstSlot, secondSlot, snapshot,
-      firstPreparedVm, firstExecutingVm, firstFrozenVm,
-      firstUnconfiguredSlot, firstConfiguredSlot, enqueue, addCommand,
-      setFence, setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot,
+theorem recover_after_commit_step :
+    Step crashedAfterCommit .controllerRecover recoveredAfterCommit := by
+  exact Step.controllerRecover (by simp [crashedAfterCommit])
+
+theorem committed_effect_survives_crash :
+    recoveredAfterCommit.effects (effectId (.installFence sid 1 false)) =
+      some .committed := by
+  simp [recoveredAfterCommit, crashedAfterCommit, wCreate, beginCreate,
+    enqueue, commitEffect, setEffect, storeNewOperation, setOperation,
+    setSandbox, setFilesystem, operationKey, put, emptyWorld]
+
+/-- A delayed generation-1 cleanup reclaims only its exact old VM. -/
+def cleanupReady : World := {
+  emptyWorld with
+  sandboxes := put emptyWorld.sandboxes sid
+    { preparedRecord with
+      generation := 2
+      currentVm := some secondVm
+      netSlot := some secondSlot }
+  vms := put (put emptyWorld.vms firstVm stoppedVm) secondVm
+    ⟨tenant, sid, 2, .executing⟩
+  effects := put emptyWorld.effects
+    (effectId (.cleanupVm sid 3 1 firstVm)) .dispatched
+  inflight := addCommand emptyWorld.inflight (.cleanupVm sid 3 1 firstVm)
+}
+
+def cleanupDone : World := reclaimVm cleanupReady firstVm stoppedVm
+
+theorem delayed_cleanup_step :
+    Step cleanupReady (.cleanupVm sid 1 firstVm) cleanupDone := by
+  apply Step.cleanupVm (epoch := 3) (vm := stoppedVm) <;>
+    simp [cleanupReady, cleanupDone, preparedRecord, createdRecord, stoppedVm,
+      effectDispatched, effectHasStatus, reclaimVm, addCommand, setVm,
       put, emptyWorld]
 
-theorem activate_second_vm_step : Step wSecondNetworkConfigured
-    (.activateVm sid secondVm) wSecondActivated := by
-  apply Step.activateVm (record := secondPreparedRecord) (vm := secondPreparedVm) <;>
-    simp_all [wSecondActivated, wSecondNetworkConfigured, wSecondPrepared,
-      wSecondPrepareDispatched, wResumeFenced, wResumeAccepted,
-      secondPreparedRecord, secondPreparedVm, secondUnconfiguredSlot,
-      secondConfiguredSlot, resumingRecord, wPaused, pausedRecord,
-      pausingClosedRecord, pausingRecord, runningRecord, preparedRecord,
-      createdRecord, durableSnapshot, localSnapshot, wFirstStopped,
-      wSnapshotDurable, wSnapshotSealed, wFrozen, wPauseFenced,
-      wPauseAccepted, wRunning, beginResume, publishPaused, stopResource,
-      makeSnapshotDurable, sealSnapshot, beginPause, applyRevocationFence,
-      publishRunning, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, beginCreate, applyStartFence,
-      prepareResources, configureSlot, activateResource, tenant, sid,
-      workspace, policy, createOperation, pauseOperation, resumeOperation,
-      firstVm, secondVm, firstSlot, secondSlot, snapshot, firstPreparedVm,
-      firstExecutingVm, firstFrozenVm, firstStoppedVm,
-      firstUnconfiguredSlot, firstConfiguredSlot, enqueue, addCommand,
-      setFence, setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot,
-      put, noExecutingVm, emptyWorld] <;> grind
-
-theorem publish_resumed_running_step : Step wSecondActivated
-    (.publishRunning sid) wResumedRunning := by
-  apply Step.publishRunning (record := secondPreparedRecord)
-      (vmId := secondVm) (vm := secondExecutingVm) (slotId := secondSlot)
-      (slot := secondConfiguredSlot)
-  all_goals
-    simp [wResumedRunning, wSecondActivated, wSecondNetworkConfigured,
-      wSecondPrepared, wSecondPrepareDispatched, wResumeFenced,
-      wResumeAccepted, resumedRunningRecord, secondPreparedRecord,
-      secondPreparedVm, secondExecutingVm, secondUnconfiguredSlot,
-      secondConfiguredSlot, resumingRecord, wPaused, pausedRecord,
-      pausingClosedRecord, pausingRecord, runningRecord, preparedRecord,
-      createdRecord, durableSnapshot, localSnapshot, wFirstStopped,
-      wSnapshotDurable, wSnapshotSealed, wFrozen, wPauseFenced,
-      wPauseAccepted, wRunning, beginResume, publishPaused, stopResource,
-      makeSnapshotDurable, sealSnapshot, beginPause, applyRevocationFence,
-      publishRunning, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, beginCreate, applyStartFence,
-      prepareResources, configureSlot, activateResource, tenant, sid,
-      workspace, policy, createOperation, pauseOperation, resumeOperation,
-      firstVm, secondVm, firstSlot, secondSlot, snapshot, firstPreparedVm,
-      firstExecutingVm, firstFrozenVm, firstStoppedVm,
-      firstUnconfiguredSlot, firstConfiguredSlot, enqueue, addCommand,
-      setFence, setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot,
-      put, noActiveSlot, emptyWorld] <;> grind
-
-theorem resumed_running_is_reachable : Reachable wResumedRunning := by
-  exact Reachable.step
-    (Reachable.step
-      (Reachable.step
-        (Reachable.step
-          (Reachable.step
-            (Reachable.step
-              (Reachable.step paused_is_reachable accept_resume_step)
-              resume_fence_step)
-            dispatch_second_prepare_step)
-          prepare_second_vm_step)
-        configure_second_network_step)
-      activate_second_vm_step)
-    publish_resumed_running_step
-
-def revokingRecord : SandboxRecord := {
-  resumedRunningRecord with
-  phase := .revoking
-  terminal := true
-  epoch := 4
-  desired := .closed
-  currentOperation := some ⟨killOperation, 4, .kill, .pending⟩
-}
-
-def revokingClosedRecord : SandboxRecord :=
-  { revokingRecord with effective := .closed }
-
-def destroyedRecord : SandboxRecord := {
-  revokingClosedRecord with
-  phase := .destroyed
-  terminal := true
-  currentVm := none
-  netSlot := none
-  desired := .closed
-  effective := .closed
-  currentOperation := some ⟨killOperation, 4, .kill, .succeeded⟩
-}
-
-def wKillAccepted : World :=
-  beginKill wResumedRunning sid resumedRunningRecord killOperation
-def wKillFenced : World := applyRevocationFence wKillAccepted sid revokingRecord
-def wSecondStopped : World :=
-  stopResource wKillFenced secondVm secondExecutingVm
-def wDestroyed : World :=
-  publishDestroyed wSecondStopped sid revokingClosedRecord
-
-theorem accept_kill_step : Step wResumedRunning
-    (.acceptKill (.tenant tenant) sid killOperation) wKillAccepted := by
-  apply Step.acceptKill (record := resumedRunningRecord) <;>
-    simp_all [wKillAccepted, wResumedRunning, resumedRunningRecord,
-      secondPreparedRecord, secondPreparedVm, secondExecutingVm,
-      secondUnconfiguredSlot, secondConfiguredSlot, resumingRecord,
-      wSecondActivated, wSecondNetworkConfigured, wSecondPrepared,
-      wSecondPrepareDispatched, wResumeFenced, wResumeAccepted, wPaused,
-      pausedRecord, pausingClosedRecord, pausingRecord, runningRecord,
-      preparedRecord, createdRecord, durableSnapshot, localSnapshot,
-      wFirstStopped, wSnapshotDurable, wSnapshotSealed, wFrozen,
-      wPauseFenced, wPauseAccepted, wRunning, beginKill, beginResume,
-      publishPaused, stopResource, makeSnapshotDurable, sealSnapshot,
-      beginPause, applyRevocationFence, publishRunning, wActivated,
-      wNetworkConfigured, wPrepared, wPrepareDispatched, wStartFenced,
-      wCreate, beginCreate, applyStartFence, prepareResources, configureSlot,
-      activateResource, tenant, sid, workspace, policy, createOperation,
-      pauseOperation, resumeOperation, killOperation, firstVm, secondVm,
-      firstSlot, secondSlot, snapshot, firstPreparedVm, firstExecutingVm,
-      firstFrozenVm, firstStoppedVm, firstUnconfiguredSlot,
-      firstConfiguredSlot, authorized, Authority.withoutResume, enqueue,
-      addCommand, setFence, setSandbox, setFilesystem, setVm, setSnapshot,
-      setNetSlot, put, emptyWorld]
-
-theorem kill_fence_step : Step wKillAccepted
-    (.installFence sid) wKillFenced := by
-  apply Step.installRevocationFence (record := revokingRecord) <;>
-    simp_all [wKillFenced, wKillAccepted, revokingRecord, wResumedRunning,
-      resumedRunningRecord, secondPreparedRecord, secondPreparedVm,
-      secondExecutingVm, secondUnconfiguredSlot, secondConfiguredSlot,
-      resumingRecord, wSecondActivated, wSecondNetworkConfigured,
-      wSecondPrepared, wSecondPrepareDispatched, wResumeFenced,
-      wResumeAccepted, wPaused, pausedRecord, pausingClosedRecord,
-      pausingRecord, runningRecord, preparedRecord, createdRecord,
-      durableSnapshot, localSnapshot, wFirstStopped, wSnapshotDurable,
-      wSnapshotSealed, wFrozen, wPauseFenced, wPauseAccepted, wRunning,
-      beginKill, beginResume, publishPaused, stopResource,
-      makeSnapshotDurable, sealSnapshot, beginPause, applyRevocationFence,
-      publishRunning, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, beginCreate,
-      applyStartFence, prepareResources, configureSlot, activateResource,
-      tenant, sid, workspace, policy, createOperation, pauseOperation,
-      resumeOperation, killOperation, firstVm, secondVm, firstSlot,
-      secondSlot, snapshot, firstPreparedVm, firstExecutingVm,
-      firstFrozenVm, firstStoppedVm, firstUnconfiguredSlot,
-      firstConfiguredSlot, Authority.withoutResume, enqueue, addCommand,
-      setFence, setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot,
-      put, emptyWorld] <;> grind
-
-theorem stop_second_vm_step : Step wKillFenced
-    (.stopVm sid secondVm) wSecondStopped := by
-  apply Step.stopVm (vm := secondExecutingVm) <;>
-    simp_all [wSecondStopped, wKillFenced, wKillAccepted,
-      revokingClosedRecord, revokingRecord, wResumedRunning,
-      resumedRunningRecord, secondPreparedRecord, secondPreparedVm,
-      secondExecutingVm, secondUnconfiguredSlot, secondConfiguredSlot,
-      resumingRecord, wSecondActivated, wSecondNetworkConfigured,
-      wSecondPrepared, wSecondPrepareDispatched, wResumeFenced,
-      wResumeAccepted, wPaused, pausedRecord, pausingClosedRecord,
-      pausingRecord, runningRecord, preparedRecord, createdRecord,
-      durableSnapshot, localSnapshot, wFirstStopped, wSnapshotDurable,
-      wSnapshotSealed, wFrozen, wPauseFenced, wPauseAccepted, wRunning,
-      beginKill, beginResume, publishPaused, stopResource,
-      makeSnapshotDurable, sealSnapshot, beginPause, applyRevocationFence,
-      publishRunning, wActivated, wNetworkConfigured, wPrepared,
-      wPrepareDispatched, wStartFenced, wCreate, beginCreate,
-      applyStartFence, prepareResources, configureSlot, activateResource,
-      tenant, sid, workspace, policy, createOperation, pauseOperation,
-      resumeOperation, killOperation, firstVm, secondVm, firstSlot,
-      secondSlot, snapshot, firstPreparedVm, firstExecutingVm,
-      firstFrozenVm, firstStoppedVm, firstUnconfiguredSlot,
-      firstConfiguredSlot, Authority.withoutResume, enqueue, addCommand,
-      setFence, setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot,
-      put, emptyWorld]
-
-theorem publish_destroyed_step : Step wSecondStopped
-    (.publishDestroyed sid) wDestroyed := by
-  apply Step.publishDestroyed (record := revokingClosedRecord) <;>
-    simp_all [wDestroyed, wSecondStopped, wKillFenced, wKillAccepted,
-      destroyedRecord, revokingClosedRecord, revokingRecord,
-      wResumedRunning, resumedRunningRecord, secondPreparedRecord,
-      secondPreparedVm, secondExecutingVm, secondStoppedVm,
-      secondUnconfiguredSlot, secondConfiguredSlot, resumingRecord,
-      wSecondActivated, wSecondNetworkConfigured, wSecondPrepared,
-      wSecondPrepareDispatched, wResumeFenced, wResumeAccepted, wPaused,
-      pausedRecord, pausingClosedRecord, pausingRecord, runningRecord,
-      preparedRecord, createdRecord, durableSnapshot, localSnapshot,
-      wFirstStopped, wSnapshotDurable, wSnapshotSealed, wFrozen,
-      wPauseFenced, wPauseAccepted, wRunning, beginKill, beginResume,
-      publishPaused, stopResource, makeSnapshotDurable, sealSnapshot,
-      beginPause, applyRevocationFence, publishRunning, publishDestroyed,
-      wActivated, wNetworkConfigured, wPrepared, wPrepareDispatched,
-      wStartFenced, wCreate, beginCreate, applyStartFence, prepareResources,
-      configureSlot, activateResource, tenant, sid, workspace, policy,
-      createOperation, pauseOperation, resumeOperation, killOperation,
-      firstVm, secondVm, firstSlot, secondSlot, snapshot, firstPreparedVm,
-      firstExecutingVm, firstFrozenVm, firstStoppedVm,
-      firstUnconfiguredSlot, firstConfiguredSlot, Authority.withoutResume,
-      enqueue, addCommand, setFence, setSandbox, setFilesystem, setVm,
-      setSnapshot, setNetSlot, put, noExecutingVm, noActiveSlot,
-      emptyWorld] <;> grind
-
-/-- The full useful lifecycle is admitted; safety is not obtained by rejecting
-    every request. -/
-theorem canonical_lifecycle_reaches_destroyed :
-    Reachable wDestroyed ∧ wDestroyed.sandboxes sid = some destroyedRecord := by
-  constructor
-  · exact Reachable.step
-      (Reachable.step
-        (Reachable.step
-          (Reachable.step resumed_running_is_reachable accept_kill_step)
-          kill_fence_step)
-        stop_second_vm_step)
-      publish_destroyed_step
-  · simp [wDestroyed, destroyedRecord, publishDestroyed, revokingClosedRecord,
-      revokingRecord, setSandbox, put]
-
-theorem canonical_lifecycle_is_safe : Safe wDestroyed :=
-  reachable_safe canonical_lifecycle_reaches_destroyed.1
+theorem delayed_cleanup_preserves_current_vm :
+    cleanupDone.vms secondVm = some ⟨tenant, sid, 2, .executing⟩ := by
+  simp [cleanupDone, cleanupReady, reclaimVm, stoppedVm, setVm, put, emptyWorld]
 
 end SandboxModel.Scenarios

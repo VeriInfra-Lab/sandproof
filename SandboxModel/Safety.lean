@@ -40,9 +40,9 @@ def WorkspaceBindingValid (world : World) : Prop :=
 /-- Version one deliberately has a single-constructor workspace policy. Keeping the
     mode in controller state makes later extension possible without admitting
     meaningless combinations of independent read/write flags. -/
-def WorkspaceModeFixed (world : World) : Prop :=
+def WorkspaceApiAccessFixed (world : World) : Prop :=
   ∀ sid record, world.sandboxes sid = some record →
-    record.workspaceMode = .readWrite
+    record.workspaceAccess = .managedReadWrite
 
 /-- References stored in a sandbox record cannot silently point at another
     sandbox's VM or network slot, including while authority is closed. -/
@@ -93,23 +93,23 @@ def AuthorityShape (world : World) : Prop :=
     | .running => ∃ vmId slotId,
         record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
         record.desired = .running sid record.generation vmId
-          record.workspace record.workspaceMode slotId record.policy ∧
+          record.workspace record.workspaceAccess slotId record.policy ∧
         record.effective = .running sid record.generation vmId
-          record.workspace record.workspaceMode slotId record.policy
+          record.workspace record.workspaceAccess slotId record.policy
     | .pausing => record.desired = .closed ∧
         (record.effective = .closed ∨ ∃ vmId slotId,
           record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
           record.effective = .running sid record.generation vmId
-            record.workspace record.workspaceMode slotId record.policy)
-    | .paused => ∃ snapshotId,
-        record.durableSnapshot = some snapshotId ∧
-        record.desired = .paused sid snapshotId ∧
-        record.effective = .paused sid snapshotId
+            record.workspace record.workspaceAccess slotId record.policy)
+    | .paused => ∃ source,
+        record.durableSnapshot = some source ∧
+        record.desired = .paused sid source ∧
+        record.effective = .paused sid source
     | .revoking => record.desired = .closed ∧
         (record.effective = .closed ∨ ∃ vmId slotId,
           record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
           record.effective = .running sid record.generation vmId
-            record.workspace record.workspaceMode slotId record.policy)
+            record.workspace record.workspaceAccess slotId record.policy)
     | .destroyed => record.desired = .closed ∧ record.effective = .closed
 
 def FenceClosesAuthority (world : World) : Prop :=
@@ -147,22 +147,24 @@ def TerminalConsistent (world : World) : Prop :=
 
 def PausedSnapshotValid (world : World) : Prop :=
   ∀ sid record, world.sandboxes sid = some record → record.phase = .paused →
-    ∃ snapshotId snapshot,
-      record.durableSnapshot = some snapshotId ∧
-      world.snapshots snapshotId = some snapshot ∧
+    ∃ source snapshot,
+      record.durableSnapshot = some source ∧
+      world.snapshots source.snapshot = some snapshot ∧
       snapshot.owner = record.owner ∧ snapshot.sandbox = sid ∧
       snapshot.sourceGeneration = record.generation ∧
       snapshot.workspace = record.workspace ∧
+      snapshot.manifest = source.manifest ∧
       snapshot.stage = .durable ∧ snapshot.immutable = true
 
 /-- A resumed Starting state remembers exactly one sealed source from the
     preceding generation. Fresh creates have no restore source. -/
 def RestoreSourceValid (world : World) : Prop :=
-  ∀ sid record snapshotId, world.sandboxes sid = some record →
-    record.phase = .starting → record.restoreFrom = some snapshotId →
-    ∃ snapshot, world.snapshots snapshotId = some snapshot ∧
+  ∀ sid record source, world.sandboxes sid = some record →
+    record.phase = .starting → record.restoreFrom = some source →
+    ∃ snapshot, world.snapshots source.snapshot = some snapshot ∧
       snapshot.owner = record.owner ∧ snapshot.sandbox = sid ∧
-      snapshot.workspace = record.workspace ∧ snapshot.stage = .durable ∧
+      snapshot.workspace = record.workspace ∧ snapshot.manifest = source.manifest ∧
+      snapshot.stage = .durable ∧
       snapshot.immutable = true ∧
       snapshot.sourceGeneration + 1 = record.generation
 
@@ -187,6 +189,39 @@ def CurrentOperationValid (world : World) : Prop :=
     ∃ operation, record.currentOperation = some operation ∧
       operation.epoch = record.epoch ∧ OperationMatchesPhase operation record.phase
 
+/-- A worker policy receipt may lag one generation during resume, but it can
+    never name another sandbox/workspace/policy or a future generation. -/
+def AppliedFilePolicyValid (world : World) : Prop :=
+  ∀ sid applied, world.appliedFilePolicies sid = some applied →
+    ∃ record, world.sandboxes sid = some record ∧
+      applied.sandbox = sid ∧ applied.workspace = record.workspace ∧
+      applied.policy = record.filePolicy ∧ applied.generation ≤ record.generation
+
+def RunningRequiresAppliedFilePolicy (world : World) : Prop :=
+  ∀ sid record, world.sandboxes sid = some record → record.phase = .running →
+    world.appliedFilePolicies sid = some
+      ⟨sid, record.generation, record.workspace, record.filePolicy⟩
+
+def OperationLedgerValid (world : World) : Prop :=
+  ∀ key ledger, world.operations key = some ledger →
+    key.sandbox = ledger.sandbox ∧ key.operation = ledger.operation.id
+
+def CurrentOperationInLedger (world : World) : Prop :=
+  ∀ sid record operation, world.sandboxes sid = some record →
+    record.currentOperation = some operation →
+    ∃ ledger, world.operations (operationKey sid operation.id) = some ledger
+
+def EffectIdentityValid (world : World) : Prop :=
+  ∀ id status, world.effects id = some status → id = effectId id.command
+
+def ReclaimedResourcesNotCurrent (world : World) : Prop :=
+  (∀ vmId vm, world.vms vmId = some vm → vm.status = .reclaimed →
+    ∀ record, world.sandboxes vm.sandbox = some record →
+      record.currentVm ≠ some vmId) ∧
+  (∀ slotId slot, world.netSlots slotId = some slot → slot.reclaimed = true →
+    ∀ record, world.sandboxes slot.sandbox = some record →
+      record.netSlot ≠ some slotId)
+
 /-! Workspace authority specifications. These names mirror the research claims
     so each claim can be inspected independently of the bundled `Safe` theorem. -/
 
@@ -196,27 +231,86 @@ def WorkspaceIdentityStable (before after : World) : Prop :=
     after.sandboxes sid = some newRecord →
     oldRecord.workspace = newRecord.workspace
 
-def WorkspaceModeStable (before after : World) : Prop :=
+def WorkspaceApiAccessStable (before after : World) : Prop :=
   ∀ sid oldRecord newRecord,
     before.sandboxes sid = some oldRecord →
     after.sandboxes sid = some newRecord →
-    oldRecord.workspaceMode = newRecord.workspaceMode
+    oldRecord.workspaceAccess = newRecord.workspaceAccess
+
+def FilePolicyStable (before after : World) : Prop :=
+  ∀ sid oldRecord newRecord,
+    before.sandboxes sid = some oldRecord →
+    after.sandboxes sid = some newRecord →
+    oldRecord.filePolicy = newRecord.filePolicy
+
+def EpochMonotone (before after : World) : Prop :=
+  ∀ sid oldRecord newRecord,
+    before.sandboxes sid = some oldRecord →
+    after.sandboxes sid = some newRecord →
+    oldRecord.epoch ≤ newRecord.epoch
+
+def GenerationMonotone (before after : World) : Prop :=
+  ∀ sid oldRecord newRecord,
+    before.sandboxes sid = some oldRecord →
+    after.sandboxes sid = some newRecord →
+    oldRecord.generation ≤ newRecord.generation
+
+def WorkerFenceMonotone (before after : World) : Prop :=
+  ∀ sid oldFence newFence,
+    before.workerFences sid = some oldFence →
+    after.workerFences sid = some newFence →
+    oldFence.epoch ≤ newFence.epoch ∧
+      (oldFence.terminal = true → newFence.terminal = true)
+
+def SnapshotManifestStable (before after : World) : Prop :=
+  ∀ snapshotId oldSnapshot newSnapshot,
+    before.snapshots snapshotId = some oldSnapshot →
+    after.snapshots snapshotId = some newSnapshot →
+    oldSnapshot.manifest = newSnapshot.manifest
+
+/-- Once an operation has a final result, no later protocol step may replace it. -/
+def OperationResultStable (before after : World) : Prop :=
+  ∀ key oldRecord newRecord,
+    before.operations key = some oldRecord →
+    oldRecord.result ≠ none →
+    after.operations key = some newRecord →
+    newRecord.result = oldRecord.result
+
+/-- Status and result may advance, but an existing operation's request identity
+    and input can never be rewritten under the same ledger key. -/
+def OperationIdentityStable (before after : World) : Prop :=
+  ∀ key oldRecord newRecord,
+    before.operations key = some oldRecord →
+    after.operations key = some newRecord →
+    oldRecord.sandbox = newRecord.sandbox ∧
+    oldRecord.operation.id = newRecord.operation.id ∧
+    oldRecord.operation.kind = newRecord.operation.kind ∧
+    oldRecord.operation.epoch = newRecord.operation.epoch ∧
+    oldRecord.input = newRecord.input
+
+/-- An acknowledged effect keeps the same result under every later step. -/
+def EffectResultStable (before after : World) : Prop :=
+  ∀ id result,
+    before.effects id = some (.acknowledged result) →
+    after.effects id = some (.acknowledged result)
 
 def RunningWorkspaceAuthorityExact (world : World) : Prop :=
   ∀ sid record, world.sandboxes sid = some record → record.phase = .running →
     ∃ vmId slotId,
       record.currentVm = some vmId ∧ record.netSlot = some slotId ∧
       record.effective = .running sid record.generation vmId
-        record.workspace record.workspaceMode slotId record.policy ∧
+        record.workspace record.workspaceAccess slotId record.policy ∧
       record.effective.allows
-        (.fileRead sid record.generation record.workspace record.workspaceMode) ∧
+        (.fileRead sid record.generation record.workspace record.workspaceAccess) ∧
       record.effective.allows
-        (.fileWrite sid record.generation record.workspace record.workspaceMode)
+        (.fileWrite sid record.generation record.workspace record.workspaceAccess)
 
 /-! Policy properties belong to transitions because they speak about the event being admitted. -/
 
 def EventAuthorized (world : World) : Event → Prop
-  | .acceptCreate actor owner _ _ _ _ => authorized actor owner
+  | .acceptCreate actor owner _ _ _ _ _ => authorized actor owner
+  | .retryOperation actor sid _ _ _
+  | .queryOperation actor sid _ _ _
   | .acceptPause actor sid _
   | .acceptResume actor sid _
   | .acceptKill actor sid _
@@ -246,10 +340,38 @@ def FileEventWorkspaceBound (world : World) : Event → Prop
         filesystem.owner = record.owner ∧ filesystem.sandbox = sid
   | _ => True
 
+/-- The durable outbox, rather than message presence alone, authorizes dispatch
+    and acknowledgement. Duplicate delivery must also name a persisted effect. -/
+def EffectAdmissionSafe (world : World) : Event → Prop
+  | .dispatchEffect id => world.effects id = some .committed
+  | .acknowledgeEffect id _ =>
+      world.effects id = some .dispatched ∧ commandResultPresent world id.command
+  | .duplicateOrLateDelivery command =>
+      ∃ status, world.effects (effectId command) = some status
+  | _ => True
+
+/-- Cleanup is admitted only for the exact stopped/inactive old resource and
+    only after the controller record no longer names it as current. -/
+def CleanupAdmissionSafe (world : World) : Event → Prop
+  | .scheduleCleanupVm sid generation vmId
+  | .cleanupVm sid generation vmId =>
+      ∃ vm, world.vms vmId = some vm ∧ vm.sandbox = sid ∧
+        vm.generation = generation ∧ vm.status = .stopped ∧
+        ∀ record, world.sandboxes sid = some record →
+          record.currentVm ≠ some vmId
+  | .scheduleCleanupSlot sid generation slotId
+  | .cleanupSlot sid generation slotId =>
+      ∃ slot, world.netSlots slotId = some slot ∧ slot.sandbox = sid ∧
+        slot.generation = generation ∧ slot.active = false ∧
+        slot.reclaimed = false ∧
+        ∀ record, world.sandboxes sid = some record →
+          record.netSlot ≠ some slotId
+  | _ => True
+
 def Safe (world : World) : Prop :=
   ResourceOwnership world ∧
   WorkspaceBindingValid world ∧
-  WorkspaceModeFixed world ∧
+  WorkspaceApiAccessFixed world ∧
   CurrentResourcesValid world ∧
   UniqueExecution world ∧
   UniqueActiveSlot world ∧
@@ -264,5 +386,43 @@ def Safe (world : World) : Prop :=
   PausedSnapshotValid world ∧
   RestoreSourceValid world ∧
   CurrentOperationValid world
+
+/-- Single-state conclusions. Admission and monotonicity remain theorems over
+    `Step`, because pretending that a relation is a field of one world would
+    hide the history it depends on. -/
+structure ProtocolSecurity (world : World) : Prop where
+  state : Safe world
+  appliedPolicy : AppliedFilePolicyValid world
+  runningPolicy : RunningRequiresAppliedFilePolicy world
+  operationLedger : OperationLedgerValid world
+  currentOperation : CurrentOperationInLedger world
+  effectIdentity : EffectIdentityValid world
+  reclaimedResources : ReclaimedResourcesNotCurrent world
+
+/-- Reviewable contract for one protocol step. Relational claims live here
+    rather than being hidden inside a predicate about only the final world. -/
+structure ProtocolStepSecurity (before : World) (event : Event)
+    (after : World) : Prop where
+  preservesState : Safe before → Safe after
+  eventAuthorized : EventAuthorized before event
+  egressEnforced : EgressPolicyEnforced before event
+  fileWorkspaceBound : WorkspaceBindingValid before →
+    FileEventWorkspaceBound before event
+  effectAdmission : EffectAdmissionSafe before event
+  cleanupAdmission : CleanupAdmissionSafe before event
+  epochMonotone : EpochMonotone before after
+  generationMonotone : GenerationMonotone before after
+  fenceMonotone : WorkerFenceMonotone before after
+  terminalMonotone : ∀ sid oldRecord newRecord,
+    before.sandboxes sid = some oldRecord →
+    after.sandboxes sid = some newRecord →
+    oldRecord.terminal = true → newRecord.terminal = true
+  workspaceStable : WorkspaceIdentityStable before after
+  workspaceAccessStable : WorkspaceApiAccessStable before after
+  filePolicyStable : FilePolicyStable before after
+  snapshotManifestStable : SnapshotManifestStable before after
+  operationIdentityStable : OperationIdentityStable before after
+  operationResultStable : OperationResultStable before after
+  effectResultStable : EffectResultStable before after
 
 end SandboxModel
