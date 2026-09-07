@@ -68,8 +68,9 @@ lake build
 1. [研究计划](RESEARCH_PLAN.zh-CN.md)
 2. [状态机与清晰边界](docs/state-machine.md)
 3. [E2B 源码分析](docs/e2b-code-audit.md)
-4. [Lean 到 Rust/adapter 的 refinement 路线](docs/refinement-plan.md)
-5. [场景、反例与实验协议](docs/evaluation.md)
-6. [固定源码证据](references/code-evidence.md)
+4. [用状态机审计 E2B 的第一次结果](docs/e2b-bug-finding.md)
+5. [Lean 到 Rust/adapter 的 refinement 路线](docs/refinement-plan.md)
+6. [场景、反例与实验协议](docs/evaluation.md)
+7. [固定源码证据](references/code-evidence.md)
 
 E2B 阅读基线为 `e2b-dev/infra@82f6529660ea98087d7a479247c789905b0a3867`。本项目目前没有声称发现 E2B 漏洞，也没有声称验证整个 E2B 或 Firecracker。

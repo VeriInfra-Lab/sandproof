@@ -303,6 +303,61 @@
       "sha256": "216383cdeb19459623e8e4eb8675916e94382d8438accee78937e2e261571666",
       "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/orchestrator/create_instance.go#L435-L531",
       "note": "节点创建之后的 running store 注册与失败清理路径"
+    },
+    {
+      "id": "E25",
+      "repository": "infra",
+      "revision": "84362fc62d94efd64370ce41e53ad00fd95772d7",
+      "path": "packages/shared/pkg/sandbox-catalog/catalog_redis.go",
+      "start_line": 81,
+      "end_line": 108,
+      "sha256": "7004a1025bdfc5830c0783e9e8281d7df5b1498dea4151b8ce8d0a30e9d22373",
+      "url": "https://github.com/e2b-dev/infra/blob/84362fc62d94efd64370ce41e53ad00fd95772d7/packages/shared/pkg/sandbox-catalog/catalog_redis.go#L81-L108",
+      "note": "修复前路由目录先 GET/核对 ExecutionID，随后另发 DEL，存在检查与删除之间的竞态窗口"
+    },
+    {
+      "id": "E26",
+      "repository": "infra",
+      "revision": "2a0c0af69a0405500eb6e7eaded32349f7f4c7fa",
+      "path": "packages/shared/pkg/sandbox-catalog/catalog_redis.go",
+      "start_line": 15,
+      "end_line": 113,
+      "sha256": "067e3293f1dd515b4a9a5d02ccc6577643fadd1aee0115ab43c183e0ff570c2e",
+      "url": "https://github.com/e2b-dev/infra/blob/2a0c0af69a0405500eb6e7eaded32349f7f4c7fa/packages/shared/pkg/sandbox-catalog/catalog_redis.go#L15-L113",
+      "note": "修复将核对当前 ExecutionID 与删除合并为 Redis 原子 compare-and-delete，明确阻止 stale teardown 删除新 execution"
+    },
+    {
+      "id": "E27",
+      "repository": "infra",
+      "revision": "eef64c73e48c3134ef9d76317e37ceffddcdb3e4",
+      "path": "packages/api/internal/orchestrator/evictor/evict.go",
+      "start_line": 159,
+      "end_line": 175,
+      "sha256": "9269cf52dad8300c1db4c87dbf310ff684380de08610802042bbc4c3eef6bea7",
+      "url": "https://github.com/e2b-dev/infra/blob/eef64c73e48c3134ef9d76317e37ceffddcdb3e4/packages/api/internal/orchestrator/evictor/evict.go#L159-L175",
+      "note": "过期扫描后的 pause/kill 决策现在携带 ExpectExecutionID，resume 插入其间时旧决策必须被拒绝"
+    },
+    {
+      "id": "E28",
+      "repository": "infra",
+      "revision": "42f699786534f1c0ad625ce9b4b7b922b3a16834",
+      "path": "packages/api/internal/orchestrator/pause_instance.go",
+      "start_line": 50,
+      "end_line": 72,
+      "sha256": "772ed0782f059bd40d3d3d09604689dbbcc31877251cc71d643b61a25718ed70",
+      "url": "https://github.com/e2b-dev/infra/blob/42f699786534f1c0ad625ce9b4b7b922b3a16834/packages/api/internal/orchestrator/pause_instance.go#L50-L72",
+      "note": "Pause RPC 被拒绝后，已经创建的 snapshot build 必须写入失败终态，避免永久非终态记录"
+    },
+    {
+      "id": "E29",
+      "repository": "infra",
+      "revision": "8586a66a5e84504536b2df9b7e28efe9069d8284",
+      "path": "packages/api/internal/orchestrator/snapshot_template.go",
+      "start_line": 150,
+      "end_line": 200,
+      "sha256": "ae434e18d839adff7c8ee7a7e48f42686d5d44bcb3ab6364ccb609ae2fa24fef",
+      "url": "https://github.com/e2b-dev/infra/blob/8586a66a5e84504536b2df9b7e28efe9069d8284/packages/api/internal/orchestrator/snapshot_template.go#L150-L200",
+      "note": "snapshot build 的最终状态写入改用脱离 client cancellation 的有界 context"
     }
   ]
 }

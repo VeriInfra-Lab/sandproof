@@ -14,11 +14,18 @@ for name, repo in manifest["repositories"].items():
     assert sha == repo["sha"], (name, sha, repo["sha"])
 for item in manifest["evidence"]:
     repo = manifest["repositories"][item["repository"]]
-    path = ROOT / repo["local_path"] / item["path"]
-    data = path.read_bytes()
+    revision = item.get("revision", repo["sha"])
+    if revision == repo["sha"]:
+        path = ROOT / repo["local_path"] / item["path"]
+        data = path.read_bytes()
+    else:
+        data = subprocess.check_output([
+            "git", "-C", str(ROOT / repo["local_path"]),
+            "show", f"{revision}:{item['path']}",
+        ])
     assert hashlib.sha256(data).hexdigest() == item["sha256"], item["id"]
     assert 1 <= item["start_line"] <= item["end_line"] <= len(data.decode().splitlines()), item["id"]
-    assert f"/blob/{repo['sha']}/" in item["url"], item["id"]
+    assert f"/blob/{revision}/" in item["url"], item["id"]
 docs = [ROOT / "README.md", ROOT / "RESEARCH_PLAN.zh-CN.md"]
 for directory in ("docs", "models", "references"):
     docs.extend((ROOT / directory).glob("*.md"))

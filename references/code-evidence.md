@@ -38,6 +38,11 @@
 | F04 | [docs/snapshotting/snapshot-support.md:395–485](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/docs/snapshotting/snapshot-support.md#L395-L485) | 恢复默认停在 Paused；可显式禁用自动 resume；内存文件须不可变 |
 | E23 | [packages/api/internal/orchestrator/create_instance.go:177–258](https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/orchestrator/create_instance.go#L177-L258) | CreateSandbox 的 reservation 与并发启动等待 |
 | E24 | [packages/api/internal/orchestrator/create_instance.go:435–531](https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/orchestrator/create_instance.go#L435-L531) | 节点创建之后的 running store 注册与失败清理路径 |
+| E25 | [catalog_redis.go:81–108（修复前）](https://github.com/e2b-dev/infra/blob/84362fc62d94efd64370ce41e53ad00fd95772d7/packages/shared/pkg/sandbox-catalog/catalog_redis.go#L81-L108) | `GET → ExecutionID 核对 → DEL` 分成两次 Redis 操作，中间可被新 execution 的 Store 插入 |
+| E26 | [catalog_redis.go:15–113（`2a0c0af`）](https://github.com/e2b-dev/infra/blob/2a0c0af69a0405500eb6e7eaded32349f7f4c7fa/packages/shared/pkg/sandbox-catalog/catalog_redis.go#L15-L113) | 修复使用 Redis 原子 compare-and-delete，提交注释明确说明防止 stale teardown 删除 newer execution |
+| E27 | [evict.go:159–175（`eef64c7`）](https://github.com/e2b-dev/infra/blob/eef64c73e48c3134ef9d76317e37ceffddcdb3e4/packages/api/internal/orchestrator/evictor/evict.go#L159-L175) | 过期扫描后的 pause/kill 决策改为携带 `ExpectExecutionID`，拒绝 resume 之后的旧决策 |
+| E28 | [pause_instance.go:50–72（`42f6997`）](https://github.com/e2b-dev/infra/blob/42f699786534f1c0ad625ce9b4b7b922b3a16834/packages/api/internal/orchestrator/pause_instance.go#L50-L72) | Pause RPC 失败后也必须将已创建的 snapshot build 写成失败终态 |
+| E29 | [snapshot_template.go:150–200（`8586a66`）](https://github.com/e2b-dev/infra/blob/8586a66a5e84504536b2df9b7e28efe9069d8284/packages/api/internal/orchestrator/snapshot_template.go#L150-L200) | snapshot build 的最终结果使用脱离 client cancellation 的有界 context 持久化 |
 
 ## 官方文档与相关工作
 

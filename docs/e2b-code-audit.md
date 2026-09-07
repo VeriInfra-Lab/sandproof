@@ -2,6 +2,8 @@
 
 阅读日期：2026-09-07。范围：公开文档、infra 的生命周期关键路径、JavaScript SDK 对应调用、上游 Firecracker 快照规范。不是全仓安全审计，也没有对 E2B 云服务执行漏洞测试。
 
+使用完成后的 Lean 性质回看 E2B 历史修复的结果，见[第一次 bug-finding 报告](e2b-bug-finding.md)。该报告已重现一个非原子路由删除反例，并将两项 E2B 历史竞态与 generation/effect 性质对应。
+
 ## 1. 版本与证据纪律
 
 | 对象 | 本轮固定版本 | 用途 |
