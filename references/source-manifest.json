@@ -1,0 +1,308 @@
+{
+  "research_date": "2026-09-07",
+  "repositories": {
+    "infra": {
+      "url": "https://github.com/e2b-dev/infra",
+      "sha": "82f6529660ea98087d7a479247c789905b0a3867",
+      "ref_at_acquisition": "main",
+      "commit_date": "2026-09-06T18:45:28Z",
+      "local_path": "research-sources/e2b-infra"
+    },
+    "sdk": {
+      "url": "https://github.com/e2b-dev/E2B",
+      "sha": "473d8bf3e62b68ee731cf18afb2e8258f9ca7a7c",
+      "ref_at_acquisition": "main",
+      "commit_date": "2026-09-04T15:01:49Z",
+      "local_path": "research-sources/e2b-sdk"
+    },
+    "firecracker": {
+      "url": "https://github.com/firecracker-microvm/firecracker",
+      "sha": "2038188f145fb81b8d098147a10e9d9f392fd22f",
+      "ref_at_acquisition": "v1.16.1",
+      "commit_date": "2026-06-29T10:33:24+01:00",
+      "local_path": "research-sources/firecracker"
+    }
+  },
+  "evidence": [
+    {
+      "id": "E01",
+      "repository": "infra",
+      "path": "docs/ARCHITECTURE.md",
+      "start_line": 11,
+      "end_line": 33,
+      "sha256": "60b0d8f4428038fd10948ff620a970dd9acf7b9088e228228a587661ba91f907",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/docs/ARCHITECTURE.md#L11-L33",
+      "note": "Firecracker 与控制面/数据面分离的总体架构"
+    },
+    {
+      "id": "E02",
+      "repository": "infra",
+      "path": "packages/api/internal/sandbox/sandboxtypes/states.go",
+      "start_line": 95,
+      "end_line": 116,
+      "sha256": "6b6f65ba9fa359a438d71fb70718a93e09b76df21b3acb1725333cff3f78fdee",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/sandbox/sandboxtypes/states.go#L95-L116",
+      "note": "运行记录只有 running/pausing/killing/snapshotting；paused 另查快照"
+    },
+    {
+      "id": "E03",
+      "repository": "infra",
+      "path": "packages/api/internal/sandbox/sandboxtypes/states.go",
+      "start_line": 82,
+      "end_line": 94,
+      "sha256": "6b6f65ba9fa359a438d71fb70718a93e09b76df21b3acb1725333cff3f78fdee",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/sandbox/sandboxtypes/states.go#L82-L94",
+      "note": "已有实例标识与延迟删除保护，不将 epoch 本身作为新贡献"
+    },
+    {
+      "id": "E04",
+      "repository": "infra",
+      "path": "packages/api/internal/sandbox/storage/redis/state_change.go",
+      "start_line": 35,
+      "end_line": 174,
+      "sha256": "f3745bdc68e9eab3a2026594bfed38eda8a80f85d5d2d3f46188462866570c8e",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/sandbox/storage/redis/state_change.go#L35-L174",
+      "note": "分布式锁、转换 ID、执行 ID 复核、转换完成回调"
+    },
+    {
+      "id": "E05",
+      "repository": "infra",
+      "path": "packages/api/internal/sandbox/storage/redis/scripts.go",
+      "start_line": 30,
+      "end_line": 64,
+      "sha256": "c3013a54de16896b61966f097ca1b4c4f08fc851dee4190f2e25b449ee62ac6b",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/sandbox/storage/redis/scripts.go#L30-L64",
+      "note": "执行 ID 检查在 Lua 写入处，而非只在 Go 读路径"
+    },
+    {
+      "id": "E06",
+      "repository": "infra",
+      "path": "packages/api/internal/sandbox/reservations/redis/README.md",
+      "start_line": 12,
+      "end_line": 19,
+      "sha256": "11f6a4c6018ce8147f3659583f10394abf9ea58beeb8e98aa9c97246ae561d80",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/sandbox/reservations/redis/README.md#L12-L19",
+      "note": "创建/恢复的 reservation、结果键、通知与轮询"
+    },
+    {
+      "id": "E07",
+      "repository": "infra",
+      "path": "packages/api/internal/handlers/sandbox_connect.go",
+      "start_line": 84,
+      "end_line": 194,
+      "sha256": "98b33120ebc76692c701d4e725ef8e06b843138973afc4e390a81cdf2854ff67",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/handlers/sandbox_connect.go#L84-L194",
+      "note": "connect 先保活，等待过渡，必要时从快照恢复"
+    },
+    {
+      "id": "E08",
+      "repository": "infra",
+      "path": "packages/api/internal/handlers/sandbox_resume.go",
+      "start_line": 97,
+      "end_line": 183,
+      "sha256": "5d56b8d8e75e6a5839cf5e1eee07ab0ab54de64ea412efadb0414f26d6bb54a0",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/handlers/sandbox_resume.go#L97-L183",
+      "note": "显式 resume 对 running/killing/pausing 的处理"
+    },
+    {
+      "id": "E09",
+      "repository": "infra",
+      "path": "packages/api/internal/handlers/sandbox_kill.go",
+      "start_line": 39,
+      "end_line": 114,
+      "sha256": "785a790c85ec8d49d5445365a3413cdbb8333005ef0f7e1d9724f5668764a515",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/handlers/sandbox_kill.go#L39-L114",
+      "note": "删除运行记录与暂停快照分属不同调用步骤"
+    },
+    {
+      "id": "E10",
+      "repository": "infra",
+      "path": "packages/api/internal/orchestrator/pause_instance.go",
+      "start_line": 29,
+      "end_line": 133,
+      "sha256": "ea6c6d11f8cd393248fd59e7df311084ebb46cb22bc3c9ce86360b919b18c910",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/orchestrator/pause_instance.go#L29-L133",
+      "note": "快照数据库记录、节点 Pause RPC、build success 与缓存失效"
+    },
+    {
+      "id": "E11",
+      "repository": "infra",
+      "path": "packages/api/internal/orchestrator/delete_instance.go",
+      "start_line": 136,
+      "end_line": 193,
+      "sha256": "7a8580a8516da34bbf79592b1c7de6377bba9b38a344ee47af943848dc439ab6",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/orchestrator/delete_instance.go#L136-L193",
+      "note": "暂停拒绝的回滚/兜底删除受配置条件约束"
+    },
+    {
+      "id": "E12",
+      "repository": "infra",
+      "path": "packages/orchestrator/pkg/server/sandboxes.go",
+      "start_line": 659,
+      "end_line": 727,
+      "sha256": "5f20955100949d4cde27c2c0dc135320d7078a6aa4590a87f6db3864636056a9",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/orchestrator/pkg/server/sandboxes.go#L659-L727",
+      "note": "MarkStopping 后后台 Stop，RPC 不等待全量清理"
+    },
+    {
+      "id": "E13",
+      "repository": "infra",
+      "path": "packages/orchestrator/pkg/server/sandboxes.go",
+      "start_line": 809,
+      "end_line": 982,
+      "sha256": "5f20955100949d4cde27c2c0dc135320d7078a6aa4590a87f6db3864636056a9",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/orchestrator/pkg/server/sandboxes.go#L809-L982",
+      "note": "节点 pause 预检、快照缓存、异步上传与后台停止"
+    },
+    {
+      "id": "E14",
+      "repository": "infra",
+      "path": "packages/orchestrator/pkg/server/sandboxes.go",
+      "start_line": 1567,
+      "end_line": 1607,
+      "sha256": "5f20955100949d4cde27c2c0dc135320d7078a6aa4590a87f6db3864636056a9",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/orchestrator/pkg/server/sandboxes.go#L1567-L1607",
+      "note": "上传重试及成功/失败完成记录；不能等同远端已持久化"
+    },
+    {
+      "id": "E15",
+      "repository": "infra",
+      "path": "packages/orchestrator/pkg/sandbox/sandbox.go",
+      "start_line": 356,
+      "end_line": 365,
+      "sha256": "4d9e1c3fa10c54434f0c0f1dab562c68cf928c9c43d47925e598b940b9c8d9c7",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/orchestrator/pkg/sandbox/sandbox.go#L356-L365",
+      "note": "ExecutionID 与具体 Firecracker 进程 LifecycleID 不同"
+    },
+    {
+      "id": "E16",
+      "repository": "infra",
+      "path": "packages/orchestrator/pkg/sandbox/map.go",
+      "start_line": 192,
+      "end_line": 216,
+      "sha256": "c4e39cea0741b947d4eebc137910ae319450ccc299bdcb64b2bb9c534ea45776",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/orchestrator/pkg/sandbox/map.go#L192-L216",
+      "note": "节点 live map 的删除按 LifecycleID 核对"
+    },
+    {
+      "id": "E17",
+      "repository": "infra",
+      "path": "packages/orchestrator/pkg/proxy/proxy.go",
+      "start_line": 64,
+      "end_line": 148,
+      "sha256": "b9cad6264aa734d2e01ba3173a06ad19fa5c5559b78da9fa3785536285f0f168",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/orchestrator/pkg/proxy/proxy.go#L64-L148",
+      "note": "代理从 live map 找实例，连接池按 LifecycleID 分组"
+    },
+    {
+      "id": "E18",
+      "repository": "infra",
+      "path": "packages/api/internal/sandbox/sandbox_envd_secret.go",
+      "start_line": 27,
+      "end_line": 35,
+      "sha256": "7e4d950bd90dd59a12cb1209fc64af8315075e6549f6953947daf9bc6dae8033",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/sandbox/sandbox_envd_secret.go#L27-L35",
+      "note": "access token 从 sandbox ID 派生；不能假定每次恢复都撤销用户句柄"
+    },
+    {
+      "id": "E19",
+      "repository": "infra",
+      "path": "packages/orchestrator/pkg/sandbox/sandbox.go",
+      "start_line": 1643,
+      "end_line": 1678,
+      "sha256": "4d9e1c3fa10c54434f0c0f1dab562c68cf928c9c43d47925e598b940b9c8d9c7",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/orchestrator/pkg/sandbox/sandbox.go#L1643-L1678",
+      "note": "物理停止包括 FC/cgroup 终止与等待进程退出"
+    },
+    {
+      "id": "E20",
+      "repository": "sdk",
+      "path": "packages/js-sdk/src/sandbox/sandboxApi.ts",
+      "start_line": 1469,
+      "end_line": 1514,
+      "sha256": "a6e1ce298f01c5c7e7752dabad63cee8fdb7f316011498a93e0d73775917e3e6",
+      "url": "https://github.com/e2b-dev/E2B/blob/473d8bf3e62b68ee731cf18afb2e8258f9ca7a7c/packages/js-sdk/src/sandbox/sandboxApi.ts#L1469-L1514",
+      "note": "SDK 将 HTTP 409 映射为 false，必须保存原始响应"
+    },
+    {
+      "id": "E21",
+      "repository": "sdk",
+      "path": "packages/js-sdk/src/sandbox/sandboxApi.ts",
+      "start_line": 1193,
+      "end_line": 1231,
+      "sha256": "a6e1ce298f01c5c7e7752dabad63cee8fdb7f316011498a93e0d73775917e3e6",
+      "url": "https://github.com/e2b-dev/E2B/blob/473d8bf3e62b68ee731cf18afb2e8258f9ca7a7c/packages/js-sdk/src/sandbox/sandboxApi.ts#L1193-L1231",
+      "note": "SDK kill 的布尔值与原始 HTTP 状态的对应"
+    },
+    {
+      "id": "E22",
+      "repository": "sdk",
+      "path": "packages/js-sdk/src/sandbox/commands/index.ts",
+      "start_line": 427,
+      "end_line": 489,
+      "sha256": "3e01f98d8574db1fd34cc9a107a0e13737fed595ff79c254184d2dbe95c1edbf",
+      "url": "https://github.com/e2b-dev/E2B/blob/473d8bf3e62b68ee731cf18afb2e8258f9ca7a7c/packages/js-sdk/src/sandbox/commands/index.ts#L427-L489",
+      "note": "commands.run 最终调用独立 envd process RPC"
+    },
+    {
+      "id": "F01",
+      "repository": "firecracker",
+      "path": "docs/snapshotting/snapshot-support.md",
+      "start_line": 87,
+      "end_line": 110,
+      "sha256": "e4ff5635b27b9d0cda5012dc3bf873e33e1028f0854e940fa6af4f69f5e2164e",
+      "url": "https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/docs/snapshotting/snapshot-support.md#L87-L110",
+      "note": "Firecracker 不替集成方管理快照可信性与生命周期"
+    },
+    {
+      "id": "F02",
+      "repository": "firecracker",
+      "path": "docs/snapshotting/snapshot-support.md",
+      "start_line": 180,
+      "end_line": 200,
+      "sha256": "e4ff5635b27b9d0cda5012dc3bf873e33e1028f0854e940fa6af4f69f5e2164e",
+      "url": "https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/docs/snapshotting/snapshot-support.md#L180-L200",
+      "note": "暂停 API 的前置条件与成功语义"
+    },
+    {
+      "id": "F03",
+      "repository": "firecracker",
+      "path": "docs/snapshotting/snapshot-support.md",
+      "start_line": 242,
+      "end_line": 316,
+      "sha256": "e4ff5635b27b9d0cda5012dc3bf873e33e1028f0854e940fa6af4f69f5e2164e",
+      "url": "https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/docs/snapshotting/snapshot-support.md#L242-L316",
+      "note": "全量快照的组成；宿主 FS 刷新不等于持久介质保证"
+    },
+    {
+      "id": "F04",
+      "repository": "firecracker",
+      "path": "docs/snapshotting/snapshot-support.md",
+      "start_line": 395,
+      "end_line": 485,
+      "sha256": "e4ff5635b27b9d0cda5012dc3bf873e33e1028f0854e940fa6af4f69f5e2164e",
+      "url": "https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/docs/snapshotting/snapshot-support.md#L395-L485",
+      "note": "恢复默认停在 Paused；可显式禁用自动 resume；内存文件须不可变"
+    },
+    {
+      "id": "E23",
+      "repository": "infra",
+      "path": "packages/api/internal/orchestrator/create_instance.go",
+      "start_line": 177,
+      "end_line": 258,
+      "sha256": "216383cdeb19459623e8e4eb8675916e94382d8438accee78937e2e261571666",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/orchestrator/create_instance.go#L177-L258",
+      "note": "CreateSandbox 的 reservation 与并发启动等待"
+    },
+    {
+      "id": "E24",
+      "repository": "infra",
+      "path": "packages/api/internal/orchestrator/create_instance.go",
+      "start_line": 435,
+      "end_line": 531,
+      "sha256": "216383cdeb19459623e8e4eb8675916e94382d8438accee78937e2e261571666",
+      "url": "https://github.com/e2b-dev/infra/blob/82f6529660ea98087d7a479247c789905b0a3867/packages/api/internal/orchestrator/create_instance.go#L435-L531",
+      "note": "节点创建之后的 running store 注册与失败清理路径"
+    }
+  ]
+}
