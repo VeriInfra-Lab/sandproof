@@ -46,7 +46,5 @@
 - [Firecracker v1.16.1 release](https://github.com/firecracker-microvm/firecracker/releases/tag/v1.16.1)：本项目唯一实现后端基线。
 - [Anvil, OSDI 2024](https://www.usenix.org/conference/osdi24/presentation/sun-xudong)：controller 的并发、失败和最终收敛验证，排除笼统的“首个 verified controller”主张。
 - [IronFleet, SOSP 2015](https://www.microsoft.com/en-us/research/wp-content/uploads/2015/10/ironfleet.pdf)：状态机 refinement 与实现级推理衔接。
-- [Dafny 官方参考手册](https://dafny.org/dafny/DafnyRef/DafnyRef.html)：规范、验证、Go 编译及 extern 边界。
-- [Dafny: Modeling External State Correctly](https://github.com/dafny-lang/dafny/wiki/Modeling-External-State-Correctly)：外部世界建模不能通过过强契约制造虚假证明。
 
 检索范围有限，尚未完成系统性 novelty review。上述工作用于界定方向，不能支撑“本领域首个”的结论。

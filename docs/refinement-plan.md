@@ -1,100 +1,109 @@
-# Refinement 与 controller 生成：证明要跨过哪些边界
+# Refinement：Lean 规范到 Rust controller 核心
 
-状态：证明计划，尚未产生机器检查的 refinement theorem。
+状态：路线已确定；Lean 协议规范与部分安全证明已经实现，Rust/Aeneas 尚未开始。
 
-## 1. 选择一条能闭合的路线
+## 1. 单一权威来源
 
-建议采用 `Dafny 可执行核心 → 官方 Go 编译后端 → 薄 runtime adapter`。研究对象是经验证的生命周期决策核心及其与执行器的协议，不自造通用语言或为任意运行时生成 controller。
+Lean 中的 `World`、`Event`、`Step`、`Reachable` 和 `Safe` 是唯一 formal specification。项目不再维护 Python、TLA+ 或 Dafny 的并行规范，避免手工同步本身成为未证明的缺口。
 
 ```mermaid
-flowchart TD
-    TLA[TLA+ finite exploration model] -. explicit correspondence obligation .-> P
-    A[Dafny abstract service contract A] <-- simulation proof --> P[Dafny asynchronous protocol P]
-    P <-- implementation refinement --> C[Executable Dafny core C]
-    C -->|official compiler; in TCB| GO[Generated Go core]
-    GO --> AD[Journal and node executor adapters]
-    AD --> FC[Firecracker v1.16.1 / Linux / local storage]
+flowchart LR
+    A[Lean abstract safety predicates] --> P[Lean World / Event / Step]
+    R[Rust pure reducer] -->|Aeneas translation| L[Lean-generated reducer semantics]
+    L -->|simulation proof| P
+    R --> J[Journal and dispatcher]
+    J --> W[Worker fence and resource registry]
+    W --> F[Firecracker v1.16.1 / storage / network]
 ```
 
-箭头标的是应完成的义务，不表示本仓库已实现这些模块。TLA+ 是早期发现反例的辅助模型，不是编译源；最终证明依赖的 A/P 规范在 Dafny 中有明确声明。若保留独立 TLA+ 版本，必须把两份规范的对应关系列为独立待办，不能用测试替代形式化等价证明。
+当前只实现了图中的 A 与 P。必须先闭合 `Reachable world → Safe world`，再冻结 reducer 接口。
 
-[Dafny 官方手册](https://dafny.org/dafny/DafnyRef/DafnyRef.html)说明了验证与多目标编译接口。本路线仍信任所选编译器与 Go 工具链；不宣称达到二进制级、内核级或 seL4 式完整证明。
+## 2. 最小 Rust reducer
 
-## 2. 最小 controller 接口
-
-决策核心应尽量是总函数，输入显式，避免把关键安全判断藏进异步 callback：
+目标接口：
 
 ```text
-Reduce(State, Event) -> (State', DurableWrites, Commands, Responses)
+reduce(state, event) -> Result<(state', effects), Reject>
 ```
 
-事件包括 Begin、FenceInstalled、LoadResult、ActivateResult、FreezeResult、SnapshotDurable、ProcessExited、Timeout、RecoverObservation。结果不仅有 success/error，也包括 outcome unknown 与“确定无副作用”的失败。
+`state` 只包含协议需要持久化的当前记录；`event` 是已经通过外部解析和身份认证的值；`effects` 是带完整 sid/epoch/generation/resource identity 的命令描述。reducer 不打开文件、不访问网络、不调用 Firecracker、不读取 wall clock。
 
-生成的 command 带 `(sid, owner, q, op_id, g, h, payload_digest)`。adapter 不可改变它的目标或参数；重试使用同一身份，禁止“重试时按 sandbox ID 重新找最新进程”。
+这样的边界让 reducer 保持确定、可翻译和可重放。controller runner 负责先提交 state，再派发 effects；失败和回执作为新 event 回到 reducer。
 
-**提交与派发纪律必须验证：** DurableWrites 的事务提交并确认后才能派发关联命令；若提交失败，命令不可发送。若提交成功但响应丢失，恢复重用原 op；若命令已发生但结果未持久化，恢复查询或幂等重放。不能让生成核心返回一个漂亮的状态机，而 hand-written runner 随意重排这些动作。
+## 3. 模拟定理
 
-节点执行器处理 effect 时再次检查 fence，并在 per-sid 串行区内检查和发出 FC 操作。InstallFence 的成功回执要意味着先前冲突操作不可能在它之后产生未经纳入账本的副作用；若 FC 调用不可取消，必须等待或跟踪它的实际结果再确认屏障。
+设 `CState` 为 Rust reducer 经 Aeneas 翻译出的 Lean 状态，`R c w` 为它与协议 World 的关系。目标分三步：
 
-## 3. 分层证明义务
+```text
+InitialC(c) ⇒ R(c, emptyWorld)
 
-| 编号 | 应证明的命题 | 证明/验证材料 | 不能替代它的东西 |
-|---|---|---|---|
-| P0 | 初始状态良构，正常 create→pause→resume→kill 可完成 | 可达性与基础 lemma | 全部拒绝请求 |
-| P1 | P 的每个动作保持身份、终止单调性、唯一执行、快照绑定 | 归纳不变量，逐动作 SMT/lemma | 只跑若干随机序列 |
-| P2 | P 的可观察动作可模拟 A；内部动作只在允许时 stutter | 显式 R(P,A)、初始化与 step simulation | 状态 enum 名称相同 |
-| P3 | 可执行 Reduce 满足 P 的 transition relation | executable method postconditions；结果分支齐全 | 从描述生成代码但不验证 |
-| P4 | journal/runner/executor 不破坏命令顺序、身份、幂等与屏障 | 适配器协议模型及安全关键代码证明 | 把整个 runner 写成 `assume correct` |
-| P5 | runtime 回执足以推出相应环境事实 | primitive 契约、适配器 lemma、实机 fault tests | controller 自己设置一个 bool |
-| P6 | 最终稳定输入与公平/恢复假设下操作有结果 | 活性证明或清晰标注的有限活性检查 | 从 safety 推导 liveness |
-| P7 | 生成实现遵守已验证核心语义 | 固定编译器、生成产物 hash、可重建 artifact；编译器明确列入 TCB | 手工翻译成 Rust 后靠单测称 refinement |
+R(c, w) ∧ reduce(c, e) = Ok(c', effects)
+⇒ ∃ w', Step w (observe e effects) w' ∧ R(c', w')
 
-建议证明顺序：I3 终止单调性 → effect/callback 身份引理 → I1 执行唯一性 → I4 暂停完成 → trace refinement → 条件活性。若身份或屏障引理不能成立，应返回修改状态机，而不是在下游堆更多补偿代码。
+R(c, w) ∧ reduce(c, e) = Reject
+⇒ 未产生任何未被规范允许的状态或 effect
+```
 
-## 4. 不可偷偷放进 TCB 的东西
+内部日志重放、重复回执或明确无效事件可以对应 stutter，但对外发布 Running/Paused/Destroyed 和真实 worker effect 不能被随意隐藏成 stutter。
 
-以下属于本工作的关键逻辑，必须进入 P/实现证明或被明确报告为证明缺口：
+## 4. effect contract
 
-- q、g、h 的分配/比较；terminal 的持久化与恢复。
-- journal commit 和命令派发的先后关系。
-- 旧事件是否可以发布 Running、恢复路由或覆盖快照 manifest。
-- 节点在实际副作用发生处检查身份；屏障与不可取消操作的排序。
-- 对未知结果的恢复决策；何时可以声明 Paused/Destroyed。
-- GC/cleanup 的精确目标核对；不能误杀新 h。
+每个 worker command 至少携带：
 
-可以作为环境假设、但需列清楚的底层部分：
+```text
+(sid, epoch, terminal, generation, vm_id, slot_id, snapshot_id, payload_digest)
+```
 
-| 假设 | 允许依赖的最低语义 | 不允许扩张成 |
-|---|---|---|
-| 身份认证 | 请求 owner 是可信认证结果 | 所有 snapshot 归属校验天然正确 |
-| journal | 原子持久事务，已确认提交在所选崩溃模型下不丢 | 跨 journal 和 Firecracker 的全局原子性 |
-| FC pause | 对精确 h 的确定成功表示 vCPU 已暂停 | 所有网络副作用与业务输出都已排空 |
-| FC load | 关闭自动 resume 后得到 Prepared；输入文件须符合前提 | snapshot 的 owner 与当前执行资格已经验证 |
-| FC resume | 成功可使 h 执行；通信超时可能已生效 | 超时一定无副作用 |
-| stop/wait | 精确进程/子 cgroup 已停止并被确认 | 删除 routing 条目自动等于所有进程停止 |
-| bundle durability | 同源、不可变文件与 manifest 在选定故障域内恢复 | 单个 snapshot API success 等于所有磁盘已持久 |
-| 编译器/OS | 生成代码按语言语义运行，Linux/KVM primitive 满足契约 | 整个平台已经验证 |
+适用字段按命令种类出现。worker 在真正执行 load/activate/freeze/stop/network change 前重新核对当前 fence 与资源身份。controller 侧“回调过期所以忽略”不足以阻止已经发出的旧副作用。
 
-不要让不可信 guest 自行报告的“我停下了”成为物理停止证明。guest 可辅助业务状态探针；虚拟机暂停/进程退出须从可信宿主边界确认。[Dafny 外部状态建模说明](https://github.com/dafny-lang/dafny/wiki/Modeling-External-State-Correctly)也提示了外部契约失真可能造成形式上通过、实际不成立的结论。
+InstallFence 的成功必须意味着：与更旧 epoch 冲突的副作用已经结束、被取消，或会在副作用点被拒绝。若 Firecracker 调用不可取消，worker 必须跟踪其实际结果，在确认 fence 前完成序列化或清理。
 
-## 5. 崩溃一致性切面
+## 5. 持久化与派发顺序
 
-| 崩溃发生位置 | 恢复必须做什么 |
+runner 必须满足：
+
+1. reducer 产生新 state 与 effects。
+2. journal 原子持久新 state 和 operation 结果。
+3. 提交确认后才派发 effects。
+4. 提交后崩溃时，用同一 operation/epoch/generation 幂等重放。
+5. effect 已发生但回执未持久时，保持 Unknown，查询精确资源或重放同一命令；不得新建替代 generation。
+
+这部分不能全放进“adapter 正确”的一个大假设。至少要在 protocol model 中表示 outbox/ack discipline，并对安全关键 runner 代码给出 Aeneas 可处理的核心或单独的协议证明。
+
+## 6. adapter 假设
+
+| 边界 | 允许依赖的语义 |
 |---|---|
-| journal 提交前 | 不存在被承诺的新操作；不得已经派发副作用 |
-| 提交后、dispatch 前 | 按原 op/q 幂等派发 |
-| FC load/activate 后、回执前 | 查询精确 h，保持 Unknown 直到证据足够；不能再创建另一个 g 替代未知对象 |
-| 快照文件完成、manifest 前 | 视为未提交恢复点；可校验补提或清理，不能谎报先前 pause 已完成 |
-| terminal 提交后、worker fence 前 | 继续安装屏障并停止残余执行；拒绝新的 resume |
-| worker fence 后、旧进程退出前 | 等待/重试精确终止；保持 Revoking |
-| 完成记录提交后、客户端响应前 | 查询/幂等重试返回原结果；不能重新开始同一个操作 |
+| 身份认证 | event 中 actor/owner 是可信认证结果 |
+| journal | 单机原子事务；确认后的记录在 controller crash/restart 后仍可读取 |
+| worker fence | 当前 epoch/terminal 在副作用处核对；确认后旧冲突 effect 不会越过屏障 |
+| FC prepare/load | 精确 VM identity，初始不执行 vCPU |
+| FC activate | 成功可开始执行；timeout 可能已生效 |
+| FC freeze | 成功表示精确 VM 的 vCPU 已暂停 |
+| stop/wait | 返回确认时精确 VM 不再执行 |
+| snapshot store | 同源 bundle 先写入，最后原子提交 immutable manifest；Durable 属于声明故障域 |
+| network slot | 独占绑定 sid/generation/VM；configured 后才能 active；fence 可关闭 active |
 
-首轮有限模型只覆盖 controller crash。正式单节点实现还必须规定 executor crash：重启先恢复 fence/journal、封闭入口、扫描受管进程，识别或终止未能核实的实例，再对外 ready。若这条恢复链暂时未验证，论文必须限定 fault model 为 controller crash，不能笼统写成 crash-safe。
+底层 KVM、Firecracker、文件系统与编译器正确性不在证明内部，但必须固定版本并通过故障实验支持契约。
 
-## 6. 研究工程规模预算
+## 7. Aeneas 使用约束
 
-目标以工作量约束，而非预先承诺 LOC：先把 Reduce、执行器安全逻辑和 manifest 提交协议控制在能够逐方法审查的规模；网络服务、日志和性能优化尽量保持普通胶水代码。
+- Rust 只使用 Aeneas 当前可稳定翻译的安全子集。
+- 数据结构围绕 reducer 需要设计，不追求通用 controller framework。
+- unsafe、线程、socket、文件 I/O 和异步 runtime 留在 adapter 外层。
+- 翻译产物可以生成，但关键 theorem 与 relation 保持手写、可读。
+- 固定 Rust、Aeneas、Lean 版本和生成物 hash；Aeneas 与编译链列入 TCB。
 
-单一后端、全量快照、无迁移、无独立 fork/snapshot、失败时保守终止，都用于缩小证明面。只有安全/精化结果成立后，才考虑让暂停后台上传、让旧实例保留、或增加自动唤醒。
+若某个结构为了 Aeneas 需要大幅扭曲协议，优先缩小 reducer，而不是在 Lean 里另写一个“看起来相同”的手工 Rust 模型。
 
-如果最终只证明 Reduce，而关键 dispatch/fencing 部分仍是未验证的手写逻辑，结果只能称 **verified core under adapter assumptions**。这是可接受的阶段成果，但不能在标题或摘要中暗示完整 controller end-to-end verified。
+## 8. 完成定义
+
+本项目只有同时满足以下条件，才称为 verified controller core：
+
+- Lean 的完整 `Safe` 对任意可达 World 成立；
+- Rust reducer 的每个成功分支模拟一个合法 Step；
+- effect identity 与 commit-before-dispatch discipline 进入证明范围；
+- adapter 假设逐项列明，并有对应的故障注入证据；
+- 正常 create→pause→resume→kill 可达，避免退化成拒绝所有操作。
+
+在此之前，准确名称是“Lean protocol model with partial machine-checked invariants”。
