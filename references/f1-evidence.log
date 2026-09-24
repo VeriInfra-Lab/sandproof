@@ -1,0 +1,29 @@
+# F-1 reproduction, 2026-09-13T07:17:00Z
+# api=http://localhost:3000 template=11111111-1111-1111-1111-111111111111 delay_ms=8000
+
+## race iteration 1
+sandbox=ich58asqq6das6lgea87n
+pause_http=204
+kill_http=204
+resume_http=201
+final_state=running
+
+## race iteration 2
+sandbox=i10onokdef5c595fukku2
+pause_http=204
+kill_http=204
+resume_http=201
+final_state=running
+
+## race iteration 3
+sandbox=i9xd0ccpwzyuxrm46nik0
+pause_http=204
+kill_http=204
+resume_http=201
+final_state=running
+
+## control: kill a paused sandbox with no resume in flight
+sandbox=iskjlxun9a64f6k8pcyl9
+pause_http=204
+kill_http=204
+{"code":404,"message":"Sandbox \"iskjlxun9a64f6k8pcyl9\" doesn't exist or you don't have access to it"} [http 404]

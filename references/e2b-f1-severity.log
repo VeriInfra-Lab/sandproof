@@ -1,0 +1,11 @@
+# F-1 severity experiment (2026-09-15T09:58:24Z)
+created: i2tfyhas52omr09qt4afi timeout=45s
+paused (snapshot written)
+DELETE while resume in flight -> 204
+resume completed -> 201
+t+0s: GET -> 200 {"alias":"base","clientID":"6532622b","cpuCount":2,"diskSizeMB":1982,"
+t+20s: GET -> 404 {"code":404,"message":"Sandbox \"i2tfyhas52omr09qt4afi\" doesn't exist
+listing contains sid: False (http 200 )
+second pause (re-snapshot deleted data) -> 404
+second DELETE -> 404
+final GET -> 404 {"code":404,"message":"Sandbox \"i2tfyhas52omr09qt4afi\" doe

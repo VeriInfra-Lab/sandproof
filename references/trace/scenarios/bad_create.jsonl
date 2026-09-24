@@ -1,0 +1,3 @@
+{"attrs": {"http": 404, "method": "POST", "path": "/sandboxes", "raw_body": "{\"code\":404,\"message\":\"template '00000000-0000-0000-0000-000000000000' not found\"}", "result": "reject"}, "event": "acceptCreate", "kind": "event", "sandbox": "?", "seq": 1, "source": "client", "ts": 274705242083}
+{"kind": "observe", "obs": {}, "sandbox": "?", "seq": 2, "source": "observer", "ts": 274705243375}
+{"kind": "observe", "obs": {"catalog_present": false, "existing_sandboxes": [], "index_members": [], "node_sandboxes": [], "phase_hint": "absent", "retired_executions": [], "running": false, "snapshot_deleted": false, "snapshot_present": false}, "sandbox": "__global__", "seq": 3, "source": "observer", "ts": 276923052250}

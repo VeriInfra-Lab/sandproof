@@ -1,0 +1,70 @@
+diff --git a/packages/orchestrator/pkg/dummyserver/info.go b/packages/orchestrator/pkg/dummyserver/info.go
+index 371cff1..5667f5d 100644
+--- a/packages/orchestrator/pkg/dummyserver/info.go
++++ b/packages/orchestrator/pkg/dummyserver/info.go
+@@ -54,6 +54,16 @@ func (s *InfoServer) ServiceInfo(_ context.Context, _ *emptypb.Empty) (*orchestr
+ 		ServiceStartup: timestamppb.New(s.startedAt),
+ 		MachineInfo:    s.machineInfo,
+ 		Labels:         s.labels,
++		// Non-zero capacity: the placement score divides by CpuCount and a
++		// zero count scores a node as unusable, so omitting these makes the
++		// dummy unplaceable. Values are synthetic.
++		MetricCpuCount:         8,
++		MetricCpuAllocated:     0,
++		MetricCpuPercent:       0,
++		MetricMemoryTotalBytes: 8 << 30,
++		MetricMemoryAllocatedBytes: 0,
++		MetricMemoryUsedBytes:  0,
++		MetricSandboxesRunning: 0,
+ 	}, nil
+ }
+ 
+diff --git a/packages/orchestrator/pkg/dummyserver/sandbox.go b/packages/orchestrator/pkg/dummyserver/sandbox.go
+index f50d2fc..b401953 100644
+--- a/packages/orchestrator/pkg/dummyserver/sandbox.go
++++ b/packages/orchestrator/pkg/dummyserver/sandbox.go
+@@ -11,7 +11,10 @@ package dummyserver
+ 
+ import (
+ 	"context"
++	"os"
++	"strconv"
+ 	"sync"
++	"time"
+ 
+ 	"github.com/google/uuid"
+ 	"google.golang.org/grpc/codes"
+@@ -48,6 +51,19 @@ func (s *SandboxServer) ClientID() string {
+ 	return s.clientID
+ }
+ 
++func createDelay() time.Duration {
++	raw := os.Getenv("DUMMY_CREATE_DELAY_MS")
++	if raw == "" {
++		return 0
++	}
++	ms, err := strconv.Atoi(raw)
++	if err != nil || ms <= 0 {
++		return 0
++	}
++
++	return time.Duration(ms) * time.Millisecond
++}
++
+ func (s *SandboxServer) Create(_ context.Context, req *orchestrator.SandboxCreateRequest) (*orchestrator.SandboxCreateResponse, error) {
+ 	if req == nil || req.GetSandbox() == nil {
+ 		return nil, status.Error(codes.InvalidArgument, "sandbox config is required")
+@@ -58,6 +74,13 @@ func (s *SandboxServer) Create(_ context.Context, req *orchestrator.SandboxCreat
+ 		return nil, status.Error(codes.InvalidArgument, "sandbox_id is required")
+ 	}
+ 
++	// Test-only failpoint: widen the node-side create/restore window so a
++	// concurrent lifecycle request can interleave before the api publishes
++	// the sandbox to its running store. DUMMY_CREATE_DELAY_MS=0 disables it.
++	if delay := createDelay(); delay > 0 {
++		time.Sleep(delay)
++	}
++
+ 	startTime := req.GetStartTime()
+ 	if startTime == nil {
+ 		startTime = timestamppb.Now()

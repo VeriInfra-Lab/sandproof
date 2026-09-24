@@ -1,0 +1,14 @@
+# E2B orphan-on-create-timeout evidence (2026-09-14T03:45:46Z)
+
+before: store [] node []
+create with client timeout=1s -> None timed out
+t+5s: node_only=[]
+t+10s: node_only=['i5ps69jmgxpn4q8kzkhvz']
+t+15s: node_only=['i5ps69jmgxpn4q8kzkhvz']
+t+20s: node_only=['i5ps69jmgxpn4q8kzkhvz']
+t+25s: node_only=['i5ps69jmgxpn4q8kzkhvz']
+
+# api log:
+2026-09-14T11:44:16.854+0800  [33mWARN[0m  error when creating instance  {"service": "orchestration-api", "internal": true, "pid": 38178, "trace_id": "28b2cd4efd5dfa61225cad63b61d330e", "span_id": "15d7d539f5f777c5", "error": "failed to place sandbox: request timed out after 1 placement attempt(s)"}
+2026-09-14T11:45:47.371+0800  [31mERROR[0m  Failed to create sandbox  {"service": "orchestration-api", "internal": true, "pid": 38178, "trace_id": "d00fa4e0c0462e9117ef88ed741f8296", "span_id": "2db4c1170178e56a", "sandbox.id": "i5ps69jmgxpn4q8kzkhvz", "template.id": "11111111-1111-1111-1111-111111111111", "build.id": "22222222-2222-2222-2222-222222222222", "node.id": "local", "attempt": 1, "error": "[Canceled] context canceled"}
+2026-09-14T11:45:47.379+0800  [33mWARN[0m  error when creating instance  {"service": "orchestration-api", "internal": true, "pid": 38178, "trace_id": "d00fa4e0c0462e9117ef88ed741f8296", "span_id": "82d95a7e4c34da15", "error": "failed to place sandbox: request timed out after 1 placement attempt(s)"}

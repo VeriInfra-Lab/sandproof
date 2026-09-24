@@ -8,3 +8,4 @@ __pycache__/
 .tools/
 artifacts/
 .lake/
+target/

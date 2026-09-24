@@ -1,0 +1,11 @@
+# F-1 severity (resume timeout=3600) (2026-09-15T10:06:47Z)
+created: i00s4favpanamkukapv8g
+paused
+DELETE -> 204
+resume(timeout=3600) -> 201
+t+0: GET -> 200
+t+60: GET -> 200
+t+180: GET -> 200
+in listing while alive: True
+re-pause (deleted data re-snapshotted) -> 204
+latest snapshot env|deleted_at: ybnye1fa0w5649ig3jcy|2026-09-15 10:07:02.124685+00

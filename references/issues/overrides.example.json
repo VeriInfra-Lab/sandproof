@@ -1,0 +1,8 @@
+{
+  "e2b-dev/runtime#3636": {
+    "in_scope": true,
+    "suggested_property": "TerminalConsistent",
+    "verdict": "violates",
+    "note": "F-1: confirmed by reproduction and checker rule kill_irreversible"
+  }
+}

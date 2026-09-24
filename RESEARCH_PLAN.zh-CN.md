@@ -1,6 +1,6 @@
 # 研究计划：Generation-Scoped Sandbox Lifecycle Authority
 
-版本：0.6，2026-09-07。状态：Lean 抽象协议的状态、准入和关键跨步骤 safety 已机器证明；尚无 controller refinement 或 Firecracker/E2B 实机结论。
+版本：0.7，2026-09-20。状态：Lean 协议安全、可执行纯状态处理函数、规范分支反向覆盖及条件化最终完成已机器证明；尚无生产 controller refinement 或 Firecracker/E2B 实机结论。
 
 ## 1. 研究问题
 
@@ -24,7 +24,7 @@
 | 网络 | `denyAll` 或静态 L3/L4 endpoint allowlist |
 | 故障 | 重复/乱序/迟到、回执丢失、timeout、controller crash/recover、迟到 cleanup |
 
-不进入首篇：多节点调度和迁移、HA 共识、共享卷、路径和文件内容模型、POSIX ACL 语义、host mount、DNS/SNI 动态策略、snapshot fork/clone、容器逃逸/KVM 证明、恶意宿主、计费、完整 E2B 兼容和 liveness。
+不进入首篇：多节点调度和迁移、HA 共识、共享卷、路径和文件内容模型、POSIX ACL 语义、host mount、DNS/SNI 动态策略、snapshot fork/clone、容器逃逸/KVM 证明、恶意宿主、计费、完整 E2B 兼容，以及不要求底层最终响应的无条件完成性。
 
 Docker 只用于离线制作 rootfs，不作为运行时。固定 Firecracker 是为了保留 freeze、snapshot、restore、activate 与物理执行权交接的真实语义。
 
@@ -32,7 +32,7 @@ Docker 只用于离线制作 rootfs，不作为运行时。固定 Firecracker �
 
 E2B 是现实系统证据和后续 conformance 对照，不是直接照搬的 specification。源码阅读固定在 `e2b-dev/infra@82f6529660ea98087d7a479247c789905b0a3867`，见[源码分析](docs/e2b-code-audit.md)。
 
-评估会分别陈述本研究的 StrictLocal 契约、E2B 公开源码能支持的契约、以及云端部署中无法从公开代码推出的事实。返回语义不同首先记为 contract difference；只有固定版本、配置和观察映射后仍无合法历史，才能称 conformance failure。
+评估会分别陈述本研究的 StrictLocal 契约、E2B 公开源码能支持的契约、以及云端部署中无法从公开代码推出的事实。返回语义不同首先记为 contract difference；只有固定版本、配置和观察映射后仍无合法历史，才能称 conformance failure。审计按[系统性 conformance 审计方法](docs/conformance-method.md)执行：固定 obs/evt 映射与 guard 表，按副作用枚举、guard-diff、字段写审计、准入审计四层做覆盖记账，已知修复历史只用于校准尺子，不用作发现目标。
 
 ## 4. 规范结构
 
@@ -45,6 +45,9 @@ Lean 是唯一权威来源：
 5. `Proofs`：初始、保持、可达性与直接协议定理。
 6. `Scenarios`：正常路径、重试查询、崩溃重放、迟到 cleanup。
 7. `Counterexamples`：绕过关键 guard 后的最小坏状态。
+8. `Controller / WorkerController`：请求、具体动作、调度、执行端动作和稳定状态发布的确定性处理函数。
+9. `HandlerCompleteness / SchedulerCompleteness / WorkerCompleteness`：规范允许分支的反向覆盖。
+10. `ControllerLiveness`：真实处理函数上的弱公平和条件化最终完成。
 
 ```lean
 Step : World → Event → World → Prop
@@ -60,9 +63,9 @@ Reachable : World → Prop
 - managed 文件 API 固定 read-write；复杂下游权限只用 `FilePolicyRef` 表示身份；
 - snapshot 只增加 `SnapshotManifestRef`，不建模文件内容与 ACL；
 - operation ID 作用域固定为 `(SandboxId, OperationId)`；
-- 删除没有合法转移的 `OperationStatus.failed`；
-- effect 账本保存 committed/dispatched/acknowledged，未定义合法路径的 rejected 状态不保留；
-- EffectId 在 Lean 中直接由完整 Command 构成，数学上无碰撞；
+- operation 明确区分 pending、结果未知、补偿中、成功与失败；失败补偿和 kill 取代旧操作都有合法转移；
+- effect 账本保存已提交、已派发、结果未知和带成功/失败结果的已确认状态；
+- EffectId 由逻辑动作身份和明确尝试编号组成；超时保持原编号，只有当前尝试明确可重试失败后才能产生严格连续的新编号；
 - cleanup 精确绑定 generation 和资源 ID；
 - 历史性质写成 `Step before event after` 定理，不伪装成单个 World 的字段；
 - `inflight` 仅保留为消息可能重复到达的传输历史，执行资格完全来自持久 effect ledger。
@@ -92,11 +95,11 @@ theorem step_protocol_secure
 | File policy | `reachable_appliedFilePolicyValid`、`step_filePolicyStable`、`reachable_runningRequiresAppliedFilePolicy`、`staleFilePolicyCommandRejected`、resume 后重新应用当前 policy |
 | Manifest | `step_snapshotManifestStable`、Paused/Starting source 绑定、`snapshotCarriesNoAuthority`、resume 使用精确 selected manifest |
 | Operation | `reachable_operationLedgerValid`、`reachable_currentOperationInLedger`、`operationRetryIdempotent`、`queryReturnsCommittedResult`、`step_operationIdentityStable`、`step_operationResultStable`；新操作必须使用 fresh `(sid,id)`，已有 kind/epoch/input 不可改写，timeout 只能改匹配的未完成账本 |
-| Effect | `effectCommittedBeforeDispatch`、`uncommittedEffectCannotDispatch`、`acknowledgeEffectRequiresDispatched`、`ackMatchesEffect`、`step_ackCannotChangeAnotherEffect`、`step_effectResultStable`、`duplicateDeliveryIsIdempotent` |
+| Effect | `effectCommittedBeforeDispatch`、结果未知后的安全重发、迟到/重复/冲突回执、命令后置状态检查、`step_ackCannotChangeAnotherEffect`、`step_effectResultStable` |
 | Cleanup | `cleanupVmTargetsExactResource`、`cleanupSlotTargetsExactResource`、两个单步非 current 定理，以及覆盖任意可达状态的 `reachable_reclaimedResourcesNotCurrent` |
 | 单调性 | epoch、generation、worker fence、terminal、workspace、API access、file policy 和 manifest 的逐步单调/稳定定理 |
 
-正常场景覆盖 create、policy apply/ack、Running、manifest seal/commit、Paused、Resume、operation retry/query、effect commit 后 controller crash/recover、以及旧代清理晚于新代运行。Mutant 覆盖缺少 policy guard、旧代 policy、错误 manifest、未提交派发、清理当前资源和 fence 回退。
+正常场景覆盖 create、policy apply/ack、Running、manifest seal/commit/stop/ack、Paused、Resume、operation retry/query、effect commit 后 controller crash/recover、结果未知后的重发与迟到回执、冲突回执拒绝、外部失败证据补偿、kill 原子终结旧 operation，以及旧代清理晚于新代运行。Mutant 覆盖缺少 policy guard、旧代 policy、错误 manifest、未提交派发、清理当前资源和 fence 回退。
 
 所有证明使用 Lean 4.30.0，源码没有 `sorry`、`admit` 或新增 `axiom`。
 
@@ -110,13 +113,13 @@ Lean 证明的是 controller/worker 协议中使用的身份和顺序。它没�
 - journal 的真实断电原子性；
 - Rust controller 的实现分支都对应 `Step`；
 - 网络栈、内核、编译器或硬件没有 bug；
-- 请求最终一定完成。
+- 在适配器永久不响应或安全清理永久失败时，请求仍最终完成。
 
 这些内容被拆成窄 adapter contract。Lean 验证传给 adapter 的 sid、epoch、generation、resource、workspace、policy 和 manifest 身份正确；具体执行由固定版本审计、refinement 和 failpoint 实验支撑。
 
-## 8. 下一阶段：Rust/Aeneas refinement
+## 8. 下一阶段：生产实现 refinement
 
-暂不开发完整系统。后续只实现纯 reducer：
+Lean 内的纯状态处理核心已经完成，并且每个成功分支携带合法 `Step` 证明，规范允许分支也有反向覆盖。下一步不再另写一套业务状态机，而是从该核心生成/包装生产实现，或实现受限的纯 Rust 核心：
 
 ```text
 reduce(state, event) -> Result<(state', effects), Reject>
@@ -145,7 +148,7 @@ reduce(state, event) -> Result<(state', effects), Reject>
 |---|---|---|
 | G0 | 固定范围、E2B 源码基线、Lean World/Step | 完成 |
 | G1 | 状态/准入/历史 safety、正常场景、mutant | 完成 |
-| G2 | Rust reducer、Aeneas translation、simulation | 未开始 |
+| G2 | Lean 可执行核心、Rust reducer、Aeneas translation、simulation | Lean 核心完成；Rust/refinement 未开始 |
 | G3 | journal/worker/storage/FC adapter 实验 | 未开始 |
 | G4 | 固定 E2B profile 的 conformance histories | 未开始 |
 | G5 | 可复现 artifact 与论文结果 | 未开始 |

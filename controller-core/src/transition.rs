@@ -1,0 +1,612 @@
+use crate::model::{
+    Command, EffectId, EffectOrigin, EffectStatus, FailureKind, Filesystem, LogicalEffectId,
+    LogicalEffectRecord, Operation, OperationInput, OperationKey, OperationLedgerRecord,
+    OperationPlan, OperationResult, OperationStatus, RestoreSource, SandboxRecord,
+    SnapshotManifestRef, World,
+};
+use crate::{
+    Actor, Authority, FilePolicyRef, FsId, NetworkPolicy, OperationKind, Phase, SandboxId,
+    SnapshotId, TenantId, VmId, WorkspaceApiAccess,
+};
+
+pub const DEFAULT_RETRY_LIMIT: u64 = 3;
+
+#[must_use]
+pub const fn operation_key(sandbox: SandboxId, operation: crate::OperationId) -> OperationKey {
+    OperationKey { sandbox, operation }
+}
+
+#[must_use]
+pub fn authorized(actor: &Actor, owner: TenantId) -> bool {
+    actor == &Actor::Tenant(owner) || actor == &Actor::SystemController
+}
+
+fn insert_unique<T: Clone + PartialEq>(values: &mut Vec<T>, value: T) {
+    let mut index = 0;
+    while index < values.len() {
+        if values[index] == value {
+            return;
+        }
+        index += 1;
+    }
+    let mut updated = Vec::new();
+    updated.push(value);
+    let mut old_index = 0;
+    while old_index < values.len() {
+        updated.push(values[old_index].clone());
+        old_index += 1;
+    }
+    *values = updated;
+}
+
+#[must_use]
+pub fn initial_operation_plan(
+    world: &World,
+    sandbox: SandboxId,
+    operation: Operation,
+    input: &OperationInput,
+) -> OperationPlan {
+    let index = world.resource_index(sandbox);
+    let generation = match input {
+        OperationInput::Create { .. } => 1,
+        OperationInput::Pause { generation } | OperationInput::Kill { generation } => *generation,
+        OperationInput::Resume { .. } => match world.sandboxes.get(&sandbox) {
+            Some(record) => record.generation,
+            None => 0,
+        },
+    };
+    let restore_from = match input {
+        OperationInput::Resume { source } => Some(*source),
+        OperationInput::Create { .. }
+        | OperationInput::Pause { .. }
+        | OperationInput::Kill { .. } => None,
+    };
+
+    OperationPlan {
+        key: operation_key(sandbox, operation.id),
+        epoch: operation.epoch,
+        generation,
+        vm: None,
+        slot: None,
+        restore_from,
+        target_snapshot: None,
+        stop_vms: index.vms,
+        close_slots: index.slots,
+        retry_limit: DEFAULT_RETRY_LIMIT,
+        sealed: operation.kind == OperationKind::Kill,
+    }
+}
+
+pub fn store_new_operation(
+    world: &mut World,
+    sandbox: SandboxId,
+    operation: Operation,
+    input: OperationInput,
+) {
+    let key = operation_key(sandbox, operation.id);
+    let plan = initial_operation_plan(world, sandbox, operation, &input);
+    world.operations.put(
+        key,
+        OperationLedgerRecord {
+            sandbox,
+            operation,
+            input,
+            result: None,
+        },
+    );
+    world.operation_plans.put(key, plan);
+}
+
+#[must_use]
+pub fn inferred_effect_origin(world: &World, command: &Command) -> EffectOrigin {
+    let sandbox = command.sandbox();
+    if let (Some(epoch), Some(record)) = (command.epoch(), world.sandboxes.get(&sandbox))
+        && let Some(operation) = record.current_operation
+        && operation.epoch == epoch
+    {
+        return EffectOrigin::Operation(operation_key(sandbox, operation.id));
+    }
+    EffectOrigin::Maintenance(sandbox)
+}
+
+pub fn commit_effect(world: &mut World, command: Command) {
+    let id = EffectId::initial(command.clone());
+    if world.effects.contains_key(&id) {
+        return;
+    }
+
+    let logical = LogicalEffectId { command };
+    world.effects.put(id.clone(), EffectStatus::Committed);
+    insert_unique(&mut world.effect_keys, id);
+
+    if !world.logical_effects.contains_key(&logical) {
+        let origin = inferred_effect_origin(world, &logical.command);
+        world.logical_effects.put(
+            logical,
+            LogicalEffectRecord {
+                origin,
+                current_attempt: 0,
+                remaining_retries: DEFAULT_RETRY_LIMIT,
+                result: None,
+            },
+        );
+    }
+}
+
+pub fn enqueue(world: &mut World, command: Command) {
+    let id = EffectId::initial(command.clone());
+    commit_effect(world, command);
+    insert_unique(&mut world.inflight, id);
+}
+
+#[must_use]
+pub fn begin_create(
+    world: &World,
+    sandbox: SandboxId,
+    owner: TenantId,
+    workspace: FsId,
+    file_policy: FilePolicyRef,
+    policy: NetworkPolicy,
+    operation_id: crate::OperationId,
+) -> World {
+    let mut next = world.clone();
+    let operation = Operation {
+        id: operation_id,
+        epoch: 1,
+        kind: OperationKind::Create,
+        status: OperationStatus::Pending,
+    };
+    let record = SandboxRecord {
+        owner,
+        phase: crate::Phase::Starting,
+        terminal: false,
+        epoch: 1,
+        generation: 1,
+        current_vm: None,
+        workspace,
+        workspace_access: WorkspaceApiAccess::ManagedReadWrite,
+        file_policy,
+        durable_snapshot: None,
+        restore_from: None,
+        net_slot: None,
+        policy: policy.clone(),
+        desired: Authority::Closed,
+        effective: Authority::Closed,
+        current_operation: Some(operation),
+    };
+    next.filesystems.put(
+        workspace,
+        Filesystem {
+            owner,
+            sandbox,
+            created_generation: 1,
+        },
+    );
+    next.sandboxes.put(sandbox, record);
+    store_new_operation(
+        &mut next,
+        sandbox,
+        operation,
+        OperationInput::Create {
+            workspace,
+            network: policy,
+            file_policy,
+        },
+    );
+    enqueue(
+        &mut next,
+        Command::InstallFence {
+            sandbox,
+            epoch: 1,
+            terminal: false,
+        },
+    );
+    next
+}
+
+/// Begin a pause exactly as `SandboxModel.beginPause`: persist the new
+/// operation before committing its fence and freeze effects.
+#[must_use]
+pub fn begin_pause(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    operation_id: crate::OperationId,
+    vm: VmId,
+    epoch: crate::Epoch,
+) -> World {
+    let mut next = world.clone();
+    let operation = Operation {
+        id: operation_id,
+        epoch,
+        kind: OperationKind::Pause,
+        status: OperationStatus::Pending,
+    };
+    let mut updated = record.clone();
+    updated.phase = Phase::Pausing;
+    updated.epoch = epoch;
+    updated.desired = Authority::Closed;
+    updated.current_operation = Some(operation);
+    next.sandboxes.put(sandbox, updated);
+    store_new_operation(
+        &mut next,
+        sandbox,
+        operation,
+        OperationInput::Pause {
+            generation: record.generation,
+        },
+    );
+    enqueue(
+        &mut next,
+        Command::InstallFence {
+            sandbox,
+            epoch,
+            terminal: false,
+        },
+    );
+    enqueue(
+        &mut next,
+        Command::FreezeVm {
+            sandbox,
+            epoch,
+            generation: record.generation,
+            vm,
+        },
+    );
+    next
+}
+
+/// Begin a resume exactly as `SandboxModel.beginResume`.
+#[must_use]
+pub fn begin_resume(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    operation_id: crate::OperationId,
+    source: RestoreSource,
+    epoch: crate::Epoch,
+    generation: crate::Generation,
+) -> World {
+    let mut next = world.clone();
+    let operation = Operation {
+        id: operation_id,
+        epoch,
+        kind: OperationKind::Resume,
+        status: OperationStatus::Pending,
+    };
+    let mut updated = record.clone();
+    updated.phase = Phase::Starting;
+    updated.epoch = epoch;
+    updated.generation = generation;
+    updated.current_vm = None;
+    updated.restore_from = Some(source);
+    updated.net_slot = None;
+    updated.desired = Authority::Closed;
+    updated.effective = Authority::Closed;
+    updated.current_operation = Some(operation);
+    next.sandboxes.put(sandbox, updated);
+    store_new_operation(
+        &mut next,
+        sandbox,
+        operation,
+        OperationInput::Resume { source },
+    );
+    enqueue(
+        &mut next,
+        Command::InstallFence {
+            sandbox,
+            epoch,
+            terminal: false,
+        },
+    );
+    next
+}
+
+/// Return whether a kill may replace the current operation.  The comparison
+/// and lookup order mirrors `Controller.supersedeReadyCheck`.
+#[must_use]
+pub fn supersede_ready_check(
+    world: &World,
+    sandbox: SandboxId,
+    current: Option<Operation>,
+) -> bool {
+    let Some(operation) = current else {
+        return true;
+    };
+    match operation.status {
+        OperationStatus::Pending | OperationStatus::OutcomeUnknown => {
+            match world.operations.get(&operation_key(sandbox, operation.id)) {
+                Some(ledger) => ledger.operation == operation && ledger.result.is_none(),
+                None => false,
+            }
+        }
+        OperationStatus::Compensating(_)
+        | OperationStatus::Succeeded
+        | OperationStatus::Failed(_) => true,
+    }
+}
+
+fn supersede_current_operation(world: &mut World, sandbox: SandboxId, current: Option<Operation>) {
+    let Some(operation) = current else {
+        return;
+    };
+    if !matches!(
+        operation.status,
+        OperationStatus::Pending | OperationStatus::OutcomeUnknown
+    ) {
+        return;
+    }
+    let key = operation_key(sandbox, operation.id);
+    let Some(ledger) = world.operations.get(&key) else {
+        return;
+    };
+    if ledger.operation != operation || ledger.result.is_some() {
+        return;
+    }
+    let mut superseded = ledger.clone();
+    superseded.operation.status = OperationStatus::Failed(FailureKind::Cancelled);
+    superseded.result = Some(OperationResult::Failed(FailureKind::Cancelled));
+    world.operations.put(key, superseded);
+}
+
+/// Begin a kill exactly as `SandboxModel.beginKill`, including finalizing an
+/// unfinished operation that the tombstone supersedes.
+#[must_use]
+pub fn begin_kill(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    operation_id: crate::OperationId,
+    epoch: crate::Epoch,
+) -> World {
+    let mut next = world.clone();
+    let operation = Operation {
+        id: operation_id,
+        epoch,
+        kind: OperationKind::Kill,
+        status: OperationStatus::Pending,
+    };
+    supersede_current_operation(&mut next, sandbox, record.current_operation);
+    let mut updated = record.clone();
+    updated.phase = Phase::Revoking;
+    updated.terminal = true;
+    updated.epoch = epoch;
+    updated.desired = Authority::Closed;
+    updated.effective = record.effective.without_resume();
+    updated.current_operation = Some(operation);
+    next.sandboxes.put(sandbox, updated);
+    store_new_operation(
+        &mut next,
+        sandbox,
+        operation,
+        OperationInput::Kill {
+            generation: record.generation,
+        },
+    );
+    enqueue(
+        &mut next,
+        Command::InstallFence {
+            sandbox,
+            epoch,
+            terminal: true,
+        },
+    );
+    next
+}
+
+/// Convert the current create/resume/pause operation into terminal
+/// compensation while retaining its operation identity and durable plan.
+#[must_use]
+pub fn begin_compensation(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    operation: Operation,
+    failure: FailureKind,
+) -> World {
+    let mut next = world.clone();
+    let mut compensating = operation;
+    compensating.status = OperationStatus::Compensating(failure);
+
+    let mut updated = record.clone();
+    updated.phase = Phase::Revoking;
+    updated.terminal = true;
+    updated.desired = Authority::Closed;
+    updated.effective = Authority::Closed;
+    updated.current_operation = Some(compensating);
+    next.sandboxes.put(sandbox, updated);
+
+    let key = operation_key(sandbox, operation.id);
+    if let Some(stored) = next.operations.get(&key) {
+        let mut ledger = stored.clone();
+        ledger.operation = compensating;
+        ledger.result = None;
+        next.operations.put(key, ledger);
+    }
+
+    enqueue(
+        &mut next,
+        Command::InstallFence {
+            sandbox,
+            epoch: record.epoch,
+            terminal: true,
+        },
+    );
+    next
+}
+
+/// Mark the current RPC operation as outcome-unknown in both the sandbox row
+/// and its operation ledger.  This is a journal-only transition: no worker
+/// command is invented from a client-side timeout.
+#[must_use]
+pub fn mark_operation_outcome_unknown(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    operation: Operation,
+) -> World {
+    let mut next = world.clone();
+    let mut unknown = operation;
+    unknown.status = OperationStatus::OutcomeUnknown;
+
+    let mut updated = record.clone();
+    updated.current_operation = Some(unknown);
+    next.sandboxes.put(sandbox, updated);
+
+    let key = operation_key(sandbox, operation.id);
+    if let Some(stored) = world.operations.get(&key) {
+        let mut ledger = stored.clone();
+        ledger.operation = unknown;
+        ledger.result = None;
+        next.operations.put(key, ledger);
+    }
+    next
+}
+
+/// Reserve the next startup VM and slot in the durable operation plan.
+#[must_use]
+pub fn reserve_startup_resources(
+    world: &World,
+    key: OperationKey,
+    plan: &OperationPlan,
+) -> Option<World> {
+    if world.next_vm_id == u64::MAX || world.next_slot_id == u64::MAX {
+        return None;
+    }
+    let mut next = world.clone();
+    let vm = VmId(world.next_vm_id);
+    let slot = crate::NetSlotId(world.next_slot_id);
+    next.next_vm_id = world.next_vm_id + 1;
+    next.next_slot_id = world.next_slot_id + 1;
+    let mut reserved = plan.clone();
+    reserved.vm = Some(vm);
+    reserved.slot = Some(slot);
+    insert_unique(&mut reserved.stop_vms, vm);
+    insert_unique(&mut reserved.close_slots, slot);
+    reserved.sealed = true;
+    next.operation_plans.put(key, reserved);
+    Some(next)
+}
+
+/// Reserve the next pause snapshot and manifest in the durable operation plan.
+#[must_use]
+pub fn reserve_pause_snapshot(
+    world: &World,
+    key: OperationKey,
+    plan: &OperationPlan,
+    vm: VmId,
+) -> Option<World> {
+    if world.next_snapshot_id == u64::MAX || world.next_manifest_digest == u64::MAX {
+        return None;
+    }
+    let mut next = world.clone();
+    let source = RestoreSource {
+        snapshot: SnapshotId(world.next_snapshot_id),
+        manifest: SnapshotManifestRef {
+            digest: crate::ManifestDigest(world.next_manifest_digest),
+        },
+    };
+    next.next_snapshot_id = world.next_snapshot_id + 1;
+    next.next_manifest_digest = world.next_manifest_digest + 1;
+    let mut reserved = plan.clone();
+    reserved.vm = Some(vm);
+    reserved.target_snapshot = Some(source);
+    reserved.sealed = true;
+    next.operation_plans.put(key, reserved);
+    Some(next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{operation_key, reserve_pause_snapshot, reserve_startup_resources};
+    use crate::model::{OperationPlan, RestoreSource, World};
+    use crate::{
+        ManifestDigest, NetSlotId, OperationId, SandboxId, SnapshotId, SnapshotManifestRef, VmId,
+    };
+
+    fn plan() -> OperationPlan {
+        OperationPlan {
+            key: operation_key(SandboxId(1), OperationId(2)),
+            epoch: 3,
+            generation: 4,
+            vm: None,
+            slot: None,
+            restore_from: None,
+            target_snapshot: None,
+            stop_vms: vec![VmId(8)],
+            close_slots: vec![NetSlotId(9)],
+            retry_limit: 3,
+            sealed: false,
+        }
+    }
+
+    #[test]
+    fn startup_reservation_advances_cursors_and_prepends_cleanup_resources() {
+        let mut world = World {
+            next_vm_id: 21,
+            next_slot_id: 34,
+            ..World::default()
+        };
+        let plan = plan();
+        world.operation_plans.put(plan.key, plan.clone());
+
+        let next = reserve_startup_resources(&world, plan.key, &plan).expect("capacity");
+        let reserved = next.operation_plans.get(&plan.key).expect("reserved plan");
+        assert_eq!(next.next_vm_id, 22);
+        assert_eq!(next.next_slot_id, 35);
+        assert_eq!(reserved.vm, Some(VmId(21)));
+        assert_eq!(reserved.slot, Some(NetSlotId(34)));
+        assert_eq!(reserved.stop_vms, vec![VmId(21), VmId(8)]);
+        assert_eq!(reserved.close_slots, vec![NetSlotId(34), NetSlotId(9)]);
+        assert!(reserved.sealed);
+        assert_eq!(world.next_vm_id, 21);
+        assert_eq!(world.next_slot_id, 34);
+    }
+
+    #[test]
+    fn pause_reservation_advances_snapshot_and_manifest_cursors() {
+        let world = World {
+            next_snapshot_id: 55,
+            next_manifest_digest: 89,
+            ..World::default()
+        };
+        let plan = plan();
+        let next = reserve_pause_snapshot(&world, plan.key, &plan, VmId(8)).expect("capacity");
+        let reserved = next.operation_plans.get(&plan.key).expect("reserved plan");
+        assert_eq!(next.next_snapshot_id, 56);
+        assert_eq!(next.next_manifest_digest, 90);
+        assert_eq!(reserved.vm, Some(VmId(8)));
+        assert_eq!(
+            reserved.target_snapshot,
+            Some(RestoreSource {
+                snapshot: SnapshotId(55),
+                manifest: SnapshotManifestRef {
+                    digest: ManifestDigest(89),
+                },
+            })
+        );
+        assert!(reserved.sealed);
+    }
+
+    #[test]
+    fn reservations_fail_closed_at_the_machine_counter_boundary() {
+        let plan = plan();
+        let startup_world = World {
+            next_vm_id: u64::MAX,
+            ..World::default()
+        };
+        assert_eq!(
+            reserve_startup_resources(&startup_world, plan.key, &plan),
+            None
+        );
+
+        let snapshot_world = World {
+            next_manifest_digest: u64::MAX,
+            ..World::default()
+        };
+        assert_eq!(
+            reserve_pause_snapshot(&snapshot_world, plan.key, &plan, VmId(8)),
+            None
+        );
+    }
+}

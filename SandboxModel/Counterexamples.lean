@@ -116,8 +116,7 @@ theorem deleting_commit_before_dispatch_guard_is_visible :
 
 theorem real_relation_rejects_uncommitted_dispatch :
     ¬ Step emptyWorld (.dispatchEffect orphanEffect) unsafeDispatchedWithoutCommit := by
-  apply uncommittedEffectCannotDispatch
-  simp [orphanEffect, emptyWorld]
+  apply nondispatchableEffectCannotDispatch <;> simp [orphanEffect, emptyWorld]
 
 /-- Mutant: reclaim the VM that the generation-2 record still names as current. -/
 def currentVm : Vm := ⟨tenant, sid, 2, .stopped⟩

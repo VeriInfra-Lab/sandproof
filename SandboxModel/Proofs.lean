@@ -193,7 +193,8 @@ theorem step_preserves_uniqueExecution {world next : World} {event : Event}
     (invariant : UniqueExecution world) (step : Step world event next) :
     UniqueExecution next := by
   cases step <;>
-    simp_all [UniqueExecution, setVm, put, noExecutingVm] <;>
+    simp_all [UniqueExecution, beginCompensation, publishFailure,
+      setSandbox, setVm, put, noExecutingVm] <;>
     grind
 
 theorem reachable_unique_execution {world : World} (reachable : Reachable world) :
@@ -213,8 +214,8 @@ theorem step_preserves_durableSnapshotsImmutable {world next : World} {event : E
     DurableSnapshotsImmutable next := by
   cases step <;>
     simp_all [DurableSnapshotsImmutable, configureSlot, activateResource,
-      sealSnapshot, makeSnapshotDurable, stopResource, setVm, setSnapshot,
-      setNetSlot, put] <;>
+      sealSnapshot, makeSnapshotDurable, stopResource, beginCompensation,
+      publishFailure, setSandbox, setVm, setSnapshot, setNetSlot, put] <;>
     grind
 
 theorem reachable_durable_snapshots_are_immutable {world : World}
@@ -235,7 +236,8 @@ theorem step_preserves_terminalConsistent {world next : World} {event : Event}
     simp_all [TerminalConsistent, beginCreate, prepareResources,
       configureSlot, activateResource, publishRunning, beginPause,
       sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
-      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
+      markOutcomeUnknown,
       setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot,
       put] <;>
     grind
@@ -257,7 +259,7 @@ theorem step_never_clears_terminal {world next : World} {event : Event}
   cases step <;>
     simp_all [beginCreate, prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, setSandbox, setFilesystem, setVm, setSnapshot,
       setNetSlot, put] <;>
     grind
@@ -571,8 +573,9 @@ theorem resourceOwnership_beginCreate
     simp [setSandbox, put]
   have withFilesystem := resourceOwnership_insertFilesystem
     (fs := filesystem) withSandbox recordFound rfl rfl
-  simpa [beginCreate, record, filesystem, enqueue, setSandbox, setFilesystem] using
-    withFilesystem
+  simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+    SnapshotOwnership, NetSlotOwnership, beginCreate, record, filesystem,
+    enqueue, setSandbox, setFilesystem] using withFilesystem
 
 theorem resourceOwnership_applyRevocationFence
     (invariant : ResourceOwnership world)
@@ -628,7 +631,9 @@ theorem resourceOwnership_prepareResources
     simpa [withVm, setNetSlot] using recordAfterVm
   have updatedOwned := resourceOwnership_setSandbox (after := updated) slotOwned
     recordBeforeUpdate rfl rfl
-  simpa [prepareResources, vm, slot, withVm, updated, enqueue] using updatedOwned
+  simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+    SnapshotOwnership, NetSlotOwnership, prepareResources, vm, slot, withVm,
+    updated, enqueue] using updatedOwned
 
 theorem resourceOwnership_publishRunning
     (invariant : ResourceOwnership world)
@@ -653,7 +658,9 @@ theorem resourceOwnership_publishRunning
     simpa [setNetSlot] using foundSandbox
   have sandboxOwned := resourceOwnership_setSandbox (after := running)
     slotOwned foundAfterSlot rfl rfl
-  simpa [publishRunning, activated, base, authority, running] using sandboxOwned
+  simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+    SnapshotOwnership, NetSlotOwnership, publishRunning, activated, base,
+    authority, running] using sandboxOwned
 
 theorem resourceOwnership_sealSnapshot
     (invariant : ResourceOwnership world)
@@ -680,20 +687,25 @@ theorem step_preserves_resourceOwnership {world next : World} {event : Event}
   case acceptCreate =>
     exact resourceOwnership_beginCreate invariant (by assumption)
   case installStartFence =>
-    simpa [applyStartFence, setFence] using invariant
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, applyStartFence, setFence] using
+      invariant
   case installRevocationFence =>
     exact resourceOwnership_applyRevocationFence invariant (by assumption)
   case dispatchPrepare =>
-    simpa [enqueue] using invariant
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, enqueue] using invariant
   case prepareVm =>
     exact resourceOwnership_prepareResources invariant (by assumption)
   case configureNetwork =>
-    simpa [configureSlot] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, configureSlot] using
       (resourceOwnership_setNetSlot (after := { ‹NetSlot› with configured := true })
         (slotId := ‹NetSlotId›) (before := ‹NetSlot›)
         invariant (by assumption) rfl rfl)
   case activateVm =>
-    simpa [activateResource] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, activateResource] using
       (resourceOwnership_setVm (after := { ‹Vm› with status := .executing })
         (vmId := ‹VmId›) (before := ‹Vm›)
         invariant (by assumption) rfl rfl)
@@ -708,25 +720,29 @@ theorem step_preserves_resourceOwnership {world next : World} {event : Event}
       desired := .closed
       currentOperation := some ⟨operationId, record.epoch + 1, .pause, .pending⟩
     }
-    simpa [beginPause, enqueue] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, beginPause, enqueue] using
       (resourceOwnership_setSandbox (after := updated)
         (sid := ‹SandboxId›) (before := record)
         invariant (by assumption) rfl rfl)
   case freezeVm =>
-    simpa [setVm] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, setVm] using
       (resourceOwnership_setVm (after := { ‹Vm› with status := .frozen })
         (vmId := ‹VmId›) (before := ‹Vm›)
         invariant (by assumption) rfl rfl)
   case sealSnapshot =>
     exact resourceOwnership_sealSnapshot invariant (by assumption)
   case commitSnapshot =>
-    simpa [makeSnapshotDurable] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, enqueue, makeSnapshotDurable] using
       (resourceOwnership_setSnapshot
         (after := { ‹Snapshot› with stage := .durable, immutable := true })
         (snapshotId := ‹SnapshotId›) (before := ‹Snapshot›)
         invariant (by assumption) rfl rfl rfl)
   case stopVm =>
-    simpa [stopResource] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, stopResource] using
       (resourceOwnership_setVm (after := { ‹Vm› with status := .stopped })
         (vmId := ‹VmId›) (before := ‹Vm›)
         invariant (by assumption) rfl rfl)
@@ -745,7 +761,8 @@ theorem step_preserves_resourceOwnership {world next : World} {event : Event}
     }
     let authority : Authority := .paused sid source
     let updated := { base with desired := authority, effective := authority }
-    simpa [publishPaused] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, publishPaused] using
       (resourceOwnership_setSandbox (after := updated)
         (sid := sid) (before := record)
         invariant (by assumption) rfl rfl)
@@ -764,13 +781,16 @@ theorem step_preserves_resourceOwnership {world next : World} {event : Event}
       effective := .closed
       currentOperation := some ⟨operationId, record.epoch + 1, .resume, .pending⟩
     }
-    simpa [beginResume, enqueue] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, beginResume, enqueue] using
       (resourceOwnership_setSandbox (after := updated)
         (sid := ‹SandboxId›) (before := record)
         invariant (by assumption) rfl rfl)
   case acceptKill =>
     let record := ‹SandboxRecord›
     let operationId := ‹OperationId›
+    let superseded :=
+      supersedeCurrentOperation world ‹SandboxId› record.currentOperation
     let updated := { record with
       phase := .revoking
       terminal := true
@@ -779,7 +799,30 @@ theorem step_preserves_resourceOwnership {world next : World} {event : Event}
       effective := record.effective.withoutResume
       currentOperation := some ⟨operationId, record.epoch + 1, .kill, .pending⟩
     }
-    simpa [beginKill, enqueue] using
+    have supersededInvariant : ResourceOwnership superseded := by
+      simpa [superseded, ResourceOwnership, VmOwnership,
+        FilesystemOwnership, SnapshotOwnership, NetSlotOwnership] using invariant
+    have foundSuperseded : superseded.sandboxes ‹SandboxId› = some record := by
+      simpa [superseded] using ‹world.sandboxes ‹SandboxId› = some record›
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, beginKill, enqueue, superseded,
+      updated] using
+      (resourceOwnership_setSandbox (after := updated)
+        (sid := ‹SandboxId›) (before := record)
+        supersededInvariant foundSuperseded rfl rfl)
+  case beginCompensation =>
+    let record := ‹SandboxRecord›
+    let operation := ‹Operation›
+    let failure := ‹FailureKind›
+    let updated := { record with
+      phase := .revoking
+      terminal := true
+      desired := .closed
+      effective := .closed
+      currentOperation := some { operation with status := .compensating failure }
+    }
+    simpa [beginCompensation, ResourceOwnership, VmOwnership,
+      FilesystemOwnership, SnapshotOwnership, NetSlotOwnership] using
       (resourceOwnership_setSandbox (after := updated)
         (sid := ‹SandboxId›) (before := record)
         invariant (by assumption) rfl rfl)
@@ -795,7 +838,26 @@ theorem step_preserves_resourceOwnership {world next : World} {event : Event}
       currentOperation := record.currentOperation.map
         (fun (op : Operation) => { op with status := .succeeded })
     }
-    simpa [publishDestroyed] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, publishDestroyed] using
+      (resourceOwnership_setSandbox (after := destroyed)
+        (sid := ‹SandboxId›) (before := record)
+        invariant (by assumption) rfl rfl)
+  case publishFailure =>
+    let record := ‹SandboxRecord›
+    let failure := ‹FailureKind›
+    let destroyed := { record with
+      phase := .destroyed
+      terminal := true
+      currentVm := none
+      netSlot := none
+      desired := .closed
+      effective := .closed
+      currentOperation := record.currentOperation.map
+        (fun (op : Operation) => { op with status := .failed failure })
+    }
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, publishFailure] using
       (resourceOwnership_setSandbox (after := destroyed)
         (sid := ‹SandboxId›) (before := record)
         invariant (by assumption) rfl rfl)
@@ -805,18 +867,21 @@ theorem step_preserves_resourceOwnership {world next : World} {event : Event}
     let updated := { record with
       currentOperation := some { operation with status := .outcomeUnknown }
     }
-    simpa [markOutcomeUnknown] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, markOutcomeUnknown] using
       (resourceOwnership_setSandbox (after := updated)
         (sid := ‹SandboxId›) (before := record)
         invariant (by assumption) rfl rfl)
   case cleanupVm =>
-    simpa [reclaimVm] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, reclaimVm] using
       (resourceOwnership_setVm
         (after := { ‹Vm› with status := .reclaimed })
         (vmId := ‹VmId›) (before := ‹Vm›)
         invariant (by assumption) rfl rfl)
   case cleanupSlot =>
-    simpa [reclaimSlot] using
+    simpa [ResourceOwnership, VmOwnership, FilesystemOwnership,
+      SnapshotOwnership, NetSlotOwnership, reclaimSlot] using
       (resourceOwnership_setNetSlot
         (after := { ‹NetSlot› with active := false, reclaimed := true })
         (slotId := ‹NetSlotId›) (before := ‹NetSlot›)
@@ -880,7 +945,7 @@ theorem step_preserves_workspaceBindingValid {world next : World} {event : Event
     simp_all [WorkspaceBindingValid, applyStartFence,
       prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, setSandbox, setFence, setVm,
       setSnapshot, setNetSlot, put] <;>
     grind
@@ -896,7 +961,7 @@ theorem step_preserves_workspaceApiAccessFixed {world next : World} {event : Eve
     simp_all [WorkspaceApiAccessFixed, beginCreate, applyStartFence,
       applyRevocationFence, prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, Authority.withoutResume, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, put] <;>
     grind
@@ -964,13 +1029,30 @@ theorem uniqueActiveSlot_applyRevocationFence
     UniqueActiveSlot (applyRevocationFence world sid record) := by
   unfold applyRevocationFence
   cases slotChoice : record.netSlot with
-  | none => simpa [slotChoice, setFence, setSandbox] using invariant
+  | none =>
+      intro id₁ slot₁ id₂ slot₂ found₁ active₁ found₂ active₂ same
+      exact invariant id₁ slot₁ id₂ slot₂
+        (by simpa [slotChoice, setFence, setSandbox] using found₁) active₁
+        (by simpa [slotChoice, setFence, setSandbox] using found₂) active₂ same
   | some slotId =>
       cases slotFound : world.netSlots slotId with
-      | none => simpa [slotChoice, slotFound, setFence, setSandbox] using invariant
+      | none =>
+          intro id₁ slot₁ id₂ slot₂ found₁ active₁ found₂ active₂ same
+          exact invariant id₁ slot₁ id₂ slot₂
+            (by simpa [slotChoice, slotFound, setFence, setSandbox] using found₁)
+            active₁
+            (by simpa [slotChoice, slotFound, setFence, setSandbox] using found₂)
+            active₂ same
       | some slot =>
-          simpa [slotChoice, slotFound, setFence, setSandbox] using
-            (uniqueActiveSlot_set_inactive (slotId := slotId) (slot := slot) invariant)
+          intro id₁ slot₁ id₂ slot₂ found₁ active₁ found₂ active₂ same
+          apply uniqueActiveSlot_set_inactive
+            (slotId := slotId) (slot := slot) invariant
+            id₁ slot₁ id₂ slot₂
+          · simpa [slotChoice, slotFound, setFence, setSandbox] using found₁
+          · exact active₁
+          · simpa [slotChoice, slotFound, setFence, setSandbox] using found₂
+          · exact active₂
+          · exact same
 
 theorem uniqueActiveSlot_publishRunning
     (invariant : UniqueActiveSlot world)
@@ -1013,6 +1095,7 @@ theorem step_preserves_uniqueActiveSlot {world next : World} {event : Event}
     let record := ‹SandboxRecord›
     let sid := ‹SandboxId›
     let vmId := ‹VmId›
+    let preparedSlotId := ‹NetSlotId›
     let slot : NetSlot := {
       owner := record.owner
       sandbox := sid
@@ -1023,10 +1106,15 @@ theorem step_preserves_uniqueActiveSlot {world next : World} {event : Event}
       active := false
       reclaimed := false
     }
-    simpa [prepareResources, enqueue, setSandbox, setVm] using
-      (uniqueActiveSlot_set_inactive
-        (slotId := ‹NetSlotId›)
-        (slot := slot) invariant)
+    intro id₁ slot₁ id₂ slot₂ found₁ active₁ found₂ active₂ same
+    apply uniqueActiveSlot_set_inactive
+      (slotId := preparedSlotId) (slot := slot) invariant
+      id₁ slot₁ id₂ slot₂
+    · simpa [prepareResources, enqueue, setSandbox, setVm] using found₁
+    · exact active₁
+    · simpa [prepareResources, enqueue, setSandbox, setVm] using found₂
+    · exact active₂
+    · exact same
   case configureNetwork =>
     exact uniqueActiveSlot_configureSlot invariant (by assumption)
   case publishRunning =>
@@ -1034,9 +1122,9 @@ theorem step_preserves_uniqueActiveSlot {world next : World} {event : Event}
   case cleanupSlot =>
     exact uniqueActiveSlot_reclaimSlot invariant
   all_goals
-    simpa [beginCreate, applyStartFence, prepareResources, activateResource,
+    simpa [UniqueActiveSlot, beginCreate, applyStartFence, prepareResources, activateResource,
       beginPause, sealSnapshot, makeSnapshotDurable, stopResource,
-      publishPaused, beginResume, beginKill, publishDestroyed,
+      publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, setSandbox, setFilesystem, setFence, setVm,
       setSnapshot, enqueue] using invariant
 
@@ -1050,8 +1138,8 @@ theorem step_preserves_authorityShape {world next : World} {event : Event}
   cases step <;>
     simp_all [AuthorityShape, beginCreate, prepareResources, configureSlot,
       activateResource, publishRunning, beginPause, sealSnapshot,
-      makeSnapshotDurable, stopResource, publishPaused, beginResume, beginKill,
-      publishDestroyed, markOutcomeUnknown, setSandbox, setFilesystem, setVm,
+      makeSnapshotDurable, stopResource, publishPaused, beginResume, beginKill, beginCompensation,
+      publishDestroyed, publishFailure, markOutcomeUnknown, setSandbox, setFilesystem, setVm,
       setSnapshot, setNetSlot, put, Authority.withoutResume] <;>
     grind
 
@@ -1076,7 +1164,7 @@ theorem step_preserves_fenceWellFormed {world next : World} {event : Event}
     simp_all [FenceWellFormed,
       beginCreate, prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, setSandbox, setFilesystem, setVm,
       setSnapshot, setNetSlot, put] <;>
     grind
@@ -1091,7 +1179,7 @@ theorem step_preserves_fenceClosesAuthority {world next : World} {event : Event}
       applyStartFence,
       beginCreate, prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, setSandbox, setFilesystem, setFence, setVm,
       setSnapshot, setNetSlot, put] <;>
     grind
@@ -1107,7 +1195,7 @@ theorem step_preserves_pausedSnapshotValid {world next : World} {event : Event}
     simp_all [PausedSnapshotValid, beginCreate, prepareResources,
       configureSlot, activateResource, publishRunning, beginPause,
       sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
-      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure, markOutcomeUnknown,
       setSandbox, setFilesystem, setVm, setSnapshot, setNetSlot,
       put] <;>
     grind
@@ -1133,12 +1221,12 @@ theorem noActiveSlot_set_inactive
     noActiveSlot (applyRevocationFence world sid record) target := by
   unfold applyRevocationFence
   cases slotChoice : record.netSlot with
-  | none => simpa [slotChoice, setFence, setSandbox] using quiet
+  | none => simpa [noActiveSlot, slotChoice, setFence, setSandbox] using quiet
   | some slotId =>
       cases slotFound : world.netSlots slotId with
-      | none => simpa [slotChoice, slotFound, setFence, setSandbox] using quiet
+      | none => simpa [noActiveSlot, slotChoice, slotFound, setFence, setSandbox] using quiet
       | some slot =>
-          simpa [slotChoice, slotFound, setFence, setSandbox] using
+          simpa [noActiveSlot, slotChoice, slotFound, setFence, setSandbox] using
             (noActiveSlot_set_inactive (slotId := slotId) (slot := slot) quiet)
 
 theorem stableStatesQuiescent_applyRevocationFence
@@ -1157,7 +1245,8 @@ theorem stableStatesQuiescent_applyRevocationFence
   · have oldFound : world.sandboxes target = some current := by
       simpa [applyRevocationFence_sandboxes, put, same] using currentFound
     rcases invariant target current oldFound stable with ⟨vmQuiet, slotQuiet⟩
-    exact ⟨by simpa only [noExecutingVm, applyRevocationFence_vms] using vmQuiet,
+    exact ⟨by simpa only [allVmsStoppedOrReclaimed,
+        applyRevocationFence_vms] using vmQuiet,
       noActiveSlot_applyRevocationFence slotQuiet⟩
 
 set_option maxHeartbeats 1200000 in
@@ -1168,14 +1257,31 @@ theorem step_preserves_stableStatesQuiescent {world next : World} {event : Event
   case installRevocationFence =>
     exact stableStatesQuiescent_applyRevocationFence invariant (by assumption)
   all_goals
-    simp_all [StableStatesQuiescent, noExecutingVm, noActiveSlot,
+    simp_all [StableStatesQuiescent, allVmsStoppedOrReclaimed, noActiveSlot,
       beginCreate, applyStartFence, prepareResources,
       configureSlot, activateResource, publishRunning, beginPause,
       sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
-      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure, markOutcomeUnknown,
       setSandbox, setFilesystem, setFence, setVm, setSnapshot, setNetSlot,
       put] <;>
     grind
+
+theorem reachable_stableStatesQuiescent {world : World}
+    (reachable : Reachable world) : StableStatesQuiescent world := by
+  induction reachable with
+  | initial => exact emptyWorld_stableStatesQuiescent
+  | step _ transition ih =>
+      exact step_preserves_stableStatesQuiescent ih transition
+
+/-- A stable sandbox cannot hide a prepared, executing, or frozen VM.  This is
+    the resource-accounting strengthening that prevents publication from
+    stranding a VM after the controller clears `currentVm`. -/
+theorem reachable_stable_resources_closed {world : World}
+    (reachable : Reachable world)
+    (found : world.sandboxes sid = some record)
+    (stable : record.phase = .paused ∨ record.phase = .destroyed) :
+    allVmsStoppedOrReclaimed world sid ∧ noActiveSlot world sid :=
+  reachable_stableStatesQuiescent reachable sid record found stable
 
 theorem emptyWorld_effectiveRuntimeValid : EffectiveRuntimeValid emptyWorld := by
   simp [EffectiveRuntimeValid, emptyWorld]
@@ -1425,6 +1531,44 @@ theorem effectiveRuntimeValid_activateVm
       slotGeneration, slotVm, slotPolicy, configured, active⟩
     simpa [activateResource, setVm, put, different] using oldFoundVm
 
+theorem effectiveRuntimeValid_stopResource
+    (invariant : EffectiveRuntimeValid world)
+    (foundSandbox : world.sandboxes sid = some record)
+    (foundVm : world.vms vmId = some vm)
+    (owned : vm.sandbox = sid)
+    (closed : record.effective = .closed) :
+    EffectiveRuntimeValid (stopResource world vmId vm) := by
+  intro target current currentFound effective phase
+  have currentFoundBefore : world.sandboxes target = some current := by
+    simpa [stopResource, setVm] using currentFound
+  rcases invariant target current currentFoundBefore
+      effective phase with
+    ⟨oldVmId, oldVm, slotId, slot, currentVm, oldFoundVm, oldVmOwner,
+      oldVmSandbox, oldVmGeneration, oldExecuting, currentSlot, foundSlot,
+      slotOwner, slotSandbox, slotGeneration, slotVm, slotPolicy,
+      configured, active⟩
+  by_cases sameVm : oldVmId = vmId
+  · have sameResource : oldVm = vm := by
+      rw [sameVm] at oldFoundVm
+      exact Option.some.inj (oldFoundVm.symm.trans foundVm)
+    subst oldVm
+    subst oldVmId
+    have sameSid : target = sid := by
+      exact oldVmSandbox.symm.trans owned
+    have currentAtSid : world.sandboxes sid = some current := by
+      rw [← sameSid]
+      exact currentFoundBefore
+    have sameRecord : current = record := by
+      exact Option.some.inj (currentAtSid.symm.trans foundSandbox)
+    subst current
+    exact (effective closed).elim
+  · refine ⟨oldVmId, oldVm, slotId, slot, currentVm, ?_, oldVmOwner,
+      oldVmSandbox, oldVmGeneration, oldExecuting, currentSlot, ?_,
+      slotOwner, slotSandbox, slotGeneration, slotVm, slotPolicy,
+      configured, active⟩
+    · simpa [stopResource, setVm, put, sameVm] using oldFoundVm
+    · simpa [stopResource, setVm] using foundSlot
+
 set_option maxHeartbeats 2000000 in
 theorem step_preserves_effectiveRuntimeValid {world next : World} {event : Event}
     (shape : AuthorityShape world)
@@ -1450,12 +1594,45 @@ theorem step_preserves_effectiveRuntimeValid {world next : World} {event : Event
   case freezeVm =>
     exact effectiveRuntimeValid_freezeVm terminal fenceClosed invariant
       (by assumption) (by assumption) (by assumption) (by grind) (by assumption)
+  case stopVm =>
+    have closed : (‹SandboxRecord›).effective = .closed := by
+      rcases (by assumption :
+          ((‹SandboxRecord›).phase = .pausing ∧
+            (‹SandboxRecord›).currentVm = some ‹VmId› ∧
+            (‹SandboxRecord›).terminal = false ∧
+            (‹Vm›).status = .frozen ∧
+            world.workerFences ‹SandboxId› =
+              some ⟨(‹SandboxRecord›).epoch, false⟩ ∧
+            ∃ operation plan source snapshot,
+              (‹SandboxRecord›).currentOperation = some operation ∧
+              world.operationPlans
+                  (operationKey ‹SandboxId› operation.id) = some plan ∧
+              plan.targetSnapshot = some source ∧
+              world.snapshots source.snapshot = some snapshot ∧
+              snapshot.sandbox = ‹SandboxId› ∧
+              snapshot.sourceGeneration = (‹SandboxRecord›).generation ∧
+              snapshot.stage = .durable ∧ snapshot.immutable = true) ∨
+          ((‹SandboxRecord›).phase = .revoking ∧
+            (‹SandboxRecord›).terminal = true ∧
+            world.workerFences ‹SandboxId› =
+              some ⟨(‹SandboxRecord›).epoch, true⟩)) with
+        pausing | revoking
+      · rcases pausing with
+          ⟨phase, _current, recordLive, _frozen, fenced, _snapshot⟩
+        exact fenceClosed ‹SandboxId› ‹SandboxRecord› (by assumption)
+          (by simpa [recordLive] using fenced)
+          (Or.inl phase)
+      · rcases revoking with ⟨phase, recordTerminal, fenced⟩
+        exact fenceClosed ‹SandboxId› ‹SandboxRecord› (by assumption)
+          (by simpa [recordTerminal] using fenced) (Or.inr phase)
+    exact effectiveRuntimeValid_stopResource invariant (by assumption)
+      (by assumption) (by assumption) closed
   all_goals
     simp_all [AuthorityShape, FenceClosesAuthority, EffectiveRuntimeValid,
       beginCreate, applyStartFence, beginPause,
-      sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
-      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
-      Authority.withoutResume, setSandbox, setFilesystem, setFence, setVm,
+      sealSnapshot, makeSnapshotDurable, publishPaused,
+      beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure, markOutcomeUnknown,
+      Authority.withoutResume, setSandbox, setFilesystem, setFence,
       setSnapshot, put] <;>
     grind
 
@@ -1490,8 +1667,8 @@ theorem step_keeps_destroyed {world next : World} {event : Event}
   cases step <;>
     simp_all [beginCreate, applyStartFence, prepareResources, configureSlot,
       activateResource, publishRunning, beginPause, sealSnapshot,
-      makeSnapshotDurable, stopResource, publishPaused, beginResume, beginKill,
-      publishDestroyed, markOutcomeUnknown, setSandbox, setFilesystem,
+      makeSnapshotDurable, stopResource, publishPaused, beginResume, beginKill, beginCompensation,
+      publishDestroyed, publishFailure, markOutcomeUnknown, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, put] <;>
     grind
 
@@ -1623,7 +1800,7 @@ theorem step_preserves_currentResourcesValid {world next : World} {event : Event
     simp_all [CurrentResourcesValid, beginCreate, applyStartFence,
       configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, setSandbox, setFilesystem, setFence, setVm,
       setSnapshot, setNetSlot, put] <;>
     grind
@@ -1660,7 +1837,7 @@ theorem step_preserves_activeSlotValid {world next : World} {event : Event}
     simp_all [ActiveSlotValid, beginCreate, applyStartFence,
       prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, Authority.withoutResume, StableStatesQuiescent,
       noActiveSlot, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, put] <;>
@@ -1707,7 +1884,7 @@ theorem step_preserves_restoreSourceValid {world next : World} {event : Event}
       beginCreate, applyStartFence, prepareResources,
       configureSlot, activateResource, publishRunning, beginPause,
       sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
-      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure, markOutcomeUnknown,
       Authority.withoutResume, setSandbox, setFilesystem, setFence, setVm,
       setSnapshot, setNetSlot, put] <;>
     grind
@@ -1729,6 +1906,32 @@ theorem currentOperationValid_applyRevocationFence
       simpa [applyRevocationFence_sandboxes, put, same] using currentFound
     exact invariant target current oldFound
 
+private theorem operationMatchesPhase_timeout
+    (phaseMatch : OperationMatchesPhase operation phase)
+    (pending : operation.status = .pending) :
+    OperationMatchesPhase { operation with status := .outcomeUnknown } phase := by
+  cases phase <;> simp_all [OperationMatchesPhase]
+
+private theorem currentOperationValid_markOutcomeUnknown
+    (invariant : CurrentOperationValid world)
+    (found : world.sandboxes sid = some record)
+    (current : record.currentOperation = some operation)
+    (pending : operation.status = .pending) :
+    CurrentOperationValid (markOutcomeUnknown world sid record operation) := by
+  intro target after foundAfter
+  by_cases same : target = sid
+  · subst target
+    simp [markOutcomeUnknown, setSandbox, put] at foundAfter
+    subst after
+    rcases invariant sid record found with ⟨old, oldCurrent, epoch, phaseMatch⟩
+    have oldEq : old = operation := Option.some.inj (oldCurrent.symm.trans current)
+    subst old
+    exact ⟨{ operation with status := .outcomeUnknown }, rfl, epoch,
+      operationMatchesPhase_timeout phaseMatch pending⟩
+  · have oldFound : world.sandboxes target = some after := by
+      simpa [markOutcomeUnknown, setSandbox, put, same] using foundAfter
+    exact invariant target after oldFound
+
 set_option maxHeartbeats 1200000 in
 theorem step_preserves_currentOperationValid {world next : World} {event : Event}
     (invariant : CurrentOperationValid world) (step : Step world event next) :
@@ -1736,12 +1939,15 @@ theorem step_preserves_currentOperationValid {world next : World} {event : Event
   cases step
   case installRevocationFence =>
     exact currentOperationValid_applyRevocationFence invariant (by assumption)
+  case rpcTimeout =>
+    exact currentOperationValid_markOutcomeUnknown invariant (by assumption)
+      (by assumption) (by assumption)
   all_goals
     simp_all [CurrentOperationValid, OperationMatchesPhase,
       beginCreate, applyStartFence, prepareResources,
       configureSlot, activateResource, publishRunning, beginPause,
       sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
-      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       Authority.withoutResume, setSandbox, setFilesystem, setFence, setVm,
       setSnapshot, setNetSlot, put] <;>
     grind
@@ -1824,7 +2030,7 @@ theorem step_workspaceIdentityStable {world next : World} {event : Event}
     simp_all [WorkspaceIdentityStable, beginCreate, applyStartFence,
       prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, Authority.withoutResume, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, put] <;>
     grind
@@ -1986,7 +2192,7 @@ theorem step_preserves_runningRequiresAppliedFilePolicy
     simp_all [RunningRequiresAppliedFilePolicy, beginCreate, applyStartFence,
       prepareResources, applyFilePolicyResult, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, reclaimVm, reclaimSlot, Authority.withoutResume,
       setSandbox, setFilesystem, setFence, setVm, setSnapshot, setNetSlot,
       setAppliedFilePolicy, enqueue, put] <;>
@@ -2021,7 +2227,7 @@ theorem step_epochMonotone {world next : World} {event : Event}
     simp_all [EpochMonotone, beginCreate, applyStartFence,
       prepareResources, configureSlot, activateResource, publishRunning,
       beginPause, sealSnapshot, makeSnapshotDurable, stopResource,
-      publishPaused, beginResume, beginKill, publishDestroyed,
+      publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, Authority.withoutResume, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
     grind
@@ -2048,7 +2254,7 @@ theorem step_generationMonotone {world next : World} {event : Event}
     simp_all [GenerationMonotone, beginCreate, applyStartFence,
       prepareResources, configureSlot, activateResource, publishRunning,
       beginPause, sealSnapshot, makeSnapshotDurable, stopResource,
-      publishPaused, beginResume, beginKill, publishDestroyed,
+      publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, Authority.withoutResume, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
     grind
@@ -2075,7 +2281,7 @@ theorem step_filePolicyStable {world next : World} {event : Event}
     simp_all [FilePolicyStable, beginCreate, applyStartFence,
       prepareResources, configureSlot, activateResource, publishRunning,
       beginPause, sealSnapshot, makeSnapshotDurable, stopResource,
-      publishPaused, beginResume, beginKill, publishDestroyed,
+      publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, Authority.withoutResume, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
     grind
@@ -2115,7 +2321,7 @@ theorem step_workerFenceMonotone {world next : World} {event : Event}
     simp_all [WorkerFenceMonotone, beginCreate, prepareResources,
       configureSlot, activateResource, publishRunning, beginPause,
       sealSnapshot, makeSnapshotDurable, stopResource, publishPaused,
-      beginResume, beginKill, publishDestroyed, markOutcomeUnknown,
+      beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure, markOutcomeUnknown,
       reclaimVm, reclaimSlot, setSandbox, setFilesystem, setVm,
       setSnapshot, setNetSlot, enqueue] <;>
     grind
@@ -2127,41 +2333,51 @@ theorem step_snapshotManifestStable {world next : World} {event : Event}
     simp_all [SnapshotManifestStable, beginCreate, applyStartFence,
       applyRevocationFence, prepareResources, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, reclaimVm, reclaimSlot, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, enqueue, put] <;>
     grind
 
 theorem effectIdentityByConstruction (world : World) : EffectIdentityValid world := by
   intro effectKey status _
-  cases effectKey
-  rfl
+  cases effectKey with
+  | mk logical attempt =>
+      cases logical
+      rfl
 
-theorem effectCommittedBeforeDispatch
+theorem effectDispatchableBeforeDispatch
     (transition : Step world (.dispatchEffect requestedId) next) :
-    world.effects requestedId = some .committed := by
+    world.effects requestedId = some .committed ∨
+      world.effects requestedId = some .outcomeUnknown := by
   cases transition
   assumption
 
-theorem uncommittedEffectCannotDispatch
-    (uncommitted : world.effects requestedId ≠ some .committed) :
+theorem nondispatchableEffectCannotDispatch
+    (notCommitted : world.effects requestedId ≠ some .committed)
+    (notUnknown : world.effects requestedId ≠ some .outcomeUnknown) :
     ¬ Step world (.dispatchEffect requestedId) next := by
   intro transition
-  exact uncommitted (effectCommittedBeforeDispatch transition)
+  rcases effectDispatchableBeforeDispatch transition with committed | unknown
+  · exact notCommitted committed
+  · exact notUnknown unknown
 
 theorem ackMatchesEffect
-    (transition : Step world (.acknowledgeEffect requestedId result) next) :
-    world.effects requestedId = some .dispatched ∧
-      commandResultPresent world requestedId.command := by
+    (transition : Step world (.acknowledgeEffect requestedId outcome) next) :
+    (((world.effects requestedId = some .dispatched ∨
+        world.effects requestedId = some .outcomeUnknown) ∧
+      effectOutcomeValid world requestedId.command outcome) ∨
+      world.effects requestedId = some (.acknowledged outcome)) := by
   cases transition
-  exact ⟨by assumption, by assumption⟩
+  · exact Or.inl ⟨by assumption, by assumption⟩
+  · exact Or.inr (by assumption)
 
 theorem step_ackCannotChangeAnotherEffect
     (transition : Step world (.acknowledgeEffect requestedId result) next)
     (different : otherId ≠ requestedId) :
     next.effects otherId = world.effects otherId := by
   cases transition
-  simp [acknowledgeEffect, setEffect, put, different]
+  · simp [acknowledgeEffect, setEffect, put, different]
+  · rfl
 
 private theorem effectResultStable_of_effects_eq
     (same : after.effects = before.effects) : EffectResultStable before after := by
@@ -2178,39 +2394,87 @@ private theorem effectResultStable_commit :
       · subst id
         rw [found] at old
         contradiction
-      · simp [commitEffect, found, setEffect, put, same]
-        exact old
+      · cases logical : world.logicalEffects (logicalEffectId command) <;>
+          simp [commitEffect, found, logical, setEffect, setLogicalEffect,
+            put, same] <;>
+          exact old
   | some existing =>
       simp [commitEffect, found]
       exact old
 
 private theorem effectResultStable_enqueue :
     EffectResultStable world (enqueue world command) := by
-  simpa [enqueue] using
-    (effectResultStable_commit (world := world) (command := command))
+  intro id outcome old
+  exact effectResultStable_commit (world := world) (command := command)
+    id outcome old
 
 private theorem effectResultStable_dispatch
-    (committed : world.effects requestedId = some .committed) :
+    (dispatchable : world.effects requestedId = some .committed ∨
+      world.effects requestedId = some .outcomeUnknown) :
     EffectResultStable world (dispatchEffect world requestedId) := by
   intro id result old
   by_cases same : id = requestedId
   · subst id
-    rw [committed] at old
-    cases old
+    rcases dispatchable with committed | unknown
+    · rw [committed] at old
+      cases old
+    · rw [unknown] at old
+      cases old
   · simp [dispatchEffect, setEffect, put, same]
     exact old
 
 private theorem effectResultStable_ack
-    (dispatched : world.effects requestedId = some .dispatched) :
+    (awaiting : world.effects requestedId = some .dispatched ∨
+      world.effects requestedId = some .outcomeUnknown) :
     EffectResultStable world
       (acknowledgeEffect world requestedId ackResult) := by
   intro id result old
   by_cases same : id = requestedId
   · subst id
-    rw [dispatched] at old
-    cases old
+    rcases awaiting with dispatched | unknown
+    · rw [dispatched] at old
+      cases old
+    · rw [unknown] at old
+      cases old
   · simp [acknowledgeEffect, setEffect, put, same]
     exact old
+
+private theorem effectResultStable_timeout
+    (dispatched : world.effects requestedId = some .dispatched) :
+    EffectResultStable world (markEffectOutcomeUnknown world requestedId) := by
+  intro id result old
+  by_cases same : id = requestedId
+  · subst id
+    rw [dispatched] at old
+    cases old
+  · simp [markEffectOutcomeUnknown, setEffect, put, same]
+    exact old
+
+private theorem nextAttemptData_fresh
+    {world : World} {logical : LogicalEffectId} {failure : FailureKind}
+    {next : EffectId} {record : LogicalEffectRecord}
+    (found : nextAttemptData world logical failure = some (next, record)) :
+    world.effects next = none := by
+  unfold nextAttemptData at found
+  split at found <;> simp_all
+  split at found <;> simp_all
+  split at found <;> simp_all
+  split at found <;> simp_all
+
+private theorem effectResultStable_startNextAttempt
+    {world : World} {logical : LogicalEffectId} {failure : FailureKind} :
+    EffectResultStable world (startNextAttempt world logical failure) := by
+  intro id outcome old
+  cases found : nextAttemptData world logical failure with
+  | none => simpa [startNextAttempt, found] using old
+  | some nextAndRecord =>
+      rcases nextAndRecord with ⟨next, record⟩
+      have fresh := nextAttemptData_fresh found
+      by_cases same : id = next
+      · subst id
+        rw [fresh] at old
+        contradiction
+      · simpa [startNextAttempt, found, put, same] using old
 
 private theorem effectResultStable_trans
     (first : EffectResultStable a b) (second : EffectResultStable b c) :
@@ -2230,6 +2494,13 @@ private theorem effectResultStable_two_enqueue_after
   apply effectResultStable_trans (effectResultStable_enqueue_after same)
   exact effectResultStable_enqueue
 
+private theorem effectResultStable_three_enqueue_after
+    (same : base.effects = world.effects) :
+    EffectResultStable world
+      (enqueue (enqueue (enqueue base first) second) third) := by
+  apply effectResultStable_trans (effectResultStable_two_enqueue_after same)
+  exact effectResultStable_enqueue
+
 theorem step_effectResultStable
     (transition : Step world event next) : EffectResultStable world next := by
   cases transition
@@ -2240,6 +2511,16 @@ theorem step_effectResultStable
     exact effectResultStable_dispatch (by assumption)
   case acknowledgeEffect =>
     exact effectResultStable_ack (by assumption)
+  case replayEffectReceipt =>
+    exact effectResultStable_of_effects_eq rfl
+  case effectTimeout =>
+    exact effectResultStable_timeout (by assumption)
+  case repeatEffectTimeout =>
+    exact effectResultStable_of_effects_eq rfl
+  case startNextAttempt =>
+    exact effectResultStable_startNextAttempt
+  case finalizeEffectFailure =>
+    exact effectResultStable_of_effects_eq finalizeLogicalFailure_effects
   case installRevocationFence =>
     apply effectResultStable_of_effects_eq
     rename_i sid record revoking queued dispatched found monotone slotIdentity
@@ -2249,10 +2530,11 @@ theorem step_effectResultStable
         cases slotFound : world.netSlots slotId <;>
           simp [applyRevocationFence, slotChoice, slotFound]
   case dispatchPrepare =>
-    exact effectResultStable_enqueue
+    apply effectResultStable_enqueue_after
+    simp
   case prepareVm =>
     unfold prepareResources
-    apply effectResultStable_two_enqueue_after
+    apply effectResultStable_three_enqueue_after
     simp
   case acceptPause =>
     unfold beginPause
@@ -2262,6 +2544,16 @@ theorem step_effectResultStable
     exact effectResultStable_enqueue
   case scheduleCleanupSlot =>
     exact effectResultStable_enqueue
+  case scheduleSealSnapshot =>
+    apply effectResultStable_enqueue_after
+    simp
+  case scheduleCommitSnapshot =>
+    exact effectResultStable_enqueue
+  case commitSnapshot =>
+    apply effectResultStable_enqueue_after
+    simp [makeSnapshotDurable]
+  case scheduleStopVm =>
+    exact effectResultStable_enqueue
   case acceptResume =>
     unfold beginResume
     apply effectResultStable_enqueue_after
@@ -2270,13 +2562,17 @@ theorem step_effectResultStable
     unfold beginKill
     apply effectResultStable_enqueue_after
     simp
+  case beginCompensation =>
+    unfold beginCompensation
+    apply effectResultStable_enqueue_after
+    simp
   all_goals
     apply effectResultStable_of_effects_eq
     first
     | rfl
     | simp [applyStartFence, applyRevocationFence, configureSlot,
         activateResource, publishRunning, sealSnapshot, makeSnapshotDurable,
-        stopResource, publishPaused, publishDestroyed, markOutcomeUnknown,
+        stopResource, publishPaused, publishDestroyed, publishFailure, markOutcomeUnknown,
         reclaimVm, reclaimSlot]
 
 theorem duplicateDeliveryIsIdempotent
@@ -2350,6 +2646,94 @@ private theorem operationResultStable_beginResume
     cases foundNew
     rfl
 
+private theorem operationResultStable_updateOperation
+    (found : world.operations (operationKey sid operation.id) = some ledger)
+    (empty : ledger.result = none) :
+    OperationResultStable world
+      (updateOperation world sid operation result) := by
+  intro key oldRecord newRecord foundOld finalOld foundNew
+  by_cases same : key = operationKey sid operation.id
+  · subst key
+    have oldIsLedger : oldRecord = ledger :=
+      Option.some.inj (foundOld.symm.trans found)
+    subst oldRecord
+    exact (finalOld empty).elim
+  · simp [updateOperation, same] at foundNew
+    rw [foundOld] at foundNew
+    cases foundNew
+    rfl
+
+private theorem operationResultStable_supersedeCurrent
+    (current : Option Operation) :
+    OperationResultStable world
+      (supersedeCurrentOperation world sid current) := by
+  cases current with
+  | none => exact operationResultStable_of_operations_eq rfl
+  | some operation =>
+      cases status : operation.status with
+      | pending =>
+          cases found : world.operations (operationKey sid operation.id) with
+          | none =>
+              simpa [supersedeCurrentOperation, status, found] using
+                (operationResultStable_of_operations_eq (before := world)
+                  (after := world) rfl)
+          | some ledger =>
+              cases final : ledger.result with
+              | none =>
+                  by_cases sameOperation : ledger.operation = operation
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (operationResultStable_updateOperation
+                        (world := world) (sid := sid)
+                        (operation := { operation with
+                          status := .failed .cancelled })
+                        (result := some (.failed .cancelled)) found final)
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (operationResultStable_of_operations_eq (before := world)
+                        (after := world) rfl)
+              | some result =>
+                  simpa [supersedeCurrentOperation, status, found, final] using
+                    (operationResultStable_of_operations_eq (before := world)
+                      (after := world) rfl)
+      | outcomeUnknown =>
+          cases found : world.operations (operationKey sid operation.id) with
+          | none =>
+              simpa [supersedeCurrentOperation, status, found] using
+                (operationResultStable_of_operations_eq (before := world)
+                  (after := world) rfl)
+          | some ledger =>
+              cases final : ledger.result with
+              | none =>
+                  by_cases sameOperation : ledger.operation = operation
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (operationResultStable_updateOperation
+                        (world := world) (sid := sid)
+                        (operation := { operation with
+                          status := .failed .cancelled })
+                        (result := some (.failed .cancelled)) found final)
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (operationResultStable_of_operations_eq (before := world)
+                        (after := world) rfl)
+              | some result =>
+                  simpa [supersedeCurrentOperation, status, found, final] using
+                    (operationResultStable_of_operations_eq (before := world)
+                      (after := world) rfl)
+      | compensating failure =>
+          simpa [supersedeCurrentOperation, status] using
+            (operationResultStable_of_operations_eq (before := world)
+              (after := world) rfl)
+      | succeeded =>
+          simpa [supersedeCurrentOperation, status] using
+            (operationResultStable_of_operations_eq (before := world)
+              (after := world) rfl)
+      | failed failure =>
+          simpa [supersedeCurrentOperation, status] using
+            (operationResultStable_of_operations_eq (before := world)
+              (after := world) rfl)
+
 private theorem operationResultStable_beginKill
     (fresh : world.operations (operationKey sid operationId) = none) :
     OperationResultStable world (beginKill world sid record operationId) := by
@@ -2358,7 +2742,26 @@ private theorem operationResultStable_beginKill
   · subst key
     rw [fresh] at foundOld
     contradiction
-  · simp [beginKill, storeNewOperation, setOperation, put, same] at foundNew
+  · have superseded := operationResultStable_supersedeCurrent
+        (world := world) (sid := sid) record.currentOperation
+    apply superseded key oldRecord newRecord foundOld finalOld
+    simpa [beginKill, storeNewOperation, setOperation, put, same] using foundNew
+
+private theorem operationResultStable_beginCompensation
+    (failure : FailureKind)
+    (found : world.operations (operationKey sid operation.id) = some ledger)
+    (empty : ledger.result = none) :
+    OperationResultStable world
+      (beginCompensation world sid record operation failure) := by
+  unfold beginCompensation
+  intro key oldRecord newRecord foundOld finalOld foundNew
+  by_cases same : key = operationKey sid operation.id
+  · subst key
+    have oldIsLedger : oldRecord = ledger :=
+      Option.some.inj (foundOld.symm.trans found)
+    subst oldRecord
+    exact (finalOld empty).elim
+  · simp [updateOperation, same] at foundNew
     rw [foundOld] at foundNew
     cases foundNew
     rfl
@@ -2425,6 +2828,19 @@ private theorem operationResultStable_publishDestroyed
   subst published
   exact ⟨ledger, found, empty⟩
 
+private theorem operationResultStable_publishFailure
+    (failure : FailureKind)
+    (current : record.currentOperation = some operation)
+    (found : world.operations (operationKey sid operation.id) = some ledger)
+    (empty : ledger.result = none) :
+    OperationResultStable world (publishFailure world sid record failure) := by
+  unfold publishFailure
+  apply operationResultStable_updateCurrent
+  intro published mapped
+  simp [current] at mapped
+  subst published
+  exact ⟨ledger, found, empty⟩
+
 private theorem operationResultStable_markOutcomeUnknown
     (found : world.operations (operationKey sid operation.id) = some ledger)
     (empty : ledger.result = none) :
@@ -2447,38 +2863,31 @@ theorem step_operationResultStable
     OperationResultStable world next := by
   cases transition
   case acceptCreate =>
-    rename_i actor owner sid workspace filePolicy policy operationId auth up
-      freshSandbox freshWorkspace freshOperation
-    exact operationResultStable_beginCreate freshOperation
+    exact operationResultStable_beginCreate (by assumption)
   case acceptPause =>
-    rename_i record vm actor sid operationId running live current auth up found
-      freshOperation
-    exact operationResultStable_beginPause freshOperation
+    exact operationResultStable_beginPause (by assumption)
   case acceptResume =>
-    rename_i record source sid operationId actor paused live currentSnapshot auth up
-      found sourceValid freshOperation
-    exact operationResultStable_beginResume freshOperation
+    exact operationResultStable_beginResume (by assumption)
   case acceptKill =>
-    rename_i record actor sid operationId notDestroyed auth up found freshOperation
-    exact operationResultStable_beginKill freshOperation
+    exact operationResultStable_beginKill (by assumption)
+  case beginCompensation =>
+    rename_i record operation ledger sid failure starting live currentOperation
+      recoverableKind unfinished operationMatches up found persistedOperation
+      evidence
+    exact operationResultStable_beginCompensation failure persistedOperation
+      operationMatches.2.2
   case publishRunning =>
-    rename_i record vmId vm sid slot slotId operation ledger starting live currentVm
-      vmIdentity executing currentSlot slotReady currentOperation operationMatches up
-      foundSandbox foundVm foundSlot exclusiveNetwork appliedPolicy policyAcknowledged
-      persistedOperation fenced
-    exact operationResultStable_publishRunning currentOperation persistedOperation
-      operationMatches.2.2
+    exact operationResultStable_publishRunning (by assumption) (by assumption)
+      (by grind)
   case publishPaused =>
-    rename_i record snapshot sid operation ledger source pausing snapshotReady
-      currentOperation operationMatches up foundSandbox foundSnapshot fenced quiet
-      networkClosed persistedOperation
-    exact operationResultStable_publishPaused currentOperation persistedOperation
-      operationMatches.2.2
+    exact operationResultStable_publishPaused (by assumption) (by assumption)
+      (by grind)
   case publishDestroyed =>
-    rename_i record sid operation ledger revoking terminal currentOperation
-      operationMatches up found fenced quiet networkClosed persistedOperation
-    exact operationResultStable_publishDestroyed currentOperation persistedOperation
-      operationMatches.2.2
+    apply operationResultStable_publishDestroyed (by assumption) (by assumption)
+    grind
+  case publishFailure =>
+    exact operationResultStable_publishFailure ‹FailureKind› (by assumption)
+      (by assumption) (by grind)
   case rpcTimeout =>
     rename_i record operation ledger sid current pending operationMatches foundSandbox
       persistedOperation
@@ -2488,26 +2897,140 @@ theorem step_operationResultStable
     apply operationResultStable_of_operations_eq
     simp
 
+set_option maxHeartbeats 1000000 in
+/-- Kill atomically gives every replaced pending/unknown operation a final
+    cancelled result before installing the new kill operation. -/
+theorem acceptKill_finalizes_superseded
+    (transition : Step world (.acceptKill actor sid operationId) next)
+    (foundRecord : world.sandboxes sid = some record)
+    (current : record.currentOperation = some oldOperation)
+    (unfinished : oldOperation.status = .pending ∨
+      oldOperation.status = .outcomeUnknown) :
+    ∃ ledger,
+      next.operations (operationKey sid oldOperation.id) = some ledger ∧
+      ledger.operation =
+        { oldOperation with status := .failed .cancelled } ∧
+      ledger.result = some (.failed .cancelled) := by
+  cases transition <;>
+    simp_all [SupersedeReady, beginKill, supersedeCurrentOperation,
+      storeNewOperation, updateOperation, setOperation, setSandbox,
+      enqueue, operationKey, put] <;>
+    grind
+
+private theorem operationIdentityStable_of_operations_eq
+    (same : after.operations = before.operations) :
+    OperationIdentityStable before after := by
+  intro key oldRecord newRecord foundOld foundNew
+  rw [same, foundOld] at foundNew
+  cases foundNew
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+private theorem operationIdentityStable_updateStatus
+    (found : world.operations (operationKey sid operation.id) = some ledger)
+    (operationMatches : ledger.operation = operation) :
+    OperationIdentityStable world
+      (updateOperation world sid { operation with status := status } result) := by
+  intro key oldRecord newRecord foundOld foundNew
+  by_cases same : key = operationKey sid operation.id
+  · subst key
+    have oldIsLedger : oldRecord = ledger :=
+      Option.some.inj (foundOld.symm.trans found)
+    subst oldRecord
+    simp [updateOperation, found] at foundNew
+    subst newRecord
+    subst operation
+    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  · simp [updateOperation, same] at foundNew
+    rw [foundOld] at foundNew
+    cases foundNew
+    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+private theorem operationIdentityStable_supersedeCurrent
+    (ready : SupersedeReady world sid current) :
+    OperationIdentityStable world
+      (supersedeCurrentOperation world sid current) := by
+  cases current with
+  | none => exact operationIdentityStable_of_operations_eq rfl
+  | some operation =>
+      cases status : operation.status with
+      | pending =>
+          have ready' : ∃ ledger,
+              world.operations (operationKey sid operation.id) = some ledger ∧
+              ledger.operation = operation ∧ ledger.result = none := by
+            simpa [SupersedeReady, status] using ready
+          rcases ready' with ⟨ledger, found, operationMatches, empty⟩
+          simpa [supersedeCurrentOperation, status, found, empty,
+            operationMatches] using
+            (operationIdentityStable_updateStatus
+              (world := world) (sid := sid) (operation := operation)
+              (ledger := ledger) (status := .failed .cancelled)
+              (result := some (.failed .cancelled)) found operationMatches)
+      | outcomeUnknown =>
+          have ready' : ∃ ledger,
+              world.operations (operationKey sid operation.id) = some ledger ∧
+              ledger.operation = operation ∧ ledger.result = none := by
+            simpa [SupersedeReady, status] using ready
+          rcases ready' with ⟨ledger, found, operationMatches, empty⟩
+          simpa [supersedeCurrentOperation, status, found, empty,
+            operationMatches] using
+            (operationIdentityStable_updateStatus
+              (world := world) (sid := sid) (operation := operation)
+              (ledger := ledger) (status := .failed .cancelled)
+              (result := some (.failed .cancelled)) found operationMatches)
+      | compensating failure =>
+          simpa [supersedeCurrentOperation, status] using
+            (operationIdentityStable_of_operations_eq
+              (before := world) (after := world) rfl)
+      | succeeded =>
+          simpa [supersedeCurrentOperation, status] using
+            (operationIdentityStable_of_operations_eq
+              (before := world) (after := world) rfl)
+      | failed failure =>
+          simpa [supersedeCurrentOperation, status] using
+            (operationIdentityStable_of_operations_eq
+              (before := world) (after := world) rfl)
+
+private theorem operationIdentityStable_beginKill
+    (ready : SupersedeReady world sid record.currentOperation)
+    (fresh : world.operations (operationKey sid operationId) = none) :
+    OperationIdentityStable world (beginKill world sid record operationId) := by
+  intro key oldRecord newRecord foundOld foundNew
+  by_cases same : key = operationKey sid operationId
+  · subst key
+    rw [fresh] at foundOld
+    contradiction
+  · have superseded := operationIdentityStable_supersedeCurrent ready
+    apply superseded key oldRecord newRecord foundOld
+    simpa [beginKill, storeNewOperation, setOperation, put, same] using foundNew
+
 set_option maxHeartbeats 2000000 in
 theorem step_operationIdentityStable
     (transition : Step world event next) :
     OperationIdentityStable world next := by
-  cases transition <;>
+  cases transition
+  case acceptKill =>
+    exact operationIdentityStable_beginKill (by assumption) (by assumption)
+  all_goals
     simp_all [OperationIdentityStable, beginCreate, applyStartFence,
       prepareResources, applyFilePolicyResult, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginCompensation,
+      publishDestroyed, publishFailure,
       markOutcomeUnknown, reclaimVm, reclaimSlot, storeNewOperation,
       updateOperation, updateCurrentOperation, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, setOperation, setEffect,
-      setAppliedFilePolicy, enqueue, dispatchEffect, acknowledgeEffect, put] <;>
+      setAppliedFilePolicy, enqueue, dispatchEffect, acknowledgeEffect,
+      markEffectOutcomeUnknown, put] <;>
     grind
 
-theorem acknowledgeEffectRequiresDispatched
-    (transition : Step world (.acknowledgeEffect requestedId result) next) :
-    world.effects requestedId = some .dispatched := by
+theorem acknowledgeEffectRequiresAwaitingOrRecorded
+    (transition : Step world (.acknowledgeEffect requestedId outcome) next) :
+    (world.effects requestedId = some .dispatched ∨
+      world.effects requestedId = some .outcomeUnknown) ∨
+      world.effects requestedId = some (.acknowledged outcome) := by
   cases transition
-  case acknowledgeEffect => assumption
+  · exact Or.inl (by assumption)
+  · exact Or.inr (by assumption)
 
 theorem staleFilePolicyCommandRejected
     (found : world.sandboxes sid = some record)
@@ -2590,7 +3113,7 @@ theorem step_preserves_appliedFilePolicyValid
     simp_all [AppliedFilePolicyValid, beginCreate, applyStartFence,
       prepareResources, applyFilePolicyResult, configureSlot, activateResource,
       publishRunning, beginPause, sealSnapshot, makeSnapshotDurable,
-      stopResource, publishPaused, beginResume, beginKill, publishDestroyed,
+      stopResource, publishPaused, beginResume, beginKill, beginCompensation, publishDestroyed, publishFailure,
       markOutcomeUnknown, reclaimVm, reclaimSlot, setSandbox, setFilesystem,
       setFence, setVm, setSnapshot, setNetSlot, setAppliedFilePolicy,
       enqueue, put] <;>
@@ -2667,6 +3190,58 @@ private theorem operationLedgerValid_of_operations_eq
   rw [← same]
   exact found
 
+private theorem operationLedgerValid_supersedeCurrent
+    (invariant : OperationLedgerValid world) :
+    OperationLedgerValid (supersedeCurrentOperation world sid current) := by
+  cases current with
+  | none => exact invariant
+  | some operation =>
+      cases status : operation.status with
+      | pending =>
+          cases found : world.operations (operationKey sid operation.id) with
+          | none => simpa [supersedeCurrentOperation, status, found] using invariant
+          | some ledger =>
+              cases final : ledger.result with
+              | none =>
+                  by_cases sameOperation : ledger.operation = operation
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (operationLedgerValid_update
+                        (world := world) (sid := sid)
+                        (operation := { operation with
+                          status := .failed .cancelled })
+                        (result := some (.failed .cancelled)) invariant)
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using invariant
+              | some result =>
+                  simpa [supersedeCurrentOperation, status, found, final] using
+                    invariant
+      | outcomeUnknown =>
+          cases found : world.operations (operationKey sid operation.id) with
+          | none => simpa [supersedeCurrentOperation, status, found] using invariant
+          | some ledger =>
+              cases final : ledger.result with
+              | none =>
+                  by_cases sameOperation : ledger.operation = operation
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (operationLedgerValid_update
+                        (world := world) (sid := sid)
+                        (operation := { operation with
+                          status := .failed .cancelled })
+                        (result := some (.failed .cancelled)) invariant)
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using invariant
+              | some result =>
+                  simpa [supersedeCurrentOperation, status, found, final] using
+                    invariant
+      | compensating failure =>
+          simpa [supersedeCurrentOperation, status] using invariant
+      | succeeded =>
+          simpa [supersedeCurrentOperation, status] using invariant
+      | failed failure =>
+          simpa [supersedeCurrentOperation, status] using invariant
+
 theorem step_preserves_operationLedgerValid
     (invariant : OperationLedgerValid world)
     (transition : Step world event next) : OperationLedgerValid next := by
@@ -2686,7 +3261,13 @@ theorem step_preserves_operationLedgerValid
   case acceptKill =>
     simp only [beginKill, OperationLedgerValid, enqueue_operations]
     apply operationLedgerValid_store
-    exact operationLedgerValid_of_operations_eq (by simp) invariant
+    refine operationLedgerValid_of_operations_eq
+      (before := supersedeCurrentOperation world ‹SandboxId›
+        ‹SandboxRecord›.currentOperation) ?_ ?_
+    · rfl
+    · exact operationLedgerValid_supersedeCurrent
+        (world := world) (sid := ‹SandboxId›)
+        (current := ‹SandboxRecord›.currentOperation) invariant
   case publishRunning =>
     unfold publishRunning
     apply operationLedgerValid_updateCurrent
@@ -2699,12 +3280,39 @@ theorem step_preserves_operationLedgerValid
     unfold publishDestroyed
     apply operationLedgerValid_updateCurrent
     exact operationLedgerValid_of_operations_eq (by simp) invariant
+  case beginCompensation =>
+    let record := ‹SandboxRecord›
+    let operation := ‹Operation›
+    let sid := ‹SandboxId›
+    let failure := ‹FailureKind›
+    let compensating := { operation with status := .compensating failure }
+    let updated := { record with
+      phase := .revoking
+      terminal := true
+      desired := .closed
+      effective := .closed
+      currentOperation := some compensating
+    }
+    change OperationLedgerValid
+      (enqueue (updateOperation (setSandbox world sid updated) sid
+        compensating none) (.installFence sid record.epoch true))
+    have base : OperationLedgerValid (setSandbox world sid updated) :=
+      operationLedgerValid_of_operations_eq rfl invariant
+    have changed : OperationLedgerValid
+        (updateOperation (setSandbox world sid updated) sid compensating none) :=
+      operationLedgerValid_update base
+    exact operationLedgerValid_of_operations_eq (by simp) changed
+  case publishFailure =>
+    unfold publishFailure
+    apply operationLedgerValid_updateCurrent
+    exact operationLedgerValid_of_operations_eq (by simp) invariant
   case rpcTimeout =>
     unfold markOutcomeUnknown
     apply operationLedgerValid_update
     exact operationLedgerValid_of_operations_eq (by simp) invariant
   all_goals
-    exact operationLedgerValid_of_operations_eq (by simp) invariant
+    refine operationLedgerValid_of_operations_eq (before := world) ?_ invariant
+    simp
 
 theorem reachable_operationLedgerValid
     (reachable : Reachable world) : OperationLedgerValid world := by
@@ -2840,6 +3448,77 @@ private theorem currentOperationInLedger_setSandbox_preserve
       invariant otherSid record operation foundBefore foundCurrent
     exact ⟨ledger, by simpa using foundLedger⟩
 
+private theorem currentOperationInLedger_updateAny
+    (invariant : CurrentOperationInLedger world) :
+    CurrentOperationInLedger (updateOperation world sid updated result) := by
+  intro otherSid record operation foundRecord foundCurrent
+  have foundBefore : world.sandboxes otherSid = some record := by
+    simpa using foundRecord
+  obtain ⟨ledger, foundLedger⟩ :=
+    invariant otherSid record operation foundBefore foundCurrent
+  by_cases same : operationKey otherSid operation.id =
+      operationKey sid updated.id
+  · refine ⟨{ ledger with operation := updated, result := result }, ?_⟩
+    have foundTarget : world.operations (operationKey sid updated.id) =
+        some ledger := by
+      rw [← same]
+      exact foundLedger
+    simp [updateOperation, same, foundTarget]
+  · refine ⟨ledger, ?_⟩
+    simpa [updateOperation, same] using foundLedger
+
+private theorem currentOperationInLedger_supersedeCurrent
+    (invariant : CurrentOperationInLedger world) :
+    CurrentOperationInLedger (supersedeCurrentOperation world sid current) := by
+  cases current with
+  | none => exact invariant
+  | some operation =>
+      cases status : operation.status with
+      | pending =>
+          cases found : world.operations (operationKey sid operation.id) with
+          | none => simpa [supersedeCurrentOperation, status, found] using invariant
+          | some ledger =>
+              cases final : ledger.result with
+              | none =>
+                  by_cases sameOperation : ledger.operation = operation
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (currentOperationInLedger_updateAny
+                        (world := world) (sid := sid)
+                        (updated := { operation with
+                          status := .failed .cancelled })
+                        (result := some (.failed .cancelled)) invariant)
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using invariant
+              | some result =>
+                  simpa [supersedeCurrentOperation, status, found, final] using
+                    invariant
+      | outcomeUnknown =>
+          cases found : world.operations (operationKey sid operation.id) with
+          | none => simpa [supersedeCurrentOperation, status, found] using invariant
+          | some ledger =>
+              cases final : ledger.result with
+              | none =>
+                  by_cases sameOperation : ledger.operation = operation
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using
+                      (currentOperationInLedger_updateAny
+                        (world := world) (sid := sid)
+                        (updated := { operation with
+                          status := .failed .cancelled })
+                        (result := some (.failed .cancelled)) invariant)
+                  · simpa [supersedeCurrentOperation, status, found, final,
+                      sameOperation] using invariant
+              | some result =>
+                  simpa [supersedeCurrentOperation, status, found, final] using
+                    invariant
+      | compensating failure =>
+          simpa [supersedeCurrentOperation, status] using invariant
+      | succeeded =>
+          simpa [supersedeCurrentOperation, status] using invariant
+      | failed failure =>
+          simpa [supersedeCurrentOperation, status] using invariant
+
 private theorem currentOperationInLedger_enqueue
     (invariant : CurrentOperationInLedger world) :
     CurrentOperationInLedger (enqueue world command) :=
@@ -2877,6 +3556,29 @@ private theorem currentOperationInLedger_publishDestroyed
   · rfl
   · simpa using found
 
+private theorem currentOperationInLedger_beginCompensation
+    (failure : FailureKind)
+    (invariant : CurrentOperationInLedger world)
+    (found : world.operations (operationKey sid operation.id) = some ledger) :
+    CurrentOperationInLedger
+      (beginCompensation world sid record operation failure) := by
+  simp only [beginCompensation]
+  apply currentOperationInLedger_enqueue
+  apply currentOperationInLedger_setUpdateOperation invariant
+  · rfl
+  · simpa using found
+
+private theorem currentOperationInLedger_publishFailure
+    (failure : FailureKind)
+    (invariant : CurrentOperationInLedger world)
+    (current : record.currentOperation = some operation)
+    (found : world.operations (operationKey sid operation.id) = some ledger) :
+    CurrentOperationInLedger (publishFailure world sid record failure) := by
+  simp only [publishFailure, current, Option.map]
+  apply currentOperationInLedger_setUpdateCurrent invariant
+  · rfl
+  · simpa using found
+
 private theorem currentOperationInLedger_timeout
     (invariant : CurrentOperationInLedger world)
     (found : world.operations (operationKey sid operation.id) = some ledger) :
@@ -2904,7 +3606,9 @@ private theorem currentOperationInLedger_revocation
             (by simp [setFence, slotChoice]) (by rfl) changed)
       | some slot => simpa [applyRevocationFence, slotChoice, slotFound] using
           (currentOperationInLedger_of_maps_eq
-            (by simp only [setNetSlot, setFence]; rw [slotChoice])
+            (by
+              simp only [setNetSlot, registerSlot, setResourceIndex, setFence]
+              rw [slotChoice])
             (by rfl) changed)
 
 private theorem currentOperationInLedger_prepare
@@ -2913,6 +3617,7 @@ private theorem currentOperationInLedger_prepare
     CurrentOperationInLedger
       (prepareResources world sid record vmId slotId) := by
   unfold prepareResources
+  apply currentOperationInLedger_enqueue
   apply currentOperationInLedger_enqueue
   apply currentOperationInLedger_enqueue
   apply currentOperationInLedger_setSandbox_preserve
@@ -2937,12 +3642,8 @@ theorem step_preserves_currentOperationInLedger
   case dispatchPrepare =>
     exact currentOperationInLedger_enqueue invariant
   case publishRunning =>
-    rename_i record vmId vm sid slot slotId operation ledger starting live currentVm
-      vmIdentity executing currentSlot slotReady currentOperation operationMatches up
-      foundSandbox foundVm foundSlot exclusiveNetwork appliedPolicy policyAcknowledged
-      persistedOperation fenced
-    exact currentOperationInLedger_publishRunning invariant currentOperation
-      persistedOperation
+    exact currentOperationInLedger_publishRunning invariant (by assumption)
+      (by assumption)
   case acceptPause =>
     simp only [beginPause]
     apply currentOperationInLedger_enqueue
@@ -2950,11 +3651,8 @@ theorem step_preserves_currentOperationInLedger
     apply currentOperationInLedger_setStore invariant
     rfl
   case publishPaused =>
-    rename_i record snapshot sid operation ledger source pausing snapshotReady
-      currentOperation operationMatches up foundSandbox foundSnapshot fenced quiet
-      networkClosed persistedOperation
-    exact currentOperationInLedger_publishPaused invariant currentOperation
-      persistedOperation
+    exact currentOperationInLedger_publishPaused invariant (by assumption)
+      (by assumption)
   case acceptResume =>
     simp only [beginResume]
     apply currentOperationInLedger_enqueue
@@ -2963,13 +3661,19 @@ theorem step_preserves_currentOperationInLedger
   case acceptKill =>
     simp only [beginKill]
     apply currentOperationInLedger_enqueue
-    apply currentOperationInLedger_setStore invariant
+    apply currentOperationInLedger_setStore
+      (currentOperationInLedger_supersedeCurrent invariant)
     rfl
+  case beginCompensation =>
+    exact currentOperationInLedger_beginCompensation (failure := by assumption)
+      invariant (by assumption)
   case publishDestroyed =>
-    rename_i record sid operation ledger revoking terminal currentOperation
-      operationMatches up found fenced quiet networkClosed persistedOperation
-    exact currentOperationInLedger_publishDestroyed invariant currentOperation
-      persistedOperation
+    exact currentOperationInLedger_publishDestroyed invariant (by assumption)
+      (by assumption)
+  case publishFailure =>
+    exact currentOperationInLedger_publishFailure (failure := by assumption)
+      invariant (by assumption)
+      (by assumption)
   case rpcTimeout =>
     rename_i record operation ledger sid current pending operationMatches foundSandbox
       persistedOperation
@@ -2977,6 +3681,15 @@ theorem step_preserves_currentOperationInLedger
   case scheduleCleanupVm =>
     exact currentOperationInLedger_enqueue invariant
   case scheduleCleanupSlot =>
+    exact currentOperationInLedger_enqueue invariant
+  case scheduleSealSnapshot =>
+    exact currentOperationInLedger_enqueue invariant
+  case scheduleCommitSnapshot =>
+    exact currentOperationInLedger_enqueue invariant
+  case commitSnapshot =>
+    apply currentOperationInLedger_enqueue
+    exact currentOperationInLedger_of_maps_eq rfl rfl invariant
+  case scheduleStopVm =>
     exact currentOperationInLedger_enqueue invariant
   all_goals
     apply currentOperationInLedger_of_maps_eq
@@ -3120,23 +3833,27 @@ theorem step_preserves_reclaimedResourcesNotCurrent
         · rfl
         · rfl
   case configureNetwork =>
-    rename_i record slot slotId sid vmId current owned foundSandbox foundSlot fenced
-    exact reclaimedResources_setNetSlot_same (before := slot)
-      (after := { slot with configured := true }) invariant foundSlot rfl rfl
+    exact reclaimedResources_setNetSlot_same (before := ‹NetSlot›)
+      (after := { ‹NetSlot› with configured := true }) invariant
+        (by assumption) rfl rfl
   case activateVm =>
     apply reclaimedResources_setVm_nonreclaimed invariant
     simp
   case sealSnapshot =>
     exact reclaimedResources_of_maps_eq rfl rfl rfl invariant
   case commitSnapshot =>
-    exact reclaimedResources_of_maps_eq rfl rfl rfl invariant
+    apply reclaimedResources_of_maps_eq (before := world)
+    · simp [enqueue, makeSnapshotDurable, setSnapshot]
+    · simp [enqueue, makeSnapshotDurable, setSnapshot]
+    · simp [enqueue, makeSnapshotDurable, setSnapshot]
+    · exact invariant
   case stopVm =>
     apply reclaimedResources_setVm_nonreclaimed invariant
     simp
   all_goals
     simp_all [ReclaimedResourcesNotCurrent, beginCreate,
       prepareResources, publishRunning, beginPause, publishPaused, beginResume,
-      beginKill, publishDestroyed, markOutcomeUnknown, reclaimVm, reclaimSlot,
+      beginKill, beginCompensation, publishDestroyed, publishFailure, markOutcomeUnknown, reclaimVm, reclaimSlot,
       setSandbox, setFilesystem, setVm, setNetSlot, enqueue, put] <;>
     grind
 
@@ -3150,7 +3867,7 @@ theorem reachable_reclaimedResourcesNotCurrent
 theorem step_effectAdmissionSafe
     (transition : Step world event next) : EffectAdmissionSafe world event := by
   cases transition <;>
-    simp_all [EffectAdmissionSafe, effectDispatched, effectHasStatus]
+    simp_all [EffectAdmissionSafe, effectAwaiting, effectHasStatus]
 
 theorem step_cleanupAdmissionSafe
     (transition : Step world event next) : CleanupAdmissionSafe world event := by

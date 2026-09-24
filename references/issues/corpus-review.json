@@ -1,0 +1,3803 @@
+[
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3636,
+    "state": "OPEN",
+    "title": "DELETE on a paused sandbox can be undone by an in-flight resume: sandbox ends up running after DELETE returns 204",
+    "labels": [],
+    "verdict": "violates",
+    "property": "TerminalConsistent",
+    "rationale": "F-1 reproduced; covered by kill_irreversible",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3625,
+    "state": "OPEN",
+    "title": "Clarify denyOut semantics for sandbox-local MMDS (169.254.169.254)",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3620,
+    "state": "OPEN",
+    "title": "Restore <pkg>-v<ver> git tags for per-component releases",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3619,
+    "state": "OPEN",
+    "title": "[Bug]: flock() on a mounted volume hangs forever (mount is missing `nolock`)",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3618,
+    "state": "CLOSED",
+    "title": "Volume mounts hang on flock(): envd mounts without `nolock` against a server that has no NLM",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3615,
+    "state": "OPEN",
+    "title": "Orchestrator GRPC_PORT takes 20-30 min to bind on startup when /run/netns has many residual ns-* from a previously drained node",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3612,
+    "state": "OPEN",
+    "title": "Future plans for the public Firecracker fork / self-host source builds?",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3610,
+    "state": "OPEN",
+    "title": "bug(envd): HTTP listener bound after blocking init chain — connect-refused during startup race",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3609,
+    "state": "OPEN",
+    "title": "bug(envd): rare startup race — MMDS poller keeps running but HTTP listener never binds (sandbox refuses :49983 instantly, orchestrator can't tell)",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3607,
+    "state": "OPEN",
+    "title": "obs(api): Redis storage layer is missing key metrics across lock, transition, scan, and data-quality paths",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3605,
+    "state": "OPEN",
+    "title": "obs(api): no metrics on global expiration ZSET size or evictor sweep latency",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3602,
+    "state": "OPEN",
+    "title": "perf(api): cjson.decode in startTransitionScript Lua script blocks Redis event loop under concurrent evictions",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3597,
+    "state": "OPEN",
+    "title": "Alpine template builds fail: glibc busybox in SyncChangesToDisk + missing /usr/bin/ionice and /usr/bin/nice",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3595,
+    "state": "OPEN",
+    "title": "sandbox cache: StartRemoving state transition not broadcast, all allocations see stale Running state",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "TerminalConsistent/StableStatesQuiescent",
+    "rationale": "stale Running in cache after StartRemoving; cache read-consistency (adapter?) vs state invariant",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3593,
+    "state": "OPEN",
+    "title": "perf(api): TeamItems causes O(allocations × team_size) Redis read bandwidth — extend existing pub/sub to maintain per-allocation sandbox cache",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3591,
+    "state": "OPEN",
+    "title": "RFC: Evaluate replacing Redis with DragonflyDB as the caching backend",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3586,
+    "state": "OPEN",
+    "title": "envd/port-forwarder: IPv6 wildcard (:::PORT) listeners silently ignored; dual-stack port key collision drops one socat",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3585,
+    "state": "OPEN",
+    "title": "kernel: ipv6.disable=0 with no IPv6 routing causes Happy Eyeballs latency on all outbound sandbox connections",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3583,
+    "state": "OPEN",
+    "title": "orchestrator: ResourceExhausted error messages don't include current vs max counts",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3579,
+    "state": "OPEN",
+    "title": "fix(api): POST /sandboxes/{id}/connect accepts non-positive timeout values causing immediate termination",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "API input validation",
+    "rationale": "connect accepts non-positive timeout",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3577,
+    "state": "OPEN",
+    "title": "fix(api): isRetryableError in volume_util.go does not recognize gRPC codes.Unavailable and codes.DeadlineExceeded",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3575,
+    "state": "OPEN",
+    "title": "fix(api): GetSandboxesSandboxID omits VolumeMounts and sets empty string Alias for paused sandboxes",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3573,
+    "state": "OPEN",
+    "title": "fix(api): PostTemplatesTags queries database and begins transaction before team ownership check (tag enumeration oracle)",
+    "labels": [],
+    "verdict": "violates",
+    "property": "ResourceOwnership",
+    "rationale": "ownership check runs after DB query/tx",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3569,
+    "state": "CLOSED",
+    "title": "feat(api): fallback to orchestrator-node gRPC when Redis is unavailable for sandbox listing",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3566,
+    "state": "OPEN",
+    "title": "sandbox/storage: stale team-index SET entries accumulate when sandbox keys are lost without going through Remove()",
+    "labels": [],
+    "verdict": "model-gap",
+    "property": "stale-index-accounting (missing)",
+    "rationale": "stale team-index SET entries accumulate; no property forbids stale references",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3563,
+    "state": "OPEN",
+    "title": "bug(envd): PostInit reads request body with io.ReadAll and no size limit, enabling OOM via oversized payload",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3559,
+    "state": "OPEN",
+    "title": "bug(envd): PostInit spawns unbounded MMDS-poll goroutines — one per /init retry",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3557,
+    "state": "OPEN",
+    "title": "bug(orchestrator): Cleanup.Add has TOCTOU race — cleanup functions silently dropped after Run()",
+    "labels": [],
+    "verdict": "model-gap",
+    "property": "cleanup-completion (missing)",
+    "rationale": "cleanup tasks silently dropped by TOCTOU; completion not guaranteed",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3555,
+    "state": "OPEN",
+    "title": "nfsproxy: isolate file-handle caches by sandbox/mount point",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3553,
+    "state": "OPEN",
+    "title": "api: \"Failed to place sandbox\" gives no diagnostic - expose why no node accepted the sandbox",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3548,
+    "state": "OPEN",
+    "title": "nfsproxy: hardcoded cacheLimit=1024 causes ESTALE errors on large npm/pip installs",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3546,
+    "state": "OPEN",
+    "title": "orchestrator: no CLI to inspect active NBD devices; lsblk shows 4096 pre-allocated noise",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3545,
+    "state": "OPEN",
+    "title": "[RFC] Node-local shared read-only memory pages for Firecracker sandboxes",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3544,
+    "state": "OPEN",
+    "title": "RFC: NFSv4 support for the sandbox NFS proxy — plans and trade-offs",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3542,
+    "state": "CLOSED",
+    "title": "bug(envd/port): ScanAndBroadcast goroutine blocks indefinitely when a subscriber stops receiving, rendering Scanner.Destroy() ineffective",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3540,
+    "state": "CLOSED",
+    "title": "bug(docker-reverse-proxy): TCP connection leak on 401 response — resp.Body not restored after io.ReadAll",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3538,
+    "state": "CLOSED",
+    "title": "bug(envd): non-PTY process exit panics envd daemon via nil tty dereference in Wait()",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3532,
+    "state": "OPEN",
+    "title": "persistent volume: .nfs* orphan files leak storage when sandbox VMs are forcibly killed",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3529,
+    "state": "OPEN",
+    "title": "fix(api): DELETE /sandboxes/{id} returns 500/404 with no structured log — root cause invisible",
+    "labels": [],
+    "verdict": "violates",
+    "property": "ResourceOwnership/SnapshotOwnership",
+    "rationale": "cross-team access is excluded by owner/ownership invariants",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3518,
+    "state": "OPEN",
+    "title": "Template build: finalize phase silently discards build-layer writes to /etc/ssl/certs",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3480,
+    "state": "OPEN",
+    "title": "fix(orchestrator): envd error responses truncated to 100 chars, hiding root cause in logs and error chain",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3461,
+    "state": "OPEN",
+    "title": "feat(events): add requester IP and user-agent to sandbox.lifecycle.killed event",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3450,
+    "state": "OPEN",
+    "title": "fix(api): add nil guard in volume mount response conversion",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3448,
+    "state": "OPEN",
+    "title": "fix(shared): ConnectionLimiter retains zero-count map entries on Release (memory leak)",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3430,
+    "state": "OPEN",
+    "title": "fix(shared): missing port range validation and broken errors.As match bypass proxy 400 Bad Request",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3424,
+    "state": "OPEN",
+    "title": "RFC: Allow fork from paused sandbox and named snapshots for RL/agent training workloads",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3421,
+    "state": "OPEN",
+    "title": "fix(envd): port scanner ignores net.Connections error and drops active forwarded ports",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3418,
+    "state": "CLOSED",
+    "title": "fix(api): non-positive timeout on sandbox create/resume/fork bypasses validation and causes instant termination",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "API input validation",
+    "rationale": "non-positive timeout bypasses validation",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3415,
+    "state": "OPEN",
+    "title": "api: ReadTimeout: 10s kills body reads under high concurrency, conflicting with requestTimeout: 70s",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3379,
+    "state": "OPEN",
+    "title": "fix(placement,fc): memory-unaware scheduling risks host OOM; balloon DeflateOnOom should be true",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3363,
+    "state": "OPEN",
+    "title": "envd: GET /files returns an empty body for procfs/sysfs files unless gzip is negotiated",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3359,
+    "state": "CLOSED",
+    "title": "fix(orchestrator): UFFD handle() failure at runtime does not kill the sandbox — leaves zombie VM with no page fault handler",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter FC lifecycle",
+    "rationale": "UFFD failure leaves zombie VM",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3358,
+    "state": "CLOSED",
+    "title": "fix(orchestrator): hardcoded Firecracker version strings use 7-char SHA but build pipeline may emit 8-char SHA",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3357,
+    "state": "OPEN",
+    "title": "fix(api): background goroutines (events, builds) not awaited at graceful shutdown — events may be dropped",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3356,
+    "state": "CLOSED",
+    "title": "fix(envd): port scanner ScanAndBroadcast uses time.Sleep instead of select+ticker, delaying shutdown",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3355,
+    "state": "OPEN",
+    "title": "perf(orchestrator): increase NBD dispatch buffer by 28 bytes to coalesce header + max payload in one read",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3354,
+    "state": "CLOSED",
+    "title": "fix(api): scope GetLastSnapshot query by team_id at SQL level (ENG-3544)",
+    "labels": [],
+    "verdict": "violates",
+    "property": "ResourceOwnership/SnapshotOwnership",
+    "rationale": "fix for 3178",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3348,
+    "state": "OPEN",
+    "title": "orchestrator: NBD dispatch response-write errors (EPIPE) logged at ERROR on normal VM exit",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3347,
+    "state": "OPEN",
+    "title": "orchestrator: NBD pool ReleaseDevice retry sleep ignores context cancellation",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3316,
+    "state": "CLOSED",
+    "title": "orchestrator/pkg/template/metadata fails to compile on non-Linux (Darwin) after build tags removed",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3315,
+    "state": "OPEN",
+    "title": "Self hosting on AWS - Nomad DNS resolution issue during make plan",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3294,
+    "state": "OPEN",
+    "title": "orchestrator: nbd read flood when build object missing from store (no negative caching + missing build_id in error log)",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3292,
+    "state": "OPEN",
+    "title": "envd: a stale process-stream subscriber can wedge stdout fan-out for all subscribers for ~15 minutes after sandbox resume",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3278,
+    "state": "CLOSED",
+    "title": "api: \"Node exhausted\" placement warning drops the exhaustion reason from logs",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3275,
+    "state": "OPEN",
+    "title": "orchestrator: FC metrics flusher goroutine may emit spurious Warn after Firecracker exit due to select race",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3274,
+    "state": "OPEN",
+    "title": "orchestrator: NBD dispatch logs context.Canceled and closed-socket errors at ERROR level after normal VM exit",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3273,
+    "state": "OPEN",
+    "title": "orchestrator: NBDProvider.Close() syncs device before disconnecting, causing spurious EIO on sandbox cleanup after VM crash",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3272,
+    "state": "OPEN",
+    "title": "Feature: export template/sandbox rootfs as Docker image",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3248,
+    "state": "OPEN",
+    "title": "fix(orchestrator): memfile.header not written in Local storage mode — templates break after cache eviction",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter snapshot fidelity",
+    "rationale": "memfile.header not written in Local mode",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3239,
+    "state": "OPEN",
+    "title": "Template deletion does not remove build artifacts from storage (GCS/S3)",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "template artifact GC",
+    "rationale": "build artifact retention, not lifecycle authority",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3226,
+    "state": "OPEN",
+    "title": "Every template I build ends up unusable after a few minutes — memfile.header is missing on disk. Am I doing something wrong?",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter snapshot fidelity",
+    "rationale": "memfile.header missing on disk",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3197,
+    "state": "OPEN",
+    "title": "feat: template build retention policy — auto-clean stale CI builds",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "template build",
+    "rationale": "template build path is outside the lifecycle boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3195,
+    "state": "OPEN",
+    "title": "feat(volumes): pluggable distributed storage backend for high-performance cross-sandbox file sharing",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3193,
+    "state": "CLOSED",
+    "title": "orchestrator: node has no independent sandbox timeout enforcement — VMs leak indefinitely if API evictor stops",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "VMs leak if evictor stops; no node-side timeout enforcement",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3180,
+    "state": "OPEN",
+    "title": "Revisit structured errorCode for sandbox lifecycle API errors",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3178,
+    "state": "OPEN",
+    "title": "Scope GetLastSnapshot query by teamID to prevent cross-team data access",
+    "labels": [],
+    "verdict": "violates",
+    "property": "ResourceOwnership/SnapshotOwnership",
+    "rationale": "GetLastSnapshot not scoped by team",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3160,
+    "state": "OPEN",
+    "title": "fix(orchestrator): generic 'build was cancelled' error hides actual failure cause",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3159,
+    "state": "CLOSED",
+    "title": "fix(orchestrator): generic 'build was cancelled' error hides actual failure cause",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3154,
+    "state": "CLOSED",
+    "title": "Bug: WrapContextAsUserError misclassifies internal timeouts as user-initiated cancellations",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "operationResultStable",
+    "rationale": "internal timeout misclassified as user cancellation; timeout semantics",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3137,
+    "state": "OPEN",
+    "title": "Sandbox creation fails with generic error when template files are in archived storage class",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3131,
+    "state": "OPEN",
+    "title": "fix(orchestrator): terminate sandbox when UFFD handler fails",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter FC lifecycle",
+    "rationale": "terminate sandbox when UFFD fails",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3104,
+    "state": "OPEN",
+    "title": "Title: feat: add bin-packing scheduling strategy for sandbox placement",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3103,
+    "state": "OPEN",
+    "title": "Title: feat: allow opt-in async NFS mount options for volume mounts",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3098,
+    "state": "OPEN",
+    "title": "envd: tag-based process lookup aborts early due to inverted Range return values",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3088,
+    "state": "OPEN",
+    "title": "RFC: move non-80/443 TCP CIDR egress enforcement into the per-sandbox netns firewall (stop steering it)",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3085,
+    "state": "OPEN",
+    "title": "RFC: optional eBPF (bpf_sk_assign) egress steering as an alternative to per-slot iptables REDIRECT",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3071,
+    "state": "CLOSED",
+    "title": "S3 storage provider forces virtual-host addressing with custom endpoints, breaking path-style-only S3-compatible backends",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3070,
+    "state": "OPEN",
+    "title": "Template builds are unbounded: `TemplateCreate` spawns one goroutine (and one FC VM + rootfs assembly) per request with no concurrency limit",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3054,
+    "state": "OPEN",
+    "title": "Proposal: Add Volcengine self-hosting support",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3035,
+    "state": "OPEN",
+    "title": "Proposal: Add Alibaba Cloud self-hosting support",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 3012,
+    "state": "OPEN",
+    "title": "Optimize Firecracker sandbox startup by reducing mount namespace copies in the orchestrator",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2972,
+    "state": "CLOSED",
+    "title": "An error occurred: build was cancelled",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2957,
+    "state": "OPEN",
+    "title": "[Feature] Bound template mmap cache size and add memory-pressure eviction to prevent unbounded RSS growth",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2944,
+    "state": "CLOSED",
+    "title": "Support Cross-Generation CPU Compatibility in Mixed Clusters",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2899,
+    "state": "CLOSED",
+    "title": "[ASK] Frequent gRPC ResourceExhausted error: too many sandboxes starting on this node despite per-node running sandbox not hitting MaxSandboxesPerNode limit",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2893,
+    "state": "CLOSED",
+    "title": "Cluster total capacity 9*500=4500 but reject create after only ~1200 sandboxes with \"too many sandboxes starting on this node\"",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2836,
+    "state": "CLOSED",
+    "title": "Sandbox disappears from Team B after resuming a paused Sandbox from Team A using the same base template",
+    "labels": [],
+    "verdict": "violates",
+    "property": "SnapshotOwnership",
+    "rationale": "cross-team resume via shared base template",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2826,
+    "state": "OPEN",
+    "title": "Repeated NBD I/O errors and zombie nbd devices after NBD connection broken (EPIPE -32)",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2819,
+    "state": "CLOSED",
+    "title": "GET /v1/sandboxes/{sandboxID}/logs always returns empty",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2813,
+    "state": "OPEN",
+    "title": "Orchestrator: Many orphaned Firecracker instances and leftover network/iptables rules causing host resource leakage",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "orphaned FC + iptables under host pressure",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2730,
+    "state": "OPEN",
+    "title": "client-proxy 502 errors & orchestration-api snapshot not found: poor observability and ambiguous error messages",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2710,
+    "state": "OPEN",
+    "title": "failed to reset memory.peak",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2709,
+    "state": "OPEN",
+    "title": "Timeline for ublk integration",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2671,
+    "state": "OPEN",
+    "title": "Document minimum IAM permissions required for self-hosting and BYOC",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2663,
+    "state": "CLOSED",
+    "title": "envd: syncing took too long causing sandbox start failed – need to increase init timeout from 50ms to a larger value",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2658,
+    "state": "OPEN",
+    "title": "Support per-team dedicated OSS buckets",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2657,
+    "state": "OPEN",
+    "title": "Clarify EndEvent.error semantics for normal non-zero exits in envd's process handler",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2656,
+    "state": "CLOSED",
+    "title": "[Cleanup]: Remove ExecutionMetricsOnWebhooksFlag and always attach execution metrics",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2652,
+    "state": "CLOSED",
+    "title": "[Refactor/Breaking]: ENG-3514 - Complete Redis migration and simplify Store logic",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2637,
+    "state": "CLOSED",
+    "title": "[Bug]: Missing teamID filtering in snapshot query, permission security risk, need to fix ownership check logic",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "violates",
+    "property": "ResourceOwnership/SnapshotOwnership",
+    "rationale": "snapshot query not team-scoped -> cross-team access",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2593,
+    "state": "CLOSED",
+    "title": "[Bug]: Intermittent volume mount failure in E2B sandboxes",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2580,
+    "state": "OPEN",
+    "title": "RFC: skip unchanged checkpoints via in-guest eBPF inspector",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2401,
+    "state": "CLOSED",
+    "title": "Feature: Cluster-wide Template Pinning (Warm Cache) to accelerate sandbox startup",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2397,
+    "state": "CLOSED",
+    "title": "[Bug]: Stop each node one by one, and the current connection of the sandbox will be disconnected.",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2350,
+    "state": "CLOSED",
+    "title": "orchestrator service memory usage is too high",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2338,
+    "state": "OPEN",
+    "title": "Support CPU template configuration for mixed-CPU pools",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2311,
+    "state": "CLOSED",
+    "title": "Cache.setIsCached marks incorrect block offsets for non-aligned writes",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2305,
+    "state": "OPEN",
+    "title": "Support Route53 instead of Coudflare provider",
+    "labels": [
+      "feature",
+      "Infrastructure"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2291,
+    "state": "OPEN",
+    "title": "Support quotas for sandbox volumes",
+    "labels": [
+      "improvement",
+      "Infrastructure"
+    ],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2270,
+    "state": "OPEN",
+    "title": "Self-host on bare metal instead of AWS/GCP",
+    "labels": [
+      "improvement",
+      "Infrastructure"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2268,
+    "state": "OPEN",
+    "title": "Docker image ENV vars are not propagated to runtime sandbox processes",
+    "labels": [
+      "improvement",
+      "Build System"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2261,
+    "state": "CLOSED",
+    "title": "What Client Configuration Is Needed for 500 Concurrent Sandboxes?",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2239,
+    "state": "CLOSED",
+    "title": "Questions about placement strategy, CPU overcommit (R), and scaling sandbox concurrency",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2217,
+    "state": "CLOSED",
+    "title": "Question: Does the control plane API layer support HA?",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2211,
+    "state": "CLOSED",
+    "title": "Documentation for self-hosted deployment on single-node setups",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2172,
+    "state": "CLOSED",
+    "title": "Roadmap Question: Support for Sandbox Warmup Service",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2136,
+    "state": "CLOSED",
+    "title": "Orphan Firecracker processes remain after orchestrator restart",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/crash-recovery",
+    "rationale": "orphan FC after orchestrator restart",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2057,
+    "state": "CLOSED",
+    "title": "[Bug]:Failed to restore the VM's GIC state: Error while setting or getting device attributes for the GIC: Bad address",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "adapter",
+    "property": "adapter FC restore",
+    "rationale": "GIC state restore failure is Firecracker-level",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2041,
+    "state": "CLOSED",
+    "title": "All sandboxes disappear after orchestrator restart",
+    "labels": [],
+    "verdict": "contract",
+    "property": "crash recovery (single-node scope)",
+    "rationale": "all sandboxes disappear after orchestrator restart",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2029,
+    "state": "CLOSED",
+    "title": "[Bug]:  Orchestrator memory leak",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 2027,
+    "state": "CLOSED",
+    "title": "The e2b sandbox cannot access external networks when building templates",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1984,
+    "state": "CLOSED",
+    "title": "Failed to build template on self-hosting e2b",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1890,
+    "state": "CLOSED",
+    "title": "[Bug]: Create an template and start the sandbox on ARM",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1767,
+    "state": "CLOSED",
+    "title": "[Bug]: Self-hosting e2b on GCP",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1763,
+    "state": "CLOSED",
+    "title": "[Bug]: Cluster node sandbox routing fails - OrchestratorIP overwritten with empty string",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "violates",
+    "property": "ActiveSlotValid",
+    "rationale": "routing identity overwritten with empty string",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1750,
+    "state": "CLOSED",
+    "title": "Bug report Create a report to help us improve Blank issue Create a new issue from scratch",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1731,
+    "state": "CLOSED",
+    "title": "Firecracker does not support e2b APIs",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1568,
+    "state": "CLOSED",
+    "title": "[Self-hosted] Firecracker process becomes orphaned after sandbox kill, and manual cleanup blocks new sandboxes for 20-30s",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "FC orphan after kill",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1516,
+    "state": "OPEN",
+    "title": "NBD Device Pool Reports \"no free slots\" Despite Available Devices",
+    "labels": [
+      "improvement",
+      "Orchestrator"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1484,
+    "state": "CLOSED",
+    "title": "How to run jupyter in custom template?",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1478,
+    "state": "CLOSED",
+    "title": "Create Sandbox - First HTTP Request to envd Fails After VM Resume from Snapshot",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1434,
+    "state": "CLOSED",
+    "title": "maximum number of concurrent E2B sandboxes",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1421,
+    "state": "CLOSED",
+    "title": "Questions on Self-Hosting: Custom Templates, Cleanup & K8s Co-hosting",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1420,
+    "state": "CLOSED",
+    "title": "Using the new sandbox creation template method, the created sandbox cannot execute start-up.sh.",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1215,
+    "state": "CLOSED",
+    "title": "after restart orchestrator, sandboxes can not be connected",
+    "labels": [],
+    "verdict": "contract",
+    "property": "crash recovery (single-node scope)",
+    "rationale": "sandboxes not connectable after restart",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1112,
+    "state": "CLOSED",
+    "title": "Minimum recommended setup for testing",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1079,
+    "state": "CLOSED",
+    "title": "Kernel Loader: Unable to read kernel image",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1075,
+    "state": "CLOSED",
+    "title": "[Unimplemented] unknown service TemplateService",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1073,
+    "state": "CLOSED",
+    "title": "API deployment is bLocked",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 1063,
+    "state": "CLOSED",
+    "title": "GCP self-hosted E2B experiences network issues when using the E2B CLI",
+    "labels": [],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 971,
+    "state": "CLOSED",
+    "title": "Questions regarding autoscaling",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 928,
+    "state": "CLOSED",
+    "title": "Sandbox cannot be created on some machine types",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 857,
+    "state": "CLOSED",
+    "title": "Snapshot data retention when self-hosting",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 850,
+    "state": "CLOSED",
+    "title": "No Auto-Scaling In Deployed Instance Groups",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 817,
+    "state": "CLOSED",
+    "title": "GCP Self-Hosting: unable to run Sandbox.run_code() due to health check failure",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 816,
+    "state": "CLOSED",
+    "title": "I want to try local",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 760,
+    "state": "CLOSED",
+    "title": "GCP: orchestration-api service job fails to start with \"failed to check migration version\" error",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 754,
+    "state": "CLOSED",
+    "title": "GCP: orchestration-api service job fails to start with \"failed to check migration version\" error",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 678,
+    "state": "CLOSED",
+    "title": "Keep getting \"Could not restore queue.\" when creating sandbox",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 371,
+    "state": "CLOSED",
+    "title": "High resource usage",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 306,
+    "state": "CLOSED",
+    "title": "Sometimes will lost the network",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 170,
+    "state": "CLOSED",
+    "title": "Update sandbox timeout in orchestrator",
+    "labels": [
+      "bug",
+      "improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 156,
+    "state": "CLOSED",
+    "title": "Proxies template change breaks connections",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 127,
+    "state": "CLOSED",
+    "title": "Client instance unexpectedly restarts",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 122,
+    "state": "CLOSED",
+    "title": "Spawning sandboxes gets stuck on loading snapshot",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 121,
+    "state": "CLOSED",
+    "title": "Add pool of preconfigured networks for sandboxes",
+    "labels": [
+      "improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 105,
+    "state": "CLOSED",
+    "title": "Allow other network protocols for communication with services inside sandbox",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 94,
+    "state": "CLOSED",
+    "title": "Missing Access-Origin-Allow-Host header",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 90,
+    "state": "CLOSED",
+    "title": "Missing process kill information",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 89,
+    "state": "CLOSED",
+    "title": "Clock drift on startup",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 83,
+    "state": "CLOSED",
+    "title": "Creating sandbox and refreshing/killing sandbox sometimes share trace",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 79,
+    "state": "CLOSED",
+    "title": "Allow using private Docker images when building custom sandboxes",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 78,
+    "state": "CLOSED",
+    "title": "Improve error message when template not found",
+    "labels": [
+      "improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 71,
+    "state": "CLOSED",
+    "title": "Improve error message when the template name is already taken",
+    "labels": [
+      "improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 69,
+    "state": "CLOSED",
+    "title": "Go context used for tracing is not closed properly",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 55,
+    "state": "CLOSED",
+    "title": "Allow network access in start command during custom sandbox building",
+    "labels": [
+      "duplicate",
+      "feature"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/runtime",
+    "number": 54,
+    "state": "CLOSED",
+    "title": "Custom sandbox builds should run on a separate host",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1860,
+    "state": "CLOSED",
+    "title": "Could E2B add an optional semantic memory adapter for fresh agent sandboxes?",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1840,
+    "state": "CLOSED",
+    "title": "Python Sandbox.create(timeout=0) sends the 300s default instead of 0",
+    "labels": [
+      "bug",
+      "sdk",
+      "python"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1834,
+    "state": "OPEN",
+    "title": "Python chart deserializer raises ValueError for an unrecognized chart type",
+    "labels": [
+      "bug",
+      "sdk",
+      "Code Interpreter"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1823,
+    "state": "OPEN",
+    "title": "files.read / volume.read return None for an unrecognized format instead of raising",
+    "labels": [
+      "bug",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1808,
+    "state": "OPEN",
+    "title": "Desktop JS: preserve allocation identity when startup cleanup also fails",
+    "labels": [
+      "sdk",
+      "Improvement",
+      "javascript"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1804,
+    "state": "CLOSED",
+    "title": "build: pnpm 10 ignores root package.json settings",
+    "labels": [
+      "bug",
+      "Build System"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1792,
+    "state": "CLOSED",
+    "title": "Integration: btp-guard — Sub-50µs in-memory AST security gate for E2B code execution",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1726,
+    "state": "OPEN",
+    "title": "Python SDK: unhandled RemoteProtocolError (TLS close_notify) during command streaming when sandbox ends",
+    "labels": [
+      "bug",
+      "sdk",
+      "python"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1677,
+    "state": "CLOSED",
+    "title": "SDKs should omit autoResume when it is not configured",
+    "labels": [
+      "sdk",
+      "Improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1669,
+    "state": "CLOSED",
+    "title": "SDKs should omit autoPause when timeout lifecycle is not configured",
+    "labels": [
+      "sdk",
+      "Improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1658,
+    "state": "OPEN",
+    "title": "Support idempotent sandbox creation with a client-supplied request identity",
+    "labels": [
+      "feature",
+      "sdk",
+      "Infrastructure"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1587,
+    "state": "OPEN",
+    "title": "[Bug]: reattached stdout stream stalls after auto-resume (regression in python-sdk 2.29.1)",
+    "labels": [
+      "bug",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1574,
+    "state": "CLOSED",
+    "title": "Feature: per-session CPU/memory override in Sandbox.create()",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1572,
+    "state": "CLOSED",
+    "title": "CLI: `sandbox list` sorts by locale-formatted date string, breaking chronological order",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1498,
+    "state": "CLOSED",
+    "title": "MCP gateway startup failure leaves orphaned sandbox running",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "model-gap",
+    "property": "partial-failure-cleanup (missing)",
+    "rationale": "failed startup leaves sandbox running; no failure-compensation path in model",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1418,
+    "state": "CLOSED",
+    "title": "[Bug]: Python SDK HTTP 2 transport fails under high async sandbox concurrency with low default `max_keepalive_connections`",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1381,
+    "state": "CLOSED",
+    "title": "[Bug]: Sandbox gets deleted with no warning",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1371,
+    "state": "CLOSED",
+    "title": "BUG: parse_git_status crashes with ValueError when branch name contains \"...\"",
+    "labels": [
+      "bug",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1352,
+    "state": "OPEN",
+    "title": "commands.connect to a resumed sandbox stops delivering stdout after a large response",
+    "labels": [
+      "bug",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1331,
+    "state": "CLOSED",
+    "title": "RFC: Deterministic OPA/Rego parameter firewalls for outbound sandbox tool execution paths",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "feature/perf/docs",
+    "rationale": "feature, performance, observability, or docs",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1330,
+    "state": "CLOSED",
+    "title": "(feature request) Run-scoped messaging for multi-sandbox agent workflows",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1322,
+    "state": "CLOSED",
+    "title": "[Bug]: e2b 2.19.5 throws \"dynamic usage of require is not supported\" under Next.js 16 / Turbopack",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1318,
+    "state": "CLOSED",
+    "title": "[Bug]: `cwd` of `CodeContext` not working",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1313,
+    "state": "CLOSED",
+    "title": "📝 Integration Proposal: CAJAL — Scientific Paper Sandbox",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1312,
+    "state": "CLOSED",
+    "title": "Support `AbortSignal` in JS SDK methods for request cancellation",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1303,
+    "state": "CLOSED",
+    "title": "Hive Civilization — x402 services for E2B sandbox agents (notification)",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1279,
+    "state": "OPEN",
+    "title": "Allow passing envs in POST /sandboxes/{id}/connect",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1257,
+    "state": "CLOSED",
+    "title": "[Feature Request] Add sandbox resource usage metrics and limits",
+    "labels": [
+      "feature",
+      "Orchestrator"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1241,
+    "state": "CLOSED",
+    "title": "Observations on how LLMs handle E2B execution flows with a live benchmark",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1215,
+    "state": "CLOSED",
+    "title": "[Bug]: Passed Credential in Sandbox.connect, does not get used in `.pause` method like in `.kill`",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1207,
+    "state": "CLOSED",
+    "title": "RFC: Implementing a cognitive layer for cross-session signal retention in ephemeral sandboxes",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1204,
+    "state": "CLOSED",
+    "title": "GNAP: git-native task queue for coordinating AI agents running E2B sandboxes",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1180,
+    "state": "CLOSED",
+    "title": "[Bug]: Access denied - template build",
+    "labels": [
+      "bug",
+      "Build System"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1161,
+    "state": "CLOSED",
+    "title": "[Bug]: `Template.copy()` silently excludes dotfiles",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1160,
+    "state": "CLOSED",
+    "title": "Credential/Secret Brokering for HTTP(S) Requests",
+    "labels": [
+      "feature",
+      "Infrastructure"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1155,
+    "state": "CLOSED",
+    "title": "Bug: httpx.AsyncClient (and sync Client) in Python SDK never closed — connection pool leaks on sandbox kill",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1138,
+    "state": "CLOSED",
+    "title": "Please add skills to use with any ai agent to use e2b in our project",
+    "labels": [
+      "feature",
+      "Infrastructure"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1130,
+    "state": "CLOSED",
+    "title": "[Bug]: Sandbox create fails from template, but succeeds without template",
+    "labels": [
+      "bug",
+      "Build System"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1117,
+    "state": "CLOSED",
+    "title": "Python SDK: ty reports no-matching-overload on Sandbox.kill()",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1113,
+    "state": "CLOSED",
+    "title": "[Bug]: Public template cannot be used by others",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1108,
+    "state": "CLOSED",
+    "title": "[Bug]: (python-sdk) AsyncSandbox.git is missing reset and restore functions",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1104,
+    "state": "CLOSED",
+    "title": "[Bug]: Incomplete filesystem snapshot on timeout-triggered auto-pause",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "adapter",
+    "property": "adapter snapshot fidelity",
+    "rationale": "incomplete filesystem snapshot on auto-pause",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1096,
+    "state": "CLOSED",
+    "title": "Promote/rename/copy template",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1093,
+    "state": "CLOSED",
+    "title": "How to update the global environment variables?",
+    "labels": [
+      "Infrastructure",
+      "User Question"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1074,
+    "state": "CLOSED",
+    "title": "Reconnect to running command by PID fails after 2 minutes",
+    "labels": [
+      "bug",
+      "Infrastructure"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1062,
+    "state": "CLOSED",
+    "title": "About E2B Failover Capability",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1055,
+    "state": "CLOSED",
+    "title": "CLI resets the timeout to 5 minutes after connecting to a running Sandbox",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1054,
+    "state": "CLOSED",
+    "title": "Filesystem read with offset & length parameter",
+    "labels": [
+      "feature",
+      "envd"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1049,
+    "state": "CLOSED",
+    "title": "How to use the file that I uploaded when I create template",
+    "labels": [
+      "Build System",
+      "User Question"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1038,
+    "state": "CLOSED",
+    "title": "Connect Sandbox Error",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1034,
+    "state": "OPEN",
+    "title": "Executing AsyncCommandHandle.kill() will cause blocking and cannot kill the process.",
+    "labels": [
+      "bug",
+      "envd"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1031,
+    "state": "OPEN",
+    "title": "process was not killed when auto paused",
+    "labels": [
+      "bug",
+      "envd"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1030,
+    "state": "CLOSED",
+    "title": "Is it possible to establish concurrent connections to a single sandbox from multiple code instances, such as in a multi-instance deployment environment?",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1029,
+    "state": "CLOSED",
+    "title": "nodejs sdk not working with type \"module\"",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1007,
+    "state": "CLOSED",
+    "title": "Maybe template error",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 1005,
+    "state": "CLOSED",
+    "title": "sandbox not killed after trying intentionally to do so",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "kill request does not complete",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 987,
+    "state": "CLOSED",
+    "title": "get 404 response when connect paused sandbox",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 928,
+    "state": "CLOSED",
+    "title": "Sandbox clone functionality",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 899,
+    "state": "CLOSED",
+    "title": "Getting 404 errors when connecting to paused sandboxes",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 884,
+    "state": "CLOSED",
+    "title": "Paused sandbox is not persisting the file changes / addition after second time resumed and onward",
+    "labels": [
+      "bug",
+      "Orchestrator"
+    ],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "resume loses file changes; content fidelity",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 879,
+    "state": "CLOSED",
+    "title": "E2b is not honoring timeout",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 875,
+    "state": "CLOSED",
+    "title": "When using autoPause in sandbox creation, connect overrides this when resuming the sandbox again",
+    "labels": [
+      "bug",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 873,
+    "state": "CLOSED",
+    "title": "[question] No timeout for sandbox",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 835,
+    "state": "CLOSED",
+    "title": "Support for multiple shell executions/instances",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 822,
+    "state": "CLOSED",
+    "title": "[Question] server of port is close in mins",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 818,
+    "state": "CLOSED",
+    "title": "[Question] Best practices for multilingual matplotlib configuration in E2B Code Interpreter",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 817,
+    "state": "CLOSED",
+    "title": "[Question] autoPause feature",
+    "labels": [],
+    "verdict": "adapter",
+    "property": "adapter storage fidelity",
+    "rationale": "content/metadata fidelity is an adapter contract, not modeled",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 809,
+    "state": "CLOSED",
+    "title": "[Templates] Docker-like behavior when updating templates on the fly",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 807,
+    "state": "CLOSED",
+    "title": "Unable to run command `mkdir`",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 801,
+    "state": "CLOSED",
+    "title": "No route to host",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 800,
+    "state": "CLOSED",
+    "title": "e2b sandbox list is not working in Ubuntu 22.04",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 736,
+    "state": "CLOSED",
+    "title": "Resume bug",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 730,
+    "state": "CLOSED",
+    "title": "[Feature]Beta features follow the main release version.",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 697,
+    "state": "CLOSED",
+    "title": "Sandbox.getOrCreate(id)",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 684,
+    "state": "CLOSED",
+    "title": "Error: \"The sandbox is running but port is not open\" on port 49999 when using specific template",
+    "labels": [
+      "bug",
+      "question"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 676,
+    "state": "CLOSED",
+    "title": "Unable to use recursive=True on watch_dir for beta version with persistence",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 665,
+    "state": "CLOSED",
+    "title": "Environment Variables are not Accessible when running R code in sandbox",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 608,
+    "state": "CLOSED",
+    "title": "Object of type Chart is not JSON serializable",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 607,
+    "state": "CLOSED",
+    "title": "How can I download the files generated by running the code",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 592,
+    "state": "CLOSED",
+    "title": "502 Timeout Error",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 582,
+    "state": "CLOSED",
+    "title": "Sandbox Resume Fails with 404 Not Found Error After Pausing",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 560,
+    "state": "OPEN",
+    "title": "Error: date dataframe columns fail to serialize",
+    "labels": [
+      "bug",
+      "Code Interpreter"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 539,
+    "state": "CLOSED",
+    "title": "Not able to get the current route of Next.js app router in iframe",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 531,
+    "state": "CLOSED",
+    "title": "Error running code on Vercel edge environment",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 529,
+    "state": "CLOSED",
+    "title": "Create Sandbox error: failed to init new envd",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 513,
+    "state": "CLOSED",
+    "title": "JS SDK - wait for a port to open ",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 510,
+    "state": "CLOSED",
+    "title": "\"TypeError: Type is not JSON serializable: Timestamp\" when outputting Dataframe with pd.Timestamp column in Code Interpreter",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 506,
+    "state": "CLOSED",
+    "title": "502 badgateway error",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 500,
+    "state": "CLOSED",
+    "title": "Clarify meaning the difference between `command.run` timeouts and request_timeout",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 466,
+    "state": "CLOSED",
+    "title": "No downloading of files from sandbox possible, Type error \"a bytes-like object is required, not 'str'\" occuring",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 465,
+    "state": "OPEN",
+    "title": "Consider implementing Python `pathlib.Path` interface for e2b filesystem",
+    "labels": [
+      "feature",
+      "sdk",
+      "Improvement"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 456,
+    "state": "CLOSED",
+    "title": "ImportError: cannot import name 'EnvVars' from 'e2b'",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 454,
+    "state": "CLOSED",
+    "title": "e2b-sandbox-refresh thread dies, can't recover",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 442,
+    "state": "CLOSED",
+    "title": " The terminal can't execute the \"cd xxx\" command",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 438,
+    "state": "CLOSED",
+    "title": "RPC issue causing `Server disconnected without sending a response`",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 427,
+    "state": "CLOSED",
+    "title": "Error creating a sandbox with the @rc version",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 426,
+    "state": "CLOSED",
+    "title": "`Error: write EPIPE` during template building",
+    "labels": [
+      "bug",
+      "cli"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 424,
+    "state": "CLOSED",
+    "title": "Requests to sandbox are not cancelled after the sandbox is killed",
+    "labels": [
+      "bug",
+      "Improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "StableStatesQuiescent",
+    "rationale": "requests not cancelled after kill; data-plane admission vs adapter",
+    "curated": true
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 419,
+    "state": "CLOSED",
+    "title": "Occasional connection issues with the sandbox interpreter",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 414,
+    "state": "CLOSED",
+    "title": "User cannot build an sandbox template for different teams",
+    "labels": [
+      "bug",
+      "Improvement",
+      "cli"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 392,
+    "state": "CLOSED",
+    "title": "Start command logs have wrong timestamps",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 391,
+    "state": "CLOSED",
+    "title": "CLI logs command does not end when sandbox closes",
+    "labels": [
+      "bug",
+      "cli"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 386,
+    "state": "CLOSED",
+    "title": "sandbox.filesystem.rename()",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 381,
+    "state": "CLOSED",
+    "title": "Can I run the sandbox locally without using cloud?",
+    "labels": [
+      "duplicate",
+      "question"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 371,
+    "state": "CLOSED",
+    "title": "Add interactive mode to CLI commands",
+    "labels": [
+      "Improvement",
+      "cli"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 370,
+    "state": "CLOSED",
+    "title": "Enable variadic arguments in CLI commands",
+    "labels": [
+      "Improvement",
+      "cli"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 364,
+    "state": "CLOSED",
+    "title": "Permission denied after using a newly created directory",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 362,
+    "state": "CLOSED",
+    "title": "websocket error in `run_code()`",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 354,
+    "state": "CLOSED",
+    "title": "`sandbox.cwd` should always return a valid path",
+    "labels": [
+      "Improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 350,
+    "state": "CLOSED",
+    "title": "How to create a \"named\" template?",
+    "labels": [
+      "feature",
+      "cli",
+      "question"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 337,
+    "state": "CLOSED",
+    "title": "Fix sandbox close in SDK tests",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 328,
+    "state": "CLOSED",
+    "title": "Code Interpreter v2.0 ",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 317,
+    "state": "CLOSED",
+    "title": "Use local Docker instance when building custom sandboxes",
+    "labels": [
+      "Improvement"
+    ],
+    "verdict": "liveness",
+    "property": "liveness/completion",
+    "rationale": "resource eventually freed is a liveness property, not proved",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 310,
+    "state": "CLOSED",
+    "title": "When creating template you can specify `name` but when listing sandboxes and templates it is referred to as `alias`",
+    "labels": [
+      "Improvement"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 307,
+    "state": "CLOSED",
+    "title": "ValidationError: 1 validation error for SubscriptionArgs handler   <Future at 0x1113bfdc0 state=pending> is not callable",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 302,
+    "state": "CLOSED",
+    "title": "Python Async sandbox ",
+    "labels": [
+      "feature",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 296,
+    "state": "CLOSED",
+    "title": "[🛑 Assigned] 🦜 🔗 Build AI code interpreter with E2B and LangChain",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 291,
+    "state": "CLOSED",
+    "title": "More general solution for handling Artifacts created in sandbox",
+    "labels": [
+      "feature"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 281,
+    "state": "CLOSED",
+    "title": "[CLOSED] Build an AI code interpreter with LlamaIndex and E2B",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 280,
+    "state": "CLOSED",
+    "title": "[🛑 Assigned] :eight_pointed_black_star: Build AI code interpreter with Autogen and E2B",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 271,
+    "state": "CLOSED",
+    "title": "ImportError: cannot import name 'Sandbox' from 'e2b'",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 269,
+    "state": "CLOSED",
+    "title": "[E2B-451] Kill WebSocket and refresh threads automatically after `close` or program exit",
+    "labels": [
+      "bug",
+      "sdk",
+      "Improvement"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 265,
+    "state": "CLOSED",
+    "title": "[E2B-450] Running following python code in sandbox isn't being streamed and waits until the whole program finishes",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 263,
+    "state": "CLOSED",
+    "title": "[E2B-448] Operations in sandbox are taking longer than running them locally",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 261,
+    "state": "CLOSED",
+    "title": "WS error when closing sandbox during stream `end` event",
+    "labels": [
+      "bug",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 256,
+    "state": "CLOSED",
+    "title": "[E2B-442] Using `sandbox.download_file` on an empty file throws error",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 254,
+    "state": "CLOSED",
+    "title": "E2B premade sandboxes don't work well in Nextjs' Edge and Node functions",
+    "labels": [
+      "bug",
+      "sdk"
+    ],
+    "verdict": "out-of-scope",
+    "property": "sdk/tooling",
+    "rationale": "issue belongs to SDK/CLI/build tooling, not the control plane",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 246,
+    "state": "CLOSED",
+    "title": "[CLOSED] Build AI code interpreter with Hugging Face and E2B",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 245,
+    "state": "CLOSED",
+    "title": "[🛑 Assigned] 🦙 Integrate E2B into LlamaIndex",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 244,
+    "state": "CLOSED",
+    "title": "✴️ Integrate E2B into Rivet",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 243,
+    "state": "CLOSED",
+    "title": "[🛑 Assigned]  :parrot: :link: Integrate E2B into LangChain",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 242,
+    "state": "CLOSED",
+    "title": "[CLOSED] The Bounty program is currently cancelled",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 241,
+    "state": "CLOSED",
+    "title": "[🛑 Assigned]  ✴️  Integrate E2B into AutoGen",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 240,
+    "state": "CLOSED",
+    "title": "[E2B-435] Python SDK WebSocket/async bugs?",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 28,
+    "state": "CLOSED",
+    "title": "Unhandled Runtime Error",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 16,
+    "state": "CLOSED",
+    "title": "If an agent runs for too long a timeout exception is thrown",
+    "labels": [
+      "bug"
+    ],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 7,
+    "state": "CLOSED",
+    "title": "Misunderstood goal",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 6,
+    "state": "CLOSED",
+    "title": "Crashed when I tried to run",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 4,
+    "state": "CLOSED",
+    "title": "Crashed when I hit enter on this prompt",
+    "labels": [],
+    "verdict": "needs-review",
+    "property": "",
+    "rationale": "no conservative rule applies; needs human classification",
+    "curated": false
+  },
+  {
+    "repo": "e2b-dev/E2B",
+    "number": 3,
+    "state": "CLOSED",
+    "title": "error after yarn dev",
+    "labels": [],
+    "verdict": "out-of-scope",
+    "property": "guest data plane",
+    "rationale": "guest/envd process or stream behavior is outside the boundary",
+    "curated": false
+  }
+]

@@ -1,0 +1,15 @@
+# check normal
+verdict: Conforms
+exit=0
+
+# check race-f1
+verdict: Violates
+  rule=kill_irreversible sandbox=iz2erajhmrk6vf5j5ko5h seq=7
+    successful resume after a successful kill
+    minimal_subsequence=[5, 7]
+    lean=['step_never_clears_terminal', 'publishRunning.live (record.terminal = false)', 'step_operationResultStable']
+  rule=kill_irreversible sandbox=iz2erajhmrk6vf5j5ko5h seq=8
+    sandbox observed running after a successful kill
+    minimal_subsequence=[5, 8]
+    lean=['step_never_clears_terminal', 'publishRunning.live (record.terminal = false)', 'step_operationResultStable']
+exit=1

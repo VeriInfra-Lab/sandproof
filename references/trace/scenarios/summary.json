@@ -1,0 +1,473 @@
+[
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "normal",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [
+      {
+        "detail": "successful resume after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 7
+      },
+      {
+        "detail": "a successful start clears an irreversible terminal state",
+        "inconclusive": false,
+        "properties": [
+          "terminalMonotone"
+        ],
+        "rule": "terminal_monotone",
+        "seq": 7
+      },
+      {
+        "detail": "resume succeeded after the snapshot was deleted",
+        "inconclusive": false,
+        "properties": [
+          "RestoreSourceValid",
+          "PausedSnapshotValid"
+        ],
+        "rule": "resume_requires_snapshot",
+        "seq": 7
+      },
+      {
+        "detail": "sandbox observed running after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 8
+      }
+    ],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "race",
+    "verdict": "Violates"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "dup_kill",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "dup_pause",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "resume_resume",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "kill_resume",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "kill_pause",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "multi",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [
+      {
+        "detail": "index references non-existent sandboxes: ['phantom-sandbox']",
+        "inconclusive": false,
+        "properties": [
+          "NoStaleIndexReferences (model-gap)"
+        ],
+        "rule": "stale_index",
+        "seq": 3
+      }
+    ],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "stale_index_control",
+    "verdict": "Violates"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "expire",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [
+      {
+        "detail": "sandbox observed running after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 18
+      },
+      {
+        "detail": "successful resume after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 19
+      },
+      {
+        "detail": "a successful start clears an irreversible terminal state",
+        "inconclusive": false,
+        "properties": [
+          "terminalMonotone"
+        ],
+        "rule": "terminal_monotone",
+        "seq": 19
+      },
+      {
+        "detail": "resume succeeded after the snapshot was deleted",
+        "inconclusive": false,
+        "properties": [
+          "RestoreSourceValid",
+          "PausedSnapshotValid"
+        ],
+        "rule": "resume_requires_snapshot",
+        "seq": 19
+      },
+      {
+        "detail": "sandbox observed running after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 20
+      },
+      {
+        "detail": "sandbox observed running after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 22
+      },
+      {
+        "detail": "successful resume after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 23
+      },
+      {
+        "detail": "a successful start clears an irreversible terminal state",
+        "inconclusive": false,
+        "properties": [
+          "terminalMonotone"
+        ],
+        "rule": "terminal_monotone",
+        "seq": 23
+      },
+      {
+        "detail": "resume succeeded after the snapshot was deleted",
+        "inconclusive": false,
+        "properties": [
+          "RestoreSourceValid",
+          "PausedSnapshotValid"
+        ],
+        "rule": "resume_requires_snapshot",
+        "seq": 23
+      },
+      {
+        "detail": "sandbox observed running after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 24
+      }
+    ],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "stress",
+    "verdict": "Violates"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone"
+    ],
+    "scenario": "bad_create",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [
+      {
+        "detail": "successful pause after a successful kill",
+        "inconclusive": false,
+        "properties": [
+          "TerminalConsistent",
+          "step_never_clears_terminal"
+        ],
+        "rule": "kill_irreversible",
+        "seq": 5
+      }
+    ],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "race_pause_kill",
+    "verdict": "Violates"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "race_double_kill",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "kill_settle",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [],
+    "rules_applied": [
+      "execution_not_reused",
+      "file_workspace_bound",
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone",
+      "workspace_stable"
+    ],
+    "scenario": "autopause_resume",
+    "verdict": "Conforms"
+  },
+  {
+    "findings": [
+      {
+        "detail": "node holds sandboxes absent from the running store: ['ivjps0806j5a2r2zburhl']",
+        "inconclusive": false,
+        "properties": [
+          "CreateCompensation",
+          "NoOrphanOnNode"
+        ],
+        "rule": "node_orphan",
+        "seq": 0
+      }
+    ],
+    "rules_applied": [
+      "kill_irreversible",
+      "lifecycle_completion",
+      "node_orphan",
+      "pause_requires_snapshot",
+      "resume_requires_snapshot",
+      "running_requires_start",
+      "stale_index",
+      "terminal_monotone"
+    ],
+    "scenario": "client_timeout",
+    "verdict": "Violates"
+  }
+]

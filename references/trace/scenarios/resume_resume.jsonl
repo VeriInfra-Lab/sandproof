@@ -1,0 +1,8 @@
+{"attrs": {"http": null, "method": "POST", "path": "/sandboxes", "raw_body": "<urlopen error [Errno 1] Operation not permitted>", "result": "unknown"}, "event": "acceptCreate", "kind": "event", "sandbox": "?", "seq": 1, "source": "client", "ts": 2132274791}
+{"kind": "observe", "obs": {}, "sandbox": "?", "seq": 2, "source": "observer", "ts": 2132275541}
+{"attrs": {"http": null, "method": null, "path": null, "raw_body": "<urlopen error [Errno 1] Operation not permitted>", "result": "unknown"}, "event": "acceptPause", "kind": "event", "sandbox": "?", "seq": 3, "source": "client", "ts": 2132516541}
+{"kind": "observe", "obs": {}, "sandbox": "?", "seq": 4, "source": "observer", "ts": 2132517083}
+{"attrs": {"http": null, "method": "POST", "path": "/sandboxes/None/resume", "raw_body": "<urlopen error [Errno 1] Operation not permitted>", "result": "unknown"}, "event": "acceptResume", "kind": "event", "sandbox": "?", "seq": 5, "source": "client", "ts": 2134067791}
+{"kind": "observe", "obs": {}, "sandbox": "?", "seq": 6, "source": "observer", "ts": 2134070041}
+{"attrs": {"http": null, "method": "POST", "path": "/sandboxes/None/resume", "raw_body": "<urlopen error [Errno 1] Operation not permitted>", "result": "unknown"}, "event": "acceptResume", "kind": "event", "sandbox": "?", "seq": 7, "source": "client", "ts": 2134072625}
+{"kind": "observe", "obs": {}, "sandbox": "?", "seq": 8, "source": "observer", "ts": 2134073583}

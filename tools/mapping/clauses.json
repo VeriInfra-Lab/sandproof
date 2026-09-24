@@ -1,0 +1,213 @@
+{
+  "revision": "82f6529660ea98087d7a479247c789905b0a3867",
+  "repo": "e2b-dev/infra",
+  "note": "Machine-readable abstraction clauses (alpha). Each clause maps a concrete source to an abstract World field and carries a fidelity assumption, a source citation, and an observability class. Unobservable fields are declared so the trust boundary is explicit. Validated by tools/mapping/validate.py.",
+  "clauses": [
+    {
+      "id": "running",
+      "abstract_field": "running",
+      "concrete_source": "Redis key sandbox:storage:{team}:sandboxes:{sid} exists",
+      "relation": "key present <=> running = true",
+      "fidelity": "The running store is the single source of truth for a live (published) sandbox.",
+      "citation": "packages/api/internal/sandbox/storage/redis/operations.go",
+      "observability": "observable",
+      "probe": "running",
+      "expected_after_create": true,
+      "expected_after_pause": false
+    },
+    {
+      "id": "phase_hint",
+      "abstract_field": "phase_hint",
+      "concrete_source": "running record `state`; else snapshot row + env.deleted_at",
+      "relation": "record.state if present; else paused if snapshot present and live; else deleted/absent",
+      "fidelity": "The record state plus the snapshot/storage representation covers the lifecycle phase for the observed purposes.",
+      "citation": "packages/api/internal/sandbox/sandboxtypes/states.go",
+      "observability": "observable",
+      "probe": "phase_hint",
+      "expected_after_create": "running",
+      "expected_after_pause": "paused"
+    },
+    {
+      "id": "snapshot_present",
+      "abstract_field": "snapshot_present",
+      "concrete_source": "a row in public.snapshots for the sandbox id",
+      "relation": "row exists <=> snapshot_present = true",
+      "fidelity": "A snapshots row means a pause representation exists for the sandbox.",
+      "citation": "packages/db/queries/snapshots/get_snapshot_builds.sql",
+      "observability": "observable",
+      "probe": "snapshot_present",
+      "expected_after_pause": true
+    },
+    {
+      "id": "snapshot_deleted",
+      "abstract_field": "snapshot_deleted",
+      "concrete_source": "the snapshot env row has deleted_at set",
+      "relation": "env.deleted_at non-null <=> snapshot_deleted = true",
+      "fidelity": "Soft-deleting the snapshot env is the observable form of deleting the paused representation.",
+      "citation": "packages/api/internal/handlers/sandbox_kill.go",
+      "observability": "observable",
+      "probe": "snapshot_deleted",
+      "expected_after_pause": false
+    },
+    {
+      "id": "workspace",
+      "abstract_field": "workspace",
+      "concrete_source": "running record `baseTemplateID`",
+      "relation": "record.baseTemplateID (when a record exists)",
+      "fidelity": "baseTemplateID is the stable sandbox identity across resume (templateID changes to the snapshot env).",
+      "citation": "packages/api/internal/sandbox/sandboxtypes/sandbox.go",
+      "observability": "observable",
+      "probe": "workspace"
+    },
+    {
+      "id": "execution_id",
+      "abstract_field": "execution_id",
+      "concrete_source": "running record `executionID`",
+      "relation": "record.executionID (when a record exists)",
+      "fidelity": "executionID is the per-execution identity; a retired value must not become current again.",
+      "citation": "packages/orchestrator/pkg/sandbox/sandbox.go",
+      "observability": "observable",
+      "probe": "execution_id"
+    },
+    {
+      "id": "index_members",
+      "abstract_field": "index_members",
+      "concrete_source": "Redis SET sandbox:storage:{team}:index",
+      "relation": "SMEMBERS of the team index SET",
+      "fidelity": "The team index is the published name list over the running store.",
+      "citation": "packages/api/internal/sandbox/storage/redis/items.go",
+      "observability": "observable",
+      "probe": "index_members"
+    },
+    {
+      "id": "existing_sandboxes",
+      "abstract_field": "existing_sandboxes",
+      "concrete_source": "keys matching sandbox:storage:{team}:sandboxes:*",
+      "relation": "the set of running-store ids",
+      "fidelity": "The running store keys enumerate exactly the live sandboxes.",
+      "citation": "packages/api/internal/sandbox/storage/redis/operations.go",
+      "observability": "observable",
+      "probe": "existing_sandboxes"
+    },
+    {
+      "id": "node_sandboxes",
+      "abstract_field": "node_sandboxes",
+      "concrete_source": "the node's in-memory instance set (read-only introspection)",
+      "relation": "the set of sandbox ids held by the node",
+      "fidelity": "The node's instance set enumerates the sandboxes it is actually running.",
+      "citation": "packages/orchestrator/pkg/sandbox/map.go",
+      "observability": "observable",
+      "probe": "node_sandboxes"
+    },
+    {
+      "id": "catalog_present",
+      "abstract_field": "catalog_present",
+      "concrete_source": "Redis key sandbox:catalog:{sid} exists",
+      "relation": "key present <=> catalog_present = true",
+      "fidelity": "The catalog key is the routing/publication entry for the sandbox.",
+      "citation": "packages/shared/pkg/sandbox-catalog/catalog_redis.go",
+      "observability": "observable",
+      "probe": "catalog_present",
+      "expected_after_create": true
+    },
+    {
+      "id": "epoch",
+      "abstract_field": "epoch",
+      "concrete_source": "none",
+      "relation": "",
+      "fidelity": "",
+      "citation": "",
+      "observability": "unobservable",
+      "probe": null,
+      "blocked_properties": [
+        "epochMonotone",
+        "fenceMonotone"
+      ]
+    },
+    {
+      "id": "generation",
+      "abstract_field": "generation",
+      "concrete_source": "none (executionID is not an ordered generation)",
+      "relation": "",
+      "fidelity": "",
+      "citation": "",
+      "observability": "partial",
+      "probe": null,
+      "blocked_properties": [
+        "generationMonotone"
+      ]
+    },
+    {
+      "id": "effect_status",
+      "abstract_field": "effects",
+      "concrete_source": "none",
+      "relation": "",
+      "fidelity": "",
+      "citation": "",
+      "observability": "unobservable",
+      "probe": null,
+      "blocked_properties": [
+        "effectAdmission",
+        "effectResultStable"
+      ]
+    },
+    {
+      "id": "operation_ledger",
+      "abstract_field": "operations",
+      "concrete_source": "none",
+      "relation": "",
+      "fidelity": "",
+      "citation": "",
+      "observability": "unobservable",
+      "probe": null,
+      "blocked_properties": [
+        "operationResultStable",
+        "operationIdentityStable"
+      ]
+    },
+    {
+      "id": "applied_policy",
+      "abstract_field": "applied_policy",
+      "concrete_source": "none",
+      "relation": "",
+      "fidelity": "",
+      "citation": "",
+      "observability": "unobservable",
+      "probe": null,
+      "blocked_properties": [
+        "RunningRequiresAppliedFilePolicy",
+        "AppliedFilePolicyValid"
+      ]
+    },
+    {
+      "id": "fence",
+      "abstract_field": "fence_epoch",
+      "concrete_source": "none",
+      "relation": "",
+      "fidelity": "",
+      "citation": "",
+      "observability": "unobservable",
+      "probe": null,
+      "blocked_properties": [
+        "FenceWellFormed",
+        "FenceClosesAuthority"
+      ]
+    },
+    {
+      "id": "resource_status",
+      "abstract_field": "executing_vms",
+      "concrete_source": "node holds sandbox ids only, not per-VM/slot status",
+      "relation": "",
+      "fidelity": "",
+      "citation": "",
+      "observability": "partial",
+      "probe": null,
+      "blocked_properties": [
+        "UniqueExecution",
+        "ActiveSlotValid",
+        "ReclaimedResourcesNotCurrent",
+        "StableStatesQuiescent"
+      ]
+    }
+  ]
+}

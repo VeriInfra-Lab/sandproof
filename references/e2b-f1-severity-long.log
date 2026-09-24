@@ -1,0 +1,11 @@
+# F-1 severity (long TTL) (2026-09-15T10:01:38Z)
+created: i32ejzj4fta36clq5isnj timeout=900s
+paused
+DELETE -> 204
+resume -> 201
+t+0: GET -> 200
+t+60: GET -> 404
+t+120: GET -> 404
+in listing while alive: False
+re-pause (creates NEW snapshot from 'deleted' state) -> 404
+snapshot row after re-pause: aiuuqh90l2wbgec6tx1o|2026-09-15 10:01:52.589583+00

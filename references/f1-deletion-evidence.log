@@ -1,0 +1,56 @@
+# F-1 删除落点证据
+
+复现日期：2026-09-13。对象：`e2b-dev/infra@82f6529660ea98087d7a479247c789905b0a3867`。
+目的：确认 paused 沙箱 kill 的 `deleteSnapshot` 实际删除了哪一行，以及删除与 resume 复活发生在同一次运行中。
+
+## 1. 干净删除落点（无在途 resume）
+
+```text
+sandbox=ifvg59lp9x2ohhr58iigr
+pause=204
+snapshot_env=7c4u7of2g9gwpwo9g0l7
+
+BEFORE kill:
+  envs(7c4u...):  deleted_at = NULL, public=f, source=snapshot
+  env_aliases:    0 行
+  active_envs:    count = 1
+
+kill=204
+
+AFTER kill:
+  envs(7c4u...):  deleted_at = 2026-09-13 07:29:24.002198+00, public=f, source=snapshot
+  env_aliases:    0 行
+  active_envs:    count = 0
+```
+
+`deleteSnapshot` → `SoftDeleteTemplate(TemplateID = snapshot.env_id)`，即对快照 env 执行
+`UPDATE envs SET deleted_at = NOW() WHERE id = ... AND deleted_at IS NULL`，并释放 alias、删除 active builds。
+kill 返回 204 意味着该路径成功。
+
+## 2. 删除与复活同一次运行
+
+```text
+sandbox=ili9h3ohnuavfv349j6dl
+pause=204
+snapshot_env=svzdb6jh7840cfsen47s
+before: deleted_at=[]                             active_envs=1
+
+[resume in flight, node create delayed 8s]
+  +2s: kill=204
+  during: deleted_at=[2026-09-13 07:29:45.21203+00]  active_envs=0
+[resume completes]
+  resume=201
+
+final:
+  GET state=running
+  redis running_key EXISTS = 1
+  snapshot_env deleted_at 仍为 2026-09-13 07:29:45.21203+00
+```
+
+即：**kill 删除了 paused 表示（快照 env 置 deleted_at、active_envs 归零）并返回 204；在途 resume 仍在同一 sandbox ID 上完成并写入 running 记录，最终沙箱 Running。**
+
+## 3. 结论
+
+- 之前"204 只可能在 deleteSnapshot 成功后返回"是代码推断；本节把它变为直接观测：kill 确实删除了 `envs` 行的 paused 表示。
+- 该删除并未阻止无锁 `Add` 的重新发布，因此 F-1 的完整链条（删除快照 + 返回成功 + 沙箱复活）全部由观测坐实。
+- 数据库落点：`public.envs.deleted_at`（快照 env），并在 `active_envs` 视图中消失；`snapshots` 行本身保留。

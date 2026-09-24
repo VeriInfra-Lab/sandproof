@@ -139,7 +139,7 @@ def EffectiveRuntimeValid (world : World) : Prop :=
 def StableStatesQuiescent (world : World) : Prop :=
   ∀ sid record, world.sandboxes sid = some record →
     (record.phase = .paused ∨ record.phase = .destroyed) →
-    noExecutingVm world sid ∧ noActiveSlot world sid
+    allVmsStoppedOrReclaimed world sid ∧ noActiveSlot world sid
 
 def TerminalConsistent (world : World) : Prop :=
   ∀ sid record, world.sandboxes sid = some record →
@@ -178,9 +178,17 @@ def OperationMatchesPhase (operation : Operation) : Phase → Prop
   | .pausing => operation.kind = .pause ∧
       (operation.status = .pending ∨ operation.status = .outcomeUnknown)
   | .paused => operation.kind = .pause ∧ operation.status = .succeeded
-  | .revoking => operation.kind = .kill ∧
-      (operation.status = .pending ∨ operation.status = .outcomeUnknown)
-  | .destroyed => operation.kind = .kill ∧ operation.status = .succeeded
+  | .revoking =>
+      (operation.kind = .kill ∧
+        (operation.status = .pending ∨ operation.status = .outcomeUnknown)) ∨
+      ((operation.kind = .create ∨ operation.kind = .resume ∨
+          operation.kind = .pause) ∧
+        ∃ failure, operation.status = .compensating failure)
+  | .destroyed =>
+      (operation.kind = .kill ∧ operation.status = .succeeded) ∨
+      ((operation.kind = .create ∨ operation.kind = .resume ∨
+          operation.kind = .pause) ∧
+        ∃ failure, operation.status = .failed failure)
 
 /-- Every live sandbox record carries one operation whose epoch and result
     agree with the lifecycle phase. This makes timeout semantics part of Safe. -/
@@ -212,7 +220,8 @@ def CurrentOperationInLedger (world : World) : Prop :=
     ∃ ledger, world.operations (operationKey sid operation.id) = some ledger
 
 def EffectIdentityValid (world : World) : Prop :=
-  ∀ id status, world.effects id = some status → id = effectId id.command
+  ∀ id status, world.effects id = some status →
+    id = effectIdAt id.command id.attempt
 
 def ReclaimedResourcesNotCurrent (world : World) : Prop :=
   (∀ vmId vm, world.vms vmId = some vm → vm.status = .reclaimed →
@@ -290,9 +299,9 @@ def OperationIdentityStable (before after : World) : Prop :=
 
 /-- An acknowledged effect keeps the same result under every later step. -/
 def EffectResultStable (before after : World) : Prop :=
-  ∀ id result,
-    before.effects id = some (.acknowledged result) →
-    after.effects id = some (.acknowledged result)
+  ∀ id outcome,
+    before.effects id = some (.acknowledged outcome) →
+    after.effects id = some (.acknowledged outcome)
 
 def RunningWorkspaceAuthorityExact (world : World) : Prop :=
   ∀ sid record, world.sandboxes sid = some record → record.phase = .running →
@@ -343,11 +352,19 @@ def FileEventWorkspaceBound (world : World) : Event → Prop
 /-- The durable outbox, rather than message presence alone, authorizes dispatch
     and acknowledgement. Duplicate delivery must also name a persisted effect. -/
 def EffectAdmissionSafe (world : World) : Event → Prop
-  | .dispatchEffect id => world.effects id = some .committed
-  | .acknowledgeEffect id _ =>
-      world.effects id = some .dispatched ∧ commandResultPresent world id.command
-  | .duplicateOrLateDelivery command =>
-      ∃ status, world.effects (effectId command) = some status
+  | .dispatchEffect id =>
+      world.effects id = some .committed ∨
+        world.effects id = some .outcomeUnknown
+  | .acknowledgeEffect id outcome =>
+      ((world.effects id = some .dispatched ∨
+          world.effects id = some .outcomeUnknown) ∧
+        effectOutcomeValid world id.command outcome) ∨
+      world.effects id = some (.acknowledged outcome)
+  | .effectTimeout id =>
+      world.effects id = some .dispatched ∨
+        world.effects id = some .outcomeUnknown
+  | .duplicateOrLateDelivery id =>
+      ∃ status, world.effects id = some status
   | _ => True
 
 /-- Cleanup is admitted only for the exact stopped/inactive old resource and

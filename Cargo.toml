@@ -1,0 +1,21 @@
+[workspace]
+members = ["controller-core", "sandbox-runtime"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.97"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true

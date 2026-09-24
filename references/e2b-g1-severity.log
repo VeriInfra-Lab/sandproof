@@ -1,0 +1,9 @@
+# G-1 severity (2026-09-15T10:10:32Z)
+before: store 0 node 0
+create (client timeout=1s) -> None
+t+10s node-only: ['ijxxtxm4ax5a93cyid1e4']
+t+60 node-only: []
+t+180 node-only: []
+API GET orphan -> 404
+in listing: False
+store/index unaware: in store? False
