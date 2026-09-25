@@ -27,6 +27,20 @@ jobs:
         # rustup reads channel and components from rust-toolchain.toml.
         run: bash scripts/check-function.sh
 
+  sdk-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check pinned E2B SDK against loopback responses
+        # No E2B cloud credentials, VM, or privileged runner are used.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/uv-bootstrap"
+          "$RUNNER_TEMP/uv-bootstrap/bin/python" -m pip install --disable-pip-version-check uv==0.11.31
+          PATH="$RUNNER_TEMP/uv-bootstrap/bin:$PATH" bash scripts/check-compat.sh
+
   pr-title:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
