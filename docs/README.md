@@ -17,4 +17,3 @@
 证明工具链的专门细节见 [verification 说明](../verification/README.zh-CN.md)；固定外部源码出处见[证据索引](../references/code-evidence.md)。它们是叶子资料，不是第二份项目计划。
 
 阅读顺序：新成员先读 README、开发指南和蓝图；做接口再读合同；做验证再读状态机、覆盖记录和证明流程。普通功能开发不需要先通读全部研究材料。
-
