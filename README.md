@@ -19,22 +19,22 @@
 
 | 部分 | 当前状态 |
 |---|---|
-| Rust 控制核心 | 已有纯状态处理实现及 78 项单元测试，不包含真实存储、HTTP 服务或 VM 操作 |
+| Rust 控制核心 | 已有纯状态处理实现与单元测试，不包含真实存储、HTTP 服务或 VM 操作 |
 | Lean 规范与对应证明 | 已有协议安全证明和当前 Rust 公开输入的对应证明；有限执行安全性带明确容量前提 |
 | 最终完成性与长期容量 | 仍有未闭合义务，见[证明覆盖记录](docs/proof-coverage.md) |
 | E2B 兼容服务与运行层 | 待按 V1 工作包实现和实机验收；旧小沙箱原型已从当前版本移除，不作为可用运行层 |
-| CI | Rust 格式、静态检查、测试及 PR 标题检查；不包含 KVM、E2B 对照或完整证明验收 |
+| CI | 功能、文档和 PR 规则检查；实际门槛与运行方法统一见开发指南 |
 
 已移除的原型可从 [Git 历史](https://github.com/ningZhang-cs/sandproof/tree/0f1901a210e24da50d259e07df75e8c2cb9d181f/sandbox-runtime)查看。当前目录不再保留旧方案的副本，也不把删除旧模块计算为新功能完成。
 
 ## 开发入口
 
 - [总计划与任务](https://github.com/ningZhang-cs/sandproof/issues/1)、[阶段里程碑](https://github.com/ningZhang-cs/sandproof/milestones)
-- [项目蓝图与三人分工](docs/project-blueprint.md)、[模块合同](docs/module-contracts.md)
-- [提交、issue 与 PR 约定](CONTRIBUTING.md)、[测试与验收计划](docs/testing-plan.md)
+- [开发指南](CONTRIBUTING.md)：分支、提交、issue、PR、测试和文档维护规则的统一入口
+- [文档目录](docs/README.md)：蓝图、合同、验收清单与模型／证明说明的总分索引
 - [CI 运行记录](https://github.com/ningZhang-cs/sandproof/actions)
 
-A 负责控制、持久化和恢复；B 负责节点执行与隔离；C 负责接口兼容和测试框架。每位开发者负责自己模块的测试。当前不强制另一位成员批准 PR，但自动检查仍是合并门槛。
+分工以蓝图为准，开发流程以开发指南为准；不在本页复制规则和实时测试数量。
 
 ## 代码和证明
 

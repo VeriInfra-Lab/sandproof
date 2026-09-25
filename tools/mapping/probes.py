@@ -1,7 +1,7 @@
 """Concrete fact gathering and probe functions for the abstraction clauses.
 
 `gather(sid)` collects the raw concrete facts once; each clause's `probe`
-projects one abstract field from them. See docs/mapping-theory.md for alpha.
+projects one abstract field from them. See docs/trace-tools.md for mapping limits.
 """
 import json
 from dataclasses import dataclass, field
