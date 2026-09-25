@@ -3,6 +3,17 @@
   "version": "2.51.0",
   "git_revision": "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b",
   "evidence": "Pinned Python SDK against synthetic loopback HTTP responses only; no E2B backend, envd, VM, or real resources",
+  "wire_calls": [
+    {"sdk_call": "Sandbox.create", "transport": "HTTP JSON", "method": "POST", "path": "/v2/sandboxes", "evidence_case": "test_create_omits_server_defaults"},
+    {"sdk_call": "Sandbox.connect", "transport": "HTTP JSON", "method": "POST", "path": "/v2/sandboxes/{id}/connect", "evidence_case": "test_connect_uses_v2_and_preserves_explicit_zero"},
+    {"sdk_call": "Sandbox.kill", "transport": "HTTP JSON", "method": "DELETE", "path": "/sandboxes/{id}", "evidence_case": "test_kill_success_and_not_found"},
+    {"sdk_call": "Sandbox.set_timeout", "transport": "HTTP JSON", "method": "POST", "path": "/sandboxes/{id}/timeout", "evidence_case": "test_set_timeout_forwards_zero_and_negative"},
+    {"sdk_call": "sandbox.commands.run", "transport": "ConnectRPC JSON stream", "method": "POST", "path": "/process.Process/Start", "evidence_case": "test_command_uses_connect_stream_and_preserves_result"},
+    {"sdk_call": "sandbox.files.write", "transport": "HTTP multipart or octet stream", "method": "POST", "path": "/files", "evidence_case": "test_file_write_and_read_use_envd_files_and_access_token"},
+    {"sdk_call": "sandbox.files.read", "transport": "HTTP bytes", "method": "GET", "path": "/files", "evidence_case": "test_file_write_and_read_use_envd_files_and_access_token"},
+    {"sdk_call": "sandbox.files.make_dir", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/filesystem.Filesystem/MakeDir", "evidence_case": "test_directory_calls_use_filesystem_rpc"},
+    {"sdk_call": "sandbox.files.list", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/filesystem.Filesystem/ListDir", "evidence_case": "test_directory_calls_use_filesystem_rpc"}
+  ],
   "tested_cases": [
     "test_create_omits_server_defaults",
     "test_create_explicit_values_and_deprecated_secure",
@@ -16,10 +27,21 @@
     "test_async_harbor_style_create_and_connect",
     "test_debug_mode_is_not_a_lifecycle_test"
   ],
+  "envd_cases": [
+    "test_command_uses_connect_stream_and_preserves_result",
+    "test_background_command_returns_handle_then_result",
+    "test_nonzero_command_exit_is_not_success",
+    "test_command_missing_end_is_not_auto_retried",
+    "test_file_write_and_read_use_envd_files_and_access_token",
+    "test_file_rejections_are_distinct",
+    "test_filelike_upload_uses_octet_stream_by_default",
+    "test_directory_calls_use_filesystem_rpc",
+    "test_sdk_forwards_path_that_server_must_check"
+  ],
   "not_yet_tested": [
     "list and info response mapping",
-    "command and process envd transport",
-    "file upload and download envd transport",
+    "command reconnect, stdin, signal, timeout and disconnect behavior",
+    "file streaming download and host-boundary enforcement",
     "template build and query",
     "real controller response compatibility",
     "real VM end-to-end behavior"
