@@ -245,6 +245,15 @@ name = "sandbox-controller-core"
 version = "0.1.0"
 
 [[package]]
+name = "sandbox-runtime"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sandproof-controller-service"
 version = "0.1.0"
 dependencies = [
