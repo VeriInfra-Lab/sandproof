@@ -1,0 +1,11 @@
+[project]
+name = "sandproof-sdk-contracts"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
+dependencies = ["e2b==2.51.0"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+e2b = { git = "https://github.com/e2b-dev/E2B.git", rev = "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b", subdirectory = "packages/python-sdk" }
