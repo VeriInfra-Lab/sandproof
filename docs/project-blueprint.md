@@ -1,5 +1,7 @@
 # Sandproof 项目蓝图：E2B 核心兼容沙箱
 
+[文档目录](README.md) · [开发规则](../CONTRIBUTING.md)
+
 更新：2026-09-25。当前阶段：V1 功能开发，不要求新增功能同步完成形式化证明。
 
 本文件是 Sandproof 当前范围、分工和验收的入口，与 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandproof/issues/1) 共同落实“先跑通，再集中证明”的开发顺序。研究安全目标保留，逐功能同步证明改为功能验收后集中证明；旧方案只保存在 Git 历史，不再在当前目录维护平行计划。
@@ -105,14 +107,8 @@ M0 后可以并行：A 使用契约一致的假执行器开发，B 用驱动程�
 
 B 的宿主环境准备通常先影响联调，应最早开展。C 同期能做协议与测试框架，A 同期能做持久化和确定性调度。出现瓶颈时其他人补该模块的测试/工具，但不增加第二个业务状态所有者。
 
-## 6. 管理与范围变更
+## 6. 更新本蓝图
 
-任务流采用 `Backlog → Ready → In progress → In review → Done`，阻塞原因单独记录；每人同一时间最多一个主要开发任务。当前使用总计划清单、GitHub milestones 和 issue 标签管理，尚未另建 GitHub Projects 看板。角色、范围、优先级和状态标签已创建；未分配实际人员的任务保持 Backlog，完成时关闭 issue 并清除进行中状态标签。分支保护是否启用以仓库设置为准，文档约定不等于平台已强制执行。
+本页只负责范围、版本基线、模块分工及里程碑。任务认领、进行状态和验收证据在对应 issue/PR 维护，不在本页复制实时进度。
 
-Ready 要求：负责人、输入输出、依赖、验收用例和范围明确。Done 要求：PR 合并、相应测试证据、文档更新、无未记录差异。只有模拟测试的运行功能不能标为实机完成。
-
-已建标签：`area:core/runtime/api/test/bench`、`kind:feature/bug/contract/plan`、`role:A/B/C`、`milestone:v1`、`priority:p0/p1`、`status:backlog/ready/in-progress/in-review/blocked`。实际阶段归属使用 GitHub milestone；每个 issue 链接总计划 #1 和本蓝图的功能/工作包编号。
-
-每个里程碑做一次范围复核，记录已运行、已测试、已证明三种不同状态。涉及新增功能、改变失败语义、扩大兼容或安全承诺时，先用“合同或范围变更”模板写明影响并经三人复核，再合入代码。常规实现细节由模块负责人决定，不为小改动开范围会议。
-
-提交、分支、issue 和 PR 规则见 [CONTRIBUTING](../CONTRIBUTING.md)；单元、集成、系统与评测的门槛见 [测试计划](testing-plan.md)。
+分支、提交、PR、测试门槛及范围变更程序统一见[开发指南](../CONTRIBUTING.md)。具体接口语义见[模块合同](module-contracts.md)，系统与评测验收见[验收清单](testing-plan.md)，证明结果见[覆盖记录](proof-coverage.md)。

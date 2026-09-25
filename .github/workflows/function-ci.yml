@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
-    branches: [main]
+    branches: [main, test]
   merge_group:
   workflow_dispatch:
 
@@ -38,3 +38,14 @@ jobs:
       - name: Check PR title
         # Read untrusted title as JSON data, never interpolate it into shell code.
         run: python3 tools/check_commit_subject.py --event "$GITHUB_EVENT_PATH"
+
+  pr-policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check branch name and PR target
+        run: python3 tools/check_pr_policy.py --event "$GITHUB_EVENT_PATH"

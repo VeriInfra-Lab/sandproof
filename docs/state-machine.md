@@ -1,5 +1,11 @@
 # 状态机与清晰边界
 
+[文档目录](README.md) · [产品范围](project-blueprint.md) · [证明覆盖](proof-coverage.md)
+
+本文解释既有协议模型，不重复定义产品 V1。模型包含暂停恢复，产品 V1 暂不启用；E2B 新接口、私有系统盘和真实执行合同仍需与模型连接，不能把它们视为已经验证。
+
+研究方法是从 issue 与实现中提取重复的失败形态，再明确身份、状态、授权和失败语义，写成 Lean 的 `World → Step → World` 及安全定理。issue 是需求证据，不是自动成立的规范；实际 Rust 经 Charon/Aeneas 抽取后再证明对应。
+
 这份状态机解决一个很具体的问题：沙箱暂停、恢复或销毁时，即使旧命令晚到、相同请求重发、controller 中途重启，也不能让旧实例重新获得权限，不能把错误的 workspace 或 snapshot 接到新实例上，也不能让旧清理任务误删当前资源。
 
 它不是 Linux、Firecracker 或 E2B 的完整模型。它是 controller 与 worker 之间的安全协议。
@@ -20,11 +26,11 @@
 
 ## 2. 固定范围
 
-首版固定：
+既有模型的抽象范围：
 
 - 单台 Linux/KVM 主机；
 - 一个 controller、一个 worker；
-- Firecracker v1.16.1；
+- 底层虚拟机通过外部合同连接；实际版本组合由项目蓝图固定；
 - 每个 sandbox 独占 workspace、VM 和网络槽；
 - managed 文件 API 只有完整读写模式 `WorkspaceApiAccess.managedReadWrite`；
 - 网络只有 `denyAll` 或静态 L3/L4 endpoint allowlist。
@@ -172,7 +178,7 @@ worker 在删除点重新检查资源的 sid、generation、具体 ID、停止/�
 | Lean 已证明 | 仍需 refinement 或 adapter 证据 |
 |---|---|
 | 任意有限合法历史中的身份、代、权限和资源关系 | 生产二进制是否只通过已证明 reducer 改变状态 |
-| 请求、effect、调度、worker 和稳定发布处理器的每个接受分支对应合法 `Step`，并有反向分支覆盖证明 | Lean reducer 到 Rust/其他部署语言的生成或 refinement |
+| 请求、effect、调度、worker 和发布的纯处理器有双向覆盖；现有 Rust 公开输入已有带容量前提的对应证明 | 新增持久化、服务、真实执行与恢复路径的实现对应 |
 | 操作计划一旦封存，资源身份和清理范围不可更换；有限资源索引与全局资源条件一致 | 资源发现和 journal 事务是否忠实维护这些索引 |
 | 明确进度合同与弱公平下，operation 最终并永久得到成功或失败结果 | VM/storage/network 最终响应，以及 fence/stop/close 安全收敛动作最终成功 |
 | controller crash 不丢持久 operation/effect 记录 | journal 的原子性与断电持久性 |

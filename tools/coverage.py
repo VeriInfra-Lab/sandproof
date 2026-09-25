@@ -3,7 +3,7 @@
 
 Usage:
   tools/coverage.py            # print to stdout
-  tools/coverage.py --write     # also write docs/trace-coverage.md
+  tools/coverage.py --write     # also write artifacts/trace-coverage.md
 """
 import os
 import sys
@@ -46,7 +46,9 @@ def main() -> int:
     print(out)
     if "--write" in sys.argv:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        path = os.path.join(root, "docs", "trace-coverage.md")
+        directory = os.path.join(root, "artifacts")
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "trace-coverage.md")
         with open(path, "w") as handle:
             handle.write(out + "\n")
         print(f"wrote {path}", file=sys.stderr)

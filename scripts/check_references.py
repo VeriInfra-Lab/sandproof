@@ -26,8 +26,8 @@ for item in manifest["evidence"]:
     assert hashlib.sha256(data).hexdigest() == item["sha256"], item["id"]
     assert 1 <= item["start_line"] <= item["end_line"] <= len(data.decode().splitlines()), item["id"]
     assert f"/blob/{revision}/" in item["url"], item["id"]
-docs = [ROOT / "README.md", ROOT / "RESEARCH_PLAN.zh-CN.md"]
-for directory in ("docs", "models", "references"):
+docs = list(ROOT.glob("*.md"))
+for directory in ("docs", "references", "verification"):
     docs.extend((ROOT / directory).glob("*.md"))
 for doc in docs:
     for target in re.findall(r"\]\(([^)]+)\)", doc.read_text()):
