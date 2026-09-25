@@ -30,7 +30,14 @@ pub enum RuntimeError {
     MissingRecord,
     IdentityMismatch(&'static str),
     TimedOut(&'static str),
-    Api { status: u16, body: String },
+    HostCommand {
+        operation: &'static str,
+        stderr: String,
+    },
+    Api {
+        status: u16,
+        body: String,
+    },
     Protocol(&'static str),
 }
 
@@ -55,6 +62,9 @@ impl Display for RuntimeError {
                 "observed process differs from recorded resource ({reason}); no signal sent"
             ),
             Self::TimedOut(action) => write!(f, "timed out waiting for {action}"),
+            Self::HostCommand { operation, stderr } => {
+                write!(f, "host network {operation} failed: {stderr}")
+            }
             Self::Api { status, body } => write!(f, "Firecracker API returned {status}: {body}"),
             Self::Protocol(reason) => write!(f, "invalid Firecracker/proc response: {reason}"),
         }
@@ -91,6 +101,13 @@ pub struct RuntimeConfig {
     /// A short-lived SSH command should use false and stop before it exits.
     /// Long-lived services may use false too; daemon mode suppresses serial logs.
     pub daemonize: bool,
+    /// Per-VM namespace handle at `/run/netns/<resource-id>`. The runtime
+    /// creates its private TAP and link when launching and removes it after
+    /// the exact VM process has stopped.
+    pub private_netns: Option<PathBuf>,
+    /// SHA-512 hex digest of the envd access token. Only used with a private
+    /// namespace; the raw token must never enter Firecracker metadata.
+    pub access_token_hash: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +135,13 @@ struct ProcessRecord {
     resource_id: String,
     pid: u32,
     start_time_ticks: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NetworkRecord {
+    resource_id: String,
+    namespace_inode: u64,
 }
 
 pub struct Runtime {
@@ -154,6 +178,31 @@ impl Runtime {
         ] {
             check_trusted_path(path)?;
         }
+        if let Some(namespace) = &config.private_netns {
+            if namespace.parent() != Some(Path::new("/run/netns")) {
+                return Err(RuntimeError::InvalidConfiguration(
+                    "private network namespace must live under /run/netns",
+                ));
+            }
+            check_trusted_path(Path::new("/run"))?;
+            check_trusted_path(Path::new("/usr/bin/ip"))?;
+            let hash =
+                config
+                    .access_token_hash
+                    .as_deref()
+                    .ok_or(RuntimeError::InvalidConfiguration(
+                        "MMDS access token hash is required",
+                    ))?;
+            if hash.len() != 128 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err(RuntimeError::InvalidConfiguration(
+                    "MMDS access token hash must be SHA-512 hex",
+                ));
+            }
+        } else if config.access_token_hash.is_some() {
+            return Err(RuntimeError::InvalidConfiguration(
+                "MMDS token hash requires a private network",
+            ));
+        }
         if !config.jailer.is_file()
             || !config.firecracker.is_file()
             || !config.kernel.is_file()
@@ -184,7 +233,11 @@ impl Runtime {
     /// Preserves partial resources when a launch phase fails.
     pub fn launch(&self, id: &str) -> Result<Observation, RuntimeError> {
         validate_id(id)?;
+        self.validate_network_id(id)?;
         let claim = self.claim_resource(id)?;
+        if self.config.private_netns.is_some() {
+            self.prepare_private_network(id, &claim)?;
+        }
         let record = self.spawn_jailer(id, &claim)?;
         self.stage_and_boot(id, record.pid)?;
         let observation = self.observe(id)?;
@@ -241,6 +294,9 @@ impl Runtime {
             .arg(&self.config.chroot_base)
             .arg("--cgroup-version")
             .arg("2");
+        if let Some(namespace) = &self.config.private_netns {
+            command.arg("--netns").arg(namespace);
+        }
         if self.config.daemonize {
             command.arg("--daemonize");
         }
@@ -320,6 +376,19 @@ impl Runtime {
         self.put(id, "/machine-config", &json!({ "vcpu_count": self.config.vcpu_count, "mem_size_mib": self.config.memory_mib }))?;
         self.put(id, "/boot-source", &json!({ "kernel_image_path": "/vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1 pci=off" }))?;
         self.put(id, "/drives/rootfs", &json!({ "drive_id": "rootfs", "path_on_host": "/rootfs.ext4", "is_root_device": true, "is_read_only": false }))?;
+        if let Some(hash) = &self.config.access_token_hash {
+            self.put(id, "/network-interfaces/eth0", &json!({ "iface_id": "eth0", "host_dev_name": "tap0", "guest_mac": "06:00:ac:10:00:02" }))?;
+            self.put(
+                id,
+                "/mmds/config",
+                &json!({ "version": "V2", "network_interfaces": ["eth0"] }),
+            )?;
+            self.put(
+                id,
+                "/mmds",
+                &json!({ "instanceID": id, "envID": "sandproof-base", "accessTokenHash": hash }),
+            )?;
+        }
         self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
         Ok(())
     }
@@ -385,6 +454,7 @@ impl Runtime {
     /// Refuses to remove a live or unverified process's backing resources.
     pub fn cleanup(&self, id: &str) -> Result<(), RuntimeError> {
         validate_id(id)?;
+        self.validate_network_id(id)?;
         let record = self.read_record(id)?;
         if verified_process(&record)?.is_some() {
             return Err(RuntimeError::InvalidConfiguration("cannot clean a live VM"));
@@ -401,6 +471,127 @@ impl Runtime {
             Ok(_) => return Err(RuntimeError::IdentityMismatch("jail directory type")),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
+        }
+        if self.config.private_netns.is_some() {
+            self.cleanup_private_network(id)?;
+        }
+        Ok(())
+    }
+
+    fn prepare_private_network(&self, id: &str, claim: &Path) -> Result<(), RuntimeError> {
+        let namespace =
+            self.config
+                .private_netns
+                .as_ref()
+                .ok_or(RuntimeError::InvalidConfiguration(
+                    "private network not configured",
+                ))?;
+        match fs::symlink_metadata(namespace) {
+            Ok(_) => return Err(RuntimeError::AlreadyClaimed),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        run_ip("create namespace", &["netns", "add", id])?;
+        check_trusted_path(namespace)?;
+        let metadata = fs::symlink_metadata(namespace)?;
+        if !metadata.is_file() {
+            return Err(RuntimeError::IdentityMismatch(
+                "network namespace handle type",
+            ));
+        }
+        let network = NetworkRecord {
+            resource_id: id.to_owned(),
+            namespace_inode: metadata.ino(),
+        };
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(claim.join("network.json"))?;
+        serde_json::to_writer(&mut file, &network)?;
+        file.flush()?;
+        file.sync_all()?;
+        File::open(claim)?.sync_all()?;
+
+        // The same private IPv4 range is safe because each VM has its own
+        // network namespace. No default route or external bridge is added.
+        run_ip(
+            "create TAP",
+            &[
+                "netns",
+                "exec",
+                id,
+                "/usr/bin/ip",
+                "tuntap",
+                "add",
+                "dev",
+                "tap0",
+                "mode",
+                "tap",
+            ],
+        )?;
+        run_ip(
+            "assign host address",
+            &[
+                "netns",
+                "exec",
+                id,
+                "/usr/bin/ip",
+                "addr",
+                "add",
+                "172.16.0.1/30",
+                "dev",
+                "tap0",
+            ],
+        )?;
+        run_ip(
+            "raise TAP",
+            &[
+                "netns",
+                "exec",
+                id,
+                "/usr/bin/ip",
+                "link",
+                "set",
+                "tap0",
+                "up",
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn cleanup_private_network(&self, id: &str) -> Result<(), RuntimeError> {
+        let namespace =
+            self.config
+                .private_netns
+                .as_ref()
+                .ok_or(RuntimeError::InvalidConfiguration(
+                    "private network not configured",
+                ))?;
+        let path = self
+            .config
+            .chroot_base
+            .join(".claims")
+            .join(id)
+            .join("network.json");
+        let network: NetworkRecord = serde_json::from_reader(File::open(path)?)?;
+        if network.resource_id != id || network.namespace_inode == 0 {
+            return Err(RuntimeError::IdentityMismatch("network record fields"));
+        }
+        let metadata = match fs::symlink_metadata(namespace) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        if !metadata.is_file() || metadata.uid() != 0 || metadata.ino() != network.namespace_inode {
+            return Err(RuntimeError::IdentityMismatch("network namespace handle"));
+        }
+        run_ip("delete namespace", &["netns", "delete", id])
+    }
+
+    fn validate_network_id(&self, id: &str) -> Result<(), RuntimeError> {
+        if let Some(namespace) = &self.config.private_netns {
+            validate_namespace_id(namespace, id)?;
         }
         Ok(())
     }
@@ -564,6 +755,15 @@ fn validate_id(id: &str) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+fn validate_namespace_id(namespace: &Path, id: &str) -> Result<(), RuntimeError> {
+    if namespace.file_name().and_then(std::ffi::OsStr::to_str) != Some(id) {
+        return Err(RuntimeError::InvalidConfiguration(
+            "network namespace must match the exact VM resource ID",
+        ));
+    }
+    Ok(())
+}
+
 fn check_trusted_path(path: &Path) -> Result<(), RuntimeError> {
     if !path.is_absolute() {
         return Err(RuntimeError::InvalidConfiguration("paths must be absolute"));
@@ -589,6 +789,22 @@ fn check_kvm(path: &Path) -> Result<(), RuntimeError> {
         .open(path)
         .map(|_| ())
         .map_err(RuntimeError::KvmUnavailable)
+}
+
+fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeError> {
+    let output = Command::new("/usr/bin/ip")
+        .args(arguments)
+        .env_clear()
+        .stdin(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        return Err(RuntimeError::HostCommand {
+            operation,
+            stderr: String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(4096)])
+                .into_owned(),
+        });
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -690,6 +906,12 @@ mod tests {
         }
         assert!(validate_id("sandproof-001").is_ok());
         assert!(validate_id(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn network_cleanup_must_target_same_resource_id() {
+        assert!(validate_namespace_id(Path::new("/run/netns/sandbox-a"), "sandbox-a").is_ok());
+        assert!(validate_namespace_id(Path::new("/run/netns/sandbox-b"), "sandbox-a").is_err());
     }
 
     #[test]
