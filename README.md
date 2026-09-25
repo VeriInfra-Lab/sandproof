@@ -84,7 +84,7 @@ theorem step_protocol_secure
 
 Lean 证明 controller 和 worker 在生命周期交接中使用了正确的身份、generation、策略与 manifest。它不解释路径、文件内容、mode bits、UID/GID、ACL、symlink 或 ext4 行为。`applyPolicy(policy)` 与 `restore(manifest, workspace)` 是否忠实实现这些引用，是明确列出的 adapter 契约，需要用固定实现审计和故障实验验证。
 
-因此，当前成果的准确名称是“已证明的 Lean 协议模型 + 可执行且带双向覆盖证明的纯状态处理核心”。它仍不是完整 verified controller：每条工作流的具体进度合同、生产实现与该核心的一致性证明，以及底层适配器合同仍是必要阶段。
+因此，当前成果是已证明的 Lean 协议与纯处理核心，以及已有 Rust 纯核心在明确前提下的对应证明。它仍不是完整已验证的部署系统：具体工作流进度义务、新增持久化/执行/恢复代码的对应证明，以及底层原语合同仍需补齐。已有纯核心证明的覆盖范围见前述证明记录，不应误读为 Rust 对应证明尚未开始，也不应扩大为运行服务已全部验证。
 
 ## 验证
 

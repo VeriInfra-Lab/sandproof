@@ -2,7 +2,7 @@
 
 更新：2026-09-25。当前阶段：V1 功能开发，不要求新增功能同步完成形式化证明。
 
-本文件是当前范围、分工和验收的入口。研究总目标见 [issue #1](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/1)；本蓝图落实“先跑通，再集中证明”的开发顺序。issue 中逐功能同步证明的安排尚需同步更新；本文没有修改远端 issue。旧的小沙箱方案和旧研究计划保留为历史依据，不能覆盖本文的当前范围。
+本文件是当前范围、分工和验收的入口，与 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/1) 共同落实“先跑通，再集中证明”的开发顺序。师兄的[原 issue 计划](history/issue-1-plan-2026-09-24.md)原文归档；研究安全目标保留，逐功能同步证明改为功能验收后集中证明。旧的小沙箱方案和旧研究计划不能覆盖本文的当前范围。
 
 ## 1. 固定目标和版本
 
@@ -85,33 +85,33 @@ M0 后可以并行：A 使用契约一致的假执行器开发，B 用驱动程�
 
 ## 5. 可直接拆分的任务
 
-以下为计划编号，尚未创建远端 issues。每项任务的“完成”都包含测试及相关文档；一个任务可以拆成多个小 PR。实际 GitHub 编号创建后回填链接，不能把计划编号伪装成已存在 issue。
+工作包已建立远端 issues，编号链接如下。每项任务的“完成”都包含测试及相关文档；一个任务可以拆成多个小 PR。里程碑表示整个工作包的最终验收点，不妨碍提前开发和按可联调小步骤交付。
 
 | 编号 | 主责 | 工作包 | 依赖与验收 |
 |---|---|---|---|
-| G01 | A，三人复核 | 合同 v1、状态与失败语义、版本冻结 | M0；固定模块合同和兼容清单，消除阻塞接口问题 |
-| A01 | A | 单节点事务持久化和 outbox | G01；提交前/后崩溃测试，无未提交派发 |
-| A02 | A | create/kill 调度、回执、稳定发布 | G01，可先用替身；与 B01/B04 联调后才算完成 |
-| A03 | A | 鉴权决策、寿命、配额和收尾预留 | A01/A02；伪时钟测试，跨用户拒绝，到期与 kill 竞争 |
-| A04 | A | 重启对账、未知结果、重放与清理 | A01/B04；关键故障窗口下不双跑、不误杀 |
-| B01 | B | Linux 环境、版本指纹、安全启动和停止 | G01；真实 jailer VM 启停，检查进程退出 |
-| B02 | B | 独立可写磁盘、任务镜像和固定 envd | B01；两个沙箱互不污染，可运行任务依赖；构建不泄露宿主权限 |
-| B03 | B | 命令/文件数据通道及资源限额 | B02；超时、后台进程、输出限额、恶意路径及隔离测试 |
-| B04 | B | 网络、精确身份、资源枚举和重复清理 | B01/B02；旧身份拒绝、网络关闭、崩溃后可发现残留 |
-| C01 | C | API/SDK 清单与契约测试框架 | G01；把每个支持/不支持的调用绑定测试，不仅是 create/kill |
-| C02 | C | 生命周期、凭据、文件/命令网关 | C01+A02/B03；原客户端直接调用；无法绕过 A/B 授权 |
-| C03 | C | 最小模板 API 与 Harbor 接入 | C01+B02；覆盖实际模板查询/构建链，固定任务与网络要求 |
-| C04 | C | KVM 系统 CI、故障框架、评测报告 | B01 起逐步接入；M2/M3 的可复现证据和失败归因 |
+| [G01 / #2](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/2) | A，三人复核 | 合同 v1、状态与失败语义、版本冻结 | M0；固定模块合同和兼容清单，消除阻塞接口问题 |
+| [A01 / #4](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/4) | A | 单节点事务持久化和 outbox | G01；提交前/后崩溃测试，无未提交派发 |
+| [A02 / #7](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/7) | A | create/kill 调度、回执、稳定发布 | A01/B01；先用替身，再验证真实启停发布；完整网络恢复在 A04/B04 验收 |
+| [A03 / #9](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/9) | A | 鉴权决策、寿命、配额和收尾预留 | A01/A02；伪时钟测试，跨用户拒绝，到期与 kill 竞争 |
+| [A04 / #11](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/11) | A | 重启对账、未知结果、重放与清理 | A01/A02/B04；关键故障窗口下不双跑、不误杀 |
+| [B01 / #3](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/3) | B | Linux 环境、版本指纹、安全启动和停止 | G01；真实 jailer VM 启停，检查进程退出；环境准备可提前 |
+| [B02 / #6](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/6) | B | 独立可写磁盘、任务镜像和固定 envd | B01；两个沙箱互不污染，可运行任务依赖；构建不泄露宿主权限 |
+| [B03 / #8](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/8) | B | 命令/文件数据通道及资源限额 | B02；超时、后台进程、输出限额、恶意路径及隔离测试 |
+| [B04 / #10](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/10) | B | 网络、精确身份、资源枚举和重复清理 | B01/B02；旧身份拒绝、网络关闭、崩溃后可发现残留 |
+| [C01 / #5](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/5) | C | API/SDK 清单与契约测试框架 | G01；把每个支持/不支持的调用绑定测试，不仅是 create/kill |
+| [C02 / #12](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/12) | C | 生命周期、凭据、文件/命令网关 | C01/A02/B03；原客户端直接调用；无法绕过 A/B 授权 |
+| [C03 / #13](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/13) | C | 最小模板 API 与 Harbor 接入 | C01/B02/C02；覆盖实际模板查询/构建链，固定任务与网络要求 |
+| [C04 / #14](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/14) | C | KVM 系统 CI、故障框架、评测报告 | B01 起逐步接入；最终验收依赖 A04/C03；M2/M3 可复现证据与失败归因 |
 
 B 的宿主环境准备通常先影响联调，应最早开展。C 同期能做协议与测试框架，A 同期能做持久化和确定性调度。出现瓶颈时其他人补该模块的测试/工具，但不增加第二个业务状态所有者。
 
 ## 6. 管理与范围变更
 
-任务板采用 `Backlog → Ready → In progress → In review → Done`，阻塞原因单独记录；每人同一时间最多一个主要开发任务。远端任务板、标签和分支规则尚未创建或配置。
+任务流采用 `Backlog → Ready → In progress → In review → Done`，阻塞原因单独记录；每人同一时间最多一个主要开发任务。当前使用总计划清单、GitHub milestones 和 issue 标签管理，尚未另建 GitHub Projects 看板。角色、范围、优先级和状态标签已创建；未分配实际人员的任务保持 Backlog，完成时关闭 issue 并清除进行中状态标签。分支保护是否启用以仓库设置为准，文档约定不等于平台已强制执行。
 
 Ready 要求：负责人、输入输出、依赖、验收用例和范围明确。Done 要求：PR 合并、相应测试证据、文档更新、无未记录差异。只有模拟测试的运行功能不能标为实机完成。
 
-建议标签：`area:core/runtime/api/test/bench`、`kind:feature/bug/contract`、`milestone:v1`、`priority:p0/p1`、`status:blocked`。每个 issue 链接总计划 #1 和本蓝图的功能/工作包编号。
+已建标签：`area:core/runtime/api/test/bench`、`kind:feature/bug/contract/plan`、`role:A/B/C`、`milestone:v1`、`priority:p0/p1`、`status:backlog/ready/in-progress/in-review/blocked`。实际阶段归属使用 GitHub milestone；每个 issue 链接总计划 #1 和本蓝图的功能/工作包编号。
 
 每个里程碑做一次范围复核，记录已运行、已测试、已证明三种不同状态。涉及新增功能、改变失败语义、扩大兼容或安全承诺时，先用“合同或范围变更”模板写明影响并经三人复核，再合入代码。常规实现细节由模块负责人决定，不为小改动开范围会议。
 
