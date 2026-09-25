@@ -1,6 +1,6 @@
 # Refinement：Lean 规范到 controller 与 adapter
 
-状态：Lean 抽象协议的 safety 已证明；controller、worker 和 Firecracker adapter 尚未实现或证明。
+历史路线说明：Rust 纯控制核心及现有公开输入的对应证明已经存在，准确范围见[证明覆盖记录](proof-coverage.md)；真实运行服务尚未打通。当前先按[项目蓝图](project-blueprint.md)完成 E2B 核心兼容 V1，再集中补齐实现证明。下文保留早期路线设计，不将其“尚未实现”描述当作当前进度。
 
 ## 1. 单一规范来源
 

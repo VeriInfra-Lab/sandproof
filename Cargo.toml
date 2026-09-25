@@ -1,5 +1,5 @@
 [workspace]
-members = ["controller-core", "sandbox-runtime"]
+members = ["controller-core"]
 resolver = "2"
 
 [workspace.package]
