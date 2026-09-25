@@ -1,7 +1,8 @@
 #!/bin/bash
 # F-1 reproduction: kill x in-flight resume.
 #
-# Requires the local harness from docs/e2b-f1-repro.md:
+# Historical experiment, not a confirmed E2B bug; see docs/trace-tools.md.
+# Requires the old local harness:
 #   - Postgres + Redis containers
 #   - E2B api on :3000 (ENVIRONMENT=local, local orchestrator discovery)
 #   - dummy-orchestrator on :5008 with DUMMY_CREATE_DELAY_MS>0
