@@ -18,13 +18,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     use std::path::PathBuf;
 
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 10
+    let network_smoke = args.get(1).is_some_and(|mode| mode == "smoke-net");
+    if (network_smoke && args.len() != 11)
+        || (!network_smoke && args.len() != 10)
         || !matches!(
             args[1].as_str(),
-            "launch" | "observe" | "stop" | "cleanup" | "smoke"
+            "launch" | "observe" | "stop" | "cleanup" | "smoke" | "smoke-net"
         )
     {
-        return Err("usage: sandproof-vm <launch|observe|stop|cleanup|smoke> <resource-id> <jailer> <firecracker> <chroot-base> <kernel> <rootfs> <vm-uid> <vm-gid>".into());
+        return Err("usage: sandproof-vm <launch|observe|stop|cleanup|smoke|smoke-net> <resource-id> <jailer> <firecracker> <chroot-base> <kernel> <rootfs> <vm-uid> <vm-gid> [private-netns-for-smoke-net]".into());
     }
     let config = RuntimeConfig {
         jailer: PathBuf::from(&args[3]),
@@ -36,7 +38,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         vm_gid: args[9].parse()?,
         vcpu_count: 1,
         memory_mib: 512,
-        daemonize: args[1] != "smoke",
+        daemonize: args[1] != "smoke" && !network_smoke,
+        private_netns: network_smoke.then(|| PathBuf::from(&args[10])),
+        // Fixed public test-only digest. Real callers must provide the hash
+        // of a fresh high-entropy token through their authenticated service.
+        access_token_hash: network_smoke.then(|| "704fd7223ef9ff63d62a667c6b756dc79b0124686d5e5fdb27ffc2761e503d2ea2f5915a118321927e0cdf8e43b8e487364be0857de54683f30ebf700e96ec67".to_owned()),
     };
     let runtime = Runtime::new(config)?;
     let observation = match args[1].as_str() {
@@ -47,7 +53,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             runtime.cleanup(&args[2])?;
             runtime.observe(&args[2])?
         }
-        "smoke" => {
+        "smoke" | "smoke-net" => {
             let launched = runtime.launch(&args[2])?;
             println!("{}", serde_json::to_string(&launched)?);
             let log_path = std::path::Path::new(&args[5])
@@ -73,8 +79,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("VM identity changed before second observation".into());
             }
             println!("{}", serde_json::to_string(&observed)?);
+            let ping_ok = if network_smoke {
+                std::process::Command::new("/usr/bin/ip")
+                    .args([
+                        "netns",
+                        "exec",
+                        &args[2],
+                        "/usr/bin/ping",
+                        "-c",
+                        "1",
+                        "-W",
+                        "2",
+                        "172.16.0.2",
+                    ])
+                    .status()?
+                    .success()
+            } else {
+                true
+            };
             let stopped = runtime.stop(&args[2])?;
             runtime.cleanup(&args[2])?;
+            if !ping_ok {
+                return Err("guest was not reachable inside the private namespace".into());
+            }
             stopped
         }
         _ => unreachable!(),
