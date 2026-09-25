@@ -1,16 +1,16 @@
-# 项目蓝图：E2B 核心兼容沙箱
+# Sandproof 项目蓝图：E2B 核心兼容沙箱
 
 更新：2026-09-25。当前阶段：V1 功能开发，不要求新增功能同步完成形式化证明。
 
-本文件是当前范围、分工和验收的入口，与 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/1) 共同落实“先跑通，再集中证明”的开发顺序。师兄的[原 issue 计划](history/issue-1-plan-2026-09-24.md)原文归档；研究安全目标保留，逐功能同步证明改为功能验收后集中证明。旧的小沙箱方案和旧研究计划不能覆盖本文的当前范围。
+本文件是 Sandproof 当前范围、分工和验收的入口，与 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandproof/issues/1) 共同落实“先跑通，再集中证明”的开发顺序。研究安全目标保留，逐功能同步证明改为功能验收后集中证明；旧方案只保存在 Git 历史，不再在当前目录维护平行计划。
 
 ## 1. 固定目标和版本
 
 交付单台 Linux/KVM 主机上的多用户、多沙箱服务，直接管理 Firecracker/jailer，在明确的功能子集内兼容固定版本的 E2B 客户端和生命周期语义。先完成真实运行、兼容性、故障和 Terminal-Bench 评测，再对安全关键 Rust 实现补齐 Lean 对应证明。最终研究版本包含暂停恢复；V1 可以先不实现。
 
-V1 不以 CubeSandbox 为适配目标，不切换到其他隔离引擎，不承诺完整复制 E2B 云产品，也不以测试通过宣称整个系统已经形式化验证。
+V1 只围绕 E2B 的固定核心子集，不切换到其他隔离引擎，不承诺完整复制 E2B 云产品，也不以测试通过宣称整个系统已经形式化验证。
 
-已有成果基线：`0f1901a210e24da50d259e07df75e8c2cb9d181f`。已有协议和 Rust 对应证明只适用于其明确覆盖的代码、输入和前提。当前运行层仍是部分基础代码，尚未打通真实沙箱。
+已有成果基线：`0f1901a210e24da50d259e07df75e8c2cb9d181f`。已有协议和 Rust 对应证明只适用于其明确覆盖的代码、输入和前提。旧的只读输入盘、自定义通信与结果导出原型已移除；当前仅保留纯控制核心，E2B 运行层待按 B01–B04 实现，尚未打通真实沙箱。
 
 调研参考版本如下；它们还不是经过联调的发布组合：
 
@@ -19,7 +19,7 @@ V1 不以 CubeSandbox 为适配目标，不切换到其他隔离引擎，不承�
 | E2B 客户端与 API | `ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b` | 接口、错误及生命周期行为依据 |
 | E2B runtime | `f455fd58fa3f289e78ce1de690c35968d8d29322` | 运行方式、envd 和外部操作参考 |
 | Harbor | `31668af15560fb50a9d0584816d12726036656cf` | E2B 接入及评测需求依据 |
-| 本项目 Firecracker/jailer | `1.16.1` | 已有运行层的目标版本；必须成对测试 |
+| 本项目 Firecracker/jailer | `1.16.1` | V1 计划目标版本；必须成对测试 |
 | Rust / Lean | 仓库工具链文件 | 本轮不升级 |
 
 M0 由 C 记录客户端精确包版本、锁文件、Harbor 和数据集版本/哈希；B 记录宿主、内核、rootfs、envd、Firecracker/jailer 和运行配置指纹；A 记录存储格式和协议版本。版本只可通过有原因、有回归证据的 PR 升级，不能跟随上游 `main` 自动漂移。
@@ -45,7 +45,7 @@ F08 的默认值必须按固定客户端及显式测试配置记录，不得擅�
 
 暂停、恢复、到期暂停和流量唤醒属于后续完整生命周期阶段。独立快照产品接口、fork/clone、多节点、高可用、共享卷、完整 POSIX/ACL 证明、动态域名策略、桌面和 GPU 不进入 V1。提供 E2B 式暂停恢复时内部必须保存内存和磁盘，不能用重启冒充恢复。
 
-文件夹只读导入可以复用为辅助能力；它不替代 E2B 式运行期间文件接口。V1 不增加“所有用户文件操作只能发生在一个工作目录”的限制来换取容易实现。
+V1 使用 E2B 式运行期间文件接口，不恢复旧的启动前只读文件夹导入方案，也不增加“所有用户文件操作只能发生在一个工作目录”的限制来换取容易实现。
 
 ## 3. 三人模块划分
 
@@ -54,7 +54,7 @@ A/B/C 是岗位占位符，不是 GitHub 用户名。实际认领后，在任务
 | 负责人 | 模块与建议目录 | 自己交付的内容 | 主要复核者 |
 |---|---|---|---|
 | A：控制与恢复 | 现有 `controller-core/`；计划新增 `controller-service/` | 唯一控制决策、事务记录、任务派发、授权判断、寿命、配额、恢复调度、状态发布 | B；接口变化另请 C |
-| B：节点执行与隔离 | 现有 `sandbox-runtime/`；计划新增镜像/部署工具 | jailer 启停、资源身份观察、独立磁盘、固定 envd 接入、命令/文件传输、网络、真实停止及清理 | A；客户端行为另请 C |
+| B：节点执行与隔离 | 计划新增 `sandbox-runtime/` 及镜像/部署工具 | jailer 启停、资源身份观察、独立磁盘、固定 envd 接入、命令/文件传输、网络、真实停止及清理 | A；客户端行为另请 C |
 | C：接口与集成 | 计划新增 `sandbox-api/`、`tests/compat/`、`tests/system/`、`benchmarks/`；现有 `.github/` | E2B API 和访问网关、SDK 兼容、模板接口、Harbor 接入、系统测试框架及 CI | A；运行环境另请 B |
 
 计划目录不代表已有可运行模块。新增 crate 只在对应任务中加入 workspace。
@@ -89,19 +89,19 @@ M0 后可以并行：A 使用契约一致的假执行器开发，B 用驱动程�
 
 | 编号 | 主责 | 工作包 | 依赖与验收 |
 |---|---|---|---|
-| [G01 / #2](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/2) | A，三人复核 | 合同 v1、状态与失败语义、版本冻结 | M0；固定模块合同和兼容清单，消除阻塞接口问题 |
-| [A01 / #4](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/4) | A | 单节点事务持久化和 outbox | G01；提交前/后崩溃测试，无未提交派发 |
-| [A02 / #7](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/7) | A | create/kill 调度、回执、稳定发布 | A01/B01；先用替身，再验证真实启停发布；完整网络恢复在 A04/B04 验收 |
-| [A03 / #9](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/9) | A | 鉴权决策、寿命、配额和收尾预留 | A01/A02；伪时钟测试，跨用户拒绝，到期与 kill 竞争 |
-| [A04 / #11](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/11) | A | 重启对账、未知结果、重放与清理 | A01/A02/B04；关键故障窗口下不双跑、不误杀 |
-| [B01 / #3](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/3) | B | Linux 环境、版本指纹、安全启动和停止 | G01；真实 jailer VM 启停，检查进程退出；环境准备可提前 |
-| [B02 / #6](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/6) | B | 独立可写磁盘、任务镜像和固定 envd | B01；两个沙箱互不污染，可运行任务依赖；构建不泄露宿主权限 |
-| [B03 / #8](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/8) | B | 命令/文件数据通道及资源限额 | B02；超时、后台进程、输出限额、恶意路径及隔离测试 |
-| [B04 / #10](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/10) | B | 网络、精确身份、资源枚举和重复清理 | B01/B02；旧身份拒绝、网络关闭、崩溃后可发现残留 |
-| [C01 / #5](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/5) | C | API/SDK 清单与契约测试框架 | G01；把每个支持/不支持的调用绑定测试，不仅是 create/kill |
-| [C02 / #12](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/12) | C | 生命周期、凭据、文件/命令网关 | C01/A02/B03；原客户端直接调用；无法绕过 A/B 授权 |
-| [C03 / #13](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/13) | C | 最小模板 API 与 Harbor 接入 | C01/B02/C02；覆盖实际模板查询/构建链，固定任务与网络要求 |
-| [C04 / #14](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/14) | C | KVM 系统 CI、故障框架、评测报告 | B01 起逐步接入；最终验收依赖 A04/C03；M2/M3 可复现证据与失败归因 |
+| [G01 / #2](https://github.com/ningZhang-cs/sandproof/issues/2) | A，三人复核 | 合同 v1、状态与失败语义、版本冻结 | M0；固定模块合同和兼容清单，消除阻塞接口问题 |
+| [A01 / #4](https://github.com/ningZhang-cs/sandproof/issues/4) | A | 单节点事务持久化和 outbox | G01；提交前/后崩溃测试，无未提交派发 |
+| [A02 / #7](https://github.com/ningZhang-cs/sandproof/issues/7) | A | create/kill 调度、回执、稳定发布 | A01/B01；先用替身，再验证真实启停发布；完整网络恢复在 A04/B04 验收 |
+| [A03 / #9](https://github.com/ningZhang-cs/sandproof/issues/9) | A | 鉴权决策、寿命、配额和收尾预留 | A01/A02；伪时钟测试，跨用户拒绝，到期与 kill 竞争 |
+| [A04 / #11](https://github.com/ningZhang-cs/sandproof/issues/11) | A | 重启对账、未知结果、重放与清理 | A01/A02/B04；关键故障窗口下不双跑、不误杀 |
+| [B01 / #3](https://github.com/ningZhang-cs/sandproof/issues/3) | B | Linux 环境、版本指纹、安全启动和停止 | G01；真实 jailer VM 启停，检查进程退出；环境准备可提前 |
+| [B02 / #6](https://github.com/ningZhang-cs/sandproof/issues/6) | B | 独立可写磁盘、任务镜像和固定 envd | B01；两个沙箱互不污染，可运行任务依赖；构建不泄露宿主权限 |
+| [B03 / #8](https://github.com/ningZhang-cs/sandproof/issues/8) | B | 命令/文件数据通道及资源限额 | B02；超时、后台进程、输出限额、恶意路径及隔离测试 |
+| [B04 / #10](https://github.com/ningZhang-cs/sandproof/issues/10) | B | 网络、精确身份、资源枚举和重复清理 | B01/B02；旧身份拒绝、网络关闭、崩溃后可发现残留 |
+| [C01 / #5](https://github.com/ningZhang-cs/sandproof/issues/5) | C | API/SDK 清单与契约测试框架 | G01；把每个支持/不支持的调用绑定测试，不仅是 create/kill |
+| [C02 / #12](https://github.com/ningZhang-cs/sandproof/issues/12) | C | 生命周期、凭据、文件/命令网关 | C01/A02/B03；原客户端直接调用；无法绕过 A/B 授权 |
+| [C03 / #13](https://github.com/ningZhang-cs/sandproof/issues/13) | C | 最小模板 API 与 Harbor 接入 | C01/B02/C02；覆盖实际模板查询/构建链，固定任务与网络要求 |
+| [C04 / #14](https://github.com/ningZhang-cs/sandproof/issues/14) | C | KVM 系统 CI、故障框架、评测报告 | B01 起逐步接入；最终验收依赖 A04/C03；M2/M3 可复现证据与失败归因 |
 
 B 的宿主环境准备通常先影响联调，应最早开展。C 同期能做协议与测试框架，A 同期能做持久化和确定性调度。出现瓶颈时其他人补该模块的测试/工具，但不增加第二个业务状态所有者。
 

@@ -1,6 +1,6 @@
 # 缺口登记表
 
-> 历史缺口记录。当前 V1 功能、负责人、依赖和验收由[项目蓝图](project-blueprint.md)及 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/1)管理。本表不作为当前开发优先级或新增运行服务证明状态的依据。
+> 历史缺口记录。当前 V1 功能、负责人、依赖和验收由[项目蓝图](project-blueprint.md)及 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandproof/issues/1)管理。本表不作为当前开发优先级或新增运行服务证明状态的依据。
 
 > 2026-09 方向更正：当前主线是建设边界内 fully verified controller，不再将本地 harness 结果表述为已确认系统 bug。本表中 C2 以及“只有三个关键缺口”的旧排序已被 [verified controller 建设路线](verified-controller-plan.md) 取代。部分失败补偿、失败回执因果绑定、结果未知处理和 kill 取代旧 operation 已接入主模型；accounting 仍是独立子模型，未与 lifecycle `World` 组合。
 

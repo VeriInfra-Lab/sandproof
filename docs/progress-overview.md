@@ -1,13 +1,13 @@
 # 项目进展总览
 
-> 当前入口（2026-09-25）：[项目蓝图](project-blueprint.md)与 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/1)。当前先做 E2B 核心兼容 V1 功能和测试；暂停恢复与集中证明在后续阶段。本文以下内容保留历史研究和实验进展，CubeSandbox 不是接入目标，不能用旧任务排序替代新蓝图。
+> 当前入口（2026-09-25）：[项目蓝图](project-blueprint.md)与 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandproof/issues/1)。Sandproof 当前先做 E2B 核心兼容 V1 功能和测试；暂停恢复与集中证明在后续阶段。本文以下内容保留协议研究和实验进展，不能用旧任务排序替代新蓝图。
 
 > 方向更正：当前主线已转为建设边界内 fully verified sandbox controller。本文中把 F-1/G-1 称为“已确认系统漏洞/一致性失败”的历史表述已撤回；它们只作为本地 harness 和建模过程的历史材料。最新路线见 [verified-controller-plan](verified-controller-plan.md)。
 
 > 2026-09-23：Rust 纯控制核心已经实现，现有公开输入的 Rust—Lean 对应及有限执行
 > 安全证明已在明确机器容量条件下完成；最终完成性与长期容量边界仍须补齐。
-> 已编译的具体输入及剩余义务见 [证明覆盖记录](proof-coverage.md)。数据库、
-> Redis 和 CubeSandbox 真实接入按用户决定列为后续阶段。下文保留的审计
+> 已编译的具体输入及剩余义务见 [证明覆盖记录](proof-coverage.md)。真实持久化、
+> E2B 兼容服务与运行层按当前蓝图开发，不属于这些既有证明。下文保留的审计
 > 与轨迹实验进度不等于当前控制核心的证明覆盖。
 
 2026-09。本文汇总目标、已完成工作、边界、缺口与下一步。细节见各专题文档。
