@@ -1,0 +1,21 @@
+{
+  "identity": {
+    "protocol_version": 1,
+    "owner": "tenant-a",
+    "sandbox": "sbx-1",
+    "operation": "op-1",
+    "epoch": 1,
+    "generation": 1,
+    "logical_action": "prepare-1",
+    "attempt": 0,
+    "resource": {"kind": "vm", "id": "vm-1"}
+  },
+  "outcome": {
+    "status": "definitive_failure",
+    "details": {
+      "code": "resource_unavailable",
+      "retryable": true,
+      "partial": {"resource": {"kind": "vm", "id": "vm-1"}, "kind": "vm_created"}
+    }
+  }
+}
