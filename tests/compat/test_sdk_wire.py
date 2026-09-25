@@ -3,12 +3,10 @@
 import asyncio
 import importlib.metadata
 import json
-import os
 import threading
 import tomllib
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import patch
 
 from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import (
@@ -19,15 +17,7 @@ from e2b.exceptions import (
     ServiceBusyException,
 )
 
-
-SANDBOX = {
-    "templateID": "probe-template",
-    "sandboxID": "probe-sandbox",
-    "clientID": "probe-client",
-    "envdVersion": "0.5.14",
-    "envdAccessToken": "synthetic-token",
-    "domain": "example.invalid",
-}
+from sdk_support import SANDBOX, isolated_sdk_environment
 
 
 class Recorder(BaseHTTPRequestHandler):
@@ -67,13 +57,7 @@ class WireContract(unittest.TestCase):
     def setUp(self):
         self.assertEqual(importlib.metadata.version("e2b"), "2.51.0")
         # Even a developer with real E2B credentials must only hit loopback.
-        safe_env = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith("E2B_")
-            and key.lower() not in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
-        }
-        self.env_patch = patch.dict(os.environ, safe_env, clear=True)
+        self.env_patch = isolated_sdk_environment()
         self.env_patch.start()
         self.addCleanup(self.env_patch.stop)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Recorder)
@@ -114,6 +98,7 @@ class WireContract(unittest.TestCase):
         sandbox = Sandbox.create(**self.options)
         self.assertEqual(sandbox.sandbox_id, "probe-sandbox")
         self.assertEqual(len(self.records), 1)
+        self.assertEqual(self.records[0]["method"], "POST")
         self.assertEqual(self.records[0]["path"], "/v2/sandboxes")
         for key in ("timeout", "allow_internet_access", "secure", "autoPause"):
             self.assertNotIn(key, self.records[0]["body"])
@@ -133,6 +118,7 @@ class WireContract(unittest.TestCase):
         Sandbox.connect("probe-sandbox", **self.options)
         Sandbox.connect("probe-sandbox", timeout=0, **self.options)
         self.assertEqual(len(self.records), 2)
+        self.assertTrue(all(r["method"] == "POST" for r in self.records))
         self.assertEqual(self.records[0]["path"], "/v2/sandboxes/probe-sandbox/connect")
         self.assertNotIn("timeout", self.records[0]["body"])
         self.assertEqual(self.records[1]["body"]["timeout"], 0)
@@ -151,6 +137,7 @@ class WireContract(unittest.TestCase):
             self.responses.append((204, None, {}))
             Sandbox.set_timeout("probe-sandbox", value, **self.options)
             self.assertEqual(self.records[-1]["body"], {"timeout": value})
+            self.assertEqual(self.records[-1]["method"], "POST")
             self.assertEqual(self.records[-1]["path"], "/sandboxes/probe-sandbox/timeout")
 
     def test_errors_are_not_one_generic_rejection(self):
