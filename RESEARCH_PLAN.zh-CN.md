@@ -1,5 +1,7 @@
 # 研究计划：Generation-Scoped Sandbox Lifecycle Authority
 
+> 历史研究计划。2026-09-25 起当前目标是 E2B 核心兼容沙箱，按[项目蓝图](docs/project-blueprint.md)先完成 V1 功能与测试，再集中形式化验证。本文的研究论证继续保留，但“E2B 仅作审计对象”和旧开发顺序不再定义当前工程任务。现有 Rust 对应证明状态见[证明覆盖记录](docs/proof-coverage.md)。
+
 版本：0.7，2026-09-20。状态：Lean 协议安全、可执行纯状态处理函数、规范分支反向覆盖及条件化最终完成已机器证明；尚无生产 controller refinement 或 Firecracker/E2B 实机结论。
 
 ## 1. 研究问题

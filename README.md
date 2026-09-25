@@ -1,8 +1,8 @@
 # Sandbox Lifecycle Refinement
 
-> 新的实现方向是更小的单机 Firecracker 沙箱：指定文件夹只读导入、独立可写工作区、执行命令、受控导出和销毁。正在先建设运行层，随后为这一缩小的范围建立新证明。当前进度与未完成项见[单节点小沙箱开发记录](docs/minimal-sandbox-runtime.md)。下文保留原有暂停/恢复协议研究的说明；其中的定理不能自动覆盖新运行层。
+> 当前主线是单节点、多用户的 **E2B 核心兼容沙箱**：先实现 V1 功能与真实测试，再集中完成形式化证明。范围、三人分工、模块合同、里程碑和任务拆分以[项目蓝图](docs/project-blueprint.md)为准；开发方式见 [CONTRIBUTING](CONTRIBUTING.md)，验收见[测试计划](docs/testing-plan.md)。V1 先打通创建、执行、文件、受控网络、寿命与销毁，暂停恢复保留在后续完整研究版本。下文描述既有协议研究与纯核心证明，它们不自动覆盖新运行服务。
 
-本仓库研究单节点 Firecracker 沙箱在 `create → pause → resume → kill` 过程中的控制协议。目标是在命令重复或迟到、RPC 结果未知、controller 崩溃恢复和旧资源延迟清理时，仍保证旧 generation 不能重新获得执行、文件或网络权限。
+既有研究基线讨论单节点 Firecracker 沙箱在 `create → pause → resume → kill` 过程中的控制协议。目标是在命令重复或迟到、RPC 结果未知、controller 崩溃恢复和旧资源延迟清理时，仍保证旧 generation 不能重新获得执行、文件或网络权限。
 
 研究范围固定为单台 Linux/KVM 主机、一个 controller、一个 worker、Firecracker v1.16.1，以及每个 sandbox 独占的 workspace 和网络槽。模型支持多个 tenant 和 sandbox，但不处理多节点迁移、共享卷、动态 DNS/SNI 策略或恶意宿主；完成性只在明确的公平调度、适配器响应和有限进度条件下成立。
 
@@ -11,8 +11,22 @@
 Rust 纯控制核心已实现；现有公开输入的对应证明，以及在明确机器容量
 条件下任意有限次混合执行的安全证明已经通过。新运行层尚未纳入这些证明。
 可复核的已证分支、证明前提和剩余工作见
-[证明覆盖记录](docs/proof-coverage.md)。数据库、Redis、CubeSandbox 接入
-与生产部署已列为后续阶段；当前没有实现这些运行服务。
+[证明覆盖记录](docs/proof-coverage.md)。事务持久化、真实执行服务与恢复
+正按 V1 蓝图安排开发，当前尚未完成；CubeSandbox 不再是接入目标。
+
+功能开发的快速检查为 `bash scripts/check-function.sh`；它不包含 KVM
+系统测试、E2B 对照、Terminal-Bench 或 Lean 证明验收。
+
+## 团队开发入口
+
+- [GitHub 总计划与任务清单](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/1)
+- [项目蓝图与三人分工](docs/project-blueprint.md)、[模块合同](docs/module-contracts.md)
+- [提交 / issue / PR 规范](CONTRIBUTING.md)、[自动化测试计划](docs/testing-plan.md)
+- [里程碑](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/milestones)、[CI 运行记录](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/actions)
+
+当前配置只做 CI，不做自动部署。实际合入和运行结果以 GitHub PR/Actions 为准。
+
+## 既有协议与证明
 
 Lean 4 是唯一规范来源：
 

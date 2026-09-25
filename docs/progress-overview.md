@@ -1,5 +1,7 @@
 # 项目进展总览
 
+> 当前入口（2026-09-25）：[项目蓝图](project-blueprint.md)与 [GitHub 总计划 #1](https://github.com/ningZhang-cs/sandbox-lifecycle-refinement/issues/1)。当前先做 E2B 核心兼容 V1 功能和测试；暂停恢复与集中证明在后续阶段。本文以下内容保留历史研究和实验进展，CubeSandbox 不是接入目标，不能用旧任务排序替代新蓝图。
+
 > 方向更正：当前主线已转为建设边界内 fully verified sandbox controller。本文中把 F-1/G-1 称为“已确认系统漏洞/一致性失败”的历史表述已撤回；它们只作为本地 harness 和建模过程的历史材料。最新路线见 [verified-controller-plan](verified-controller-plan.md)。
 
 > 2026-09-23：Rust 纯控制核心已经实现，现有公开输入的 Rust—Lean 对应及有限执行
