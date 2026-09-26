@@ -43,14 +43,42 @@ where
     W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
 {
     let sandbox = request.sandbox;
-    let key = core::OperationKey {
-        sandbox,
-        operation: request.operation,
-    };
+    let operation = request.operation;
     journal.apply(
         core::ControllerInput::Request(core::Request::Create(request)),
         &mut NeverCrash,
     )?;
+    finish_admitted_create_v1(journal, sandbox, operation, worker)
+}
+
+/// Continue only an already durably admitted V1 create. This is the bridge
+/// from atomic lease/quota admission to the unchanged reducer workflow.
+/// A fresh call must not be used as automatic recovery after an uncertain
+/// worker result; that requires explicit host reconciliation.
+///
+/// # Errors
+/// Rejects missing/wrong-phase intent or any unresolved physical action.
+pub fn finish_admitted_create_v1<E, W>(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    operation: core::OperationId,
+    worker: &mut W,
+) -> Result<core::World, JournalError>
+where
+    E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+    W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
+{
+    let world = journal.world()?;
+    let record = world
+        .sandbox_record(sandbox)
+        .ok_or(JournalError::UnsupportedInput)?;
+    if record.phase != core::Phase::Starting
+        || !matches!(record.current_operation, Some(current)
+            if current.id == operation && current.kind == core::OperationKind::Create)
+    {
+        return Err(JournalError::UnsupportedInput);
+    }
+    let key = core::OperationKey { sandbox, operation };
     let reserved = journal.apply(
         core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
         &mut NeverCrash,
@@ -93,18 +121,42 @@ where
 {
     let sandbox = request.sandbox;
     let operation = request.operation;
-    let accepted = journal.apply(
+    journal.apply(
         core::ControllerInput::Request(core::Request::Kill(request)),
         &mut NeverCrash,
     )?;
+    finish_accepted_kill_v1(journal, sandbox, operation, worker)
+}
+
+/// Finish a previously accepted tenant kill or an atomic expiry kill. This
+/// starts at the existing revocation intent and never accepts another kill.
+///
+/// # Errors
+/// An uncertain host stop leaves the sandbox unreported as Destroyed.
+pub fn finish_accepted_kill_v1<E, W>(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    operation: core::OperationId,
+    worker: &mut W,
+) -> Result<core::World, JournalError>
+where
+    E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+    W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
+{
+    let accepted = journal.world()?;
+    let current = accepted
+        .sandbox_record(sandbox)
+        .and_then(|record| record.current_operation)
+        .ok_or(JournalError::UnsupportedInput)?;
+    if current.id != operation || current.kind != core::OperationKind::Kill {
+        return Err(JournalError::UnsupportedInput);
+    }
     drain(journal, sandbox, worker)?;
     let record = accepted
-        .next
         .sandbox_record(sandbox)
         .ok_or(JournalError::CorruptStore)?;
     let key = core::OperationKey { sandbox, operation };
     let plan = accepted
-        .next
         .operation_plan(key)
         .ok_or(JournalError::CorruptStore)?;
     for vm in &plan.stop_vms {

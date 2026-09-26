@@ -19,7 +19,7 @@ pub use journal::{
     AcceptedWrite, DispatchState, Journal, RecordedReceipt, StorageSettings, StoredOperation,
     StoredSandbox,
 };
-pub use workflow::{create_v1, kill_v1};
+pub use workflow::{create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1};
 
 use rusqlite::Error as SqliteError;
 use sandproof_protocol::ContractError;

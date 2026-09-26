@@ -22,6 +22,8 @@ pub struct AdmissionLimits {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Lifetime {
+    /// `None` only for records migrated from an older schema.
+    pub started_at_ms: Option<i64>,
     pub deadline_ms: i64,
     pub disk_bytes: u64,
 }
@@ -104,22 +106,30 @@ fn read_lifetime(
     owner: core::TenantId,
 ) -> Result<Option<Lifetime>, AdmissionError> {
     let id = identity::sandbox_id(namespace, sandbox)?;
-    let stored: Option<(String, i64, i64)> = tx
+    let stored: Option<(String, i64, i64, Option<i64>)> = tx
         .query_row(
-            "SELECT owner_id, deadline_ms, disk_bytes FROM sandbox_lifetimes WHERE sandbox_id=?1",
+            "SELECT owner_id, deadline_ms, disk_bytes, started_at_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
             [id.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    stored.map_or(Ok(None), |(stored_owner, deadline_ms, bytes)| {
-        if stored_owner != identity::owner_id(owner)?.as_str() || deadline_ms < 0 || bytes <= 0 {
-            return Err(AdmissionError::CorruptLifetime);
-        }
-        Ok(Some(Lifetime {
-            deadline_ms,
-            disk_bytes: u64::try_from(bytes).map_err(|_| AdmissionError::CorruptLifetime)?,
-        }))
-    })
+    stored.map_or(
+        Ok(None),
+        |(stored_owner, deadline_ms, bytes, started_at_ms)| {
+            if stored_owner != identity::owner_id(owner)?.as_str()
+                || deadline_ms < 0
+                || bytes <= 0
+                || started_at_ms.is_some_and(|time| time < 0 || time > deadline_ms)
+            {
+                return Err(AdmissionError::CorruptLifetime);
+            }
+            Ok(Some(Lifetime {
+                started_at_ms,
+                deadline_ms,
+                disk_bytes: u64::try_from(bytes).map_err(|_| AdmissionError::CorruptLifetime)?,
+            }))
+        },
+    )
 }
 
 fn active(record: &core::SandboxRecord) -> bool {
@@ -214,9 +224,9 @@ impl ControllerJournal {
             core::ControllerInput::Request(core::Request::Create(request)),
         )?;
         tx.execute(
-            "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes, started_at_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![identity::sandbox_id(&self.namespace, sandbox)?.as_str(),
-                identity::owner_id(owner)?.as_str(), end, i64::try_from(disk_bytes).map_err(|_| AdmissionError::QuotaExceeded)?],
+                identity::owner_id(owner)?.as_str(), end, i64::try_from(disk_bytes).map_err(|_| AdmissionError::QuotaExceeded)?, now_ms],
         )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit().map_err(JournalError::CommitUncertain)?;

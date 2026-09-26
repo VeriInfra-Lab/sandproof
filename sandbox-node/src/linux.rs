@@ -129,6 +129,20 @@ pub struct LinuxWorker {
 }
 
 impl LinuxWorker {
+    /// Check allocatable bytes on the same filesystem that stores the VM's
+    /// private disk. This is an admission observation, not a reservation
+    /// against unrelated host processes.
+    /// # Errors
+    /// Rejects an unavailable or untrusted disk location.
+    pub fn available_disk_bytes(&self) -> NodeResult<u64> {
+        check_trusted_path(&self.config.chroot_base)?;
+        let status = rustix::fs::statvfs(&self.config.chroot_base)?;
+        Ok(status
+            .f_bavail
+            .checked_mul(status.f_frsize)
+            .ok_or("disk size overflow")?)
+    }
+
     /// The state directory must already be private and root-owned. Secrets,
     /// slot bindings and fences are persisted below it with exact IDs.
     /// # Errors

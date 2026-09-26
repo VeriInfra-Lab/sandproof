@@ -4,6 +4,8 @@
 //! This crate does not make lifecycle decisions: the trusted `ControllerPort`
 //! must authorize every operation against the durable controller state.
 
+pub mod managed;
+
 use std::sync::Arc;
 
 use axum::{
@@ -66,6 +68,8 @@ pub struct CreateRequest {
     pub allow_internet_access: Option<bool>,
     #[serde(default)]
     pub metadata: Option<std::collections::BTreeMap<String, String>>,
+    #[serde(default, rename = "envVars")]
+    pub env_vars: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Default)]
@@ -251,6 +255,14 @@ async fn create<P: ControllerPort>(
     if request.template_id != "base"
         || request.allow_internet_access != Some(false)
         || !valid_timeout(request.timeout)
+        || request
+            .metadata
+            .as_ref()
+            .is_some_and(|metadata| !metadata.is_empty())
+        || request
+            .env_vars
+            .as_ref()
+            .is_some_and(|env_vars| !env_vars.is_empty())
     {
         return Err(ApiFailure::BadRequest);
     }

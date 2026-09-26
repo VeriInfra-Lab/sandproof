@@ -232,6 +232,8 @@ async fn creation_rejects_unimplemented_e2b_defaults_and_unsupported_fields() {
         r#"{"templateID":"base","allow_internet_access":false,"autoPause":true}"#,
         r#"{"templateID":"base","allow_internet_access":false,"owner":"bob"}"#,
         r#"{"templateID":"base","allow_internet_access":false,"timeout":0}"#,
+        r#"{"templateID":"base","allow_internet_access":false,"envVars":{"X":"1"}}"#,
+        r#"{"templateID":"base","allow_internet_access":false,"metadata":{"job":"a"}}"#,
     ] {
         assert!(
             send(
@@ -252,7 +254,7 @@ async fn creation_rejects_unimplemented_e2b_defaults_and_unsupported_fields() {
         "POST",
         "/v2/sandboxes",
         Some(ALICE_KEY),
-        Some(r#"{"templateID":"base","allow_internet_access":false,"timeout":300,"metadata":{"job":"a"}}"#),
+        Some(r#"{"templateID":"base","allow_internet_access":false,"timeout":300,"metadata":{},"envVars":{}}"#),
     ).await;
     assert_eq!(response.status(), StatusCode::CREATED);
     let body = to_bytes(response.into_body(), 4096).await.unwrap();
