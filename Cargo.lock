@@ -269,6 +269,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandproof-node"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "sandbox-controller-core",
+ "sandbox-runtime",
+ "sandproof-controller-service",
+ "sandproof-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "sandproof-protocol"
 version = "0.1.0"
 dependencies = [
