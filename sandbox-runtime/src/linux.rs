@@ -366,7 +366,7 @@ impl Runtime {
         }
         let root = self.root_path(id);
         fs::copy(&self.config.kernel, root.join("vmlinux"))?;
-        fs::copy(&self.config.rootfs, root.join("rootfs.ext4"))?;
+        copy_private_disk(&self.config.rootfs, &root.join("rootfs.ext4"))?;
         chown(
             root.join("rootfs.ext4"),
             Some(Uid::from_raw(self.config.vm_uid)),
@@ -791,6 +791,14 @@ fn check_kvm(path: &Path) -> Result<(), RuntimeError> {
         .map_err(RuntimeError::KvmUnavailable)
 }
 
+fn copy_private_disk(source: &Path, destination: &Path) -> Result<(), RuntimeError> {
+    fs::copy(source, destination)?;
+    // A root-owned read-only template must still produce a writable private
+    // guest disk. fs::copy preserves the source mode, including 0444.
+    fs::set_permissions(destination, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
 fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeError> {
     let output = Command::new("/usr/bin/ip")
         .args(arguments)
@@ -927,5 +935,23 @@ mod tests {
             check_kvm(Path::new("/nonexistent-sandproof-kvm")),
             Err(RuntimeError::KvmUnavailable(_))
         ));
+    }
+
+    #[test]
+    fn readonly_template_produces_independent_writable_disk() {
+        let directory = std::env::temp_dir().join(format!("sandproof-copy-{}", std::process::id()));
+        fs::create_dir(&directory).unwrap();
+        let source = directory.join("base");
+        let destination = directory.join("private");
+        fs::write(&source, b"base contents").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
+        copy_private_disk(&source, &destination).unwrap();
+        assert_eq!(fs::metadata(&destination).unwrap().mode() & 0o777, 0o600);
+        fs::write(&destination, b"guest changes").unwrap();
+        assert_eq!(fs::read(&source).unwrap(), b"base contents");
+        assert_eq!(fs::metadata(&source).unwrap().mode() & 0o777, 0o444);
+        fs::remove_file(destination).unwrap();
+        fs::remove_file(source).unwrap();
+        fs::remove_dir(directory).unwrap();
     }
 }
