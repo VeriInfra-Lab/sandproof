@@ -1,99 +1,18 @@
+mod support;
+use support::*;
+
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    ControllerJournal, CrashInjector, CrashPoint, DispatchResult, HostEvidence, JournalError,
-    NeverCrash, WorkerTransportError,
+    ControllerJournal, CrashInjector, CrashPoint, DispatchResult, JournalError, NeverCrash,
 };
-use sandproof_protocol::{
-    FailureCode, ResourceEvidence, ResourceRef, UnknownReason, WorkAction, WorkOutcome, WorkReceipt,
-};
-use serde::{Deserialize, Serialize};
+use sandproof_protocol::{FailureCode, UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 use tempfile::TempDir;
-
-const NAMESPACE: &str = "0123456789abcdef";
-const SANDBOX: core::SandboxId = core::SandboxId(10);
-const CREATE_OP: core::OperationId = core::OperationId(100);
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct FakeHostEvidence {
-    resource: ResourceRef,
-    command: core::Command,
-    established: bool,
-}
-
-impl ResourceEvidence for FakeHostEvidence {
-    fn resource(&self) -> &ResourceRef {
-        &self.resource
-    }
-}
-
-impl HostEvidence for FakeHostEvidence {
-    fn validates(&self, command: &core::Command) -> bool {
-        self.established && self.command == *command
-    }
-}
-
-fn success(action: &WorkAction<core::EffectId>) -> WorkReceipt<FakeHostEvidence> {
-    WorkReceipt {
-        identity: action.identity.clone(),
-        outcome: WorkOutcome::ObservedSuccess(FakeHostEvidence {
-            resource: action.identity.resource.clone(),
-            command: action.command.command().clone(),
-            established: true,
-        }),
-    }
-}
-
-// Keep the production transport signature for this deliberately infallible fake.
-#[allow(clippy::unnecessary_wraps)]
-fn worker(
-    action: &WorkAction<core::EffectId>,
-) -> Result<WorkReceipt<FakeHostEvidence>, WorkerTransportError> {
-    Ok(success(action))
-}
-
-fn create() -> core::ControllerInput {
-    core::ControllerInput::Request(core::Request::Create(core::CreateRequest {
-        actor: core::Actor::Tenant(core::TenantId(1)),
-        owner: core::TenantId(1),
-        sandbox: SANDBOX,
-        workspace: core::FsId(10),
-        file_policy: core::FilePolicyRef {
-            digest: core::PolicyDigest(1),
-        },
-        policy: core::NetworkPolicy::DenyAll,
-        operation: CREATE_OP,
-    }))
-}
-
-fn kill(owner: u64) -> core::ControllerInput {
-    core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
-        actor: core::Actor::Tenant(core::TenantId(owner)),
-        sandbox: SANDBOX,
-        operation: core::OperationId(101),
-    }))
-}
 
 fn setup() -> (TempDir, ControllerJournal) {
     let directory = TempDir::new().unwrap();
     let journal =
         ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     (directory, journal)
-}
-
-fn apply(journal: &mut ControllerJournal, input: core::ControllerInput) -> core::World {
-    journal.apply(input, &mut NeverCrash).unwrap().next
-}
-
-fn dispatch_all(journal: &mut ControllerJournal) -> usize {
-    let mut count = 0;
-    loop {
-        match journal.dispatch_next(&mut worker, &mut NeverCrash).unwrap() {
-            DispatchResult::NoReadyAction => return count,
-            DispatchResult::ReceiptRecorded(_) => count += 1,
-            DispatchResult::OutcomeUnknown { .. } => panic!("fake worker should return evidence"),
-        }
-        assert!(count < 20);
-    }
 }
 
 fn prepare_ready(journal: &mut ControllerJournal) -> core::OperationPlan {
