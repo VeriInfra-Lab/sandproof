@@ -764,7 +764,10 @@ fn validate_namespace_id(namespace: &Path, id: &str) -> Result<(), RuntimeError>
     Ok(())
 }
 
-fn check_trusted_path(path: &Path) -> Result<(), RuntimeError> {
+/// Check a root-owned, non-symlink path and all of its components.
+/// # Errors
+/// Rejects a component which a less trusted process can replace.
+pub fn check_trusted_path(path: &Path) -> Result<(), RuntimeError> {
     if !path.is_absolute() {
         return Err(RuntimeError::InvalidConfiguration("paths must be absolute"));
     }

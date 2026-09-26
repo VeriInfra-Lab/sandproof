@@ -10,14 +10,16 @@
 mod controller;
 mod dispatch;
 mod journal;
+mod workflow;
 
-pub use controller::{ControllerJournal, HostEvidence};
+pub use controller::{AdmissionError, AdmissionLimits, ControllerJournal, HostEvidence, Lifetime};
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
 pub use journal::{
     AcceptedWrite, DispatchState, Journal, RecordedReceipt, StorageSettings, StoredOperation,
     StoredSandbox,
 };
+pub use workflow::{create_v1, kill_v1};
 
 use rusqlite::Error as SqliteError;
 use sandproof_protocol::ContractError;
