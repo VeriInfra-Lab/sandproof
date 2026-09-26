@@ -3,6 +3,7 @@ use crate::transition::{authorized, mark_operation_outcome_unknown, operation_ke
 use crate::{Generation, NetSlotId, SandboxId, VmId};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AccessInput {
     Exec(Actor, SandboxId, VmId),
     FileRead(Actor, SandboxId, Generation),

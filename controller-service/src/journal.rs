@@ -12,7 +12,7 @@ const APPLICATION_ID: i64 = 0x5350_4631; // SPF1
 const FORMAT_VERSION: i64 = 1;
 type ExistingReceiptRow = (i64, String, Vec<u8>, Option<Vec<u8>>);
 
-/// Bytes are a projection supplied by the controller reducer's future adapter.
+/// Bytes are a projection supplied by the controller reducer's adapter.
 /// This journal never interprets or independently changes business state.
 pub struct AcceptedWrite<C> {
     pub owner: TenantId,
@@ -100,6 +100,96 @@ fn constraint_as_conflict(error: rusqlite::Error) -> JournalError {
         }
         _ => JournalError::Sqlite(error),
     }
+}
+
+pub(crate) fn write_accepted<C: Serialize>(
+    transaction: &rusqlite::Transaction<'_>,
+    write: &AcceptedWrite<C>,
+) -> Result<u64, JournalError> {
+    for action in &write.actions {
+        action.identity.validate_version()?;
+        if action.identity.owner != write.owner
+            || action.identity.sandbox != write.sandbox
+            || action.identity.operation != write.operation
+        {
+            return Err(JournalError::Conflict);
+        }
+        as_sql_integer(action.identity.attempt)?;
+    }
+
+    let next_revision = match write.expected_revision {
+        Some(revision) => revision
+            .checked_add(1)
+            .ok_or(JournalError::RevisionConflict)?,
+        None => 1,
+    };
+    let next_revision_sql = as_sql_integer(next_revision)?;
+    if let Some(expected) = write.expected_revision {
+        let changed = transaction.execute(
+            "UPDATE sandboxes SET revision=?1, state_blob=?2
+             WHERE sandbox_id=?3 AND owner_id=?4 AND revision=?5",
+            params![
+                next_revision_sql,
+                &write.sandbox_state,
+                write.sandbox.as_str(),
+                write.owner.as_str(),
+                as_sql_integer(expected)?
+            ],
+        )?;
+        if changed != 1 {
+            return Err(JournalError::RevisionConflict);
+        }
+    } else {
+        transaction
+            .execute(
+                "INSERT INTO sandboxes (sandbox_id, owner_id, revision, state_blob)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    write.sandbox.as_str(),
+                    write.owner.as_str(),
+                    next_revision_sql,
+                    &write.sandbox_state
+                ],
+            )
+            .map_err(constraint_as_conflict)?;
+    }
+
+    let changed = transaction.execute(
+        "INSERT INTO operations (operation_id, sandbox_id, owner_id, state_blob)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(operation_id) DO UPDATE SET state_blob=excluded.state_blob
+         WHERE operations.sandbox_id=excluded.sandbox_id
+           AND operations.owner_id=excluded.owner_id",
+        params![
+            write.operation.as_str(),
+            write.sandbox.as_str(),
+            write.owner.as_str(),
+            &write.operation_state
+        ],
+    )?;
+    if changed != 1 {
+        return Err(JournalError::Conflict);
+    }
+
+    for action in &write.actions {
+        transaction
+            .execute(
+                "INSERT INTO outbox
+                 (sandbox_id, owner_id, operation_id, logical_action_id, attempt,
+                  action_json, dispatch_state)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ready')",
+                params![
+                    write.sandbox.as_str(),
+                    write.owner.as_str(),
+                    write.operation.as_str(),
+                    action.identity.logical_action.as_str(),
+                    as_sql_integer(action.identity.attempt)?,
+                    serde_json::to_vec(action)?
+                ],
+            )
+            .map_err(constraint_as_conflict)?;
+    }
+    Ok(next_revision)
 }
 
 impl Journal {
@@ -218,92 +308,10 @@ impl Journal {
         write: &AcceptedWrite<C>,
         crashes: &mut impl CrashInjector,
     ) -> Result<u64, JournalError> {
-        for action in &write.actions {
-            action.identity.validate_version()?;
-            if action.identity.owner != write.owner
-                || action.identity.sandbox != write.sandbox
-                || action.identity.operation != write.operation
-            {
-                return Err(JournalError::Conflict);
-            }
-            as_sql_integer(action.identity.attempt)?;
-        }
-
-        let next_revision = match write.expected_revision {
-            Some(revision) => revision
-                .checked_add(1)
-                .ok_or(JournalError::RevisionConflict)?,
-            None => 1,
-        };
-        let next_revision_sql = as_sql_integer(next_revision)?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if let Some(expected) = write.expected_revision {
-            let changed = transaction.execute(
-                "UPDATE sandboxes SET revision=?1, state_blob=?2
-                 WHERE sandbox_id=?3 AND owner_id=?4 AND revision=?5",
-                params![
-                    next_revision_sql,
-                    &write.sandbox_state,
-                    write.sandbox.as_str(),
-                    write.owner.as_str(),
-                    as_sql_integer(expected)?
-                ],
-            )?;
-            if changed != 1 {
-                return Err(JournalError::RevisionConflict);
-            }
-        } else {
-            transaction
-                .execute(
-                    "INSERT INTO sandboxes (sandbox_id, owner_id, revision, state_blob)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![
-                        write.sandbox.as_str(),
-                        write.owner.as_str(),
-                        next_revision_sql,
-                        &write.sandbox_state
-                    ],
-                )
-                .map_err(constraint_as_conflict)?;
-        }
-
-        let changed = transaction.execute(
-            "INSERT INTO operations (operation_id, sandbox_id, owner_id, state_blob)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(operation_id) DO UPDATE SET state_blob=excluded.state_blob
-             WHERE operations.sandbox_id=excluded.sandbox_id
-               AND operations.owner_id=excluded.owner_id",
-            params![
-                write.operation.as_str(),
-                write.sandbox.as_str(),
-                write.owner.as_str(),
-                &write.operation_state
-            ],
-        )?;
-        if changed != 1 {
-            return Err(JournalError::Conflict);
-        }
-
-        for action in &write.actions {
-            transaction
-                .execute(
-                    "INSERT INTO outbox
-                     (sandbox_id, owner_id, operation_id, logical_action_id, attempt,
-                      action_json, dispatch_state)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ready')",
-                    params![
-                        write.sandbox.as_str(),
-                        write.owner.as_str(),
-                        write.operation.as_str(),
-                        action.identity.logical_action.as_str(),
-                        as_sql_integer(action.identity.attempt)?,
-                        serde_json::to_vec(action)?
-                    ],
-                )
-                .map_err(constraint_as_conflict)?;
-        }
+        let next_revision = write_accepted(&transaction, write)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         transaction
             .commit()

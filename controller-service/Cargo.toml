@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
 rusqlite = { version = "=0.40.2", features = ["bundled"] }
 sandproof-protocol = { path = "../sandbox-protocol" }
 serde = { version = "=1.0.228", features = ["derive"] }
