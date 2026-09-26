@@ -81,6 +81,14 @@ def exercise(args: argparse.Namespace) -> None:
         with httpx.Client(base_url=args.sandbox_url, trust_env=False, timeout=10) as client:
             assert client.get("/files", params={"path": "/tmp/x"}, headers={"X-Access-Token": "0" * 64}).status_code == 401
             assert client.get("/files?path=%00bad", headers={"X-Access-Token": token}).status_code == 400
+            assert client.get("/files?path=%FF", headers={"X-Access-Token": token}).status_code == 400
+            assert client.get(
+                "/files", headers=[("X-Access-Token", token), ("X-Access-Token", token)]
+            ).status_code == 401
+            assert client.post(
+                "/files", content=b"x" * (8 * 1024 * 1024 + 1),
+                headers={"X-Access-Token": token},
+            ).status_code == 413
         assert sandbox.commands.run("printf after-rejection").stdout == "after-rejection"
     finally:
         if sandbox is not None:
@@ -102,7 +110,7 @@ def exercise(args: argparse.Namespace) -> None:
         "pinned_sdk": "2.51.0",
         "management": "create/connect/get/list/set_timeout/kill",
         "data": "command/timeout/kill/reconnect/large-output/files/directories",
-        "authorization": "foreign-tenant/wrong-token/revoked-token/NUL-path",
+        "authorization": "foreign-tenant/wrong-token/revoked-token/NUL-or-invalid-UTF8-path/duplicate-token/oversized-upload",
         "expiry": "automatic kill observed",
         "scope": "isolated real VM; template API, egress, Harbor and proofs not covered",
     }))
