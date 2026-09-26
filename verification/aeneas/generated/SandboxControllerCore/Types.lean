@@ -18,7 +18,7 @@ set_option maxRecDepth 2048
 namespace SandboxControllerRust
 
 /-- [sandbox_controller_core::model::Protocol]
-    Source: 'controller-core/src/model.rs', lines 60:0-63:1
+    Source: 'controller-core/src/model.rs', lines 69:0-72:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.Protocol where
@@ -26,7 +26,7 @@ inductive model.Protocol where
 | Udp : model.Protocol
 
 /-- [sandbox_controller_core::model::Endpoint]
-    Source: 'controller-core/src/model.rs', lines 66:0-71:1
+    Source: 'controller-core/src/model.rs', lines 76:0-81:1
     Visibility: public -/
 structure model.Endpoint where
   address : String
@@ -35,13 +35,13 @@ structure model.Endpoint where
   port : Std.U64
 
 /-- [sandbox_controller_core::ids::TenantId]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.TenantId := Std.U64
 
 /-- [sandbox_controller_core::model::Actor]
-    Source: 'controller-core/src/model.rs', lines 8:0-11:1
+    Source: 'controller-core/src/model.rs', lines 9:0-12:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.Actor where
@@ -49,25 +49,25 @@ inductive model.Actor where
 | SystemController : model.Actor
 
 /-- [sandbox_controller_core::ids::NetSlotId]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.NetSlotId := Std.U64
 
 /-- [sandbox_controller_core::ids::VmId]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.VmId := Std.U64
 
 /-- [sandbox_controller_core::ids::SandboxId]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.SandboxId := Std.U64
 
 /-- [sandbox_controller_core::auxiliary::AccessInput]
-    Source: 'controller-core/src/auxiliary.rs', lines 6:0-12:1
+    Source: 'controller-core/src/auxiliary.rs', lines 7:0-13:1
     Visibility: public -/
 @[discriminant isize]
 inductive auxiliary.AccessInput where
@@ -96,7 +96,7 @@ inductive auxiliary.AccessInput where
   auxiliary.AccessInput
 
 /-- [sandbox_controller_core::auxiliary::AuxiliaryEvent]
-    Source: 'controller-core/src/auxiliary.rs', lines 15:0-22:1
+    Source: 'controller-core/src/auxiliary.rs', lines 16:0-23:1
     Visibility: public -/
 @[discriminant isize]
 inductive auxiliary.AuxiliaryEvent where
@@ -116,7 +116,7 @@ inductive auxiliary.AuxiliaryEvent where
 | Egress : ids.SandboxId → model.Endpoint → auxiliary.AuxiliaryEvent
 
 /-- [sandbox_controller_core::auxiliary::AuxiliaryReject]
-    Source: 'controller-core/src/auxiliary.rs', lines 25:0-35:1
+    Source: 'controller-core/src/auxiliary.rs', lines 26:0-36:1
     Visibility: public -/
 @[discriminant isize]
 inductive auxiliary.AuxiliaryReject where
@@ -137,32 +137,32 @@ structure store.Store (K : Type) (V : Type) where
   entries : alloc.vec.Vec (K × V)
 
 /-- [sandbox_controller_core::model::WorkerFence]
-    Source: 'controller-core/src/model.rs', lines 461:0-464:1
+    Source: 'controller-core/src/model.rs', lines 498:0-501:1
     Visibility: public -/
 structure model.WorkerFence where
   epoch : Std.U64
   terminal : Bool
 
 /-- [sandbox_controller_core::ids::PolicyDigest]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.PolicyDigest := Std.U64
 
 /-- [sandbox_controller_core::model::FilePolicyRef]
-    Source: 'controller-core/src/model.rs', lines 44:0-46:1
+    Source: 'controller-core/src/model.rs', lines 50:0-52:1
     Visibility: public -/
 structure model.FilePolicyRef where
   digest : ids.PolicyDigest
 
 /-- [sandbox_controller_core::ids::FsId]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.FsId := Std.U64
 
 /-- [sandbox_controller_core::model::AppliedFilePolicy]
-    Source: 'controller-core/src/model.rs', lines 453:0-458:1
+    Source: 'controller-core/src/model.rs', lines 489:0-494:1
     Visibility: public -/
 structure model.AppliedFilePolicy where
   sandbox : ids.SandboxId
@@ -171,7 +171,7 @@ structure model.AppliedFilePolicy where
   policy : model.FilePolicyRef
 
 /-- [sandbox_controller_core::model::NetworkPolicy]
-    Source: 'controller-core/src/model.rs', lines 74:0-77:1
+    Source: 'controller-core/src/model.rs', lines 85:0-88:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.NetworkPolicy where
@@ -179,7 +179,7 @@ inductive model.NetworkPolicy where
 | StaticAllowlist : alloc.vec.Vec model.Endpoint → model.NetworkPolicy
 
 /-- [sandbox_controller_core::model::NetSlot]
-    Source: 'controller-core/src/model.rs', lines 441:0-450:1
+    Source: 'controller-core/src/model.rs', lines 476:0-485:1
     Visibility: public -/
 structure model.NetSlot where
   owner : ids.TenantId
@@ -192,19 +192,19 @@ structure model.NetSlot where
   reclaimed : Bool
 
 /-- [sandbox_controller_core::ids::ManifestDigest]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.ManifestDigest := Std.U64
 
 /-- [sandbox_controller_core::model::SnapshotManifestRef]
-    Source: 'controller-core/src/model.rs', lines 49:0-51:1
+    Source: 'controller-core/src/model.rs', lines 56:0-58:1
     Visibility: public -/
 structure model.SnapshotManifestRef where
   digest : ids.ManifestDigest
 
 /-- [sandbox_controller_core::model::SnapshotStage]
-    Source: 'controller-core/src/model.rs', lines 33:0-36:1
+    Source: 'controller-core/src/model.rs', lines 37:0-40:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.SnapshotStage where
@@ -212,7 +212,7 @@ inductive model.SnapshotStage where
 | Durable : model.SnapshotStage
 
 /-- [sandbox_controller_core::model::Snapshot]
-    Source: 'controller-core/src/model.rs', lines 430:0-438:1
+    Source: 'controller-core/src/model.rs', lines 464:0-472:1
     Visibility: public -/
 structure model.Snapshot where
   owner : ids.TenantId
@@ -224,7 +224,7 @@ structure model.Snapshot where
   immutable : Bool
 
 /-- [sandbox_controller_core::model::Filesystem]
-    Source: 'controller-core/src/model.rs', lines 423:0-427:1
+    Source: 'controller-core/src/model.rs', lines 456:0-460:1
     Visibility: public -/
 structure model.Filesystem where
   owner : ids.TenantId
@@ -232,7 +232,7 @@ structure model.Filesystem where
   created_generation : Std.U64
 
 /-- [sandbox_controller_core::model::VmStatus]
-    Source: 'controller-core/src/model.rs', lines 24:0-30:1
+    Source: 'controller-core/src/model.rs', lines 27:0-33:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.VmStatus where
@@ -243,7 +243,7 @@ inductive model.VmStatus where
 | Reclaimed : model.VmStatus
 
 /-- [sandbox_controller_core::model::Vm]
-    Source: 'controller-core/src/model.rs', lines 415:0-420:1
+    Source: 'controller-core/src/model.rs', lines 447:0-452:1
     Visibility: public -/
 structure model.Vm where
   owner : ids.TenantId
@@ -252,27 +252,27 @@ structure model.Vm where
   status : model.VmStatus
 
 /-- [sandbox_controller_core::ids::SnapshotId]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.SnapshotId := Std.U64
 
 /-- [sandbox_controller_core::model::RestoreSource]
-    Source: 'controller-core/src/model.rs', lines 54:0-57:1
+    Source: 'controller-core/src/model.rs', lines 62:0-65:1
     Visibility: public -/
 structure model.RestoreSource where
   snapshot : ids.SnapshotId
   manifest : model.SnapshotManifestRef
 
 /-- [sandbox_controller_core::model::WorkspaceApiAccess]
-    Source: 'controller-core/src/model.rs', lines 39:0-41:1
+    Source: 'controller-core/src/model.rs', lines 44:0-46:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.WorkspaceApiAccess where
 | ManagedReadWrite : model.WorkspaceApiAccess
 
 /-- [sandbox_controller_core::model::Authority]
-    Source: 'controller-core/src/model.rs', lines 154:0-169:1
+    Source: 'controller-core/src/model.rs', lines 172:0-187:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.Authority where
@@ -289,7 +289,7 @@ inductive model.Authority where
 | Paused : ids.SandboxId → model.RestoreSource → model.Authority
 
 /-- [sandbox_controller_core::model::FailureKind]
-    Source: 'controller-core/src/model.rs', lines 98:0-105:1
+    Source: 'controller-core/src/model.rs', lines 111:0-118:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.FailureKind where
@@ -301,7 +301,7 @@ inductive model.FailureKind where
 | InternalFailure : model.FailureKind
 
 /-- [sandbox_controller_core::model::OperationStatus]
-    Source: 'controller-core/src/model.rs', lines 137:0-143:1
+    Source: 'controller-core/src/model.rs', lines 153:0-159:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.OperationStatus where
@@ -312,7 +312,7 @@ inductive model.OperationStatus where
 | Failed : model.FailureKind → model.OperationStatus
 
 /-- [sandbox_controller_core::model::OperationKind]
-    Source: 'controller-core/src/model.rs', lines 129:0-134:1
+    Source: 'controller-core/src/model.rs', lines 144:0-149:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.OperationKind where
@@ -322,13 +322,13 @@ inductive model.OperationKind where
 | Kill : model.OperationKind
 
 /-- [sandbox_controller_core::ids::OperationId]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.OperationId := Std.U64
 
 /-- [sandbox_controller_core::model::Operation]
-    Source: 'controller-core/src/model.rs', lines 146:0-151:1
+    Source: 'controller-core/src/model.rs', lines 163:0-168:1
     Visibility: public -/
 structure model.Operation where
   id : ids.OperationId
@@ -337,7 +337,7 @@ structure model.Operation where
   status : model.OperationStatus
 
 /-- [sandbox_controller_core::model::Phase]
-    Source: 'controller-core/src/model.rs', lines 14:0-21:1
+    Source: 'controller-core/src/model.rs', lines 16:0-23:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.Phase where
@@ -349,7 +349,7 @@ inductive model.Phase where
 | Destroyed : model.Phase
 
 /-- [sandbox_controller_core::model::SandboxRecord]
-    Source: 'controller-core/src/model.rs', lines 395:0-412:1
+    Source: 'controller-core/src/model.rs', lines 426:0-443:1
     Visibility: public -/
 structure model.SandboxRecord where
   owner : ids.TenantId
@@ -370,7 +370,7 @@ structure model.SandboxRecord where
   current_operation : Option model.Operation
 
 /-- [sandbox_controller_core::model::OperationResult]
-    Source: 'controller-core/src/model.rs', lines 121:0-126:1
+    Source: 'controller-core/src/model.rs', lines 135:0-140:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.OperationResult where
@@ -380,7 +380,7 @@ inductive model.OperationResult where
 | Failed : model.FailureKind → model.OperationResult
 
 /-- [sandbox_controller_core::model::OperationInput]
-    Source: 'controller-core/src/model.rs', lines 80:0-95:1
+    Source: 'controller-core/src/model.rs', lines 92:0-107:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.OperationInput where
@@ -394,7 +394,7 @@ inductive model.OperationInput where
 | Kill : Std.U64 → model.OperationInput
 
 /-- [sandbox_controller_core::model::OperationLedgerRecord]
-    Source: 'controller-core/src/model.rs', lines 387:0-392:1
+    Source: 'controller-core/src/model.rs', lines 417:0-422:1
     Visibility: public -/
 structure model.OperationLedgerRecord where
   sandbox : ids.SandboxId
@@ -403,13 +403,13 @@ structure model.OperationLedgerRecord where
   result : Option model.OperationResult
 
 /-- [sandbox_controller_core::ids::ResultDigest]
-    Source: 'controller-core/src/ids.rs', lines 4:8-4:34
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.ResultDigest := Std.U64
 
 /-- [sandbox_controller_core::model::LogicalEffectResult]
-    Source: 'controller-core/src/model.rs', lines 367:0-376:1
+    Source: 'controller-core/src/model.rs', lines 395:0-404:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.LogicalEffectResult where
@@ -417,14 +417,14 @@ inductive model.LogicalEffectResult where
 | Failed : Std.U64 → model.FailureKind → model.LogicalEffectResult
 
 /-- [sandbox_controller_core::model::OperationKey]
-    Source: 'controller-core/src/model.rs', lines 333:0-336:1
+    Source: 'controller-core/src/model.rs', lines 357:0-360:1
     Visibility: public -/
 structure model.OperationKey where
   sandbox : ids.SandboxId
   operation : ids.OperationId
 
 /-- [sandbox_controller_core::model::EffectOrigin]
-    Source: 'controller-core/src/model.rs', lines 361:0-364:1
+    Source: 'controller-core/src/model.rs', lines 388:0-391:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.EffectOrigin where
@@ -432,7 +432,7 @@ inductive model.EffectOrigin where
 | Maintenance : ids.SandboxId → model.EffectOrigin
 
 /-- [sandbox_controller_core::model::LogicalEffectRecord]
-    Source: 'controller-core/src/model.rs', lines 379:0-384:1
+    Source: 'controller-core/src/model.rs', lines 408:0-413:1
     Visibility: public -/
 structure model.LogicalEffectRecord where
   origin : model.EffectOrigin
@@ -441,7 +441,7 @@ structure model.LogicalEffectRecord where
   result : Option model.LogicalEffectResult
 
 /-- [sandbox_controller_core::model::ResourceIndex]
-    Source: 'controller-core/src/model.rs', lines 354:0-358:1
+    Source: 'controller-core/src/model.rs', lines 380:0-384:1
     Visibility: public -/
 structure model.ResourceIndex where
   vms : alloc.vec.Vec ids.VmId
@@ -449,7 +449,7 @@ structure model.ResourceIndex where
   snapshots : alloc.vec.Vec ids.SnapshotId
 
 /-- [sandbox_controller_core::model::OperationPlan]
-    Source: 'controller-core/src/model.rs', lines 339:0-351:1
+    Source: 'controller-core/src/model.rs', lines 364:0-376:1
     Visibility: public -/
 structure model.OperationPlan where
   key : model.OperationKey
@@ -465,7 +465,7 @@ structure model.OperationPlan where
   sealed : Bool
 
 /-- [sandbox_controller_core::model::EffectOutcome]
-    Source: 'controller-core/src/model.rs', lines 319:0-322:1
+    Source: 'controller-core/src/model.rs', lines 341:0-344:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.EffectOutcome where
@@ -473,7 +473,7 @@ inductive model.EffectOutcome where
 | Failed : model.FailureKind → model.EffectOutcome
 
 /-- [sandbox_controller_core::model::EffectStatus]
-    Source: 'controller-core/src/model.rs', lines 325:0-330:1
+    Source: 'controller-core/src/model.rs', lines 348:0-353:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.EffectStatus where
@@ -483,7 +483,7 @@ inductive model.EffectStatus where
 | Acknowledged : model.EffectOutcome → model.EffectStatus
 
 /-- [sandbox_controller_core::model::Command]
-    Source: 'controller-core/src/model.rs', lines 182:0-255:1
+    Source: 'controller-core/src/model.rs', lines 201:0-274:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.Command where
@@ -544,20 +544,20 @@ inductive model.Command where
 | CleanupSlot : ids.SandboxId → Std.U64 → ids.NetSlotId → model.Command
 
 /-- [sandbox_controller_core::model::LogicalEffectId]
-    Source: 'controller-core/src/model.rs', lines 293:0-295:1
+    Source: 'controller-core/src/model.rs', lines 313:0-315:1
     Visibility: public -/
 structure model.LogicalEffectId where
   command : model.Command
 
 /-- [sandbox_controller_core::model::EffectId]
-    Source: 'controller-core/src/model.rs', lines 298:0-301:1
+    Source: 'controller-core/src/model.rs', lines 319:0-322:1
     Visibility: public -/
 structure model.EffectId where
   logical : model.LogicalEffectId
   attempt : Std.U64
 
 /-- [sandbox_controller_core::model::World]
-    Source: 'controller-core/src/model.rs', lines 558:0-578:1
+    Source: 'controller-core/src/model.rs', lines 596:0-616:1
     Visibility: public -/
 structure model.World where
   sandboxes : store.Store ids.SandboxId model.SandboxRecord
@@ -581,14 +581,14 @@ structure model.World where
   controller_up : Bool
 
 /-- [sandbox_controller_core::auxiliary::AuxiliaryDecision]
-    Source: 'controller-core/src/auxiliary.rs', lines 38:0-41:1
+    Source: 'controller-core/src/auxiliary.rs', lines 39:0-42:1
     Visibility: public -/
 structure auxiliary.AuxiliaryDecision where
   event : auxiliary.AuxiliaryEvent
   next : model.World
 
 /-- [sandbox_controller_core::scheduler::SchedulerInput]
-    Source: 'controller-core/src/scheduler.rs', lines 46:0-55:1
+    Source: 'controller-core/src/scheduler.rs', lines 47:0-56:1
     Visibility: public -/
 @[discriminant isize]
 inductive scheduler.SchedulerInput where
@@ -621,7 +621,7 @@ inductive scheduler.SchedulerInput where
   scheduler.SchedulerInput
 
 /-- [sandbox_controller_core::request::CompensationRequest]
-    Source: 'controller-core/src/request.rs', lines 88:0-92:1
+    Source: 'controller-core/src/request.rs', lines 95:0-99:1
     Visibility: public -/
 structure request.CompensationRequest where
   sandbox : ids.SandboxId
@@ -629,7 +629,7 @@ structure request.CompensationRequest where
   evidence : Option model.EffectId
 
 /-- [sandbox_controller_core::request::QueryRequest]
-    Source: 'controller-core/src/request.rs', lines 81:0-85:1
+    Source: 'controller-core/src/request.rs', lines 87:0-91:1
     Visibility: public -/
 structure request.QueryRequest where
   actor : model.Actor
@@ -637,7 +637,7 @@ structure request.QueryRequest where
   operation : ids.OperationId
 
 /-- [sandbox_controller_core::request::ReplayRequest]
-    Source: 'controller-core/src/request.rs', lines 72:0-78:1
+    Source: 'controller-core/src/request.rs', lines 77:0-83:1
     Visibility: public -/
 structure request.ReplayRequest where
   actor : model.Actor
@@ -647,7 +647,7 @@ structure request.ReplayRequest where
   input : model.OperationInput
 
 /-- [sandbox_controller_core::request::KillRequest]
-    Source: 'controller-core/src/request.rs', lines 65:0-69:1
+    Source: 'controller-core/src/request.rs', lines 69:0-73:1
     Visibility: public -/
 structure request.KillRequest where
   actor : model.Actor
@@ -655,7 +655,7 @@ structure request.KillRequest where
   operation : ids.OperationId
 
 /-- [sandbox_controller_core::request::ResumeRequest]
-    Source: 'controller-core/src/request.rs', lines 58:0-62:1
+    Source: 'controller-core/src/request.rs', lines 61:0-65:1
     Visibility: public -/
 structure request.ResumeRequest where
   actor : model.Actor
@@ -663,7 +663,7 @@ structure request.ResumeRequest where
   operation : ids.OperationId
 
 /-- [sandbox_controller_core::request::PauseRequest]
-    Source: 'controller-core/src/request.rs', lines 51:0-55:1
+    Source: 'controller-core/src/request.rs', lines 53:0-57:1
     Visibility: public -/
 structure request.PauseRequest where
   actor : model.Actor
@@ -671,7 +671,7 @@ structure request.PauseRequest where
   operation : ids.OperationId
 
 /-- [sandbox_controller_core::request::CreateRequest]
-    Source: 'controller-core/src/request.rs', lines 40:0-48:1
+    Source: 'controller-core/src/request.rs', lines 41:0-49:1
     Visibility: public -/
 structure request.CreateRequest where
   actor : model.Actor
@@ -683,7 +683,7 @@ structure request.CreateRequest where
   operation : ids.OperationId
 
 /-- [sandbox_controller_core::request::Request]
-    Source: 'controller-core/src/request.rs', lines 95:0-103:1
+    Source: 'controller-core/src/request.rs', lines 103:0-111:1
     Visibility: public -/
 @[discriminant isize]
 inductive request.Request where
@@ -696,7 +696,7 @@ inductive request.Request where
 | Compensate : request.CompensationRequest → request.Request
 
 /-- [sandbox_controller_core::recovery_monitor::RuntimeInput]
-    Source: 'controller-core/src/recovery_monitor.rs', lines 6:0-10:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 7:0-11:1
     Visibility: public -/
 @[discriminant isize]
 inductive recovery_monitor.RuntimeInput where
@@ -705,7 +705,7 @@ inductive recovery_monitor.RuntimeInput where
 | DuplicateOrLateDelivery : model.EffectId → recovery_monitor.RuntimeInput
 
 /-- [sandbox_controller_core::publication::PublicationInput]
-    Source: 'controller-core/src/publication.rs', lines 10:0-15:1
+    Source: 'controller-core/src/publication.rs', lines 11:0-16:1
     Visibility: public -/
 @[discriminant isize]
 inductive publication.PublicationInput where
@@ -718,7 +718,7 @@ inductive publication.PublicationInput where
 | Failed : ids.SandboxId → model.FailureKind → publication.PublicationInput
 
 /-- [sandbox_controller_core::effect::EffectInput]
-    Source: 'controller-core/src/effect.rs', lines 7:0-13:1
+    Source: 'controller-core/src/effect.rs', lines 8:0-14:1
     Visibility: public -/
 @[discriminant isize]
 inductive effect.EffectInput where
@@ -732,7 +732,7 @@ inductive effect.EffectInput where
   effect.EffectInput
 
 /-- [sandbox_controller_core::controller::ControllerInput]
-    Source: 'controller-core/src/controller.rs', lines 16:0-25:1
+    Source: 'controller-core/src/controller.rs', lines 17:0-26:1
     Visibility: public -/
 @[discriminant isize]
 inductive controller.ControllerInput where
@@ -776,7 +776,7 @@ inductive worker.WorkerEvent where
   worker.WorkerEvent
 
 /-- [sandbox_controller_core::recovery_monitor::RuntimeEvent]
-    Source: 'controller-core/src/recovery_monitor.rs', lines 14:0-18:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 15:0-19:1
     Visibility: public -/
 @[discriminant isize]
 inductive recovery_monitor.RuntimeEvent where
@@ -785,7 +785,7 @@ inductive recovery_monitor.RuntimeEvent where
 | DuplicateOrLateDelivery : model.EffectId → recovery_monitor.RuntimeEvent
 
 /-- [sandbox_controller_core::publication::PublicationEvent]
-    Source: 'controller-core/src/publication.rs', lines 18:0-23:1
+    Source: 'controller-core/src/publication.rs', lines 19:0-24:1
     Visibility: public -/
 @[discriminant isize]
 inductive publication.PublicationEvent where
@@ -801,7 +801,7 @@ inductive publication.PublicationEvent where
   publication.PublicationEvent
 
 /-- [sandbox_controller_core::model::Event]
-    Source: 'controller-core/src/model.rs', lines 467:0-555:1
+    Source: 'controller-core/src/model.rs', lines 505:0-593:1
     Visibility: public -/
 @[discriminant isize]
 inductive model.Event where
@@ -880,7 +880,7 @@ inductive model.Event where
 | FinalizeEffectFailure : model.EffectId → model.FailureKind → model.Event
 
 /-- [sandbox_controller_core::controller::ControllerEvent]
-    Source: 'controller-core/src/controller.rs', lines 30:0-36:1
+    Source: 'controller-core/src/controller.rs', lines 31:0-37:1
     Visibility: public -/
 @[discriminant isize]
 inductive controller.ControllerEvent where
@@ -965,7 +965,7 @@ inductive request.Reject where
 | CounterExhausted : request.Reject
 
 /-- [sandbox_controller_core::recovery_monitor::RuntimeReject]
-    Source: 'controller-core/src/recovery_monitor.rs', lines 22:0-26:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 23:0-27:1
     Visibility: public -/
 @[discriminant isize]
 inductive recovery_monitor.RuntimeReject where
@@ -974,7 +974,7 @@ inductive recovery_monitor.RuntimeReject where
 | EffectNotFound : recovery_monitor.RuntimeReject
 
 /-- [sandbox_controller_core::publication::PublicationReject]
-    Source: 'controller-core/src/publication.rs', lines 26:0-45:1
+    Source: 'controller-core/src/publication.rs', lines 27:0-46:1
     Visibility: public -/
 @[discriminant isize]
 inductive publication.PublicationReject where
@@ -998,7 +998,7 @@ inductive publication.PublicationReject where
 | LedgerMismatch : publication.PublicationReject
 
 /-- [sandbox_controller_core::effect::EffectReject]
-    Source: 'controller-core/src/effect.rs', lines 16:0-33:1
+    Source: 'controller-core/src/effect.rs', lines 17:0-34:1
     Visibility: public -/
 @[discriminant isize]
 inductive effect.EffectReject where
@@ -1020,7 +1020,7 @@ inductive effect.EffectReject where
 | CounterExhausted : effect.EffectReject
 
 /-- [sandbox_controller_core::controller::ControllerReject]
-    Source: 'controller-core/src/controller.rs', lines 41:0-49:1
+    Source: 'controller-core/src/controller.rs', lines 42:0-50:1
     Visibility: public -/
 @[discriminant isize]
 inductive controller.ControllerReject where
@@ -1033,7 +1033,7 @@ inductive controller.ControllerReject where
 | Runtime : recovery_monitor.RuntimeReject → controller.ControllerReject
 
 /-- [sandbox_controller_core::controller::ControllerDecision]
-    Source: 'controller-core/src/controller.rs', lines 54:0-57:1
+    Source: 'controller-core/src/controller.rs', lines 55:0-58:1
     Visibility: public -/
 structure controller.ControllerDecision where
   event : controller.ControllerEvent
@@ -1047,7 +1047,7 @@ structure request.Decision where
   next : model.World
 
 /-- [sandbox_controller_core::effect::EffectDecision]
-    Source: 'controller-core/src/effect.rs', lines 36:0-39:1
+    Source: 'controller-core/src/effect.rs', lines 37:0-40:1
     Visibility: public -/
 structure effect.EffectDecision where
   event : model.Event
@@ -1061,21 +1061,21 @@ structure worker.WorkerDecision where
   next : model.World
 
 /-- [sandbox_controller_core::publication::PublicationDecision]
-    Source: 'controller-core/src/publication.rs', lines 48:0-51:1
+    Source: 'controller-core/src/publication.rs', lines 49:0-52:1
     Visibility: public -/
 structure publication.PublicationDecision where
   event : publication.PublicationEvent
   next : model.World
 
 /-- [sandbox_controller_core::recovery_monitor::RuntimeDecision]
-    Source: 'controller-core/src/recovery_monitor.rs', lines 30:0-33:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 31:0-34:1
     Visibility: public -/
 structure recovery_monitor.RuntimeDecision where
   event : recovery_monitor.RuntimeEvent
   next : model.World
 
 /-- [sandbox_controller_core::recovery_monitor::SandboxView]
-    Source: 'controller-core/src/recovery_monitor.rs', lines 117:0-121:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 118:0-122:1
     Visibility: public -/
 structure recovery_monitor.SandboxView where
   phase : model.Phase
@@ -1083,7 +1083,7 @@ structure recovery_monitor.SandboxView where
   generation : Std.U64
 
 /-- [sandbox_controller_core::recovery_monitor::MonitorState]
-    Source: 'controller-core/src/recovery_monitor.rs', lines 124:0-127:1 -/
+    Source: 'controller-core/src/recovery_monitor.rs', lines 125:0-128:1 -/
 structure recovery_monitor.MonitorState where
   accepted : Bool
   seen_terminal : Bool

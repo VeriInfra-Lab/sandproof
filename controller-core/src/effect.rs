@@ -4,6 +4,7 @@ use crate::model::{
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EffectInput {
     Dispatch(EffectId),
     Receipt(EffectId, EffectOutcome),

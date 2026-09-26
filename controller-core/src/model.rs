@@ -5,12 +5,14 @@ use crate::ids::{
 use crate::store::Store;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Actor {
     Tenant(TenantId),
     SystemController,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Phase {
     Starting,
     Running,
@@ -21,6 +23,7 @@ pub enum Phase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum VmStatus {
     Prepared,
     Executing,
@@ -30,39 +33,46 @@ pub enum VmStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SnapshotStage {
     LocalSealed,
     Durable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum WorkspaceApiAccess {
     ManagedReadWrite,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FilePolicyRef {
     pub digest: PolicyDigest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SnapshotManifestRef {
     pub digest: ManifestDigest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RestoreSource {
     pub snapshot: SnapshotId,
     pub manifest: SnapshotManifestRef,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Protocol {
     Tcp,
     Udp,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Endpoint {
     pub address: String,
     pub prefix_length: u64,
@@ -71,12 +81,14 @@ pub struct Endpoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum NetworkPolicy {
     DenyAll,
     StaticAllowlist(Vec<Endpoint>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OperationInput {
     Create {
         workspace: FsId,
@@ -95,6 +107,7 @@ pub enum OperationInput {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FailureKind {
     Cancelled,
     DeadlineExceeded,
@@ -118,6 +131,7 @@ impl FailureKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OperationResult {
     Running(Generation),
     Paused(RestoreSource),
@@ -126,6 +140,7 @@ pub enum OperationResult {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OperationKind {
     Create,
     Pause,
@@ -134,6 +149,7 @@ pub enum OperationKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OperationStatus {
     Pending,
     OutcomeUnknown,
@@ -143,6 +159,7 @@ pub enum OperationStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Operation {
     pub id: OperationId,
     pub epoch: Epoch,
@@ -151,6 +168,7 @@ pub struct Operation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Authority {
     Closed,
     Running {
@@ -179,6 +197,7 @@ impl Authority {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Command {
     InstallFence {
         sandbox: SandboxId,
@@ -290,11 +309,13 @@ impl Command {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LogicalEffectId {
     pub command: Command,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EffectId {
     pub logical: LogicalEffectId,
     pub attempt: AttemptNo,
@@ -316,12 +337,14 @@ impl EffectId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EffectOutcome {
     Succeeded(ResultDigest),
     Failed(FailureKind),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EffectStatus {
     Committed,
     Dispatched,
@@ -330,12 +353,14 @@ pub enum EffectStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OperationKey {
     pub sandbox: SandboxId,
     pub operation: OperationId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OperationPlan {
     pub key: OperationKey,
     pub epoch: Epoch,
@@ -351,6 +376,7 @@ pub struct OperationPlan {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ResourceIndex {
     pub vms: Vec<VmId>,
     pub slots: Vec<NetSlotId>,
@@ -358,12 +384,14 @@ pub struct ResourceIndex {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EffectOrigin {
     Operation(OperationKey),
     Maintenance(SandboxId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LogicalEffectResult {
     Succeeded {
         attempt: AttemptNo,
@@ -376,6 +404,7 @@ pub enum LogicalEffectResult {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LogicalEffectRecord {
     pub origin: EffectOrigin,
     pub current_attempt: AttemptNo,
@@ -384,6 +413,7 @@ pub struct LogicalEffectRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OperationLedgerRecord {
     pub sandbox: SandboxId,
     pub operation: Operation,
@@ -392,6 +422,7 @@ pub struct OperationLedgerRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SandboxRecord {
     pub owner: TenantId,
     pub phase: Phase,
@@ -412,6 +443,7 @@ pub struct SandboxRecord {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Vm {
     pub owner: TenantId,
     pub sandbox: SandboxId,
@@ -420,6 +452,7 @@ pub struct Vm {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Filesystem {
     pub owner: TenantId,
     pub sandbox: SandboxId,
@@ -427,6 +460,7 @@ pub struct Filesystem {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Snapshot {
     pub owner: TenantId,
     pub sandbox: SandboxId,
@@ -438,6 +472,7 @@ pub struct Snapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NetSlot {
     pub owner: TenantId,
     pub sandbox: SandboxId,
@@ -450,6 +485,7 @@ pub struct NetSlot {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AppliedFilePolicy {
     pub sandbox: SandboxId,
     pub generation: Generation,
@@ -458,12 +494,14 @@ pub struct AppliedFilePolicy {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WorkerFence {
     pub epoch: Epoch,
     pub terminal: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Event {
     AcceptCreate {
         actor: Actor,
@@ -614,6 +652,43 @@ pub fn initial_world() -> World {
 }
 
 impl World {
+    /// Read-only integration views. They do not permit constructing or
+    /// mutating a World outside the controller reducer.
+    #[must_use]
+    pub fn sandbox_record(&self, sandbox: SandboxId) -> Option<&SandboxRecord> {
+        self.sandboxes.get(&sandbox)
+    }
+
+    #[must_use]
+    pub fn operation_record(&self, key: OperationKey) -> Option<&OperationLedgerRecord> {
+        self.operations.get(&key)
+    }
+
+    #[must_use]
+    pub fn operation_records(&self) -> &[(OperationKey, OperationLedgerRecord)] {
+        self.operations.entries()
+    }
+
+    #[must_use]
+    pub fn operation_plan(&self, key: OperationKey) -> Option<&OperationPlan> {
+        self.operation_plans.get(&key)
+    }
+
+    #[must_use]
+    pub fn effect_ids(&self) -> &[EffectId] {
+        &self.effect_keys
+    }
+
+    #[must_use]
+    pub fn effect_status(&self, effect: &EffectId) -> Option<EffectStatus> {
+        self.effects.get_copy(effect)
+    }
+
+    #[must_use]
+    pub fn logical_effect(&self, effect: &LogicalEffectId) -> Option<LogicalEffectRecord> {
+        self.logical_effects.get_copy(effect)
+    }
+
     #[must_use]
     pub fn resource_index(&self, sandbox: SandboxId) -> ResourceIndex {
         self.resource_indexes

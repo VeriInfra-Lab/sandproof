@@ -1,6 +1,7 @@
 macro_rules! identifier {
     ($name:ident) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name(pub u64);
 
         impl $name {

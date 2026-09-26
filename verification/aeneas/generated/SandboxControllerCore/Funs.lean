@@ -50,7 +50,7 @@ def ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
   ok (self = other)
 
 /-- [sandbox_controller_core::auxiliary::allows_exec]:
-    Source: 'controller-core/src/auxiliary.rs', lines 43:0-55:1 -/
+    Source: 'controller-core/src/auxiliary.rs', lines 44:0-56:1 -/
 def auxiliary.allows_exec
   (record : model.SandboxRecord) (sandbox : ids.SandboxId) (vm : ids.VmId) :
   Result Bool
@@ -71,7 +71,7 @@ def auxiliary.allows_exec
   | model.Authority.Paused _ _ => ok false
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::WorkspaceApiAccess> for sandbox_controller_core::model::WorkspaceApiAccess}::eq]:
-    Source: 'controller-core/src/model.rs', lines 38:29-38:38
+    Source: 'controller-core/src/model.rs', lines 42:29-42:38
     Visibility: public -/
 def model.WorkspaceApiAccess.Insts.CoreCmpPartialEqWorkspaceApiAccess.eq
   (self : model.WorkspaceApiAccess) (other : model.WorkspaceApiAccess) :
@@ -87,7 +87,7 @@ def ids.FsId.Insts.CoreCmpPartialEqFsId.eq
   ok (self = other)
 
 /-- [sandbox_controller_core::auxiliary::allows_file]:
-    Source: 'controller-core/src/auxiliary.rs', lines 57:0-73:1 -/
+    Source: 'controller-core/src/auxiliary.rs', lines 58:0-74:1 -/
 def auxiliary.allows_file
   (record : model.SandboxRecord) (sandbox : ids.SandboxId)
   (generation : Std.U64) :
@@ -116,7 +116,7 @@ def auxiliary.allows_file
   | model.Authority.Paused _ _ => ok false
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq]:
-    Source: 'controller-core/src/model.rs', lines 59:29-59:38
+    Source: 'controller-core/src/model.rs', lines 67:29-67:38
     Visibility: public -/
 def model.Protocol.Insts.CoreCmpPartialEqProtocol.eq
   (self : model.Protocol) (other : model.Protocol) : Result Bool := do
@@ -125,7 +125,7 @@ def model.Protocol.Insts.CoreCmpPartialEqProtocol.eq
   ok (self1 = other1)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}::eq]:
-    Source: 'controller-core/src/model.rs', lines 65:23-65:32
+    Source: 'controller-core/src/model.rs', lines 74:23-74:32
     Visibility: public -/
 def model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq
   (self : model.Endpoint) (other : model.Endpoint) : Result Bool := do
@@ -145,7 +145,7 @@ def model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}]
-    Source: 'controller-core/src/model.rs', lines 65:23-65:32 -/
+    Source: 'controller-core/src/model.rs', lines 74:23-74:32 -/
 @[reducible]
 impl_def model.Endpoint.Insts.CoreCmpPartialEqEndpoint : core.cmp.PartialEq
   model.Endpoint model.Endpoint := {
@@ -155,7 +155,7 @@ impl_def model.Endpoint.Insts.CoreCmpPartialEqEndpoint : core.cmp.PartialEq
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}::eq]:
-    Source: 'controller-core/src/model.rs', lines 73:23-73:32
+    Source: 'controller-core/src/model.rs', lines 83:23-83:32
     Visibility: public -/
 def model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
   (self : model.NetworkPolicy) (other : model.NetworkPolicy) :
@@ -176,7 +176,7 @@ def model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}]
-    Source: 'controller-core/src/model.rs', lines 73:23-73:32 -/
+    Source: 'controller-core/src/model.rs', lines 83:23-83:32 -/
 @[reducible]
 impl_def model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy :
   core.cmp.PartialEq model.NetworkPolicy model.NetworkPolicy := {
@@ -193,7 +193,7 @@ def ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
   ok (self = other)
 
 /-- [sandbox_controller_core::auxiliary::allows_network]:
-    Source: 'controller-core/src/auxiliary.rs', lines 75:0-93:1 -/
+    Source: 'controller-core/src/auxiliary.rs', lines 76:0-94:1 -/
 def auxiliary.allows_network
   (record : model.SandboxRecord) (sandbox : ids.SandboxId) (vm : ids.VmId)
   (slot : ids.NetSlotId) :
@@ -227,7 +227,7 @@ def auxiliary.allows_network
   | model.Authority.Paused _ _ => ok false
 
 /-- [sandbox_controller_core::auxiliary::destination_allowed]: loop body 0:
-    Source: 'controller-core/src/auxiliary.rs', lines 101:12-106:13 -/
+    Source: 'controller-core/src/auxiliary.rs', lines 102:12-107:13 -/
 @[rust_loop_body]
 def auxiliary.destination_allowed_loop.body
   (destination : model.Endpoint) (endpoints : alloc.vec.Vec model.Endpoint)
@@ -252,7 +252,7 @@ def auxiliary.destination_allowed_loop.body
   else ok (done allowed)
 
 /-- [sandbox_controller_core::auxiliary::destination_allowed]: loop 0:
-    Source: 'controller-core/src/auxiliary.rs', lines 101:12-106:13 -/
+    Source: 'controller-core/src/auxiliary.rs', lines 102:12-107:13 -/
 @[rust_loop]
 def auxiliary.destination_allowed_loop
   (destination : model.Endpoint) (endpoints : alloc.vec.Vec model.Endpoint)
@@ -265,7 +265,7 @@ def auxiliary.destination_allowed_loop
     (cursor, allowed)
 
 /-- [sandbox_controller_core::auxiliary::destination_allowed]:
-    Source: 'controller-core/src/auxiliary.rs', lines 95:0-110:1 -/
+    Source: 'controller-core/src/auxiliary.rs', lines 96:0-111:1 -/
 def auxiliary.destination_allowed
   (record : model.SandboxRecord) (destination : model.Endpoint) :
   Result Bool
@@ -396,14 +396,14 @@ def store.Store.Insts.CoreCloneClone.clone
   ok { entries := v }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}::clone]:
-    Source: 'controller-core/src/model.rs', lines 460:9-460:14
+    Source: 'controller-core/src/model.rs', lines 496:9-496:14
     Visibility: public -/
 def model.WorkerFence.Insts.CoreCloneClone.clone
   (self : model.WorkerFence) : Result model.WorkerFence := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}]
-    Source: 'controller-core/src/model.rs', lines 460:9-460:14 -/
+    Source: 'controller-core/src/model.rs', lines 496:9-496:14 -/
 @[reducible]
 def model.WorkerFence.Insts.CoreCloneClone : core.clone.Clone model.WorkerFence
   := {
@@ -411,14 +411,14 @@ def model.WorkerFence.Insts.CoreCloneClone : core.clone.Clone model.WorkerFence
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}::clone]:
-    Source: 'controller-core/src/model.rs', lines 452:9-452:14
+    Source: 'controller-core/src/model.rs', lines 487:9-487:14
     Visibility: public -/
 def model.AppliedFilePolicy.Insts.CoreCloneClone.clone
   (self : model.AppliedFilePolicy) : Result model.AppliedFilePolicy := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}]
-    Source: 'controller-core/src/model.rs', lines 452:9-452:14 -/
+    Source: 'controller-core/src/model.rs', lines 487:9-487:14 -/
 @[reducible]
 def model.AppliedFilePolicy.Insts.CoreCloneClone : core.clone.Clone
   model.AppliedFilePolicy := {
@@ -426,14 +426,14 @@ def model.AppliedFilePolicy.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone]:
-    Source: 'controller-core/src/model.rs', lines 59:9-59:14
+    Source: 'controller-core/src/model.rs', lines 67:9-67:14
     Visibility: public -/
 def model.Protocol.Insts.CoreCloneClone.clone
   (self : model.Protocol) : Result model.Protocol := do
   ok self
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone]:
-    Source: 'controller-core/src/model.rs', lines 65:9-65:14
+    Source: 'controller-core/src/model.rs', lines 74:9-74:14
     Visibility: public -/
 def model.Endpoint.Insts.CoreCloneClone.clone
   (self : model.Endpoint) : Result model.Endpoint := do
@@ -444,14 +444,14 @@ def model.Endpoint.Insts.CoreCloneClone.clone
   ok { address := s, prefix_length := i, protocol := p, port := i1 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}]
-    Source: 'controller-core/src/model.rs', lines 65:9-65:14 -/
+    Source: 'controller-core/src/model.rs', lines 74:9-74:14 -/
 @[reducible]
 def model.Endpoint.Insts.CoreCloneClone : core.clone.Clone model.Endpoint := {
   clone := model.Endpoint.Insts.CoreCloneClone.clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone]:
-    Source: 'controller-core/src/model.rs', lines 73:9-73:14
+    Source: 'controller-core/src/model.rs', lines 83:9-83:14
     Visibility: public -/
 def model.NetworkPolicy.Insts.CoreCloneClone.clone
   (self : model.NetworkPolicy) : Result model.NetworkPolicy := do
@@ -484,7 +484,7 @@ def ids.SandboxId.Insts.CoreCloneClone.clone
   ok self
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}::clone]:
-    Source: 'controller-core/src/model.rs', lines 440:9-440:14
+    Source: 'controller-core/src/model.rs', lines 474:9-474:14
     Visibility: public -/
 def model.NetSlot.Insts.CoreCloneClone.clone
   (self : model.NetSlot) : Result model.NetSlot := do
@@ -509,35 +509,35 @@ def model.NetSlot.Insts.CoreCloneClone.clone
     }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}]
-    Source: 'controller-core/src/model.rs', lines 440:9-440:14 -/
+    Source: 'controller-core/src/model.rs', lines 474:9-474:14 -/
 @[reducible]
 def model.NetSlot.Insts.CoreCloneClone : core.clone.Clone model.NetSlot := {
   clone := model.NetSlot.Insts.CoreCloneClone.clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}::clone]:
-    Source: 'controller-core/src/model.rs', lines 429:9-429:14
+    Source: 'controller-core/src/model.rs', lines 462:9-462:14
     Visibility: public -/
 def model.Snapshot.Insts.CoreCloneClone.clone
   (self : model.Snapshot) : Result model.Snapshot := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}]
-    Source: 'controller-core/src/model.rs', lines 429:9-429:14 -/
+    Source: 'controller-core/src/model.rs', lines 462:9-462:14 -/
 @[reducible]
 def model.Snapshot.Insts.CoreCloneClone : core.clone.Clone model.Snapshot := {
   clone := model.Snapshot.Insts.CoreCloneClone.clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}::clone]:
-    Source: 'controller-core/src/model.rs', lines 422:9-422:14
+    Source: 'controller-core/src/model.rs', lines 454:9-454:14
     Visibility: public -/
 def model.Filesystem.Insts.CoreCloneClone.clone
   (self : model.Filesystem) : Result model.Filesystem := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}]
-    Source: 'controller-core/src/model.rs', lines 422:9-422:14 -/
+    Source: 'controller-core/src/model.rs', lines 454:9-454:14 -/
 @[reducible]
 def model.Filesystem.Insts.CoreCloneClone : core.clone.Clone model.Filesystem
   := {
@@ -545,28 +545,28 @@ def model.Filesystem.Insts.CoreCloneClone : core.clone.Clone model.Filesystem
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}::clone]:
-    Source: 'controller-core/src/model.rs', lines 414:9-414:14
+    Source: 'controller-core/src/model.rs', lines 445:9-445:14
     Visibility: public -/
 def model.Vm.Insts.CoreCloneClone.clone
   (self : model.Vm) : Result model.Vm := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}]
-    Source: 'controller-core/src/model.rs', lines 414:9-414:14 -/
+    Source: 'controller-core/src/model.rs', lines 445:9-445:14 -/
 @[reducible]
 def model.Vm.Insts.CoreCloneClone : core.clone.Clone model.Vm := {
   clone := model.Vm.Insts.CoreCloneClone.clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone]:
-    Source: 'controller-core/src/model.rs', lines 53:9-53:14
+    Source: 'controller-core/src/model.rs', lines 60:9-60:14
     Visibility: public -/
 def model.RestoreSource.Insts.CoreCloneClone.clone
   (self : model.RestoreSource) : Result model.RestoreSource := do
   ok self
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone]:
-    Source: 'controller-core/src/model.rs', lines 38:9-38:14
+    Source: 'controller-core/src/model.rs', lines 42:9-42:14
     Visibility: public -/
 def model.WorkspaceApiAccess.Insts.CoreCloneClone.clone
   (self : model.WorkspaceApiAccess) : Result model.WorkspaceApiAccess := do
@@ -587,7 +587,7 @@ def ids.NetSlotId.Insts.CoreCloneClone.clone
   ok self
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone]:
-    Source: 'controller-core/src/model.rs', lines 153:9-153:14
+    Source: 'controller-core/src/model.rs', lines 170:9-170:14
     Visibility: public -/
 def model.Authority.Insts.CoreCloneClone.clone
   (self : model.Authority) : Result model.Authority := do
@@ -609,14 +609,14 @@ def model.Authority.Insts.CoreCloneClone.clone
     ok (model.Authority.Paused si rs)
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone]:
-    Source: 'controller-core/src/model.rs', lines 145:9-145:14
+    Source: 'controller-core/src/model.rs', lines 161:9-161:14
     Visibility: public -/
 def model.Operation.Insts.CoreCloneClone.clone
   (self : model.Operation) : Result model.Operation := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}]
-    Source: 'controller-core/src/model.rs', lines 145:9-145:14 -/
+    Source: 'controller-core/src/model.rs', lines 161:9-161:14 -/
 @[reducible]
 def model.Operation.Insts.CoreCloneClone : core.clone.Clone model.Operation
   := {
@@ -624,7 +624,7 @@ def model.Operation.Insts.CoreCloneClone : core.clone.Clone model.Operation
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}]
-    Source: 'controller-core/src/model.rs', lines 53:9-53:14 -/
+    Source: 'controller-core/src/model.rs', lines 60:9-60:14 -/
 @[reducible]
 def model.RestoreSource.Insts.CoreCloneClone : core.clone.Clone
   model.RestoreSource := {
@@ -632,14 +632,14 @@ def model.RestoreSource.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone]:
-    Source: 'controller-core/src/model.rs', lines 43:9-43:14
+    Source: 'controller-core/src/model.rs', lines 48:9-48:14
     Visibility: public -/
 def model.FilePolicyRef.Insts.CoreCloneClone.clone
   (self : model.FilePolicyRef) : Result model.FilePolicyRef := do
   ok self
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone]:
-    Source: 'controller-core/src/model.rs', lines 13:9-13:14
+    Source: 'controller-core/src/model.rs', lines 14:9-14:14
     Visibility: public -/
 def model.Phase.Insts.CoreCloneClone.clone
   (self : model.Phase) : Result model.Phase := do
@@ -660,7 +660,7 @@ def ids.VmId.Insts.CoreCloneClone : core.clone.Clone ids.VmId := {
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}::clone]:
-    Source: 'controller-core/src/model.rs', lines 394:9-394:14
+    Source: 'controller-core/src/model.rs', lines 424:9-424:14
     Visibility: public -/
 def model.SandboxRecord.Insts.CoreCloneClone.clone
   (self : model.SandboxRecord) : Result model.SandboxRecord := do
@@ -712,7 +712,7 @@ def model.SandboxRecord.Insts.CoreCloneClone.clone
     }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}]
-    Source: 'controller-core/src/model.rs', lines 394:9-394:14 -/
+    Source: 'controller-core/src/model.rs', lines 424:9-424:14 -/
 @[reducible]
 def model.SandboxRecord.Insts.CoreCloneClone : core.clone.Clone
   model.SandboxRecord := {
@@ -720,14 +720,14 @@ def model.SandboxRecord.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone]:
-    Source: 'controller-core/src/model.rs', lines 120:9-120:14
+    Source: 'controller-core/src/model.rs', lines 133:9-133:14
     Visibility: public -/
 def model.OperationResult.Insts.CoreCloneClone.clone
   (self : model.OperationResult) : Result model.OperationResult := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}]
-    Source: 'controller-core/src/model.rs', lines 120:9-120:14 -/
+    Source: 'controller-core/src/model.rs', lines 133:9-133:14 -/
 @[reducible]
 def model.OperationResult.Insts.CoreCloneClone : core.clone.Clone
   model.OperationResult := {
@@ -735,7 +735,7 @@ def model.OperationResult.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone]:
-    Source: 'controller-core/src/model.rs', lines 79:9-79:14
+    Source: 'controller-core/src/model.rs', lines 90:9-90:14
     Visibility: public -/
 def model.OperationInput.Insts.CoreCloneClone.clone
   (self : model.OperationInput) : Result model.OperationInput := do
@@ -756,7 +756,7 @@ def model.OperationInput.Insts.CoreCloneClone.clone
     ok (model.OperationInput.Kill i)
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone]:
-    Source: 'controller-core/src/model.rs', lines 386:9-386:14
+    Source: 'controller-core/src/model.rs', lines 415:9-415:14
     Visibility: public -/
 def model.OperationLedgerRecord.Insts.CoreCloneClone.clone
   (self : model.OperationLedgerRecord) :
@@ -771,7 +771,7 @@ def model.OperationLedgerRecord.Insts.CoreCloneClone.clone
   ok { sandbox := si, operation := o, input := oi, result := o1 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}]
-    Source: 'controller-core/src/model.rs', lines 386:9-386:14 -/
+    Source: 'controller-core/src/model.rs', lines 415:9-415:14 -/
 @[reducible]
 def model.OperationLedgerRecord.Insts.CoreCloneClone : core.clone.Clone
   model.OperationLedgerRecord := {
@@ -779,14 +779,14 @@ def model.OperationLedgerRecord.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone]:
-    Source: 'controller-core/src/model.rs', lines 378:9-378:14
+    Source: 'controller-core/src/model.rs', lines 406:9-406:14
     Visibility: public -/
 def model.LogicalEffectRecord.Insts.CoreCloneClone.clone
   (self : model.LogicalEffectRecord) : Result model.LogicalEffectRecord := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}]
-    Source: 'controller-core/src/model.rs', lines 378:9-378:14 -/
+    Source: 'controller-core/src/model.rs', lines 406:9-406:14 -/
 @[reducible]
 def model.LogicalEffectRecord.Insts.CoreCloneClone : core.clone.Clone
   model.LogicalEffectRecord := {
@@ -808,7 +808,7 @@ def ids.SnapshotId.Insts.CoreCloneClone : core.clone.Clone ids.SnapshotId := {
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}::clone]:
-    Source: 'controller-core/src/model.rs', lines 353:9-353:14
+    Source: 'controller-core/src/model.rs', lines 378:9-378:14
     Visibility: public -/
 def model.ResourceIndex.Insts.CoreCloneClone.clone
   (self : model.ResourceIndex) : Result model.ResourceIndex := do
@@ -820,7 +820,7 @@ def model.ResourceIndex.Insts.CoreCloneClone.clone
   ok { vms := v, slots := v1, snapshots := v2 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}]
-    Source: 'controller-core/src/model.rs', lines 353:9-353:14 -/
+    Source: 'controller-core/src/model.rs', lines 378:9-378:14 -/
 @[reducible]
 def model.ResourceIndex.Insts.CoreCloneClone : core.clone.Clone
   model.ResourceIndex := {
@@ -828,14 +828,14 @@ def model.ResourceIndex.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone]:
-    Source: 'controller-core/src/model.rs', lines 332:9-332:14
+    Source: 'controller-core/src/model.rs', lines 355:9-355:14
     Visibility: public -/
 def model.OperationKey.Insts.CoreCloneClone.clone
   (self : model.OperationKey) : Result model.OperationKey := do
   ok self
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}::clone]:
-    Source: 'controller-core/src/model.rs', lines 338:9-338:14
+    Source: 'controller-core/src/model.rs', lines 362:9-362:14
     Visibility: public -/
 def model.OperationPlan.Insts.CoreCloneClone.clone
   (self : model.OperationPlan) : Result model.OperationPlan := do
@@ -877,7 +877,7 @@ def model.OperationPlan.Insts.CoreCloneClone.clone
     }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}]
-    Source: 'controller-core/src/model.rs', lines 338:9-338:14 -/
+    Source: 'controller-core/src/model.rs', lines 362:9-362:14 -/
 @[reducible]
 def model.OperationPlan.Insts.CoreCloneClone : core.clone.Clone
   model.OperationPlan := {
@@ -885,7 +885,7 @@ def model.OperationPlan.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}]
-    Source: 'controller-core/src/model.rs', lines 332:9-332:14 -/
+    Source: 'controller-core/src/model.rs', lines 355:9-355:14 -/
 @[reducible]
 def model.OperationKey.Insts.CoreCloneClone : core.clone.Clone
   model.OperationKey := {
@@ -893,14 +893,14 @@ def model.OperationKey.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}::clone]:
-    Source: 'controller-core/src/model.rs', lines 324:9-324:14
+    Source: 'controller-core/src/model.rs', lines 346:9-346:14
     Visibility: public -/
 def model.EffectStatus.Insts.CoreCloneClone.clone
   (self : model.EffectStatus) : Result model.EffectStatus := do
   ok self
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}]
-    Source: 'controller-core/src/model.rs', lines 324:9-324:14 -/
+    Source: 'controller-core/src/model.rs', lines 346:9-346:14 -/
 @[reducible]
 def model.EffectStatus.Insts.CoreCloneClone : core.clone.Clone
   model.EffectStatus := {
@@ -908,14 +908,14 @@ def model.EffectStatus.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone]:
-    Source: 'controller-core/src/model.rs', lines 48:9-48:14
+    Source: 'controller-core/src/model.rs', lines 54:9-54:14
     Visibility: public -/
 def model.SnapshotManifestRef.Insts.CoreCloneClone.clone
   (self : model.SnapshotManifestRef) : Result model.SnapshotManifestRef := do
   ok self
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone]:
-    Source: 'controller-core/src/model.rs', lines 181:9-181:14
+    Source: 'controller-core/src/model.rs', lines 199:9-199:14
     Visibility: public -/
 def model.Command.Insts.CoreCloneClone.clone
   (self : model.Command) : Result model.Command := do
@@ -1001,7 +1001,7 @@ def model.Command.Insts.CoreCloneClone.clone
     ok (model.Command.CleanupSlot si i nsi)
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}::clone]:
-    Source: 'controller-core/src/model.rs', lines 292:9-292:14
+    Source: 'controller-core/src/model.rs', lines 311:9-311:14
     Visibility: public -/
 def model.LogicalEffectId.Insts.CoreCloneClone.clone
   (self : model.LogicalEffectId) : Result model.LogicalEffectId := do
@@ -1009,7 +1009,7 @@ def model.LogicalEffectId.Insts.CoreCloneClone.clone
   ok { command := c }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}::clone]:
-    Source: 'controller-core/src/model.rs', lines 297:9-297:14
+    Source: 'controller-core/src/model.rs', lines 317:9-317:14
     Visibility: public -/
 def model.EffectId.Insts.CoreCloneClone.clone
   (self : model.EffectId) : Result model.EffectId := do
@@ -1018,14 +1018,14 @@ def model.EffectId.Insts.CoreCloneClone.clone
   ok { logical := lei, attempt := i }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}]
-    Source: 'controller-core/src/model.rs', lines 297:9-297:14 -/
+    Source: 'controller-core/src/model.rs', lines 317:9-317:14 -/
 @[reducible]
 def model.EffectId.Insts.CoreCloneClone : core.clone.Clone model.EffectId := {
   clone := model.EffectId.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}]
-    Source: 'controller-core/src/model.rs', lines 292:9-292:14 -/
+    Source: 'controller-core/src/model.rs', lines 311:9-311:14 -/
 @[reducible]
 def model.LogicalEffectId.Insts.CoreCloneClone : core.clone.Clone
   model.LogicalEffectId := {
@@ -1047,7 +1047,7 @@ def ids.SandboxId.Insts.CoreCloneClone : core.clone.Clone ids.SandboxId := {
 }
 
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::World}::clone]:
-    Source: 'controller-core/src/model.rs', lines 557:9-557:14
+    Source: 'controller-core/src/model.rs', lines 595:9-595:14
     Visibility: public -/
 def model.World.Insts.CoreCloneClone.clone
   (self : model.World) : Result model.World := do
@@ -1131,7 +1131,7 @@ def ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq
   ok (self = other)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKey> for sandbox_controller_core::model::OperationKey}::eq]:
-    Source: 'controller-core/src/model.rs', lines 332:29-332:38
+    Source: 'controller-core/src/model.rs', lines 355:29-355:38
     Visibility: public -/
 def model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
   (self : model.OperationKey) (other : model.OperationKey) : Result Bool := do
@@ -1144,7 +1144,7 @@ def model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKey> for sandbox_controller_core::model::OperationKey}]
-    Source: 'controller-core/src/model.rs', lines 332:29-332:38 -/
+    Source: 'controller-core/src/model.rs', lines 355:29-355:38 -/
 @[reducible]
 impl_def model.OperationKey.Insts.CoreCmpPartialEqOperationKey :
   core.cmp.PartialEq model.OperationKey model.OperationKey := {
@@ -1205,7 +1205,7 @@ def transition.mark_operation_outcome_unknown
     ok { next with sandboxes := s, operations := s1 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}::eq]:
-    Source: 'controller-core/src/model.rs', lines 97:29-97:38
+    Source: 'controller-core/src/model.rs', lines 109:29-109:38
     Visibility: public -/
 def model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
   (self : model.FailureKind) (other : model.FailureKind) : Result Bool := do
@@ -1214,7 +1214,7 @@ def model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
   ok (self1 = other1)
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}]
-    Source: 'controller-core/src/model.rs', lines 97:29-97:38 -/
+    Source: 'controller-core/src/model.rs', lines 109:29-109:38 -/
 @[reducible]
 impl_def model.FailureKind.Insts.CoreCmpPartialEqFailureKind :
   core.cmp.PartialEq model.FailureKind model.FailureKind := {
@@ -1224,7 +1224,7 @@ impl_def model.FailureKind.Insts.CoreCmpPartialEqFailureKind :
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationStatus> for sandbox_controller_core::model::OperationStatus}::eq]:
-    Source: 'controller-core/src/model.rs', lines 136:29-136:38
+    Source: 'controller-core/src/model.rs', lines 151:29-151:38
     Visibility: public -/
 def model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq
   (self : model.OperationStatus) (other : model.OperationStatus) :
@@ -1259,7 +1259,7 @@ def model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq
   else ok false
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}::eq]:
-    Source: 'controller-core/src/model.rs', lines 128:29-128:38
+    Source: 'controller-core/src/model.rs', lines 142:29-142:38
     Visibility: public -/
 def model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
   (self : model.OperationKind) (other : model.OperationKind) :
@@ -1270,7 +1270,7 @@ def model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
   ok (self1 = other1)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Operation> for sandbox_controller_core::model::Operation}::eq]:
-    Source: 'controller-core/src/model.rs', lines 145:29-145:38
+    Source: 'controller-core/src/model.rs', lines 161:29-161:38
     Visibility: public -/
 def model.Operation.Insts.CoreCmpPartialEqOperation.eq
   (self : model.Operation) (other : model.Operation) : Result Bool := do
@@ -1292,7 +1292,7 @@ def model.Operation.Insts.CoreCmpPartialEqOperation.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Operation> for sandbox_controller_core::model::Operation}]
-    Source: 'controller-core/src/model.rs', lines 145:29-145:38 -/
+    Source: 'controller-core/src/model.rs', lines 161:29-161:38 -/
 @[reducible]
 impl_def model.Operation.Insts.CoreCmpPartialEqOperation : core.cmp.PartialEq
   model.Operation model.Operation := {
@@ -1302,7 +1302,7 @@ impl_def model.Operation.Insts.CoreCmpPartialEqOperation : core.cmp.PartialEq
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationStatus> for sandbox_controller_core::model::OperationStatus}]
-    Source: 'controller-core/src/model.rs', lines 136:29-136:38 -/
+    Source: 'controller-core/src/model.rs', lines 151:29-151:38 -/
 @[reducible]
 impl_def model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus :
   core.cmp.PartialEq model.OperationStatus model.OperationStatus := {
@@ -1312,7 +1312,7 @@ impl_def model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus :
 }
 
 /-- [sandbox_controller_core::auxiliary::handle_rpc_timeout]:
-    Source: 'controller-core/src/auxiliary.rs', lines 116:0-140:1
+    Source: 'controller-core/src/auxiliary.rs', lines 117:0-141:1
     Visibility: public -/
 def auxiliary.handle_rpc_timeout
   (world : model.World) (sandbox : ids.SandboxId) :
@@ -1441,7 +1441,7 @@ def transition.authorized
       model.Actor.SystemController
 
 /-- [sandbox_controller_core::auxiliary::handle_exec]:
-    Source: 'controller-core/src/auxiliary.rs', lines 146:0-165:1
+    Source: 'controller-core/src/auxiliary.rs', lines 147:0-166:1
     Visibility: public -/
 def auxiliary.handle_exec
   (world : model.World) (actor : model.Actor) (sandbox : ids.SandboxId)
@@ -1470,7 +1470,7 @@ def auxiliary.handle_exec
     else ok (core.result.Result.Err auxiliary.AuxiliaryReject.Unauthorized)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Phase> for sandbox_controller_core::model::Phase}::eq]:
-    Source: 'controller-core/src/model.rs', lines 13:29-13:38
+    Source: 'controller-core/src/model.rs', lines 14:29-14:38
     Visibility: public -/
 def model.Phase.Insts.CoreCmpPartialEqPhase.eq
   (self : model.Phase) (other : model.Phase) : Result Bool := do
@@ -1479,7 +1479,7 @@ def model.Phase.Insts.CoreCmpPartialEqPhase.eq
   ok (self1 = other1)
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Phase> for sandbox_controller_core::model::Phase}]
-    Source: 'controller-core/src/model.rs', lines 13:29-13:38 -/
+    Source: 'controller-core/src/model.rs', lines 14:29-14:38 -/
 @[reducible]
 impl_def model.Phase.Insts.CoreCmpPartialEqPhase : core.cmp.PartialEq
   model.Phase model.Phase := {
@@ -1489,7 +1489,7 @@ impl_def model.Phase.Insts.CoreCmpPartialEqPhase : core.cmp.PartialEq
 }
 
 /-- [sandbox_controller_core::auxiliary::handle_file_read]:
-    Source: 'controller-core/src/auxiliary.rs', lines 171:0-196:1
+    Source: 'controller-core/src/auxiliary.rs', lines 172:0-197:1
     Visibility: public -/
 def auxiliary.handle_file_read
   (world : model.World) (actor : model.Actor) (sandbox : ids.SandboxId)
@@ -1534,7 +1534,7 @@ def auxiliary.handle_file_read
         else ok (core.result.Result.Err auxiliary.AuxiliaryReject.Unauthorized)
 
 /-- [sandbox_controller_core::auxiliary::handle_file_write]:
-    Source: 'controller-core/src/auxiliary.rs', lines 202:0-227:1
+    Source: 'controller-core/src/auxiliary.rs', lines 203:0-228:1
     Visibility: public -/
 def auxiliary.handle_file_write
   (world : model.World) (actor : model.Actor) (sandbox : ids.SandboxId)
@@ -1579,7 +1579,7 @@ def auxiliary.handle_file_write
         else ok (core.result.Result.Err auxiliary.AuxiliaryReject.Unauthorized)
 
 /-- [sandbox_controller_core::auxiliary::handle_ingress]:
-    Source: 'controller-core/src/auxiliary.rs', lines 233:0-253:1
+    Source: 'controller-core/src/auxiliary.rs', lines 234:0-254:1
     Visibility: public -/
 def auxiliary.handle_ingress
   (world : model.World) (actor : model.Actor) (sandbox : ids.SandboxId)
@@ -1611,7 +1611,7 @@ def auxiliary.handle_ingress
     else ok (core.result.Result.Err auxiliary.AuxiliaryReject.Unauthorized)
 
 /-- [sandbox_controller_core::auxiliary::handle_egress]:
-    Source: 'controller-core/src/auxiliary.rs', lines 259:0-279:1
+    Source: 'controller-core/src/auxiliary.rs', lines 260:0-280:1
     Visibility: public -/
 def auxiliary.handle_egress
   (world : model.World) (sandbox : ids.SandboxId) (vm : ids.VmId)
@@ -1643,7 +1643,7 @@ def auxiliary.handle_egress
     else ok (core.result.Result.Err auxiliary.AuxiliaryReject.CapabilityDenied)
 
 /-- [sandbox_controller_core::auxiliary::handle_access]:
-    Source: 'controller-core/src/auxiliary.rs', lines 285:0-304:1
+    Source: 'controller-core/src/auxiliary.rs', lines 286:0-305:1
     Visibility: public -/
 def auxiliary.handle_access
   (world : model.World) (input : auxiliary.AccessInput) :
@@ -1663,7 +1663,7 @@ def auxiliary.handle_access
     auxiliary.handle_egress world sandbox vm slot destination
 
 /-- [sandbox_controller_core::controller::protocol_decision]:
-    Source: 'controller-core/src/controller.rs', lines 59:0-64:1 -/
+    Source: 'controller-core/src/controller.rs', lines 60:0-65:1 -/
 def controller.protocol_decision
   (decision : request.Decision) : Result controller.ControllerDecision := do
   ok
@@ -1673,7 +1673,7 @@ def controller.protocol_decision
     }
 
 /-- [sandbox_controller_core::controller::effect_decision]:
-    Source: 'controller-core/src/controller.rs', lines 66:0-71:1 -/
+    Source: 'controller-core/src/controller.rs', lines 67:0-72:1 -/
 def controller.effect_decision
   (decision : effect.EffectDecision) :
   Result controller.ControllerDecision
@@ -1685,7 +1685,7 @@ def controller.effect_decision
     }
 
 /-- [sandbox_controller_core::controller::worker_decision]:
-    Source: 'controller-core/src/controller.rs', lines 73:0-78:1 -/
+    Source: 'controller-core/src/controller.rs', lines 74:0-79:1 -/
 def controller.worker_decision
   (decision : worker.WorkerDecision) :
   Result controller.ControllerDecision
@@ -1697,7 +1697,7 @@ def controller.worker_decision
     }
 
 /-- [sandbox_controller_core::controller::publication_decision]:
-    Source: 'controller-core/src/controller.rs', lines 80:0-85:1 -/
+    Source: 'controller-core/src/controller.rs', lines 81:0-86:1 -/
 def controller.publication_decision
   (decision : publication.PublicationDecision) :
   Result controller.ControllerDecision
@@ -1709,7 +1709,7 @@ def controller.publication_decision
     }
 
 /-- [sandbox_controller_core::controller::auxiliary_decision]:
-    Source: 'controller-core/src/controller.rs', lines 87:0-92:1 -/
+    Source: 'controller-core/src/controller.rs', lines 88:0-93:1 -/
 def controller.auxiliary_decision
   (decision : auxiliary.AuxiliaryDecision) :
   Result controller.ControllerDecision
@@ -1721,7 +1721,7 @@ def controller.auxiliary_decision
     }
 
 /-- [sandbox_controller_core::controller::runtime_decision]:
-    Source: 'controller-core/src/controller.rs', lines 94:0-99:1 -/
+    Source: 'controller-core/src/controller.rs', lines 95:0-100:1 -/
 def controller.runtime_decision
   (decision : recovery_monitor.RuntimeDecision) :
   Result controller.ControllerDecision
@@ -1836,7 +1836,7 @@ def worker.insert_unique
     value 0#usize
 
 /-- [sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::ResourceIndex}::default]:
-    Source: 'controller-core/src/model.rs', lines 353:23-353:30
+    Source: 'controller-core/src/model.rs', lines 378:23-378:30
     Visibility: public -/
 def model.ResourceIndex.Insts.CoreDefaultDefault.default
   : Result model.ResourceIndex := do
@@ -1846,7 +1846,7 @@ def model.ResourceIndex.Insts.CoreDefaultDefault.default
   ok { vms := v, slots := v1, snapshots := v2 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::ResourceIndex}]
-    Source: 'controller-core/src/model.rs', lines 353:23-353:30 -/
+    Source: 'controller-core/src/model.rs', lines 378:23-378:30 -/
 @[reducible]
 def model.ResourceIndex.Insts.CoreDefaultDefault : core.default.Default
   model.ResourceIndex := {
@@ -1854,7 +1854,7 @@ def model.ResourceIndex.Insts.CoreDefaultDefault : core.default.Default
 }
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::World}::resource_index]:
-    Source: 'controller-core/src/model.rs', lines 618:4-623:5
+    Source: 'controller-core/src/model.rs', lines 693:4-698:5
     Visibility: public -/
 def model.World.resource_index
   (self : model.World) (sandbox : ids.SandboxId) :
@@ -1942,7 +1942,7 @@ def worker.put_vm
   ok { world1 with vms := s }
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::Command}::epoch]:
-    Source: 'controller-core/src/model.rs', lines 276:4-289:5
+    Source: 'controller-core/src/model.rs', lines 295:4-308:5
     Visibility: public -/
 def model.Command.epoch (self : model.Command) : Result (Option Std.U64) := do
   match self with
@@ -1959,7 +1959,7 @@ def model.Command.epoch (self : model.Command) : Result (Option Std.U64) := do
   | model.Command.CleanupSlot _ _ _ => ok none
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::Command}::sandbox]:
-    Source: 'controller-core/src/model.rs', lines 259:4-273:5
+    Source: 'controller-core/src/model.rs', lines 278:4-292:5
     Visibility: public -/
 def model.Command.sandbox (self : model.Command) : Result ids.SandboxId := do
   match self with
@@ -2107,7 +2107,7 @@ def store.Store.contains_key
   ok (core.option.Option.is_some o)
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::initial]:
-    Source: 'controller-core/src/model.rs', lines 305:4-310:5
+    Source: 'controller-core/src/model.rs', lines 326:4-331:5
     Visibility: public -/
 def model.EffectId.initial
   (command : model.Command) : Result model.EffectId := do
@@ -2121,7 +2121,7 @@ def ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq
   ok (self = other)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef> for sandbox_controller_core::model::SnapshotManifestRef}::eq]:
-    Source: 'controller-core/src/model.rs', lines 48:29-48:38
+    Source: 'controller-core/src/model.rs', lines 54:29-54:38
     Visibility: public -/
 def model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
   (self : model.SnapshotManifestRef) (other : model.SnapshotManifestRef) :
@@ -2138,7 +2138,7 @@ def ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
   ok (self = other)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}::eq]:
-    Source: 'controller-core/src/model.rs', lines 53:29-53:38
+    Source: 'controller-core/src/model.rs', lines 60:29-60:38
     Visibility: public -/
 def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
   (self : model.RestoreSource) (other : model.RestoreSource) :
@@ -2154,7 +2154,7 @@ def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}]
-    Source: 'controller-core/src/model.rs', lines 53:29-53:38 -/
+    Source: 'controller-core/src/model.rs', lines 60:29-60:38 -/
 @[reducible]
 impl_def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource :
   core.cmp.PartialEq model.RestoreSource model.RestoreSource := {
@@ -2164,7 +2164,7 @@ impl_def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource :
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef> for sandbox_controller_core::model::SnapshotManifestRef}]
-    Source: 'controller-core/src/model.rs', lines 48:29-48:38 -/
+    Source: 'controller-core/src/model.rs', lines 54:29-54:38 -/
 @[reducible]
 impl_def model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef :
   core.cmp.PartialEq model.SnapshotManifestRef model.SnapshotManifestRef := {
@@ -2181,7 +2181,7 @@ def ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq
   ok (self = other)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}::eq]:
-    Source: 'controller-core/src/model.rs', lines 43:29-43:38
+    Source: 'controller-core/src/model.rs', lines 48:29-48:38
     Visibility: public -/
 def model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
   (self : model.FilePolicyRef) (other : model.FilePolicyRef) :
@@ -2191,7 +2191,7 @@ def model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
     other.digest
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}]
-    Source: 'controller-core/src/model.rs', lines 43:29-43:38 -/
+    Source: 'controller-core/src/model.rs', lines 48:29-48:38 -/
 @[reducible]
 impl_def model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef :
   core.cmp.PartialEq model.FilePolicyRef model.FilePolicyRef := {
@@ -2220,7 +2220,7 @@ impl_def ids.FsId.Insts.CoreCmpPartialEqFsId : core.cmp.PartialEq ids.FsId
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Command> for sandbox_controller_core::model::Command}::eq]:
-    Source: 'controller-core/src/model.rs', lines 181:23-181:32
+    Source: 'controller-core/src/model.rs', lines 199:23-199:32
     Visibility: public -/
 def model.Command.Insts.CoreCmpPartialEqCommand.eq
   (self : model.Command) (other : model.Command) : Result Bool := do
@@ -2577,7 +2577,7 @@ def model.Command.Insts.CoreCmpPartialEqCommand.eq
   else ok false
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}::eq]:
-    Source: 'controller-core/src/model.rs', lines 292:23-292:32
+    Source: 'controller-core/src/model.rs', lines 311:23-311:32
     Visibility: public -/
 def model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
   (self : model.LogicalEffectId) (other : model.LogicalEffectId) :
@@ -2586,7 +2586,7 @@ def model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
   model.Command.Insts.CoreCmpPartialEqCommand.eq self.command other.command
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}::eq]:
-    Source: 'controller-core/src/model.rs', lines 297:23-297:32
+    Source: 'controller-core/src/model.rs', lines 317:23-317:32
     Visibility: public -/
 def model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
   (self : model.EffectId) (other : model.EffectId) : Result Bool := do
@@ -2598,7 +2598,7 @@ def model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}]
-    Source: 'controller-core/src/model.rs', lines 297:23-297:32 -/
+    Source: 'controller-core/src/model.rs', lines 317:23-317:32 -/
 @[reducible]
 impl_def model.EffectId.Insts.CoreCmpPartialEqEffectId : core.cmp.PartialEq
   model.EffectId model.EffectId := {
@@ -2608,7 +2608,7 @@ impl_def model.EffectId.Insts.CoreCmpPartialEqEffectId : core.cmp.PartialEq
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}]
-    Source: 'controller-core/src/model.rs', lines 292:23-292:32 -/
+    Source: 'controller-core/src/model.rs', lines 311:23-311:32 -/
 @[reducible]
 impl_def model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId :
   core.cmp.PartialEq model.LogicalEffectId model.LogicalEffectId := {
@@ -2762,7 +2762,7 @@ def worker.apply_start_fence
   ok { next with worker_fences := s }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}::eq]:
-    Source: 'controller-core/src/model.rs', lines 23:29-23:38
+    Source: 'controller-core/src/model.rs', lines 25:29-25:38
     Visibility: public -/
 def model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
   (self : model.VmStatus) (other : model.VmStatus) : Result Bool := do
@@ -2816,7 +2816,7 @@ def worker.indexed_no_executing_vm
   worker.indexed_no_executing_vm_loop world index 0#usize
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}::eq]:
-    Source: 'controller-core/src/model.rs', lines 32:29-32:38
+    Source: 'controller-core/src/model.rs', lines 35:29-35:38
     Visibility: public -/
 def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
   (self : model.SnapshotStage) (other : model.SnapshotStage) :
@@ -2947,7 +2947,7 @@ def worker.fence_can_advance
     else ok false
 
 /-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop body 0:
-    Source: 'controller-core/src/store.rs', lines 62:8-69:5
+    Source: 'controller-core/src/store.rs', lines 61:8-68:5
     Visibility: public -/
 @[rust_loop_body]
 def store.Store.get_copy_loop.body
@@ -2969,7 +2969,7 @@ def store.Store.get_copy_loop.body
   else ok (done none)
 
 /-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop 0:
-    Source: 'controller-core/src/store.rs', lines 62:8-69:5
+    Source: 'controller-core/src/store.rs', lines 61:8-68:5
     Visibility: public -/
 @[rust_loop]
 def store.Store.get_copy_loop
@@ -2983,7 +2983,7 @@ def store.Store.get_copy_loop
     index
 
 /-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]:
-    Source: 'controller-core/src/store.rs', lines 60:4-69:5
+    Source: 'controller-core/src/store.rs', lines 59:4-68:5
     Visibility: public -/
 @[reducible]
 def store.Store.get_copy
@@ -2995,7 +2995,7 @@ def store.Store.get_copy
   store.Store.get_copy_loop corecmpPartialEqInst self key 0#usize
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::marker::Copy for sandbox_controller_core::model::LogicalEffectRecord}]
-    Source: 'controller-core/src/model.rs', lines 378:16-378:20 -/
+    Source: 'controller-core/src/model.rs', lines 406:16-406:20 -/
 @[reducible]
 def model.LogicalEffectRecord.Insts.CoreMarkerCopy : core.marker.Copy
   model.LogicalEffectRecord := {
@@ -3060,7 +3060,7 @@ def worker.contains
   worker.contains_loop corecmpPartialEqInst values value 0#usize
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::WorkerFence> for sandbox_controller_core::model::WorkerFence}::eq]:
-    Source: 'controller-core/src/model.rs', lines 460:29-460:38
+    Source: 'controller-core/src/model.rs', lines 496:29-496:38
     Visibility: public -/
 def model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence.eq
   (self : model.WorkerFence) (other : model.WorkerFence) : Result Bool := do
@@ -3069,7 +3069,7 @@ def model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::WorkerFence> for sandbox_controller_core::model::WorkerFence}]
-    Source: 'controller-core/src/model.rs', lines 460:29-460:38 -/
+    Source: 'controller-core/src/model.rs', lines 496:29-496:38 -/
 @[reducible]
 impl_def model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence :
   core.cmp.PartialEq model.WorkerFence model.WorkerFence := {
@@ -3079,7 +3079,7 @@ impl_def model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence :
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}]
-    Source: 'controller-core/src/model.rs', lines 32:29-32:38 -/
+    Source: 'controller-core/src/model.rs', lines 35:29-35:38 -/
 @[reducible]
 impl_def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage :
   core.cmp.PartialEq model.SnapshotStage model.SnapshotStage := {
@@ -3089,7 +3089,7 @@ impl_def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage :
 }
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}]
-    Source: 'controller-core/src/model.rs', lines 23:29-23:38 -/
+    Source: 'controller-core/src/model.rs', lines 25:29-25:38 -/
 @[reducible]
 impl_def model.VmStatus.Insts.CoreCmpPartialEqVmStatus : core.cmp.PartialEq
   model.VmStatus model.VmStatus := {
@@ -4539,7 +4539,7 @@ def worker.handle_worker
     else ok (core.result.Result.Err worker.WorkerReject.NotQueued)
 
 /-- [sandbox_controller_core::scheduler::not_current_slot_check]:
-    Source: 'controller-core/src/scheduler.rs', lines 650:0-655:1 -/
+    Source: 'controller-core/src/scheduler.rs', lines 651:0-656:1 -/
 def scheduler.not_current_slot_check
   (world : model.World) (sandbox : ids.SandboxId) (slot : ids.NetSlotId) :
   Result Bool
@@ -4556,7 +4556,7 @@ def scheduler.not_current_slot_check
       slot)
 
 /-- [sandbox_controller_core::scheduler::handle_schedule_cleanup_slot]:
-    Source: 'controller-core/src/scheduler.rs', lines 663:0-719:1
+    Source: 'controller-core/src/scheduler.rs', lines 664:0-720:1
     Visibility: public -/
 def scheduler.handle_schedule_cleanup_slot
   (world : model.World) (sandbox : ids.SandboxId) (generation : Std.U64)
@@ -4671,7 +4671,7 @@ def scheduler.handle_schedule_cleanup_slot
   else ok (core.result.Result.Err scheduler.SchedulerReject.ControllerDown)
 
 /-- [sandbox_controller_core::scheduler::not_current_vm_check]:
-    Source: 'controller-core/src/scheduler.rs', lines 582:0-587:1 -/
+    Source: 'controller-core/src/scheduler.rs', lines 583:0-588:1 -/
 def scheduler.not_current_vm_check
   (world : model.World) (sandbox : ids.SandboxId) (vm : ids.VmId) :
   Result Bool
@@ -4687,7 +4687,7 @@ def scheduler.not_current_vm_check
       ids.VmId.Insts.CoreCmpPartialEqVmId) record.current_vm (some vm)
 
 /-- [sandbox_controller_core::scheduler::handle_schedule_cleanup_vm]:
-    Source: 'controller-core/src/scheduler.rs', lines 595:0-648:1
+    Source: 'controller-core/src/scheduler.rs', lines 596:0-649:1
     Visibility: public -/
 def scheduler.handle_schedule_cleanup_vm
   (world : model.World) (sandbox : ids.SandboxId) (generation : Std.U64)
@@ -4798,7 +4798,7 @@ def scheduler.handle_schedule_cleanup_vm
   else ok (core.result.Result.Err scheduler.SchedulerReject.ControllerDown)
 
 /-- [sandbox_controller_core::scheduler::stoppable_vm_status]:
-    Source: 'controller-core/src/scheduler.rs', lines 57:0-62:1 -/
+    Source: 'controller-core/src/scheduler.rs', lines 58:0-63:1 -/
 def scheduler.stoppable_vm_status (status : model.VmStatus) : Result Bool := do
   match status with
   | model.VmStatus.Prepared => ok true
@@ -4808,7 +4808,7 @@ def scheduler.stoppable_vm_status (status : model.VmStatus) : Result Bool := do
   | model.VmStatus.Reclaimed => ok false
 
 /-- [sandbox_controller_core::effect::effect_succeeded_check]:
-    Source: 'controller-core/src/effect.rs', lines 231:0-250:1
+    Source: 'controller-core/src/effect.rs', lines 232:0-251:1
     Visibility: public -/
 def effect.effect_succeeded_check
   (world : model.World) (command : model.Command) : Result Bool := do
@@ -4838,7 +4838,7 @@ def effect.effect_succeeded_check
       | model.EffectOutcome.Failed _ => ok false
 
 /-- [sandbox_controller_core::scheduler::handle_schedule_stop_vm]:
-    Source: 'controller-core/src/scheduler.rs', lines 507:0-580:1
+    Source: 'controller-core/src/scheduler.rs', lines 508:0-581:1
     Visibility: public -/
 def scheduler.handle_schedule_stop_vm
   (world : model.World) (sandbox : ids.SandboxId) (generation : Std.U64)
@@ -4979,7 +4979,7 @@ def scheduler.handle_schedule_stop_vm
   else ok (core.result.Result.Err scheduler.SchedulerReject.ControllerDown)
 
 /-- [sandbox_controller_core::scheduler::handle_schedule_commit_snapshot]:
-    Source: 'controller-core/src/scheduler.rs', lines 441:0-499:1
+    Source: 'controller-core/src/scheduler.rs', lines 442:0-500:1
     Visibility: public -/
 def scheduler.handle_schedule_commit_snapshot
   (world : model.World) (sandbox : ids.SandboxId)
@@ -5071,7 +5071,7 @@ def scheduler.handle_schedule_commit_snapshot
   else ok (core.result.Result.Err scheduler.SchedulerReject.ControllerDown)
 
 /-- [sandbox_controller_core::scheduler::handle_schedule_seal_snapshot]:
-    Source: 'controller-core/src/scheduler.rs', lines 341:0-433:1
+    Source: 'controller-core/src/scheduler.rs', lines 342:0-434:1
     Visibility: public -/
 def scheduler.handle_schedule_seal_snapshot
   (world : model.World) (sandbox : ids.SandboxId) (snapshot : ids.SnapshotId)
@@ -5257,7 +5257,7 @@ def scheduler.handle_schedule_seal_snapshot
   else ok (core.result.Result.Err scheduler.SchedulerReject.ControllerDown)
 
 /-- [sandbox_controller_core::scheduler::usable_snapshot_check]:
-    Source: 'controller-core/src/scheduler.rs', lines 213:0-230:1 -/
+    Source: 'controller-core/src/scheduler.rs', lines 214:0-231:1 -/
 def scheduler.usable_snapshot_check
   (world : model.World) (sandbox : ids.SandboxId)
   (record : model.SandboxRecord) (source : model.RestoreSource) :
@@ -5301,7 +5301,7 @@ def scheduler.usable_snapshot_check
     else ok false
 
 /-- [sandbox_controller_core::scheduler::restore_source_ready_check]:
-    Source: 'controller-core/src/scheduler.rs', lines 232:0-240:1 -/
+    Source: 'controller-core/src/scheduler.rs', lines 233:0-241:1 -/
 def scheduler.restore_source_ready_check
   (world : model.World) (sandbox : ids.SandboxId)
   (record : model.SandboxRecord) :
@@ -5319,7 +5319,7 @@ def scheduler.restore_source_ready_check
     else ok false
 
 /-- [sandbox_controller_core::scheduler::handle_dispatch_prepare]:
-    Source: 'controller-core/src/scheduler.rs', lines 249:0-333:1
+    Source: 'controller-core/src/scheduler.rs', lines 250:0-334:1
     Visibility: public -/
 def scheduler.handle_dispatch_prepare
   (world : model.World) (sandbox : ids.SandboxId) (vm : ids.VmId)
@@ -5529,7 +5529,7 @@ impl_def ids.OperationId.Insts.CoreCmpPartialEqOperationId : core.cmp.PartialEq
 }
 
 /-- [sandbox_controller_core::scheduler::handle_reserve_pause_snapshot]:
-    Source: 'controller-core/src/scheduler.rs', lines 143:0-211:1
+    Source: 'controller-core/src/scheduler.rs', lines 144:0-212:1
     Visibility: public -/
 def scheduler.handle_reserve_pause_snapshot
   (world : model.World) (key : model.OperationKey) :
@@ -5692,7 +5692,7 @@ def transition.reserve_startup_resources
         { next with operation_plans := s, next_vm_id := i, next_slot_id := i1 })
 
 /-- [sandbox_controller_core::scheduler::handle_reserve_startup]:
-    Source: 'controller-core/src/scheduler.rs', lines 70:0-135:1
+    Source: 'controller-core/src/scheduler.rs', lines 71:0-136:1
     Visibility: public -/
 def scheduler.handle_reserve_startup
   (world : model.World) (key : model.OperationKey) :
@@ -5824,7 +5824,7 @@ def scheduler.handle_reserve_startup
   else ok (core.result.Result.Err scheduler.SchedulerReject.ControllerDown)
 
 /-- [sandbox_controller_core::scheduler::handle_scheduler]:
-    Source: 'controller-core/src/scheduler.rs', lines 726:0-749:1
+    Source: 'controller-core/src/scheduler.rs', lines 727:0-750:1
     Visibility: public -/
 def scheduler.handle_scheduler
   (world : model.World) (input : scheduler.SchedulerInput) :
@@ -5922,7 +5922,7 @@ impl_def ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest :
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectResult> for sandbox_controller_core::model::LogicalEffectResult}::eq]:
-    Source: 'controller-core/src/model.rs', lines 366:29-366:38
+    Source: 'controller-core/src/model.rs', lines 393:29-393:38
     Visibility: public -/
 def model.LogicalEffectResult.Insts.CoreCmpPartialEqLogicalEffectResult.eq
   (self : model.LogicalEffectResult) (other : model.LogicalEffectResult) :
@@ -5956,7 +5956,7 @@ def model.LogicalEffectResult.Insts.CoreCmpPartialEqLogicalEffectResult.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectResult> for sandbox_controller_core::model::LogicalEffectResult}]
-    Source: 'controller-core/src/model.rs', lines 366:29-366:38 -/
+    Source: 'controller-core/src/model.rs', lines 393:29-393:38 -/
 @[reducible]
 impl_def model.LogicalEffectResult.Insts.CoreCmpPartialEqLogicalEffectResult :
   core.cmp.PartialEq model.LogicalEffectResult model.LogicalEffectResult := {
@@ -5966,7 +5966,7 @@ impl_def model.LogicalEffectResult.Insts.CoreCmpPartialEqLogicalEffectResult :
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOrigin> for sandbox_controller_core::model::EffectOrigin}::eq]:
-    Source: 'controller-core/src/model.rs', lines 360:29-360:38
+    Source: 'controller-core/src/model.rs', lines 386:29-386:38
     Visibility: public -/
 def model.EffectOrigin.Insts.CoreCmpPartialEqEffectOrigin.eq
   (self : model.EffectOrigin) (other : model.EffectOrigin) : Result Bool := do
@@ -5989,7 +5989,7 @@ def model.EffectOrigin.Insts.CoreCmpPartialEqEffectOrigin.eq
   else ok false
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}::eq]:
-    Source: 'controller-core/src/model.rs', lines 318:29-318:38
+    Source: 'controller-core/src/model.rs', lines 339:29-339:38
     Visibility: public -/
 def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome.eq
   (self : model.EffectOutcome) (other : model.EffectOutcome) :
@@ -6015,7 +6015,7 @@ def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}]
-    Source: 'controller-core/src/model.rs', lines 318:29-318:38 -/
+    Source: 'controller-core/src/model.rs', lines 339:29-339:38 -/
 @[reducible]
 impl_def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome :
   core.cmp.PartialEq model.EffectOutcome model.EffectOutcome := {
@@ -6025,7 +6025,7 @@ impl_def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome :
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectStatus> for sandbox_controller_core::model::EffectStatus}::eq]:
-    Source: 'controller-core/src/model.rs', lines 324:29-324:38
+    Source: 'controller-core/src/model.rs', lines 346:29-346:38
     Visibility: public -/
 def model.EffectStatus.Insts.CoreCmpPartialEqEffectStatus.eq
   (self : model.EffectStatus) (other : model.EffectStatus) : Result Bool := do
@@ -6048,7 +6048,7 @@ def model.EffectStatus.Insts.CoreCmpPartialEqEffectStatus.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectStatus> for sandbox_controller_core::model::EffectStatus}]
-    Source: 'controller-core/src/model.rs', lines 324:29-324:38 -/
+    Source: 'controller-core/src/model.rs', lines 346:29-346:38 -/
 @[reducible]
 impl_def model.EffectStatus.Insts.CoreCmpPartialEqEffectStatus :
   core.cmp.PartialEq model.EffectStatus model.EffectStatus := {
@@ -6058,13 +6058,13 @@ impl_def model.EffectStatus.Insts.CoreCmpPartialEqEffectStatus :
 }
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::command]:
-    Source: 'controller-core/src/model.rs', lines 313:4-315:5
+    Source: 'controller-core/src/model.rs', lines 334:4-336:5
     Visibility: public -/
 def model.EffectId.command (self : model.EffectId) : Result model.Command := do
   ok self.logical.command
 
 /-- [sandbox_controller_core::request::supplied_compensation_evidence]:
-    Source: 'controller-core/src/request.rs', lines 463:0-491:1 -/
+    Source: 'controller-core/src/request.rs', lines 471:0-499:1 -/
 def request.supplied_compensation_evidence
   (world : model.World) (key : model.OperationKey) (epoch : Std.U64)
   (failure : model.FailureKind) (evidence : Option model.EffectId) :
@@ -6128,7 +6128,7 @@ def request.supplied_compensation_evidence
       else ok false
 
 /-- [sandbox_controller_core::request::handle_compensation]:
-    Source: 'controller-core/src/request.rs', lines 500:0-548:1
+    Source: 'controller-core/src/request.rs', lines 508:0-556:1
     Visibility: public -/
 def request.handle_compensation
   (world : model.World) (input : request.CompensationRequest) :
@@ -6264,7 +6264,7 @@ def request.handle_compensation
   else ok (core.result.Result.Err request.Reject.ControllerDown)
 
 /-- [sandbox_controller_core::request::handle_query]:
-    Source: 'controller-core/src/request.rs', lines 434:0-461:1
+    Source: 'controller-core/src/request.rs', lines 442:0-469:1
     Visibility: public -/
 def request.handle_query
   (world : model.World) (input : request.QueryRequest) :
@@ -6301,7 +6301,7 @@ def request.handle_query
     else ok (core.result.Result.Err request.Reject.Unauthorized)
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}]
-    Source: 'controller-core/src/model.rs', lines 128:29-128:38 -/
+    Source: 'controller-core/src/model.rs', lines 142:29-142:38 -/
 @[reducible]
 impl_def model.OperationKind.Insts.CoreCmpPartialEqOperationKind :
   core.cmp.PartialEq model.OperationKind model.OperationKind := {
@@ -6311,7 +6311,7 @@ impl_def model.OperationKind.Insts.CoreCmpPartialEqOperationKind :
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationInput> for sandbox_controller_core::model::OperationInput}::eq]:
-    Source: 'controller-core/src/model.rs', lines 79:23-79:32
+    Source: 'controller-core/src/model.rs', lines 90:23-90:32
     Visibility: public -/
 def model.OperationInput.Insts.CoreCmpPartialEqOperationInput.eq
   (self : model.OperationInput) (other : model.OperationInput) :
@@ -6365,7 +6365,7 @@ def model.OperationInput.Insts.CoreCmpPartialEqOperationInput.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationInput> for sandbox_controller_core::model::OperationInput}]
-    Source: 'controller-core/src/model.rs', lines 79:23-79:32 -/
+    Source: 'controller-core/src/model.rs', lines 90:23-90:32 -/
 @[reducible]
 impl_def model.OperationInput.Insts.CoreCmpPartialEqOperationInput :
   core.cmp.PartialEq model.OperationInput model.OperationInput := {
@@ -6375,7 +6375,7 @@ impl_def model.OperationInput.Insts.CoreCmpPartialEqOperationInput :
 }
 
 /-- [sandbox_controller_core::request::handle_replay]:
-    Source: 'controller-core/src/request.rs', lines 391:0-426:1
+    Source: 'controller-core/src/request.rs', lines 399:0-434:1
     Visibility: public -/
 def request.handle_replay
   (world : model.World) (input : request.ReplayRequest) :
@@ -6557,7 +6557,7 @@ def transition.store_new_operation
   ok { world with operations := s, operation_plans := s1 }
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::Authority}::without_resume]:
-    Source: 'controller-core/src/model.rs', lines 173:4-178:5
+    Source: 'controller-core/src/model.rs', lines 191:4-196:5
     Visibility: public -/
 def model.Authority.without_resume
   (self : model.Authority) : Result model.Authority := do
@@ -6658,7 +6658,7 @@ def transition.supersede_ready_check
     | model.OperationStatus.Failed _ => ok true
 
 /-- [sandbox_controller_core::request::handle_kill]:
-    Source: 'controller-core/src/request.rs', lines 338:0-382:1
+    Source: 'controller-core/src/request.rs', lines 346:0-390:1
     Visibility: public -/
 def request.handle_kill
   (world : model.World) (input : request.KillRequest) :
@@ -6771,7 +6771,7 @@ def transition.begin_resume
   transition.enqueue next1 (model.Command.InstallFence sandbox epoch false)
 
 /-- [sandbox_controller_core::request::usable_snapshot_check]:
-    Source: 'controller-core/src/request.rs', lines 259:0-276:1 -/
+    Source: 'controller-core/src/request.rs', lines 267:0-284:1 -/
 def request.usable_snapshot_check
   (world : model.World) (sandbox : ids.SandboxId)
   (record : model.SandboxRecord) (source : model.RestoreSource) :
@@ -6815,7 +6815,7 @@ def request.usable_snapshot_check
     else ok false
 
 /-- [sandbox_controller_core::request::handle_resume]:
-    Source: 'controller-core/src/request.rs', lines 283:0-331:1
+    Source: 'controller-core/src/request.rs', lines 291:0-339:1
     Visibility: public -/
 def request.handle_resume
   (world : model.World) (input : request.ResumeRequest) :
@@ -6939,7 +6939,7 @@ def transition.begin_pause
     record.generation vm)
 
 /-- [sandbox_controller_core::request::handle_pause]:
-    Source: 'controller-core/src/request.rs', lines 213:0-257:1
+    Source: 'controller-core/src/request.rs', lines 221:0-265:1
     Visibility: public -/
 def request.handle_pause
   (world : model.World) (input : request.PauseRequest) :
@@ -7060,7 +7060,7 @@ def transition.begin_create
   transition.enqueue next1 (model.Command.InstallFence sandbox 1#u64 false)
 
 /-- [sandbox_controller_core::request::handle_create]:
-    Source: 'controller-core/src/request.rs', lines 156:0-206:1
+    Source: 'controller-core/src/request.rs', lines 164:0-214:1
     Visibility: public -/
 def request.handle_create
   (world : model.World) (input : request.CreateRequest) :
@@ -7121,7 +7121,7 @@ def request.handle_create
   else ok (core.result.Result.Err request.Reject.ControllerDown)
 
 /-- [sandbox_controller_core::request::handle]:
-    Source: 'controller-core/src/request.rs', lines 555:0-565:1
+    Source: 'controller-core/src/request.rs', lines 563:0-573:1
     Visibility: public -/
 def request.handle
   (world : model.World) (input : request.Request) :
@@ -7138,7 +7138,7 @@ def request.handle
     request.handle_compensation world input1
 
 /-- [sandbox_controller_core::recovery_monitor::handle_duplicate_or_late_delivery]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 83:0-95:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 84:0-96:1
     Visibility: public -/
 def recovery_monitor.handle_duplicate_or_late_delivery
   (world : model.World) (effect : model.EffectId) :
@@ -7160,7 +7160,7 @@ def recovery_monitor.handle_duplicate_or_late_delivery
     ok (core.result.Result.Err recovery_monitor.RuntimeReject.EffectNotFound)
 
 /-- [sandbox_controller_core::recovery_monitor::handle_controller_recover]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 60:0-71:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 61:0-72:1
     Visibility: public -/
 def recovery_monitor.handle_controller_recover
   (world : model.World) :
@@ -7180,7 +7180,7 @@ def recovery_monitor.handle_controller_recover
       })
 
 /-- [sandbox_controller_core::recovery_monitor::handle_controller_crash]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 41:0-52:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 42:0-53:1
     Visibility: public -/
 def recovery_monitor.handle_controller_crash
   (world : model.World) :
@@ -7200,7 +7200,7 @@ def recovery_monitor.handle_controller_crash
       recovery_monitor.RuntimeReject.ControllerAlreadyDown)
 
 /-- [sandbox_controller_core::recovery_monitor::handle_runtime]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 102:0-113:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 103:0-114:1
     Visibility: public -/
 def recovery_monitor.handle_runtime
   (world : model.World) (input : recovery_monitor.RuntimeInput) :
@@ -7216,7 +7216,7 @@ def recovery_monitor.handle_runtime
     recovery_monitor.handle_duplicate_or_late_delivery world effect
 
 /-- [sandbox_controller_core::publication::recoverable_operation_kind]:
-    Source: 'controller-core/src/publication.rs', lines 540:0-545:1 -/
+    Source: 'controller-core/src/publication.rs', lines 541:0-546:1 -/
 def publication.recoverable_operation_kind
   (kind : model.OperationKind) : Result Bool := do
   match kind with
@@ -7226,7 +7226,7 @@ def publication.recoverable_operation_kind
   | model.OperationKind.Kill => ok false
 
 /-- [sandbox_controller_core::publication::update_operation_result]:
-    Source: 'controller-core/src/publication.rs', lines 147:0-160:1 -/
+    Source: 'controller-core/src/publication.rs', lines 148:0-161:1 -/
 def publication.update_operation_result
   (world : model.World) (sandbox : ids.SandboxId) (operation : model.Operation)
   (result : model.OperationResult) :
@@ -7247,7 +7247,7 @@ def publication.update_operation_result
     ok { world with operations := s }
 
 /-- [sandbox_controller_core::publication::publish_failure]:
-    Source: 'controller-core/src/publication.rs', lines 256:0-284:1 -/
+    Source: 'controller-core/src/publication.rs', lines 257:0-285:1 -/
 def publication.publish_failure
   (world : model.World) (sandbox : ids.SandboxId)
   (record : model.SandboxRecord) (failure : model.FailureKind) :
@@ -7284,7 +7284,7 @@ def publication.publish_failure
       operation (model.OperationResult.Failed failure)
 
 /-- [sandbox_controller_core::publication::stop_receipt_candidate]:
-    Source: 'controller-core/src/publication.rs', lines 83:0-113:1 -/
+    Source: 'controller-core/src/publication.rs', lines 84:0-114:1 -/
 def publication.stop_receipt_candidate
   (world : model.World) (sandbox : ids.SandboxId) (generation : Std.U64)
   (vm : ids.VmId) (candidate : model.EffectId) :
@@ -7317,7 +7317,7 @@ def publication.stop_receipt_candidate
   | model.Command.CleanupSlot _ _ _ => ok false
 
 /-- [sandbox_controller_core::publication::vm_has_stop_receipt]: loop body 0:
-    Source: 'controller-core/src/publication.rs', lines 122:4-129:1 -/
+    Source: 'controller-core/src/publication.rs', lines 123:4-130:1 -/
 @[rust_loop_body]
 def publication.vm_has_stop_receipt_loop.body
   (world : model.World) (sandbox : ids.SandboxId) (generation : Std.U64)
@@ -7338,7 +7338,7 @@ def publication.vm_has_stop_receipt_loop.body
   else ok (done false)
 
 /-- [sandbox_controller_core::publication::vm_has_stop_receipt]: loop 0:
-    Source: 'controller-core/src/publication.rs', lines 122:4-129:1 -/
+    Source: 'controller-core/src/publication.rs', lines 123:4-130:1 -/
 @[rust_loop]
 def publication.vm_has_stop_receipt_loop
   (world : model.World) (sandbox : ids.SandboxId) (generation : Std.U64)
@@ -7351,7 +7351,7 @@ def publication.vm_has_stop_receipt_loop
     cursor
 
 /-- [sandbox_controller_core::publication::vm_has_stop_receipt]:
-    Source: 'controller-core/src/publication.rs', lines 115:0-129:1 -/
+    Source: 'controller-core/src/publication.rs', lines 116:0-130:1 -/
 @[reducible]
 def publication.vm_has_stop_receipt
   (world : model.World) (sandbox : ids.SandboxId) (generation : Std.U64)
@@ -7361,7 +7361,7 @@ def publication.vm_has_stop_receipt
   publication.vm_has_stop_receipt_loop world sandbox generation vm 0#usize
 
 /-- [sandbox_controller_core::publication::indexed_stops_succeeded]: loop body 0:
-    Source: 'controller-core/src/publication.rs', lines 134:4-145:1 -/
+    Source: 'controller-core/src/publication.rs', lines 135:4-146:1 -/
 @[rust_loop_body]
 def publication.indexed_stops_succeeded_loop.body
   (world : model.World) (sandbox : ids.SandboxId) (index : model.ResourceIndex)
@@ -7388,7 +7388,7 @@ def publication.indexed_stops_succeeded_loop.body
   else ok (done true)
 
 /-- [sandbox_controller_core::publication::indexed_stops_succeeded]: loop 0:
-    Source: 'controller-core/src/publication.rs', lines 134:4-145:1 -/
+    Source: 'controller-core/src/publication.rs', lines 135:4-146:1 -/
 @[rust_loop]
 def publication.indexed_stops_succeeded_loop
   (world : model.World) (sandbox : ids.SandboxId) (index : model.ResourceIndex)
@@ -7401,14 +7401,14 @@ def publication.indexed_stops_succeeded_loop
     cursor
 
 /-- [sandbox_controller_core::publication::indexed_stops_succeeded]:
-    Source: 'controller-core/src/publication.rs', lines 131:0-145:1 -/
+    Source: 'controller-core/src/publication.rs', lines 132:0-146:1 -/
 def publication.indexed_stops_succeeded
   (world : model.World) (sandbox : ids.SandboxId) : Result Bool := do
   let index ← model.World.resource_index world sandbox
   publication.indexed_stops_succeeded_loop world sandbox index 0#usize
 
 /-- [sandbox_controller_core::publication::indexed_slots_closed]: loop body 0:
-    Source: 'controller-core/src/publication.rs', lines 71:4-81:1 -/
+    Source: 'controller-core/src/publication.rs', lines 72:4-82:1 -/
 @[rust_loop_body]
 def publication.indexed_slots_closed_loop.body
   (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
@@ -7433,7 +7433,7 @@ def publication.indexed_slots_closed_loop.body
   else ok (done true)
 
 /-- [sandbox_controller_core::publication::indexed_slots_closed]: loop 0:
-    Source: 'controller-core/src/publication.rs', lines 71:4-81:1 -/
+    Source: 'controller-core/src/publication.rs', lines 72:4-82:1 -/
 @[rust_loop]
 def publication.indexed_slots_closed_loop
   (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
@@ -7445,14 +7445,14 @@ def publication.indexed_slots_closed_loop
     cursor
 
 /-- [sandbox_controller_core::publication::indexed_slots_closed]:
-    Source: 'controller-core/src/publication.rs', lines 68:0-81:1 -/
+    Source: 'controller-core/src/publication.rs', lines 69:0-82:1 -/
 def publication.indexed_slots_closed
   (world : model.World) (sandbox : ids.SandboxId) : Result Bool := do
   let index ← model.World.resource_index world sandbox
   publication.indexed_slots_closed_loop world index 0#usize
 
 /-- [sandbox_controller_core::publication::indexed_vms_closed]: loop body 0:
-    Source: 'controller-core/src/publication.rs', lines 56:4-66:1 -/
+    Source: 'controller-core/src/publication.rs', lines 57:4-67:1 -/
 @[rust_loop_body]
 def publication.indexed_vms_closed_loop.body
   (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
@@ -7487,7 +7487,7 @@ def publication.indexed_vms_closed_loop.body
   else ok (done true)
 
 /-- [sandbox_controller_core::publication::indexed_vms_closed]: loop 0:
-    Source: 'controller-core/src/publication.rs', lines 56:4-66:1 -/
+    Source: 'controller-core/src/publication.rs', lines 57:4-67:1 -/
 @[rust_loop]
 def publication.indexed_vms_closed_loop
   (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
@@ -7499,14 +7499,14 @@ def publication.indexed_vms_closed_loop
     cursor
 
 /-- [sandbox_controller_core::publication::indexed_vms_closed]:
-    Source: 'controller-core/src/publication.rs', lines 53:0-66:1 -/
+    Source: 'controller-core/src/publication.rs', lines 54:0-67:1 -/
 def publication.indexed_vms_closed
   (world : model.World) (sandbox : ids.SandboxId) : Result Bool := do
   let index ← model.World.resource_index world sandbox
   publication.indexed_vms_closed_loop world index 0#usize
 
 /-- [sandbox_controller_core::publication::handle_publish_failure]:
-    Source: 'controller-core/src/publication.rs', lines 621:0-683:1
+    Source: 'controller-core/src/publication.rs', lines 622:0-684:1
     Visibility: public -/
 def publication.handle_publish_failure
   (world : model.World) (sandbox : ids.SandboxId) (failure : model.FailureKind)
@@ -7647,7 +7647,7 @@ def publication.handle_publish_failure
   else ok (core.result.Result.Err publication.PublicationReject.ControllerDown)
 
 /-- [sandbox_controller_core::publication::operation_pending_or_unknown]:
-    Source: 'controller-core/src/publication.rs', lines 531:0-538:1 -/
+    Source: 'controller-core/src/publication.rs', lines 532:0-539:1 -/
 def publication.operation_pending_or_unknown
   (status : model.OperationStatus) : Result Bool := do
   match status with
@@ -7658,7 +7658,7 @@ def publication.operation_pending_or_unknown
   | model.OperationStatus.Failed _ => ok false
 
 /-- [sandbox_controller_core::publication::publish_destroyed]:
-    Source: 'controller-core/src/publication.rs', lines 236:0-254:1 -/
+    Source: 'controller-core/src/publication.rs', lines 237:0-255:1 -/
 def publication.publish_destroyed
   (world : model.World) (sandbox : ids.SandboxId)
   (record : model.SandboxRecord) :
@@ -7694,7 +7694,7 @@ def publication.publish_destroyed
       operation model.OperationResult.Destroyed
 
 /-- [sandbox_controller_core::publication::handle_publish_destroyed]:
-    Source: 'controller-core/src/publication.rs', lines 553:0-614:1
+    Source: 'controller-core/src/publication.rs', lines 554:0-615:1
     Visibility: public -/
 def publication.handle_publish_destroyed
   (world : model.World) (sandbox : ids.SandboxId) :
@@ -7833,7 +7833,7 @@ def publication.handle_publish_destroyed
   else ok (core.result.Result.Err publication.PublicationReject.ControllerDown)
 
 /-- [sandbox_controller_core::publication::publish_paused]:
-    Source: 'controller-core/src/publication.rs', lines 204:0-234:1 -/
+    Source: 'controller-core/src/publication.rs', lines 205:0-235:1 -/
 def publication.publish_paused
   (world : model.World) (sandbox : ids.SandboxId)
   (record : model.SandboxRecord) (source : model.RestoreSource) :
@@ -7873,7 +7873,7 @@ def publication.publish_paused
       operation (model.OperationResult.Paused source)
 
 /-- [sandbox_controller_core::publication::handle_publish_paused]:
-    Source: 'controller-core/src/publication.rs', lines 426:0-529:1
+    Source: 'controller-core/src/publication.rs', lines 427:0-530:1
     Visibility: public -/
 def publication.handle_publish_paused
   (world : model.World) (sandbox : ids.SandboxId)
@@ -8103,7 +8103,7 @@ def publication.handle_publish_paused
   else ok (core.result.Result.Err publication.PublicationReject.ControllerDown)
 
 /-- [sandbox_controller_core::publication::publish_running]:
-    Source: 'controller-core/src/publication.rs', lines 162:0-202:1 -/
+    Source: 'controller-core/src/publication.rs', lines 163:0-203:1 -/
 def publication.publish_running
   (world : model.World) (sandbox : ids.SandboxId)
   (record : model.SandboxRecord) (slot_id : ids.NetSlotId)
@@ -8157,7 +8157,7 @@ def publication.publish_running
       (model.OperationResult.Running running.generation)
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::AppliedFilePolicy> for sandbox_controller_core::model::AppliedFilePolicy}::eq]:
-    Source: 'controller-core/src/model.rs', lines 452:29-452:38
+    Source: 'controller-core/src/model.rs', lines 487:29-487:38
     Visibility: public -/
 def model.AppliedFilePolicy.Insts.CoreCmpPartialEqAppliedFilePolicy.eq
   (self : model.AppliedFilePolicy) (other : model.AppliedFilePolicy) :
@@ -8180,7 +8180,7 @@ def model.AppliedFilePolicy.Insts.CoreCmpPartialEqAppliedFilePolicy.eq
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::AppliedFilePolicy> for sandbox_controller_core::model::AppliedFilePolicy}]
-    Source: 'controller-core/src/model.rs', lines 452:29-452:38 -/
+    Source: 'controller-core/src/model.rs', lines 487:29-487:38 -/
 @[reducible]
 impl_def model.AppliedFilePolicy.Insts.CoreCmpPartialEqAppliedFilePolicy :
   core.cmp.PartialEq model.AppliedFilePolicy model.AppliedFilePolicy := {
@@ -8190,7 +8190,7 @@ impl_def model.AppliedFilePolicy.Insts.CoreCmpPartialEqAppliedFilePolicy :
 }
 
 /-- [sandbox_controller_core::publication::handle_publish_running]:
-    Source: 'controller-core/src/publication.rs', lines 291:0-419:1
+    Source: 'controller-core/src/publication.rs', lines 292:0-420:1
     Visibility: public -/
 def publication.handle_publish_running
   (world : model.World) (sandbox : ids.SandboxId) :
@@ -8515,7 +8515,7 @@ def publication.handle_publish_running
   else ok (core.result.Result.Err publication.PublicationReject.ControllerDown)
 
 /-- [sandbox_controller_core::publication::handle_publication]:
-    Source: 'controller-core/src/publication.rs', lines 690:0-702:1
+    Source: 'controller-core/src/publication.rs', lines 691:0-703:1
     Visibility: public -/
 def publication.handle_publication
   (world : model.World) (input : publication.PublicationInput) :
@@ -8533,7 +8533,7 @@ def publication.handle_publication
     publication.handle_publish_failure world sandbox failure
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::FailureKind}::retryable]:
-    Source: 'controller-core/src/model.rs', lines 109:4-117:5
+    Source: 'controller-core/src/model.rs', lines 122:4-130:5
     Visibility: public -/
 def model.FailureKind.retryable (self : model.FailureKind) : Result Bool := do
   match self with
@@ -8545,7 +8545,7 @@ def model.FailureKind.retryable (self : model.FailureKind) : Result Bool := do
   | model.FailureKind.InternalFailure => ok true
 
 /-- [sandbox_controller_core::effect::finalize_logical_failure]:
-    Source: 'controller-core/src/effect.rs', lines 335:0-360:1
+    Source: 'controller-core/src/effect.rs', lines 336:0-361:1
     Visibility: public -/
 def effect.finalize_logical_failure
   (world : model.World) (logical : model.LogicalEffectId)
@@ -8588,7 +8588,7 @@ def effect.finalize_logical_failure
       ok { next with logical_effects := s }
 
 /-- [sandbox_controller_core::effect::handle_effect_finalize_failure]:
-    Source: 'controller-core/src/effect.rs', lines 496:0-531:1
+    Source: 'controller-core/src/effect.rs', lines 497:0-532:1
     Visibility: public -/
 def effect.handle_effect_finalize_failure
   (world : model.World) (logical : model.LogicalEffectId)
@@ -8677,7 +8677,7 @@ def effect.handle_effect_finalize_failure
   else ok (core.result.Result.Err effect.EffectReject.ControllerDown)
 
 /-- [sandbox_controller_core::effect::insert_unique]: loop body 1:
-    Source: 'controller-core/src/effect.rs', lines 53:4-56:5 -/
+    Source: 'controller-core/src/effect.rs', lines 54:4-57:5 -/
 @[rust_loop_body]
 def effect.insert_unique_loop0_loop0.body
   {T : Type} (corecloneCloneInst : core.clone.Clone T)
@@ -8697,7 +8697,7 @@ def effect.insert_unique_loop0_loop0.body
   else ok (done next)
 
 /-- [sandbox_controller_core::effect::insert_unique]: loop 1:
-    Source: 'controller-core/src/effect.rs', lines 53:4-56:5 -/
+    Source: 'controller-core/src/effect.rs', lines 54:4-57:5 -/
 @[rust_loop]
 def effect.insert_unique_loop0_loop0
   {T : Type} (corecloneCloneInst : core.clone.Clone T)
@@ -8710,7 +8710,7 @@ def effect.insert_unique_loop0_loop0
     (index, next)
 
 /-- [sandbox_controller_core::effect::insert_unique]: loop body 0:
-    Source: 'controller-core/src/effect.rs', lines 43:4-58:1 -/
+    Source: 'controller-core/src/effect.rs', lines 44:4-59:1 -/
 @[rust_loop_body]
 def effect.insert_unique_loop0.body
   {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
@@ -8736,7 +8736,7 @@ def effect.insert_unique_loop0.body
     ok (done next1)
 
 /-- [sandbox_controller_core::effect::insert_unique]: loop 0:
-    Source: 'controller-core/src/effect.rs', lines 43:4-58:1 -/
+    Source: 'controller-core/src/effect.rs', lines 44:4-59:1 -/
 @[rust_loop]
 def effect.insert_unique_loop0
   {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
@@ -8750,7 +8750,7 @@ def effect.insert_unique_loop0
     index
 
 /-- [sandbox_controller_core::effect::insert_unique]:
-    Source: 'controller-core/src/effect.rs', lines 41:0-58:1 -/
+    Source: 'controller-core/src/effect.rs', lines 42:0-59:1 -/
 @[reducible]
 def effect.insert_unique
   {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
@@ -8761,7 +8761,7 @@ def effect.insert_unique
     value 0#usize
 
 /-- [sandbox_controller_core::effect::start_next_attempt]:
-    Source: 'controller-core/src/effect.rs', lines 296:0-332:1
+    Source: 'controller-core/src/effect.rs', lines 297:0-333:1
     Visibility: public -/
 def effect.start_next_attempt
   (world : model.World) (logical : model.LogicalEffectId)
@@ -8841,7 +8841,7 @@ def effect.start_next_attempt
       else model.World.Insts.CoreCloneClone.clone world
 
 /-- [sandbox_controller_core::effect::handle_effect_retry]:
-    Source: 'controller-core/src/effect.rs', lines 441:0-490:1
+    Source: 'controller-core/src/effect.rs', lines 442:0-491:1
     Visibility: public -/
 def effect.handle_effect_retry
   (world : model.World) (logical : model.LogicalEffectId)
@@ -8940,7 +8940,7 @@ def effect.handle_effect_retry
   else ok (core.result.Result.Err effect.EffectReject.ControllerDown)
 
 /-- [sandbox_controller_core::effect::mark_effect_outcome_unknown]:
-    Source: 'controller-core/src/effect.rs', lines 289:0-293:1
+    Source: 'controller-core/src/effect.rs', lines 290:0-294:1
     Visibility: public -/
 def effect.mark_effect_outcome_unknown
   (world : model.World) (id : model.EffectId) : Result model.World := do
@@ -8951,7 +8951,7 @@ def effect.mark_effect_outcome_unknown
   ok { next with effects := s }
 
 /-- [sandbox_controller_core::effect::handle_effect_timeout]:
-    Source: 'controller-core/src/effect.rs', lines 419:0-434:1
+    Source: 'controller-core/src/effect.rs', lines 420:0-435:1
     Visibility: public -/
 def effect.handle_effect_timeout
   (world : model.World) (id : model.EffectId) :
@@ -8979,7 +8979,7 @@ def effect.handle_effect_timeout
       ok (core.result.Result.Err effect.EffectReject.NotDispatched)
 
 /-- [sandbox_controller_core::effect::acknowledge_effect]:
-    Source: 'controller-core/src/effect.rs', lines 268:0-286:1
+    Source: 'controller-core/src/effect.rs', lines 269:0-287:1
     Visibility: public -/
 def effect.acknowledge_effect
   (world : model.World) (id : model.EffectId) (outcome : model.EffectOutcome) :
@@ -9029,7 +9029,7 @@ def effect.acknowledge_effect
   ok { next1 with effect_keys := v, effects := s }
 
 /-- [sandbox_controller_core::effect::command_result_present]:
-    Source: 'controller-core/src/effect.rs', lines 65:0-226:1
+    Source: 'controller-core/src/effect.rs', lines 66:0-227:1
     Visibility: public -/
 def effect.command_result_present
   (world : model.World) (command : model.Command) : Result Bool := do
@@ -9261,7 +9261,7 @@ def effect.command_result_present
       else ok false
 
 /-- [sandbox_controller_core::effect::effect_outcome_valid]:
-    Source: 'controller-core/src/effect.rs', lines 253:0-258:1
+    Source: 'controller-core/src/effect.rs', lines 254:0-259:1
     Visibility: public -/
 def effect.effect_outcome_valid
   (world : model.World) (command : model.Command)
@@ -9276,7 +9276,7 @@ def effect.effect_outcome_valid
     ok (¬ b)
 
 /-- [sandbox_controller_core::effect::handle_effect_receipt]:
-    Source: 'controller-core/src/effect.rs', lines 386:0-413:1
+    Source: 'controller-core/src/effect.rs', lines 387:0-414:1
     Visibility: public -/
 def effect.handle_effect_receipt
   (world : model.World) (id : model.EffectId) (outcome : model.EffectOutcome) :
@@ -9326,7 +9326,7 @@ def effect.handle_effect_receipt
           { event := (model.Event.AcknowledgeEffect id outcome), next := w })
 
 /-- [sandbox_controller_core::effect::dispatch_effect]:
-    Source: 'controller-core/src/effect.rs', lines 261:0-265:1
+    Source: 'controller-core/src/effect.rs', lines 262:0-266:1
     Visibility: public -/
 def effect.dispatch_effect
   (world : model.World) (id : model.EffectId) : Result model.World := do
@@ -9337,7 +9337,7 @@ def effect.dispatch_effect
   ok { next with effects := s }
 
 /-- [sandbox_controller_core::effect::handle_effect_dispatch]:
-    Source: 'controller-core/src/effect.rs', lines 366:0-380:1
+    Source: 'controller-core/src/effect.rs', lines 367:0-381:1
     Visibility: public -/
 def effect.handle_effect_dispatch
   (world : model.World) (id : model.EffectId) :
@@ -9369,7 +9369,7 @@ def effect.handle_effect_dispatch
   else ok (core.result.Result.Err effect.EffectReject.ControllerDown)
 
 /-- [sandbox_controller_core::effect::handle_effect]:
-    Source: 'controller-core/src/effect.rs', lines 537:0-547:1
+    Source: 'controller-core/src/effect.rs', lines 538:0-548:1
     Visibility: public -/
 def effect.handle_effect
   (world : model.World) (input : effect.EffectInput) :
@@ -9386,7 +9386,7 @@ def effect.handle_effect
     effect.handle_effect_finalize_failure world logical failure
 
 /-- [sandbox_controller_core::controller::handle_controller]:
-    Source: 'controller-core/src/controller.rs', lines 107:0-157:1
+    Source: 'controller-core/src/controller.rs', lines 108:0-158:1
     Visibility: public -/
 def controller.handle_controller
   (world : model.World) (input : controller.ControllerInput) :
@@ -9471,7 +9471,7 @@ def store.Store.Insts.CoreDefaultDefault.default
   ok { entries := (alloc.vec.Vec.new (K × V)) }
 
 /-- [sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::World}::default]:
-    Source: 'controller-core/src/model.rs', lines 581:4-603:5
+    Source: 'controller-core/src/model.rs', lines 619:4-641:5
     Visibility: public -/
 def model.World.Insts.CoreDefaultDefault.default : Result model.World := do
   let s ←
@@ -9529,13 +9529,13 @@ def model.World.Insts.CoreDefaultDefault.default : Result model.World := do
     }
 
 /-- [sandbox_controller_core::model::initial_world]:
-    Source: 'controller-core/src/model.rs', lines 612:0-614:1
+    Source: 'controller-core/src/model.rs', lines 650:0-652:1
     Visibility: public -/
 def model.initial_world : Result model.World := do
   model.World.Insts.CoreDefaultDefault.default
 
 /-- [sandbox_controller_core::recovery_monitor::monitor_observation]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 129:0-144:1 -/
+    Source: 'controller-core/src/recovery_monitor.rs', lines 130:0-145:1 -/
 def recovery_monitor.monitor_observation
   (seen_terminal : Bool) (observation : Option recovery_monitor.SandboxView) :
   Result recovery_monitor.MonitorState
@@ -9556,7 +9556,7 @@ def recovery_monitor.monitor_observation
     else ok { accepted := true, seen_terminal := current.terminal }
 
 /-- [sandbox_controller_core::recovery_monitor::view]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 149:0-160:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 150:0-161:1
     Visibility: public -/
 def recovery_monitor.view
   (world : model.World) (sandbox : ids.SandboxId) :
@@ -9576,7 +9576,7 @@ def recovery_monitor.view
       })
 
 /-- [sandbox_controller_core::recovery_monitor::monitor_from]: loop body 0:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 170:4-179:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 171:4-180:1
     Visibility: public -/
 @[rust_loop_body]
 def recovery_monitor.monitor_from_loop.body
@@ -9596,7 +9596,7 @@ def recovery_monitor.monitor_from_loop.body
   else ok (done true)
 
 /-- [sandbox_controller_core::recovery_monitor::monitor_from]: loop 0:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 170:4-179:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 171:4-180:1
     Visibility: public -/
 @[rust_loop]
 def recovery_monitor.monitor_from_loop
@@ -9610,7 +9610,7 @@ def recovery_monitor.monitor_from_loop
     (seen_terminal, index)
 
 /-- [sandbox_controller_core::recovery_monitor::monitor_from]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 168:0-179:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 169:0-180:1
     Visibility: public -/
 @[reducible]
 def recovery_monitor.monitor_from
@@ -9621,7 +9621,7 @@ def recovery_monitor.monitor_from
   recovery_monitor.monitor_from_loop seen_terminal views 0#usize
 
 /-- [sandbox_controller_core::recovery_monitor::monitor]:
-    Source: 'controller-core/src/recovery_monitor.rs', lines 183:0-185:1
+    Source: 'controller-core/src/recovery_monitor.rs', lines 184:0-186:1
     Visibility: public -/
 def recovery_monitor.monitor
   (views : Slice (Option recovery_monitor.SandboxView)) : Result Bool := do

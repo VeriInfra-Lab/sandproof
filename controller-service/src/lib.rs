@@ -2,11 +2,16 @@
 
 //! Single-node durable journal and post-commit dispatch boundary.
 //!
-//! The service stores decisions made elsewhere. It does not decide sandbox
-//! lifecycle transitions, interpret opaque state bytes, or verify host claims.
+//! `ControllerJournal` delegates lifecycle decisions to the existing pure
+//! core and atomically persists accepted inputs, projections, and actions.
+//! The lower-level `Journal` remains an opaque persistence primitive, not a
+//! second production writer. Physical host claims require a trusted adapter.
 
+mod controller;
 mod dispatch;
 mod journal;
+
+pub use controller::{ControllerJournal, HostEvidence};
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
 pub use journal::{
@@ -45,6 +50,7 @@ impl CrashInjector for NeverCrash {
 
 #[derive(Debug)]
 pub enum JournalError {
+    Io(std::io::Error),
     Sqlite(SqliteError),
     CommitUncertain(SqliteError),
     Json(serde_json::Error),
@@ -56,11 +62,17 @@ pub enum JournalError {
     UnsupportedStore,
     CorruptStore,
     InjectedCrash(CrashPoint),
+    ControllerRejected(sandbox_controller_core::controller::ControllerReject),
+    ControllerBusy,
+    UnsupportedInput,
+    UnresolvedAction,
+    InvalidHostEvidence,
 }
 
 impl Display for JournalError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Io(error) => write!(formatter, "controller filesystem error: {error}"),
             Self::Sqlite(error) => write!(formatter, "sqlite journal error: {error}"),
             Self::CommitUncertain(error) => {
                 write!(
@@ -77,6 +89,19 @@ impl Display for JournalError {
             Self::UnsupportedStore => formatter.write_str("unsupported sqlite journal format"),
             Self::CorruptStore => formatter.write_str("corrupt sqlite journal record"),
             Self::InjectedCrash(point) => write!(formatter, "injected crash at {point:?}"),
+            Self::ControllerRejected(reason) => {
+                write!(formatter, "controller rejected: {reason:?}")
+            }
+            Self::ControllerBusy => formatter.write_str("another controller owns this database"),
+            Self::UnsupportedInput => {
+                formatter.write_str("input is not supported at this service boundary")
+            }
+            Self::UnresolvedAction => {
+                formatter.write_str("an earlier worker action must be reconciled first")
+            }
+            Self::InvalidHostEvidence => {
+                formatter.write_str("host evidence does not establish this command result")
+            }
         }
     }
 }
@@ -84,11 +109,18 @@ impl Display for JournalError {
 impl Error for JournalError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Io(error) => Some(error),
             Self::Sqlite(error) | Self::CommitUncertain(error) => Some(error),
             Self::Json(error) => Some(error),
             Self::Contract(error) => Some(error),
             _ => None,
         }
+    }
+}
+
+impl From<std::io::Error> for JournalError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
     }
 }
 
