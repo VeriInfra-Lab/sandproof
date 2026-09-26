@@ -11,7 +11,7 @@ mod controller;
 mod dispatch;
 mod journal;
 
-pub use controller::{ControllerJournal, HostEvidence};
+pub use controller::{AdmissionError, AdmissionLimits, ControllerJournal, HostEvidence, Lifetime};
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
 pub use journal::{
