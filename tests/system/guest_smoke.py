@@ -21,6 +21,71 @@ import time
 URL = "http://172.16.0.2:49983"
 
 
+def probe_edge_cases(sandbox, config):
+    """Exercise pinned SDK semantics without inventing a second data plane."""
+    import httpx
+    from e2b.sandbox.commands.command_handle import CommandExitException
+
+    # A timed-out stream is not evidence that its guest process never ran, or
+    # that the sandbox died. Do not automatically replay a timed-out shell.
+    try:
+        sandbox.commands.run("sleep 1; printf t >> /tmp/timeout-once", timeout=0.2)
+    except Exception as error:
+        if not any(marker in type(error).__name__.lower()
+                   for marker in ("timeout", "deadline")):
+            raise AssertionError(f"unexpected command timeout error: {type(error).__name__}") from error
+    else:
+        raise AssertionError("command stream did not respect the explicit timeout")
+    assert sandbox.commands.run("printf alive").stdout == "alive"
+
+    pending = sandbox.commands.run("sleep 30", background=True)
+    assert pending.kill() is True
+    try:
+        pending.wait()
+    except CommandExitException:
+        pass
+    else:
+        raise AssertionError("explicitly killed command returned successful exit")
+
+    # Closing a streaming connection is not a request to kill or re-execute.
+    pending = sandbox.commands.run("sleep 1; printf reconnect-ok", background=True)
+    pid = pending.pid
+    pending.disconnect()
+    reconnected = sandbox.commands.connect(pid)
+    assert reconnected.pid == pid
+    assert reconnected.wait().stdout == "reconnect-ok"
+
+    output = sandbox.commands.run(
+        "python3 -c 'import sys; sys.stdout.write(\"X\" * 1048576); "
+        "sys.stderr.write(\"E\" * 262144)'"
+    )
+    assert len(output.stdout) == 1048576 and set(output.stdout) == {"X"}
+    assert len(output.stderr) == 262144 and set(output.stderr) == {"E"}
+
+    # The same absolute path on the host and in the guest names different
+    # storage; the test also checks the host sentinel after every VM exits.
+    host_marker = config["host_marker"]
+    assert sandbox.commands.run(f"test ! -e {host_marker}").exit_code == 0
+    sandbox.files.write(host_marker, "guest-only\n")
+    assert sandbox.files.read(host_marker) == "guest-only\n"
+    assert sandbox.files.read("/tmp/input.txt") == "real guest file\n"
+    path_statuses = {}
+    with httpx.Client(base_url=URL, trust_env=False, timeout=5) as client:
+        headers = {"X-Access-Token": config["token"]}
+        for label, suspicious in (("nul", "\x00"),
+                                  ("proc_root", "/proc/1/root" + host_marker),
+                                  ("traversal", "/tmp/../../" + host_marker.lstrip("/"))):
+            response = client.get("/files", params={"path": suspicious}, headers=headers)
+            path_statuses[label] = response.status_code
+            if label == "nul":
+                assert response.status_code >= 400
+            else:
+                assert response.status_code < 500, (suspicious, response.status_code)
+            assert b"host-only sentinel" not in response.content
+    assert sandbox.files.read("/tmp/input.txt") == "real guest file\n"
+    return path_statuses
+
+
 def probe(config):
     import httpx
     from e2b import AsyncSandbox, Sandbox
@@ -111,12 +176,15 @@ def probe(config):
         assert await asynchronous.files.read("/tmp/async-input.txt") == "async file\n"
 
     asyncio.run(async_client_checks())
+    path_statuses = probe_edge_cases(sandbox, config) if config.get("edge_cases") else {}
     print(json.dumps({
         "resource_id": config["id"], "sdk_version": "2.51.0", "envd_version": "0.9.0",
         "pre_init_wrong_token_rejected": True, "wrong_file_and_command_token_rejected": True,
         "command_cwd_env_user_exit_background": True, "files_read_write_list_info": True,
         "async_background_wait_and_files": True,
         "host_marker_not_visible": True, "guest_command_cgroup": cgroup,
+        "edge_cases": bool(config.get("edge_cases")),
+        "malformed_file_statuses": path_statuses,
     }))
 
 
@@ -136,7 +204,8 @@ def orchestrate(args):
         for index in range(2):
             resource_id = f"sp-envd-{secrets.token_hex(6)}"
             token = secrets.token_urlsafe(32)
-            config = {"id": resource_id, "token": token, "host_marker": str(marker)}
+            config = {"id": resource_id, "token": token, "host_marker": str(marker),
+                      "edge_cases": index == 0}
             environment = {
                 key: value for key, value in os.environ.items()
                 if not key.startswith("E2B_")
@@ -167,6 +236,7 @@ def orchestrate(args):
                 assert not (Path(args.chroot_base) / Path(args.firecracker).name / config["id"]).exists()
             except Exception as error:
                 cleanup_errors.append(f"{config['id']}: {error}")
+        assert marker.read_text() == "host-only sentinel", "guest file operation changed host data"
         marker.unlink()
         with image.open("rb") as stream:
             assert hashlib.file_digest(stream, "sha256").hexdigest() == before
