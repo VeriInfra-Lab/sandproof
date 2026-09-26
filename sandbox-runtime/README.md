@@ -1,8 +1,8 @@
-# Firecracker 运行层（B01；B02 网络原型）
+# Firecracker 运行层与来宾联调（B01/B02）
 
 [项目蓝图](../docs/project-blueprint.md) · [模块合同](../docs/module-contracts.md) · [系统验收](../docs/testing-plan.md)
 
-此 crate 是节点执行器的起点，负责固定 Linux/KVM 主机上的 Firecracker/jailer 启停、进程身份观察和私有磁盘清理。可选的 B02 原型会为每台 VM 自动创建独立 Linux 网络空间和 TAP，仅配置一条 `172.16.0.0/30` 私有链路，不添加默认路由；停止并核对精确 VM 进程后，按已记录的网络空间 inode 回收。它**尚未**部署 envd，也不提供 E2B API、命令/文件通道或多租户授权；`vmm_running` 仅表示 Firecracker 报告 VM 正在运行，**不等于来宾服务就绪，更不能直接发布控制器的 Running**。后续分别由 [#6](https://github.com/ningZhang-cs/sandproof/issues/6)、[#8](https://github.com/ningZhang-cs/sandproof/issues/8)、[#7](https://github.com/ningZhang-cs/sandproof/issues/7) 和 [#12](https://github.com/ningZhang-cs/sandproof/issues/12) 接通。
+此 crate 是节点执行器的起点，负责固定 Linux/KVM 主机上的 Firecracker/jailer 启停、进程身份观察和私有磁盘清理。每台 VM 可拥有独立 Linux 网络空间和 TAP，仅配置一条 `172.16.0.0/30` 私有链路，不添加默认路由；停止并核对精确 VM 进程后，按已记录的网络空间 inode 回收。配套脚本可制备固定 envd 来宾镜像，并用原 E2B SDK 实测来宾命令和文件操作。控制器持久动作、对外 E2B API 和多租户授权仍待接通；`vmm_running` 仅表示 Firecracker 报告 VM 正在运行，**不等于来宾服务就绪，更不能直接发布控制器的 Running**。相关工作由 [#6](https://github.com/ningZhang-cs/sandproof/issues/6)、[#8](https://github.com/ningZhang-cs/sandproof/issues/8)、[#7](https://github.com/ningZhang-cs/sandproof/issues/7) 和 [#12](https://github.com/ningZhang-cs/sandproof/issues/12) 跟踪。
 
 运行器要求调用者为 root，jailer、Firecracker、内核、基础 ext4 和 jailer 基目录的每级路径均由 root 拥有且不可由其他用户修改。基础盘在每次启动时复制到独立 jail 中；调用者必须为不同 VM 分配不同非 root UID/GID。当前 CLI 是开发诊断工具，不是常驻控制服务；从短命 SSH 会话单独执行 `launch` 不能保证 VM 在会话结束后继续存活。
 
@@ -19,4 +19,29 @@ sudo ./target/debug/sandproof-vm smoke \
 
 若需复现实机私有链路，用同样参数调用 `smoke-net`，并在末尾追加 `/run/netns/<同一资源编号>`。此诊断模式使用代码中固定的**公开测试用**令牌摘要，只能验证 Firecracker 的网络和 MMDS 配置，不能作为正式服务凭据。运行器自行创建网络空间和 TAP，验证来宾可达后按编号清理网络空间和私有磁盘；基础镜像不被修改。实测过的网络模式仍依赖 CI 镜像预装的 `fcnet.service`，它不是可部署任务镜像。
 
-失败清理尚不完整：若进程在记录写入前或网络空间创建后、inode 记录写入前崩溃，编号会保留给人工核对，不能自动重试或宣称资源已回收。网络模式还未接入控制器持久动作、来宾服务和 SDK 数据通道，因此 #6、#8、#7 的验收都不能因此勾选。
+失败清理尚不完整：若进程在记录写入前或网络空间创建后、inode 记录写入前崩溃，编号会保留给人工核对，不能自动重试或宣称资源已回收。测试脚本的 `finally` 收尾不能替代服务崩溃恢复。
+
+## 固定 envd 与真实 SDK 测试
+
+[`tools/build_ci_guest.py`](../tools/build_ci_guest.py) 只接收已固定指纹的 Firecracker CI 基础盘和 envd 二进制。它新建 ext4 副本，用 debugfs 安装程序及开机服务，并检查文件内容、启动链接和文件系统；不挂载镜像、不运行来宾程序。基础盘和已有输出均不被改写。envd 源码固定为 `e2b-dev/runtime@f455fd58fa3f289e78ce1de690c35968d8d29322`，程序报告版本 `0.9.0`；构建时使用 Go 1.27.1、Linux amd64、CGO 关闭。具体二进制与基础盘 SHA-256 由脚本固定。输出镜像包含新 inode 时间戳，脚本记录每次输出指纹，不承诺磁盘字节逐次完全相同。
+
+```sh
+python3 tools/build_ci_guest.py --base /absolute/base.ext4 \
+  --envd /absolute/pinned-envd --output /absolute/new-guest.ext4
+```
+
+将输出放入运行器要求的 root 拥有、不可由其他用户修改的目录后，在独立 Linux/KVM 测试机运行：
+
+```sh
+uv sync --locked --project tests/compat
+cargo build -p sandbox-runtime --locked
+sudo tests/compat/.venv/bin/python tests/system/guest_smoke.py \
+  --runtime ./target/debug/sandproof-vm \
+  --jailer /absolute/jailer --firecracker /absolute/firecracker \
+  --chroot-base /absolute/jailer-directory --kernel /absolute/vmlinux \
+  --rootfs /absolute/new-guest.ext4 --uid-base 22001
+```
+
+测试机须预留指定的两个非 root UID/GID，且不能同时运行另一轮使用相同 UID/GID 的测试。脚本为两个同时存活的 VM 分别生成随机令牌，启动前只把摘要放入 MMDS；原始令牌经测试进程标准输入交给私有空间内的探针，不出现在命令行或结果日志。先确认错误令牌不能抢先初始化，再完成合法初始化；原 SDK 验证命令的目录、环境变量、用户、输出、退出码、后台等待，以及文件读写和目录查询。异步 SDK 路径另行实测，两个 VM 对同一系统路径的写入必须互不影响。最后核验同一进程停止、私有盘和网络回收，以及基础盘指纹不变。
+
+`launch-net`、`observe-net`、`stop-net`、`cleanup-net` 为该测试提供诊断入口，参数与 `smoke-net` 相同，但要求环境变量 `SANDBOX_ENVD_TOKEN_SHA512`。`launch-net` 保留串口日志，整轮测试应留在同一个受监督的宿主会话中。该测试直接使用 SDK 构造器连接已创建的来宾，**没有测试公共 create/kill API 或 Harbor**。镜像沿用 Firecracker CI 系统及其测试配置，不是生产任务镜像，也不包含 Dockerfile/OCI 构建、外网策略或完整资源限制验收。新增运行层、制备工具和 envd 不在现有 Lean 证明范围内。
