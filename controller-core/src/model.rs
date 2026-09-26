@@ -655,8 +655,23 @@ impl World {
     /// Read-only integration views. They do not permit constructing or
     /// mutating a World outside the controller reducer.
     #[must_use]
+    pub fn sandbox_records(&self) -> &[(SandboxId, SandboxRecord)] {
+        self.sandboxes.entries()
+    }
+
+    #[must_use]
     pub fn sandbox_record(&self, sandbox: SandboxId) -> Option<&SandboxRecord> {
         self.sandboxes.get(&sandbox)
+    }
+
+    #[must_use]
+    pub fn vm_record(&self, vm: VmId) -> Option<&Vm> {
+        self.vms.get(&vm)
+    }
+
+    #[must_use]
+    pub fn slot_record(&self, slot: NetSlotId) -> Option<&NetSlot> {
+        self.net_slots.get(&slot)
     }
 
     #[must_use]
