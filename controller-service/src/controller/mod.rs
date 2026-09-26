@@ -1,8 +1,11 @@
 //! Durable integration of the existing pure reducer. The database stores
 //! accepted inputs, not a second implementation of lifecycle decisions.
 
+mod admission;
 mod identity;
 mod storage;
+
+pub use admission::{AdmissionError, AdmissionLimits, Lifetime};
 
 use crate::{
     CrashInjector, CrashPoint, DispatchResult, Journal, JournalError, WorkerTransportError,
@@ -86,17 +89,24 @@ impl ControllerJournal {
                 "CREATE TABLE controller_meta (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, namespace TEXT NOT NULL);
                  CREATE TABLE controller_inputs (sequence INTEGER PRIMARY KEY, input_json BLOB NOT NULL);
                  CREATE TABLE controller_effect_keys (id INTEGER PRIMARY KEY, logical_json BLOB NOT NULL UNIQUE);
-                 CREATE TABLE controller_receipt_history (sequence INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL REFERENCES outbox(id), receipt_json BLOB NOT NULL);"
+                 CREATE TABLE controller_receipt_history (sequence INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL REFERENCES outbox(id), receipt_json BLOB NOT NULL);
+                 CREATE TABLE sandbox_lifetimes (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), owner_id TEXT NOT NULL, deadline_ms INTEGER NOT NULL, disk_bytes INTEGER NOT NULL CHECK(disk_bytes > 0));"
             )?;
-            transaction.execute("INSERT INTO controller_meta VALUES (1, 1, ?1)", [namespace])?;
+            transaction.execute("INSERT INTO controller_meta VALUES (1, 2, ?1)", [namespace])?;
         }
         let (version, stored): (i64, String) = transaction.query_row(
             "SELECT version, namespace FROM controller_meta WHERE id=1",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if version != 1 || stored != namespace {
+        if !(version == 1 || version == 2) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
+        }
+        if version == 1 {
+            transaction.execute_batch(
+                "CREATE TABLE sandbox_lifetimes (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), owner_id TEXT NOT NULL, deadline_ms INTEGER NOT NULL, disk_bytes INTEGER NOT NULL CHECK(disk_bytes > 0));
+                 UPDATE controller_meta SET version=2 WHERE id=1;"
+            )?;
         }
         storage::load_world(&transaction)?;
         transaction
