@@ -43,6 +43,7 @@ pub enum PortError {
     QuotaExceeded,
     Busy,
     OutcomeUnknown,
+    Failed,
 }
 
 impl PortError {
@@ -53,7 +54,7 @@ impl PortError {
             Self::Conflict => StatusCode::CONFLICT,
             Self::QuotaExceeded => StatusCode::TOO_MANY_REQUESTS,
             Self::Busy => StatusCode::SERVICE_UNAVAILABLE,
-            Self::OutcomeUnknown => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::OutcomeUnknown | Self::Failed => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

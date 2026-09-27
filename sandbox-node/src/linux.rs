@@ -451,6 +451,21 @@ impl LinuxWorker {
         Ok(self.secret(sandbox)?.token)
     }
 
+    /// A missing secret is distinguishable from a malformed or untrusted one.
+    /// # Errors
+    /// Refuses to treat a corrupt credential as safe to replace.
+    pub fn has_secret(&self, sandbox: core::SandboxId) -> NodeResult<bool> {
+        let path = self.secret_path(sandbox);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+            Ok(_) => {
+                self.secret(sandbox)?;
+                Ok(true)
+            }
+        }
+    }
+
     /// Execute one already claimed action. Any physical uncertainty becomes an
     /// Unknown receipt, never a fabricated success or an automatic retry.
     /// # Errors
@@ -673,7 +688,6 @@ impl LinuxWorker {
             vm_gid: uid,
             vcpu_count: self.config.vcpu_count,
             memory_mib: self.config.memory_mib,
-            daemonize: true,
             private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
             access_token_hash: Some(secret.sha512),
         })?)
@@ -1203,16 +1217,15 @@ fn hash_token(token: &str) -> NodeResult<String> {
 }
 
 fn write_new_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)?;
+    let parent = path.parent().ok_or("missing state parent")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    file.as_file()
+        .set_permissions(fs::Permissions::from_mode(0o600))?;
     serde_json::to_writer(&mut file, value)?;
     file.flush()?;
-    file.sync_all()?;
-    File::open(path.parent().ok_or("missing state parent")?)?.sync_all()?;
+    file.as_file().sync_all()?;
+    file.persist_noclobber(path)?;
+    File::open(parent)?.sync_all()?;
     Ok(())
 }
 
@@ -1231,7 +1244,7 @@ fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::require_absent;
+    use super::{require_absent, write_new_json};
 
     #[test]
     fn dangling_symlink_is_not_mistaken_for_cleaned_resource() {
@@ -1240,5 +1253,22 @@ mod tests {
         std::os::unix::fs::symlink(directory.path().join("missing"), &link).unwrap();
         assert!(require_absent(&link).is_err());
         assert!(require_absent(&directory.path().join("missing")).is_ok());
+    }
+
+    #[test]
+    fn new_host_record_is_published_atomically_without_overwrite() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("secret.json");
+        let first = serde_json::json!({"token": "first"});
+        write_new_json(&path, &first).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(),
+            first
+        );
+        assert!(write_new_json(&path, &serde_json::json!({"token": "second"})).is_err());
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(),
+            first
+        );
     }
 }

@@ -19,7 +19,10 @@ pub use journal::{
     AcceptedWrite, DispatchState, Journal, RecordedReceipt, StorageSettings, StoredOperation,
     StoredSandbox,
 };
-pub use workflow::{create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1};
+pub use workflow::{
+    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, finish_compensating_create_v1,
+    kill_v1,
+};
 
 use rusqlite::Error as SqliteError;
 use sandproof_protocol::ContractError;
@@ -68,6 +71,7 @@ pub enum JournalError {
     ControllerBusy,
     UnsupportedInput,
     UnresolvedAction,
+    OperationFailed,
     InvalidHostEvidence,
 }
 
@@ -97,6 +101,9 @@ impl Display for JournalError {
             Self::ControllerBusy => formatter.write_str("another controller owns this database"),
             Self::UnsupportedInput => {
                 formatter.write_str("input is not supported at this service boundary")
+            }
+            Self::OperationFailed => {
+                formatter.write_str("accepted operation failed and was compensated")
             }
             Self::UnresolvedAction => {
                 formatter.write_str("an earlier worker action must be reconciled first")

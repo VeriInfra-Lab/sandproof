@@ -4,9 +4,9 @@ use support::*;
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, JournalError, NeverCrash, create_v1,
-    finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
+    finish_accepted_kill_v1, finish_admitted_create_v1, finish_compensating_create_v1, kill_v1,
 };
-use sandproof_protocol::{UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
+use sandproof_protocol::{FailureCode, UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 use tempfile::TempDir;
 
 fn setup() -> (TempDir, ControllerJournal) {
@@ -129,6 +129,147 @@ fn unknown_host_result_prevents_running_publication() {
         core::Phase::Starting
     );
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+}
+
+#[test]
+fn definitive_create_failure_revokes_stops_and_publishes_failed() {
+    let (_directory, mut journal) = setup();
+    let mut stopped = false;
+    let result = create_v1(&mut journal, create_request(), &mut |action| {
+        let outcome = if matches!(
+            action.command.command(),
+            core::Command::ConfigureNetwork { .. }
+        ) {
+            WorkOutcome::DefinitiveFailure {
+                code: FailureCode::PolicyRejected,
+                retryable: false,
+                partial: None,
+            }
+        } else {
+            stopped |= matches!(action.command.command(), core::Command::StopVm { .. });
+            return worker(action);
+        };
+        Ok(WorkReceipt::<FakeHostEvidence> {
+            identity: action.identity.clone(),
+            outcome,
+        })
+    });
+    assert!(
+        matches!(result, Err(JournalError::OperationFailed)),
+        "{result:?}"
+    );
+    assert!(stopped);
+    let world = journal.world().unwrap();
+    let record = world.sandbox_record(SANDBOX).unwrap();
+    assert_eq!(record.phase, core::Phase::Destroyed);
+    assert_eq!(record.effective, core::Authority::Closed);
+    assert_eq!(
+        record.current_operation.unwrap().status,
+        core::OperationStatus::Failed(core::FailureKind::PolicyFailure)
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+}
+
+#[test]
+fn clean_retryable_create_failure_uses_next_attempt_once() {
+    let (_directory, mut journal) = setup();
+    let mut network_attempts = Vec::new();
+    let result = create_v1(&mut journal, create_request(), &mut |action| {
+        if matches!(
+            action.command.command(),
+            core::Command::ConfigureNetwork { .. }
+        ) {
+            network_attempts.push(action.command.attempt);
+            if network_attempts.len() == 1 {
+                return Ok(WorkReceipt::<FakeHostEvidence> {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::DefinitiveFailure {
+                        code: FailureCode::ResourceUnavailable,
+                        retryable: true,
+                        partial: None,
+                    },
+                });
+            }
+        }
+        worker(action)
+    })
+    .unwrap();
+    assert_eq!(
+        result.sandbox_record(SANDBOX).unwrap().phase,
+        core::Phase::Running
+    );
+    assert_eq!(network_attempts, vec![0, 1]);
+}
+
+#[test]
+fn compensation_stop_reply_lost_requires_observation_before_failed_publication() {
+    let (directory, mut journal) = setup();
+    let lost = create_v1(&mut journal, create_request(), &mut |action| {
+        if matches!(
+            action.command.command(),
+            core::Command::ConfigureNetwork { .. }
+        ) {
+            return Ok(WorkReceipt::<FakeHostEvidence> {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::DefinitiveFailure {
+                    code: FailureCode::PolicyRejected,
+                    retryable: false,
+                    partial: None,
+                },
+            });
+        }
+        if matches!(action.command.command(), core::Command::StopVm { .. }) {
+            return Ok(WorkReceipt::<FakeHostEvidence> {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
+        worker(action)
+    });
+    assert!(matches!(lost, Err(JournalError::UnresolvedAction)));
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(SANDBOX)
+            .unwrap()
+            .phase,
+        core::Phase::Revoking
+    );
+    drop(journal);
+
+    let mut reopened =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let uncertain = reopened.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::StopVm { .. }
+    ));
+    assert_eq!(
+        reopened
+            .reconcile_uncertain(&mut |action| Some(success(action)))
+            .unwrap(),
+        1
+    );
+    let completed =
+        finish_compensating_create_v1(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
+    assert_eq!(
+        completed.sandbox_record(SANDBOX).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(
+        completed
+            .sandbox_record(SANDBOX)
+            .unwrap()
+            .current_operation
+            .unwrap()
+            .status,
+        core::OperationStatus::Failed(core::FailureKind::PolicyFailure)
+    );
 }
 
 #[test]

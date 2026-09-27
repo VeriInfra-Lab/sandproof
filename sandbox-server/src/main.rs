@@ -84,6 +84,10 @@ mod linux {
                 .map_err(|_| PortError::Busy)
         }
 
+        fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
+            self.0.has_secret(sandbox).map_err(|_| PortError::Busy)
+        }
+
         fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
             self.0.token_for(sandbox).map_err(|_| PortError::Busy)
         }
