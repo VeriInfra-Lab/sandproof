@@ -237,6 +237,22 @@ impl LinuxWorker {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                 Err(error) => return Err(error.into()),
             };
+            // An extant namespace is not evidence that its firewall still
+            // enforces the policy. A live (or unobservable) VM must retain
+            // the exact pre-launch guard across controller/worker restarts.
+            // Incomplete, definitely stopped launches are handled by the
+            // separate exact-resource reclamation path instead.
+            if process
+                .as_ref()
+                .is_some_and(|observed| observed.state != VmState::Stopped)
+            {
+                let observed_inode = self
+                    .runtime(binding.sandbox, binding.vm)?
+                    .observe_private_network(&vm_name)?;
+                if network_inode != Some(observed_inode) {
+                    return Err("live VM network guard or namespace identity changed".into());
+                }
+            }
             let disk = self
                 .config
                 .chroot_base

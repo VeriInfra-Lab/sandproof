@@ -3,6 +3,7 @@
 //! Opt-in, root-only KVM test. It never invents a host success receipt.
 //! A failure intentionally leaves exact resource claims for inspection.
 
+use rustix::process::{Signal, getpid, kill_process};
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     ControllerJournal, CrashInjector, CrashPoint, DispatchResult, JournalError, NeverCrash,
@@ -14,9 +15,11 @@ use std::env;
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Read;
+use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
-use std::process::Command as Process;
+use std::process::{Command as Process, Stdio};
 
 fn required(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("missing operator setting {name}"))
@@ -50,6 +53,21 @@ fn test_token() -> String {
         write!(&mut token, "{value:02x}").unwrap();
     }
     token
+}
+
+fn update_guest_guard(namespace: &str, script: &str) {
+    let mut child = Process::new("/usr/bin/ip")
+        .args(["netns", "exec", namespace, "/usr/sbin/nft", "-f", "-"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(script.as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
 }
 
 fn test_create_request(config: &NodeConfig) -> core::CreateRequest {
@@ -166,6 +184,22 @@ fn create_and_kill_use_real_host_receipts() {
     assert!(inventory.slots[0].disk_inode.is_some());
     let vm_name = format!("vm-{namespace}-{}", resources.vms[0].0);
     assert!(PathBuf::from(format!("/run/netns/{vm_name}")).exists());
+    // Even an extra restrictive rule is a changed policy. The next startup
+    // inventory must reject it, rather than treating the namespace inode as
+    // proof that the original guard still exists. Both changes are atomic
+    // nft transactions; the test never opens an unguarded interval.
+    update_guest_guard(
+        &vm_name,
+        "add rule inet sandproof_guard guest_out iifname \"tap0\" drop\n",
+    );
+    assert!(worker.inventory().is_err());
+    update_guest_guard(
+        &vm_name,
+        "flush chain inet sandproof_guard guest_out\n\
+         add rule inet sandproof_guard guest_out iifname \"tap0\" ct state established,related accept\n\
+         add rule inet sandproof_guard guest_out iifname \"tap0\" drop\n",
+    );
+    assert_eq!(worker.inventory().unwrap().slots.len(), 1);
     let lost = kill_v1(
         &mut journal,
         core::KillRequest {
@@ -296,19 +330,25 @@ fn create_and_kill_use_real_host_receipts() {
     assert!(worker.inventory().unwrap().unbound_networks.is_empty());
 }
 
-struct ExitAfterWorker;
+struct TerminateAfterWorker {
+    sigkill: bool,
+}
 
-impl CrashInjector for ExitAfterWorker {
+impl CrashInjector for TerminateAfterWorker {
     fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
         if point == CrashPoint::AfterWorkerCall {
-            // No Rust destructors or receipt commit run in the worker process.
+            // Neither termination path runs destructors or commits a receipt.
+            if self.sigkill {
+                kill_process(getpid(), Signal::KILL).unwrap();
+                unreachable!("SIGKILL returned to the worker");
+            }
             std::process::exit(91);
         }
         Ok(())
     }
 }
 
-fn exit_child(stage: &str) {
+fn exit_child(stage: &str, sigkill: bool) {
     let config = test_config();
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal =
@@ -323,35 +363,32 @@ fn exit_child(stage: &str) {
                 ));
                 worker.execute(action)
             },
-            &mut ExitAfterWorker,
+            &mut TerminateAfterWorker { sigkill },
         )
         .unwrap();
     panic!("worker child did not exit at the injected boundary");
 }
 
-fn spawn_exit_child(stage: &str) {
+fn spawn_exit_child(stage: &str, test_name: &str, sigkill: bool) {
     let output = Process::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "real_worker_process_exit_reconciles_prepare_and_stop",
-            "--ignored",
-            "--nocapture",
-        ])
+        .args(["--exact", test_name, "--ignored", "--nocapture"])
         .env("SANDPROOF_HOST_EXIT_CHILD", stage)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(91), "{stage}: {output:?}");
+    if sigkill {
+        assert_eq!(output.status.signal(), Some(9), "{stage}: {output:?}");
+    } else {
+        assert_eq!(output.status.code(), Some(91), "{stage}: {output:?}");
+    }
 }
 
-#[test]
-#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
 #[expect(
     clippy::too_many_lines,
-    reason = "real worker process exits separately after VM launch and exact stop, before either receipt is committed"
+    reason = "real worker process terminates separately after VM launch and exact stop, before either receipt is committed"
 )]
-fn real_worker_process_exit_reconciles_prepare_and_stop() {
+fn worker_termination_reconciles_prepare_and_stop(test_name: &str, sigkill: bool) {
     if let Ok(stage) = env::var("SANDPROOF_HOST_EXIT_CHILD") {
-        exit_child(&stage);
+        exit_child(&stage, sigkill);
         return;
     }
     let config = test_config();
@@ -400,7 +437,7 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
         .unwrap();
     drop(journal);
     drop(worker);
-    spawn_exit_child("prepare");
+    spawn_exit_child("prepare", test_name, sigkill);
 
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal =
@@ -488,7 +525,7 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
         .unwrap();
     drop(journal);
     drop(worker);
-    spawn_exit_child("stop");
+    spawn_exit_child("stop", test_name, sigkill);
 
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal =
@@ -538,4 +575,22 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
     assert!(inventory.slots[0].network_inode.is_none());
     assert!(inventory.slots[0].disk_inode.is_none());
     assert!(!PathBuf::from(format!("/run/netns/vm-{}-{}", config.namespace, vm.0)).exists());
+}
+
+#[test]
+#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+fn real_worker_process_exit_reconciles_prepare_and_stop() {
+    worker_termination_reconciles_prepare_and_stop(
+        "real_worker_process_exit_reconciles_prepare_and_stop",
+        false,
+    );
+}
+
+#[test]
+#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+fn real_worker_sigkill_reconciles_prepare_and_stop() {
+    worker_termination_reconciles_prepare_and_stop(
+        "real_worker_sigkill_reconciles_prepare_and_stop",
+        true,
+    );
 }

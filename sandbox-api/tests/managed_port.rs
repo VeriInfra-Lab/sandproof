@@ -12,7 +12,7 @@ use sandproof_api::{
 };
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, HostEvidence, NeverCrash, WorkerTransportError,
-    finish_admitted_create_v1,
+    finish_admitted_create_v1, kill_v1,
 };
 use sandproof_protocol::{
     ResourceEvidence, ResourceRef, UnknownReason, WorkAction, WorkOutcome, WorkReceipt,
@@ -47,6 +47,7 @@ struct FakeHost {
     secrets: BTreeMap<u64, String>,
     free_bytes: u64,
     observed_prepare: bool,
+    observed_stop: bool,
 }
 
 impl Default for FakeHost {
@@ -55,6 +56,7 @@ impl Default for FakeHost {
             secrets: BTreeMap::new(),
             free_bytes: 10_000,
             observed_prepare: false,
+            observed_stop: false,
         }
     }
 }
@@ -95,8 +97,10 @@ impl HostAdapter for FakeHost {
     }
 
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
-        if self.observed_prepare
-            && matches!(action.command.command(), core::Command::PrepareVm { .. })
+        if (self.observed_prepare
+            && matches!(action.command.command(), core::Command::PrepareVm { .. }))
+            || (self.observed_stop
+                && matches!(action.command.command(), core::Command::StopVm { .. }))
         {
             Some(WorkReceipt {
                 identity: action.identity.clone(),
@@ -329,6 +333,92 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
     assert_eq!(again.receipts_recovered, 0);
     assert_eq!(again.workflows_completed, 0);
     assert_eq!(again.unresolved_sandboxes, 0);
+}
+
+#[test]
+fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        config(),
+    );
+    let sandbox_id = port.create("1", request()).unwrap().sandbox_id;
+    drop(port);
+
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let sandbox = core::SandboxId(1);
+    let lost = kill_v1(
+        &mut journal,
+        core::KillRequest {
+            actor: core::Actor::Tenant(core::TenantId(1)),
+            sandbox,
+            operation: core::OperationId(2),
+        },
+        &mut |action| {
+            if matches!(action.command.command(), core::Command::StopVm { .. }) {
+                Ok(WorkReceipt::<Evidence> {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                })
+            } else {
+                FakeHost::default().execute(action)
+            }
+        },
+    );
+    assert!(matches!(
+        lost,
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    assert_ne!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::StopVm { .. }
+    ));
+    let late_stop = FakeHost::default().execute(&uncertain[0]).unwrap();
+    drop(journal);
+
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost {
+            observed_stop: true,
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let recovery = port.recover_on_startup().unwrap();
+    assert_eq!(recovery.receipts_recovered, 1);
+    assert_eq!(recovery.workflows_completed, 1);
+    assert_eq!(recovery.unresolved_sandboxes, 0);
+    assert_eq!(port.get("1", &sandbox_id), Err(PortError::NotFound));
+    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    drop(port);
+
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let destroyed = journal.world().unwrap();
+    assert_eq!(
+        destroyed.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(
+        journal.complete(&late_stop, &mut NeverCrash).unwrap(),
+        destroyed
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
 }
 
 fn request() -> CreateRequest {
