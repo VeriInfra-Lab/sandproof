@@ -656,47 +656,7 @@ impl Runtime {
                 "unexpected jail without process record",
             ));
         }
-        if let Some(namespace) = &self.config.private_netns {
-            let intent_path = claim.join("network-intent.json");
-            let intent: ResourceMarker = if path_present(&intent_path)? {
-                read_trusted_record(&intent_path)?
-            } else {
-                if path_present(namespace)? {
-                    return Err(RuntimeError::IdentityMismatch(
-                        "namespace exists without durable network intent",
-                    ));
-                }
-                ResourceMarker {
-                    resource_id: id.to_owned(),
-                }
-            };
-            if intent.resource_id != id {
-                return Err(RuntimeError::IdentityMismatch("network intent resource ID"));
-            }
-            if path_present(namespace)? {
-                check_trusted_path(namespace)?;
-                let metadata = fs::symlink_metadata(namespace)?;
-                if !metadata.is_file() || metadata.uid() != 0 {
-                    return Err(RuntimeError::IdentityMismatch("namespace handle type"));
-                }
-                let record_path = claim.join("network.json");
-                if path_present(&record_path)? {
-                    let record: NetworkRecord = read_trusted_record(&record_path)?;
-                    if record.resource_id != id || record.namespace_inode != metadata.ino() {
-                        return Err(RuntimeError::IdentityMismatch("namespace inode record"));
-                    }
-                }
-                let pids = Command::new("/usr/bin/ip")
-                    .args(["netns", "pids", id])
-                    .output()?;
-                if !pids.status.success() || !pids.stdout.is_empty() {
-                    return Err(RuntimeError::InvalidConfiguration(
-                        "namespace still contains a process or cannot be checked",
-                    ));
-                }
-                run_ip("delete aborted namespace", &["netns", "delete", id])?;
-            }
-        }
+        self.reclaim_unlaunched_network(id, &claim)?;
         let marker = claim.join("aborted.json");
         if path_present(&marker)? {
             let stored: ResourceMarker = read_trusted_record(&marker)?;
@@ -712,6 +672,52 @@ impl Runtime {
             )?;
         }
         Ok(())
+    }
+
+    fn reclaim_unlaunched_network(&self, id: &str, claim: &Path) -> Result<(), RuntimeError> {
+        let Some(namespace) = &self.config.private_netns else {
+            return Ok(());
+        };
+        let intent_path = claim.join("network-intent.json");
+        let intent: ResourceMarker = if path_present(&intent_path)? {
+            read_trusted_record(&intent_path)?
+        } else {
+            if path_present(namespace)? {
+                return Err(RuntimeError::IdentityMismatch(
+                    "namespace exists without durable network intent",
+                ));
+            }
+            ResourceMarker {
+                resource_id: id.to_owned(),
+            }
+        };
+        if intent.resource_id != id {
+            return Err(RuntimeError::IdentityMismatch("network intent resource ID"));
+        }
+        if !path_present(namespace)? {
+            return Ok(());
+        }
+        check_trusted_path(namespace)?;
+        let metadata = fs::symlink_metadata(namespace)?;
+        if !metadata.is_file() || metadata.uid() != 0 {
+            return Err(RuntimeError::IdentityMismatch("namespace handle type"));
+        }
+        let record_path = claim.join("network.json");
+        if path_present(&record_path)? {
+            let record: NetworkRecord = read_trusted_record(&record_path)?;
+            if record.resource_id != id || record.namespace_inode != metadata.ino() {
+                return Err(RuntimeError::IdentityMismatch("namespace inode record"));
+            }
+        }
+        let pids = Command::new("/usr/bin/ip")
+            .args(["netns", "pids", id])
+            .output()?;
+        if !pids.status.success() || !pids.stdout.is_empty() {
+            return Err(RuntimeError::InvalidConfiguration(
+                "namespace still contains a process or cannot be checked",
+            ));
+        }
+        run_ip("delete aborted namespace", &["netns", "delete", id])
     }
 
     /// A read-only terminal observation for a never-launched resource.
@@ -749,6 +755,78 @@ impl Runtime {
         {
             return Err(RuntimeError::IdentityMismatch(
                 "aborted launch still has a physical resource",
+            ));
+        }
+        Ok(true)
+    }
+
+    /// Complete a PrepareVm whose exact recorded VMM is already stopped.
+    /// The caller must first match the operation and generation. Even if a
+    /// successful start reply was lost, a stopped VMM cannot be published as
+    /// a usable sandbox. The claim and process record remain as tombstones.
+    /// # Errors
+    /// Refuses a live or identity-mismatched process and incomplete cleanup.
+    pub fn reclaim_stopped_prepare(&self, id: &str) -> Result<(), RuntimeError> {
+        validate_id(id)?;
+        let record = self.read_record(id)?;
+        if verified_process(&record)?.is_some() {
+            return Err(RuntimeError::InvalidConfiguration("VM is not stopped"));
+        }
+        self.cleanup(id)?;
+        let marker = self
+            .config
+            .chroot_base
+            .join(".claims")
+            .join(id)
+            .join("failed-prepare.json");
+        if path_present(&marker)? {
+            let stored: ProcessRecord = read_trusted_record(&marker)?;
+            if stored.resource_id != id
+                || stored.pid != record.pid
+                || stored.start_time_ticks != record.start_time_ticks
+            {
+                return Err(RuntimeError::IdentityMismatch("failed prepare identity"));
+            }
+        } else {
+            write_new_record(&marker, &record)?;
+        }
+        Ok(())
+    }
+
+    /// Read-only proof that a recorded, stopped PrepareVm was fully reclaimed.
+    /// # Errors
+    /// Rejects a live VMM, mismatched marker or surviving jail/namespace.
+    pub fn was_reclaimed_stopped_prepare(&self, id: &str) -> Result<bool, RuntimeError> {
+        validate_id(id)?;
+        let marker = self
+            .config
+            .chroot_base
+            .join(".claims")
+            .join(id)
+            .join("failed-prepare.json");
+        if !path_present(&marker)? {
+            return Ok(false);
+        }
+        let stored: ProcessRecord = read_trusted_record(&marker)?;
+        let record = self.read_record(id)?;
+        if stored.resource_id != id
+            || stored.pid != record.pid
+            || stored.start_time_ticks != record.start_time_ticks
+            || verified_process(&record)?.is_some()
+            || path_present(
+                &self
+                    .config
+                    .chroot_base
+                    .join(self.firecracker_name())
+                    .join(id),
+            )?
+            || match &self.config.private_netns {
+                Some(namespace) => path_present(namespace)?,
+                None => false,
+            }
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "failed prepare still has resources",
             ));
         }
         Ok(true)
@@ -1178,6 +1256,80 @@ mod tests {
         assert!(!Path::new(&format!("/run/netns/{id}")).exists());
         assert!(runtime.was_reclaimed_unlaunched(&id).unwrap());
         runtime.reclaim_unlaunched(&id).unwrap();
+        assert!(matches!(
+            runtime.claim_resource(&id),
+            Err(RuntimeError::AlreadyClaimed)
+        ));
+    }
+
+    #[test]
+    #[ignore = "requires root and an isolated Linux network test host"]
+    fn stopped_prepare_reclaims_exact_disk_and_network_before_failure_marker() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let id = format!("spr-{:x}-{suffix:x}", std::process::id());
+        let base = tempfile::tempdir_in("/var/lib").unwrap();
+        let claim = base.path().join(".claims").join(&id);
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&claim)
+            .unwrap();
+        let jail = base.path().join("firecracker").join(&id);
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&jail)
+            .unwrap();
+        fs::write(jail.join("rootfs.ext4"), b"private disk").unwrap();
+        let runtime = Runtime {
+            config: RuntimeConfig {
+                jailer: PathBuf::from("/usr/bin/true"),
+                firecracker: PathBuf::from("/usr/bin/firecracker"),
+                chroot_base: base.path().to_path_buf(),
+                kernel: PathBuf::new(),
+                rootfs: PathBuf::new(),
+                vm_uid: 10001,
+                vm_gid: 10001,
+                vcpu_count: 1,
+                memory_mib: 128,
+                private_netns: Some(PathBuf::from(format!("/run/netns/{id}"))),
+                access_token_hash: None,
+            },
+        };
+        write_new_record(
+            &claim.join("network-intent.json"),
+            &ResourceMarker {
+                resource_id: id.clone(),
+            },
+        )
+        .unwrap();
+        run_ip("test namespace add", &["netns", "add", &id]).unwrap();
+        let network = fs::symlink_metadata(format!("/run/netns/{id}")).unwrap();
+        write_new_record(
+            &claim.join("network.json"),
+            &NetworkRecord {
+                resource_id: id.clone(),
+                namespace_inode: network.ino(),
+            },
+        )
+        .unwrap();
+        write_new_record(
+            &claim.join("record.json"),
+            &ProcessRecord {
+                resource_id: id.clone(),
+                pid: i32::MAX as u32,
+                start_time_ticks: 1,
+            },
+        )
+        .unwrap();
+        runtime.reclaim_stopped_prepare(&id).unwrap();
+        assert!(runtime.was_reclaimed_stopped_prepare(&id).unwrap());
+        assert!(!jail.exists());
+        assert!(!Path::new(&format!("/run/netns/{id}")).exists());
+        runtime.reclaim_stopped_prepare(&id).unwrap();
         assert!(matches!(
             runtime.claim_resource(&id),
             Err(RuntimeError::AlreadyClaimed)

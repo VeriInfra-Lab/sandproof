@@ -187,12 +187,12 @@ mod linux {
             if !planned {
                 return Err("host slot has no matching durable resource plan".into());
             }
-            if slot.aborted_unlaunched
-                && (slot.process.is_some()
+            if (slot.aborted_unlaunched || slot.failed_prepare_reclaimed)
+                && ((slot.aborted_unlaunched && slot.process.is_some())
                     || slot.network_inode.is_some()
                     || slot.disk_inode.is_some())
             {
-                return Err("aborted VM still has physical resources".into());
+                return Err("reclaimed failed PrepareVm still has physical resources".into());
             }
             if slot.claim_present && slot.process.is_none() && !slot.aborted_unlaunched {
                 return Err(
@@ -247,7 +247,14 @@ mod linux {
         let world = journal.world()?;
         let uncertain = journal.uncertain_actions()?;
         for slot in inventory.slots {
-            if slot.process.is_some() || slot.aborted_unlaunched {
+            if slot.aborted_unlaunched || slot.failed_prepare_reclaimed {
+                continue;
+            }
+            if slot
+                .process
+                .as_ref()
+                .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped)
+            {
                 continue;
             }
             let matched = uncertain.iter().any(|action| {
@@ -264,10 +271,20 @@ mod linux {
                             && plan.slot == Some(slot.slot)
                     })
             });
-            if !matched || !planned {
+            if !matched {
+                if slot.process.is_some() {
+                    continue;
+                }
+                return Err("incomplete VM has no exact uncertain PrepareVm action".into());
+            }
+            if !planned {
                 return Err("incomplete VM has no exact uncertain PrepareVm plan".into());
             }
-            node.reclaim_aborted_prepare(slot.sandbox, slot.generation, slot.vm, slot.slot)?;
+            if slot.process.is_some() {
+                node.reclaim_stopped_prepare(slot.sandbox, slot.generation, slot.vm, slot.slot)?;
+            } else {
+                node.reclaim_aborted_prepare(slot.sandbox, slot.generation, slot.vm, slot.slot)?;
+            }
         }
         Ok(())
     }

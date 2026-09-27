@@ -59,6 +59,7 @@ pub struct ObservedSlot {
     pub slot: core::NetSlotId,
     pub claim_present: bool,
     pub aborted_unlaunched: bool,
+    pub failed_prepare_reclaimed: bool,
     pub process: Option<Observation>,
     pub network_inode: Option<u64>,
     pub disk_inode: Option<u64>,
@@ -214,6 +215,10 @@ impl LinuxWorker {
                 && self
                     .runtime(binding.sandbox, binding.vm)?
                     .was_reclaimed_unlaunched(&vm_name)?;
+            let failed_prepare_reclaimed = claim_present
+                && self
+                    .runtime(binding.sandbox, binding.vm)?
+                    .was_reclaimed_stopped_prepare(&vm_name)?;
             let process = if claim_present {
                 match self.runtime(binding.sandbox, binding.vm)?.observe(&vm_name) {
                     Ok(observed) => Some(observed),
@@ -256,6 +261,7 @@ impl LinuxWorker {
                 slot: binding.slot,
                 claim_present,
                 aborted_unlaunched,
+                failed_prepare_reclaimed,
                 process,
                 network_inode,
                 disk_inode,
@@ -364,6 +370,29 @@ impl LinuxWorker {
             return Err("aborted launch marker is not durable".into());
         }
         require_absent(Path::new(&format!("/run/netns/{name}")))?;
+        Ok(())
+    }
+
+    /// Reclaim a PrepareVm whose recorded process has definitively exited.
+    /// # Errors
+    /// Refuses a mismatched slot or any still-live/uncertain VM process.
+    pub fn reclaim_stopped_prepare(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        vm: core::VmId,
+        slot: core::NetSlotId,
+    ) -> NodeResult<()> {
+        self.require_slot(sandbox, generation, vm, slot)?;
+        let name = self.vm_name(vm);
+        let runtime = self.runtime(sandbox, vm)?;
+        if runtime.observe(&name)?.state != VmState::Stopped {
+            return Err("unknown or live VM cannot be reclaimed".into());
+        }
+        runtime.reclaim_stopped_prepare(&name)?;
+        if !runtime.was_reclaimed_stopped_prepare(&name)? {
+            return Err("failed PrepareVm marker is not durable".into());
+        }
         Ok(())
     }
 
@@ -563,6 +592,9 @@ impl LinuxWorker {
                 if self
                     .runtime(*sandbox, *vm)?
                     .was_reclaimed_unlaunched(&self.vm_name(*vm))?
+                    || self
+                        .runtime(*sandbox, *vm)?
+                        .was_reclaimed_stopped_prepare(&self.vm_name(*vm))?
                 {
                     return Ok(WorkReceipt {
                         identity: action.identity.clone(),
