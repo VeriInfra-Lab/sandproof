@@ -111,6 +111,18 @@ fn create_and_kill_use_real_host_receipts() {
         uncertain[0].command.command(),
         core::Command::PrepareVm { .. }
     ));
+    let late_prepare = worker.observe_action(&uncertain[0]).unwrap();
+    assert!(matches!(
+        journal.apply(
+            core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                sandbox,
+                operation: core::OperationId(2),
+            })),
+            &mut NeverCrash,
+        ),
+        Err(JournalError::UnresolvedAction)
+    ));
     assert_eq!(
         journal
             .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
@@ -133,6 +145,10 @@ fn create_and_kill_use_real_host_receipts() {
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Running
+    );
+    assert_eq!(
+        journal.complete(&late_prepare, &mut NeverCrash).unwrap(),
+        running
     );
     let resources = running.resource_index(sandbox);
     assert_eq!(resources.vms.len(), 1);
@@ -187,6 +203,7 @@ fn create_and_kill_use_real_host_receipts() {
         uncertain[0].command.command(),
         core::Command::StopVm { .. }
     ));
+    let late_stop = worker.observe_action(&uncertain[0]).unwrap();
     assert_eq!(
         journal
             .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
@@ -209,6 +226,10 @@ fn create_and_kill_use_real_host_receipts() {
     assert_eq!(
         killed.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Destroyed
+    );
+    assert_eq!(
+        journal.complete(&late_stop, &mut NeverCrash).unwrap(),
+        killed
     );
     assert!(!PathBuf::from(format!("/run/netns/{vm_name}")).exists());
     assert!(
@@ -376,6 +397,18 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
         uncertain[0].command.command(),
         core::Command::PrepareVm { .. }
     ));
+    let late_prepare = worker.observe_action(&uncertain[0]).unwrap();
+    assert!(matches!(
+        journal.apply(
+            core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                sandbox,
+                operation: core::OperationId(2),
+            })),
+            &mut NeverCrash,
+        ),
+        Err(JournalError::UnresolvedAction)
+    ));
     let inventory = worker.inventory().unwrap();
     assert_eq!(inventory.slots.len(), 1);
     assert_eq!(inventory.slots[0].vm, vm);
@@ -400,6 +433,10 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Running
+    );
+    assert_eq!(
+        journal.complete(&late_prepare, &mut NeverCrash).unwrap(),
+        running
     );
 
     journal
@@ -448,6 +485,7 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
         uncertain[0].command.command(),
         core::Command::StopVm { .. }
     ));
+    let late_stop = worker.observe_action(&uncertain[0]).unwrap();
     assert_eq!(
         worker.inventory().unwrap().slots[0]
             .process
@@ -473,6 +511,10 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
     assert_eq!(
         destroyed.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Destroyed
+    );
+    assert_eq!(
+        journal.complete(&late_stop, &mut NeverCrash).unwrap(),
+        destroyed
     );
     assert!(journal.uncertain_actions().unwrap().is_empty());
     let inventory = worker.inventory().unwrap();
