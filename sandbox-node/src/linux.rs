@@ -1024,12 +1024,7 @@ impl LinuxWorker {
         self.require_slot(sandbox, generation, vm, slot)?;
         self.running(sandbox, vm)?;
         let name = self.vm_name(vm);
-        let namespace = PathBuf::from(format!("/run/netns/{name}"));
-        check_trusted_path(&namespace)?;
-        let metadata = fs::symlink_metadata(&namespace)?;
-        if !metadata.is_file() || metadata.uid() != 0 || metadata.ino() == 0 {
-            return Err("private network namespace identity mismatch".into());
-        }
+        let namespace_inode = self.runtime(sandbox, vm)?.observe_private_network(&name)?;
         let output = Process::new("/usr/bin/ip")
             .args([
                 "netns",
@@ -1045,9 +1040,7 @@ impl LinuxWorker {
         if !output.status.success() || !output.stdout.is_empty() {
             return Err("private namespace has external route or cannot be checked".into());
         }
-        Ok(ObservedResult::Network {
-            namespace_inode: metadata.ino(),
-        })
+        Ok(ObservedResult::Network { namespace_inode })
     }
 
     fn observe_file_policy(

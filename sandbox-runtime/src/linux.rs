@@ -21,6 +21,10 @@ const START_TIMEOUT: Duration = Duration::from_secs(10);
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const LAUNCH_GATE_SCRIPT: &str =
     "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec \"$@\"";
+const GUEST_GUARD_RULES: &str = "add table inet sandproof_guard\n\
+add chain inet sandproof_guard guest_out { type filter hook prerouting priority -10; policy accept; }\n\
+add rule inet sandproof_guard guest_out iifname \"tap0\" ct state established,related accept\n\
+add rule inet sandproof_guard guest_out iifname \"tap0\" drop\n";
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -192,6 +196,7 @@ impl Runtime {
             }
             check_trusted_path(Path::new("/run"))?;
             check_trusted_path(Path::new("/usr/bin/ip"))?;
+            check_trusted_path(Path::new("/usr/sbin/nft"))?;
             let hash =
                 config
                     .access_token_hash
@@ -524,6 +529,16 @@ impl Runtime {
         };
         write_new_record(&claim.join("network.json"), &network)?;
 
+        // Install an atomic, default-deny guard before creating the TAP or
+        // starting the VM. Host-initiated envd replies remain established;
+        // guest-initiated DNS, IPv4, IPv6 and other L3 traffic are dropped.
+        run_nft_in_namespace(
+            id,
+            "install guest guard",
+            &["-f", "-"],
+            Some(GUEST_GUARD_RULES),
+        )?;
+
         // The same private IPv4 range is safe because each VM has its own
         // network namespace. No default route or external bridge is added.
         run_ip(
@@ -598,6 +613,83 @@ impl Runtime {
             return Err(RuntimeError::IdentityMismatch("network namespace handle"));
         }
         run_ip("delete namespace", &["netns", "delete", id])
+    }
+
+    /// Read-only check of the exact namespace handle and its guest-facing
+    /// default-deny firewall. The caller checks the intended route policy.
+    /// # Errors
+    /// Rejects a changed namespace inode or any changed/missing guard rule.
+    pub fn observe_private_network(&self, id: &str) -> Result<u64, RuntimeError> {
+        validate_id(id)?;
+        self.validate_network_id(id)?;
+        let namespace =
+            self.config
+                .private_netns
+                .as_ref()
+                .ok_or(RuntimeError::InvalidConfiguration(
+                    "private network not configured",
+                ))?;
+        check_trusted_path(namespace)?;
+        let metadata = fs::symlink_metadata(namespace)?;
+        let record_path = self
+            .config
+            .chroot_base
+            .join(".claims")
+            .join(id)
+            .join("network.json");
+        let record: NetworkRecord = read_trusted_record(&record_path)?;
+        if !metadata.is_file()
+            || metadata.uid() != 0
+            || record.resource_id != id
+            || record.namespace_inode == 0
+            || record.namespace_inode != metadata.ino()
+        {
+            return Err(RuntimeError::IdentityMismatch("private network record"));
+        }
+        let output = run_nft_in_namespace(
+            id,
+            "observe guest guard",
+            &[
+                "-j",
+                "list",
+                "chain",
+                "inet",
+                "sandproof_guard",
+                "guest_out",
+            ],
+            None,
+        )?;
+        let rules: serde_json::Value = serde_json::from_slice(&output)?;
+        let entries = rules
+            .get("nftables")
+            .and_then(serde_json::Value::as_array)
+            .ok_or(RuntimeError::Protocol("nft JSON structure"))?;
+        let chain = &entries
+            .get(1)
+            .ok_or(RuntimeError::Protocol("nft guard chain"))?["chain"];
+        let expected_first = json!([
+            {"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"tap0"}},
+            {"match":{"op":"in","left":{"ct":{"key":"state"}},"right":["established","related"]}},
+            {"accept":null}
+        ]);
+        let expected_last = json!([
+            {"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"tap0"}},
+            {"drop":null}
+        ]);
+        if entries.len() != 4
+            || chain["family"] != "inet"
+            || chain["table"] != "sandproof_guard"
+            || chain["name"] != "guest_out"
+            || chain["type"] != "filter"
+            || chain["hook"] != "prerouting"
+            || chain["prio"] != -10
+            || chain["policy"] != "accept"
+            || entries[2]["rule"]["expr"] != expected_first
+            || entries[3]["rule"]["expr"] != expected_last
+        {
+            return Err(RuntimeError::IdentityMismatch("guest guard rules"));
+        }
+        Ok(metadata.ino())
     }
 
     /// Reclaim a launch that cannot have released its gate: no process record
@@ -1098,6 +1190,40 @@ fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeErro
         });
     }
     Ok(())
+}
+
+fn run_nft_in_namespace(
+    id: &str,
+    operation: &'static str,
+    arguments: &[&str],
+    input: Option<&str>,
+) -> Result<Vec<u8>, RuntimeError> {
+    let mut child = Command::new("/usr/bin/ip")
+        .args(["netns", "exec", id, "/usr/sbin/nft"])
+        .args(arguments)
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(input) = input {
+        child
+            .stdin
+            .take()
+            .ok_or(RuntimeError::Protocol("nft stdin"))?
+            .write_all(input.as_bytes())?;
+    }
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        return Err(RuntimeError::HostCommand {
+            operation,
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(output.stdout)
 }
 
 #[derive(Debug)]
