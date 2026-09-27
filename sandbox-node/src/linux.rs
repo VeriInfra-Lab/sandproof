@@ -627,7 +627,7 @@ impl LinuxWorker {
                 generation,
                 policy,
                 ..
-            } => self.observe_file_policy(*sandbox, *epoch, *generation, policy)?,
+            } => self.observe_file_policy(*sandbox, *epoch, *generation, *policy)?,
             core::Command::CleanupSlot {
                 sandbox,
                 generation,
@@ -933,7 +933,7 @@ impl LinuxWorker {
                 generation,
                 policy,
                 ..
-            } => self.observe_file_policy(*sandbox, *epoch, *generation, policy)?,
+            } => self.observe_file_policy(*sandbox, *epoch, *generation, *policy)?,
             core::Command::ActivateVm {
                 sandbox,
                 epoch,
@@ -1055,7 +1055,7 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         epoch: core::Epoch,
         generation: core::Generation,
-        policy: &core::FilePolicyRef,
+        policy: core::FilePolicyRef,
     ) -> NodeResult<ObservedResult> {
         self.require_fence(sandbox, epoch, false)?;
         if policy.digest != self.config.file_policy_digest {
