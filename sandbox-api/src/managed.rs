@@ -229,7 +229,8 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// Reconcile exact host observations before resuming accepted workflows.
     /// It never re-executes a dispatched action. A sandbox with inconclusive
     /// evidence remains unavailable, while other sandboxes can still recover.
-    /// Call this after opening the durable journal and before serving requests.
+    /// Call this after opening the durable journal and periodically while the
+    /// service runs. Repeated calls never re-dispatch an uncertain action.
     /// # Errors
     /// Invalid evidence or a corrupt journal aborts startup recovery.
     pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {

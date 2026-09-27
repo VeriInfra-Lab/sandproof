@@ -229,6 +229,26 @@ mod linux {
         Ok(())
     }
 
+    fn spawn_reconciliation_scanner(port: Arc<ManagedPort<NodeHost>>, seconds: u64) {
+        drop(tokio::spawn(async move {
+            let mut timer = tokio::time::interval(Duration::from_secs(seconds));
+            loop {
+                timer.tick().await;
+                let port = Arc::clone(&port);
+                match tokio::task::spawn_blocking(move || {
+                    port.recover_on_startup()?;
+                    port.expire_due()
+                })
+                .await
+                {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(_)) => eprintln!("reconciliation or expiry worker needs attention"),
+                    Err(error) => eprintln!("reconciliation worker join failure: {error}"),
+                }
+            }
+        }));
+    }
+
     pub async fn run() -> Result<(), Box<dyn Error>> {
         private_root_path(&std::env::current_exe()?)?;
         let mut args = std::env::args_os();
@@ -313,19 +333,7 @@ mod linux {
                 )
             });
         let listener = tokio::net::TcpListener::bind(config.bind).await?;
-        let scanner = Arc::clone(&port);
-        tokio::spawn(async move {
-            let mut timer = tokio::time::interval(Duration::from_secs(config.expiry_scan_seconds));
-            loop {
-                timer.tick().await;
-                let port = Arc::clone(&scanner);
-                match tokio::task::spawn_blocking(move || port.expire_due()).await {
-                    Ok(Ok(_)) => {}
-                    Ok(Err(_)) => eprintln!("expiry worker needs reconciliation"),
-                    Err(error) => eprintln!("expiry worker join failure: {error}"),
-                }
-            }
-        });
+        spawn_reconciliation_scanner(Arc::clone(&port), config.expiry_scan_seconds);
         axum::serve(listener, app).await?;
         Ok(())
     }

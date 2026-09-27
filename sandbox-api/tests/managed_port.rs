@@ -325,6 +325,10 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
         port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
         "running"
     );
+    let again = port.recover_on_startup().unwrap();
+    assert_eq!(again.receipts_recovered, 0);
+    assert_eq!(again.workflows_completed, 0);
+    assert_eq!(again.unresolved_sandboxes, 0);
 }
 
 fn request() -> CreateRequest {
