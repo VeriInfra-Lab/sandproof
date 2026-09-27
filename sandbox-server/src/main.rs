@@ -187,7 +187,14 @@ mod linux {
             if !planned {
                 return Err("host slot has no matching durable resource plan".into());
             }
-            if slot.claim_present && slot.process.is_none() {
+            if (slot.aborted_unlaunched || slot.failed_prepare_reclaimed)
+                && ((slot.aborted_unlaunched && slot.process.is_some())
+                    || slot.network_inode.is_some()
+                    || slot.disk_inode.is_some())
+            {
+                return Err("reclaimed failed PrepareVm still has physical resources".into());
+            }
+            if slot.claim_present && slot.process.is_none() && !slot.aborted_unlaunched {
                 return Err(
                     "VM claim has no exact process record; manual reconciliation required".into(),
                 );
@@ -224,6 +231,59 @@ mod linux {
                     .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped)
             {
                 return Err("terminal sandbox still has a live or unobservable VM".into());
+            }
+        }
+        Ok(())
+    }
+
+    fn reclaim_aborted_prepares(
+        node: &LinuxWorker,
+        journal: &ControllerJournal,
+    ) -> Result<(), Box<dyn Error>> {
+        let inventory = node.inventory()?;
+        if !inventory.unbound_claims.is_empty() || !inventory.unbound_networks.is_empty() {
+            return Err("unbound host resource requires operator reconciliation".into());
+        }
+        let world = journal.world()?;
+        let uncertain = journal.uncertain_actions()?;
+        for slot in inventory.slots {
+            if slot.aborted_unlaunched || slot.failed_prepare_reclaimed {
+                continue;
+            }
+            if slot
+                .process
+                .as_ref()
+                .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped)
+            {
+                continue;
+            }
+            let matched = uncertain.iter().any(|action| {
+                matches!(action.command.command(), core::Command::PrepareVm {
+                    sandbox, generation, vm, slot: network_slot, ..
+                } if *sandbox == slot.sandbox && *generation == slot.generation
+                    && *vm == slot.vm && *network_slot == slot.slot)
+            });
+            let planned = world.operation_records().iter().any(|(key, _)| {
+                key.sandbox == slot.sandbox
+                    && world.operation_plan(*key).is_some_and(|plan| {
+                        plan.generation == slot.generation
+                            && plan.vm == Some(slot.vm)
+                            && plan.slot == Some(slot.slot)
+                    })
+            });
+            if !matched {
+                if slot.process.is_some() {
+                    continue;
+                }
+                return Err("incomplete VM has no exact uncertain PrepareVm action".into());
+            }
+            if !planned {
+                return Err("incomplete VM has no exact uncertain PrepareVm plan".into());
+            }
+            if slot.process.is_some() {
+                node.reclaim_stopped_prepare(slot.sandbox, slot.generation, slot.vm, slot.slot)?;
+            } else {
+                node.reclaim_aborted_prepare(slot.sandbox, slot.generation, slot.vm, slot.slot)?;
             }
         }
         Ok(())
@@ -281,6 +341,7 @@ mod linux {
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
+        reclaim_aborted_prepares(&node, &journal)?;
         audit_host_inventory(&node, &journal)?;
         let port = Arc::new(ManagedPort::new(
             journal,
