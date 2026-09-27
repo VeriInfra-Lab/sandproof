@@ -350,9 +350,9 @@ impl LinuxWorker {
         })
     }
 
-    /// Finish only an unlaunched PrepareVm whose slot binding has already
+    /// Finish only an unlaunched `PrepareVm` whose slot binding has already
     /// been checked against the durable operation plan by the caller. This
-    /// does not retry PrepareVm or infer that a live/unknown VM has stopped.
+    /// does not retry `PrepareVm` or infer that a live/unknown VM has stopped.
     /// # Errors
     /// Refuses a mismatched binding or any possible live VM identity.
     pub fn reclaim_aborted_prepare(
@@ -373,7 +373,7 @@ impl LinuxWorker {
         Ok(())
     }
 
-    /// Reclaim a PrepareVm whose recorded process has definitively exited.
+    /// Reclaim a `PrepareVm` whose recorded process has definitively exited.
     /// # Errors
     /// Refuses a mismatched slot or any still-live/uncertain VM process.
     pub fn reclaim_stopped_prepare(

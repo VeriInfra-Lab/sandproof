@@ -760,7 +760,7 @@ impl Runtime {
         Ok(true)
     }
 
-    /// Complete a PrepareVm whose exact recorded VMM is already stopped.
+    /// Complete a `PrepareVm` whose exact recorded VMM is already stopped.
     /// The caller must first match the operation and generation. Even if a
     /// successful start reply was lost, a stopped VMM cannot be published as
     /// a usable sandbox. The claim and process record remain as tombstones.
@@ -793,7 +793,7 @@ impl Runtime {
         Ok(())
     }
 
-    /// Read-only proof that a recorded, stopped PrepareVm was fully reclaimed.
+    /// Read-only proof that a recorded, stopped `PrepareVm` was fully reclaimed.
     /// # Errors
     /// Rejects a live VMM, mismatched marker or surviving jail/namespace.
     pub fn was_reclaimed_stopped_prepare(&self, id: &str) -> Result<bool, RuntimeError> {
