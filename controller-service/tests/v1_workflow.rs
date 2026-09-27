@@ -2,7 +2,10 @@ mod support;
 use support::*;
 
 use sandbox_controller_core as core;
-use sandproof_controller_service::{ControllerJournal, JournalError, create_v1, kill_v1};
+use sandproof_controller_service::{
+    AdmissionLimits, ControllerJournal, JournalError, NeverCrash, create_v1,
+    finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
+};
 use sandproof_protocol::{UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 use tempfile::TempDir;
 
@@ -46,6 +49,53 @@ fn create_publishes_after_all_results_and_kill_publishes_after_stop() {
     let reopened =
         ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(reopened.world().unwrap(), destroyed);
+}
+
+#[test]
+fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
+    let (_directory, mut journal) = setup();
+    let limits = AdmissionLimits {
+        max_active_global: 2,
+        max_active_per_tenant: 1,
+        max_disk_bytes_global: 10_000,
+        max_disk_bytes_per_tenant: 5_000,
+        cleanup_reserve_bytes: 1_000,
+        max_timeout_secs: 86_400,
+    };
+    let request = create_request();
+    journal
+        .admit_create(request.clone(), 1_000, 60, 2_000, limits, &mut NeverCrash)
+        .unwrap();
+    let running = finish_admitted_create_v1(
+        &mut journal,
+        request.sandbox,
+        request.operation,
+        &mut worker,
+    )
+    .unwrap();
+    assert_eq!(
+        running.sandbox_record(SANDBOX).unwrap().phase,
+        core::Phase::Running
+    );
+    assert_eq!(
+        journal
+            .live_lifetime(&request.actor, SANDBOX, 1_001)
+            .unwrap()
+            .deadline_ms,
+        61_000
+    );
+
+    let expiry_operation = core::OperationId(102);
+    journal
+        .accept_expiry(SANDBOX, expiry_operation, 61_000, &mut NeverCrash)
+        .unwrap();
+    let destroyed =
+        finish_accepted_kill_v1(&mut journal, SANDBOX, expiry_operation, &mut worker).unwrap();
+    assert_eq!(
+        destroyed.sandbox_record(SANDBOX).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
 }
 
 #[test]
