@@ -5,8 +5,8 @@
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    ControllerJournal, JournalError, create_v1, finish_accepted_kill_v1, finish_admitted_create_v1,
-    kill_v1,
+    ControllerJournal, CrashInjector, CrashPoint, DispatchResult, JournalError, NeverCrash,
+    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
 };
 use sandproof_node::{LinuxWorker, NodeConfig};
 use sandproof_protocol::{TenantId, UnknownReason, WorkOutcome, WorkReceipt};
@@ -22,18 +22,10 @@ fn required(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("missing operator setting {name}"))
 }
 
-#[test]
-#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one real VM is carried through two deliberately lost receipts, restart reconciliation and exact cleanup"
-)]
-fn create_and_kill_use_real_host_receipts() {
-    let namespace = required("SANDPROOF_TEST_NAMESPACE");
-    let state_dir = PathBuf::from(required("SANDPROOF_TEST_STATE_DIR"));
-    let config = NodeConfig {
-        namespace: namespace.clone(),
-        state_dir: state_dir.clone(),
+fn test_config() -> NodeConfig {
+    NodeConfig {
+        namespace: required("SANDPROOF_TEST_NAMESPACE"),
+        state_dir: PathBuf::from(required("SANDPROOF_TEST_STATE_DIR")),
         jailer: PathBuf::from(required("SANDPROOF_TEST_JAILER")),
         firecracker: PathBuf::from(required("SANDPROOF_TEST_FIRECRACKER")),
         chroot_base: PathBuf::from(required("SANDPROOF_TEST_CHROOT")),
@@ -44,9 +36,10 @@ fn create_and_kill_use_real_host_receipts() {
         vcpu_count: 1,
         memory_mib: 256,
         file_policy_digest: core::PolicyDigest(1),
-    };
-    let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal = ControllerJournal::open(state_dir.join("controller.db"), &namespace).unwrap();
+    }
+}
+
+fn test_token() -> String {
     let mut random = [0_u8; 32];
     File::open("/dev/urandom")
         .unwrap()
@@ -56,19 +49,39 @@ fn create_and_kill_use_real_host_receipts() {
     for value in random {
         write!(&mut token, "{value:02x}").unwrap();
     }
-    let sandbox = core::SandboxId(1);
-    worker.put_secret(sandbox, &token).unwrap();
-    let request = core::CreateRequest {
+    token
+}
+
+fn test_create_request(config: &NodeConfig) -> core::CreateRequest {
+    core::CreateRequest {
         actor: core::Actor::Tenant(core::TenantId(1)),
         owner: core::TenantId(1),
-        sandbox,
+        sandbox: core::SandboxId(1),
         workspace: core::FsId(1),
         file_policy: core::FilePolicyRef {
             digest: config.file_policy_digest,
         },
         policy: core::NetworkPolicy::DenyAll,
         operation: core::OperationId(1),
-    };
+    }
+}
+
+#[test]
+#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one real VM is carried through two deliberately lost receipts, restart reconciliation and exact cleanup"
+)]
+fn create_and_kill_use_real_host_receipts() {
+    let config = test_config();
+    let namespace = config.namespace.clone();
+    let state_dir = config.state_dir.clone();
+    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal = ControllerJournal::open(state_dir.join("controller.db"), &namespace).unwrap();
+    let token = test_token();
+    let sandbox = core::SandboxId(1);
+    worker.put_secret(sandbox, &token).unwrap();
+    let request = test_create_request(&config);
     let lost = create_v1(&mut journal, request, &mut |action| {
         let receipt = worker.execute(action)?;
         if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
@@ -98,6 +111,18 @@ fn create_and_kill_use_real_host_receipts() {
         uncertain[0].command.command(),
         core::Command::PrepareVm { .. }
     ));
+    let late_prepare = worker.observe_action(&uncertain[0]).unwrap();
+    assert!(matches!(
+        journal.apply(
+            core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                sandbox,
+                operation: core::OperationId(2),
+            })),
+            &mut NeverCrash,
+        ),
+        Err(JournalError::UnresolvedAction)
+    ));
     assert_eq!(
         journal
             .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
@@ -120,6 +145,10 @@ fn create_and_kill_use_real_host_receipts() {
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Running
+    );
+    assert_eq!(
+        journal.complete(&late_prepare, &mut NeverCrash).unwrap(),
+        running
     );
     let resources = running.resource_index(sandbox);
     assert_eq!(resources.vms.len(), 1);
@@ -188,6 +217,7 @@ fn create_and_kill_use_real_host_receipts() {
         uncertain[0].command.command(),
         core::Command::StopVm { .. }
     ));
+    let late_stop = worker.observe_action(&uncertain[0]).unwrap();
     assert_eq!(
         journal
             .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
@@ -210,6 +240,10 @@ fn create_and_kill_use_real_host_receipts() {
     assert_eq!(
         killed.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Destroyed
+    );
+    assert_eq!(
+        journal.complete(&late_stop, &mut NeverCrash).unwrap(),
+        killed
     );
     assert!(!PathBuf::from(format!("/run/netns/{vm_name}")).exists());
     assert!(
@@ -260,4 +294,248 @@ fn create_and_kill_use_real_host_receipts() {
             .success()
     );
     assert!(worker.inventory().unwrap().unbound_networks.is_empty());
+}
+
+struct ExitAfterWorker;
+
+impl CrashInjector for ExitAfterWorker {
+    fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
+        if point == CrashPoint::AfterWorkerCall {
+            // No Rust destructors or receipt commit run in the worker process.
+            std::process::exit(91);
+        }
+        Ok(())
+    }
+}
+
+fn exit_child(stage: &str) {
+    let config = test_config();
+    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal =
+        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    journal
+        .dispatch_next(
+            &mut |action| {
+                assert!(matches!(
+                    (stage, action.command.command()),
+                    ("prepare", core::Command::PrepareVm { .. })
+                        | ("stop", core::Command::StopVm { .. })
+                ));
+                worker.execute(action)
+            },
+            &mut ExitAfterWorker,
+        )
+        .unwrap();
+    panic!("worker child did not exit at the injected boundary");
+}
+
+fn spawn_exit_child(stage: &str) {
+    let output = Process::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "real_worker_process_exit_reconciles_prepare_and_stop",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("SANDPROOF_HOST_EXIT_CHILD", stage)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(91), "{stage}: {output:?}");
+}
+
+#[test]
+#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "real worker process exits separately after VM launch and exact stop, before either receipt is committed"
+)]
+fn real_worker_process_exit_reconciles_prepare_and_stop() {
+    if let Ok(stage) = env::var("SANDPROOF_HOST_EXIT_CHILD") {
+        exit_child(&stage);
+        return;
+    }
+    let config = test_config();
+    let sandbox = core::SandboxId(1);
+    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    worker.put_secret(sandbox, &test_token()).unwrap();
+    let mut journal =
+        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    journal
+        .apply(
+            core::ControllerInput::Request(core::Request::Create(test_create_request(&config))),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let create_key = core::OperationKey {
+        sandbox,
+        operation: core::OperationId(1),
+    };
+    journal
+        .apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(create_key)),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert!(matches!(
+        journal
+            .dispatch_next(&mut |action| worker.execute(action), &mut NeverCrash)
+            .unwrap(),
+        DispatchResult::ReceiptRecorded(_)
+    ));
+    let plan = journal
+        .world()
+        .unwrap()
+        .operation_plan(create_key)
+        .unwrap()
+        .clone();
+    let vm = plan.vm.unwrap();
+    let slot = plan.slot.unwrap();
+    journal
+        .apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::DispatchPrepare(
+                sandbox, vm, slot,
+            )),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+    drop(worker);
+    spawn_exit_child("prepare");
+
+    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal =
+        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::PrepareVm { .. }
+    ));
+    let late_prepare = worker.observe_action(&uncertain[0]).unwrap();
+    assert!(matches!(
+        journal.apply(
+            core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                sandbox,
+                operation: core::OperationId(2),
+            })),
+            &mut NeverCrash,
+        ),
+        Err(JournalError::UnresolvedAction)
+    ));
+    let inventory = worker.inventory().unwrap();
+    assert_eq!(inventory.slots.len(), 1);
+    assert_eq!(inventory.slots[0].vm, vm);
+    assert_eq!(
+        inventory.slots[0].process.as_ref().unwrap().state,
+        sandbox_runtime::VmState::VmmRunning
+    );
+    assert_eq!(
+        journal
+            .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
+            .unwrap(),
+        1
+    );
+    let mut repeated_prepare = false;
+    let running =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            repeated_prepare |= matches!(action.command.command(), core::Command::PrepareVm { .. });
+            worker.execute(action)
+        })
+        .unwrap_or_else(|error| panic!("resumed create: {error}; host: {:?}", worker.last_error()));
+    assert!(!repeated_prepare);
+    assert_eq!(
+        running.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Running
+    );
+    assert_eq!(
+        journal.complete(&late_prepare, &mut NeverCrash).unwrap(),
+        running
+    );
+
+    journal
+        .apply(
+            core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                sandbox,
+                operation: core::OperationId(2),
+            })),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert!(matches!(
+        journal
+            .dispatch_next(&mut |action| worker.execute(action), &mut NeverCrash)
+            .unwrap(),
+        DispatchResult::ReceiptRecorded(_)
+    ));
+    let world = journal.world().unwrap();
+    let record = world.sandbox_record(sandbox).unwrap();
+    let kill_key = core::OperationKey {
+        sandbox,
+        operation: core::OperationId(2),
+    };
+    let stop_vm = world.operation_plan(kill_key).unwrap().stop_vms[0];
+    journal
+        .apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(
+                sandbox,
+                record.generation,
+                stop_vm,
+            )),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+    drop(worker);
+    spawn_exit_child("stop");
+
+    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal =
+        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::StopVm { .. }
+    ));
+    let late_stop = worker.observe_action(&uncertain[0]).unwrap();
+    assert_eq!(
+        worker.inventory().unwrap().slots[0]
+            .process
+            .as_ref()
+            .unwrap()
+            .state,
+        sandbox_runtime::VmState::Stopped
+    );
+    assert_eq!(
+        journal
+            .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
+            .unwrap(),
+        1
+    );
+    let mut repeated_stop = false;
+    let destroyed =
+        finish_accepted_kill_v1(&mut journal, sandbox, core::OperationId(2), &mut |action| {
+            repeated_stop |= matches!(action.command.command(), core::Command::StopVm { .. });
+            worker.execute(action)
+        })
+        .unwrap_or_else(|error| panic!("resumed kill: {error}; host: {:?}", worker.last_error()));
+    assert!(!repeated_stop);
+    assert_eq!(
+        destroyed.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(
+        journal.complete(&late_stop, &mut NeverCrash).unwrap(),
+        destroyed
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+    let inventory = worker.inventory().unwrap();
+    assert!(inventory.unbound_claims.is_empty());
+    assert!(inventory.unbound_networks.is_empty());
+    assert_eq!(inventory.slots.len(), 1);
+    assert!(inventory.slots[0].network_inode.is_none());
+    assert!(inventory.slots[0].disk_inode.is_none());
+    assert!(!PathBuf::from(format!("/run/netns/vm-{}-{}", config.namespace, vm.0)).exists());
 }
