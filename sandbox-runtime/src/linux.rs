@@ -1463,6 +1463,65 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires root and an isolated Linux network test host"]
+    fn changed_guest_guard_is_not_accepted_as_a_configured_network() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let id = format!("spr-{:x}-{suffix:x}", std::process::id());
+        let base = tempfile::tempdir_in("/var/lib").unwrap();
+        let claim = base.path().join(".claims").join(&id);
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&claim)
+            .unwrap();
+        let runtime = Runtime {
+            config: RuntimeConfig {
+                jailer: PathBuf::from("/usr/bin/true"),
+                firecracker: PathBuf::from("/usr/bin/firecracker"),
+                chroot_base: base.path().to_path_buf(),
+                kernel: PathBuf::new(),
+                rootfs: PathBuf::new(),
+                vm_uid: 10001,
+                vm_gid: 10001,
+                vcpu_count: 1,
+                memory_mib: 128,
+                private_netns: Some(PathBuf::from(format!("/run/netns/{id}"))),
+                access_token_hash: None,
+            },
+        };
+        run_ip("test namespace add", &["netns", "add", &id]).unwrap();
+        let namespace = fs::symlink_metadata(format!("/run/netns/{id}")).unwrap();
+        write_new_record(
+            &claim.join("network.json"),
+            &NetworkRecord {
+                resource_id: id.clone(),
+                namespace_inode: namespace.ino(),
+            },
+        )
+        .unwrap();
+        run_nft_in_namespace(&id, "test guard", &["-f", "-"], Some(GUEST_GUARD_RULES)).unwrap();
+        assert_eq!(
+            runtime.observe_private_network(&id).unwrap(),
+            namespace.ino()
+        );
+        run_nft_in_namespace(
+            &id,
+            "test rule mutation",
+            &["-f", "-"],
+            Some("insert rule inet sandproof_guard guest_out iifname \"tap0\" accept\n"),
+        )
+        .unwrap();
+        assert!(matches!(
+            runtime.observe_private_network(&id),
+            Err(RuntimeError::IdentityMismatch("guest guard rules"))
+        ));
+        runtime.cleanup_private_network(&id).unwrap();
+    }
+
+    #[test]
     fn proc_stat_start_time_uses_field_22() {
         let stat = "123 (name with spaces) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 12345 20";
         assert_eq!(parse_proc_stat(stat).unwrap().start_time_ticks, 12345);
