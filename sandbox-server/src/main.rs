@@ -94,6 +94,13 @@ mod linux {
         ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
             self.0.execute(action)
         }
+
+        fn observe(
+            &self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Option<WorkReceipt<Self::Evidence>> {
+            self.0.observe_action(action).ok()
+        }
     }
 
     fn private_root_path(path: &Path) -> Result<(), Box<dyn Error>> {
@@ -141,6 +148,76 @@ mod linux {
         Ok(disk_bytes)
     }
 
+    fn audit_host_inventory(
+        node: &LinuxWorker,
+        journal: &ControllerJournal,
+    ) -> Result<(), Box<dyn Error>> {
+        let inventory = node.inventory()?;
+        if !inventory.unbound_claims.is_empty() {
+            return Err(format!(
+                "unbound VM claims require operator reconciliation: {:?}",
+                inventory.unbound_claims
+            )
+            .into());
+        }
+        let world = journal.world()?;
+        for slot in inventory.slots {
+            let record = world
+                .sandbox_record(slot.sandbox)
+                .ok_or("host slot has no durable sandbox")?;
+            let planned = world.operation_records().iter().any(|(key, _)| {
+                key.sandbox == slot.sandbox
+                    && world.operation_plan(*key).is_some_and(|plan| {
+                        plan.generation == slot.generation
+                            && plan.vm == Some(slot.vm)
+                            && plan.slot == Some(slot.slot)
+                    })
+            });
+            if !planned {
+                return Err("host slot has no matching durable resource plan".into());
+            }
+            if slot.claim_present && slot.process.is_none() {
+                return Err(
+                    "VM claim has no exact process record; manual reconciliation required".into(),
+                );
+            }
+            if let Some(vm) = world.vm_record(slot.vm) {
+                if vm.sandbox != slot.sandbox || vm.generation != slot.generation {
+                    return Err("host VM identity differs from durable resource".into());
+                }
+                if vm.status == core::VmStatus::Reclaimed
+                    && (slot.disk_inode.is_some()
+                        || slot.network_inode.is_some()
+                        || slot.process.as_ref().is_some_and(|process| {
+                            process.state != sandbox_runtime::VmState::Stopped
+                        }))
+                {
+                    return Err("reclaimed VM still has physical resources".into());
+                }
+            }
+            if let Some(network) = world.slot_record(slot.slot) {
+                if network.sandbox != slot.sandbox
+                    || network.generation != slot.generation
+                    || network.vm != slot.vm
+                {
+                    return Err("host network identity differs from durable resource".into());
+                }
+                if network.reclaimed && slot.network_inode.is_some() {
+                    return Err("reclaimed network slot still exists on host".into());
+                }
+            }
+            if record.phase == core::Phase::Destroyed
+                && slot
+                    .process
+                    .as_ref()
+                    .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped)
+            {
+                return Err("terminal sandbox still has a live or unobservable VM".into());
+            }
+        }
+        Ok(())
+    }
+
     pub async fn run() -> Result<(), Box<dyn Error>> {
         private_root_path(&std::env::current_exe()?)?;
         let mut args = std::env::args_os();
@@ -173,6 +250,7 @@ mod linux {
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
+        audit_host_inventory(&node, &journal)?;
         let port = Arc::new(ManagedPort::new(
             journal,
             NodeHost(node),
@@ -195,6 +273,15 @@ mod linux {
                 domain: config.domain,
             },
         ));
+        let recovery = port.recover_on_startup().map_err(|error| {
+            std::io::Error::other(format!("startup recovery failed: {error:?}"))
+        })?;
+        if recovery.unresolved_sandboxes != 0 {
+            eprintln!(
+                "startup recovery left {} sandboxes unresolved; no uncertain host action was repeated",
+                recovery.unresolved_sandboxes
+            );
+        }
         let credentials = config
             .credentials
             .into_iter()

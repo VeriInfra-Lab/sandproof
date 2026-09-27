@@ -7,6 +7,7 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
@@ -234,6 +235,10 @@ impl Runtime {
     pub fn launch(&self, id: &str) -> Result<Observation, RuntimeError> {
         validate_id(id)?;
         self.validate_network_id(id)?;
+        // Linux sockaddr_un.sun_path has 108 bytes including its trailing NUL.
+        // Reject before creating a claim or starting jailer: an overlong path
+        // otherwise leaves a live VM whose API cannot be observed or booted.
+        validate_socket_path(&self.socket_path(id))?;
         let claim = self.claim_resource(id)?;
         if self.config.private_netns.is_some() {
             self.prepare_private_network(id, &claim)?;
@@ -742,6 +747,15 @@ impl Runtime {
     }
 }
 
+fn validate_socket_path(path: &Path) -> Result<(), RuntimeError> {
+    if path.as_os_str().as_bytes().len() >= 108 {
+        return Err(RuntimeError::InvalidConfiguration(
+            "Firecracker API socket path exceeds Linux limit",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_id(id: &str) -> Result<(), RuntimeError> {
     if id.is_empty()
         || id.len() > 64
@@ -917,6 +931,12 @@ mod tests {
         }
         assert!(validate_id("sandproof-001").is_ok());
         assert!(validate_id(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn api_socket_path_limit_is_checked_before_launch() {
+        assert!(validate_socket_path(Path::new(&format!("/{}", "a".repeat(105)))).is_ok());
+        assert!(validate_socket_path(Path::new(&format!("/{}", "a".repeat(107)))).is_err());
     }
 
     #[test]

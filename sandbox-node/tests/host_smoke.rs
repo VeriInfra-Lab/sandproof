@@ -4,12 +4,17 @@
 //! A failure intentionally leaves exact resource claims for inspection.
 
 use sandbox_controller_core as core;
-use sandproof_controller_service::{ControllerJournal, create_v1, kill_v1};
+use sandproof_controller_service::{
+    ControllerJournal, JournalError, create_v1, finish_accepted_kill_v1, finish_admitted_create_v1,
+    kill_v1,
+};
 use sandproof_node::{LinuxWorker, NodeConfig};
+use sandproof_protocol::{UnknownReason, WorkOutcome, WorkReceipt};
 use std::env;
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 fn required(name: &str) -> String {
@@ -18,6 +23,10 @@ fn required(name: &str) -> String {
 
 #[test]
 #[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one real VM is carried through two deliberately lost receipts, restart reconciliation and exact cleanup"
+)]
 fn create_and_kill_use_real_host_receipts() {
     let namespace = required("SANDPROOF_TEST_NAMESPACE");
     let state_dir = PathBuf::from(required("SANDPROOF_TEST_STATE_DIR"));
@@ -59,8 +68,54 @@ fn create_and_kill_use_real_host_receipts() {
         policy: core::NetworkPolicy::DenyAll,
         operation: core::OperationId(1),
     };
-    let running = create_v1(&mut journal, request, &mut |action| worker.execute(action))
-        .unwrap_or_else(|error| panic!("create failed: {error}; host: {:?}", worker.last_error()));
+    let lost = create_v1(&mut journal, request, &mut |action| {
+        let receipt = worker.execute(action)?;
+        if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
+            assert_eq!(worker.observe_action(action).unwrap(), receipt);
+        }
+        if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+            return Ok(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
+        Ok(receipt)
+    });
+    assert!(
+        matches!(lost, Err(JournalError::UnresolvedAction)),
+        "{lost:?}; host: {:?}",
+        worker.last_error()
+    );
+    drop(journal); // simulated controller process restart after the VM launched
+    let mut journal = ControllerJournal::open(state_dir.join("controller.db"), &namespace).unwrap();
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::PrepareVm { .. }
+    ));
+    assert_eq!(
+        journal
+            .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
+            .unwrap(),
+        1
+    );
+    let mut repeated_prepare = false;
+    let running =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            repeated_prepare |= matches!(action.command.command(), core::Command::PrepareVm { .. });
+            worker.execute(action)
+        })
+        .unwrap_or_else(|error| {
+            panic!(
+                "resumed create failed: {error}; host: {:?}",
+                worker.last_error()
+            )
+        });
+    assert!(!repeated_prepare);
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Running
@@ -68,18 +123,74 @@ fn create_and_kill_use_real_host_receipts() {
     let resources = running.resource_index(sandbox);
     assert_eq!(resources.vms.len(), 1);
     assert_eq!(resources.slots.len(), 1);
+    let inventory = worker.inventory().unwrap();
+    assert!(inventory.unbound_claims.is_empty());
+    assert_eq!(inventory.slots.len(), 1);
+    assert_eq!(inventory.slots[0].sandbox, sandbox);
+    assert_eq!(inventory.slots[0].vm, resources.vms[0]);
+    assert_eq!(inventory.slots[0].slot, resources.slots[0]);
+    assert!(inventory.slots[0].claim_present);
+    assert!(inventory.slots[0].process.is_some());
+    assert!(inventory.slots[0].network_inode.is_some());
+    assert!(inventory.slots[0].disk_inode.is_some());
     let vm_name = format!("vm-{namespace}-{}", resources.vms[0].0);
     assert!(PathBuf::from(format!("/run/netns/{vm_name}")).exists());
-    let killed = kill_v1(
+    let lost = kill_v1(
         &mut journal,
         core::KillRequest {
             actor: core::Actor::Tenant(core::TenantId(1)),
             sandbox,
             operation: core::OperationId(2),
         },
-        &mut |action| worker.execute(action),
-    )
-    .unwrap_or_else(|error| panic!("kill failed: {error}; host: {:?}", worker.last_error()));
+        &mut |action| {
+            let receipt = worker.execute(action)?;
+            if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
+                assert_eq!(worker.observe_action(action).unwrap(), receipt);
+            }
+            if matches!(action.command.command(), core::Command::StopVm { .. }) {
+                return Ok(WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                });
+            }
+            Ok(receipt)
+        },
+    );
+    assert!(
+        matches!(lost, Err(JournalError::UnresolvedAction)),
+        "{lost:?}; host: {:?}",
+        worker.last_error()
+    );
+    drop(journal);
+    let mut journal = ControllerJournal::open(state_dir.join("controller.db"), &namespace).unwrap();
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::StopVm { .. }
+    ));
+    assert_eq!(
+        journal
+            .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
+            .unwrap(),
+        1
+    );
+    let mut repeated_stop = false;
+    let killed =
+        finish_accepted_kill_v1(&mut journal, sandbox, core::OperationId(2), &mut |action| {
+            repeated_stop |= matches!(action.command.command(), core::Command::StopVm { .. });
+            worker.execute(action)
+        })
+        .unwrap_or_else(|error| {
+            panic!(
+                "resumed kill failed: {error}; host: {:?}",
+                worker.last_error()
+            )
+        });
+    assert!(!repeated_stop);
     assert_eq!(
         killed.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Destroyed
@@ -93,4 +204,23 @@ fn create_and_kill_use_real_host_receipts() {
             .exists()
     );
     assert!(journal.uncertain_actions().unwrap().is_empty());
+    let inventory = worker.inventory().unwrap();
+    assert_eq!(inventory.slots.len(), 1);
+    assert_eq!(
+        inventory.slots[0].process.as_ref().unwrap().state,
+        sandbox_runtime::VmState::Stopped
+    );
+    assert!(inventory.slots[0].network_inode.is_none());
+    assert!(inventory.slots[0].disk_inode.is_none());
+    let unbound = config
+        .chroot_base
+        .join(".claims")
+        .join(format!("vm-{namespace}-999"));
+    std::fs::create_dir(&unbound).unwrap();
+    std::fs::set_permissions(&unbound, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(
+        worker.inventory().unwrap().unbound_claims,
+        vec![format!("vm-{namespace}-999")]
+    );
+    std::fs::remove_dir(&unbound).unwrap();
 }
