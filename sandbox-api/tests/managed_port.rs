@@ -73,6 +73,10 @@ impl HostAdapter for FakeHost {
         Ok(())
     }
 
+    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
+        Ok(self.secrets.contains_key(&sandbox.0))
+    }
+
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
         self.secrets.get(&sandbox.0).cloned().ok_or(PortError::Busy)
     }
@@ -143,6 +147,119 @@ fn setup() -> (TempDir, Arc<ManagedPort<FakeHost>>) {
 }
 
 #[test]
+fn startup_recovers_admitted_create_before_credential_write() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let sandbox = core::SandboxId(1);
+    journal
+        .admit_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox,
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+            )
+            .unwrap(),
+            300,
+            1_000,
+            config().limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal); // crash after admission, before the first credential file exists
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        config(),
+    );
+    let recovery = port.recover_on_startup().unwrap();
+    assert_eq!(recovery.receipts_recovered, 0);
+    assert_eq!(recovery.workflows_completed, 1);
+    assert_eq!(recovery.unresolved_sandboxes, 0);
+    assert_eq!(
+        port.connect(
+            "1",
+            &format!("sb-{NAMESPACE}-1"),
+            ConnectRequest { timeout: None }
+        )
+        .unwrap()
+        .envd_access_token
+        .len(),
+        64
+    );
+}
+
+#[test]
+fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let sandbox = core::SandboxId(1);
+    journal
+        .admit_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox,
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+            )
+            .unwrap(),
+            300,
+            1_000,
+            config().limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    journal
+        .apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(
+                core::OperationKey {
+                    sandbox,
+                    operation: core::OperationId(1),
+                },
+            )),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        config(),
+    );
+    let recovery = port.recover_on_startup().unwrap();
+    assert_eq!(recovery.workflows_completed, 0);
+    assert_eq!(recovery.unresolved_sandboxes, 1);
+    assert!(matches!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    ));
+}
+
+#[test]
 fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
@@ -208,6 +325,10 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
         port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
         "running"
     );
+    let again = port.recover_on_startup().unwrap();
+    assert_eq!(again.receipts_recovered, 0);
+    assert_eq!(again.workflows_completed, 0);
+    assert_eq!(again.unresolved_sandboxes, 0);
 }
 
 fn request() -> CreateRequest {

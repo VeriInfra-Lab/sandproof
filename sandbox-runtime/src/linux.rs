@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 const API_SOCKET: &str = "api.socket";
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const LAUNCH_GATE_SCRIPT: &str =
+    "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec \"$@\"";
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -99,9 +101,6 @@ pub struct RuntimeConfig {
     pub vm_gid: u32,
     pub vcpu_count: u8,
     pub memory_mib: u32,
-    /// A short-lived SSH command should use false and stop before it exits.
-    /// Long-lived services may use false too; daemon mode suppresses serial logs.
-    pub daemonize: bool,
     /// Per-VM namespace handle at `/run/netns/<resource-id>`. The runtime
     /// creates its private TAP and link when launching and removes it after
     /// the exact VM process has stopped.
@@ -285,8 +284,16 @@ impl Runtime {
             .mode(0o600)
             .open(claim.join("console.log"))?;
         let stderr = output.try_clone()?;
-        let mut command = Command::new(&self.config.jailer);
+        // The shell cannot exec jailer until the exact process identity has
+        // been durably recorded. If this process dies before releasing stdin,
+        // the gate sees EOF and exits without ever starting Firecracker.
+        // `exec` retains the recorded PID and start time for the jailer/VMM.
+        let mut command = Command::new("/bin/sh");
         command
+            .arg("-c")
+            .arg(LAUNCH_GATE_SCRIPT)
+            .arg("sandproof-launch-gate")
+            .arg(&self.config.jailer)
             .arg("--id")
             .arg(id)
             .arg("--exec-file")
@@ -302,57 +309,49 @@ impl Runtime {
         if let Some(namespace) = &self.config.private_netns {
             command.arg("--netns").arg(namespace);
         }
-        if self.config.daemonize {
-            command.arg("--daemonize");
-        }
         let mut child = command
             .arg("--")
             .arg("--api-sock")
             .arg(format!("/{API_SOCKET}"))
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::from(output))
             .stderr(Stdio::from(stderr))
             .spawn()?;
-        let pid = if self.config.daemonize {
-            let pid_file = self
-                .root_path(id)
-                .join(format!("{}.pid", self.firecracker_name()));
-            let deadline = Instant::now() + START_TIMEOUT;
-            let pid = loop {
-                if let Ok(contents) = fs::read_to_string(&pid_file) {
-                    break contents
-                        .trim()
-                        .parse()
-                        .map_err(|_| RuntimeError::Protocol("invalid jailer PID file"))?;
-                }
-                if Instant::now() >= deadline {
-                    return Err(RuntimeError::TimedOut("jailer PID file"));
-                }
-                thread::sleep(Duration::from_millis(20));
+        let result = (|| {
+            let pid = child.id();
+            let start_time_ticks = read_proc(pid)?
+                .ok_or(RuntimeError::Protocol("launch gate vanished"))?
+                .start_time_ticks;
+            let record = ProcessRecord {
+                resource_id: id.to_owned(),
+                pid,
+                start_time_ticks,
             };
-            let _ = child.wait()?;
-            pid
+            let mut file = tempfile::NamedTempFile::new_in(claim)?;
+            serde_json::to_writer(&mut file, &record)?;
+            file.as_file_mut().sync_all()?;
+            file.persist_noclobber(claim.join("record.json"))
+                .map_err(|error| RuntimeError::Io(error.error))?;
+            File::open(claim)?.sync_all()?;
+            child
+                .stdin
+                .take()
+                .ok_or(RuntimeError::Protocol("launch gate pipe missing"))?
+                .write_all(b"release\n")?;
+            Ok(record)
+        })();
+        if result.is_err() {
+            drop(child.stdin.take());
+            let _ = child.wait();
         } else {
-            child.id()
-        };
-        let start_time_ticks = read_proc(pid)?
-            .ok_or(RuntimeError::Protocol("new Firecracker PID vanished"))?
-            .start_time_ticks;
-        let record = ProcessRecord {
-            resource_id: id.to_owned(),
-            pid,
-            start_time_ticks,
-        };
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(claim.join("record.json"))?;
-        serde_json::to_writer(&mut file, &record)?;
-        file.flush()?;
-        file.sync_all()?;
-        File::open(claim)?.sync_all()?;
-        Ok(record)
+            // A running service must reap its non-daemonized VMM after stop.
+            // On service crash the kernel reparents it; the durable record
+            // remains available for exact observation and termination.
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        result
     }
 
     fn stage_and_boot(&self, id: &str, pid: u32) -> Result<(), RuntimeError> {
@@ -958,6 +957,52 @@ mod tests {
             check_kvm(Path::new("/nonexistent-sandproof-kvm")),
             Err(RuntimeError::KvmUnavailable(_))
         ));
+    }
+
+    #[test]
+    fn launch_gate_requires_explicit_release_and_eof_cannot_start_child() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("started");
+        let mut denied = Command::new("/bin/sh")
+            .args([
+                "-c",
+                LAUNCH_GATE_SCRIPT,
+                "sandproof-launch-gate",
+                "/bin/sh",
+                "-c",
+            ])
+            .arg("printf started > \"$1\"")
+            .arg("jailer-test")
+            .arg(&marker)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(denied.stdin.take());
+        assert!(!denied.wait().unwrap().success());
+        assert!(!marker.exists());
+
+        let mut released = Command::new("/bin/sh")
+            .args([
+                "-c",
+                LAUNCH_GATE_SCRIPT,
+                "sandproof-launch-gate",
+                "/bin/sh",
+                "-c",
+            ])
+            .arg("printf started > \"$1\"")
+            .arg("jailer-test")
+            .arg(&marker)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        released
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"release\n")
+            .unwrap();
+        assert!(released.wait().unwrap().success());
+        assert_eq!(fs::read(&marker).unwrap(), b"started");
     }
 
     #[test]

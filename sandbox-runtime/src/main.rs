@@ -59,7 +59,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         vm_gid: args[9].parse()?,
         vcpu_count: 1,
         memory_mib: 512,
-        daemonize: args[1] == "launch",
         private_netns: network_mode.then(|| PathBuf::from(&args[10])),
         access_token_hash,
     };

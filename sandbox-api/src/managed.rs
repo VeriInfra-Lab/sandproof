@@ -2,6 +2,7 @@
 //! It does not impersonate the host: all worker receipts come from `HostAdapter`.
 
 use std::{
+    collections::BTreeSet,
     marker::PhantomData,
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
@@ -10,7 +11,8 @@ use std::{
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, HostEvidence, JournalError, NeverCrash,
-    WorkerTransportError, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
+    WorkerTransportError, finish_accepted_kill_v1, finish_admitted_create_v1,
+    finish_compensating_create_v1, kill_v1,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
@@ -31,6 +33,11 @@ pub trait HostAdapter: Send + 'static {
     /// # Errors
     /// A host credential creation failure leaves the admitted create pending.
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError>;
+    /// Return false only when no credential was ever stored. A malformed or
+    /// unreadable credential must be an error, not permission to replace it.
+    /// # Errors
+    /// Refuses to classify an untrusted or corrupt host credential as absent.
+    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError>;
     /// # Errors
     /// Missing credentials cannot be replaced by a new token on connect.
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError>;
@@ -188,6 +195,7 @@ fn map_journal(error: JournalError) -> PortError {
         JournalError::UnresolvedAction | JournalError::CommitUncertain(_) => {
             PortError::OutcomeUnknown
         }
+        JournalError::OperationFailed => PortError::Failed,
         _ => PortError::Busy,
     };
     drop(error);
@@ -221,27 +229,76 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// Reconcile exact host observations before resuming accepted workflows.
     /// It never re-executes a dispatched action. A sandbox with inconclusive
     /// evidence remains unavailable, while other sandboxes can still recover.
-    /// Call this after opening the durable journal and before serving requests.
+    /// Call this after opening the durable journal and periodically while the
+    /// service runs. Repeated calls never re-dispatch an uncertain action.
     /// # Errors
     /// Invalid evidence or a corrupt journal aborts startup recovery.
     pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let Inner { journal, host } = &mut *inner;
+        let initial = journal.world().map_err(map_journal)?;
+        let mut blocked = BTreeSet::new();
+        for (sandbox, record) in initial.sandbox_records() {
+            if record.phase != core::Phase::Starting
+                || !matches!(record.current_operation, Some(operation)
+                    if operation.kind == core::OperationKind::Create)
+            {
+                continue;
+            }
+            let operation = record.current_operation.ok_or(PortError::Busy)?;
+            let key = core::OperationKey {
+                sandbox: *sandbox,
+                operation: operation.id,
+            };
+            let plan = initial.operation_plan(key).ok_or(PortError::Busy)?;
+            match host.has_secret(*sandbox) {
+                Ok(true) => {}
+                Ok(false) if plan.vm.is_none() => {
+                    if host.put_secret(*sandbox, &token()?).is_err() {
+                        blocked.insert(*sandbox);
+                    }
+                }
+                Ok(false) | Err(_) => {
+                    // Once a VM has been reserved, a missing secret may mean
+                    // external work already started. Never mint a replacement.
+                    blocked.insert(*sandbox);
+                }
+            }
+        }
         let receipts_recovered = journal
-            .reconcile_uncertain(&mut |action| host.observe(action))
+            .reconcile_uncertain(&mut |action| {
+                (!blocked.contains(&action.command.command().sandbox()))
+                    .then(|| host.observe(action))
+                    .flatten()
+            })
             .map_err(map_journal)?;
         let pending = journal.world().map_err(map_journal)?;
         let mut report = RecoveryReport {
             receipts_recovered,
+            unresolved_sandboxes: blocked.len(),
             ..RecoveryReport::default()
         };
         for (sandbox, record) in pending.sandbox_records() {
+            if blocked.contains(sandbox) {
+                continue;
+            }
             let Some(operation) = record.current_operation else {
                 continue;
             };
             let resume = match (record.phase, operation.kind) {
                 (core::Phase::Starting, core::OperationKind::Create) => {
                     finish_admitted_create_v1(journal, *sandbox, operation.id, &mut |action| {
+                        host.execute(action)
+                    })
+                    .map(|_| ())
+                }
+                (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Create)
+                    if matches!(
+                        operation.status,
+                        core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
+                    ) =>
+                {
+                    finish_compensating_create_v1(journal, *sandbox, operation.id, &mut |action| {
                         host.execute(action)
                     })
                     .map(|_| ())
@@ -255,7 +312,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 _ => continue,
             };
             match resume {
-                Ok(()) => report.workflows_completed += 1,
+                Ok(()) | Err(JournalError::OperationFailed) => report.workflows_completed += 1,
                 Err(JournalError::UnresolvedAction) => report.unresolved_sandboxes += 1,
                 Err(error) => return Err(map_journal(error)),
             }
