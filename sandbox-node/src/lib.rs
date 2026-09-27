@@ -7,4 +7,4 @@
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::{HostObservation, LinuxWorker, NodeConfig};
+pub use linux::{HostInventory, HostObservation, LinuxWorker, NodeConfig, ObservedSlot};

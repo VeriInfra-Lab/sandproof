@@ -11,9 +11,12 @@ use sandproof_api::{
     router,
 };
 use sandproof_controller_service::{
-    AdmissionLimits, ControllerJournal, HostEvidence, WorkerTransportError,
+    AdmissionLimits, ControllerJournal, HostEvidence, NeverCrash, WorkerTransportError,
+    finish_admitted_create_v1,
 };
-use sandproof_protocol::{ResourceEvidence, ResourceRef, WorkAction, WorkOutcome, WorkReceipt};
+use sandproof_protocol::{
+    ResourceEvidence, ResourceRef, UnknownReason, WorkAction, WorkOutcome, WorkReceipt,
+};
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -43,6 +46,7 @@ impl HostEvidence for Evidence {
 struct FakeHost {
     secrets: BTreeMap<u64, String>,
     free_bytes: u64,
+    observed_prepare: bool,
 }
 
 impl Default for FakeHost {
@@ -50,6 +54,7 @@ impl Default for FakeHost {
         Self {
             secrets: BTreeMap::new(),
             free_bytes: 10_000,
+            observed_prepare: false,
         }
     }
 }
@@ -83,6 +88,22 @@ impl HostAdapter for FakeHost {
                 command: action.command.command().clone(),
             }),
         })
+    }
+
+    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
+        if self.observed_prepare
+            && matches!(action.command.command(), core::Command::PrepareVm { .. })
+        {
+            Some(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::ObservedSuccess(Evidence {
+                    resource: action.identity.resource.clone(),
+                    command: action.command.command().clone(),
+                }),
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -119,6 +140,74 @@ fn setup_with_host(host: FakeHost) -> (TempDir, Arc<ManagedPort<FakeHost>>) {
 
 fn setup() -> (TempDir, Arc<ManagedPort<FakeHost>>) {
     setup_with_host(FakeHost::default())
+}
+
+#[test]
+fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let sandbox = core::SandboxId(1);
+    journal
+        .admit_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox,
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+            )
+            .unwrap(),
+            300,
+            1_000,
+            config().limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let attempted =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+                Ok(WorkReceipt::<Evidence> {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                })
+            } else {
+                FakeHost::default().execute(action)
+            }
+        });
+    assert!(attempted.is_err());
+    drop(journal);
+    let mut host = FakeHost {
+        observed_prepare: true,
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    let recovery = port.recover_on_startup().unwrap();
+    assert_eq!(recovery.receipts_recovered, 1);
+    assert_eq!(recovery.workflows_completed, 1);
+    assert_eq!(recovery.unresolved_sandboxes, 0);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
+        "running"
+    );
 }
 
 fn request() -> CreateRequest {

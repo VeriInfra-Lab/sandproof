@@ -1,15 +1,19 @@
 use rustix::process::geteuid;
 use sandbox_controller_core as core;
-use sandbox_runtime::{Runtime, RuntimeConfig, VmState, check_trusted_path};
+use sandbox_runtime::{
+    Observation, Runtime, RuntimeConfig, RuntimeError, VmState, check_trusted_path,
+};
 use sandproof_controller_service::{HostEvidence, WorkerTransportError};
 use sandproof_protocol::{
     ResourceEvidence, ResourceId, ResourceKind, ResourceRef, UnknownReason, WorkAction,
     WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs::{self, DirBuilder, File};
 use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command as Process, Stdio};
@@ -36,6 +40,26 @@ pub struct NodeConfig {
     /// V1 has one deployment-controlled managed-disk policy, not arbitrary
     /// user-supplied host paths or a directory ACL implementation.
     pub file_policy_digest: core::PolicyDigest,
+}
+
+/// Read-only host inventory. A claim without a process record is explicitly
+/// inconclusive; it must not be treated as a stopped VM or deleted by name.
+#[derive(Clone, Debug)]
+pub struct HostInventory {
+    pub slots: Vec<ObservedSlot>,
+    pub unbound_claims: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObservedSlot {
+    pub sandbox: core::SandboxId,
+    pub generation: core::Generation,
+    pub vm: core::VmId,
+    pub slot: core::NetSlotId,
+    pub claim_present: bool,
+    pub process: Option<Observation>,
+    pub network_inode: Option<u64>,
+    pub disk_inode: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,6 +153,148 @@ pub struct LinuxWorker {
 }
 
 impl LinuxWorker {
+    /// Enumerate every slot and claim in this deployment namespace, including
+    /// incomplete launches. This is evidence for reconciliation, not authority
+    /// to kill or remove anything. Unexpected/corrupt entries fail closed.
+    /// # Errors
+    /// Rejects unsafe paths, malformed bindings or mismatched host identities.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "closed inventory checks each recorded host resource and orphan claim without silently skipping malformed entries"
+    )]
+    pub fn inventory(&self) -> NodeResult<HostInventory> {
+        let prefix = format!("slot-{}-", self.config.namespace);
+        let mut slots = Vec::new();
+        let mut bound = BTreeSet::new();
+        for entry in fs::read_dir(self.config.state_dir.join("slots"))? {
+            let entry = entry?;
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| "non-UTF8 slot name")?;
+            if !name.starts_with(&prefix) {
+                continue;
+            }
+            let number = name
+                .strip_prefix(&prefix)
+                .and_then(|tail| tail.strip_suffix(".json"))
+                .ok_or("invalid slot filename")?
+                .parse::<u64>()?;
+            let path = entry.path();
+            check_trusted_path(&path)?;
+            let metadata = fs::symlink_metadata(&path)?;
+            if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
+                return Err("untrusted slot record".into());
+            }
+            let binding: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
+            if binding.slot.0 != number || binding.vm.0 > self.config.max_vm_id {
+                return Err("slot filename or VM identity mismatch".into());
+            }
+            let vm_name = self.vm_name(binding.vm);
+            if !bound.insert(vm_name.clone()) {
+                return Err("one VM is bound to multiple network slots".into());
+            }
+            let claim = self.config.chroot_base.join(".claims").join(&vm_name);
+            let claim_present = match fs::symlink_metadata(&claim) {
+                Ok(metadata)
+                    if metadata.is_dir()
+                        && metadata.uid() == 0
+                        && metadata.mode().trailing_zeros() >= 6 =>
+                {
+                    true
+                }
+                Ok(_) => return Err("untrusted VM claim".into()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                Err(error) => return Err(error.into()),
+            };
+            let process = if claim_present {
+                match self.runtime(binding.sandbox, binding.vm)?.observe(&vm_name) {
+                    Ok(observed) => Some(observed),
+                    Err(RuntimeError::MissingRecord) => None,
+                    Err(error) => return Err(error.into()),
+                }
+            } else {
+                None
+            };
+            let network = PathBuf::from(format!("/run/netns/{vm_name}"));
+            let network_inode = match fs::symlink_metadata(&network) {
+                Ok(metadata) if metadata.is_file() && metadata.uid() == 0 => Some(metadata.ino()),
+                Ok(_) => return Err("untrusted network namespace handle".into()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.into()),
+            };
+            let disk = self
+                .config
+                .chroot_base
+                .join(
+                    self.config
+                        .firecracker
+                        .file_name()
+                        .ok_or("invalid firecracker name")?,
+                )
+                .join(&vm_name)
+                .join("root/rootfs.ext4");
+            let disk_inode = match fs::symlink_metadata(&disk) {
+                Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                    Some(metadata.ino())
+                }
+                Ok(_) => return Err("untrusted VM disk".into()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.into()),
+            };
+            slots.push(ObservedSlot {
+                sandbox: binding.sandbox,
+                generation: binding.generation,
+                vm: binding.vm,
+                slot: binding.slot,
+                claim_present,
+                process,
+                network_inode,
+                disk_inode,
+            });
+        }
+        slots.sort_by_key(|slot| slot.slot.0);
+        let mut unbound_claims = Vec::new();
+        let claims = self.config.chroot_base.join(".claims");
+        match fs::read_dir(&claims) {
+            Ok(entries) => {
+                let vm_prefix = format!("vm-{}-", self.config.namespace);
+                for entry in entries {
+                    let entry = entry?;
+                    let name = entry
+                        .file_name()
+                        .into_string()
+                        .map_err(|_| "non-UTF8 claim name")?;
+                    if !name.starts_with(&vm_prefix) {
+                        continue;
+                    }
+                    let number = name
+                        .strip_prefix(&vm_prefix)
+                        .and_then(|number| number.parse::<u64>().ok())
+                        .ok_or("invalid VM claim number")?;
+                    let metadata = fs::symlink_metadata(entry.path())?;
+                    if number > self.config.max_vm_id
+                        || !entry.file_type()?.is_dir()
+                        || metadata.uid() != 0
+                        || metadata.mode().trailing_zeros() < 6
+                    {
+                        return Err("invalid VM claim name or type".into());
+                    }
+                    if !bound.contains(&name) {
+                        unbound_claims.push(name);
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        unbound_claims.sort();
+        Ok(HostInventory {
+            slots,
+            unbound_claims,
+        })
+    }
+
     /// Check allocatable bytes on the same filesystem that stores the VM's
     /// private disk. This is an admission observation, not a reservation
     /// against unrelated host processes.
@@ -179,6 +345,19 @@ impl LinuxWorker {
             || config.memory_mib < 128
         {
             return Err("invalid node resource limits".into());
+        }
+        let longest_socket = config
+            .chroot_base
+            .join(
+                config
+                    .firecracker
+                    .file_name()
+                    .ok_or("invalid firecracker name")?,
+            )
+            .join(format!("vm-{}-{}", config.namespace, config.max_vm_id))
+            .join("root/api.socket");
+        if longest_socket.as_os_str().as_bytes().len() >= 108 {
+            return Err("Firecracker API socket path exceeds Linux limit".into());
         }
         for subdir in ["secrets", "fences", "slots"] {
             let path = config.state_dir.join(subdir);
@@ -255,6 +434,134 @@ impl LinuxWorker {
         Ok(WorkReceipt {
             identity: action.identity.clone(),
             outcome,
+        })
+    }
+
+    /// Reconstruct a successful receipt only from current host state. This
+    /// path must never launch, initialize, stop, or clean a VM: a dispatched
+    /// action may already have taken effect before the controller crashed.
+    /// An error means that the outcome remains unknown, not that it failed.
+    /// # Errors
+    /// Returns the exact failed observation check for operator diagnosis.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "each V1 command needs its own read-only physical observation without sharing mutating worker paths"
+    )]
+    pub fn observe_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<WorkReceipt<HostObservation>> {
+        self.validate_action(action)?;
+        let command = action.command.command();
+        let result = match command {
+            core::Command::InstallFence {
+                sandbox,
+                epoch,
+                terminal,
+            } => {
+                let observed = self.fence(*sandbox)?;
+                if observed.epoch != *epoch || observed.terminal != *terminal {
+                    return Err("host fence does not prove this action".into());
+                }
+                ObservedResult::Fence(observed)
+            }
+            core::Command::PrepareVm {
+                sandbox,
+                generation,
+                vm,
+                slot,
+                ..
+            } => {
+                self.require_slot(*sandbox, *generation, *vm, *slot)?;
+                let observed = self.running(*sandbox, *vm)?;
+                ObservedResult::Prepared {
+                    pid: observed.pid,
+                    start_ticks: observed.start_time_ticks,
+                }
+            }
+            core::Command::ConfigureNetwork { .. }
+            | core::Command::ApplyFilePolicy { .. }
+            | core::Command::CleanupSlot { .. } => {
+                return Ok(WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::ObservedSuccess(self.perform(action)?),
+                });
+            }
+            core::Command::ActivateVm {
+                sandbox,
+                generation,
+                vm,
+                ..
+            } => {
+                if self.vm_for_workspace(*sandbox, *generation)? != *vm {
+                    return Err("activation VM binding mismatch".into());
+                }
+                let observed = self.running(*sandbox, *vm)?;
+                let token = self.secret(*sandbox)?.token;
+                if Self::guest_file_status(&self.vm_name(*vm), &token)? != "200" {
+                    return Err("guest authentication not observed".into());
+                }
+                ObservedResult::Activated {
+                    pid: observed.pid,
+                    start_ticks: observed.start_time_ticks,
+                }
+            }
+            core::Command::StopVm {
+                sandbox,
+                epoch,
+                generation,
+                vm,
+            } => {
+                self.require_fence(*sandbox, *epoch, true)?;
+                if self.vm_for_workspace(*sandbox, *generation)? != *vm {
+                    return Err("stop VM binding mismatch".into());
+                }
+                let observed = self.runtime(*sandbox, *vm)?.observe(&self.vm_name(*vm))?;
+                if observed.state != VmState::Stopped {
+                    return Err("exact VM stop not observed".into());
+                }
+                ObservedResult::Stopped {
+                    pid: observed.pid,
+                    start_ticks: observed.start_time_ticks,
+                }
+            }
+            core::Command::CleanupVm {
+                sandbox,
+                generation,
+                vm,
+            } => {
+                if !self.fence(*sandbox)?.terminal
+                    || self.vm_for_workspace(*sandbox, *generation)? != *vm
+                {
+                    return Err("cleanup VM binding mismatch".into());
+                }
+                let name = self.vm_name(*vm);
+                if self.runtime(*sandbox, *vm)?.observe(&name)?.state != VmState::Stopped {
+                    return Err("exact VM is still live".into());
+                }
+                let jail = self
+                    .config
+                    .chroot_base
+                    .join(
+                        self.config
+                            .firecracker
+                            .file_name()
+                            .ok_or("invalid firecracker name")?,
+                    )
+                    .join(&name);
+                require_absent(&jail)?;
+                require_absent(Path::new(&format!("/run/netns/{name}")))?;
+                ObservedResult::VmCleaned
+            }
+            _ => return Err("command is outside the V1 host observer".into()),
+        };
+        Ok(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(HostObservation {
+                resource: action.identity.resource.clone(),
+                command: command.clone(),
+                result,
+            }),
         })
     }
 
@@ -377,11 +684,7 @@ impl LinuxWorker {
         Ok(())
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "closed V1 command dispatch keeps each physical precondition adjacent to its exact observation"
-    )]
-    fn perform(&self, action: &WorkAction<core::EffectId>) -> NodeResult<HostObservation> {
+    fn validate_action(&self, action: &WorkAction<core::EffectId>) -> NodeResult<()> {
         action.identity.validate_version()?;
         let command = action.command.command();
         let generation = match command {
@@ -403,6 +706,16 @@ impl LinuxWorker {
         {
             return Err("host action identity mismatch".into());
         }
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "closed V1 command dispatch keeps each physical precondition adjacent to its exact observation"
+    )]
+    fn perform(&self, action: &WorkAction<core::EffectId>) -> NodeResult<HostObservation> {
+        self.validate_action(action)?;
+        let command = action.command.command();
         let result = match command {
             core::Command::InstallFence {
                 sandbox,
@@ -600,9 +913,7 @@ impl LinuxWorker {
                     return Err("cannot clean live VM".into());
                 }
                 runtime.cleanup(&self.vm_name(*vm))?;
-                if Path::new(&format!("/run/netns/{}", self.vm_name(*vm))).exists() {
-                    return Err("network namespace remains after cleanup".into());
-                }
+                require_absent(Path::new(&format!("/run/netns/{}", self.vm_name(*vm))))?;
                 ObservedResult::VmCleaned
             }
             core::Command::CleanupSlot {
@@ -617,9 +928,10 @@ impl LinuxWorker {
                 if binding.sandbox != *sandbox || binding.generation != *generation {
                     return Err("slot cleanup binding mismatch".into());
                 }
-                if Path::new(&format!("/run/netns/{}", self.vm_name(binding.vm))).exists() {
-                    return Err("slot namespace remains after cleanup".into());
-                }
+                require_absent(Path::new(&format!(
+                    "/run/netns/{}",
+                    self.vm_name(binding.vm)
+                )))?;
                 if self
                     .runtime(*sandbox, binding.vm)?
                     .observe(&self.vm_name(binding.vm))?
@@ -813,6 +1125,14 @@ impl LinuxWorker {
     }
 }
 
+fn require_absent(path: &Path) -> NodeResult<()> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err("host resource still exists after cleanup".into()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn hash_token(token: &str) -> NodeResult<String> {
     let mut child = Process::new("/usr/bin/sha512sum")
         .stdin(Stdio::piped())
@@ -864,4 +1184,18 @@ fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
     file.persist(path)?;
     File::open(parent)?.sync_all()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_absent;
+
+    #[test]
+    fn dangling_symlink_is_not_mistaken_for_cleaned_resource() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let link = directory.path().join("dangling");
+        std::os::unix::fs::symlink(directory.path().join("missing"), &link).unwrap();
+        assert!(require_absent(&link).is_err());
+        assert!(require_absent(&directory.path().join("missing")).is_ok());
+    }
 }

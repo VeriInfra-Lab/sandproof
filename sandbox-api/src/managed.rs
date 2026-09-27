@@ -40,6 +40,17 @@ pub trait HostAdapter: Send + 'static {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError>;
+
+    /// Observe an already dispatched action without performing it again.
+    /// `None` means the physical outcome is still unknown and must stay so.
+    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>>;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RecoveryReport {
+    pub receipts_recovered: usize,
+    pub workflows_completed: usize,
+    pub unresolved_sandboxes: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,6 +216,51 @@ impl<H: HostAdapter> ManagedPort<H> {
             config,
             _evidence: PhantomData,
         }
+    }
+
+    /// Reconcile exact host observations before resuming accepted workflows.
+    /// It never re-executes a dispatched action. A sandbox with inconclusive
+    /// evidence remains unavailable, while other sandboxes can still recover.
+    /// Call this after opening the durable journal and before serving requests.
+    /// # Errors
+    /// Invalid evidence or a corrupt journal aborts startup recovery.
+    pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {
+        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        let Inner { journal, host } = &mut *inner;
+        let receipts_recovered = journal
+            .reconcile_uncertain(&mut |action| host.observe(action))
+            .map_err(map_journal)?;
+        let pending = journal.world().map_err(map_journal)?;
+        let mut report = RecoveryReport {
+            receipts_recovered,
+            ..RecoveryReport::default()
+        };
+        for (sandbox, record) in pending.sandbox_records() {
+            let Some(operation) = record.current_operation else {
+                continue;
+            };
+            let resume = match (record.phase, operation.kind) {
+                (core::Phase::Starting, core::OperationKind::Create) => {
+                    finish_admitted_create_v1(journal, *sandbox, operation.id, &mut |action| {
+                        host.execute(action)
+                    })
+                    .map(|_| ())
+                }
+                (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Kill) => {
+                    finish_accepted_kill_v1(journal, *sandbox, operation.id, &mut |action| {
+                        host.execute(action)
+                    })
+                    .map(|_| ())
+                }
+                _ => continue,
+            };
+            match resume {
+                Ok(()) => report.workflows_completed += 1,
+                Err(JournalError::UnresolvedAction) => report.unresolved_sandboxes += 1,
+                Err(error) => return Err(map_journal(error)),
+            }
+        }
+        Ok(report)
     }
 
     /// Resolve an envd bearer credential to the exact current VM and check

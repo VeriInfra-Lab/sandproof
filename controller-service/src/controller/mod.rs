@@ -392,6 +392,35 @@ impl ControllerJournal {
         }
         Ok(actions)
     }
+
+    /// Resolve claimed actions from fresh, command-specific host observations.
+    /// The observer must not execute the action again. An absent or inconclusive
+    /// observation leaves the durable action unresolved for later inspection.
+    ///
+    /// # Errors
+    /// Rejects invalid evidence or storage failures without inventing success.
+    pub fn reconcile_uncertain<E, O>(&mut self, observer: &mut O) -> Result<usize, JournalError>
+    where
+        E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+        O: FnMut(&WorkAction<core::EffectId>) -> Option<WorkReceipt<E>>,
+    {
+        let mut resolved = 0;
+        for action in self.uncertain_actions()? {
+            let Some(receipt) = observer(&action) else {
+                continue;
+            };
+            if !matches!(
+                receipt.outcome,
+                WorkOutcome::ObservedSuccess(_)
+                    | WorkOutcome::DefinitiveFailure { partial: None, .. }
+            ) {
+                continue;
+            }
+            self.complete(&receipt, &mut crate::NeverCrash)?;
+            resolved += 1;
+        }
+        Ok(resolved)
+    }
 }
 
 fn uncertain<E>(outcome: &WorkOutcome<E>) -> bool {

@@ -16,7 +16,7 @@
 
 ## 动作接口：A → B
 
-节点运行器的首批实现及实机运行方法见 [`sandbox-runtime`](../sandbox-runtime/README.md)。其 `vmm_running` 只代表虚拟机监控器状态，不能当作可用沙箱成功回执。[宿主适配器](../sandbox-node/src/linux.rs)已在隔离 Linux/KVM 测试中补上 envd 健康、鉴权初始化、禁网和独立磁盘检查，只有这些观察完成才向控制核心回执成功；公网出站、外部 API 鉴权和完整崩溃对账仍未接通。
+节点运行器的首批实现及实机运行方法见 [`sandbox-runtime`](../sandbox-runtime/README.md)。其 `vmm_running` 只代表虚拟机监控器状态，不能当作可用沙箱成功回执。[宿主适配器](../sandbox-node/src/linux.rs)已在隔离 Linux/KVM 测试中补上 envd 健康、鉴权初始化、禁网和独立磁盘检查，只有这些观察完成才向控制核心回执成功。它还可只读枚举已登记的 VM/网络槽/私有盘，并对丢失的准备和停止回执重新观察；控制器重启时先核对宿主资源与持久计划，再接续可确认的动作。未落盘的进程记录或无法精确归属的资源仍会阻止自动接续，不能按名称猜测清理；静态公网出站、受控 DNS 和完整崩溃对账仍未接通。
 
 每项持久动作至少绑定：协议版本、sandbox、owner、operation、epoch/generation、逻辑动作 ID、attempt ID、精确资源 ID、动作参数。只有已提交动作可派发；B 的控制入口不向沙箱或公网开放。
 

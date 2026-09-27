@@ -18,12 +18,26 @@ where
     W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
 {
     loop {
+        if journal
+            .uncertain_actions()?
+            .iter()
+            .any(|action| action.command.command().sandbox() == sandbox)
+        {
+            return Err(JournalError::UnresolvedAction);
+        }
         match journal.dispatch_next_for(sandbox, worker, &mut NeverCrash)? {
             DispatchResult::NoReadyAction => return Ok(()),
             DispatchResult::ReceiptRecorded(_) => {}
             DispatchResult::OutcomeUnknown { .. } => return Err(JournalError::UnresolvedAction),
         }
     }
+}
+
+fn scheduled(world: &core::World, command: &core::Command) -> bool {
+    world
+        .effect_ids()
+        .iter()
+        .any(|effect| effect.command() == command)
 }
 
 /// Accept a V1 create, install its fence, reserve a VM, and publish only after
@@ -74,28 +88,45 @@ where
         .ok_or(JournalError::UnsupportedInput)?;
     if record.phase != core::Phase::Starting
         || !matches!(record.current_operation, Some(current)
-            if current.id == operation && current.kind == core::OperationKind::Create)
+            if current.id == operation
+                && current.kind == core::OperationKind::Create
+                && matches!(current.status, core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown))
     {
         return Err(JournalError::UnsupportedInput);
     }
     let key = core::OperationKey { sandbox, operation };
-    let reserved = journal.apply(
-        core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
-        &mut NeverCrash,
-    )?;
+    if world
+        .operation_plan(key)
+        .is_some_and(|plan| plan.vm.is_none())
+    {
+        journal.apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
+            &mut NeverCrash,
+        )?;
+    }
     drain(journal, sandbox, worker)?;
-    let plan = reserved
-        .next
+    let refreshed = journal.world()?;
+    let plan = refreshed
         .operation_plan(key)
         .ok_or(JournalError::CorruptStore)?;
-    journal.apply(
-        core::ControllerInput::Scheduler(core::SchedulerInput::DispatchPrepare(
-            sandbox,
-            plan.vm.ok_or(JournalError::CorruptStore)?,
-            plan.slot.ok_or(JournalError::CorruptStore)?,
-        )),
-        &mut NeverCrash,
-    )?;
+    let vm = plan.vm.ok_or(JournalError::CorruptStore)?;
+    let slot = plan.slot.ok_or(JournalError::CorruptStore)?;
+    let prepare = core::Command::PrepareVm {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+        slot,
+        source: plan.restore_from,
+    };
+    if !scheduled(&refreshed, &prepare) {
+        journal.apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::DispatchPrepare(
+                sandbox, vm, slot,
+            )),
+            &mut NeverCrash,
+        )?;
+    }
     drain(journal, sandbox, worker)?;
     Ok(journal
         .apply(
@@ -159,43 +190,110 @@ where
     let plan = accepted
         .operation_plan(key)
         .ok_or(JournalError::CorruptStore)?;
-    for vm in &plan.stop_vms {
-        journal.apply(
-            core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(
+    if record.phase == core::Phase::Revoking {
+        for vm in &plan.stop_vms {
+            let stop = core::Command::StopVm {
                 sandbox,
-                record.generation,
-                *vm,
-            )),
+                epoch: record.epoch,
+                generation: record.generation,
+                vm: *vm,
+            };
+            if !scheduled(&journal.world()?, &stop) {
+                journal.apply(
+                    core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(
+                        sandbox,
+                        record.generation,
+                        *vm,
+                    )),
+                    &mut NeverCrash,
+                )?;
+            }
+            drain(journal, sandbox, worker)?;
+        }
+        journal.apply(
+            core::ControllerInput::Publication(core::PublicationInput::Destroyed(sandbox)),
             &mut NeverCrash,
         )?;
-        drain(journal, sandbox, worker)?;
+    } else if record.phase != core::Phase::Destroyed {
+        return Err(JournalError::UnsupportedInput);
     }
-    let published = journal.apply(
-        core::ControllerInput::Publication(core::PublicationInput::Destroyed(sandbox)),
-        &mut NeverCrash,
-    )?;
-    let resources = published.next.resource_index(sandbox);
+    cleanup_destroyed_resources(journal, sandbox, record.generation, worker)
+}
+
+fn cleanup_destroyed_resources<E, W>(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+    worker: &mut W,
+) -> Result<core::World, JournalError>
+where
+    E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+    W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
+{
+    let resources = journal.world()?.resource_index(sandbox);
     for vm in resources.vms {
-        journal.apply(
-            core::ControllerInput::Scheduler(core::SchedulerInput::CleanupVm(
+        let world = journal.world()?;
+        if world
+            .vm_record(vm)
+            .is_some_and(|vm_record| vm_record.status == core::VmStatus::Reclaimed)
+        {
+            continue;
+        }
+        if !scheduled(
+            &world,
+            &core::Command::CleanupVm {
                 sandbox,
-                record.generation,
+                generation,
                 vm,
-            )),
-            &mut NeverCrash,
-        )?;
+            },
+        ) {
+            journal.apply(
+                core::ControllerInput::Scheduler(core::SchedulerInput::CleanupVm(
+                    sandbox, generation, vm,
+                )),
+                &mut NeverCrash,
+            )?;
+        }
         drain(journal, sandbox, worker)?;
+        if journal
+            .world()?
+            .vm_record(vm)
+            .is_none_or(|vm_record| vm_record.status != core::VmStatus::Reclaimed)
+        {
+            return Err(JournalError::UnresolvedAction);
+        }
     }
     for slot in resources.slots {
-        journal.apply(
-            core::ControllerInput::Scheduler(core::SchedulerInput::CleanupSlot(
+        let world = journal.world()?;
+        if world
+            .slot_record(slot)
+            .is_some_and(|slot_record| slot_record.reclaimed)
+        {
+            continue;
+        }
+        if !scheduled(
+            &world,
+            &core::Command::CleanupSlot {
                 sandbox,
-                record.generation,
+                generation,
                 slot,
-            )),
-            &mut NeverCrash,
-        )?;
+            },
+        ) {
+            journal.apply(
+                core::ControllerInput::Scheduler(core::SchedulerInput::CleanupSlot(
+                    sandbox, generation, slot,
+                )),
+                &mut NeverCrash,
+            )?;
+        }
         drain(journal, sandbox, worker)?;
+        if journal
+            .world()?
+            .slot_record(slot)
+            .is_none_or(|slot_record| !slot_record.reclaimed)
+        {
+            return Err(JournalError::UnresolvedAction);
+        }
     }
     journal.world()
 }
