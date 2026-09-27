@@ -51,6 +51,26 @@ pub trait HostAdapter: Send + 'static {
     /// Observe an already dispatched action without performing it again.
     /// `None` means the physical outcome is still unknown and must stay so.
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>>;
+
+    /// Reclaim an incomplete, already dispatched `PrepareVm` only after the
+    /// controller has matched it to the durable owner and resource plan.
+    /// A live or unobservable VM must remain untouched. The adapter records
+    /// exact physical evidence before `observe` may return a final failure.
+    /// # Errors
+    /// Ambiguous or foreign resources remain unresolved; no retry follows.
+    fn reclaim_incomplete_prepare(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError>;
+
+    /// Finish exact, already-dispatched cleanup after proving the recorded
+    /// VM is stopped. This may remove only resources owned by that VM.
+    /// # Errors
+    /// Ambiguous or live resources remain unresolved.
+    fn reclaim_incomplete_cleanup(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError>;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -216,6 +236,44 @@ fn map_admission(error: AdmissionError) -> PortError {
     }
 }
 
+fn reclaim_uncertain_actions<H: HostAdapter>(
+    journal: &ControllerJournal,
+    host: &mut H,
+    world: &core::World,
+    blocked: &BTreeSet<core::SandboxId>,
+) -> Result<(), PortError> {
+    // This is a compensating observation, never a replay of PrepareVm. The
+    // outbox action must match the exact current operation and sealed plan
+    // before the host checks physical identity and touches partial resources.
+    for action in journal.uncertain_actions().map_err(map_journal)? {
+        if blocked.contains(&action.command.command().sandbox()) {
+            continue;
+        }
+        match action.command.command() {
+            core::Command::PrepareVm { .. } => {
+                if !journal
+                    .matches_current_prepare(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_prepare(&action)?;
+            }
+            core::Command::CleanupVm { .. } => {
+                if !journal
+                    .matches_current_cleanup(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_cleanup(&action)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 impl<H: HostAdapter> ManagedPort<H> {
     #[must_use]
     pub fn new(journal: ControllerJournal, host: H, config: ManagedConfig) -> Self {
@@ -265,6 +323,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 }
             }
         }
+        reclaim_uncertain_actions(journal, host, &initial, &blocked)?;
         let receipts_recovered = journal
             .reconcile_uncertain(&mut |action| {
                 (!blocked.contains(&action.command.command().sandbox()))

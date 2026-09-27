@@ -415,6 +415,125 @@ impl LinuxWorker {
         Ok(())
     }
 
+    /// Recover only an already-dispatched `PrepareVm` selected by the
+    /// controller's durable plan. This never launches or signals a VM. An
+    /// absent first slot can be tombstoned only when its claim, jail and
+    /// namespace are all absent; otherwise identity remains unknown.
+    /// # Errors
+    /// Rejects mismatched ownership or any ambiguous physical resource.
+    pub fn reclaim_incomplete_prepare(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        self.validate_action(action)?;
+        let core::Command::PrepareVm {
+            sandbox,
+            generation,
+            vm,
+            slot,
+            ..
+        } = action.command.command()
+        else {
+            return Err("reclaim requires a PrepareVm action".into());
+        };
+        let slot_path = self.slot_path(*slot);
+        match fs::symlink_metadata(&slot_path) {
+            Ok(_) => self.require_slot(*sandbox, *generation, *vm, *slot)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let inventory = self.inventory()?;
+                if !inventory.unbound_claims.is_empty()
+                    || !inventory.unbound_networks.is_empty()
+                    || inventory
+                        .slots
+                        .iter()
+                        .any(|known| known.vm == *vm || known.slot == *slot)
+                {
+                    return Err("missing slot has an ambiguous host resource".into());
+                }
+                let name = self.vm_name(*vm);
+                require_absent(&self.config.chroot_base.join(".claims").join(&name))?;
+                require_absent(
+                    &self
+                        .config
+                        .chroot_base
+                        .join(
+                            self.config
+                                .firecracker
+                                .file_name()
+                                .ok_or("firecracker name")?,
+                        )
+                        .join(&name),
+                )?;
+                require_absent(Path::new(&format!("/run/netns/{name}")))?;
+                write_new_json(
+                    &slot_path,
+                    &SlotBinding {
+                        owner: action.identity.owner.clone(),
+                        sandbox: *sandbox,
+                        generation: *generation,
+                        vm: *vm,
+                        slot: *slot,
+                    },
+                )?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        let name = self.vm_name(*vm);
+        match self.runtime(*sandbox, *vm)?.observe(&name) {
+            Err(RuntimeError::MissingRecord) => {
+                self.reclaim_aborted_prepare(*sandbox, *generation, *vm, *slot)
+            }
+            Ok(Observation {
+                state: VmState::Stopped,
+                ..
+            }) => self.reclaim_stopped_prepare(*sandbox, *generation, *vm, *slot),
+            Ok(_) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Complete only a dispatched cleanup whose operation was matched by A.
+    /// Runtime cleanup is idempotent but still verifies the persisted process
+    /// identity, stopped state, jail type and namespace inode on every call.
+    /// # Errors
+    /// A live, changed or unobservable VM is never cleaned by guesswork.
+    pub fn reclaim_incomplete_cleanup(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        self.validate_action(action)?;
+        let core::Command::CleanupVm {
+            sandbox,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Err("reclaim requires a CleanupVm action".into());
+        };
+        if !self.fence(*sandbox)?.terminal || self.vm_for_workspace(*sandbox, *generation)? != *vm {
+            return Err("cleanup requires terminal fence and exact VM binding".into());
+        }
+        let name = self.vm_name(*vm);
+        let runtime = self.runtime(*sandbox, *vm)?;
+        if runtime.observe(&name)?.state != VmState::Stopped {
+            return Err("uncertain or live VM cannot be cleaned".into());
+        }
+        runtime.cleanup(&name)?;
+        let jail = self
+            .config
+            .chroot_base
+            .join(
+                self.config
+                    .firecracker
+                    .file_name()
+                    .ok_or("firecracker name")?,
+            )
+            .join(&name);
+        require_absent(&jail)?;
+        require_absent(Path::new(&format!("/run/netns/{name}")))?;
+        Ok(())
+    }
+
     /// Check allocatable bytes on the same filesystem that stores the VM's
     /// private disk. This is an admission observation, not a reservation
     /// against unrelated host processes.
@@ -1025,22 +1144,8 @@ impl LinuxWorker {
                     start_ticks: observation.start_time_ticks,
                 }
             }
-            core::Command::CleanupVm {
-                sandbox,
-                generation,
-                vm,
-            } => {
-                if !self.fence(*sandbox)?.terminal
-                    || self.vm_for_workspace(*sandbox, *generation)? != *vm
-                {
-                    return Err("cleanup requires terminal fence and exact VM".into());
-                }
-                let runtime = self.runtime(*sandbox, *vm)?;
-                if runtime.observe(&self.vm_name(*vm))?.state != VmState::Stopped {
-                    return Err("cannot clean live VM".into());
-                }
-                runtime.cleanup(&self.vm_name(*vm))?;
-                require_absent(Path::new(&format!("/run/netns/{}", self.vm_name(*vm))))?;
+            core::Command::CleanupVm { .. } => {
+                self.reclaim_incomplete_cleanup(action)?;
                 ObservedResult::VmCleaned
             }
             core::Command::CleanupSlot {

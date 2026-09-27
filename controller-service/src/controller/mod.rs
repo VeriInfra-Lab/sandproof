@@ -36,6 +36,101 @@ pub struct ControllerJournal {
 }
 
 impl ControllerJournal {
+    /// Require an uncertain prepare to belong to the exact current create
+    /// operation and its saved resource plan, not just a matching VM number.
+    /// # Errors
+    /// Rejects an invalid projected operation identity.
+    pub fn matches_current_prepare(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::PrepareVm {
+            sandbox,
+            generation,
+            vm,
+            slot,
+            ..
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        Ok(operation.kind == core::OperationKind::Create
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == plan.epoch
+            && action.identity.generation == *generation
+            && plan.generation == *generation
+            && plan.vm == Some(*vm)
+            && plan.slot == Some(*slot))
+    }
+
+    /// A cleanup can be resumed only for the current terminal workflow's
+    /// exact stopped VM. Physical process and resource checks remain the
+    /// host adapter's responsibility.
+    /// # Errors
+    /// Rejects an invalid projected operation identity.
+    pub fn matches_current_cleanup(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::CleanupVm {
+            sandbox,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        let Some(resource) = world.vm_record(*vm) else {
+            return Ok(false);
+        };
+        Ok(
+            matches!(record.phase, core::Phase::Revoking | core::Phase::Destroyed)
+                && matches!(
+                    operation.kind,
+                    core::OperationKind::Create | core::OperationKind::Kill
+                )
+                && action.identity.owner == identity::owner_id(record.owner)?
+                && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+                && action.identity.operation == identity::operation_id(&self.namespace, key)?
+                && action.identity.epoch == record.epoch
+                && action.identity.generation == *generation
+                && plan.generation == *generation
+                && plan.stop_vms.contains(vm)
+                && resource.sandbox == *sandbox
+                && resource.generation == *generation,
+        )
+    }
+
     /// `namespace` is a deployment-allocated, unique 16-digit lowercase hex ID.
     /// It is persisted and forms part of every external resource identifier.
     /// The database directory must be private to the trusted controller.
