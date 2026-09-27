@@ -83,6 +83,41 @@ def probe_edge_cases(sandbox, config):
                 assert response.status_code < 500, (suspicious, response.status_code)
             assert b"host-only sentinel" not in response.content
     assert sandbox.files.read("/tmp/input.txt") == "real guest file\n"
+    # Guest root may replace its resolver configuration. The host namespace
+    # guard must still reject the resulting DNS and non-DNS egress, while the
+    # authenticated host-initiated envd connection remains usable.
+    sandbox.commands.run(
+        "printf 'nameserver 1.1.1.1\\noptions timeout:1 attempts:1\\n' > /etc/resolv.conf"
+    )
+    network_probe = sandbox.commands.run("""python3 - <<'PY'
+import socket
+targets = [
+    (socket.AF_INET, ('1.1.1.1', 53)),
+    (socket.AF_INET, ('8.8.8.8', 853)),
+    (socket.AF_INET, ('1.1.1.1', 443)),
+    (socket.AF_INET6, ('2606:4700:4700::1111', 53)),
+]
+for family, target in targets:
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        try:
+            sock.connect(target)
+        except (OSError, TimeoutError):
+            continue
+        raise AssertionError(f'guest egress unexpectedly connected to {target}')
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+    sock.settimeout(0.5)
+    try:
+        sock.sendto(b'\\x00' * 12, ('1.1.1.1', 53))
+        sock.recvfrom(512)
+    except (OSError, TimeoutError):
+        pass
+    else:
+        raise AssertionError('guest received external DNS response')
+print('guest-egress-denied')
+PY""")
+    assert network_probe.stdout.strip() == "guest-egress-denied"
+    assert sandbox.files.read("/tmp/input.txt") == "real guest file\n"
     return path_statuses
 
 
