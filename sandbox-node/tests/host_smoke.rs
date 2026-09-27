@@ -16,6 +16,7 @@ use std::fs::File;
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::Command as Process;
 
 fn required(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("missing operator setting {name}"))
@@ -125,6 +126,7 @@ fn create_and_kill_use_real_host_receipts() {
     assert_eq!(resources.slots.len(), 1);
     let inventory = worker.inventory().unwrap();
     assert!(inventory.unbound_claims.is_empty());
+    assert!(inventory.unbound_networks.is_empty());
     assert_eq!(inventory.slots.len(), 1);
     assert_eq!(inventory.slots[0].sandbox, sandbox);
     assert_eq!(inventory.slots[0].vm, resources.vms[0]);
@@ -206,6 +208,7 @@ fn create_and_kill_use_real_host_receipts() {
     assert!(journal.uncertain_actions().unwrap().is_empty());
     let inventory = worker.inventory().unwrap();
     assert_eq!(inventory.slots.len(), 1);
+    assert!(inventory.unbound_networks.is_empty());
     assert_eq!(
         inventory.slots[0].process.as_ref().unwrap().state,
         sandbox_runtime::VmState::Stopped
@@ -223,4 +226,24 @@ fn create_and_kill_use_real_host_receipts() {
         vec![format!("vm-{namespace}-999")]
     );
     std::fs::remove_dir(&unbound).unwrap();
+    let orphan_network = format!("vm-{namespace}-998");
+    assert!(
+        Process::new("/usr/bin/ip")
+            .args(["netns", "add", &orphan_network])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(
+        worker.inventory().unwrap().unbound_networks,
+        vec![orphan_network.clone()]
+    );
+    assert!(
+        Process::new("/usr/bin/ip")
+            .args(["netns", "delete", &orphan_network])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(worker.inventory().unwrap().unbound_networks.is_empty());
 }

@@ -48,6 +48,7 @@ pub struct NodeConfig {
 pub struct HostInventory {
     pub slots: Vec<ObservedSlot>,
     pub unbound_claims: Vec<String>,
+    pub unbound_networks: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -153,9 +154,10 @@ pub struct LinuxWorker {
 }
 
 impl LinuxWorker {
-    /// Enumerate every slot and claim in this deployment namespace, including
-    /// incomplete launches. This is evidence for reconciliation, not authority
-    /// to kill or remove anything. Unexpected/corrupt entries fail closed.
+    /// Enumerate slots, VM claims and network handles in this deployment
+    /// namespace, including incomplete launches. This is evidence for
+    /// reconciliation, not authority to kill or remove anything.
+    /// Unexpected/corrupt entries fail closed.
     /// # Errors
     /// Rejects unsafe paths, malformed bindings or mismatched host identities.
     #[expect(
@@ -289,9 +291,50 @@ impl LinuxWorker {
             Err(error) => return Err(error.into()),
         }
         unbound_claims.sort();
+        let mut unbound_networks = Vec::new();
+        let networks = Path::new("/run/netns");
+        let vm_prefix = format!("vm-{}-", self.config.namespace);
+        match fs::read_dir(networks) {
+            Ok(entries) => {
+                check_trusted_path(networks)?;
+                for entry in entries {
+                    let entry = entry?;
+                    if !entry
+                        .file_name()
+                        .as_bytes()
+                        .starts_with(vm_prefix.as_bytes())
+                    {
+                        continue;
+                    }
+                    let name = entry
+                        .file_name()
+                        .into_string()
+                        .map_err(|_| "non-UTF8 network namespace name")?;
+                    let number = name
+                        .strip_prefix(&vm_prefix)
+                        .and_then(|number| number.parse::<u64>().ok())
+                        .ok_or("invalid network namespace number")?;
+                    let metadata = fs::symlink_metadata(entry.path())?;
+                    if name != format!("{vm_prefix}{number}")
+                        || number > self.config.max_vm_id
+                        || !metadata.is_file()
+                        || metadata.uid() != 0
+                    {
+                        return Err("invalid network namespace identity or type".into());
+                    }
+                    if !bound.contains(&name) {
+                        unbound_networks.push(name);
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        unbound_networks.sort();
         Ok(HostInventory {
             slots,
             unbound_claims,
+            unbound_networks,
         })
     }
 
