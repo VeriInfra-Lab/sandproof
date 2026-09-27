@@ -1,7 +1,7 @@
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::fs::chown;
 use rustix::process::{Gid, Pid, PidfdFlags, Signal, Uid, pidfd_open, pidfd_send_signal};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
 use std::error::Error;
 use std::fmt::{self, Display};
@@ -142,6 +142,12 @@ struct ProcessRecord {
 struct NetworkRecord {
     resource_id: String,
     namespace_inode: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResourceMarker {
+    resource_id: String,
 }
 
 pub struct Runtime {
@@ -495,6 +501,15 @@ impl Runtime {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
+        // This durable intent precedes the first host-side network effect.
+        // A crash after `netns add` can then be tied to this never-reused
+        // claim, even if the inode record was not yet committed.
+        write_new_record(
+            &claim.join("network-intent.json"),
+            &ResourceMarker {
+                resource_id: id.to_owned(),
+            },
+        )?;
         run_ip("create namespace", &["netns", "add", id])?;
         check_trusted_path(namespace)?;
         let metadata = fs::symlink_metadata(namespace)?;
@@ -507,15 +522,7 @@ impl Runtime {
             resource_id: id.to_owned(),
             namespace_inode: metadata.ino(),
         };
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(claim.join("network.json"))?;
-        serde_json::to_writer(&mut file, &network)?;
-        file.flush()?;
-        file.sync_all()?;
-        File::open(claim)?.sync_all()?;
+        write_new_record(&claim.join("network.json"), &network)?;
 
         // The same private IPv4 range is safe because each VM has its own
         // network namespace. No default route or external bridge is added.
@@ -591,6 +598,160 @@ impl Runtime {
             return Err(RuntimeError::IdentityMismatch("network namespace handle"));
         }
         run_ip("delete namespace", &["netns", "delete", id])
+    }
+
+    /// Reclaim a launch that cannot have released its gate: no process record
+    /// was ever committed, so the jailer/VMM was never allowed to start.
+    /// Keep the claim as a non-reusable tombstone and publish an abort marker
+    /// only after exact network cleanup has completed.
+    ///
+    /// # Errors
+    /// Refuses a process record, an unexpected jail, a foreign namespace, or
+    /// a namespace still holding processes.
+    pub fn reclaim_unlaunched(&self, id: &str) -> Result<(), RuntimeError> {
+        validate_id(id)?;
+        self.validate_network_id(id)?;
+        let claims = self.config.chroot_base.join(".claims");
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&claims)
+            .or_else(|error| {
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })?;
+        check_trusted_path(&claims)?;
+        let claim = claims.join(id);
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&claim)
+            .or_else(|error| {
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })?;
+        check_trusted_path(&claim)?;
+        let claim_metadata = fs::symlink_metadata(&claim)?;
+        if !claim_metadata.is_dir() || claim_metadata.mode() & 0o077 != 0 {
+            return Err(RuntimeError::IdentityMismatch(
+                "claim directory permissions",
+            ));
+        }
+        if path_present(&claim.join("record.json"))? {
+            return Err(RuntimeError::InvalidConfiguration(
+                "launch has a process record; use exact process reconciliation",
+            ));
+        }
+        let jail = self
+            .config
+            .chroot_base
+            .join(self.firecracker_name())
+            .join(id);
+        if path_present(&jail)? {
+            return Err(RuntimeError::IdentityMismatch(
+                "unexpected jail without process record",
+            ));
+        }
+        if let Some(namespace) = &self.config.private_netns {
+            let intent_path = claim.join("network-intent.json");
+            let intent: ResourceMarker = if path_present(&intent_path)? {
+                read_trusted_record(&intent_path)?
+            } else {
+                if path_present(namespace)? {
+                    return Err(RuntimeError::IdentityMismatch(
+                        "namespace exists without durable network intent",
+                    ));
+                }
+                ResourceMarker {
+                    resource_id: id.to_owned(),
+                }
+            };
+            if intent.resource_id != id {
+                return Err(RuntimeError::IdentityMismatch("network intent resource ID"));
+            }
+            if path_present(namespace)? {
+                check_trusted_path(namespace)?;
+                let metadata = fs::symlink_metadata(namespace)?;
+                if !metadata.is_file() || metadata.uid() != 0 {
+                    return Err(RuntimeError::IdentityMismatch("namespace handle type"));
+                }
+                let record_path = claim.join("network.json");
+                if path_present(&record_path)? {
+                    let record: NetworkRecord = read_trusted_record(&record_path)?;
+                    if record.resource_id != id || record.namespace_inode != metadata.ino() {
+                        return Err(RuntimeError::IdentityMismatch("namespace inode record"));
+                    }
+                }
+                let pids = Command::new("/usr/bin/ip")
+                    .args(["netns", "pids", id])
+                    .output()?;
+                if !pids.status.success() || !pids.stdout.is_empty() {
+                    return Err(RuntimeError::InvalidConfiguration(
+                        "namespace still contains a process or cannot be checked",
+                    ));
+                }
+                run_ip("delete aborted namespace", &["netns", "delete", id])?;
+            }
+        }
+        let marker = claim.join("aborted.json");
+        if path_present(&marker)? {
+            let stored: ResourceMarker = read_trusted_record(&marker)?;
+            if stored.resource_id != id {
+                return Err(RuntimeError::IdentityMismatch("abort marker resource ID"));
+            }
+        } else {
+            write_new_record(
+                &marker,
+                &ResourceMarker {
+                    resource_id: id.to_owned(),
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// A read-only terminal observation for a never-launched resource.
+    /// # Errors
+    /// Rejects a marker whose identity does not match the requested VM.
+    pub fn was_reclaimed_unlaunched(&self, id: &str) -> Result<bool, RuntimeError> {
+        validate_id(id)?;
+        let path = self
+            .config
+            .chroot_base
+            .join(".claims")
+            .join(id)
+            .join("aborted.json");
+        if !path_present(&path)? {
+            return Ok(false);
+        }
+        let marker: ResourceMarker = read_trusted_record(&path)?;
+        if marker.resource_id != id {
+            return Err(RuntimeError::IdentityMismatch("abort marker resource ID"));
+        }
+        let claim = self.config.chroot_base.join(".claims").join(id);
+        let network_present = match &self.config.private_netns {
+            Some(namespace) => path_present(namespace)?,
+            None => false,
+        };
+        if path_present(&claim.join("record.json"))?
+            || path_present(
+                &self
+                    .config
+                    .chroot_base
+                    .join(self.firecracker_name())
+                    .join(id),
+            )?
+            || network_present
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "aborted launch still has a physical resource",
+            ));
+        }
+        Ok(true)
     }
 
     fn validate_network_id(&self, id: &str) -> Result<(), RuntimeError> {
@@ -815,6 +976,36 @@ fn copy_private_disk(source: &Path, destination: &Path) -> Result<(), RuntimeErr
     Ok(())
 }
 
+fn write_new_record<T: Serialize>(path: &Path, value: &T) -> Result<(), RuntimeError> {
+    let parent = path
+        .parent()
+        .ok_or(RuntimeError::InvalidConfiguration("record parent"))?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    serde_json::to_writer(&mut file, value)?;
+    file.as_file_mut().sync_all()?;
+    file.persist_noclobber(path)
+        .map_err(|error| RuntimeError::Io(error.error))?;
+    File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+fn path_present(path: &Path) -> Result<bool, RuntimeError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn read_trusted_record<T: DeserializeOwned>(path: &Path) -> Result<T, RuntimeError> {
+    check_trusted_path(path)?;
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
+        return Err(RuntimeError::IdentityMismatch("record type or permissions"));
+    }
+    Ok(serde_json::from_reader(File::open(path)?)?)
+}
+
 fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeError> {
     let output = Command::new("/usr/bin/ip")
         .args(arguments)
@@ -942,6 +1133,55 @@ mod tests {
     fn network_cleanup_must_target_same_resource_id() {
         assert!(validate_namespace_id(Path::new("/run/netns/sandbox-a"), "sandbox-a").is_ok());
         assert!(validate_namespace_id(Path::new("/run/netns/sandbox-b"), "sandbox-a").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires root and an isolated Linux network test host"]
+    fn interrupted_namespace_creation_is_reclaimed_without_reusing_the_id() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let id = format!("spr-{:x}-{suffix:x}", std::process::id());
+        let base = tempfile::tempdir_in("/var/lib").unwrap();
+        let claim = base.path().join(".claims").join(&id);
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&claim)
+            .unwrap();
+        let runtime = Runtime {
+            config: RuntimeConfig {
+                jailer: PathBuf::from("/usr/bin/true"),
+                firecracker: PathBuf::from("/usr/bin/firecracker"),
+                chroot_base: base.path().to_path_buf(),
+                kernel: PathBuf::new(),
+                rootfs: PathBuf::new(),
+                vm_uid: 10001,
+                vm_gid: 10001,
+                vcpu_count: 1,
+                memory_mib: 128,
+                private_netns: Some(PathBuf::from(format!("/run/netns/{id}"))),
+                access_token_hash: None,
+            },
+        };
+        write_new_record(
+            &claim.join("network-intent.json"),
+            &ResourceMarker {
+                resource_id: id.clone(),
+            },
+        )
+        .unwrap();
+        run_ip("test namespace add", &["netns", "add", &id]).unwrap();
+        assert!(!claim.join("network.json").exists());
+        assert!(runtime.reclaim_unlaunched(&id).is_ok());
+        assert!(!Path::new(&format!("/run/netns/{id}")).exists());
+        assert!(runtime.was_reclaimed_unlaunched(&id).unwrap());
+        runtime.reclaim_unlaunched(&id).unwrap();
+        assert!(matches!(
+            runtime.claim_resource(&id),
+            Err(RuntimeError::AlreadyClaimed)
+        ));
     }
 
     #[test]

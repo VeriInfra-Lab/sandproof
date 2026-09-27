@@ -5,8 +5,8 @@ use sandbox_runtime::{
 };
 use sandproof_controller_service::{HostEvidence, WorkerTransportError};
 use sandproof_protocol::{
-    ResourceEvidence, ResourceId, ResourceKind, ResourceRef, UnknownReason, WorkAction,
-    WorkOutcome, WorkReceipt,
+    FailureCode, ResourceEvidence, ResourceId, ResourceKind, ResourceRef, UnknownReason,
+    WorkAction, WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -58,6 +58,7 @@ pub struct ObservedSlot {
     pub vm: core::VmId,
     pub slot: core::NetSlotId,
     pub claim_present: bool,
+    pub aborted_unlaunched: bool,
     pub process: Option<Observation>,
     pub network_inode: Option<u64>,
     pub disk_inode: Option<u64>,
@@ -209,6 +210,10 @@ impl LinuxWorker {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
                 Err(error) => return Err(error.into()),
             };
+            let aborted_unlaunched = claim_present
+                && self
+                    .runtime(binding.sandbox, binding.vm)?
+                    .was_reclaimed_unlaunched(&vm_name)?;
             let process = if claim_present {
                 match self.runtime(binding.sandbox, binding.vm)?.observe(&vm_name) {
                     Ok(observed) => Some(observed),
@@ -250,6 +255,7 @@ impl LinuxWorker {
                 vm: binding.vm,
                 slot: binding.slot,
                 claim_present,
+                aborted_unlaunched,
                 process,
                 network_inode,
                 disk_inode,
@@ -336,6 +342,29 @@ impl LinuxWorker {
             unbound_claims,
             unbound_networks,
         })
+    }
+
+    /// Finish only an unlaunched PrepareVm whose slot binding has already
+    /// been checked against the durable operation plan by the caller. This
+    /// does not retry PrepareVm or infer that a live/unknown VM has stopped.
+    /// # Errors
+    /// Refuses a mismatched binding or any possible live VM identity.
+    pub fn reclaim_aborted_prepare(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        vm: core::VmId,
+        slot: core::NetSlotId,
+    ) -> NodeResult<()> {
+        self.require_slot(sandbox, generation, vm, slot)?;
+        let name = self.vm_name(vm);
+        let runtime = self.runtime(sandbox, vm)?;
+        runtime.reclaim_unlaunched(&name)?;
+        if !runtime.was_reclaimed_unlaunched(&name)? {
+            return Err("aborted launch marker is not durable".into());
+        }
+        require_absent(Path::new(&format!("/run/netns/{name}")))?;
+        Ok(())
     }
 
     /// Check allocatable bytes on the same filesystem that stores the VM's
@@ -495,10 +524,10 @@ impl LinuxWorker {
         })
     }
 
-    /// Reconstruct a successful receipt only from current host state. This
-    /// path must never launch, initialize, stop, or clean a VM: a dispatched
-    /// action may already have taken effect before the controller crashed.
-    /// An error means that the outcome remains unknown, not that it failed.
+    /// Reconstruct a receipt only from current host state. This path never
+    /// launches, initializes, stops, or cleans a VM. A durable aborted-launch
+    /// marker can prove a definitive failure; otherwise an observation error
+    /// leaves the dispatched outcome unknown.
     /// # Errors
     /// Returns the exact failed observation check for operator diagnosis.
     #[expect(
@@ -531,20 +560,47 @@ impl LinuxWorker {
                 ..
             } => {
                 self.require_slot(*sandbox, *generation, *vm, *slot)?;
+                if self
+                    .runtime(*sandbox, *vm)?
+                    .was_reclaimed_unlaunched(&self.vm_name(*vm))?
+                {
+                    return Ok(WorkReceipt {
+                        identity: action.identity.clone(),
+                        outcome: WorkOutcome::DefinitiveFailure {
+                            // The never-reusable VM resource was consumed by
+                            // this aborted launch; retry needs a new resource.
+                            code: FailureCode::InvalidResource,
+                            retryable: false,
+                            partial: None,
+                        },
+                    });
+                }
                 let observed = self.running(*sandbox, *vm)?;
                 ObservedResult::Prepared {
                     pid: observed.pid,
                     start_ticks: observed.start_time_ticks,
                 }
             }
-            core::Command::ConfigureNetwork { .. }
-            | core::Command::ApplyFilePolicy { .. }
-            | core::Command::CleanupSlot { .. } => {
-                return Ok(WorkReceipt {
-                    identity: action.identity.clone(),
-                    outcome: WorkOutcome::ObservedSuccess(self.perform(action)?),
-                });
-            }
+            core::Command::ConfigureNetwork {
+                sandbox,
+                epoch,
+                generation,
+                vm,
+                slot,
+                policy,
+            } => self.observe_network(*sandbox, *epoch, *generation, *vm, *slot, policy)?,
+            core::Command::ApplyFilePolicy {
+                sandbox,
+                epoch,
+                generation,
+                policy,
+                ..
+            } => self.observe_file_policy(*sandbox, *epoch, *generation, policy)?,
+            core::Command::CleanupSlot {
+                sandbox,
+                generation,
+                slot,
+            } => self.observe_closed_slot(*sandbox, *generation, *slot)?,
             core::Command::ActivateVm {
                 sandbox,
                 generation,
@@ -838,81 +894,14 @@ impl LinuxWorker {
                 vm,
                 slot,
                 policy,
-            } => {
-                self.require_fence(*sandbox, *epoch, false)?;
-                if *policy != core::NetworkPolicy::DenyAll {
-                    return Err("only private no-egress network policy is implemented".into());
-                }
-                self.require_slot(*sandbox, *generation, *vm, *slot)?;
-                self.running(*sandbox, *vm)?;
-                let name = self.vm_name(*vm);
-                let namespace = PathBuf::from(format!("/run/netns/{name}"));
-                check_trusted_path(&namespace)?;
-                let metadata = fs::symlink_metadata(&namespace)?;
-                if !metadata.is_file() || metadata.uid() != 0 || metadata.ino() == 0 {
-                    return Err("private network namespace identity mismatch".into());
-                }
-                let output = Process::new("/usr/bin/ip")
-                    .args([
-                        "netns",
-                        "exec",
-                        &name,
-                        "/usr/bin/ip",
-                        "-4",
-                        "route",
-                        "show",
-                        "default",
-                    ])
-                    .output()?;
-                if !output.status.success() || !output.stdout.is_empty() {
-                    return Err("private namespace has external route or cannot be checked".into());
-                }
-                ObservedResult::Network {
-                    namespace_inode: metadata.ino(),
-                }
-            }
+            } => self.observe_network(*sandbox, *epoch, *generation, *vm, *slot, policy)?,
             core::Command::ApplyFilePolicy {
                 sandbox,
                 epoch,
                 generation,
                 policy,
                 ..
-            } => {
-                self.require_fence(*sandbox, *epoch, false)?;
-                if policy.digest != self.config.file_policy_digest {
-                    return Err("file policy digest is not the deployed V1 policy".into());
-                }
-                let vm = self.vm_for_workspace(*sandbox, *generation)?;
-                self.running(*sandbox, vm)?;
-                let disk = self
-                    .config
-                    .chroot_base
-                    .join(
-                        self.config
-                            .firecracker
-                            .file_name()
-                            .ok_or("invalid firecracker name")?,
-                    )
-                    .join(self.vm_name(vm))
-                    .join("root/rootfs.ext4");
-                let metadata = fs::symlink_metadata(&disk)?;
-                let uid = self
-                    .config
-                    .uid_base
-                    .checked_add(u32::try_from(vm.0)?)
-                    .ok_or("VM uid overflow")?;
-                if !metadata.is_file()
-                    || metadata.file_type().is_symlink()
-                    || metadata.mode() & 0o777 != 0o600
-                    || metadata.uid() != uid
-                    || metadata.ino() == 0
-                {
-                    return Err("VM private disk policy not observed".into());
-                }
-                ObservedResult::FilePolicy {
-                    disk_inode: metadata.ino(),
-                }
-            }
+            } => self.observe_file_policy(*sandbox, *epoch, *generation, policy)?,
             core::Command::ActivateVm {
                 sandbox,
                 epoch,
@@ -977,28 +966,7 @@ impl LinuxWorker {
                 sandbox,
                 generation,
                 slot,
-            } => {
-                if !self.fence(*sandbox)?.terminal {
-                    return Err("slot cleanup requires terminal fence".into());
-                }
-                let binding = self.slot(*slot)?;
-                if binding.sandbox != *sandbox || binding.generation != *generation {
-                    return Err("slot cleanup binding mismatch".into());
-                }
-                require_absent(Path::new(&format!(
-                    "/run/netns/{}",
-                    self.vm_name(binding.vm)
-                )))?;
-                if self
-                    .runtime(*sandbox, binding.vm)?
-                    .observe(&self.vm_name(binding.vm))?
-                    .state
-                    != VmState::Stopped
-                {
-                    return Err("slot VM remains alive".into());
-                }
-                ObservedResult::SlotClosed
-            }
+            } => self.observe_closed_slot(*sandbox, *generation, *slot)?,
             _ => return Err("command is outside the V1 host executor".into()),
         };
         Ok(HostObservation {
@@ -1006,6 +974,119 @@ impl LinuxWorker {
             command: command.clone(),
             result,
         })
+    }
+
+    fn observe_network(
+        &self,
+        sandbox: core::SandboxId,
+        epoch: core::Epoch,
+        generation: core::Generation,
+        vm: core::VmId,
+        slot: core::NetSlotId,
+        policy: &core::NetworkPolicy,
+    ) -> NodeResult<ObservedResult> {
+        self.require_fence(sandbox, epoch, false)?;
+        if *policy != core::NetworkPolicy::DenyAll {
+            return Err("only private no-egress network policy is implemented".into());
+        }
+        self.require_slot(sandbox, generation, vm, slot)?;
+        self.running(sandbox, vm)?;
+        let name = self.vm_name(vm);
+        let namespace = PathBuf::from(format!("/run/netns/{name}"));
+        check_trusted_path(&namespace)?;
+        let metadata = fs::symlink_metadata(&namespace)?;
+        if !metadata.is_file() || metadata.uid() != 0 || metadata.ino() == 0 {
+            return Err("private network namespace identity mismatch".into());
+        }
+        let output = Process::new("/usr/bin/ip")
+            .args([
+                "netns",
+                "exec",
+                &name,
+                "/usr/bin/ip",
+                "-4",
+                "route",
+                "show",
+                "default",
+            ])
+            .output()?;
+        if !output.status.success() || !output.stdout.is_empty() {
+            return Err("private namespace has external route or cannot be checked".into());
+        }
+        Ok(ObservedResult::Network {
+            namespace_inode: metadata.ino(),
+        })
+    }
+
+    fn observe_file_policy(
+        &self,
+        sandbox: core::SandboxId,
+        epoch: core::Epoch,
+        generation: core::Generation,
+        policy: &core::FilePolicyRef,
+    ) -> NodeResult<ObservedResult> {
+        self.require_fence(sandbox, epoch, false)?;
+        if policy.digest != self.config.file_policy_digest {
+            return Err("file policy digest is not the deployed V1 policy".into());
+        }
+        let vm = self.vm_for_workspace(sandbox, generation)?;
+        self.running(sandbox, vm)?;
+        let disk = self
+            .config
+            .chroot_base
+            .join(
+                self.config
+                    .firecracker
+                    .file_name()
+                    .ok_or("invalid firecracker name")?,
+            )
+            .join(self.vm_name(vm))
+            .join("root/rootfs.ext4");
+        let metadata = fs::symlink_metadata(&disk)?;
+        let uid = self
+            .config
+            .uid_base
+            .checked_add(u32::try_from(vm.0)?)
+            .ok_or("VM uid overflow")?;
+        if !metadata.is_file()
+            || metadata.file_type().is_symlink()
+            || metadata.mode() & 0o777 != 0o600
+            || metadata.uid() != uid
+            || metadata.ino() == 0
+        {
+            return Err("VM private disk policy not observed".into());
+        }
+        Ok(ObservedResult::FilePolicy {
+            disk_inode: metadata.ino(),
+        })
+    }
+
+    fn observe_closed_slot(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        slot: core::NetSlotId,
+    ) -> NodeResult<ObservedResult> {
+        if !self.fence(sandbox)?.terminal {
+            return Err("slot cleanup requires terminal fence".into());
+        }
+        let binding = self.slot(slot)?;
+        if binding.sandbox != sandbox || binding.generation != generation {
+            return Err("slot cleanup binding mismatch".into());
+        }
+        require_absent(Path::new(&format!(
+            "/run/netns/{}",
+            self.vm_name(binding.vm)
+        )))?;
+        if self
+            .runtime(sandbox, binding.vm)?
+            .observe(&self.vm_name(binding.vm))?
+            .state
+            != VmState::Stopped
+        {
+            return Err("slot VM remains alive".into());
+        }
+        Ok(ObservedResult::SlotClosed)
     }
 
     fn resource(&self, command: &core::Command) -> NodeResult<ResourceRef> {
