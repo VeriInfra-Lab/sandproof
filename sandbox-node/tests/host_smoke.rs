@@ -9,7 +9,7 @@ use sandproof_controller_service::{
     create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
 };
 use sandproof_node::{LinuxWorker, NodeConfig};
-use sandproof_protocol::{UnknownReason, WorkOutcome, WorkReceipt};
+use sandproof_protocol::{TenantId, UnknownReason, WorkOutcome, WorkReceipt};
 use std::env;
 use std::fmt::Write as _;
 use std::fs::File;
@@ -174,6 +174,20 @@ fn create_and_kill_use_real_host_receipts() {
             operation: core::OperationId(2),
         },
         &mut |action| {
+            if matches!(
+                action.command.command(),
+                core::Command::StopVm { .. }
+                    | core::Command::CleanupVm { .. }
+                    | core::Command::CleanupSlot { .. }
+            ) {
+                let mut wrong_owner = action.clone();
+                wrong_owner.identity.owner = TenantId::try_from("tenant-999").unwrap();
+                assert!(worker.observe_action(&wrong_owner).is_err());
+                assert!(matches!(
+                    worker.execute(&wrong_owner).unwrap().outcome,
+                    WorkOutcome::Unknown { .. }
+                ));
+            }
             let receipt = worker.execute(action)?;
             if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
                 assert_eq!(worker.observe_action(action).unwrap(), receipt);

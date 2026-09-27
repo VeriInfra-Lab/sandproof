@@ -176,6 +176,9 @@ mod linux {
             let record = world
                 .sandbox_record(slot.sandbox)
                 .ok_or("host slot has no durable sandbox")?;
+            if slot.owner.as_str() != format!("tenant-{}", record.owner.0) {
+                return Err("host slot owner differs from durable sandbox".into());
+            }
             let planned = world.operation_records().iter().any(|(key, _)| {
                 key.sandbox == slot.sandbox
                     && world.operation_plan(*key).is_some_and(|plan| {
@@ -247,6 +250,12 @@ mod linux {
         let world = journal.world()?;
         let uncertain = journal.uncertain_actions()?;
         for slot in inventory.slots {
+            let record = world
+                .sandbox_record(slot.sandbox)
+                .ok_or("incomplete host slot has no durable sandbox")?;
+            if slot.owner.as_str() != format!("tenant-{}", record.owner.0) {
+                return Err("incomplete host slot owner differs from durable sandbox".into());
+            }
             if slot.aborted_unlaunched || slot.failed_prepare_reclaimed {
                 continue;
             }
