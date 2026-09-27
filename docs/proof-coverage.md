@@ -172,4 +172,4 @@
 
 `scripts/verify-controller.sh` 检查 Rust、重新抽取一致性、所有项目证明文件和未完成证明；`verification/ProofAudit.lean` 审查真实定理传递依赖，只允许 Lean 标准逻辑基础。编译文件数、抽取函数数、局部成功或 CI 绿灯都不是全输入证明覆盖。
 
-`controller-service` 已加入首批 SQLite 事务账本、outbox 与进程中断点组件测试，但它尚未接入纯控制核心的完整状态、状态发布或宿主对账，也没有 Rust→Lean 对应证明。真实时钟与任务循环、E2B API、运行层及真实资源对账仍按[项目蓝图](project-blueprint.md)开发。当前定理不自动覆盖这些新代码；自有授权、持久化决策、worker 资格和恢复逻辑不能整体放入“适配器正确”假设，外部原语按逐项合同明确边界。
+`controller-service` 已接入纯控制核心的创建、销毁、状态发布与真实宿主回执；`sandbox-api`、`sandbox-node` 和 `sandbox-server` 新增持久寿命/配额、鉴权、网关、实际磁盘余量检查和实机测试。这些新增服务代码**没有** Rust→Lean 对应证明；现有定理只覆盖原先明确列出的纯核心输入，不自动扩展到 SQLite、时钟、令牌、Linux 网络空间、HTTP 转发或 Firecracker。特别是自有授权、持久化决策、worker 资格和恢复逻辑不能整体放入“适配器正确”假设；需要逐项列出外部原语合同并继续做对应证明。未知回执对账、重启恢复、完整容量保证和长期完成性仍是开放义务。

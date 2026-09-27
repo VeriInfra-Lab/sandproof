@@ -4,6 +4,8 @@
 //! This crate does not make lifecycle decisions: the trusted `ControllerPort`
 //! must authorize every operation against the durable controller state.
 
+pub mod managed;
+
 use std::sync::Arc;
 
 use axum::{
