@@ -5,7 +5,7 @@ use sandbox_runtime::{
 };
 use sandproof_controller_service::{HostEvidence, WorkerTransportError};
 use sandproof_protocol::{
-    FailureCode, ResourceEvidence, ResourceId, ResourceKind, ResourceRef, UnknownReason,
+    FailureCode, ResourceEvidence, ResourceId, ResourceKind, ResourceRef, TenantId, UnknownReason,
     WorkAction, WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
@@ -53,6 +53,7 @@ pub struct HostInventory {
 
 #[derive(Clone, Debug)]
 pub struct ObservedSlot {
+    pub owner: TenantId,
     pub sandbox: core::SandboxId,
     pub generation: core::Generation,
     pub vm: core::VmId,
@@ -75,6 +76,7 @@ struct GuestSecret {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SlotBinding {
+    owner: TenantId,
     sandbox: core::SandboxId,
     generation: core::Generation,
     vm: core::VmId,
@@ -255,6 +257,7 @@ impl LinuxWorker {
                 Err(error) => return Err(error.into()),
             };
             slots.push(ObservedSlot {
+                owner: binding.owner,
                 sandbox: binding.sandbox,
                 generation: binding.generation,
                 vm: binding.vm,
@@ -791,11 +794,11 @@ impl LinuxWorker {
         Ok(value)
     }
 
-    fn vm_for_workspace(
+    fn binding_for_workspace(
         &self,
         sandbox: core::SandboxId,
         generation: core::Generation,
-    ) -> NodeResult<core::VmId> {
+    ) -> NodeResult<SlotBinding> {
         let mut found = None;
         for entry in fs::read_dir(self.config.state_dir.join("slots"))? {
             let entry = entry?;
@@ -804,10 +807,18 @@ impl LinuxWorker {
                 if found.is_some() {
                     return Err("ambiguous VM for workspace".into());
                 }
-                found = Some(binding.vm);
+                found = Some(binding);
             }
         }
         found.ok_or_else(|| "no VM for workspace".into())
+    }
+
+    fn vm_for_workspace(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<core::VmId> {
+        Ok(self.binding_for_workspace(sandbox, generation)?.vm)
     }
 
     fn fence(&self, sandbox: core::SandboxId) -> NodeResult<Fence> {
@@ -850,6 +861,27 @@ impl LinuxWorker {
             || action.identity.resource != self.resource(command)?
         {
             return Err("host action identity mismatch".into());
+        }
+        if let Some(generation) = generation {
+            // PrepareVm creates the first slot binding. All later actions,
+            // including old cleanup and read-only observations, must carry
+            // the same owner as that durable host binding.
+            let bound_owner = match command {
+                core::Command::PrepareVm { slot, .. } => {
+                    match fs::symlink_metadata(self.slot_path(*slot)) {
+                        Ok(_) => Some(self.slot(*slot)?.owner),
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                _ => Some(
+                    self.binding_for_workspace(command.sandbox(), generation)?
+                        .owner,
+                ),
+            };
+            if bound_owner.is_some_and(|owner| owner != action.identity.owner) {
+                return Err("host action owner differs from resource binding".into());
+            }
         }
         Ok(())
     }
@@ -901,6 +933,7 @@ impl LinuxWorker {
                 }
                 self.require_fence(*sandbox, *epoch, false)?;
                 let binding = SlotBinding {
+                    owner: action.identity.owner.clone(),
                     sandbox: *sandbox,
                     generation: *generation,
                     vm: *vm,
@@ -1143,13 +1176,11 @@ impl LinuxWorker {
         vm: core::VmId,
         slot: core::NetSlotId,
     ) -> NodeResult<()> {
-        if self.slot(slot)?
-            != (SlotBinding {
-                sandbox,
-                generation,
-                vm,
-                slot,
-            })
+        let binding = self.slot(slot)?;
+        if binding.sandbox != sandbox
+            || binding.generation != generation
+            || binding.vm != vm
+            || binding.slot != slot
         {
             return Err("slot binding mismatch".into());
         }
