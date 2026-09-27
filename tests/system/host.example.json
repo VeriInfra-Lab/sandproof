@@ -1,0 +1,24 @@
+{
+  "firecracker_version": "1.16.1",
+  "artifacts": {
+    "firecracker": {
+      "path": "/opt/sandproof/bin/firecracker",
+      "sha256": "REPLACE_WITH_APPROVED_FIRECRACKER_SHA256"
+    },
+    "jailer": {
+      "path": "/opt/sandproof/bin/jailer",
+      "sha256": "REPLACE_WITH_APPROVED_JAILER_SHA256"
+    },
+    "kernel": {
+      "path": "/opt/sandproof/images/vmlinux",
+      "sha256": "REPLACE_WITH_APPROVED_KERNEL_SHA256"
+    },
+    "rootfs": {
+      "path": "/opt/sandproof/images/envd.ext4",
+      "sha256": "REPLACE_WITH_APPROVED_GUEST_IMAGE_SHA256"
+    }
+  },
+  "chroot_base": "/var/lib/sandproof/jailer",
+  "min_free_disk_bytes": 10737418240,
+  "min_available_memory_bytes": 2147483648
+}

@@ -47,3 +47,22 @@
 - 在线 E2B 和模型评测需要单独的凭据、资源和费用预算，不加入普通 PR 的默认检查。
 
 暂停恢复和安全竞争用 S 类专门测试扩展，不能用 Terminal-Bench 通过代替。形式化阶段再证明声明范围内任意历史的性质；V1 测试报告只记录实验结果。
+
+## 4. 独立运行宿主预检
+
+[宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。
+
+从[配置示例](../tests/system/host.example.json)复制一份到被忽略的 `artifacts/`，按已复核的测试环境填写绝对路径、四个指纹和资源最低余量。示例中的指纹占位符会被拒绝，磁盘/内存数值只是例子，须按本轮 VM 数量、磁盘副本、日志及收尾需求确定。指纹应来自已确认的发布产物或镜像构建记录；不要在不匹配时直接覆盖基线。
+
+在**待测主机**的干净、精确提交上，用运行 jailer 的同一 root 身份执行（先确认该提交及配置适合在该主机运行）：
+
+```sh
+mkdir -p artifacts
+cp tests/system/host.example.json artifacts/host.json
+# 编辑 artifacts/host.json，填入已复核的基线。
+sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/host-preflight.json
+```
+
+标准输出始终用于 JSON 报告。有效配置下，报告包含提交、工作区是否有未提交变更、配置摘要、宿主内核、观察指纹和各项检查；有未提交变更时预检失败，不能以 HEAD 代替未提交代码的版本证据。退出码 `0` 仅表示全部前置检查通过，`1` 表示检查失败或不完整，`2` 表示配置错误。每项状态区分 `pass`、`fail`、`unavailable`、`timeout`、`not_run`；二进制未通过可信路径及指纹检查时，不执行它的 `--version`。不要用 `|| true` 或未检查的管道掩盖退出码。
+
+工具只读取环境并执行已核对二进制的版本查询，不创建 VM/TAP/网络空间、不配置资源、不清理残留，也不输出环境变量或凭据。报告中的资源余量是当时快照，不是容量预留；通过不保证 cgroup 创建、网络隔离、来宾启动或 S01–S13 已验收。预检后仍须按本轮身份分配独占资源并运行真实系统测试。该工具尚未接入高权限 KVM CI。
