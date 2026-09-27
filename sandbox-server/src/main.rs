@@ -160,6 +160,13 @@ mod linux {
             )
             .into());
         }
+        if !inventory.unbound_networks.is_empty() {
+            return Err(format!(
+                "unbound network namespaces require operator reconciliation: {:?}",
+                inventory.unbound_networks
+            )
+            .into());
+        }
         let world = journal.world()?;
         for slot in inventory.slots {
             let record = world
