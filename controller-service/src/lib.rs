@@ -14,7 +14,7 @@ mod workflow;
 
 pub use controller::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateNetwork,
-    CreateNetworking, CreateOptions, HostEvidence, Lifetime,
+    CreateNetworking, CreateOptions, DEFAULT_TIMEOUT_SECS, HostEvidence, Lifetime,
 };
 
 pub use dispatch::{DispatchResult, WorkerTransportError};

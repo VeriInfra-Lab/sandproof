@@ -7,7 +7,7 @@ mod storage;
 
 pub use admission::{
     AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
-    CreateOptions, Lifetime,
+    CreateOptions, DEFAULT_TIMEOUT_SECS, Lifetime,
 };
 
 use crate::{
@@ -400,7 +400,7 @@ impl ControllerJournal {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=4).contains(&version) || stored != namespace {
+        if !(1..=5).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {
@@ -425,6 +425,15 @@ impl ControllerJournal {
             transaction.execute(
                 "INSERT OR IGNORE INTO sandbox_create_options (sandbox_id, options_json) SELECT sandbox_id, ?1 FROM sandboxes",
                 [b"{\"env_vars\":{},\"metadata\":{}}".as_slice()],
+            )?;
+        }
+        if version <= 4 {
+            // The original total limit was not recorded. Preserve only the
+            // already granted deadline; never reset the age during migration.
+            transaction.execute_batch(
+                "ALTER TABLE sandbox_lifetimes ADD COLUMN max_deadline_ms INTEGER CHECK(max_deadline_ms >= 0);
+                 UPDATE sandbox_lifetimes SET max_deadline_ms=deadline_ms;
+                 UPDATE controller_meta SET version=5 WHERE id=1;",
             )?;
         }
         storage::load_world(&transaction)?;

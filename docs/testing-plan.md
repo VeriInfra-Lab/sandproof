@@ -118,7 +118,7 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [一元 RPC 超时探针](../tests/system/sdk_rpc_timeouts.py)对原同步/异步文件 get_info/exists/list/make_dir/remove/rename、命令 list/kill/send_stdin/close_stdin，以及句柄 send_stdin/close_stdin，逐项传入省略、零、负数和超过 Connect 毫秒头范围的请求期限。负数转为 1 ms，快速完整回执可能先到；失败仅接受明确的 DEADLINE_EXCEEDED。超长头须在操作前拒绝且无副作用；期限失败只查询已有路径或 PID，不重复提交未知操作。输入结果须为零次或一次完整载荷，不能重复；每例再检查正常调用，最后销毁本次 VM 并另做宿主残留审计。该脚本不覆盖生命周期和 watcher 接口，运行方式与其他 SDK 实机脚本一致。上述 96 个场景已在两台真实 VM 通过：48 个完整成功、24 个明确期限到期、24 个超长头拒绝；精确提交和指纹见[版本基线](../references/v1-baseline.json)的 `rpc_timeout_acceptance`。本轮负数均观察到期限到期，不能据此要求更快的服务必定失败。服务退出前宿主进程、私有资源与网络空间持有者均已清理，基础盘未变。
 
-[沙箱寿命参数探针](../tests/system/sdk_lifetime_values.py)通过原同步/异步 SDK 单独验证创建，以及实例/类形式的 connect/set_timeout：省略、零、负数和部署上限前/恰好/之后的值。创建省略时核对部署默认寿命，connect 省略或请求更短寿命时不缩短到期时间，set_timeout 可以缩短或延长；缺少必填参数的 set_timeout 须在 SDK 报错，其余非法寿命须收到管理 API 的 400，不能沿用 envd RPC 错误类型。每次拒绝后原期限保持不变、原实例可用；每次销毁后原 SDK 列表为空，宿主另审计精确残留。该脚本要求客户端与隔离服务在同一宿主，并显式提供 `--default-timeout`、`--max-timeout` 匹配服务配置，不将探针配置当成最终部署预算。同步/异步的 68 个当前行为用例已通过：34 个成功、30 个管理 400 和 4 个缺参 TypeError；8 台 VM 在服务退出前经精确进程、私有资源和网络空间持有者审计，基础盘未变。精确版本见[版本基线](../references/v1-baseline.json)的 `lifetime_parameter_observation`。这是当前行为观测，不是寿命兼容目标通过：创建默认值、省略连接时的续期、零/负值触发到期和总寿命截顶仍保留[能力矩阵](../tests/compat/contract.json)第 2/5/6/7 项缺口，由 #9/#12 继续实现。
+[沙箱寿命参数探针](../tests/system/sdk_lifetime_values.py)按固定目标检查同步/异步 create 及实例/类 connect/set_timeout：默认 300 秒、零/负数、单次上限前/恰好/之后、set_timeout 超长值截顶、connect 只延长。非正 set_timeout 后查询/健康/列表立即不可用，独立宿主监督器须观察原实例 Destroyed 与精确资源退出，探针不能用主动 kill 冒充到期流程。`--mode total` 在短总寿命配置中检查创建拒绝而非截短、续期截顶、同一 VM 重启后总期限不变，以及越过总上限的 400。用 `--supervisor-dir` 协调受控服务重启/收尾观察，客户端和服务端在同一宿主；`--max-timeout`/`--max-lifetime` 绑定可信测试配置。控制层另用显式时钟覆盖边界、旧事件重检、不复活、配置放宽/重启不重置年龄及旧库升级。历史 68 项旧行为观测仅对应[版本基线](../references/v1-baseline.json)的 `lifetime_parameter_observation` 及其中旧脚本哈希，不能用于宣称当前目标已实测。
 
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
@@ -181,3 +181,5 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 [详情字段探针](../tests/system/sdk_sandbox_details.py)对固定同步/异步 SDK 检查实例与类 get_info 一致、原始网络字段、域名、生命周期、资源与元数据；列表不含访问令牌，外租户及已销毁实例返回 404。可通过 `--restart-dir` 与独立宿主监督器协调服务重启，要求重启后同一实例的完整详情与令牌不变，且命令仍可执行；监督器另核对精确 VM 身份和资源残留。该场景仅覆盖显式禁网及指定静态参数，省略/true 参数的回传另有组件检查，不代替公网连通性验收。
 
 详情场景已在提交 `2e17d3ff49fc66405458c95e760b8d523b8eaaea` 的四台真实 VM 上通过：同步/异步各五组检查，各一次完整服务重启后保持原 VM 精确 PID/start 身份、详情和令牌不变；服务退出前四台全部销毁且进程、jail、netns、cgroup 无残留，基础盘未变。精确指纹和限制见[版本基线](../references/v1-baseline.json)的 `sandbox_detail_acceptance`。
+
+寿命目标场景已在生产提交 `e9c251d234492cb4cabb4bce91be16f9badb8e00`、探针提交 `7063d6a98ca0ca739efc84f5bdcf8965b3f0f3cb` 的同一二进制上通过：常规同步/异步各 36 项，共 72 项；12 秒总寿命配置各一组边界/重启场景。18＋2 台 VM 在服务退出前全部完成精确资源审计，基础盘不变。两次早期未完成实验分别为健康请求错误预期、监督器过早要求清理完成；另 12 台 VM 已独立核对收尾，失败不计为通过。到期后的 health 在本服务映射为 401，固定 SDK 抛 AuthenticationException，不能声称 is_running 返回 False。详见[版本基线](../references/v1-baseline.json)的 `lifetime_target_acceptance`。

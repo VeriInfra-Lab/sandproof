@@ -634,5 +634,53 @@
     "residuals": "all four exact VM PID/start identities stopped; private jails/netns/cgroups absent and no recorded namespace holders before final service exit; live cgroup identity/limits sampled and base SHA unchanged",
     "component_evidence": "SQLite reopen preserves omitted/false/true internet values, raw CIDR spelling/order and empty lists; legacy JSON remains readable without invented networking; foreign detail/list never read host token; 42 original SDK wire cases and Rust gateway composition checks passed",
     "limits": "real detail matrix uses explicit false/no-internet; omitted/true roundtrip tested in components, not newly retested against public VM egress. Existing legacy records cannot recover absent original network requests. No pause, aliases, volumes, lifetime target changes, new proofs or full V1 claim."
+  },
+  "lifetime_target_acceptance": {
+    "production_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "test_commit": "7063d6a98ca0ca739efc84f5bdcf8965b3f0f3cb",
+    "script": "tests/system/sdk_lifetime_values.py",
+    "script_sha256": "c98dbf2409abd3e1dabaad81b6652fe672eedd91467f6030be4be77bdd7dab96",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "wrapper_sha256": "ba7b88d6e20e6c5a7cf78116cbdb81680293f766c19278579cd475d998bcd9a9",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure/KVM, fixed 1 GiB base/kernel/envd, Firecracker/jailer 1.16.1 and E2B SDK 2.51.0 on Python 3.13; one vCPU/512 MiB guest, 768 MiB host memory cgroup, explicit no-internet and 64/96 MiB streaming test budgets",
+    "commands": [
+      "pinned-SDK Python tests/system/sdk_lifetime_values.py --api-url <own-loopback> --sandbox-url <same-service> --supervisor-dir <own-barrier> --default-timeout 300 --max-timeout 600 --max-lifetime 600 --mode values",
+      "same command with --max-lifetime 12 --mode total; expiry scanner is 20 seconds and service restart preserves the same live VM"
+    ],
+    "values_result": {
+      "sdk_cases": 72,
+      "outcomes": {
+        "completed": 42,
+        "http_400": 18,
+        "missing_argument": 4,
+        "expired_and_reclaimed": 8
+      },
+      "destroyed_vms": 18,
+      "seconds": 102.713,
+      "configuration": "300-second default; 600-second request and total limits; 1-second expiry scan"
+    },
+    "total_result": {
+      "sdk_grouped_cases": 2,
+      "destroyed_vms": 2,
+      "service_restarts": 2,
+      "seconds": 48.393,
+      "configuration": "300-second default, 600-second request limit, 12-second instance total limit, 20-second expiry scan; default create rejected instead of silently clipped",
+      "observations": "both original SDK clients preserve the original absolute deadline and VM PID/start across restart; connect and set_timeout beyond total return 400 before the expiry worker cleans up"
+    },
+    "residuals": "all 20 successful-run durable rows Destroyed; exact VM PID/start stopped, private jails/netns/cgroups absent and no namespace holders before service exit; live cgroup identity/limits sampled; base SHA unchanged. Nonpositive timeout cleanup acknowledgments wait for physical resources as well as terminal records; the probe does not kill to make expiry succeed.",
+    "component_evidence": "explicit-clock boundaries, immutable total deadline across reopen/config expansion, conservative V4 migration, nonpositive immediate data-route revocation, expiry/renewal gate ordering and configured 86400-second request acceptance",
+    "initial_incomplete_runs": [
+      {
+        "commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+        "reason": "probe expected is_running=False after expiry; fixed SDK maps gateway 401 to AuthenticationException",
+        "cleanup": "six VMs observed Destroyed and all exact resources audited before stopping the retained test service/supervisor; base unchanged"
+      },
+      {
+        "commit": "7063d6a98ca0ca739efc84f5bdcf8965b3f0f3cb",
+        "reason": "supervisor required private jail removal at first observation of Destroyed; revised to wait for independently observed physical cleanup",
+        "cleanup": "six additional VMs observed Destroyed and all exact resources audited before retained service/supervisor stop; base unchanged"
+      }
+    ],
+    "limits": "selected synchronous/asynchronous lifecycle target paths only; not exhaustive expiry/kill/slow-stream races, final task budgets or a proof. Revoked-token health requests still produce SDK AuthenticationException (HTTP 401), not False. Old records keep only their previously granted deadline as migration cap; existing non-300 default configuration must be changed explicitly. No controller-core Rust changes."
   }
 }
