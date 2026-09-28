@@ -3,13 +3,14 @@
 Use an isolated service: max_transfers=4, max_transfers_per_vm=3,
 control_reserve=1, request/write idle=3 seconds, file idle=5 seconds,
 64/96 MiB upload/download budgets. Requires two tenants and fixed base tools.
-Raw HTTP is used only to control transport progress/backpressure precisely.
+Raw HTTP is used only to control upload progress precisely. Downloads use
+the original SDK stream so a truncated response must surface as its error.
 """
 
 import argparse
 import asyncio
 import hashlib
-from http.client import HTTPResponse, IncompleteRead
+from http.client import HTTPResponse
 import importlib.metadata
 import json
 import os
@@ -170,12 +171,10 @@ async def admission(first, second, directory, url):
         await cleanup_handles(tracked)
 
 
-def connection(url, receive_buffer=None):
+def connection(url):
     address = urlsplit(url)
     assert address.scheme == 'http' and address.hostname and address.port
     sock = socket.socket()
-    if receive_buffer is not None:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, receive_buffer)
     sock.settimeout(15)
     sock.connect((address.hostname, address.port))
     return sock
@@ -231,21 +230,21 @@ def progressing_upload(sandbox, url, path):
                 'sha256': hashlib.sha256(body * 6).hexdigest()}
 
 
-def finish_truncated(response, received):
+async def finish_truncated(chunks, is_async, received):
     try:
-        while data := response.read(64 * 1024):
+        while True:
+            data = await anext(chunks, None) if is_async else await call(next, chunks, None)
+            if data is None:
+                break
             assert data == b'X' * len(data)
             received += len(data)
             assert received < DOWNLOAD_BYTES
-    except IncompleteRead as error:
-        assert error.partial == b'X' * len(error.partial)
-        received += len(error.partial)
-    except ConnectionResetError:
-        pass
+    except (httpx.RemoteProtocolError, httpx.ReadError) as error:
+        error_name = type(error).__name__
     else:
         raise AssertionError('stalled download ended as complete success')
     assert 0 < received < DOWNLOAD_BYTES
-    return received
+    return received, error_name
 
 
 async def stalled_download(sandbox, control, directory, url):
@@ -256,28 +255,32 @@ async def stalled_download(sandbox, control, directory, url):
     tracked = []
     try:
         quiet = await start_input(sandbox, directory + '/quiet', tracked)
-        with connection(url, receive_buffer=8192) as sock:
-            request_head(sock, sandbox, 'GET', path)
-            response = HTTPResponse(sock)
-            await call(response.begin)
-            assert response.status == 200
-            first = await call(response.read, 4096)
-            assert first == b'X' * 4096
+        stream = await call(sandbox.files.read, path, format='stream', request_timeout=30)
+        is_async = hasattr(stream, '__aenter__')
+        chunks = await stream.__aenter__() if is_async else await call(stream.__enter__)
+        try:
+            first = await anext(chunks) if is_async else await call(next, chunks)
+            assert first and first == b'X' * len(first)
             await limited(sandbox.files.get_info, path)
             await health(sandbox, url)
             await healthy(control, directory + '/slow-download-control')
             started = time.monotonic()
-            # Do not drain the socket. Its deliberately small receive window
-            # forces frontend backpressure; admission probes observe release.
+            # Stop consuming SDK chunks. The initial 429 confirms the stream
+            # is still admitted; observe its release before reading further.
             info, rejections = await wait_capacity(sandbox, path)
             assert info.size == DOWNLOAD_BYTES
             elapsed = time.monotonic() - started
-            received = await call(finish_truncated, response, len(first))
-            response.close()
+            received, error_name = await finish_truncated(chunks, is_async, len(first))
+        finally:
+            if is_async:
+                await stream.__aexit__(None, None, None)
+            else:
+                await call(stream.__exit__, None, None, None)
         # The quiet command outlives file/write idle and finishes normally.
         await end_input(quiet, b'quiet command stayed alive')
         return {'received_bytes': received, 'intended_bytes': DOWNLOAD_BYTES,
-                'capacity_release_seconds': elapsed, '429_while_stalled': rejections}
+                'capacity_release_seconds': elapsed, '429_while_stalled': rejections,
+                'sdk_error': error_name}
     finally:
         await cleanup_handles(tracked)
 
