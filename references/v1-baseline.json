@@ -3,7 +3,7 @@
   "purpose": "M0 固定来源、依赖和已有实机证据；不是 V1 全功能或形式化验收报告",
   "recorded_on": "2026-09-28",
   "code_baseline": {
-    "test_branch_before_contract_update": "c4e2f1e79dfc31848010951b2d4ae3fd3c91e96c",
+    "test_branch_at_contract_review": "9eba68821b8ad11f374a88f4a3450753e69c5ee1",
     "rust_toolchain": "1.97.0",
     "cargo_lock_sha256": "04db1f9911a3009e40a0a3a5f0635aa596adca5c6341cd4b0c99354b11d9de26",
     "sdk_python": "e2b==2.51.0",
@@ -52,6 +52,14 @@
       "scope": "synthetic envd; new large-stream KVM script not run in this PR"
     },
     {
+      "id": "sdk_gateway_optional_streaming",
+      "commit": "7502bdad563cd68e906ec9b4a24d234fd3f53c51",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/45",
+      "test": "scripts/check-compat.sh",
+      "reported_result": "passed fixed SDK sync/async gateway composition with optional streaming config on Linux",
+      "scope": "synthetic envd, explicit data_transfer config; new full-service and KVM large-stream scripts not run in this PR"
+    },
+    {
       "id": "service_receipt_crash",
       "commit": "1a630f02a32c0a3236ead55b7644ff9c18acdacf",
       "pr": "https://github.com/ningZhang-cs/sandproof/pull/42",
@@ -71,6 +79,6 @@
   "separate_future_baselines": [
     "#13: Harbor exact joint dependency lock, fixed task IDs/content hashes, reviewed initialization scripts and standard-solution/scoring environment",
     "#14: repeatable high-privilege KVM CI and per-run preflight/config digest",
-    "#8/#9/#10/#12: V1 target semantics and full-service regression evidence"
+    "#8/#9/#10/#12: remaining V1 target semantics, optional streaming KVM evidence and full-service regression"
   ]
 }
