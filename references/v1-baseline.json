@@ -199,5 +199,16 @@
     "normal_regression": "same committed server passed sdk_server_smoke.py and sync/async sdk_data_contract.py using legacy configuration",
     "residuals": "ten interruption VMs and four legacy VMs had live PID/start-time/cgroup identity and limits sampled; before each service exited, exact VM processes were stopped, private jails/netns/cgroups absent and no process held a recorded network namespace inode. Base hash unchanged. Earlier failed and first corrected runs separately audited after tests ended.",
     "limits": "selected manual acceptance; generous explicit idle/admission test budgets separate lifecycle from transport timeouts. Does not cover all timeout arguments, concurrent lifecycle/restart races, host filesystem exhaustion or final budgets tied to frozen #13 tasks. No new Lean coverage."
+  },
+  "command_input_acceptance": {
+    "test": "tests/system/sdk_command_input.py",
+    "commit": "92ac1a497c61a4e26e0c37354c08fa9ac96c6e2b",
+    "script_sha256": "8b27fc2acc349e59ae68bd3a19ab34ff0e418e0a8791c0224b4b56e8bf6881a3",
+    "server_build_commit": "3a25bf6800ecd4cce86d486c292cf12dffa05708",
+    "server_source_equivalence": "production source unchanged between server build and test commit",
+    "host_and_artifacts": "same fixed host, base and server fingerprints as transfer_interruption_acceptance",
+    "result": "passed sixteen real cases: original sync/async SDK x root/ubuntu x omitted stdin, explicit false, enabled empty EOF, enabled text/binary input with same-PID reconnect. Both handle and commands SendInput APIs and CloseStdin used; full byte count and SHA-256 checked; exactly one Start marker and healthy subsequent command.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before service exit; live cgroup limits observed, base hash unchanged",
+    "limits": "selected stdin acceptance only, under the existing explicit streaming configuration. Does not establish input-budget boundaries, invalid identity/closed-input errors, or every timeout argument combination."
   }
 }

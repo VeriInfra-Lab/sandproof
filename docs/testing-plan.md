@@ -83,6 +83,8 @@ uv run --locked --project tests/compat python tests/system/sdk_disk_full.py \
 
 服务须允许同租户同时创建两台 VM、300 秒寿命；来宾需有 Python 3、`posix_fallocate` 和现有 shell 工具。`--max-guest-disk-bytes` 默认 2 GiB 是探针拒绝意外大盘的上界，不是部署磁盘配额；测试仍使用已预检的固定私有 base。该脚本已在启用宿主 cgroup 限制的真实 KVM 服务通过，六台 VM 的精确进程/cgroup/网络空间/私有盘回收与基础盘指纹另经宿主审计；提交和配置见[版本基线](../references/v1-baseline.json)。
 
+[命令输入探针](../tests/system/sdk_command_input.py)使用原同步/异步 SDK，分别以 root 和 ubuntu 验证省略 stdin、显式 false、启用后空输入关闭，以及文本/二进制输入后断线并按同一 PID 重连。启用路径检查 EOF 后的完整长度和 SHA-256、单次启动标记及后续可用性；不把重连当成重新执行命令。运行方式与其他实机脚本相同，显式提供 `--api-url`、`--sandbox-url` 及环境中的测试凭据；该探针已在固定 base 的真实控制器/网关/VM 链完成十六个场景，精确提交与残留检查见[版本基线](../references/v1-baseline.json)；命令输入预算与完整超时参数矩阵另行验收。
+
 [传输中断探针](../tests/system/transfer_interruption.py)分别对同步/异步 SDK 的上传、下载执行 kill 与到期场景。上传用有界生产者屏障暂停在前缀之后，并通过来宾文件信息确认实际写入；下载先收到有效内容再触发中断。另一个持续命令连接用于观察在途访问撤销；物理 VM 停止和清理由宿主另外核验，不能只根据查询列表消失或中继断开就认定到期销毁完成。旧令牌的 health、文件读写与 Start 新请求须被拒绝，独立控制 VM 始终能执行和读写。SDK 或传输的普通超时不能代替中断成功，最后仍需宿主精确残留审计。该脚本已在固定 base 上通过八个真实场景；同一提交也通过旧配置的生命周期和同步/异步数据调用回归。宿主在服务退出前核对精确进程、盘、cgroup 和网络空间持有者，基础盘未变；精确版本见[版本基线](../references/v1-baseline.json)。完整超时参数、并发慢流与重启竞争仍未由此覆盖。
 
 ```sh
