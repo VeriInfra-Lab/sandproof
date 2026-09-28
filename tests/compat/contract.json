@@ -12,7 +12,13 @@
     {"sdk_call": "sandbox.files.write", "transport": "HTTP multipart or octet stream", "method": "POST", "path": "/files", "evidence_case": "test_file_write_and_read_use_envd_files_and_access_token"},
     {"sdk_call": "sandbox.files.read", "transport": "HTTP bytes", "method": "GET", "path": "/files", "evidence_case": "test_file_write_and_read_use_envd_files_and_access_token"},
     {"sdk_call": "sandbox.files.make_dir", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/filesystem.Filesystem/MakeDir", "evidence_case": "test_directory_calls_use_filesystem_rpc"},
-    {"sdk_call": "sandbox.files.list", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/filesystem.Filesystem/ListDir", "evidence_case": "test_directory_calls_use_filesystem_rpc"}
+    {"sdk_call": "sandbox.files.list", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/filesystem.Filesystem/ListDir", "evidence_case": "test_directory_calls_use_filesystem_rpc"},
+    {"sdk_call": "sandbox.commands.connect", "transport": "ConnectRPC JSON stream", "method": "POST", "path": "/process.Process/Connect", "evidence_case": "test_reconnect_and_signal_use_known_pid_without_start_replay"},
+    {"sdk_call": "command_handle.kill", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/process.Process/SendSignal", "evidence_case": "test_reconnect_and_signal_use_known_pid_without_start_replay"},
+    {"sdk_call": "sandbox.files.get_info", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/filesystem.Filesystem/Stat", "evidence_case": "test_file_info_and_batch_upload_preserve_paths_and_bytes"},
+    {"sdk_call": "sandbox.files.write_files", "transport": "HTTP multipart or sequential octet streams", "method": "POST", "path": "/files", "evidence_case": "test_file_info_and_batch_upload_preserve_paths_and_bytes"},
+    {"sdk_call": "await sandbox.commands.run", "transport": "ConnectRPC JSON stream", "method": "POST", "path": "/process.Process/Start", "evidence_case": "test_async_command_cwd_env_user_stdout_stderr_and_nonzero"},
+    {"sdk_call": "await sandbox.files.write_files", "transport": "HTTP multipart or sequential chunked octet streams", "method": "POST", "path": "/files", "evidence_case": "test_async_file_info_batch_and_directory_requests"}
   ],
   "tested_cases": [
     "test_create_omits_server_defaults",
@@ -28,38 +34,48 @@
     "test_debug_mode_is_not_a_lifecycle_test"
   ],
   "envd_cases": [
-    "test_command_uses_connect_stream_and_preserves_result",
     "test_background_command_returns_handle_then_result",
-    "test_nonzero_command_exit_is_not_success",
+    "test_batch_failure_does_not_replay_previous_uploads",
+    "test_command_cwd_env_user_and_stderr_are_preserved",
     "test_command_missing_end_is_not_auto_retried",
     "test_command_truncated_frame_is_not_replayed_and_next_command_works",
+    "test_command_uses_connect_stream_and_preserves_result",
+    "test_directory_calls_use_filesystem_rpc",
+    "test_file_info_and_batch_upload_preserve_paths_and_bytes",
+    "test_file_rejections_are_distinct",
     "test_file_truncated_download_is_not_returned_as_success",
     "test_file_write_and_read_use_envd_files_and_access_token",
-    "test_file_rejections_are_distinct",
     "test_filelike_upload_uses_octet_stream_by_default",
-    "test_directory_calls_use_filesystem_rpc",
+    "test_nonzero_command_exit_is_not_success",
+    "test_reconnect_and_signal_use_known_pid_without_start_replay",
     "test_sdk_forwards_path_that_server_must_check"
   ],
   "gateway_cases": [
     "test_background_command_returns_handle_then_result",
+    "test_batch_failure_does_not_replay_previous_uploads",
+    "test_command_cwd_env_user_and_stderr_are_preserved",
     "test_command_missing_end_is_not_auto_retried",
     "test_command_output_limit_fails_without_replaying_start",
     "test_command_truncated_frame_is_not_replayed_and_next_command_works",
     "test_command_uses_connect_stream_and_preserves_result",
     "test_directory_calls_use_filesystem_rpc",
     "test_download_limit_fixed_and_streamed_through_sdk",
+    "test_file_info_and_batch_upload_preserve_paths_and_bytes",
     "test_file_rejections_are_distinct",
     "test_file_truncated_download_is_not_returned_as_success",
     "test_file_write_and_read_use_envd_files_and_access_token",
     "test_filelike_upload_uses_octet_stream_by_default",
     "test_management_api_key_is_removed_from_data_request",
     "test_nonzero_command_exit_is_not_success",
+    "test_reconnect_and_signal_use_known_pid_without_start_replay",
     "test_sdk_forwards_path_that_server_must_check",
     "test_stream_classifier_rejects_unrelated_errors_and_deadlines",
     "test_upload_boundary_rejection_never_reaches_envd"
   ],
   "gateway_streaming_cases": [
     "test_background_command_returns_handle_then_result",
+    "test_batch_failure_does_not_replay_previous_uploads",
+    "test_command_cwd_env_user_and_stderr_are_preserved",
     "test_command_missing_end_is_not_auto_retried",
     "test_command_output_limit_fails_without_replaying_start",
     "test_command_truncated_frame_is_not_replayed_and_next_command_works",
@@ -67,6 +83,7 @@
     "test_compressed_upload_rejected_and_download_negotiates_identity",
     "test_directory_calls_use_filesystem_rpc",
     "test_download_limit_fixed_and_streamed_through_sdk",
+    "test_file_info_and_batch_upload_preserve_paths_and_bytes",
     "test_file_rejections_are_distinct",
     "test_file_truncated_download_is_not_returned_as_success",
     "test_file_write_and_read_use_envd_files_and_access_token",
@@ -75,6 +92,7 @@
     "test_idle_upload_is_rejected_and_next_request_works",
     "test_management_api_key_is_removed_from_data_request",
     "test_nonzero_command_exit_is_not_success",
+    "test_reconnect_and_signal_use_known_pid_without_start_replay",
     "test_sdk_forwards_path_that_server_must_check",
     "test_stream_classifier_rejects_unrelated_errors_and_deadlines",
     "test_transfer_saturation_preserves_health_and_releases_capacity",
@@ -93,6 +111,32 @@
     "memory_evidence": "gated streaming and Rust RSS high-water observations; synthetic envd buffers separately; not a host resource guarantee",
     "pending": ["real KVM and disk-full evidence", "full sync/async SDK argument combinations", "kill/expiry/revocation races", "final limits measured with frozen tasks and host quotas"]
   },
+  "envd_async_cases": [
+    "test_async_background_reconnect_and_kill_do_not_replay_start",
+    "test_async_batch_failure_does_not_replay_previous_uploads",
+    "test_async_command_cwd_env_user_stdout_stderr_and_nonzero",
+    "test_async_file_info_batch_and_directory_requests",
+    "test_async_truncated_command_is_not_replayed_and_next_call_works",
+    "test_async_truncated_download_fails_and_next_call_works"
+  ],
+  "gateway_async_cases": [
+    "test_async_background_reconnect_and_kill_do_not_replay_start",
+    "test_async_batch_failure_does_not_replay_previous_uploads",
+    "test_async_command_cwd_env_user_stdout_stderr_and_nonzero",
+    "test_async_file_info_batch_and_directory_requests",
+    "test_async_truncated_command_is_not_replayed_and_next_call_works",
+    "test_async_truncated_download_fails_and_next_call_works"
+  ],
+  "gateway_async_streaming_cases": [
+    "test_async_background_reconnect_and_kill_do_not_replay_start",
+    "test_async_batch_failure_does_not_replay_previous_uploads",
+    "test_async_chunked_upload_budget_and_recovery",
+    "test_async_command_cwd_env_user_stdout_stderr_and_nonzero",
+    "test_async_file_info_batch_and_directory_requests",
+    "test_async_stream_download_budget_and_recovery",
+    "test_async_truncated_command_is_not_replayed_and_next_call_works",
+    "test_async_truncated_download_fails_and_next_call_works"
+  ],
   "gateway_differences": [
     "Data requests require HTTP/1.1; other versions return 505 before body consumption or forwarding",
     "Upload 413 maps to SandboxException with a 413 message prefix; SDK 2.51.0 does not populate status_code for this envd error",
@@ -100,9 +144,9 @@
   ],
   "not_yet_tested": [
     "list and info response mapping",
-    "command reconnect, stdin, signal, timeout and disconnect behavior",
+    "full real-service stdin, timeout-parameter and disconnect/failure combinations",
     "file host-boundary enforcement against a real VM",
-    "template build and query",
+    "fixed-base per-task initialization for #13",
     "real controller response compatibility",
     "real VM end-to-end behavior"
   ]
