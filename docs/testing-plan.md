@@ -72,7 +72,7 @@ uv run --locked --project tests/compat python tests/system/gateway_async_stream_
 
 这组参数沿用 64/96/32 MiB 测试配置，不是最终部署值。该异步脚本已在真实 KVM 完成上述边界、较小输出成功对照、截流与重连，独立宿主审计确认精确进程、cgroup、网络空间和私有盘回收，基础盘指纹不变；提交与证据见[版本基线](../references/v1-baseline.json)。不能据此推断并发、慢流、到期或授权撤销竞争全部通过。
 
-命令与基本文件的共同输入和断言集中在[SDK 数据样例](../tests/compat/sdk_data_samples.py)：cwd/env/user、stdout/stderr、非零退出、文本/二进制/空文件、文件信息和目录内容。同步/异步合成 envd、实际 Rust 网关组合测试和[真实 VM 探针](../tests/system/sdk_data_contract.py)均导入该模块；模拟层额外保留请求参数、鉴权头、批量顺序及失败断言，真实 VM 仍独立执行 shell、写入文件、核对内容哈希及原 PID 重连，不把模拟回复当作实际执行。提交 `a73f83e774d2b2e21ccc6b2b6d6797694c18a36f` 已通过全部 SDK/网关检查，且在新 `3f96c961…` base 的普通和流式配置各通过同步/异步 root/ubuntu 四组检查，每配置两台 VM，分别 10.011/9.836 秒；四台精确资源在服务退出前回收，base 不变，实际 cgroup/Firecracker/私有盘已核对，见[基线](../references/v1-baseline.json)的 `shared_sdk_data_acceptance`。共享范围是这些命令/文件样例；管理、网络和各故障探针仍按各自证据记录。
+命令与基本文件的共同输入和断言集中在[SDK 数据样例](../tests/compat/sdk_data_samples.py)：cwd/env/user、stdout/stderr、非零退出、文本/二进制/空文件、文件信息和目录内容。同步/异步合成 envd、实际 Rust 网关组合测试和[真实 VM 探针](../tests/system/sdk_data_contract.py)均导入该模块；模拟层额外保留请求参数、鉴权头、批量顺序及失败断言，真实 VM 仍独立执行 shell、写入文件、核对内容哈希及原 PID 重连，不把模拟回复当作实际执行。提交 `a73f83e774d2b2e21ccc6b2b6d6797694c18a36f` 已通过全部 SDK/网关检查，且在新 `3f96c961…` base 的普通和流式配置各通过同步/异步 root/ubuntu 四组检查，每配置两台 VM，分别 10.011/9.836 秒；四台精确资源在服务退出前回收，base 不变，实际 cgroup/Firecracker/私有盘已核对，见[基线](../references/v1-baseline.json)的 `shared_sdk_data_acceptance`。共享范围是这些命令/文件样例；其他调用及各故障探针仍按各自证据记录；网络/详情的共同样例见下文。
 
 同步与异步的数据调用合同复用同一合成 envd 和真实 Rust 网关：检查 cwd、含空格/Unicode 的命令 envs、user 的鉴权头、stdout/stderr、非零退出；后台连接和终止只发送已有 PID，不重发 Start；Stat、递归 ListDir 请求和批量上传保留路径及字节。批量收到合成 507 时抛出 `NotEnoughSpaceException`，已发起的上传不重发；同步 octet-stream 逐项发送，第二项失败后不发送第三项，而异步 SDK 并发发送，其他项可能仍在写入。用屏障确保并发请求均已到达再返回故障，不承诺批量回滚。这组组合测试验证错误传播；真实 ENOSPC 由下面的独立来宾磁盘探针验收。异步 SDK 的文件流使用分块传输，另经流式配置覆盖大文件边界和失败恢复；不能只以同步 SDK 的已知长度结果推断异步行为。
 
@@ -139,6 +139,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 独立的禁网来宾探针还临时创建完全隔离的“外部”网络空间：先验证同一沙箱宿主网络空间通过临时链路确能连接测试端点，再开启该沙箱网络空间内的 IPv4 转发、核对来自 TAP 的路由，并让来宾 root 发起相同连接。只有宿主路径可通、来宾仍被禁网规则阻断才通过，避免把没有出口的测试环境误当成防火墙有效。探针结束后恢复该网络空间的转发值并删除临时链路和外部空间；它不改宿主全局转发，也不单独代表公网或静态规则验收。
 
 [服务恢复测试](../sandbox-api/tests/managed_port.rs)覆盖停止成功但回执未知、准备阶段只有部分资源、IPv4 配置回执丢失、补偿终止围栏回执丢失，以及销毁或失败补偿中清理只完成一部分。重开数据库后的扫描器先匹配当前操作编号、owner、时期和持久资源计划，再要求宿主给出精确结果；重复恢复与迟到的相同回执保持终局不变。已销毁且 VM/网络槽均已确认回收的历史操作不再重复进入完成编排；仍有未知动作或部分资源时继续恢复。失败创建遗留的未派发启动动作由同一控制核心检查是否仍可执行。回归同时核对空闲扫描完成数为零、活实例授权正常及旧凭证继续拒绝。同一集成提交还在独占 KVM 主机通过首次开放围栏及停止动作执行前的两个工作进程 SIGKILL 测试，原操作恢复、精确资源回收与基础盘指纹均通过核对，见[版本基线](../references/v1-baseline.json)的 `integrated_recovery_windows_acceptance`。这是合成宿主证据测试，不能替代真实服务进程的任意位置强制终止测试。
+
+[网络与详情共同样例](../tests/compat/sdk_network_samples.py)固定六组创建选项、SDK/HTTP 原始字段和回显预期；[合成 HTTP 测试](../tests/compat/test_sdk_wire.py)、双客户端网络探针及[详情探针](../tests/system/sdk_sandbox_details.py)复用输入和断言。预期值是静态样例，不执行策略判断；TCP/UDP 可达性、原 VM 重启身份和资源残留由实机独立检查。合成层另检查参数是否省略以及 SDK 的字段拼写，保留旧详情缺字段的兼容检查。
 
 [双客户端网络实机探针](../tests/system/sdk_network_clients.py)在提交 `cfd15b5f17a6990a3f2c6af5f1f73ef71b9b4cee` 通过同步/异步各 57 组、共 114 组检查：省略联网参数、显式 true/false、false＋允许网段＋全拒绝、true＋拒绝地址、全允许＋全拒绝六种配置。原始 CIDR 拼写/重复项/顺序、空列表、nullable 联网值经 SDK 详情及原始 HTTP 回传；列表无令牌，外租户详情不可见。真实 TCP/UDP 443 回显分别验证两个测试地址，宿主本机地址在全允许规则下仍被阻断；每客户端各重启服务一次，保留两台原 VM 的身份、策略及详情，销毁其中一台不影响另一台。14 次非法网络创建均为精确 HTTP 400，最终只有 12 条合法准入记录。12 台 VM 的进程、jail、netns、cgroup、宿主链路与 nft 表在服务退出前全部回收，外部回显空间和独立宿主空间也已移除；探针及 VM 审计耗时 107.375 秒。
 
