@@ -100,6 +100,8 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [完整服务数据脚本](../tests/system/sdk_data_contract.py)通过原 SDK 的 create/connect/kill 创建自己的沙箱，分别以 root 和固定 base 的普通用户运行同步/异步调用。它上传包含文本、二进制和空文件的多层目录，检查返回路径、文件信息、递归列表、普通/流式下载及 SHA-256；用 FIFO 和异步输出回调同步断线时机，确认重连同一 PID、只写一次标记，并验证终止、后续调用和销毁后的旧令牌拒绝。它没有绕过管理链直接构造来宾客户端；已用 root/ubuntu 在真实 KVM 的默认与显式流式配置执行，并覆盖省略 cwd 使用所选用户 home、显式 cwd 优先。时间参数的省略/零/负值/超限、销毁期间的授权竞争和宿主残留仍需独立用例。
 
+[命令参数失败探针](../tests/system/sdk_command_arguments.py)通过原同步/异步 SDK 分别运行前台和后台 Start：未知用户、root/ubuntu 的不存在或普通文件 cwd，以及 ubuntu 无权访问的目录。未知用户须得到 `AuthenticationException`，目录问题须得到 `InvalidArgumentException`，不能把连接或普通期限超时算作参数拒绝。每次失败必须没有本次唯一副作用标记，随后同一 VM 的普通用户仍可按指定 cwd、环境变量执行；相同私有目录另以 root 正常执行作为权限对照。运行时提供与其他数据脚本相同的 URL 和环境凭据，本探针的 24 个拒绝场景及正常对照已在两台真实 VM 通过，物理资源、网络空间持有者和基础盘另经独立审计，精确提交见[版本基线](../references/v1-baseline.json)的 `command_arguments_acceptance`；不表示全部非法参数或超时组合已验收。
+
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000 \
