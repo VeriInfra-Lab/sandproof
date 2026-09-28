@@ -5,8 +5,45 @@ use super::{ControllerJournal, identity, storage};
 use crate::{CrashInjector, CrashPoint, JournalError};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use sandbox_controller_core as core;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{self, Display};
+
+/// Immutable, user-supplied creation data outside the pure lifecycle model.
+/// It is committed with the create intent before any host-side initialization.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateOptions {
+    pub env_vars: BTreeMap<String, String>,
+    pub metadata: BTreeMap<String, String>,
+}
+
+impl CreateOptions {
+    /// Check bounded, JSON-safe values before any durable or host effect.
+    /// # Errors
+    /// Rejects invalid environment names, NULs or oversized input.
+    pub fn validate(&self) -> Result<(), AdmissionError> {
+        self.encoded().map(|_| ())
+    }
+
+    fn encoded(&self) -> Result<Vec<u8>, AdmissionError> {
+        if self.env_vars.iter().any(|(key, value)| {
+            key.is_empty() || key.contains('=') || key.contains('\0') || value.contains('\0')
+        }) || self
+            .metadata
+            .iter()
+            .any(|(key, value)| key.is_empty() || key.contains('\0') || value.contains('\0'))
+        {
+            return Err(AdmissionError::InvalidCreateOptions);
+        }
+        let encoded = serde_json::to_vec(self).map_err(|_| AdmissionError::InvalidCreateOptions)?;
+        if encoded.len() > 64 * 1024 {
+            return Err(AdmissionError::InvalidCreateOptions);
+        }
+        Ok(encoded)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AdmissionLimits {
@@ -18,6 +55,16 @@ pub struct AdmissionLimits {
     /// process records and cleanup must remain possible at the admission edge.
     pub cleanup_reserve_bytes: u64,
     pub max_timeout_secs: u64,
+}
+
+/// One admission decision's immutable time, resource budget and launch data.
+#[derive(Clone, Debug)]
+pub struct CreateAdmission {
+    pub now_ms: i64,
+    pub timeout_secs: u64,
+    pub disk_bytes: u64,
+    pub limits: AdmissionLimits,
+    pub options: CreateOptions,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +89,8 @@ pub enum AdmissionError {
     MissingLifetime,
     UnmanagedActive,
     CorruptLifetime,
+    InvalidCreateOptions,
+    MissingCreateOptions,
 }
 
 impl Display for AdmissionError {
@@ -59,6 +108,8 @@ impl Display for AdmissionError {
             Self::MissingLifetime => f.write_str("sandbox has no registered lifetime"),
             Self::UnmanagedActive => f.write_str("active sandbox has no quota reservation"),
             Self::CorruptLifetime => f.write_str("sandbox lifetime record mismatch"),
+            Self::InvalidCreateOptions => f.write_str("invalid sandbox creation options"),
+            Self::MissingCreateOptions => f.write_str("accepted sandbox has no creation options"),
         }
     }
 }
@@ -167,6 +218,38 @@ impl ControllerJournal {
         limits: AdmissionLimits,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
+        self.admit_create_with_options(
+            request,
+            CreateAdmission {
+                now_ms,
+                timeout_secs,
+                disk_bytes,
+                limits,
+                options: CreateOptions::default(),
+            },
+            crashes,
+        )
+    }
+
+    /// Atomically bind user initialization data to the accepted create.
+    /// A restart must read these exact bytes; it cannot infer them from a
+    /// later HTTP retry or mint a different launch configuration.
+    /// # Errors
+    /// Rejects invalid input, quotas, store failures or a rejected create.
+    pub fn admit_create_with_options(
+        &mut self,
+        request: core::CreateRequest,
+        admission: CreateAdmission,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<core::ControllerDecision, AdmissionError> {
+        let CreateAdmission {
+            now_ms,
+            timeout_secs,
+            disk_bytes,
+            limits,
+            options,
+        } = admission;
+        let encoded_options = options.encoded()?;
         let end = deadline(now_ms, timeout_secs, limits)?;
         if disk_bytes == 0
             || disk_bytes > i64::MAX as u64
@@ -228,10 +311,55 @@ impl ControllerJournal {
             params![identity::sandbox_id(&self.namespace, sandbox)?.as_str(),
                 identity::owner_id(owner)?.as_str(), end, i64::try_from(disk_bytes).map_err(|_| AdmissionError::QuotaExceeded)?, now_ms],
         )?;
+        tx.execute(
+            "INSERT INTO sandbox_create_options (sandbox_id, options_json) VALUES (?1, ?2)",
+            params![
+                identity::sandbox_id(&self.namespace, sandbox)?.as_str(),
+                encoded_options
+            ],
+        )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit().map_err(JournalError::CommitUncertain)?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(decision)
+    }
+
+    /// Read the immutable creation data for host initialization or metadata
+    /// projection. Legacy admitted sandboxes had only empty options.
+    /// # Errors
+    /// Rejects malformed persisted JSON instead of silently dropping it.
+    pub fn create_options(
+        &self,
+        sandbox: core::SandboxId,
+    ) -> Result<CreateOptions, AdmissionError> {
+        let id = identity::sandbox_id(&self.namespace, sandbox)?;
+        let encoded: Option<Vec<u8>> = self
+            .journal
+            .connection
+            .query_row(
+                "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
+                [id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(bytes) = encoded {
+            let options: CreateOptions =
+                serde_json::from_slice(&bytes).map_err(|_| AdmissionError::InvalidCreateOptions)?;
+            if options.encoded()? != bytes {
+                return Err(AdmissionError::InvalidCreateOptions);
+            }
+            Ok(options)
+        } else {
+            let admitted: i64 = self.journal.connection.query_row(
+                "SELECT count(*) FROM sandbox_lifetimes WHERE sandbox_id=?1",
+                [id.as_str()],
+                |row| row.get(0),
+            )?;
+            if admitted != 0 {
+                return Err(AdmissionError::MissingCreateOptions);
+            }
+            Ok(CreateOptions::default())
+        }
     }
 
     /// Verify owner, Running authority and unexpired lifetime. API data-plane
