@@ -239,6 +239,24 @@ mod linux {
                 .map_err(|_| PortError::Busy)
         }
 
+        fn reclaim_incomplete_open_fence(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_open_fence(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_stop(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_stop(action)
+                .map_err(|_| PortError::Busy)
+        }
+
         fn reclaim_incomplete_cleanup(
             &mut self,
             action: &WorkAction<core::EffectId>,

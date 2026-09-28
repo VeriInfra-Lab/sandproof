@@ -629,11 +629,12 @@ fn assert_two_cleaned_slots(worker: &LinuxWorker) {
 
 struct TerminateAfterWorker {
     sigkill: bool,
+    point: CrashPoint,
 }
 
 impl CrashInjector for TerminateAfterWorker {
     fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
-        if point == CrashPoint::AfterWorkerCall {
+        if point == self.point {
             // Neither termination path runs destructors or commits a receipt.
             if self.sigkill {
                 kill_process(getpid(), Signal::KILL).unwrap();
@@ -657,11 +658,26 @@ fn exit_child(stage: &str, sigkill: bool) {
                     (stage, action.command.command()),
                     ("prepare", core::Command::PrepareVm { .. })
                         | ("stop", core::Command::StopVm { .. })
+                        | ("stop_before_host", core::Command::StopVm { .. })
+                        | (
+                            "open_fence_before_host",
+                            core::Command::InstallFence {
+                                terminal: false,
+                                ..
+                            }
+                        )
                         | ("cleanup", core::Command::CleanupVm { .. })
                 ));
                 worker.execute(action)
             },
-            &mut TerminateAfterWorker { sigkill },
+            &mut TerminateAfterWorker {
+                sigkill,
+                point: if stage.ends_with("before_host") {
+                    CrashPoint::AfterDispatchClaim
+                } else {
+                    CrashPoint::AfterWorkerCall
+                },
+            },
         )
         .unwrap();
     panic!("worker child did not exit at the injected boundary");
@@ -684,7 +700,11 @@ fn spawn_exit_child(stage: &str, test_name: &str, sigkill: bool) {
     clippy::too_many_lines,
     reason = "real worker process terminates separately after VM launch and exact stop, before either receipt is committed"
 )]
-fn worker_termination_reconciles_prepare_and_stop(test_name: &str, sigkill: bool) {
+fn worker_termination_reconciles_prepare_and_stop(
+    test_name: &str,
+    sigkill: bool,
+    stop_before_host: bool,
+) {
     if let Ok(stage) = env::var("SANDPROOF_HOST_EXIT_CHILD") {
         exit_child(&stage, sigkill);
         return;
@@ -823,7 +843,15 @@ fn worker_termination_reconciles_prepare_and_stop(test_name: &str, sigkill: bool
         .unwrap();
     drop(journal);
     drop(worker);
-    spawn_exit_child("stop", test_name, sigkill);
+    spawn_exit_child(
+        if stop_before_host {
+            "stop_before_host"
+        } else {
+            "stop"
+        },
+        test_name,
+        sigkill,
+    );
 
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal =
@@ -834,6 +862,23 @@ fn worker_termination_reconciles_prepare_and_stop(test_name: &str, sigkill: bool
         uncertain[0].command.command(),
         core::Command::StopVm { .. }
     ));
+    if stop_before_host {
+        assert!(worker.observe_action(&uncertain[0]).is_err());
+        assert_eq!(
+            worker.inventory().unwrap().slots[0]
+                .process
+                .as_ref()
+                .unwrap()
+                .state,
+            sandbox_runtime::VmState::VmmRunning
+        );
+        assert!(
+            journal
+                .matches_current_stop(&journal.world().unwrap(), &uncertain[0])
+                .unwrap()
+        );
+        worker.reclaim_incomplete_stop(&uncertain[0]).unwrap();
+    }
     let late_stop = worker.observe_action(&uncertain[0]).unwrap();
     assert_eq!(
         worker.inventory().unwrap().slots[0]
@@ -881,6 +926,7 @@ fn real_worker_process_exit_reconciles_prepare_and_stop() {
     worker_termination_reconciles_prepare_and_stop(
         "real_worker_process_exit_reconciles_prepare_and_stop",
         false,
+        false,
     );
 }
 
@@ -890,7 +936,112 @@ fn real_worker_sigkill_reconciles_prepare_and_stop() {
     worker_termination_reconciles_prepare_and_stop(
         "real_worker_sigkill_reconciles_prepare_and_stop",
         true,
+        false,
     );
+}
+
+#[test]
+#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+fn real_worker_sigkill_before_stop_is_finished_by_exact_identity() {
+    worker_termination_reconciles_prepare_and_stop(
+        "real_worker_sigkill_before_stop_is_finished_by_exact_identity",
+        true,
+        true,
+    );
+}
+
+#[test]
+#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+fn real_worker_sigkill_before_opening_fence_resumes_one_create() {
+    const TEST_NAME: &str = "real_worker_sigkill_before_opening_fence_resumes_one_create";
+    if let Ok(stage) = env::var("SANDPROOF_HOST_EXIT_CHILD") {
+        exit_child(&stage, true);
+        return;
+    }
+    let config = test_config();
+    let sandbox = core::SandboxId(1);
+    let worker = LinuxWorker::new(config.clone()).unwrap();
+    worker.put_secret(sandbox, &test_token()).unwrap();
+    let mut journal =
+        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    journal
+        .apply(
+            core::ControllerInput::Request(core::Request::Create(test_create_request(&config))),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    journal
+        .apply(
+            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(
+                core::OperationKey {
+                    sandbox,
+                    operation: core::OperationId(1),
+                },
+            )),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+    drop(worker);
+    spawn_exit_child("open_fence_before_host", TEST_NAME, true);
+
+    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal =
+        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::InstallFence {
+            terminal: false,
+            ..
+        }
+    ));
+    assert!(worker.observe_action(&uncertain[0]).is_err());
+    assert!(
+        journal
+            .matches_current_open_fence(&journal.world().unwrap(), &uncertain[0])
+            .unwrap()
+    );
+    worker.reclaim_incomplete_open_fence(&uncertain[0]).unwrap();
+    assert_eq!(
+        journal
+            .reconcile_uncertain(&mut |action| worker.observe_action(action).ok())
+            .unwrap(),
+        1
+    );
+    let running =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            worker.execute(action)
+        })
+        .unwrap_or_else(|error| panic!("resumed create: {error}; host: {:?}", worker.last_error()));
+    assert_eq!(
+        running.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Running
+    );
+    let destroyed = kill_v1(
+        &mut journal,
+        core::KillRequest {
+            actor: core::Actor::Tenant(core::TenantId(1)),
+            sandbox,
+            operation: core::OperationId(2),
+        },
+        &mut |action| worker.execute(action),
+    )
+    .unwrap_or_else(|error| panic!("kill: {error}; host: {:?}", worker.last_error()));
+    assert_eq!(
+        destroyed.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+    let inventory = worker.inventory().unwrap();
+    assert!(inventory.unbound_claims.is_empty());
+    assert!(inventory.unbound_networks.is_empty());
+    assert!(inventory.unbound_cgroups.is_empty());
+    assert_eq!(inventory.slots.len(), 1);
+    assert!(inventory.slots[0].network_inode.is_none());
+    assert!(inventory.slots[0].disk_inode.is_none());
+    assert!(inventory.slots[0].cgroup_inode.is_none());
 }
 
 #[test]
