@@ -785,5 +785,41 @@
       "ip netns exec remounted sysfs and hid configured cgroup parent: service startup failed before VM creation; no cgroup limit removed; exact echo/supervisors/private namespaces cleaned, then used network-only nsenter"
     ],
     "limits": "same unmodified production code and SDK assertions passed in an isolated host-network topology; does not claim Internet endpoint reachability on the shared Docker host, DNS query-content enforcement, advanced IPv6 or arbitrary network/crash interleavings. No production Rust or proof changes. Twelve VMs belong to the passed run; one additional failed-run VM is separately audited and not counted as passing."
+  },
+  "routed_base_isolation_acceptance": {
+    "commit": "a580139075bd50fe17e3d40dfd7131672ec1ce96",
+    "new_test": "tests/system/sdk_private_root.py",
+    "probes_sha256": {
+      "sdk_private_root.py": "d95bfadbcebde98732e6d6c6fe7a3722dba505a398bc0dea47ed13cf5e349d6c",
+      "sdk_server_smoke.py": "0b771d17ec7be344d41e6dd6fb2685b29789d4656cd31ba0014b2b0abd9f6daf",
+      "sdk_data_contract.py": "5c158f26b9bf41aa5ec1070b8fe26218c8830e7efefcd755237eba27de8ac9cc",
+      "sdk_file_permissions.py": "4cf6ae1adc5f20e34fd5d9073a9de06762c5f95dc7857dcdf7f49ddaaa8de5b4"
+    },
+    "wrapper_sha256": "8f325fc1f7c1713fae923aa5743f88d8deb275b62e2855be58ff77ed34fccc87",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "all production Rust sources and Cargo manifests/lock unchanged between build and probe commit; verified before each run",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "base_preparation": "same fixed recipe, source inputs and imported service definition as network_clients_acceptance.new_base; that entry records the build and previous network evidence separately",
+    "host_and_configuration": "Linux 6.8.0-1065-azure/KVM, Firecracker/jailer 1.16.1, fixed envd 0.9.0 and kernel, original E2B SDK 2.51.0/Python 3.13; each VM one vCPU/512 MiB guest, one CPU/768 MiB host cgroup with swap disabled, 1 GiB private disk, explicit no-internet; streaming 64/96 MiB test budgets are not final deployment defaults",
+    "command": "pinned-SDK Python tests/system/sdk_private_root.py --api-url <own-loopback-service> --sandbox-url <same-service>; existing sdk_server_smoke.py, sdk_data_contract.py and sdk_file_permissions.py use the same service, with a disposable --host-canary for the latter; credentials from environment only, independent host supervisor required",
+    "runs": [
+      {
+        "mode": "legacy",
+        "durable_destroyed_rows": 14,
+        "probe_and_audit_seconds": 101.668,
+        "result": "new private-root probe: six VMs, six grouped cases per original SDK (12 total), different versions of a locally constructed Debian package at the same system paths, independent dpkg databases/config writes/removal/destruction, two clean replacement VMs; existing lifecycle/auth/expiry smoke: two VMs; sync/async root/ubuntu data contract: two VMs/four user cases; file-user/path/batch/host-canary probe: four VMs/70 grouped cases"
+      },
+      {
+        "mode": "streaming",
+        "durable_destroyed_rows": 6,
+        "probe_and_audit_seconds": 40.976,
+        "result": "existing sync/async root/ubuntu data contract: two VMs/four user cases; file-user/path/batch/host-canary probe: four VMs/70 grouped cases; local package/private-root probe not repeated in this configuration"
+      }
+    ],
+    "observations": "all 20 live VMs sampled for exact PID/start and cgroup identity/membership/limits, distinct concurrent private-disk device/inode versus base and each other, 1 GiB disk size, and actual Firecracker machine-config 1 vCPU/512 MiB matching SDK detail; host canary contents/device/inode/owner/mode unchanged in both runs",
+    "residuals": "20 durable rows Destroyed; exact PID/start stopped, private jails/netns/cgroups absent and no namespace holders, checked before each service exit; new base hash unchanged after each run; old b5e677 base independently unchanged; supervisors/services exited normally and test cgroup parent empty",
+    "failed_attempts": [],
+    "limits": "manual selected acceptance of the new routed base, not byte-identical ext4 reproduction, arbitrary package dependencies, guest-user DAC, all streaming boundaries on this image or #13 Harbor initialization/final budgets. No Internet/software repository accessed by the new package probe. Historical b5e677 large-transfer/fault evidence remains bound to its original image and commit. No production Rust or proof changes."
   }
 }
