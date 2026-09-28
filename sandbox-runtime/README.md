@@ -23,7 +23,32 @@ sudo ./target/debug/sandproof-vm smoke \
 
 ## 固定 envd 与真实 SDK 测试
 
-[`tools/build_ci_guest.py`](../tools/build_ci_guest.py) 只接收已固定指纹的 Firecracker CI 基础盘和 envd 二进制。它新建 ext4 副本，用 debugfs 安装程序及开机服务，并检查文件内容、启动链接和文件系统；不挂载镜像、不运行来宾程序。基础盘和已有输出均不被改写。envd 源码固定为 `e2b-dev/runtime@f455fd58fa3f289e78ce1de690c35968d8d29322`，程序报告版本 `0.9.0`；构建时使用 Go 1.27.1、Linux amd64、CGO 关闭。具体二进制与基础盘 SHA-256 由脚本固定。输出镜像包含新 inode 时间戳，脚本记录每次输出指纹，不承诺磁盘字节逐次完全相同。
+[`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；不跟随 latest，也不接收用户提供的 Dockerfile/OCI。该配置用于可复现联调，尚未与 #13 的任务初始化及资源需求一起验收，不能视为通用任务镜像或生产默认值。
+
+准备阶段按清单下载并校验输入，解开清单固定的 Go 工具链和 envd 源码，提前缓存 `packages/envd` 所需的 Go 模块（`go mod download`，保留 go.sum 校验）。在源码的 `packages/envd` 目录使用以下构建参数；离线时设置 `GOPROXY=off`，缺少依赖直接失败：
+
+```sh
+env GOENV=off GOFLAGS= GOTOOLCHAIN=local GOAMD64=v1 GOEXPERIMENT= \
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOPROXY=off \
+  /absolute/go1.27.1/bin/go build -trimpath -buildvcs=false \
+  -ldflags '-X=main.commitSHA=f455fd5 -s -w -buildid=' \
+  -o /absolute/envd
+```
+
+该配方在两个独立源码目录构建得到相同的清单内 envd 指纹。它与下述历史 CI 二进制的指纹不同，不能据此沿用旧镜像的实机结论。镜像组装由 [`tools/build_base_guest.py`](../tools/build_base_guest.py) 执行：
+
+```sh
+sudo python3 tools/build_base_guest.py \
+  --squashfs /absolute/ubuntu-24.04.squashfs \
+  --envd /absolute/envd --packages /absolute/ubuntu-24.04.manifest \
+  --output /root-owned/new-base.ext4 > artifacts/base-build.json
+```
+
+输出目录及其祖先必须由 root 拥有、不可被其他用户写入且不是符号链接；输出文件必须尚不存在。工具先把三个输入复制到私有目录并校验指纹，再解包、组装 1 GiB ext4；不挂载镜像、不执行来宾代码、不访问网络。保留 root/ubuntu 用户供 envd 选择运行身份，锁定登录密码、移除继承的 SSH 密钥和串口自动登录配置、屏蔽 SSH 服务，并清空共享机器标识。安装 envd、启动服务和包清单后，用 debugfs 检查内容与权限、e2fsck 检查文件系统；仅成功时输出 JSON 指纹报告并将镜像设为只读。失败的精确输出路径保留诊断，没有成功报告的文件不能作为已验收 base。
+
+报告记录 profile、构建脚本、宿主文件系统工具及其配置、输出磁盘的指纹。固定输入与文件时间不代表不同宿主工具或 inode 创建时间下磁盘字节完全一致；每次输出都须单独绑定预检和实机证据。1 GiB 是这份联调镜像的逻辑容量，不是已测定的任务配额、宿主物理磁盘预留或内存保障。系统调用与 envd 均不在现有 Lean 证明范围内。
+
+历史 CI 配方 [`tools/build_ci_guest.py`](../tools/build_ci_guest.py) 只接收已固定指纹的 Firecracker CI 基础盘和 envd 二进制。它新建 ext4 副本，用 debugfs 安装程序及开机服务，并检查文件内容、启动链接和文件系统；不挂载镜像、不运行来宾程序。基础盘和已有输出均不被改写。envd 源码固定为 `e2b-dev/runtime@f455fd58fa3f289e78ce1de690c35968d8d29322`，程序报告版本 `0.9.0`；构建时使用 Go 1.27.1、Linux amd64、CGO 关闭。具体二进制与基础盘 SHA-256 由脚本固定。输出镜像包含新 inode 时间戳，脚本记录每次输出指纹，不承诺磁盘字节逐次完全相同。
 
 ```sh
 python3 tools/build_ci_guest.py --base /absolute/base.ext4 \

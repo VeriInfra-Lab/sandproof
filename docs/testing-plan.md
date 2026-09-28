@@ -90,6 +90,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 暂停恢复和安全竞争用 S 类专门测试扩展，不能用 Terminal-Bench 通过代替。形式化阶段再证明声明范围内任意历史的性质；V1 测试报告只记录实验结果。
 
+固定 base 制备按[运行层配方](../sandbox-runtime/README.md)和[输入清单](../tests/system/base-inputs.json)记录源码、工具链、二进制和镜像指纹。接受新 profile 前须验证错误指纹/已有输出/路径逃逸被拒绝，检查安装内容、登录配置与文件系统，再以新镜像运行两 VM 私有根盘、原 SDK、停止及残留场景；组装成功不能代替 S03、S10、S11 或 #13 任务初始化。历史 CI 镜像的结果不能直接背书新 profile。
+
 ## 4. 独立运行宿主预检
 
 [宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。
