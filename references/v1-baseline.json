@@ -295,5 +295,16 @@
     "limits": "per-request encoded body budget, not aggregate stdin quota. Base64 granularity means no request exactly at every byte was claimed. Root user only in this probe; user/reconnect cases separately bound to command_input_acceptance. Final deployment budgets and full timeout/error matrices remain open. No production or proof changes.",
     "server_sha256": "084cc8b4399a745812368e6b1521405c0067193ced1abf12ed463c3896f5e213",
     "previous_test_commit": "13865e3306fa6087afd085d877b7d7071c4f252d (same probe also passed before PR57 integration)"
+  },
+  "command_arguments_acceptance": {
+    "test": "tests/system/sdk_command_arguments.py",
+    "commit": "25533c3b130b80b25311c21d82a05fed17bcb04a",
+    "script_sha256": "78b2e0c63effe937fbfb32c832ddc6153f5a40a5581dae2901fa819efa391810",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base and server fingerprints as command_input_budget_acceptance; explicit no-internet",
+    "result": "passed 24 Start rejections: sync/async x foreground/background x unknown user, root/ubuntu missing cwd, root/ubuntu regular-file cwd, ubuntu denied cwd. Exact AuthenticationException or InvalidArgumentException required; every unique marker absent and subsequent ubuntu cwd/env/user command successful. Root successfully uses the same private directory; root/ubuntu foreground/background valid contexts also pass.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected invalid user/cwd cases, not every malformed argument, path or timeout combination. No production or proof changes."
   }
 }
