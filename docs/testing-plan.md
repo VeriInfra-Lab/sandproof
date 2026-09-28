@@ -194,6 +194,8 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 
 工具只读取环境并执行已核对二进制的版本查询，不创建 VM/TAP/网络空间、不配置资源、不清理残留，也不输出环境变量或凭据。报告中的资源余量是当时快照，不是容量预留；通过不保证 cgroup 创建、网络隔离、来宾启动或 S01–S13 已验收。预检后仍须按本轮身份分配独占资源并运行真实系统测试。该工具尚未接入高权限 KVM CI。
 
+[管理共同样例](../tests/compat/sdk_management_samples.py)集中创建 envs/metadata、两条明确记录的 15 组查询输入与预期顺序、寿命参数/创建期限和管理错误/身份/kill 结果断言。[固定 SDK 合成 HTTP 测试](../tests/compat/test_sdk_wire.py)与创建上下文、列表和寿命实机探针导入同一模块。合成层检查序列化、游标传递及返回类型；实际环境隔离、查询筛选/排序、续期/到期、重启持久性和精确回收仍由实机探针检查，共同样例不模拟控制器状态或查询算法。
+
 [详情字段探针](../tests/system/sdk_sandbox_details.py)对固定同步/异步 SDK 检查实例与类 get_info 一致、原始网络字段、域名、生命周期、资源与元数据；列表不含访问令牌，外租户及已销毁实例返回 404。可通过 `--restart-dir` 与独立宿主监督器协调服务重启，要求重启后同一实例的完整详情与令牌不变，且命令仍可执行；监督器另核对精确 VM 身份和资源残留。该场景仅覆盖显式禁网及指定静态参数，省略/true 参数的回传另有组件检查，不代替公网连通性验收。
 
 详情场景已在提交 `2e17d3ff49fc66405458c95e760b8d523b8eaaea` 的四台真实 VM 上通过：同步/异步各五组检查，各一次完整服务重启后保持原 VM 精确 PID/start 身份、详情和令牌不变；服务退出前四台全部销毁且进程、jail、netns、cgroup 无残留，基础盘未变。精确指纹和限制见[版本基线](../references/v1-baseline.json)的 `sandbox_detail_acceptance`。

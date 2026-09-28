@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.metadata
 import json
 import os
+import sys
 from pathlib import Path
 
 from e2b import AsyncSandbox, Sandbox
@@ -19,19 +20,17 @@ from sdk_command_input import call
 from sdk_server_smoke import options
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'compat'))
+from sdk_management_samples import (
+    DEFAULT_LIFETIME, REJECTED_LIFETIMES, lifetime_values,
+    lifetime_arguments as arguments, validate_bad_lifetime as bad_lifetime,
+    validate_created_lifetime, validate_identity, validate_kill,
+)
+
+
 async def listed_ids(cls, owner):
     paginator = await call(cls.list, **owner)
     return [item.sandbox_id for item in await call(paginator.next_items)]
-
-
-def arguments(case, value):
-    return {} if case == 'omitted' else {'timeout': value}
-
-
-def bad_lifetime(error):
-    # This management API maps HTTP 400 to SandboxException, distinct from
-    # the envd RPC InvalidArgumentException checked in the other probes.
-    assert type(error) is SandboxException and error.status_code == 400
 
 
 async def healthy(sandbox):
@@ -42,7 +41,7 @@ async def healthy(sandbox):
 async def create_case(cls, owner, case, value, default):
     assert await listed_ids(cls, owner) == []
     sandbox = None
-    rejected = case in ('zero', 'negative', 'above_maximum')
+    rejected = case in REJECTED_LIFETIMES
     try:
         try:
             sandbox = await call(cls.create, template='base', allow_internet_access=False,
@@ -53,13 +52,12 @@ async def create_case(cls, owner, case, value, default):
         else:
             assert not rejected, 'invalid lifetime created a sandbox'
             info = await call(sandbox.get_info)
-            expected = default if case == 'omitted' else value
-            assert (info.end_at - info.started_at).total_seconds() == expected
+            validate_created_lifetime(info, case, value, default)
             assert await listed_ids(cls, owner) == [sandbox.sandbox_id]
             await healthy(sandbox)
     finally:
         if sandbox is not None:
-            assert await call(sandbox.kill)
+            validate_kill(await call(sandbox.kill), True)
     assert await listed_ids(cls, owner) == []
     return dict(operation='create', case=case, outcome='http_400' if rejected else 'completed')
 
@@ -76,7 +74,7 @@ async def supervisor(args, kind, sandbox_id):
 
 async def lifetime_case(cls, sandbox, owner, operation, static, case, value, args):
     before = await call(sandbox.get_info)
-    rejected = operation == 'connect' and case in ('zero', 'negative', 'above_maximum')
+    rejected = operation == 'connect' and case in REJECTED_LIFETIMES
     missing = operation == 'set_timeout' and case == 'omitted'
     function = getattr(cls if static else sandbox, operation)
     positional = (sandbox.sandbox_id,) if static else ()
@@ -93,7 +91,7 @@ async def lifetime_case(cls, sandbox, owner, operation, static, case, value, arg
     else:
         assert not rejected and not missing
         if operation == 'connect':
-            assert result.sandbox_id == sandbox.sandbox_id
+            validate_identity(result, sandbox.sandbox_id)
             await healthy(result)
         else:
             assert result is None
@@ -103,7 +101,7 @@ async def lifetime_case(cls, sandbox, owner, operation, static, case, value, arg
     if rejected or missing:
         assert after.end_at == before.end_at
     else:
-        duration = 300 if case == 'omitted' else value
+        duration = DEFAULT_LIFETIME if case == 'omitted' else value
         cap = before.started_at + timedelta(seconds=args.max_lifetime)
         # Compare without constructing a timedelta from an arbitrarily large
         # request. The server must clip i64::MAX before any narrow arithmetic.
@@ -147,7 +145,7 @@ async def expire_case(cls, sandbox, owner, static, value, args):
     # The supervisor observes durable Destroyed and the exact VM exit without
     # sending kill; successful return alone is not proof of synchronous cleanup.
     await supervisor(args, 'expired', sandbox.sandbox_id)
-    assert not await call(sandbox.kill)
+    validate_kill(await call(sandbox.kill), False)
     return dict(operation='set_timeout', form='class' if static else 'instance',
                 case='zero' if value == 0 else 'negative', outcome='expired_and_reclaimed')
 
@@ -185,7 +183,7 @@ async def short_total_case(cls, owner, args):
                 raise AssertionError('renewal escaped total lifetime')
         await assert_data_revoked(sandbox)
         await supervisor(args, 'expired', sandbox.sandbox_id)
-        assert not await call(sandbox.kill)
+        validate_kill(await call(sandbox.kill), False)
     finally:
         await call(sandbox.kill)
     return dict(operation='total_lifetime', case='live_boundary_and_restart', outcome='cap_preserved_and_reclaimed')
@@ -193,11 +191,9 @@ async def short_total_case(cls, owner, args):
 
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
-    assert args.default_timeout == 300
+    assert args.default_timeout == DEFAULT_LIFETIME
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
-    values = [('omitted', None), ('zero', 0), ('negative', -1),
-              ('below_maximum', args.max_timeout - 1), ('at_maximum', args.max_timeout),
-              ('above_maximum', args.max_timeout + 1)]
+    values = lifetime_values(args.max_timeout)
     results = []
     for cls in (Sandbox, AsyncSandbox):
         rows = []
