@@ -49,7 +49,7 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 - SDK 合同测试：`bash scripts/check-compat.sh` 另覆盖 Connect 帧被截断和文件长度不足。已取得命令 PID 后，缺少完整结束事件仍报错，不自动重发 Start；文件下载不返回成功的部分内容。测试使用固定 SDK、现有 `retries=0` 配置与合成服务。
 - SDK/网关组合测试：同一脚本在 Linux 上还启用 `sdk-contract-tests`，让[原 SDK 调用集](../tests/compat/gateway_sdk.py)经过[实际 Rust 网关的请求分类、请求体处理和 HTTP 转发代码](../sandbox-server/src/gateway/sdk_tests.rs)。除了复用 SDK 的命令、后台句柄、退出码、文件和目录用例，还验证上传 8 MiB 和下载 32 MiB 的前一字节/恰好/多一字节边界、大命令输出、管理 API key 不被转发、失败后继续使用。上游是合成 envd，下游是真实 SDK；不覆盖 `handle` 的鉴权、命名空间 relay 或 VM。夹具只编入测试二进制，正式服务没有旁路启动模式。非 Linux 会明确报告组合测试未运行，不能用 SDK 单层通过代替。
 - 显式流式配置另运行同一 SDK 调用集：使用仅供测试的 64 MiB 上传、96 MiB 下载预算，分别覆盖已知/未知长度的空文件、少一字节/恰好/多一字节；验证 415 压缩拒绝、identity 协商、并发 429 后仍可 health、输入 408 和下载中途空闲失败、失败后正常请求。使用明确的事件屏障保持在途请求，不靠随机 sleep。组件测试另用暂停时钟验证写阻塞超时与安静命令的区别，并以生产者等待上游收到第一块的屏障证明上传不整包缓冲。组合测试记录 Rust 网关进程 RSS 高水位（不包含 Python 合成 envd）；这是观测证据，不是整个部署的内存上界或实机磁盘证据。上传/响应体与上游连接均结束后才释放并发名额，夹具退出时等待连接任务收尾。
-- 固定 SDK 会把部分 Connect 流的 HTTP EOF 包装成 `TimeoutException`。组合测试与实机脚本共用错误分类，只有底层 `ConnectError(UNAVAILABLE)` 的原因确为传输读错误时才将它视为断流；普通期限超时、鉴权失败和测试异常不能算作限流通过。这个 SDK 错误映射差异不表示沙箱已到期，失败后仍须另行验证可用性。
+- 固定 SDK 的同步路径会把部分 Connect 流的 HTTP EOF 包装成 `TimeoutException`。组合测试与实机脚本共用错误分类，只有底层 `ConnectError(UNAVAILABLE)` 的原因确为传输读错误时才将它视为断流；普通期限超时、鉴权失败和测试异常不能算作限流通过。这个 SDK 错误映射差异不表示沙箱已到期，失败后仍须另行验证可用性。
 - [独立实机脚本](../tests/system/gateway_stream_limits.py)：在原系统测试相同的隔离服务环境，沿用 `retries=0` 配置，使用 `SANDPROOF_TEST_API_KEY` 和显式 `--api-url`、`--sandbox-url` 运行。它创建自己的禁网沙箱，检查 32 MiB 前一字节/恰好/多一字节的文件下载、超大命令输出和主动断线后同 PID 重连；用 FIFO 同步断线时机，用来宾标记核对副作用只观察到一次，每次失败后验证沙箱仍可执行命令，最后销毁本轮沙箱。启动需允许 300 秒寿命，来宾须有现有探针使用的 shell/coreutils。该脚本已在固定新 base 上执行选定 KVM 场景；证据绑定见[版本基线](../references/v1-baseline.json)，不代替完整 S11/S12。
 
 实机脚本运行示例（在已配置服务的测试机上执行，API key 由环境提供）：
@@ -70,7 +70,7 @@ uv run --locked --project tests/compat python tests/system/gateway_async_stream_
   --command-output-bytes 33554432
 ```
 
-这组参数沿用 64/96/32 MiB 测试配置，不是最终部署值。实机结果须与同步脚本分别记录；同样需要独立宿主残留审计，不能据此推断并发、慢流、到期或授权撤销竞争全部通过。
+这组参数沿用 64/96/32 MiB 测试配置，不是最终部署值。该异步脚本已在真实 KVM 完成上述边界、较小输出成功对照、截流与重连，独立宿主审计确认精确进程、cgroup、网络空间和私有盘回收，基础盘指纹不变；提交与证据见[版本基线](../references/v1-baseline.json)。不能据此推断并发、慢流、到期或授权撤销竞争全部通过。
 
 同步与异步的数据调用合同复用同一合成 envd 和真实 Rust 网关：检查 cwd、含空格/Unicode 的命令 envs、user 的鉴权头、stdout/stderr、非零退出；后台连接和终止只发送已有 PID，不重发 Start；Stat、递归 ListDir 请求和批量上传保留路径及字节。批量收到合成 507 时抛出 `NotEnoughSpaceException`，已发起的上传不重发；同步 octet-stream 逐项发送，第二项失败后不发送第三项，而异步 SDK 并发发送，其他项可能仍在写入。用屏障确保并发请求均已到达再返回故障，不承诺批量回滚。这组组合测试验证错误传播；真实 ENOSPC 由下面的独立来宾磁盘探针验收。异步 SDK 的文件流使用分块传输，另经流式配置覆盖大文件边界和失败恢复；不能只以同步 SDK 的已知长度结果推断异步行为。
 
