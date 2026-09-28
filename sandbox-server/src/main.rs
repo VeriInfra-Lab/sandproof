@@ -136,28 +136,28 @@ mod linux {
             // revocation/fence and before the physical stop. It lets a second
             // HTTP kill arrive while the first owns the lifecycle lock.
             #[cfg(debug_assertions)]
-            if matches!(action.command.command(), core::Command::StopVm { .. }) {
-                if let Some(path) = std::env::var_os("SANDPROOF_TEST_STOP_GATE") {
-                    use std::io::Read;
-                    use std::os::unix::net::UnixListener;
-                    let path = PathBuf::from(path);
-                    let parent = path.parent().expect("stop gate must have a parent");
-                    let metadata = fs::metadata(parent).expect("stop gate parent missing");
-                    assert_eq!(metadata.uid(), 0, "stop gate parent must be root owned");
-                    assert_eq!(
-                        metadata.mode() & 0o077,
-                        0,
-                        "stop gate parent must be private"
-                    );
-                    let listener = UnixListener::bind(&path).expect("bind stop gate");
-                    let (mut peer, _) = listener.accept().expect("accept stop gate");
-                    let mut release = [0_u8; 1];
-                    peer.read_exact(&mut release)
-                        .expect("read stop gate release");
-                    assert_eq!(release, [b'g']);
-                    drop(listener);
-                    fs::remove_file(path).expect("remove stop gate");
-                }
+            if matches!(action.command.command(), core::Command::StopVm { .. })
+                && let Some(path) = std::env::var_os("SANDPROOF_TEST_STOP_GATE")
+            {
+                use std::io::Read;
+                use std::os::unix::net::UnixListener;
+                let path = PathBuf::from(path);
+                let parent = path.parent().expect("stop gate must have a parent");
+                let metadata = fs::metadata(parent).expect("stop gate parent missing");
+                assert_eq!(metadata.uid(), 0, "stop gate parent must be root owned");
+                assert_eq!(
+                    metadata.mode() & 0o077,
+                    0,
+                    "stop gate parent must be private"
+                );
+                let listener = UnixListener::bind(&path).expect("bind stop gate");
+                let (mut peer, _) = listener.accept().expect("accept stop gate");
+                let mut release = [0_u8; 1];
+                peer.read_exact(&mut release)
+                    .expect("read stop gate release");
+                assert_eq!(release, [b'g']);
+                drop(listener);
+                fs::remove_file(path).expect("remove stop gate");
             }
             let result = self.0.execute(action);
             // The integration test exits the *whole service* after a real
