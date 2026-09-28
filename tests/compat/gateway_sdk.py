@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 from wsgiref.simple_server import make_server
 
 import httpx
+from pyqwest import WriteError as TransportWriteError
 from e2b import Sandbox
 from e2b.exceptions import AuthenticationException, RateLimitException, SandboxException, TimeoutException
 
@@ -28,7 +29,7 @@ from test_sdk_envd_wire import EnvdWireContract, QuietHandler, SyntheticEnvd, Th
 # Exercise the same error classifier used by the opt-in real-VM script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "system"))
 from gateway_stream_limits import UnknownLengthFile, stream_failure
-from gateway_async_stream_limits import ASYNC_CHUNK_EOF, async_stream_failure
+from gateway_async_stream_limits import ASYNC_CHUNK_EOF, ASYNC_BODY_EOF, async_stream_failure
 
 
 MIB = 1024 * 1024
@@ -41,6 +42,10 @@ class GatewayWireContract(EnvdWireContract):
     gateway_url = None
     upload_bytes = 8 * MIB
     download_bytes = 32 * MIB
+
+    def check_early_upload_rejection(self, _size):
+        # Legacy uploads are buffered up to the cap before rejection.
+        pass
 
     def setUp(self):
         self.assertEqual(importlib.metadata.version("e2b"), "2.51.0")
@@ -61,8 +66,18 @@ class GatewayWireContract(EnvdWireContract):
                     self.sandbox.files.write("/tmp/input.txt", body)
                     self.assertEqual(self.app.records[-1]["body"], b"X" * size)
                 else:
-                    with self.assertRaisesRegex(SandboxException, "^413:"):
+                    self.check_early_upload_rejection(size)
+                    try:
                         self.sandbox.files.write("/tmp/input.txt", body)
+                    except SandboxException as error:
+                        self.assertRegex(str(error), "^413:")
+                    except httpx.WriteError as error:
+                        # The pinned transport may see EPIPE before it reads
+                        # that response. Neither outcome is upload success.
+                        self.assertIs(type(error.__cause__), TransportWriteError)
+                        self.assertTrue(str(error.__cause__).endswith("Broken pipe (os error 32)"))
+                    else:
+                        self.fail("oversized known upload returned success")
                     self.assertEqual(len(self.app.records), before)
         self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
 
@@ -136,6 +151,23 @@ class GatewayWireContract(EnvdWireContract):
 
 
 class GatewayStreamingContract(GatewayWireContract):
+    def check_early_upload_rejection(self, size):
+        # Observe the early 413 without racing a large client write against
+        # the server's close. No body byte or envd request is needed.
+        before = len(self.app.records)
+        address = urlsplit(self.gateway_url)
+        with socket.create_connection((address.hostname, address.port), timeout=15) as client:
+            client.sendall((
+                "POST /files?path=/tmp/input.txt HTTP/1.1\r\n"
+                "Host: localhost\r\nContent-Type: application/octet-stream\r\n"
+                f"Content-Length: {size}\r\nConnection: close\r\n\r\n"
+            ).encode())
+            response = HTTPResponse(client)
+            response.begin()
+            self.assertEqual(response.status, 413)
+            response.read()
+        self.assertEqual(len(self.app.records), before)
+
     def test_transfer_saturation_preserves_health_and_releases_capacity(self):
         gate = threading.Event()
         self.app.download_size = 128 * 1024
@@ -237,7 +269,9 @@ class GatewayAsyncContract(AsyncEnvdWireContract):
         self.assertEqual(handle.pid, 4321)
         with self.assertRaises(TimeoutException) as error:
             await handle.wait()
-        self.assertTrue(async_stream_failure(error.exception))
+        self.assertTrue(async_stream_failure(error.exception),
+                        (repr(error.exception), repr(error.exception.__cause__),
+                         repr(error.exception.__context__)))
         self.assertGreater(received, 0)
         self.assertLess(received, 32 * MIB)
         self.assertEqual(len(self.app.process.starts), 1)
@@ -246,13 +280,16 @@ class GatewayAsyncContract(AsyncEnvdWireContract):
         self.assertEqual(len(self.app.process.starts), 2)
 
     def test_async_stream_classifier_rejects_unrelated_errors_and_deadlines(self):
-        self.assertTrue(async_stream_failure(TimeoutException(ASYNC_CHUNK_EOF)))
-        chained_deadline = TimeoutException(ASYNC_CHUNK_EOF)
-        chained_deadline.__cause__ = TimeoutError("deadline")
+        for message in (ASYNC_CHUNK_EOF, ASYNC_BODY_EOF):
+            self.assertTrue(async_stream_failure(TimeoutException(message)))
+            chained_deadline = TimeoutException(message)
+            chained_deadline.__cause__ = TimeoutError("deadline")
+            self.assertFalse(async_stream_failure(chained_deadline))
+            self.assertFalse(async_stream_failure(TimeoutException(message + " extra")))
         for error in (TimeoutException("deadline exceeded"), TimeoutError("deadline"),
                       TimeoutException("unexpected EOF"), TimeoutException(ASYNC_CHUNK_EOF + " extra"),
                       SandboxException(ASYNC_CHUNK_EOF), AuthenticationException("denied"),
-                      AssertionError("test bug"), chained_deadline):
+                      AssertionError("test bug")):
             with self.subTest(error=type(error).__name__):
                 self.assertFalse(async_stream_failure(error))
 

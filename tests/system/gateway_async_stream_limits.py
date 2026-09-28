@@ -24,6 +24,9 @@ from sdk_server_smoke import options
 ASYNC_CHUNK_EOF = str(format_sandbox_timeout_exception(
     'Error reading content: request or response body error: '
     'error reading a body from connection: unexpected EOF during chunk size line'))
+ASYNC_BODY_EOF = str(format_sandbox_timeout_exception(
+    'Error reading content: request or response body error: '
+    'error reading a body from connection: end of file before message length reached'))
 
 
 def async_stream_failure(error):
@@ -31,9 +34,10 @@ def async_stream_failure(error):
         return True
     # SDK 2.51.0 stores a newly mapped exception in its background event task,
     # then raises it in wait(), losing the ConnectError/transport chain. Accept
-    # only this exact, observed chunk EOF rendering; not arbitrary timeouts.
+    # only these exact observed EOF renderings (at a chunk boundary or within
+    # its body); not arbitrary timeouts or messages with a deadline cause.
     return (type(error) is TimeoutException and error.__cause__ is None
-            and error.__context__ is None and str(error) == ASYNC_CHUNK_EOF)
+            and error.__context__ is None and str(error) in (ASYNC_CHUNK_EOF, ASYNC_BODY_EOF))
 
 
 async def healthy(sandbox):

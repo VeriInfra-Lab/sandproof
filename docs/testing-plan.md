@@ -49,7 +49,7 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 - SDK 合同测试：`bash scripts/check-compat.sh` 另覆盖 Connect 帧被截断和文件长度不足。已取得命令 PID 后，缺少完整结束事件仍报错，不自动重发 Start；文件下载不返回成功的部分内容。测试使用固定 SDK、现有 `retries=0` 配置与合成服务。
 - SDK/网关组合测试：同一脚本在 Linux 上还启用 `sdk-contract-tests`，让[原 SDK 调用集](../tests/compat/gateway_sdk.py)经过[实际 Rust 网关的请求分类、请求体处理和 HTTP 转发代码](../sandbox-server/src/gateway/sdk_tests.rs)。除了复用 SDK 的命令、后台句柄、退出码、文件和目录用例，还验证上传 8 MiB 和下载 32 MiB 的前一字节/恰好/多一字节边界、大命令输出、管理 API key 不被转发、失败后继续使用。上游是合成 envd，下游是真实 SDK；不覆盖 `handle` 的鉴权、命名空间 relay 或 VM。夹具只编入测试二进制，正式服务没有旁路启动模式。非 Linux 会明确报告组合测试未运行，不能用 SDK 单层通过代替。
 - 显式流式配置另运行同一 SDK 调用集：使用仅供测试的 64 MiB 上传、96 MiB 下载预算，分别覆盖已知/未知长度的空文件、少一字节/恰好/多一字节；验证 415 压缩拒绝、identity 协商、并发 429 后仍可 health、输入 408 和下载中途空闲失败、失败后正常请求。使用明确的事件屏障保持在途请求，不靠随机 sleep。组件测试另用暂停时钟验证写阻塞超时与安静命令的区别，并以生产者等待上游收到第一块的屏障证明上传不整包缓冲。组合测试记录 Rust 网关进程 RSS 高水位（不包含 Python 合成 envd）；这是观测证据，不是整个部署的内存上界或实机磁盘证据。上传/响应体与上游连接均结束后才释放并发名额，夹具退出时等待连接任务收尾。
-- 固定 SDK 的同步路径会把部分 Connect 流的 HTTP EOF 包装成 `TimeoutException`。组合测试与实机脚本共用错误分类，只有底层 `ConnectError(UNAVAILABLE)` 的原因确为传输读错误时才将它视为断流；普通期限超时、鉴权失败和测试异常不能算作限流通过。这个 SDK 错误映射差异不表示沙箱已到期，失败后仍须另行验证可用性。
+- 固定 SDK 的同步路径会把部分 Connect 流的 HTTP EOF 包装成 `TimeoutException`。组合测试与实机脚本共用错误分类，同步路径只有底层 `ConnectError(UNAVAILABLE)` 的原因确为传输读错误时才将它视为断流；普通期限超时、鉴权失败和测试异常不能算作限流通过。异步后台等待可能丢失原因链，检查仅接受实测的两条精确 EOF 文本（分块长度行处或未达到声明长度），并拒绝附带普通期限原因的异常。这个 SDK 错误映射差异不表示沙箱已到期，失败后仍须另行验证可用性。流式配置的已知长度超限另以只发送请求头的 HTTP 调用核验 413；原 SDK 大体写入与服务端提前关闭竞争时也可能先观察到具体的 EPIPE 写错误，仍须核对 envd 未收到请求、无完整成功且后续调用可用。
 - [独立实机脚本](../tests/system/gateway_stream_limits.py)：在原系统测试相同的隔离服务环境，沿用 `retries=0` 配置，使用 `SANDPROOF_TEST_API_KEY` 和显式 `--api-url`、`--sandbox-url` 运行。它创建自己的禁网沙箱，检查 32 MiB 前一字节/恰好/多一字节的文件下载、超大命令输出和主动断线后同 PID 重连；用 FIFO 同步断线时机，用来宾标记核对副作用只观察到一次，每次失败后验证沙箱仍可执行命令，最后销毁本轮沙箱。启动需允许 300 秒寿命，来宾须有现有探针使用的 shell/coreutils。该脚本已在固定新 base 上执行选定 KVM 场景；证据绑定见[版本基线](../references/v1-baseline.json)，不代替完整 S11/S12。
 
 实机脚本运行示例（在已配置服务的测试机上执行，API key 由环境提供）：
@@ -82,6 +82,15 @@ uv run --locked --project tests/compat python tests/system/sdk_disk_full.py \
 ```
 
 服务须允许同租户同时创建两台 VM、300 秒寿命；来宾需有 Python 3、`posix_fallocate` 和现有 shell 工具。`--max-guest-disk-bytes` 默认 2 GiB 是探针拒绝意外大盘的上界，不是部署磁盘配额；测试仍使用已预检的固定私有 base。该脚本已在启用宿主 cgroup 限制的真实 KVM 服务通过，六台 VM 的精确进程/cgroup/网络空间/私有盘回收与基础盘指纹另经宿主审计；提交和配置见[版本基线](../references/v1-baseline.json)。
+
+[传输中断探针](../tests/system/transfer_interruption.py)分别对同步/异步 SDK 的上传、下载执行 kill 与到期场景。上传用有界生产者屏障暂停在前缀之后，并通过来宾文件信息确认实际写入；下载先收到有效内容再触发中断。另一个持续命令连接用于观察在途访问撤销；物理 VM 停止和清理由宿主另外核验，不能只根据查询列表消失或中继断开就认定到期销毁完成。旧令牌的 health、文件读写与 Start 新请求须被拒绝，独立控制 VM 始终能执行和读写。SDK 或传输的普通超时不能代替中断成功，最后仍需宿主精确残留审计。该脚本已在固定 base 上通过八个真实场景；同一提交也通过旧配置的生命周期和同步/异步数据调用回归。宿主在服务退出前核对精确进程、盘、cgroup 和网络空间持有者，基础盘未变；精确版本见[版本基线](../references/v1-baseline.json)。完整超时参数、并发慢流与重启竞争仍未由此覆盖。
+
+```sh
+uv run --locked --project tests/compat python tests/system/transfer_interruption.py \
+  --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000
+```
+
+该探针要求显式流式配置至少支持 2 MiB 上传和 64 MiB 下载；请求、文件与写入空闲预算均至少 30 秒，避免与 2 秒到期场景混淆。每租户同时保留两台 VM；来宾需有现有 shell/coreutils。测试使用屏障和有界状态轮询，失败只销毁本轮已知实例，不把手动 kill 的结果写成自动到期通过。
 
 [完整服务数据脚本](../tests/system/sdk_data_contract.py)通过原 SDK 的 create/connect/kill 创建自己的沙箱，分别以 root 和固定 base 的普通用户运行同步/异步调用。它上传包含文本、二进制和空文件的多层目录，检查返回路径、文件信息、递归列表、普通/流式下载及 SHA-256；用 FIFO 和异步输出回调同步断线时机，确认重连同一 PID、只写一次标记，并验证终止、后续调用和销毁后的旧令牌拒绝。它没有绕过管理链直接构造来宾客户端；已用 root/ubuntu 在真实 KVM 的默认与显式流式配置执行，并覆盖省略 cwd 使用所选用户 home、显式 cwd 优先。时间参数的省略/零/负值/超限、销毁期间的授权竞争和宿主残留仍需独立用例。
 
