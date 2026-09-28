@@ -61,7 +61,16 @@ uv run --locked --project tests/compat python tests/system/gateway_stream_limits
 
 验收显式 `data_transfer` 配置时，在同一命令追加 `--file-upload-bytes`、`--file-download-bytes`、`--command-output-bytes`，值须与待测服务配置一致；不能把测试夹具值当作已测定的部署值。新增上传场景通过原 SDK 发送可定位文件和不可定位流，覆盖零/上限前/上限/超限；成功后核对来宾文件信息和 SHA-256，下载同样校验内容。已知长度拒绝不得创建文件，分块拒绝允许部分写入且不重传。脚本按本轮路径删除测试文件并销毁自己的沙箱；仍需宿主侧独立观察进程、网络空间、cgroup、磁盘残留，以及磁盘满、断线、到期和 kill 竞争。扩展脚本已在真实 KVM 使用 64 MiB 上传、96 MiB 下载测试预算通过上述边界和内容检查；宿主独立观察确认本轮精确进程停止，网络空间、cgroup 和私有 jail 无残留，基础盘指纹不变。服务进程本轮 RSS 高水位约 15.4 MiB；这不包含所有 relay/来宾资源，也不是总内存上界或最终部署预算。
 
-同步与异步的数据调用合同复用同一合成 envd 和真实 Rust 网关：检查 cwd、含空格/Unicode 的命令 envs、user 的鉴权头、stdout/stderr、非零退出；后台连接和终止只发送已有 PID，不重发 Start；Stat、递归 ListDir 请求和批量上传保留路径及字节。批量收到合成 507 时抛出 `NotEnoughSpaceException`，已发起的上传不重发；同步 octet-stream 逐项发送，第二项失败后不发送第三项，而异步 SDK 并发发送，其他项可能仍在写入。用屏障确保并发请求均已到达再返回故障，不承诺批量回滚。这验证错误传播，不证明真实 ENOSPC。异步 SDK 的文件流使用分块传输，另经流式配置覆盖大文件边界和失败恢复；不能只以同步 SDK 的已知长度结果推断异步行为。
+同步与异步的数据调用合同复用同一合成 envd 和真实 Rust 网关：检查 cwd、含空格/Unicode 的命令 envs、user 的鉴权头、stdout/stderr、非零退出；后台连接和终止只发送已有 PID，不重发 Start；Stat、递归 ListDir 请求和批量上传保留路径及字节。批量收到合成 507 时抛出 `NotEnoughSpaceException`，已发起的上传不重发；同步 octet-stream 逐项发送，第二项失败后不发送第三项，而异步 SDK 并发发送，其他项可能仍在写入。用屏障确保并发请求均已到达再返回故障，不承诺批量回滚。这组组合测试验证错误传播；真实 ENOSPC 由下面的独立来宾磁盘探针验收。异步 SDK 的文件流使用分块传输，另经流式配置覆盖大文件边界和失败恢复；不能只以同步 SDK 的已知长度结果推断异步行为。
+
+[来宾磁盘满探针](../tests/system/sdk_disk_full.py)在原 SDK 创建的独占沙箱内，用有容量上界的 `posix_fallocate` 实际触发根盘 ENOSPC；不填宿主文件系统。同步与异步调用分别检查文本 multipart、可定位文件和不可定位流都收到 `NotEnoughSpaceException`，同时让第二台 VM 持续核验命令与读写。释放本轮填充文件后，同一 VM 必须能恢复写入；再次触发 ENOSPC 后直接销毁，并创建新 VM 验证初始目录干净、写入正常。脚本保留内核 errno、实际分配与剩余块数，不把文件系统保留块当成可写容量；失败也按已知沙箱 ID 清理。宿主空间耗尽、日志/数据库收尾预留和 inode 耗尽另行测试，不能用来宾块 ENOSPC 代替。
+
+```sh
+uv run --locked --project tests/compat python tests/system/sdk_disk_full.py \
+  --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000
+```
+
+服务须允许同租户同时创建两台 VM、300 秒寿命；来宾需有 Python 3、`posix_fallocate` 和现有 shell 工具。`--max-guest-disk-bytes` 默认 2 GiB 是探针拒绝意外大盘的上界，不是部署磁盘配额；测试仍使用已预检的固定私有 base。宿主运行器须另行核验精确进程/cgroup/网络空间/私有盘回收与基础盘指纹。
 
 [完整服务数据脚本](../tests/system/sdk_data_contract.py)通过原 SDK 的 create/connect/kill 创建自己的沙箱，分别以 root 和固定 base 的普通用户运行同步/异步调用。它上传包含文本、二进制和空文件的多层目录，检查返回路径、文件信息、递归列表、普通/流式下载及 SHA-256；用 FIFO 和异步输出回调同步断线时机，确认重连同一 PID、只写一次标记，并验证终止、后续调用和销毁后的旧令牌拒绝。它没有绕过管理链直接构造来宾客户端；已用 root/ubuntu 在真实 KVM 的默认与显式流式配置执行，并覆盖省略 cwd 使用所选用户 home、显式 cwd 优先。时间参数的省略/零/负值/超限、销毁期间的授权竞争和宿主残留仍需独立用例。
 
