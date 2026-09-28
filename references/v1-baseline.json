@@ -393,5 +393,33 @@
     "limits": "current selected lifetime values only; does not establish target compatibility, management HTTP request deadlines, total lifetime, expiry/restart races or final deployment budgets. No production or proof changes.",
     "previous_test_commit": "087d5eaff3fc5c0d1d76b43f4f1493cbf2ed823d",
     "server_sha256": "5c3eefe9c3714ecb8ccd170313972f01bc4f07ab18e669cf70ff4944b5df20cc"
+  },
+  "storage_filesystem_acceptance": {
+    "test": "tests/system/server_storage_filesystems.py",
+    "commit": "5177b8439e875e6ab81f8032ebb220e222f119d5",
+    "script_sha256": "da92b4982e4e35f622fdbafe97ea8cd349468cc7594124cc60411bdc02e910d3",
+    "server_build_commit": "6a2d57e2b4e135fbe293938619bcc18ac956114f",
+    "server_sha256": "b011c3e25518d91393aab974acad1b13b1acc559aa5501b4cccf3f2ef08a87cb",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between build and startup test; build includes integrated lifecycle PR68",
+    "previous_server_build_commit": "8e5b9479165f264fafdd7059d95960c0227fcf68",
+    "previous_server_sha256": "5c3eefe9c3714ecb8ccd170313972f01bc4f07ab18e669cf70ff4944b5df20cc",
+    "host": "Linux 6.8.0-1065-azure x86_64; same pinned kernel/envd/base and explicit host cgroup configuration as command_input_budget_acceptance",
+    "scratch_bytes": 67108864,
+    "result": "six real startup cases passed on private ext4 loop: old server accepts database on another filesystem; new server starts with all three directories on either filesystem and rejects each one moved off the other two before creating database/node state",
+    "residuals": "no VM created; empty claims/netns/cgroups checked, service processes stopped, own mount unmounted and loop detached; base hash unchanged; root probe preserves user Git index permissions",
+    "kvm_regression": {
+      "commit": "6a2d57e2b4e135fbe293938619bcc18ac956114f",
+      "tests": [
+        "tests/system/sdk_server_smoke.py",
+        "tests/system/sdk_data_contract.py"
+      ],
+      "script_sha256": [
+        "0b771d17ec7be344d41e6dd6fb2685b29789d4656cd31ba0014b2b0abd9f6daf",
+        "5c158f26b9bf41aa5ec1070b8fe26218c8830e7efefcd755237eba27de8ac9cc"
+      ],
+      "configuration": "default legacy gateway, no internet, 512 MiB guest, 768 MiB host memory.max, one vCPU and cpu.max 100000 100000; same pinned base; no debug fault injection",
+      "result": "full original SDK management/auth/expiry/commands/files and sync/async root/ubuntu data calls passed; four exact VM processes stopped, jail/netns/cgroups absent and no network namespace holders before service exit; live cgroup identity and limits sampled; base unchanged"
+    },
+    "limits": "filesystem placement and selected normal service regression only; does not test host block/inode ENOSPC, atomic reservation against external writes, power loss, final task-derived budgets or full V1. No control-core or proof changes."
   }
 }

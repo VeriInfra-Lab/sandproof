@@ -83,7 +83,7 @@ uv run --locked --project tests/compat python tests/system/sdk_disk_full.py \
 
 服务须允许同租户同时创建两台 VM、300 秒寿命；来宾需有 Python 3、`posix_fallocate` 和现有 shell 工具。`--max-guest-disk-bytes` 默认 2 GiB 是探针拒绝意外大盘的上界，不是部署磁盘配额；测试仍使用已预检的固定私有 base。该脚本已在启用宿主 cgroup 限制的真实 KVM 服务通过，六台 VM 的精确进程/cgroup/网络空间/私有盘回收与基础盘指纹另经宿主审计；提交和配置见[版本基线](../references/v1-baseline.json)。
 
-[启动存储布局探针](../tests/system/server_storage_filesystems.py)使用私有挂载命名空间内的 64 MiB ext4 loop 文件系统，检查三目录同盘可启动、数据库/节点状态/VM 目录分别异盘时均在创建持久状态前拒绝。运行需 root、已复核的服务二进制及 SHA-256、root 独占的配置模板和全新结果目录，参数为 `--server`、`--server-sha256`、`--config`、`--root`；可用 `--previous-server`、`--previous-sha256` 验证旧版漏检数据库的缺陷。仅发送空沙箱列表查询，退出前检查无 VM 资源，最后核对卸载和 loop 分离并保留结果；不填宿主共享盘，不把启动检查算作 KVM 或 ENOSPC 验收。基础 CI 另通过真实临时目录与 Linux procfs 的设备号覆盖同盘、三种异盘和缺失目录拒绝。
+[启动存储布局探针](../tests/system/server_storage_filesystems.py)使用私有挂载命名空间内的 64 MiB ext4 loop 文件系统，检查三目录同盘可启动、数据库/节点状态/VM 目录分别异盘时均在创建持久状态前拒绝。运行需 root、已复核的服务二进制及 SHA-256、root 独占的配置模板和全新结果目录，参数为 `--server`、`--server-sha256`、`--config`、`--root`；可用 `--previous-server`、`--previous-sha256` 验证旧版漏检数据库的缺陷。仅发送空沙箱列表查询，退出前检查无 VM 资源，最后核对卸载和 loop 分离并保留结果；不填宿主共享盘，不把启动检查算作 KVM 或 ENOSPC 验收。基础 CI 另通过真实临时目录与 Linux procfs 的设备号覆盖同盘、三种异盘和缺失目录拒绝。六个新旧服务启动对照已在隔离宿主通过；合入生命周期变更后，另以同一服务二进制通过四台真实 VM 的完整 SDK 冒烟及同步/异步数据合同，精确提交与范围见[版本基线](../references/v1-baseline.json)的 `storage_filesystem_acceptance`。
 
 [命令输入探针](../tests/system/sdk_command_input.py)使用原同步/异步 SDK，分别以 root 和 ubuntu 验证省略 stdin、显式 false、启用后空输入关闭，以及文本/二进制输入后断线并按同一 PID 重连。启用路径检查 EOF 后的完整长度和 SHA-256、单次启动标记及后续可用性；不把重连当成重新执行命令。运行方式与其他实机脚本相同，显式提供 `--api-url`、`--sandbox-url` 及环境中的测试凭据；该探针已在固定 base 的真实控制器/网关/VM 链完成十六个场景，精确提交与残留检查见[版本基线](../references/v1-baseline.json)；命令输入预算与完整超时参数矩阵另行验收。
 
