@@ -5,24 +5,29 @@ the actual Rust gateway body/HTTP code on an ephemeral loopback listener.
 """
 
 import importlib.metadata
+from contextlib import ExitStack
+from http.client import HTTPResponse
 from io import BytesIO
 import json
 from pathlib import Path
 import sys
+import socket
 import threading
 import unittest
+from urllib.parse import urlsplit
 from wsgiref.simple_server import make_server
 
 import httpx
 from e2b import Sandbox
-from e2b.exceptions import AuthenticationException, SandboxException, TimeoutException
+from e2b.exceptions import AuthenticationException, RateLimitException, SandboxException, TimeoutException
 
 from sdk_support import isolated_sdk_environment
-from test_sdk_envd_wire import EnvdWireContract, QuietHandler, SyntheticEnvd
+from test_sdk_envd_async import AsyncEnvdWireContract
+from test_sdk_envd_wire import EnvdWireContract, QuietHandler, SyntheticEnvd, ThreadedEnvd
 
 # Exercise the same error classifier used by the opt-in real-VM script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "system"))
-from gateway_stream_limits import stream_failure
+from gateway_stream_limits import UnknownLengthFile, stream_failure
 
 
 MIB = 1024 * 1024
@@ -33,6 +38,8 @@ class GatewayWireContract(EnvdWireContract):
     # The harness injects only two local fixture endpoints, never cloud URLs.
     server = None
     gateway_url = None
+    upload_bytes = 8 * MIB
+    download_bytes = 32 * MIB
 
     def setUp(self):
         self.assertEqual(importlib.metadata.version("e2b"), "2.51.0")
@@ -45,11 +52,11 @@ class GatewayWireContract(EnvdWireContract):
         )
 
     def test_upload_boundary_rejection_never_reaches_envd(self):
-        for size in (8 * MIB - 1, 8 * MIB, 8 * MIB + 1):
+        for size in (0, self.upload_bytes - 1, self.upload_bytes, self.upload_bytes + 1):
             with self.subTest(size=size):
                 before = len(self.app.records)
                 body = BytesIO(b"X" * size)  # octet stream has no multipart overhead
-                if size <= 8 * MIB:
+                if size <= self.upload_bytes:
                     self.sandbox.files.write("/tmp/input.txt", body)
                     self.assertEqual(self.app.records[-1]["body"], b"X" * size)
                 else:
@@ -61,7 +68,7 @@ class GatewayWireContract(EnvdWireContract):
     def test_download_limit_fixed_and_streamed_through_sdk(self):
         for known_length in (False, True):
             self.app.download_length = known_length
-            for size in (32 * MIB - 1, 32 * MIB, 32 * MIB + 1):
+            for size in (0, self.download_bytes - 1, self.download_bytes, self.download_bytes + 1):
                 with self.subTest(size=size, known_length=known_length):
                     self.app.download_size = size
                     before = len(self.app.records)
@@ -74,14 +81,14 @@ class GatewayWireContract(EnvdWireContract):
                                 self.assertEqual(chunk, b"X" * len(chunk))
                                 received += len(chunk)
 
-                    if size <= 32 * MIB:
+                    if size <= self.download_bytes:
                         download()
                         self.assertEqual(received, size)
                     else:
                         with self.assertRaises(httpx.RemoteProtocolError):
                             download()
                         self.assertGreater(received, 0)
-                        self.assertLessEqual(received, 32 * MIB)
+                        self.assertLessEqual(received, self.download_bytes)
                     downloads = [r for r in self.app.records[before:] if r["path"] == "/files"]
                     self.assertEqual(len(downloads), 1)
                     self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
@@ -127,21 +134,156 @@ class GatewayWireContract(EnvdWireContract):
         self.assertEqual(self.app.records[-1]["access_token"], "synthetic-token")
 
 
+class GatewayStreamingContract(GatewayWireContract):
+    def test_transfer_saturation_preserves_health_and_releases_capacity(self):
+        gate = threading.Event()
+        self.app.download_size = 128 * 1024
+        self.app.download_gate = gate
+        with ExitStack() as readers:
+            streams = []
+            try:
+                for _ in range(3):  # fixture per-VM cap 4, with 1 reserved control slot
+                    chunks = readers.enter_context(self.sandbox.files.read("/tmp/input.txt", format="stream"))
+                    first = next(chunks)
+                    self.assertGreater(len(first), 0)
+                    streams.append((chunks, len(first)))
+                before = len(self.app.records)
+                with self.assertRaises(RateLimitException):
+                    self.sandbox.files.read("/tmp/input.txt")
+                self.assertEqual(len(self.app.records), before)
+                with httpx.Client(base_url=self.gateway_url, trust_env=False, timeout=5) as client:
+                    self.assertEqual(client.get("/health").status_code, 204)
+            finally:
+                gate.set()
+            for chunks, size in streams:
+                self.assertEqual(size + sum(len(chunk) for chunk in chunks), 128 * 1024)
+        self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
+
+    def test_idle_download_ends_as_error_and_next_request_works(self):
+        gate = threading.Event()
+        self.app.download_size = 128 * 1024
+        self.app.download_gate = gate
+        try:
+            with self.sandbox.files.read("/tmp/input.txt", format="stream") as chunks:
+                self.assertGreater(len(next(chunks)), 0)
+                with self.assertRaises(httpx.RemoteProtocolError):
+                    list(chunks)
+        finally:
+            gate.set()
+        self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
+
+    def test_idle_upload_is_rejected_and_next_request_works(self):
+        address = urlsplit(self.gateway_url)
+        with socket.create_connection((address.hostname, address.port), timeout=15) as client:
+            client.sendall(b"POST /files?path=/tmp/input.txt HTTP/1.1\r\n"
+                           b"Host: localhost\r\nContent-Type: application/octet-stream\r\n"
+                           b"Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n1\r\nX\r\n")
+            response = HTTPResponse(client)
+            response.begin()
+            self.assertEqual(response.status, 408)
+            response.read()
+        self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
+
+    def test_unknown_length_upload_cannot_bypass_total_budget(self):
+        for size in (0, self.upload_bytes - 1, self.upload_bytes, self.upload_bytes + 1):
+            with self.subTest(size=size):
+                stream = UnknownLengthFile(size)
+                if size <= self.upload_bytes:
+                    self.sandbox.files.write("/tmp/input.txt", stream)
+                    self.assertEqual(len(self.app.records[-1]["body"]), size)
+                    self.assertEqual(self.app.records[-1]["body"], b"X" * size)
+                else:
+                    with self.assertRaisesRegex(SandboxException, "^413:"):
+                        self.sandbox.files.write("/tmp/input.txt", stream)
+                self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
+
+    def test_compressed_upload_rejected_and_download_negotiates_identity(self):
+        before = len(self.app.records)
+        with self.assertRaisesRegex(SandboxException, "^415:"):
+            self.sandbox.files.write("/tmp/input.txt", BytesIO(b"must-not-be-written"), gzip=True)
+        self.assertEqual(len(self.app.records), before)
+        self.assertEqual(self.sandbox.files.read("/tmp/input.txt", gzip=True), "synthetic file content\n")
+        self.assertEqual(self.app.records[-1]["accept_encoding"], "identity")
+
+    def test_unexpected_compressed_upstream_is_not_forwarded(self):
+        self.app.download_size = 10
+        self.app.download_encoding = "gzip"
+        with httpx.Client(base_url=self.gateway_url, trust_env=False, timeout=5) as client:
+            response = client.get("/files?path=/tmp/input.txt")
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.content, b"")
+
+
+class GatewayAsyncContract(AsyncEnvdWireContract):
+    server = None
+
+    def setUp(self):
+        # Environment and listener belong to the Rust composition harness.
+        self.app = SyntheticEnvd()
+        self.server.set_app(self.app)
+
+
+class GatewayAsyncStreamingContract(GatewayAsyncContract):
+    async def test_async_chunked_upload_budget_and_recovery(self):
+        for size in (0, self.upload_bytes - 1, self.upload_bytes, self.upload_bytes + 1):
+            with self.subTest(size=size):
+                body = UnknownLengthFile(size)
+                if size <= self.upload_bytes:
+                    await self.sandbox.files.write("/tmp/input.txt", body)
+                    self.assertEqual(self.app.records[-1]["body"], b"X" * size)
+                else:
+                    with self.assertRaisesRegex(SandboxException, "^413:"):
+                        await self.sandbox.files.write("/tmp/input.txt", body)
+                self.assertEqual((await self.sandbox.commands.run("healthy")).exit_code, 0)
+
+    async def test_async_stream_download_budget_and_recovery(self):
+        for known_length in (False, True):
+            self.app.download_length = known_length
+            for size in (0, self.download_bytes - 1, self.download_bytes, self.download_bytes + 1):
+                with self.subTest(size=size, known_length=known_length):
+                    self.app.download_size = size
+                    received = 0
+                    failed = False
+                    try:
+                        async with await self.sandbox.files.read("/tmp/input.txt", format="stream") as chunks:
+                            async for chunk in chunks:
+                                self.assertEqual(chunk, b"X" * len(chunk))
+                                received += len(chunk)
+                    except httpx.RemoteProtocolError:
+                        if size <= self.download_bytes:
+                            raise
+                        failed = True
+                    if size <= self.download_bytes:
+                        self.assertEqual(received, size)
+                    else:
+                        self.assertTrue(failed, "oversized async download returned success")
+                        self.assertGreater(received, 0)
+                        self.assertLessEqual(received, self.download_bytes)
+                    self.assertEqual((await self.sandbox.commands.run("healthy")).exit_code, 0)
+
+
 def main():
     manifest = json.loads(Path(__file__).with_name("contract.json").read_text())
-    cases = unittest.defaultTestLoader.getTestCaseNames(GatewayWireContract)
-    assert sorted(manifest["gateway_cases"]) == cases
     with isolated_sdk_environment():
-        server = make_server("127.0.0.1", 0, SyntheticEnvd(), handler_class=QuietHandler)
+        server = make_server("127.0.0.1", 0, SyntheticEnvd(), server_class=ThreadedEnvd, handler_class=QuietHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             print(f"127.0.0.1:{server.server_port}", flush=True)
-            gateway_url = sys.stdin.readline().strip()
+            settings = json.loads(sys.stdin.readline())
+            gateway_url = settings["gateway_url"]
             assert gateway_url.startswith("http://127.0.0.1:")
-            GatewayWireContract.server = server
-            GatewayWireContract.gateway_url = gateway_url
-            suite = unittest.defaultTestLoader.loadTestsFromTestCase(GatewayWireContract)
+            classes = [(GatewayStreamingContract, "gateway_streaming_cases"),
+                       (GatewayAsyncStreamingContract, "gateway_async_streaming_cases")] if settings["streaming"] else [
+                           (GatewayWireContract, "gateway_cases"), (GatewayAsyncContract, "gateway_async_cases")]
+            suite = unittest.TestSuite()
+            for test_class, manifest_key in classes:
+                assert sorted(manifest[manifest_key]) == unittest.defaultTestLoader.getTestCaseNames(test_class)
+                test_class.server = server
+                test_class.gateway_url = gateway_url
+                test_class.upload_bytes = settings["upload_bytes"]
+                test_class.download_bytes = settings["download_bytes"]
+                suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(test_class))
             result = unittest.TextTestRunner(verbosity=2).run(suite)
         finally:
             server.shutdown()

@@ -69,6 +69,9 @@ mod linux {
         max_timeout_secs: u64,
         default_timeout_secs: u64,
         expiry_scan_seconds: u64,
+        /// Explicit opt-in while deployment/large-file KVM acceptance is pending.
+        #[serde(default)]
+        data_transfer: Option<gateway::TransferLimits>,
     }
 
     pub(crate) struct NodeHost(LinuxWorker);
@@ -159,6 +162,9 @@ mod linux {
     }
 
     fn validate_config(config: &ConfigFile) -> Result<u64, Box<dyn Error>> {
+        if let Some(limits) = &config.data_transfer {
+            limits.validate()?;
+        }
         if !config.bind.ip().is_loopback() {
             return Err(
                 "HTTP management listener must bind loopback behind a trusted TLS front end".into(),
@@ -390,18 +396,27 @@ mod linux {
             .collect();
         let gateway_port = Arc::clone(&port);
         let gateway_namespace = config.namespace.clone();
+        let gateway_limits = config
+            .data_transfer
+            .map(gateway::Gateway::new)
+            .transpose()?
+            .map(Arc::new);
+        let write_idle = gateway_limits
+            .as_ref()
+            .map(|gateway| Duration::from_secs(gateway.limits.write_idle_seconds));
         let app = router(Arc::clone(&port), credentials)
             .map_err(|_| "invalid API credentials")?
             .fallback(move |request| {
                 gateway::handle(
                     Arc::clone(&gateway_port),
                     gateway_namespace.clone(),
+                    gateway_limits.clone(),
                     request,
                 )
             });
         let listener = tokio::net::TcpListener::bind(config.bind).await?;
         spawn_reconciliation_scanner(Arc::clone(&port), config.expiry_scan_seconds);
-        axum::serve(listener, app).await?;
+        axum::serve(gateway::GatewayListener::new(listener, write_idle), app).await?;
         Ok(())
     }
 }
