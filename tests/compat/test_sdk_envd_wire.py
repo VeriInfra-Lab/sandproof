@@ -28,6 +28,14 @@ class QuietHandler(WSGIRequestHandler):
     def log_message(self, *_args):
         pass
 
+    def send_error(self, *args, **kwargs):
+        try:
+            super().send_error(*args, **kwargs)
+        except (BrokenPipeError, ConnectionResetError):
+            # An over-limit upload intentionally closes the upstream socket.
+            # Other handler failures still reach the test server's error log.
+            pass
+
     def handle(self):
         # pyqwest sends Connect streaming RPCs with Transfer-Encoding: chunked.
         # The standard-library WSGI test server does not decode that framing.
@@ -67,7 +75,10 @@ class QuietHandler(WSGIRequestHandler):
                         self.send_error(400)
                         return
                     break
-                if len(decoded) + size > 1024 * 1024:
+                # This is a synthetic fixture cap, deliberately larger than
+                # the gateway upload budgets under test. Process RPCs stay small.
+                cap = 128 * 1024 * 1024 if self.path.startswith("/files?") else 1024 * 1024
+                if len(decoded) + size > cap:
                     self.send_error(413)
                     return
                 decoded.extend(self.rfile.read(size))
@@ -154,6 +165,8 @@ class SyntheticEnvd:
         self.truncate_file = False
         self.download_size = None
         self.download_length = True
+        self.download_encoding = None
+        self.download_gate = None
 
     def __call__(self, environ, start_response):
         path = environ["PATH_INFO"]
@@ -168,6 +181,7 @@ class SyntheticEnvd:
                 "content_type": environ.get("CONTENT_TYPE", ""),
                 "access_token": environ.get("HTTP_X_ACCESS_TOKEN"),
                 "api_key": environ.get("HTTP_X_API_KEY"),
+                "accept_encoding": environ.get("HTTP_ACCEPT_ENCODING"),
                 "body": body,
             }
         )
@@ -214,16 +228,22 @@ class SyntheticEnvd:
             if method == "GET":
                 if self.download_size is not None:
                     headers = [("Content-Type", "application/octet-stream")]
+                    if self.download_encoding:
+                        headers.append(("Content-Encoding", self.download_encoding))
                     if self.download_length:
                         headers.append(("Content-Length", str(self.download_size)))
                     start_response("200 OK", headers)
 
                     def chunks():
                         remaining = self.download_size
+                        gate = self.download_gate
                         while remaining:
                             size = min(remaining, 64 * 1024)
                             yield b"X" * size
                             remaining -= size
+                            if gate is not None and remaining:
+                                gate.wait()  # explicit fault barrier; harness bounds the test
+                                gate = None
 
                     return chunks()
                 response = b"synthetic file content\n"

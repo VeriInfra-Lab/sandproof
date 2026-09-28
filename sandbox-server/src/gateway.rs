@@ -7,6 +7,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use axum::{
@@ -14,7 +15,10 @@ use axum::{
     http::{Method, Request, Response, StatusCode, Version, header},
 };
 use http_body_util::{BodyStream, Limited};
-use hyper::client::conn::http1::{self, SendRequest};
+use hyper::{
+    body::Body as _,
+    client::conn::http1::{self, SendRequest},
+};
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use sandproof_api::{
@@ -27,6 +31,17 @@ use tokio::{
 };
 
 use crate::linux::NodeHost;
+
+mod admission;
+mod idle;
+mod limits;
+mod upload;
+pub(crate) use admission::Gateway;
+use admission::{LeasedBody, control_request};
+pub(crate) use idle::GatewayListener;
+use idle::{Activity, IdleBody, WriteIdle};
+pub(crate) use limits::TransferLimits;
+use upload::{UploadBody, UploadProgress};
 
 const FILE_REQUEST_LIMIT: usize = 8 * 1024 * 1024;
 const PROCESS_REQUEST_LIMIT: usize = 1024 * 1024;
@@ -125,6 +140,7 @@ fn spawn_relay(namespace_name: &str) -> io::Result<tokio::process::Child> {
 pub async fn handle(
     port: Arc<ManagedPort<NodeHost>>,
     namespace: String,
+    gateway: Option<Arc<Gateway>>,
     request: Request<Body>,
 ) -> Response<Body> {
     let path = request.uri().path().to_owned();
@@ -165,7 +181,18 @@ pub async fn handle(
             }
             Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
         };
-    let request = match prepare_body(request, file_request).await {
+    let lease = match &gateway {
+        Some(gateway) => match gateway.acquire(
+            (destination.vm.0, destination.generation),
+            control_request(&request),
+        ) {
+            Ok(lease) => Some(lease),
+            Err(status) => return response(status),
+        },
+        None => None,
+    };
+    let limits = gateway.as_ref().map(|gateway| &gateway.limits);
+    let request = match prepare_body(request, file_request, limits).await {
         Ok(request) => request,
         Err(rejection) => return rejection,
     };
@@ -177,16 +204,29 @@ pub async fn handle(
         read: child.stdout.take().expect("piped stdout"),
         write: child.stdin.take().expect("piped stdin"),
     };
-    let Ok((mut sender, connection)) = http1::Builder::new().handshake(TokioIo::new(tunnel)).await
-    else {
+    let tunnel = WriteIdle::new(
+        tunnel,
+        limits.map(|limits| Duration::from_secs(limits.write_idle_seconds)),
+    );
+    let mut builder = http1::Builder::new();
+    if limits.is_some() {
+        builder.max_buf_size(64 * 1024);
+    }
+    let Ok((mut sender, connection)) = builder.handshake(TokioIo::new(tunnel)).await else {
         let _ = child.kill().await;
         return response(StatusCode::BAD_GATEWAY);
     };
+    let connection_lease = lease.clone();
     tokio::spawn(async move {
         let _ = connection.await;
         let _ = child.kill().await;
+        drop(connection_lease);
     });
-    forward_request(&mut sender, request).await
+    let response = forward_request(&mut sender, request, limits).await;
+    match lease {
+        Some(lease) => LeasedBody::wrap(response, lease),
+        None => response,
+    }
 }
 
 // Shared by the authenticated production path and transport regression tests.
@@ -194,16 +234,50 @@ pub async fn handle(
 async fn prepare_body(
     mut request: Request<Body>,
     file_request: bool,
+    limits: Option<&TransferLimits>,
 ) -> Result<Request<Body>, Response<Body>> {
     // The fixed SDK uses HTTP/1.1. HTTP/1.0 cannot distinguish a truncated
     // unknown-length stream from success; do not execute it on that basis.
     if request.version() != Version::HTTP_11 {
         return Err(response(StatusCode::HTTP_VERSION_NOT_SUPPORTED));
     }
-    if file_request {
-        let (parts, body) = request.into_parts();
-        let Ok(bytes) = to_bytes(body, FILE_REQUEST_LIMIT).await else {
+    if limits.is_some() && !identity_encoding(request.headers()) {
+        return Err(response(StatusCode::UNSUPPORTED_MEDIA_TYPE));
+    }
+    if let Some(limits) = limits {
+        let (mut parts, body) = request.into_parts();
+        let activity = Activity::new();
+        parts.extensions.insert(activity.clone());
+        request = Request::from_parts(
+            parts,
+            IdleBody::wrap(body, limits.request_idle_seconds, activity),
+        );
+    }
+    if let Some(limits) = limits
+        && request.uri().path() == "/files"
+        && request.method() == Method::POST
+    {
+        let (mut parts, body) = request.into_parts();
+        if body.size_hint().lower() > limits.file_upload_bytes as u64 {
             return Err(response(StatusCode::PAYLOAD_TOO_LARGE));
+        }
+        let (body, progress) = UploadBody::new(body, limits.file_upload_bytes);
+        parts.extensions.insert(progress);
+        request = Request::from_parts(parts, Body::new(body));
+    } else if file_request {
+        let (parts, body) = request.into_parts();
+        let budget = limits.map_or(FILE_REQUEST_LIMIT, |value| value.rpc_request_bytes);
+        let Ok(bytes) = to_bytes(body, budget).await else {
+            let status = if parts
+                .extensions
+                .get::<Activity>()
+                .is_some_and(Activity::timed_out)
+            {
+                StatusCode::REQUEST_TIMEOUT
+            } else {
+                StatusCode::PAYLOAD_TOO_LARGE
+            };
+            return Err(response(status));
         };
         if parts.uri.path().starts_with("/filesystem.Filesystem/") && contains_nul_escape(&bytes) {
             return Err(response(StatusCode::BAD_REQUEST));
@@ -218,17 +292,63 @@ async fn prepare_body(
             // Limited clamps an exact size hint to the budget. Do not let
             // HTTP turn that hint into a shorter successful Content-Length:
             // the over-limit frame must still be polled and fail the stream.
-            Body::new(BodyStream::new(Limited::new(body, PROCESS_REQUEST_LIMIT))),
+            Body::new(BodyStream::new(Limited::new(
+                body,
+                limits.map_or(PROCESS_REQUEST_LIMIT, |value| value.command_input_bytes),
+            ))),
         );
     }
     Ok(request)
 }
 
+fn identity_encoding(headers: &axum::http::HeaderMap) -> bool {
+    // envd can decompress both HTTP uploads and Connect streams. Until a
+    // separate decoded-byte budget exists, neither encoding is supported.
+    [
+        "content-encoding",
+        "connect-content-encoding",
+        "grpc-encoding",
+    ]
+    .iter()
+    .all(|name| {
+        headers.get_all(*name).iter().all(|value| {
+            value
+                .to_str()
+                .is_ok_and(|value| value.trim().eq_ignore_ascii_case("identity"))
+        })
+    })
+}
+
 async fn forward_request(
     sender: &mut SendRequest<Body>,
     mut request: Request<Body>,
+    limits: Option<&TransferLimits>,
 ) -> Response<Body> {
     let downstream_version = request.version();
+    let upload = request.extensions().get::<UploadProgress>().cloned();
+    let activity = request.extensions().get::<Activity>().cloned();
+    let file_response = request.uri().path() == "/files"
+        || request.uri().path().starts_with("/filesystem.Filesystem/");
+    let file_download = request.uri().path() == "/files" && request.method() == Method::GET;
+    let response_limit = limits.map_or(RESPONSE_LIMIT, |limits| {
+        if file_download {
+            limits.file_download_bytes
+        } else if request.uri().path().starts_with("/process.Process/") {
+            limits.command_output_bytes
+        } else {
+            limits.rpc_response_bytes
+        }
+    });
+    if limits.is_some() {
+        // This is a valid HTTP content negotiation choice, including when a
+        // SDK asks for gzip: identity bytes make the enforced budget unambiguous.
+        request
+            .headers_mut()
+            .insert(header::ACCEPT_ENCODING, "identity".parse().unwrap());
+        request
+            .headers_mut()
+            .insert("connect-accept-encoding", "identity".parse().unwrap());
+    }
     request.headers_mut().remove("x-api-key");
     request.headers_mut().insert(
         header::CONNECTION,
@@ -236,6 +356,11 @@ async fn forward_request(
     );
     request.headers_mut().remove(header::TRANSFER_ENCODING);
     request.headers_mut().remove(header::CONTENT_LENGTH);
+    if let Some(length) = upload.as_ref().and_then(|progress| progress.length) {
+        request
+            .headers_mut()
+            .insert(header::CONTENT_LENGTH, length.into());
+    }
     request
         .headers_mut()
         .insert(header::HOST, ENVD_ADDRESS.parse().expect("static host"));
@@ -247,8 +372,37 @@ async fn forward_request(
         return response(StatusCode::BAD_REQUEST);
     };
     *request.uri_mut() = uri;
-    match sender.send_request(request).await {
+    let result = if let (Some(limits), Some(activity)) =
+        (limits.filter(|_| file_response), activity.as_ref())
+    {
+        tokio::select! {
+            biased;
+            result = sender.send_request(request) => result,
+            () = activity.stalled(Duration::from_secs(limits.file_idle_seconds)) => {
+                return response(if activity.timed_out() { StatusCode::REQUEST_TIMEOUT } else { StatusCode::GATEWAY_TIMEOUT });
+            }
+        }
+    } else {
+        sender.send_request(request).await
+    };
+    if activity.as_ref().is_some_and(Activity::timed_out) {
+        return response(StatusCode::REQUEST_TIMEOUT);
+    }
+    if upload.as_ref().is_some_and(UploadProgress::over_limit) {
+        return response(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    match result {
         Ok(mut upstream) => {
+            if upstream.status().is_success()
+                && upload.as_ref().is_some_and(|progress| !progress.complete())
+            {
+                // An early success is not evidence that the final bytes
+                // arrived. Partial writes remain possible/unknown.
+                return response(StatusCode::BAD_GATEWAY);
+            }
+            if limits.is_some() && !identity_encoding(upstream.headers()) {
+                return response(StatusCode::BAD_GATEWAY);
+            }
             // The two HTTP connections negotiate versions independently. An
             // upstream HTTP/1.0 response must not downgrade an HTTP/1.1 client
             // to close-delimited output: EOF would hide a stream limit error.
@@ -257,7 +411,13 @@ async fn forward_request(
             // clamped hint. Otherwise it conflicts with the original header
             // (a Hyper assertion), or can disguise truncation as completion.
             // BodyStream preserves data/trailers/errors without buffering.
-            upstream.map(|body| Body::new(BodyStream::new(Limited::new(body, RESPONSE_LIMIT))))
+            upstream.map(|body| {
+                let body = Body::new(BodyStream::new(Limited::new(body, response_limit)));
+                match limits.filter(|_| file_response) {
+                    Some(limits) => IdleBody::wrap(body, limits.file_idle_seconds, Activity::new()),
+                    None => body,
+                }
+            })
         }
         Err(_) => response(StatusCode::BAD_GATEWAY),
     }

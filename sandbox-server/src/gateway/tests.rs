@@ -23,6 +23,8 @@ use tokio::{
 
 const CHUNK: usize = 64 * 1024;
 
+mod streaming;
+
 struct Chunks {
     remaining: usize,
     known_length: bool,
@@ -85,7 +87,7 @@ async fn unsupported_http_versions_are_rejected_before_body_or_forwarding() {
         for file in [false, true] {
             let (mut request, polled) = request(1, file, false);
             *request.version_mut() = version;
-            let rejection = prepare_body(request, file).await.unwrap_err();
+            let rejection = prepare_body(request, file, None).await.unwrap_err();
             assert_eq!(rejection.status(), StatusCode::HTTP_VERSION_NOT_SUPPORTED);
             assert_eq!(polled.load(Ordering::SeqCst), 0);
         }
@@ -101,7 +103,7 @@ async fn file_upload_limit_accepts_exact_boundary_for_known_and_streamed_bodies(
             FILE_REQUEST_LIMIT + 1,
         ] {
             let (request, _) = request(size, true, known);
-            let prepared = prepare_body(request, true).await;
+            let prepared = prepare_body(request, true, None).await;
             if size > FILE_REQUEST_LIMIT {
                 assert_eq!(
                     prepared.unwrap_err().status(),
@@ -131,7 +133,7 @@ async fn process_input_is_lazy_and_enforces_total_across_chunks() {
             PROCESS_REQUEST_LIMIT + 1,
         ] {
             let (request, polled) = request(size, false, known);
-            let request = prepare_body(request, false).await.unwrap();
+            let request = prepare_body(request, false, None).await.unwrap();
             assert_eq!(
                 polled.load(Ordering::SeqCst),
                 0,
@@ -189,8 +191,8 @@ async fn process_input_overflow_is_not_forwarded_as_a_short_successful_request()
                     http1::handshake(TokioIo::new(client_io)).await.unwrap();
                 let driver = tokio::spawn(connection);
                 let (request, _) = request(size, false, known);
-                let prepared = prepare_body(request, false).await.unwrap();
-                let response = forward_request(&mut sender, prepared).await;
+                let prepared = prepare_body(request, false, None).await.unwrap();
+                let response = forward_request(&mut sender, prepared, None).await;
                 let status = response.status();
                 let _ = response.into_body().collect().await;
                 drop(sender);
@@ -321,7 +323,7 @@ async fn exchange(reply: Reply, starts: Arc<AtomicUsize>) -> Observed {
             .header("x-api-key", "must-not-reach-guest")
             .body(Body::empty())
             .unwrap();
-        let response = forward_request(&mut sender, request).await;
+        let response = forward_request(&mut sender, request, None).await;
         drop(sender);
 
         // Serialize the actual bounded gateway body through HTTP again. Merely

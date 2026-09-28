@@ -13,7 +13,7 @@ echo "SDK wire checks passed against synthetic loopback responses."
 if [[ "$(uname -s)" == Linux ]]; then
   cargo clippy -p sandproof-server --all-targets --features sdk-contract-tests --locked -- -D warnings
   cargo test -p sandproof-server --features sdk-contract-tests --locked \
-    gateway::sdk_tests::pinned_sdk_through_gateway -- --exact --nocapture
+    gateway::sdk_tests:: -- --test-threads=1 --nocapture
   echo "SDK/gateway composition checks passed; authorization, host relay and VM are not tested."
 else
   echo "SDK/gateway composition checks not run: the gateway requires Linux."
