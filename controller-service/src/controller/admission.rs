@@ -232,6 +232,70 @@ fn accounted(world: &core::World, sandbox: core::SandboxId, record: &core::Sandb
 }
 
 impl ControllerJournal {
+    /// Publish Running and set its externally visible lifetime origin in the
+    /// same transaction. The provisional admission clock reserves capacity;
+    /// it is not the guest's usable lifetime start. A crash before this commit
+    /// leaves Starting, so recovery can retry this exact publication once.
+    /// # Errors
+    /// Rejects a stale publication, missing lease, invalid clock or store error.
+    pub fn publish_running_at(
+        &mut self,
+        sandbox: core::SandboxId,
+        started_at_ms: i64,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<core::World, JournalError> {
+        if started_at_ms < 0 {
+            return Err(JournalError::UnsupportedInput);
+        }
+        let tx = self
+            .journal
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let world = storage::load_world(&tx)?;
+        if storage::unresolved(&world, sandbox) {
+            return Err(JournalError::UnresolvedAction);
+        }
+        let record = world
+            .sandbox_record(sandbox)
+            .ok_or(JournalError::UnsupportedInput)?;
+        let lease = read_lifetime(&tx, &self.namespace, sandbox, record.owner)
+            .map_err(|_| JournalError::CorruptStore)?
+            .ok_or(JournalError::CorruptStore)?;
+        let admitted_at = lease.started_at_ms.ok_or(JournalError::CorruptStore)?;
+        if started_at_ms < admitted_at {
+            return Err(JournalError::UnsupportedInput);
+        }
+        let initial_ms = lease
+            .deadline_ms
+            .checked_sub(admitted_at)
+            .ok_or(JournalError::CorruptStore)?;
+        let total_ms = lease
+            .max_end_ms
+            .checked_sub(admitted_at)
+            .ok_or(JournalError::CorruptStore)?;
+        let end = started_at_ms
+            .checked_add(initial_ms)
+            .ok_or(JournalError::UnsupportedInput)?;
+        let max_end = started_at_ms
+            .checked_add(total_ms)
+            .ok_or(JournalError::UnsupportedInput)?;
+        let decision = storage::apply(
+            &tx,
+            &self.namespace,
+            &world,
+            core::ControllerInput::Publication(core::PublicationInput::Running(sandbox)),
+        )?;
+        let id = identity::sandbox_id(&self.namespace, sandbox)?;
+        tx.execute(
+            "UPDATE sandbox_lifetimes SET started_at_ms=?1, deadline_ms=?2, max_end_ms=?3 WHERE sandbox_id=?4",
+            params![started_at_ms, end, max_end, id.as_str()],
+        )?;
+        crashes.hit(CrashPoint::BeforeCommit)?;
+        tx.commit().map_err(JournalError::CommitUncertain)?;
+        crashes.hit(CrashPoint::AfterCommit)?;
+        Ok(decision.next)
+    }
+
     /// Accept a create and its lease/physical-disk budget in the same `SQLite`
     /// transaction as the reducer input and outbox. An existing active sandbox
     /// without a reservation fails admission closed during v1 migration.

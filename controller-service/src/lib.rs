@@ -23,8 +23,8 @@ pub use journal::{
     StoredSandbox,
 };
 pub use workflow::{
-    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, finish_compensating_create_v1,
-    kill_v1,
+    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
+    finish_compensating_create_v1, kill_v1,
 };
 
 use rusqlite::Error as SqliteError;

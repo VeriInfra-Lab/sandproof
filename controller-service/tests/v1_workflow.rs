@@ -3,8 +3,9 @@ use support::*;
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    AdmissionLimits, ControllerJournal, JournalError, NeverCrash, create_v1,
-    finish_accepted_kill_v1, finish_admitted_create_v1, finish_compensating_create_v1, kill_v1,
+    AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, JournalError, NeverCrash,
+    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
+    finish_compensating_create_v1, kill_v1,
 };
 use sandproof_protocol::{FailureCode, UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
 use tempfile::TempDir;
@@ -97,6 +98,100 @@ fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
         core::Phase::Destroyed
     );
     assert!(journal.uncertain_actions().unwrap().is_empty());
+}
+
+struct BeforePublicationCommit;
+
+impl CrashInjector for BeforePublicationCommit {
+    fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
+        if point == CrashPoint::BeforeCommit {
+            Err(JournalError::InjectedCrash(point))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[test]
+fn visible_lifetime_starts_with_atomic_running_publication_even_after_restart() {
+    let (directory, mut journal) = setup();
+    let request = create_request();
+    let limits = AdmissionLimits {
+        max_active_global: 2,
+        max_active_per_tenant: 1,
+        max_disk_bytes_global: 10_000,
+        max_disk_bytes_per_tenant: 5_000,
+        cleanup_reserve_bytes: 1_000,
+        max_timeout_secs: 300,
+        max_total_lifetime_secs: 600,
+    };
+    journal
+        .admit_create(request.clone(), 1_000, 60, 2_000, limits, &mut NeverCrash)
+        .unwrap();
+    assert!(matches!(
+        finish_admitted_create_v1_timed(
+            &mut journal,
+            request.sandbox,
+            request.operation,
+            &mut worker,
+            &mut || Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit)),
+        ),
+        Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit))
+    ));
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(SANDBOX)
+            .unwrap()
+            .phase,
+        core::Phase::Starting
+    );
+    assert!(matches!(
+        journal.publish_running_at(SANDBOX, 5_000, &mut BeforePublicationCommit),
+        Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit))
+    ));
+    drop(journal);
+    let mut reopened =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(
+        reopened
+            .world()
+            .unwrap()
+            .sandbox_record(SANDBOX)
+            .unwrap()
+            .phase,
+        core::Phase::Starting
+    );
+    let running = finish_admitted_create_v1_timed(
+        &mut reopened,
+        request.sandbox,
+        request.operation,
+        &mut |_action| -> Result<WorkReceipt<FakeHostEvidence>, _> {
+            panic!("recovery must not dispatch already acknowledged host work")
+        },
+        &mut || Ok(6_000),
+    )
+    .unwrap();
+    assert_eq!(
+        running.sandbox_record(SANDBOX).unwrap().phase,
+        core::Phase::Running
+    );
+    let lifetime = reopened
+        .live_lifetime(&request.actor, SANDBOX, 6_001)
+        .unwrap();
+    assert_eq!(
+        (
+            lifetime.started_at_ms,
+            lifetime.deadline_ms,
+            lifetime.max_end_ms
+        ),
+        (Some(6_000), 66_000, 606_000)
+    );
+    assert!(matches!(
+        reopened.accept_expiry(SANDBOX, core::OperationId(102), 61_000, &mut NeverCrash),
+        Err(sandproof_controller_service::AdmissionError::NotDue)
+    ));
 }
 
 #[test]

@@ -5,6 +5,7 @@ new private root and preserves it on failure for exact-resource inspection.
 """
 
 import argparse
+from datetime import timedelta
 import hashlib
 import importlib.metadata
 import json
@@ -18,9 +19,12 @@ import sys
 import tempfile
 import urllib.request
 
+from e2b import Sandbox
+
 from server_process_crash import (
     free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
 )
+from sdk_server_smoke import options
 
 
 def digest(path):
@@ -121,6 +125,22 @@ def run(args):
             subprocess.run([sys.executable, str(Path(__file__).with_name(script)),
                             '--api-url', base_url, '--sandbox-url', base_url, *extra],
                            env=env, check=True, timeout=600)
+        # A restart cannot reset the creation origin or grant a new total
+        # budget. Use the same database, namespace, VM identity and SDK.
+        sdk = options(key, base_url, base_url)
+        persistent = Sandbox.create(template='base', timeout=60,
+                                    allow_internet_access=False, **sdk)
+        before_restart = persistent.get_info()
+        stop_server(process)
+        process = start_server(binary, config, root / 'server.log', None)
+        wait_ready(opener, base_url, key, process)
+        resumed = Sandbox.connect(persistent.sandbox_id, **sdk)
+        after_restart = resumed.get_info()
+        assert after_restart.started_at == before_restart.started_at
+        assert after_restart.end_at > before_restart.end_at
+        resumed.set_timeout(args.max_total * 2)
+        assert resumed.get_info().end_at == before_restart.started_at + timedelta(seconds=args.max_total)
+        assert Sandbox.kill(persistent.sandbox_id, **sdk)
         with sqlite3.connect(root / 'db/controller.db') as database:
             states = [json.loads(row[0]) for row in database.execute('SELECT state_blob FROM sandboxes')]
         assert states and all(state['phase'] == 'Destroyed' for state in states), 'live durable sandbox'
@@ -148,6 +168,7 @@ def run(args):
                           'sdk_version': '2.51.0', 'durable_destroyed': len(states),
                           'exact_process_netns_jail': 'none',
                           'verified_process_tombstones': claim_count,
+                          'restart_lifetime_origin': 'preserved',
                           'fixed_base': 'unchanged'}))
     finally:
         stop_server(process)
