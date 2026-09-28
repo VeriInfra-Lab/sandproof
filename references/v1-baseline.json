@@ -976,5 +976,101 @@
     "residuals": "32 durable rows Destroyed; exact recorded PID/start identities stopped, private jails/netns/cgroups absent and no namespace holders before each final service exit; live cgroup identity/membership/limits sampled; base fingerprint unchanged in all four runs; cgroup parent empty after batch",
     "failed_attempts": [],
     "limits": "shared samples do not emulate server state, filtering, clock behavior or guest environments; these still execute on real VMs. No production Rust/proof changes. Lifetime/startup owner corrections #89/#84 are not in this commit; #13 frozen task inputs, initialization and final budgets remain outstanding. Prior non-finite/exhaustive fault and older-image evidence keeps its original scope."
+  },
+  "lifecycle_integration_candidate_acceptance": {
+    "status": "tested integration candidate; dependency PRs remain separate; not a test/main release",
+    "commit": "fbdbfd2d7d233d99ea0809e1c9e1a1d431309900",
+    "inputs": {
+      "test": "4df1602006171da27912a11542c8c7b7609312af",
+      "pr84": "f6f716735d3d252f77560eb3eefe31743566bff2",
+      "pr89": "2c150df49e2db4187c0f6897e640d83c7be1a86e"
+    },
+    "own_changes": "union conflict resolution for SDK capability 7, durable abort versus Running publication regressions; update unready probe default config to 300/600 while retaining explicit 5-second create and add optional live cgroup/residual audit",
+    "server_build_commit": "fbdbfd2d7d233d99ea0809e1c9e1a1d431309900",
+    "server_sha256": "728f3db151084306c98680b5b0774a764a42f8d1d846dccf874aa8610d925b34",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "host": "Linux 6.8.0-1065-azure/KVM; fixed Firecracker/jailer 1.16.1, envd 0.9.0; original SDK 2.51.0; explicit no-internet; 1 vCPU and 1 GiB private root",
+    "checks": "basic check-function and complete check-compat passed; v1_workflow 9 tests passed including rejected late publication after durable abort, original lease/world preserved, one acknowledged PrepareVm, compensation to Destroyed, and no abort at old admission deadline after Running",
+    "real_tests": {
+      "server_unready_abort.py": "e59d7cbf7d40215861a44097b6c4f4985c59b9c48d514cd47f5912d17b6102db",
+      "server_process_crash.py": "0e8bee166610f0c9009f1a0be40d6aeb04bf8bf4c7be1b466ef99755f2f66e1e",
+      "sdk_lifecycle_races.py": "42b1fdd7cd848c30148c8449a7cb1050af781bb94527d5790457042adf101fd1",
+      "sdk_running_start.py": "d4612985e1b230c47e7e7bfee8edd098f0ba0cf603be93b3c39e7bf5b298757c",
+      "sdk_lifetime_values.py": "1d7fd42e1e751b4dcc7f19ad11b1c5b94073cd53d984dd1b9f314d5d2ba9ce9b",
+      "sdk_data_contract.py": "d1bd8f78163b272e2aca8739c5b8e1d993533000fbf90168bc9c19abe55aaaa8"
+    },
+    "runs": [
+      {
+        "scenario": "unready-abort",
+        "vm_count": 1,
+        "guest_memory_mib": 256,
+        "host_cgroup": "1 CPU/768 MiB; inode, membership and limits observed",
+        "result": "unready live VMM stopped at explicit 5-second create deadline; debug exit 86 after physical abort before receipt; restart reconciled pending actions to Destroyed; no exact PID/start, jail/netns/cgroup or namespace holders before service exit; private base copy unchanged"
+      },
+      {
+        "scenario": "lifetime-values",
+        "vm_count": 18,
+        "grouped_cases": 72,
+        "seconds": 107.518,
+        "guest_memory_mib": 512
+      },
+      {
+        "scenario": "lifetime-total",
+        "vm_count": 2,
+        "grouped_cases": 2,
+        "service_restarts": 2,
+        "seconds": 48.36,
+        "guest_memory_mib": 512
+      },
+      {
+        "scenario": "data-legacy",
+        "vm_count": 2,
+        "grouped_cases": 4,
+        "seconds": 10.03,
+        "guest_memory_mib": 512
+      },
+      {
+        "scenario": "data-streaming",
+        "vm_count": 2,
+        "grouped_cases": 4,
+        "seconds": 10.61,
+        "guest_memory_mib": 512
+      },
+      {
+        "scenario": "crash-before-host",
+        "vm_count": 1,
+        "guest_memory_mib": 256,
+        "host_cgroup": "not configured",
+        "result": "create recovery, terminal fence persisted before stop, same VM identity and exact stop/jail/netns cleanup"
+      },
+      {
+        "scenario": "crash-after-host",
+        "vm_count": 1,
+        "guest_memory_mib": 256,
+        "host_cgroup": "not configured",
+        "result": "lost prepare and stop receipts recovered, same original VM, exact stop/jail/netns cleanup"
+      },
+      {
+        "scenario": "lifecycle-races",
+        "vm_count": 1,
+        "failed_create_without_vm": 1,
+        "guest_memory_mib": 256,
+        "host_cgroup": "not configured",
+        "result": "barrier-controlled concurrent kill 204/404 with one durable Kill; malformed create 400 without admission; absent private kernel then restart yields Destroyed, no process/netns/jail/stop-gate and unchanged base"
+      },
+      {
+        "scenario": "running-start",
+        "vm_count": 1,
+        "service_restarts": 1,
+        "guest_memory_mib": 256,
+        "host_cgroup": "not configured",
+        "result": "initial 60-second usable lifetime, persisted same-VM origin after restart, default connect and 600-second total clamp; exact process stopped and jail/netns absent, base unchanged"
+      }
+    ],
+    "lifetime_wrapper_sha256": "8230cd29f6a682a914fe958a7e17939dd6362f69cf93fcf6fc4922e9724dfaf8",
+    "data_wrapper_sha256": "4f1b2340214110779095bc04091302fa7645ee1b14b3ff12f7bbd839cd302979",
+    "supervised_resource_audit": "24 lifetime/data VMs all durable Destroyed and exact PID/start, jail/netns/cgroup absent, no namespace holders before server exit; live cgroup inode/membership/1 CPU/768 MiB sampled. Data runs additionally observed actual Firecracker 1 CPU/512 MiB and private disk inode/size. Final dedicated UID range had zero processes, cgroup parent empty, original base hash unchanged.",
+    "commands": "root with fixed SDK Python for SDK scripts; standalone probes take --server --jailer --firecracker --kernel --rootfs --uid-base --scratch-parent; crash adds --window before-host or after-host; unready adds --cgroup-parent and --keep-artifacts. Hosted data/lifetime scripts use --api-url/--sandbox-url; lifetime uses --supervisor-dir and --mode values or total, default timeout 300, max timeout 600, total lifetime 600 or 12.",
+    "limits": "Only selected exact fault windows, not arbitrary SIGKILL or complete V1. No public-network regression or #13 frozen task initialization/final budgets in this batch; streaming 64/96 MiB remains test configuration. Controller core equals PR84 and old proofs do not cover AbortPrepare changes; no full proof acceptance claimed. Production source unchanged after tested commit; subsequent changes document this evidence only."
   }
 }
