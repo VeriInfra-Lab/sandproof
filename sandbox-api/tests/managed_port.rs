@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
         Arc, Barrier,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -94,6 +94,8 @@ impl ActionGate {
 
 struct FakeHost {
     secrets: BTreeMap<u64, (String, BTreeMap<String, String>)>,
+    launch_error_once: Option<PortError>,
+    token_error_once: AtomicBool,
     free_bytes: u64,
     public_ipv4_ready: bool,
     prepare: PrepareObservation,
@@ -110,6 +112,8 @@ impl Default for FakeHost {
     fn default() -> Self {
         Self {
             secrets: BTreeMap::new(),
+            launch_error_once: None,
+            token_error_once: AtomicBool::new(false),
             free_bytes: 10_000,
             public_ipv4_ready: false,
             prepare: PrepareObservation::Missing,
@@ -145,6 +149,9 @@ impl HostAdapter for FakeHost {
         token: &str,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<(), PortError> {
+        if let Some(error) = self.launch_error_once.take() {
+            return Err(error);
+        }
         if self
             .secrets
             .insert(sandbox.0, (token.to_owned(), env_vars.clone()))
@@ -172,6 +179,9 @@ impl HostAdapter for FakeHost {
     }
 
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
+        if self.token_error_once.swap(false, Ordering::SeqCst) {
+            return Err(PortError::Busy);
+        }
         self.secrets
             .get(&sandbox.0)
             .map(|(token, _)| token.clone())
@@ -1408,6 +1418,74 @@ fn physical_disk_shortage_rejects_before_any_admission() {
     assert!(port.list("1", None, None).unwrap().items.is_empty());
 }
 
+#[tokio::test]
+async fn credential_write_failure_after_admission_is_unknown_and_recovers_without_recreate() {
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let (directory, port) = setup_with_host(FakeHost {
+        launch_error_once: Some(PortError::Busy),
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        ..FakeHost::default()
+    });
+    let app = router(
+        Arc::clone(&port),
+        vec![ApiCredential {
+            tenant: "1".into(),
+            secret: KEY_ONE.into(),
+        }],
+    )
+    .unwrap();
+    let response = app
+        .oneshot(
+            Request::post("/v2/sandboxes")
+                .header("x-api-key", KEY_ONE)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"templateID":"base","allow_internet_access":false,"metadata":{"job":"original"}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(1))
+            .unwrap()
+            .phase,
+        core::Phase::Starting
+    );
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 0);
+    // HTTP 503 means a refused call to the pinned SDK. An already durable
+    // create must instead report unknown, even when no host VM exists yet.
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            prepare_calls: Some(Arc::clone(&prepare_calls)),
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let recovery = port.recover_on_startup().unwrap();
+    assert_eq!(recovery.workflows_completed, 1);
+    assert_eq!(recovery.unresolved_sandboxes, 0);
+    let items = port.list("1", None, None).unwrap().items;
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].sandbox_id, format!("sb-{NAMESPACE}-1"));
+    assert_eq!(items[0].metadata.get("job"), Some(&"original".into()));
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    port.kill("1", &items[0].sandbox_id).unwrap();
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
+}
+
 #[test]
 fn direct_port_cannot_bypass_public_subset_guards() {
     let (_directory, port) = setup();
@@ -1418,6 +1496,40 @@ fn direct_port_cannot_bypass_public_subset_guards() {
     unsupported.allow_internet_access = Some(true);
     assert_eq!(port.create("1", unsupported), Err(PortError::Invalid));
     assert!(port.list("1", None, None).unwrap().items.is_empty());
+}
+
+#[test]
+fn create_reply_failure_is_unknown_after_the_vm_has_started() {
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let (directory, port) = setup_with_host(FakeHost {
+        token_error_once: AtomicBool::new(true),
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        ..FakeHost::default()
+    });
+    assert_eq!(port.create("1", request()), Err(PortError::OutcomeUnknown));
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    let items = port.list("1", None, None).unwrap().items;
+    assert_eq!(items.len(), 1);
+    let recovered = port
+        .connect("1", &items[0].sandbox_id, ConnectRequest { timeout: None })
+        .unwrap();
+    assert_eq!(recovered.sandbox_id, format!("sb-{NAMESPACE}-1"));
+    assert_eq!(recovered.envd_access_token.len(), 64);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    port.kill("1", &recovered.sandbox_id).unwrap();
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(1))
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
 }
 
 #[test]
