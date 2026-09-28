@@ -12,6 +12,7 @@ import unittest
 from urllib.parse import parse_qs
 from wsgiref.simple_server import ServerHandler, WSGIRequestHandler, make_server
 
+import httpx
 from protobuf import Oneof
 
 from e2b import Sandbox
@@ -147,6 +148,8 @@ class SyntheticEnvd:
             self.filesystem
         )
         self.file_status = 200
+        self.truncate_process_frame = False
+        self.truncate_file = False
 
     def __call__(self, environ, start_response):
         path = environ["PATH_INFO"]
@@ -166,7 +169,21 @@ class SyntheticEnvd:
         if path.startswith("/process.Process/"):
             # The generated application consumes the request body itself.
             environ["wsgi.input"] = BytesIO(body)
-            return self.process_app(environ, start_response)
+            frames = self.process_app(environ, start_response)
+            if not self.truncate_process_frame:
+                return frames
+
+            def cut_frame():
+                try:
+                    iterator = iter(frames)
+                    yield next(iterator)  # complete Start event: the command exists
+                    frame = next(iterator)
+                    assert len(frame) > 5
+                    yield frame[:-1]  # EOF inside the declared Connect data frame
+                finally:
+                    frames.close()
+
+            return cut_frame()
 
         if path.startswith("/filesystem.Filesystem/"):
             environ["wsgi.input"] = BytesIO(body)
@@ -193,7 +210,7 @@ class SyntheticEnvd:
                 response = b"synthetic file content\n"
                 start_response(
                     "200 OK", [("Content-Type", "text/plain"),
-                               ("Content-Length", str(len(response)))]
+                               ("Content-Length", str(len(response) + int(self.truncate_file)))]
                 )
                 return [response]
             if method == "POST":
@@ -205,6 +222,10 @@ class SyntheticEnvd:
                                ("Content-Length", str(len(response)))]
                 )
                 return [response]
+
+        if path == "/health":
+            start_response("204 No Content", [])
+            return []
 
         response = b'{"message":"unexpected synthetic request"}'
         start_response(
@@ -267,6 +288,27 @@ class EnvdWireContract(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "without an end event"):
             self.sandbox.commands.run("touch /tmp/side-effect")
         self.assertEqual(len(self.app.process.starts), 1)
+
+    def test_command_truncated_frame_is_not_replayed_and_next_command_works(self):
+        self.app.truncate_process_frame = True
+        handle = self.sandbox.commands.run("touch /tmp/side-effect", background=True)
+        self.assertEqual(handle.pid, 4321)
+        with self.assertRaisesRegex(Exception, "^Command ended without an end event$"):
+            handle.wait()
+        self.assertEqual(len(self.app.process.starts), 1)
+        self.app.truncate_process_frame = False
+        self.assertEqual(self.sandbox.commands.run("printf healthy").stdout, "synthetic\n")
+        self.assertEqual(len(self.app.process.starts), 2)
+
+    def test_file_truncated_download_is_not_returned_as_success(self):
+        self.app.truncate_file = True
+        with self.assertRaises(httpx.RemoteProtocolError):
+            self.sandbox.files.read("/tmp/input.txt")
+        downloads = [record for record in self.app.records
+                     if record["path"] == "/files" and record["method"] == "GET"]
+        self.assertEqual(len(downloads), 1)
+        self.app.truncate_file = False
+        self.assertEqual(self.sandbox.files.read("/tmp/input.txt"), "synthetic file content\n")
 
     def test_file_write_and_read_use_envd_files_and_access_token(self):
         written = self.sandbox.files.write("/tmp/input.txt", "synthetic input")

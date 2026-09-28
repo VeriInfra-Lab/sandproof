@@ -32,6 +32,8 @@
     "test_background_command_returns_handle_then_result",
     "test_nonzero_command_exit_is_not_success",
     "test_command_missing_end_is_not_auto_retried",
+    "test_command_truncated_frame_is_not_replayed_and_next_command_works",
+    "test_file_truncated_download_is_not_returned_as_success",
     "test_file_write_and_read_use_envd_files_and_access_token",
     "test_file_rejections_are_distinct",
     "test_filelike_upload_uses_octet_stream_by_default",

@@ -43,6 +43,19 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 
 固定版本的 SDK 调用清单位于[兼容合同](../tests/compat/contract.json)。`bash scripts/check-compat.sh` 使用 E2B Python SDK 2.51.0 和本机回环合成响应；[实机系统测试](../tests/system/sdk_server_smoke.py)则使用同版原 SDK，经真实控制器和网关驱动 Firecracker，覆盖显式禁网的创建、连接、查询、列表、续期、销毁，以及基本命令、文件、超时、终止、断线重连、1 MiB 输出、跨租户与旧令牌、非法文件路径、重复令牌、超限上传拒绝和到期清理。隔离 Linux/KVM 测试已通过，但只覆盖 S01–S05、S11–S12 的部分路径。
 
+网关超限与断流回归分三层记录，不能合并算作实机通过：
+
+- [网关组件测试](../sandbox-server/src/gateway/tests.rs)：在 Linux 上执行 `cargo test -p sandproof-server --locked`。通过实际网关的请求处理、响应限流及 HTTP 编码，覆盖 8 MiB 文件请求、1 MiB 命令输入、32 MiB 响应边界；区分已知长度和分块传输，检查中途 EOF、逐块传输、不重发及失败后的新请求。使用内存传输替换 envd，不覆盖鉴权、进程执行或 VM 隔离。响应上限计算 HTTP body 字节，包含 Connect 编码，不能直接等同于原始 stdout 大小。
+- SDK 合同测试：`bash scripts/check-compat.sh` 另覆盖 Connect 帧被截断和文件长度不足。已取得命令 PID 后，缺少完整结束事件仍报错，不自动重发 Start；文件下载不返回成功的部分内容。测试使用固定 SDK、现有 `retries=0` 配置与合成服务。
+- [独立实机脚本](../tests/system/gateway_stream_limits.py)：在原系统测试相同的隔离服务环境，沿用 `retries=0` 配置，使用 `SANDPROOF_TEST_API_KEY` 和显式 `--api-url`、`--sandbox-url` 运行。它创建自己的禁网沙箱，检查 32 MiB 前一字节/恰好/多一字节的文件下载、超大命令输出和主动断线后同 PID 重连；用 FIFO 同步断线时机，用来宾标记核对副作用只观察到一次，每次失败后验证沙箱仍可执行命令，最后销毁本轮沙箱。启动需允许 300 秒寿命，来宾须有现有探针使用的 shell/coreutils。此新增实机脚本尚待在 KVM 上验收，不代替宿主资源残留检查或完整 S11/S12。
+
+实机脚本运行示例（在已配置服务的测试机上执行，API key 由环境提供）：
+
+```sh
+uv run --locked --project tests/compat python tests/system/gateway_stream_limits.py \
+  --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000
+```
+
 [宿主故障测试](../sandbox-node/tests/host_smoke.rs)覆盖 VM 启动或停止后回执丢失，以及独立工作进程恰在真实启停成功、回执提交前退出或被 SIGKILL 杀死。重开数据库后只读核对真实资源，不重复启停；结果未明时 create×kill 被拒绝，迟到的同一回执不改变运行或销毁终局。冒用其他 owner 的停止、清理和观察也被拒绝。运行中 VM 的启动盘点现在还会核对网络空间 inode 与完整禁网规则；实机测试添加额外限制规则后盘点拒绝，原子恢复规则后仍可正常销毁。[运行层故障注入](../sandbox-runtime/src/linux.rs)验证了未放行门控不能启动子进程、网络空间已创建但 inode 记录未提交、准备回执不确定而精确进程已停止、编号不可复用，以及禁网规则被篡改时不能取得成功观察。[来宾探针](../tests/system/guest_smoke.py)让 root 改写解析器，测试 UDP/TCP DNS、853 和 443 端口及 IPv6 出站被拒绝，同时管理通道可用。
 
 [服务恢复测试](../sandbox-api/tests/managed_port.rs)还覆盖停止成功但回执未知时，重新打开数据库后先取得停止观察、再继续发布销毁；重复恢复与迟到的相同回执保持终局不变。这是合成宿主证据测试，不能替代真实服务进程的任意位置强制终止测试。
