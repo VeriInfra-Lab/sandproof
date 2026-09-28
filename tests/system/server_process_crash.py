@@ -218,7 +218,8 @@ def exercise(args: argparse.Namespace) -> None:
         assert status == 200 and json.loads(body) == [], status
         assert fetch(opener, base_url, "GET", f"/sandboxes/{sandbox_id}", api_key)[0] == 404
         assert not Path(f"/run/netns/{vm_name}").exists(), "network namespace survived cleanup"
-        assert not (root / "jails/firecracker" / vm_name).exists(), "private VM jail survived cleanup"
+        jail = root / "jails" / Path(args.firecracker).name / vm_name
+        assert not jail.exists(), "private VM jail survived cleanup"
         assert process_start_ticks(pid) != ticks, "VM was relaunched during recovery"
         completed = True
         print(json.dumps({
