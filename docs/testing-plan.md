@@ -61,7 +61,7 @@ uv run --locked --project tests/compat python tests/system/gateway_stream_limits
 
 验收显式 `data_transfer` 配置时，在同一命令追加 `--file-upload-bytes`、`--file-download-bytes`、`--command-output-bytes`，值须与待测服务配置一致；不能把测试夹具值当作已测定的部署值。新增上传场景通过原 SDK 发送可定位文件和不可定位流，覆盖零/上限前/上限/超限；成功后核对来宾文件信息和 SHA-256，下载同样校验内容。已知长度拒绝不得创建文件，分块拒绝允许部分写入且不重传。脚本按本轮路径删除测试文件并销毁自己的沙箱；仍需宿主侧独立观察进程、网络空间、cgroup、磁盘残留，以及磁盘满、断线、到期和 kill 竞争。扩展脚本已在真实 KVM 使用 64 MiB 上传、96 MiB 下载测试预算通过上述边界和内容检查；宿主独立观察确认本轮精确进程停止，网络空间、cgroup 和私有 jail 无残留，基础盘指纹不变。服务进程本轮 RSS 高水位约 15.4 MiB；这不包含所有 relay/来宾资源，也不是总内存上界或最终部署预算。
 
-[异步流式实机脚本](../tests/system/gateway_async_stream_limits.py)使用原 `AsyncSandbox` 完成 create/kill，以显式参数匹配部署的上传、下载和命令输出预算。上传分别用可定位文件与不可定位流覆盖零/上限前/上限/超限，下载逐块核验字节与 SHA-256；每次拒绝后用同一 VM 验证后续调用。固定异步 SDK 对两种 IO 源都发送分块请求，因此超限都允许留下部分文件，不能沿用同步已知长度拒绝的“文件未创建”断言。命令输出使用回调计数，截流只接受已分类的传输失败；FIFO 和输出事件共同确定断线时刻，重连仍使用原 PID 并检查副作用标记只有一次。
+[异步流式实机脚本](../tests/system/gateway_async_stream_limits.py)使用原 `AsyncSandbox` 完成 create/kill，以显式参数匹配部署的上传、下载和命令输出预算。上传分别用可定位文件与不可定位流覆盖零/上限前/上限/超限，下载逐块核验字节与 SHA-256；每次拒绝后用同一 VM 验证后续调用。固定异步 SDK 对两种 IO 源都发送分块请求，因此超限都允许留下部分文件，不能沿用同步已知长度拒绝的“文件未创建”断言。命令输出先用较小输出核对完整成功，再通过回调计数检查截流。固定 SDK 的异步后台任务会丢失异常链，只对此版本实测的完整 chunk EOF 文本接受 `TimeoutException`；普通超时、相似文本、鉴权错误或带期限原因的异常仍拒绝，组合测试复现这条路径并验证没有重发 Start。FIFO 和输出事件共同确定断线时刻，重连仍使用原 PID 并检查副作用标记只有一次。
 
 ```sh
 uv run --locked --project tests/compat python tests/system/gateway_async_stream_limits.py \

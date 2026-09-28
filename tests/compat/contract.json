@@ -164,7 +164,9 @@
     "test_async_background_reconnect_and_kill_do_not_replay_start",
     "test_async_batch_failure_does_not_replay_previous_uploads",
     "test_async_command_cwd_env_user_stdout_stderr_and_nonzero",
+    "test_async_command_output_limit_fails_without_replaying_start",
     "test_async_file_info_batch_and_directory_requests",
+    "test_async_stream_classifier_rejects_unrelated_errors_and_deadlines",
     "test_async_truncated_command_is_not_replayed_and_next_call_works",
     "test_async_truncated_download_fails_and_next_call_works"
   ],
@@ -173,7 +175,9 @@
     "test_async_batch_failure_does_not_replay_previous_uploads",
     "test_async_chunked_upload_budget_and_recovery",
     "test_async_command_cwd_env_user_stdout_stderr_and_nonzero",
+    "test_async_command_output_limit_fails_without_replaying_start",
     "test_async_file_info_batch_and_directory_requests",
+    "test_async_stream_classifier_rejects_unrelated_errors_and_deadlines",
     "test_async_stream_download_budget_and_recovery",
     "test_async_truncated_command_is_not_replayed_and_next_call_works",
     "test_async_truncated_download_fails_and_next_call_works"
@@ -182,7 +186,7 @@
     "Data requests require HTTP/1.1; other versions return 505 before body consumption or forwarding",
     "Sync octet-stream batches stop at the first error; async batches use concurrent uploads and other writes may remain in flight; 507 maps to NotEnoughSpaceException",
     "Upload 413 maps to SandboxException with a 413 message prefix; SDK 2.51.0 does not populate status_code for this envd error",
-    "A truncated chunked command response can map to TimeoutException; inspect its ConnectError UNAVAILABLE transport cause and separately check sandbox health"
+    "A truncated chunked command response can map to TimeoutException; sync preserves its ConnectError UNAVAILABLE transport cause; async wait can lose the chain, so the probe accepts only the exact pinned chunk-EOF rendering and separately checks smaller output, sandbox health and no Start replay"
   ],
   "not_yet_tested": [
     "full SDK get/list response fields, pagination, filtering, sorting and current-vs-target defaults",

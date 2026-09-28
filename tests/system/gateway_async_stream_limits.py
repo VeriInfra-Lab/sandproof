@@ -15,10 +15,25 @@ import tempfile
 import uuid
 
 from e2b import AsyncSandbox
-from e2b.exceptions import SandboxException
+from e2b.exceptions import SandboxException, TimeoutException, format_sandbox_timeout_exception
 
 from gateway_stream_limits import UnknownLengthFile, pattern_digest, stream_failure
 from sdk_server_smoke import options
+
+
+ASYNC_CHUNK_EOF = str(format_sandbox_timeout_exception(
+    'Error reading content: request or response body error: '
+    'error reading a body from connection: unexpected EOF during chunk size line'))
+
+
+def async_stream_failure(error):
+    if stream_failure(error):
+        return True
+    # SDK 2.51.0 stores a newly mapped exception in its background event task,
+    # then raises it in wait(), losing the ConnectError/transport chain. Accept
+    # only this exact, observed chunk EOF rendering; not arbitrary timeouts.
+    return (type(error) is TimeoutException and error.__cause__ is None
+            and error.__context__ is None and str(error) == ASYNC_CHUNK_EOF)
 
 
 async def healthy(sandbox):
@@ -100,6 +115,12 @@ async def command_overflow(sandbox, directory, limit):
     marker = f'{directory}/overflow-starts'
     received = 0
 
+    # Positive control: a smaller stream must end with a complete result.
+    below = limit // 2
+    result = await sandbox.commands.run(
+        f"head -c {below} /dev/zero | tr '\\000' X", timeout=30)
+    assert result.stdout == 'X' * below and result.exit_code == 0
+
     def observe_output(chunk):
         nonlocal received
         received += len(chunk.encode())
@@ -111,17 +132,18 @@ async def command_overflow(sandbox, directory, limit):
     try:
         await handle.wait()
     except Exception as error:
-        if not stream_failure(error):
+        if not async_stream_failure(error):
             raise
         error_name = type(error).__name__
     finally:
         await handle.kill()
     assert error_name is not None, 'oversized command stream reported success'
     assert received > 0, 'command failed before any output'
+    assert received < limit, 'raw stdout already exceeds the encoded body budget'
     assert await sandbox.files.read(marker) == 'once\n', 'command Start was replayed'
     await healthy(sandbox)
     return {'pid': handle.pid, 'stream_error': error_name,
-            'stdout_bytes': received, 'observed_starts': 1}
+            'stdout_bytes': received, 'below_limit_stdout_bytes': below, 'observed_starts': 1}
 
 
 async def disconnect_and_reconnect(sandbox, directory):
