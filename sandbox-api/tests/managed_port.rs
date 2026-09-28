@@ -511,7 +511,10 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
     assert_eq!(
-        port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
+        port.get("1", &format!("sb-{NAMESPACE}-1"))
+            .unwrap()
+            .info
+            .state,
         "running"
     );
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
@@ -591,7 +594,10 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
     assert_eq!(
-        port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
+        port.get("1", &format!("sb-{NAMESPACE}-1"))
+            .unwrap()
+            .info
+            .state,
         "running"
     );
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
@@ -850,7 +856,10 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
     assert_eq!(recovery.workflows_completed, 1);
     assert_eq!(recovery.unresolved_sandboxes, 0);
     assert_eq!(
-        port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
+        port.get("1", &format!("sb-{NAMESPACE}-1"))
+            .unwrap()
+            .info
+            .state,
         "running"
     );
     let again = port.recover_on_startup().unwrap();
@@ -1367,12 +1376,12 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
     );
 
     let info = port.get("1", &created.sandbox_id).unwrap();
-    assert_eq!(info.state, "running");
-    assert!(info.started_at.ends_with('Z'));
-    assert!(info.end_at.ends_with('Z'));
+    assert_eq!(info.info.state, "running");
+    assert!(info.info.started_at.ends_with('Z'));
+    assert!(info.info.end_at.ends_with('Z'));
     assert_eq!(
         port.list("1", ListQuery::default()).unwrap().items,
-        vec![info]
+        vec![info.info]
     );
     assert_eq!(
         port.connect("1", &created.sandbox_id, ConnectRequest { timeout: None })
@@ -1408,6 +1417,7 @@ fn create_environment_and_metadata_follow_one_durable_identity() {
     assert_eq!(
         port.get("1", &session.sandbox_id)
             .unwrap()
+            .info
             .metadata
             .get("job"),
         Some(&"job-7".to_owned())
@@ -1421,6 +1431,79 @@ fn create_environment_and_metadata_follow_one_durable_identity() {
 }
 
 #[test]
+fn details_preserve_original_networking_after_reopen_without_list_credentials() {
+    use sandproof_api::CreateNetwork;
+    for internet in [None, Some(false), Some(true)] {
+        let directory = TempDir::new().unwrap();
+        let path = directory.path().join("controller.db");
+        let mut configured = config();
+        configured.public_ipv4_enabled = true;
+        let mut input = request();
+        input.allow_internet_access = internet;
+        input.network = Some(CreateNetwork {
+            allow_public_traffic: Some(true),
+            allow_out: Some(vec!["1.2.3.4/24".into(), "1.2.3.0/24".into()]),
+            deny_out: Some(vec![]),
+        });
+        let expected_network = input.network.clone();
+        let port = ManagedPort::new(
+            ControllerJournal::open(&path, NAMESPACE).unwrap(),
+            FakeHost {
+                public_ipv4_ready: true,
+                ..FakeHost::default()
+            },
+            configured.clone(),
+        );
+        let created = port.create("1", input).unwrap();
+        let before = port.get("1", &created.sandbox_id).unwrap();
+        assert_eq!(before.allow_internet_access, Some(internet));
+        assert_eq!(before.network, expected_network);
+        assert_eq!(before.envd_access_token, created.envd_access_token);
+        assert_eq!(before.domain, configured.domain);
+        drop(port);
+        let host = FakeHost {
+            secrets: BTreeMap::from([(1, (created.envd_access_token.clone(), BTreeMap::new()))]),
+            ..FakeHost::default()
+        };
+        let port = ManagedPort::new(
+            ControllerJournal::open(&path, NAMESPACE).unwrap(),
+            host,
+            configured,
+        );
+        assert_eq!(port.get("1", &created.sandbox_id).unwrap(), before);
+        assert_eq!(port.get("2", &created.sandbox_id), Err(PortError::NotFound));
+        let listed =
+            serde_json::to_value(port.list("1", ListQuery::default()).unwrap().items).unwrap();
+        assert!(listed[0].get("envdAccessToken").is_none());
+        assert!(listed[0].get("network").is_none());
+        port.kill("1", &created.sandbox_id).unwrap();
+        assert_eq!(port.get("1", &created.sandbox_id), Err(PortError::NotFound));
+    }
+}
+
+#[test]
+fn foreign_detail_and_list_do_not_read_the_host_token() {
+    let (directory, port) = setup();
+    let created = port.create("1", request()).unwrap();
+    drop(port);
+    let host = FakeHost {
+        token_error_once: AtomicBool::new(true),
+        secrets: BTreeMap::from([(1, (created.envd_access_token, BTreeMap::new()))]),
+        ..FakeHost::default()
+    };
+    let port = ManagedPort::new(
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    assert_eq!(port.get("2", &created.sandbox_id), Err(PortError::NotFound));
+    assert_eq!(port.list("1", ListQuery::default()).unwrap().items.len(), 1);
+    assert_eq!(port.get("1", &created.sandbox_id), Err(PortError::Busy));
+    assert!(port.get("1", &created.sandbox_id).is_ok());
+    port.kill("1", &created.sandbox_id).unwrap();
+}
+
+#[test]
 fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
@@ -1428,6 +1511,7 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
     let options = sandproof_controller_service::CreateOptions {
         env_vars: BTreeMap::from([("TASK_ID".into(), "persisted".into())]),
         metadata: BTreeMap::from([("job".into(), "persisted".into())]),
+        ..Default::default()
     };
     journal
         .admit_create_with_options(
@@ -1485,9 +1569,14 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
     assert_eq!(
         good.get("1", &format!("sb-{NAMESPACE}-1"))
             .unwrap()
+            .info
             .metadata,
         options.metadata
     );
+    let legacy =
+        serde_json::to_value(good.get("1", &format!("sb-{NAMESPACE}-1")).unwrap()).unwrap();
+    assert!(legacy.get("allowInternetAccess").is_none());
+    assert!(legacy.get("network").is_none());
     assert_eq!(good.recover_on_startup().unwrap().unresolved_sandboxes, 0);
 }
 
@@ -1884,7 +1973,7 @@ fn two_active_sandboxes_page_without_duplicate_or_cross_tenant_leak() {
     assert_eq!(page.items.len(), 1);
     let first_info = port.get("1", &first.sandbox_id).unwrap();
     let second_info = port.get("1", &second.sandbox_id).unwrap();
-    let (newest, oldest) = if first_info.started_at == second_info.started_at {
+    let (newest, oldest) = if first_info.info.started_at == second_info.info.started_at {
         (&first.sandbox_id, &second.sandbox_id)
     } else {
         (&second.sandbox_id, &first.sandbox_id)

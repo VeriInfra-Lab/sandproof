@@ -17,6 +17,28 @@ use std::fmt::{self, Display};
 pub struct CreateOptions {
     pub env_vars: BTreeMap<String, String>,
     pub metadata: BTreeMap<String, String>,
+    /// None for legacy records whose original request cannot be recovered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub networking: Option<CreateNetworking>,
+}
+
+/// Original supported network fields, before canonicalizing the enforced policy.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateNetworking {
+    pub allow_internet_access: Option<bool>,
+    pub network: Option<CreateNetwork>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreateNetwork {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_public_traffic: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_out: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deny_out: Option<Vec<String>>,
 }
 
 impl CreateOptions {

@@ -20,8 +20,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::watch;
 
 use crate::{
-    ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError, SandboxInfo, SandboxPage,
-    SandboxSession,
+    ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError, SandboxDetail,
+    SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
 };
 
 pub trait HostAdapter: Send + 'static {
@@ -798,6 +798,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             memory_mb: self.config.memory_mb,
             disk_size_mb: self.config.disk_size_mb,
             state: "running".into(),
+            volume_mounts: Vec::new(),
         })
     }
 }
@@ -814,6 +815,10 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let options = CreateOptions {
             env_vars: request.env_vars.unwrap_or_default(),
             metadata: request.metadata.unwrap_or_default(),
+            networking: Some(sandproof_controller_service::CreateNetworking {
+                allow_internet_access: request.allow_internet_access,
+                network: request.network,
+            }),
         };
         let timeout = request.timeout.unwrap_or(
             i64::try_from(self.config.default_timeout_secs).map_err(|_| PortError::Invalid)?,
@@ -902,11 +907,28 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         self.session(&inner, tenant, sandbox)
     }
 
-    fn get(&self, tenant: &str, external: &str) -> Result<SandboxInfo, PortError> {
+    fn get(&self, tenant: &str, external: &str) -> Result<SandboxDetail, PortError> {
         let tenant = tenant_id(tenant)?;
         let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let sandbox = sandbox_id(&inner.journal, external)?;
-        self.info(&inner, tenant, sandbox)
+        // Authorize owner, Running state and lifetime before reading a token.
+        let info = self.info(&inner, tenant, sandbox)?;
+        let networking = inner
+            .journal
+            .create_options(sandbox)
+            .map_err(map_admission)?
+            .networking;
+        Ok(SandboxDetail {
+            info,
+            envd_access_token: inner.host.token_for(sandbox)?,
+            domain: self.config.domain.clone(),
+            allow_internet_access: networking.as_ref().map(|input| input.allow_internet_access),
+            network: networking.and_then(|input| input.network),
+            lifecycle: SandboxLifecycle {
+                on_timeout: SandboxOnTimeout::Kill,
+                auto_resume: false,
+            },
+        })
     }
 
     fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError> {

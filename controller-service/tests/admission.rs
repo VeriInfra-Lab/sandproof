@@ -16,6 +16,24 @@ fn setup() -> (TempDir, ControllerJournal) {
     (directory, journal)
 }
 
+#[test]
+fn legacy_create_options_do_not_invent_original_network_parameters() {
+    let options: CreateOptions = serde_json::from_str(r#"{"env_vars":{},"metadata":{}}"#).unwrap();
+    assert_eq!(options.networking, None);
+    assert!(
+        serde_json::to_value(&options)
+            .unwrap()
+            .get("networking")
+            .is_none()
+    );
+    let input = r#"{"env_vars":{},"metadata":{},"networking":{"allow_internet_access":null,"network":{"allowOut":[],"denyOut":["8.8.8.8","1.2.3.4/24"]}}}"#;
+    let options: CreateOptions = serde_json::from_str(input).unwrap();
+    assert_eq!(
+        serde_json::to_value(options).unwrap(),
+        serde_json::from_str::<serde_json::Value>(input).unwrap()
+    );
+}
+
 fn limits() -> AdmissionLimits {
     AdmissionLimits {
         max_active_global: 2,
@@ -57,6 +75,10 @@ fn create_options_share_the_admission_commit_and_survive_reopen() {
     let options = CreateOptions {
         env_vars: BTreeMap::from([("TASK_ID".into(), "unit-7".into())]),
         metadata: BTreeMap::from([("job".into(), "unit-7".into())]),
+        networking: Some(sandproof_controller_service::CreateNetworking {
+            allow_internet_access: Some(false),
+            network: None,
+        }),
     };
     assert!(matches!(
         journal.admit_create_with_options(

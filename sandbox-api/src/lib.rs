@@ -21,6 +21,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+pub use sandproof_controller_service::CreateNetwork;
 use sandproof_controller_service::CreateOptions;
 use serde::{Deserialize, Serialize};
 
@@ -82,18 +83,6 @@ pub struct CreateRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Default)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct CreateNetwork {
-    /// The pinned SDK serializes this as true even when the caller only sets
-    /// egress rules. False needs ingress-token support and remains unsupported.
-    pub allow_public_traffic: Option<bool>,
-    #[serde(default)]
-    pub allow_out: Vec<String>,
-    #[serde(default)]
-    pub deny_out: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ConnectRequest {
     pub timeout: Option<i64>,
@@ -142,6 +131,14 @@ pub struct SandboxInfo {
     #[serde(rename = "diskSizeMB")]
     pub disk_size_mb: u32,
     pub state: String,
+    #[serde(rename = "volumeMounts")]
+    pub volume_mounts: Vec<SandboxVolumeMount>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct SandboxVolumeMount {
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -149,6 +146,35 @@ pub struct SandboxPage {
     pub items: Vec<SandboxInfo>,
     pub next_token: Option<String>,
     pub total_running: Option<usize>,
+}
+
+/// Owner-authorized detail fields are deliberately absent from list responses.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SandboxDetail {
+    #[serde(flatten)]
+    pub info: SandboxInfo,
+    pub envd_access_token: String,
+    pub domain: String,
+    /// Outer None means unavailable on a legacy record; inner None is SDK default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_internet_access: Option<Option<bool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<CreateNetwork>,
+    pub lifecycle: SandboxLifecycle,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SandboxLifecycle {
+    pub on_timeout: SandboxOnTimeout,
+    pub auto_resume: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxOnTimeout {
+    Kill,
 }
 
 /// Implementations must check `tenant` and current lifecycle authorization for
@@ -169,7 +195,7 @@ pub trait ControllerPort: Send + Sync + 'static {
     ) -> Result<SandboxSession, PortError>;
     /// # Errors
     /// Returns `NotFound` for a missing or foreign sandbox.
-    fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxInfo, PortError>;
+    fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxDetail, PortError>;
     /// # Errors
     /// Returns a typed rejection for an invalid page token or storage failure.
     fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError>;
@@ -287,6 +313,10 @@ async fn create<P: ControllerPort>(
         || (CreateOptions {
             env_vars: request.env_vars.clone().unwrap_or_default(),
             metadata: request.metadata.clone().unwrap_or_default(),
+            networking: Some(sandproof_controller_service::CreateNetworking {
+                allow_internet_access: request.allow_internet_access,
+                network: request.network.clone(),
+            }),
         })
         .validate()
         .is_err()
@@ -316,7 +346,7 @@ async fn get_sandbox<P: ControllerPort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
     Path(sandbox_id): Path<String>,
-) -> Result<Json<SandboxInfo>, ApiFailure> {
+) -> Result<Json<SandboxDetail>, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     Ok(Json(
         blocking(move || state.port.get(&tenant, &sandbox_id)).await?,

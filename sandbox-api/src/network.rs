@@ -9,11 +9,13 @@ pub(crate) fn selected_policy(request: &CreateRequest) -> Result<NetworkPolicy, 
     let allow_out = request
         .network
         .as_ref()
-        .map_or(&[][..], |network| network.allow_out.as_slice());
+        .and_then(|network| network.allow_out.as_deref())
+        .unwrap_or_default();
     let deny_out = request
         .network
         .as_ref()
-        .map_or(&[][..], |network| network.deny_out.as_slice());
+        .and_then(|network| network.deny_out.as_deref())
+        .unwrap_or_default();
     if request
         .network
         .as_ref()
@@ -39,8 +41,8 @@ mod tests {
             allow_internet_access: internet,
             network: Some(CreateNetwork {
                 allow_public_traffic: Some(true),
-                allow_out: allow.iter().map(|item| (*item).into()).collect(),
-                deny_out: deny.iter().map(|item| (*item).into()).collect(),
+                allow_out: Some(allow.iter().map(|item| (*item).into()).collect()),
+                deny_out: Some(deny.iter().map(|item| (*item).into()).collect()),
             }),
             metadata: None,
             env_vars: None,
