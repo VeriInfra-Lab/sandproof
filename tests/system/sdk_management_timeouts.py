@@ -17,12 +17,18 @@ import httpx
 from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import TimeoutException
 
-from sdk_command_input import call
+from sdk_command_input import call as sdk_call
 from sdk_file_timeouts import verify_deadline
 from sdk_server_smoke import options
 
 
 VALUES = [('omitted', None), ('zero', 0), ('negative', -1), ('large', 10_000_000)]
+
+
+async def call(function, *args, **kwargs):
+    # Separate fixture watchdog: zero disables the SDK deadline, not the
+    # finite acceptance run. An outer watchdog is never counted as SDK timeout.
+    return await asyncio.wait_for(sdk_call(function, *args, **kwargs), timeout=45)
 
 
 def arguments(case, value):
@@ -67,6 +73,7 @@ def expected_timeout(form, case, value):
 
 
 async def invoke(function, positional, kwargs, form, case, value, health=False):
+    print(json.dumps(dict(progress='start', operation=function.__name__, form=form, case=case)), flush=True)
     result, outcome = None, 'completed'
     expected = expected_timeout(form, case, value)
     with observe_timeout(expected) as observed:
@@ -83,6 +90,7 @@ async def invoke(function, positional, kwargs, form, case, value, health=False):
     # A negative deadline can finish before expiry; then its complete result is
     # checked below. A deadline never proves that the operation had no effect.
     assert len(observed) == 1, 'expected exactly one original SDK HTTP send'
+    print(json.dumps(dict(progress='done', operation=function.__name__, form=form, case=case, outcome=outcome)), flush=True)
     return result, dict(case=case, outcome=outcome, effective_timeout_seconds=expected)
 
 
@@ -229,7 +237,8 @@ async def exercise(args):
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     run = uuid.uuid4().hex
     results = []
-    for cls in (Sandbox, AsyncSandbox):
+    classes = {'both': (Sandbox, AsyncSandbox), 'sync': (Sandbox,), 'async': (AsyncSandbox,)}[args.sdk]
+    for cls in classes:
         assert await items(cls, owner) == []
         try:
             rows = await create_cases(cls, owner, run)
@@ -240,13 +249,14 @@ async def exercise(args):
         assert len(rows) == 48
         results.append(dict(sdk=cls.__name__, cases=rows))
     print(json.dumps(dict(sdk_version='2.51.0', results=results,
-                          scope='96 selected management/health HTTP request timeout cases; '
+                          scope='selected management/health HTTP request timeout cases; '
                                 'observation-only send wrapper delegates unchanged; '
-                                'not lifetime values, forced response loss, or final budgets'), indent=2))
+                                'not lifetime values, forced response loss, or final budgets')))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--sdk', choices=('both', 'sync', 'async'), default='both')
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--sandbox-url', required=True)
     asyncio.run(exercise(parser.parse_args()))
