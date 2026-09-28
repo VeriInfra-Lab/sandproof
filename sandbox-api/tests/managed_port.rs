@@ -1,6 +1,9 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::Arc,
+    sync::{
+        Arc, Barrier,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use axum::{
@@ -14,8 +17,8 @@ use sandproof_api::{
     router,
 };
 use sandproof_controller_service::{
-    AdmissionLimits, ControllerJournal, HostEvidence, NeverCrash, WorkerTransportError,
-    finish_admitted_create_v1, kill_v1,
+    AdmissionLimits, ControllerJournal, CreateAdmission, HostEvidence, NeverCrash,
+    WorkerTransportError, finish_admitted_create_v1, kill_v1,
 };
 use sandproof_protocol::{
     FailureCode, ResourceEvidence, ResourceRef, UnknownReason, WorkAction, WorkOutcome, WorkReceipt,
@@ -67,16 +70,40 @@ enum StopObservation {
     Normal,
     LoseReceipt,
     ObservedAfterRestart,
+    LostThenObserved,
+}
+
+struct ActionGate {
+    entered: Barrier,
+    release: Barrier,
+}
+
+impl ActionGate {
+    fn new() -> Self {
+        Self {
+            entered: Barrier::new(2),
+            release: Barrier::new(2),
+        }
+    }
+
+    fn block(&self) {
+        self.entered.wait();
+        self.release.wait();
+    }
 }
 
 struct FakeHost {
-    secrets: BTreeMap<u64, String>,
+    secrets: BTreeMap<u64, (String, BTreeMap<String, String>)>,
     free_bytes: u64,
     public_ipv4_ready: bool,
     prepare: PrepareObservation,
     recovered_actions: BTreeSet<RecoveredAction>,
     stop: StopObservation,
     incomplete_cleanup: bool,
+    stop_calls: Option<Arc<AtomicUsize>>,
+    prepare_calls: Option<Arc<AtomicUsize>>,
+    stop_gate: Option<Arc<ActionGate>>,
+    prepare_gate: Option<Arc<ActionGate>>,
 }
 
 impl Default for FakeHost {
@@ -89,6 +116,10 @@ impl Default for FakeHost {
             recovered_actions: BTreeSet::new(),
             stop: StopObservation::Normal,
             incomplete_cleanup: false,
+            stop_calls: None,
+            prepare_calls: None,
+            stop_gate: None,
+            prepare_gate: None,
         }
     }
 }
@@ -105,7 +136,20 @@ impl HostAdapter for FakeHost {
     }
 
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
-        if self.secrets.insert(sandbox.0, token.to_owned()).is_some() {
+        self.put_launch_config(sandbox, token, &BTreeMap::new())
+    }
+
+    fn put_launch_config(
+        &mut self,
+        sandbox: core::SandboxId,
+        token: &str,
+        env_vars: &BTreeMap<String, String>,
+    ) -> Result<(), PortError> {
+        if self
+            .secrets
+            .insert(sandbox.0, (token.to_owned(), env_vars.clone()))
+            .is_some()
+        {
             return Err(PortError::Conflict);
         }
         Ok(())
@@ -115,16 +159,49 @@ impl HostAdapter for FakeHost {
         Ok(self.secrets.contains_key(&sandbox.0))
     }
 
+    fn has_launch_config(
+        &self,
+        sandbox: core::SandboxId,
+        env_vars: &BTreeMap<String, String>,
+    ) -> Result<bool, PortError> {
+        match self.secrets.get(&sandbox.0) {
+            Some((_, stored)) if stored == env_vars => Ok(true),
+            Some(_) => Err(PortError::Busy),
+            None => Ok(false),
+        }
+    }
+
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
-        self.secrets.get(&sandbox.0).cloned().ok_or(PortError::Busy)
+        self.secrets
+            .get(&sandbox.0)
+            .map(|(token, _)| token.clone())
+            .ok_or(PortError::Busy)
     }
 
     fn execute(
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
-        if self.stop == StopObservation::LoseReceipt
-            && matches!(action.command.command(), core::Command::StopVm { .. })
+        if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+            if let Some(calls) = &self.prepare_calls {
+                calls.fetch_add(1, Ordering::SeqCst);
+            }
+            if let Some(gate) = &self.prepare_gate {
+                gate.block();
+            }
+        }
+        if matches!(action.command.command(), core::Command::StopVm { .. }) {
+            if let Some(calls) = &self.stop_calls {
+                calls.fetch_add(1, Ordering::SeqCst);
+            }
+            if let Some(gate) = &self.stop_gate {
+                gate.block();
+            }
+        }
+        if matches!(
+            self.stop,
+            StopObservation::LoseReceipt | StopObservation::LostThenObserved
+        ) && matches!(action.command.command(), core::Command::StopVm { .. })
         {
             return Ok(WorkReceipt {
                 identity: action.identity.clone(),
@@ -170,8 +247,10 @@ impl HostAdapter for FakeHost {
                     action.command.command(),
                     core::Command::InstallFence { terminal: true, .. }
                 ))
-            || (self.stop == StopObservation::ObservedAfterRestart
-                && matches!(action.command.command(), core::Command::StopVm { .. }))
+            || (matches!(
+                self.stop,
+                StopObservation::ObservedAfterRestart | StopObservation::LostThenObserved
+            ) && matches!(action.command.command(), core::Command::StopVm { .. }))
             || (self.incomplete_cleanup
                 && matches!(action.command.command(), core::Command::CleanupVm { .. }))
         {
@@ -1028,6 +1107,99 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
 }
 
 #[test]
+fn create_environment_and_metadata_follow_one_durable_identity() {
+    let (directory, port) = setup();
+    let mut input = request();
+    input.env_vars = Some(BTreeMap::from([("TASK_ID".into(), "job-7".into())]));
+    input.metadata = Some(BTreeMap::from([("job".into(), "job-7".into())]));
+    let session = port.create("1", input).unwrap();
+    assert_eq!(
+        port.get("1", &session.sandbox_id)
+            .unwrap()
+            .metadata
+            .get("job"),
+        Some(&"job-7".to_owned())
+    );
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let options = journal.create_options(core::SandboxId(1)).unwrap();
+    assert_eq!(options.env_vars.get("TASK_ID"), Some(&"job-7".to_owned()));
+    assert_eq!(options.metadata.get("job"), Some(&"job-7".to_owned()));
+}
+
+#[test]
+fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let options = sandproof_controller_service::CreateOptions {
+        env_vars: BTreeMap::from([("TASK_ID".into(), "persisted".into())]),
+        metadata: BTreeMap::from([("job".into(), "persisted".into())]),
+    };
+    journal
+        .admit_create_with_options(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox: core::SandboxId(1),
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            CreateAdmission {
+                now_ms: i64::try_from(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis(),
+                )
+                .unwrap(),
+                timeout_secs: 300,
+                disk_bytes: 1_000,
+                limits: config().limits,
+                options: options.clone(),
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+
+    let mut wrong_host = FakeHost::default();
+    wrong_host
+        .put_secret(core::SandboxId(1), &"a".repeat(64))
+        .unwrap();
+    let wrong = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        wrong_host,
+        config(),
+    );
+    assert_eq!(wrong.recover_on_startup().unwrap().unresolved_sandboxes, 1);
+    assert_eq!(
+        wrong.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    );
+    drop(wrong);
+
+    let good = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        config(),
+    );
+    assert_eq!(good.recover_on_startup().unwrap().workflows_completed, 1);
+    assert_eq!(
+        good.get("1", &format!("sb-{NAMESPACE}-1"))
+            .unwrap()
+            .metadata,
+        options.metadata
+    );
+    assert_eq!(good.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+}
+
+#[test]
 fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
     use sandproof_api::managed::DataKind;
     let (_directory, port) = setup();
@@ -1085,6 +1257,148 @@ fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
 }
 
 #[test]
+fn repeated_kill_observes_one_persisted_stop_without_a_new_operation() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (directory, port) = setup_with_host(FakeHost {
+        stop: StopObservation::LostThenObserved,
+        stop_calls: Some(Arc::clone(&calls)),
+        ..FakeHost::default()
+    });
+    let created = port.create("1", request()).unwrap();
+    let route = port
+        .data_permit(
+            &created.envd_access_token,
+            sandproof_api::managed::DataKind::Exec,
+        )
+        .unwrap();
+    assert_eq!(
+        port.kill("1", &created.sandbox_id),
+        Err(PortError::OutcomeUnknown)
+    );
+    assert!(*route.revocation.borrow());
+    assert_eq!(port.get("1", &created.sandbox_id), Err(PortError::NotFound));
+    assert_eq!(port.kill("1", &created.sandbox_id), Ok(()));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        port.kill("1", &created.sandbox_id),
+        Err(PortError::NotFound)
+    );
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(
+        world
+            .operation_records()
+            .iter()
+            .filter(|(key, operation)| {
+                key.sandbox == core::SandboxId(1)
+                    && operation.operation.kind == core::OperationKind::Kill
+            })
+            .count(),
+        1
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+}
+
+#[test]
+fn simultaneous_kills_serialize_without_a_second_stop_or_operation() {
+    let gate = Arc::new(ActionGate::new());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (directory, port) = setup_with_host(FakeHost {
+        stop_gate: Some(Arc::clone(&gate)),
+        stop_calls: Some(Arc::clone(&calls)),
+        ..FakeHost::default()
+    });
+    let created = port.create("1", request()).unwrap();
+    let first = Arc::clone(&port);
+    let id = created.sandbox_id.clone();
+    let first = std::thread::spawn(move || first.kill("1", &id));
+    gate.entered.wait(); // first kill holds the reducer/host serialization lock
+    let second = Arc::clone(&port);
+    let id = created.sandbox_id.clone();
+    let ready = Arc::new(Barrier::new(2));
+    let second_ready = Arc::clone(&ready);
+    let second = std::thread::spawn(move || {
+        second_ready.wait();
+        second.kill("1", &id)
+    });
+    ready.wait();
+    gate.release.wait();
+    assert_eq!(first.join().unwrap(), Ok(()));
+    assert_eq!(second.join().unwrap(), Err(PortError::NotFound));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world
+            .operation_records()
+            .iter()
+            .filter(|(key, operation)| {
+                key.sandbox == core::SandboxId(1)
+                    && operation.operation.kind == core::OperationKind::Kill
+            })
+            .count(),
+        1
+    );
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+        core::Phase::Destroyed
+    );
+}
+
+#[test]
+fn create_and_kill_race_has_one_prepare_one_stop_and_no_live_access() {
+    let gate = Arc::new(ActionGate::new());
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let stop_calls = Arc::new(AtomicUsize::new(0));
+    let (directory, port) = setup_with_host(FakeHost {
+        prepare_gate: Some(Arc::clone(&gate)),
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        stop_calls: Some(Arc::clone(&stop_calls)),
+        ..FakeHost::default()
+    });
+    let creator = Arc::clone(&port);
+    let creator = std::thread::spawn(move || creator.create("1", request()));
+    gate.entered.wait(); // create is admitted and physical preparation is in flight
+    let killer = Arc::clone(&port);
+    let ready = Arc::new(Barrier::new(2));
+    let killer_ready = Arc::clone(&ready);
+    let killer = std::thread::spawn(move || {
+        killer_ready.wait();
+        killer.kill("1", &format!("sb-{NAMESPACE}-1"))
+    });
+    ready.wait();
+    gate.release.wait();
+    let session = creator.join().unwrap().unwrap();
+    assert_eq!(killer.join().unwrap(), Ok(()));
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(stop_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        port.authorize_data(
+            &session.envd_access_token,
+            sandproof_api::managed::DataKind::Exec
+        ),
+        Err(PortError::NotFound)
+    );
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+}
+
+#[test]
 fn physical_disk_shortage_rejects_before_any_admission() {
     let (_directory, port) = setup_with_host(FakeHost {
         free_bytes: 1_999,
@@ -1098,7 +1412,7 @@ fn physical_disk_shortage_rejects_before_any_admission() {
 fn direct_port_cannot_bypass_public_subset_guards() {
     let (_directory, port) = setup();
     let mut unsupported = request();
-    unsupported.env_vars = Some(BTreeMap::from([("SECRET".into(), "x".into())]));
+    unsupported.env_vars = Some(BTreeMap::from([("A=B".into(), "x".into())]));
     assert_eq!(port.create("1", unsupported), Err(PortError::Invalid));
     let mut unsupported = request();
     unsupported.allow_internet_access = Some(true);

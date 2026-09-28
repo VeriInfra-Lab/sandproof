@@ -10,9 +10,9 @@ use std::{
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    AdmissionError, AdmissionLimits, ControllerJournal, HostEvidence, JournalError, NeverCrash,
-    WorkerTransportError, finish_accepted_kill_v1, finish_admitted_create_v1,
-    finish_compensating_create_v1,
+    AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
+    HostEvidence, JournalError, NeverCrash, WorkerTransportError, finish_accepted_kill_v1,
+    finish_admitted_create_v1, finish_compensating_create_v1,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
@@ -41,11 +41,41 @@ pub trait HostAdapter: Send + 'static {
     /// # Errors
     /// A host credential creation failure leaves the admitted create pending.
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError>;
+    /// Persist the exact guest initialization environment with its credential
+    /// before a VM can be reserved. Hosts without this capability reject
+    /// nonempty input instead of silently dropping it.
+    /// # Errors
+    /// Any uncertain credential write blocks launch until observation.
+    fn put_launch_config(
+        &mut self,
+        sandbox: core::SandboxId,
+        token: &str,
+        env_vars: &BTreeMap<String, String>,
+    ) -> Result<(), PortError> {
+        if !env_vars.is_empty() {
+            return Err(PortError::Invalid);
+        }
+        self.put_secret(sandbox, token)
+    }
     /// Return false only when no credential was ever stored. A malformed or
     /// unreadable credential must be an error, not permission to replace it.
     /// # Errors
     /// Refuses to classify an untrusted or corrupt host credential as absent.
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError>;
+    /// A present credential with different initialization data is not a
+    /// valid recovery candidate for the admitted create.
+    /// # Errors
+    /// Rejects an unreadable or mismatched launch configuration.
+    fn has_launch_config(
+        &self,
+        sandbox: core::SandboxId,
+        env_vars: &BTreeMap<String, String>,
+    ) -> Result<bool, PortError> {
+        if !env_vars.is_empty() {
+            return Err(PortError::Invalid);
+        }
+        self.has_secret(sandbox)
+    }
     /// # Errors
     /// Missing credentials cannot be replaced by a new token on connect.
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError>;
@@ -274,7 +304,8 @@ fn map_admission(error: AdmissionError) -> PortError {
     match error {
         AdmissionError::InvalidTimeout
         | AdmissionError::TimeOverflow
-        | AdmissionError::InvalidClock => PortError::Invalid,
+        | AdmissionError::InvalidClock
+        | AdmissionError::InvalidCreateOptions => PortError::Invalid,
         AdmissionError::QuotaExceeded => PortError::QuotaExceeded,
         AdmissionError::Unauthorized | AdmissionError::NotRunning | AdmissionError::Expired => {
             PortError::NotFound
@@ -289,12 +320,15 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
     host: &mut H,
     world: &core::World,
     blocked: &BTreeSet<core::SandboxId>,
+    selected: Option<core::SandboxId>,
 ) -> Result<(), PortError> {
     // This is a compensating observation, never a replay of PrepareVm. The
     // outbox action must match the exact current operation and sealed plan
     // before the host checks physical identity and touches partial resources.
     for action in journal.uncertain_actions().map_err(map_journal)? {
-        if blocked.contains(&action.command.command().sandbox()) {
+        if blocked.contains(&action.command.command().sandbox())
+            || selected.is_some_and(|id| id != action.command.command().sandbox())
+        {
             continue;
         }
         match action.command.command() {
@@ -343,6 +377,103 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
     Ok(())
 }
 
+// Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
+// lets a repeated kill observe and finish its *existing* operation without
+// changing unrelated instances. It never accepts a second lifecycle input.
+fn recover_locked<H: HostAdapter>(
+    inner: &mut Inner<H>,
+    selected: Option<core::SandboxId>,
+) -> Result<RecoveryReport, PortError> {
+    let Inner { journal, host, .. } = inner;
+    let initial = journal.world().map_err(map_journal)?;
+    let mut blocked = BTreeSet::new();
+    for (sandbox, record) in initial.sandbox_records() {
+        if selected.is_some_and(|id| id != *sandbox)
+            || record.phase != core::Phase::Starting
+            || !matches!(record.current_operation, Some(operation)
+                if operation.kind == core::OperationKind::Create)
+        {
+            continue;
+        }
+        let operation = record.current_operation.ok_or(PortError::Busy)?;
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let plan = initial.operation_plan(key).ok_or(PortError::Busy)?;
+        let options = journal.create_options(*sandbox).map_err(map_admission)?;
+        match host.has_launch_config(*sandbox, &options.env_vars) {
+            Ok(true) => {}
+            Ok(false) if plan.vm.is_none() => {
+                if host
+                    .put_launch_config(*sandbox, &token()?, &options.env_vars)
+                    .is_err()
+                {
+                    blocked.insert(*sandbox);
+                }
+            }
+            Ok(false) | Err(_) => {
+                blocked.insert(*sandbox);
+            }
+        }
+    }
+    reclaim_uncertain_actions(journal, host, &initial, &blocked, selected)?;
+    let receipts_recovered = journal
+        .reconcile_uncertain(&mut |action| {
+            let sandbox = action.command.command().sandbox();
+            (!blocked.contains(&sandbox) && selected.is_none_or(|id| id == sandbox))
+                .then(|| host.observe(action))
+                .flatten()
+        })
+        .map_err(map_journal)?;
+    let pending = journal.world().map_err(map_journal)?;
+    let mut report = RecoveryReport {
+        receipts_recovered,
+        unresolved_sandboxes: blocked.len(),
+        ..RecoveryReport::default()
+    };
+    for (sandbox, record) in pending.sandbox_records() {
+        if blocked.contains(sandbox) || selected.is_some_and(|id| id != *sandbox) {
+            continue;
+        }
+        let Some(operation) = record.current_operation else {
+            continue;
+        };
+        let resume = match (record.phase, operation.kind) {
+            (core::Phase::Starting, core::OperationKind::Create) => {
+                finish_admitted_create_v1(journal, *sandbox, operation.id, &mut |action| {
+                    host.execute(action)
+                })
+                .map(|_| ())
+            }
+            (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Create)
+                if matches!(
+                    operation.status,
+                    core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
+                ) =>
+            {
+                finish_compensating_create_v1(journal, *sandbox, operation.id, &mut |action| {
+                    host.execute(action)
+                })
+                .map(|_| ())
+            }
+            (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Kill) => {
+                finish_accepted_kill_v1(journal, *sandbox, operation.id, &mut |action| {
+                    host.execute(action)
+                })
+                .map(|_| ())
+            }
+            _ => continue,
+        };
+        match resume {
+            Ok(()) | Err(JournalError::OperationFailed) => report.workflows_completed += 1,
+            Err(JournalError::UnresolvedAction) => report.unresolved_sandboxes += 1,
+            Err(error) => return Err(map_journal(error)),
+        }
+    }
+    Ok(report)
+}
+
 impl<H: HostAdapter> ManagedPort<H> {
     #[must_use]
     pub fn new(journal: ControllerJournal, host: H, config: ManagedConfig) -> Self {
@@ -368,90 +499,7 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// Invalid evidence or a corrupt journal aborts startup recovery.
     pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        let Inner { journal, host, .. } = &mut *inner;
-        let initial = journal.world().map_err(map_journal)?;
-        let mut blocked = BTreeSet::new();
-        for (sandbox, record) in initial.sandbox_records() {
-            if record.phase != core::Phase::Starting
-                || !matches!(record.current_operation, Some(operation)
-                    if operation.kind == core::OperationKind::Create)
-            {
-                continue;
-            }
-            let operation = record.current_operation.ok_or(PortError::Busy)?;
-            let key = core::OperationKey {
-                sandbox: *sandbox,
-                operation: operation.id,
-            };
-            let plan = initial.operation_plan(key).ok_or(PortError::Busy)?;
-            match host.has_secret(*sandbox) {
-                Ok(true) => {}
-                Ok(false) if plan.vm.is_none() => {
-                    if host.put_secret(*sandbox, &token()?).is_err() {
-                        blocked.insert(*sandbox);
-                    }
-                }
-                Ok(false) | Err(_) => {
-                    // Once a VM has been reserved, a missing secret may mean
-                    // external work already started. Never mint a replacement.
-                    blocked.insert(*sandbox);
-                }
-            }
-        }
-        reclaim_uncertain_actions(journal, host, &initial, &blocked)?;
-        let receipts_recovered = journal
-            .reconcile_uncertain(&mut |action| {
-                (!blocked.contains(&action.command.command().sandbox()))
-                    .then(|| host.observe(action))
-                    .flatten()
-            })
-            .map_err(map_journal)?;
-        let pending = journal.world().map_err(map_journal)?;
-        let mut report = RecoveryReport {
-            receipts_recovered,
-            unresolved_sandboxes: blocked.len(),
-            ..RecoveryReport::default()
-        };
-        for (sandbox, record) in pending.sandbox_records() {
-            if blocked.contains(sandbox) {
-                continue;
-            }
-            let Some(operation) = record.current_operation else {
-                continue;
-            };
-            let resume = match (record.phase, operation.kind) {
-                (core::Phase::Starting, core::OperationKind::Create) => {
-                    finish_admitted_create_v1(journal, *sandbox, operation.id, &mut |action| {
-                        host.execute(action)
-                    })
-                    .map(|_| ())
-                }
-                (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Create)
-                    if matches!(
-                        operation.status,
-                        core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
-                    ) =>
-                {
-                    finish_compensating_create_v1(journal, *sandbox, operation.id, &mut |action| {
-                        host.execute(action)
-                    })
-                    .map(|_| ())
-                }
-                (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Kill) => {
-                    finish_accepted_kill_v1(journal, *sandbox, operation.id, &mut |action| {
-                        host.execute(action)
-                    })
-                    .map(|_| ())
-                }
-                _ => continue,
-            };
-            match resume {
-                Ok(()) | Err(JournalError::OperationFailed) => report.workflows_completed += 1,
-                Err(JournalError::UnresolvedAction) => report.unresolved_sandboxes += 1,
-                Err(error) => return Err(map_journal(error)),
-            }
-        }
-        Ok(report)
+        recover_locked(&mut inner, None)
     }
 
     /// Resolve an envd bearer credential to the exact current VM and check
@@ -611,6 +659,11 @@ impl<H: HostAdapter> ManagedPort<H> {
             .live_lifetime(&core::Actor::Tenant(tenant), sandbox, now_ms()?)
             .map_err(map_admission)?;
         let started_at = lifetime.started_at_ms.ok_or(PortError::Busy)?;
+        let metadata = inner
+            .journal
+            .create_options(sandbox)
+            .map_err(map_admission)?
+            .metadata;
         Ok(SandboxInfo {
             template_id: "base".into(),
             sandbox_id: inner
@@ -620,6 +673,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 .as_str()
                 .to_owned(),
             client_id: format!("tenant-{}", tenant.0),
+            metadata,
             started_at: rfc3339(started_at)?,
             end_at: rfc3339(lifetime.deadline_ms)?,
             envd_version: self.config.envd_version.clone(),
@@ -637,17 +691,13 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let policy = crate::network::selected_policy(&request)?;
         if request.template_id != "base"
             || (policy != core::NetworkPolicy::DenyAll && !self.config.public_ipv4_enabled)
-            || request
-                .metadata
-                .as_ref()
-                .is_some_and(|metadata| !metadata.is_empty())
-            || request
-                .env_vars
-                .as_ref()
-                .is_some_and(|env_vars| !env_vars.is_empty())
         {
             return Err(PortError::Invalid);
         }
+        let options = CreateOptions {
+            env_vars: request.env_vars.unwrap_or_default(),
+            metadata: request.metadata.unwrap_or_default(),
+        };
         let timeout = request.timeout.unwrap_or(
             i64::try_from(self.config.default_timeout_secs).map_err(|_| PortError::Invalid)?,
         );
@@ -668,7 +718,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let actor = core::Actor::Tenant(tenant);
         inner
             .journal
-            .admit_create(
+            .admit_create_with_options(
                 core::CreateRequest {
                     actor,
                     owner: tenant,
@@ -680,15 +730,20 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                     policy,
                     operation: core::OperationId(1),
                 },
-                now_ms()?,
-                timeout,
-                self.config.disk_bytes,
-                self.config.limits,
+                CreateAdmission {
+                    now_ms: now_ms()?,
+                    timeout_secs: timeout,
+                    disk_bytes: self.config.disk_bytes,
+                    limits: self.config.limits,
+                    options: options.clone(),
+                },
                 &mut NeverCrash,
             )
             .map_err(map_admission)?;
         let secret = token()?;
-        inner.host.put_secret(sandbox, &secret)?;
+        inner
+            .host
+            .put_launch_config(sandbox, &secret, &options.env_vars)?;
         let Inner { journal, host, .. } = &mut *inner;
         finish_admitted_create_v1(journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
@@ -780,6 +835,29 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let record = world.sandbox_record(sandbox).ok_or(PortError::NotFound)?;
         if record.owner != tenant || record.phase == core::Phase::Destroyed {
             return Err(PortError::NotFound);
+        }
+        if record.phase == core::Phase::Revoking {
+            if !matches!(record.current_operation, Some(operation)
+                if operation.kind == core::OperationKind::Kill)
+            {
+                return Err(PortError::OutcomeUnknown);
+            }
+            // Reuse the already accepted kill. Observation may complete a
+            // lost receipt, but it cannot allocate a new operation or VM.
+            inner.revoke_data(sandbox);
+            recover_locked(&mut inner, Some(sandbox))?;
+            let recovered = inner.journal.world().map_err(map_journal)?;
+            return if recovered
+                .sandbox_record(sandbox)
+                .is_some_and(|record| record.phase == core::Phase::Destroyed)
+            {
+                Ok(())
+            } else {
+                Err(PortError::OutcomeUnknown)
+            };
+        }
+        if record.terminal {
+            return Err(PortError::OutcomeUnknown);
         }
         let operation = next_operation(&world, sandbox)?;
         let accepted = inner.journal.apply(

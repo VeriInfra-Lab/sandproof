@@ -9,7 +9,7 @@ use sandproof_protocol::{
     WorkAction, WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::{self, DirBuilder, File};
 use std::io::Write;
@@ -74,6 +74,8 @@ pub struct ObservedSlot {
 struct GuestSecret {
     token: String,
     sha512: String,
+    #[serde(default)]
+    env_vars: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -730,6 +732,19 @@ impl LinuxWorker {
     /// # Errors
     /// Rejects reuse, malformed tokens, or a hash computation failure.
     pub fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> NodeResult<()> {
+        self.put_launch_secret(sandbox, token, &BTreeMap::new())
+    }
+
+    /// Store the exact creation environment in the same root-only record as
+    /// the token. This record exists before the VM can be reserved or booted.
+    /// # Errors
+    /// Rejects reuse, invalid variables or an unsafe credential location.
+    pub fn put_launch_secret(
+        &self,
+        sandbox: core::SandboxId,
+        token: &str,
+        env_vars: &BTreeMap<String, String>,
+    ) -> NodeResult<()> {
         if token.len() < 32
             || token.len() > 128
             || !token
@@ -738,10 +753,16 @@ impl LinuxWorker {
         {
             return Err("invalid guest access token shape".into());
         }
+        if env_vars.iter().any(|(key, value)| {
+            key.is_empty() || key.contains('=') || key.contains('\0') || value.contains('\0')
+        }) {
+            return Err("invalid guest initialization variable".into());
+        }
         let sha512 = hash_token(token)?;
         let value = GuestSecret {
             token: token.to_owned(),
             sha512,
+            env_vars: env_vars.clone(),
         };
         let path = self.secret_path(sandbox);
         write_new_json(&path, &value)
@@ -767,6 +788,24 @@ impl LinuxWorker {
                 Ok(true)
             }
         }
+    }
+
+    /// A present but mismatched initialization record cannot be reused after
+    /// a controller restart; that would start the VM with the wrong inputs.
+    /// # Errors
+    /// Rejects unreadable, malformed or mismatched stored data.
+    pub fn has_launch_secret(
+        &self,
+        sandbox: core::SandboxId,
+        env_vars: &BTreeMap<String, String>,
+    ) -> NodeResult<bool> {
+        if !self.has_secret(sandbox)? {
+            return Ok(false);
+        }
+        if self.secret(sandbox)?.env_vars != *env_vars {
+            return Err("stored guest initialization differs from admitted create".into());
+        }
+        Ok(true)
     }
 
     /// Execute one already claimed action. Any physical uncertainty becomes an
@@ -1486,16 +1525,20 @@ impl LinuxWorker {
             }
             thread::sleep(Duration::from_millis(100));
         }
-        let token = self.secret(sandbox)?.token;
+        let secret = self.secret(sandbox)?;
         // Leave cwd to envd's per-user home resolution. A global /root default
         // makes an otherwise valid non-root command fail before exec when the
         // caller selects user but omits cwd. Explicit request cwd still wins.
-        let init = serde_json::json!({"accessToken": token, "defaultUser": "root"});
+        let init = serde_json::json!({
+            "accessToken": &secret.token,
+            "defaultUser": "root",
+            "envVars": &secret.env_vars,
+        });
         let body = serde_json::to_vec(&init)?;
         if Self::guest_status(&name, "POST", "/init", Some(&body))? != "204" {
             return Err("envd rejected authenticated initialization".into());
         }
-        if Self::guest_file_status(&name, &token)? != "200" {
+        if Self::guest_file_status(&name, &secret.token)? != "200" {
             return Err("envd authenticated file access not ready".into());
         }
         Ok(())

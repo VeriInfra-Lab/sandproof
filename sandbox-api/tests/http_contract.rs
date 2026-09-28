@@ -40,6 +40,7 @@ fn info() -> SandboxInfo {
         template_id: "base".into(),
         sandbox_id: "sand-a".into(),
         client_id: "client-a".into(),
+        metadata: std::collections::BTreeMap::default(),
         started_at: "2026-01-01T00:00:00Z".into(),
         end_at: "2026-01-01T00:05:00Z".into(),
         envd_version: "0.9.0".into(),
@@ -229,6 +230,7 @@ async fn creation_accepts_e2b_ipv4_wire_and_rejects_unsupported_fields() {
         r#"{"templateID":"base"}"#,
         r#"{"templateID":"base","allow_internet_access":true}"#,
         r#"{"templateID":"base","allow_internet_access":false,"network":{"allowPublicTraffic":true,"allowOut":["1.1.1.1"],"denyOut":["0.0.0.0/0"]}}"#,
+        r#"{"templateID":"base","allow_internet_access":false,"envVars":{"X":"1"},"metadata":{"job":"a"}}"#,
     ] {
         assert_eq!(
             send(
@@ -243,7 +245,7 @@ async fn creation_accepts_e2b_ipv4_wire_and_rejects_unsupported_fields() {
             StatusCode::CREATED
         );
     }
-    assert_eq!(port.calls.lock().unwrap().len(), 3);
+    assert_eq!(port.calls.lock().unwrap().len(), 4);
     port.calls.lock().unwrap().clear();
     for body in [
         r#"{"templateID":"other","allow_internet_access":false}"#,
@@ -253,8 +255,8 @@ async fn creation_accepts_e2b_ipv4_wire_and_rejects_unsupported_fields() {
         r#"{"templateID":"base","allow_internet_access":false,"autoPause":true}"#,
         r#"{"templateID":"base","allow_internet_access":false,"owner":"bob"}"#,
         r#"{"templateID":"base","allow_internet_access":false,"timeout":0}"#,
-        r#"{"templateID":"base","allow_internet_access":false,"envVars":{"X":"1"}}"#,
-        r#"{"templateID":"base","allow_internet_access":false,"metadata":{"job":"a"}}"#,
+        r#"{"templateID":"base","allow_internet_access":false,"envVars":{"A=B":"1"}}"#,
+        r#"{"templateID":"base","allow_internet_access":false,"metadata":{"":"a"}}"#,
     ] {
         assert!(
             send(

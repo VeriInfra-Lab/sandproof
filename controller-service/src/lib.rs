@@ -12,7 +12,10 @@ mod dispatch;
 mod journal;
 mod workflow;
 
-pub use controller::{AdmissionError, AdmissionLimits, ControllerJournal, HostEvidence, Lifetime};
+pub use controller::{
+    AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
+    HostEvidence, Lifetime,
+};
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
 pub use journal::{

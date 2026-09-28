@@ -84,10 +84,15 @@ def wait_ready(
     raise AssertionError("server did not become ready")
 
 
-def start_server(binary: Path, config: Path, log: Path, target: str | None) -> subprocess.Popen[bytes]:
+def start_server(
+    binary: Path, config: Path, log: Path, target: str | None,
+    stop_gate: Path | None = None,
+) -> subprocess.Popen[bytes]:
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
     if target is not None:
         environment["SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION"] = target
+    if stop_gate is not None:
+        environment["SANDPROOF_TEST_STOP_GATE"] = str(stop_gate)
     with log.open("ab") as output:
         return subprocess.Popen(
             [str(binary), str(config)],
