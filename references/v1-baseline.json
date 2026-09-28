@@ -325,5 +325,33 @@
     "semantics": "sync run/connect ignore request_timeout; async applies it to first-event waiting. Negative timeout becomes 1 ms; an over-ten-digit Connect millisecond header is rejected. wait inherits its stream deadline. Start also sets the process execution deadline: late connect returns retained exit -1/signal: killed. Connect-only deadline leaves the original process live, allowing same-PID EOF and full success.",
     "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
     "limits": "selected command stream/opening and inherited-wait deadlines only; not file, unary RPC, sandbox lifetime or all malformed/non-finite timeout arguments. No production or proof changes."
+  },
+  "file_timeout_acceptance": {
+    "test": "tests/system/sdk_file_timeouts.py",
+    "commit": "0aac7ec64fe1552c1a4d9e2de7bd955136eac65d",
+    "script_sha256": "43013753d6cc8bf1aa9642ad3d92adf5c6c5ceb2b03a80edb9b63f6c63f30177",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same fixed host/kernel/envd/base/server, explicit no-internet and streaming configuration as command_input_budget_acceptance",
+    "result": "passed 160 original sync/async SDK cases: read text/bytes/stream request_timeout; stream read stream_idle_timeout; write and two-entry write_files with multipart/octet and text/bytes/binary IO/text IO. Each receives omitted, zero, negative and 10000000 seconds. Complete success verified by length/content/SHA-256; deadline errors must be exact httpx.ReadTimeout with TimeoutError cause; subsequent reads/writes healthy.",
+    "payload_bytes": 69000,
+    "payload_sha256": "e5e8db7e6b6b67a04bacf1d261dcafce255c44b5d6075dd7277aab25114d73bb",
+    "observations": {
+      "sync": {
+        "completed": 67,
+        "deadline": 13,
+        "deadline_upload_paths": 15,
+        "deadline_upload_existing_paths": 5
+      },
+      "async": {
+        "completed": 66,
+        "deadline": 14,
+        "deadline_upload_paths": 15,
+        "deadline_upload_existing_paths": 0
+      }
+    },
+    "semantics": "HTTP large-value control is valid, distinct from Connect header limits. Both clients omit the operation deadline for streamed IO uploads; multipart text IO is buffered and retains it. Negative HTTP deadlines expire, not argument rejection; sync ignores stream_idle_timeout while async applies it to opening and each read. Deadline-failed writes may already leave partial or full data: no rollback or automatic replay claimed.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected HTTP file timeout values and explicit encodings; not every malformed/non-finite value, watcher API, unary RPC or sandbox lifetime matrix, nor final deployment budgets. No production or proof changes."
   }
 }
