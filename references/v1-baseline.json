@@ -740,5 +740,50 @@
     "elapsed_seconds": 21.643,
     "residuals": "exactly four admitted sandbox rows, all Destroyed; all four exact VM PID/start identities stopped; jails/netns/cgroups absent, no namespace holders before service exit; live cgroup identity/limits sampled; base SHA unchanged",
     "limits": "selected creation-context contract, not every malformed/maximum-size combination, arbitrary crash location, public networking or #13 task initialization. Service restarted with same disk/config and both live VM identities, not merely new SDK objects. No production Rust/proof changes."
+  },
+  "network_clients_acceptance": {
+    "commit": "cfd15b5f17a6990a3f2c6af5f1f73ef71b9b4cee",
+    "test": "tests/system/sdk_network_clients.py",
+    "script_sha256": "a0d8f7a58e4683fb417bf0fb204bb7e48106b7910c594970a146949897a337af",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "all production Rust sources and Cargo manifests/lock unchanged between build and probe commit; verified before run",
+    "wrapper_sha256": "14fe2f0d3dcfde6d1fad26cdc41762b104f57746d9fe712fb5d132de2dab3e79",
+    "isolated_host_wrapper_sha256": "22e4ee50e78ecbd9fc3a8621b11870f61e183c24fc51442c70b6085ad297b95e",
+    "outside_helper_sha256": "22f63fdc63ab7a1e0f0e3f4c9b2a283444d63a82f5aa4b8cb26bdd7b8b2c424e",
+    "host_and_artifacts": "Linux 6.8.0-1065-azure/KVM, Firecracker/jailer 1.16.1, original E2B SDK 2.51.0/Python 3.13; same fixed kernel/envd inputs as lifetime_target_acceptance, new base recorded below; one vCPU/512 MiB guest, one CPU/768 MiB host cgroup, 1 GiB private disk; public IPv4 enabled only in isolated test service, 64/96 MiB streaming test profile",
+    "new_base": {
+      "recipe_commit": "f377e888bd2c6e1dd72420188b2dabe620f49778",
+      "image_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+      "image_bytes": 1073741824,
+      "builder_sha256": "ddc6543694d5b3261771f859db5ad7a9257d4bcd2ec8c105cbcc6e0d5246dd22",
+      "profile_sha256": "f89656adb855b03925f6ca498dfd66abd34cd620eb8de83816ef99978b825cac",
+      "service_helper_sha256": "bcd583245d4e9b518697771cf4723fe221cbd59e56e18255f07802c3b07aa8df",
+      "reason": "current fixed recipe adds guest default route via 172.16.0.1; old b5e677 image retained unchanged",
+      "preparation": "tools/build_base_guest.py with the unchanged fixed SquashFS/envd/packages inputs; private verified copies, content/ownership checks and e2fsck passed"
+    },
+    "command": "pinned-SDK Python tests/system/sdk_network_clients.py --api-url <own-loopback-service> --sandbox-url <same-service> --restart-dir <own-supervisor-barrier>; API credentials only from environment; Outside fixture and the entire service/SDK run inside a dedicated parent network namespace entered with nsenter --net to retain cgroup mount",
+    "result": "114 grouped cases (57/client): six original network option profiles, exact detail roundtrips including nullable internet flag, raw/noncanonical/duplicate CIDRs and empty lists; 64 TCP/UDP echo path checks plus two independent-cleanup positive controls; host-local address remains denied, foreign detail 404/list contains no token; 14 invalid-network creates return exact SandboxException 400 with no additional durable records",
+    "service_restarts": [
+      {
+        "sdk": "Sandbox",
+        "same_vm_identities": true,
+        "live_vms": 2
+      },
+      {
+        "sdk": "AsyncSandbox",
+        "same_vm_identities": true,
+        "live_vms": 2
+      }
+    ],
+    "durable_destroyed_rows": 12,
+    "probe_and_vm_audit_seconds": 107.375,
+    "residuals": "12 exact VM PID/start identities stopped; all durable rows Destroyed; private jails/netns/cgroups, VM root uplinks and nft tables absent with no namespace holders before service exit; live cgroup identity/limits sampled, new base SHA unchanged. Outside echo process/link/routes/namespace and private host network namespace removed. Shared host Docker filter rules (ignoring counters) and global forwarding unchanged; old base SHA unchanged",
+    "failed_attempts": [
+      "initial supervisor interpreter lacked the SDK import before VM/network creation; retained setup directory, corrected interpreter",
+      "shared host Docker FORWARD policy DROP: host echo control succeeded, first default-public VM could not reach echo endpoint; probe failed, its one VM and exact resources independently cleaned; shared firewall never relaxed",
+      "ip netns exec remounted sysfs and hid configured cgroup parent: service startup failed before VM creation; no cgroup limit removed; exact echo/supervisors/private namespaces cleaned, then used network-only nsenter"
+    ],
+    "limits": "same unmodified production code and SDK assertions passed in an isolated host-network topology; does not claim Internet endpoint reachability on the shared Docker host, DNS query-content enforcement, advanced IPv6 or arbitrary network/crash interleavings. No production Rust or proof changes. Twelve VMs belong to the passed run; one additional failed-run VM is separately audited and not counted as passing."
   }
 }
