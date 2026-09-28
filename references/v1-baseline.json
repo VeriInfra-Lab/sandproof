@@ -712,5 +712,17 @@
     ],
     "residuals": "all eight durable records Destroyed; exact VM PID/start identities stopped; private jails/netns/cgroups absent and no namespace holders before service exit; live cgroup identity/limits sampled; base fingerprint unchanged; each independently created host canary retained content, device/inode, owner and mode",
     "limits": "selected full service cases, not guest-user DAC isolation, exhaustive path/fault coverage, final deployment budgets or full V1. Fixed envd file operations run as root; user determines home/ownership. Async octet batch errors do not cancel all other uploads; no atomicity/replay guarantee. No production or proof changes."
+  },
+  "running_lifetime_origin_acceptance": {
+    "commit": "6ac3f5942d3c6b5cd5c403d20c47f8056670da10",
+    "test": "tests/system/sdk_running_start.py",
+    "script_sha256": "d4612985e1b230c47e7e7bfee8edd098f0ba0cf603be93b3c39e7bf5b298757c",
+    "server_sha256": "ac0bf4b4e25b6c9f97c52f205f70a86b28bb3b1a2bf9f3e234001cdac4a4f891",
+    "host_and_artifacts": "same isolated Linux x86_64 KVM host, Firecracker/jailer 1.16.1, pinned kernel and 1 GiB envd base SHA-256 83f82ca1925f47c1512199e670babfb128e36d1eee58b93183d804c594e7a7cd; E2B Python SDK 2.51.0; fresh root-only short directory and exclusive UID range; one vCPU, 256 MiB guest, explicit no-internet",
+    "configuration": "one tenant, default 300 seconds, maximum single-call and total lifetime 600 seconds, expiry scan 1 second, one-image cleanup reserve",
+    "command": "root-only tests/system/sdk_running_start.py --server <exact-build> --jailer <pinned> --firecracker <pinned> --kernel <pinned> --rootfs <pinned> --scratch-parent <root-only-short-path> --uid-base <exclusive-range>",
+    "result": "one real VM created with 60-second initial lifetime; visible start and end differ by exactly 60 seconds; same live VM and start survive service/database reopen, omitted connect extends, oversized set_timeout caps at original start plus 600 seconds; SDK kill completes",
+    "residuals": "one durable record Destroyed; exact PID/start identity stopped; private network namespace and jail absent; fixed base unchanged; temporary test root removed after success",
+    "limits": "selected one-VM sync SDK path, paired with deterministic transaction pre-commit fault and recovery test; not an exhaustive SIGKILL, async, wall-clock rollback or all concurrent expiry/kill schedules. Does not change the proved control core or claim a new Lean proof."
   }
 }
