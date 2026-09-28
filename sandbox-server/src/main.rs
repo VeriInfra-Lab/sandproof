@@ -30,6 +30,8 @@ mod linux {
     };
     use sandproof_controller_service::{AdmissionLimits, ControllerJournal, WorkerTransportError};
     use sandproof_node::{HostObservation, LinuxWorker, NodeConfig};
+    #[cfg(debug_assertions)]
+    use sandproof_protocol::WorkOutcome;
     use sandproof_protocol::{WorkAction, WorkReceipt};
     use serde::Deserialize;
 
@@ -96,7 +98,26 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
-            self.0.execute(action)
+            let result = self.0.execute(action);
+            // The integration test exits the *whole service* after a real
+            // host result but before the journal records its receipt. Release
+            // binaries have no fault injection path.
+            #[cfg(debug_assertions)]
+            if result
+                .as_ref()
+                .is_ok_and(|receipt| matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)))
+            {
+                let target = std::env::var("SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION").ok();
+                let command = action.command.command();
+                if matches!(
+                    (target.as_deref(), command),
+                    (Some("prepare_vm"), core::Command::PrepareVm { .. })
+                        | (Some("stop_vm"), core::Command::StopVm { .. })
+                ) {
+                    std::process::exit(86);
+                }
+            }
+            result
         }
 
         fn observe(
