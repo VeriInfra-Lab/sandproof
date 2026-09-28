@@ -740,16 +740,23 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                 &mut NeverCrash,
             )
             .map_err(map_admission)?;
-        let secret = token()?;
+        // Admission is durable. A later failure cannot be reported as a
+        // refused request (503), which the SDK treats as safe to retry.
+        let secret = token().map_err(|_| PortError::OutcomeUnknown)?;
         inner
             .host
-            .put_launch_config(sandbox, &secret, &options.env_vars)?;
+            .put_launch_config(sandbox, &secret, &options.env_vars)
+            .map_err(|_| PortError::OutcomeUnknown)?;
         let Inner { journal, host, .. } = &mut *inner;
         finish_admitted_create_v1(journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
         })
-        .map_err(map_journal)?;
+        .map_err(|error| match error {
+            JournalError::OperationFailed => PortError::Failed,
+            _ => PortError::OutcomeUnknown,
+        })?;
         self.session(&inner, tenant, sandbox)
+            .map_err(|_| PortError::OutcomeUnknown)
     }
 
     fn connect(

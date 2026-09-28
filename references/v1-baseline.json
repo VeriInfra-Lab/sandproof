@@ -448,5 +448,79 @@
     "result": "passed with three real SDK VMs: physical free space initially allows a third disk; own host filler reduces it below disk+reserve while logical quotas remain available; create returns exact SDK RateLimitException/HTTP 429 with no new admission or host claim; both existing VMs still execute/read/write; one VM is destroyed while filler remains; release permits a clean new VM",
     "residuals": "three exact PID/start identities stopped, private jails/netns/cgroups absent, no recorded namespace holders before server exit, actual cgroup membership/inode/limits sampled; base hash unchanged; own mount unmounted and loop detached",
     "limits": "selected physical admission reserve and cleanup only; does not test full block/inode ENOSPC, adversarial external writes after admission, process crash, or final task-derived deployment budgets. No production/core/proof changes."
+  },
+  "host_enospc_acceptance": {
+    "test": "tests/system/server_disk_reserve.py",
+    "helper": "tests/system/host_enospc.py",
+    "commit": "4f66b2cd4a356afcfb28eae35b896186be045dff",
+    "script_sha256": "cc0b563e179d575d78e940922c66b6d833e12325c85402742d99c1e8a6851120",
+    "helper_sha256": "d1524d3f4a9b203efc723e01d72794271c8e1d3947e12e92e24e415d128e7ab8",
+    "server_build_commit": "c12ab1f18c89eaf8b8b7c8723bebd955129bdcf0",
+    "server_sha256": "c8aff62f94ed5927a8cb3c0ccf31fbe847151850ddf8a6e1773b4c358d9c5451",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between build and final test commit; includes post-admission create outcome fix and integrated main/test history",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure host, pinned base/kernel/envd, explicit no-internet and cgroup limits as storage_filesystem_acceptance; each scenario uses its own private mount namespace and 4 GiB ext4 loop",
+    "commands": "root pinned-SDK Python tests/system/server_disk_reserve.py --server <reviewed-root-only-binary> --server-sha256 <above-hash> --config <root-only-template> --root <fresh-private-directory>; run separately with --exhaustion inodes, --exhaustion blocks, and no exhaustion option",
+    "configuration": {
+      "scratch_bytes": 4294967296,
+      "cleanup_reserve_bytes": 268435456,
+      "guest_vcpus": 1,
+      "guest_memory_mib": 512,
+      "host_memory_max_bytes": 805306368,
+      "private_disk_bytes": 1073741824,
+      "max_active_global": 4,
+      "max_active_per_tenant": 4,
+      "max_disk_bytes_global": 8589934592,
+      "max_disk_bytes_per_tenant": 4294967296
+    },
+    "observations": {
+      "inode": {
+        "fill": {
+          "errno": 28,
+          "allocated_bytes": 0,
+          "created_empty_files": 952,
+          "remaining_inodes": 0,
+          "remaining_bytes": 1948921856
+        },
+        "create_http_status": 500,
+        "durable_create_before_error": true,
+        "no_vm_before_inode_release": true,
+        "original_create_recovered_without_replay": true
+      },
+      "block": {
+        "fill": {
+          "errno": 28,
+          "allocated_bytes": 1882091520,
+          "created_empty_files": 0,
+          "remaining_inodes": 262072,
+          "remaining_bytes": 0
+        },
+        "create_http_status": 429,
+        "no_new_admission": true,
+        "full_disk_kill_http_status": 500,
+        "explicit_cleanup_after_release": true,
+        "fresh_vm_clean": true
+      },
+      "reserve": {
+        "available_before": 1882095616,
+        "allocated_filler_bytes": 1479442432,
+        "available_under_pressure": 402649088,
+        "available_after_kill": 1524342784,
+        "available_after_filler_release": 3003789312,
+        "rejected_http_status": 429,
+        "rejection_created_no_admission": true,
+        "killed_while_filler_present": true,
+        "fresh_vm_clean": true
+      }
+    },
+    "old_bug_reproduction": {
+      "test_commit": "c12ab1f18c89eaf8b8b7c8723bebd955129bdcf0",
+      "script_sha256": "55631e1ceb461b406e9e221c0ba12aee98738d42df70a3cfe1898c0a025e93de",
+      "server_build_commit": "6a2d57e2b4e135fbe293938619bcc18ac956114f",
+      "server_sha256": "b011c3e25518d91393aab974acad1b13b1acc559aa5501b4cccf3f2ef08a87cb",
+      "result": "--exhaustion inodes --expected-inode-status 503 reproduces the old incorrect refused reply after durable Starting admission; releasing inodes recovers the original create without replay. Three VMs and own loop fully reclaimed. This is bug reproduction, not acceptance of HTTP 503 after admission."
+    },
+    "result": "three corrected scenarios passed with nine real SDK VMs; existing two guests continue command/file operations during each pressure case. SDK CPU/memory matches live Firecracker machine-config, private disk stat and configured cgroup limits; no creation replay after unknown result",
+    "residuals": "all nine exact PID/start identities stopped; private jails/netns/cgroups absent and no recorded network namespace holders before service exit; actual cgroup inode/membership/limits sampled; base SHA unchanged; each own mount unmounted and loop detached",
+    "limits": "selected reserve/block/inode scenarios only, not all crashes or unknown-outcome reconciliation. External writes exhausting reserve are outside the physical capacity premise; no atomic reservation against arbitrary host writes or final task-derived deployment budgets claimed. API/service fix is outside the proved control core; no proof claim."
   }
 }
