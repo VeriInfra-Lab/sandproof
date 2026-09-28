@@ -7,10 +7,11 @@ does not execute a process or touch a sandbox filesystem.
 import importlib.metadata
 from io import BytesIO
 import json
+from socketserver import ThreadingMixIn
 import threading
 import unittest
 from urllib.parse import parse_qs
-from wsgiref.simple_server import ServerHandler, WSGIRequestHandler, make_server
+from wsgiref.simple_server import ServerHandler, WSGIRequestHandler, WSGIServer, make_server
 
 import httpx
 from protobuf import Oneof
@@ -18,7 +19,7 @@ from protobuf import Oneof
 from e2b import Sandbox
 from e2b.envd.filesystem import filesystem_connect, filesystem_pb
 from e2b.envd.process import process_connect, process_pb
-from e2b.exceptions import AuthenticationException, FileNotFoundException
+from e2b.exceptions import AuthenticationException, FileNotFoundException, NotEnoughSpaceException
 from e2b.sandbox.commands.command_handle import CommandExitException
 
 from sdk_support import SANDBOX, isolated_sdk_environment
@@ -27,6 +28,14 @@ from sdk_support import SANDBOX, isolated_sdk_environment
 class QuietHandler(WSGIRequestHandler):
     def log_message(self, *_args):
         pass
+
+    def send_error(self, *args, **kwargs):
+        try:
+            super().send_error(*args, **kwargs)
+        except (BrokenPipeError, ConnectionResetError):
+            # An over-limit upload intentionally closes the upstream socket.
+            # Other handler failures still reach the test server's error log.
+            pass
 
     def handle(self):
         # pyqwest sends Connect streaming RPCs with Transfer-Encoding: chunked.
@@ -67,7 +76,10 @@ class QuietHandler(WSGIRequestHandler):
                         self.send_error(400)
                         return
                     break
-                if len(decoded) + size > 1024 * 1024:
+                # This is a synthetic fixture cap, deliberately larger than
+                # the gateway upload budgets under test. Process RPCs stay small.
+                cap = 128 * 1024 * 1024 if self.path.startswith("/files?") else 1024 * 1024
+                if len(decoded) + size > cap:
                     self.send_error(413)
                     return
                 decoded.extend(self.rfile.read(size))
@@ -85,31 +97,52 @@ class QuietHandler(WSGIRequestHandler):
         handler.run(self.server.get_app())
 
 
+class ThreadedEnvd(ThreadingMixIn, WSGIServer):
+    # Joining handlers makes a stuck barrier fail instead of hiding as a daemon.
+    daemon_threads = False
+
+
 class SyntheticProcess(process_connect.ProcessSync):
     def __init__(self):
         self.starts = []
+        self.connects = []
+        self.signals = []
         self.exit_code = 0
         self.omit_end = False
         self.stdout_chunks = [b"synthetic\n"]
+        self.stderr_chunks = []
 
     def start(self, request, _context):
         self.starts.append(request)
-        yield process_pb.StartResponse(
+        yield from self.events(process_pb.StartResponse)
+
+    def connect(self, request, _context):
+        self.connects.append(request)
+        yield from self.events(process_pb.ConnectResponse)
+
+    def send_signal(self, request, _context):
+        self.signals.append(request)
+        return process_pb.SendSignalResponse()
+
+    def events(self, response):
+        # Transport fixtures only: no shell execution or process-state model.
+        yield response(
             event=process_pb.ProcessEvent(
                 event=Oneof("start", process_pb.ProcessEvent.StartEvent(pid=4321))
             )
         )
-        for chunk in self.stdout_chunks:
-            yield process_pb.StartResponse(
-                event=process_pb.ProcessEvent(
-                    event=Oneof(
-                        "data",
-                        process_pb.ProcessEvent.DataEvent(output=Oneof("stdout", chunk)),
+        for channel, chunks in (("stdout", self.stdout_chunks), ("stderr", self.stderr_chunks)):
+            for chunk in chunks:
+                yield response(
+                    event=process_pb.ProcessEvent(
+                        event=Oneof(
+                            "data",
+                            process_pb.ProcessEvent.DataEvent(output=Oneof(channel, chunk)),
+                        )
                     )
                 )
-            )
         if not self.omit_end:
-            yield process_pb.StartResponse(
+            yield response(
                 event=process_pb.ProcessEvent(
                     event=Oneof(
                         "end",
@@ -125,6 +158,14 @@ class SyntheticFilesystem(filesystem_connect.FilesystemSync):
     def __init__(self):
         self.list_requests = []
         self.mkdir_requests = []
+        self.stat_requests = []
+
+    def stat(self, request, _context):
+        self.stat_requests.append(request)
+        return filesystem_pb.StatResponse(entry=filesystem_pb.EntryInfo(
+            name="input.txt", path="/tmp/input.txt", type=filesystem_pb.FileType.FILE,
+            size=15, mode=0o644,
+        ))
 
     def list_dir(self, request, _context):
         self.list_requests.append(request)
@@ -150,10 +191,15 @@ class SyntheticEnvd:
             self.filesystem
         )
         self.file_status = 200
+        self.file_statuses = []
+        self.file_status_by_path = {}
+        self.file_batch_barrier = None
         self.truncate_process_frame = False
         self.truncate_file = False
         self.download_size = None
         self.download_length = True
+        self.download_encoding = None
+        self.download_gate = None
 
     def __call__(self, environ, start_response):
         path = environ["PATH_INFO"]
@@ -168,6 +214,9 @@ class SyntheticEnvd:
                 "content_type": environ.get("CONTENT_TYPE", ""),
                 "access_token": environ.get("HTTP_X_ACCESS_TOKEN"),
                 "api_key": environ.get("HTTP_X_API_KEY"),
+                "accept_encoding": environ.get("HTTP_ACCEPT_ENCODING"),
+                "authorization": environ.get("HTTP_AUTHORIZATION"),
+                "connect_timeout_ms": environ.get("HTTP_CONNECT_TIMEOUT_MS"),
                 "body": body,
             }
         )
@@ -203,10 +252,15 @@ class SyntheticEnvd:
             return [response]
 
         if path == "/files":
-            if self.file_status != 200:
+            status = self.file_statuses.pop(0) if self.file_statuses else self.file_status
+            target = parse_qs(environ.get("QUERY_STRING", "")).get("path", [""])[0]
+            status = self.file_status_by_path.get(target, status)
+            if method == "POST" and self.file_batch_barrier is not None:
+                self.file_batch_barrier.wait(timeout=10)
+            if status != 200:
                 response = b'{"message":"synthetic rejection"}'
                 start_response(
-                    f"{self.file_status} Synthetic Rejection",
+                    f"{status} Synthetic Rejection",
                     [("Content-Type", "application/json"),
                      ("Content-Length", str(len(response)))],
                 )
@@ -214,16 +268,22 @@ class SyntheticEnvd:
             if method == "GET":
                 if self.download_size is not None:
                     headers = [("Content-Type", "application/octet-stream")]
+                    if self.download_encoding:
+                        headers.append(("Content-Encoding", self.download_encoding))
                     if self.download_length:
                         headers.append(("Content-Length", str(self.download_size)))
                     start_response("200 OK", headers)
 
                     def chunks():
                         remaining = self.download_size
+                        gate = self.download_gate
                         while remaining:
                             size = min(remaining, 64 * 1024)
                             yield b"X" * size
                             remaining -= size
+                            if gate is not None and remaining:
+                                gate.wait()  # explicit fault barrier; harness bounds the test
+                                gate = None
 
                     return chunks()
                 response = b"synthetic file content\n"
@@ -233,8 +293,9 @@ class SyntheticEnvd:
                 )
                 return [response]
             if method == "POST":
+                uploaded_path = parse_qs(environ.get("QUERY_STRING", "")).get("path", ["/tmp/input.txt"])[0]
                 response = json.dumps(
-                    [{"name": "input.txt", "path": "/tmp/input.txt", "type": "file"}]
+                    [{"name": uploaded_path.rsplit("/", 1)[-1], "path": uploaded_path, "type": "file"}]
                 ).encode()
                 start_response(
                     "200 OK", [("Content-Type", "application/json"),
@@ -294,6 +355,56 @@ class EnvdWireContract(unittest.TestCase):
         self.assertEqual(handle.pid, 4321)
         self.assertEqual(handle.wait().exit_code, 0)
         self.assertEqual(len(self.app.process.starts), 1)
+
+    def test_command_cwd_env_user_and_stderr_are_preserved(self):
+        self.app.process.stderr_chunks = [b"synthetic stderr\n"]
+        result = self.sandbox.commands.run("printf synthetic", cwd="/tmp/project",
+                                           envs={"SP_VALUE": "spaces and \u4e2d\u6587"}, user="ubuntu")
+        self.assertEqual((result.stdout, result.stderr, result.exit_code),
+                         ("synthetic\n", "synthetic stderr\n", 0))
+        request = self.app.process.starts[0].process
+        self.assertEqual(request.cwd, "/tmp/project")
+        self.assertEqual(dict(request.envs), {"SP_VALUE": "spaces and \u4e2d\u6587"})
+        self.assertEqual(self.app.records[-1]["authorization"], "Basic dWJ1bnR1Og==")
+
+    def test_reconnect_and_signal_use_known_pid_without_start_replay(self):
+        handle = self.sandbox.commands.run("synthetic-background", background=True)
+        handle.disconnect()
+        resumed = self.sandbox.commands.connect(handle.pid)
+        self.assertEqual(resumed.pid, handle.pid)
+        self.assertEqual(resumed.wait().stdout, "synthetic\n")
+        self.assertTrue(resumed.kill())
+        self.assertEqual(len(self.app.process.starts), 1)
+        self.assertEqual(self.app.process.connects[0].process.selector, Oneof("pid", handle.pid))
+        self.assertEqual(self.app.process.signals[0].process.selector, Oneof("pid", handle.pid))
+        self.assertEqual(self.app.process.signals[0].signal, process_pb.Signal.SIGKILL)
+
+    def test_file_info_and_batch_upload_preserve_paths_and_bytes(self):
+        info = self.sandbox.files.get_info("/tmp/input.txt", user="ubuntu")
+        self.assertEqual((info.path, info.size, info.mode), ("/tmp/input.txt", 15, 0o644))
+        self.assertEqual(self.app.filesystem.stat_requests[0].path, "/tmp/input.txt")
+        self.assertEqual(self.app.records[-1]["authorization"], "Basic dWJ1bnR1Og==")
+        entries = [{"path": "/tmp/project/a.txt", "data": BytesIO(b"first")},
+                   {"path": "/tmp/project/nested/b.bin", "data": BytesIO(b"\x00\xffsecond")}]
+        written = self.sandbox.files.write_files(entries, user="ubuntu")
+        self.assertEqual([entry.path for entry in written], [entry["path"] for entry in entries])
+        posts = self.app.records[-2:]
+        self.assertEqual([p["query"]["path"][0] for p in posts], [e["path"] for e in entries])
+        self.assertEqual([p["body"] for p in posts], [b"first", b"\x00\xffsecond"])
+        self.assertTrue(all(p["query"]["username"] == ["ubuntu"] for p in posts))
+
+    def test_batch_failure_does_not_replay_previous_uploads(self):
+        self.app.file_statuses = [200, 507]
+        before = len(self.app.records)
+        with self.assertRaises(NotEnoughSpaceException):
+            self.sandbox.files.write_files([
+                {"path": f"/tmp/batch/{name}", "data": BytesIO(name.encode())}
+                for name in ("first", "second", "third")
+            ])
+        uploads = [r for r in self.app.records[before:] if r["path"] == "/files"]
+        self.assertEqual([r["query"]["path"] for r in uploads],
+                         [["/tmp/batch/first"], ["/tmp/batch/second"]])
+        self.assertEqual(self.sandbox.commands.run("healthy").exit_code, 0)
 
     def test_nonzero_command_exit_is_not_success(self):
         self.app.process.exit_code = 17
@@ -383,7 +494,7 @@ class EnvdManifest(unittest.TestCase):
         manifest = json.loads(Path(__file__).with_name("contract.json").read_text())
         self.assertEqual(sorted(manifest["envd_cases"]),
                          unittest.defaultTestLoader.getTestCaseNames(EnvdWireContract))
-        all_cases = set(manifest["tested_cases"] + manifest["envd_cases"])
+        all_cases = set(manifest["tested_cases"] + manifest["envd_cases"] + manifest["envd_async_cases"])
         self.assertTrue(all(call["evidence_case"] in all_cases for call in manifest["wire_calls"]))
         self.assertEqual(len({call["sdk_call"] for call in manifest["wire_calls"]}),
                          len(manifest["wire_calls"]))
