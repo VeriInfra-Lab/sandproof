@@ -148,6 +148,27 @@ fn access_token(headers: &axum::http::HeaderMap) -> Result<String, StatusCode> {
         .map_err(|_| StatusCode::UNAUTHORIZED)
 }
 
+fn request_kind(request: &Request<Body>) -> Result<(DataKind, bool), StatusCode> {
+    let (kind, file_request) =
+        operation(request.method(), request.uri().path()).ok_or(StatusCode::NOT_FOUND)?;
+    let raw_url = request
+        .uri()
+        .path_and_query()
+        .map_or("", |value| value.as_str());
+    if raw_url.len() > URL_LIMIT {
+        return Err(StatusCode::URI_TOO_LONG);
+    }
+    if file_request
+        && (percent_decode_str(raw_url).decode_utf8().is_err()
+            || percent_decode_str(raw_url)
+                .decode_utf8()
+                .is_ok_and(|decoded| decoded.contains('\0')))
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok((kind, file_request))
+}
+
 /// SDK data requests carry only the sandbox's envd bearer token. It is
 /// resolved to one running sandbox, and the core checks effective Exec or
 /// FileRead/FileWrite permission before launching a namespace-local relay.
@@ -157,25 +178,10 @@ pub async fn handle(
     gateway: Option<Arc<Gateway>>,
     request: Request<Body>,
 ) -> Response<Body> {
-    let path = request.uri().path().to_owned();
-    let Some((kind, file_request)) = operation(request.method(), &path) else {
-        return response(StatusCode::NOT_FOUND);
+    let (kind, file_request) = match request_kind(&request) {
+        Ok(kind) => kind,
+        Err(status) => return response(status),
     };
-    let raw_url = request
-        .uri()
-        .path_and_query()
-        .map_or("", |value| value.as_str());
-    if raw_url.len() > URL_LIMIT {
-        return response(StatusCode::URI_TOO_LONG);
-    }
-    if file_request
-        && (percent_decode_str(raw_url).decode_utf8().is_err()
-            || percent_decode_str(raw_url)
-                .decode_utf8()
-                .is_ok_and(|decoded| decoded.contains('\0')))
-    {
-        return response(StatusCode::BAD_REQUEST);
-    }
     let token = match access_token(request.headers()) {
         Ok(token) => token,
         Err(status) => return response(status),
