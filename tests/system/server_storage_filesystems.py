@@ -48,9 +48,10 @@ def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
-def run_case(root, mounted, template, binary, label, placement, accepted):
-    local = root / label
-    remote = mounted / label
+def run_case(root, mounted, template, binary, label, placement, accepted, index):
+    # Keep jail paths short enough for Firecracker's Unix socket address.
+    local = root / str(index)
+    remote = mounted / str(index)
     local.mkdir(mode=0o700)
     remote.mkdir(mode=0o700)
     paths = {}
@@ -153,7 +154,7 @@ def child(args):
         cases = []
         if args.previous_server:
             cases.append(run_case(args.root, mounted, template, args.previous_server,
-                                  "old-database-other", (False, True, True), True))
+                                  "old-database-other", (False, True, True), True, len(cases)))
         for label, placement, accepted in (
             ("same-outer", (False, False, False), True),
             ("same-loop", (True, True, True), True),
@@ -162,7 +163,7 @@ def child(args):
             ("jail-other", (True, True, False), False),
         ):
             cases.append(run_case(args.root, mounted, template, args.server,
-                                  label, placement, accepted))
+                                  label, placement, accepted, len(cases)))
         assert digest(Path(template["rootfs"])) == base_digest
         report = dict(
             revision=revision, kernel=os.uname().release,
