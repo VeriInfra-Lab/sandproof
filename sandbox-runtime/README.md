@@ -25,7 +25,7 @@ sudo ./target/debug/sandproof-vm smoke \
 
 ## 宿主 CPU 与内存限制
 
-服务私有配置可显式提供 `host_resources`；CLI 诊断使用同结构的 `SANDBOX_HOST_RESOURCES` JSON 环境变量。缺省仍保留历史诊断模式，**不能据此声称宿主资源已受限**。此接入已实现，真实内核与 VM 验收结果须绑定测试提交，不能由基础 CI 的忽略用例推断通过。
+服务私有配置可显式提供 `host_resources`；CLI 诊断使用同结构的 `SANDBOX_HOST_RESOURCES` JSON 环境变量。缺省仍保留历史诊断模式，**不能据此声称宿主资源已受限**。此接入已通过选定真实内核、VM/SDK 和回执恢复测试，提交、配置与边界记录在[版本基线](../references/v1-baseline.json)；不能由基础 CI 的忽略用例推断通过。
 
 ```json
 {

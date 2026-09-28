@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::Read;
 use std::io::Write as _;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::{Command as Process, Stdio};
@@ -132,6 +132,15 @@ fn partial_prepare_without_first_slot_is_reclaimed_without_launch() {
     };
     let name = format!("vm-{}-{}", config.namespace, vm.0);
     assert!(!PathBuf::from(format!("/run/netns/{name}")).exists());
+    if let Some(settings) = &config.host_resources {
+        let group = settings.cgroup_parent.join(&name);
+        fs::DirBuilder::new().mode(0o700).create(&group).unwrap();
+        assert_eq!(worker.inventory().unwrap().unbound_cgroups, vec![name]);
+        assert!(worker.reclaim_incomplete_prepare(&action).is_err());
+        assert!(group.exists());
+        // The test owns this empty group; recovery must not adopt it.
+        fs::remove_dir(group).unwrap();
+    }
     worker.reclaim_incomplete_prepare(&action).unwrap();
     worker.reclaim_incomplete_prepare(&action).unwrap();
     let receipt = worker.observe_action(&action).unwrap();
@@ -151,6 +160,7 @@ fn partial_prepare_without_first_slot_is_reclaimed_without_launch() {
     assert!(inventory.slots[0].aborted_unlaunched);
     assert!(inventory.unbound_claims.is_empty());
     assert!(inventory.unbound_networks.is_empty());
+    assert!(inventory.unbound_cgroups.is_empty());
 }
 
 #[test]
@@ -323,6 +333,34 @@ fn create_and_kill_use_real_host_receipts() {
     assert!(inventory.slots[0].disk_inode.is_some());
     let vm_name = format!("vm-{namespace}-{}", resources.vms[0].0);
     assert!(PathBuf::from(format!("/run/netns/{vm_name}")).exists());
+    if let Some(settings) = &config.host_resources {
+        let group = settings.cgroup_parent.join(&vm_name);
+        assert_eq!(
+            inventory.slots[0].cgroup_inode,
+            Some(fs::metadata(&group).unwrap().ino())
+        );
+        let pid = inventory.slots[0].process.as_ref().unwrap().pid;
+        assert_eq!(
+            fs::read_to_string(format!("/proc/{pid}/cgroup"))
+                .unwrap()
+                .trim(),
+            format!(
+                "0::/{}",
+                group.strip_prefix("/sys/fs/cgroup").unwrap().display()
+            )
+        );
+        assert_eq!(
+            fs::read_to_string(group.join("memory.max")).unwrap().trim(),
+            settings.memory_max_bytes.to_string()
+        );
+        let cpu = group.join("cpu.max");
+        let original = fs::read_to_string(&cpu).unwrap();
+        // Even a stricter limit invalidates the expected resource declaration.
+        fs::write(&cpu, "50000 100000").unwrap();
+        assert!(worker.inventory().is_err());
+        fs::write(cpu, original).unwrap();
+        assert!(worker.inventory().is_ok());
+    }
     // Even an extra restrictive rule is a changed policy. The next startup
     // inventory must reject it, rather than treating the namespace inode as
     // proof that the original guard still exists. Both changes are atomic
@@ -436,6 +474,8 @@ fn create_and_kill_use_real_host_receipts() {
     );
     assert!(inventory.slots[0].network_inode.is_none());
     assert!(inventory.slots[0].disk_inode.is_none());
+    assert!(inventory.slots[0].cgroup_inode.is_none());
+    assert!(inventory.unbound_cgroups.is_empty());
     let unbound = config
         .chroot_base
         .join(".claims")
@@ -848,6 +888,16 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
         uncertain[0].command.command(),
         core::Command::CleanupVm { .. }
     ));
+    if let Some(settings) = &config.host_resources {
+        let group = settings.cgroup_parent.join(&name);
+        assert!(!group.exists());
+        fs::DirBuilder::new().mode(0o700).create(&group).unwrap();
+        // A lost receipt must not hide or reclaim a same-name replacement.
+        assert!(worker.observe_action(&uncertain[0]).is_err());
+        assert!(worker.reclaim_incomplete_cleanup(&uncertain[0]).is_err());
+        assert!(group.exists());
+        fs::remove_dir(group).unwrap();
+    }
     worker.reclaim_incomplete_cleanup(&uncertain[0]).unwrap();
     worker.reclaim_incomplete_cleanup(&uncertain[0]).unwrap();
     assert_eq!(
@@ -882,4 +932,6 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
     assert!(inventory.unbound_networks.is_empty());
     assert!(inventory.slots[0].disk_inode.is_none());
     assert!(inventory.slots[0].network_inode.is_none());
+    assert!(inventory.slots[0].cgroup_inode.is_none());
+    assert!(inventory.unbound_cgroups.is_empty());
 }
