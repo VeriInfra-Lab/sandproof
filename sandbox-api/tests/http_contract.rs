@@ -442,7 +442,7 @@ async fn list_pagination_and_timeout_contract() {
         )
         .await
         .status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::NO_CONTENT
     );
     assert_eq!(
         send(
@@ -457,10 +457,11 @@ async fn list_pagination_and_timeout_contract() {
         StatusCode::NO_CONTENT
     );
     let calls = port.calls.lock().unwrap();
-    assert_eq!(calls.len(), 3);
+    assert_eq!(calls.len(), 4);
     assert!(calls[0].contains("limit: Some(1)"));
     assert!(calls[1].contains("state: Some(\"paused\")"));
-    assert_eq!(calls[2], "timeout:alice:sand-a:60");
+    assert_eq!(calls[2], "timeout:alice:sand-a:0");
+    assert_eq!(calls[3], "timeout:alice:sand-a:60");
 }
 
 #[tokio::test]
@@ -513,4 +514,45 @@ async fn list_filters_are_forwarded_and_invalid_queries_never_reach_the_port() {
         );
     }
     assert_eq!(port.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn set_timeout_preserves_signed_values_for_controller_clamping() {
+    let port = Arc::new(FakePort::default());
+    let app = app(Arc::clone(&port));
+    for seconds in [i64::MIN, -1, 0, i64::MAX] {
+        let body = format!("{{\"timeout\":{seconds}}}");
+        let response = send(
+            app.clone(),
+            "POST",
+            "/sandboxes/sand-a/timeout",
+            Some(ALICE_KEY),
+            Some(&body),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            port.calls.lock().unwrap().last().unwrap(),
+            &format!("timeout:alice:sand-a:{seconds}")
+        );
+    }
+    for body in [
+        "{}",
+        "{\"timeout\":1.5}",
+        "{\"timeout\":9223372036854775808}",
+    ] {
+        assert_eq!(
+            send(
+                app.clone(),
+                "POST",
+                "/sandboxes/sand-a/timeout",
+                Some(ALICE_KEY),
+                Some(body)
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(port.calls.lock().unwrap().len(), 4);
 }

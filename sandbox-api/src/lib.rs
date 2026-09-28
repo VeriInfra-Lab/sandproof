@@ -295,7 +295,7 @@ async fn bounded_kill(
 }
 
 fn valid_timeout(timeout: Option<i64>) -> bool {
-    timeout.is_none_or(|seconds| (1..=86_400).contains(&seconds))
+    timeout.is_none_or(|seconds| seconds > 0)
 }
 
 async fn create<P: ControllerPort>(
@@ -400,9 +400,6 @@ async fn set_timeout<P: ControllerPort>(
 ) -> Result<StatusCode, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
-    if !valid_timeout(Some(request.timeout)) {
-        return Err(ApiFailure::BadRequest);
-    }
     blocking(move || {
         state
             .port

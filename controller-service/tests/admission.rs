@@ -42,6 +42,7 @@ fn limits() -> AdmissionLimits {
         max_disk_bytes_per_tenant: 1_000,
         cleanup_reserve_bytes: 1_000,
         max_timeout_secs: 86_400,
+        max_lifetime_secs: 86_400,
     }
 }
 
@@ -217,9 +218,7 @@ fn lease_updates_and_expiry_recheck_use_the_server_clock() {
         Err(AdmissionError::NotDue)
     ));
     assert!(journal.due_lifetimes(31_000).unwrap().is_empty());
-    let shortened = journal
-        .set_lifetime(&owner, sandbox, 12_000, 5, limits())
-        .unwrap();
+    let shortened = journal.set_lifetime(&owner, sandbox, 12_000, 5).unwrap();
     assert_eq!(shortened.deadline_ms, 17_000);
     assert_eq!(journal.due_lifetimes(17_000).unwrap(), vec![sandbox]);
     assert!(matches!(
@@ -242,6 +241,207 @@ fn lease_updates_and_expiry_recheck_use_the_server_clock() {
         journal.accept_expiry(sandbox, core::OperationId(102), 17_000, &mut NeverCrash),
         Err(AdmissionError::NotRunning)
     ));
+}
+
+#[test]
+fn default_connect_and_repeated_renewals_keep_the_original_total_limit_across_restart() {
+    let (directory, mut journal) = setup();
+    let mut policy = limits();
+    policy.max_timeout_secs = 600;
+    policy.max_lifetime_secs = 600;
+    let sandbox = core::SandboxId(10);
+    let owner = core::Actor::Tenant(core::TenantId(1));
+    journal
+        .admit_create(request(10, 1), 1_000, 20, 1_000, policy, &mut NeverCrash)
+        .unwrap();
+    running(&mut journal, sandbox, core::OperationId(100));
+    let default = journal
+        .connect_lifetime(&owner, sandbox, 2_000, None, policy)
+        .unwrap();
+    assert_eq!(
+        (default.deadline_ms, default.max_deadline_ms),
+        (302_000, 601_000)
+    );
+    assert_eq!(
+        journal
+            .connect_lifetime(&owner, sandbox, 3_000, Some(1), policy)
+            .unwrap(),
+        default
+    );
+    assert!(matches!(
+        journal.connect_lifetime(&owner, sandbox, 3_000, Some(601), policy),
+        Err(AdmissionError::InvalidTimeout)
+    ));
+    assert_eq!(
+        journal
+            .set_lifetime(&owner, sandbox, 4_000, i64::MAX)
+            .unwrap()
+            .deadline_ms,
+        601_000
+    );
+    assert_eq!(
+        journal
+            .set_lifetime(&owner, sandbox, 5_000, 15)
+            .unwrap()
+            .deadline_ms,
+        20_000
+    );
+    drop(journal);
+    let mut journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    policy.max_timeout_secs = 3_600;
+    policy.max_lifetime_secs = 3_600;
+    for now in [6_000, 300_000, 600_999] {
+        let renewed = journal
+            .connect_lifetime(&owner, sandbox, now, Some(3_600), policy)
+            .unwrap();
+        assert_eq!(renewed.started_at_ms, Some(1_000));
+        assert_eq!(
+            (renewed.deadline_ms, renewed.max_deadline_ms),
+            (601_000, 601_000)
+        );
+    }
+    assert!(matches!(
+        journal.set_lifetime(&owner, sandbox, 601_000, 300),
+        Err(AdmissionError::Expired)
+    ));
+    assert!(matches!(
+        journal.set_lifetime(&owner, sandbox, 601_001, 300),
+        Err(AdmissionError::MaxLifetimeExceeded)
+    ));
+    assert!(matches!(
+        journal.connect_lifetime(&owner, sandbox, 601_001, None, policy),
+        Err(AdmissionError::MaxLifetimeExceeded)
+    ));
+    assert!(matches!(
+        journal.set_lifetime(
+            &core::Actor::Tenant(core::TenantId(2)),
+            sandbox,
+            601_001,
+            300
+        ),
+        Err(AdmissionError::Unauthorized)
+    ));
+}
+
+#[test]
+fn nonpositive_timeout_expires_without_synchronous_kill_or_resurrection() {
+    for seconds in [0, -1, i64::MIN] {
+        let (_directory, mut journal) = setup();
+        let sandbox = core::SandboxId(10);
+        let owner = core::Actor::Tenant(core::TenantId(1));
+        journal
+            .admit_create(request(10, 1), 1_000, 60, 1_000, limits(), &mut NeverCrash)
+            .unwrap();
+        running(&mut journal, sandbox, core::OperationId(100));
+        assert_eq!(
+            journal
+                .set_lifetime(&owner, sandbox, 5_000, seconds)
+                .unwrap()
+                .deadline_ms,
+            5_000
+        );
+        assert_eq!(
+            journal
+                .world()
+                .unwrap()
+                .sandbox_record(sandbox)
+                .unwrap()
+                .phase,
+            core::Phase::Running
+        );
+        assert_eq!(journal.due_lifetimes(5_000).unwrap(), vec![sandbox]);
+        assert!(matches!(
+            journal.live_lifetime(&owner, sandbox, 5_000),
+            Err(AdmissionError::Expired)
+        ));
+        assert!(matches!(
+            journal.connect_lifetime(&owner, sandbox, 5_000, None, limits()),
+            Err(AdmissionError::Expired)
+        ));
+        assert!(matches!(
+            journal.set_lifetime(&owner, sandbox, 5_000, 300),
+            Err(AdmissionError::Expired)
+        ));
+        journal
+            .accept_expiry(sandbox, core::OperationId(101), 5_000, &mut NeverCrash)
+            .unwrap();
+        assert!(matches!(
+            journal.set_lifetime(&owner, sandbox, 5_000, 300),
+            Err(AdmissionError::ChangingState)
+        ));
+    }
+}
+
+#[test]
+fn create_rejects_total_limit_overflow_without_shortening_the_request() {
+    let (_directory, mut journal) = setup();
+    let mut policy = limits();
+    policy.max_lifetime_secs = 60;
+    for seconds in [61, 300, 86_400] {
+        assert!(matches!(
+            journal.admit_create(
+                request(10, 1),
+                1_000,
+                seconds,
+                1_000,
+                policy,
+                &mut NeverCrash
+            ),
+            Err(AdmissionError::InvalidTimeout)
+        ));
+        assert!(journal.world().unwrap().sandbox_records().is_empty());
+    }
+    journal
+        .admit_create(request(10, 1), 1_000, 60, 1_000, policy, &mut NeverCrash)
+        .unwrap();
+    running(&mut journal, core::SandboxId(10), core::OperationId(100));
+    let lifetime = journal
+        .live_lifetime(
+            &core::Actor::Tenant(core::TenantId(1)),
+            core::SandboxId(10),
+            1_001,
+        )
+        .unwrap();
+    assert_eq!(
+        (lifetime.deadline_ms, lifetime.max_deadline_ms),
+        (61_000, 61_000)
+    );
+}
+
+#[test]
+fn legacy_migration_preserves_granted_time_without_inventing_a_new_total_limit() {
+    let (directory, mut journal) = setup();
+    let sandbox = core::SandboxId(10);
+    let owner = core::Actor::Tenant(core::TenantId(1));
+    journal
+        .admit_create(request(10, 1), 1_000, 30, 1_000, limits(), &mut NeverCrash)
+        .unwrap();
+    running(&mut journal, sandbox, core::OperationId(100));
+    drop(journal);
+    let path = directory.path().join("controller.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection.execute_batch("ALTER TABLE sandbox_lifetimes DROP COLUMN max_deadline_ms; UPDATE controller_meta SET version=4 WHERE id=1;").unwrap();
+    drop(connection);
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let original = journal.live_lifetime(&owner, sandbox, 2_000).unwrap();
+    assert_eq!(
+        (original.deadline_ms, original.max_deadline_ms),
+        (31_000, 31_000)
+    );
+    assert_eq!(
+        journal
+            .connect_lifetime(&owner, sandbox, 2_000, None, limits())
+            .unwrap(),
+        original
+    );
+    journal.set_lifetime(&owner, sandbox, 3_000, 1).unwrap();
+    assert_eq!(
+        journal
+            .set_lifetime(&owner, sandbox, 3_100, i64::MAX)
+            .unwrap(),
+        original
+    );
 }
 
 #[test]
