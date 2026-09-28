@@ -9,12 +9,14 @@ until the reported resources have been inspected and reclaimed.
 
 import argparse
 from contextlib import closing
+import http.client
 import importlib.metadata
 import json
 import os
 from pathlib import Path
 import secrets
 import signal
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -71,8 +73,24 @@ class Resources:
             assert membership == "0::/" + str(group.relative_to("/sys/fs/cgroup"))
             actual = {name: (group / name).read_text().strip() for name in expected}
             assert actual == expected
+            jail = (Path(self.config["chroot_base"]) /
+                    Path(self.config["firecracker"]).name / claim.name / "root")
+            with socket.socket(socket.AF_UNIX) as connection:
+                connection.settimeout(5)
+                connection.connect(str(jail / "api.socket"))
+                connection.sendall(b"GET /machine-config HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                with http.client.HTTPResponse(connection) as response:
+                    response.begin()
+                    assert response.status == 200
+                    machine = json.load(response)
+            assert machine["vcpu_count"] == self.config["vcpu_count"] == 1
+            assert machine["mem_size_mib"] == self.config["memory_mib"] == 512
+            disk_bytes = (jail / "rootfs.ext4").stat().st_size
+            assert disk_bytes == Path(self.config["rootfs"]).stat().st_size == 1024 * MIB
             self.samples[claim.name] = dict(
                 pid=record["pid"], ticks=record["start_time_ticks"], cgroup_inode=inode,
+                vcpu_count=machine["vcpu_count"], memory_mib=machine["mem_size_mib"],
+                private_disk_bytes=disk_bytes,
                 cgroup=str(group), namespace_inode=json.loads(
                     (claim / "network.json").read_text())["namespace_inode"], limits=actual,
             )
@@ -97,7 +115,8 @@ class Resources:
 
 
 def healthy(sandbox, marker, payload):
-    assert sandbox.get_info().state == "running"
+    info = sandbox.get_info()
+    assert info.state == "running" and info.cpu_count == 1 and info.memory_mb == 512
     assert sandbox.commands.run("printf disk-reserve-healthy", timeout=15).stdout == "disk-reserve-healthy"
     sandbox.files.write(marker, payload)
     assert sandbox.files.read(marker, format="bytes") == payload
