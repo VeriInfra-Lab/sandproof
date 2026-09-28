@@ -3,6 +3,9 @@
 #[cfg(target_os = "linux")]
 mod gateway;
 
+#[cfg(target_os = "linux")]
+mod storage;
+
 #[cfg(not(target_os = "linux"))]
 fn main() {
     eprintln!("sandproof-server requires Linux/KVM");
@@ -234,11 +237,11 @@ mod linux {
             return Err("invalid lifetime scanner or default".into());
         }
         private_root_path(config.database.parent().ok_or("database parent missing")?)?;
-        if fs::metadata(&config.node_state_dir)?.dev() != fs::metadata(&config.chroot_base)?.dev() {
-            return Err(
-                "database and private VM disk must share a filesystem for cleanup reserve".into(),
-            );
-        }
+        crate::storage::validate_filesystems(
+            &config.database,
+            &config.node_state_dir,
+            &config.chroot_base,
+        )?;
         let disk_bytes = fs::metadata(&config.rootfs)?.len();
         if disk_bytes == 0 || disk_bytes > config.max_disk_bytes_per_tenant {
             return Err("root disk exceeds per-tenant budget".into());
