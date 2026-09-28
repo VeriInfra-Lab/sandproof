@@ -230,7 +230,9 @@ def child(args):
     mounted_ok = False
     try:
         command("mkfs.ext4", "-q", "-F", "-m", "0", str(loop))
-        command("mount", "-t", "ext4", "-o", "nodev,nosuid", str(loop), str(mounted))
+        # Jailer creates its private KVM/TUN device nodes and executable inside
+        # this filesystem; nodev/noexec would invalidate the runtime fixture.
+        command("mount", "-t", "ext4", "-o", "nosuid", str(loop), str(mounted))
         mounted_ok = True
         mounted.chmod(0o700)
         assert mounted.stat().st_dev == device != args.root.stat().st_dev
