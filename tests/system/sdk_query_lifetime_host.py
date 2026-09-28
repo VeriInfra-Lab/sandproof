@@ -18,7 +18,9 @@ import sys
 import tempfile
 import urllib.request
 
-from server_process_crash import free_loopback_port, start_server, stop_server, wait_ready
+from server_process_crash import (
+    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+)
 
 
 def digest(path):
@@ -49,7 +51,7 @@ def run(args):
         raise RuntimeError('insufficient private disk for four VM reservations and cleanup')
     root = Path(tempfile.mkdtemp(prefix='sp12-', dir=parent))
     namespace = secrets.token_hex(8)
-    longest_socket = root / 'jails' / args.firecracker.name / f'vm-{namespace}-1000' / 'root/api.socket'
+    longest_socket = root / 'jails' / args.firecracker.resolve(strict=True).name / f'vm-{namespace}-1000' / 'root/api.socket'
     if len(os.fsencode(longest_socket)) >= 108:
         root.rmdir()
         raise RuntimeError('private test root exceeds Firecracker socket limit')
@@ -125,15 +127,28 @@ def run(args):
         prefix = f'vm-{namespace}-'
         assert not list(exact_processes(prefix)), 'test VMM process remains'
         assert not any(path.name.startswith(prefix) for path in Path('/run/netns').iterdir()), 'test netns remains'
-        jail_root = root / 'jails' / args.firecracker.name
+        jail_root = root / 'jails' / args.firecracker.resolve(strict=True).name
         assert not jail_root.exists() or not any(path.name.startswith(prefix) for path in jail_root.iterdir()), 'test jail remains'
+        # The host deliberately retains immutable process claims as recovery
+        # tombstones. Their presence is expected; the exact recorded process
+        # must be dead and no physical jail/network resource may remain.
         claims = root / 'jails/.claims'
-        assert not claims.exists() or not any(path.name.startswith(prefix) for path in claims.iterdir()), 'test claim remains'
+        claim_count = 0
+        if claims.exists():
+            for claim in claims.iterdir():
+                if not claim.name.startswith(prefix):
+                    continue
+                record = json.loads((claim / 'record.json').read_text())
+                assert record['resource_id'] == claim.name, 'claim identity mismatch'
+                assert process_start_ticks(record['pid']) != record['start_time_ticks'], 'recorded VM still live'
+                claim_count += 1
         assert digest(rootfs) == base_digest, 'fixed base changed'
         completed = True
         print(json.dumps({'server_sha256': digest(binary), 'base_sha256': base_digest,
                           'sdk_version': '2.51.0', 'durable_destroyed': len(states),
-                          'exact_process_netns_jail_claim': 'none', 'fixed_base': 'unchanged'}))
+                          'exact_process_netns_jail': 'none',
+                          'verified_process_tombstones': claim_count,
+                          'fixed_base': 'unchanged'}))
     finally:
         stop_server(process)
         if completed:
