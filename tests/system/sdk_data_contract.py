@@ -53,6 +53,9 @@ def file_entries(directory):
 
 
 def sync_case(sandbox, directory, user):
+    home = sandbox.commands.run("printf '%s' \"$HOME\"", user=user).stdout
+    default_cwd = sandbox.commands.run("pwd", user=user)
+    assert (default_cwd.stdout, default_cwd.stderr) == (home + "\n", "")
     assert sandbox.files.make_dir(directory, user=user)
     written = sandbox.files.write_files(file_entries(directory), user=user)
     assert {entry.path for entry in written} == {f"{directory}/{name}" for name in FILES}
@@ -107,6 +110,9 @@ def sync_case(sandbox, directory, user):
 
 
 async def async_case(sandbox, directory, user):
+    home = (await sandbox.commands.run("printf '%s' \"$HOME\"", user=user)).stdout
+    default_cwd = await sandbox.commands.run("pwd", user=user)
+    assert (default_cwd.stdout, default_cwd.stderr) == (home + "\n", "")
     assert await sandbox.files.make_dir(directory, user=user)
     written = await sandbox.files.write_files(file_entries(directory), user=user)
     assert {entry.path for entry in written} == {f"{directory}/{name}" for name in FILES}
