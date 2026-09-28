@@ -1,4 +1,4 @@
-"""Real SDK/Firecracker recovery when network succeeds but its receipt is lost.
+"""Real SDK/Firecracker recovery when network or stop receipts are lost.
 
 Run only as root on an isolated Linux/KVM host with the approved debug server.
 The outside destination is a test-only namespace, never the public Internet.
@@ -111,7 +111,19 @@ def exercise(args: argparse.Namespace) -> None:
             assert guest_ping(sandbox, "11.22.33.1"), "allowed route lost on recovery"
             assert not guest_ping(sandbox, "11.22.34.1"), "static restriction widened"
             assert not guest_ping(sandbox, "11.22.33.2"), "host became reachable"
-            assert Sandbox.kill(sandbox.sandbox_id, **options)
+            stop_server(process)
+            process = start_server(binary, config, root / "server.log", "stop_vm")
+            wait_ready(opener, api_url, api_key, process)
+            interrupted_request(
+                lambda: fetch(opener, api_url, "DELETE",
+                              f"/sandboxes/{sandbox.sandbox_id}", api_key),
+                process,
+            )
+            assert process_start_ticks(identity[0]) != identity[1], "exact VM survived StopVm"
+            process = start_server(binary, config, root / "server.log", None)
+            wait_ready(opener, api_url, api_key, process)
+            status, body = fetch(opener, api_url, "GET", "/v2/sandboxes", api_key)
+            assert status == 200 and json.loads(body) == [], "stopped VM was republished"
             clean_vm(root, args.firecracker, namespace, 0, identity)
         completed = True
         with rootfs.open("rb") as stream:
@@ -119,8 +131,9 @@ def exercise(args: argparse.Namespace) -> None:
         print(json.dumps({
             "fixed_sdk": "2.51.0", "base_image_sha256": image_hash,
             "network_receipt_lost": "recovered same PID and exact static policy",
+            "stop_receipt_lost": "recovered exact stopped VM and uplink cleanup",
             "exact_cleanup": True,
-            "scope": "debug-only service exit after real ConfigureNetwork; one VM",
+            "scope": "debug-only service exits after real ConfigureNetwork and StopVm; one VM",
         }))
     finally:
         stop_server(process)
