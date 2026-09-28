@@ -80,5 +80,41 @@
     "#13: Harbor exact joint dependency lock, fixed task IDs/content hashes, reviewed initialization scripts and standard-solution/scoring environment",
     "#14: repeatable high-privilege KVM CI and per-run preflight/config digest",
     "#8/#9/#10/#12: remaining V1 target semantics, optional streaming KVM evidence and full-service regression"
-  ]
+  ],
+  "fixed_base_acceptance": {
+    "profile": "tests/system/base-inputs.json",
+    "builder": "tools/build_base_guest.py",
+    "image_build_commit": "45d6f8632c646cc677beb37dba93a5d1d872a3f4",
+    "host_kernel": "6.8.0-1065-azure",
+    "kvm_api": 12,
+    "firecracker_jailer": "1.16.1",
+    "kernel_sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+    "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+    "image_sha256": "b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd",
+    "image_bytes": 1073741824,
+    "tests": [
+      {
+        "test": "tests/system/guest_smoke.py",
+        "commit": "b08c81ce846fcdcbcf7f935cc90a01e3a74110dd",
+        "result": "passed: two concurrent private roots, base unchanged, reachable host route but guest denied, exact process/disk/network cleanup"
+      },
+      {
+        "test": "tests/system/sdk_server_smoke.py",
+        "commit": "b08c81ce846fcdcbcf7f935cc90a01e3a74110dd",
+        "result": "passed: selected public lifecycle, data, authorization and expiry"
+      },
+      {
+        "test": "tests/system/sdk_data_contract.py",
+        "commit": "b495f2c39e5d9b05e428a57abd3256ff1ad7d93f",
+        "result": "passed with legacy and explicit streaming config: sync/async root/ubuntu, cwd/envs/user, files/hashes, known-PID reconnect and kill"
+      },
+      {
+        "test": "tests/system/gateway_stream_limits.py",
+        "commit": "b495f2c39e5d9b05e428a57abd3256ff1ad7d93f",
+        "result": "passed: 64 MiB upload / 96 MiB download test budgets, zero/below/at/above, known/chunked upload, command overflow and same-PID reconnect"
+      }
+    ],
+    "observations": "Per-run host audit found exact VM processes stopped and private jails/netns/cgroups absent; base fingerprint unchanged. Streaming service VmHWM 15760 KiB excludes guest/relay totals and is not a memory bound.",
+    "limits": "Selected manual KVM evidence only; host CPU/memory quotas, real ENOSPC, full async large-transfer/fault/timeout matrices and #13 task initialization remain open. New fixed input profile does not inherit historical ning-host acceptance or promise byte-identical ext4 across builds."
+  }
 }
