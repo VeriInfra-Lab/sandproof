@@ -6,7 +6,8 @@ use axum::{
 };
 use sandproof_api::{
     ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError,
-    SandboxInfo, SandboxPage, SandboxSession, router,
+    SandboxDetail, SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
+    router,
 };
 use tower::ServiceExt;
 
@@ -48,6 +49,7 @@ fn info() -> SandboxInfo {
         memory_mb: 512,
         disk_size_mb: 1024,
         state: "running".into(),
+        volume_mounts: Vec::new(),
     }
 }
 
@@ -73,12 +75,22 @@ impl ControllerPort for FakePort {
         Ok(session())
     }
 
-    fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxInfo, PortError> {
+    fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxDetail, PortError> {
         self.record(format!("get:{tenant}:{sandbox_id}"));
         if tenant != "alice" {
             return Err(PortError::NotFound);
         }
-        Ok(info())
+        Ok(SandboxDetail {
+            info: info(),
+            envd_access_token: session().envd_access_token,
+            domain: session().domain,
+            allow_internet_access: Some(Some(false)),
+            network: None,
+            lifecycle: SandboxLifecycle {
+                on_timeout: SandboxOnTimeout::Kill,
+                auto_resume: false,
+            },
+        })
     }
 
     fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError> {
@@ -123,6 +135,45 @@ fn app(port: Arc<FakePort>) -> axum::Router {
         ],
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn details_include_owner_fields_but_list_never_serializes_a_token() {
+    let app = app(Arc::new(FakePort::default()));
+    let response = send(
+        app.clone(),
+        "GET",
+        "/sandboxes/sand-a",
+        Some(ALICE_KEY),
+        None,
+    )
+    .await;
+    let detail: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(detail["sandboxID"], "sand-a");
+    assert_eq!(detail["envdAccessToken"], "guest-only-token");
+    assert_eq!(detail["domain"], "example.invalid");
+    assert_eq!(detail["allowInternetAccess"], false);
+    assert_eq!(
+        detail["lifecycle"],
+        serde_json::json!({"onTimeout":"kill","autoResume":false})
+    );
+    assert_eq!(detail["volumeMounts"], serde_json::json!([]));
+    assert!(detail.get("network").is_none());
+    let response = send(app, "GET", "/v2/sandboxes", Some(ALICE_KEY), None).await;
+    let list: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    let listed = &list[0];
+    for key in [
+        "envdAccessToken",
+        "domain",
+        "allowInternetAccess",
+        "network",
+        "lifecycle",
+    ] {
+        assert!(listed.get(key).is_none(), "{key}");
+    }
+    assert_eq!(listed["volumeMounts"], serde_json::json!([]));
 }
 
 async fn send(

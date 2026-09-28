@@ -70,6 +70,7 @@
     "test_kill_success_and_not_found",
     "test_set_timeout_forwards_zero_and_negative",
     "test_sync_async_list_filters_and_opaque_pagination_wire",
+    "test_sync_async_detail_network_lifecycle_and_legacy_fields",
     "test_errors_are_not_one_generic_rejection",
     "test_429_create_retry_has_no_automatic_idempotency_key",
     "test_500_does_not_trigger_control_plane_retry",

@@ -229,6 +229,7 @@ mod tests {
             memory_mb: 512,
             disk_size_mb: 1024,
             state: "running".into(),
+            volume_mounts: Vec::new(),
         }
     }
 

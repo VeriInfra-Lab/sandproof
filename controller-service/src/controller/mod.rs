@@ -5,7 +5,10 @@ mod admission;
 mod identity;
 mod storage;
 
-pub use admission::{AdmissionError, AdmissionLimits, CreateAdmission, CreateOptions, Lifetime};
+pub use admission::{
+    AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
+    CreateOptions, Lifetime,
+};
 
 use crate::{
     CrashInjector, CrashPoint, DispatchResult, Journal, JournalError, WorkerTransportError,

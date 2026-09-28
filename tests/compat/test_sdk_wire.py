@@ -95,6 +95,37 @@ class WireContract(unittest.TestCase):
     def responses(self):
         return self.server.responses
 
+    def test_sync_async_detail_network_lifecycle_and_legacy_fields(self):
+        common = {**SANDBOX, "startedAt": "2026-01-01T00:00:00Z",
+                  "endAt": "2026-01-01T00:05:00Z", "cpuCount": 1,
+                  "memoryMB": 512, "diskSizeMB": 1024, "state": "running",
+                  "metadata": {"job": "雪"}, "volumeMounts": []}
+        for cls in (Sandbox, AsyncSandbox):
+            for internet in (None, False, True):
+                self.responses.append((200, {**common, "allowInternetAccess": internet,
+                    "network": {"allowPublicTraffic": True, "allowOut": [],
+                                "denyOut": ["8.8.8.8", "1.2.3.4/24"]},
+                    "lifecycle": {"onTimeout": "kill", "autoResume": False}}, {}))
+                info = cls.get_info(SANDBOX["sandboxID"], **self.options)
+                if cls is AsyncSandbox:
+                    info = asyncio.run(info)
+                self.assertIs(info.allow_internet_access, internet)
+                self.assertEqual(info.network, {"allow_public_traffic": True, "allow_out": [],
+                                               "deny_out": ["8.8.8.8", "1.2.3.4/24"]})
+                self.assertEqual(info.lifecycle, {"on_timeout": "kill", "auto_resume": False})
+                self.assertEqual(info.sandbox_domain, "example.invalid")
+                self.assertEqual(info.volume_mounts, [])
+                self.assertEqual(info.metadata, {"job": "雪"})
+            legacy = {key: value for key, value in common.items() if key not in ("domain", "envdAccessToken")}
+            self.responses.append((200, legacy, {}))
+            info = cls.get_info(SANDBOX["sandboxID"], **self.options)
+            if cls is AsyncSandbox:
+                info = asyncio.run(info)
+            self.assertIsNone(info.allow_internet_access)
+            self.assertIsNone(info.network)
+            self.assertIsNone(info.lifecycle)
+            self.assertIsNone(info.sandbox_domain)
+
     def test_sync_async_list_filters_and_opaque_pagination_wire(self):
         metadata = {"reserved &+%=": "雪 =+&/%", "group": "red"}
         started = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=timezone.utc)
