@@ -70,7 +70,7 @@ scope：`core`、`service`、`runtime`、`api`、`contract`、`test`、`bench`�
 - 任务状态为 Backlog → Ready → In progress → In review → Done；未认领或验收不明的任务不进入 Ready。issue/里程碑是进度来源，文档不另抄实时进度表。
 - 正文用 `Refs #编号`。任务 PR 先合入 test 时也用 Refs，不依赖“自动关闭 issue”表示已交付；通过所需验收并进入 main 后才关闭。总计划 #1 不由部分 PR 关闭。
 - test → main 的晋级 PR 列本批 task PR/issue、精确测试提交、验收结果、未启用或不支持能力；不能只写“同步分支”。
-- 跨模块接口更改先与受影响负责人确认；范围和安全承诺变更三人讨论后修改对应权威文档。取消人工审批不等于允许自行改变项目目标。
+- 跨模块接口更改先与受影响负责人核对；产品范围、安全承诺与优先级由项目 owner 决定，并同步对应权威文档。技术复核不能替代 owner 决策，取消人工审批也不允许执行者自行改变项目目标。
 - 不提交凭据、用户数据、虚拟磁盘或完整实验日志。证据绑定提交与环境，日志脱敏，产物放忽略的 `artifacts/` 或 CI 附件。
 
 ## 3. 测试规则
@@ -90,10 +90,11 @@ scope：`core`、`service`、`runtime`、`api`、`contract`、`test`、`bench`�
 
 ```sh
 bash scripts/check-function.sh
+bash scripts/check-compat.sh  # 修改 E2B 客户端合同或接入时运行；使用锁定依赖
 python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任务'
 ```
 
-基础 CI 不启动 VM，不访问 E2B，不使用付费模型，也不执行完整 Lean 验收。PR 另检查标题、分支命名和目标；规则检查只验证 issue 编号的格式，任务是否真实存在及关联准确仍需核对。
+基础 CI 不启动 VM，不访问 E2B 云服务，不使用付费模型，也不执行完整 Lean 验收。独立的 SDK 合同任务从固定公开提交安装 E2B Python SDK，只向本机回环服务发送合成请求；在 Linux 上还运行 SDK 经实际 Rust 网关体处理/转发代码访问合成 envd 的组合测试，不涉及管理鉴权或宿主 relay，不能代替真实控制器或虚拟机验收。PR 另检查标题、分支命名和目标；规则检查只验证 issue 编号的格式，任务是否真实存在及关联准确仍需核对。
 
 ### 测试编写和结果纪律
 

@@ -13,6 +13,7 @@ use crate::worker::{WorkerDecision, WorkerEvent, WorkerReject};
 /// Every state-changing or state-observing input owned by the verified pure
 /// controller boundary.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ControllerInput {
     Request(Request),
     Effect(EffectInput),

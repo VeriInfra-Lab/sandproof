@@ -37,6 +37,7 @@ pub struct Decision {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CreateRequest {
     pub actor: Actor,
     pub owner: TenantId,
@@ -48,6 +49,7 @@ pub struct CreateRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PauseRequest {
     pub actor: Actor,
     pub sandbox: SandboxId,
@@ -55,6 +57,7 @@ pub struct PauseRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ResumeRequest {
     pub actor: Actor,
     pub sandbox: SandboxId,
@@ -62,6 +65,7 @@ pub struct ResumeRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KillRequest {
     pub actor: Actor,
     pub sandbox: SandboxId,
@@ -69,6 +73,7 @@ pub struct KillRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReplayRequest {
     pub actor: Actor,
     pub sandbox: SandboxId,
@@ -78,6 +83,7 @@ pub struct ReplayRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct QueryRequest {
     pub actor: Actor,
     pub sandbox: SandboxId,
@@ -85,6 +91,7 @@ pub struct QueryRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompensationRequest {
     pub sandbox: SandboxId,
     pub failure: FailureKind,
@@ -92,6 +99,7 @@ pub struct CompensationRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Request {
     Create(CreateRequest),
     Pause(PauseRequest),

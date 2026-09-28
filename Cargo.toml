@@ -1,5 +1,5 @@
 [workspace]
-members = ["controller-core"]
+members = ["controller-core", "sandbox-protocol", "controller-service", "sandbox-runtime", "sandbox-node", "sandbox-api", "sandbox-server"]
 resolver = "2"
 
 [workspace.package]

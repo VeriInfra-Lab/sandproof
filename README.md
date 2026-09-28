@@ -22,7 +22,7 @@
 | Rust 控制核心 | 已有纯状态处理实现与单元测试，不包含真实存储、HTTP 服务或 VM 操作 |
 | Lean 规范与对应证明 | 已有协议安全证明和当前 Rust 公开输入的对应证明；有限执行安全性带明确容量前提 |
 | 最终完成性与长期容量 | 仍有未闭合义务，见[证明覆盖记录](docs/proof-coverage.md) |
-| E2B 兼容服务与运行层 | 待按 V1 工作包实现和实机验收；旧小沙箱原型已从当前版本移除，不作为可用运行层 |
+| E2B 兼容服务与运行层 | 显式禁网的固定 SDK 管理、命令与文件子集已在单台隔离 Linux/KVM 实测；模板、出站网络、未知结果恢复和 Harbor 尚未完成，不能作为完整 V1 部署 |
 | CI | 功能、文档和 PR 规则检查；实际门槛与运行方法统一见开发指南 |
 
 已移除的原型可从 [Git 历史](https://github.com/ningZhang-cs/sandproof/tree/0f1901a210e24da50d259e07df75e8c2cb9d181f/sandbox-runtime)查看。当前目录不再保留旧方案的副本，也不把删除旧模块计算为新功能完成。
@@ -32,6 +32,7 @@
 - [总计划与任务](https://github.com/ningZhang-cs/sandproof/issues/1)、[阶段里程碑](https://github.com/ningZhang-cs/sandproof/milestones)
 - [开发指南](CONTRIBUTING.md)：分支、提交、issue、PR、测试和文档维护规则的统一入口
 - [文档目录](docs/README.md)：蓝图、合同、验收清单与模型／证明说明的总分索引
+- [系统架构](docs/ARCHITECTURE.md)：V1 组件、运行路径、存储用途及与 E2B 的逐项对照
 - [CI 运行记录](https://github.com/ningZhang-cs/sandproof/actions)
 
 分工以蓝图为准，开发流程以开发指南为准；不在本页复制规则和实时测试数量。
@@ -47,7 +48,7 @@
 | `tools/` | Lean 交互、轨迹与研究辅助工具 |
 | `docs/` | 当前蓝图、合同、测试计划、证明覆盖和相关研究记录 |
 
-项目品牌改名不改动 Rust crate 名、Lean 命名空间或抽取符号，避免引入与本次清理无关的证明变化。新增服务模块在各自工作包中建立，不先放空实现冒充能力。
+服务、接口和宿主运行模块的职责与目录见[系统架构](docs/ARCHITECTURE.md)。crate 已存在不等于对应工作包已完整验收，不以目录数量计算完成度。
 
 ## 本地检查
 

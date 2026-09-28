@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "purpose": "M0 固定来源、依赖和已有实机证据；不是 V1 全功能或形式化验收报告",
+  "recorded_on": "2026-09-28",
+  "code_baseline": {
+    "test_branch_at_contract_review": "9eba68821b8ad11f374a88f4a3450753e69c5ee1",
+    "rust_toolchain": "1.97.0",
+    "cargo_lock_sha256": "04db1f9911a3009e40a0a3a5f0635aa596adca5c6341cd4b0c99354b11d9de26",
+    "sdk_python": "e2b==2.51.0",
+    "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
+    "protocol_version": 1,
+    "sqlite_user_version": 1,
+    "sqlite_settings": ["WAL", "synchronous=FULL", "foreign_keys=ON", "trusted_schema=OFF", "BEGIN IMMEDIATE", "busy_timeout=5s"]
+  },
+  "source_revisions": {
+    "e2b_sdk": "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b",
+    "e2b_runtime_behavior_reference": "f455fd58fa3f289e78ce1de690c35968d8d29322",
+    "harbor_adapter_reference": "31668af15560fb50a9d0584816d12726036656cf",
+    "firecracker_release": "1.16.1",
+    "note": "runtime 和 Harbor 为固定源码阅读依据；未运行完整 E2B 后端，Harbor 联合依赖与任务锁待 #13"
+  },
+  "observed_linux_host": {
+    "host_alias": "ning",
+    "observation": "2026-09-28 通过只读 SSH 取得；不是完整宿主预检或新的 KVM 通过报告",
+    "kernel_release": "6.8.0-139-generic",
+    "artifacts": {
+      "firecracker": {"path": "/usr/local/bin/firecracker", "version": "1.16.1", "sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7"},
+      "jailer": {"path": "/usr/local/bin/jailer", "version": "1.16.1", "sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd"},
+      "guest_kernel": {"path": "/var/lib/sandproof/images/ci-20260708-e8a198e23f48-0/vmlinux-6.1.176", "sha256": "7c424b7447ea0a97d5ad8d9377b52cfbedfd564c7974f0ef9629e529305077a5"},
+      "guest_rootfs_with_envd": {"path": "/home/ning/sandproof-b01.InC2R4/artifacts/guest-envd-01.ext4", "sha256": "83f82ca1925f47c1512199e670babfb128e36d1eee58b93183d804c594e7a7cd"},
+      "upstream_ubuntu_rootfs": {"path": "/var/lib/sandproof/images/ci-20260708-e8a198e23f48-0/ubuntu-24.04.ext4", "sha256": "144ab0e1581ec14b18b536eab8824ef8414da484a1e4d99773b1ab0ef94ef2d2"}
+    },
+    "envd_version_from_prior_pr": "0.9.0",
+    "envd_version_evidence": "https://github.com/ningZhang-cs/sandproof/pull/43",
+    "limit": "只读摘要与先前运行的基础盘摘要匹配；本次未检查来宾内 envd 二进制，也未运行 host preflight/VM 测试"
+  },
+  "historical_evidence": [
+    {
+      "id": "sdk_vm_selected",
+      "commit": "9c1ae462f6ba35b9ee43ad625d668c73ac82306d",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/30",
+      "test": "tests/system/sdk_server_smoke.py",
+      "reported_result": "passed on isolated Linux/KVM with fixed base and explicit no-internet",
+      "scope": "original SDK through real controller, gateway and VM: selected create/connect/get/list/set_timeout/kill, command/file/auth/expiry; not default public or all V1 fields"
+    },
+    {
+      "id": "sdk_gateway_synthetic",
+      "commit": "905b7ef6dcf1ca22c871d08f48447001d8e4a924",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/40",
+      "test": "scripts/check-compat.sh",
+      "reported_result": "passed pinned SDK wire and Linux SDK-through-Rust-gateway tests",
+      "scope": "synthetic envd; new large-stream KVM script not run in this PR"
+    },
+    {
+      "id": "sdk_gateway_optional_streaming",
+      "commit": "7502bdad563cd68e906ec9b4a24d234fd3f53c51",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/45",
+      "test": "scripts/check-compat.sh",
+      "reported_result": "passed fixed SDK sync/async gateway composition with optional streaming config on Linux",
+      "scope": "synthetic envd, explicit data_transfer config; new full-service and KVM large-stream scripts not run in this PR"
+    },
+    {
+      "id": "service_receipt_crash",
+      "commit": "1a630f02a32c0a3236ead55b7644ff9c18acdacf",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/42",
+      "test": "tests/system/server_process_crash.py",
+      "reported_result": "passed two service process exit windows on isolated Linux/KVM",
+      "scope": "prepare_vm and stop_vm host success before receipt; not arbitrary crash points"
+    },
+    {
+      "id": "live_route_no_internet",
+      "commit": "a8be02111b1400923d0eea9d33927f6de2c7e534",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/43",
+      "test": "tests/system/guest_smoke.py",
+      "reported_result": "passed two real VM probes and residual checks",
+      "scope": "guest denied while controlled host route was reachable; direct envd, not full controller public/static network behavior"
+    }
+  ],
+  "separate_future_baselines": [
+    "#13: Harbor exact joint dependency lock, fixed task IDs/content hashes, reviewed initialization scripts and standard-solution/scoring environment",
+    "#14: repeatable high-privilege KVM CI and per-run preflight/config digest",
+    "#8/#9/#10/#12: remaining V1 target semantics, optional streaming KVM evidence and full-service regression"
+  ],
+  "fixed_base_acceptance": {
+    "profile": "tests/system/base-inputs.json",
+    "builder": "tools/build_base_guest.py",
+    "image_build_commit": "45d6f8632c646cc677beb37dba93a5d1d872a3f4",
+    "host_kernel": "6.8.0-1065-azure",
+    "kvm_api": 12,
+    "firecracker_jailer": "1.16.1",
+    "kernel_sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+    "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+    "image_sha256": "b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd",
+    "image_bytes": 1073741824,
+    "tests": [
+      {
+        "test": "tests/system/guest_smoke.py",
+        "commit": "b08c81ce846fcdcbcf7f935cc90a01e3a74110dd",
+        "result": "passed: two concurrent private roots, base unchanged, reachable host route but guest denied, exact process/disk/network cleanup"
+      },
+      {
+        "test": "tests/system/sdk_server_smoke.py",
+        "commit": "b08c81ce846fcdcbcf7f935cc90a01e3a74110dd",
+        "result": "passed: selected public lifecycle, data, authorization and expiry"
+      },
+      {
+        "test": "tests/system/sdk_data_contract.py",
+        "commit": "b495f2c39e5d9b05e428a57abd3256ff1ad7d93f",
+        "result": "passed with legacy and explicit streaming config: sync/async root/ubuntu, cwd/envs/user, files/hashes, known-PID reconnect and kill"
+      },
+      {
+        "test": "tests/system/gateway_stream_limits.py",
+        "commit": "b495f2c39e5d9b05e428a57abd3256ff1ad7d93f",
+        "result": "passed: 64 MiB upload / 96 MiB download test budgets, zero/below/at/above, known/chunked upload, command overflow and same-PID reconnect"
+      }
+    ],
+    "observations": "Per-run host audit found exact VM processes stopped and private jails/netns/cgroups absent; base fingerprint unchanged. Streaming service VmHWM 15760 KiB excludes guest/relay totals and is not a memory bound.",
+    "limits": "Selected manual KVM evidence only; host CPU/memory quotas, real ENOSPC, full async large-transfer/fault/timeout matrices and #13 task initialization remain open. New fixed input profile does not inherit historical ning-host acceptance or promise byte-identical ext4 across builds."
+  },
+  "host_resource_acceptance": {
+    "commit": "7547fa3aae30af1b72ab3e90b9bc86beb388ab06",
+    "host_kernel": "6.8.0-1065-azure",
+    "kvm_api": 12,
+    "firecracker_jailer": "1.16.1",
+    "base_profile": "tests/system/base-inputs.json",
+    "base_sha256": "b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd",
+    "server_sha256": "fdff030d4685a4fa0b939232200060a5cd858a4f06fdbe5f9f8793b42998be5e",
+    "configuration": {
+      "cgroup_parent": "exclusive root-only cgroup v2 domain with CPU/memory delegated",
+      "cpu_max": "100000 100000",
+      "cpu_max_burst": 0,
+      "memory_swap_max": 0,
+      "memory_oom_group": 1,
+      "sdk_guest_memory_mib": 512,
+      "sdk_host_memory_max_bytes": 805306368,
+      "recovery_guest_memory_mib": 256,
+      "recovery_host_memory_max_bytes": 536870912
+    },
+    "tests": [
+      "passed three real cgroup kernel tests: CPU throttling, bounded group OOM, tampered limits, populated group, replacement inode and interrupted creation cleanup",
+      "passed sdk_server_smoke.py and sync/async sdk_data_contract.py with legacy data limits",
+      "passed sync/async sdk_data_contract.py and gateway_stream_limits.py with 64 MiB upload / 96 MiB download budgets",
+      "passed six host_smoke cases: lost prepare/stop receipts, worker exit/SIGKILL, partial cleanup and two unlaunched prepare cases"
+    ],
+    "observations": "Seven SDK VMs were sampled while live: exact PID/start-time, cgroup inode, membership and all five limit settings matched; CPU throttling counters increased. Independent residual checks for these seven and four recovery VMs found exact processes stopped and private jails/netns/cgroups absent; two unlaunched cases also left no resources. Base hash unchanged.",
+    "limits": "Manual selected acceptance, opt-in host_resources only. Memory-OOM probe used controlled host children, not a Firecracker OOM. Per-VMM limits do not bound controller/relay totals or reserve physical capacity. Real ENOSPC, full async large-transfer/fault/timeout matrices, final deployment budgets and #13 task initialization remain open; no new Lean coverage."
+  },
+  "guest_disk_full_acceptance": {
+    "test": "tests/system/sdk_disk_full.py",
+    "commit": "295764da29be216cd9bbe2c20a0832674720a220",
+    "script_sha256": "148738fa0ed79e635a0f26a7c77a9e165cc717012754f09ba8cd2b77b30a4f89",
+    "server_build_commit": "7547fa3aae30af1b72ab3e90b9bc86beb388ab06",
+    "server_source_equivalence": "production source unchanged between server build and test commit",
+    "host_and_artifacts": "same host, Firecracker/jailer, base and server hashes as host_resource_acceptance",
+    "guest_memory_mib": 512,
+    "host_memory_max_bytes": 805306368,
+    "vcpu_count": 1,
+    "image_bytes": 1073741824,
+    "filesystem_bytes": 1020702720,
+    "first_fill_allocated_bytes": 591863808,
+    "remaining_free_bytes_at_enospc": 16777216,
+    "result": "passed original sync and async SDK: actual guest errno 28; multipart text, seekable octet stream and nonseekable upload all raise NotEnoughSpaceException; concurrent control VM remains writable; same VM writes after releasing filler; refilled VM destroyed; new VM has clean test directory and writable disk",
+    "residuals": "six exact VM processes stopped; private jails, network namespaces and cgroups absent; base fingerprint unchanged",
+    "limits": "Guest block allocation ENOSPC only. Free block counters can include filesystem reserves and do not mean the failed write can fit. Does not test host filesystem exhaustion, inode exhaustion, controller cleanup reserves, batch atomicity or the full S11/S12 matrix."
+  },
+  "async_stream_acceptance": {
+    "test": "tests/system/gateway_async_stream_limits.py",
+    "commit": "6fcb83e28912e6bc88ca840f356f89e775d5c4cb",
+    "script_sha256": "ed17b479839aba9df9cef445c0386e67dcd67eea991a4c2d1f25473c260aa362",
+    "server_build_commit": "7547fa3aae30af1b72ab3e90b9bc86beb388ab06",
+    "server_source_equivalence": "production source unchanged between server build and test commit",
+    "host_and_artifacts": "same host, Firecracker/jailer, base and server hashes as host_resource_acceptance",
+    "budgets_bytes": {"file_upload": 67108864, "file_download": 100663296, "command_output": 33554432},
+    "result": "passed eight async IO uploads and four streamed downloads at zero/below/at/above limits with successful content hashes; 16 MiB command output completed, oversized output failed after 25133056 stdout bytes with one Start marker; FIFO/event-gated disconnect reconnected the same PID with one marker",
+    "sdk_difference": "Async background wait can discard the underlying ConnectError chain. The probe accepts only the exact pinned SDK chunk-EOF rendering, with a smaller-output success control and independent health/no-replay checks. Composition tests reject ordinary deadlines, lookalike messages, authentication errors and a deadline cause.",
+    "residuals": "successful VM and earlier classifier-failure VM independently audited: exact processes stopped; private jails/netns/cgroups absent; base hash unchanged",
+    "limits": "Selected manual async KVM acceptance under 1 vCPU / 512 MiB guest / 768 MiB VMM limits; excludes final deployment budgets, concurrent slow transfers, full timeout parameter combinations and kill/expiry/revocation races."
+  },
+  "transfer_interruption_acceptance": {
+    "test": "tests/system/transfer_interruption.py",
+    "commit": "3a25bf6800ecd4cce86d486c292cf12dffa05708",
+    "script_sha256": "558e84a169ce86bde51af31f9903735c77bf63e9b2832a72bbf6a7d1fe5856cf",
+    "server_sha256": "f5859d5cdd530fc3fe039186e9f23cc62fea55d84f1bb32ca062fc939c4c7f65",
+    "host_and_artifacts": "same Linux/KVM host, Firecracker/jailer and fixed base fingerprints as host_resource_acceptance; server rebuilt at this exact commit",
+    "configuration": {
+      "guest_memory_mib": 512,
+      "host_memory_max_bytes": 805306368,
+      "vcpu_count": 1,
+      "file_upload_bytes": 67108864,
+      "file_download_bytes": 100663296,
+      "idle_seconds": 30,
+      "max_transfers": 16,
+      "max_transfers_per_vm": 8,
+      "control_reserve": 1
+    },
+    "regression": "before the fix, kill returned successfully but a quiet command and paused upload remained open; API authority and cancellation subscription now share one management lock, and accepted kill/expiry cancels only that sandbox routes",
+    "result": "passed eight original SDK cases: sync/async x upload/download x kill/expiry. Each upload had 262144 bytes observed in the guest before interruption, then failed authentication after release; each 64 MiB download received a nonzero prefix and failed with RemoteProtocolError. Old-token health/files/Start rejected; independent control VM remained usable.",
+    "sdk_difference": "quiet command cancellation is rendered by pinned SDK as TimeoutException with the previously verified transport EOF shape; ordinary deadline errors are explicitly rejected, not counted as successful revocation",
+    "normal_regression": "same committed server passed sdk_server_smoke.py and sync/async sdk_data_contract.py using legacy configuration",
+    "residuals": "ten interruption VMs and four legacy VMs had live PID/start-time/cgroup identity and limits sampled; before each service exited, exact VM processes were stopped, private jails/netns/cgroups absent and no process held a recorded network namespace inode. Base hash unchanged. Earlier failed and first corrected runs separately audited after tests ended.",
+    "limits": "selected manual acceptance; generous explicit idle/admission test budgets separate lifecycle from transport timeouts. Does not cover all timeout arguments, concurrent lifecycle/restart races, host filesystem exhaustion or final budgets tied to frozen #13 tasks. No new Lean coverage."
+  },
+  "command_input_acceptance": {
+    "test": "tests/system/sdk_command_input.py",
+    "commit": "92ac1a497c61a4e26e0c37354c08fa9ac96c6e2b",
+    "script_sha256": "8b27fc2acc349e59ae68bd3a19ab34ff0e418e0a8791c0224b4b56e8bf6881a3",
+    "server_build_commit": "3a25bf6800ecd4cce86d486c292cf12dffa05708",
+    "server_source_equivalence": "production source unchanged between server build and test commit",
+    "host_and_artifacts": "same fixed host, base and server fingerprints as transfer_interruption_acceptance",
+    "result": "passed sixteen real cases: original sync/async SDK x root/ubuntu x omitted stdin, explicit false, enabled empty EOF, enabled text/binary input with same-PID reconnect. Both handle and commands SendInput APIs and CloseStdin used; full byte count and SHA-256 checked; exactly one Start marker and healthy subsequent command.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before service exit; live cgroup limits observed, base hash unchanged",
+    "limits": "selected stdin acceptance only, under the existing explicit streaming configuration. Does not establish input-budget boundaries, invalid identity/closed-input errors, or every timeout argument combination."
+  },
+  "transfer_pressure_acceptance": {
+    "test": "tests/system/gateway_pressure.py",
+    "commit": "b503aa06df82048518a3d1d0d9b74b90e93d6cdf",
+    "script_sha256": "23fd01ddaa74eb8eeb0c3b0948bba9465625453d1ac45832eee9bafad185a0ab",
+    "server_build_commit": "3a25bf6800ecd4cce86d486c292cf12dffa05708",
+    "server_source_equivalence": "production sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed base and reviewed server fingerprints as transfer_interruption_acceptance",
+    "configuration": {
+      "max_transfers": 4,
+      "max_transfers_per_vm": 3,
+      "control_reserve": 1,
+      "request_idle_seconds": 3,
+      "file_idle_seconds": 5,
+      "write_idle_seconds": 3,
+      "file_upload_bytes": 67108864,
+      "file_download_bytes": 100663296
+    },
+    "result": "passed original sync and async SDK on two tenants: separate per-VM/global 429; health, SendInput, CloseStdin and SendSignal retain reserved capacity; EOF and signal release slots; rejected file and Start calls leave no effects. Paused uploads have 131072 guest bytes before 408; six progress chunks complete 393216 bytes over five seconds with a matching hash; paused 64 MiB SDK downloads fail with RemoteProtocolError and release capacity. FIFO-blocked file headers yield 504, bounded writers unblock/remove the FIFO, and quiet commands complete normally.",
+    "observations": {
+      "slow_upload_sha256": "df31d7ee9f236be433a7c9be89b3c2b10eff1114c56264e461ae1f58ef2a338d",
+      "sync_download_bytes_before_error": 2658928,
+      "async_download_bytes_before_error": 2717104,
+      "header_failure_seconds": [
+        5.012059331056662,
+        5.021190759027377
+      ],
+      "timing_scope": "observations under explicit test budgets, not performance or latency guarantees"
+    },
+    "residuals": "four exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; all live cgroup identity/membership/limits sampled; base hash unchanged. Earlier failed raw HTTP reader probe separately audited clean and not counted as acceptance.",
+    "limits": "selected manual admission/idle acceptance, not final deployment budgets, exhaustive concurrent lifecycle/restart schedules, each SDK timeout-argument combination, host filesystem/inode exhaustion or a whole-host memory bound. No production code or Lean claim changed."
+  },
+  "runtime_b01_acceptance": {
+    "test": "sandbox-node/tests/host_smoke.rs",
+    "commit": "d6b1bfa4ced9ec0b36fe6e6c3c8a7d71a0a5164a",
+    "test_binary_sha256": "91224dbeb7580507c92d6f6bd95534b7d3c07507c829131a0a3316e5a27b3617",
+    "host_kernel": "6.8.0-1065-azure",
+    "kvm_api": 12,
+    "fixed_artifacts": "same Firecracker/jailer 1.16.1, kernel, envd and base fingerprints as fixed_base_acceptance",
+    "configuration": {
+      "vcpu_count": 1,
+      "guest_memory_mib": 256,
+      "host_memory_max_bytes": 536870912,
+      "cpu_max": "100000 100000",
+      "memory_swap_max": 0,
+      "memory_oom_group": 1
+    },
+    "tests": [
+      "repeated_stop_and_cleanup_preserve_another_live_vm",
+      "create_and_kill_use_real_host_receipts",
+      "real_worker_process_exit_reconciles_prepare_and_stop",
+      "real_worker_sigkill_reconciles_prepare_and_stop",
+      "real_worker_sigkill_reconciles_partial_cleanup",
+      "partial_prepare_without_first_slot_is_reclaimed_without_launch",
+      "partial_prepare_network_intent_is_reclaimed_by_exact_identity"
+    ],
+    "result": "All seven selected real-host cases passed. Two concurrent VMs: repeated StopVm/CleanupVm/CleanupSlot before and after worker reopen preserve the other VM PID/start, disk/netns/cgroup inodes and authenticated envd file access. Lost receipts and process-exit/SIGKILL cases reconcile the original identities; no repeated PrepareVm or StopVm after journal recovery.",
+    "residuals": "Six exact VMM processes stopped, private jails/netns/cgroups absent; two unlaunched resource claims also clean. Independent /proc scan found no holders of recorded network namespace inodes. Base SHA-256 remained b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd. Root-only claims and diagnostics intentionally retained.",
+    "missing_kvm": "The ordinary Rust missing_kvm_is_reported_explicitly regression passed; real-host preflight separately opened /dev/kvm and verified API 12. No claim of physically removing KVM on this host.",
+    "reproduction": "sandbox-runtime/README.md: independent B01 node acceptance; clean commit, reviewed binary, fresh private directories/namespace per case, exclusive UID range and delegated cgroup parent",
+    "limits": "Manual B01 runtime acceptance only. Fixed crash windows, not all interleavings, host reboot or V1 acceptance. Does not close #6/#8 final budgets and #13 task initialization. No production or proof changes."
+  }
+}

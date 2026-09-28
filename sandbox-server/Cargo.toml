@@ -1,0 +1,32 @@
+[package]
+name = "sandproof-server"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Compiles only the test harness; never exposes an unauthenticated server mode.
+sdk-contract-tests = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
+sandproof-api = { path = "../sandbox-api" }
+sandproof-controller-service = { path = "../controller-service" }
+sandproof-node = { path = "../sandbox-node" }
+sandproof-protocol = { path = "../sandbox-protocol" }
+sandbox-runtime = { path = "../sandbox-runtime" }
+axum = { version = "=0.8.9", features = ["tokio", "http1"] }
+hyper = { version = "=1.11.1", features = ["client", "http1"] }
+hyper-util = { version = "=0.1.21", features = ["tokio"] }
+http-body-util = "=0.1.5"
+percent-encoding = "=2.3.2"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.142"
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "time", "process", "io-std", "io-util"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+tokio = { version = "=1.49.0", features = ["test-util"] }
+
+[lints]
+workspace = true

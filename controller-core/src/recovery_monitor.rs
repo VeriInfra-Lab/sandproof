@@ -3,6 +3,7 @@ use crate::{Generation, SandboxId};
 
 /// Controller-runtime inputs represented by `SandboxModel.RuntimeController`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RuntimeInput {
     Crash,
     Recover,

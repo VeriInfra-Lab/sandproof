@@ -45,7 +45,6 @@ impl<K: PartialEq, V> Store<K, V> {
         self.entries.push((key, value));
     }
 
-    #[cfg(test)]
     #[must_use]
     pub fn entries(&self) -> &[(K, V)] {
         &self.entries

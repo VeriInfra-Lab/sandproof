@@ -7,6 +7,7 @@ use crate::model::{
 use crate::transition::operation_key;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PublicationInput {
     Running(SandboxId),
     Paused(SandboxId, RestoreSource),
