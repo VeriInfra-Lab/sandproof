@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -83,6 +84,17 @@ def prepare_payload(root, envd, packages, epoch):
     link = guest_destination(root, LINK_GUEST)
     link.symlink_to(UNIT_GUEST)
     write_guest(root, "/etc/sandproof-base-packages.manifest", packages.read_bytes())
+    # The CI SquashFS has all-root ownership, including ubuntu's 0750 home.
+    # Restore this fixed account's home before running SDK commands as ubuntu.
+    passwd = guest_destination(root, "/etc/passwd").read_text().splitlines()
+    ubuntu = [line.split(":") for line in passwd if line.startswith("ubuntu:")]
+    if len(ubuntu) != 1 or ubuntu[0][2:4] != ["1000", "1000"] or ubuntu[0][5] != "/home/ubuntu":
+        raise ValueError("fixed base ubuntu account differs from expected identity")
+    home = guest_destination(root, "/home/ubuntu")
+    os.chown(home, 1000, 1000)
+    for current, directories, files in os.walk(home, followlinks=False):
+        for name in directories + files:
+            os.chown(Path(current) / name, 1000, 1000, follow_symlinks=False)
     # SDK user selection is setuid in envd; no shared login password/key is needed.
     shadow = guest_destination(root, "/etc/shadow")
     entries = [line.split(":") for line in shadow.read_text().splitlines()]
@@ -128,6 +140,8 @@ def verify_image(output, work, profile):
     metadata = debugfs(output, f"stat {ENVD_GUEST}")
     if "Mode:  0755" not in metadata:
         raise ValueError("installed envd mode mismatch")
+    if not re.search(r"User:\s+1000\s+Group:\s+1000", debugfs(output, "stat /home/ubuntu")):
+        raise ValueError("ubuntu home must be accessible to the fixed non-root user")
     manifest = work / "installed-packages"
     debugfs(output, f"dump /etc/sandproof-base-packages.manifest {manifest}")
     if digest(manifest) != profile["packages"]["sha256"]:

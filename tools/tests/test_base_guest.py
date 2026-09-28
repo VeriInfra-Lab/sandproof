@@ -62,6 +62,7 @@ class BaseGuestTests(unittest.TestCase):
             f"cat {builder.UNIT_GUEST}": builder.SERVICE,
             f"stat {builder.LINK_GUEST}": f'Fast link dest: "{builder.UNIT_GUEST}"',
             f"stat {builder.ENVD_GUEST}": "Mode:  0755",
+            "stat /home/ubuntu": "User: 1000   Group: 1000",
         }
         with patch.object(builder, "digest", side_effect=["envd", "packages"]), \
              patch.object(builder, "debugfs", side_effect=lambda _, request: responses.get(request, "")):
