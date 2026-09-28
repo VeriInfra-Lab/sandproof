@@ -70,7 +70,7 @@ uv run --locked --project tests/compat python tests/system/sdk_disk_full.py \
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000
 ```
 
-服务须允许同租户同时创建两台 VM、300 秒寿命；来宾需有 Python 3、`posix_fallocate` 和现有 shell 工具。`--max-guest-disk-bytes` 默认 2 GiB 是探针拒绝意外大盘的上界，不是部署磁盘配额；测试仍使用已预检的固定私有 base。宿主运行器须另行核验精确进程/cgroup/网络空间/私有盘回收与基础盘指纹。
+服务须允许同租户同时创建两台 VM、300 秒寿命；来宾需有 Python 3、`posix_fallocate` 和现有 shell 工具。`--max-guest-disk-bytes` 默认 2 GiB 是探针拒绝意外大盘的上界，不是部署磁盘配额；测试仍使用已预检的固定私有 base。该脚本已在启用宿主 cgroup 限制的真实 KVM 服务通过，六台 VM 的精确进程/cgroup/网络空间/私有盘回收与基础盘指纹另经宿主审计；提交和配置见[版本基线](../references/v1-baseline.json)。
 
 [完整服务数据脚本](../tests/system/sdk_data_contract.py)通过原 SDK 的 create/connect/kill 创建自己的沙箱，分别以 root 和固定 base 的普通用户运行同步/异步调用。它上传包含文本、二进制和空文件的多层目录，检查返回路径、文件信息、递归列表、普通/流式下载及 SHA-256；用 FIFO 和异步输出回调同步断线时机，确认重连同一 PID、只写一次标记，并验证终止、后续调用和销毁后的旧令牌拒绝。它没有绕过管理链直接构造来宾客户端；已用 root/ubuntu 在真实 KVM 的默认与显式流式配置执行，并覆盖省略 cwd 使用所选用户 home、显式 cwd 优先。时间参数的省略/零/负值/超限、销毁期间的授权竞争和宿主残留仍需独立用例。
 
