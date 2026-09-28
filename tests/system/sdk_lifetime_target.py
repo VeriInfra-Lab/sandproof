@@ -49,6 +49,20 @@ async def one_sdk(cls, owner, maximum, total, scanner_seconds):
                            allow_internet_access=False, **owner)
         observations.append('create invalid values: HTTP 400 without accepted VM')
 
+        for value in (maximum - 1, maximum):
+            boundary = await call(cls.create, template='base', timeout=value,
+                                  allow_internet_access=False, **owner)
+            live.append(boundary)
+            initial = await info(boundary)
+            assert (initial.end_at - initial.started_at).total_seconds() == value
+            await call(cls.connect, boundary.sandbox_id, timeout=maximum, **owner)
+            renewed = await info(boundary)
+            assert renewed.end_at >= initial.end_at
+            assert renewed.end_at <= initial.started_at + timedelta(seconds=total)
+            assert await call(cls.kill, boundary.sandbox_id, **owner)
+            live.remove(boundary)
+        observations.append('create and connect at single-call boundary')
+
         sandbox = await call(cls.create, template='base', timeout=5,
                              allow_internet_access=False, **owner)
         live.append(sandbox)

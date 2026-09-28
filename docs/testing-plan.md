@@ -118,9 +118,9 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [沙箱寿命参数探针](../tests/system/sdk_lifetime_values.py)通过原同步/异步 SDK 单独验证创建，以及实例/类形式的 connect/set_timeout：省略、零、负数和部署上限前/恰好/之后的值。创建省略时核对部署默认寿命，connect 省略或请求更短寿命时不缩短到期时间，set_timeout 可以缩短或延长；缺少必填参数的 set_timeout 须在 SDK 报错，其余非法寿命须收到管理 API 的 400，不能沿用 envd RPC 错误类型。每次拒绝后原期限保持不变、原实例可用；每次销毁后原 SDK 列表为空，宿主另审计精确残留。该脚本要求客户端与隔离服务在同一宿主，并显式提供 `--default-timeout`、`--max-timeout` 匹配服务配置，不将探针配置当成最终部署预算。同步/异步的 68 个旧版行为用例已通过：34 个成功、30 个管理 400 和 4 个缺参 TypeError；8 台 VM 在服务退出前经精确进程、私有资源和网络空间持有者审计，基础盘未变。精确版本见[版本基线](../references/v1-baseline.json)的 `lifetime_parameter_observation`。这是旧版行为观测，不是新版寿命兼容目标通过，且零/负值与新版目标相反；不得用它验收新版。
 
-[#12 查询目标探针](../tests/system/sdk_list_contract.py)在独立 Linux/KVM 服务中用固定同步/异步 SDK 检查 `get` 字段、两租户隔离、元数据/状态/起始时间/模板筛选、升降序与两页游标，以及错租户和错筛选游标的拒绝。每轮使用两台本租户和一台外租户真实 VM，脚本只销毁自己的实例；宿主需另核对精确进程、网络空间、私有盘和固定基础盘指纹。对应 HTTP/组件及 SDK 回环测试已通过；此实机脚本尚未执行，不能标记 #12 查询部分实机验收完成。
+[#12 查询目标探针](../tests/system/sdk_list_contract.py)在独立 Linux/KVM 服务中用固定同步/异步 SDK 检查 `get` 字段、两租户隔离、元数据/状态/起始时间/模板筛选、升降序与两页游标，以及错租户和错筛选游标的拒绝。每轮使用两台本租户和一台外租户真实 VM，脚本只销毁自己的实例；宿主另核对精确进程、网络空间、私有盘和固定基础盘指纹。对应 HTTP/组件、SDK 回环及真实 VM 选定用例均已通过，精确提交、脚本和限制见[版本基线](../references/v1-baseline.json)的 `query_lifetime_acceptance`；不等于暂停、卷挂载或并发列表快照语义已实现。
 
-[#9/#12 寿命目标探针](../tests/system/sdk_lifetime_target.py)在独立 Linux/KVM 服务中用固定同步/异步 SDK 检查默认 300 秒、连接省略时续期、非法单次值拒绝、`set_timeout` 缩短与总寿命截顶、零/负值立即撤权后由周期扫描销毁。需显式匹配服务的单次上限、总寿命上限和扫描周期；另做宿主精确残留、服务重启与到期/续期竞争验收。[隔离宿主启动器](../tests/system/sdk_query_lifetime_host.py)从固定二进制与镜像建立全新私有目录，运行两套探针并核对本轮持久终局、精确进程/网络空间/私有资源及基础盘指纹，失败时保留本轮现场，不触碰其他任务。事务/HTTP/SDK 回环测试已通过，目标实机脚本尚未执行；旧版寿命观测不能替代它。
+[#9/#12 寿命目标探针](../tests/system/sdk_lifetime_target.py)在独立 Linux/KVM 服务中用固定同步/异步 SDK 检查默认 300 秒、连接省略时续期、非法单次值拒绝、`set_timeout` 缩短与总寿命截顶、零/负值立即撤权后由周期扫描销毁。需显式匹配服务的单次上限、总寿命上限和扫描周期。[隔离宿主启动器](../tests/system/sdk_query_lifetime_host.py)从固定二进制与镜像建立全新私有目录，运行两套探针，还用同一数据库重启服务检查起点保持、连接续期和总寿命截顶；核对本轮持久终局、精确进程/网络空间/私有资源及基础盘指纹，失败时保留本轮现场，不触碰其他任务。事务/HTTP/SDK 回环及上述选定真实 VM 用例已通过，精确提交和限制见[版本基线](../references/v1-baseline.json)的 `query_lifetime_acceptance`。到期/续期和 kill 的所有并发交错仍只覆盖定点组件测试，不把这轮实机用例说成穷尽验证；旧版寿命观测不能替代新版结果。
 
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \

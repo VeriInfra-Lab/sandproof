@@ -595,5 +595,20 @@
     "result": "both tests passed on the integrated #76 plus idle recovery scan fix commit; each faulted worker was really SIGKILLed and its original durable operation recovered",
     "residuals": "two exact PID/start identities stopped; private jail/netns/cgroups absent, no recorded namespace holders; base SHA unchanged",
     "limits": "two selected worker failure windows only; not arbitrary full-service SIGKILL, never-ready live VM abort, activation-unknown handling or the whole #11 recovery matrix"
+  },
+  "query_lifetime_acceptance": {
+    "commit": "0de6db03c795313f7049ffe73369450ab5a70701",
+    "server_sha256": "5018223edf54b8a5cc23d10ee5ead29816ab09ba431bafe920f463b1308b0207",
+    "scripts": {
+      "tests/system/sdk_query_lifetime_host.py": "51a5530c7b872192dbc677aeb80a185db7cb7da072797494b4423231110fd5fd",
+      "tests/system/sdk_list_contract.py": "044c96cc94298dad363e9b52ab897634fb0eb8860becde4e4f5f82d9c85929de",
+      "tests/system/sdk_lifetime_target.py": "e00ea3e7dcdb324a7612ed93c2773c24aff55db0e76a62540ccb7c501fe2ba68"
+    },
+    "host_and_artifacts": "isolated Linux x86_64 KVM host, Firecracker/jailer 1.16.1, pinned guest kernel, 1 GiB envd base SHA-256 83f82ca1925f47c1512199e670babfb128e36d1eee58b93183d804c594e7a7cd, Python E2B SDK 2.51.0, root-only fresh directory and namespace, one vCPU and 256 MiB guest memory, explicit no-internet",
+    "config": "two test tenants; max active global/per tenant 4/3, logical disk budget 5/4 base images with one-image cleanup reserve; create/connect single timeout 600 seconds, total lifetime 1200 seconds, default 300 seconds, expiry scan 1 second",
+    "command": "root-only tests/system/sdk_query_lifetime_host.py --server <exact-build> --jailer <pinned> --firecracker <pinned> --kernel <pinned> --rootfs <pinned> --scratch-parent <root-only-short-path> --uid-base <exclusive-range> --max-timeout 600 --max-total 1200 --scanner-seconds 1",
+    "result": "sync and async fixed SDK get/list fields, filters, order and two-page cursor passed; sync and async lifetime defaults, invalid values, connect, set_timeout, immediate expiry and scanner cleanup passed; same-database service restart preserved start time and total-life cap",
+    "residuals": "15 durable records Destroyed; all 15 exact PID/start-time tombstones refer to stopped processes; no matching live process, network namespace or private jail; fixed base fingerprint unchanged; temporary test root removed after success",
+    "limits": "selected real-VM paths and deterministic transaction crash test, not arbitrary concurrent expiry/kill scheduling, all quota boundaries, cgroup audit, paused states, volumes or cross-page snapshot isolation; no new formal proof claim"
   }
 }
