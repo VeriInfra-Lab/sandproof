@@ -106,9 +106,13 @@ class AsyncEnvdWireContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([entry.path for entry in written],
                          ["/tmp/project/a.txt", "/tmp/project/nested/b.bin"])
         posts = self.app.records[-2:]
-        self.assertEqual([p["query"]["path"] for p in posts],
-                         [["/tmp/project/a.txt"], ["/tmp/project/nested/b.bin"]])
-        self.assertEqual([p["body"] for p in posts], [b"first", b"\x00\xffsecond"])
+        # Async uploads may reach the server in either order, even though the
+        # SDK preserves input order in the returned result list.
+        bodies_by_path = {p["query"]["path"][0]: p["body"] for p in posts}
+        self.assertEqual(bodies_by_path, {
+            "/tmp/project/a.txt": b"first",
+            "/tmp/project/nested/b.bin": b"\x00\xffsecond",
+        })
         self.assertTrue(all(p["query"]["username"] == ["ubuntu"] for p in posts))
         self.assertEqual(await self.sandbox.files.read("/tmp/input.txt"), "synthetic file content\n")
 
