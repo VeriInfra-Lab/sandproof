@@ -222,13 +222,34 @@ async fn malformed_requests_have_sdk_error_shape_and_no_port_side_effect() {
 }
 
 #[tokio::test]
-async fn creation_rejects_unimplemented_e2b_defaults_and_unsupported_fields() {
+async fn creation_accepts_e2b_ipv4_wire_and_rejects_unsupported_fields() {
     let port = Arc::new(FakePort::default());
     let app = app(Arc::clone(&port));
     for body in [
         r#"{"templateID":"base"}"#,
         r#"{"templateID":"base","allow_internet_access":true}"#,
+        r#"{"templateID":"base","allow_internet_access":false,"network":{"allowPublicTraffic":true,"allowOut":["1.1.1.1"],"denyOut":["0.0.0.0/0"]}}"#,
+    ] {
+        assert_eq!(
+            send(
+                app.clone(),
+                "POST",
+                "/v2/sandboxes",
+                Some(ALICE_KEY),
+                Some(body)
+            )
+            .await
+            .status(),
+            StatusCode::CREATED
+        );
+    }
+    assert_eq!(port.calls.lock().unwrap().len(), 3);
+    port.calls.lock().unwrap().clear();
+    for body in [
         r#"{"templateID":"other","allow_internet_access":false}"#,
+        r#"{"templateID":"base","network":{"allowOut":["example.com"]}}"#,
+        r#"{"templateID":"base","network":{"allowOut":["::1"]}}"#,
+        r#"{"templateID":"base","network":{"allowPublicTraffic":false}}"#,
         r#"{"templateID":"base","allow_internet_access":false,"autoPause":true}"#,
         r#"{"templateID":"base","allow_internet_access":false,"owner":"bob"}"#,
         r#"{"templateID":"base","allow_internet_access":false,"timeout":0}"#,

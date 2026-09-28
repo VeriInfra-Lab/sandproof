@@ -501,6 +501,7 @@ name = "sandbox-runtime"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sandbox-controller-core",
  "serde",
  "serde_json",
  "tempfile",

@@ -113,6 +113,22 @@ class WireContract(unittest.TestCase):
         self.assertIs(self.records[0]["body"]["allow_internet_access"], False)
         self.assertNotIn("secure", self.records[0]["body"])
 
+    def test_create_static_ipv4_network_wire(self):
+        self.responses.append((201, SANDBOX, {}))
+        Sandbox.create(
+            network={"allow_out": ["1.1.1.1", "8.8.8.0/24"],
+                     "deny_out": ["0.0.0.0/0"]},
+            allow_internet_access=False,
+            **self.options,
+        )
+        body = self.records[0]["body"]
+        self.assertIs(body["allow_internet_access"], False)
+        self.assertEqual(body["network"], {
+            "allowPublicTraffic": True,
+            "allowOut": ["1.1.1.1", "8.8.8.0/24"],
+            "denyOut": ["0.0.0.0/0"],
+        })
+
     def test_connect_uses_v2_and_preserves_explicit_zero(self):
         self.responses.extend([(200, SANDBOX, {}), (200, SANDBOX, {})])
         Sandbox.connect("probe-sandbox", **self.options)

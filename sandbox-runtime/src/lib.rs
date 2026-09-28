@@ -6,6 +6,12 @@
 pub mod egress;
 
 #[cfg(target_os = "linux")]
+mod uplink;
+
+#[cfg(target_os = "linux")]
+pub use uplink::UplinkState;
+
+#[cfg(target_os = "linux")]
 mod linux;
 
 #[cfg(target_os = "linux")]

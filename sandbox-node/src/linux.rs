@@ -93,6 +93,10 @@ struct Fence {
     terminal: bool,
 }
 
+fn fence_can_advance(prior: Fence, next: Fence) -> bool {
+    prior.epoch <= next.epoch && (next.terminal || !prior.terminal)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum ObservedResult {
     Fence(Fence),
@@ -251,7 +255,7 @@ impl LinuxWorker {
             {
                 let observed_inode = self
                     .runtime(binding.sandbox, binding.vm)?
-                    .observe_private_network(&vm_name)?;
+                    .observe_recorded_network(&vm_name)?;
                 if network_inode != Some(observed_inode) {
                     return Err("live VM network guard or namespace identity changed".into());
                 }
@@ -578,6 +582,62 @@ impl LinuxWorker {
         Ok(())
     }
 
+    /// Reconcile only an already dispatched, current `ConfigureNetwork`. A
+    /// staged exact policy may be completed; pre-prepared partial resources
+    /// are removed under the original deny gate before final failure.
+    /// # Errors
+    /// Invalid identity or uncertain host effects remain unresolved.
+    pub fn reclaim_incomplete_network(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        self.validate_action(action)?;
+        let core::Command::ConfigureNetwork {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+            slot,
+            policy,
+        } = action.command.command()
+        else {
+            return Err("reclaim requires ConfigureNetwork".into());
+        };
+        self.require_fence(*sandbox, *epoch, false)?;
+        self.require_slot(*sandbox, *generation, *vm, *slot)?;
+        self.running(*sandbox, *vm)?;
+        if matches!(policy, core::NetworkPolicy::Ipv4 { .. }) {
+            self.runtime(*sandbox, *vm)?
+                .reconcile_incomplete_ipv4_uplink(&self.vm_name(*vm), policy)?;
+        }
+        Ok(())
+    }
+
+    /// Reapply only a current terminal fence whose first receipt is unknown.
+    /// Setting the same or stricter fence is idempotent; the normal host
+    /// transition rejects any attempt to reopen or move backwards.
+    /// # Errors
+    /// A stale or unobservable fence remains unresolved.
+    pub fn reclaim_incomplete_terminal_fence(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        if !matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ) {
+            return Err("reclaim requires terminal fence".into());
+        }
+        let observation = self.perform(action)?;
+        if !matches!(
+            observation.result,
+            ObservedResult::Fence(Fence { terminal: true, .. })
+        ) {
+            return Err("terminal fence not observed".into());
+        }
+        Ok(())
+    }
+
     /// Check allocatable bytes on the same filesystem that stores the VM's
     /// private disk. This is an admission observation, not a reservation
     /// against unrelated host processes.
@@ -805,7 +865,22 @@ impl LinuxWorker {
                 vm,
                 slot,
                 policy,
-            } => self.observe_network(*sandbox, *epoch, *generation, *vm, *slot, policy)?,
+            } => {
+                if self
+                    .runtime(*sandbox, *vm)?
+                    .was_reclaimed_ipv4_uplink(&self.vm_name(*vm), policy)?
+                {
+                    return Ok(WorkReceipt {
+                        identity: action.identity.clone(),
+                        outcome: WorkOutcome::DefinitiveFailure {
+                            code: FailureCode::InvalidResource,
+                            retryable: false,
+                            partial: None,
+                        },
+                    });
+                }
+                self.observe_network(*sandbox, *epoch, *generation, *vm, *slot, policy)?
+            }
             core::Command::ApplyFilePolicy {
                 sandbox,
                 epoch,
@@ -1091,10 +1166,7 @@ impl LinuxWorker {
                 };
                 if path.exists() {
                     let prior = self.fence(*sandbox)?;
-                    if prior.epoch > *epoch
-                        || (prior.epoch == *epoch && prior.terminal != *terminal)
-                        || (prior.terminal && !terminal)
-                    {
+                    if !fence_can_advance(prior, next) {
                         return Err("stale or reopened host fence".into());
                     }
                     if prior != next {
@@ -1144,7 +1216,16 @@ impl LinuxWorker {
                 vm,
                 slot,
                 policy,
-            } => self.observe_network(*sandbox, *epoch, *generation, *vm, *slot, policy)?,
+            } => {
+                self.require_fence(*sandbox, *epoch, false)?;
+                self.require_slot(*sandbox, *generation, *vm, *slot)?;
+                self.running(*sandbox, *vm)?;
+                if !matches!(policy, core::NetworkPolicy::DenyAll) {
+                    self.runtime(*sandbox, *vm)?
+                        .configure_ipv4_uplink(&self.vm_name(*vm), policy)?;
+                }
+                self.observe_network(*sandbox, *epoch, *generation, *vm, *slot, policy)?
+            }
             core::Command::ApplyFilePolicy {
                 sandbox,
                 epoch,
@@ -1222,13 +1303,22 @@ impl LinuxWorker {
         policy: &core::NetworkPolicy,
     ) -> NodeResult<ObservedResult> {
         self.require_fence(sandbox, epoch, false)?;
-        if *policy != core::NetworkPolicy::DenyAll {
-            return Err("only private no-egress network policy is implemented".into());
-        }
         self.require_slot(sandbox, generation, vm, slot)?;
         self.running(sandbox, vm)?;
         let name = self.vm_name(vm);
-        let namespace_inode = self.runtime(sandbox, vm)?.observe_private_network(&name)?;
+        let runtime = self.runtime(sandbox, vm)?;
+        let namespace_inode = match policy {
+            core::NetworkPolicy::DenyAll => runtime.observe_private_network(&name)?,
+            core::NetworkPolicy::Ipv4 { .. } => match runtime.observe_ipv4_uplink(&name, policy)? {
+                sandbox_runtime::UplinkState::Active(inode) => inode,
+                sandbox_runtime::UplinkState::Staged => {
+                    return Err("IPv4 uplink has not been activated".into());
+                }
+            },
+            core::NetworkPolicy::StaticAllowlist(_) => {
+                return Err("unsupported network policy".into());
+            }
+        };
         let output = Process::new("/usr/bin/ip")
             .args([
                 "netns",
@@ -1241,8 +1331,11 @@ impl LinuxWorker {
                 "default",
             ])
             .output()?;
-        if !output.status.success() || !output.stdout.is_empty() {
-            return Err("private namespace has external route or cannot be checked".into());
+        if !output.status.success()
+            || (matches!(policy, core::NetworkPolicy::DenyAll) && !output.stdout.is_empty())
+            || (matches!(policy, core::NetworkPolicy::Ipv4 { .. }) && output.stdout.is_empty())
+        {
+            return Err("namespace route does not match configured policy".into());
         }
         Ok(ObservedResult::Network { namespace_inode })
     }
@@ -1309,6 +1402,12 @@ impl LinuxWorker {
         )))?;
         self.runtime(sandbox, binding.vm)?
             .require_cgroup_absent(&self.vm_name(binding.vm))?;
+        if !self
+            .runtime(sandbox, binding.vm)?
+            .uplink_resources_absent(&self.vm_name(binding.vm))?
+        {
+            return Err("slot uplink resources remain after cleanup".into());
+        }
         if self
             .runtime(sandbox, binding.vm)?
             .observe(&self.vm_name(binding.vm))?
@@ -1557,7 +1656,29 @@ fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{require_absent, write_new_json};
+    use super::{Fence, fence_can_advance, require_absent, write_new_json};
+
+    #[test]
+    fn fence_may_close_in_same_epoch_but_never_reopen_or_go_back() {
+        let open = Fence {
+            epoch: 1,
+            terminal: false,
+        };
+        let closed = Fence {
+            epoch: 1,
+            terminal: true,
+        };
+        assert!(fence_can_advance(open, closed));
+        assert!(fence_can_advance(closed, closed));
+        assert!(!fence_can_advance(closed, open));
+        assert!(!fence_can_advance(
+            closed,
+            Fence {
+                epoch: 0,
+                terminal: true
+            }
+        ));
+    }
 
     #[test]
     fn dangling_symlink_is_not_mistaken_for_cleaned_resource() {

@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-//! Packet test for the not-yet-enabled #10 egress compiler. Every veth end
+//! Packet test for the #10 guest-side egress compiler. Every veth end
 //! stays in a private namespace; this never routes to the real internet or
 //! changes the host's global forwarding setting.
 

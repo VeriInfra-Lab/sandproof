@@ -27,6 +27,7 @@ After=fcnet.service
 [Service]
 Type=simple
 ExecStartPre=/usr/sbin/ip route replace 169.254.169.254/32 dev eth0
+ExecStartPre=/usr/sbin/ip route replace default via 172.16.0.1 dev eth0
 ExecStart=/usr/local/bin/envd -verbose
 Restart=on-failure
 RestartSec=1

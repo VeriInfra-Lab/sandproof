@@ -46,8 +46,12 @@ class CapabilityMatrix(unittest.TestCase):
                     source = ROOT / path
                     self.assertTrue(source.is_file(), reference)
                     if separator:
-                        self.assertRegex(method, r"^test_[a-z0-9_]+$")
-                        self.assertIn(f"def {method}(", source.read_text())
+                        if source.suffix == ".rs":
+                            self.assertRegex(method, r"^[a-z][a-z0-9_]+$")
+                            self.assertIn(f"fn {method}(", source.read_text())
+                        else:
+                            self.assertRegex(method, r"^test_[a-z0-9_]+$")
+                            self.assertIn(f"def {method}(", source.read_text())
                 for scenario in item["planned_scenarios"]:
                     self.assertRegex(scenario, r"^S\d{2}$")
                     self.assertIn(f"| {scenario} |", SCENARIOS)
