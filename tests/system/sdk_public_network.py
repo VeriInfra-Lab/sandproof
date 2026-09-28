@@ -8,12 +8,14 @@ forwarding; this script refuses to change the global setting itself.
 import argparse
 import hashlib
 import importlib.metadata
+import ipaddress
 import json
 import os
 from pathlib import Path
 import select
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -153,6 +155,21 @@ PY'''
     return result.stdout.strip() == "allowed"
 
 
+def guest_tcp_connect(sandbox: Sandbox, address: str, port: int) -> bool:
+    """A completed TCP handshake tests an optional real public route."""
+    probe = f'''python3 - <<'PY'
+import socket
+try:
+    with socket.create_connection(({address!r}, {port}), timeout=3):
+        print('connected')
+except OSError:
+    print('denied')
+PY'''
+    result = sandbox.commands.run(probe)
+    assert result.stdout.strip() in ("connected", "denied"), result.stdout
+    return result.stdout.strip() == "connected"
+
+
 def probe_ports(sandbox: Sandbox, address: str, allowed: bool) -> None:
     for port in (53, 853, 443):
         for protocol in ("udp", "tcp"):
@@ -213,6 +230,12 @@ def exercise(args: argparse.Namespace) -> None:
         raise RuntimeError("requires root on an isolated Linux/KVM host")
     if Path("/proc/sys/net/ipv4/ip_forward").read_text().strip() != "1":
         raise RuntimeError("host IPv4 forwarding must be temporarily enabled by the test runner")
+    if args.public_probe_ip is not None:
+        address = ipaddress.IPv4Address(args.public_probe_ip)
+        if not address.is_global or not 1 <= args.public_probe_port <= 65535:
+            raise ValueError("public probe requires a global IPv4 and a valid TCP port")
+        with socket.create_connection((str(address), args.public_probe_port), timeout=3):
+            pass  # Do not judge a guest by a public endpoint the host cannot reach.
     assert importlib.metadata.version("e2b") == "2.51.0"
     parent = Path(args.scratch_parent).resolve(strict=True)
     disk_bytes = Path(args.rootfs).stat().st_size
@@ -285,6 +308,9 @@ def exercise(args: argparse.Namespace) -> None:
             assert not guest_ping(static, "11.22.33.2"), "host-local address escaped"
             probe_ports(static, "11.22.33.1", True)
             probe_ports(static, "11.22.34.1", False)
+            if args.public_probe_ip is not None:
+                assert not guest_tcp_connect(static, args.public_probe_ip,
+                                             args.public_probe_port), "static mode reached Internet"
             # The guest controls resolv.conf, but this cannot create a host
             # firewall exception for an otherwise denied resolver address.
             static.commands.run("printf 'nameserver 11.22.34.1\\n' > /etc/resolv.conf")
@@ -295,6 +321,9 @@ def exercise(args: argparse.Namespace) -> None:
             assert guest_ping(public, "11.22.33.1"), "public default egress failed"
             assert not guest_ping(public, "11.22.33.2"), "public mode reached host-local address"
             probe_ports(public, "11.22.34.1", True)
+            if args.public_probe_ip is not None:
+                assert guest_tcp_connect(public, args.public_probe_ip,
+                                         args.public_probe_port), "public Internet path failed"
             probe_guest_ipv6(public, namespace, 1)
             # This address did not exist when either policy was compiled. The
             # root INPUT/FORWARD guard must still block a newly local address.
@@ -332,6 +361,9 @@ def exercise(args: argparse.Namespace) -> None:
             closed_identity = vm_identity(root, namespace, 2)
             assert not guest_ping(closed, "11.22.33.1"), "closed mode escaped"
             probe_ports(closed, "11.22.33.1", False)
+            if args.public_probe_ip is not None:
+                assert not guest_tcp_connect(closed, args.public_probe_ip,
+                                             args.public_probe_port), "closed mode reached Internet"
             closed.commands.run("printf 'nameserver 11.22.33.1\\n' > /etc/resolv.conf")
             probe_ports(closed, "11.22.33.1", False)
             probe_guest_ipv6(closed, namespace, 2)
@@ -346,6 +378,9 @@ def exercise(args: argparse.Namespace) -> None:
             explicit_identity = vm_identity(root, namespace, 3)
             probe_ports(explicit, "11.22.33.1", True)
             probe_ports(explicit, "11.22.34.1", False)
+            if args.public_probe_ip is not None:
+                assert guest_tcp_connect(explicit, args.public_probe_ip,
+                                         args.public_probe_port), "explicit public Internet path failed"
             assert not guest_ping(explicit, "11.22.33.2"), "explicit public reached host"
             assert Sandbox.kill(explicit.sandbox_id, **options)
             sandboxes.remove(explicit)
@@ -364,9 +399,12 @@ def exercise(args: argparse.Namespace) -> None:
             "udp_tcp_dns_port_matrix": True, "guest_resolver_rewrite_denied": True,
             "new_host_address_denied": True, "closed_default_denied": True,
             "guest_root_ipv6_route_denied": True,
+            "real_public_ipv4_tcp": args.public_probe_ip is not None,
             "restart_keeps_exact_vms_and_policies": True,
             "independent_cleanup": True, "exact_cleanup": True,
-            "scope": "real Firecracker and SDK, test-only outside namespace; no real Internet or DNS claim",
+            "scope": "real Firecracker and SDK, isolated outside namespace"
+                     + (" plus one optional public TCP handshake" if args.public_probe_ip else "")
+                     + "; no DNS query-content claim",
         }))
     finally:
         for sandbox in sandboxes:
@@ -386,4 +424,6 @@ if __name__ == "__main__":
     for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
         parser.add_argument(f"--{name}", required=True, type=Path)
     parser.add_argument("--uid-base", required=True, type=int)
+    parser.add_argument("--public-probe-ip", help="optional preflighted real public IPv4 target")
+    parser.add_argument("--public-probe-port", type=int, default=443)
     exercise(parser.parse_args())
