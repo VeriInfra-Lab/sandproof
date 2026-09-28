@@ -66,14 +66,17 @@ def fetch(
 
 
 def wait_ready(
-    opener: urllib.request.OpenerDirector, base_url: str, process: subprocess.Popen[bytes]
+    opener: urllib.request.OpenerDirector,
+    base_url: str,
+    api_key: str,
+    process: subprocess.Popen[bytes],
 ) -> None:
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise AssertionError(f"server exited during startup: {process.returncode}")
         try:
-            if fetch(opener, base_url, "GET", "/health")[0] == 200:
+            if fetch(opener, base_url, "GET", "/v2/sandboxes", api_key)[0] == 200:
                 return
         except (urllib.error.URLError, http.client.HTTPException, OSError):
             pass
@@ -126,7 +129,7 @@ def exercise(args: argparse.Namespace) -> None:
         raise RuntimeError("test host lacks space for trusted template and private VM disk")
     root = Path(tempfile.mkdtemp(prefix="sp-crash-", dir=parent))
     namespace = secrets.token_hex(8)
-    vm_name = f"vm-{namespace}-1"
+    vm_name = f"vm-{namespace}-0"
     api_key = secrets.token_hex(32)
     port = free_loopback_port()
     for name in ("db", "state", "jails"):
@@ -138,8 +141,10 @@ def exercise(args: argparse.Namespace) -> None:
     rootfs = root / "rootfs.ext4"
     shutil.copyfile(args.kernel, kernel)
     shutil.copyfile(args.rootfs, rootfs)
-    kernel.chmod(0o600)
-    rootfs.chmod(0o600)
+    # Jailer drops to uid_base before Firecracker opens these chroot files.
+    # The private parent remains root-only; the copies need guest-process read access.
+    kernel.chmod(0o644)
+    rootfs.chmod(0o644)
     config = root / "config.json"
     settings = {
         "namespace": namespace,
@@ -176,7 +181,7 @@ def exercise(args: argparse.Namespace) -> None:
     completed = False
     try:
         process = start_server(binary, config, log, "prepare_vm")
-        wait_ready(opener, base_url, process)
+        wait_ready(opener, base_url, api_key, process)
         interrupted_request(
             lambda: fetch(
                 opener, base_url, "POST", "/v2/sandboxes", api_key,
@@ -190,7 +195,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert process_start_ticks(pid) == ticks, "first VM is not running after server exit"
 
         process = start_server(binary, config, log, None)
-        wait_ready(opener, base_url, process)
+        wait_ready(opener, base_url, api_key, process)
         status, body = fetch(opener, base_url, "GET", "/v2/sandboxes", api_key)
         assert status == 200, status
         items = json.loads(body)
@@ -200,7 +205,7 @@ def exercise(args: argparse.Namespace) -> None:
         stop_server(process)
 
         process = start_server(binary, config, log, "stop_vm")
-        wait_ready(opener, base_url, process)
+        wait_ready(opener, base_url, api_key, process)
         interrupted_request(
             lambda: fetch(opener, base_url, "DELETE", f"/sandboxes/{sandbox_id}", api_key),
             process,
@@ -208,7 +213,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert process_start_ticks(pid) != ticks, "recorded VM survived StopVm"
 
         process = start_server(binary, config, log, None)
-        wait_ready(opener, base_url, process)
+        wait_ready(opener, base_url, api_key, process)
         status, body = fetch(opener, base_url, "GET", "/v2/sandboxes", api_key)
         assert status == 200 and json.loads(body) == [], status
         assert fetch(opener, base_url, "GET", f"/sandboxes/{sandbox_id}", api_key)[0] == 404
