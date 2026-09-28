@@ -102,6 +102,12 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [命令参数失败探针](../tests/system/sdk_command_arguments.py)通过原同步/异步 SDK 分别运行前台和后台 Start：未知用户、root/ubuntu 的不存在或普通文件 cwd，以及 ubuntu 无权访问的目录。未知用户须得到 `AuthenticationException`，目录问题须得到 `InvalidArgumentException`，不能把连接或普通期限超时算作参数拒绝。每次失败必须没有本次唯一副作用标记，随后同一 VM 的普通用户仍可按指定 cwd、环境变量执行；相同私有目录另以 root 正常执行作为权限对照。运行时提供与其他数据脚本相同的 URL 和环境凭据，本探针的 24 个拒绝场景及正常对照已在两台真实 VM 通过，物理资源、网络空间持有者和基础盘另经独立审计，精确提交见[版本基线](../references/v1-baseline.json)的 `command_arguments_acceptance`；不表示全部非法参数或超时组合已验收。
 
+[命令超时参数探针](../tests/system/sdk_command_timeouts.py)分别向原同步/异步 `commands.run`（前台/后台）和 `commands.connect` 传入省略、零、负数及超过 Connect 十位毫秒头上限的值，区分 `timeout` 与 `request_timeout`。同步流忽略 `request_timeout`，异步以它限制首事件等待；`run(timeout=...)` 还由 envd 用作进程执行期限，到期会终止命令；`connect(timeout=...)` 只限制连接流。`wait()` 沿用原流期限且没有独立超时参数。负数流期限由固定 SDK 转成 1 ms，不是参数拒绝；用保持 stdin 打开的命令阻止它提前成功。另在已知 PID 后分别验等待：Start 期限到期后连接同一 PID 取得保留的被终止结果；Connect 期限到期后同一 PID 仍可正常关闭输入并完整退出。两者都只启动一次。启动结果可能不明时只查询唯一标记对应的已有进程并终止，最终销毁本轮 VM，不重发 shell。运行方式同其他数据脚本；上述 52 个场景已在两台真实 VM 通过，服务退出前另核对宿主资源和网络空间持有者均已回收、基础盘未变，精确版本见[版本基线](../references/v1-baseline.json)的 `command_timeout_acceptance`。文件/一元 RPC 与沙箱寿命参数另有各自验收，不能由本探针推断。
+
+[文件超时参数探针](../tests/system/sdk_file_timeouts.py)分别对原同步/异步文件读取（text/bytes/stream）、流读取的 `stream_idle_timeout`，以及单文件/批量写入的 `request_timeout` 传入省略、零、负数和大正数。上传区分 multipart/octet、字符串/字节/二进制 IO/文本 IO；完整成功须核对长度和 SHA-256，期限失败后只读取本次路径的实际状态，不假定原子回滚或自动重传。每次失败后检查正常读写仍可用；脚本最后销毁自己的 VM，宿主须另核对精确残留。本探针不覆盖一元 RPC 或沙箱寿命参数，也不把大于 Connect 头范围的 HTTP 期限误称为 HTTP 协议超限。运行方式与其他原 SDK 实机脚本一致。上述 160 个场景已在两台真实 VM 通过，精确版本和指纹见[版本基线](../references/v1-baseline.json)的 `file_timeout_acceptance`。成功内容为 69000 字节并核对 SHA-256；本轮同步上传的期限失败中，15 个目标路径有 5 个已出现，异步本轮没有观察到文件，后者不能外推为失败无副作用。宿主精确资源与网络空间持有者在服务退出前均已回收，基础盘未变。
+
+[一元 RPC 超时探针](../tests/system/sdk_rpc_timeouts.py)对原同步/异步文件 get_info/exists/list/make_dir/remove/rename、命令 list/kill/send_stdin/close_stdin，以及句柄 send_stdin/close_stdin，逐项传入省略、零、负数和超过 Connect 毫秒头范围的请求期限。负数转为 1 ms，快速完整回执可能先到；失败仅接受明确的 DEADLINE_EXCEEDED。超长头须在操作前拒绝且无副作用；期限失败只查询已有路径或 PID，不重复提交未知操作。输入结果须为零次或一次完整载荷，不能重复；每例再检查正常调用，最后销毁本次 VM 并另做宿主残留审计。该脚本不覆盖生命周期和 watcher 接口，运行方式与其他 SDK 实机脚本一致。上述 96 个场景已在两台真实 VM 通过：48 个完整成功、24 个明确期限到期、24 个超长头拒绝；精确提交和指纹见[版本基线](../references/v1-baseline.json)的 `rpc_timeout_acceptance`。本轮负数均观察到期限到期，不能据此要求更快的服务必定失败。服务退出前宿主进程、私有资源与网络空间持有者均已清理，基础盘未变。
+
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000 \

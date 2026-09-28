@@ -306,5 +306,69 @@
     "result": "passed 24 Start rejections: sync/async x foreground/background x unknown user, root/ubuntu missing cwd, root/ubuntu regular-file cwd, ubuntu denied cwd. Exact AuthenticationException or InvalidArgumentException required; every unique marker absent and subsequent ubuntu cwd/env/user command successful. Root successfully uses the same private directory; root/ubuntu foreground/background valid contexts also pass.",
     "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
     "limits": "selected invalid user/cwd cases, not every malformed argument, path or timeout combination. No production or proof changes."
+  },
+  "command_timeout_acceptance": {
+    "test": "tests/system/sdk_command_timeouts.py",
+    "commit": "368f92aee93014768092f08d737e58eda0d087ea",
+    "script_sha256": "d41117c266c9cc4484b7c0695a4b72a170cb00d4986c233df0d6e5203ccea718",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base, server fingerprints and resource configuration as command_input_budget_acceptance; explicit no-internet",
+    "result": "passed 52 original SDK cases: sync/async run foreground/background and connect, each timeout/request_timeout omitted, zero, negative and 10000000 seconds; plus known-PID wait after one-second Start and Connect deadlines for each client. No automatic Start replay; subsequent calls healthy.",
+    "observations": {
+      "completed": 33,
+      "stream_deadline": 8,
+      "invalid_rpc_timeout": 6,
+      "opening_deadline": 3,
+      "command_terminated": 2
+    },
+    "semantics": "sync run/connect ignore request_timeout; async applies it to first-event waiting. Negative timeout becomes 1 ms; an over-ten-digit Connect millisecond header is rejected. wait inherits its stream deadline. Start also sets the process execution deadline: late connect returns retained exit -1/signal: killed. Connect-only deadline leaves the original process live, allowing same-PID EOF and full success.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected command stream/opening and inherited-wait deadlines only; not file, unary RPC, sandbox lifetime or all malformed/non-finite timeout arguments. No production or proof changes."
+  },
+  "file_timeout_acceptance": {
+    "test": "tests/system/sdk_file_timeouts.py",
+    "commit": "0aac7ec64fe1552c1a4d9e2de7bd955136eac65d",
+    "script_sha256": "43013753d6cc8bf1aa9642ad3d92adf5c6c5ceb2b03a80edb9b63f6c63f30177",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same fixed host/kernel/envd/base/server, explicit no-internet and streaming configuration as command_input_budget_acceptance",
+    "result": "passed 160 original sync/async SDK cases: read text/bytes/stream request_timeout; stream read stream_idle_timeout; write and two-entry write_files with multipart/octet and text/bytes/binary IO/text IO. Each receives omitted, zero, negative and 10000000 seconds. Complete success verified by length/content/SHA-256; deadline errors must be exact httpx.ReadTimeout with TimeoutError cause; subsequent reads/writes healthy.",
+    "payload_bytes": 69000,
+    "payload_sha256": "e5e8db7e6b6b67a04bacf1d261dcafce255c44b5d6075dd7277aab25114d73bb",
+    "observations": {
+      "sync": {
+        "completed": 67,
+        "deadline": 13,
+        "deadline_upload_paths": 15,
+        "deadline_upload_existing_paths": 5
+      },
+      "async": {
+        "completed": 66,
+        "deadline": 14,
+        "deadline_upload_paths": 15,
+        "deadline_upload_existing_paths": 0
+      }
+    },
+    "semantics": "HTTP large-value control is valid, distinct from Connect header limits. Both clients omit the operation deadline for streamed IO uploads; multipart text IO is buffered and retains it. Negative HTTP deadlines expire, not argument rejection; sync ignores stream_idle_timeout while async applies it to opening and each read. Deadline-failed writes may already leave partial or full data: no rollback or automatic replay claimed.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected HTTP file timeout values and explicit encodings; not every malformed/non-finite value, watcher API, unary RPC or sandbox lifetime matrix, nor final deployment budgets. No production or proof changes."
+  },
+  "rpc_timeout_acceptance": {
+    "test": "tests/system/sdk_rpc_timeouts.py",
+    "commit": "d6e34395ad12a881f66553ab7d37349e70eb445a",
+    "script_sha256": "f6635267c511d9154a55070c7e753a036e8115e15f3925ce4786ea4617069dcb",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base/server, explicit no-internet and streaming configuration as command_input_budget_acceptance",
+    "result": "passed 96 original sync/async SDK cases: files get_info/exists/list/make_dir/remove/rename; commands list/kill/send_stdin/close_stdin; handle send_stdin/close_stdin. Each receives omitted, zero, negative and 10000000 seconds. Exact typed deadline/header errors, success payloads, read-only observations of unknown effects, one Start marker and subsequent usability checked.",
+    "observations": {
+      "completed": 48,
+      "deadline": 24,
+      "invalid_rpc_timeout": 24
+    },
+    "semantics": "negative request_timeout becomes 1 ms; all 24 negative cases timed out on this host, but valid full success can beat the deadline. Above-ten-digit Connect headers are rejected without operation effects. Deadline errors require TimeoutException with ConnectError DEADLINE_EXCEEDED context; no blind mutation retry. SendInput observations are zero or one payload, never duplicate.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected unary filesystem and process methods; not lifecycle or watcher deadlines, non-finite/malformed values or all concurrent schedules. No production or proof changes."
   }
 }
