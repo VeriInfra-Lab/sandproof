@@ -7,6 +7,7 @@ does not claim to test Sandbox.create/kill, controller authorization, or Harbor.
 
 import argparse
 import asyncio
+from contextlib import contextmanager
 import hashlib
 import importlib.metadata
 import json
@@ -19,6 +20,99 @@ import time
 
 
 URL = "http://172.16.0.2:49983"
+OUTSIDE_ADDRESS = "198.18.255.1"
+OUTSIDE_PORT = 18080
+
+
+def ip(*arguments):
+    subprocess.run(["/usr/bin/ip", *arguments], check=True, timeout=10)
+
+
+def network_socket_probe(namespace, source):
+    code = ("import socket; s=socket.socket(); s.settimeout(1); "
+            f"s.bind(({source!r}, 0)); s.connect(({OUTSIDE_ADDRESS!r}, {OUTSIDE_PORT})); "
+            "s.close()")
+    return subprocess.run(["/usr/bin/ip", "netns", "exec", namespace,
+                           sys.executable, "-c", code], capture_output=True,
+                          text=True, timeout=3)
+
+
+@contextmanager
+def live_outside_route(resource_id):
+    """A reachable test-only network, so a denied guest connection is not vacuous."""
+    suffix = secrets.token_hex(3)
+    outside = f"sp-out-{suffix}"
+    outside_link = f"spo{suffix}"
+    inside_link = f"spi{suffix}"
+    listener = None
+    forwarding_before = None
+    outside_created = False
+    pair_created = False
+    pair_moved = False
+    try:
+        ip("netns", "add", outside)
+        outside_created = True
+        ip("link", "add", outside_link, "type", "veth", "peer", "name", inside_link,
+           "netns", resource_id)
+        pair_created = True
+        ip("link", "set", outside_link, "netns", outside)
+        pair_moved = True
+        ip("netns", "exec", outside, "/usr/bin/ip", "addr", "add",
+           f"{OUTSIDE_ADDRESS}/30", "dev", outside_link)
+        ip("netns", "exec", outside, "/usr/bin/ip", "link", "set", outside_link, "up")
+        ip("netns", "exec", outside, "/usr/bin/ip", "route", "add",
+           "172.16.0.0/30", "via", "198.18.255.2")
+        ip("netns", "exec", resource_id, "/usr/bin/ip", "addr", "add",
+           "198.18.255.2/30", "dev", inside_link)
+        ip("netns", "exec", resource_id, "/usr/bin/ip", "link", "set", inside_link, "up")
+        forwarding_before = subprocess.check_output(
+            ["/usr/bin/ip", "netns", "exec", resource_id, "/usr/sbin/sysctl", "-n",
+             "net.ipv4.ip_forward"], text=True, timeout=10).strip()
+        subprocess.run(["/usr/bin/ip", "netns", "exec", resource_id, "/usr/sbin/sysctl",
+                        "-w", "net.ipv4.ip_forward=1"], check=True, capture_output=True,
+                       timeout=10)
+        guest_route = subprocess.check_output(
+            ["/usr/bin/ip", "netns", "exec", resource_id, "/usr/bin/ip",
+             "-4", "route", "get", OUTSIDE_ADDRESS, "from", "172.16.0.2",
+             "iif", "tap0"], text=True, timeout=10)
+        assert inside_link in guest_route, guest_route
+        listener_code = ("import socket; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, "
+                         "socket.SO_REUSEADDR, 1); s.bind(('198.18.255.1', 18080)); "
+                         "s.listen();\nwhile True:\n c,_=s.accept(); c.close()")
+        listener = subprocess.Popen(
+            ["/usr/bin/ip", "netns", "exec", outside, sys.executable, "-c", listener_code],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if listener.poll() is not None:
+                raise RuntimeError(f"test listener exited: {listener.stderr.read()!r}")
+            # This process is inside the VM's host namespace, not the guest.
+            # Bind the host side of the guest's TAP subnet to test the return route.
+            if network_socket_probe(resource_id, "172.16.0.1").returncode == 0:
+                break
+            time.sleep(0.1)
+        else:
+            raise RuntimeError("test outside route is not reachable from the VM namespace")
+        yield {"outside_address": OUTSIDE_ADDRESS, "outside_port": OUTSIDE_PORT}
+    finally:
+        if listener is not None:
+            listener.terminate()
+            try:
+                listener.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                listener.kill()
+                listener.wait(timeout=5)
+        try:
+            if forwarding_before is not None:
+                subprocess.run(["/usr/bin/ip", "netns", "exec", resource_id,
+                                "/usr/sbin/sysctl", "-w",
+                                f"net.ipv4.ip_forward={forwarding_before}"], check=True,
+                               capture_output=True, timeout=10)
+        finally:
+            if outside_created:
+                ip("netns", "delete", outside)
+            if pair_created and not pair_moved:
+                ip("link", "delete", outside_link)
 
 
 def probe_edge_cases(sandbox, config):
@@ -117,6 +211,29 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
 print('guest-egress-denied')
 PY""")
     assert network_probe.stdout.strip() == "guest-egress-denied"
+    if config.get("outside_address"):
+        address = config["outside_address"]
+        port = config["outside_port"]
+        route = sandbox.commands.run(
+            f"ip -4 route replace {address}/32 via 172.16.0.1 dev eth0"
+        )
+        assert route.exit_code == 0, route.stderr
+        # The host-side namespace has already reached this listener with the
+        # guest's source address. This packet must still be stopped at tap0.
+        guarded_probe = sandbox.commands.run(f"""python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.settimeout(1)
+    try:
+        sock.connect(({address!r}, {port}))
+    except OSError:
+        print('live-route-guest-denied')
+    else:
+        raise AssertionError('guest reached the test-only outside network')
+PY""")
+        assert (guarded_probe.stdout.strip(), guarded_probe.exit_code) == (
+            "live-route-guest-denied", 0
+        )
     assert sandbox.files.read("/tmp/input.txt") == "real guest file\n"
     return path_statuses
 
@@ -219,6 +336,7 @@ def probe(config):
         "async_background_wait_and_files": True,
         "host_marker_not_visible": True, "guest_command_cgroup": cgroup,
         "edge_cases": bool(config.get("edge_cases")),
+        "live_outside_route_denied": bool(config.get("outside_address")),
         "malformed_file_statuses": path_statuses,
     }))
 
@@ -252,9 +370,16 @@ def orchestrate(args):
                       str(args.uid_base + index), f"/run/netns/{resource_id}"]
             resources.append((config, environment, values))
             subprocess.run([runtime, "launch-net", *values], env=environment, check=True, timeout=30)
-            subprocess.run(["/usr/bin/ip", "netns", "exec", resource_id,
-                            sys.executable, script, "--probe"], env=environment,
-                           input=json.dumps(config), text=True, check=True, timeout=90)
+            if index == 0:
+                with live_outside_route(resource_id) as route:
+                    config.update(route)
+                    subprocess.run(["/usr/bin/ip", "netns", "exec", resource_id,
+                                    sys.executable, script, "--probe"], env=environment,
+                                   input=json.dumps(config), text=True, check=True, timeout=90)
+            else:
+                subprocess.run(["/usr/bin/ip", "netns", "exec", resource_id,
+                                sys.executable, script, "--probe"], env=environment,
+                               input=json.dumps(config), text=True, check=True, timeout=90)
         # Both VMs are still alive; writes to the same absolute system path
         # must retain their own value after the other VM has modified its disk.
         for config, environment, _values in resources:
@@ -278,6 +403,7 @@ def orchestrate(args):
         if cleanup_errors:
             raise RuntimeError("exact resource cleanup requires inspection: " + "; ".join(cleanup_errors))
     print(json.dumps({"two_vm_isolation": True, "base_image_unchanged": before,
+                      "live_outside_route_denied": True,
                       "exact_vm_disk_network_cleanup": True,
                       "scope": "guest SDK data plane only; controller/API/Harbor not yet exercised"}))
 
