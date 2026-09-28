@@ -712,5 +712,33 @@
     ],
     "residuals": "all eight durable records Destroyed; exact VM PID/start identities stopped; private jails/netns/cgroups absent and no namespace holders before service exit; live cgroup identity/limits sampled; base fingerprint unchanged; each independently created host canary retained content, device/inode, owner and mode",
     "limits": "selected full service cases, not guest-user DAC isolation, exhaustive path/fault coverage, final deployment budgets or full V1. Fixed envd file operations run as root; user determines home/ownership. Async octet batch errors do not cancel all other uploads; no atomicity/replay guarantee. No production or proof changes."
+  },
+  "create_context_acceptance": {
+    "commit": "0bb82762ca3bcb5c7f5c5b9a01e7708e21da6469",
+    "test": "tests/system/sdk_create_context.py",
+    "script_sha256": "0ff0e0a2504ab26e59e16540d871eb0fb8f87423325409653900e9cc6a6f0285",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "wrapper_sha256": "8e8d2dce33dedbdb078f35603d2a5b838042189601fe3f101be63d5ddd613dd0",
+    "server_source_equivalence": "all production Rust sources and Cargo manifests/lock unchanged between server build and test commit; checked before run",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure/KVM, fixed base/kernel/envd and Firecracker/jailer 1.16.1 as lifetime_target_acceptance; E2B SDK 2.51.0/Python 3.13; one vCPU/512 MiB guest, 1 CPU/768 MiB host cgroup, 1 GiB private disk; explicit no-internet, 64/96 MiB streaming test profile",
+    "command": "pinned-SDK Python tests/system/sdk_create_context.py --api-url <own-loopback-service> --sandbox-url <same-service> --restart-dir <own-supervisor-barrier>; API credentials only from environment",
+    "result": "62 grouped cases, 31 per original sync/async SDK: two concurrent VMs with different create env/metadata; root/ubuntu observe expected defaults and command-local overrides, empty/Unicode/metacharacters preserved, other VM unchanged, metadata not injected into environment; detail and paginated exact filters preserve metadata and owner isolation before/after one service restart per client; 16 invalid-context creates return exact SandboxException HTTP 400 and add no durable records",
+    "service_restarts": [
+      {
+        "sdk": "Sandbox",
+        "same_vm_identities": true,
+        "live_vms": 2
+      },
+      {
+        "sdk": "AsyncSandbox",
+        "same_vm_identities": true,
+        "live_vms": 2
+      }
+    ],
+    "durable_destroyed_rows": 4,
+    "elapsed_seconds": 21.643,
+    "residuals": "exactly four admitted sandbox rows, all Destroyed; all four exact VM PID/start identities stopped; jails/netns/cgroups absent, no namespace holders before service exit; live cgroup identity/limits sampled; base SHA unchanged",
+    "limits": "selected creation-context contract, not every malformed/maximum-size combination, arbitrary crash location, public networking or #13 task initialization. Service restarted with same disk/config and both live VM identities, not merely new SDK objects. No production Rust/proof changes."
   }
 }
