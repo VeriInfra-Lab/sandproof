@@ -22,7 +22,7 @@ import uuid
 
 import httpx
 from e2b import AsyncSandbox, Sandbox
-from e2b.exceptions import FileNotFoundException, RateLimitException
+from e2b.exceptions import FileNotFoundException, RateLimitException, SandboxException
 from e2b.sandbox.commands.command_handle import CommandExitException
 
 from sdk_command_input import call
@@ -276,11 +276,45 @@ async def stalled_download(sandbox, control, directory, url):
                 await stream.__aexit__(None, None, None)
             else:
                 await call(stream.__exit__, None, None, None)
-        # The quiet command outlives file/write idle and finishes normally.
+        # The quiet command survives the stalled file transfer and finishes normally.
         await end_input(quiet, b'quiet command stayed alive')
         return {'received_bytes': received, 'intended_bytes': DOWNLOAD_BYTES,
                 'capacity_release_seconds': elapsed, '429_while_stalled': rejections,
                 'sdk_error': error_name}
+    finally:
+        await cleanup_handles(tracked)
+
+
+async def stalled_headers(sandbox, control, directory):
+    fifo = directory + '/header-gate'
+    await call(sandbox.commands.run, f'mkfifo {shlex.quote(fifo)}', timeout=15)
+    tracked = []
+    try:
+        quiet = await start_input(sandbox, directory + '/header-quiet', tracked)
+        started = time.monotonic()
+        # The fixed envd opens this FIFO before sending headers. No writer
+        # exists until after the gateway's header deadline has been observed.
+        pending = asyncio.create_task(call(sandbox.files.read, fifo, request_timeout=15))
+        try:
+            await healthy(control, directory + '/header-idle-control')
+            try:
+                await pending
+            except SandboxException as error:
+                assert str(error).startswith('504:'), type(error).__name__
+            else:
+                raise AssertionError('blocked guest file unexpectedly completed')
+            elapsed = time.monotonic() - started
+        finally:
+            # Wake the guest's blocked open, then remove only our FIFO. The
+            # bounded writer also makes an unexpected missing reader fail.
+            writer = f"printf '%s' {'X' * 1024} > {shlex.quote(fifo)}"
+            await call(sandbox.commands.run,
+                       f'timeout 5 sh -c {shlex.quote(writer)}; status=$?; rm -f -- {shlex.quote(fifo)}; exit "$status"',
+                       timeout=10)
+            if not pending.done():
+                await pending
+        await end_input(quiet, b'quiet command outlived file header idle')
+        return {'status': 504, 'elapsed_seconds': elapsed, 'quiet_command_completed': True}
     finally:
         await cleanup_handles(tracked)
 
@@ -300,10 +334,12 @@ async def transport_cases(sandbox, control, directory, url):
     content = await call(sandbox.files.read, progress_path, format='bytes')
     assert len(content) == progressing['bytes'] and hashlib.sha256(content).hexdigest() == progressing['sha256']
     stalled = await stalled_download(sandbox, control, directory, url)
+    headers = await stalled_headers(sandbox, control, directory)
     await healthy(sandbox, directory + '/after-stalled-download')
     await healthy(control, directory + '/after-transport-control')
     return {'idle_upload_status': 408, 'observed_guest_prefix': prefix,
-            'progressing_upload': progressing, 'stalled_download': stalled}
+            'progressing_upload': progressing, 'stalled_download': stalled,
+            'stalled_headers': headers}
 
 
 async def exercise(args):
