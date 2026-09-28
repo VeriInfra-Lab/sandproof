@@ -17,7 +17,7 @@ sudo ./target/debug/sandproof-vm smoke \
   <root拥有的基础ext4绝对路径> <独占的非root UID> <独占的非root GID>
 ```
 
-`smoke` 在同一个进程内启动 VM、读取串口日志中的来宾启动标志、按 PID 句柄确认精确进程退出，然后删除该编号的私有 jail/磁盘。编号占位记录及仅 root 可读的日志保留，防止旧编号被复用。`observe`、`stop`、`cleanup` 接收同样参数，可检查或收尾确切编号；失败/超时不自动分配第二个 VM。启动门控进程在精确 PID 与启动时刻原子落盘并同步后才执行 jailer；控制进程在此之前退出会关闭门控管道，使 Firecracker 不会启动。部署前仍需完成残留资源自动对账、常驻运行服务、来宾健康检查和实际资源/网络约束。
+`smoke` 在同一个进程内启动 VM、读取串口日志中的来宾启动标志、按 PID 句柄确认精确进程退出，然后删除该编号的私有 jail/磁盘。编号占位记录及仅 root 可读的日志保留，防止旧编号被复用。`observe`、`stop`、`cleanup` 接收同样参数，可检查或收尾确切编号；失败/超时不自动分配第二个 VM。启动门控进程在精确 PID 与启动时刻原子落盘并同步后才执行 jailer；控制进程在此之前退出会关闭门控管道，使 Firecracker 不会启动。常驻运行服务由 `sandbox-server` 经 `sandbox-node` 接入；已有真实来宾健康/鉴权检查、禁网和选定回执丢失恢复证据。CLI 的启动标志检查不能替代这些服务验收。实际 CPU/内存限制须显式配置下述 `host_resources`；公网/静态出站、完整恢复竞争与最终部署预算仍待对应任务验收。
 
 若需复现实机私有链路，用同样参数调用 `smoke-net`，并在末尾追加 `/run/netns/<同一资源编号>`。此诊断模式使用代码中固定的**公开测试用**令牌摘要，只能验证 Firecracker 的网络和 MMDS 配置，不能作为正式服务凭据。运行器自行创建网络空间和 TAP，验证来宾可达后按编号清理网络空间和私有磁盘；基础镜像不被修改。实测过的网络模式仍依赖 CI 镜像预装的 `fcnet.service`，它不是可部署任务镜像。
 
@@ -100,4 +100,38 @@ sudo tests/compat/.venv/bin/python tests/system/guest_smoke.py \
 
 禁网测试额外创建一个仅供本轮使用的外部网络空间和临时链路，先从 VM 的宿主网络空间确认该测试端点真实可达，再由来宾 root 设置静态路由尝试访问；即使转发路径存在，来宾流量仍须在 TAP 入站处被宿主规则拒绝。该实验只使用隔离的测试网络，不开放真实公网，也不改变宿主全局 IPv4 转发值。测试脚本会恢复 VM 网络空间原转发值并删除临时链路；异常留下的网络空间需要按本轮唯一名称检查，不得批量删除其他运行中的沙箱资源。
 
-`launch-net`、`observe-net`、`stop-net`、`cleanup-net` 为该测试提供诊断入口，参数与 `smoke-net` 相同，但要求环境变量 `SANDBOX_ENVD_TOKEN_SHA512`。`launch-net` 保留串口日志，整轮测试应留在同一个受监督的宿主会话中。该测试直接使用 SDK 构造器连接已创建的来宾，**没有测试公共 create/kill API 或 Harbor**。镜像沿用 Firecracker CI 系统及其测试配置，不是生产任务镜像，也不包含 Dockerfile/OCI 构建、外网策略或完整资源限制验收。新增运行层、制备工具和 envd 不在现有 Lean 证明范围内。
+`launch-net`、`observe-net`、`stop-net`、`cleanup-net` 为该测试提供诊断入口，参数与 `smoke-net` 相同，但要求环境变量 `SANDBOX_ENVD_TOKEN_SHA512`。`launch-net` 保留串口日志，整轮测试应留在同一个受监督的宿主会话中。该测试直接使用 SDK 构造器连接已创建的来宾，**没有测试公共 create/kill API 或 Harbor**。上述脚本也已使用 `base-inputs.json` 的新 base 执行，精确提交和指纹见[版本基线](../references/v1-baseline.json)；历史 CI 配方与新 base 的证据分别记录。它不包含 Dockerfile/OCI 构建、完整外网策略或最终任务资源验收。新增运行层、制备工具和 envd 不在现有 Lean 证明范围内。
+
+
+## 独立复现 B01 节点验收
+
+[节点实机用例](../sandbox-node/tests/host_smoke.rs)可独立于公共 HTTP 服务执行，使用真实控制器日志、jailer、envd 与资源观察。先按[宿主预检](../docs/testing-plan.md#4-独立运行宿主预检)确认干净提交及固定产物，再构建该提交的测试可执行文件：
+
+```sh
+cargo test -p sandproof-node --test host_smoke --locked --no-run --message-format=json \
+  > artifacts/host-test-build.json
+python3 -c 'import json; print("\n".join(x["executable"] for x in map(json.loads, open("artifacts/host-test-build.json")) if x.get("executable")))'
+```
+
+将输出的 `host_smoke-*` 可执行文件复制到已复核的 root 独占目录，核对复制前后的 SHA-256，并记录源码提交。以下路径和 UID 是需由测试机操作员填写的占位值；UID 基数及后续 1000 个编号必须独占，不能与其他测试并行复用。每条用例单独建立空的 root 私有 state/jails 目录及新的 16 位小写十六进制 namespace；不能把多个用例共用同一数据库。
+
+```sh
+sudo env \
+  SANDPROOF_TEST_NAMESPACE=<新的16位十六进制编号> \
+  SANDPROOF_TEST_STATE_DIR=/root-owned/this-case/state \
+  SANDPROOF_TEST_CHROOT=/root-owned/this-case/jails \
+  SANDPROOF_TEST_JAILER=/root-owned/jailer \
+  SANDPROOF_TEST_FIRECRACKER=/root-owned/firecracker \
+  SANDPROOF_TEST_KERNEL=/root-owned/vmlinux \
+  SANDPROOF_TEST_ROOTFS=/root-owned/base.ext4 \
+  SANDPROOF_TEST_UID_BASE=<独占UID基数> \
+  SANDPROOF_TEST_HOST_RESOURCES='{"cgroup_parent":"/sys/fs/cgroup/sandproof-node","memory_max_bytes":536870912}' \
+  /root-owned/host-smoke --exact repeated_stop_and_cleanup_preserve_another_live_vm \
+  --ignored --nocapture
+```
+
+该用例同时启动两台 VM，重复停止、清理其中一台，并在重建 worker 后再次提交相同动作。每步必须保留另一台的 PID/启动时刻、网络/磁盘/cgroup inode，且通过真实 envd 鉴权读取；最后两台均停止、资源均清理。节点测试的来宾 RAM 为 256 MiB，上例 VMM 宿主上限为 512 MiB，仅是测试配置。失败保留现场，不靠析构函数掩盖失败后的残留。
+
+同一入口分别运行 `create_and_kill_use_real_host_receipts`、`real_worker_process_exit_reconciles_prepare_and_stop`、`real_worker_sigkill_reconciles_prepare_and_stop`、`real_worker_sigkill_reconciles_partial_cleanup`、`partial_prepare_without_first_slot_is_reclaimed_without_launch` 和 `partial_prepare_network_intent_is_reclaimed_by_exact_identity`；每次更换独立目录和 namespace。这些用例覆盖已固定的故障窗口，不代表任意位置崩溃。基础检查还运行 `missing_kvm_is_reported_explicitly`，确认缺失 KVM 路径返回专门错误；宿主预检负责检查实际 `/dev/kvm` 能否打开及 API 版本。
+
+报告须记录命令、退出码、测试二进制/配置摘要与固定镜像指纹。测试退出后，独立按 `.claims` 内记录的 PID/启动时刻检查进程退出，核对本轮 jail、网络空间和 cgroup 已消失、没有进程仍持有记录的网络空间 inode，并重新计算基础盘哈希。保留 root 私有编号记录和诊断日志，导出时只提取明确允许的结果字段；不发布 envd 令牌或整份私有配置。普通 CI 中这些实机用例是忽略项，不能把基础检查绿灯称为 KVM 通过。

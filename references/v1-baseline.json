@@ -242,5 +242,35 @@
     },
     "residuals": "four exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; all live cgroup identity/membership/limits sampled; base hash unchanged. Earlier failed raw HTTP reader probe separately audited clean and not counted as acceptance.",
     "limits": "selected manual admission/idle acceptance, not final deployment budgets, exhaustive concurrent lifecycle/restart schedules, each SDK timeout-argument combination, host filesystem/inode exhaustion or a whole-host memory bound. No production code or Lean claim changed."
+  },
+  "runtime_b01_acceptance": {
+    "test": "sandbox-node/tests/host_smoke.rs",
+    "commit": "d6b1bfa4ced9ec0b36fe6e6c3c8a7d71a0a5164a",
+    "test_binary_sha256": "91224dbeb7580507c92d6f6bd95534b7d3c07507c829131a0a3316e5a27b3617",
+    "host_kernel": "6.8.0-1065-azure",
+    "kvm_api": 12,
+    "fixed_artifacts": "same Firecracker/jailer 1.16.1, kernel, envd and base fingerprints as fixed_base_acceptance",
+    "configuration": {
+      "vcpu_count": 1,
+      "guest_memory_mib": 256,
+      "host_memory_max_bytes": 536870912,
+      "cpu_max": "100000 100000",
+      "memory_swap_max": 0,
+      "memory_oom_group": 1
+    },
+    "tests": [
+      "repeated_stop_and_cleanup_preserve_another_live_vm",
+      "create_and_kill_use_real_host_receipts",
+      "real_worker_process_exit_reconciles_prepare_and_stop",
+      "real_worker_sigkill_reconciles_prepare_and_stop",
+      "real_worker_sigkill_reconciles_partial_cleanup",
+      "partial_prepare_without_first_slot_is_reclaimed_without_launch",
+      "partial_prepare_network_intent_is_reclaimed_by_exact_identity"
+    ],
+    "result": "All seven selected real-host cases passed. Two concurrent VMs: repeated StopVm/CleanupVm/CleanupSlot before and after worker reopen preserve the other VM PID/start, disk/netns/cgroup inodes and authenticated envd file access. Lost receipts and process-exit/SIGKILL cases reconcile the original identities; no repeated PrepareVm or StopVm after journal recovery.",
+    "residuals": "Six exact VMM processes stopped, private jails/netns/cgroups absent; two unlaunched resource claims also clean. Independent /proc scan found no holders of recorded network namespace inodes. Base SHA-256 remained b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd. Root-only claims and diagnostics intentionally retained.",
+    "missing_kvm": "The ordinary Rust missing_kvm_is_reported_explicitly regression passed; real-host preflight separately opened /dev/kvm and verified API 12. No claim of physically removing KVM on this host.",
+    "reproduction": "sandbox-runtime/README.md: independent B01 node acceptance; clean commit, reviewed binary, fresh private directories/namespace per case, exclusive UID range and delegated cgroup parent",
+    "limits": "Manual B01 runtime acceptance only. Fixed crash windows, not all interleavings, host reboot or V1 acceptance. Does not close #6/#8 final budgets and #13 task initialization. No production or proof changes."
   }
 }
