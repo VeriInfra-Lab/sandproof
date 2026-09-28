@@ -196,7 +196,7 @@
   "not_yet_tested": [
     "full optional SDK get/list response fields and current-vs-target lifetime defaults beyond selected tested list filters/pagination",
     "full-service stdin resource boundaries, timeout-parameter, disconnect, failure and unknown-result combinations",
-    "file host-boundary enforcement and large-stream budgets against a real VM",
+    "final task-derived transfer budgets and path/fault combinations beyond the selected real-VM streaming and host-canary controls",
     "fixed-base Harbor task initialization and scoring baseline",
     "public IPv4/static-rule DNS, IPv6, concurrent and crash recovery matrices beyond selected full-service smoke"
   ]
