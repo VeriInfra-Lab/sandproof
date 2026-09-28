@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use axum::{
     body::{Body, to_bytes},
@@ -52,13 +55,28 @@ enum PrepareObservation {
     Reclaimed,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum RecoveredAction {
+    Network,
+    TerminalFence,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum StopObservation {
+    #[default]
+    Normal,
+    LoseReceipt,
+    ObservedAfterRestart,
+}
+
 struct FakeHost {
     secrets: BTreeMap<u64, String>,
     free_bytes: u64,
+    public_ipv4_ready: bool,
     prepare: PrepareObservation,
-    observed_stop: bool,
+    recovered_actions: BTreeSet<RecoveredAction>,
+    stop: StopObservation,
     incomplete_cleanup: bool,
-    lose_stop_receipt: bool,
 }
 
 impl Default for FakeHost {
@@ -66,16 +84,21 @@ impl Default for FakeHost {
         Self {
             secrets: BTreeMap::new(),
             free_bytes: 10_000,
+            public_ipv4_ready: false,
             prepare: PrepareObservation::Missing,
-            observed_stop: false,
+            recovered_actions: BTreeSet::new(),
+            stop: StopObservation::Normal,
             incomplete_cleanup: false,
-            lose_stop_receipt: false,
         }
     }
 }
 
 impl HostAdapter for FakeHost {
     type Evidence = Evidence;
+
+    fn public_ipv4_ready(&self) -> Result<bool, PortError> {
+        Ok(self.public_ipv4_ready)
+    }
 
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
         Ok(self.free_bytes)
@@ -100,7 +123,7 @@ impl HostAdapter for FakeHost {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
-        if self.lose_stop_receipt
+        if self.stop == StopObservation::LoseReceipt
             && matches!(action.command.command(), core::Command::StopVm { .. })
         {
             return Ok(WorkReceipt {
@@ -135,7 +158,19 @@ impl HostAdapter for FakeHost {
         }
         if (self.prepare == PrepareObservation::Successful
             && matches!(action.command.command(), core::Command::PrepareVm { .. }))
-            || (self.observed_stop
+            || (self.recovered_actions.contains(&RecoveredAction::Network)
+                && matches!(
+                    action.command.command(),
+                    core::Command::ConfigureNetwork { .. }
+                ))
+            || (self
+                .recovered_actions
+                .contains(&RecoveredAction::TerminalFence)
+                && matches!(
+                    action.command.command(),
+                    core::Command::InstallFence { terminal: true, .. }
+                ))
+            || (self.stop == StopObservation::ObservedAfterRestart
                 && matches!(action.command.command(), core::Command::StopVm { .. }))
             || (self.incomplete_cleanup
                 && matches!(action.command.command(), core::Command::CleanupVm { .. }))
@@ -166,6 +201,31 @@ impl HostAdapter for FakeHost {
         Ok(())
     }
 
+    fn reclaim_incomplete_network(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::ConfigureNetwork { .. }
+        ));
+        self.recovered_actions.insert(RecoveredAction::Network);
+        Ok(())
+    }
+
+    fn reclaim_incomplete_terminal_fence(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ));
+        self.recovered_actions
+            .insert(RecoveredAction::TerminalFence);
+        Ok(())
+    }
+
     fn reclaim_incomplete_cleanup(
         &mut self,
         action: &WorkAction<core::EffectId>,
@@ -179,6 +239,7 @@ impl HostAdapter for FakeHost {
 
 fn config() -> ManagedConfig {
     ManagedConfig {
+        public_ipv4_enabled: false,
         limits: AdmissionLimits {
             max_active_global: 2,
             max_active_per_tenant: 1,
@@ -210,6 +271,192 @@ fn setup_with_host(host: FakeHost) -> (TempDir, Arc<ManagedPort<FakeHost>>) {
 
 fn setup() -> (TempDir, Arc<ManagedPort<FakeHost>>) {
     setup_with_host(FakeHost::default())
+}
+
+fn admit_public_create(journal: &mut ControllerJournal) {
+    journal
+        .admit_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox: core::SandboxId(1),
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::from_sdk_ipv4(None, &[], &[]).unwrap(),
+                operation: core::OperationId(1),
+            },
+            i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis(),
+            )
+            .unwrap(),
+            300,
+            1_000,
+            config().limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+}
+
+#[test]
+fn lost_public_network_receipt_is_reconciled_before_running() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    admit_public_create(&mut journal);
+    let sandbox = core::SandboxId(1);
+    let pending =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            if matches!(
+                action.command.command(),
+                core::Command::ConfigureNetwork { .. }
+            ) {
+                Ok(WorkReceipt::<Evidence> {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                })
+            } else {
+                FakeHost::default().execute(action)
+            }
+        });
+    assert!(matches!(
+        pending,
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::ConfigureNetwork { .. }
+    ));
+    assert!(
+        journal
+            .matches_current_network(&journal.world().unwrap(), &uncertain[0])
+            .unwrap()
+    );
+    let mut stale = uncertain[0].clone();
+    stale.identity.epoch += 1;
+    assert!(
+        !journal
+            .matches_current_network(&journal.world().unwrap(), &stale)
+            .unwrap()
+    );
+    assert_ne!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Running
+    );
+    drop(journal);
+
+    let mut host = FakeHost {
+        public_ipv4_ready: true,
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    let mut settings = config();
+    settings.public_ipv4_enabled = true;
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        settings,
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 0);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
+        "running"
+    );
+    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+}
+
+#[test]
+fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    admit_public_create(&mut journal);
+    let sandbox = core::SandboxId(1);
+    let pending =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            let outcome = match action.command.command() {
+                core::Command::ConfigureNetwork { .. } => WorkOutcome::DefinitiveFailure {
+                    code: FailureCode::InvalidResource,
+                    retryable: false,
+                    partial: None,
+                },
+                core::Command::InstallFence { terminal: true, .. } => WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+                _ => return FakeHost::default().execute(action),
+            };
+            Ok(WorkReceipt::<Evidence> {
+                identity: action.identity.clone(),
+                outcome,
+            })
+        });
+    assert!(matches!(
+        pending,
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::InstallFence { terminal: true, .. }
+    ));
+    assert!(
+        journal
+            .matches_current_terminal_fence(&journal.world().unwrap(), &uncertain[0])
+            .unwrap()
+    );
+    let mut stale = uncertain[0].clone();
+    stale.identity.generation += 1;
+    assert!(
+        !journal
+            .matches_current_terminal_fence(&journal.world().unwrap(), &stale)
+            .unwrap()
+    );
+    assert_ne!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
+    drop(journal);
+
+    let mut host = FakeHost::default();
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 0);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
 }
 
 #[test]
@@ -536,7 +783,7 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
     let port = ManagedPort::new(
         ControllerJournal::open(&path, NAMESPACE).unwrap(),
         FakeHost {
-            observed_stop: true,
+            stop: StopObservation::ObservedAfterRestart,
             ..FakeHost::default()
         },
         config(),
@@ -713,6 +960,7 @@ fn request() -> CreateRequest {
         template_id: "base".into(),
         timeout: Some(300),
         allow_internet_access: Some(false),
+        network: None,
         metadata: None,
         env_vars: None,
     }
@@ -818,7 +1066,7 @@ fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
 fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
     use sandproof_api::managed::DataKind;
     let (_directory, port) = setup_with_host(FakeHost {
-        lose_stop_receipt: true,
+        stop: StopObservation::LoseReceipt,
         ..FakeHost::default()
     });
     let sandbox = port.create("1", request()).unwrap();
@@ -856,6 +1104,34 @@ fn direct_port_cannot_bypass_public_subset_guards() {
     unsupported.allow_internet_access = Some(true);
     assert_eq!(port.create("1", unsupported), Err(PortError::Invalid));
     assert!(port.list("1", None, None).unwrap().items.is_empty());
+}
+
+#[test]
+fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut settings = config();
+    settings.public_ipv4_enabled = true;
+    let mut create = request();
+    create.allow_internet_access = Some(true);
+    let blocked = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        settings.clone(),
+    );
+    assert_eq!(blocked.create("1", create.clone()), Err(PortError::Busy));
+    assert!(blocked.list("1", None, None).unwrap().items.is_empty());
+    drop(blocked);
+    let ready = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost {
+            public_ipv4_ready: true,
+            ..FakeHost::default()
+        },
+        settings,
+    );
+    assert!(ready.create("1", create).is_ok());
+    assert_eq!(ready.list("1", None, None).unwrap().items.len(), 1);
 }
 
 #[test]

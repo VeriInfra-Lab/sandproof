@@ -5,6 +5,7 @@
 //! must authorize every operation against the durable controller state.
 
 pub mod managed;
+mod network;
 
 use std::sync::Arc;
 
@@ -67,10 +68,23 @@ pub struct CreateRequest {
     pub timeout: Option<i64>,
     #[serde(rename = "allow_internet_access")]
     pub allow_internet_access: Option<bool>,
+    pub network: Option<CreateNetwork>,
     #[serde(default)]
     pub metadata: Option<std::collections::BTreeMap<String, String>>,
     #[serde(default, rename = "envVars")]
     pub env_vars: Option<std::collections::BTreeMap<String, String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreateNetwork {
+    /// The pinned SDK serializes this as true even when the caller only sets
+    /// egress rules. False needs ingress-token support and remains unsupported.
+    pub allow_public_traffic: Option<bool>,
+    #[serde(default)]
+    pub allow_out: Vec<String>,
+    #[serde(default)]
+    pub deny_out: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Default)]
@@ -251,10 +265,10 @@ async fn create<P: ControllerPort>(
 ) -> Result<(StatusCode, Json<SandboxSession>), ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
-    // The pinned E2B SDK omits this field by default. Until egress isolation
-    // is implemented, accepting omission would silently change its behavior.
+    // Parse the pinned SDK's address-only policy before any host effect. The
+    // managed port separately checks host readiness before durable admission.
     if request.template_id != "base"
-        || request.allow_internet_access != Some(false)
+        || network::selected_policy(&request).is_err()
         || !valid_timeout(request.timeout)
         || request
             .metadata

@@ -156,7 +156,7 @@ struct ResourceMarker {
 }
 
 pub struct Runtime {
-    config: RuntimeConfig,
+    pub(crate) config: RuntimeConfig,
 }
 
 impl Runtime {
@@ -615,13 +615,24 @@ impl Runtime {
         }
         let metadata = match fs::symlink_metadata(namespace) {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return self.cleanup_uplink_after_namespace(id);
+            }
             Err(error) => return Err(error.into()),
         };
         if !metadata.is_file() || metadata.uid() != 0 || metadata.ino() != network.namespace_inode {
             return Err(RuntimeError::IdentityMismatch("network namespace handle"));
         }
-        run_ip("delete namespace", &["netns", "delete", id])
+        let pids = Command::new("/usr/bin/ip")
+            .args(["netns", "pids", id])
+            .output()?;
+        if !pids.status.success() || !pids.stdout.is_empty() {
+            return Err(RuntimeError::InvalidConfiguration(
+                "namespace still contains a process or cannot be checked",
+            ));
+        }
+        run_ip("delete namespace", &["netns", "delete", id])?;
+        self.cleanup_uplink_after_namespace(id)
     }
 
     /// Read-only check of the exact namespace handle and its guest-facing
@@ -797,7 +808,7 @@ impl Runtime {
             return Err(RuntimeError::IdentityMismatch("network intent resource ID"));
         }
         if !path_present(namespace)? {
-            return Ok(());
+            return self.cleanup_uplink_after_namespace(id);
         }
         check_trusted_path(namespace)?;
         let metadata = fs::symlink_metadata(namespace)?;
@@ -819,7 +830,8 @@ impl Runtime {
                 "namespace still contains a process or cannot be checked",
             ));
         }
-        run_ip("delete aborted namespace", &["netns", "delete", id])
+        run_ip("delete aborted namespace", &["netns", "delete", id])?;
+        self.cleanup_uplink_after_namespace(id)
     }
 
     /// A read-only terminal observation for a never-launched resource.
@@ -855,6 +867,7 @@ impl Runtime {
                     .join(id),
             )?
             || network_present
+            || !self.uplink_resources_absent(id)?
         {
             return Err(RuntimeError::IdentityMismatch(
                 "aborted launch still has a physical resource",
@@ -928,6 +941,7 @@ impl Runtime {
                 Some(namespace) => path_present(namespace)?,
                 None => false,
             }
+            || !self.uplink_resources_absent(id)?
         {
             return Err(RuntimeError::IdentityMismatch(
                 "failed prepare still has resources",
@@ -936,7 +950,7 @@ impl Runtime {
         Ok(true)
     }
 
-    fn validate_network_id(&self, id: &str) -> Result<(), RuntimeError> {
+    pub(crate) fn validate_network_id(&self, id: &str) -> Result<(), RuntimeError> {
         if let Some(namespace) = &self.config.private_netns {
             validate_namespace_id(namespace, id)?;
         }
@@ -1158,7 +1172,7 @@ fn copy_private_disk(source: &Path, destination: &Path) -> Result<(), RuntimeErr
     Ok(())
 }
 
-fn write_new_record<T: Serialize>(path: &Path, value: &T) -> Result<(), RuntimeError> {
+pub(crate) fn write_new_record<T: Serialize>(path: &Path, value: &T) -> Result<(), RuntimeError> {
     let parent = path
         .parent()
         .ok_or(RuntimeError::InvalidConfiguration("record parent"))?;
@@ -1179,7 +1193,7 @@ fn path_present(path: &Path) -> Result<bool, RuntimeError> {
     }
 }
 
-fn read_trusted_record<T: DeserializeOwned>(path: &Path) -> Result<T, RuntimeError> {
+pub(crate) fn read_trusted_record<T: DeserializeOwned>(path: &Path) -> Result<T, RuntimeError> {
     check_trusted_path(path)?;
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
@@ -1188,7 +1202,7 @@ fn read_trusted_record<T: DeserializeOwned>(path: &Path) -> Result<T, RuntimeErr
     Ok(serde_json::from_reader(File::open(path)?)?)
 }
 
-fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeError> {
+pub(crate) fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeError> {
     let output = Command::new("/usr/bin/ip")
         .args(arguments)
         .env_clear()
@@ -1204,7 +1218,7 @@ fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeErro
     Ok(())
 }
 
-fn run_nft_in_namespace(
+pub(crate) fn run_nft_in_namespace(
     id: &str,
     operation: &'static str,
     arguments: &[&str],

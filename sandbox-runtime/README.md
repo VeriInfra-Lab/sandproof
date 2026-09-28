@@ -2,9 +2,9 @@
 
 [项目蓝图](../docs/project-blueprint.md) · [模块合同](../docs/module-contracts.md) · [系统验收](../docs/testing-plan.md)
 
-此 crate 负责固定 Linux/KVM 主机上的 Firecracker/jailer 启停、进程身份观察和私有磁盘清理。每台 VM 有独立 Linux 网络空间和 TAP，仅配置一条 `172.16.0.0/30` 私有链路。创建 TAP 和启动 VM 之前，在该空间内原子安装宿主控制的默认拒绝规则：只允许宿主发起的管理连接得到已建立连接的回包，其余来宾发起的 IPv4、IPv6 和 DNS 包均丢弃。网络回执核对空间 inode 与规则的完整内容；规则缺失或被放宽不会算配置成功。停止并核对精确 VM 进程后，按已记录的网络空间 inode 回收。`egress` 模块集中生成禁网规则，并预备按固定 SDK 的 IPv4 地址/网段允许、拒绝与公网默认值生成来宾侧规则；不要求用户增加协议或端口字段。平台禁区优先于用户允许，用户允许优先于用户拒绝。此规则生成器**尚未接入宿主出口、隔离观察与恢复**，不能作为已启用功能，也不能把目前的禁网模式称为完整 #10。配套脚本可制备固定 envd 来宾镜像，并用原 E2B SDK 实测来宾命令和文件操作；`vmm_running` 仅表示 Firecracker 报告 VM 正在运行，**不等于来宾服务就绪，更不能直接发布控制器的 Running**。相关工作由 [#6](https://github.com/ningZhang-cs/sandproof/issues/6)、[#8](https://github.com/ningZhang-cs/sandproof/issues/8)、[#7](https://github.com/ningZhang-cs/sandproof/issues/7)、[#10](https://github.com/ningZhang-cs/sandproof/issues/10) 和 [#12](https://github.com/ningZhang-cs/sandproof/issues/12) 跟踪。
+此 crate 负责固定 Linux/KVM 主机上的 Firecracker/jailer 启停、进程身份观察和私有磁盘清理。每台 VM 有独立 Linux 网络空间和 TAP；VM 启动前先安装默认拒绝规则，保留经鉴权的管理通道。可选 IPv4 出口使用每台 VM 独立的链路、地址、宿主 INPUT/FORWARD 规则和两层 NAT；先持久记录资源意图，安装并观察宿主规则，再准备来宾策略，最后原子打开来宾闸门。平台禁区高于用户允许，用户允许高于用户拒绝；动态宿主本机地址再由宿主路由判断阻断。观察绑定网络空间 inode、链路 ifindex、地址、路由和完整规则。配置中断时，未打开闸门的部分资源可由精确动作对账并清理；已准备的配置只在重新观察后继续激活。停止并核对精确 VM 进程后回收出口与私有资源。隔离流量与固定 SDK→真实 Firecracker→测试专用外部网络空间的选定场景通过；这不是任意公网、DNS 隧道、并发故障或完整 #10 验收。`vmm_running` 仅代表虚拟机监控器运行，不能直接发布控制器的 Running。相关工作由 [#6](https://github.com/ningZhang-cs/sandproof/issues/6)、[#7](https://github.com/ningZhang-cs/sandproof/issues/7)、[#10](https://github.com/ningZhang-cs/sandproof/issues/10) 和 [#12](https://github.com/ningZhang-cs/sandproof/issues/12) 跟踪。
 
-[出站规则隔离流量测试](tests/egress_traffic.rs)在测试专用 Linux 主机上以 root 手动运行：`cargo test -p sandbox-runtime --test egress_traffic -- --ignored --nocapture`。它先在独立网络空间中证明公网样式地址、私网地址、宿主样式地址和 IPv6 目标原本有路，再安装生成的规则测试允许与拒绝，并核对宿主发起的管理回包及测试资源清理。所有虚拟链路两端都在本轮私有网络空间，转发只在该空间启用；不连接真实互联网、不启动 VM，也不等于控制器或 SDK 网络功能已验收。
+[出站规则隔离流量测试](tests/egress_traffic.rs)在测试专用 Linux 主机上以 root 手动运行：`cargo test -p sandbox-runtime --test egress_traffic -- --ignored --nocapture`。它验证来宾侧允许、拒绝、平台禁区、IPv6 封闭及管理回包。[出口安装与恢复测试](src/uplink.rs)另验证完整来宾模拟网络空间→宿主→外部模拟网络空间的允许与拒绝数据包、闸门激活前的封闭、准备后恢复、安装中断后的精确清理。后者需临时开启宿主 IPv4 转发并在测试后恢复；不得并行运行或当作公网/真实 VM 的验收。服务配置还须显式 `public_ipv4_enabled=true`，宿主转发已启用，且新构建的固定 `base` 镜像包含来宾默认路由。默认配置仍拒绝公网上线请求。
 
 运行器要求调用者为 root，jailer、Firecracker、内核、基础 ext4 和 jailer 基目录的每级路径均由 root 拥有且不可由其他用户修改。基础盘在每次启动时复制到独立 jail 中；调用者必须为不同 VM 分配不同非 root UID/GID。当前 CLI 是开发诊断工具，不是常驻控制服务；从短命 SSH 会话单独执行 `launch` 不能保证 VM 在会话结束后继续存活。
 
@@ -68,6 +68,8 @@ sudo python3 tools/build_base_guest.py \
 ```
 
 输出目录及其祖先必须由 root 拥有、不可被其他用户写入且不是符号链接；输出文件必须尚不存在。工具先把三个输入复制到私有目录并校验指纹，再解包、组装 1 GiB ext4；不挂载镜像、不执行来宾代码、不访问网络。保留 root/ubuntu 用户供 envd 选择运行身份，恢复上游 all-root SquashFS 中 ubuntu home 的正确归属，锁定登录密码、移除继承的 SSH 密钥和串口自动登录配置、屏蔽 SSH 服务，并清空共享机器标识。安装 envd、启动服务和包清单后，用 debugfs 检查内容与权限、e2fsck 检查文件系统；仅成功时输出 JSON 指纹报告并将镜像设为只读。失败的精确输出路径保留诊断，没有成功报告的文件不能作为已验收 base。
+
+新构建的固定镜像在 `fcnet.service` 配好 `eth0` 后、启动 envd 前，设置到 `172.16.0.1` 的默认路由。旧镜像没有这条路由，即使宿主出口测试通过也不能用于公网模式验收；公开模式只对已重建并重新记录指纹的镜像开放。显式禁网仍由宿主闸门强制，不能靠来宾路由是否存在判断安全。
 
 报告记录 profile、构建脚本、宿主文件系统工具及其配置、输出磁盘的指纹。固定输入与文件时间不代表不同宿主工具或 inode 创建时间下磁盘字节完全一致；每次输出都须单独绑定预检和实机证据。1 GiB 是这份联调镜像的逻辑容量，不是已测定的任务配额、宿主物理磁盘预留或内存保障。系统调用与 envd 均不在现有 Lean 证明范围内。
 
