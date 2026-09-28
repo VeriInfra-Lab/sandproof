@@ -12,7 +12,7 @@ use axum::{
 };
 use sandbox_controller_core as core;
 use sandproof_api::{
-    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, PortError,
+    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListOrder, ListQuery, PortError,
     managed::{HostAdapter, ManagedConfig, ManagedPort},
     router,
 };
@@ -1303,7 +1303,7 @@ fn idle_recovery_does_not_revisit_reclaimed_history_or_change_live_authority() {
         assert_eq!(report.unresolved_sandboxes, 0);
         assert_eq!(prepare_calls.load(Ordering::SeqCst), 4);
         assert_eq!(stop_calls.load(Ordering::SeqCst), 3);
-        assert_eq!(port.list("1", None, None).unwrap().items.len(), 1);
+        assert_eq!(port.list("1", ListQuery::default()).unwrap().items.len(), 1);
         assert!(
             port.authorize_data(
                 &live.envd_access_token,
@@ -1359,13 +1359,21 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
         port.kill("2", &created.sandbox_id),
         Err(PortError::NotFound)
     );
-    assert!(port.list("2", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("2", ListQuery::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 
     let info = port.get("1", &created.sandbox_id).unwrap();
     assert_eq!(info.state, "running");
     assert!(info.started_at.ends_with('Z'));
     assert!(info.end_at.ends_with('Z'));
-    assert_eq!(port.list("1", None, None).unwrap().items, vec![info]);
+    assert_eq!(
+        port.list("1", ListQuery::default()).unwrap().items,
+        vec![info]
+    );
     assert_eq!(
         port.connect("1", &created.sandbox_id, ConnectRequest { timeout: None })
             .unwrap()
@@ -1382,7 +1390,12 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
         Err(PortError::NotFound)
     );
     assert_eq!(port.get("1", &created.sandbox_id), Err(PortError::NotFound));
-    assert!(port.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("1", ListQuery::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1684,7 +1697,12 @@ fn physical_disk_shortage_rejects_before_any_admission() {
         ..FakeHost::default()
     });
     assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
-    assert!(port.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("1", ListQuery::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -1743,7 +1761,7 @@ async fn credential_write_failure_after_admission_is_unknown_and_recovers_withou
     let recovery = port.recover_on_startup().unwrap();
     assert_eq!(recovery.workflows_completed, 1);
     assert_eq!(recovery.unresolved_sandboxes, 0);
-    let items = port.list("1", None, None).unwrap().items;
+    let items = port.list("1", ListQuery::default()).unwrap().items;
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].sandbox_id, format!("sb-{NAMESPACE}-1"));
     assert_eq!(items[0].metadata.get("job"), Some(&"original".into()));
@@ -1764,7 +1782,12 @@ fn direct_port_cannot_bypass_public_subset_guards() {
     let mut unsupported = request();
     unsupported.allow_internet_access = Some(true);
     assert_eq!(port.create("1", unsupported), Err(PortError::Invalid));
-    assert!(port.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("1", ListQuery::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1777,7 +1800,7 @@ fn create_reply_failure_is_unknown_after_the_vm_has_started() {
     });
     assert_eq!(port.create("1", request()), Err(PortError::OutcomeUnknown));
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
-    let items = port.list("1", None, None).unwrap().items;
+    let items = port.list("1", ListQuery::default()).unwrap().items;
     assert_eq!(items.len(), 1);
     let recovered = port
         .connect("1", &items[0].sandbox_id, ConnectRequest { timeout: None })
@@ -1815,7 +1838,13 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
         settings.clone(),
     );
     assert_eq!(blocked.create("1", create.clone()), Err(PortError::Busy));
-    assert!(blocked.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        blocked
+            .list("1", ListQuery::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
     drop(blocked);
     let ready = ManagedPort::new(
         ControllerJournal::open(&path, NAMESPACE).unwrap(),
@@ -1826,7 +1855,10 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
         settings,
     );
     assert!(ready.create("1", create).is_ok());
-    assert_eq!(ready.list("1", None, None).unwrap().items.len(), 1);
+    assert_eq!(
+        ready.list("1", ListQuery::default()).unwrap().items.len(),
+        1
+    );
 }
 
 #[test]
@@ -1840,14 +1872,45 @@ fn two_active_sandboxes_page_without_duplicate_or_cross_tenant_leak() {
     let port = ManagedPort::new(journal, FakeHost::default(), settings);
     let first = port.create("1", request()).unwrap();
     let second = port.create("1", request()).unwrap();
-    let page = port.list("1", Some(1), None).unwrap();
+    let page = port
+        .list(
+            "1",
+            ListQuery {
+                limit: Some(1),
+                ..ListQuery::default()
+            },
+        )
+        .unwrap();
     assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].sandbox_id, first.sandbox_id);
-    let following = port.list("1", Some(1), page.next_token).unwrap();
+    let first_info = port.get("1", &first.sandbox_id).unwrap();
+    let second_info = port.get("1", &second.sandbox_id).unwrap();
+    let (newest, oldest) = if first_info.started_at == second_info.started_at {
+        (&first.sandbox_id, &second.sandbox_id)
+    } else {
+        (&second.sandbox_id, &first.sandbox_id)
+    };
+    assert_eq!(&page.items[0].sandbox_id, newest);
+    assert_eq!(page.total_running, Some(2));
+    let following = port
+        .list(
+            "1",
+            ListQuery {
+                limit: Some(1),
+                next_token: page.next_token,
+                ..ListQuery::default()
+            },
+        )
+        .unwrap();
     assert_eq!(following.items.len(), 1);
-    assert_eq!(following.items[0].sandbox_id, second.sandbox_id);
+    assert_eq!(&following.items[0].sandbox_id, oldest);
+    assert_eq!(following.total_running, Some(2));
     assert!(following.next_token.is_none());
-    assert!(port.list("2", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("2", ListQuery::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
     port.kill("1", &first.sandbox_id).unwrap();
     port.kill("1", &second.sandbox_id).unwrap();
 }
@@ -1903,4 +1966,78 @@ async fn router_reaches_the_same_port_without_request_selected_identity() {
         app.oneshot(kill).await.unwrap().status(),
         StatusCode::NO_CONTENT
     );
+}
+
+#[test]
+fn filtered_listing_survives_restart_and_never_counts_or_returns_foreign_instances() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut settings = config();
+    settings.limits.max_active_global = 4;
+    settings.limits.max_active_per_tenant = 3;
+    settings.limits.max_disk_bytes_global = 8_000;
+    settings.limits.max_disk_bytes_per_tenant = 3_000;
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        settings.clone(),
+    );
+    let mut red = request();
+    red.metadata = Some(BTreeMap::from([("group".into(), "red".into())]));
+    let first = port.create("1", red.clone()).unwrap();
+    let second = port.create("1", red.clone()).unwrap();
+    let foreign = port.create("2", red).unwrap();
+    let mut blue = request();
+    blue.metadata = Some(BTreeMap::from([("group".into(), "blue".into())]));
+    let blue = port.create("1", blue).unwrap();
+    drop(port);
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        settings,
+    );
+    let mut query = ListQuery {
+        metadata: Some("group=red".into()),
+        state: Some("running,paused".into()),
+        template: Some("base".into()),
+        order: Some(ListOrder::Asc),
+        limit: Some(1),
+        ..ListQuery::default()
+    };
+    let page = port.list("1", query.clone()).unwrap();
+    assert_eq!(page.total_running, Some(2));
+    assert_eq!(page.items.len(), 1);
+    query.next_token = page.next_token;
+    assert!(query.next_token.is_some());
+    let following = port.list("1", query.clone()).unwrap();
+    assert_eq!(following.total_running, Some(2));
+    assert!(following.next_token.is_none());
+    let ids: BTreeSet<_> = page
+        .items
+        .iter()
+        .chain(&following.items)
+        .map(|item| item.sandbox_id.as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        BTreeSet::from([first.sandbox_id.as_str(), second.sandbox_id.as_str()])
+    );
+    // Reusing a cursor under another tenant is only a position in that
+    // tenant's authorized result set. Even its count cannot reveal the owner.
+    let foreign_page = port.list("2", query.clone()).unwrap();
+    assert_eq!(foreign_page.total_running, Some(1));
+    assert!(
+        foreign_page
+            .items
+            .iter()
+            .all(|item| item.sandbox_id == foreign.sandbox_id)
+    );
+    query.state = Some("paused".into());
+    let paused = port.list("1", query).unwrap();
+    assert!(paused.items.is_empty());
+    assert_eq!(paused.total_running, None);
+    for session in [first, second, blue] {
+        port.kill("1", &session.sandbox_id).unwrap();
+    }
+    port.kill("2", &foreign.sandbox_id).unwrap();
 }

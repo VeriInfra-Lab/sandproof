@@ -20,7 +20,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::watch;
 
 use crate::{
-    ConnectRequest, ControllerPort, CreateRequest, PortError, SandboxInfo, SandboxPage,
+    ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError, SandboxInfo, SandboxPage,
     SandboxSession,
 };
 
@@ -909,46 +909,23 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         self.info(&inner, tenant, sandbox)
     }
 
-    fn list(
-        &self,
-        tenant: &str,
-        limit: Option<u32>,
-        next_token: Option<String>,
-    ) -> Result<SandboxPage, PortError> {
+    fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError> {
         let tenant = tenant_id(tenant)?;
+        let selection = query.validate()?;
         let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let world = inner.journal.world().map_err(map_journal)?;
-        let start = next_token
-            .map(|token| token.parse::<u64>().map_err(|_| PortError::Invalid))
-            .transpose()?
-            .unwrap_or(0);
-        let limit = usize::try_from(limit.unwrap_or(100)).map_err(|_| PortError::Invalid)?;
-        if !(1..=100).contains(&limit) {
-            return Err(PortError::Invalid);
-        }
-        let mut matching = Vec::new();
+        let mut items = Vec::new();
         for (sandbox, record) in world.sandbox_records() {
-            if sandbox.0 <= start || record.owner != tenant || record.phase != core::Phase::Running
-            {
+            if record.owner != tenant || record.phase != core::Phase::Running {
                 continue;
             }
             match self.info(&inner, tenant, *sandbox) {
-                Ok(info) => matching.push((*sandbox, info)),
+                Ok(info) => items.push(info),
                 Err(PortError::NotFound) => {} // expired after last cleanup tick
                 Err(error) => return Err(error),
             }
         }
-        matching.sort_by_key(|(sandbox, _)| sandbox.0);
-        let next = if matching.len() > limit {
-            Some(matching[limit - 1].0.0.to_string())
-        } else {
-            None
-        };
-        matching.truncate(limit);
-        Ok(SandboxPage {
-            items: matching.into_iter().map(|(_, info)| info).collect(),
-            next_token: next,
-        })
+        selection.page(items)
     }
 
     fn kill(&self, tenant: &str, external: &str) -> Result<(), PortError> {

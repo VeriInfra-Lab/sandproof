@@ -6,9 +6,11 @@ import json
 import threading
 import tomllib
 import unittest
+from datetime import datetime, timezone
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from e2b import AsyncSandbox, Sandbox
+from e2b import AsyncSandbox, Sandbox, SandboxQuery, SandboxState
 from e2b.exceptions import (
     AuthenticationException,
     RateLimitException,
@@ -92,6 +94,40 @@ class WireContract(unittest.TestCase):
     @property
     def responses(self):
         return self.server.responses
+
+    def test_sync_async_list_filters_and_opaque_pagination_wire(self):
+        metadata = {"reserved &+%=": "雪 =+&/%", "group": "red"}
+        started = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=timezone.utc)
+        for cls in (Sandbox, AsyncSandbox):
+            self.responses.extend([(200, [], {"X-Next-Token": "opaque-next"}), (200, [], {})])
+            paginator = cls.list(
+                query=SandboxQuery(metadata=metadata, state=[SandboxState.RUNNING, SandboxState.PAUSED],
+                                   started_after=started, template="base"),
+                limit=2, order="asc", **self.options,
+            )
+            if cls is Sandbox:
+                self.assertEqual(paginator.next_items(), [])
+                self.assertTrue(paginator.has_next)
+                self.assertEqual(paginator.next_items(), [])
+            else:
+                async def pages():
+                    self.assertEqual(await paginator.next_items(), [])
+                    self.assertTrue(paginator.has_next)
+                    self.assertEqual(await paginator.next_items(), [])
+                asyncio.run(pages())
+            self.assertFalse(paginator.has_next)
+            self.assertIsNone(paginator.next_token)
+            first, following = self.records[-2:]
+            self.assertEqual(first["method"], "GET")
+            self.assertEqual(urlsplit(first["path"]).path, "/v2/sandboxes")
+            params = parse_qs(urlsplit(first["path"]).query)
+            self.assertEqual(params["metadata"], [urlencode({quote(k): quote(v) for k, v in metadata.items()})])
+            self.assertEqual(params["state"], ["running,paused"])
+            self.assertEqual(params["order"], ["asc"])
+            self.assertEqual(params["template"], ["base"])
+            self.assertEqual(params["limit"], ["2"])
+            self.assertEqual(datetime.fromisoformat(params["startedAfter"][0]), started)
+            self.assertEqual(parse_qs(urlsplit(following["path"]).query), {**params, "nextToken": ["opaque-next"]})
 
     def test_create_omits_server_defaults(self):
         self.responses.append((201, SANDBOX, {}))
