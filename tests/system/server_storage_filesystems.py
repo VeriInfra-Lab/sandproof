@@ -27,7 +27,9 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def git(*args):
-    return command("git", "-c", f"safe.directory={REPO}", "-C", str(REPO), *args)
+    # A root-only probe must not refresh the user's index under its private umask.
+    return command("git", "--no-optional-locks", "-c", f"safe.directory={REPO}",
+                   "-C", str(REPO), *args)
 
 
 def digest(path):
