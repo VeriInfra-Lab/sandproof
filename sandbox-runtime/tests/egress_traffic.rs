@@ -132,7 +132,7 @@ impl Topology {
             "-n {} addr add 11.22.33.2/30 dev outside0",
             network.outside
         ));
-        for address in ["8.8.8.8/32", "10.10.10.10/32"] {
+        for address in ["8.8.8.8/32", "10.10.10.10/32", "169.254.169.254/32"] {
             ip(&format!("-n {} addr add {address} dev lo", network.outside));
         }
         for (name, address, interface) in [
@@ -153,7 +153,7 @@ impl Topology {
         ] {
             ip(&format!("-n {name} link set {interface} up"));
         }
-        for address in ["8.8.8.8/32", "10.10.10.10/32"] {
+        for address in ["8.8.8.8/32", "10.10.10.10/32", "169.254.169.254/32"] {
             ip(&format!(
                 "-n {} route add {address} via 11.22.33.2",
                 network.guard
@@ -265,7 +265,13 @@ fn guest_guard_blocks_only_the_declared_packet_paths() {
     // Baseline uses identical routes but a separate namespace/conntrack table:
     // no previously established guest flows can bypass the tested rules.
     let baseline = Topology::new();
-    for target in ["11.22.33.2", "8.8.8.8", "10.10.10.10", "11.22.33.1"] {
+    for target in [
+        "11.22.33.2",
+        "8.8.8.8",
+        "10.10.10.10",
+        "169.254.169.254",
+        "11.22.33.1",
+    ] {
         assert!(
             ping(&baseline.guest, target, false),
             "baseline route to {target}"
@@ -312,6 +318,10 @@ fn guest_guard_blocks_only_the_declared_packet_paths() {
         assert!(
             !ping(&network.guest, "10.10.10.10", false),
             "{name}: private range"
+        );
+        assert!(
+            !ping(&network.guest, "169.254.169.254", false),
+            "{name}: metadata address"
         );
         assert!(
             !ping(&network.guest, "11.22.33.1", false),
