@@ -210,5 +210,36 @@
     "result": "passed sixteen real cases: original sync/async SDK x root/ubuntu x omitted stdin, explicit false, enabled empty EOF, enabled text/binary input with same-PID reconnect. Both handle and commands SendInput APIs and CloseStdin used; full byte count and SHA-256 checked; exactly one Start marker and healthy subsequent command.",
     "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before service exit; live cgroup limits observed, base hash unchanged",
     "limits": "selected stdin acceptance only, under the existing explicit streaming configuration. Does not establish input-budget boundaries, invalid identity/closed-input errors, or every timeout argument combination."
+  },
+  "transfer_pressure_acceptance": {
+    "test": "tests/system/gateway_pressure.py",
+    "commit": "b503aa06df82048518a3d1d0d9b74b90e93d6cdf",
+    "script_sha256": "23fd01ddaa74eb8eeb0c3b0948bba9465625453d1ac45832eee9bafad185a0ab",
+    "server_build_commit": "3a25bf6800ecd4cce86d486c292cf12dffa05708",
+    "server_source_equivalence": "production sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed base and reviewed server fingerprints as transfer_interruption_acceptance",
+    "configuration": {
+      "max_transfers": 4,
+      "max_transfers_per_vm": 3,
+      "control_reserve": 1,
+      "request_idle_seconds": 3,
+      "file_idle_seconds": 5,
+      "write_idle_seconds": 3,
+      "file_upload_bytes": 67108864,
+      "file_download_bytes": 100663296
+    },
+    "result": "passed original sync and async SDK on two tenants: separate per-VM/global 429; health, SendInput, CloseStdin and SendSignal retain reserved capacity; EOF and signal release slots; rejected file and Start calls leave no effects. Paused uploads have 131072 guest bytes before 408; six progress chunks complete 393216 bytes over five seconds with a matching hash; paused 64 MiB SDK downloads fail with RemoteProtocolError and release capacity. FIFO-blocked file headers yield 504, bounded writers unblock/remove the FIFO, and quiet commands complete normally.",
+    "observations": {
+      "slow_upload_sha256": "df31d7ee9f236be433a7c9be89b3c2b10eff1114c56264e461ae1f58ef2a338d",
+      "sync_download_bytes_before_error": 2658928,
+      "async_download_bytes_before_error": 2717104,
+      "header_failure_seconds": [
+        5.012059331056662,
+        5.021190759027377
+      ],
+      "timing_scope": "observations under explicit test budgets, not performance or latency guarantees"
+    },
+    "residuals": "four exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; all live cgroup identity/membership/limits sampled; base hash unchanged. Earlier failed raw HTTP reader probe separately audited clean and not counted as acceptance.",
+    "limits": "selected manual admission/idle acceptance, not final deployment budgets, exhaustive concurrent lifecycle/restart schedules, each SDK timeout-argument combination, host filesystem/inode exhaustion or a whole-host memory bound. No production code or Lean claim changed."
   }
 }
