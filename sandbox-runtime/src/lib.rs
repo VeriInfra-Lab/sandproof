@@ -9,4 +9,6 @@ pub mod egress;
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::{Observation, Runtime, RuntimeConfig, RuntimeError, VmState, check_trusted_path};
+pub use linux::{
+    HostResources, Observation, Runtime, RuntimeConfig, RuntimeError, VmState, check_trusted_path,
+};

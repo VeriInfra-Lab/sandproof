@@ -38,6 +38,9 @@ fn test_config() -> NodeConfig {
         max_vm_id: 1000,
         vcpu_count: 1,
         memory_mib: 256,
+        host_resources: env::var("SANDPROOF_TEST_HOST_RESOURCES")
+            .ok()
+            .map(|value| serde_json::from_str(&value).expect("valid host resource configuration")),
         file_policy_digest: core::PolicyDigest(1),
     }
 }

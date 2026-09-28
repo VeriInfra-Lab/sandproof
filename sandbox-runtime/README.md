@@ -23,6 +23,27 @@ sudo ./target/debug/sandproof-vm smoke \
 
 失败清理仍有边界：门控解决“VM 已运行但无精确进程记录”的窗口；网络空间创建前先同步写入资源意图，若在 inode 记录写入前崩溃，恢复时须用持久操作计划、槽位绑定和资源意图共同核对，确认没有进程记录、虚拟机 jail 或空间内进程后，才能精确删除该网络空间并留下不可复用的编号。有精确进程记录但进程已退出的准备动作，则先清理独立 jail/磁盘及网络空间，再落盘失败标记。进程仍存活、身份不符或资源状态无法判定时继续保持未知，不猜测停止。测试脚本的 `finally` 收尾不能替代服务崩溃恢复。
 
+## 宿主 CPU 与内存限制
+
+服务私有配置可显式提供 `host_resources`；CLI 诊断使用同结构的 `SANDBOX_HOST_RESOURCES` JSON 环境变量。缺省仍保留历史诊断模式，**不能据此声称宿主资源已受限**。此接入已实现，真实内核与 VM 验收结果须绑定测试提交，不能由基础 CI 的忽略用例推断通过。
+
+```json
+{
+  "host_resources": {
+    "cgroup_parent": "/sys/fs/cgroup/sandproof-node",
+    "memory_max_bytes": 805306368
+  }
+}
+```
+
+这是 512 MiB 来宾的测试配置示例：`memory_mib` 仍表示来宾 RAM，`memory_max_bytes` 表示整个 Firecracker 的宿主内存上限，包含 VMM 开销，必须大于来宾 RAM 且按 4096 字节对齐。示例不是最终任务预算。CPU 上限按 `vcpu_count × 100000 / 100000` 微秒配置到 `cpu.max`，包含 VMM 的处理开销；不表示独占物理核或调度时延保障。每组关闭额外 CPU burst 和宿主 swap，启用整组 OOM 处理。它不限制整个控制服务/relay 的内存，不提供宿主物理容量预留，磁盘和准入预算仍需各自验收。
+
+部署者预先建立一个独占、root 拥有且模式为 0700 的 cgroup v2 父目录，保证它为空的 domain，向子组委派 CPU/memory 控制器。根或共享祖先须由宿主配置事先提供这些控制器；运行器不会修改共享祖先。每个部署须保持父目录与配置稳定，不能在仍有记录的 VM 存活或待清理时更换父目录、取消配置或改预算。
+
+运行器在放行 jailer 前持久记录创建意图、宿主 boot ID、父目录和子组 inode、限额，再设置并读回限制。jailer 进入这个已配置的精确子组，不临时创建未记录的分组。运行观察核对限额、inode 与 PID 的实际 cgroup 归属；异常不会取得成功观察。停止仍使用原 PID/start-time 的 pidfd；清理要求精确身份且分组无任务，只删除该空子组，保留父目录。创建后 inode 尚未落盘的中断，仅在独占分配器的持久意图匹配、没有启动记录或 jail、分组为空时收尾；删除前补存 inode，防止下一次清理误处理同名替代组。缺少首个槽位、终止标记、丢失清理回执和服务启动盘点也检查 cgroup，不能只因磁盘已删除就报告资源全部回收。
+
+内核专用用例需要独占的父目录与 root scratch 目录，通过 `SANDPROOF_TEST_CGROUP_PARENT`、`SANDPROOF_TEST_SCRATCH` 指定，然后手动执行 `cargo test -p sandbox-runtime linux::cgroup::tests::real_ -- --ignored --nocapture --test-threads=1`。CPU 竞争探针要求至少两个可用宿主 CPU；失败或缺环境不是通过。节点回执恢复用例另通过 `SANDPROOF_TEST_HOST_RESOURCES` 接入同结构配置，仍须按每轮精确资源身份审计残留。上述新增 Linux 资源管理没有现有 Lean 对应证明。
+
 ## 固定 envd 与真实 SDK 测试
 
 [`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；不跟随 latest，也不接收用户提供的 Dockerfile/OCI。该配置用于可复现联调，尚未与 #13 的任务初始化及资源需求一起验收，不能视为通用任务镜像或生产默认值。
