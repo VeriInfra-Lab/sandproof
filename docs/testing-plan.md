@@ -136,7 +136,7 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 [网络与停止回执丢失实机脚本](../tests/system/sdk_network_receipt_crash.py)在调试构建中让服务进程分别恰在真实 `ConfigureNetwork`、`StopVm` 成功后、回执入库前退出。固定 SDK 2.51.0 创建静态 IPv4 沙箱；第一次重启后必须找到原 PID/启动时刻和原规则，准许目标可达、未授权与宿主地址不可达；第二次重启后沙箱不得重新发布，进程、jail、网络空间、根链路和 nft 表无残留。它只覆盖两个成功动作后的确定窗口，不替代安装中途的任意崩溃；同名出口接口替代另由上面的根级测试覆盖。
 
-[常驻服务故障测试](../tests/system/server_process_crash.py)在独立 Linux/KVM 测试机上使用仅调试构建可用的注入点：真实 VM 启动、停止成功之后，服务进程在对应回执写入前直接退出。测试重启同一服务和数据库，核对运行态仍是原 VM 的 PID 与启动时刻、最终销毁后进程、网络空间和私有 jail 均不存在；实测通过。该测试只覆盖这两个确定窗口和一台 VM，不替代任意指令位置的 SIGKILL、并发负载或公网/静态规则验收。运行时须指定独占 UID 范围、可信 Firecracker/jailer、内核、envd 磁盘及 root 独占的临时目录；失败保留精确现场，不能按名称猜测清理其他资源。
+[常驻服务故障测试](../tests/system/server_process_crash.py)在独立 Linux/KVM 测试机上使用仅调试构建可用的注入点。默认 `--window after-host`：真实 VM 启动、停止成功之后，服务进程在对应回执写入前直接退出。新增 `--window before-host`：开放围栏与停止动作已持久领取，但宿主副作用发生前退出。两种模式均重启同一服务和数据库；后一模式还核对首次退出时围栏、VM、网络尚未产生，停止前原 VM 仍存活且终止围栏已落盘。最终须观察同一 VM 的 PID 与启动时刻、真实停止，以及进程、网络空间和私有 jail 全无残留。已实测的提交与模式以对应 PR 证据为准；这仍只是四个确定窗口和单台 VM，不替代任意指令位置的 SIGKILL、并发负载或公网/静态规则验收。运行时须指定独占 UID 范围、可信 Firecracker/jailer、内核、envd 磁盘及 root 独占的临时目录；失败保留精确现场，不能按名称猜测清理其他资源。
 
 [#7 生命周期并发探针](../tests/system/sdk_lifecycle_races.py)在独立 Linux/KVM 测试机使用固定 E2B SDK 创建一台真实 VM，检查创建环境变量在来宾可用、元数据在查询与列表可见；调试构建的停止屏障使两个销毁请求确定地重叠，核对仅有一次持久 Kill，第一请求成功、第二请求只能观察原操作或已销毁结果，且原进程、网络空间、私有 jail 与屏障均消失。随后检查非法环境变量被拒且没有持久创建，再暂时移走测试专用内核副本，使下一次创建无法启动 VMM；恢复副本、重启服务后必须把原操作判为失败并发布 Destroyed，且不留下该次 VM 资源。固定基础盘指纹始终不变。测试用独立、root 独占且足够短的根目录和资源身份（Firecracker 的 Unix socket 路径必须小于 108 字节），失败保留精确现场；该实验不等于所有并发交错的证明。运行时将 `--server`、`--jailer`、`--firecracker`、`--kernel`、`--rootfs`、`--uid-base` 和 `--scratch-parent` 绑定本轮已预检的产物与独占范围。
 
