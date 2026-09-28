@@ -306,5 +306,24 @@
     "result": "passed 24 Start rejections: sync/async x foreground/background x unknown user, root/ubuntu missing cwd, root/ubuntu regular-file cwd, ubuntu denied cwd. Exact AuthenticationException or InvalidArgumentException required; every unique marker absent and subsequent ubuntu cwd/env/user command successful. Root successfully uses the same private directory; root/ubuntu foreground/background valid contexts also pass.",
     "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
     "limits": "selected invalid user/cwd cases, not every malformed argument, path or timeout combination. No production or proof changes."
+  },
+  "command_timeout_acceptance": {
+    "test": "tests/system/sdk_command_timeouts.py",
+    "commit": "368f92aee93014768092f08d737e58eda0d087ea",
+    "script_sha256": "d41117c266c9cc4484b7c0695a4b72a170cb00d4986c233df0d6e5203ccea718",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base, server fingerprints and resource configuration as command_input_budget_acceptance; explicit no-internet",
+    "result": "passed 52 original SDK cases: sync/async run foreground/background and connect, each timeout/request_timeout omitted, zero, negative and 10000000 seconds; plus known-PID wait after one-second Start and Connect deadlines for each client. No automatic Start replay; subsequent calls healthy.",
+    "observations": {
+      "completed": 33,
+      "stream_deadline": 8,
+      "invalid_rpc_timeout": 6,
+      "opening_deadline": 3,
+      "command_terminated": 2
+    },
+    "semantics": "sync run/connect ignore request_timeout; async applies it to first-event waiting. Negative timeout becomes 1 ms; an over-ten-digit Connect millisecond header is rejected. wait inherits its stream deadline. Start also sets the process execution deadline: late connect returns retained exit -1/signal: killed. Connect-only deadline leaves the original process live, allowing same-PID EOF and full success.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected command stream/opening and inherited-wait deadlines only; not file, unary RPC, sandbox lifetime or all malformed/non-finite timeout arguments. No production or proof changes."
   }
 }
