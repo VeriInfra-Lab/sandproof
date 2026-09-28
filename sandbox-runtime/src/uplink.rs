@@ -1414,8 +1414,52 @@ mod tests {
         )
         .unwrap();
         run_ip("test delete namespace", &["netns", "delete", &id]).unwrap();
+        // A late cleanup must not mistake a newly created same-name host
+        // interface for the old VM's uplink, even when the old intent remains.
+        let original_plan = UplinkPlan::new(&id).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while root_link_exists(&original_plan.root_interface).unwrap() && Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!root_link_exists(&original_plan.root_interface).unwrap());
+        let replacement_peer = format!("spr{}", &namespace[..8]);
+        run_ip(
+            "test replacement root link",
+            &[
+                "link",
+                "add",
+                &original_plan.root_interface,
+                "type",
+                "veth",
+                "peer",
+                "name",
+                &replacement_peer,
+            ],
+        )
+        .unwrap();
+        let refused = runtime.cleanup_uplink_after_namespace(&id).is_err();
+        let replacement_survived = root_link_exists(&original_plan.root_interface).unwrap();
+        let filter_survived = root_table_exists("inet", &original_plan.filter_table).unwrap();
+        let nat_survived = root_table_exists("ip", &original_plan.nat_table).unwrap();
+        if replacement_survived {
+            run_ip(
+                "test delete replacement root link",
+                &["link", "delete", &original_plan.root_interface],
+            )
+            .unwrap();
+        }
         runtime.cleanup_uplink_after_namespace(&id).unwrap();
         assert!(runtime.uplink_resources_absent(&id).unwrap());
+        assert!(refused, "late cleanup accepted a replacement interface");
+        assert!(
+            replacement_survived,
+            "late cleanup deleted another interface"
+        );
+        assert!(
+            filter_survived && nat_survived,
+            "late cleanup changed uplink rules"
+        );
 
         // Crash after the durable intent and atomic root firewall batch, but
         // before the veth or prepared receipt: cleanup must not require a VM.
