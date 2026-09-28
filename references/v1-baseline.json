@@ -275,11 +275,11 @@
   },
   "command_input_budget_acceptance": {
     "test": "tests/system/sdk_input_budget.py",
-    "commit": "13865e3306fa6087afd085d877b7d7071c4f252d",
+    "commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
     "script_sha256": "4f4bc6406c84b828ddea37790c314295dea4b38d49df43ff71b3d800df1d35bb",
-    "server_build_commit": "3a25bf6800ecd4cce86d486c292cf12dffa05708",
-    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
-    "host_and_artifacts": "same host, fixed base and server fingerprints as transfer_interruption_acceptance",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "test and server rebuilt at the same exact commit after integrating network PR57; public_ipv4_enabled=false and allow_internet_access=false",
+    "host_and_artifacts": "same host/kernel/envd/base and CPU/memory limits as transfer_interruption_acceptance; newly built server fingerprint recorded here",
     "command_input_bytes": 1048576,
     "observations": {
       "sync_and_async_fitting_stdin_bytes": 786393,
@@ -292,6 +292,8 @@
     "result": "passed original sync and async SDK: empty input, largest fitting base64-encoded SendInput, first oversized payload, then another fitting input on the same PID. Exact combined length/hash excludes the rejected input, one Start marker, healthy next command and normal CloseStdin EOF.",
     "error_mapping": "current gateway returns plain HTTP 502 when the Process request body limit aborts forwarding; pinned SDK wraps its cause-free ConnectError UNAVAILABLE with message HTTP 502 in TimeoutException. Test requires that exact context, not an ordinary client deadline or unrelated timeout.",
     "residuals": "two exact VM processes stopped; jails/netns/cgroups absent and no recorded netns inode holders before server exit; live cgroup identity/membership/limits sampled; base unchanged",
-    "limits": "per-request encoded body budget, not aggregate stdin quota. Base64 granularity means no request exactly at every byte was claimed. Root user only in this probe; user/reconnect cases separately bound to command_input_acceptance. Final deployment budgets and full timeout/error matrices remain open. No production or proof changes."
+    "limits": "per-request encoded body budget, not aggregate stdin quota. Base64 granularity means no request exactly at every byte was claimed. Root user only in this probe; user/reconnect cases separately bound to command_input_acceptance. Final deployment budgets and full timeout/error matrices remain open. No production or proof changes.",
+    "server_sha256": "084cc8b4399a745812368e6b1521405c0067193ced1abf12ed463c3896f5e213",
+    "previous_test_commit": "13865e3306fa6087afd085d877b7d7071c4f252d (same probe also passed before PR57 integration)"
   }
 }
