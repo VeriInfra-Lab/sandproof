@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import uuid
+import sys
 
 import httpx
 from e2b import AsyncSandbox, Sandbox, SandboxQuery
@@ -21,38 +22,35 @@ from sdk_command_input import call
 from sdk_server_smoke import options
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'compat'))
+from sdk_network_samples import DETAIL_PROFILES, validate_base_details, validate_network
+
+
 async def exercise_client(cls, args):
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     foreign = options(os.environ['SANDPROOF_TEST_FOREIGN_API_KEY'], args.api_url, args.sandbox_url)
     run = uuid.uuid4().hex
     rows = []
     async with httpx.AsyncClient(base_url=args.api_url, trust_env=False, timeout=20) as client:
-        for network in (None, {'allow_out': [], 'deny_out': ['8.8.8.8', '1.2.3.4/24']}):
+        for profile in DETAIL_PROFILES:
+            network = profile.sdk_network
             known = []
             metadata = {'detail_run': run, 'label': '雪 &=+'}
-            kwargs = {} if network is None else {'network': network}
-            expected = None if network is None else {**network, 'allow_public_traffic': True}
             try:
                 sandbox = await call(cls.create, template='base', timeout=300,
-                                     allow_internet_access=False, metadata=metadata, **kwargs, **owner)
+                                     metadata=metadata, **profile.options, **owner)
                 known.append(sandbox.sandbox_id)
                 async def verify():
                     instance = await call(sandbox.get_info)
                     detail = await call(cls.get_info, sandbox.sandbox_id, **owner)
                     assert instance == detail
-                    assert detail.allow_internet_access is False
-                    assert detail.network == expected, 'original network fields changed'
-                    assert detail.sandbox_domain == 'example.invalid'
-                    assert detail.lifecycle == {'on_timeout': 'kill', 'auto_resume': False}
-                    assert detail.volume_mounts == [] and detail.name is None
-                    assert detail.metadata == metadata and detail.template_id == 'base'
-                    assert detail.cpu_count == 1 and detail.memory_mb == 512
+                    assert detail.template_id == 'base'
                     response = await client.get('/sandboxes/'+sandbox.sandbox_id,
                                                 headers={'X-API-Key':owner['api_key']})
                     assert response.status_code == 200
                     raw = response.json()
-                    assert raw['envdAccessToken'] and raw['diskSizeMB'] == 1024
-                    assert raw['volumeMounts'] == [] and 'alias' not in raw
+                    validate_network(detail, raw, profile)
+                    validate_base_details(detail, raw, metadata)
                     listed = await client.get('/v2/sandboxes', headers={'X-API-Key':owner['api_key']})
                     assert listed.status_code == 200
                     matches = [item for item in listed.json() if item['sandboxID'] == sandbox.sandbox_id]

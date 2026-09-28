@@ -1,6 +1,7 @@
 """Pinned E2B Python SDK against synthetic local HTTP responses, not a VM."""
 
 import asyncio
+from dataclasses import replace
 import importlib.metadata
 import json
 import threading
@@ -20,6 +21,9 @@ from e2b.exceptions import (
 )
 
 from sdk_support import SANDBOX, isolated_sdk_environment
+from sdk_network_samples import (
+    DETAIL_FIELDS, DETAIL_NETWORK, PROFILES, validate_base_details, validate_network,
+)
 
 
 class Recorder(BaseHTTPRequestHandler):
@@ -96,27 +100,20 @@ class WireContract(unittest.TestCase):
         return self.server.responses
 
     def test_sync_async_detail_network_lifecycle_and_legacy_fields(self):
-        common = {**SANDBOX, "startedAt": "2026-01-01T00:00:00Z",
-                  "endAt": "2026-01-01T00:05:00Z", "cpuCount": 1,
-                  "memoryMB": 512, "diskSizeMB": 1024, "state": "running",
-                  "metadata": {"job": "雪"}, "volumeMounts": []}
+        common = {**SANDBOX, **DETAIL_FIELDS, "startedAt": "2026-01-01T00:00:00Z",
+                  "endAt": "2026-01-01T00:05:00Z", "state": "running",
+                  "metadata": {"job": "雪"}}
         for cls in (Sandbox, AsyncSandbox):
             for internet in (None, False, True):
-                self.responses.append((200, {**common, "allowInternetAccess": internet,
-                    "network": {"allowPublicTraffic": True, "allowOut": [],
-                                "denyOut": ["8.8.8.8", "1.2.3.4/24"]},
-                    "lifecycle": {"onTimeout": "kill", "autoResume": False}}, {}))
+                sample = replace(DETAIL_NETWORK, internet=internet)
+                raw = {**common, "allowInternetAccess": internet, "network": sample.wire_network}
+                self.responses.append((200, raw, {}))
                 info = cls.get_info(SANDBOX["sandboxID"], **self.options)
                 if cls is AsyncSandbox:
                     info = asyncio.run(info)
-                self.assertIs(info.allow_internet_access, internet)
-                self.assertEqual(info.network, {"allow_public_traffic": True, "allow_out": [],
-                                               "deny_out": ["8.8.8.8", "1.2.3.4/24"]})
-                self.assertEqual(info.lifecycle, {"on_timeout": "kill", "auto_resume": False})
-                self.assertEqual(info.sandbox_domain, "example.invalid")
-                self.assertEqual(info.volume_mounts, [])
-                self.assertEqual(info.metadata, {"job": "雪"})
-            legacy = {key: value for key, value in common.items() if key not in ("domain", "envdAccessToken")}
+                validate_network(info, raw, sample)
+                validate_base_details(info, raw, common["metadata"])
+            legacy = {key: value for key, value in common.items() if key not in ("domain", "envdAccessToken", "lifecycle")}
             self.responses.append((200, legacy, {}))
             info = cls.get_info(SANDBOX["sandboxID"], **self.options)
             if cls is AsyncSandbox:
@@ -181,20 +178,33 @@ class WireContract(unittest.TestCase):
         self.assertNotIn("secure", self.records[0]["body"])
 
     def test_create_static_ipv4_network_wire(self):
-        self.responses.append((201, SANDBOX, {}))
-        Sandbox.create(
-            network={"allow_out": ["1.1.1.1", "8.8.8.0/24"],
-                     "deny_out": ["0.0.0.0/0"]},
-            allow_internet_access=False,
-            **self.options,
-        )
-        body = self.records[0]["body"]
-        self.assertIs(body["allow_internet_access"], False)
-        self.assertEqual(body["network"], {
-            "allowPublicTraffic": True,
-            "allowOut": ["1.1.1.1", "8.8.8.0/24"],
-            "denyOut": ["0.0.0.0/0"],
-        })
+        for cls in (Sandbox, AsyncSandbox):
+            for sample in PROFILES:
+                with self.subTest(sdk=cls.__name__, profile=sample.name):
+                    self.responses.append((201, SANDBOX, {}))
+                    sandbox = cls.create(**sample.options, **self.options)
+                    if cls is AsyncSandbox:
+                        sandbox = asyncio.run(sandbox)
+                    body = self.records[-1]["body"]
+                    if 'allow_internet_access' in sample.options:
+                        self.assertIs(body['allow_internet_access'], sample.internet)
+                    else:
+                        self.assertNotIn('allow_internet_access', body)
+                    if sample.wire_network is None:
+                        self.assertNotIn('network', body)
+                    else:
+                        self.assertEqual(body['network'], sample.wire_network)
+                    raw = {**SANDBOX, **DETAIL_FIELDS,
+                           'startedAt': '2026-01-01T00:00:00Z',
+                           'endAt': '2026-01-01T00:05:00Z', 'state': 'running',
+                           'metadata': {}, 'allowInternetAccess': sample.internet}
+                    if sample.wire_network is not None:
+                        raw['network'] = sample.wire_network
+                    self.responses.append((200, raw, {}))
+                    info = sandbox.get_info()
+                    if cls is AsyncSandbox:
+                        info = asyncio.run(info)
+                    validate_network(info, raw, sample)
 
     def test_connect_uses_v2_and_preserves_explicit_zero(self):
         self.responses.extend([(200, SANDBOX, {}), (200, SANDBOX, {})])

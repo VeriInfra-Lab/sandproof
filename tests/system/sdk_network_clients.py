@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import sys
 import uuid
 
 import httpx
@@ -23,18 +24,8 @@ from sdk_command_input import call
 from sdk_server_smoke import options
 
 
-PROFILES = [
-    ('omitted_public', {}, (True, True)),
-    ('false_with_allow', {'allow_internet_access':False,
-                          'network':{'allow_out':['11.22.33.7/24', '11.22.33.0/24'],
-                                     'deny_out':['0.0.0.0/0']}}, (True, False)),
-    ('explicit_public', {'allow_internet_access':True}, (True, True)),
-    ('explicit_closed', {'allow_internet_access':False}, (False, False)),
-    ('public_with_deny', {'allow_internet_access':True,
-                         'network':{'allow_out':[], 'deny_out':['11.22.34.1']}}, (True, False)),
-    ('allow_precedes_deny', {'network':{'allow_out':['0.0.0.0/0'],
-                                      'deny_out':['0.0.0.0/0']}}, (True, True)),
-]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'compat'))
+from sdk_network_samples import PROFILES, validate_network
 
 
 async def echo(sandbox, address, protocol):
@@ -98,23 +89,13 @@ async def invalid_networks(cls, owner):
 
 
 async def verify(cls, sandbox, profile, owner, foreign, client, stage, rows):
-    name, kwargs, reachability = profile
-    expected_network = kwargs.get('network')
-    if expected_network is not None:
-        expected_network = {**expected_network, 'allow_public_traffic':True}
+    name, reachability = profile.name, profile.reachable
     info = await call(sandbox.get_info)
-    assert info.allow_internet_access is kwargs.get('allow_internet_access')
-    assert info.network == expected_network
     assert await call(cls.get_info, sandbox.sandbox_id, **owner) == info
     raw = await client.get('/sandboxes/' + sandbox.sandbox_id, headers={'X-API-Key':owner['api_key']})
     assert raw.status_code == 200
     detail = raw.json()
-    assert detail['allowInternetAccess'] is kwargs.get('allow_internet_access')
-    if expected_network is None:
-        assert 'network' not in detail
-    else:
-        camel = {'allow_out':'allowOut', 'deny_out':'denyOut', 'allow_public_traffic':'allowPublicTraffic'}
-        assert detail['network'] == {camel[key]:value for key,value in expected_network.items()}
+    validate_network(info, detail, profile)
     listed = await client.get('/v2/sandboxes', headers={'X-API-Key':owner['api_key']})
     assert listed.status_code == 200
     matching = [item for item in listed.json() if item['sandboxID'] == sandbox.sandbox_id]
@@ -152,7 +133,7 @@ async def exercise_client(cls, args):
             snapshots = []
             for profile in PROFILES[:2]:
                 sandbox = await call(cls.create, template='base', timeout=300,
-                                     metadata={'network_run':run, 'profile':profile[0]}, **profile[1], **owner)
+                                     metadata={'network_run':run, 'profile':profile.name}, **profile.options, **owner)
                 known.add(sandbox.sandbox_id)
                 paired.append(sandbox)
                 snapshots.append(await verify(cls, sandbox, profile, owner, foreign, client,
@@ -175,7 +156,7 @@ async def exercise_client(cls, args):
             assert await call(paired[0].kill)
             for profile in PROFILES[2:]:
                 sandbox = await call(cls.create, template='base', timeout=300,
-                                     metadata={'network_run':run, 'profile':profile[0]}, **profile[1], **owner)
+                                     metadata={'network_run':run, 'profile':profile.name}, **profile.options, **owner)
                 known.add(sandbox.sandbox_id)
                 await verify(cls, sandbox, profile, owner, foreign, client, 'single_vm', rows)
                 assert await call(sandbox.kill)
