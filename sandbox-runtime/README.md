@@ -4,6 +4,8 @@
 
 此 crate 负责固定 Linux/KVM 主机上的 Firecracker/jailer 启停、进程身份观察和私有磁盘清理。每台 VM 有独立 Linux 网络空间和 TAP，仅配置一条 `172.16.0.0/30` 私有链路。创建 TAP 和启动 VM 之前，在该空间内原子安装宿主控制的默认拒绝规则：只允许宿主发起的管理连接得到已建立连接的回包，其余来宾发起的 IPv4、IPv6 和 DNS 包均丢弃。网络回执核对空间 inode 与规则的完整内容；规则缺失或被放宽不会算配置成功。停止并核对精确 VM 进程后，按已记录的网络空间 inode 回收。`egress` 模块集中生成禁网规则，并预备按固定 SDK 的 IPv4 地址/网段允许、拒绝与公网默认值生成来宾侧规则；不要求用户增加协议或端口字段。平台禁区优先于用户允许，用户允许优先于用户拒绝。此规则生成器**尚未接入宿主出口、隔离观察与恢复**，不能作为已启用功能，也不能把目前的禁网模式称为完整 #10。配套脚本可制备固定 envd 来宾镜像，并用原 E2B SDK 实测来宾命令和文件操作；`vmm_running` 仅表示 Firecracker 报告 VM 正在运行，**不等于来宾服务就绪，更不能直接发布控制器的 Running**。相关工作由 [#6](https://github.com/ningZhang-cs/sandproof/issues/6)、[#8](https://github.com/ningZhang-cs/sandproof/issues/8)、[#7](https://github.com/ningZhang-cs/sandproof/issues/7)、[#10](https://github.com/ningZhang-cs/sandproof/issues/10) 和 [#12](https://github.com/ningZhang-cs/sandproof/issues/12) 跟踪。
 
+[出站规则隔离流量测试](tests/egress_traffic.rs)在测试专用 Linux 主机上以 root 手动运行：`cargo test -p sandbox-runtime --test egress_traffic -- --ignored --nocapture`。它先在独立网络空间中证明公网样式地址、私网地址、宿主样式地址和 IPv6 目标原本有路，再安装生成的规则测试允许与拒绝，并核对宿主发起的管理回包及测试资源清理。所有虚拟链路两端都在本轮私有网络空间，转发只在该空间启用；不连接真实互联网、不启动 VM，也不等于控制器或 SDK 网络功能已验收。
+
 运行器要求调用者为 root，jailer、Firecracker、内核、基础 ext4 和 jailer 基目录的每级路径均由 root 拥有且不可由其他用户修改。基础盘在每次启动时复制到独立 jail 中；调用者必须为不同 VM 分配不同非 root UID/GID。当前 CLI 是开发诊断工具，不是常驻控制服务；从短命 SSH 会话单独执行 `launch` 不能保证 VM 在会话结束后继续存活。
 
 Linux 实机可运行 `cargo test -p sandbox-runtime --locked` 和 `cargo clippy -p sandbox-runtime --all-targets --locked -- -D warnings`。准备固定镜像及 root 拥有的 jailer 目录后，使用唯一的全小写资源编号执行：
