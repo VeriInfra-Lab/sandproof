@@ -144,5 +144,23 @@
     ],
     "observations": "Seven SDK VMs were sampled while live: exact PID/start-time, cgroup inode, membership and all five limit settings matched; CPU throttling counters increased. Independent residual checks for these seven and four recovery VMs found exact processes stopped and private jails/netns/cgroups absent; two unlaunched cases also left no resources. Base hash unchanged.",
     "limits": "Manual selected acceptance, opt-in host_resources only. Memory-OOM probe used controlled host children, not a Firecracker OOM. Per-VMM limits do not bound controller/relay totals or reserve physical capacity. Real ENOSPC, full async large-transfer/fault/timeout matrices, final deployment budgets and #13 task initialization remain open; no new Lean coverage."
+  },
+  "guest_disk_full_acceptance": {
+    "test": "tests/system/sdk_disk_full.py",
+    "commit": "295764da29be216cd9bbe2c20a0832674720a220",
+    "script_sha256": "148738fa0ed79e635a0f26a7c77a9e165cc717012754f09ba8cd2b77b30a4f89",
+    "server_build_commit": "7547fa3aae30af1b72ab3e90b9bc86beb388ab06",
+    "server_source_equivalence": "production source unchanged between server build and test commit",
+    "host_and_artifacts": "same host, Firecracker/jailer, base and server hashes as host_resource_acceptance",
+    "guest_memory_mib": 512,
+    "host_memory_max_bytes": 805306368,
+    "vcpu_count": 1,
+    "image_bytes": 1073741824,
+    "filesystem_bytes": 1020702720,
+    "first_fill_allocated_bytes": 591863808,
+    "remaining_free_bytes_at_enospc": 16777216,
+    "result": "passed original sync and async SDK: actual guest errno 28; multipart text, seekable octet stream and nonseekable upload all raise NotEnoughSpaceException; concurrent control VM remains writable; same VM writes after releasing filler; refilled VM destroyed; new VM has clean test directory and writable disk",
+    "residuals": "six exact VM processes stopped; private jails, network namespaces and cgroups absent; base fingerprint unchanged",
+    "limits": "Guest block allocation ENOSPC only. Free block counters can include filesystem reserves and do not mean the failed write can fit. Does not test host filesystem exhaustion, inode exhaustion, controller cleanup reserves, batch atomicity or the full S11/S12 matrix."
   }
 }
