@@ -421,5 +421,32 @@
       "result": "full original SDK management/auth/expiry/commands/files and sync/async root/ubuntu data calls passed; four exact VM processes stopped, jail/netns/cgroups absent and no network namespace holders before service exit; live cgroup identity and limits sampled; base unchanged"
     },
     "limits": "filesystem placement and selected normal service regression only; does not test host block/inode ENOSPC, atomic reservation against external writes, power loss, final task-derived budgets or full V1. No control-core or proof changes."
+  },
+  "host_disk_reserve_acceptance": {
+    "test": "tests/system/server_disk_reserve.py",
+    "commit": "8c0ccd0f2367b79c6aa14854fdbad34a49eca85d",
+    "script_sha256": "3a3e135fc670ebc8c7c3bdcd8e6240914d24646bfa1db136146ccea370448395",
+    "server_build_commit": "6a2d57e2b4e135fbe293938619bcc18ac956114f",
+    "server_sha256": "b011c3e25518d91393aab974acad1b13b1acc559aa5501b4cccf3f2ef08a87cb",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between build and test; includes lifecycle PR68 and storage filesystem fix PR69",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure host, pinned 1 GiB base/kernel/envd and explicit cgroup limits as storage_filesystem_acceptance; private mount namespace and ext4 loop; no Internet",
+    "configuration": {
+      "scratch_bytes": 4294967296,
+      "cleanup_reserve_bytes": 268435456,
+      "max_active_global": 4,
+      "max_active_per_tenant": 4,
+      "max_disk_bytes_global": 8589934592,
+      "max_disk_bytes_per_tenant": 4294967296
+    },
+    "observations": {
+      "available_before": 1882095616,
+      "allocated_filler_bytes": 1479442432,
+      "available_under_pressure": 402649088,
+      "available_after_kill": 1524342784,
+      "available_after_filler_release": 3003789312
+    },
+    "result": "passed with three real SDK VMs: physical free space initially allows a third disk; own host filler reduces it below disk+reserve while logical quotas remain available; create returns exact SDK RateLimitException/HTTP 429 with no new admission or host claim; both existing VMs still execute/read/write; one VM is destroyed while filler remains; release permits a clean new VM",
+    "residuals": "three exact PID/start identities stopped, private jails/netns/cgroups absent, no recorded namespace holders before server exit, actual cgroup membership/inode/limits sampled; base hash unchanged; own mount unmounted and loop detached",
+    "limits": "selected physical admission reserve and cleanup only; does not test full block/inode ENOSPC, adversarial external writes after admission, process crash, or final task-derived deployment budgets. No production/core/proof changes."
   }
 }
