@@ -58,6 +58,7 @@ struct FakeHost {
     prepare: PrepareObservation,
     observed_stop: bool,
     incomplete_cleanup: bool,
+    lose_stop_receipt: bool,
 }
 
 impl Default for FakeHost {
@@ -68,6 +69,7 @@ impl Default for FakeHost {
             prepare: PrepareObservation::Missing,
             observed_stop: false,
             incomplete_cleanup: false,
+            lose_stop_receipt: false,
         }
     }
 }
@@ -98,6 +100,17 @@ impl HostAdapter for FakeHost {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        if self.lose_stop_receipt
+            && matches!(action.command.command(), core::Command::StopVm { .. })
+        {
+            return Ok(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
         Ok(WorkReceipt {
             identity: action.identity.clone(),
             outcome: WorkOutcome::ObservedSuccess(Evidence {
@@ -764,6 +777,63 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
     );
     assert_eq!(port.get("1", &created.sandbox_id), Err(PortError::NotFound));
     assert!(port.list("1", None, None).unwrap().items.is_empty());
+}
+
+#[test]
+fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
+    use sandproof_api::managed::DataKind;
+    let (_directory, port) = setup();
+    let first = port.create("1", request()).unwrap();
+    let second = port.create("2", request()).unwrap();
+    let first_routes = [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite]
+        .map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let other_route = port
+        .data_permit(&second.envd_access_token, DataKind::Exec)
+        .unwrap();
+    assert!(port.data_permit(&"0".repeat(64), DataKind::Exec).is_err());
+    assert_eq!(port.kill("2", &first.sandbox_id), Err(PortError::NotFound));
+    port.set_timeout("1", &first.sandbox_id, 60).unwrap();
+    assert_eq!(port.expire_due().unwrap(), 0);
+    assert!(first_routes.iter().all(|route| !*route.revocation.borrow()));
+    port.kill("1", &first.sandbox_id).unwrap();
+    assert!(first_routes.iter().all(|route| *route.revocation.borrow()));
+    assert!(!*other_route.revocation.borrow());
+    assert!(
+        port.data_permit(&first.envd_access_token, DataKind::Exec)
+            .is_err()
+    );
+    let replacement = port.create("1", request()).unwrap();
+    let new_route = port
+        .data_permit(&replacement.envd_access_token, DataKind::Exec)
+        .unwrap();
+    assert_ne!(new_route.target.vm, first_routes[0].target.vm);
+    assert!(!*new_route.revocation.borrow());
+    assert!(first_routes.iter().all(|route| *route.revocation.borrow()));
+    port.kill("1", &replacement.sandbox_id).unwrap();
+    assert!(!*other_route.revocation.borrow());
+    port.kill("2", &second.sandbox_id).unwrap();
+}
+
+#[test]
+fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
+    use sandproof_api::managed::DataKind;
+    let (_directory, port) = setup_with_host(FakeHost {
+        lose_stop_receipt: true,
+        ..FakeHost::default()
+    });
+    let sandbox = port.create("1", request()).unwrap();
+    let route = port
+        .data_permit(&sandbox.envd_access_token, DataKind::Exec)
+        .unwrap();
+    assert_eq!(
+        port.kill("1", &sandbox.sandbox_id),
+        Err(PortError::OutcomeUnknown)
+    );
+    assert!(*route.revocation.borrow());
+    assert!(
+        port.data_permit(&sandbox.envd_access_token, DataKind::Exec)
+            .is_err()
+    );
 }
 
 #[test]

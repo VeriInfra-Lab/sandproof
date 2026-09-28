@@ -19,7 +19,7 @@ import uuid
 
 import httpx
 from e2b import AsyncSandbox, Sandbox
-from e2b.exceptions import FileNotFoundException, SandboxException
+from e2b.exceptions import AuthenticationException, FileNotFoundException, SandboxException
 
 from gateway_async_stream_limits import async_stream_failure
 from gateway_stream_limits import stream_failure
@@ -90,14 +90,14 @@ async def revoked(sandbox, url):
 
 async def interrupted_monitor(monitor, timeout=10):
     done, _pending = await asyncio.wait({monitor}, timeout=timeout)
-    assert done, 'running command connection did not observe VM termination'
+    assert done, 'running command connection did not observe access revocation'
     try:
         monitor.result()
     except Exception as error:
         if not async_stream_failure(error):
             raise
         return type(error).__name__
-    raise AssertionError('monitor command ended successfully despite VM destruction')
+    raise AssertionError('monitor command ended successfully despite revocation')
 
 
 async def trigger(sandbox, mode, monitor):
@@ -111,7 +111,7 @@ async def trigger(sandbox, mode, monitor):
 
 
 def upload_failure(error):
-    return (type(error) in (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError)
+    return (type(error) in (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError, AuthenticationException)
             or (type(error) is SandboxException and str(error).startswith('502:')))
 
 

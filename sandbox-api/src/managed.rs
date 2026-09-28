@@ -2,7 +2,7 @@
 //! It does not impersonate the host: all worker receipts come from `HostAdapter`.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
@@ -12,11 +12,12 @@ use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, HostEvidence, JournalError, NeverCrash,
     WorkerTransportError, finish_accepted_kill_v1, finish_admitted_create_v1,
-    finish_compensating_create_v1, kill_v1,
+    finish_compensating_create_v1,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use tokio::sync::watch;
 
 use crate::{
     ConnectRequest, ControllerPort, CreateRequest, PortError, SandboxInfo, SandboxPage,
@@ -93,6 +94,14 @@ pub struct DataTarget {
     pub generation: core::Generation,
 }
 
+/// A request authorized against the durable world, with a local cancellation
+/// signal. The signal can withdraw an existing route; it never grants access.
+#[derive(Debug)]
+pub struct DataPermit {
+    pub target: DataTarget,
+    pub revocation: watch::Receiver<bool>,
+}
+
 fn same_secret(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
         return false;
@@ -120,6 +129,15 @@ pub struct ManagedConfig {
 struct Inner<H: HostAdapter> {
     journal: ControllerJournal,
     host: H,
+    data_revocations: BTreeMap<u64, watch::Sender<bool>>,
+}
+
+impl<H: HostAdapter> Inner<H> {
+    fn revoke_data(&mut self, sandbox: core::SandboxId) {
+        if let Some(signal) = self.data_revocations.remove(&sandbox.0) {
+            signal.send_replace(true);
+        }
+    }
 }
 
 /// The mutex gives one process a serial operation boundary across journal
@@ -278,7 +296,11 @@ impl<H: HostAdapter> ManagedPort<H> {
     #[must_use]
     pub fn new(journal: ControllerJournal, host: H, config: ManagedConfig) -> Self {
         Self {
-            inner: Mutex::new(Inner { journal, host }),
+            inner: Mutex::new(Inner {
+                journal,
+                host,
+                data_revocations: BTreeMap::new(),
+            }),
             config,
             _evidence: PhantomData,
         }
@@ -293,7 +315,7 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// Invalid evidence or a corrupt journal aborts startup recovery.
     pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        let Inner { journal, host } = &mut *inner;
+        let Inner { journal, host, .. } = &mut *inner;
         let initial = journal.world().map_err(map_journal)?;
         let mut blocked = BTreeSet::new();
         for (sandbox, record) in initial.sandbox_records() {
@@ -387,10 +409,33 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// # Errors
     /// Rejects unknown, expired, revoked or non-running credentials.
     pub fn authorize_data(&self, supplied: &str, kind: DataKind) -> Result<DataTarget, PortError> {
+        let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        Self::data_target(&inner, supplied, kind).map(|(_, target)| target)
+    }
+
+    /// Authorize and subscribe under the same management lock, so a kill
+    /// cannot fall between the authority check and route registration.
+    /// # Errors
+    /// Rejects unknown, expired, revoked or non-running credentials.
+    pub fn data_permit(&self, supplied: &str, kind: DataKind) -> Result<DataPermit, PortError> {
+        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        let (sandbox, target) = Self::data_target(&inner, supplied, kind)?;
+        let revocation = inner
+            .data_revocations
+            .entry(sandbox.0)
+            .or_insert_with(|| watch::channel(false).0)
+            .subscribe();
+        Ok(DataPermit { target, revocation })
+    }
+
+    fn data_target(
+        inner: &Inner<H>,
+        supplied: &str,
+        kind: DataKind,
+    ) -> Result<(core::SandboxId, DataTarget), PortError> {
         if supplied.len() != 64 || !supplied.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(PortError::NotFound);
         }
-        let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let world = inner.journal.world().map_err(map_journal)?;
         let mut matched = None;
         for (sandbox, record) in world.sandbox_records() {
@@ -420,10 +465,13 @@ impl<H: HostAdapter> ManagedPort<H> {
             .journal
             .check(core::ControllerInput::Access(input))
             .map_err(map_journal)?;
-        Ok(DataTarget {
-            vm,
-            generation: record.generation,
-        })
+        Ok((
+            sandbox,
+            DataTarget {
+                vm,
+                generation: record.generation,
+            },
+        ))
     }
 
     /// Execute due expiries against the same journal/host lock as client
@@ -440,11 +488,19 @@ impl<H: HostAdapter> ManagedPort<H> {
         let mut completed = 0;
         for sandbox in due {
             let operation = next_operation(&inner.journal.world().map_err(map_journal)?, sandbox)?;
-            inner
+            let accepted = inner
                 .journal
-                .accept_expiry(sandbox, operation, now, &mut NeverCrash)
-                .map_err(map_admission)?;
-            let Inner { journal, host } = &mut *inner;
+                .accept_expiry(sandbox, operation, now, &mut NeverCrash);
+            if accepted.is_ok()
+                || matches!(
+                    accepted,
+                    Err(AdmissionError::Journal(JournalError::CommitUncertain(_)))
+                )
+            {
+                inner.revoke_data(sandbox);
+            }
+            accepted.map_err(map_admission)?;
+            let Inner { journal, host, .. } = &mut *inner;
             finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
                 host.execute(action)
             })
@@ -576,7 +632,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             .map_err(map_admission)?;
         let secret = token()?;
         inner.host.put_secret(sandbox, &secret)?;
-        let Inner { journal, host } = &mut *inner;
+        let Inner { journal, host, .. } = &mut *inner;
         finish_admitted_create_v1(journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
         })
@@ -669,16 +725,25 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             return Err(PortError::NotFound);
         }
         let operation = next_operation(&world, sandbox)?;
-        let Inner { journal, host } = &mut *inner;
-        kill_v1(
-            journal,
-            core::KillRequest {
+        let accepted = inner.journal.apply(
+            core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
                 actor: core::Actor::Tenant(tenant),
                 sandbox,
                 operation,
-            },
-            &mut |action| host.execute(action),
-        )
+            })),
+            &mut NeverCrash,
+        );
+        // Close only this sandbox's existing routes after durable acceptance.
+        // A commit-uncertain result also closes them conservatively, without
+        // reporting kill success or dispatching an unconfirmed host action.
+        if accepted.is_ok() || matches!(accepted, Err(JournalError::CommitUncertain(_))) {
+            inner.revoke_data(sandbox);
+        }
+        accepted.map_err(map_journal)?;
+        let Inner { journal, host, .. } = &mut *inner;
+        finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
+            host.execute(action)
+        })
         .map_err(map_journal)?;
         Ok(())
     }

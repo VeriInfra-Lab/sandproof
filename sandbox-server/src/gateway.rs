@@ -35,12 +35,14 @@ use crate::linux::NodeHost;
 mod admission;
 mod idle;
 mod limits;
+mod revocation;
 mod upload;
 pub(crate) use admission::Gateway;
 use admission::{LeasedBody, control_request};
 pub(crate) use idle::GatewayListener;
 use idle::{Activity, IdleBody, WriteIdle};
 pub(crate) use limits::TransferLimits;
+use revocation::until_revoked;
 use upload::{UploadBody, UploadProgress};
 
 const FILE_REQUEST_LIMIT: usize = 8 * 1024 * 1024;
@@ -134,6 +136,18 @@ fn spawn_relay(namespace_name: &str) -> io::Result<tokio::process::Child> {
         .spawn()
 }
 
+fn access_token(headers: &axum::http::HeaderMap) -> Result<String, StatusCode> {
+    let mut tokens = headers.get_all("x-access-token").iter();
+    let token = tokens.next().ok_or(StatusCode::UNAUTHORIZED)?;
+    if tokens.next().is_some() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    token
+        .to_str()
+        .map(str::to_owned)
+        .map_err(|_| StatusCode::UNAUTHORIZED)
+}
+
 /// SDK data requests carry only the sandbox's envd bearer token. It is
 /// resolved to one running sandbox, and the core checks effective Exec or
 /// FileRead/FileWrite permission before launching a namespace-local relay.
@@ -162,25 +176,19 @@ pub async fn handle(
     {
         return response(StatusCode::BAD_REQUEST);
     }
-    let mut tokens = request.headers().get_all("x-access-token").iter();
-    let Some(token) = tokens.next() else {
-        return response(StatusCode::UNAUTHORIZED);
+    let token = match access_token(request.headers()) {
+        Ok(token) => token,
+        Err(status) => return response(status),
     };
-    if tokens.next().is_some() {
-        return response(StatusCode::UNAUTHORIZED);
-    }
-    let Ok(token) = token.to_str() else {
-        return response(StatusCode::UNAUTHORIZED);
+    let mut permit = match tokio::task::spawn_blocking(move || port.data_permit(&token, kind)).await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(PortError::NotFound | PortError::Invalid)) => {
+            return response(StatusCode::UNAUTHORIZED);
+        }
+        Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
     };
-    let token = token.to_owned();
-    let destination =
-        match tokio::task::spawn_blocking(move || port.authorize_data(&token, kind)).await {
-            Ok(Ok(value)) => value,
-            Ok(Err(PortError::NotFound | PortError::Invalid)) => {
-                return response(StatusCode::UNAUTHORIZED);
-            }
-            Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
-        };
+    let destination = permit.target;
     let lease = match &gateway {
         Some(gateway) => match gateway.acquire(
             (destination.vm.0, destination.generation),
@@ -192,9 +200,15 @@ pub async fn handle(
         None => None,
     };
     let limits = gateway.as_ref().map(|gateway| &gateway.limits);
-    let request = match prepare_body(request, file_request, limits).await {
-        Ok(request) => request,
-        Err(rejection) => return rejection,
+    let request = match until_revoked(
+        &mut permit.revocation,
+        prepare_body(request, file_request, limits),
+    )
+    .await
+    {
+        Some(Ok(request)) => request,
+        Some(Err(rejection)) => return rejection,
+        None => return response(StatusCode::UNAUTHORIZED),
     };
     let namespace_name = format!("vm-{namespace}-{}", destination.vm.0);
     let Ok(mut child) = spawn_relay(&namespace_name) else {
@@ -212,17 +226,32 @@ pub async fn handle(
     if limits.is_some() {
         builder.max_buf_size(64 * 1024);
     }
-    let Ok((mut sender, connection)) = builder.handshake(TokioIo::new(tunnel)).await else {
+    let handshake = until_revoked(
+        &mut permit.revocation,
+        builder.handshake(TokioIo::new(tunnel)),
+    )
+    .await;
+    let Some(Ok((mut sender, connection))) = handshake else {
         let _ = child.kill().await;
-        return response(StatusCode::BAD_GATEWAY);
+        return response(if handshake.is_none() {
+            StatusCode::UNAUTHORIZED
+        } else {
+            StatusCode::BAD_GATEWAY
+        });
     };
     let connection_lease = lease.clone();
+    let mut connection_revocation = permit.revocation.clone();
     tokio::spawn(async move {
-        let _ = connection.await;
+        let _ = until_revoked(&mut connection_revocation, connection).await;
         let _ = child.kill().await;
         drop(connection_lease);
     });
-    let response = forward_request(&mut sender, request, limits).await;
+    let response = until_revoked(
+        &mut permit.revocation,
+        forward_request(&mut sender, request, limits),
+    )
+    .await
+    .unwrap_or_else(|| response(StatusCode::UNAUTHORIZED));
     match lease {
         Some(lease) => LeasedBody::wrap(response, lease),
         None => response,
