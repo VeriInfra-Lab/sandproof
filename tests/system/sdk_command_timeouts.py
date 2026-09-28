@@ -19,6 +19,7 @@ from e2b import AsyncSandbox, Sandbox
 from e2b.envd.client_async import _request_timeout_exception
 from e2b.envd.rpc import handle_rpc_exception
 from e2b.exceptions import InvalidArgumentException, TimeoutException
+from e2b.sandbox.commands.command_handle import CommandExitException
 
 from sdk_command_input import call
 from sdk_server_smoke import options
@@ -159,38 +160,66 @@ async def connect_case(sandbox, asynchronous, field, case, value):
                 outcome=expected, same_pid_recovered=True, start_markers=1)
 
 
-async def wait_deadline_case(sandbox):
+def verify_deadline_exit(error):
+    assert type(error) is CommandExitException
+    assert (error.exit_code, error.stdout, error.stderr, error.error) == (
+        -1, '', '', 'signal: killed')
+
+
+async def wait_deadline_case(sandbox, started_with_deadline):
     marker = '/tmp/wait-timeout-' + uuid.uuid4().hex
     command = "printf 'once\\n' >> " + shlex.quote(marker)
     command += '; exec python3 -c ' + shlex.quote(QUIET)
     original = await call(sandbox.commands.run, command, stdin=True,
-                          background=True, timeout=1)
+                          background=True, timeout=1 if started_with_deadline else 60)
+    waiting = original
     recovery = None
     try:
+        if not started_with_deadline:
+            await call(original.disconnect)
+            waiting = await call(sandbox.commands.connect, original.pid, timeout=1)
+            assert waiting.pid == original.pid
         # Start has returned a known PID, but stdin stays open, so wait cannot
         # get a successful end event. Its deadline is the existing stream's.
         try:
-            await call(original.wait)
+            await call(waiting.wait)
         except Exception as error:
-            verify_failure(error, 'stream_deadline')
+            if started_with_deadline and type(error) is CommandExitException:
+                # envd's process deadline and the RPC deadline can race.
+                verify_deadline_exit(error)
+            else:
+                verify_failure(error, 'stream_deadline')
         else:
             raise AssertionError('wait ignored the command stream deadline')
-        assert original.pid in [item.pid for item in await call(sandbox.commands.list)]
-        await call(original.disconnect)
+        await call(waiting.disconnect)
         recovery = await call(sandbox.commands.connect, original.pid, timeout=15)
         assert recovery.pid == original.pid
-        await call(recovery.close_stdin, request_timeout=15)
-        result = await call(recovery.wait)
-        assert (result.stdout, result.stderr, result.exit_code) == ('finished\n', '', 0)
+        if started_with_deadline:
+            # Start copies its header deadline to exec.CommandContext. A late
+            # Connect observes the retained exit, never a restarted command.
+            try:
+                await call(recovery.wait)
+            except Exception as error:
+                verify_deadline_exit(error)
+            else:
+                raise AssertionError('command deadline did not terminate the process')
+            assert original.pid not in [item.pid for item in await call(sandbox.commands.list)]
+        else:
+            assert original.pid in [item.pid for item in await call(sandbox.commands.list)]
+            await call(recovery.close_stdin, request_timeout=15)
+            result = await call(recovery.wait)
+            assert (result.stdout, result.stderr, result.exit_code) == ('finished\n', '', 0)
         assert await marker_count(sandbox, marker) == 1
+        assert (await call(sandbox.commands.run, 'printf healthy', timeout=15)).stdout == 'healthy'
     finally:
         await call(original.kill)
-        for handle in (recovery, original):
+        for handle in (recovery, waiting, original):
             if handle is not None:
                 await call(handle.disconnect)
     return dict(operation='wait', parameter='inherited_stream_deadline',
-                case='one_second_after_known_start', outcome='stream_deadline',
-                same_pid_recovered=True, start_markers=1)
+                case='start' if started_with_deadline else 'connect',
+                outcome='command_terminated' if started_with_deadline else 'stream_deadline',
+                same_pid_observed=True, start_markers=1)
 
 
 async def exercise(args):
@@ -210,7 +239,8 @@ async def exercise(args):
                     rows.append(await connect_case(sandbox, cls is AsyncSandbox,
                                                    field, case, value))
                     assert (await call(sandbox.commands.run, 'printf healthy', timeout=15)).stdout == 'healthy'
-            rows.append(await wait_deadline_case(sandbox))
+            for started_with_deadline in (True, False):
+                rows.append(await wait_deadline_case(sandbox, started_with_deadline))
             results.append(dict(sdk=cls.__name__, cases=rows))
         finally:
             assert await call(sandbox.kill)
