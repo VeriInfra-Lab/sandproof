@@ -11,9 +11,10 @@ use std::{
 
 use axum::{
     body::{Body, to_bytes},
-    http::{Method, Request, Response, StatusCode, header},
+    http::{Method, Request, Response, StatusCode, Version, header},
 };
-use hyper::client::conn::http1;
+use http_body_util::{BodyStream, Limited};
+use hyper::client::conn::http1::{self, SendRequest};
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use sandproof_api::{
@@ -124,7 +125,7 @@ fn spawn_relay(namespace_name: &str) -> io::Result<tokio::process::Child> {
 pub async fn handle(
     port: Arc<ManagedPort<NodeHost>>,
     namespace: String,
-    mut request: Request<Body>,
+    request: Request<Body>,
 ) -> Response<Body> {
     let path = request.uri().path().to_owned();
     let Some((kind, file_request)) = operation(request.method(), &path) else {
@@ -164,24 +165,10 @@ pub async fn handle(
             }
             Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
         };
-    if file_request {
-        let (parts, body) = request.into_parts();
-        let Ok(bytes) = to_bytes(body, FILE_REQUEST_LIMIT).await else {
-            return response(StatusCode::PAYLOAD_TOO_LARGE);
-        };
-        if path.starts_with("/filesystem.Filesystem/") && contains_nul_escape(&bytes) {
-            return response(StatusCode::BAD_REQUEST);
-        }
-        request = Request::from_parts(parts, Body::from(bytes));
-    } else {
-        // Process RPCs may be bidirectional. Preserve streaming while bounding
-        // client-to-guest input; buffering the whole request can deadlock Start.
-        let (parts, body) = request.into_parts();
-        request = Request::from_parts(
-            parts,
-            Body::new(http_body_util::Limited::new(body, PROCESS_REQUEST_LIMIT)),
-        );
-    }
+    let request = match prepare_body(request, file_request).await {
+        Ok(request) => request,
+        Err(rejection) => return rejection,
+    };
     let namespace_name = format!("vm-{namespace}-{}", destination.vm.0);
     let Ok(mut child) = spawn_relay(&namespace_name) else {
         return response(StatusCode::BAD_GATEWAY);
@@ -199,6 +186,49 @@ pub async fn handle(
         let _ = connection.await;
         let _ = child.kill().await;
     });
+    forward_request(&mut sender, request).await
+}
+
+// Shared by the authenticated production path and transport regression tests.
+// Tests replace only the envd transport; the actual limits and framing remain.
+async fn prepare_body(
+    mut request: Request<Body>,
+    file_request: bool,
+) -> Result<Request<Body>, Response<Body>> {
+    // The fixed SDK uses HTTP/1.1. HTTP/1.0 cannot distinguish a truncated
+    // unknown-length stream from success; do not execute it on that basis.
+    if request.version() != Version::HTTP_11 {
+        return Err(response(StatusCode::HTTP_VERSION_NOT_SUPPORTED));
+    }
+    if file_request {
+        let (parts, body) = request.into_parts();
+        let Ok(bytes) = to_bytes(body, FILE_REQUEST_LIMIT).await else {
+            return Err(response(StatusCode::PAYLOAD_TOO_LARGE));
+        };
+        if parts.uri.path().starts_with("/filesystem.Filesystem/") && contains_nul_escape(&bytes) {
+            return Err(response(StatusCode::BAD_REQUEST));
+        }
+        request = Request::from_parts(parts, Body::from(bytes));
+    } else {
+        // Process RPCs may be bidirectional. Preserve streaming while bounding
+        // client-to-guest input; buffering the whole request can deadlock Start.
+        let (parts, body) = request.into_parts();
+        request = Request::from_parts(
+            parts,
+            // Limited clamps an exact size hint to the budget. Do not let
+            // HTTP turn that hint into a shorter successful Content-Length:
+            // the over-limit frame must still be polled and fail the stream.
+            Body::new(BodyStream::new(Limited::new(body, PROCESS_REQUEST_LIMIT))),
+        );
+    }
+    Ok(request)
+}
+
+async fn forward_request(
+    sender: &mut SendRequest<Body>,
+    mut request: Request<Body>,
+) -> Response<Body> {
+    let downstream_version = request.version();
     request.headers_mut().remove("x-api-key");
     request.headers_mut().insert(
         header::CONNECTION,
@@ -218,8 +248,16 @@ pub async fn handle(
     };
     *request.uri_mut() = uri;
     match sender.send_request(request).await {
-        Ok(upstream) => {
-            upstream.map(|body| Body::new(http_body_util::Limited::new(body, RESPONSE_LIMIT)))
+        Ok(mut upstream) => {
+            // The two HTTP connections negotiate versions independently. An
+            // upstream HTTP/1.0 response must not downgrade an HTTP/1.1 client
+            // to close-delimited output: EOF would hide a stream limit error.
+            *upstream.version_mut() = downstream_version;
+            // Keep the upstream Content-Length, if present, but erase the
+            // clamped hint. Otherwise it conflicts with the original header
+            // (a Hyper assertion), or can disguise truncation as completion.
+            // BodyStream preserves data/trailers/errors without buffering.
+            upstream.map(|body| Body::new(BodyStream::new(Limited::new(body, RESPONSE_LIMIT))))
         }
         Err(_) => response(StatusCode::BAD_GATEWAY),
     }
@@ -248,3 +286,9 @@ pub async fn relay() -> Result<(), Box<dyn Error>> {
     tokio::try_join!(upstream, downstream)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(all(test, feature = "sdk-contract-tests"))]
+mod sdk_tests;
