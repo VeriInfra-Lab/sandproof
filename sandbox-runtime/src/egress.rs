@@ -1,54 +1,22 @@
-//! Compile guest-side IPv4 egress rules. The running controller still installs
-//! only `DenyAll`; permissive rules also require an identity-bound host uplink,
-//! host INPUT/FORWARD isolation, observation and crash-safe cleanup.
+//! Compile guest-side IPv4 egress rules. Permissive modes additionally require
+//! an identity-bound host uplink, host INPUT/FORWARD isolation, observation and
+//! crash-safe cleanup.
 
 use std::collections::BTreeSet;
-use std::fmt::{self, Display, Write};
+use std::fmt::Write;
 use std::net::Ipv4Addr;
 
-const MAX_RULES_PER_LIST: usize = 128;
+use sandbox_controller_core::{
+    Ipv4Cidr, NetworkPolicy, PLATFORM_DENY_IPV4, SdkIpv4Error, platform_protected_ipv4,
+};
+
 const CHAIN_PREFIX: &str = "add table inet sandproof_guard\n\
 add chain inet sandproof_guard guest_out { type filter hook prerouting priority -10; policy accept; }\n\
 add rule inet sandproof_guard guest_out iifname \"tap0\" ct state established,related accept\n";
 const CHAIN_SUFFIX: &str = "add rule inet sandproof_guard guest_out iifname \"tap0\" drop\n";
 
-// Platform exclusions are independent of the user's lists. Actual host IPv4
-// addresses must also be supplied; a static list cannot discover them.
-const PLATFORM_DENY: &[(Ipv4Addr, u8)] = &[
-    (Ipv4Addr::UNSPECIFIED, 8),
-    (Ipv4Addr::new(10, 0, 0, 0), 8),
-    (Ipv4Addr::new(100, 64, 0, 0), 10),
-    (Ipv4Addr::new(127, 0, 0, 0), 8),
-    (Ipv4Addr::new(169, 254, 0, 0), 16),
-    (Ipv4Addr::new(172, 16, 0, 0), 12),
-    (Ipv4Addr::new(192, 0, 0, 0), 24),
-    (Ipv4Addr::new(192, 0, 2, 0), 24),
-    (Ipv4Addr::new(192, 88, 99, 0), 24),
-    (Ipv4Addr::new(192, 168, 0, 0), 16),
-    (Ipv4Addr::new(198, 18, 0, 0), 15),
-    (Ipv4Addr::new(198, 51, 100, 0), 24),
-    (Ipv4Addr::new(203, 0, 113, 0), 24),
-    (Ipv4Addr::new(224, 0, 0, 0), 4),
-    (Ipv4Addr::new(240, 0, 0, 0), 4),
-];
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Ipv4Cidr {
-    network: Ipv4Addr,
-    prefix_length: u8,
-}
-
-impl Ipv4Cidr {
-    fn contains(self, address: Ipv4Addr) -> bool {
-        (u32::from(address) & prefix_mask(self.prefix_length)) == u32::from(self.network)
-    }
-}
-
-impl Display for Ipv4Cidr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.network, self.prefix_length)
-    }
-}
+// Platform exclusions are shared with the core. Actual host IPv4 addresses
+// must also be supplied; static ranges cannot discover them.
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ipv4EgressRules {
@@ -59,9 +27,9 @@ pub struct Ipv4EgressRules {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EgressPolicy {
-    /// The only policy currently installed by the runtime.
+    /// The default closed policy.
     DenyAll,
-    /// Normalized fixed-SDK IPv4 address rules, not yet wired to a VM uplink.
+    /// Normalized fixed-SDK IPv4 address rules, installed only with a host uplink.
     Ipv4(Ipv4EgressRules),
 }
 
@@ -73,65 +41,18 @@ pub enum PolicyError {
     MissingHostBoundary,
 }
 
-fn prefix_mask(prefix: u8) -> u32 {
-    if prefix == 0 {
-        0
-    } else {
-        u32::MAX << (32 - prefix)
-    }
-}
-
-fn parse_cidr(input: &str) -> Result<Ipv4Cidr, PolicyError> {
-    let (address, prefix) = if let Some((address, prefix)) = input.split_once('/') {
-        let prefix = prefix
-            .parse::<u8>()
-            .map_err(|_| PolicyError::InvalidIpv4Address)?;
-        if prefix > 32 {
-            return Err(PolicyError::InvalidIpv4Address);
-        }
-        (address, prefix)
-    } else {
-        (input, 32)
-    };
-    let address = address.parse::<Ipv4Addr>().map_err(|_| {
-        if input.contains(':') || input.chars().any(char::is_alphabetic) {
-            PolicyError::UnsupportedAddressKind
-        } else {
-            PolicyError::InvalidIpv4Address
-        }
-    })?;
-    // The fixed API accepts this sentinel, not an unspecified host address.
-    if address.is_unspecified() && input != "0.0.0.0/0" {
-        return Err(PolicyError::InvalidIpv4Address);
-    }
-    Ok(Ipv4Cidr {
-        network: Ipv4Addr::from(u32::from(address) & prefix_mask(prefix)),
-        prefix_length: prefix,
-    })
-}
-
-fn parse_list(entries: &[String]) -> Result<Vec<Ipv4Cidr>, PolicyError> {
-    if entries.len() > MAX_RULES_PER_LIST {
-        return Err(PolicyError::TooManyRules);
-    }
-    // The SDK accepts duplicates and CIDRs with host bits. Rule order within
-    // one list has no meaning; normalize and deduplicate deterministically.
-    entries
-        .iter()
-        .map(|entry| parse_cidr(entry))
-        .collect::<Result<BTreeSet<_>, _>>()
-        .map(|rules| rules.into_iter().collect())
-}
-
 fn protected_destination(address: Ipv4Addr, host_addresses: &[Ipv4Addr]) -> bool {
-    host_addresses.contains(&address)
-        || PLATFORM_DENY.iter().any(|(network, prefix)| {
-            Ipv4Cidr {
-                network: *network,
-                prefix_length: *prefix,
-            }
-            .contains(address)
-        })
+    host_addresses.contains(&address) || platform_protected_ipv4(u32::from(address))
+}
+
+impl From<SdkIpv4Error> for PolicyError {
+    fn from(value: SdkIpv4Error) -> Self {
+        match value {
+            SdkIpv4Error::TooManyRules => Self::TooManyRules,
+            SdkIpv4Error::InvalidAddress => Self::InvalidIpv4Address,
+            SdkIpv4Error::UnsupportedAddressKind => Self::UnsupportedAddressKind,
+        }
+    }
 }
 
 impl EgressPolicy {
@@ -147,11 +68,30 @@ impl EgressPolicy {
         allow_out: &[String],
         deny_out: &[String],
     ) -> Result<Self, PolicyError> {
-        Ok(Self::Ipv4(Ipv4EgressRules {
-            internet_access: allow_internet_access.unwrap_or(true),
-            allow_out: parse_list(allow_out)?,
-            deny_out: parse_list(deny_out)?,
-        }))
+        Self::from_core_policy(&NetworkPolicy::from_sdk_ipv4(
+            allow_internet_access,
+            allow_out,
+            deny_out,
+        )?)
+    }
+
+    /// One canonical core policy becomes the same host firewall policy.
+    /// # Errors
+    /// Rejects the older endpoint/port allowlist, which is not a V1 SDK mode.
+    pub fn from_core_policy(policy: &NetworkPolicy) -> Result<Self, PolicyError> {
+        match policy {
+            NetworkPolicy::DenyAll => Ok(Self::DenyAll),
+            NetworkPolicy::Ipv4 {
+                internet_access,
+                allow_out,
+                deny_out,
+            } => Ok(Self::Ipv4(Ipv4EgressRules {
+                internet_access: *internet_access,
+                allow_out: allow_out.clone(),
+                deny_out: deny_out.clone(),
+            })),
+            NetworkPolicy::StaticAllowlist(_) => Err(PolicyError::UnsupportedAddressKind),
+        }
     }
 
     /// Evaluate the intended policy for a new guest-initiated IPv4 connection.
@@ -176,14 +116,14 @@ impl EgressPolicy {
         if rules
             .allow_out
             .iter()
-            .any(|range| range.contains(destination))
+            .any(|range| range.contains(u32::from(destination)))
         {
             return Ok(true);
         }
         if rules
             .deny_out
             .iter()
-            .any(|range| range.contains(destination))
+            .any(|range| range.contains(u32::from(destination)))
         {
             return Ok(false);
         }
@@ -192,41 +132,90 @@ impl EgressPolicy {
 
     /// Render one nft transaction for the VM's TAP ingress: platform deny,
     /// user allow, user deny, then default. IPv6 always reaches the final
-    /// drop. Only `DenyAll` may be installed by the current runtime.
+    /// drop. Installation of permissive policy also requires a host uplink.
     ///
     /// # Errors
     /// Permissive policies require a nonempty host-boundary snapshot.
     pub fn guest_guard_script(&self, host_addresses: &[Ipv4Addr]) -> Result<String, PolicyError> {
         let mut script = String::from(CHAIN_PREFIX);
-        if let Self::Ipv4(rules) = self {
-            if host_addresses.is_empty() {
-                return Err(PolicyError::MissingHostBoundary);
-            }
-            for (network, prefix) in PLATFORM_DENY {
-                writeln!(script, "add rule inet sandproof_guard guest_out iifname \"tap0\" ip daddr {network}/{prefix} drop")
-                    .expect("writing to a string cannot fail");
-            }
-            for address in host_addresses.iter().copied().collect::<BTreeSet<_>>() {
-                writeln!(script, "add rule inet sandproof_guard guest_out iifname \"tap0\" ip daddr {address}/32 drop")
-                    .expect("writing to a string cannot fail");
-            }
-            for range in &rules.allow_out {
-                writeln!(script, "add rule inet sandproof_guard guest_out iifname \"tap0\" ip daddr {range} accept")
-                    .expect("writing to a string cannot fail");
-            }
-            for range in &rules.deny_out {
-                writeln!(
-                    script,
-                    "add rule inet sandproof_guard guest_out iifname \"tap0\" ip daddr {range} drop"
-                )
-                .expect("writing to a string cannot fail");
-            }
-            if rules.internet_access {
-                script.push_str("add rule inet sandproof_guard guest_out iifname \"tap0\" meta nfproto ipv4 accept\n");
-            }
-        }
+        self.append_ipv4_rules(&mut script, "guest_out", host_addresses)?;
         script.push_str(CHAIN_SUFFIX);
         Ok(script)
+    }
+
+    /// Stage a non-hooked chain while the original `guest_out` gate still drops
+    /// every new guest packet. The caller can inspect and durably record the
+    /// chain before making one atomic gate change.
+    /// # Errors
+    /// Requires a supported IPv4 policy and a host-address snapshot.
+    pub fn staged_policy_script(&self, host_addresses: &[Ipv4Addr]) -> Result<String, PolicyError> {
+        if !matches!(self, Self::Ipv4(_)) {
+            return Err(PolicyError::UnsupportedAddressKind);
+        }
+        let mut script = String::from("add chain inet sandproof_guard guest_policy\n");
+        self.append_ipv4_rules(&mut script, "guest_policy", host_addresses)?;
+        script.push_str("add rule inet sandproof_guard guest_policy iifname \"tap0\" drop\n");
+        Ok(script)
+    }
+
+    /// Switch only the hooked gate in one nft transaction. A crash leaves
+    /// either the previous deny gate or this exact jump, never an empty gate.
+    #[must_use]
+    pub fn activate_policy_script() -> &'static str {
+        "flush chain inet sandproof_guard guest_out\n\
+         add rule inet sandproof_guard guest_out iifname \"tap0\" ct state established,related accept\n\
+         add rule inet sandproof_guard guest_out iifname \"tap0\" jump guest_policy\n\
+         add rule inet sandproof_guard guest_out iifname \"tap0\" drop\n"
+    }
+
+    fn append_ipv4_rules(
+        &self,
+        script: &mut String,
+        chain: &str,
+        host_addresses: &[Ipv4Addr],
+    ) -> Result<(), PolicyError> {
+        let Self::Ipv4(rules) = self else {
+            return Ok(());
+        };
+        if host_addresses.is_empty() {
+            return Err(PolicyError::MissingHostBoundary);
+        }
+        for range in PLATFORM_DENY_IPV4 {
+            writeln!(
+                script,
+                "add rule inet sandproof_guard {chain} iifname \"tap0\" ip daddr {range} drop"
+            )
+            .expect("string write");
+        }
+        for address in host_addresses.iter().copied().collect::<BTreeSet<_>>() {
+            writeln!(
+                script,
+                "add rule inet sandproof_guard {chain} iifname \"tap0\" ip daddr {address}/32 drop"
+            )
+            .expect("string write");
+        }
+        for range in &rules.allow_out {
+            writeln!(
+                script,
+                "add rule inet sandproof_guard {chain} iifname \"tap0\" ip daddr {range} accept"
+            )
+            .expect("string write");
+        }
+        for range in &rules.deny_out {
+            writeln!(
+                script,
+                "add rule inet sandproof_guard {chain} iifname \"tap0\" ip daddr {range} drop"
+            )
+            .expect("string write");
+        }
+        if rules.internet_access {
+            writeln!(
+                script,
+                "add rule inet sandproof_guard {chain} iifname \"tap0\" meta nfproto ipv4 accept"
+            )
+            .expect("string write");
+        }
+        Ok(())
     }
 }
 
@@ -257,6 +246,17 @@ mod tests {
         let script = EgressPolicy::DenyAll.guest_guard_script(&[]).unwrap();
         assert_eq!(script, format!("{CHAIN_PREFIX}{CHAIN_SUFFIX}"));
         assert!(!permitted(&EgressPolicy::DenyAll, [1, 1, 1, 1]));
+    }
+
+    #[test]
+    fn staged_policy_does_not_remove_deny_gate_before_activation() {
+        let staged = policy(Some(false), &["1.1.1.1"], &[])
+            .staged_policy_script(&host())
+            .unwrap();
+        assert!(staged.starts_with("add chain inet sandproof_guard guest_policy\n"));
+        assert!(staged.contains("guest_policy iifname \"tap0\" ip daddr 1.1.1.1/32 accept"));
+        assert!(!staged.contains("flush chain"));
+        assert!(EgressPolicy::activate_policy_script().contains("jump guest_policy"));
     }
 
     #[test]

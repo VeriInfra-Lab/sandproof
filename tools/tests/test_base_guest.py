@@ -10,6 +10,14 @@ from tools import build_base_guest as builder
 
 
 class BaseGuestTests(unittest.TestCase):
+    def test_fixed_base_installs_default_route_before_envd(self):
+        unit = builder.SERVICE
+        self.assertIn("Requires=fcnet.service", unit)
+        self.assertLess(unit.index("After=fcnet.service"), unit.index(
+            "ExecStartPre=/usr/sbin/ip route replace default via 172.16.0.1 dev eth0"))
+        self.assertLess(unit.index("ExecStartPre=/usr/sbin/ip route replace default"),
+                        unit.index("ExecStart=/usr/local/bin/envd"))
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

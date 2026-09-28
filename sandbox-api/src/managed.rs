@@ -31,6 +31,13 @@ pub trait HostAdapter: Send + 'static {
     /// Rejects an unavailable physical disk observation.
     fn available_disk_bytes(&self) -> Result<u64, PortError>;
 
+    /// Read-only host readiness check before admitting a public IPv4 VM.
+    /// # Errors
+    /// Treat an unreadable forwarding state as unavailable, not permitted.
+    fn public_ipv4_ready(&self) -> Result<bool, PortError> {
+        Ok(false)
+    }
+
     /// # Errors
     /// A host credential creation failure leaves the admitted create pending.
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError>;
@@ -63,6 +70,28 @@ pub trait HostAdapter: Send + 'static {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError>;
+
+    /// Reconcile an exact current network action without assuming a lost
+    /// acknowledgement means no host effect occurred.
+    /// # Errors
+    /// Ambiguous or foreign network resources remain unresolved.
+    fn reclaim_incomplete_network(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Complete only the current operation's terminal fence after a lost
+    /// acknowledgement; it may not reopen an older execution gate.
+    /// # Errors
+    /// Ambiguous or stale fence state remains unresolved.
+    fn reclaim_incomplete_terminal_fence(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
 
     /// Finish exact, already-dispatched cleanup after proving the recorded
     /// VM is stopped. This may remove only resources owned by that VM.
@@ -115,6 +144,7 @@ fn same_secret(left: &[u8], right: &[u8]) -> bool {
 
 #[derive(Clone, Debug)]
 pub struct ManagedConfig {
+    pub public_ipv4_enabled: bool,
     pub limits: AdmissionLimits,
     pub disk_bytes: u64,
     pub file_policy_digest: core::PolicyDigest,
@@ -277,6 +307,27 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
                 }
                 host.reclaim_incomplete_prepare(&action)?;
             }
+            core::Command::ConfigureNetwork {
+                policy: core::NetworkPolicy::Ipv4 { .. },
+                ..
+            } => {
+                if !journal
+                    .matches_current_network(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_network(&action)?;
+            }
+            core::Command::InstallFence { terminal: true, .. } => {
+                if !journal
+                    .matches_current_terminal_fence(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_terminal_fence(&action)?;
+            }
             core::Command::CleanupVm { .. } => {
                 if !journal
                     .matches_current_cleanup(world, &action)
@@ -307,8 +358,10 @@ impl<H: HostAdapter> ManagedPort<H> {
     }
 
     /// Reconcile exact host observations before resuming accepted workflows.
-    /// It never re-executes a dispatched action. A sandbox with inconclusive
-    /// evidence remains unavailable, while other sandboxes can still recover.
+    /// It never blindly repeats an uncertain action: only an identity-matched
+    /// network setup or terminal fence may complete an idempotent host step.
+    /// A sandbox with inconclusive evidence remains unavailable, while other
+    /// sandboxes can still recover.
     /// Call this after opening the durable journal and periodically while the
     /// service runs. Repeated calls never re-dispatch an uncertain action.
     /// # Errors
@@ -581,8 +634,9 @@ impl<H: HostAdapter> ManagedPort<H> {
 impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
     fn create(&self, tenant: &str, request: CreateRequest) -> Result<SandboxSession, PortError> {
         let tenant = tenant_id(tenant)?;
+        let policy = crate::network::selected_policy(&request)?;
         if request.template_id != "base"
-            || request.allow_internet_access != Some(false)
+            || (policy != core::NetworkPolicy::DenyAll && !self.config.public_ipv4_enabled)
             || request
                 .metadata
                 .as_ref()
@@ -599,6 +653,9 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         );
         let timeout = u64::try_from(timeout).map_err(|_| PortError::Invalid)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        if policy != core::NetworkPolicy::DenyAll && !inner.host.public_ipv4_ready()? {
+            return Err(PortError::Busy);
+        }
         let sandbox = next_sandbox(&inner.journal)?;
         let physical_needed = self
             .config
@@ -620,7 +677,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                     file_policy: core::FilePolicyRef {
                         digest: self.config.file_policy_digest,
                     },
-                    policy: core::NetworkPolicy::DenyAll,
+                    policy,
                     operation: core::OperationId(1),
                 },
                 now_ms()?,

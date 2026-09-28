@@ -85,6 +85,35 @@ pub struct Endpoint {
 pub enum NetworkPolicy {
     DenyAll,
     StaticAllowlist(Vec<Endpoint>),
+    /// The fixed SDK's IPv4 address policy. This does not grant access to
+    /// platform-protected destinations; the host enforces that boundary.
+    Ipv4 {
+        internet_access: bool,
+        allow_out: Vec<Ipv4Cidr>,
+        deny_out: Vec<Ipv4Cidr>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Ipv4Cidr {
+    /// Canonical network address in host byte order.
+    pub network: u32,
+    pub prefix_length: u8,
+}
+
+impl Ipv4Cidr {
+    #[must_use]
+    pub fn contains(self, address: u32) -> bool {
+        let mask = if self.prefix_length == 0 {
+            0
+        } else if self.prefix_length <= 32 {
+            u32::MAX << (32 - self.prefix_length)
+        } else {
+            return false;
+        };
+        self.network & mask == self.network && address & mask == self.network
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
