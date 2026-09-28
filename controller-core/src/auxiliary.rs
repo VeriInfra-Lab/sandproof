@@ -107,6 +107,31 @@ fn destination_allowed(record: &SandboxRecord, destination: &Endpoint) -> bool {
             }
             allowed
         }
+        crate::NetworkPolicy::Ipv4 {
+            internet_access,
+            allow_out,
+            deny_out,
+        } => {
+            // This pure decision does not model the host's changing local
+            // addresses. The deployed host must additionally enforce those.
+            let Ok(address) = destination.address.parse::<std::net::Ipv4Addr>() else {
+                return false;
+            };
+            if destination.prefix_length != 32 {
+                return false;
+            }
+            let address = u32::from(address);
+            if crate::platform_protected_ipv4(address) {
+                return false;
+            }
+            if allow_out.iter().any(|range| range.contains(address)) {
+                return true;
+            }
+            if deny_out.iter().any(|range| range.contains(address)) {
+                return false;
+            }
+            *internet_access
+        }
     }
 }
 
@@ -253,7 +278,7 @@ pub fn handle_ingress(
     })
 }
 
-/// Admit egress only through the exact running authority and a static member.
+/// Admit egress only through the exact running authority and recorded policy.
 ///
 /// # Errors
 /// Returns sandbox, capability, then destination errors in model order.
@@ -373,6 +398,39 @@ mod tests {
         running.policy = NetworkPolicy::StaticAllowlist(vec![endpoint(443)]);
         world.sandboxes.put(SID, running);
         world
+    }
+
+    #[test]
+    fn ipv4_policy_denies_platform_before_user_allow_and_keeps_exceptions() {
+        let mut world = running();
+        let policy = NetworkPolicy::from_sdk_ipv4(
+            Some(false),
+            &["1.1.1.1".into(), "169.254.169.254".into()],
+            &["0.0.0.0/0".into()],
+        )
+        .unwrap();
+        let mut record = world.sandboxes.get(&SID).unwrap().clone();
+        record.policy = policy.clone();
+        if let Authority::Running {
+            policy: effective, ..
+        } = &mut record.effective
+        {
+            *effective = policy;
+        }
+        world.sandboxes.put(SID, record);
+        let mut destination = endpoint(53);
+        destination.address = "1.1.1.1".into();
+        assert!(handle_egress(&world, SID, VM, SLOT, destination.clone()).is_ok());
+        destination.address = "8.8.8.8".into();
+        assert_eq!(
+            handle_egress(&world, SID, VM, SLOT, destination.clone()),
+            Err(AuxiliaryReject::DestinationDenied)
+        );
+        destination.address = "169.254.169.254".into();
+        assert_eq!(
+            handle_egress(&world, SID, VM, SLOT, destination),
+            Err(AuxiliaryReject::DestinationDenied)
+        );
     }
 
     #[test]

@@ -5,7 +5,8 @@
   "code_baseline": {
     "test_branch_at_contract_review": "9eba68821b8ad11f374a88f4a3450753e69c5ee1",
     "rust_toolchain": "1.97.0",
-    "cargo_lock_sha256": "04db1f9911a3009e40a0a3a5f0635aa596adca5c6341cd4b0c99354b11d9de26",
+    "cargo_lock_sha256_at_contract_review": "04db1f9911a3009e40a0a3a5f0635aa596adca5c6341cd4b0c99354b11d9de26",
+    "cargo_lock_sha256": "7ef00ab578116bcef3482a1fc0032346140939ea253902aecb5e759dc89fbda9",
     "sdk_python": "e2b==2.51.0",
     "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
     "protocol_version": 1,
@@ -271,5 +272,126 @@
     "missing_kvm": "The ordinary Rust missing_kvm_is_reported_explicitly regression passed; real-host preflight separately opened /dev/kvm and verified API 12. No claim of physically removing KVM on this host.",
     "reproduction": "sandbox-runtime/README.md: independent B01 node acceptance; clean commit, reviewed binary, fresh private directories/namespace per case, exclusive UID range and delegated cgroup parent",
     "limits": "Manual B01 runtime acceptance only. Fixed crash windows, not all interleavings, host reboot or V1 acceptance. Does not close #6/#8 final budgets and #13 task initialization. No production or proof changes."
+  },
+  "command_input_budget_acceptance": {
+    "test": "tests/system/sdk_input_budget.py",
+    "commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "script_sha256": "4f4bc6406c84b828ddea37790c314295dea4b38d49df43ff71b3d800df1d35bb",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "test and server rebuilt at the same exact commit after integrating network PR57; public_ipv4_enabled=false and allow_internet_access=false",
+    "host_and_artifacts": "same host/kernel/envd/base and CPU/memory limits as transfer_interruption_acceptance; newly built server fingerprint recorded here",
+    "command_input_bytes": 1048576,
+    "observations": {
+      "sync_and_async_fitting_stdin_bytes": 786393,
+      "fitting_body_bytes": 1048573,
+      "first_overflow_body_bytes": 1048577,
+      "received_bytes_per_process": 1572786,
+      "sha256": "6e1dedaba53f0dddb557e42e5acd8f01af55ce9fc63546535bf3ba660d63f19c",
+      "start_markers_per_process": 1
+    },
+    "result": "passed original sync and async SDK: empty input, largest fitting base64-encoded SendInput, first oversized payload, then another fitting input on the same PID. Exact combined length/hash excludes the rejected input, one Start marker, healthy next command and normal CloseStdin EOF.",
+    "error_mapping": "current gateway returns plain HTTP 502 when the Process request body limit aborts forwarding; pinned SDK wraps its cause-free ConnectError UNAVAILABLE with message HTTP 502 in TimeoutException. Test requires that exact context, not an ordinary client deadline or unrelated timeout.",
+    "residuals": "two exact VM processes stopped; jails/netns/cgroups absent and no recorded netns inode holders before server exit; live cgroup identity/membership/limits sampled; base unchanged",
+    "limits": "per-request encoded body budget, not aggregate stdin quota. Base64 granularity means no request exactly at every byte was claimed. Root user only in this probe; user/reconnect cases separately bound to command_input_acceptance. Final deployment budgets and full timeout/error matrices remain open. No production or proof changes.",
+    "server_sha256": "084cc8b4399a745812368e6b1521405c0067193ced1abf12ed463c3896f5e213",
+    "previous_test_commit": "13865e3306fa6087afd085d877b7d7071c4f252d (same probe also passed before PR57 integration)"
+  },
+  "command_arguments_acceptance": {
+    "test": "tests/system/sdk_command_arguments.py",
+    "commit": "25533c3b130b80b25311c21d82a05fed17bcb04a",
+    "script_sha256": "78b2e0c63effe937fbfb32c832ddc6153f5a40a5581dae2901fa819efa391810",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base and server fingerprints as command_input_budget_acceptance; explicit no-internet",
+    "result": "passed 24 Start rejections: sync/async x foreground/background x unknown user, root/ubuntu missing cwd, root/ubuntu regular-file cwd, ubuntu denied cwd. Exact AuthenticationException or InvalidArgumentException required; every unique marker absent and subsequent ubuntu cwd/env/user command successful. Root successfully uses the same private directory; root/ubuntu foreground/background valid contexts also pass.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected invalid user/cwd cases, not every malformed argument, path or timeout combination. No production or proof changes."
+  },
+  "command_timeout_acceptance": {
+    "test": "tests/system/sdk_command_timeouts.py",
+    "commit": "368f92aee93014768092f08d737e58eda0d087ea",
+    "script_sha256": "d41117c266c9cc4484b7c0695a4b72a170cb00d4986c233df0d6e5203ccea718",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base, server fingerprints and resource configuration as command_input_budget_acceptance; explicit no-internet",
+    "result": "passed 52 original SDK cases: sync/async run foreground/background and connect, each timeout/request_timeout omitted, zero, negative and 10000000 seconds; plus known-PID wait after one-second Start and Connect deadlines for each client. No automatic Start replay; subsequent calls healthy.",
+    "observations": {
+      "completed": 33,
+      "stream_deadline": 8,
+      "invalid_rpc_timeout": 6,
+      "opening_deadline": 3,
+      "command_terminated": 2
+    },
+    "semantics": "sync run/connect ignore request_timeout; async applies it to first-event waiting. Negative timeout becomes 1 ms; an over-ten-digit Connect millisecond header is rejected. wait inherits its stream deadline. Start also sets the process execution deadline: late connect returns retained exit -1/signal: killed. Connect-only deadline leaves the original process live, allowing same-PID EOF and full success.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected command stream/opening and inherited-wait deadlines only; not file, unary RPC, sandbox lifetime or all malformed/non-finite timeout arguments. No production or proof changes."
+  },
+  "file_timeout_acceptance": {
+    "test": "tests/system/sdk_file_timeouts.py",
+    "commit": "0aac7ec64fe1552c1a4d9e2de7bd955136eac65d",
+    "script_sha256": "43013753d6cc8bf1aa9642ad3d92adf5c6c5ceb2b03a80edb9b63f6c63f30177",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same fixed host/kernel/envd/base/server, explicit no-internet and streaming configuration as command_input_budget_acceptance",
+    "result": "passed 160 original sync/async SDK cases: read text/bytes/stream request_timeout; stream read stream_idle_timeout; write and two-entry write_files with multipart/octet and text/bytes/binary IO/text IO. Each receives omitted, zero, negative and 10000000 seconds. Complete success verified by length/content/SHA-256; deadline errors must be exact httpx.ReadTimeout with TimeoutError cause; subsequent reads/writes healthy.",
+    "payload_bytes": 69000,
+    "payload_sha256": "e5e8db7e6b6b67a04bacf1d261dcafce255c44b5d6075dd7277aab25114d73bb",
+    "observations": {
+      "sync": {
+        "completed": 67,
+        "deadline": 13,
+        "deadline_upload_paths": 15,
+        "deadline_upload_existing_paths": 5
+      },
+      "async": {
+        "completed": 66,
+        "deadline": 14,
+        "deadline_upload_paths": 15,
+        "deadline_upload_existing_paths": 0
+      }
+    },
+    "semantics": "HTTP large-value control is valid, distinct from Connect header limits. Both clients omit the operation deadline for streamed IO uploads; multipart text IO is buffered and retains it. Negative HTTP deadlines expire, not argument rejection; sync ignores stream_idle_timeout while async applies it to opening and each read. Deadline-failed writes may already leave partial or full data: no rollback or automatic replay claimed.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected HTTP file timeout values and explicit encodings; not every malformed/non-finite value, watcher API, unary RPC or sandbox lifetime matrix, nor final deployment budgets. No production or proof changes."
+  },
+  "rpc_timeout_acceptance": {
+    "test": "tests/system/sdk_rpc_timeouts.py",
+    "commit": "d6e34395ad12a881f66553ab7d37349e70eb445a",
+    "script_sha256": "f6635267c511d9154a55070c7e753a036e8115e15f3925ce4786ea4617069dcb",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base/server, explicit no-internet and streaming configuration as command_input_budget_acceptance",
+    "result": "passed 96 original sync/async SDK cases: files get_info/exists/list/make_dir/remove/rename; commands list/kill/send_stdin/close_stdin; handle send_stdin/close_stdin. Each receives omitted, zero, negative and 10000000 seconds. Exact typed deadline/header errors, success payloads, read-only observations of unknown effects, one Start marker and subsequent usability checked.",
+    "observations": {
+      "completed": 48,
+      "deadline": 24,
+      "invalid_rpc_timeout": 24
+    },
+    "semantics": "negative request_timeout becomes 1 ms; all 24 negative cases timed out on this host, but valid full success can beat the deadline. Above-ten-digit Connect headers are rejected without operation effects. Deadline errors require TimeoutException with ConnectError DEADLINE_EXCEEDED context; no blind mutation retry. SendInput observations are zero or one payload, never duplicate.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected unary filesystem and process methods; not lifecycle or watcher deadlines, non-finite/malformed values or all concurrent schedules. No production or proof changes."
+  },
+  "lifetime_parameter_observation": {
+    "test": "tests/system/sdk_lifetime_values.py",
+    "commit": "8e5b9479165f264fafdd7059d95960c0227fcf68",
+    "script_sha256": "c42e22b597589a586d65d2bb9ddb6ce78a81406ebe20c0b503190fe30a60719e",
+    "server_build_commit": "8e5b9479165f264fafdd7059d95960c0227fcf68",
+    "server_source_equivalence": "test and server rebuilt at the same exact commit after integrating network receipt-crash PR63; debug fault injection is not enabled in this run",
+    "host_and_artifacts": "same host/kernel/envd/base and explicit no-internet streaming configuration as command_input_budget_acceptance; rebuilt server fingerprint recorded here; SDK and server share host clock",
+    "configuration": {
+      "default_timeout_seconds": 180,
+      "max_single_timeout_seconds": 600
+    },
+    "result": "68 current-behavior characterization cases passed, not full lifecycle target acceptance: sync/async create and class/instance connect/set_timeout receive omitted, zero, negative, below/at/above configured maximum; connect/set additionally receive shorter positive lifetime. Exact create duration, identity/deadline preservation, typed HTTP 400/SDK TypeError and subsequent usability checked.",
+    "observations": {
+      "completed": 34,
+      "http_400": 30,
+      "missing_argument": 4
+    },
+    "known_target_gaps": "configured create default differs from the 300-second target; omitted connect preserves its old deadline instead of the target default extension; zero/negative set_timeout rejects instead of triggering expiry; maximum is per request, not the total-lifetime and set-timeout-capping target. Capability items 2/5/6/7 and issues #9/#12 remain authoritative and open.",
+    "residuals": "eight exact VM processes stopped; private jails/netns/cgroups absent; no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled for every VM; base hash unchanged",
+    "limits": "current selected lifetime values only; does not establish target compatibility, management HTTP request deadlines, total lifetime, expiry/restart races or final deployment budgets. No production or proof changes.",
+    "previous_test_commit": "087d5eaff3fc5c0d1d76b43f4f1493cbf2ed823d",
+    "server_sha256": "5c3eefe9c3714ecb8ccd170313972f01bc4f07ab18e669cf70ff4944b5df20cc"
   }
 }

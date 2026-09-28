@@ -70,6 +70,8 @@ mod linux {
         cleanup_reserve_bytes: u64,
         max_timeout_secs: u64,
         default_timeout_secs: u64,
+        #[serde(default)]
+        public_ipv4_enabled: bool,
         expiry_scan_seconds: u64,
         /// Explicit opt-in while deployment/large-file KVM acceptance is pending.
         #[serde(default)]
@@ -80,6 +82,12 @@ mod linux {
 
     impl HostAdapter for NodeHost {
         type Evidence = HostObservation;
+
+        fn public_ipv4_ready(&self) -> Result<bool, PortError> {
+            std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
+                .map(|value| value.trim() == "1")
+                .map_err(|_| PortError::Busy)
+        }
 
         fn available_disk_bytes(&self) -> Result<u64, PortError> {
             self.0.available_disk_bytes().map_err(|_| PortError::Busy)
@@ -117,6 +125,10 @@ mod linux {
                 if matches!(
                     (target.as_deref(), command),
                     (Some("prepare_vm"), core::Command::PrepareVm { .. })
+                        | (
+                            Some("configure_network"),
+                            core::Command::ConfigureNetwork { .. }
+                        )
                         | (Some("stop_vm"), core::Command::StopVm { .. })
                 ) {
                     std::process::exit(86);
@@ -129,7 +141,24 @@ mod linux {
             &self,
             action: &WorkAction<core::EffectId>,
         ) -> Option<WorkReceipt<Self::Evidence>> {
-            self.0.observe_action(action).ok()
+            match self.0.observe_action(action) {
+                Ok(receipt) => Some(receipt),
+                Err(error) => {
+                    let kind = match action.command.command() {
+                        core::Command::InstallFence {
+                            terminal: false, ..
+                        } => "open fence",
+                        core::Command::InstallFence { terminal: true, .. } => "terminal fence",
+                        core::Command::PrepareVm { .. } => "prepare VM",
+                        core::Command::ConfigureNetwork { .. } => "configure network",
+                        core::Command::StopVm { .. } => "stop VM",
+                        core::Command::CleanupVm { .. } => "cleanup VM",
+                        _ => "other host action",
+                    };
+                    eprintln!("host {kind} observation remains unknown: {error}");
+                    None
+                }
+            }
         }
 
         fn reclaim_incomplete_prepare(
@@ -138,6 +167,24 @@ mod linux {
         ) -> Result<(), PortError> {
             self.0
                 .reclaim_incomplete_prepare(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_network(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_network(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_terminal_fence(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_terminal_fence(action)
                 .map_err(|_| PortError::Busy)
         }
 
@@ -371,6 +418,7 @@ mod linux {
             journal,
             NodeHost(node),
             ManagedConfig {
+                public_ipv4_enabled: config.public_ipv4_enabled,
                 limits: AdmissionLimits {
                     max_active_global: config.max_active_global,
                     max_active_per_tenant: config.max_active_per_tenant,
