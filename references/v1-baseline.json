@@ -682,5 +682,35 @@
       }
     ],
     "limits": "selected synchronous/asynchronous lifecycle target paths only; not exhaustive expiry/kill/slow-stream races, final task budgets or a proof. Revoked-token health requests still produce SDK AuthenticationException (HTTP 401), not False. Old records keep only their previously granted deadline as migration cap; existing non-300 default configuration must be changed explicitly. No controller-core Rust changes."
+  },
+  "file_permissions_acceptance": {
+    "commit": "56df22d91a2683f872a3f340b89fd100d29e23a9",
+    "test": "tests/system/sdk_file_permissions.py",
+    "script_sha256": "4cf6ae1adc5f20e34fd5d9073a9de06762c5f95dc7857dcdf7f49ddaaa8de5b4",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "all production Rust sources and Cargo manifests/lock unchanged between server build and test commit; checked before each run",
+    "wrapper_sha256": "6fb2f09dd11c6efd7003b1ebd6e9ca0c2a73563e31a3d3983f55d9d91239184a",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure/KVM, fixed base/kernel/envd and Firecracker/jailer 1.16.1 as lifetime_target_acceptance; original E2B 2.51.0 on Python 3.13; one vCPU/512 MiB guest, one CPU/768 MiB host cgroup, 1 GiB private disk, explicit no-internet; legacy and 64/96 MiB streaming test profiles",
+    "command": "pinned-SDK Python tests/system/sdk_file_permissions.py --api-url <own-loopback-service> --sandbox-url <same-service> --host-canary /var/lib/sp-01a0e1bd/fp8-<own-run>/host-canary; API credential only from environment; independent harness creates and audits its disposable host canary",
+    "result": "140 grouped cases (35 per sync/async client per legacy/streaming mode): user home/ownership and root-file behavior versus ubuntu command DAC, six unknown-user rejections, selected missing/type/home path errors, multipart/octet partial batches, absolute/dot-dot/symlink/proc-root guest paths with an independent control VM",
+    "runs": [
+      {
+        "mode": "legacy",
+        "grouped_cases": 70,
+        "durable_destroyed_rows": 4,
+        "elapsed_seconds": 20.675,
+        "host_canary_unchanged": true
+      },
+      {
+        "mode": "streaming",
+        "grouped_cases": 70,
+        "durable_destroyed_rows": 4,
+        "elapsed_seconds": 24.792,
+        "host_canary_unchanged": true
+      }
+    ],
+    "residuals": "all eight durable records Destroyed; exact VM PID/start identities stopped; private jails/netns/cgroups absent and no namespace holders before service exit; live cgroup identity/limits sampled; base fingerprint unchanged; each independently created host canary retained content, device/inode, owner and mode",
+    "limits": "selected full service cases, not guest-user DAC isolation, exhaustive path/fault coverage, final deployment budgets or full V1. Fixed envd file operations run as root; user determines home/ownership. Async octet batch errors do not cancel all other uploads; no atomicity/replay guarantee. No production or proof changes."
   }
 }
