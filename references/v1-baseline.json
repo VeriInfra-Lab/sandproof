@@ -855,5 +855,52 @@
     "residuals": "all four durable rows Destroyed; exact recorded PID/start stopped, jail/netns/cgroup absent and no namespace holders before service exit; each live cgroup identity/membership/limits, actual Firecracker machine-config and private disk size/inode sampled; base hash unchanged in both runs",
     "failed_attempts": [],
     "limits": "shared expectations for the selected command/basic-file subset, with synthetic fixtures supplying protocol replies and real guests executing independently; no production/proof change, no claim that synthetic execution proves VM behavior or that all lifecycle/network/fault expectations have been centralized. Final task budgets and Harbor inputs still depend on #13."
+  },
+  "shared_sdk_network_detail_acceptance": {
+    "commit": "5326a79fcba8275551c4f427cd5d4f7f16938e61",
+    "shared_samples": "tests/compat/sdk_network_samples.py",
+    "shared_samples_sha256": "658dd11027d5ef58508255af3ef44650cb2bc991c6915215ee79ef3245e3f5c1",
+    "real_tests": {
+      "sdk_network_clients.py": "7bc94082189adee20d78cac2ffd23517b28f1eeaa0ed556b1809104ada127d3b",
+      "sdk_sandbox_details.py": "817a87619e05469d7a0e8bbafe6c0fa599d43ac3e681550c478590cd79bb7a0a"
+    },
+    "supervisors_sha256": {
+      "network": "68831a045407a268f9c5cd2de78c02d589f2274d7310bf34d23ec776c36b2a20",
+      "isolated_host": "01ed11118fc8a725dcfb3e931b683d1ce5fad0e5746b71fb19c52642d3596fdc",
+      "details": "b807fc654f54a34d9d592bbe001bad38f3f13d0679afce4e5ffd04a9c2d8ba5b"
+    },
+    "synthetic": "fixed SDK 2.51.0 sync/async uses all six original network create profiles and identical network/detail assertions; independently checks omitted fields and original SDK wire spelling; nullable detail and legacy missing-field cases retained; complete check-compat.sh and contract matrix passed",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "production Rust and Cargo manifests/lock verified unchanged before each real run",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "host_and_configuration": "Linux 6.8.0-1065-azure/KVM, fixed Firecracker/jailer 1.16.1 and envd 0.9.0, SDK 2.51.0/Python 3.13; routed base from network_clients_acceptance; 1 vCPU/512 MiB guest, 1 CPU/768 MiB host cgroup, 1 GiB private disk; streaming 64/96 MiB test budgets. Network run enables public IPv4 only inside dedicated host netns; detail run explicitly denies Internet.",
+    "commands": [
+      "pinned-SDK Python tests/system/sdk_network_clients.py --api-url <own-loopback> --sandbox-url <same-service> --restart-dir <own-barrier>; Outside and service inside private host netns via nsenter --net; credentials from environment",
+      "pinned-SDK Python tests/system/sdk_sandbox_details.py --api-url <own-loopback> --sandbox-url <same-service> --restart-dir <own-barrier>; credentials from environment"
+    ],
+    "runs": [
+      {
+        "test": "sdk_network_clients.py",
+        "mode": "streaming",
+        "vm_count": 12,
+        "grouped_cases": 114,
+        "service_restarts": 2,
+        "probe_and_audit_seconds": 111.199,
+        "result": "same six create profiles, nullable/raw SDK+HTTP fields, TCP/UDP reachability, platform host-local denial, owner-only details/list, fourteen invalid creates with no extra admissions; two restarts preserve both original VM identities/policies; killing one preserves the other egress"
+      },
+      {
+        "test": "sdk_sandbox_details.py",
+        "mode": "streaming",
+        "vm_count": 4,
+        "grouped_cases": 10,
+        "service_restarts": 2,
+        "probe_and_audit_seconds": 16.296,
+        "result": "same SDK+HTTP detail assertions with omitted/supplied network, base resource fields, lifecycle, metadata, instance/class equality, lists without token, foreign/destroyed 404, working commands; same original VM/details/token across both restarts"
+      }
+    ],
+    "residuals": "all sixteen durable rows Destroyed; exact PID/start identities stopped, jails/netns/cgroups absent and no namespace holders before each service exit; live cgroup identity/membership/limits sampled; base SHA unchanged. Network VM uplinks/nft and Outside echo resources removed; dedicated host netns removed, shared filter hash and forwarding unchanged.",
+    "failed_attempts": [],
+    "limits": "static common inputs and assertions for the selected network/detail subset; synthetic replies do not prove packet behavior. No real Internet endpoint, advanced DNS/IPv6, production Rust or proof change. Other management/fault evidence retains its own scope; owner lifetime/startup corrections and #13 task inputs/budgets remain separate."
   }
 }
