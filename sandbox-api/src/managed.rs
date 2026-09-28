@@ -421,6 +421,71 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
     Ok(())
 }
 
+fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
+    match world.effect_status(effect) {
+        Some(core::EffectStatus::Acknowledged(_)) => false,
+        Some(core::EffectStatus::Committed) => {
+            // Failed creates can retain unclaimed startup actions. Use the
+            // dispatcher's core preview to distinguish obsolete work; never
+            // suppress a dispatched action whose physical result is unknown.
+            let input = core::ControllerInput::Effect(core::EffectInput::Dispatch(effect.clone()));
+            core::handle_controller(world, input).map_or(true, |dispatched| {
+                core::handle_controller(
+                    &dispatched.next,
+                    core::ControllerInput::Worker(effect.clone()),
+                )
+                .is_ok()
+            })
+        }
+        Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown) | None => true,
+    }
+}
+
+fn reclaimed_sandboxes(world: &core::World) -> BTreeSet<core::SandboxId> {
+    let mut reclaimed = world
+        .sandbox_records()
+        .iter()
+        .filter_map(|(sandbox, record)| {
+            if record.phase != core::Phase::Destroyed
+                || !record.current_operation.is_some_and(|operation| {
+                    matches!(
+                        (operation.kind, operation.status),
+                        (core::OperationKind::Kill, core::OperationStatus::Succeeded)
+                            | (
+                                core::OperationKind::Create,
+                                core::OperationStatus::Failed(_)
+                            )
+                    )
+                })
+            {
+                return None;
+            }
+            let resources = world.resource_index(*sandbox);
+            // Destroyed alone is insufficient: physical cleanup follows its
+            // publication. Keep incomplete VM/slot cleanup in the recovery path.
+            (resources.snapshots.is_empty()
+                && resources.vms.iter().all(|vm| {
+                    world
+                        .vm_record(*vm)
+                        .is_some_and(|record| record.status == core::VmStatus::Reclaimed)
+                })
+                && resources.slots.iter().all(|slot| {
+                    world
+                        .slot_record(*slot)
+                        .is_some_and(|record| record.reclaimed)
+                }))
+            .then_some(*sandbox)
+        })
+        .collect::<BTreeSet<_>>();
+    for effect in world.effect_ids() {
+        let sandbox = effect.command().sandbox();
+        if reclaimed.contains(&sandbox) && effect_needs_recovery(world, effect) {
+            reclaimed.remove(&sandbox);
+        }
+    }
+    reclaimed
+}
+
 // Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
 // lets a repeated kill observe and finish its *existing* operation without
 // changing unrelated instances. It never accepts a second lifecycle input.
@@ -430,6 +495,11 @@ fn recover_locked<H: HostAdapter>(
 ) -> Result<RecoveryReport, PortError> {
     let Inner { journal, host, .. } = inner;
     let initial = journal.world().map_err(map_journal)?;
+    // Use the state before reconciliation: work whose last cleanup receipt is
+    // recovered in this scan must still finish and be counted once. Already
+    // reclaimed history must not repeatedly replay the entire journal through
+    // each completed workflow while holding the management/data admission lock.
+    let reclaimed = reclaimed_sandboxes(&initial);
     let mut blocked = BTreeSet::new();
     for (sandbox, record) in initial.sandbox_records() {
         if selected.is_some_and(|id| id != *sandbox)
@@ -477,7 +547,10 @@ fn recover_locked<H: HostAdapter>(
         ..RecoveryReport::default()
     };
     for (sandbox, record) in pending.sandbox_records() {
-        if blocked.contains(sandbox) || selected.is_some_and(|id| id != *sandbox) {
+        if blocked.contains(sandbox)
+            || reclaimed.contains(sandbox)
+            || selected.is_some_and(|id| id != *sandbox)
+        {
             continue;
         }
         let Some(operation) = record.current_operation else {

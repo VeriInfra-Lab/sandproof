@@ -1184,7 +1184,10 @@ fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
     assert_eq!(recovered.workflows_completed, 1);
     assert_eq!(recovered.unresolved_sandboxes, 0);
     assert_eq!(port.get("1", &sandbox_id), Err(PortError::NotFound));
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    let idle = port.recover_on_startup().unwrap();
+    assert_eq!(idle.receipts_recovered, 0);
+    assert_eq!(idle.workflows_completed, 0);
+    assert_eq!(idle.unresolved_sandboxes, 0);
     drop(port);
 
     let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
@@ -1257,7 +1260,10 @@ fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
     let recovered = port.recover_on_startup().unwrap();
     assert_eq!(recovered.receipts_recovered, 1);
     assert_eq!(recovered.unresolved_sandboxes, 0);
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    let idle = port.recover_on_startup().unwrap();
+    assert_eq!(idle.receipts_recovered, 0);
+    assert_eq!(idle.workflows_completed, 0);
+    assert_eq!(idle.unresolved_sandboxes, 0);
 }
 
 fn request() -> CreateRequest {
@@ -1269,6 +1275,53 @@ fn request() -> CreateRequest {
         metadata: None,
         env_vars: None,
     }
+}
+
+#[test]
+fn idle_recovery_does_not_revisit_reclaimed_history_or_change_live_authority() {
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let stop_calls = Arc::new(AtomicUsize::new(0));
+    let (_directory, port) = setup_with_host(FakeHost {
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        stop_calls: Some(Arc::clone(&stop_calls)),
+        ..FakeHost::default()
+    });
+    let mut retired = Vec::new();
+    for _ in 0..3 {
+        let session = port.create("1", request()).unwrap();
+        port.kill("1", &session.sandbox_id).unwrap();
+        retired.push(session);
+    }
+    let live = port.create("1", request()).unwrap();
+    for _ in 0..2 {
+        let report = port.recover_on_startup().unwrap();
+        assert_eq!(
+            report.workflows_completed, 0,
+            "completed history was resumed"
+        );
+        assert_eq!(report.receipts_recovered, 0);
+        assert_eq!(report.unresolved_sandboxes, 0);
+        assert_eq!(prepare_calls.load(Ordering::SeqCst), 4);
+        assert_eq!(stop_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(port.list("1", None, None).unwrap().items.len(), 1);
+        assert!(
+            port.authorize_data(
+                &live.envd_access_token,
+                sandproof_api::managed::DataKind::Exec
+            )
+            .is_ok()
+        );
+        for session in &retired {
+            assert_eq!(
+                port.authorize_data(
+                    &session.envd_access_token,
+                    sandproof_api::managed::DataKind::Exec
+                ),
+                Err(PortError::NotFound)
+            );
+        }
+    }
+    port.kill("1", &live.sandbox_id).unwrap();
 }
 
 #[test]

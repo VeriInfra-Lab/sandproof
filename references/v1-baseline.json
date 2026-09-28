@@ -564,6 +564,36 @@
         "result": "combined same-process run made per-case progress but exceeded the outer 600-second harness budget; not a full pass. No individual 45-second watchdog failure observed before interruption; all 17 durable VM identities precisely reclaimed before service exit"
       }
     ],
-    "limits": "independent client modes only; combined completion/long-history latency not accepted. Numeric deadline forwarding plus selected actual calls, not forced slow responses lasting 60 seconds, response loss, all lifetime/expiry races, non-finite values or final task-derived budgets. No production or proof changes."
+    "limits": "Selected numeric deadline forwarding and actual calls, including one continuous sync+async run after the recovery scan fix; not forced slow responses lasting 60 seconds, response loss, all lifetime/expiry races, non-finite values or final task-derived budgets. Historical interrupted runs remain incomplete. The API orchestration fix does not change the proved control core or establish a new proof claim.",
+    "combined_run": {
+      "commit": "e2f3f806c89671b3d1713c9743246b7378f881ed",
+      "server_sha256": "39499b79b685bd2859d002a1db43a310aaf5c5ad135a7390b98d706591858b80",
+      "script_sha256": "02fb3fca978b5db0730233834062f46e5b29f1f6bff36ef4a3fffecf4d27d00f",
+      "wrapper_sha256": "ae7129b6504a363526310c675f357016ce713d40a48148f6470987700090f0f4",
+      "command": "pinned-SDK Python tests/system/sdk_management_timeouts.py --api-url <own-loopback-service> --sandbox-url <same-service> --sdk both",
+      "environment": "same Linux 6.8.0-1065-azure host and pinned artifacts/configuration as the independent runs; fresh service/database/namespace, both SDKs in one probe process",
+      "result": "96 cases passed continuously: each SDK completed 36 calls and observed 12 exact deadline errors; one sync negative create was found and cleaned using its original ID without replay",
+      "probe_and_audit_elapsed_seconds": 168.043,
+      "outer_watchdog_seconds": 600,
+      "durable_destroyed_rows": 25,
+      "residuals": "all 25 durable rows Destroyed; exact PID/start identities stopped, private jail/netns/cgroups absent, no recorded namespace holders before service exit; live cgroup identity/membership/limits sampled; fixed base SHA unchanged",
+      "recovery_change": "idle scans skip terminal workflows only after VM/slot reclamation and no remaining executable/unknown action; obsolete unclaimed create actions use the existing core dispatcher preview. Regression failed before the change by revisiting three settled operations; partial cleanup and live/retired authority remain covered.",
+      "limits": "same probe now completes within the original watchdog. Includes the integrated #76 recovery changes; this single run is not an isolated causal performance benchmark or a long-history scalability guarantee."
+    }
+  },
+  "integrated_recovery_windows_acceptance": {
+    "commit": "e2f3f806c89671b3d1713c9743246b7378f881ed",
+    "test": "sandbox-node/tests/host_smoke.rs",
+    "binary_sha256": "a41122cb13a9e3b431c96aca0611ddec885548c227afd47cf4ad97f468537bd2",
+    "wrapper_sha256": "f32784ded71b7fc709a97b79442171526eaee010afb22570d6939f723e039cf7",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure host, fixed kernel/envd/1 GiB base, Firecracker/jailer 1.16.1; one vCPU, 256 MiB guest and 512 MiB host memory limit; fresh state and namespace per test",
+    "command": "reviewed host_smoke binary --exact <test> --ignored --nocapture, one fresh isolated configuration per test",
+    "tests": [
+      "real_worker_sigkill_before_opening_fence_resumes_one_create",
+      "real_worker_sigkill_before_stop_is_finished_by_exact_identity"
+    ],
+    "result": "both tests passed on the integrated #76 plus idle recovery scan fix commit; each faulted worker was really SIGKILLed and its original durable operation recovered",
+    "residuals": "two exact PID/start identities stopped; private jail/netns/cgroups absent, no recorded namespace holders; base SHA unchanged",
+    "limits": "two selected worker failure windows only; not arbitrary full-service SIGKILL, never-ready live VM abort, activation-unknown handling or the whole #11 recovery matrix"
   }
 }
