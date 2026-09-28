@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "purpose": "M0 固定来源、依赖和已有实机证据；不是 V1 全功能或形式化验收报告",
+  "recorded_on": "2026-09-28",
+  "code_baseline": {
+    "test_branch_at_contract_review": "9eba68821b8ad11f374a88f4a3450753e69c5ee1",
+    "rust_toolchain": "1.97.0",
+    "cargo_lock_sha256": "04db1f9911a3009e40a0a3a5f0635aa596adca5c6341cd4b0c99354b11d9de26",
+    "sdk_python": "e2b==2.51.0",
+    "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
+    "protocol_version": 1,
+    "sqlite_user_version": 1,
+    "sqlite_settings": ["WAL", "synchronous=FULL", "foreign_keys=ON", "trusted_schema=OFF", "BEGIN IMMEDIATE", "busy_timeout=5s"]
+  },
+  "source_revisions": {
+    "e2b_sdk": "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b",
+    "e2b_runtime_behavior_reference": "f455fd58fa3f289e78ce1de690c35968d8d29322",
+    "harbor_adapter_reference": "31668af15560fb50a9d0584816d12726036656cf",
+    "firecracker_release": "1.16.1",
+    "note": "runtime 和 Harbor 为固定源码阅读依据；未运行完整 E2B 后端，Harbor 联合依赖与任务锁待 #13"
+  },
+  "observed_linux_host": {
+    "host_alias": "ning",
+    "observation": "2026-09-28 通过只读 SSH 取得；不是完整宿主预检或新的 KVM 通过报告",
+    "kernel_release": "6.8.0-139-generic",
+    "artifacts": {
+      "firecracker": {"path": "/usr/local/bin/firecracker", "version": "1.16.1", "sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7"},
+      "jailer": {"path": "/usr/local/bin/jailer", "version": "1.16.1", "sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd"},
+      "guest_kernel": {"path": "/var/lib/sandproof/images/ci-20260708-e8a198e23f48-0/vmlinux-6.1.176", "sha256": "7c424b7447ea0a97d5ad8d9377b52cfbedfd564c7974f0ef9629e529305077a5"},
+      "guest_rootfs_with_envd": {"path": "/home/ning/sandproof-b01.InC2R4/artifacts/guest-envd-01.ext4", "sha256": "83f82ca1925f47c1512199e670babfb128e36d1eee58b93183d804c594e7a7cd"},
+      "upstream_ubuntu_rootfs": {"path": "/var/lib/sandproof/images/ci-20260708-e8a198e23f48-0/ubuntu-24.04.ext4", "sha256": "144ab0e1581ec14b18b536eab8824ef8414da484a1e4d99773b1ab0ef94ef2d2"}
+    },
+    "envd_version_from_prior_pr": "0.9.0",
+    "envd_version_evidence": "https://github.com/ningZhang-cs/sandproof/pull/43",
+    "limit": "只读摘要与先前运行的基础盘摘要匹配；本次未检查来宾内 envd 二进制，也未运行 host preflight/VM 测试"
+  },
+  "historical_evidence": [
+    {
+      "id": "sdk_vm_selected",
+      "commit": "9c1ae462f6ba35b9ee43ad625d668c73ac82306d",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/30",
+      "test": "tests/system/sdk_server_smoke.py",
+      "reported_result": "passed on isolated Linux/KVM with fixed base and explicit no-internet",
+      "scope": "original SDK through real controller, gateway and VM: selected create/connect/get/list/set_timeout/kill, command/file/auth/expiry; not default public or all V1 fields"
+    },
+    {
+      "id": "sdk_gateway_synthetic",
+      "commit": "905b7ef6dcf1ca22c871d08f48447001d8e4a924",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/40",
+      "test": "scripts/check-compat.sh",
+      "reported_result": "passed pinned SDK wire and Linux SDK-through-Rust-gateway tests",
+      "scope": "synthetic envd; new large-stream KVM script not run in this PR"
+    },
+    {
+      "id": "sdk_gateway_optional_streaming",
+      "commit": "7502bdad563cd68e906ec9b4a24d234fd3f53c51",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/45",
+      "test": "scripts/check-compat.sh",
+      "reported_result": "passed fixed SDK sync/async gateway composition with optional streaming config on Linux",
+      "scope": "synthetic envd, explicit data_transfer config; new full-service and KVM large-stream scripts not run in this PR"
+    },
+    {
+      "id": "service_receipt_crash",
+      "commit": "1a630f02a32c0a3236ead55b7644ff9c18acdacf",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/42",
+      "test": "tests/system/server_process_crash.py",
+      "reported_result": "passed two service process exit windows on isolated Linux/KVM",
+      "scope": "prepare_vm and stop_vm host success before receipt; not arbitrary crash points"
+    },
+    {
+      "id": "live_route_no_internet",
+      "commit": "a8be02111b1400923d0eea9d33927f6de2c7e534",
+      "pr": "https://github.com/ningZhang-cs/sandproof/pull/43",
+      "test": "tests/system/guest_smoke.py",
+      "reported_result": "passed two real VM probes and residual checks",
+      "scope": "guest denied while controlled host route was reachable; direct envd, not full controller public/static network behavior"
+    }
+  ],
+  "separate_future_baselines": [
+    "#13: Harbor exact joint dependency lock, fixed task IDs/content hashes, reviewed initialization scripts and standard-solution/scoring environment",
+    "#14: repeatable high-privilege KVM CI and per-run preflight/config digest",
+    "#8/#9/#10/#12: remaining V1 target semantics, optional streaming KVM evidence and full-service regression"
+  ]
+}
