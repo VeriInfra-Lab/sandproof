@@ -3,6 +3,8 @@
 //! Host-only Firecracker/jailer operations. This crate does not publish a
 //! sandbox lifecycle state or grant a user permission to execute in the VM.
 
+pub mod egress;
+
 #[cfg(target_os = "linux")]
 mod linux;
 

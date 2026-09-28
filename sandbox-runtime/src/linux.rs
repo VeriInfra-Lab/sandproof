@@ -21,10 +21,6 @@ const START_TIMEOUT: Duration = Duration::from_secs(10);
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const LAUNCH_GATE_SCRIPT: &str =
     "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec \"$@\"";
-const GUEST_GUARD_RULES: &str = "add table inet sandproof_guard\n\
-add chain inet sandproof_guard guest_out { type filter hook prerouting priority -10; policy accept; }\n\
-add rule inet sandproof_guard guest_out iifname \"tap0\" ct state established,related accept\n\
-add rule inet sandproof_guard guest_out iifname \"tap0\" drop\n";
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -532,12 +528,10 @@ impl Runtime {
         // Install an atomic, default-deny guard before creating the TAP or
         // starting the VM. Host-initiated envd replies remain established;
         // guest-initiated DNS, IPv4, IPv6 and other L3 traffic are dropped.
-        run_nft_in_namespace(
-            id,
-            "install guest guard",
-            &["-f", "-"],
-            Some(GUEST_GUARD_RULES),
-        )?;
+        let guest_guard = crate::egress::EgressPolicy::DenyAll
+            .guest_guard_script()
+            .expect("fixed deny policy must render");
+        run_nft_in_namespace(id, "install guest guard", &["-f", "-"], Some(&guest_guard))?;
 
         // The same private IPv4 range is safe because each VM has its own
         // network namespace. No default route or external bridge is added.
@@ -1502,7 +1496,10 @@ mod tests {
             },
         )
         .unwrap();
-        run_nft_in_namespace(&id, "test guard", &["-f", "-"], Some(GUEST_GUARD_RULES)).unwrap();
+        let guest_guard = crate::egress::EgressPolicy::DenyAll
+            .guest_guard_script()
+            .unwrap();
+        run_nft_in_namespace(&id, "test guard", &["-f", "-"], Some(&guest_guard)).unwrap();
         assert_eq!(
             runtime.observe_private_network(&id).unwrap(),
             namespace.ino()
