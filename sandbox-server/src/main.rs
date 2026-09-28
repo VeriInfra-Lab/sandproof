@@ -30,6 +30,8 @@ mod linux {
     };
     use sandproof_controller_service::{AdmissionLimits, ControllerJournal, WorkerTransportError};
     use sandproof_node::{HostObservation, LinuxWorker, NodeConfig};
+    #[cfg(debug_assertions)]
+    use sandproof_protocol::WorkOutcome;
     use sandproof_protocol::{WorkAction, WorkReceipt};
     use serde::Deserialize;
 
@@ -96,7 +98,26 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
-            self.0.execute(action)
+            let result = self.0.execute(action);
+            // The integration test exits the *whole service* after a real
+            // host result but before the journal records its receipt. Release
+            // binaries have no fault injection path.
+            #[cfg(debug_assertions)]
+            if result
+                .as_ref()
+                .is_ok_and(|receipt| matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)))
+            {
+                let target = std::env::var("SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION").ok();
+                let command = action.command.command();
+                if matches!(
+                    (target.as_deref(), command),
+                    (Some("prepare_vm"), core::Command::PrepareVm { .. })
+                        | (Some("stop_vm"), core::Command::StopVm { .. })
+                ) {
+                    std::process::exit(86);
+                }
+            }
+            result
         }
 
         fn observe(
@@ -104,6 +125,24 @@ mod linux {
             action: &WorkAction<core::EffectId>,
         ) -> Option<WorkReceipt<Self::Evidence>> {
             self.0.observe_action(action).ok()
+        }
+
+        fn reclaim_incomplete_prepare(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_prepare(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_cleanup(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_cleanup(action)
+                .map_err(|_| PortError::Busy)
         }
     }
 
@@ -239,61 +278,19 @@ mod linux {
         Ok(())
     }
 
-    fn reclaim_aborted_prepares(
+    fn reclaim_uncertain_prepares(
         node: &LinuxWorker,
         journal: &ControllerJournal,
     ) -> Result<(), Box<dyn Error>> {
-        let inventory = node.inventory()?;
-        if !inventory.unbound_claims.is_empty() || !inventory.unbound_networks.is_empty() {
-            return Err("unbound host resource requires operator reconciliation".into());
-        }
         let world = journal.world()?;
-        let uncertain = journal.uncertain_actions()?;
-        for slot in inventory.slots {
-            let record = world
-                .sandbox_record(slot.sandbox)
-                .ok_or("incomplete host slot has no durable sandbox")?;
-            if slot.owner.as_str() != format!("tenant-{}", record.owner.0) {
-                return Err("incomplete host slot owner differs from durable sandbox".into());
-            }
-            if slot.aborted_unlaunched || slot.failed_prepare_reclaimed {
+        for action in journal.uncertain_actions()? {
+            if !matches!(action.command.command(), core::Command::PrepareVm { .. }) {
                 continue;
             }
-            if slot
-                .process
-                .as_ref()
-                .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped)
-            {
-                continue;
+            if !journal.matches_current_prepare(&world, &action)? {
+                return Err("uncertain PrepareVm differs from current durable plan".into());
             }
-            let matched = uncertain.iter().any(|action| {
-                matches!(action.command.command(), core::Command::PrepareVm {
-                    sandbox, generation, vm, slot: network_slot, ..
-                } if *sandbox == slot.sandbox && *generation == slot.generation
-                    && *vm == slot.vm && *network_slot == slot.slot)
-            });
-            let planned = world.operation_records().iter().any(|(key, _)| {
-                key.sandbox == slot.sandbox
-                    && world.operation_plan(*key).is_some_and(|plan| {
-                        plan.generation == slot.generation
-                            && plan.vm == Some(slot.vm)
-                            && plan.slot == Some(slot.slot)
-                    })
-            });
-            if !matched {
-                if slot.process.is_some() {
-                    continue;
-                }
-                return Err("incomplete VM has no exact uncertain PrepareVm action".into());
-            }
-            if !planned {
-                return Err("incomplete VM has no exact uncertain PrepareVm plan".into());
-            }
-            if slot.process.is_some() {
-                node.reclaim_stopped_prepare(slot.sandbox, slot.generation, slot.vm, slot.slot)?;
-            } else {
-                node.reclaim_aborted_prepare(slot.sandbox, slot.generation, slot.vm, slot.slot)?;
-            }
+            node.reclaim_incomplete_prepare(&action)?;
         }
         Ok(())
     }
@@ -350,7 +347,7 @@ mod linux {
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
-        reclaim_aborted_prepares(&node, &journal)?;
+        reclaim_uncertain_prepares(&node, &journal)?;
         audit_host_inventory(&node, &journal)?;
         let port = Arc::new(ManagedPort::new(
             journal,

@@ -32,6 +32,7 @@
 - [总计划与任务](https://github.com/ningZhang-cs/sandproof/issues/1)、[阶段里程碑](https://github.com/ningZhang-cs/sandproof/milestones)
 - [开发指南](CONTRIBUTING.md)：分支、提交、issue、PR、测试和文档维护规则的统一入口
 - [文档目录](docs/README.md)：蓝图、合同、验收清单与模型／证明说明的总分索引
+- [系统架构](docs/ARCHITECTURE.md)：V1 组件、运行路径、存储用途及与 E2B 的逐项对照
 - [CI 运行记录](https://github.com/ningZhang-cs/sandproof/actions)
 
 分工以蓝图为准，开发流程以开发指南为准；不在本页复制规则和实时测试数量。
@@ -47,7 +48,7 @@
 | `tools/` | Lean 交互、轨迹与研究辅助工具 |
 | `docs/` | 当前蓝图、合同、测试计划、证明覆盖和相关研究记录 |
 
-项目品牌改名不改动 Rust crate 名、Lean 命名空间或抽取符号，避免引入与本次清理无关的证明变化。新增服务模块在各自工作包中建立，不先放空实现冒充能力。
+服务、接口和宿主运行模块的职责与目录见[系统架构](docs/ARCHITECTURE.md)。crate 已存在不等于对应工作包已完整验收，不以目录数量计算完成度。
 
 ## 本地检查
 
