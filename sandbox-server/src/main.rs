@@ -125,6 +125,10 @@ mod linux {
                 if matches!(
                     (target.as_deref(), command),
                     (Some("prepare_vm"), core::Command::PrepareVm { .. })
+                        | (
+                            Some("configure_network"),
+                            core::Command::ConfigureNetwork { .. }
+                        )
                         | (Some("stop_vm"), core::Command::StopVm { .. })
                 ) {
                     std::process::exit(86);
