@@ -284,6 +284,58 @@ impl ControllerJournal {
             && resource.generation == *generation)
     }
 
+    /// Bind an uncertain startup abort to the current compensated create and
+    /// both reserved resource IDs. The host separately proves exact exit.
+    /// # Errors
+    /// Rejects malformed persisted identities.
+    pub fn matches_current_abort_prepare(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::AbortPrepare {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+            slot,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        Ok(record.phase == core::Phase::Revoking
+            && record.terminal
+            && operation.kind == core::OperationKind::Create
+            && matches!(operation.status, core::OperationStatus::Compensating(_))
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && *epoch == record.epoch
+            && *epoch == plan.epoch
+            && action.identity.generation == *generation
+            && *generation == record.generation
+            && *generation == plan.generation
+            && plan.sealed
+            && plan.vm == Some(*vm)
+            && plan.slot == Some(*slot)
+            && plan.stop_vms.contains(vm)
+            && plan.close_slots.contains(slot))
+    }
+
     /// A cleanup can be resumed only for the current terminal workflow's
     /// exact stopped VM. Physical process and resource checks remain the
     /// host adapter's responsibility.
@@ -480,7 +532,14 @@ impl ControllerJournal {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let world = storage::load_world(&transaction)?;
-        if storage::unresolved(&world, sandbox) {
+        let terminal_prepare_abort =
+            core::scheduler::only_uncertain_prepare_for_abort(&world, sandbox)
+                && matches!(
+                    input,
+                    core::ControllerInput::Scheduler(core::SchedulerInput::AbortPrepare(..))
+                        | core::ControllerInput::Publication(core::PublicationInput::Failed(..))
+                );
+        if storage::unresolved(&world, sandbox) && !terminal_prepare_abort {
             return Err(JournalError::UnresolvedAction);
         }
         let decision = storage::apply(&transaction, &self.namespace, &world, input)?;
@@ -592,7 +651,9 @@ impl ControllerJournal {
             if selected.is_some_and(|sandbox| action.command.command().sandbox() != sandbox) {
                 continue;
             }
-            if storage::unresolved(&world, action.command.command().sandbox()) {
+            if storage::unresolved(&world, action.command.command().sandbox())
+                && !core::scheduler::dispatch_allowed_during_abort(&world, action.command.command())
+            {
                 continue;
             }
             let input =

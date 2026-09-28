@@ -35,6 +35,7 @@ fn resource(namespace: &str, command: &core::Command) -> Result<ResourceRef, Jou
     let (kind, prefix, number) = match command {
         Command::InstallFence { sandbox, .. } => (ResourceKind::Sandbox, "sb", sandbox.0),
         Command::PrepareVm { vm, .. }
+        | Command::AbortPrepare { vm, .. }
         | Command::ActivateVm { vm, .. }
         | Command::StopVm { vm, .. }
         | Command::CleanupVm { vm, .. } => (ResourceKind::Vm, "vm", vm.0),
@@ -81,6 +82,7 @@ pub(super) fn new_actions(
         )?;
         let generation = match effect.command() {
             core::Command::PrepareVm { generation, .. }
+            | core::Command::AbortPrepare { generation, .. }
             | core::Command::ConfigureNetwork { generation, .. }
             | core::Command::ActivateVm { generation, .. }
             | core::Command::ApplyFilePolicy { generation, .. }
@@ -155,6 +157,7 @@ pub(super) fn input_sandbox(
         I::Scheduler(S::ReserveStartup(key)) => key.sandbox,
         I::Scheduler(
             S::DispatchPrepare(sandbox, ..)
+            | S::AbortPrepare(sandbox, ..)
             | S::StopVm(sandbox, ..)
             | S::CleanupVm(sandbox, ..)
             | S::CleanupSlot(sandbox, ..),

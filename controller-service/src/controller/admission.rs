@@ -527,6 +527,66 @@ impl ControllerJournal {
         Ok(due)
     }
 
+    /// Atomically record terminal compensation for creates still unfinished
+    /// when their already persisted lifetime expires. This only records an
+    /// intent and terminal-fence action; host stop follows normal dispatch.
+    /// # Errors
+    /// Refuses a corrupt/missing lease or an invalid clock without mutation.
+    pub fn abort_due_startups(
+        &mut self,
+        now_ms: i64,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<usize, AdmissionError> {
+        if now_ms < 0 {
+            return Err(AdmissionError::InvalidClock);
+        }
+        let tx = self
+            .journal
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut world = storage::load_world(&tx)?;
+        let mut aborted = 0;
+        let due: Vec<_> = world
+            .sandbox_records()
+            .iter()
+            .filter_map(|(sandbox, record)| {
+                (record.phase == core::Phase::Starting
+                    && matches!(record.current_operation, Some(op)
+                        if op.kind == core::OperationKind::Create
+                            && matches!(op.status,
+                                core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown)))
+                .then_some((*sandbox, record.owner))
+            })
+            .collect();
+        for (sandbox, owner) in due {
+            let lifetime = read_lifetime(&tx, &self.namespace, sandbox, owner)?
+                .ok_or(AdmissionError::UnmanagedActive)?;
+            if lifetime.deadline_ms > now_ms {
+                continue;
+            }
+            world = storage::apply(
+                &tx,
+                &self.namespace,
+                &world,
+                core::ControllerInput::Request(core::Request::Compensate(
+                    core::CompensationRequest {
+                        sandbox,
+                        failure: core::FailureKind::DeadlineExceeded,
+                        evidence: None,
+                    },
+                )),
+            )?
+            .next;
+            aborted += 1;
+        }
+        if aborted > 0 {
+            crashes.hit(CrashPoint::BeforeCommit)?;
+            tx.commit().map_err(JournalError::CommitUncertain)?;
+            crashes.hit(CrashPoint::AfterCommit)?;
+        }
+        Ok(aborted)
+    }
+
     /// Atomically recheck expiry and accept the core Kill intent. The returned
     /// outbox still requires the normal trusted host stop/cleanup workflow.
     /// # Errors

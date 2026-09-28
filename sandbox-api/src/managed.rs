@@ -147,6 +147,17 @@ pub trait HostAdapter: Send + 'static {
         Err(PortError::Busy)
     }
 
+    /// Resume only a dispatched, plan-matched `AbortPrepare` under the
+    /// terminal fence. The host verifies the original process identity.
+    /// # Errors
+    /// An ambiguous or live resource remains unresolved.
+    fn reclaim_incomplete_abort_prepare(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
     /// Finish exact, already-dispatched cleanup after proving the recorded
     /// VM is stopped. This may remove only resources owned by that VM.
     /// # Errors
@@ -374,6 +385,14 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
                 {
                     return Err(PortError::Busy);
                 }
+                if world
+                    .sandbox_record(action.command.command().sandbox())
+                    .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+                {
+                    // Terminal startup cleanup, not the old opening action,
+                    // owns the physical stop. Observation follows afterwards.
+                    continue;
+                }
                 host.reclaim_incomplete_prepare(&action)?;
             }
             core::Command::ConfigureNetwork {
@@ -405,6 +424,15 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
                     return Err(PortError::Busy);
                 }
                 host.reclaim_incomplete_stop(&action)?;
+            }
+            core::Command::AbortPrepare { .. } => {
+                if !journal
+                    .matches_current_abort_prepare(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_abort_prepare(&action)?;
             }
             core::Command::CleanupVm { .. } => {
                 if !journal
@@ -486,20 +514,40 @@ fn reclaimed_sandboxes(world: &core::World) -> BTreeSet<core::SandboxId> {
     reclaimed
 }
 
-// Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
-// lets a repeated kill observe and finish its *existing* operation without
-// changing unrelated instances. It never accepts a second lifecycle input.
-fn recover_locked<H: HostAdapter>(
-    inner: &mut Inner<H>,
+fn observe_recovery_action<H: HostAdapter>(
+    host: &H,
+    world: &core::World,
+    blocked: &BTreeSet<core::SandboxId>,
     selected: Option<core::SandboxId>,
-) -> Result<RecoveryReport, PortError> {
-    let Inner { journal, host, .. } = inner;
-    let initial = journal.world().map_err(map_journal)?;
-    // Use the state before reconciliation: work whose last cleanup receipt is
-    // recovered in this scan must still finish and be counted once. Already
-    // reclaimed history must not repeatedly replay the entire journal through
-    // each completed workflow while holding the management/data admission lock.
-    let reclaimed = reclaimed_sandboxes(&initial);
+    action: &WorkAction<core::EffectId>,
+) -> Option<WorkReceipt<H::Evidence>> {
+    let sandbox = action.command.command().sandbox();
+    if blocked.contains(&sandbox) || selected.is_some_and(|id| id != sandbox) {
+        return None;
+    }
+    let receipt = host.observe(action)?;
+    if matches!(action.command.command(), core::Command::PrepareVm { .. })
+        && world
+            .sandbox_record(sandbox)
+            .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+        && matches!(
+            receipt.outcome,
+            sandproof_protocol::WorkOutcome::ObservedSuccess(_)
+        )
+    {
+        // A late-ready VMM cannot undo a durable terminal abort. The exact
+        // abort action must stop it before the old prepare can be resolved.
+        return None;
+    }
+    Some(receipt)
+}
+
+fn blocked_launch_configs<H: HostAdapter>(
+    journal: &ControllerJournal,
+    host: &mut H,
+    initial: &core::World,
+    selected: Option<core::SandboxId>,
+) -> Result<BTreeSet<core::SandboxId>, PortError> {
     let mut blocked = BTreeSet::new();
     for (sandbox, record) in initial.sandbox_records() {
         if selected.is_some_and(|id| id != *sandbox)
@@ -531,21 +579,42 @@ fn recover_locked<H: HostAdapter>(
             }
         }
     }
+    Ok(blocked)
+}
+
+// Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
+// lets a repeated kill observe and finish its *existing* operation without
+// changing unrelated instances. It never accepts a second lifecycle input.
+fn recover_locked<H: HostAdapter>(
+    inner: &mut Inner<H>,
+    selected: Option<core::SandboxId>,
+) -> Result<RecoveryReport, PortError> {
+    let Inner { journal, host, .. } = inner;
+    if selected.is_none() {
+        journal
+            .abort_due_startups(now_ms()?, &mut NeverCrash)
+            .map_err(map_admission)?;
+    }
+    let initial = journal.world().map_err(map_journal)?;
+    // Use the state before reconciliation: work whose last cleanup receipt is
+    // recovered in this scan must still finish and be counted once. Already
+    // reclaimed history must not repeatedly replay the entire journal through
+    // each completed workflow while holding the management/data admission lock.
+    let reclaimed = reclaimed_sandboxes(&initial);
+    let blocked = blocked_launch_configs(journal, host, &initial, selected)?;
     reclaim_uncertain_actions(journal, host, &initial, &blocked, selected)?;
+    let recovery_world = journal.world().map_err(map_journal)?;
     let receipts_recovered = journal
         .reconcile_uncertain(&mut |action| {
-            let sandbox = action.command.command().sandbox();
-            (!blocked.contains(&sandbox) && selected.is_none_or(|id| id == sandbox))
-                .then(|| host.observe(action))
-                .flatten()
+            observe_recovery_action(host, &recovery_world, &blocked, selected, action)
         })
         .map_err(map_journal)?;
     let pending = journal.world().map_err(map_journal)?;
     let mut report = RecoveryReport {
         receipts_recovered,
-        unresolved_sandboxes: blocked.len(),
         ..RecoveryReport::default()
     };
+    let mut unresolved = blocked.clone();
     for (sandbox, record) in pending.sandbox_records() {
         if blocked.contains(sandbox)
             || reclaimed.contains(sandbox)
@@ -584,10 +653,16 @@ fn recover_locked<H: HostAdapter>(
         };
         match resume {
             Ok(()) | Err(JournalError::OperationFailed) => report.workflows_completed += 1,
-            Err(JournalError::UnresolvedAction) => report.unresolved_sandboxes += 1,
+            Err(JournalError::UnresolvedAction) => {
+                unresolved.insert(*sandbox);
+            }
             Err(error) => return Err(map_journal(error)),
         }
     }
+    for action in journal.uncertain_actions().map_err(map_journal)? {
+        unresolved.insert(action.command.command().sandbox());
+    }
+    report.unresolved_sandboxes = unresolved.len();
     Ok(report)
 }
 

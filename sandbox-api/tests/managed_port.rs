@@ -56,6 +56,7 @@ enum PrepareObservation {
     Successful,
     Incomplete,
     Reclaimed,
+    LiveUnready,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -73,6 +74,13 @@ enum StopObservation {
     ObservedAfterRestart,
     LostThenObserved,
     Incomplete,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AbortReceipt {
+    #[default]
+    Normal,
+    LostOnce,
 }
 
 struct ActionGate {
@@ -107,6 +115,8 @@ struct FakeHost {
     incomplete_cleanup: bool,
     stop_calls: Option<Arc<AtomicUsize>>,
     prepare_calls: Option<Arc<AtomicUsize>>,
+    abort_calls: Option<Arc<AtomicUsize>>,
+    abort_receipt: AbortReceipt,
     stop_gate: Option<Arc<ActionGate>>,
     prepare_gate: Option<Arc<ActionGate>>,
 }
@@ -126,6 +136,8 @@ impl Default for FakeHost {
             incomplete_cleanup: false,
             stop_calls: None,
             prepare_calls: None,
+            abort_calls: None,
+            abort_receipt: AbortReceipt::Normal,
             stop_gate: None,
             prepare_gate: None,
         }
@@ -220,6 +232,36 @@ impl HostAdapter for FakeHost {
             if let Some(gate) = &self.prepare_gate {
                 gate.block();
             }
+            if self.prepare == PrepareObservation::LiveUnready {
+                return Ok(WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                });
+            }
+        }
+        if matches!(action.command.command(), core::Command::AbortPrepare { .. }) {
+            if let Some(calls) = &self.abort_calls {
+                calls.fetch_add(1, Ordering::SeqCst);
+            }
+            assert!(matches!(
+                self.prepare,
+                PrepareObservation::LiveUnready | PrepareObservation::Reclaimed
+            ));
+            self.prepare = PrepareObservation::Reclaimed;
+            if std::mem::replace(&mut self.abort_receipt, AbortReceipt::Normal)
+                == AbortReceipt::LostOnce
+            {
+                return Ok(WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                });
+            }
         }
         if matches!(action.command.command(), core::Command::StopVm { .. }) {
             if let Some(calls) = &self.stop_calls {
@@ -294,6 +336,8 @@ impl HostAdapter for FakeHost {
             ) && matches!(action.command.command(), core::Command::StopVm { .. }))
             || (self.incomplete_cleanup
                 && matches!(action.command.command(), core::Command::CleanupVm { .. }))
+            || (self.prepare == PrepareObservation::Reclaimed
+                && matches!(action.command.command(), core::Command::AbortPrepare { .. }))
         {
             Some(WorkReceipt {
                 identity: action.identity.clone(),
@@ -375,6 +419,18 @@ impl HostAdapter for FakeHost {
         Ok(())
     }
 
+    fn reclaim_incomplete_abort_prepare(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::AbortPrepare { .. }
+        ));
+        assert_eq!(self.prepare, PrepareObservation::Reclaimed);
+        Ok(())
+    }
+
     fn reclaim_incomplete_cleanup(
         &mut self,
         action: &WorkAction<core::EffectId>,
@@ -449,6 +505,226 @@ fn admit_public_create(journal: &mut ControllerJournal) {
             &mut NeverCrash,
         )
         .unwrap();
+}
+
+fn due_unknown_prepare_fixture(
+    lose_abort_receipt_once: bool,
+) -> (
+    TempDir,
+    ControllerJournal,
+    FakeHost,
+    Arc<AtomicUsize>,
+    Arc<AtomicUsize>,
+) {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let sandbox = core::SandboxId(1);
+    journal
+        .admit_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox,
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            0,
+            1,
+            1_000,
+            config().limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let abort_calls = Arc::new(AtomicUsize::new(0));
+    let mut host = FakeHost {
+        prepare: PrepareObservation::LiveUnready,
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        abort_calls: Some(Arc::clone(&abort_calls)),
+        abort_receipt: if lose_abort_receipt_once {
+            AbortReceipt::LostOnce
+        } else {
+            AbortReceipt::Normal
+        },
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    assert!(matches!(
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            host.execute(action)
+        }),
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+    (directory, journal, host, prepare_calls, abort_calls)
+}
+
+#[test]
+fn expired_unready_prepare_is_fenced_exactly_aborted_and_never_relaunched() {
+    let (directory, journal, host, prepare_calls, abort_calls) = due_unknown_prepare_fixture(false);
+    drop(journal);
+    let port = ManagedPort::new(
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    let first = port.recover_on_startup().unwrap();
+    assert_eq!(first.workflows_completed, 1);
+    assert_eq!(first.unresolved_sandboxes, 1);
+    assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    );
+    let second = port.recover_on_startup().unwrap();
+    assert_eq!(second.receipts_recovered, 1);
+    assert_eq!(second.unresolved_sandboxes, 0);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+    let world = journal.world().unwrap();
+    let record = world.sandbox_record(core::SandboxId(1)).unwrap();
+    assert_eq!(record.phase, core::Phase::Destroyed);
+    assert!(record.terminal);
+    assert_eq!(
+        world.vm_record(core::VmId(0)).unwrap().status,
+        core::VmStatus::Reclaimed
+    );
+    assert!(world.slot_record(core::NetSlotId(0)).unwrap().reclaimed);
+}
+
+#[test]
+fn abort_intent_alone_cannot_schedule_unfenced_or_foreign_resource() {
+    let (_directory, mut journal, _host, _prepare_calls, _abort_calls) =
+        due_unknown_prepare_fixture(false);
+    assert_eq!(journal.abort_due_startups(999, &mut NeverCrash).unwrap(), 0);
+    assert_eq!(
+        journal.abort_due_startups(1_000, &mut NeverCrash).unwrap(),
+        1
+    );
+    assert_eq!(
+        journal.abort_due_startups(1_001, &mut NeverCrash).unwrap(),
+        0
+    );
+    let world = journal.world().unwrap();
+    let sandbox = core::SandboxId(1);
+    assert!(core::scheduler::only_uncertain_prepare_for_abort(
+        &world, sandbox
+    ));
+    assert_eq!(
+        core::scheduler::handle_schedule_abort_prepare(
+            &world,
+            sandbox,
+            1,
+            core::VmId(0),
+            core::NetSlotId(99),
+        ),
+        Err(core::scheduler::SchedulerReject::PlanMismatch)
+    );
+    assert_eq!(
+        core::scheduler::handle_schedule_abort_prepare(
+            &world,
+            sandbox,
+            1,
+            core::VmId(0),
+            core::NetSlotId(0),
+        ),
+        Err(core::scheduler::SchedulerReject::FenceNotInstalled)
+    );
+    assert!(
+        core::publication::handle_publish_failure(
+            &world,
+            sandbox,
+            core::FailureKind::DeadlineExceeded,
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn restart_after_abort_host_success_without_receipt_reconciles_once() {
+    let (directory, journal, host, prepare_calls, abort_calls) = due_unknown_prepare_fixture(true);
+    drop(journal);
+    let port = ManagedPort::new(
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    let first = port.recover_on_startup().unwrap();
+    assert_eq!(first.unresolved_sandboxes, 1);
+    assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    );
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let abort_action = journal
+        .uncertain_actions()
+        .unwrap()
+        .into_iter()
+        .find(|action| matches!(action.command.command(), core::Command::AbortPrepare { .. }))
+        .unwrap();
+    let world = journal.world().unwrap();
+    assert!(
+        journal
+            .matches_current_abort_prepare(&world, &abort_action)
+            .unwrap()
+    );
+    let mut stale = abort_action.clone();
+    stale.identity.generation += 1;
+    assert!(
+        !journal
+            .matches_current_abort_prepare(&world, &stale)
+            .unwrap()
+    );
+    drop(journal);
+    // A new controller process observes physical reclamation, records both
+    // missing receipts, and publishes failure without repeating either action.
+    let mut restarted_host = FakeHost {
+        prepare: PrepareObservation::Reclaimed,
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        abort_calls: Some(Arc::clone(&abort_calls)),
+        ..FakeHost::default()
+    };
+    restarted_host
+        .put_secret(core::SandboxId(1), &"a".repeat(64))
+        .unwrap();
+    let restarted = ManagedPort::new(
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        restarted_host,
+        config(),
+    );
+    let report = restarted.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 2);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
+    drop(restarted);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(1))
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
 }
 
 #[test]
