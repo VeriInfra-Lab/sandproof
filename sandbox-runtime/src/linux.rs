@@ -529,7 +529,7 @@ impl Runtime {
         // starting the VM. Host-initiated envd replies remain established;
         // guest-initiated DNS, IPv4, IPv6 and other L3 traffic are dropped.
         let guest_guard = crate::egress::EgressPolicy::DenyAll
-            .guest_guard_script()
+            .guest_guard_script(&[])
             .expect("fixed deny policy must render");
         run_nft_in_namespace(id, "install guest guard", &["-f", "-"], Some(&guest_guard))?;
 
@@ -1497,7 +1497,7 @@ mod tests {
         )
         .unwrap();
         let guest_guard = crate::egress::EgressPolicy::DenyAll
-            .guest_guard_script()
+            .guest_guard_script(&[])
             .unwrap();
         run_nft_in_namespace(&id, "test guard", &["-f", "-"], Some(&guest_guard)).unwrap();
         assert_eq!(
