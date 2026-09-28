@@ -7,7 +7,7 @@
 pub mod managed;
 mod network;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
@@ -19,9 +19,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use sandproof_controller_service::CreateOptions;
 use serde::{Deserialize, Serialize};
 
 const MAX_JSON_BYTES: usize = 64 * 1024;
+// A client may choose a shorter timeout. Crossing this deadline never
+// cancels accepted physical work or reports a destroyed sandbox.
+const KILL_REPLY_DEADLINE: Duration = Duration::from_secs(25);
 
 #[derive(Clone, Debug)]
 pub struct ApiCredential {
@@ -122,6 +126,7 @@ pub struct SandboxInfo {
     pub sandbox_id: String,
     #[serde(rename = "clientID")]
     pub client_id: String,
+    pub metadata: std::collections::BTreeMap<String, String>,
     #[serde(rename = "startedAt")]
     pub started_at: String,
     #[serde(rename = "endAt")]
@@ -254,6 +259,17 @@ async fn blocking<T: Send + 'static>(
         .map_err(ApiFailure::Port)
 }
 
+async fn bounded_kill(
+    work: impl FnOnce() -> Result<(), PortError> + Send + 'static,
+    deadline: Duration,
+) -> Result<(), ApiFailure> {
+    // After a response timeout the blocking task continues under the durable
+    // reducer lock. The caller sees unknown, not a fabricated completion.
+    tokio::time::timeout(deadline, blocking(work))
+        .await
+        .map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
+}
+
 fn valid_timeout(timeout: Option<i64>) -> bool {
     timeout.is_none_or(|seconds| (1..=86_400).contains(&seconds))
 }
@@ -270,14 +286,12 @@ async fn create<P: ControllerPort>(
     if request.template_id != "base"
         || network::selected_policy(&request).is_err()
         || !valid_timeout(request.timeout)
-        || request
-            .metadata
-            .as_ref()
-            .is_some_and(|metadata| !metadata.is_empty())
-        || request
-            .env_vars
-            .as_ref()
-            .is_some_and(|env_vars| !env_vars.is_empty())
+        || (CreateOptions {
+            env_vars: request.env_vars.clone().unwrap_or_default(),
+            metadata: request.metadata.clone().unwrap_or_default(),
+        })
+        .validate()
+        .is_err()
     {
         return Err(ApiFailure::BadRequest);
     }
@@ -346,7 +360,11 @@ async fn kill<P: ControllerPort>(
     Path(sandbox_id): Path<String>,
 ) -> Result<StatusCode, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
-    blocking(move || state.port.kill(&tenant, &sandbox_id)).await?;
+    bounded_kill(
+        move || state.port.kill(&tenant, &sandbox_id),
+        KILL_REPLY_DEADLINE,
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -412,4 +430,36 @@ pub fn router<P: ControllerPort>(
         .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
         .with_state(state))
+}
+
+#[cfg(test)]
+mod lifecycle_deadline_tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reply_deadline_returns_unknown_but_does_not_cancel_physical_completion() {
+        let (started_tx, started_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        let pending = tokio::spawn(async move {
+            bounded_kill(
+                move || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    done_tx.send(()).unwrap();
+                    Ok(())
+                },
+                Duration::from_millis(30),
+            )
+            .await
+        });
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(matches!(
+            pending.await.unwrap(),
+            Err(ApiFailure::Port(PortError::OutcomeUnknown))
+        ));
+        release_tx.send(()).unwrap();
+        done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    }
 }

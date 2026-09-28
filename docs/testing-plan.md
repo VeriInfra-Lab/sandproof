@@ -83,6 +83,10 @@ uv run --locked --project tests/compat python tests/system/sdk_disk_full.py \
 
 服务须允许同租户同时创建两台 VM、300 秒寿命；来宾需有 Python 3、`posix_fallocate` 和现有 shell 工具。`--max-guest-disk-bytes` 默认 2 GiB 是探针拒绝意外大盘的上界，不是部署磁盘配额；测试仍使用已预检的固定私有 base。该脚本已在启用宿主 cgroup 限制的真实 KVM 服务通过，六台 VM 的精确进程/cgroup/网络空间/私有盘回收与基础盘指纹另经宿主审计；提交和配置见[版本基线](../references/v1-baseline.json)。
 
+[启动存储布局探针](../tests/system/server_storage_filesystems.py)使用私有挂载命名空间内的 64 MiB ext4 loop 文件系统，检查三目录同盘可启动、数据库/节点状态/VM 目录分别异盘时均在创建持久状态前拒绝。运行需 root、已复核的服务二进制及 SHA-256、root 独占的配置模板和全新结果目录，参数为 `--server`、`--server-sha256`、`--config`、`--root`；可用 `--previous-server`、`--previous-sha256` 验证旧版漏检数据库的缺陷。仅发送空沙箱列表查询，退出前检查无 VM 资源，最后核对卸载和 loop 分离并保留结果；不填宿主共享盘，不把启动检查算作 KVM 或 ENOSPC 验收。基础 CI 另通过真实临时目录与 Linux procfs 的设备号覆盖同盘、三种异盘和缺失目录拒绝。六个新旧服务启动对照已在隔离宿主通过；合入生命周期变更后，另以同一服务二进制通过四台真实 VM 的完整 SDK 冒烟及同步/异步数据合同，精确提交与范围见[版本基线](../references/v1-baseline.json)的 `storage_filesystem_acceptance`。
+
+[宿主磁盘预留探针](../tests/system/server_disk_reserve.py)在私有挂载命名空间的 4 GiB ext4 上放置数据库、节点状态和私有 VM 盘，使用 256 MiB 测试清理预留及宽于当前用量的逻辑配额。两台原 SDK VM 启动后仅分配本轮宿主填充文件，使物理余量不足以接收下一张盘；检查 429 且无新增准入/宿主资源、已有 VM 命令和文件正常、保留填充文件时可精确销毁、释放空间后新 VM 干净可用。需固定 1 GiB base、1 vCPU/512 MiB 来宾、768 MiB 宿主内存上限及独占 cgroup/UID，参数与启动布局探针相同（不传旧版二进制），使用安装了固定 SDK 的 Python；root 目录应短且全新。最终审计必须先于服务退出和文件系统卸载；失败保留挂载命名空间及恢复监督进程，按精确身份收尾后再退出。该探针已完成三台真实 VM 的上述行为及最终挂载/loop 回收检查，精确提交和观测余量见[版本基线](../references/v1-baseline.json)的 `host_disk_reserve_acceptance`。此探针仍未覆盖块或 inode ENOSPC，也不确定最终部署预算。
+
 [命令输入探针](../tests/system/sdk_command_input.py)使用原同步/异步 SDK，分别以 root 和 ubuntu 验证省略 stdin、显式 false、启用后空输入关闭，以及文本/二进制输入后断线并按同一 PID 重连。启用路径检查 EOF 后的完整长度和 SHA-256、单次启动标记及后续可用性；不把重连当成重新执行命令。运行方式与其他实机脚本相同，显式提供 `--api-url`、`--sandbox-url` 及环境中的测试凭据；该探针已在固定 base 的真实控制器/网关/VM 链完成十六个场景，精确提交与残留检查见[版本基线](../references/v1-baseline.json)；命令输入预算与完整超时参数矩阵另行验收。
 
 [输入预算探针](../tests/system/sdk_input_budget.py)通过原同步/异步 SDK 的 `SendInput` 检查空输入、最大可编码请求和首个超限请求，再向同一 PID 发送合法数据并关闭 stdin。使用固定 SDK 的 JSON 编码测量请求体，区分 base64 开销和原始输入长度；base64 长度按组变化，不宣称逐个编码字节均可构造。最终长度、SHA-256 和单次启动标记必须匹配，超限内容不得混入正常结果。传入与独立服务相同的 `--command-input-bytes`（默认测试值 1048576）以及 API/sandbox URL、环境中的测试凭据；该限制按单次 Process RPC 请求体计算，不是命令整个生命周期的累计输入配额。该探针已在两台真实 VM 通过，精确提交、字节数和资源审计见[版本基线](../references/v1-baseline.json)的 `command_input_budget_acceptance`。当前 Process 请求超限中断上游并返回空 body 的 HTTP 502，固定 SDK 将其映射为 `TimeoutException`；断言必须核对内部 `ConnectError` 的 `UNAVAILABLE`、精确 `HTTP 502` 消息且无传输原因，普通客户端期限耗尽不能算通过。此观察不扩展为任意命令的无副作用保证。
@@ -128,7 +132,9 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 [常驻服务故障测试](../tests/system/server_process_crash.py)在独立 Linux/KVM 测试机上使用仅调试构建可用的注入点：真实 VM 启动、停止成功之后，服务进程在对应回执写入前直接退出。测试重启同一服务和数据库，核对运行态仍是原 VM 的 PID 与启动时刻、最终销毁后进程、网络空间和私有 jail 均不存在；实测通过。该测试只覆盖这两个确定窗口和一台 VM，不替代任意指令位置的 SIGKILL、并发负载或公网/静态规则验收。运行时须指定独占 UID 范围、可信 Firecracker/jailer、内核、envd 磁盘及 root 独占的临时目录；失败保留精确现场，不能按名称猜测清理其他资源。
 
-这些只是 S07–S10 的部分路径，尚缺公网/静态模式的更多真实外网目的地与复杂并发探测、其他位置的 SIGKILL、其他部分副作用下常驻服务跨崩溃自动收尾和旧资源冒名等系统级实验。已测试的是 DNS 常用端口的 IP 层可达性和来宾 root 的 IPv6 尝试，不是受控解析器或全部 DNS 隧道证明。非空环境变量、元数据、固定 `base` 的任务初始化及完整重启恢复也未验收，不能把 S01–S13 整体标为通过。命令流缺少结束回执时，SDK 抛出异常且本次请求不自动重发；服务端仍须把已开始的命令结果视为未知，不能凭异常断定命令未执行。
+[#7 生命周期并发探针](../tests/system/sdk_lifecycle_races.py)在独立 Linux/KVM 测试机使用固定 E2B SDK 创建一台真实 VM，检查创建环境变量在来宾可用、元数据在查询与列表可见；调试构建的停止屏障使两个销毁请求确定地重叠，核对仅有一次持久 Kill，第一请求成功、第二请求只能观察原操作或已销毁结果，且原进程、网络空间、私有 jail 与屏障均消失。随后检查非法环境变量被拒且没有持久创建，再暂时移走测试专用内核副本，使下一次创建无法启动 VMM；恢复副本、重启服务后必须把原操作判为失败并发布 Destroyed，且不留下该次 VM 资源。固定基础盘指纹始终不变。测试用独立、root 独占且足够短的根目录和资源身份（Firecracker 的 Unix socket 路径必须小于 108 字节），失败保留精确现场；该实验不等于所有并发交错的证明。运行时将 `--server`、`--jailer`、`--firecracker`、`--kernel`、`--rootfs`、`--uid-base` 和 `--scratch-parent` 绑定本轮已预检的产物与独占范围。
+
+这些只是 S07–S10 的部分路径，尚缺公网/静态模式的更多真实外网目的地与复杂并发探测、其他位置的 SIGKILL、其他部分副作用下常驻服务跨崩溃自动收尾和旧资源冒名等系统级实验。已测试的是 DNS 常用端口的 IP 层可达性和来宾 root 的 IPv6 尝试，不是受控解析器或全部 DNS 隧道证明。创建级非空环境变量与元数据已有选定真实 VM 组合测试；固定 `base` 的完整任务初始化及完整重启恢复仍未验收，不能把 S01–S13 整体标为通过。真实 VMM 进程存在但坏内核使其未进入 Running 的准备动作目前保持结果未知、不虚构成功；若它始终不自行退出，尚需 #11 的明确中止及自动收尾路径。命令流缺少结束回执时，SDK 抛出异常且本次请求不自动重发；服务端仍须把已开始的命令结果视为未知，不能凭异常断定命令未执行。
 
 - 固定 Harbor、数据集、任务 ID 清单和内容哈希、环境镜像、资源、网络策略、智能体、模型及参数。任务在跑之前按能力选定；不能遇到失败才删除题目。
 - 首先用任务提供的标准解答检查环境和评分链，再用同一智能体对比。E2B 自身不支持的任务与我们尚未支持的任务分别记录。
