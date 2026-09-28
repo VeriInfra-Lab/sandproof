@@ -272,5 +272,39 @@
     "missing_kvm": "The ordinary Rust missing_kvm_is_reported_explicitly regression passed; real-host preflight separately opened /dev/kvm and verified API 12. No claim of physically removing KVM on this host.",
     "reproduction": "sandbox-runtime/README.md: independent B01 node acceptance; clean commit, reviewed binary, fresh private directories/namespace per case, exclusive UID range and delegated cgroup parent",
     "limits": "Manual B01 runtime acceptance only. Fixed crash windows, not all interleavings, host reboot or V1 acceptance. Does not close #6/#8 final budgets and #13 task initialization. No production or proof changes."
+  },
+  "command_input_budget_acceptance": {
+    "test": "tests/system/sdk_input_budget.py",
+    "commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "script_sha256": "4f4bc6406c84b828ddea37790c314295dea4b38d49df43ff71b3d800df1d35bb",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "test and server rebuilt at the same exact commit after integrating network PR57; public_ipv4_enabled=false and allow_internet_access=false",
+    "host_and_artifacts": "same host/kernel/envd/base and CPU/memory limits as transfer_interruption_acceptance; newly built server fingerprint recorded here",
+    "command_input_bytes": 1048576,
+    "observations": {
+      "sync_and_async_fitting_stdin_bytes": 786393,
+      "fitting_body_bytes": 1048573,
+      "first_overflow_body_bytes": 1048577,
+      "received_bytes_per_process": 1572786,
+      "sha256": "6e1dedaba53f0dddb557e42e5acd8f01af55ce9fc63546535bf3ba660d63f19c",
+      "start_markers_per_process": 1
+    },
+    "result": "passed original sync and async SDK: empty input, largest fitting base64-encoded SendInput, first oversized payload, then another fitting input on the same PID. Exact combined length/hash excludes the rejected input, one Start marker, healthy next command and normal CloseStdin EOF.",
+    "error_mapping": "current gateway returns plain HTTP 502 when the Process request body limit aborts forwarding; pinned SDK wraps its cause-free ConnectError UNAVAILABLE with message HTTP 502 in TimeoutException. Test requires that exact context, not an ordinary client deadline or unrelated timeout.",
+    "residuals": "two exact VM processes stopped; jails/netns/cgroups absent and no recorded netns inode holders before server exit; live cgroup identity/membership/limits sampled; base unchanged",
+    "limits": "per-request encoded body budget, not aggregate stdin quota. Base64 granularity means no request exactly at every byte was claimed. Root user only in this probe; user/reconnect cases separately bound to command_input_acceptance. Final deployment budgets and full timeout/error matrices remain open. No production or proof changes.",
+    "server_sha256": "084cc8b4399a745812368e6b1521405c0067193ced1abf12ed463c3896f5e213",
+    "previous_test_commit": "13865e3306fa6087afd085d877b7d7071c4f252d (same probe also passed before PR57 integration)"
+  },
+  "command_arguments_acceptance": {
+    "test": "tests/system/sdk_command_arguments.py",
+    "commit": "25533c3b130b80b25311c21d82a05fed17bcb04a",
+    "script_sha256": "78b2e0c63effe937fbfb32c832ddc6153f5a40a5581dae2901fa819efa391810",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base and server fingerprints as command_input_budget_acceptance; explicit no-internet",
+    "result": "passed 24 Start rejections: sync/async x foreground/background x unknown user, root/ubuntu missing cwd, root/ubuntu regular-file cwd, ubuntu denied cwd. Exact AuthenticationException or InvalidArgumentException required; every unique marker absent and subsequent ubuntu cwd/env/user command successful. Root successfully uses the same private directory; root/ubuntu foreground/background valid contexts also pass.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent and no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected invalid user/cwd cases, not every malformed argument, path or timeout combination. No production or proof changes."
   }
 }
