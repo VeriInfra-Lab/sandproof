@@ -522,5 +522,48 @@
     "result": "three corrected scenarios passed with nine real SDK VMs; existing two guests continue command/file operations during each pressure case. SDK CPU/memory matches live Firecracker machine-config, private disk stat and configured cgroup limits; no creation replay after unknown result",
     "residuals": "all nine exact PID/start identities stopped; private jails/netns/cgroups absent and no recorded network namespace holders before service exit; actual cgroup inode/membership/limits sampled; base SHA unchanged; each own mount unmounted and loop detached",
     "limits": "selected reserve/block/inode scenarios only, not all crashes or unknown-outcome reconciliation. External writes exhausting reserve are outside the physical capacity premise; no atomic reservation against arbitrary host writes or final task-derived deployment budgets claimed. API/service fix is outside the proved control core; no proof claim."
+  },
+  "management_request_timeout_observation": {
+    "test": "tests/system/sdk_management_timeouts.py",
+    "commit": "bc74356597107f06f973577f4909e1012e7e3c5d",
+    "script_sha256": "02fb3fca978b5db0730233834062f46e5b29f1f6bff36ef4a3fffecf4d27d00f",
+    "server_build_commit": "c12ab1f18c89eaf8b8b7c8723bebd955129bdcf0",
+    "server_sha256": "c8aff62f94ed5927a8cb3c0ccf31fbe847151850ddf8a6e1773b4c358d9c5451",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between service build and test commit",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure host, pinned 1 GiB base/kernel/envd, SDK 2.51.0 on Python 3.13, explicit no-internet, one vCPU, 512 MiB guest and 768 MiB host cgroup limit as host_enospc_acceptance; streaming transfer configuration 64/96 MiB",
+    "commands": "pinned-SDK Python tests/system/sdk_management_timeouts.py --api-url <own-loopback-service> --sandbox-url <same-service> --sdk sync; repeat with --sdk async on a separate fresh service/database and namespace; credentials supplied only through the test environment",
+    "wrapper_sha256": "c3c35b49e5b7e219ea1c949b359b361d6337725eb137f0e20ee2215644a296f7",
+    "result": "96 selected cases passed across two separate fresh services: create; class/instance connect, get_info, set_timeout, kill; lazy list configuration, paginator override and health. Omitted, zero, negative and 10000000 seconds are observed at original HTTPX send and forwarded unchanged; no mocked responses or transport. Each client passed 36 full results and 12 exact deadline errors.",
+    "observations": {
+      "AsyncSandbox": {
+        "outcomes": {
+          "completed": 36,
+          "deadline": 12
+        },
+        "destroyed_rows": 12,
+        "timed_out_create_recovered_ids": 0
+      },
+      "Sandbox": {
+        "outcomes": {
+          "completed": 36,
+          "deadline": 12
+        },
+        "destroyed_rows": 13,
+        "timed_out_create_recovered_ids": 1
+      }
+    },
+    "semantics": "class omitted timeout is 60 seconds; instance omitted inherits the 30-second fixture configuration. Zero becomes None for class calls, paginator override and health; instance management config reconstruction restores 60. Management deadline is httpx.ReadTimeout caused by builtin TimeoutError; health wraps it in SDK TimeoutException. Large HTTP values are distinct from Connect header limits. One sync negative create left an actual VM, discovered and cleaned by its original ID without creation replay.",
+    "residuals": "25 durable rows all Destroyed; exact VM PID/start identities stopped, private jail/netns/cgroups absent, no recorded namespace holders before service exit, live cgroup identity/membership/limits sampled, base hash unchanged",
+    "incomplete_attempts": [
+      {
+        "commit": "e9cebce173984df2f71d73fa38c95e6b0bc1f60d",
+        "result": "initial uninstrumented combined run manually interrupted without per-case progress; cause undetermined, not evidence of an SDK defect or a pass; all 17 durable VM identities precisely reclaimed before service exit"
+      },
+      {
+        "commit": "bc74356597107f06f973577f4909e1012e7e3c5d",
+        "result": "combined same-process run made per-case progress but exceeded the outer 600-second harness budget; not a full pass. No individual 45-second watchdog failure observed before interruption; all 17 durable VM identities precisely reclaimed before service exit"
+      }
+    ],
+    "limits": "independent client modes only; combined completion/long-history latency not accepted. Numeric deadline forwarding plus selected actual calls, not forced slow responses lasting 60 seconds, response loss, all lifetime/expiry races, non-finite values or final task-derived budgets. No production or proof changes."
   }
 }
