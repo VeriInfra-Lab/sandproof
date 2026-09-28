@@ -595,5 +595,19 @@
     "result": "both tests passed on the integrated #76 plus idle recovery scan fix commit; each faulted worker was really SIGKILLed and its original durable operation recovered",
     "residuals": "two exact PID/start identities stopped; private jail/netns/cgroups absent, no recorded namespace holders; base SHA unchanged",
     "limits": "two selected worker failure windows only; not arbitrary full-service SIGKILL, never-ready live VM abort, activation-unknown handling or the whole #11 recovery matrix"
+  },
+  "list_query_acceptance": {
+    "commit": "9ffcd42fdefd367f9132e29769507687167b73cc",
+    "test": "tests/system/sdk_list_queries.py",
+    "script_sha256": "2dd3a968ec0bae9ceae8b762e1283655ff79cd7eecbb7c10a5989a04c51d52d9",
+    "server_sha256": "ec9ec1c0686c9c135235169209ddf271ec3c06bebe2889c1f2b09b12fc4383d4",
+    "wrapper_sha256": "4e9a497f29e739b22e3c766be46228bd32988ff3f539bd39e05320ded933c402",
+    "host_and_artifacts": "same Linux 6.8.0-1065-azure/KVM, fixed 1 GiB base/kernel/envd, Firecracker/jailer 1.16.1 and E2B SDK 2.51.0 on Python 3.13; one vCPU/512 MiB guest, 768 MiB host memory cgroup, explicit no-internet and 64/96 MiB streaming test budgets",
+    "command": "pinned-SDK Python tests/system/sdk_list_queries.py --api-url <own-loopback-service> --sandbox-url <same-service>; own and foreign credentials only from environment",
+    "result": "both SDK clients passed 32 scenarios each (18 SDK query scenarios and 14 direct HTTP header/rejection checks per client): default/asc/desc pagination, Unicode/reserved metadata, combined filters, state/template/startedAfter, get/list field consistency, cursor continuation and direction rejection, filtered totals, tenant isolation, invalid parameters and continuation after anchor deletion/new creation",
+    "durable_destroyed_rows": 8,
+    "residuals": "all eight exact VM PID/start identities stopped; private jails/netns/cgroups absent, no recorded namespace holders before service exit; live cgroup inode/membership/limits sampled; original base SHA unchanged",
+    "component_evidence": "deterministic timestamp ties in both directions, inclusive microsecond/timezone bounds, invalid filters/cursors and real SQLite reopen with tenant-scoped persisted metadata all passed; fixed original SDK wire and real Rust gateway composition checks passed",
+    "limits": "selected query contract only; live pagination is not a frozen multi-request snapshot. No paused instances or template registry implemented. Full optional get/list response fields, lifetime targets and the rest of #12 remain separate work; no proved core Rust changes or new proof claim."
   }
 }
