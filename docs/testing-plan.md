@@ -72,6 +72,8 @@ uv run --locked --project tests/compat python tests/system/gateway_async_stream_
 
 这组参数沿用 64/96/32 MiB 测试配置，不是最终部署值。该异步脚本已在真实 KVM 完成上述边界、较小输出成功对照、截流与重连，独立宿主审计确认精确进程、cgroup、网络空间和私有盘回收，基础盘指纹不变；提交与证据见[版本基线](../references/v1-baseline.json)。不能据此推断并发、慢流、到期或授权撤销竞争全部通过。
 
+命令与基本文件的共同输入和断言集中在[SDK 数据样例](../tests/compat/sdk_data_samples.py)：cwd/env/user、stdout/stderr、非零退出、文本/二进制/空文件、文件信息和目录内容。同步/异步合成 envd、实际 Rust 网关组合测试和[真实 VM 探针](../tests/system/sdk_data_contract.py)均导入该模块；模拟层额外保留请求参数、鉴权头、批量顺序及失败断言，真实 VM 仍独立执行 shell、写入文件、核对内容哈希及原 PID 重连，不把模拟回复当作实际执行。提交 `a73f83e774d2b2e21ccc6b2b6d6797694c18a36f` 已通过全部 SDK/网关检查，且在新 `3f96c961…` base 的普通和流式配置各通过同步/异步 root/ubuntu 四组检查，每配置两台 VM，分别 10.011/9.836 秒；四台精确资源在服务退出前回收，base 不变，实际 cgroup/Firecracker/私有盘已核对，见[基线](../references/v1-baseline.json)的 `shared_sdk_data_acceptance`。共享范围是这些命令/文件样例；管理、网络和各故障探针仍按各自证据记录。
+
 同步与异步的数据调用合同复用同一合成 envd 和真实 Rust 网关：检查 cwd、含空格/Unicode 的命令 envs、user 的鉴权头、stdout/stderr、非零退出；后台连接和终止只发送已有 PID，不重发 Start；Stat、递归 ListDir 请求和批量上传保留路径及字节。批量收到合成 507 时抛出 `NotEnoughSpaceException`，已发起的上传不重发；同步 octet-stream 逐项发送，第二项失败后不发送第三项，而异步 SDK 并发发送，其他项可能仍在写入。用屏障确保并发请求均已到达再返回故障，不承诺批量回滚。这组组合测试验证错误传播；真实 ENOSPC 由下面的独立来宾磁盘探针验收。异步 SDK 的文件流使用分块传输，另经流式配置覆盖大文件边界和失败恢复；不能只以同步 SDK 的已知长度结果推断异步行为。
 
 [来宾磁盘满探针](../tests/system/sdk_disk_full.py)在原 SDK 创建的独占沙箱内，用有容量上界的 `posix_fallocate` 实际触发根盘 ENOSPC；不填宿主文件系统。同步与异步调用分别检查文本 multipart、可定位文件和不可定位流都收到 `NotEnoughSpaceException`，同时让第二台 VM 持续核验命令与读写。释放本轮填充文件后，同一 VM 必须能恢复写入；再次触发 ENOSPC 后直接销毁，并创建新 VM 验证初始目录干净、写入正常。脚本保留内核 errno、实际分配与剩余块数，不把文件系统保留块当成可写容量；失败也按已知沙箱 ID 清理。宿主空间耗尽、日志/数据库收尾预留和 inode 耗尽另行测试，不能用来宾块 ENOSPC 代替。

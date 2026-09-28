@@ -821,5 +821,39 @@
     "residuals": "20 durable rows Destroyed; exact PID/start stopped, private jails/netns/cgroups absent and no namespace holders, checked before each service exit; new base hash unchanged after each run; old b5e677 base independently unchanged; supervisors/services exited normally and test cgroup parent empty",
     "failed_attempts": [],
     "limits": "manual selected acceptance of the new routed base, not byte-identical ext4 reproduction, arbitrary package dependencies, guest-user DAC, all streaming boundaries on this image or #13 Harbor initialization/final budgets. No Internet/software repository accessed by the new package probe. Historical b5e677 large-transfer/fault evidence remains bound to its original image and commit. No production Rust or proof changes."
+  },
+  "shared_sdk_data_acceptance": {
+    "commit": "a73f83e774d2b2e21ccc6b2b6d6797694c18a36f",
+    "shared_samples": "tests/compat/sdk_data_samples.py",
+    "shared_samples_sha256": "493fa42ca042ab594899538395dc0ff53b08169404681d234d07a40529115609",
+    "real_test": "tests/system/sdk_data_contract.py",
+    "real_test_sha256": "d1bd8f78163b272e2aca8739c5b8e1d993533000fbf90168bc9c19abe55aaaa8",
+    "wrapper_sha256": "9458491fc402b71896a835895bf1e930763439c59b714e8c61e11614337800d6",
+    "synthetic_and_gateway": "check-compat.sh passed pinned SDK wire tests and actual Rust gateway composition in ordinary and streaming profiles; both original clients exercise the same root/ubuntu command, nonzero exit, text/binary/empty bytes, file metadata, directory and read/stream assertions as the real VM probe; retain independent wire arguments/auth headers/batch ordering/no-replay/failure checks",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "production Rust and Cargo manifests/lock verified unchanged before each real run",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "host_and_configuration": "same fixed artifacts/new routed base as routed_base_isolation_acceptance; Linux 6.8.0-1065-azure/KVM, Firecracker/jailer 1.16.1, envd 0.9.0, original SDK 2.51.0/Python 3.13; 1 vCPU/512 MiB guest, 1 CPU/768 MiB host cgroup, 1 GiB private disk, explicit no-internet; streaming 64/96 MiB budgets are test settings",
+    "command": "pinned-SDK Python tests/system/sdk_data_contract.py --api-url <own-loopback-service> --sandbox-url <same-service> --unprivileged-user ubuntu; credentials from environment, independent host supervisor",
+    "runs": [
+      {
+        "mode": "legacy",
+        "vm_count": 2,
+        "user_cases": 4,
+        "probe_and_audit_seconds": 10.011,
+        "result": "sync/async each root and ubuntu: identical shared command/file assertions, real content SHA-256, same-PID FIFO-barrier reconnect and kill, lifecycle/old-token checks passed"
+      },
+      {
+        "mode": "streaming",
+        "vm_count": 2,
+        "user_cases": 4,
+        "probe_and_audit_seconds": 9.836,
+        "result": "sync/async each root and ubuntu: identical shared command/file assertions, real content SHA-256, same-PID FIFO-barrier reconnect and kill, lifecycle/old-token checks passed"
+      }
+    ],
+    "residuals": "all four durable rows Destroyed; exact recorded PID/start stopped, jail/netns/cgroup absent and no namespace holders before service exit; each live cgroup identity/membership/limits, actual Firecracker machine-config and private disk size/inode sampled; base hash unchanged in both runs",
+    "failed_attempts": [],
+    "limits": "shared expectations for the selected command/basic-file subset, with synthetic fixtures supplying protocol replies and real guests executing independently; no production/proof change, no claim that synthetic execution proves VM behavior or that all lifecycle/network/fault expectations have been centralized. Final task budgets and Harbor inputs still depend on #13."
   }
 }
