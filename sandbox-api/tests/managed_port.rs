@@ -1666,6 +1666,85 @@ fn nonpositive_timeout_revokes_existing_transfers_before_the_expiry_worker_runs(
 }
 
 #[test]
+fn fixed_harbor_day_request_is_preserved_when_the_trusted_budget_allows_it() {
+    let (_directory, port) = setup();
+    let mut input = request();
+    input.timeout = Some(86_400);
+    let created = port.create("1", input).unwrap();
+    let before = port.get("1", &created.sandbox_id).unwrap().info;
+    let start = time::OffsetDateTime::parse(
+        &before.started_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    let end = time::OffsetDateTime::parse(
+        &before.end_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    assert_eq!((end - start).whole_seconds(), 86_400);
+    port.connect("1", &created.sandbox_id, ConnectRequest::default())
+        .unwrap();
+    assert_eq!(
+        port.get("1", &created.sandbox_id).unwrap().info.end_at,
+        before.end_at
+    );
+    port.kill("1", &created.sandbox_id).unwrap();
+}
+
+#[test]
+fn renewal_contending_with_expiry_cleanup_cannot_resurrect_the_instance() {
+    for connect in [false, true] {
+        let gate = Arc::new(ActionGate::new());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (directory, port) = setup_with_host(FakeHost {
+            stop_gate: Some(Arc::clone(&gate)),
+            stop_calls: Some(Arc::clone(&calls)),
+            ..FakeHost::default()
+        });
+        let created = port.create("1", request()).unwrap();
+        port.set_timeout("1", &created.sandbox_id, 0).unwrap();
+        let expiring = Arc::clone(&port);
+        let worker = std::thread::spawn(move || expiring.expire_due());
+        gate.entered.wait(); // expiry is durable and its exact host stop is in flight
+        let renewing = Arc::clone(&port);
+        let ready = Arc::new(Barrier::new(2));
+        let caller_ready = Arc::clone(&ready);
+        let caller = std::thread::spawn(move || {
+            caller_ready.wait();
+            if connect {
+                renewing
+                    .connect("1", &created.sandbox_id, ConnectRequest::default())
+                    .map(|_| ())
+            } else {
+                renewing.set_timeout("1", &created.sandbox_id, 300)
+            }
+        });
+        ready.wait();
+        gate.release.wait();
+        assert_eq!(worker.join().unwrap(), Ok(1));
+        assert_eq!(caller.join().unwrap(), Err(PortError::NotFound));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        drop(port);
+        let journal =
+            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        let world = journal.world().unwrap();
+        assert_eq!(
+            world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+            core::Phase::Destroyed
+        );
+        assert_eq!(
+            world
+                .operation_records()
+                .iter()
+                .filter(|(_, op)| op.operation.kind == core::OperationKind::Kill)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
     use sandproof_api::managed::DataKind;
     let (_directory, port) = setup_with_host(FakeHost {
