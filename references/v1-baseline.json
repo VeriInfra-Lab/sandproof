@@ -162,5 +162,18 @@
     "result": "passed original sync and async SDK: actual guest errno 28; multipart text, seekable octet stream and nonseekable upload all raise NotEnoughSpaceException; concurrent control VM remains writable; same VM writes after releasing filler; refilled VM destroyed; new VM has clean test directory and writable disk",
     "residuals": "six exact VM processes stopped; private jails, network namespaces and cgroups absent; base fingerprint unchanged",
     "limits": "Guest block allocation ENOSPC only. Free block counters can include filesystem reserves and do not mean the failed write can fit. Does not test host filesystem exhaustion, inode exhaustion, controller cleanup reserves, batch atomicity or the full S11/S12 matrix."
+  },
+  "async_stream_acceptance": {
+    "test": "tests/system/gateway_async_stream_limits.py",
+    "commit": "6fcb83e28912e6bc88ca840f356f89e775d5c4cb",
+    "script_sha256": "ed17b479839aba9df9cef445c0386e67dcd67eea991a4c2d1f25473c260aa362",
+    "server_build_commit": "7547fa3aae30af1b72ab3e90b9bc86beb388ab06",
+    "server_source_equivalence": "production source unchanged between server build and test commit",
+    "host_and_artifacts": "same host, Firecracker/jailer, base and server hashes as host_resource_acceptance",
+    "budgets_bytes": {"file_upload": 67108864, "file_download": 100663296, "command_output": 33554432},
+    "result": "passed eight async IO uploads and four streamed downloads at zero/below/at/above limits with successful content hashes; 16 MiB command output completed, oversized output failed after 25133056 stdout bytes with one Start marker; FIFO/event-gated disconnect reconnected the same PID with one marker",
+    "sdk_difference": "Async background wait can discard the underlying ConnectError chain. The probe accepts only the exact pinned SDK chunk-EOF rendering, with a smaller-output success control and independent health/no-replay checks. Composition tests reject ordinary deadlines, lookalike messages, authentication errors and a deadline cause.",
+    "residuals": "successful VM and earlier classifier-failure VM independently audited: exact processes stopped; private jails/netns/cgroups absent; base hash unchanged",
+    "limits": "Selected manual async KVM acceptance under 1 vCPU / 512 MiB guest / 768 MiB VMM limits; excludes final deployment budgets, concurrent slow transfers, full timeout parameter combinations and kill/expiry/revocation races."
   }
 }

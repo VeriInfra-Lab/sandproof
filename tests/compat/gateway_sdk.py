@@ -28,6 +28,7 @@ from test_sdk_envd_wire import EnvdWireContract, QuietHandler, SyntheticEnvd, Th
 # Exercise the same error classifier used by the opt-in real-VM script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "system"))
 from gateway_stream_limits import UnknownLengthFile, stream_failure
+from gateway_async_stream_limits import ASYNC_CHUNK_EOF, async_stream_failure
 
 
 MIB = 1024 * 1024
@@ -221,6 +222,39 @@ class GatewayAsyncContract(AsyncEnvdWireContract):
         # Environment and listener belong to the Rust composition harness.
         self.app = SyntheticEnvd()
         self.server.set_app(self.app)
+
+    async def test_async_command_output_limit_fails_without_replaying_start(self):
+        self.app.process.stdout_chunks = [b"X" * (64 * 1024)] * 512
+        received = 0
+
+        def output(chunk):
+            nonlocal received
+            self.assertEqual(chunk, "X" * len(chunk))
+            received += len(chunk)
+
+        handle = await self.sandbox.commands.run(
+            "synthetic-large-output", background=True, on_stdout=output)
+        self.assertEqual(handle.pid, 4321)
+        with self.assertRaises(TimeoutException) as error:
+            await handle.wait()
+        self.assertTrue(async_stream_failure(error.exception))
+        self.assertGreater(received, 0)
+        self.assertLess(received, 32 * MIB)
+        self.assertEqual(len(self.app.process.starts), 1)
+        self.app.process.stdout_chunks = [b"synthetic\n"]
+        self.assertEqual((await self.sandbox.commands.run("healthy")).stdout, "synthetic\n")
+        self.assertEqual(len(self.app.process.starts), 2)
+
+    def test_async_stream_classifier_rejects_unrelated_errors_and_deadlines(self):
+        self.assertTrue(async_stream_failure(TimeoutException(ASYNC_CHUNK_EOF)))
+        chained_deadline = TimeoutException(ASYNC_CHUNK_EOF)
+        chained_deadline.__cause__ = TimeoutError("deadline")
+        for error in (TimeoutException("deadline exceeded"), TimeoutError("deadline"),
+                      TimeoutException("unexpected EOF"), TimeoutException(ASYNC_CHUNK_EOF + " extra"),
+                      SandboxException(ASYNC_CHUNK_EOF), AuthenticationException("denied"),
+                      AssertionError("test bug"), chained_deadline):
+            with self.subTest(error=type(error).__name__):
+                self.assertFalse(async_stream_failure(error))
 
 
 class GatewayAsyncStreamingContract(GatewayAsyncContract):
