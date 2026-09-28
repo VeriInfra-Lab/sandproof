@@ -29,9 +29,11 @@ ENV = {"SP_DATA_VALUE": "spaces and 中文"}
 
 
 def validate_command(result, directory, user):
-    assert (result.stdout, result.stderr, result.exit_code) == (
+    actual = (result.stdout, result.stderr, result.exit_code)
+    expected = (
         f"{directory}\n{ENV['SP_DATA_VALUE']}\n{user}\n", "data-stderr\n", 0,
     )
+    assert actual == expected, {"user": user, "actual": actual, "expected": expected}
 
 
 def validate_entries(entries, directory):
