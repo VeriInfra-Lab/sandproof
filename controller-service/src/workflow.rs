@@ -152,6 +152,49 @@ where
     E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
     W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
 {
+    finish_admitted_create_v1_with(journal, sandbox, operation, worker, |journal, sandbox| {
+        Ok(journal
+            .apply(
+                core::ControllerInput::Publication(core::PublicationInput::Running(sandbox)),
+                &mut NeverCrash,
+            )?
+            .next)
+    })
+}
+
+/// Complete an admitted create with the service clock sampled after physical
+/// readiness, and commit that origin with Running publication atomically.
+/// # Errors
+/// Leaves failed or uncertain physical work durably unresolved.
+pub fn finish_admitted_create_v1_timed<E, W, C>(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    operation: core::OperationId,
+    worker: &mut W,
+    clock: &mut C,
+) -> Result<core::World, JournalError>
+where
+    E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+    W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
+    C: FnMut() -> Result<i64, JournalError>,
+{
+    finish_admitted_create_v1_with(journal, sandbox, operation, worker, |journal, sandbox| {
+        journal.publish_running_at(sandbox, clock()?, &mut NeverCrash)
+    })
+}
+
+fn finish_admitted_create_v1_with<E, W, P>(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    operation: core::OperationId,
+    worker: &mut W,
+    publish: P,
+) -> Result<core::World, JournalError>
+where
+    E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+    W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
+    P: FnOnce(&mut ControllerJournal, core::SandboxId) -> Result<core::World, JournalError>,
+{
     let world = journal.world()?;
     let record = world
         .sandbox_record(sandbox)
@@ -214,12 +257,7 @@ where
         finish_compensating_create_v1(journal, sandbox, operation, worker)?;
         return Err(JournalError::OperationFailed);
     }
-    Ok(journal
-        .apply(
-            core::ControllerInput::Publication(core::PublicationInput::Running(sandbox)),
-            &mut NeverCrash,
-        )?
-        .next)
+    publish(journal, sandbox)
 }
 
 /// Finish the reducer's terminal compensation after a definitive create

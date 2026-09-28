@@ -12,7 +12,7 @@ use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
     HostEvidence, JournalError, NeverCrash, WorkerTransportError, finish_accepted_kill_v1,
-    finish_admitted_create_v1, finish_compensating_create_v1,
+    finish_admitted_create_v1_timed, finish_compensating_create_v1,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
@@ -237,6 +237,10 @@ fn now_ms() -> Result<i64, PortError> {
         .duration_since(UNIX_EPOCH)
         .map_err(|_| PortError::Busy)?;
     i64::try_from(duration.as_millis()).map_err(|_| PortError::Busy)
+}
+
+fn publication_clock() -> Result<i64, JournalError> {
+    now_ms().map_err(|_| JournalError::Io(std::io::Error::other("invalid service clock")))
 }
 
 fn rfc3339(milliseconds: i64) -> Result<String, PortError> {
@@ -559,9 +563,13 @@ fn recover_locked<H: HostAdapter>(
         };
         let resume = match (record.phase, operation.kind) {
             (core::Phase::Starting, core::OperationKind::Create) => {
-                finish_admitted_create_v1(journal, *sandbox, operation.id, &mut |action| {
-                    host.execute(action)
-                })
+                finish_admitted_create_v1_timed(
+                    journal,
+                    *sandbox,
+                    operation.id,
+                    &mut |action| host.execute(action),
+                    &mut publication_clock,
+                )
                 .map(|_| ())
             }
             (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Create)
@@ -869,9 +877,13 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             .put_launch_config(sandbox, &secret, &options.env_vars)
             .map_err(|_| PortError::OutcomeUnknown)?;
         let Inner { journal, host, .. } = &mut *inner;
-        finish_admitted_create_v1(journal, sandbox, core::OperationId(1), &mut |action| {
-            host.execute(action)
-        })
+        finish_admitted_create_v1_timed(
+            journal,
+            sandbox,
+            core::OperationId(1),
+            &mut |action| host.execute(action),
+            &mut publication_clock,
+        )
         .map_err(|error| match error {
             JournalError::OperationFailed => PortError::Failed,
             _ => PortError::OutcomeUnknown,
