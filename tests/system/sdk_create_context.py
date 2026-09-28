@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import sys
 import uuid
 
 import httpx
@@ -23,8 +24,9 @@ from sdk_command_input import call
 from sdk_server_smoke import options
 
 
-KEYS = ['SP_CTX_COMMON', 'SP_CTX_EMPTY', 'SP_CTX_UTF8', 'SP_CTX_ONLY_A',
-        'SP_CTX_ONLY_B', 'SP_CTX_TRANSIENT', 'SP_META_ONLY']
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'compat'))
+from sdk_management_samples import CONTEXT_KEYS as KEYS, creation_contexts, validate_context
+
 INSPECT = 'python3 -c ' + shlex.quote(
     'import json,os; print(json.dumps({key:os.environ.get(key) for key in ' + repr(KEYS) + '}))')
 
@@ -44,7 +46,7 @@ async def inspect_environment(sandbox, expected, user, overrides=None):
     result = await call(sandbox.commands.run, INSPECT, user=user, timeout=15, **kwargs)
     assert result.exit_code == 0 and result.stderr == ''
     actual = json.loads(result.stdout)
-    assert actual == {key: expected.get(key) for key in KEYS}, (user, actual, expected)
+    validate_context(actual, expected)
 
 
 async def invalid_contexts(cls, owner):
@@ -79,16 +81,7 @@ async def exercise_client(cls, args):
     rows = await invalid_contexts(cls, owner)
     run = uuid.uuid4().hex
     live = []
-    envs = []
-    metadata = []
-    # Values test JSON, shell metacharacters and empty-string preservation;
-    # metadata with an environment-like key must not become a guest variable.
-    for label in ('A', 'B'):
-        envs.append({'SP_CTX_COMMON': label, 'SP_CTX_EMPTY': '',
-                     'SP_CTX_UTF8': f'{label} 雪 "quotes" $HOME; =+&%\nsecond line',
-                     'SP_CTX_ONLY_' + label: run})
-        metadata.append({'context_run': run, 'label': label, 'empty': '',
-                         'reserved &=+%': f'{label} 雪 =+&/%', 'SP_META_ONLY': 'metadata only'})
+    envs, metadata = zip(*creation_contexts(run))
     async with httpx.AsyncClient(base_url=args.api_url, trust_env=False, timeout=20) as client:
         try:
             for values, tags in zip(envs, metadata):
