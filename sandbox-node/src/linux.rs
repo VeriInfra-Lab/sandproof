@@ -640,6 +640,54 @@ impl LinuxWorker {
         Ok(())
     }
 
+    /// Reapply only an opening fence that the controller matched to the
+    /// current nonterminal create. `fence_can_advance` prevents reopening a
+    /// terminal host fence, including after a stale receipt arrives.
+    /// # Errors
+    /// Rejects any different action or a terminal/stale host fence.
+    pub fn reclaim_incomplete_open_fence(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        if !matches!(
+            action.command.command(),
+            core::Command::InstallFence {
+                terminal: false,
+                ..
+            }
+        ) {
+            return Err("reclaim requires opening fence".into());
+        }
+        let observation = self.perform(action)?;
+        if !matches!(
+            observation.result,
+            ObservedResult::Fence(Fence {
+                terminal: false,
+                ..
+            })
+        ) {
+            return Err("opening fence not observed".into());
+        }
+        Ok(())
+    }
+
+    /// Complete the one already-dispatched stop selected by the controller.
+    /// `perform` checks the terminal fence and workspace binding, then the
+    /// runtime signals only the process verified by its durable identity and
+    /// pidfd. A repeated stop of that same process is harmless.
+    /// # Errors
+    /// A changed identity or unconfirmed process exit remains unresolved.
+    pub fn reclaim_incomplete_stop(&self, action: &WorkAction<core::EffectId>) -> NodeResult<()> {
+        if !matches!(action.command.command(), core::Command::StopVm { .. }) {
+            return Err("reclaim requires StopVm".into());
+        }
+        let observation = self.perform(action)?;
+        if !matches!(observation.result, ObservedResult::Stopped { .. }) {
+            return Err("exact VM stop not observed".into());
+        }
+        Ok(())
+    }
+
     /// Check allocatable bytes on the same filesystem that stores the VM's
     /// private disk. This is an admission observation, not a reservation
     /// against unrelated host processes.

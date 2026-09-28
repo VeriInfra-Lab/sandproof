@@ -123,6 +123,30 @@ pub trait HostAdapter: Send + 'static {
         Err(PortError::Busy)
     }
 
+    /// Complete the original opening fence only while the controller's
+    /// matching create is current. The host must reject a terminal-to-open
+    /// transition even if its earlier receipt was lost.
+    /// # Errors
+    /// A stale or unobservable fence remains unresolved.
+    fn reclaim_incomplete_open_fence(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Finish an already-dispatched stop for the current terminal operation.
+    /// This may signal only the exact recorded process; it is not permission
+    /// to re-dispatch arbitrary uncertain host commands.
+    /// # Errors
+    /// An unverified process or incomplete stop remains unresolved.
+    fn reclaim_incomplete_stop(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
     /// Finish exact, already-dispatched cleanup after proving the recorded
     /// VM is stopped. This may remove only resources owned by that VM.
     /// # Errors
@@ -332,6 +356,17 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
             continue;
         }
         match action.command.command() {
+            core::Command::InstallFence {
+                terminal: false, ..
+            } => {
+                if !journal
+                    .matches_current_open_fence(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_open_fence(&action)?;
+            }
             core::Command::PrepareVm { .. } => {
                 if !journal
                     .matches_current_prepare(world, &action)
@@ -361,6 +396,15 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
                     return Err(PortError::Busy);
                 }
                 host.reclaim_incomplete_terminal_fence(&action)?;
+            }
+            core::Command::StopVm { .. } => {
+                if !journal
+                    .matches_current_stop(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_stop(&action)?;
             }
             core::Command::CleanupVm { .. } => {
                 if !journal

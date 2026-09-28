@@ -182,6 +182,105 @@ impl ControllerJournal {
             && action.identity.generation == plan.generation)
     }
 
+    /// A lost opening-fence receipt may be completed only while its original
+    /// create remains current and nonterminal. A later terminal fence must
+    /// never be reopened by recovery of an old action.
+    /// # Errors
+    /// Returns an error if the trusted journal identity cannot be encoded.
+    pub fn matches_current_open_fence(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::InstallFence {
+            sandbox,
+            epoch,
+            terminal: false,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        Ok(record.phase == core::Phase::Starting
+            && !record.terminal
+            && operation.kind == core::OperationKind::Create
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && *epoch == record.epoch
+            && *epoch == plan.epoch
+            && action.identity.generation == plan.generation
+            && plan.generation == record.generation)
+    }
+
+    /// Only the current terminal operation can complete an uncertain `StopVm`.
+    /// Its VM must be in the saved stop plan and still belong to the same
+    /// sandbox generation; the host separately verifies the physical process.
+    /// # Errors
+    /// Returns an error if the trusted journal identity cannot be encoded.
+    pub fn matches_current_stop(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::StopVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        let Some(resource) = world.vm_record(*vm) else {
+            return Ok(false);
+        };
+        Ok(record.phase == core::Phase::Revoking
+            && record.terminal
+            && matches!(
+                operation.kind,
+                core::OperationKind::Create | core::OperationKind::Kill
+            )
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && *epoch == record.epoch
+            && *epoch == plan.epoch
+            && action.identity.generation == *generation
+            && *generation == record.generation
+            && *generation == plan.generation
+            && plan.stop_vms.contains(vm)
+            && resource.sandbox == *sandbox
+            && resource.generation == *generation)
+    }
+
     /// A cleanup can be resumed only for the current terminal workflow's
     /// exact stopped VM. Physical process and resource checks remain the
     /// host adapter's responsibility.

@@ -60,6 +60,7 @@ enum PrepareObservation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum RecoveredAction {
+    OpenFence,
     Network,
     TerminalFence,
 }
@@ -71,6 +72,7 @@ enum StopObservation {
     LoseReceipt,
     ObservedAfterRestart,
     LostThenObserved,
+    Incomplete,
 }
 
 struct ActionGate {
@@ -98,6 +100,7 @@ struct FakeHost {
     token_error_once: AtomicBool,
     free_bytes: u64,
     public_ipv4_ready: bool,
+    incomplete_open_fence: bool,
     prepare: PrepareObservation,
     recovered_actions: BTreeSet<RecoveredAction>,
     stop: StopObservation,
@@ -116,6 +119,7 @@ impl Default for FakeHost {
             token_error_once: AtomicBool::new(false),
             free_bytes: 10_000,
             public_ipv4_ready: false,
+            incomplete_open_fence: false,
             prepare: PrepareObservation::Missing,
             recovered_actions: BTreeSet::new(),
             stop: StopObservation::Normal,
@@ -192,6 +196,23 @@ impl HostAdapter for FakeHost {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        if self.incomplete_open_fence
+            && matches!(
+                action.command.command(),
+                core::Command::InstallFence {
+                    terminal: false,
+                    ..
+                }
+            )
+        {
+            return Ok(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
         if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
             if let Some(calls) = &self.prepare_calls {
                 calls.fetch_add(1, Ordering::SeqCst);
@@ -210,7 +231,9 @@ impl HostAdapter for FakeHost {
         }
         if matches!(
             self.stop,
-            StopObservation::LoseReceipt | StopObservation::LostThenObserved
+            StopObservation::LoseReceipt
+                | StopObservation::LostThenObserved
+                | StopObservation::Incomplete
         ) && matches!(action.command.command(), core::Command::StopVm { .. })
         {
             return Ok(WorkReceipt {
@@ -243,8 +266,16 @@ impl HostAdapter for FakeHost {
                 },
             });
         }
-        if (self.prepare == PrepareObservation::Successful
-            && matches!(action.command.command(), core::Command::PrepareVm { .. }))
+        if (self.recovered_actions.contains(&RecoveredAction::OpenFence)
+            && matches!(
+                action.command.command(),
+                core::Command::InstallFence {
+                    terminal: false,
+                    ..
+                }
+            ))
+            || (self.prepare == PrepareObservation::Successful
+                && matches!(action.command.command(), core::Command::PrepareVm { .. }))
             || (self.recovered_actions.contains(&RecoveredAction::Network)
                 && matches!(
                     action.command.command(),
@@ -312,6 +343,35 @@ impl HostAdapter for FakeHost {
         ));
         self.recovered_actions
             .insert(RecoveredAction::TerminalFence);
+        Ok(())
+    }
+
+    fn reclaim_incomplete_open_fence(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::InstallFence {
+                terminal: false,
+                ..
+            }
+        ));
+        self.recovered_actions.insert(RecoveredAction::OpenFence);
+        Ok(())
+    }
+
+    fn reclaim_incomplete_stop(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::StopVm { .. }
+        ));
+        if self.stop == StopObservation::Incomplete {
+            self.stop = StopObservation::ObservedAfterRestart;
+        }
         Ok(())
     }
 
@@ -389,6 +449,72 @@ fn admit_public_create(journal: &mut ControllerJournal) {
             &mut NeverCrash,
         )
         .unwrap();
+}
+
+#[test]
+fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_create() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    admit_public_create(&mut journal);
+    let sandbox = core::SandboxId(1);
+    let pending =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            FakeHost {
+                incomplete_open_fence: true,
+                ..FakeHost::default()
+            }
+            .execute(action)
+        });
+    assert!(matches!(
+        pending,
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::InstallFence {
+            terminal: false,
+            ..
+        }
+    ));
+    let world = journal.world().unwrap();
+    assert!(
+        journal
+            .matches_current_open_fence(&world, &uncertain[0])
+            .unwrap()
+    );
+    let mut stale = uncertain[0].clone();
+    stale.identity.epoch += 1;
+    assert!(!journal.matches_current_open_fence(&world, &stale).unwrap());
+    assert_ne!(
+        world.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Running
+    );
+    drop(journal);
+
+    let mut host = FakeHost {
+        public_ipv4_ready: true,
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    let mut settings = config();
+    settings.public_ipv4_enabled = true;
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        settings,
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 0);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap().state,
+        "running"
+    );
+    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
 }
 
 #[test]
@@ -896,6 +1022,96 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
         destroyed
     );
     assert!(journal.uncertain_actions().unwrap().is_empty());
+}
+
+#[test]
+fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        config(),
+    );
+    let sandbox_id = port.create("1", request()).unwrap().sandbox_id;
+    drop(port);
+
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let sandbox = core::SandboxId(1);
+    let pending = kill_v1(
+        &mut journal,
+        core::KillRequest {
+            actor: core::Actor::Tenant(core::TenantId(1)),
+            sandbox,
+            operation: core::OperationId(2),
+        },
+        &mut |action| {
+            FakeHost {
+                stop: StopObservation::Incomplete,
+                ..FakeHost::default()
+            }
+            .execute(action)
+        },
+    );
+    assert!(matches!(
+        pending,
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    assert!(matches!(
+        uncertain[0].command.command(),
+        core::Command::StopVm { .. }
+    ));
+    let world = journal.world().unwrap();
+    assert!(journal.matches_current_stop(&world, &uncertain[0]).unwrap());
+    let mut stale = uncertain[0].clone();
+    stale.identity.generation += 1;
+    assert!(!journal.matches_current_stop(&world, &stale).unwrap());
+    assert_ne!(
+        world.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    drop(journal);
+
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost {
+            stop: StopObservation::Incomplete,
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 0);
+    assert_eq!(port.get("1", &sandbox_id), Err(PortError::NotFound));
+    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    drop(port);
+
+    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .operation_records()
+            .iter()
+            .filter(|(key, operation)| {
+                key.sandbox == sandbox && operation.operation.kind == core::OperationKind::Kill
+            })
+            .count(),
+        1
+    );
 }
 
 #[test]
