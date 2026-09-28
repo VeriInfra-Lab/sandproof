@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 from e2b import AsyncSandbox, Sandbox
-from e2b.exceptions import SandboxException, SandboxNotFoundException
+from e2b.exceptions import AuthenticationException, SandboxException, SandboxNotFoundException
 
 from sdk_command_input import call
 from sdk_server_smoke import options
@@ -122,6 +122,16 @@ async def lifetime_case(cls, sandbox, owner, operation, static, case, value, arg
                 outcome='missing_argument' if missing else 'http_400' if rejected else 'completed')
 
 
+async def assert_data_revoked(sandbox):
+    try:
+        await call(sandbox.is_running)
+    except AuthenticationException as error:
+        # The pinned envd HTTP mapping creates this exact class only for 401.
+        assert type(error) is AuthenticationException
+    else:
+        raise AssertionError('revoked credentials were accepted or mapped to an unrelated result')
+
+
 async def expire_case(cls, sandbox, owner, static, value, args):
     function = cls.set_timeout if static else sandbox.set_timeout
     await call(function, *((sandbox.sandbox_id, value) if static else (value,)),
@@ -132,7 +142,7 @@ async def expire_case(cls, sandbox, owner, static, value, args):
         pass
     else:
         raise AssertionError('expired sandbox was still queryable')
-    assert not await call(sandbox.is_running)
+    await assert_data_revoked(sandbox)
     assert await listed_ids(cls, owner) == []
     # The supervisor observes durable Destroyed and the exact VM exit without
     # sending kill; successful return alone is not proof of synchronous cleanup.
@@ -173,7 +183,7 @@ async def short_total_case(cls, owner, args):
                 bad_lifetime(error)
             else:
                 raise AssertionError('renewal escaped total lifetime')
-        assert not await call(sandbox.is_running)
+        await assert_data_revoked(sandbox)
         await supervisor(args, 'expired', sandbox.sandbox_id)
         assert not await call(sandbox.kill)
     finally:
