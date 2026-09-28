@@ -4,8 +4,10 @@
 //! This crate does not make lifecycle decisions: the trusted `ControllerPort`
 //! must authorize every operation against the durable controller state.
 
+mod list;
 pub mod managed;
 mod network;
+pub use list::{ListOrder, ListQuery};
 
 use std::{sync::Arc, time::Duration};
 
@@ -146,6 +148,7 @@ pub struct SandboxInfo {
 pub struct SandboxPage {
     pub items: Vec<SandboxInfo>,
     pub next_token: Option<String>,
+    pub total_running: Option<usize>,
 }
 
 /// Implementations must check `tenant` and current lifecycle authorization for
@@ -169,12 +172,7 @@ pub trait ControllerPort: Send + Sync + 'static {
     fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxInfo, PortError>;
     /// # Errors
     /// Returns a typed rejection for an invalid page token or storage failure.
-    fn list(
-        &self,
-        tenant: &str,
-        limit: Option<u32>,
-        next_token: Option<String>,
-    ) -> Result<SandboxPage, PortError>;
+    fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError>;
     /// # Errors
     /// Returns `NotFound` for a missing or foreign sandbox.
     fn kill(&self, tenant: &str, sandbox_id: &str) -> Result<(), PortError>;
@@ -325,14 +323,6 @@ async fn get_sandbox<P: ControllerPort>(
     ))
 }
 
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct ListQuery {
-    limit: Option<u32>,
-    #[serde(rename = "nextToken")]
-    next_token: Option<String>,
-}
-
 async fn list<P: ControllerPort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
@@ -340,11 +330,15 @@ async fn list<P: ControllerPort>(
 ) -> Result<Response, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     let Query(query) = query.map_err(|_| ApiFailure::BadRequest)?;
-    if query.limit.is_some_and(|limit| !(1..=100).contains(&limit)) {
-        return Err(ApiFailure::BadRequest);
-    }
-    let page = blocking(move || state.port.list(&tenant, query.limit, query.next_token)).await?;
+    query.validate().map_err(ApiFailure::Port)?;
+    let page = blocking(move || state.port.list(&tenant, query)).await?;
     let mut response = Json(page.items).into_response();
+    if let Some(total) = page.total_running {
+        response.headers_mut().insert(
+            HeaderName::from_static("x-total-running"),
+            HeaderValue::from_str(&total.to_string()).map_err(|_| ApiFailure::BadRequest)?,
+        );
+    }
     if let Some(token) = page.next_token {
         let token = HeaderValue::from_str(&token).map_err(|_| ApiFailure::BadRequest)?;
         response
