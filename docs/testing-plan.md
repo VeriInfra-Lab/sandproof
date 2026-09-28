@@ -102,6 +102,8 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [命令参数失败探针](../tests/system/sdk_command_arguments.py)通过原同步/异步 SDK 分别运行前台和后台 Start：未知用户、root/ubuntu 的不存在或普通文件 cwd，以及 ubuntu 无权访问的目录。未知用户须得到 `AuthenticationException`，目录问题须得到 `InvalidArgumentException`，不能把连接或普通期限超时算作参数拒绝。每次失败必须没有本次唯一副作用标记，随后同一 VM 的普通用户仍可按指定 cwd、环境变量执行；相同私有目录另以 root 正常执行作为权限对照。运行时提供与其他数据脚本相同的 URL 和环境凭据，本探针的 24 个拒绝场景及正常对照已在两台真实 VM 通过，物理资源、网络空间持有者和基础盘另经独立审计，精确提交见[版本基线](../references/v1-baseline.json)的 `command_arguments_acceptance`；不表示全部非法参数或超时组合已验收。
 
+[命令超时参数探针](../tests/system/sdk_command_timeouts.py)分别向原同步/异步 `commands.run`（前台/后台）和 `commands.connect` 传入省略、零、负数及超过 Connect 十位毫秒头上限的值，区分 `timeout` 与 `request_timeout`。同步流忽略 `request_timeout`，异步以它限制首事件等待；命令 `timeout` 控制整个流，`wait()` 沿用原流期限且没有独立超时参数。负数流期限由固定 SDK 转成 1 ms，不是参数拒绝；用保持 stdin 打开的命令阻止它提前成功。连接超时后必须通过同一 PID 正常关闭输入并取得完整退出结果，只启动一次。启动结果可能不明时只查询唯一标记对应的已有进程并终止，最终销毁本轮 VM，不重发 shell。运行方式同其他数据脚本；文件/一元 RPC 与沙箱寿命参数另有各自验收，不能由本探针推断。
+
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000 \
