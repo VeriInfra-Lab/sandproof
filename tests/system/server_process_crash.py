@@ -1,4 +1,4 @@
-"""Exit the real server after host PrepareVm/StopVm, before receipt commit.
+"""Exit the real server at exact pre-host or post-host lifecycle windows.
 
 Run only as root on an isolated Linux/KVM host with an approved debug build.
 All test resources use a new namespace and private directory. A failed run
@@ -23,6 +23,7 @@ import urllib.request
 
 
 EXIT_AFTER_HOST_ACTION = 86
+EXIT_BEFORE_HOST_ACTION = 87
 
 
 def free_loopback_port() -> int:
@@ -87,10 +88,13 @@ def wait_ready(
 def start_server(
     binary: Path, config: Path, log: Path, target: str | None,
     stop_gate: Path | None = None,
+    before_target: str | None = None,
 ) -> subprocess.Popen[bytes]:
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
     if target is not None:
         environment["SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION"] = target
+    if before_target is not None:
+        environment["SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION"] = before_target
     if stop_gate is not None:
         environment["SANDPROOF_TEST_STOP_GATE"] = str(stop_gate)
     with log.open("ab") as output:
@@ -115,14 +119,17 @@ def stop_server(process: subprocess.Popen[bytes] | None) -> None:
         process.wait(timeout=10)
 
 
-def interrupted_request(request: object, process: subprocess.Popen[bytes]) -> None:
+def interrupted_request(
+    request: object, process: subprocess.Popen[bytes],
+    expected_exit: int = EXIT_AFTER_HOST_ACTION,
+) -> None:
     try:
         response = request()
     except (urllib.error.URLError, http.client.HTTPException, OSError):
         pass
     else:
         raise AssertionError(f"request returned before injected exit: {response[0]}")
-    assert process.wait(timeout=30) == EXIT_AFTER_HOST_ACTION, process.returncode
+    assert process.wait(timeout=30) == expected_exit, process.returncode
 
 
 def exercise(args: argparse.Namespace) -> None:
@@ -185,7 +192,12 @@ def exercise(args: argparse.Namespace) -> None:
     process = None
     completed = False
     try:
-        process = start_server(binary, config, log, "prepare_vm")
+        before_host = args.window == "before-host"
+        process = start_server(
+            binary, config, log,
+            None if before_host else "prepare_vm",
+            before_target="open_fence" if before_host else None,
+        )
         wait_ready(opener, base_url, api_key, process)
         interrupted_request(
             lambda: fetch(
@@ -193,11 +205,23 @@ def exercise(args: argparse.Namespace) -> None:
                 {"templateID": "base", "timeout": 180, "allow_internet_access": False},
             ),
             process,
+            EXIT_BEFORE_HOST_ACTION if before_host else EXIT_AFTER_HOST_ACTION,
         )
-        record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
-        assert record["resource_id"] == vm_name
-        pid, ticks = record["pid"], record["start_time_ticks"]
-        assert process_start_ticks(pid) == ticks, "first VM is not running after server exit"
+        if before_host:
+            assert not list((root / "state/fences").glob("*.json")), (
+                "opening fence was written before injected exit"
+            )
+            assert not (root / "jails/.claims" / vm_name).exists(), (
+                "VM was launched before opening fence"
+            )
+            assert not Path(f"/run/netns/{vm_name}").exists(), (
+                "network was created before opening fence"
+            )
+        else:
+            record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
+            assert record["resource_id"] == vm_name
+            pid, ticks = record["pid"], record["start_time_ticks"]
+            assert process_start_ticks(pid) == ticks, "first VM is not running after server exit"
 
         process = start_server(binary, config, log, None)
         wait_ready(opener, base_url, api_key, process)
@@ -206,16 +230,30 @@ def exercise(args: argparse.Namespace) -> None:
         items = json.loads(body)
         assert len(items) == 1 and items[0]["state"] == "running", items
         sandbox_id = items[0]["sandboxID"]
+        if before_host:
+            record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
+            assert record["resource_id"] == vm_name
+            pid, ticks = record["pid"], record["start_time_ticks"]
         assert process_start_ticks(pid) == ticks, "server restart replaced the VM"
         stop_server(process)
 
-        process = start_server(binary, config, log, "stop_vm")
+        process = start_server(
+            binary, config, log,
+            None if before_host else "stop_vm",
+            before_target="stop_vm" if before_host else None,
+        )
         wait_ready(opener, base_url, api_key, process)
         interrupted_request(
             lambda: fetch(opener, base_url, "DELETE", f"/sandboxes/{sandbox_id}", api_key),
             process,
+            EXIT_BEFORE_HOST_ACTION if before_host else EXIT_AFTER_HOST_ACTION,
         )
-        assert process_start_ticks(pid) != ticks, "recorded VM survived StopVm"
+        if before_host:
+            assert process_start_ticks(pid) == ticks, "VM stopped before injected exit"
+            fence = root / "state/fences" / f"{sandbox_id}.json"
+            assert json.loads(fence.read_text())["terminal"] is True, "terminal fence not durable"
+        else:
+            assert process_start_ticks(pid) != ticks, "recorded VM survived StopVm"
 
         process = start_server(binary, config, log, None)
         wait_ready(opener, base_url, api_key, process)
@@ -230,8 +268,9 @@ def exercise(args: argparse.Namespace) -> None:
         print(json.dumps({
             "namespace": namespace,
             "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
-            "prepare_receipt_lost": "recovered without second VM",
-            "stop_receipt_lost": "recovered after exact stop and cleanup",
+            "window": args.window,
+            "create": "recovered the original VM after the selected crash",
+            "stop": "published destruction only after exact stop and cleanup",
             "scope": "real server process exit; one VM; no public egress or arbitrary-position SIGKILL",
         }))
     finally:
@@ -251,4 +290,5 @@ if __name__ == "__main__":
     parser.add_argument("--rootfs", required=True, type=Path)
     parser.add_argument("--uid-base", required=True, type=int)
     parser.add_argument("--scratch-parent", required=True, type=Path)
+    parser.add_argument("--window", choices=("before-host", "after-host"), default="after-host")
     exercise(parser.parse_args())

@@ -135,6 +135,25 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+            // Debug-only deterministic crash after the outbox dispatch claim,
+            // before any host side effect. Recovery must not assume the
+            // action was either executed or safely retryable.
+            #[cfg(debug_assertions)]
+            {
+                let target = std::env::var("SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION").ok();
+                if matches!(
+                    (target.as_deref(), action.command.command()),
+                    (
+                        Some("open_fence"),
+                        core::Command::InstallFence {
+                            terminal: false,
+                            ..
+                        }
+                    ) | (Some("stop_vm"), core::Command::StopVm { .. })
+                ) {
+                    std::process::exit(87);
+                }
+            }
             // Test-only, one-shot synchronization point after the durable
             // revocation/fence and before the physical stop. It lets a second
             // HTTP kill arrive while the first owns the lifecycle lock.
