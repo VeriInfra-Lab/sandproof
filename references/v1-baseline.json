@@ -175,5 +175,29 @@
     "sdk_difference": "Async background wait can discard the underlying ConnectError chain. The probe accepts only the exact pinned SDK chunk-EOF rendering, with a smaller-output success control and independent health/no-replay checks. Composition tests reject ordinary deadlines, lookalike messages, authentication errors and a deadline cause.",
     "residuals": "successful VM and earlier classifier-failure VM independently audited: exact processes stopped; private jails/netns/cgroups absent; base hash unchanged",
     "limits": "Selected manual async KVM acceptance under 1 vCPU / 512 MiB guest / 768 MiB VMM limits; excludes final deployment budgets, concurrent slow transfers, full timeout parameter combinations and kill/expiry/revocation races."
+  },
+  "transfer_interruption_acceptance": {
+    "test": "tests/system/transfer_interruption.py",
+    "commit": "3a25bf6800ecd4cce86d486c292cf12dffa05708",
+    "script_sha256": "558e84a169ce86bde51af31f9903735c77bf63e9b2832a72bbf6a7d1fe5856cf",
+    "server_sha256": "f5859d5cdd530fc3fe039186e9f23cc62fea55d84f1bb32ca062fc939c4c7f65",
+    "host_and_artifacts": "same Linux/KVM host, Firecracker/jailer and fixed base fingerprints as host_resource_acceptance; server rebuilt at this exact commit",
+    "configuration": {
+      "guest_memory_mib": 512,
+      "host_memory_max_bytes": 805306368,
+      "vcpu_count": 1,
+      "file_upload_bytes": 67108864,
+      "file_download_bytes": 100663296,
+      "idle_seconds": 30,
+      "max_transfers": 16,
+      "max_transfers_per_vm": 8,
+      "control_reserve": 1
+    },
+    "regression": "before the fix, kill returned successfully but a quiet command and paused upload remained open; API authority and cancellation subscription now share one management lock, and accepted kill/expiry cancels only that sandbox routes",
+    "result": "passed eight original SDK cases: sync/async x upload/download x kill/expiry. Each upload had 262144 bytes observed in the guest before interruption, then failed authentication after release; each 64 MiB download received a nonzero prefix and failed with RemoteProtocolError. Old-token health/files/Start rejected; independent control VM remained usable.",
+    "sdk_difference": "quiet command cancellation is rendered by pinned SDK as TimeoutException with the previously verified transport EOF shape; ordinary deadline errors are explicitly rejected, not counted as successful revocation",
+    "normal_regression": "same committed server passed sdk_server_smoke.py and sync/async sdk_data_contract.py using legacy configuration",
+    "residuals": "ten interruption VMs and four legacy VMs had live PID/start-time/cgroup identity and limits sampled; before each service exited, exact VM processes were stopped, private jails/netns/cgroups absent and no process held a recorded network namespace inode. Base hash unchanged. Earlier failed and first corrected runs separately audited after tests ended.",
+    "limits": "selected manual acceptance; generous explicit idle/admission test budgets separate lifecycle from transport timeouts. Does not cover all timeout arguments, concurrent lifecycle/restart races, host filesystem exhaustion or final budgets tied to frozen #13 tasks. No new Lean coverage."
   }
 }
