@@ -29,9 +29,11 @@ ENV = {"SP_DATA_VALUE": "spaces and 中文"}
 
 
 def validate_command(result, directory, user):
-    assert (result.stdout, result.stderr, result.exit_code) == (
+    actual = (result.stdout, result.stderr, result.exit_code)
+    expected = (
         f"{directory}\n{ENV['SP_DATA_VALUE']}\n{user}\n", "data-stderr\n", 0,
     )
+    assert actual == expected, {"user": user, "actual": actual, "expected": expected}
 
 
 def validate_entries(entries, directory):
@@ -51,6 +53,9 @@ def file_entries(directory):
 
 
 def sync_case(sandbox, directory, user):
+    home = sandbox.commands.run("printf '%s' \"$HOME\"", user=user).stdout
+    default_cwd = sandbox.commands.run("pwd", user=user)
+    assert (default_cwd.stdout, default_cwd.stderr) == (home + "\n", "")
     assert sandbox.files.make_dir(directory, user=user)
     written = sandbox.files.write_files(file_entries(directory), user=user)
     assert {entry.path for entry in written} == {f"{directory}/{name}" for name in FILES}
@@ -105,6 +110,9 @@ def sync_case(sandbox, directory, user):
 
 
 async def async_case(sandbox, directory, user):
+    home = (await sandbox.commands.run("printf '%s' \"$HOME\"", user=user)).stdout
+    default_cwd = await sandbox.commands.run("pwd", user=user)
+    assert (default_cwd.stdout, default_cwd.stderr) == (home + "\n", "")
     assert await sandbox.files.make_dir(directory, user=user)
     written = await sandbox.files.write_files(file_entries(directory), user=user)
     assert {entry.path for entry in written} == {f"{directory}/{name}" for name in FILES}

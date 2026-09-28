@@ -1,0 +1,54 @@
+{
+  "profile": "ubuntu-24.04-envd-0.9.0-x86_64",
+  "squashfs": {
+    "url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20260715-1faca2f70e7a-0/x86_64/ubuntu-24.04.squashfs",
+    "sha256": "b8547327e5d19f4f2b90ed95fc62f2d8d54491e4a0009358fdd9a39f399a0566",
+    "bytes": 106815488
+  },
+  "packages": {
+    "url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20260715-1faca2f70e7a-0/x86_64/ubuntu-24.04.manifest",
+    "sha256": "2c0191925a1f1a9cd9253ae80dd37ee6992325d0055466cfa3b7255aa70a8ff2",
+    "bytes": 6879
+  },
+  "kernel": {
+    "version": "6.1.176",
+    "url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20260715-1faca2f70e7a-0/x86_64/vmlinux-6.1.176",
+    "sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+    "bytes": 44649272
+  },
+  "envd": {
+    "version": "0.9.0",
+    "source_commit": "f455fd58fa3f289e78ce1de690c35968d8d29322",
+    "source_url": "https://api.github.com/repos/e2b-dev/runtime/tarball/f455fd58fa3f289e78ce1de690c35968d8d29322",
+    "go_version": "go1.27.1",
+    "go_url": "https://go.dev/dl/go1.27.1.linux-amd64.tar.gz",
+    "go_sha256": "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445",
+    "build_directory": "packages/envd",
+    "build_env": {
+      "GOENV": "off",
+      "GOFLAGS": "",
+      "GOTOOLCHAIN": "local",
+      "GOAMD64": "v1",
+      "GOEXPERIMENT": "",
+      "CGO_ENABLED": "0",
+      "GOOS": "linux",
+      "GOARCH": "amd64"
+    },
+    "build_args": [
+      "build",
+      "-trimpath",
+      "-buildvcs=false",
+      "-ldflags",
+      "-X=main.commitSHA=f455fd5 -s -w -buildid="
+    ],
+    "sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+    "bytes": 11505788,
+    "source_sha256": "f6e9d75f9cc66f9254f34c14608911261e061031c2e114d454c90d99e1638d79"
+  },
+  "image": {
+    "bytes": 1073741824,
+    "uuid": "b8547327-e5d1-4f4f-ab90-ed95fc62f2d8",
+    "source_date_epoch": 1784084814,
+    "label": "sandproof-base"
+  }
+}

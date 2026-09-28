@@ -1336,7 +1336,10 @@ impl LinuxWorker {
             thread::sleep(Duration::from_millis(100));
         }
         let token = self.secret(sandbox)?.token;
-        let init = serde_json::json!({"accessToken": token, "defaultUser": "root", "defaultWorkdir": "/root"});
+        // Leave cwd to envd's per-user home resolution. A global /root default
+        // makes an otherwise valid non-root command fail before exec when the
+        // caller selects user but omits cwd. Explicit request cwd still wins.
+        let init = serde_json::json!({"accessToken": token, "defaultUser": "root"});
         let body = serde_json::to_vec(&init)?;
         if Self::guest_status(&name, "POST", "/init", Some(&body))? != "204" {
             return Err("envd rejected authenticated initialization".into());

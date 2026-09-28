@@ -50,7 +50,7 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 - SDK/网关组合测试：同一脚本在 Linux 上还启用 `sdk-contract-tests`，让[原 SDK 调用集](../tests/compat/gateway_sdk.py)经过[实际 Rust 网关的请求分类、请求体处理和 HTTP 转发代码](../sandbox-server/src/gateway/sdk_tests.rs)。除了复用 SDK 的命令、后台句柄、退出码、文件和目录用例，还验证上传 8 MiB 和下载 32 MiB 的前一字节/恰好/多一字节边界、大命令输出、管理 API key 不被转发、失败后继续使用。上游是合成 envd，下游是真实 SDK；不覆盖 `handle` 的鉴权、命名空间 relay 或 VM。夹具只编入测试二进制，正式服务没有旁路启动模式。非 Linux 会明确报告组合测试未运行，不能用 SDK 单层通过代替。
 - 显式流式配置另运行同一 SDK 调用集：使用仅供测试的 64 MiB 上传、96 MiB 下载预算，分别覆盖已知/未知长度的空文件、少一字节/恰好/多一字节；验证 415 压缩拒绝、identity 协商、并发 429 后仍可 health、输入 408 和下载中途空闲失败、失败后正常请求。使用明确的事件屏障保持在途请求，不靠随机 sleep。组件测试另用暂停时钟验证写阻塞超时与安静命令的区别，并以生产者等待上游收到第一块的屏障证明上传不整包缓冲。组合测试记录 Rust 网关进程 RSS 高水位（不包含 Python 合成 envd）；这是观测证据，不是整个部署的内存上界或实机磁盘证据。上传/响应体与上游连接均结束后才释放并发名额，夹具退出时等待连接任务收尾。
 - 固定 SDK 会把部分 Connect 流的 HTTP EOF 包装成 `TimeoutException`。组合测试与实机脚本共用错误分类，只有底层 `ConnectError(UNAVAILABLE)` 的原因确为传输读错误时才将它视为断流；普通期限超时、鉴权失败和测试异常不能算作限流通过。这个 SDK 错误映射差异不表示沙箱已到期，失败后仍须另行验证可用性。
-- [独立实机脚本](../tests/system/gateway_stream_limits.py)：在原系统测试相同的隔离服务环境，沿用 `retries=0` 配置，使用 `SANDPROOF_TEST_API_KEY` 和显式 `--api-url`、`--sandbox-url` 运行。它创建自己的禁网沙箱，检查 32 MiB 前一字节/恰好/多一字节的文件下载、超大命令输出和主动断线后同 PID 重连；用 FIFO 同步断线时机，用来宾标记核对副作用只观察到一次，每次失败后验证沙箱仍可执行命令，最后销毁本轮沙箱。启动需允许 300 秒寿命，来宾须有现有探针使用的 shell/coreutils。此新增实机脚本尚待在 KVM 上验收，不代替宿主资源残留检查或完整 S11/S12。
+- [独立实机脚本](../tests/system/gateway_stream_limits.py)：在原系统测试相同的隔离服务环境，沿用 `retries=0` 配置，使用 `SANDPROOF_TEST_API_KEY` 和显式 `--api-url`、`--sandbox-url` 运行。它创建自己的禁网沙箱，检查 32 MiB 前一字节/恰好/多一字节的文件下载、超大命令输出和主动断线后同 PID 重连；用 FIFO 同步断线时机，用来宾标记核对副作用只观察到一次，每次失败后验证沙箱仍可执行命令，最后销毁本轮沙箱。启动需允许 300 秒寿命，来宾须有现有探针使用的 shell/coreutils。该脚本已在固定新 base 上执行选定 KVM 场景；证据绑定见[版本基线](../references/v1-baseline.json)，不代替完整 S11/S12。
 
 实机脚本运行示例（在已配置服务的测试机上执行，API key 由环境提供）：
 
@@ -59,11 +59,11 @@ uv run --locked --project tests/compat python tests/system/gateway_stream_limits
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000
 ```
 
-验收显式 `data_transfer` 配置时，在同一命令追加 `--file-upload-bytes`、`--file-download-bytes`、`--command-output-bytes`，值须与待测服务配置一致；不能把测试夹具值当作已测定的部署值。新增上传场景通过原 SDK 发送可定位文件和不可定位流，覆盖零/上限前/上限/超限；成功后核对来宾文件信息和 SHA-256，下载同样校验内容。已知长度拒绝不得创建文件，分块拒绝允许部分写入且不重传。脚本按本轮路径删除测试文件并销毁自己的沙箱；仍需宿主侧独立观察进程、网络空间、cgroup、磁盘残留，以及磁盘满、断线、到期和 kill 竞争。扩展脚本尚未在 KVM 上执行，不能由组合测试通过替代。
+验收显式 `data_transfer` 配置时，在同一命令追加 `--file-upload-bytes`、`--file-download-bytes`、`--command-output-bytes`，值须与待测服务配置一致；不能把测试夹具值当作已测定的部署值。新增上传场景通过原 SDK 发送可定位文件和不可定位流，覆盖零/上限前/上限/超限；成功后核对来宾文件信息和 SHA-256，下载同样校验内容。已知长度拒绝不得创建文件，分块拒绝允许部分写入且不重传。脚本按本轮路径删除测试文件并销毁自己的沙箱；仍需宿主侧独立观察进程、网络空间、cgroup、磁盘残留，以及磁盘满、断线、到期和 kill 竞争。扩展脚本已在真实 KVM 使用 64 MiB 上传、96 MiB 下载测试预算通过上述边界和内容检查；宿主独立观察确认本轮精确进程停止，网络空间、cgroup 和私有 jail 无残留，基础盘指纹不变。服务进程本轮 RSS 高水位约 15.4 MiB；这不包含所有 relay/来宾资源，也不是总内存上界或最终部署预算。
 
 同步与异步的数据调用合同复用同一合成 envd 和真实 Rust 网关：检查 cwd、含空格/Unicode 的命令 envs、user 的鉴权头、stdout/stderr、非零退出；后台连接和终止只发送已有 PID，不重发 Start；Stat、递归 ListDir 请求和批量上传保留路径及字节。批量收到合成 507 时抛出 `NotEnoughSpaceException`，已发起的上传不重发；同步 octet-stream 逐项发送，第二项失败后不发送第三项，而异步 SDK 并发发送，其他项可能仍在写入。用屏障确保并发请求均已到达再返回故障，不承诺批量回滚。这验证错误传播，不证明真实 ENOSPC。异步 SDK 的文件流使用分块传输，另经流式配置覆盖大文件边界和失败恢复；不能只以同步 SDK 的已知长度结果推断异步行为。
 
-[完整服务数据脚本](../tests/system/sdk_data_contract.py)通过原 SDK 的 create/connect/kill 创建自己的沙箱，分别以 root 和固定 base 的普通用户运行同步/异步调用。它上传包含文本、二进制和空文件的多层目录，检查返回路径、文件信息、递归列表、普通/流式下载及 SHA-256；用 FIFO 和异步输出回调同步断线时机，确认重连同一 PID、只写一次标记，并验证终止、后续调用和销毁后的旧令牌拒绝。它没有绕过管理链直接构造来宾客户端；尚待真实 KVM 执行，不能把源文件存在或合成合同通过记作完整服务验收。时间参数的省略/零/负值/超限、销毁期间的授权竞争和宿主残留仍需独立用例。
+[完整服务数据脚本](../tests/system/sdk_data_contract.py)通过原 SDK 的 create/connect/kill 创建自己的沙箱，分别以 root 和固定 base 的普通用户运行同步/异步调用。它上传包含文本、二进制和空文件的多层目录，检查返回路径、文件信息、递归列表、普通/流式下载及 SHA-256；用 FIFO 和异步输出回调同步断线时机，确认重连同一 PID、只写一次标记，并验证终止、后续调用和销毁后的旧令牌拒绝。它没有绕过管理链直接构造来宾客户端；已用 root/ubuntu 在真实 KVM 的默认与显式流式配置执行，并覆盖省略 cwd 使用所选用户 home、显式 cwd 优先。时间参数的省略/零/负值/超限、销毁期间的授权竞争和宿主残留仍需独立用例。
 
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
@@ -89,6 +89,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 - 在线 E2B 和模型评测需要单独的凭据、资源和费用预算，不加入普通 PR 的默认检查。
 
 暂停恢复和安全竞争用 S 类专门测试扩展，不能用 Terminal-Bench 通过代替。形式化阶段再证明声明范围内任意历史的性质；V1 测试报告只记录实验结果。
+
+固定 base 制备按[运行层配方](../sandbox-runtime/README.md)和[输入清单](../tests/system/base-inputs.json)记录源码、工具链、二进制和镜像指纹。接受新 profile 前须验证错误指纹/已有输出/路径逃逸被拒绝，检查安装内容、登录配置与文件系统，再以新镜像运行两 VM 私有根盘、原 SDK、停止及残留场景；组装成功不能代替 S03、S10、S11 或 #13 任务初始化。历史 CI 镜像的结果不能直接背书新 profile。
 
 ## 4. 独立运行宿主预检
 
