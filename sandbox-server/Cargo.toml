@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# Compiles only the test harness; never exposes an unauthenticated server mode.
+sdk-contract-tests = []
+
 [target.'cfg(target_os = "linux")'.dependencies]
 sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
 sandproof-api = { path = "../sandbox-api" }
