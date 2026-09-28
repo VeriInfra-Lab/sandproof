@@ -902,5 +902,67 @@
     "residuals": "all sixteen durable rows Destroyed; exact PID/start identities stopped, jails/netns/cgroups absent and no namespace holders before each service exit; live cgroup identity/membership/limits sampled; base SHA unchanged. Network VM uplinks/nft and Outside echo resources removed; dedicated host netns removed, shared filter hash and forwarding unchanged.",
     "failed_attempts": [],
     "limits": "static common inputs and assertions for the selected network/detail subset; synthetic replies do not prove packet behavior. No real Internet endpoint, advanced DNS/IPv6, production Rust or proof change. Other management/fault evidence retains its own scope; owner lifetime/startup corrections and #13 task inputs/budgets remain separate."
+  },
+  "shared_sdk_management_acceptance": {
+    "commit": "939cf8bea49df2d590fe7456af8b39731de1a4c7",
+    "shared_samples": "tests/compat/sdk_management_samples.py",
+    "shared_samples_sha256": "d535412748790077f7ae1d17a6211775e329466ebc89e2b603913cf5a614f686",
+    "real_tests": {
+      "sdk_create_context.py": "2d9e69e7855a91ebe0d852a769c5338dc22ac6fde18650362504adad178a42bc",
+      "sdk_list_queries.py": "6d05ec64a8bf41ece81cb8327b272bd51ba11c87e445462b5d2d0c57fe2b775b",
+      "sdk_lifetime_values.py": "1d7fd42e1e751b4dcc7f19ad11b1c5b94073cd53d984dd1b9f314d5d2ba9ce9b"
+    },
+    "synthetic": "18 wire tests and complete SDK/gateway suite passed: sync/async shared create env/metadata and detail roundtrip, six lifetime parameters for create/connect/set_timeout with omitted required argument/no request and exact 400 mapping, kill True/False, fifteen query cases with exact query encoding/opaque pagination and list/detail fields",
+    "sample_preservation": "one-off extraction/execution of prior test fixture declarations verified both creation contexts, six lifetime values and all fifteen query cases exactly match the pre-refactor probes; fixed expected records, no filtering engine or VM state model",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "production Rust and Cargo manifests/lock verified unchanged before all four real runs",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "host_and_configuration": "Linux 6.8.0-1065-azure/KVM; fixed Firecracker/jailer 1.16.1, envd 0.9.0 and routed base from network_clients_acceptance; SDK 2.51.0/Python 3.13; explicit no-internet; 1 vCPU/512 MiB guest, 1 CPU/768 MiB cgroup, 1 GiB private root; streaming 64/96 MiB budgets are test settings",
+    "commands": [
+      "pinned-SDK Python tests/system/sdk_create_context.py --api-url <own-loopback> --sandbox-url <same-service> --restart-dir <own-barrier>",
+      "pinned-SDK Python tests/system/sdk_list_queries.py --api-url <own-loopback> --sandbox-url <same-service>",
+      "pinned-SDK Python tests/system/sdk_lifetime_values.py --api-url <own-loopback> --sandbox-url <same-service> --supervisor-dir <own-barrier> --mode values --default-timeout 300 --max-timeout 600 --max-lifetime 600",
+      "pinned-SDK Python tests/system/sdk_lifetime_values.py --api-url <own-loopback> --sandbox-url <same-service> --supervisor-dir <own-barrier> --mode total --default-timeout 300 --max-timeout 600 --max-lifetime 12"
+    ],
+    "credentials": "test API keys supplied only through environment and root-only config; never logged",
+    "runs": [
+      {
+        "scenario": "context",
+        "mode": "streaming",
+        "vm_count": 4,
+        "grouped_cases": 62,
+        "probe_and_audit_seconds": 20.311,
+        "wrapper_sha256": "7f17087ec3aa20a3d8da472d88a730c4ff2b3f40f50ad6fc012798d6d96913d8"
+      },
+      {
+        "scenario": "list",
+        "mode": "streaming",
+        "vm_count": 8,
+        "grouped_cases": 64,
+        "probe_and_audit_seconds": 42.81,
+        "wrapper_sha256": "49fa59a2595b857c6c7f70571d2bb6678399050d0d4307090d7bd5cc78fa96f9"
+      },
+      {
+        "scenario": "lifetime-values",
+        "mode": "streaming",
+        "vm_count": 18,
+        "grouped_cases": 72,
+        "probe_and_audit_seconds": 105.902,
+        "wrapper_sha256": "6f7741190c44eab769cf011d31180204d17452997c1579fc98d7d630335699e8"
+      },
+      {
+        "scenario": "lifetime-total",
+        "mode": "streaming",
+        "vm_count": 2,
+        "grouped_cases": 2,
+        "probe_and_audit_seconds": 48.552,
+        "wrapper_sha256": "6f7741190c44eab769cf011d31180204d17452997c1579fc98d7d630335699e8"
+      }
+    ],
+    "result": "200 grouped checks across 32 VMs: create env/metadata isolation and two same-VM-pair service restarts; full existing list/filter/order/pagination/cursor/foreign/raw-boundary matrix; class/instance lifetime defaults, shortening/extension/clamping/rejections and automatic nonpositive expiry; two 12-second total-lifetime/same-VM restart groups. Four service restarts total, no replay of ambiguous creates.",
+    "residuals": "32 durable rows Destroyed; exact recorded PID/start identities stopped, private jails/netns/cgroups absent and no namespace holders before each final service exit; live cgroup identity/membership/limits sampled; base fingerprint unchanged in all four runs; cgroup parent empty after batch",
+    "failed_attempts": [],
+    "limits": "shared samples do not emulate server state, filtering, clock behavior or guest environments; these still execute on real VMs. No production Rust/proof changes. Lifetime/startup owner corrections #89/#84 are not in this commit; #13 frozen task inputs, initialization and final budgets remain outstanding. Prior non-finite/exhaustive fault and older-image evidence keeps its original scope."
   }
 }
