@@ -21,6 +21,7 @@ use axum::{
 };
 use sandproof_controller_service::CreateOptions;
 use serde::{Deserialize, Serialize};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 const MAX_JSON_BYTES: usize = 64 * 1024;
 // A client may choose a shorter timeout. Crossing this deadline never
@@ -140,12 +141,56 @@ pub struct SandboxInfo {
     #[serde(rename = "diskSizeMB")]
     pub disk_size_mb: u32,
     pub state: String,
+    pub domain: String,
+    #[serde(rename = "allowInternetAccess")]
+    pub allow_internet_access: bool,
+    #[serde(rename = "volumeMounts")]
+    pub volume_mounts: Vec<SandboxVolumeMount>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct SandboxVolumeMount {
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SandboxPage {
     pub items: Vec<SandboxInfo>,
     pub next_token: Option<String>,
+    pub total_running: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub enum ListOrder {
+    Asc,
+    #[default]
+    Desc,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ListRequest {
+    pub limit: u32,
+    pub next_token: Option<String>,
+    pub metadata: std::collections::BTreeMap<String, String>,
+    pub include_running: bool,
+    pub started_after_ns: Option<i128>,
+    pub template: Option<String>,
+    pub order: ListOrder,
+}
+
+impl Default for ListRequest {
+    fn default() -> Self {
+        Self {
+            limit: 100,
+            next_token: None,
+            metadata: std::collections::BTreeMap::new(),
+            include_running: true,
+            started_after_ns: None,
+            template: None,
+            order: ListOrder::Desc,
+        }
+    }
 }
 
 /// Implementations must check `tenant` and current lifecycle authorization for
@@ -169,12 +214,7 @@ pub trait ControllerPort: Send + Sync + 'static {
     fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxInfo, PortError>;
     /// # Errors
     /// Returns a typed rejection for an invalid page token or storage failure.
-    fn list(
-        &self,
-        tenant: &str,
-        limit: Option<u32>,
-        next_token: Option<String>,
-    ) -> Result<SandboxPage, PortError>;
+    fn list(&self, tenant: &str, request: ListRequest) -> Result<SandboxPage, PortError>;
     /// # Errors
     /// Returns `NotFound` for a missing or foreign sandbox.
     fn kill(&self, tenant: &str, sandbox_id: &str) -> Result<(), PortError>;
@@ -331,6 +371,92 @@ struct ListQuery {
     limit: Option<u32>,
     #[serde(rename = "nextToken")]
     next_token: Option<String>,
+    metadata: Option<String>,
+    state: Option<String>,
+    #[serde(rename = "startedAfter")]
+    started_after: Option<String>,
+    template: Option<String>,
+    order: Option<String>,
+}
+
+fn decode_metadata_component(encoded: &str) -> Result<String, ApiFailure> {
+    let bytes = encoded.as_bytes();
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte == b'%'
+            && (index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit())
+        {
+            return Err(ApiFailure::BadRequest);
+        }
+    }
+    percent_encoding::percent_decode_str(&encoded.replace('+', " "))
+        .decode_utf8()
+        .map(std::borrow::Cow::into_owned)
+        .map_err(|_| ApiFailure::BadRequest)
+}
+
+fn list_request(query: ListQuery) -> Result<ListRequest, ApiFailure> {
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=100).contains(&limit) {
+        return Err(ApiFailure::BadRequest);
+    }
+    let mut metadata = std::collections::BTreeMap::new();
+    if let Some(encoded) = query.metadata {
+        if encoded.len() > MAX_JSON_BYTES {
+            return Err(ApiFailure::BadRequest);
+        }
+        if !encoded.is_empty() && encoded.split('&').any(|pair| pair.split('=').count() != 2) {
+            return Err(ApiFailure::BadRequest);
+        }
+        for (key, value) in form_urlencoded::parse(encoded.as_bytes()) {
+            let key = decode_metadata_component(&key)?;
+            let value = decode_metadata_component(&value)?;
+            if key.is_empty() || metadata.insert(key, value).is_some() {
+                return Err(ApiFailure::BadRequest);
+            }
+        }
+    }
+    let include_running = match query.state.as_deref() {
+        None => true,
+        Some(states) => {
+            let mut running = false;
+            let mut paused = false;
+            for state in states.split(',') {
+                match state {
+                    "running" if !running => running = true,
+                    "paused" if !paused => paused = true,
+                    _ => return Err(ApiFailure::BadRequest),
+                }
+            }
+            running
+        }
+    };
+    let order = match query.order.as_deref() {
+        None | Some("desc") => ListOrder::Desc,
+        Some("asc") => ListOrder::Asc,
+        _ => return Err(ApiFailure::BadRequest),
+    };
+    let started_after_ns = query
+        .started_after
+        .map(|value| {
+            OffsetDateTime::parse(&value, &Rfc3339)
+                .map(OffsetDateTime::unix_timestamp_nanos)
+                .map_err(|_| ApiFailure::BadRequest)
+        })
+        .transpose()?;
+    if query.template.as_ref().is_some_and(String::is_empty) {
+        return Err(ApiFailure::BadRequest);
+    }
+    Ok(ListRequest {
+        limit,
+        next_token: query.next_token,
+        metadata,
+        include_running,
+        started_after_ns,
+        template: query.template,
+        order,
+    })
 }
 
 async fn list<P: ControllerPort>(
@@ -340,16 +466,21 @@ async fn list<P: ControllerPort>(
 ) -> Result<Response, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     let Query(query) = query.map_err(|_| ApiFailure::BadRequest)?;
-    if query.limit.is_some_and(|limit| !(1..=100).contains(&limit)) {
-        return Err(ApiFailure::BadRequest);
-    }
-    let page = blocking(move || state.port.list(&tenant, query.limit, query.next_token)).await?;
+    let request = list_request(query)?;
+    let page = blocking(move || state.port.list(&tenant, request)).await?;
     let mut response = Json(page.items).into_response();
     if let Some(token) = page.next_token {
         let token = HeaderValue::from_str(&token).map_err(|_| ApiFailure::BadRequest)?;
         response
             .headers_mut()
             .insert(HeaderName::from_static("x-next-token"), token);
+    }
+    if let Some(total) = page.total_running {
+        let value =
+            HeaderValue::from_str(&total.to_string()).map_err(|_| ApiFailure::BadRequest)?;
+        response
+            .headers_mut()
+            .insert(HeaderName::from_static("x-total-running"), value);
     }
     Ok(response)
 }
@@ -376,9 +507,6 @@ async fn set_timeout<P: ControllerPort>(
 ) -> Result<StatusCode, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
-    if !valid_timeout(Some(request.timeout)) {
-        return Err(ApiFailure::BadRequest);
-    }
     blocking(move || {
         state
             .port

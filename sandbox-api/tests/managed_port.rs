@@ -12,7 +12,8 @@ use axum::{
 };
 use sandbox_controller_core as core;
 use sandproof_api::{
-    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, PortError,
+    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListOrder, ListRequest,
+    PortError,
     managed::{HostAdapter, ManagedConfig, ManagedPort},
     router,
 };
@@ -396,6 +397,7 @@ fn config() -> ManagedConfig {
             max_disk_bytes_per_tenant: 1_000,
             cleanup_reserve_bytes: 1_000,
             max_timeout_secs: 86_400,
+            max_total_lifetime_secs: 86_400,
         },
         disk_bytes: 1_000,
         file_policy_digest: core::PolicyDigest(1),
@@ -1303,7 +1305,10 @@ fn idle_recovery_does_not_revisit_reclaimed_history_or_change_live_authority() {
         assert_eq!(report.unresolved_sandboxes, 0);
         assert_eq!(prepare_calls.load(Ordering::SeqCst), 4);
         assert_eq!(stop_calls.load(Ordering::SeqCst), 3);
-        assert_eq!(port.list("1", None, None).unwrap().items.len(), 1);
+        assert_eq!(
+            port.list("1", ListRequest::default()).unwrap().items.len(),
+            1
+        );
         assert!(
             port.authorize_data(
                 &live.envd_access_token,
@@ -1359,13 +1364,21 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
         port.kill("2", &created.sandbox_id),
         Err(PortError::NotFound)
     );
-    assert!(port.list("2", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("2", ListRequest::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 
     let info = port.get("1", &created.sandbox_id).unwrap();
     assert_eq!(info.state, "running");
     assert!(info.started_at.ends_with('Z'));
     assert!(info.end_at.ends_with('Z'));
-    assert_eq!(port.list("1", None, None).unwrap().items, vec![info]);
+    assert_eq!(
+        port.list("1", ListRequest::default()).unwrap().items,
+        vec![info]
+    );
     assert_eq!(
         port.connect("1", &created.sandbox_id, ConnectRequest { timeout: None })
             .unwrap()
@@ -1382,7 +1395,12 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
         Err(PortError::NotFound)
     );
     assert_eq!(port.get("1", &created.sandbox_id), Err(PortError::NotFound));
-    assert!(port.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("1", ListRequest::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1511,6 +1529,68 @@ fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
     port.kill("1", &replacement.sandbox_id).unwrap();
     assert!(!*other_route.revocation.borrow());
     port.kill("2", &second.sandbox_id).unwrap();
+}
+
+#[test]
+fn omitted_connect_renews_to_three_hundred_seconds_without_shortening() {
+    let (_directory, port) = setup();
+    let mut input = request();
+    input.timeout = Some(5);
+    let sandbox = port.create("1", input).unwrap();
+    let before = port.get("1", &sandbox.sandbox_id).unwrap();
+    port.connect("1", &sandbox.sandbox_id, ConnectRequest::default())
+        .unwrap();
+    let after = port.get("1", &sandbox.sandbox_id).unwrap();
+    assert!(after.end_at > before.end_at);
+    let start = time::OffsetDateTime::parse(
+        &after.started_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    let end = time::OffsetDateTime::parse(
+        &after.end_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    assert!(end - start >= time::Duration::seconds(300));
+    port.kill("1", &sandbox.sandbox_id).unwrap();
+}
+
+#[test]
+fn nonpositive_timeout_revokes_only_its_sandbox_before_expiry_stop() {
+    use sandproof_api::managed::DataKind;
+    for seconds in [0, -7] {
+        let (_directory, port) = setup();
+        let expiring = port.create("1", request()).unwrap();
+        let unaffected = port.create("2", request()).unwrap();
+        let old_route = port
+            .data_permit(&expiring.envd_access_token, DataKind::Exec)
+            .unwrap();
+        let other_route = port
+            .data_permit(&unaffected.envd_access_token, DataKind::Exec)
+            .unwrap();
+        assert_eq!(port.set_timeout("1", &expiring.sandbox_id, seconds), Ok(()));
+        assert!(*old_route.revocation.borrow());
+        assert!(!*other_route.revocation.borrow());
+        assert_eq!(
+            port.get("1", &expiring.sandbox_id),
+            Err(PortError::NotFound)
+        );
+        assert!(
+            port.data_permit(&expiring.envd_access_token, DataKind::FileRead)
+                .is_err()
+        );
+        assert_eq!(port.expire_due().unwrap(), 1);
+        assert_eq!(
+            port.get("1", &expiring.sandbox_id),
+            Err(PortError::NotFound)
+        );
+        assert_eq!(
+            port.get("2", &unaffected.sandbox_id).unwrap().state,
+            "running"
+        );
+        port.kill("2", &unaffected.sandbox_id).unwrap();
+    }
 }
 
 #[test]
@@ -1684,7 +1764,12 @@ fn physical_disk_shortage_rejects_before_any_admission() {
         ..FakeHost::default()
     });
     assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
-    assert!(port.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("1", ListRequest::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -1743,7 +1828,7 @@ async fn credential_write_failure_after_admission_is_unknown_and_recovers_withou
     let recovery = port.recover_on_startup().unwrap();
     assert_eq!(recovery.workflows_completed, 1);
     assert_eq!(recovery.unresolved_sandboxes, 0);
-    let items = port.list("1", None, None).unwrap().items;
+    let items = port.list("1", ListRequest::default()).unwrap().items;
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].sandbox_id, format!("sb-{NAMESPACE}-1"));
     assert_eq!(items[0].metadata.get("job"), Some(&"original".into()));
@@ -1764,7 +1849,12 @@ fn direct_port_cannot_bypass_public_subset_guards() {
     let mut unsupported = request();
     unsupported.allow_internet_access = Some(true);
     assert_eq!(port.create("1", unsupported), Err(PortError::Invalid));
-    assert!(port.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("1", ListRequest::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1777,7 +1867,7 @@ fn create_reply_failure_is_unknown_after_the_vm_has_started() {
     });
     assert_eq!(port.create("1", request()), Err(PortError::OutcomeUnknown));
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
-    let items = port.list("1", None, None).unwrap().items;
+    let items = port.list("1", ListRequest::default()).unwrap().items;
     assert_eq!(items.len(), 1);
     let recovered = port
         .connect("1", &items[0].sandbox_id, ConnectRequest { timeout: None })
@@ -1815,7 +1905,13 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
         settings.clone(),
     );
     assert_eq!(blocked.create("1", create.clone()), Err(PortError::Busy));
-    assert!(blocked.list("1", None, None).unwrap().items.is_empty());
+    assert!(
+        blocked
+            .list("1", ListRequest::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
     drop(blocked);
     let ready = ManagedPort::new(
         ControllerJournal::open(&path, NAMESPACE).unwrap(),
@@ -1826,7 +1922,10 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
         settings,
     );
     assert!(ready.create("1", create).is_ok());
-    assert_eq!(ready.list("1", None, None).unwrap().items.len(), 1);
+    assert_eq!(
+        ready.list("1", ListRequest::default()).unwrap().items.len(),
+        1
+    );
 }
 
 #[test]
@@ -1840,18 +1939,235 @@ fn two_active_sandboxes_page_without_duplicate_or_cross_tenant_leak() {
     let port = ManagedPort::new(journal, FakeHost::default(), settings);
     let first = port.create("1", request()).unwrap();
     let second = port.create("1", request()).unwrap();
-    let page = port.list("1", Some(1), None).unwrap();
+    let page = port
+        .list(
+            "1",
+            ListRequest {
+                limit: 1,
+                ..ListRequest::default()
+            },
+        )
+        .unwrap();
     assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].sandbox_id, first.sandbox_id);
-    let following = port.list("1", Some(1), page.next_token).unwrap();
+    assert_eq!(page.total_running, Some(2));
+    let following = port
+        .list(
+            "1",
+            ListRequest {
+                limit: 1,
+                next_token: page.next_token,
+                ..ListRequest::default()
+            },
+        )
+        .unwrap();
     assert_eq!(following.items.len(), 1);
-    assert_eq!(following.items[0].sandbox_id, second.sandbox_id);
+    assert_eq!(following.total_running, Some(2));
+    assert!(page.items[0].started_at >= following.items[0].started_at);
+    let mut ids = vec![
+        page.items[0].sandbox_id.clone(),
+        following.items[0].sandbox_id.clone(),
+    ];
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec![first.sandbox_id.clone(), second.sandbox_id.clone()]
+    );
     assert!(following.next_token.is_none());
-    assert!(port.list("2", None, None).unwrap().items.is_empty());
+    assert!(
+        port.list("2", ListRequest::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
     port.kill("1", &first.sandbox_id).unwrap();
     port.kill("1", &second.sandbox_id).unwrap();
 }
 
+fn selected_list_request() -> ListRequest {
+    ListRequest {
+        limit: 1,
+        metadata: BTreeMap::from([("job".into(), "selected".into())]),
+        template: Some("base".into()),
+        ..ListRequest::default()
+    }
+}
+
+fn assert_list_cursor_rejections(
+    port: &ManagedPort<FakeHost>,
+    filtered: &ListRequest,
+    cursor: String,
+) {
+    for (tenant, request) in [
+        (
+            "1",
+            ListRequest {
+                next_token: Some("garbage".into()),
+                ..filtered.clone()
+            },
+        ),
+        (
+            "2",
+            ListRequest {
+                next_token: Some(cursor.clone()),
+                ..filtered.clone()
+            },
+        ),
+        (
+            "1",
+            ListRequest {
+                next_token: Some(cursor.clone()),
+                order: ListOrder::Asc,
+                ..filtered.clone()
+            },
+        ),
+        (
+            "1",
+            ListRequest {
+                next_token: Some(cursor),
+                metadata: BTreeMap::new(),
+                ..filtered.clone()
+            },
+        ),
+    ] {
+        assert_eq!(port.list(tenant, request), Err(PortError::Invalid));
+    }
+}
+
+fn assert_list_filter_and_order_boundaries(
+    port: &ManagedPort<FakeHost>,
+    first_page: &sandproof_api::SandboxPage,
+) {
+    let paused = port
+        .list(
+            "1",
+            ListRequest {
+                include_running: false,
+                ..ListRequest::default()
+            },
+        )
+        .unwrap();
+    assert!(paused.items.is_empty());
+    assert_eq!(paused.total_running, None);
+    for request in [
+        ListRequest {
+            template: Some("unknown".into()),
+            ..ListRequest::default()
+        },
+        ListRequest {
+            metadata: BTreeMap::from([("job".into(), "missing".into())]),
+            ..ListRequest::default()
+        },
+    ] {
+        assert!(port.list("1", request).unwrap().items.is_empty());
+    }
+
+    let all = port.list("1", ListRequest::default()).unwrap().items;
+    let ascending = port
+        .list(
+            "1",
+            ListRequest {
+                order: ListOrder::Asc,
+                ..ListRequest::default()
+            },
+        )
+        .unwrap()
+        .items;
+    assert_eq!(all.len(), 3);
+    assert_eq!(
+        all.iter()
+            .map(|item| &item.sandbox_id)
+            .rev()
+            .collect::<Vec<_>>(),
+        ascending
+            .iter()
+            .map(|item| &item.sandbox_id)
+            .collect::<Vec<_>>()
+    );
+    let started_ns = time::OffsetDateTime::parse(
+        &first_page.items[0].started_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap()
+    .unix_timestamp_nanos();
+    assert!(
+        port.list(
+            "1",
+            ListRequest {
+                started_after_ns: Some(started_ns),
+                ..ListRequest::default()
+            }
+        )
+        .unwrap()
+        .items
+        .iter()
+        .any(|item| item.sandbox_id == first_page.items[0].sandbox_id)
+    );
+    assert!(
+        port.list(
+            "1",
+            ListRequest {
+                started_after_ns: Some(started_ns + 86_400_000_000_000),
+                ..ListRequest::default()
+            }
+        )
+        .unwrap()
+        .items
+        .is_empty()
+    );
+}
+
+#[test]
+fn list_filters_before_stable_keyset_pagination_and_binds_cursor_to_tenant_and_query() {
+    let directory = TempDir::new().unwrap();
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut settings = config();
+    settings.limits.max_active_global = 4;
+    settings.limits.max_active_per_tenant = 3;
+    settings.limits.max_disk_bytes_global = 5_000;
+    settings.limits.max_disk_bytes_per_tenant = 3_000;
+    let port = ManagedPort::new(journal, FakeHost::default(), settings);
+    let mut selected = request();
+    selected.metadata = Some(BTreeMap::from([("job".into(), "selected".into())]));
+    let first = port.create("1", selected.clone()).unwrap();
+    let other = port.create("1", request()).unwrap();
+    let third = port.create("1", selected).unwrap();
+    let foreign = port.create("2", request()).unwrap();
+
+    let filtered = selected_list_request();
+    let first_page = port.list("1", filtered.clone()).unwrap();
+    assert_eq!(first_page.items.len(), 1);
+    assert_eq!(first_page.total_running, Some(2));
+    let second_page = port
+        .list(
+            "1",
+            ListRequest {
+                next_token: first_page.next_token.clone(),
+                ..filtered.clone()
+            },
+        )
+        .unwrap();
+    assert_eq!(second_page.items.len(), 1);
+    assert!(second_page.next_token.is_none());
+    let mut filtered_ids = vec![
+        first_page.items[0].sandbox_id.clone(),
+        second_page.items[0].sandbox_id.clone(),
+    ];
+    filtered_ids.sort();
+    assert_eq!(
+        filtered_ids,
+        vec![first.sandbox_id.clone(), third.sandbox_id.clone()]
+    );
+    assert_ne!(filtered_ids[0], other.sandbox_id);
+    assert_ne!(filtered_ids[0], foreign.sandbox_id);
+
+    assert_list_cursor_rejections(&port, &filtered, first_page.next_token.clone().unwrap());
+    assert_list_filter_and_order_boundaries(&port, &first_page);
+    for id in [first.sandbox_id, other.sandbox_id, third.sandbox_id] {
+        port.kill("1", &id).unwrap();
+    }
+    port.kill("2", &foreign.sandbox_id).unwrap();
+}
 #[tokio::test]
 async fn router_reaches_the_same_port_without_request_selected_identity() {
     let (_directory, port) = setup();

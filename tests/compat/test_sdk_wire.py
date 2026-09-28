@@ -6,9 +6,11 @@ import json
 import threading
 import tomllib
 import unittest
+import urllib.parse
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from e2b import AsyncSandbox, Sandbox
+from e2b import AsyncSandbox, Sandbox, SandboxQuery, SandboxState
 from e2b.exceptions import (
     AuthenticationException,
     RateLimitException,
@@ -138,6 +140,35 @@ class WireContract(unittest.TestCase):
         self.assertEqual(self.records[0]["path"], "/v2/sandboxes/probe-sandbox/connect")
         self.assertNotIn("timeout", self.records[0]["body"])
         self.assertEqual(self.records[1]["body"]["timeout"], 0)
+
+    def test_list_filter_order_and_cursor_wire(self):
+        query = SandboxQuery(
+            metadata={"job name": "hello world"},
+            state=[SandboxState.RUNNING, SandboxState.PAUSED],
+            started_after=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            template="base",
+        )
+        self.responses.extend([
+            (200, [], {"X-Next-Token": "cursor-one"}),
+            (200, [], {}),
+        ])
+        pages = Sandbox.list(query=query, limit=2, order="asc", **self.options)
+        self.assertEqual(pages.next_items(), [])
+        self.assertEqual(pages.next_token, "cursor-one")
+        self.assertEqual(pages.next_items(), [])
+        first = urllib.parse.parse_qs(urllib.parse.urlsplit(self.records[0]["path"]).query)
+        second = urllib.parse.parse_qs(urllib.parse.urlsplit(self.records[1]["path"]).query)
+        self.assertEqual(first["metadata"], ["job%2520name=hello%2520world"])
+        self.assertEqual(first["state"], ["running,paused"])
+        self.assertEqual(
+            datetime.fromisoformat(first["startedAfter"][0]),
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        self.assertEqual(first["template"], ["base"])
+        self.assertEqual(first["order"], ["asc"])
+        self.assertEqual(first["limit"], ["2"])
+        self.assertEqual(second["nextToken"], ["cursor-one"])
+        self.assertEqual({k: v for k, v in second.items() if k != "nextToken"}, first)
 
     def test_kill_success_and_not_found(self):
         self.responses.extend(

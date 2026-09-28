@@ -61,6 +61,7 @@ fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
         max_disk_bytes_per_tenant: 5_000,
         cleanup_reserve_bytes: 1_000,
         max_timeout_secs: 86_400,
+        max_total_lifetime_secs: 86_400,
     };
     let request = create_request();
     journal

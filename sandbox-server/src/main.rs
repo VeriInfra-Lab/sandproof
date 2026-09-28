@@ -74,6 +74,8 @@ mod linux {
         max_timeout_secs: u64,
         default_timeout_secs: u64,
         #[serde(default)]
+        max_total_lifetime_secs: Option<u64>,
+        #[serde(default)]
         public_ipv4_enabled: bool,
         expiry_scan_seconds: u64,
         /// Explicit opt-in while deployment/large-file KVM acceptance is pending.
@@ -316,8 +318,13 @@ mod linux {
             return Err("at least one nonzero tenant credential is required".into());
         }
         if config.expiry_scan_seconds == 0
-            || config.default_timeout_secs == 0
+            || config.default_timeout_secs
+                != sandproof_controller_service::DEFAULT_SANDBOX_TIMEOUT_SECS
             || config.default_timeout_secs > config.max_timeout_secs
+            || config
+                .max_total_lifetime_secs
+                .unwrap_or(config.max_timeout_secs)
+                < config.max_timeout_secs
         {
             return Err("invalid lifetime scanner or default".into());
         }
@@ -514,6 +521,9 @@ mod linux {
                     max_disk_bytes_per_tenant: config.max_disk_bytes_per_tenant,
                     cleanup_reserve_bytes: config.cleanup_reserve_bytes,
                     max_timeout_secs: config.max_timeout_secs,
+                    max_total_lifetime_secs: config
+                        .max_total_lifetime_secs
+                        .unwrap_or(config.max_timeout_secs),
                 },
                 disk_bytes,
                 file_policy_digest: core::PolicyDigest(config.file_policy_digest),

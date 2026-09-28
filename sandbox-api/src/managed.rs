@@ -20,8 +20,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::watch;
 
 use crate::{
-    ConnectRequest, ControllerPort, CreateRequest, PortError, SandboxInfo, SandboxPage,
-    SandboxSession,
+    ConnectRequest, ControllerPort, CreateRequest, ListOrder, ListRequest, PortError, SandboxInfo,
+    SandboxPage, SandboxSession,
 };
 
 pub trait HostAdapter: Send + 'static {
@@ -257,6 +257,75 @@ fn token() -> Result<String, PortError> {
         result.push(char::from(HEX[usize::from(byte & 15)]));
     }
     Ok(result)
+}
+
+/// The cursor is a pagination position, never an authorization credential.
+/// Every use is bound to the authenticated tenant and normalized filters.
+fn list_filter_tag(request: &ListRequest) -> Result<u64, PortError> {
+    let encoded = serde_json::to_vec(&(
+        &request.metadata,
+        request.include_running,
+        request.started_after_ns,
+        &request.template,
+        request.order,
+    ))
+    .map_err(|_| PortError::Invalid)?;
+    Ok(encoded
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+        }))
+}
+
+fn list_cursor(
+    tenant: core::TenantId,
+    request: &ListRequest,
+    started_at_ms: i64,
+    sandbox: core::SandboxId,
+) -> Result<String, PortError> {
+    let order = match request.order {
+        ListOrder::Asc => "a",
+        ListOrder::Desc => "d",
+    };
+    Ok(format!(
+        "v1:{}:{order}:{started_at_ms}:{}:{:016x}",
+        tenant.0,
+        sandbox.0,
+        list_filter_tag(request)?
+    ))
+}
+
+fn parse_list_cursor(
+    tenant: core::TenantId,
+    request: &ListRequest,
+    world: &core::World,
+    journal: &ControllerJournal,
+) -> Result<Option<(i64, String)>, PortError> {
+    let Some(token) = &request.next_token else {
+        return Ok(None);
+    };
+    let parts: Vec<_> = token.split(':').collect();
+    if parts.len() != 6 || parts[0] != "v1" || parts[1].parse::<u64>().ok() != Some(tenant.0) {
+        return Err(PortError::Invalid);
+    }
+    let expected_order = match request.order {
+        ListOrder::Asc => "a",
+        ListOrder::Desc => "d",
+    };
+    if parts[2] != expected_order || parts[5] != format!("{:016x}", list_filter_tag(request)?) {
+        return Err(PortError::Invalid);
+    }
+    let started_at_ms = parts[3].parse::<i64>().map_err(|_| PortError::Invalid)?;
+    let sandbox = core::SandboxId(parts[4].parse::<u64>().map_err(|_| PortError::Invalid)?);
+    if started_at_ms < 0
+        || world
+            .sandbox_record(sandbox)
+            .is_none_or(|record| record.owner != tenant)
+    {
+        return Err(PortError::Invalid);
+    }
+    let external = journal.sandbox_id(sandbox).map_err(map_journal)?;
+    Ok(Some((started_at_ms, external.as_str().to_owned())))
 }
 
 fn tenant_id(tenant: &str) -> Result<core::TenantId, PortError> {
@@ -781,6 +850,11 @@ impl<H: HostAdapter> ManagedPort<H> {
             .create_options(sandbox)
             .map_err(map_admission)?
             .metadata;
+        let world = inner.journal.world().map_err(map_journal)?;
+        let policy = &world
+            .sandbox_record(sandbox)
+            .ok_or(PortError::NotFound)?
+            .policy;
         Ok(SandboxInfo {
             template_id: "base".into(),
             sandbox_id: inner
@@ -798,6 +872,15 @@ impl<H: HostAdapter> ManagedPort<H> {
             memory_mb: self.config.memory_mb,
             disk_size_mb: self.config.disk_size_mb,
             state: "running".into(),
+            domain: self.config.domain.clone(),
+            allow_internet_access: matches!(
+                policy,
+                core::NetworkPolicy::Ipv4 {
+                    internet_access: true,
+                    ..
+                }
+            ),
+            volume_mounts: Vec::new(),
         })
     }
 }
@@ -909,45 +992,92 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         self.info(&inner, tenant, sandbox)
     }
 
-    fn list(
-        &self,
-        tenant: &str,
-        limit: Option<u32>,
-        next_token: Option<String>,
-    ) -> Result<SandboxPage, PortError> {
+    fn list(&self, tenant: &str, request: ListRequest) -> Result<SandboxPage, PortError> {
         let tenant = tenant_id(tenant)?;
         let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let world = inner.journal.world().map_err(map_journal)?;
-        let start = next_token
-            .map(|token| token.parse::<u64>().map_err(|_| PortError::Invalid))
-            .transpose()?
-            .unwrap_or(0);
-        let limit = usize::try_from(limit.unwrap_or(100)).map_err(|_| PortError::Invalid)?;
+        let cursor = parse_list_cursor(tenant, &request, &world, &inner.journal)?;
+        let limit = usize::try_from(request.limit).map_err(|_| PortError::Invalid)?;
         if !(1..=100).contains(&limit) {
             return Err(PortError::Invalid);
         }
         let mut matching = Vec::new();
         for (sandbox, record) in world.sandbox_records() {
-            if sandbox.0 <= start || record.owner != tenant || record.phase != core::Phase::Running
+            if !request.include_running
+                || record.owner != tenant
+                || record.phase != core::Phase::Running
+            {
+                continue;
+            }
+            let lifetime =
+                match inner
+                    .journal
+                    .live_lifetime(&core::Actor::Tenant(tenant), *sandbox, now_ms()?)
+                {
+                    Ok(lifetime) => lifetime,
+                    Err(AdmissionError::Expired | AdmissionError::NotRunning) => continue,
+                    Err(error) => return Err(map_admission(error)),
+                };
+            let started_at_ms = lifetime.started_at_ms.ok_or(PortError::Busy)?;
+            if request
+                .started_after_ns
+                .is_some_and(|bound| i128::from(started_at_ms) * 1_000_000 < bound)
+                || request
+                    .template
+                    .as_ref()
+                    .is_some_and(|template| template != "base")
             {
                 continue;
             }
             match self.info(&inner, tenant, *sandbox) {
-                Ok(info) => matching.push((*sandbox, info)),
-                Err(PortError::NotFound) => {} // expired after last cleanup tick
+                Ok(info)
+                    if request
+                        .metadata
+                        .iter()
+                        .all(|(key, value)| info.metadata.get(key) == Some(value)) =>
+                {
+                    matching.push((started_at_ms, *sandbox, info));
+                }
+                Ok(_) | Err(PortError::NotFound) => {} // filtered or expired
                 Err(error) => return Err(error),
             }
         }
-        matching.sort_by_key(|(sandbox, _)| sandbox.0);
+        let total_running = request.include_running.then_some(matching.len());
+        matching.sort_by(|left, right| match request.order {
+            ListOrder::Desc => right
+                .0
+                .cmp(&left.0)
+                .then_with(|| left.2.sandbox_id.cmp(&right.2.sandbox_id)),
+            ListOrder::Asc => left
+                .0
+                .cmp(&right.0)
+                .then_with(|| right.2.sandbox_id.cmp(&left.2.sandbox_id)),
+        });
+        if let Some((started_at_ms, external)) = cursor {
+            matching.retain(|(time, _, info)| match request.order {
+                ListOrder::Desc => {
+                    *time < started_at_ms || (*time == started_at_ms && info.sandbox_id > external)
+                }
+                ListOrder::Asc => {
+                    *time > started_at_ms || (*time == started_at_ms && info.sandbox_id < external)
+                }
+            });
+        }
         let next = if matching.len() > limit {
-            Some(matching[limit - 1].0.0.to_string())
+            Some(list_cursor(
+                tenant,
+                &request,
+                matching[limit - 1].0,
+                matching[limit - 1].1,
+            )?)
         } else {
             None
         };
         matching.truncate(limit);
         Ok(SandboxPage {
-            items: matching.into_iter().map(|(_, info)| info).collect(),
+            items: matching.into_iter().map(|(_, _, info)| info).collect(),
             next_token: next,
+            total_running,
         })
     }
 
@@ -1011,17 +1141,23 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let tenant = tenant_id(tenant)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let sandbox = sandbox_id(&inner.journal, external)?;
-        let seconds = u64::try_from(seconds).map_err(|_| PortError::Invalid)?;
-        inner
-            .journal
-            .set_lifetime(
-                &core::Actor::Tenant(tenant),
-                sandbox,
-                now_ms()?,
-                seconds,
-                self.config.limits,
-            )
-            .map_err(map_admission)?;
+        let now = now_ms()?;
+        let changed =
+            inner
+                .journal
+                .set_lifetime(&core::Actor::Tenant(tenant), sandbox, now, seconds);
+        if matches!(
+            &changed,
+            Err(AdmissionError::Journal(JournalError::CommitUncertain(_)))
+        ) {
+            // The shorter deadline may already be durable. An existing data
+            // stream must not keep authority merely because the ACK was lost.
+            inner.revoke_data(sandbox);
+        }
+        let lifetime = changed.map_err(map_admission)?;
+        if lifetime.deadline_ms <= now {
+            inner.revoke_data(sandbox);
+        }
         Ok(())
     }
 }

@@ -5,7 +5,10 @@ mod admission;
 mod identity;
 mod storage;
 
-pub use admission::{AdmissionError, AdmissionLimits, CreateAdmission, CreateOptions, Lifetime};
+pub use admission::{
+    AdmissionError, AdmissionLimits, CreateAdmission, CreateOptions, DEFAULT_SANDBOX_TIMEOUT_SECS,
+    Lifetime,
+};
 
 use crate::{
     CrashInjector, CrashPoint, DispatchResult, Journal, JournalError, WorkerTransportError,
@@ -387,17 +390,17 @@ impl ControllerJournal {
                  CREATE TABLE controller_inputs (sequence INTEGER PRIMARY KEY, input_json BLOB NOT NULL);
                  CREATE TABLE controller_effect_keys (id INTEGER PRIMARY KEY, logical_json BLOB NOT NULL UNIQUE);
                  CREATE TABLE controller_receipt_history (sequence INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL REFERENCES outbox(id), receipt_json BLOB NOT NULL);
-                 CREATE TABLE sandbox_lifetimes (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), owner_id TEXT NOT NULL, deadline_ms INTEGER NOT NULL, disk_bytes INTEGER NOT NULL CHECK(disk_bytes > 0), started_at_ms INTEGER CHECK(started_at_ms >= 0));
+                 CREATE TABLE sandbox_lifetimes (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), owner_id TEXT NOT NULL, deadline_ms INTEGER NOT NULL, disk_bytes INTEGER NOT NULL CHECK(disk_bytes > 0), started_at_ms INTEGER CHECK(started_at_ms >= 0), max_end_ms INTEGER NOT NULL CHECK(max_end_ms >= deadline_ms));
                  CREATE TABLE sandbox_create_options (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), options_json BLOB NOT NULL);"
             )?;
-            transaction.execute("INSERT INTO controller_meta VALUES (1, 4, ?1)", [namespace])?;
+            transaction.execute("INSERT INTO controller_meta VALUES (1, 5, ?1)", [namespace])?;
         }
         let (version, stored): (i64, String) = transaction.query_row(
             "SELECT version, namespace FROM controller_meta WHERE id=1",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=4).contains(&version) || stored != namespace {
+        if !(1..=5).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {
@@ -422,6 +425,15 @@ impl ControllerJournal {
             transaction.execute(
                 "INSERT OR IGNORE INTO sandbox_create_options (sandbox_id, options_json) SELECT sandbox_id, ?1 FROM sandboxes",
                 [b"{\"env_vars\":{},\"metadata\":{}}".as_slice()],
+            )?;
+        }
+        if version <= 4 {
+            // Existing leases have no trustworthy total-life policy. Preserve
+            // their current end, but grant no further extension after upgrade.
+            transaction.execute_batch(
+                "ALTER TABLE sandbox_lifetimes ADD COLUMN max_end_ms INTEGER;
+                 UPDATE sandbox_lifetimes SET max_end_ms=deadline_ms;
+                 UPDATE controller_meta SET version=5 WHERE id=1;",
             )?;
         }
         storage::load_world(&transaction)?;

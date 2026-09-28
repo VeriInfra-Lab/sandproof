@@ -279,7 +279,7 @@ def exercise(args: argparse.Namespace) -> None:
         "max_disk_bytes_per_tenant": disk_bytes * 4,
         "cleanup_reserve_bytes": disk_bytes,
         "max_timeout_secs": 600,
-        "default_timeout_secs": 180,
+        "default_timeout_secs": 300,
         "expiry_scan_seconds": 1,
         "public_ipv4_enabled": True,
     }

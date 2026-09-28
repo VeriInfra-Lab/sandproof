@@ -14,7 +14,7 @@ mod workflow;
 
 pub use controller::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
-    HostEvidence, Lifetime,
+    DEFAULT_SANDBOX_TIMEOUT_SECS, HostEvidence, Lifetime,
 };
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
