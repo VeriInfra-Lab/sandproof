@@ -106,6 +106,8 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [文件超时参数探针](../tests/system/sdk_file_timeouts.py)分别对原同步/异步文件读取（text/bytes/stream）、流读取的 `stream_idle_timeout`，以及单文件/批量写入的 `request_timeout` 传入省略、零、负数和大正数。上传区分 multipart/octet、字符串/字节/二进制 IO/文本 IO；完整成功须核对长度和 SHA-256，期限失败后只读取本次路径的实际状态，不假定原子回滚或自动重传。每次失败后检查正常读写仍可用；脚本最后销毁自己的 VM，宿主须另核对精确残留。本探针不覆盖一元 RPC 或沙箱寿命参数，也不把大于 Connect 头范围的 HTTP 期限误称为 HTTP 协议超限。运行方式与其他原 SDK 实机脚本一致。上述 160 个场景已在两台真实 VM 通过，精确版本和指纹见[版本基线](../references/v1-baseline.json)的 `file_timeout_acceptance`。成功内容为 69000 字节并核对 SHA-256；本轮同步上传的期限失败中，15 个目标路径有 5 个已出现，异步本轮没有观察到文件，后者不能外推为失败无副作用。宿主精确资源与网络空间持有者在服务退出前均已回收，基础盘未变。
 
+[一元 RPC 超时探针](../tests/system/sdk_rpc_timeouts.py)对原同步/异步文件 get_info/exists/list/make_dir/remove/rename、命令 list/kill/send_stdin/close_stdin，以及句柄 send_stdin/close_stdin，逐项传入省略、零、负数和超过 Connect 毫秒头范围的请求期限。负数转为 1 ms，快速完整回执可能先到；失败仅接受明确的 DEADLINE_EXCEEDED。超长头须在操作前拒绝且无副作用；期限失败只查询已有路径或 PID，不重复提交未知操作。输入结果须为零次或一次完整载荷，不能重复；每例再检查正常调用，最后销毁本次 VM 并另做宿主残留审计。该脚本不覆盖生命周期和 watcher 接口，运行方式与其他 SDK 实机脚本一致。上述 96 个场景已在两台真实 VM 通过：48 个完整成功、24 个明确期限到期、24 个超长头拒绝；精确提交和指纹见[版本基线](../references/v1-baseline.json)的 `rpc_timeout_acceptance`。本轮负数均观察到期限到期，不能据此要求更快的服务必定失败。服务退出前宿主进程、私有资源与网络空间持有者均已清理，基础盘未变。
+
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000 \
