@@ -7,6 +7,7 @@ until the reported resources have been inspected and reclaimed.
 """
 
 import argparse
+from contextlib import closing
 import importlib.metadata
 import json
 import os
@@ -40,7 +41,9 @@ def free_bytes(path):
 
 
 def database_count(path):
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+    # The connection's own context manager commits/rolls back, but does not
+    # close the handle; an open DB/WAL descriptor prevents the final unmount.
+    with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as connection:
         return connection.execute("SELECT count(*) FROM sandboxes").fetchone()[0]
 
 
@@ -247,6 +250,12 @@ def child(args):
         report = exercise(args, mounted, template)
         assert digest(Path(template["rootfs"])) == base_hash
         assert git("rev-parse", "HEAD") == revision and not git("status", "--porcelain")
+        (args.root / "observations.json").write_text(json.dumps(report, indent=2))
+        command("umount", str(mounted))
+        assert mounted.stat().st_dev == args.root.stat().st_dev
+        assert Path(backing.read_text().strip()).samefile(image)
+        command("losetup", "--detach", str(loop))
+        assert not backing.exists()
     except BaseException:
         (args.root / "failure.log").write_text(traceback.format_exc())
         print(json.dumps(dict(failed=True, recovery_supervisor_pid=os.getpid(),
@@ -254,11 +263,6 @@ def child(args):
         # Do not let namespace teardown hide leaked resources on a failed audit.
         while True:
             signal.pause()
-    command("umount", str(mounted))
-    assert mounted.stat().st_dev == args.root.stat().st_dev
-    assert Path(backing.read_text().strip()).samefile(image)
-    command("losetup", "--detach", str(loop))
-    assert not backing.exists()
     report.update(
         revision=revision, script_sha256=digest(Path(__file__)), kernel=os.uname().release,
         server_sha256=args.server_sha256, base_sha256=base_hash,
