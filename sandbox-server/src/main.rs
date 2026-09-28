@@ -57,6 +57,8 @@ mod linux {
         max_vm_id: u64,
         vcpu_count: u8,
         memory_mib: u32,
+        #[serde(default)]
+        host_resources: Option<sandbox_runtime::HostResources>,
         file_policy_digest: u64,
         bind: SocketAddr,
         domain: String,
@@ -202,6 +204,13 @@ mod linux {
         journal: &ControllerJournal,
     ) -> Result<(), Box<dyn Error>> {
         let inventory = node.inventory()?;
+        if !inventory.unbound_cgroups.is_empty() {
+            return Err(format!(
+                "unbound VM cgroups require operator reconciliation: {:?}",
+                inventory.unbound_cgroups
+            )
+            .into());
+        }
         if !inventory.unbound_claims.is_empty() {
             return Err(format!(
                 "unbound VM claims require operator reconciliation: {:?}",
@@ -238,7 +247,8 @@ mod linux {
             if (slot.aborted_unlaunched || slot.failed_prepare_reclaimed)
                 && ((slot.aborted_unlaunched && slot.process.is_some())
                     || slot.network_inode.is_some()
-                    || slot.disk_inode.is_some())
+                    || slot.disk_inode.is_some()
+                    || slot.cgroup_inode.is_some())
             {
                 return Err("reclaimed failed PrepareVm still has physical resources".into());
             }
@@ -254,6 +264,7 @@ mod linux {
                 if vm.status == core::VmStatus::Reclaimed
                     && (slot.disk_inode.is_some()
                         || slot.network_inode.is_some()
+                        || slot.cgroup_inode.is_some()
                         || slot.process.as_ref().is_some_and(|process| {
                             process.state != sandbox_runtime::VmState::Stopped
                         }))
@@ -350,6 +361,7 @@ mod linux {
             max_vm_id: config.max_vm_id,
             vcpu_count: config.vcpu_count,
             memory_mib: config.memory_mib,
+            host_resources: config.host_resources.clone(),
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;

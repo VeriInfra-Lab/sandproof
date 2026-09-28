@@ -116,5 +116,33 @@
     ],
     "observations": "Per-run host audit found exact VM processes stopped and private jails/netns/cgroups absent; base fingerprint unchanged. Streaming service VmHWM 15760 KiB excludes guest/relay totals and is not a memory bound.",
     "limits": "Selected manual KVM evidence only; host CPU/memory quotas, real ENOSPC, full async large-transfer/fault/timeout matrices and #13 task initialization remain open. New fixed input profile does not inherit historical ning-host acceptance or promise byte-identical ext4 across builds."
+  },
+  "host_resource_acceptance": {
+    "commit": "7547fa3aae30af1b72ab3e90b9bc86beb388ab06",
+    "host_kernel": "6.8.0-1065-azure",
+    "kvm_api": 12,
+    "firecracker_jailer": "1.16.1",
+    "base_profile": "tests/system/base-inputs.json",
+    "base_sha256": "b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd",
+    "server_sha256": "fdff030d4685a4fa0b939232200060a5cd858a4f06fdbe5f9f8793b42998be5e",
+    "configuration": {
+      "cgroup_parent": "exclusive root-only cgroup v2 domain with CPU/memory delegated",
+      "cpu_max": "100000 100000",
+      "cpu_max_burst": 0,
+      "memory_swap_max": 0,
+      "memory_oom_group": 1,
+      "sdk_guest_memory_mib": 512,
+      "sdk_host_memory_max_bytes": 805306368,
+      "recovery_guest_memory_mib": 256,
+      "recovery_host_memory_max_bytes": 536870912
+    },
+    "tests": [
+      "passed three real cgroup kernel tests: CPU throttling, bounded group OOM, tampered limits, populated group, replacement inode and interrupted creation cleanup",
+      "passed sdk_server_smoke.py and sync/async sdk_data_contract.py with legacy data limits",
+      "passed sync/async sdk_data_contract.py and gateway_stream_limits.py with 64 MiB upload / 96 MiB download budgets",
+      "passed six host_smoke cases: lost prepare/stop receipts, worker exit/SIGKILL, partial cleanup and two unlaunched prepare cases"
+    ],
+    "observations": "Seven SDK VMs were sampled while live: exact PID/start-time, cgroup inode, membership and all five limit settings matched; CPU throttling counters increased. Independent residual checks for these seven and four recovery VMs found exact processes stopped and private jails/netns/cgroups absent; two unlaunched cases also left no resources. Base hash unchanged.",
+    "limits": "Manual selected acceptance, opt-in host_resources only. Memory-OOM probe used controlled host children, not a Firecracker OOM. Per-VMM limits do not bound controller/relay totals or reserve physical capacity. Real ENOSPC, full async large-transfer/fault/timeout matrices, final deployment budgets and #13 task initialization remain open; no new Lean coverage."
   }
 }

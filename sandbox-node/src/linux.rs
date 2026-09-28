@@ -37,6 +37,7 @@ pub struct NodeConfig {
     pub max_vm_id: u64,
     pub vcpu_count: u8,
     pub memory_mib: u32,
+    pub host_resources: Option<sandbox_runtime::HostResources>,
     /// V1 has one deployment-controlled managed-disk policy, not arbitrary
     /// user-supplied host paths or a directory ACL implementation.
     pub file_policy_digest: core::PolicyDigest,
@@ -49,6 +50,7 @@ pub struct HostInventory {
     pub slots: Vec<ObservedSlot>,
     pub unbound_claims: Vec<String>,
     pub unbound_networks: Vec<String>,
+    pub unbound_cgroups: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -64,6 +66,7 @@ pub struct ObservedSlot {
     pub process: Option<Observation>,
     pub network_inode: Option<u64>,
     pub disk_inode: Option<u64>,
+    pub cgroup_inode: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -284,6 +287,9 @@ impl LinuxWorker {
                 process,
                 network_inode,
                 disk_inode,
+                cgroup_inode: self
+                    .runtime(binding.sandbox, binding.vm)?
+                    .cgroup_inode(&vm_name)?,
             });
         }
         slots.sort_by_key(|slot| slot.slot.0);
@@ -363,6 +369,7 @@ impl LinuxWorker {
         }
         unbound_networks.sort();
         Ok(HostInventory {
+            unbound_cgroups: self.unbound_cgroups(&bound)?,
             slots,
             unbound_claims,
             unbound_networks,
@@ -415,6 +422,40 @@ impl LinuxWorker {
         Ok(())
     }
 
+    fn unbound_cgroups(&self, bound: &BTreeSet<String>) -> NodeResult<Vec<String>> {
+        let mut unbound = Vec::new();
+        if let Some(settings) = &self.config.host_resources {
+            settings.validate(self.config.memory_mib)?;
+            let prefix = format!("vm-{}-", self.config.namespace);
+            for entry in fs::read_dir(&settings.cgroup_parent)? {
+                let entry = entry?;
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| "non-UTF8 cgroup name")?;
+                if !name.starts_with(&prefix) {
+                    continue;
+                }
+                let number = name
+                    .strip_prefix(&prefix)
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .ok_or("invalid cgroup VM number")?;
+                if number > self.config.max_vm_id
+                    || name != format!("{prefix}{number}")
+                    || !entry.file_type()?.is_dir()
+                {
+                    return Err("invalid VM cgroup identity or type".into());
+                }
+                check_trusted_path(&entry.path())?;
+                if !bound.contains(&name) {
+                    unbound.push(name);
+                }
+            }
+        }
+        unbound.sort();
+        Ok(unbound)
+    }
+
     /// Recover only an already-dispatched `PrepareVm` selected by the
     /// controller's durable plan. This never launches or signals a VM. An
     /// absent first slot can be tombstoned only when its claim, jail and
@@ -443,6 +484,7 @@ impl LinuxWorker {
                 let inventory = self.inventory()?;
                 if !inventory.unbound_claims.is_empty()
                     || !inventory.unbound_networks.is_empty()
+                    || !inventory.unbound_cgroups.is_empty()
                     || inventory
                         .slots
                         .iter()
@@ -465,6 +507,7 @@ impl LinuxWorker {
                         .join(&name),
                 )?;
                 require_absent(Path::new(&format!("/run/netns/{name}")))?;
+                self.runtime(*sandbox, *vm)?.require_cgroup_absent(&name)?;
                 write_new_json(
                     &slot_path,
                     &SlotBinding {
@@ -519,6 +562,7 @@ impl LinuxWorker {
             return Err("uncertain or live VM cannot be cleaned".into());
         }
         runtime.cleanup(&name)?;
+        runtime.require_cgroup_absent(&name)?;
         let jail = self
             .config
             .chroot_base
@@ -584,6 +628,9 @@ impl LinuxWorker {
             || config.memory_mib < 128
         {
             return Err("invalid node resource limits".into());
+        }
+        if let Some(settings) = &config.host_resources {
+            settings.validate(config.memory_mib)?;
         }
         let longest_socket = config
             .chroot_base
@@ -820,7 +867,8 @@ impl LinuxWorker {
                     return Err("cleanup VM binding mismatch".into());
                 }
                 let name = self.vm_name(*vm);
-                if self.runtime(*sandbox, *vm)?.observe(&name)?.state != VmState::Stopped {
+                let runtime = self.runtime(*sandbox, *vm)?;
+                if runtime.observe(&name)?.state != VmState::Stopped {
                     return Err("exact VM is still live".into());
                 }
                 let jail = self
@@ -834,6 +882,7 @@ impl LinuxWorker {
                     )
                     .join(&name);
                 require_absent(&jail)?;
+                runtime.require_cgroup_absent(&name)?;
                 require_absent(Path::new(&format!("/run/netns/{name}")))?;
                 ObservedResult::VmCleaned
             }
@@ -914,6 +963,7 @@ impl LinuxWorker {
             vm_gid: uid,
             vcpu_count: self.config.vcpu_count,
             memory_mib: self.config.memory_mib,
+            host_resources: self.config.host_resources.clone(),
             private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
             access_token_hash: Some(secret.sha512),
         })?)
@@ -1257,6 +1307,8 @@ impl LinuxWorker {
             "/run/netns/{}",
             self.vm_name(binding.vm)
         )))?;
+        self.runtime(sandbox, binding.vm)?
+            .require_cgroup_absent(&self.vm_name(binding.vm))?;
         if self
             .runtime(sandbox, binding.vm)?
             .observe(&self.vm_name(binding.vm))?

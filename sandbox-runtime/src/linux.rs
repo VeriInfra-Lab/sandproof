@@ -16,6 +16,10 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "cgroup.rs"]
+mod cgroup;
+pub use cgroup::HostResources;
+
 const API_SOCKET: &str = "api.socket";
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -101,6 +105,7 @@ pub struct RuntimeConfig {
     pub vm_gid: u32,
     pub vcpu_count: u8,
     pub memory_mib: u32,
+    pub host_resources: Option<HostResources>,
     /// Per-VM namespace handle at `/run/netns/<resource-id>`. The runtime
     /// creates its private TAP and link when launching and removes it after
     /// the exact VM process has stopped.
@@ -184,6 +189,9 @@ impl Runtime {
         ] {
             check_trusted_path(path)?;
         }
+        if let Some(settings) = &config.host_resources {
+            settings.validate(config.memory_mib)?;
+        }
         if let Some(namespace) = &config.private_netns {
             if namespace.parent() != Some(Path::new("/run/netns")) {
                 return Err(RuntimeError::InvalidConfiguration(
@@ -246,6 +254,7 @@ impl Runtime {
         // otherwise leaves a live VM whose API cannot be observed or booted.
         validate_socket_path(&self.socket_path(id))?;
         let claim = self.claim_resource(id)?;
+        self.prepare_cgroup(id)?;
         if self.config.private_netns.is_some() {
             self.prepare_private_network(id, &claim)?;
         }
@@ -313,6 +322,9 @@ impl Runtime {
             .arg(&self.config.chroot_base)
             .arg("--cgroup-version")
             .arg("2");
+        if let Some(cgroup) = self.jailer_cgroup(id)? {
+            command.arg("--parent-cgroup").arg(cgroup);
+        }
         if let Some(namespace) = &self.config.private_netns {
             command.arg("--netns").arg(namespace);
         }
@@ -411,9 +423,9 @@ impl Runtime {
     pub fn observe(&self, id: &str) -> Result<Observation, RuntimeError> {
         validate_id(id)?;
         let record = self.read_record(id)?;
-        let state = match verified_process(&record)? {
-            None => VmState::Stopped,
-            Some(_) => match self.api(id, "GET", "/", None) {
+        let state = if let Some(_pidfd) = verified_process(&record)? {
+            self.verify_cgroup(id, Some(record.pid))?;
+            match self.api(id, "GET", "/", None) {
                 Ok(body) => {
                     let status: serde_json::Value = serde_json::from_slice(&body)?;
                     if status.get("state").and_then(serde_json::Value::as_str) == Some("Running") {
@@ -423,7 +435,9 @@ impl Runtime {
                     }
                 }
                 Err(_) => VmState::ApiUnavailable,
-            },
+            }
+        } else {
+            VmState::Stopped
         };
         Ok(Observation {
             resource_id: id.to_owned(),
@@ -470,6 +484,7 @@ impl Runtime {
         if verified_process(&record)?.is_some() {
             return Err(RuntimeError::InvalidConfiguration("cannot clean a live VM"));
         }
+        self.cleanup_cgroup(id, false)?;
         let jail = self
             .config
             .chroot_base
@@ -743,6 +758,7 @@ impl Runtime {
             ));
         }
         self.reclaim_unlaunched_network(id, &claim)?;
+        self.cleanup_cgroup(id, true)?;
         let marker = claim.join("aborted.json");
         if path_present(&marker)? {
             let stored: ResourceMarker = read_trusted_record(&marker)?;
@@ -824,6 +840,7 @@ impl Runtime {
         if marker.resource_id != id {
             return Err(RuntimeError::IdentityMismatch("abort marker resource ID"));
         }
+        self.require_cgroup_absent(id)?;
         let claim = self.config.chroot_base.join(".claims").join(id);
         let network_present = match &self.config.private_netns {
             Some(namespace) => path_present(namespace)?,
@@ -894,6 +911,7 @@ impl Runtime {
             return Ok(false);
         }
         let stored: ProcessRecord = read_trusted_record(&marker)?;
+        self.require_cgroup_absent(id)?;
         let record = self.read_record(id)?;
         if stored.resource_id != id
             || stored.pid != record.pid
@@ -1359,6 +1377,7 @@ mod tests {
                 vm_gid: 10001,
                 vcpu_count: 1,
                 memory_mib: 128,
+                host_resources: None,
                 private_netns: Some(PathBuf::from(format!("/run/netns/{id}"))),
                 access_token_hash: None,
             },
@@ -1415,6 +1434,7 @@ mod tests {
                 vm_gid: 10001,
                 vcpu_count: 1,
                 memory_mib: 128,
+                host_resources: None,
                 private_netns: Some(PathBuf::from(format!("/run/netns/{id}"))),
                 access_token_hash: None,
             },
@@ -1482,6 +1502,7 @@ mod tests {
                 vm_gid: 10001,
                 vcpu_count: 1,
                 memory_mib: 128,
+                host_resources: None,
                 private_netns: Some(PathBuf::from(format!("/run/netns/{id}"))),
                 access_token_hash: None,
             },

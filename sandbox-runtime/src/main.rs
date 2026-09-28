@@ -59,6 +59,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         vm_gid: args[9].parse()?,
         vcpu_count: 1,
         memory_mib: 512,
+        host_resources: std::env::var("SANDBOX_HOST_RESOURCES")
+            .ok()
+            .map(|value| serde_json::from_str(&value))
+            .transpose()?,
         private_netns: network_mode.then(|| PathBuf::from(&args[10])),
         access_token_hash,
     };
