@@ -373,11 +373,11 @@
   },
   "lifetime_parameter_observation": {
     "test": "tests/system/sdk_lifetime_values.py",
-    "commit": "087d5eaff3fc5c0d1d76b43f4f1493cbf2ed823d",
+    "commit": "8e5b9479165f264fafdd7059d95960c0227fcf68",
     "script_sha256": "c42e22b597589a586d65d2bb9ddb6ce78a81406ebe20c0b503190fe30a60719e",
-    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
-    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
-    "host_and_artifacts": "same fixed host/kernel/envd/base/server, explicit no-internet and streaming configuration as command_input_budget_acceptance; SDK and server share host clock",
+    "server_build_commit": "8e5b9479165f264fafdd7059d95960c0227fcf68",
+    "server_source_equivalence": "test and server rebuilt at the same exact commit after integrating network receipt-crash PR63; debug fault injection is not enabled in this run",
+    "host_and_artifacts": "same host/kernel/envd/base and explicit no-internet streaming configuration as command_input_budget_acceptance; rebuilt server fingerprint recorded here; SDK and server share host clock",
     "configuration": {
       "default_timeout_seconds": 180,
       "max_single_timeout_seconds": 600
@@ -390,6 +390,8 @@
     },
     "known_target_gaps": "configured create default differs from the 300-second target; omitted connect preserves its old deadline instead of the target default extension; zero/negative set_timeout rejects instead of triggering expiry; maximum is per request, not the total-lifetime and set-timeout-capping target. Capability items 2/5/6/7 and issues #9/#12 remain authoritative and open.",
     "residuals": "eight exact VM processes stopped; private jails/netns/cgroups absent; no recorded namespace holders before server exit; live cgroup identity/membership/limits sampled for every VM; base hash unchanged",
-    "limits": "current selected lifetime values only; does not establish target compatibility, management HTTP request deadlines, total lifetime, expiry/restart races or final deployment budgets. No production or proof changes."
+    "limits": "current selected lifetime values only; does not establish target compatibility, management HTTP request deadlines, total lifetime, expiry/restart races or final deployment budgets. No production or proof changes.",
+    "previous_test_commit": "087d5eaff3fc5c0d1d76b43f4f1493cbf2ed823d",
+    "server_sha256": "5c3eefe9c3714ecb8ccd170313972f01bc4f07ab18e669cf70ff4944b5df20cc"
   }
 }
