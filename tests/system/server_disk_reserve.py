@@ -1,7 +1,8 @@
 """Real VM admission/cleanup under low space on a private 4 GiB host filesystem.
 
-Uses the pinned SDK and a reviewed root-only service/configuration. This tests
-admission reserve, not host ENOSPC or inode exhaustion. Failed physical cleanup
+Uses the pinned SDK and a reviewed root-only service/configuration. By default
+this tests admission reserve; --exhaustion selects real block/inode ENOSPC.
+Failed physical cleanup
 keeps the mount namespace alive for exact recovery; do not kill its supervisor
 until the reported resources have been inspected and reclaimed.
 """
@@ -232,7 +233,8 @@ def child(args):
     assert Path(backing.read_text().strip()).samefile(image)
     mounted_ok = False
     try:
-        command("mkfs.ext4", "-q", "-F", "-m", "0", str(loop))
+        inode_options = ["-N", "1024"] if args.exhaustion == "inodes" else []
+        command("mkfs.ext4", "-q", "-F", "-m", "0", *inode_options, str(loop))
         # Jailer creates its private KVM/TUN device nodes and executable inside
         # this filesystem; nodev/noexec would invalidate the runtime fixture.
         command("mount", "-t", "ext4", "-o", "nosuid", str(loop), str(mounted))
@@ -247,7 +249,11 @@ def child(args):
         command("losetup", "--detach", str(loop))
         raise
     try:
-        report = exercise(args, mounted, template)
+        if args.exhaustion:
+            from host_enospc import exercise_enospc
+            report = exercise_enospc(args, mounted, template)
+        else:
+            report = exercise(args, mounted, template)
         assert digest(Path(template["rootfs"])) == base_hash
         assert git("rev-parse", "HEAD") == revision and not git("status", "--porcelain")
         (args.root / "observations.json").write_text(json.dumps(report, indent=2))
@@ -267,8 +273,12 @@ def child(args):
         revision=revision, script_sha256=digest(Path(__file__)), kernel=os.uname().release,
         server_sha256=args.server_sha256, base_sha256=base_hash,
         scratch_bytes=SCRATCH_BYTES, unmounted=True, loop_detached=True,
-        scope="selected physical admission reserve and cleanup; not ENOSPC or final budgets",
+        scope=("selected host ENOSPC and recovery; not final budgets or protection from arbitrary host writes"
+               if args.exhaustion else
+               "selected physical admission reserve and cleanup; not ENOSPC or final budgets"),
     )
+    if args.exhaustion:
+        report["enospc_helper_sha256"] = digest(Path(__file__).with_name("host_enospc.py"))
     (args.root / "result.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report), flush=True)
 
@@ -279,6 +289,9 @@ def main():
     parser.add_argument("--server-sha256", required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--exhaustion", choices=("blocks", "inodes"))
+    parser.add_argument("--expected-inode-status", type=int, choices=(500, 503), default=500,
+                        help="503 only reproduces the old unsafe busy reply; acceptance requires 500")
     parser.add_argument("--parent-mount-inode", type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
     assert os.geteuid() == 0 and sys.platform == "linux"
