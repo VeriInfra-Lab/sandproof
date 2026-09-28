@@ -104,6 +104,8 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [命令超时参数探针](../tests/system/sdk_command_timeouts.py)分别向原同步/异步 `commands.run`（前台/后台）和 `commands.connect` 传入省略、零、负数及超过 Connect 十位毫秒头上限的值，区分 `timeout` 与 `request_timeout`。同步流忽略 `request_timeout`，异步以它限制首事件等待；`run(timeout=...)` 还由 envd 用作进程执行期限，到期会终止命令；`connect(timeout=...)` 只限制连接流。`wait()` 沿用原流期限且没有独立超时参数。负数流期限由固定 SDK 转成 1 ms，不是参数拒绝；用保持 stdin 打开的命令阻止它提前成功。另在已知 PID 后分别验等待：Start 期限到期后连接同一 PID 取得保留的被终止结果；Connect 期限到期后同一 PID 仍可正常关闭输入并完整退出。两者都只启动一次。启动结果可能不明时只查询唯一标记对应的已有进程并终止，最终销毁本轮 VM，不重发 shell。运行方式同其他数据脚本；上述 52 个场景已在两台真实 VM 通过，服务退出前另核对宿主资源和网络空间持有者均已回收、基础盘未变，精确版本见[版本基线](../references/v1-baseline.json)的 `command_timeout_acceptance`。文件/一元 RPC 与沙箱寿命参数另有各自验收，不能由本探针推断。
 
+[文件超时参数探针](../tests/system/sdk_file_timeouts.py)分别对原同步/异步文件读取（text/bytes/stream）、流读取的 `stream_idle_timeout`，以及单文件/批量写入的 `request_timeout` 传入省略、零、负数和大正数。上传区分 multipart/octet、字符串/字节/二进制 IO/文本 IO；完整成功须核对长度和 SHA-256，期限失败后只读取本次路径的实际状态，不假定原子回滚或自动重传。每次失败后检查正常读写仍可用；脚本最后销毁自己的 VM，宿主须另核对精确残留。本探针不覆盖一元 RPC 或沙箱寿命参数，也不把大于 Connect 头范围的 HTTP 期限误称为 HTTP 协议超限。运行方式与其他原 SDK 实机脚本一致。
+
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000 \
