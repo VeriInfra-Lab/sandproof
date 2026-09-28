@@ -353,5 +353,22 @@
     "semantics": "HTTP large-value control is valid, distinct from Connect header limits. Both clients omit the operation deadline for streamed IO uploads; multipart text IO is buffered and retains it. Negative HTTP deadlines expire, not argument rejection; sync ignores stream_idle_timeout while async applies it to opening and each read. Deadline-failed writes may already leave partial or full data: no rollback or automatic replay claimed.",
     "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; live cgroup identity/membership/limits sampled; base hash unchanged",
     "limits": "selected HTTP file timeout values and explicit encodings; not every malformed/non-finite value, watcher API, unary RPC or sandbox lifetime matrix, nor final deployment budgets. No production or proof changes."
+  },
+  "rpc_timeout_acceptance": {
+    "test": "tests/system/sdk_rpc_timeouts.py",
+    "commit": "d6e34395ad12a881f66553ab7d37349e70eb445a",
+    "script_sha256": "f6635267c511d9154a55070c7e753a036e8115e15f3925ce4786ea4617069dcb",
+    "server_build_commit": "6170a2ad176e386b43f4bc829d5238eafad62d07",
+    "server_source_equivalence": "all Rust sources and Cargo manifests/lock unchanged between server build and test commit",
+    "host_and_artifacts": "same host, fixed kernel/envd/base/server, explicit no-internet and streaming configuration as command_input_budget_acceptance",
+    "result": "passed 96 original sync/async SDK cases: files get_info/exists/list/make_dir/remove/rename; commands list/kill/send_stdin/close_stdin; handle send_stdin/close_stdin. Each receives omitted, zero, negative and 10000000 seconds. Exact typed deadline/header errors, success payloads, read-only observations of unknown effects, one Start marker and subsequent usability checked.",
+    "observations": {
+      "completed": 48,
+      "deadline": 24,
+      "invalid_rpc_timeout": 24
+    },
+    "semantics": "negative request_timeout becomes 1 ms; all 24 negative cases timed out on this host, but valid full success can beat the deadline. Above-ten-digit Connect headers are rejected without operation effects. Deadline errors require TimeoutException with ConnectError DEADLINE_EXCEEDED context; no blind mutation retry. SendInput observations are zero or one payload, never duplicate.",
+    "residuals": "two exact VM processes stopped; private jails/netns/cgroups absent; no recorded network namespace holders before service exit; live cgroup identity/membership/limits sampled; base hash unchanged",
+    "limits": "selected unary filesystem and process methods; not lifecycle or watcher deadlines, non-finite/malformed values or all concurrent schedules. No production or proof changes."
   }
 }
