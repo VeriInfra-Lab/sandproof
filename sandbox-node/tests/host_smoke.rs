@@ -509,6 +509,124 @@ fn create_and_kill_use_real_host_receipts() {
     assert!(worker.inventory().unwrap().unbound_networks.is_empty());
 }
 
+#[test]
+#[ignore = "requires root, KVM, pinned envd image and dedicated state directory"]
+fn repeated_stop_and_cleanup_preserve_another_live_vm() {
+    let config = test_config();
+    let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal =
+        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let survivor = core::SandboxId(2);
+    let mut survivor_activation = None;
+    for number in 1..=2 {
+        let mut request = test_create_request(&config);
+        request.sandbox = core::SandboxId(number);
+        request.workspace = core::FsId(number);
+        request.operation = core::OperationId(number);
+        worker.put_secret(request.sandbox, &test_token()).unwrap();
+        let running = create_v1(&mut journal, request, &mut |action| {
+            let receipt = worker.execute(action)?;
+            if number == 2 && matches!(action.command.command(), core::Command::ActivateVm { .. }) {
+                survivor_activation = Some((action.clone(), receipt.clone()));
+            }
+            Ok(receipt)
+        })
+        .unwrap();
+        assert_eq!(
+            running
+                .sandbox_record(core::SandboxId(number))
+                .unwrap()
+                .phase,
+            core::Phase::Running
+        );
+    }
+    let (activation, ready) = survivor_activation.unwrap();
+    let before = worker
+        .inventory()
+        .unwrap()
+        .slots
+        .into_iter()
+        .find(|slot| slot.sandbox == survivor)
+        .unwrap();
+    let assert_survivor = |worker: &LinuxWorker| {
+        let after = worker
+            .inventory()
+            .unwrap()
+            .slots
+            .into_iter()
+            .find(|slot| slot.sandbox == survivor)
+            .unwrap();
+        assert_eq!(after.process, before.process);
+        assert_eq!(after.network_inode, before.network_inode);
+        assert_eq!(after.disk_inode, before.disk_inode);
+        assert_eq!(after.cgroup_inode, before.cgroup_inode);
+        // Rechecks the live VMM identity and an authenticated envd file read.
+        assert_eq!(worker.observe_action(&activation).unwrap(), ready);
+    };
+    let mut completed = Vec::new();
+    kill_v1(
+        &mut journal,
+        core::KillRequest {
+            actor: core::Actor::Tenant(core::TenantId(1)),
+            sandbox: core::SandboxId(1),
+            operation: core::OperationId(3),
+        },
+        &mut |action| {
+            let receipt = worker.execute(action)?;
+            if matches!(
+                action.command.command(),
+                core::Command::StopVm { .. }
+                    | core::Command::CleanupVm { .. }
+                    | core::Command::CleanupSlot { .. }
+            ) {
+                assert!(matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)));
+                assert_eq!(worker.execute(action)?, receipt);
+                assert_survivor(&worker);
+                completed.push((action.clone(), receipt.clone()));
+            }
+            Ok(receipt)
+        },
+    )
+    .unwrap();
+    assert_eq!(completed.len(), 3);
+    // Reopen the worker after complete cleanup, then replay the same precise
+    // actions. Tombstones must not resolve to a different, still-live VM.
+    let mut worker = LinuxWorker::new(config).unwrap();
+    for (action, receipt) in completed {
+        assert_eq!(worker.execute(&action).unwrap(), receipt);
+        assert_eq!(worker.observe_action(&action).unwrap(), receipt);
+        assert_survivor(&worker);
+    }
+    kill_v1(
+        &mut journal,
+        core::KillRequest {
+            actor: core::Actor::Tenant(core::TenantId(1)),
+            sandbox: survivor,
+            operation: core::OperationId(4),
+        },
+        &mut |action| worker.execute(action),
+    )
+    .unwrap();
+    assert_two_cleaned_slots(&worker);
+}
+
+fn assert_two_cleaned_slots(worker: &LinuxWorker) {
+    let inventory = worker.inventory().unwrap();
+    assert!(inventory.unbound_claims.is_empty());
+    assert!(inventory.unbound_networks.is_empty());
+    assert!(inventory.unbound_cgroups.is_empty());
+    assert_eq!(inventory.slots.len(), 2);
+    for slot in inventory.slots {
+        assert_eq!(
+            slot.process.unwrap().state,
+            sandbox_runtime::VmState::Stopped
+        );
+        assert!(slot.network_inode.is_none());
+        assert!(slot.disk_inode.is_none());
+        assert!(slot.cgroup_inode.is_none());
+    }
+}
+
 struct TerminateAfterWorker {
     sigkill: bool,
 }
