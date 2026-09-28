@@ -18,7 +18,7 @@
     {"sdk_call": "sandbox.files.get_info", "transport": "ConnectRPC JSON unary", "method": "POST", "path": "/filesystem.Filesystem/Stat", "evidence_case": "test_file_info_and_batch_upload_preserve_paths_and_bytes"},
     {"sdk_call": "sandbox.files.write_files", "transport": "HTTP multipart or sequential octet streams", "method": "POST", "path": "/files", "evidence_case": "test_file_info_and_batch_upload_preserve_paths_and_bytes"},
     {"sdk_call": "await sandbox.commands.run", "transport": "ConnectRPC JSON stream", "method": "POST", "path": "/process.Process/Start", "evidence_case": "test_async_command_cwd_env_user_stdout_stderr_and_nonzero"},
-    {"sdk_call": "await sandbox.files.write_files", "transport": "HTTP multipart or sequential chunked octet streams", "method": "POST", "path": "/files", "evidence_case": "test_async_file_info_batch_and_directory_requests"}
+    {"sdk_call": "await sandbox.files.write_files", "transport": "HTTP multipart or concurrent chunked octet streams", "method": "POST", "path": "/files", "evidence_case": "test_async_file_info_batch_and_directory_requests"}
   ],
   "tested_cases": [
     "test_create_omits_server_defaults",
@@ -139,6 +139,7 @@
   ],
   "gateway_differences": [
     "Data requests require HTTP/1.1; other versions return 505 before body consumption or forwarding",
+    "Sync octet-stream batches stop at the first error; async batches use concurrent uploads and other writes may remain in flight; 507 maps to NotEnoughSpaceException",
     "Upload 413 maps to SandboxException with a 413 message prefix; SDK 2.51.0 does not populate status_code for this envd error",
     "A truncated chunked command response can map to TimeoutException; inspect its ConnectError UNAVAILABLE transport cause and separately check sandbox health"
   ],
