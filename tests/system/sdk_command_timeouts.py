@@ -159,6 +159,40 @@ async def connect_case(sandbox, asynchronous, field, case, value):
                 outcome=expected, same_pid_recovered=True, start_markers=1)
 
 
+async def wait_deadline_case(sandbox):
+    marker = '/tmp/wait-timeout-' + uuid.uuid4().hex
+    command = "printf 'once\\n' >> " + shlex.quote(marker)
+    command += '; exec python3 -c ' + shlex.quote(QUIET)
+    original = await call(sandbox.commands.run, command, stdin=True,
+                          background=True, timeout=1)
+    recovery = None
+    try:
+        # Start has returned a known PID, but stdin stays open, so wait cannot
+        # get a successful end event. Its deadline is the existing stream's.
+        try:
+            await call(original.wait)
+        except Exception as error:
+            verify_failure(error, 'stream_deadline')
+        else:
+            raise AssertionError('wait ignored the command stream deadline')
+        assert original.pid in [item.pid for item in await call(sandbox.commands.list)]
+        await call(original.disconnect)
+        recovery = await call(sandbox.commands.connect, original.pid, timeout=15)
+        assert recovery.pid == original.pid
+        await call(recovery.close_stdin, request_timeout=15)
+        result = await call(recovery.wait)
+        assert (result.stdout, result.stderr, result.exit_code) == ('finished\n', '', 0)
+        assert await marker_count(sandbox, marker) == 1
+    finally:
+        await call(original.kill)
+        for handle in (recovery, original):
+            if handle is not None:
+                await call(handle.disconnect)
+    return dict(operation='wait', parameter='inherited_stream_deadline',
+                case='one_second_after_known_start', outcome='stream_deadline',
+                same_pid_recovered=True, start_markers=1)
+
+
 async def exercise(args):
     assert importlib.metadata.version('e2b') == '2.51.0'
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
@@ -176,6 +210,7 @@ async def exercise(args):
                     rows.append(await connect_case(sandbox, cls is AsyncSandbox,
                                                    field, case, value))
                     assert (await call(sandbox.commands.run, 'printf healthy', timeout=15)).stdout == 'healthy'
+            rows.append(await wait_deadline_case(sandbox))
             results.append(dict(sdk=cls.__name__, cases=rows))
         finally:
             assert await call(sandbox.kill)
