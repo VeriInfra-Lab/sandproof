@@ -3,9 +3,10 @@ use support::*;
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    AdmissionError, AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, JournalError,
-    NeverCrash,
+    AdmissionError, AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, CreateAdmission,
+    CreateOptions, JournalError, NeverCrash,
 };
+use std::collections::BTreeMap;
 use tempfile::TempDir;
 
 fn setup() -> (TempDir, ControllerJournal) {
@@ -48,6 +49,62 @@ fn request(sandbox: u64, tenant: u64) -> core::CreateRequest {
     request.workspace = core::FsId(sandbox);
     request.operation = core::OperationId(sandbox * 10);
     request
+}
+
+#[test]
+fn create_options_share_the_admission_commit_and_survive_reopen() {
+    let (directory, mut journal) = setup();
+    let options = CreateOptions {
+        env_vars: BTreeMap::from([("TASK_ID".into(), "unit-7".into())]),
+        metadata: BTreeMap::from([("job".into(), "unit-7".into())]),
+    };
+    assert!(matches!(
+        journal.admit_create_with_options(
+            request(10, 1),
+            CreateAdmission {
+                now_ms: 1_000,
+                timeout_secs: 60,
+                disk_bytes: 1_000,
+                limits: limits(),
+                options: options.clone()
+            },
+            &mut BeforeCommit,
+        ),
+        Err(AdmissionError::Journal(JournalError::InjectedCrash(
+            CrashPoint::BeforeCommit
+        )))
+    ));
+    assert!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(10))
+            .is_none()
+    );
+    assert_eq!(
+        journal.create_options(core::SandboxId(10)).unwrap(),
+        CreateOptions::default()
+    );
+    journal
+        .admit_create_with_options(
+            request(10, 1),
+            CreateAdmission {
+                now_ms: 1_000,
+                timeout_secs: 60,
+                disk_bytes: 1_000,
+                limits: limits(),
+                options: options.clone(),
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+    let reopened =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(
+        reopened.create_options(core::SandboxId(10)).unwrap(),
+        options
+    );
 }
 
 fn running(
