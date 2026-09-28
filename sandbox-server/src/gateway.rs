@@ -11,7 +11,7 @@ use std::{
 
 use axum::{
     body::{Body, to_bytes},
-    http::{Method, Request, Response, StatusCode, header},
+    http::{Method, Request, Response, StatusCode, Version, header},
 };
 use http_body_util::{BodyStream, Limited};
 use hyper::client::conn::http1::{self, SendRequest};
@@ -195,6 +195,11 @@ async fn prepare_body(
     mut request: Request<Body>,
     file_request: bool,
 ) -> Result<Request<Body>, Response<Body>> {
+    // The fixed SDK uses HTTP/1.1. HTTP/1.0 cannot distinguish a truncated
+    // unknown-length stream from success; do not execute it on that basis.
+    if request.version() != Version::HTTP_11 {
+        return Err(response(StatusCode::HTTP_VERSION_NOT_SUPPORTED));
+    }
     if file_request {
         let (parts, body) = request.into_parts();
         let Ok(bytes) = to_bytes(body, FILE_REQUEST_LIMIT).await else {
@@ -223,6 +228,7 @@ async fn forward_request(
     sender: &mut SendRequest<Body>,
     mut request: Request<Body>,
 ) -> Response<Body> {
+    let downstream_version = request.version();
     request.headers_mut().remove("x-api-key");
     request.headers_mut().insert(
         header::CONNECTION,
@@ -242,7 +248,11 @@ async fn forward_request(
     };
     *request.uri_mut() = uri;
     match sender.send_request(request).await {
-        Ok(upstream) => {
+        Ok(mut upstream) => {
+            // The two HTTP connections negotiate versions independently. An
+            // upstream HTTP/1.0 response must not downgrade an HTTP/1.1 client
+            // to close-delimited output: EOF would hide a stream limit error.
+            *upstream.version_mut() = downstream_version;
             // Keep the upstream Content-Length, if present, but erase the
             // clamped hint. Otherwise it conflicts with the original header
             // (a Hyper assertion), or can disguise truncation as completion.
@@ -279,3 +289,6 @@ pub async fn relay() -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "sdk-contract-tests"))]
+mod sdk_tests;

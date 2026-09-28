@@ -75,6 +75,24 @@ fn request(size: usize, file: bool, known_length: bool) -> (Request<Body>, Arc<A
 }
 
 #[tokio::test]
+async fn unsupported_http_versions_are_rejected_before_body_or_forwarding() {
+    for version in [
+        Version::HTTP_09,
+        Version::HTTP_10,
+        Version::HTTP_2,
+        Version::HTTP_3,
+    ] {
+        for file in [false, true] {
+            let (mut request, polled) = request(1, file, false);
+            *request.version_mut() = version;
+            let rejection = prepare_body(request, file).await.unwrap_err();
+            assert_eq!(rejection.status(), StatusCode::HTTP_VERSION_NOT_SUPPORTED);
+            assert_eq!(polled.load(Ordering::SeqCst), 0);
+        }
+    }
+}
+
+#[tokio::test]
 async fn file_upload_limit_accepts_exact_boundary_for_known_and_streamed_bodies() {
     for known in [false, true] {
         for size in [
@@ -203,9 +221,16 @@ async fn process_input_overflow_is_not_forwarded_as_a_short_successful_request()
 }
 
 #[derive(Clone, Copy)]
+enum Framing {
+    Fixed,
+    Chunked,
+    CloseDelimited,
+}
+
+#[derive(Clone, Copy)]
 struct Reply {
     size: usize,
-    chunked: bool,
+    framing: Framing,
     truncated: bool,
     gated: bool,
 }
@@ -235,27 +260,31 @@ async fn synthetic_envd(
     assert!(!headers.to_lowercase().contains("x-api-key"));
     starts.fetch_add(1, Ordering::SeqCst);
     let stream = reader.get_mut();
-    let framing = if reply.chunked {
-        "Transfer-Encoding: chunked\r\n".to_owned()
-    } else {
-        format!(
+    let framing = match reply.framing {
+        Framing::Chunked => "Transfer-Encoding: chunked\r\n".to_owned(),
+        Framing::Fixed => format!(
             "Content-Length: {}\r\n",
             reply.size + usize::from(reply.truncated)
-        )
+        ),
+        Framing::CloseDelimited => String::new(),
+    };
+    let version = match reply.framing {
+        Framing::CloseDelimited => "HTTP/1.0",
+        Framing::Fixed | Framing::Chunked => "HTTP/1.1",
     };
     stream
-        .write_all(format!("HTTP/1.1 200 OK\r\n{framing}Connection: close\r\n\r\n").as_bytes())
+        .write_all(format!("{version} 200 OK\r\n{framing}Connection: close\r\n\r\n").as_bytes())
         .await?;
     let bytes = vec![b'X'; CHUNK];
     let mut remaining = reply.size;
     let mut release = Some(release);
     while remaining > 0 {
         let size = remaining.min(CHUNK);
-        if reply.chunked {
+        if matches!(reply.framing, Framing::Chunked) {
             stream.write_all(format!("{size:x}\r\n").as_bytes()).await?;
         }
         stream.write_all(&bytes[..size]).await?;
-        if reply.chunked {
+        if matches!(reply.framing, Framing::Chunked) {
             stream.write_all(b"\r\n").await?;
         }
         remaining -= size;
@@ -267,7 +296,7 @@ async fn synthetic_envd(
                 .expect("client must observe the first chunk before the rest is sent");
         }
     }
-    if reply.chunked && !reply.truncated {
+    if matches!(reply.framing, Framing::Chunked) && !reply.truncated {
         stream.write_all(b"0\r\n\r\n").await?;
     }
     stream.shutdown().await
@@ -354,15 +383,15 @@ async fn exchange(reply: Reply, starts: Arc<AtomicUsize>) -> Observed {
 }
 
 #[tokio::test]
-async fn response_limit_is_exact_on_the_wire_for_fixed_and_chunked_lengths() {
+async fn response_limit_is_exact_for_fixed_chunked_and_close_delimited_upstreams() {
     let starts = Arc::new(AtomicUsize::new(0));
-    for chunked in [false, true] {
+    for framing in [Framing::Fixed, Framing::Chunked, Framing::CloseDelimited] {
         for size in [RESPONSE_LIMIT - 1, RESPONSE_LIMIT, RESPONSE_LIMIT + 1] {
             let before = starts.load(Ordering::SeqCst);
             let observed = exchange(
                 Reply {
                     size,
-                    chunked,
+                    framing,
                     truncated: false,
                     gated: false,
                 },
@@ -387,12 +416,12 @@ async fn response_limit_is_exact_on_the_wire_for_fixed_and_chunked_lengths() {
 #[tokio::test]
 async fn upstream_disconnect_is_not_a_success_or_replay_and_next_request_works() {
     let starts = Arc::new(AtomicUsize::new(0));
-    for chunked in [false, true] {
+    for framing in [Framing::Fixed, Framing::Chunked] {
         let before = starts.load(Ordering::SeqCst);
         let broken = exchange(
             Reply {
                 size: CHUNK * 2,
-                chunked,
+                framing,
                 truncated: true,
                 gated: true,
             },
@@ -406,7 +435,7 @@ async fn upstream_disconnect_is_not_a_success_or_replay_and_next_request_works()
         let healthy = exchange(
             Reply {
                 size: 17,
-                chunked,
+                framing,
                 truncated: false,
                 gated: false,
             },
@@ -424,7 +453,7 @@ async fn response_flows_before_upstream_finishes_and_overflow_does_not_poison_ne
     let starts = Arc::new(AtomicUsize::new(0));
     let reply = Reply {
         size: RESPONSE_LIMIT + 1,
-        chunked: true,
+        framing: Framing::Chunked,
         truncated: false,
         gated: true,
     };

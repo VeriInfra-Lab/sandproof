@@ -43,10 +43,12 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 
 固定版本的 SDK 调用清单位于[兼容合同](../tests/compat/contract.json)。`bash scripts/check-compat.sh` 使用 E2B Python SDK 2.51.0 和本机回环合成响应；[实机系统测试](../tests/system/sdk_server_smoke.py)则使用同版原 SDK，经真实控制器和网关驱动 Firecracker，覆盖显式禁网的创建、连接、查询、列表、续期、销毁，以及基本命令、文件、超时、终止、断线重连、1 MiB 输出、跨租户与旧令牌、非法文件路径、重复令牌、超限上传拒绝和到期清理。隔离 Linux/KVM 测试已通过，但只覆盖 S01–S05、S11–S12 的部分路径。
 
-网关超限与断流回归分三层记录，不能合并算作实机通过：
+网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
 
-- [网关组件测试](../sandbox-server/src/gateway/tests.rs)：在 Linux 上执行 `cargo test -p sandproof-server --locked`。通过实际网关的请求处理、响应限流及 HTTP 编码，覆盖 8 MiB 文件请求、1 MiB 命令输入、32 MiB 响应边界；区分已知长度和分块传输，检查中途 EOF、逐块传输、不重发及失败后的新请求。使用内存传输替换 envd，不覆盖鉴权、进程执行或 VM 隔离。响应上限计算 HTTP body 字节，包含 Connect 编码，不能直接等同于原始 stdout 大小。
+- [网关组件测试](../sandbox-server/src/gateway/tests.rs)：在 Linux 上执行 `cargo test -p sandproof-server --locked`。通过实际网关的请求处理、响应限流及 HTTP 编码，覆盖 8 MiB 文件请求、1 MiB 命令输入、32 MiB 响应边界；区分已知长度、分块传输和上游 HTTP/1.0 未声明长度，检查中途 EOF、逐块传输、不重发及失败后的新请求，以及非 HTTP/1.1 请求在读取 body 前被拒绝。使用内存传输替换 envd，不覆盖鉴权、进程执行或 VM 隔离。响应上限计算 HTTP body 字节，包含 Connect 编码，不能直接等同于原始 stdout 大小。
 - SDK 合同测试：`bash scripts/check-compat.sh` 另覆盖 Connect 帧被截断和文件长度不足。已取得命令 PID 后，缺少完整结束事件仍报错，不自动重发 Start；文件下载不返回成功的部分内容。测试使用固定 SDK、现有 `retries=0` 配置与合成服务。
+- SDK/网关组合测试：同一脚本在 Linux 上还启用 `sdk-contract-tests`，让[原 SDK 调用集](../tests/compat/gateway_sdk.py)经过[实际 Rust 网关的请求分类、请求体处理和 HTTP 转发代码](../sandbox-server/src/gateway/sdk_tests.rs)。除了复用 SDK 的命令、后台句柄、退出码、文件和目录用例，还验证上传 8 MiB 和下载 32 MiB 的前一字节/恰好/多一字节边界、大命令输出、管理 API key 不被转发、失败后继续使用。上游是合成 envd，下游是真实 SDK；不覆盖 `handle` 的鉴权、命名空间 relay 或 VM。夹具只编入测试二进制，正式服务没有旁路启动模式。非 Linux 会明确报告组合测试未运行，不能用 SDK 单层通过代替。
+- 固定 SDK 会把部分 Connect 流的 HTTP EOF 包装成 `TimeoutException`。组合测试与实机脚本共用错误分类，只有底层 `ConnectError(UNAVAILABLE)` 的原因确为传输读错误时才将它视为断流；普通期限超时、鉴权失败和测试异常不能算作限流通过。这个 SDK 错误映射差异不表示沙箱已到期，失败后仍须另行验证可用性。
 - [独立实机脚本](../tests/system/gateway_stream_limits.py)：在原系统测试相同的隔离服务环境，沿用 `retries=0` 配置，使用 `SANDPROOF_TEST_API_KEY` 和显式 `--api-url`、`--sandbox-url` 运行。它创建自己的禁网沙箱，检查 32 MiB 前一字节/恰好/多一字节的文件下载、超大命令输出和主动断线后同 PID 重连；用 FIFO 同步断线时机，用来宾标记核对副作用只观察到一次，每次失败后验证沙箱仍可执行命令，最后销毁本轮沙箱。启动需允许 300 秒寿命，来宾须有现有探针使用的 shell/coreutils。此新增实机脚本尚待在 KVM 上验收，不代替宿主资源残留检查或完整 S11/S12。
 
 实机脚本运行示例（在已配置服务的测试机上执行，API key 由环境提供）：

@@ -12,8 +12,11 @@ import shlex
 import uuid
 
 import httpx
+import pyqwest
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 from e2b import Sandbox
-from e2b.exceptions import SandboxException
+from e2b.exceptions import TimeoutException
 
 from sdk_server_smoke import options
 
@@ -27,9 +30,17 @@ RESPONSE_LIMIT = 32 * MIB
 def stream_failure(error):
     # Never turn authentication errors, timeouts, command nonzero exits, or
     # arbitrary test bugs into evidence that a stream limit was enforced.
-    return (type(error) in (httpx.RemoteProtocolError, httpx.ReadError, SandboxException)
-            or (type(error) is Exception
-                and str(error) == "Command ended without an end event"))
+    if type(error) in (httpx.RemoteProtocolError, httpx.ReadError):
+        return True
+    if type(error) is Exception and str(error) == "Command ended without an end event":
+        return True
+    # SDK 2.51.0 maps a chunked-body EOF to TimeoutException via UNAVAILABLE.
+    # Accept only its typed transport cause, never a deadline or timeout alone.
+    rpc_error = error.__context__ if type(error) is TimeoutException else error
+    return (isinstance(rpc_error, ConnectError)
+            and rpc_error.code is Code.UNAVAILABLE
+            and isinstance(rpc_error.__cause__,
+                           (pyqwest.RemoteProtocolError, pyqwest.ReadError, pyqwest.StreamError)))
 
 
 def healthy(sandbox):

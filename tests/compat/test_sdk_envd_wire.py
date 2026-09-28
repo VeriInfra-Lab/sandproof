@@ -90,6 +90,7 @@ class SyntheticProcess(process_connect.ProcessSync):
         self.starts = []
         self.exit_code = 0
         self.omit_end = False
+        self.stdout_chunks = [b"synthetic\n"]
 
     def start(self, request, _context):
         self.starts.append(request)
@@ -98,14 +99,15 @@ class SyntheticProcess(process_connect.ProcessSync):
                 event=Oneof("start", process_pb.ProcessEvent.StartEvent(pid=4321))
             )
         )
-        yield process_pb.StartResponse(
-            event=process_pb.ProcessEvent(
-                event=Oneof(
-                    "data",
-                    process_pb.ProcessEvent.DataEvent(output=Oneof("stdout", b"synthetic\n")),
+        for chunk in self.stdout_chunks:
+            yield process_pb.StartResponse(
+                event=process_pb.ProcessEvent(
+                    event=Oneof(
+                        "data",
+                        process_pb.ProcessEvent.DataEvent(output=Oneof("stdout", chunk)),
+                    )
                 )
             )
-        )
         if not self.omit_end:
             yield process_pb.StartResponse(
                 event=process_pb.ProcessEvent(
@@ -150,6 +152,8 @@ class SyntheticEnvd:
         self.file_status = 200
         self.truncate_process_frame = False
         self.truncate_file = False
+        self.download_size = None
+        self.download_length = True
 
     def __call__(self, environ, start_response):
         path = environ["PATH_INFO"]
@@ -163,6 +167,7 @@ class SyntheticEnvd:
                 "query": parse_qs(environ.get("QUERY_STRING", "")),
                 "content_type": environ.get("CONTENT_TYPE", ""),
                 "access_token": environ.get("HTTP_X_ACCESS_TOKEN"),
+                "api_key": environ.get("HTTP_X_API_KEY"),
                 "body": body,
             }
         )
@@ -207,6 +212,20 @@ class SyntheticEnvd:
                 )
                 return [response]
             if method == "GET":
+                if self.download_size is not None:
+                    headers = [("Content-Type", "application/octet-stream")]
+                    if self.download_length:
+                        headers.append(("Content-Length", str(self.download_size)))
+                    start_response("200 OK", headers)
+
+                    def chunks():
+                        remaining = self.download_size
+                        while remaining:
+                            size = min(remaining, 64 * 1024)
+                            yield b"X" * size
+                            remaining -= size
+
+                    return chunks()
                 response = b"synthetic file content\n"
                 start_response(
                     "200 OK", [("Content-Type", "text/plain"),
