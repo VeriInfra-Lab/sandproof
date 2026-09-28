@@ -218,8 +218,9 @@ PY""")
             f"ip -4 route replace {address}/32 via 172.16.0.1 dev eth0"
         )
         assert route.exit_code == 0, route.stderr
-        # The host-side namespace has already reached this listener with the
-        # guest's source address. This packet must still be stopped at tap0.
+        # The host-side namespace has reached this listener from the TAP
+        # subnet, and its route check covers forwarded guest packets. The
+        # guest packet itself must still be stopped at tap0.
         guarded_probe = sandbox.commands.run(f"""python3 - <<'PY'
 import socket
 with socket.socket() as sock:
