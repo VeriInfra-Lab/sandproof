@@ -108,6 +108,8 @@ uv run --locked --project tests/compat python tests/system/transfer_interruption
 
 [一元 RPC 超时探针](../tests/system/sdk_rpc_timeouts.py)对原同步/异步文件 get_info/exists/list/make_dir/remove/rename、命令 list/kill/send_stdin/close_stdin，以及句柄 send_stdin/close_stdin，逐项传入省略、零、负数和超过 Connect 毫秒头范围的请求期限。负数转为 1 ms，快速完整回执可能先到；失败仅接受明确的 DEADLINE_EXCEEDED。超长头须在操作前拒绝且无副作用；期限失败只查询已有路径或 PID，不重复提交未知操作。输入结果须为零次或一次完整载荷，不能重复；每例再检查正常调用，最后销毁本次 VM 并另做宿主残留审计。该脚本不覆盖生命周期和 watcher 接口，运行方式与其他 SDK 实机脚本一致。上述 96 个场景已在两台真实 VM 通过：48 个完整成功、24 个明确期限到期、24 个超长头拒绝；精确提交和指纹见[版本基线](../references/v1-baseline.json)的 `rpc_timeout_acceptance`。本轮负数均观察到期限到期，不能据此要求更快的服务必定失败。服务退出前宿主进程、私有资源与网络空间持有者均已清理，基础盘未变。
 
+[沙箱寿命参数探针](../tests/system/sdk_lifetime_values.py)通过原同步/异步 SDK 单独验证创建，以及实例/类形式的 connect/set_timeout：省略、零、负数和部署上限前/恰好/之后的值。创建省略时核对部署默认寿命，connect 省略或请求更短寿命时不缩短到期时间，set_timeout 可以缩短或延长；缺少必填参数的 set_timeout 须在 SDK 报错，其余非法寿命须收到管理 API 的 400，不能沿用 envd RPC 错误类型。每次拒绝后原期限保持不变、原实例可用；每次销毁后原 SDK 列表为空，宿主另审计精确残留。该脚本要求客户端与隔离服务在同一宿主，并显式提供 `--default-timeout`、`--max-timeout` 匹配服务配置，不将探针配置当成最终部署预算。同步/异步的 68 个当前行为用例已通过：34 个成功、30 个管理 400 和 4 个缺参 TypeError；8 台 VM 在服务退出前经精确进程、私有资源和网络空间持有者审计，基础盘未变。精确版本见[版本基线](../references/v1-baseline.json)的 `lifetime_parameter_observation`。这是当前行为观测，不是寿命兼容目标通过：创建默认值、省略连接时的续期、零/负值触发到期和总寿命截顶仍保留[能力矩阵](../tests/compat/contract.json)第 2/5/6/7 项缺口，由 #9/#12 继续实现。
+
 ```sh
 uv run --locked --project tests/compat python tests/system/sdk_data_contract.py \
   --api-url http://127.0.0.1:3000 --sandbox-url http://127.0.0.1:3000 \
