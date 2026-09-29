@@ -171,7 +171,8 @@ def exercise(args: argparse.Namespace) -> None:
                              {"templateID": "base", "allow_internet_access": False})
         assert status == 201, (status, body)
         sandbox_id = json.loads(body)["sandboxID"]
-        assert fetch(opener, base_url, "DELETE", f"/v2/sandboxes/{sandbox_id}", key)[0] == 204
+        status, body = fetch(opener, base_url, "DELETE", f"/sandboxes/{sandbox_id}", key)
+        assert status == 204, (status, body)
         wait_for(lambda: not processes_in_uid_range(args.uid_base, args.uid_base + 1000), 15, "all test VM exits")
         for path in (root / "jails/.claims").iterdir():
             saved = json.loads((path / "record.json").read_text())
