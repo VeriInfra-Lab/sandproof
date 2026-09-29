@@ -923,17 +923,34 @@ impl ControllerJournal {
             let Some(receipt) = observer(&action) else {
                 continue;
             };
-            if !matches!(
-                receipt.outcome,
-                WorkOutcome::ObservedSuccess(_)
-                    | WorkOutcome::DefinitiveFailure { partial: None, .. }
-            ) {
-                continue;
-            }
-            self.complete(&receipt, &mut crate::NeverCrash)?;
-            resolved += 1;
+            resolved += usize::from(self.reconcile_observed(&action, &receipt)?);
         }
         Ok(resolved)
+    }
+
+    /// Accept one final, observed result for an action already claimed by the
+    /// durable outbox. Inconclusive observations leave its history untouched.
+    /// This lets the recovery coordinator isolate a rejected receipt to its
+    /// sandbox without duplicating the receipt decision outside this module.
+    /// # Errors
+    /// Rejects invalid evidence, an obsolete action, or a storage failure.
+    pub fn reconcile_observed<E>(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+        receipt: &WorkReceipt<E>,
+    ) -> Result<bool, JournalError>
+    where
+        E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+    {
+        if !matches!(
+            receipt.outcome,
+            WorkOutcome::ObservedSuccess(_) | WorkOutcome::DefinitiveFailure { partial: None, .. }
+        ) {
+            return Ok(false);
+        }
+        receipt.validate_for(action)?;
+        self.complete(receipt, &mut crate::NeverCrash)?;
+        Ok(true)
     }
 }
 

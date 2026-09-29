@@ -70,12 +70,36 @@ class BaseGuestTests(unittest.TestCase):
             f"cat {builder.UNIT_GUEST}": builder.SERVICE,
             f"stat {builder.LINK_GUEST}": f'Fast link dest: "{builder.UNIT_GUEST}"',
             f"stat {builder.ENVD_GUEST}": "Mode:  0755",
-            "stat /home/ubuntu": "User: 1000   Group: 1000",
+            **{f"stat {name}": "Type: directory    Mode:  0755" for name in ("/", "/home", "/usr", "/usr/bin")},
+            "stat /usr/bin/dash": "Type: regular    Mode:  0755",
+            "stat /home/ubuntu": "Type: directory    Mode:  0750\nUser: 1000   Group: 1000",
+            "stat /bin": 'Fast link dest: "usr/bin"',
+            "stat /bin/sh": 'Fast link dest: "dash"',
         }
         with patch.object(builder, "digest", side_effect=["envd", "packages"]), \
              patch.object(builder, "debugfs", side_effect=lambda _, request: responses.get(request, "")):
             with self.assertRaisesRegex(ValueError, "shadow is missing"):
                 builder.verify_image(self.work / "image", self.work, profile)
+
+    def test_ubuntu_home_owner_mode_and_shell_path_are_checked(self):
+        responses = {
+            **{f"stat {name}": "Type: directory    Mode:  0755" for name in ("/", "/home", "/usr", "/usr/bin")},
+            "stat /usr/bin/dash": "Type: regular    Mode:  0755",
+            "stat /home/ubuntu": "Type: directory    Mode:  0750\nUser: 1000   Group: 1000",
+            "stat /bin": 'Fast link dest: "usr/bin"',
+            "stat /bin/sh": 'Fast link dest: "dash"',
+        }
+        with patch.object(builder, "debugfs", side_effect=lambda _, request: responses[request]):
+            builder.verify_ubuntu_execution_paths(self.work / "image")
+            for broken in ("Type: directory    Mode:  0750\nUser: 0   Group: 0",
+                           "Type: directory    Mode:  0640\nUser: 1000   Group: 1000"):
+                responses["stat /home/ubuntu"] = broken
+                with self.assertRaisesRegex(ValueError, "ubuntu home"):
+                    builder.verify_ubuntu_execution_paths(self.work / "image")
+            responses["stat /home/ubuntu"] = "Type: directory    Mode:  0750\nUser: 1000   Group: 1000"
+            responses["stat /bin/sh"] = 'Fast link dest: "bash"'
+            with self.assertRaisesRegex(ValueError, "shell link"):
+                builder.verify_ubuntu_execution_paths(self.work / "image")
 
     def test_untrusted_output_parent_is_rejected(self):
         # Even root-owned /tmp has writable mode; ownership alone is insufficient.

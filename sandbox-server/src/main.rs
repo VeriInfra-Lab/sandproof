@@ -22,7 +22,7 @@ mod linux {
         os::unix::fs::{MetadataExt, PermissionsExt},
         path::{Path, PathBuf},
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use sandbox_controller_core as core;
@@ -299,6 +299,16 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<(), PortError> {
+            #[cfg(debug_assertions)]
+            if std::env::var("SANDPROOF_TEST_FAIL_RECLAIM_STOP_SANDBOX")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                == Some(action.command.command().sandbox().0)
+            {
+                // Test-only refusal before host I/O. The old stop remains
+                // unknown, so another sandbox must still be able to recover.
+                return Err(PortError::Busy);
+            }
             self.0
                 .reclaim_incomplete_stop(action)
                 .map_err(|_| PortError::Busy)
@@ -489,16 +499,31 @@ mod linux {
     fn spawn_reconciliation_scanner(port: Arc<ManagedPort<NodeHost>>, seconds: u64) {
         drop(tokio::spawn(async move {
             let mut timer = tokio::time::interval(Duration::from_secs(seconds));
+            let mut last_failure_log: Option<Instant> = None;
             loop {
                 timer.tick().await;
                 let port = Arc::clone(&port);
                 match tokio::task::spawn_blocking(move || {
-                    port.recover_on_startup()?;
-                    port.expire_due()
+                    let recovery = port.recover_on_startup()?;
+                    let expiry = port.expire_due_report()?;
+                    Ok::<_, PortError>((recovery, expiry))
                 })
                 .await
                 {
-                    Ok(Ok(_)) => {}
+                    Ok(Ok((recovery, expiry)))
+                        if recovery.failed_sandboxes > 0 || expiry.unresolved_sandboxes > 0 =>
+                    {
+                        if last_failure_log
+                            .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
+                        {
+                            eprintln!(
+                                "reconciliation parked {} sandboxes after host or receipt errors; {} due expiries remain unresolved; manual inspection may be required",
+                                recovery.failed_sandboxes, expiry.unresolved_sandboxes
+                            );
+                            last_failure_log = Some(Instant::now());
+                        }
+                    }
+                    Ok(Ok(_)) => last_failure_log = None,
                     Ok(Err(_)) => eprintln!("reconciliation or expiry worker needs attention"),
                     Err(error) => eprintln!("reconciliation worker join failure: {error}"),
                 }
@@ -575,8 +600,8 @@ mod linux {
         })?;
         if recovery.unresolved_sandboxes != 0 {
             eprintln!(
-                "startup recovery left {} sandboxes unresolved; no uncertain host action was repeated",
-                recovery.unresolved_sandboxes
+                "startup recovery left {} sandboxes unresolved ({} after host or receipt errors); no uncertain host action was repeated",
+                recovery.unresolved_sandboxes, recovery.failed_sandboxes
             );
         }
         let credentials = config

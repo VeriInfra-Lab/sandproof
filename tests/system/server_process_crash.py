@@ -90,6 +90,7 @@ def start_server(
     stop_gate: Path | None = None,
     before_target: str | None = None,
     guest_init_target: str | None = None,
+    fail_reclaim_stop_sandbox: int | None = None,
 ) -> subprocess.Popen[bytes]:
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
     if target is not None:
@@ -98,6 +99,8 @@ def start_server(
         environment["SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION"] = before_target
     if guest_init_target is not None:
         environment["SANDPROOF_TEST_EXIT_AFTER_GUEST_INIT"] = guest_init_target
+    if fail_reclaim_stop_sandbox is not None:
+        environment["SANDPROOF_TEST_FAIL_RECLAIM_STOP_SANDBOX"] = str(fail_reclaim_stop_sandbox)
     if stop_gate is not None:
         environment["SANDPROOF_TEST_STOP_GATE"] = str(stop_gate)
     with log.open("ab") as output:
