@@ -128,6 +128,9 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
         assert prepared.exit_code == 0
         profile = sandbox.commands.run("nproc; awk '/MemTotal/ {print $2}' /proc/meminfo; df -B1 --output=size / | tail -1", cwd="/app", timeout=30).stdout.splitlines()
         assert int(profile[0]) == 1 and int(profile[1]) >= 2_000_000 and int(profile[2]) >= 9 * GIB, profile
+        # The prebuilt base has the host's 127.0.0.53 stub, which is not a
+        # resolver inside the VM. Keep one reviewed DNS endpoint for the run.
+        sandbox.commands.run("printf 'nameserver 1.1.1.1\\n' > /etc/resolv.conf && getent ahostsv4 archive.ubuntu.com >/dev/null", cwd="/app", timeout=30)
         version = sandbox.commands.run("python3 --version; (gcc --version | head -1) 2>/dev/null || true", cwd="/app", timeout=30).stdout.strip()
         if name == "polyglot-c-py":
             # Exactly the only task-specific Dockerfile RUN step, inside the guest.
@@ -229,7 +232,7 @@ def exercise(args: argparse.Namespace) -> None:
                           "server_sha256": sha256_file(binary), "base_sha256": source_base_sha,
                           "source_commit": json.loads((checkout / "benchmarks/diagnostic-tasks.json").read_text())["source_commit"],
                           "memory_mib": 2048, "disk_mib": 10240, "vcpu_count": 1,
-                          "network": "public IPv4 fixed for whole trial", "tasks": results,
+                          "network": "public IPv4 fixed for whole trial; guest DNS 1.1.1.1", "tasks": results,
                           "residual": "each VM durable Destroyed; no exact process, jail, netns, cgroup, test UID; base unchanged",
                           "scope": "selected original oracle/verifier chain, not full E2B equivalence or 89-task score"}))
     finally:
