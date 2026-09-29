@@ -1353,7 +1353,7 @@
         "cwd": "/"
       },
       {
-        "run": "pip install mteb==1.38.41",
+        "run": "pip install mteb==1.38.41 Pillow==11.3.0",
         "cwd": "/app",
         "env": {
           "PIP_NO_CACHE_DIR": "1"
