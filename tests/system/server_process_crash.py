@@ -89,12 +89,24 @@ def start_server(
     binary: Path, config: Path, log: Path, target: str | None,
     stop_gate: Path | None = None,
     before_target: str | None = None,
+    guest_init_target: str | None = None,
+    fail_reclaim_stop_sandbox: int | None = None,
+    fail_reclaim_prepare_sandbox: int | None = None,
+    exit_after_vm_claim: str | None = None,
 ) -> subprocess.Popen[bytes]:
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
     if target is not None:
         environment["SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION"] = target
     if before_target is not None:
         environment["SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION"] = before_target
+    if guest_init_target is not None:
+        environment["SANDPROOF_TEST_EXIT_AFTER_GUEST_INIT"] = guest_init_target
+    if fail_reclaim_stop_sandbox is not None:
+        environment["SANDPROOF_TEST_FAIL_RECLAIM_STOP_SANDBOX"] = str(fail_reclaim_stop_sandbox)
+    if fail_reclaim_prepare_sandbox is not None:
+        environment["SANDPROOF_TEST_FAIL_RECLAIM_PREPARE_SANDBOX"] = str(fail_reclaim_prepare_sandbox)
+    if exit_after_vm_claim is not None:
+        environment["SANDPROOF_TEST_EXIT_AFTER_VM_CLAIM"] = exit_after_vm_claim
     if stop_gate is not None:
         environment["SANDPROOF_TEST_STOP_GATE"] = str(stop_gate)
     with log.open("ab") as output:
@@ -193,19 +205,33 @@ def exercise(args: argparse.Namespace) -> None:
     completed = False
     try:
         before_host = args.window == "before-host"
+        activation = args.window in ("before-activation", "after-activation", "after-guest-init")
+        create_after = (
+            "activate_vm" if args.window == "after-activation"
+            else "prepare_vm" if args.window == "after-host"
+            else None
+        )
+        create_before = (
+            "open_fence" if before_host
+            else "activate_vm" if args.window == "before-activation"
+            else None
+        )
         process = start_server(
             binary, config, log,
-            None if before_host else "prepare_vm",
-            before_target="open_fence" if before_host else None,
+            create_after,
+            before_target=create_before,
+            guest_init_target="activate_vm" if args.window == "after-guest-init" else None,
         )
         wait_ready(opener, base_url, api_key, process)
         interrupted_request(
             lambda: fetch(
                 opener, base_url, "POST", "/v2/sandboxes", api_key,
-                {"templateID": "base", "timeout": 180, "allow_internet_access": False},
+                {"templateID": "base", "timeout": 180, "allow_internet_access": False,
+                 "envVars": {"SP_RECOVERY": "original"}},
             ),
             process,
-            EXIT_BEFORE_HOST_ACTION if before_host else EXIT_AFTER_HOST_ACTION,
+            (EXIT_BEFORE_HOST_ACTION if create_before else
+             88 if args.window == "after-guest-init" else EXIT_AFTER_HOST_ACTION),
         )
         if before_host:
             assert not list((root / "state/fences").glob("*.json")), (
@@ -235,6 +261,14 @@ def exercise(args: argparse.Namespace) -> None:
             assert record["resource_id"] == vm_name
             pid, ticks = record["pid"], record["start_time_ticks"]
         assert process_start_ticks(pid) == ticks, "server restart replaced the VM"
+        if activation:
+            import importlib.metadata
+            from e2b import Sandbox
+            from sdk_server_smoke import options
+
+            assert importlib.metadata.version("e2b") == "2.51.0"
+            sandbox = Sandbox.connect(sandbox_id, **options(api_key, base_url, base_url))
+            assert sandbox.commands.run("printf %s \"$SP_RECOVERY\"").stdout == "original"
         stop_server(process)
 
         process = start_server(
@@ -290,5 +324,9 @@ if __name__ == "__main__":
     parser.add_argument("--rootfs", required=True, type=Path)
     parser.add_argument("--uid-base", required=True, type=int)
     parser.add_argument("--scratch-parent", required=True, type=Path)
-    parser.add_argument("--window", choices=("before-host", "after-host"), default="after-host")
+    parser.add_argument(
+        "--window",
+        choices=("before-host", "after-host", "before-activation", "after-activation", "after-guest-init"),
+        default="after-host",
+    )
     exercise(parser.parse_args())

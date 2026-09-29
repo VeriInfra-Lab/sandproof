@@ -112,6 +112,19 @@ pub trait HostAdapter: Send + 'static {
         Err(PortError::Busy)
     }
 
+    /// Repeat only the identical, already-dispatched guest initialization
+    /// after the controller has matched its current create and sealed VM plan.
+    /// The host must use the persisted credential/configuration and verify
+    /// the same running VM before and after the request.
+    /// # Errors
+    /// An unreadable guest, changed VM or conflicting configuration stays unknown.
+    fn reclaim_incomplete_activation(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
     /// Complete only the current operation's terminal fence after a lost
     /// acknowledgement; it may not reopen an older execution gate.
     /// # Errors
@@ -172,6 +185,16 @@ pub trait HostAdapter: Send + 'static {
 pub struct RecoveryReport {
     pub receipts_recovered: usize,
     pub workflows_completed: usize,
+    pub unresolved_sandboxes: usize,
+    /// Sandboxes whose recovery hit a host error or rejected observation.
+    /// Their current operation stays incomplete until exact evidence arrives.
+    pub failed_sandboxes: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ExpiryReport {
+    pub completed: usize,
+    /// Already expired instances whose stop or cleanup is still unresolved.
     pub unresolved_sandboxes: usize,
 }
 
@@ -355,100 +378,82 @@ fn map_admission(error: AdmissionError) -> PortError {
     }
 }
 
+fn matches_current_reclaim(
+    journal: &ControllerJournal,
+    world: &core::World,
+    action: &WorkAction<core::EffectId>,
+) -> Result<bool, PortError> {
+    let matches = match action.command.command() {
+        core::Command::InstallFence {
+            terminal: false, ..
+        } => journal.matches_current_open_fence(world, action),
+        core::Command::PrepareVm { .. } => journal.matches_current_prepare(world, action),
+        core::Command::ConfigureNetwork {
+            policy: core::NetworkPolicy::Ipv4 { .. },
+            ..
+        } => journal.matches_current_network(world, action),
+        core::Command::ActivateVm { .. } => journal.matches_current_activation(world, action),
+        core::Command::InstallFence { terminal: true, .. } => {
+            journal.matches_current_terminal_fence(world, action)
+        }
+        core::Command::StopVm { .. } => journal.matches_current_stop(world, action),
+        core::Command::AbortPrepare { .. } => journal.matches_current_abort_prepare(world, action),
+        core::Command::CleanupVm { .. } => journal.matches_current_cleanup(world, action),
+        _ => return Ok(true),
+    };
+    matches.map_err(map_journal)
+}
+
 fn reclaim_uncertain_actions<H: HostAdapter>(
     journal: &ControllerJournal,
     host: &mut H,
     world: &core::World,
-    blocked: &BTreeSet<core::SandboxId>,
+    blocked: &mut BTreeSet<core::SandboxId>,
     selected: Option<core::SandboxId>,
 ) -> Result<(), PortError> {
-    // This is a compensating observation, never a replay of PrepareVm. The
-    // outbox action must match the exact current operation and sealed plan
-    // before the host checks physical identity and touches partial resources.
+    // This is a compensating observation, never a replay of PrepareVm. Check
+    // the exact current operation and sealed plan before touching the host.
     for action in journal.uncertain_actions().map_err(map_journal)? {
-        if blocked.contains(&action.command.command().sandbox())
-            || selected.is_some_and(|id| id != action.command.command().sandbox())
-        {
+        let sandbox = action.command.command().sandbox();
+        if blocked.contains(&sandbox) || selected.is_some_and(|id| id != sandbox) {
             continue;
         }
-        match action.command.command() {
+        if matches!(
+            action.command.command(),
+            core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }
+        ) && world
+            .sandbox_record(sandbox)
+            .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+        {
+            // Terminal stop, not old startup work, owns the physical VM.
+            continue;
+        }
+        if !matches_current_reclaim(journal, world, &action)? {
+            blocked.insert(sandbox);
+            continue;
+        }
+        let result = match action.command.command() {
             core::Command::InstallFence {
                 terminal: false, ..
-            } => {
-                if !journal
-                    .matches_current_open_fence(world, &action)
-                    .map_err(map_journal)?
-                {
-                    return Err(PortError::Busy);
-                }
-                host.reclaim_incomplete_open_fence(&action)?;
-            }
-            core::Command::PrepareVm { .. } => {
-                if !journal
-                    .matches_current_prepare(world, &action)
-                    .map_err(map_journal)?
-                {
-                    return Err(PortError::Busy);
-                }
-                if world
-                    .sandbox_record(action.command.command().sandbox())
-                    .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
-                {
-                    // Terminal startup cleanup, not the old opening action,
-                    // owns the physical stop. Observation follows afterwards.
-                    continue;
-                }
-                host.reclaim_incomplete_prepare(&action)?;
-            }
+            } => host.reclaim_incomplete_open_fence(&action),
+            core::Command::PrepareVm { .. } => host.reclaim_incomplete_prepare(&action),
             core::Command::ConfigureNetwork {
                 policy: core::NetworkPolicy::Ipv4 { .. },
                 ..
-            } => {
-                if !journal
-                    .matches_current_network(world, &action)
-                    .map_err(map_journal)?
-                {
-                    return Err(PortError::Busy);
-                }
-                host.reclaim_incomplete_network(&action)?;
-            }
+            } => host.reclaim_incomplete_network(&action),
+            core::Command::ActivateVm { .. } => host.reclaim_incomplete_activation(&action),
             core::Command::InstallFence { terminal: true, .. } => {
-                if !journal
-                    .matches_current_terminal_fence(world, &action)
-                    .map_err(map_journal)?
-                {
-                    return Err(PortError::Busy);
-                }
-                host.reclaim_incomplete_terminal_fence(&action)?;
+                host.reclaim_incomplete_terminal_fence(&action)
             }
-            core::Command::StopVm { .. } => {
-                if !journal
-                    .matches_current_stop(world, &action)
-                    .map_err(map_journal)?
-                {
-                    return Err(PortError::Busy);
-                }
-                host.reclaim_incomplete_stop(&action)?;
-            }
-            core::Command::AbortPrepare { .. } => {
-                if !journal
-                    .matches_current_abort_prepare(world, &action)
-                    .map_err(map_journal)?
-                {
-                    return Err(PortError::Busy);
-                }
-                host.reclaim_incomplete_abort_prepare(&action)?;
-            }
-            core::Command::CleanupVm { .. } => {
-                if !journal
-                    .matches_current_cleanup(world, &action)
-                    .map_err(map_journal)?
-                {
-                    return Err(PortError::Busy);
-                }
-                host.reclaim_incomplete_cleanup(&action)?;
-            }
-            _ => {}
+            core::Command::StopVm { .. } => host.reclaim_incomplete_stop(&action),
+            core::Command::AbortPrepare { .. } => host.reclaim_incomplete_abort_prepare(&action),
+            core::Command::CleanupVm { .. } => host.reclaim_incomplete_cleanup(&action),
+            _ => Ok(()),
+        };
+        if result.is_err() {
+            // Keep the original claim unknown; no later action for this
+            // sandbox can run during this pass.
+            blocked.insert(sandbox);
         }
     }
     Ok(())
@@ -456,7 +461,7 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
 
 fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
     match world.effect_status(effect) {
-        Some(core::EffectStatus::Acknowledged(_)) => false,
+        Some(core::EffectStatus::Acknowledged(_) | core::EffectStatus::RetiredByStop(_)) => false,
         Some(core::EffectStatus::Committed) => {
             // Failed creates can retain unclaimed startup actions. Use the
             // dispatcher's core preview to distinguish obsolete work; never
@@ -530,11 +535,21 @@ fn observe_recovery_action<H: HostAdapter>(
     if blocked.contains(&sandbox) || selected.is_some_and(|id| id != sandbox) {
         return None;
     }
-    let receipt = host.observe(action)?;
-    if matches!(action.command.command(), core::Command::PrepareVm { .. })
+    if matches!(action.command.command(), core::Command::ActivateVm { .. })
         && world
             .sandbox_record(sandbox)
-            .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+            .is_some_and(|record| record.terminal)
+    {
+        // Terminal cleanup needs host stop evidence, never another guest RPC.
+        return None;
+    }
+    let receipt = host.observe(action)?;
+    if matches!(
+        action.command.command(),
+        core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }
+    ) && world
+        .sandbox_record(sandbox)
+        .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
         && matches!(
             receipt.outcome,
             sandproof_protocol::WorkOutcome::ObservedSuccess(_)
@@ -567,11 +582,24 @@ fn blocked_launch_configs<H: HostAdapter>(
             sandbox: *sandbox,
             operation: operation.id,
         };
-        let plan = initial.operation_plan(key).ok_or(PortError::Busy)?;
+        initial.operation_plan(key).ok_or(PortError::Busy)?;
         let options = journal.create_options(*sandbox).map_err(map_admission)?;
         match host.has_launch_config(*sandbox, &options.env_vars) {
             Ok(true) => {}
-            Ok(false) if plan.vm.is_none() => {
+            Ok(false)
+                if initial.effect_ids().iter().all(|effect| {
+                    effect.command().sandbox() != *sandbox
+                        || matches!(
+                            initial.effect_status(effect),
+                            Some(core::EffectStatus::Committed)
+                        )
+                }) =>
+            {
+                // The VM/slot identity is now reserved with the create intent.
+                // A missing credential may be created only if no host action
+                // was ever claimed. Once any action was claimed, losing the
+                // credential must remain unresolved instead of minting a new
+                // token for a possibly live VM.
                 if host
                     .put_launch_config(*sandbox, &token()?, &options.env_vars)
                     .is_err()
@@ -595,6 +623,8 @@ fn recover_locked<H: HostAdapter>(
     selected: Option<core::SandboxId>,
 ) -> Result<RecoveryReport, PortError> {
     let Inner { journal, host, .. } = inner;
+    // Expiry is a durable decision, not dependent on guest availability.
+    // Once terminal, never try initialization before performing exact stop.
     if selected.is_none() {
         journal
             .abort_due_startups(now_ms()?, &mut NeverCrash)
@@ -606,14 +636,32 @@ fn recover_locked<H: HostAdapter>(
     // reclaimed history must not repeatedly replay the entire journal through
     // each completed workflow while holding the management/data admission lock.
     let reclaimed = reclaimed_sandboxes(&initial);
-    let blocked = blocked_launch_configs(journal, host, &initial, selected)?;
-    reclaim_uncertain_actions(journal, host, &initial, &blocked, selected)?;
+    let mut blocked = blocked_launch_configs(journal, host, &initial, selected)?;
+    reclaim_uncertain_actions(journal, host, &initial, &mut blocked, selected)?;
     let recovery_world = journal.world().map_err(map_journal)?;
-    let receipts_recovered = journal
-        .reconcile_uncertain(&mut |action| {
-            observe_recovery_action(host, &recovery_world, &blocked, selected, action)
-        })
-        .map_err(map_journal)?;
+    let mut receipts_recovered = 0;
+    for action in journal.uncertain_actions().map_err(map_journal)? {
+        let Some(receipt) =
+            observe_recovery_action(host, &recovery_world, &blocked, selected, &action)
+        else {
+            continue;
+        };
+        match journal.reconcile_observed(&action, &receipt) {
+            Ok(accepted) => receipts_recovered += usize::from(accepted),
+            Err(error) if error.is_local_recovery_failure() => {
+                // The rejected observation remains uncommitted. Do not run
+                // more actions for this sandbox in the same recovery pass.
+                blocked.insert(action.command.command().sandbox());
+            }
+            Err(error) => return Err(map_journal(error)),
+        }
+    }
+    // Host I/O can cross the deadline. Recheck before any Running publication.
+    if selected.is_none() {
+        journal
+            .abort_due_startups(now_ms()?, &mut NeverCrash)
+            .map_err(map_admission)?;
+    }
     let pending = journal.world().map_err(map_journal)?;
     let mut report = RecoveryReport {
         receipts_recovered,
@@ -665,6 +713,10 @@ fn recover_locked<H: HostAdapter>(
             Err(JournalError::UnresolvedAction) => {
                 unresolved.insert(*sandbox);
             }
+            Err(error) if error.is_local_recovery_failure() => {
+                blocked.insert(*sandbox);
+                unresolved.insert(*sandbox);
+            }
             Err(error) => return Err(map_journal(error)),
         }
     }
@@ -672,6 +724,7 @@ fn recover_locked<H: HostAdapter>(
         unresolved.insert(action.command.command().sandbox());
     }
     report.unresolved_sandboxes = unresolved.len();
+    report.failed_sandboxes = blocked.len();
     Ok(report)
 }
 
@@ -692,12 +745,12 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// Reconcile exact host observations before resuming accepted workflows.
     /// It never blindly repeats an uncertain action: only an identity-matched
     /// network setup or terminal fence may complete an idempotent host step.
-    /// A sandbox with inconclusive evidence remains unavailable, while other
-    /// sandboxes can still recover.
+    /// A sandbox with inconclusive evidence or rejected host observation
+    /// remains unavailable; recovery continues for independent sandboxes.
     /// Call this after opening the durable journal and periodically while the
     /// service runs. Repeated calls never re-dispatch an uncertain action.
     /// # Errors
-    /// Invalid evidence or a corrupt journal aborts startup recovery.
+    /// Shared storage, replay, and commit failures abort startup recovery.
     pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         recover_locked(&mut inner, None)
@@ -781,15 +834,31 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// revocation is recorded.
     ///
     /// # Errors
-    /// Stops at the first uncertain host outcome; no subsequent VM is
-    /// silently reported as destroyed.
+    /// Shared storage, replay, or commit failures stop the scan. An uncertain
+    /// physical result leaves that sandbox open for a later exact recovery.
     pub fn expire_due(&self) -> Result<usize, PortError> {
+        Ok(self.expire_due_report()?.completed)
+    }
+
+    /// Accept every due sandbox independently under the controller lock.
+    /// An uncertain stop never counts as completed or reuses its VM identity.
+    /// # Errors
+    /// Shared storage, replay, or commit failures stop the scan.
+    pub fn expire_due_report(&self) -> Result<ExpiryReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let now = now_ms()?;
         let due = inner.journal.due_lifetimes(now).map_err(map_admission)?;
-        let mut completed = 0;
+        let mut report = ExpiryReport::default();
         for sandbox in due {
-            let operation = next_operation(&inner.journal.world().map_err(map_journal)?, sandbox)?;
+            let operation =
+                match next_operation(&inner.journal.world().map_err(map_journal)?, sandbox) {
+                    Ok(operation) => operation,
+                    Err(PortError::Conflict) => {
+                        report.unresolved_sandboxes += 1;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
             let accepted = inner
                 .journal
                 .accept_expiry(sandbox, operation, now, &mut NeverCrash);
@@ -801,15 +870,28 @@ impl<H: HostAdapter> ManagedPort<H> {
             {
                 inner.revoke_data(sandbox);
             }
-            accepted.map_err(map_admission)?;
+            match accepted {
+                Ok(_) => {}
+                Err(AdmissionError::Journal(error)) if error.is_local_recovery_failure() => {
+                    report.unresolved_sandboxes += 1;
+                    continue;
+                }
+                Err(error) => return Err(map_admission(error)),
+            }
             let Inner { journal, host, .. } = &mut *inner;
-            finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
+            match finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
                 host.execute(action)
             })
-            .map_err(map_journal)?;
-            completed += 1;
+            .map(|_| ())
+            {
+                Ok(()) => report.completed += 1,
+                Err(error) if error.is_local_recovery_failure() => {
+                    report.unresolved_sandboxes += 1;
+                }
+                Err(error) => return Err(map_journal(error)),
+            }
         }
-        Ok(completed)
+        Ok(report)
     }
 
     fn session(

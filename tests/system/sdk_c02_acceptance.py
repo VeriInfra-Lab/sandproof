@@ -82,6 +82,8 @@ def assert_no_exact_resources(root: Path, namespace: str, first_uid: int, firecr
     # Claims are intentionally retained as non-reusable tombstones, not live VMs.
     for parent in (root / "jails" / firecracker_name, Path("/run/netns")):
         assert not [path for path in parent.glob(f"{prefix}*")], f"VM resource remains under {parent}"
+    cgroup_root = Path("/sys/fs/cgroup")
+    assert not list(cgroup_root.rglob(f"{prefix}*")), "test cgroup remains"
     assert not processes_in_uid_range(first_uid, first_uid + MAX_VM_ID), "test UID process remains"
 
 
@@ -206,12 +208,13 @@ def exercise(args: argparse.Namespace) -> None:
             "sdk": "e2b 2.51.0",
             "server_sha256": sha256_file(binary),
             "base_sha256": base_digest,
+            "namespace": namespace,
             "probes": list(scripts),
             "probe_sha256": {
                 name: sha256_file(checkout / "tests/system" / name) for name in scripts
             },
             "vms_destroyed": EXPECTED_SANDBOXES,
-            "residual": "no exact VM process, jail, netns or test UID process; non-reusable claims retained until private-root removal",
+            "residual": "no exact VM process, jail, netns, cgroup or test UID process; non-reusable claims retained until private-root removal",
             "scope": "selected C02 SDK/auth/data gateway chain; not full #8/#9 or V1",
         }))
     finally:

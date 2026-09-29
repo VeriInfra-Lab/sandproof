@@ -93,6 +93,7 @@ where
             .iter()
             .any(|action| action.command.command().sandbox() == sandbox)
             && !core::scheduler::only_uncertain_prepare_for_abort(&journal.world()?, sandbox)
+            && !core::terminal::only_uncertain_activation_for_abort(&journal.world()?, sandbox)
         {
             return Err(JournalError::UnresolvedAction);
         }
@@ -348,6 +349,7 @@ where
             }
             drain(journal, sandbox, worker)?;
         }
+        retire_stopped_activations(journal, sandbox)?;
         journal.apply(
             core::ControllerInput::Publication(core::PublicationInput::Failed(sandbox, failure)),
             &mut NeverCrash,
@@ -356,6 +358,37 @@ where
         return Err(JournalError::UnsupportedInput);
     }
     cleanup_destroyed_resources(journal, sandbox, generation, worker)
+}
+
+fn retire_stopped_activations(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+) -> Result<(), JournalError> {
+    for action in journal.uncertain_actions()? {
+        if action.command.command().sandbox() != sandbox {
+            continue;
+        }
+        let Some(stop_command) = core::terminal::activation_stop(&action.command) else {
+            continue;
+        };
+        let world = journal.world()?;
+        let logical = core::LogicalEffectId {
+            command: stop_command,
+        };
+        let attempt = world
+            .logical_effect(&logical)
+            .ok_or(JournalError::UnresolvedAction)?
+            .current_attempt;
+        let stop = core::EffectId { logical, attempt };
+        journal.apply(
+            core::ControllerInput::Effect(core::EffectInput::RetireActivation {
+                activation: action.command,
+                stop,
+            }),
+            &mut NeverCrash,
+        )?;
+    }
+    Ok(())
 }
 
 /// Revoke access, stop every planned live VM and publish destruction only when

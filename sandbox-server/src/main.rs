@@ -22,7 +22,7 @@ mod linux {
         os::unix::fs::{MetadataExt, PermissionsExt},
         path::{Path, PathBuf},
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use sandbox_controller_core as core;
@@ -32,7 +32,7 @@ mod linux {
         router,
     };
     use sandproof_controller_service::{AdmissionLimits, ControllerJournal, WorkerTransportError};
-    use sandproof_node::{HostObservation, LinuxWorker, NodeConfig};
+    use sandproof_node::{HostObservation, LinuxWorker, NodeConfig, ObservedSlot};
     #[cfg(debug_assertions)]
     use sandproof_protocol::WorkOutcome;
     use sandproof_protocol::{WorkAction, WorkReceipt};
@@ -163,6 +163,7 @@ mod linux {
                             ..
                         }
                     ) | (Some("stop_vm"), core::Command::StopVm { .. })
+                        | (Some("activate_vm"), core::Command::ActivateVm { .. })
                 ) {
                     std::process::exit(87);
                 }
@@ -213,7 +214,9 @@ mod linux {
                             core::Command::ConfigureNetwork { .. }
                         )
                         | (Some("stop_vm"), core::Command::StopVm { .. })
+                        | (Some("activate_vm"), core::Command::ActivateVm { .. })
                         | (Some("abort_prepare"), core::Command::AbortPrepare { .. })
+                        | (Some("cleanup_vm"), core::Command::CleanupVm { .. })
                 ) {
                     std::process::exit(86);
                 }
@@ -234,6 +237,7 @@ mod linux {
                         } => "open fence",
                         core::Command::InstallFence { terminal: true, .. } => "terminal fence",
                         core::Command::PrepareVm { .. } => "prepare VM",
+                        core::Command::ActivateVm { .. } => "activate VM",
                         core::Command::ConfigureNetwork { .. } => "configure network",
                         core::Command::StopVm { .. } => "stop VM",
                         core::Command::AbortPrepare { .. } => "abort prepare",
@@ -250,6 +254,16 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<(), PortError> {
+            #[cfg(debug_assertions)]
+            if std::env::var("SANDPROOF_TEST_FAIL_RECLAIM_PREPARE_SANDBOX")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                == Some(action.command.command().sandbox().0)
+            {
+                // Refuse only this sandbox's compensating observation. The
+                // original PrepareVm remains unknown; no launch is replayed.
+                return Err(PortError::Busy);
+            }
             self.0
                 .reclaim_incomplete_prepare(action)
                 .map_err(|_| PortError::Busy)
@@ -261,6 +275,15 @@ mod linux {
         ) -> Result<(), PortError> {
             self.0
                 .reclaim_incomplete_network(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_activation(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_activation(action)
                 .map_err(|_| PortError::Busy)
         }
 
@@ -286,6 +309,16 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<(), PortError> {
+            #[cfg(debug_assertions)]
+            if std::env::var("SANDPROOF_TEST_FAIL_RECLAIM_STOP_SANDBOX")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                == Some(action.command.command().sandbox().0)
+            {
+                // Test-only refusal before host I/O. The old stop remains
+                // unknown, so another sandbox must still be able to recover.
+                return Err(PortError::Busy);
+            }
             self.0
                 .reclaim_incomplete_stop(action)
                 .map_err(|_| PortError::Busy)
@@ -360,6 +393,32 @@ mod linux {
         Ok(disk_bytes)
     }
 
+    fn has_current_uncertain_prepare(
+        journal: &ControllerJournal,
+        world: &core::World,
+        slot: &ObservedSlot,
+        uncertain: &[WorkAction<core::EffectId>],
+    ) -> Result<bool, Box<dyn Error>> {
+        for action in uncertain {
+            if let core::Command::PrepareVm {
+                sandbox,
+                generation,
+                vm,
+                slot: network_slot,
+                ..
+            } = action.command.command()
+                && *sandbox == slot.sandbox
+                && *generation == slot.generation
+                && *vm == slot.vm
+                && *network_slot == slot.slot
+                && journal.matches_current_prepare(world, action)?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn audit_host_inventory(
         node: &LinuxWorker,
         journal: &ControllerJournal,
@@ -387,6 +446,7 @@ mod linux {
             .into());
         }
         let world = journal.world()?;
+        let uncertain = journal.uncertain_actions()?;
         for slot in inventory.slots {
             let record = world
                 .sandbox_record(slot.sandbox)
@@ -414,9 +474,18 @@ mod linux {
                 return Err("reclaimed failed PrepareVm still has physical resources".into());
             }
             if slot.claim_present && slot.process.is_none() && !slot.aborted_unlaunched {
-                return Err(
-                    "VM claim has no exact process record; manual reconciliation required".into(),
-                );
+                // A claim from the exact current uncertain PrepareVm may be
+                // an interrupted pre-launch. The per-sandbox recovery path
+                // will reclaim it or park this sandbox. All other claims
+                // remain a global startup error, never an inferred stop.
+                if record.phase == core::Phase::Destroyed
+                    || !has_current_uncertain_prepare(journal, &world, &slot, &uncertain)?
+                {
+                    return Err(
+                        "VM claim has no exact process record; manual reconciliation required"
+                            .into(),
+                    );
+                }
             }
             if let Some(vm) = world.vm_record(slot.vm) {
                 if vm.sandbox != slot.sandbox || vm.generation != slot.generation {
@@ -456,36 +525,34 @@ mod linux {
         Ok(())
     }
 
-    fn reclaim_uncertain_prepares(
-        node: &LinuxWorker,
-        journal: &ControllerJournal,
-    ) -> Result<(), Box<dyn Error>> {
-        let world = journal.world()?;
-        for action in journal.uncertain_actions()? {
-            if !matches!(action.command.command(), core::Command::PrepareVm { .. }) {
-                continue;
-            }
-            if !journal.matches_current_prepare(&world, &action)? {
-                return Err("uncertain PrepareVm differs from current durable plan".into());
-            }
-            node.reclaim_incomplete_prepare(&action)?;
-        }
-        Ok(())
-    }
-
     fn spawn_reconciliation_scanner(port: Arc<ManagedPort<NodeHost>>, seconds: u64) {
         drop(tokio::spawn(async move {
             let mut timer = tokio::time::interval(Duration::from_secs(seconds));
+            let mut last_failure_log: Option<Instant> = None;
             loop {
                 timer.tick().await;
                 let port = Arc::clone(&port);
                 match tokio::task::spawn_blocking(move || {
-                    port.recover_on_startup()?;
-                    port.expire_due()
+                    let recovery = port.recover_on_startup()?;
+                    let expiry = port.expire_due_report()?;
+                    Ok::<_, PortError>((recovery, expiry))
                 })
                 .await
                 {
-                    Ok(Ok(_)) => {}
+                    Ok(Ok((recovery, expiry)))
+                        if recovery.failed_sandboxes > 0 || expiry.unresolved_sandboxes > 0 =>
+                    {
+                        if last_failure_log
+                            .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
+                        {
+                            eprintln!(
+                                "reconciliation parked {} sandboxes after host or receipt errors; {} due expiries remain unresolved; manual inspection may be required",
+                                recovery.failed_sandboxes, expiry.unresolved_sandboxes
+                            );
+                            last_failure_log = Some(Instant::now());
+                        }
+                    }
+                    Ok(Ok(_)) => last_failure_log = None,
                     Ok(Err(_)) => eprintln!("reconciliation or expiry worker needs attention"),
                     Err(error) => eprintln!("reconciliation worker join failure: {error}"),
                 }
@@ -500,6 +567,7 @@ mod linux {
         Ok(ManagedConfig {
             public_ipv4_enabled: config.public_ipv4_enabled,
             limits: AdmissionLimits {
+                max_vm_id: config.max_vm_id,
                 max_active_global: config.max_active_global,
                 max_active_per_tenant: config.max_active_per_tenant,
                 max_disk_bytes_global: config.max_disk_bytes_global,
@@ -553,7 +621,6 @@ mod linux {
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
-        reclaim_uncertain_prepares(&node, &journal)?;
         audit_host_inventory(&node, &journal)?;
         let port = Arc::new(ManagedPort::new(journal, NodeHost(node), managed));
         let recovery = port.recover_on_startup().map_err(|error| {
@@ -561,8 +628,8 @@ mod linux {
         })?;
         if recovery.unresolved_sandboxes != 0 {
             eprintln!(
-                "startup recovery left {} sandboxes unresolved; no uncertain host action was repeated",
-                recovery.unresolved_sandboxes
+                "startup recovery left {} sandboxes unresolved ({} after host or receipt errors); no uncertain host action was repeated",
+                recovery.unresolved_sandboxes, recovery.failed_sandboxes
             );
         }
         let credentials = config

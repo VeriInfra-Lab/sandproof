@@ -163,6 +163,75 @@ impl ControllerJournal {
             && network.policy == *policy)
     }
 
+    /// A dispatched guest initialization may be repeated only for the
+    /// original create, sealed VM plan and still-live starting generation.
+    /// The host additionally checks the exact process, open fence and saved
+    /// initialization data before sending the same request to envd.
+    /// # Errors
+    /// Rejects an unencodable trusted journal identity.
+    pub fn matches_current_activation(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::ActivateVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let (Some(plan), Some(resource), Some(slot)) = (
+            world.operation_plan(key),
+            world.vm_record(*vm),
+            record.net_slot.and_then(|id| world.slot_record(id)),
+        ) else {
+            return Ok(false);
+        };
+        Ok(operation.kind == core::OperationKind::Create
+            && matches!(
+                operation.status,
+                core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown
+            )
+            && record.phase == core::Phase::Starting
+            && !record.terminal
+            && record.current_vm == Some(*vm)
+            && record.generation == *generation
+            && record.epoch == *epoch
+            && plan.sealed
+            && plan.epoch == *epoch
+            && plan.generation == *generation
+            && plan.vm == Some(*vm)
+            && plan.slot == record.net_slot
+            && slot.owner == record.owner
+            && slot.sandbox == *sandbox
+            && slot.generation == *generation
+            && slot.vm == *vm
+            && slot.policy == record.policy
+            && slot.configured
+            && resource.owner == record.owner
+            && resource.sandbox == *sandbox
+            && resource.generation == *generation
+            && resource.status == core::VmStatus::Prepared
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && action.identity.generation == *generation)
+    }
+
     /// A lost terminal-fence receipt may be completed only for the current
     /// compensating operation. The host still enforces monotonicity.
     /// # Errors
@@ -478,7 +547,7 @@ impl ControllerJournal {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=6).contains(&version) || stored != namespace {
+        if !(1..=7).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {
@@ -506,6 +575,12 @@ impl ControllerJournal {
             )?;
         }
         migrate_lifetime_schema(&transaction, version)?;
+        // V7 adds a core retirement input, not a fabricated host receipt.
+        // Existing inputs remain replayable; old binaries must reject the
+        // upgraded journal before interpreting the new terminal semantics.
+        if version <= 6 {
+            transaction.execute("UPDATE controller_meta SET version=7 WHERE id=1", [])?;
+        }
         storage::load_world(&transaction)?;
         transaction
             .commit()
@@ -566,7 +641,34 @@ impl ControllerJournal {
                     core::ControllerInput::Scheduler(core::SchedulerInput::AbortPrepare(..))
                         | core::ControllerInput::Publication(core::PublicationInput::Failed(..))
                 );
-        if storage::unresolved(&world, sandbox) && !terminal_prepare_abort {
+        let terminal_activation_abort =
+            core::terminal::only_uncertain_activation_for_abort(&world, sandbox)
+                && match &input {
+                    core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(
+                        sandbox,
+                        generation,
+                        vm,
+                    )) => world.sandbox_record(*sandbox).is_some_and(|record| {
+                        core::scheduler::dispatch_allowed_during_abort(
+                            &world,
+                            &core::Command::StopVm {
+                                sandbox: *sandbox,
+                                epoch: record.epoch,
+                                generation: *generation,
+                                vm: *vm,
+                            },
+                        )
+                    }),
+                    core::ControllerInput::Effect(core::EffectInput::RetireActivation {
+                        activation,
+                        ..
+                    }) => core::terminal::activation_in_current_abort(&world, activation),
+                    _ => false,
+                };
+        if storage::unresolved(&world, sandbox)
+            && !terminal_prepare_abort
+            && !terminal_activation_abort
+        {
             return Err(JournalError::UnresolvedAction);
         }
         let decision = storage::apply(&transaction, &self.namespace, &world, input)?;
@@ -740,6 +842,20 @@ impl ControllerJournal {
         let (id, json, state, previous) = row.ok_or(JournalError::Conflict)?;
         let action: WorkAction<core::EffectId> = serde_json::from_slice(&json)?;
         receipt.validate_for(&action)?;
+        let world = storage::load_world(&transaction)?;
+        // An initialization result cannot reopen a terminal create, and a
+        // stopped VM must not be misread as proof that initialization worked.
+        if matches!(action.command.command(), core::Command::ActivateVm { .. })
+            && !matches!(
+                world.effect_status(&action.command),
+                Some(core::EffectStatus::Acknowledged(_))
+            )
+            && world
+                .sandbox_record(action.command.command().sandbox())
+                .is_some_and(|record| record.terminal)
+        {
+            return Err(JournalError::ObsoleteReceipt);
+        }
         if state == "ready" {
             return Err(JournalError::ReceiptBeforeDispatch);
         }
@@ -752,7 +868,6 @@ impl ControllerJournal {
                 return Err(JournalError::ConflictingReceipt);
             }
         }
-        let world = storage::load_world(&transaction)?;
         let next = apply_outcome(&transaction, &self.namespace, world, &action, receipt, id)?;
         let serialized = serde_json::to_vec(receipt)?;
         transaction.execute(
@@ -808,17 +923,34 @@ impl ControllerJournal {
             let Some(receipt) = observer(&action) else {
                 continue;
             };
-            if !matches!(
-                receipt.outcome,
-                WorkOutcome::ObservedSuccess(_)
-                    | WorkOutcome::DefinitiveFailure { partial: None, .. }
-            ) {
-                continue;
-            }
-            self.complete(&receipt, &mut crate::NeverCrash)?;
-            resolved += 1;
+            resolved += usize::from(self.reconcile_observed(&action, &receipt)?);
         }
         Ok(resolved)
+    }
+
+    /// Accept one final, observed result for an action already claimed by the
+    /// durable outbox. Inconclusive observations leave its history untouched.
+    /// This lets the recovery coordinator isolate a rejected receipt to its
+    /// sandbox without duplicating the receipt decision outside this module.
+    /// # Errors
+    /// Rejects invalid evidence, an obsolete action, or a storage failure.
+    pub fn reconcile_observed<E>(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+        receipt: &WorkReceipt<E>,
+    ) -> Result<bool, JournalError>
+    where
+        E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
+    {
+        if !matches!(
+            receipt.outcome,
+            WorkOutcome::ObservedSuccess(_) | WorkOutcome::DefinitiveFailure { partial: None, .. }
+        ) {
+            return Ok(false);
+        }
+        receipt.validate_for(action)?;
+        self.complete(receipt, &mut crate::NeverCrash)?;
+        Ok(true)
     }
 }
 
