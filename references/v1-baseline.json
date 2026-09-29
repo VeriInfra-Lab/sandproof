@@ -1075,5 +1075,20 @@
     "supervised_resource_audit": "24 lifetime/data VMs all durable Destroyed and exact PID/start, jail/netns/cgroup absent, no namespace holders before server exit; live cgroup inode/membership/1 CPU/768 MiB sampled. Data runs additionally observed actual Firecracker 1 CPU/512 MiB and private disk inode/size. Final dedicated UID range had zero processes, cgroup parent empty, original base hash unchanged.",
     "commands": "root with fixed SDK Python for SDK scripts; standalone probes take --server --jailer --firecracker --kernel --rootfs --uid-base --scratch-parent; crash adds --window before-host or after-host; unready adds --cgroup-parent and --keep-artifacts. Hosted data/lifetime scripts use --api-url/--sandbox-url; lifetime uses --supervisor-dir and --mode values or total, default timeout 300, max timeout 600, total lifetime 600 or 12.",
     "limits": "Only selected exact fault windows, not arbitrary SIGKILL or complete V1. No public-network regression or #13 frozen task initialization/final budgets in this batch; streaming 64/96 MiB remains test configuration. Controller core equals PR84 and old proofs do not cover AbortPrepare changes; no full proof acceptance claimed. Production and real VM probes unchanged after tested commit; rebasing retains the upstream SDK timezone expectation correction and contract description."
+  },
+  "activation_recovery_acceptance": {
+    "issue": 11,
+    "tested_source_commit": "436800f3f70529d72453fc324d93dc3fe14617bb",
+    "server_sha256": "e77d11fac000d73b5944d396c601257b82701af5e7bc037fbf592fc0d5616eaa",
+    "test_file": "tests/system/server_process_crash.py",
+    "test_file_sha256": "d6056851516fa86a882b419d3db29d1c45434cf7daff454301b34363c1aeb715",
+    "host": "ning; Linux 6.8.0-142-generic x86_64; KVM; root-only private test root and exclusive UID ranges",
+    "firecracker_jailer": "1.16.1; sha256 2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7 / 1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+    "guest_kernel_sha256": "7c424b7447ea0a97d5ad8d9377b52cfbedfd564c7974f0ef9629e529305077a5",
+    "base_envd_sha256_before_after": "83f82ca1925f47c1512199e670babfb128e36d1eee58b93183d804c594e7a7cd",
+    "sdk": "original E2B Python 2.51.0",
+    "passed_windows": ["before-activation", "after-activation", "after-guest-init"],
+    "observed": "Each window restarted the same server/database and retained the original VM PID/start identity; SDK command read the original creation environment. A separate lost StopVm receipt was recovered; exact process, jail and network namespace disappeared. Three VMs used distinct namespaces and UID ranges; the fixed base was unchanged.",
+    "limits": "Only three deterministic create crash windows, explicit no-internet, one VM per window and 256 MiB guest; no cgroup limit in this probe. It does not prove arbitrary crash positions, partial envd SetData interruption, permanently unavailable envd, public IPv4, full #11 closure or formal correctness. The unavailable-envd component case remains terminal and unresolved with quota held."
   }
 }

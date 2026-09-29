@@ -112,6 +112,19 @@ pub trait HostAdapter: Send + 'static {
         Err(PortError::Busy)
     }
 
+    /// Repeat only the identical, already-dispatched guest initialization
+    /// after the controller has matched its current create and sealed VM plan.
+    /// The host must use the persisted credential/configuration and verify
+    /// the same running VM before and after the request.
+    /// # Errors
+    /// An unreadable guest, changed VM or conflicting configuration stays unknown.
+    fn reclaim_incomplete_activation(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
     /// Complete only the current operation's terminal fence after a lost
     /// acknowledgement; it may not reopen an older execution gate.
     /// # Errors
@@ -412,6 +425,27 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
                 }
                 host.reclaim_incomplete_network(&action)?;
             }
+            core::Command::ActivateVm { .. } => {
+                if world
+                    .sandbox_record(action.command.command().sandbox())
+                    .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+                {
+                    // Terminal cleanup owns the exact VM. Never re-open a
+                    // guest initialization after the terminal fence.
+                    continue;
+                }
+                if !journal
+                    .matches_current_activation(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                // Env readiness and the exact VMM can be temporarily
+                // unobservable. Never synthesize a receipt from that error;
+                // keep the action unknown and still let the durable startup
+                // deadline initiate terminal compensation below.
+                let _ = host.reclaim_incomplete_activation(&action);
+            }
             core::Command::InstallFence { terminal: true, .. } => {
                 if !journal
                     .matches_current_terminal_fence(world, &action)
@@ -531,10 +565,12 @@ fn observe_recovery_action<H: HostAdapter>(
         return None;
     }
     let receipt = host.observe(action)?;
-    if matches!(action.command.command(), core::Command::PrepareVm { .. })
-        && world
-            .sandbox_record(sandbox)
-            .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+    if matches!(
+        action.command.command(),
+        core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }
+    ) && world
+        .sandbox_record(sandbox)
+        .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
         && matches!(
             receipt.outcome,
             sandproof_protocol::WorkOutcome::ObservedSuccess(_)
@@ -595,11 +631,6 @@ fn recover_locked<H: HostAdapter>(
     selected: Option<core::SandboxId>,
 ) -> Result<RecoveryReport, PortError> {
     let Inner { journal, host, .. } = inner;
-    if selected.is_none() {
-        journal
-            .abort_due_startups(now_ms()?, &mut NeverCrash)
-            .map_err(map_admission)?;
-    }
     let initial = journal.world().map_err(map_journal)?;
     // Use the state before reconciliation: work whose last cleanup receipt is
     // recovered in this scan must still finish and be counted once. Already
@@ -614,6 +645,16 @@ fn recover_locked<H: HostAdapter>(
             observe_recovery_action(host, &recovery_world, &blocked, selected, action)
         })
         .map_err(map_journal)?;
+    // Resolve the already-dispatched, repeat-safe initialization before a
+    // possibly elapsed startup deadline makes its create terminal. This does
+    // not publish Running: the durable deadline is checked next, before any
+    // create workflow resumes. A late successful initialization is therefore
+    // stopped by compensation, not exposed as a new usable sandbox.
+    if selected.is_none() {
+        journal
+            .abort_due_startups(now_ms()?, &mut NeverCrash)
+            .map_err(map_admission)?;
+    }
     let pending = journal.world().map_err(map_journal)?;
     let mut report = RecoveryReport {
         receipts_recovered,

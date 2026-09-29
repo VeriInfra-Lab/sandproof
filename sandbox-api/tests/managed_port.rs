@@ -59,6 +59,15 @@ enum PrepareObservation {
     LiveUnready,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum ActivationObservation {
+    #[default]
+    Normal,
+    Incomplete,
+    Unavailable,
+    Complete,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum RecoveredAction {
     OpenFence,
@@ -110,6 +119,8 @@ struct FakeHost {
     public_ipv4_ready: bool,
     incomplete_open_fence: bool,
     prepare: PrepareObservation,
+    activation: ActivationObservation,
+    activation_calls: Option<Arc<AtomicUsize>>,
     recovered_actions: BTreeSet<RecoveredAction>,
     stop: StopObservation,
     reclaim_stop_error_once: Option<PortError>,
@@ -132,6 +143,8 @@ impl Default for FakeHost {
             public_ipv4_ready: false,
             incomplete_open_fence: false,
             prepare: PrepareObservation::Missing,
+            activation: ActivationObservation::Normal,
+            activation_calls: None,
             recovered_actions: BTreeSet::new(),
             stop: StopObservation::Normal,
             reclaim_stop_error_once: None,
@@ -244,6 +257,20 @@ impl HostAdapter for FakeHost {
                 });
             }
         }
+        if matches!(action.command.command(), core::Command::ActivateVm { .. })
+            && matches!(
+                self.activation,
+                ActivationObservation::Incomplete | ActivationObservation::Unavailable
+            )
+        {
+            return Ok(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
         if matches!(action.command.command(), core::Command::AbortPrepare { .. }) {
             if let Some(calls) = &self.abort_calls {
                 calls.fetch_add(1, Ordering::SeqCst);
@@ -320,6 +347,8 @@ impl HostAdapter for FakeHost {
             ))
             || (self.prepare == PrepareObservation::Successful
                 && matches!(action.command.command(), core::Command::PrepareVm { .. }))
+            || (self.activation == ActivationObservation::Complete
+                && matches!(action.command.command(), core::Command::ActivateVm { .. }))
             || (self.recovered_actions.contains(&RecoveredAction::Network)
                 && matches!(
                     action.command.command(),
@@ -376,6 +405,25 @@ impl HostAdapter for FakeHost {
             core::Command::ConfigureNetwork { .. }
         ));
         self.recovered_actions.insert(RecoveredAction::Network);
+        Ok(())
+    }
+
+    fn reclaim_incomplete_activation(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::ActivateVm { .. }
+        ));
+        if self.activation == ActivationObservation::Unavailable {
+            return Err(PortError::Busy);
+        }
+        assert_eq!(self.activation, ActivationObservation::Incomplete);
+        if let Some(calls) = &self.activation_calls {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }
+        self.activation = ActivationObservation::Complete;
         Ok(())
     }
 
@@ -885,6 +933,246 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
         "running"
     );
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+}
+
+#[test]
+fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let sandbox = core::SandboxId(1);
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    admit_public_create(&mut journal);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut host = FakeHost {
+        activation: ActivationObservation::Incomplete,
+        activation_calls: Some(Arc::clone(&calls)),
+        public_ipv4_ready: true,
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    let pending =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            host.execute(action)
+        });
+    assert!(matches!(
+        pending,
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    let action = &uncertain[0];
+    assert!(matches!(
+        action.command.command(),
+        core::Command::ActivateVm { .. }
+    ));
+    let world = journal.world().unwrap();
+    assert!(journal.matches_current_activation(&world, action).unwrap());
+    let mut wrong_epoch = action.clone();
+    wrong_epoch.identity.epoch += 1;
+    assert!(
+        !journal
+            .matches_current_activation(&world, &wrong_epoch)
+            .unwrap()
+    );
+    let mut wrong_vm = action.clone();
+    if let core::Command::ActivateVm { vm, .. } = &mut wrong_vm.command.logical.command {
+        *vm = core::VmId(vm.0 + 1);
+    }
+    assert!(
+        !journal
+            .matches_current_activation(&world, &wrong_vm)
+            .unwrap()
+    );
+    let original_vm = world.sandbox_record(sandbox).unwrap().current_vm;
+    drop(journal);
+
+    let mut wrong_host = FakeHost {
+        activation: ActivationObservation::Incomplete,
+        activation_calls: Some(Arc::clone(&calls)),
+        ..FakeHost::default()
+    };
+    wrong_host
+        .put_launch_config(
+            sandbox,
+            &"b".repeat(64),
+            &BTreeMap::from([("SP_RECOVERY".into(), "different".into())]),
+        )
+        .unwrap();
+    let blocked = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        wrong_host,
+        config(),
+    );
+    assert_eq!(
+        blocked.recover_on_startup().unwrap().unresolved_sandboxes,
+        1
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    drop(blocked);
+
+    let mut settings = config();
+    settings.public_ipv4_enabled = true;
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        settings,
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1"))
+            .unwrap()
+            .info
+            .state,
+        "running"
+    );
+    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    drop(port);
+    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.sandbox_record(sandbox).unwrap().current_vm,
+        original_vm
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+}
+
+#[test]
+fn expired_unknown_activation_is_reconciled_before_terminal_cleanup_not_published_running() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let sandbox = core::SandboxId(1);
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut limits = config().limits;
+    limits.startup_timeout_secs = 1;
+    journal
+        .admit_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox,
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            0,
+            300,
+            1_000,
+            limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut host = FakeHost {
+        activation: ActivationObservation::Incomplete,
+        activation_calls: Some(Arc::clone(&calls)),
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    assert!(matches!(
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            host.execute(action)
+        }),
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    drop(journal);
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    );
+    drop(port);
+    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(
+        world.vm_record(core::VmId(0)).unwrap().status,
+        core::VmStatus::Reclaimed
+    );
+}
+
+#[test]
+fn unavailable_activation_remains_terminal_and_unresolved_after_startup_deadline() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let sandbox = core::SandboxId(1);
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut limits = config().limits;
+    limits.startup_timeout_secs = 1;
+    journal
+        .admit_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox,
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            0,
+            300,
+            1_000,
+            limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let mut host = FakeHost {
+        activation: ActivationObservation::Unavailable,
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    assert!(matches!(
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            host.execute(action)
+        }),
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    drop(journal);
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(report.workflows_completed, 0);
+    assert_eq!(report.unresolved_sandboxes, 1);
+    drop(port);
+    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Revoking
+    );
 }
 
 #[test]
