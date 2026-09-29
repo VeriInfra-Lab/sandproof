@@ -1299,7 +1299,10 @@
         "run": "mkdir -p /app",
         "cwd": "/"
       }
-    ]
+    ],
+    "env": {
+      "R_REMOTES_UPGRADE": "never"
+    }
   },
   "merge-diff-arc-agi-task": {
     "base": "ubuntu-24.04",
