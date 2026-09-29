@@ -514,7 +514,7 @@ mod linux {
                         if recovery.failed_sandboxes > 0 || expiry.unresolved_sandboxes > 0 =>
                     {
                         if last_failure_log
-                            .is_none_or(|instant| instant.elapsed() >= Duration::from_secs(60))
+                            .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
                         {
                             eprintln!(
                                 "reconciliation parked {} sandboxes after host or receipt errors; {} due expiries remain unresolved; manual inspection may be required",
