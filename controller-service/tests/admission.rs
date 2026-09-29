@@ -190,6 +190,7 @@ fn vm_id_capacity_is_checked_before_admission_and_survives_restart() {
         assert_eq!(plan.vm, Some(core::VmId(sandbox - 10)));
         assert_eq!(plan.slot, Some(core::NetSlotId(sandbox - 10)));
     }
+    let before_rejection = journal.world().unwrap();
     assert!(matches!(
         journal.admit_create(request(12, 1), 1_000, 60, 1_000, policy, &mut NeverCrash),
         Err(AdmissionError::QuotaExceeded)
@@ -201,6 +202,7 @@ fn vm_id_capacity_is_checked_before_admission_and_survives_restart() {
             .sandbox_record(core::SandboxId(12))
             .is_none()
     );
+    assert_eq!(journal.world().unwrap(), before_rejection);
 
     drop(journal);
     let mut reopened =
@@ -216,6 +218,7 @@ fn vm_id_capacity_is_checked_before_admission_and_survives_restart() {
             .sandbox_record(core::SandboxId(12))
             .is_none()
     );
+    assert_eq!(reopened.world().unwrap(), before_rejection);
 }
 
 #[test]

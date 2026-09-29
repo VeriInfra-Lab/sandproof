@@ -2726,6 +2726,8 @@ fn physical_disk_shortage_rejects_before_any_admission() {
 
 #[test]
 fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
+    use sandproof_api::managed::DataKind;
+
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let prepare_calls = Arc::new(AtomicUsize::new(0));
@@ -2734,37 +2736,79 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         ..FakeHost::default()
     };
     let mut policy = config();
-    policy.limits.max_vm_id = 1;
+    policy.limits.max_vm_id = 2;
+    policy.limits.max_active_per_tenant = 2;
+    policy.limits.max_disk_bytes_per_tenant = 4_000;
     let port = ManagedPort::new(
         ControllerJournal::open(&path, NAMESPACE).unwrap(),
         host,
-        policy,
+        policy.clone(),
     );
 
     for _ in 0..2 {
         let created = port.create("1", request()).unwrap();
         port.kill("1", &created.sandbox_id).unwrap();
     }
-    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
+    let survivor = port.create("1", request()).unwrap();
+    let before = port.get("1", &survivor.sandbox_id).unwrap();
+    let permit = port
+        .data_permit(&survivor.envd_access_token, DataKind::Exec)
+        .unwrap();
+    assert_eq!(permit.target.vm, core::VmId(2));
     assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
-    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 3);
+    assert!(!*permit.revocation.borrow());
+    assert_eq!(port.get("1", &survivor.sandbox_id).unwrap(), before);
+    for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
+        assert_eq!(
+            port.authorize_data(&survivor.envd_access_token, kind)
+                .unwrap(),
+            permit.target
+        );
+    }
     drop(port);
 
-    let mut policy = config();
-    policy.limits.max_vm_id = 1;
     let reopened = ManagedPort::new(
         ControllerJournal::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
+            secrets: BTreeMap::from([(3, (survivor.envd_access_token.clone(), BTreeMap::new()))]),
             ..FakeHost::default()
         },
         policy,
     );
+    reopened.recover_on_startup().unwrap();
     assert_eq!(
         reopened.create("1", request()),
         Err(PortError::QuotaExceeded)
     );
-    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 3);
+    assert_eq!(reopened.get("1", &survivor.sandbox_id).unwrap(), before);
+    for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
+        assert_eq!(
+            reopened
+                .authorize_data(&survivor.envd_access_token, kind)
+                .unwrap(),
+            permit.target
+        );
+    }
+    reopened.kill("1", &survivor.sandbox_id).unwrap();
+    assert_eq!(
+        reopened.create("1", request()),
+        Err(PortError::QuotaExceeded)
+    );
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 3);
+    drop(reopened);
+    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(world.sandbox_records().len(), 3);
+    assert!(
+        world
+            .sandbox_records()
+            .iter()
+            .all(|(_, record)| record.phase == core::Phase::Destroyed)
+    );
+    assert!(journal.uncertain_actions().unwrap().is_empty());
 }
 
 #[tokio::test]

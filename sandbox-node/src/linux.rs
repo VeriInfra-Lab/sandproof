@@ -815,14 +815,8 @@ impl LinuxWorker {
         if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
             return Err("node state directory must be root-only".into());
         }
-        if config.uid_base == 0
-            || config.max_vm_id == 0
-            || u64::from(config.uid_base)
-                .checked_add(config.max_vm_id)
-                .is_none_or(|last_uid| last_uid >= u64::from(u32::MAX))
-            || config.vcpu_count == 0
-            || config.memory_mib < 128
-        {
+        crate::identity::validate_vm_id_range(config.uid_base, config.max_vm_id)?;
+        if config.vcpu_count == 0 || config.memory_mib < 128 {
             return Err("invalid node resource limits".into());
         }
         if let Some(settings) = &config.host_resources {
@@ -1217,19 +1211,11 @@ impl LinuxWorker {
     }
 
     fn vm_uid(&self, vm: core::VmId) -> NodeResult<u32> {
-        let id = u32::try_from(vm.0)?;
-        if vm.0 > self.config.max_vm_id {
-            return Err("node VM ID exceeds allocated UID range".into());
-        }
-        let uid = self
-            .config
-            .uid_base
-            .checked_add(id)
-            .ok_or("VM uid overflow")?;
-        if uid == u32::MAX {
-            return Err("VM uid is reserved".into());
-        }
-        Ok(uid)
+        Ok(crate::identity::vm_uid(
+            self.config.uid_base,
+            self.config.max_vm_id,
+            vm.0,
+        )?)
     }
 
     fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
