@@ -38,6 +38,10 @@ BASE_FROM = {
 }
 
 RECIPES = Path(__file__).with_name('task-recipes.json')
+TASK_BASES = {
+    'task-custom-memory-heap-crash': (
+        'custom-memory-heap-crash', 'alexgshaw/custom-memory-heap-crash:20251031'),
+}
 
 
 def local_url(value):
@@ -67,6 +71,11 @@ def load_recipes(lock, source):
     for name, recipe in recipes.items():
         entry = entries[name]
         expected_from = BASE_FROM.get(recipe['base'])
+        if recipe['base'] in TASK_BASES:
+            task_name, reference = TASK_BASES[recipe['base']]
+            if name != task_name or entry.get('upstream_image_reference') != reference:
+                raise InvalidInput(name + ': task image cannot be reused for another task or reference')
+            expected_from = ['ubuntu:24.04']
         if name == 'financial-document-processor' and recipe['base'] == 'ubuntu-24.04':
             expected_from = ['ubuntu:24.04 as build', 'ubuntu:24.04 AS target']
         if expected_from is None or [x.strip() for x in entry['dockerfile_from_lines']] != expected_from:

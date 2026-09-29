@@ -34,6 +34,19 @@ class LocalRunnerTests(unittest.TestCase):
                 local_url(url)
         self.assertEqual(local_url('http://127.0.0.1:1234'), 'http://127.0.0.1:1234')
 
+    def test_prebuilt_task_image_rejects_cross_task_or_reference(self):
+        for name, reference in (
+            ('other-task', 'alexgshaw/custom-memory-heap-crash:20251031'),
+            ('custom-memory-heap-crash', 'alexgshaw/custom-memory-heap-crash:latest'),
+        ):
+            with self.subTest(name=name, reference=reference), tempfile.TemporaryDirectory() as tmp:
+                recipes = Path(tmp) / 'recipes.json'
+                recipes.write_text(json.dumps({name: {'base': 'task-custom-memory-heap-crash'}}))
+                lock = {'tasks': [{'name': name, 'dockerfile_from_lines': ['ubuntu:24.04'],
+                                   'upstream_image_reference': reference}]}
+                with patch('benchmarks.run_local.RECIPES', recipes), self.assertRaises(InvalidInput):
+                    load_recipes(lock, Path(tmp))
+
     def test_recipe_cannot_upload_private_phase(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'environment'

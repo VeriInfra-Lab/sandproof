@@ -67,7 +67,7 @@ python3 tools/benchmark_tasks.py audit \
 
 ## 本地标准解答探针
 
-[本地入口](run_local.py)使用固定 Harbor 的 `OracleAgent` 与 `Verifier`，通过原版异步 SDK 连接显式指定的回环服务。它只创建 `base`，不调用模板 API；[固定配方](task-recipes.json)列出全部 89 题的初始化命令与输入映射，运行时不解释 Dockerfile。配方绑定七种[基础环境指纹](base-profiles.lock.json)，其中多阶段文档准备显式删除中间源文件，Windows 3.11 题目在 VM 内启动其原 supervisord。配方存在不代表初始化或评分通过。
+[本地入口](run_local.py)使用固定 Harbor 的 `OracleAgent` 与 `Verifier`，通过原版异步 SDK 连接显式指定的回环服务。它只创建 `base`，不调用模板 API；[固定配方](task-recipes.json)列出全部 89 题的初始化命令与输入映射，运行时不解释 Dockerfile。配方绑定七种通用基础环境及一个任务专用预制镜像的[固定指纹](base-profiles.lock.json)，其中多阶段文档准备显式删除中间源文件，Windows 3.11 题目在 VM 内启动其原 supervisord。配方存在不代表初始化或评分通过。
 
 ```sh
 uv run --locked --project benchmarks python -m benchmarks.run_local \
@@ -109,3 +109,5 @@ Cython 扩展题使用独立 pip 约束将 Planarity 固定为带源码 SHA-256 
 GPT-2 题的标准解答预留大于来宾物理内存的虚拟地址空间；该题初始化仅在来宾设置 `vm.overcommit_memory=1`，允许延迟按需分配物理页。来宾 4 GiB 内存、宿主 cgroup 上限及原评分时限保持不变。
 
 Mailman 题在来宾补齐基础镜像缺少的 `/var/mail`（root:mail，2775），使 Postfix 能创建本地邮箱。两道 MIPS 题的原 Doom 共享版数据链接失效，改从 [SliTaz 列出的 TuxFamily 镜像](https://www.slitaz.org/en/get/)下载相同发行数据并校验固定 SHA-256；下载失败立即中止初始化，不能把 HTTP 错误正文当作 WAD 文件。
+
+`custom-memory-heap-crash` 使用该题元数据指定的预构建镜像 `alexgshaw/custom-memory-heap-crash:20251031`，amd64 清单固定为 `sha256:1895d7d6240d5fb2ec774d6bfdd1057d170f8d199c15c582e4585d3c63802557`。原 Dockerfile 的两套 GCC 13.2.0 定制库已在其中构建，初始化无需在 600 秒内重新编译编译器。离线转换不执行镜像程序；加入固定 BusyBox/init 和 envd 后仍为 10 GiB 私有盘。执行时核对 task 专属标记、原 program/patches 内容摘要及两套库存在性。该 profile 仅允许原任务与原上游镜像引用使用；不允许其他任务复用，也不包含 solution/tests。原标准解答、评分器、CPU/内存及所有任务时限保持不变，是否实机通过仍以该提交的独立报告为准。

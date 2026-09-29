@@ -418,55 +418,13 @@
     ]
   },
   "custom-memory-heap-crash": {
-    "base": "ubuntu-24.04",
+    "base": "task-custom-memory-heap-crash",
     "workdir": "/app",
     "environment_sha256": "6ee81e5a4fa2540443d7f27d577ba840728fc6aab9f301ab7919103673c78080",
     "steps": [
       {
-        "run": "apt-get update &&      apt-get install -y      asciinema      build-essential      g++      gcc      make      autoconf      automake      libtool      texinfo      tmux      python3      python3-pip      flex      bison      git      wget      file      libgmp-dev      libmpfr-dev      libmpc-dev      valgrind      && rm -rf /var/lib/apt/lists/*",
-        "cwd": "/",
-        "env": {}
-      },
-      {
-        "run": "mkdir -p /build",
-        "cwd": "/"
-      },
-      {
-        "run": "cd /build &&      wget -q https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-13.2.0.tar.gz &&      tar -xzf gcc-13.2.0.tar.gz &&      mv gcc-releases-gcc-13.2.0 gcc-13.2.0 &&      rm gcc-13.2.0.tar.gz",
-        "cwd": "/build",
-        "env": {}
-      },
-      {
-        "copy": "patches/",
-        "target": "/build/patches"
-      },
-      {
-        "run": "cd /build/gcc-13.2.0 &&      patch -p0 < /build/patches/locale_classes.tcc.patch &&      patch -p0 < /build/patches/locale_init.cc.patch",
-        "cwd": "/build",
-        "env": {}
-      },
-      {
-        "run": "mkdir -p /build/gcc-build-debug &&      cd /build/gcc-build-debug &&      CXXFLAGS=\"-g -O0\" ../gcc-13.2.0/configure          --prefix=/usr/local/gcc-custom-debug          --disable-multilib          --disable-bootstrap          --enable-languages=c,c++          --enable-shared          --enable-threads=posix          --disable-libstdcxx-pch          --disable-werror &&      make -j$(nproc) all-target-libstdc++-v3 &&      make install-target-libstdc++-v3",
-        "cwd": "/build",
-        "env": {}
-      },
-      {
-        "run": "mkdir -p /build/gcc-build-release &&      cd /build/gcc-build-release &&      CXXFLAGS=\"-O2 -DNDEBUG\" ../gcc-13.2.0/configure          --prefix=/usr/local/gcc-custom-release          --disable-multilib          --disable-bootstrap          --enable-languages=c,c++          --enable-shared          --enable-threads=posix          --disable-libstdcxx-pch          --disable-werror &&      make -j$(nproc) all-target-libstdc++-v3 &&      make install-target-libstdc++-v3",
-        "cwd": "/build",
-        "env": {}
-      },
-      {
-        "run": "rm -rf /build/gcc-build-debug /build/gcc-build-release",
-        "cwd": "/build",
-        "env": {}
-      },
-      {
-        "run": "mkdir -p /app",
-        "cwd": "/"
-      },
-      {
-        "copy": "program/",
-        "target": "/app"
+        "run": "sha256sum -c <<'SANDPROOF_INPUTS'\nb94538c76887cc2b2ab739b5ac4731cddd0faa8f4a9892a6265c062bbbeede14  /app/main.cpp\n92b203786fed1bf0b3aa1675c9cd2d82b2651170675064da8ffee73b98ef14f9  /app/user.cpp\nf43d155995a56c22b9cd1417daef7c3b5a976cdc662a98eef0feb438ae1eee77  /app/user.h\n16951f4a4df6bf253886ac75f5a39fdbc328e415194493f63cb7589a364aa817  /build/patches/locale_classes.tcc.patch\ne97f133ceebd86f8881f972e0e45b0ec0a13a9bfa428d8032008707683d54292  /build/patches/locale_init.cc.patch\nSANDPROOF_INPUTS\ntest -e /usr/local/gcc-custom-debug/lib64/libstdc++.so\ntest -e /usr/local/gcc-custom-release/lib64/libstdc++.so",
+        "cwd": "/app"
       }
     ]
   },
