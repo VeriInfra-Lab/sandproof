@@ -7,7 +7,7 @@ mod storage;
 
 pub use admission::{
     AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
-    CreateOptions, DEFAULT_TIMEOUT_SECS, Lifetime,
+    CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS, Lifetime,
 };
 
 use crate::{
@@ -21,6 +21,32 @@ use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 type ReceiptRow = (i64, Vec<u8>, String, Option<Vec<u8>>);
+
+fn migrate_lifetime_schema(
+    transaction: &rusqlite::Transaction<'_>,
+    version: i64,
+) -> Result<(), JournalError> {
+    if version <= 4 {
+        // The original total limit was not recorded. Preserve only the
+        // already granted deadline; never reset the age during migration.
+        transaction.execute_batch(
+            "ALTER TABLE sandbox_lifetimes ADD COLUMN max_deadline_ms INTEGER CHECK(max_deadline_ms >= 0);
+             UPDATE sandbox_lifetimes SET max_deadline_ms=deadline_ms;
+             UPDATE controller_meta SET version=5 WHERE id=1;",
+        )?;
+    }
+    if version <= 5 {
+        // Existing Starting creates retain the original admitted cutoff;
+        // migration must not silently extend a possibly live startup.
+        // Running records no longer consult this watchdog.
+        transaction.execute_batch(
+            "ALTER TABLE sandbox_lifetimes ADD COLUMN startup_deadline_ms INTEGER CHECK(startup_deadline_ms >= 0);
+             UPDATE sandbox_lifetimes SET startup_deadline_ms=deadline_ms;
+             UPDATE controller_meta SET version=6 WHERE id=1;",
+        )?;
+    }
+    Ok(())
+}
 
 /// Implemented by the trusted host adapter, never by a guest/API response.
 /// The adapter must establish the command-specific physical result, including
@@ -452,7 +478,7 @@ impl ControllerJournal {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=5).contains(&version) || stored != namespace {
+        if !(1..=6).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {
@@ -479,15 +505,7 @@ impl ControllerJournal {
                 [b"{\"env_vars\":{},\"metadata\":{}}".as_slice()],
             )?;
         }
-        if version <= 4 {
-            // The original total limit was not recorded. Preserve only the
-            // already granted deadline; never reset the age during migration.
-            transaction.execute_batch(
-                "ALTER TABLE sandbox_lifetimes ADD COLUMN max_deadline_ms INTEGER CHECK(max_deadline_ms >= 0);
-                 UPDATE sandbox_lifetimes SET max_deadline_ms=deadline_ms;
-                 UPDATE controller_meta SET version=5 WHERE id=1;",
-            )?;
-        }
+        migrate_lifetime_schema(&transaction, version)?;
         storage::load_world(&transaction)?;
         transaction
             .commit()
