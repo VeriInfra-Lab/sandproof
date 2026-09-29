@@ -1,17 +1,60 @@
 """Reference repair integrity and residue parsing, without running task code."""
+import asyncio
+import contextlib
 import hashlib
 import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
-from benchmarks.oracle_repairs import repair_solution
+from harbor.agents.oracle import OracleAgent
+from harbor.models.agent.context import AgentContext
+from harbor.models.trial.paths import TrialPaths
+from harbor.models.task.task import Task
+
+from benchmarks.oracle_repairs import prepare_repaired_task, repair_solution
 from benchmarks.protein_sequences import expand_sequence, get_single_fasta, get_component
 from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_real_harbor_agent_accepts_repaired_task_without_bypassing_containment(self):
+        # Exercise pinned Harbor's actual input validation and upload path.
+        # The environment records commands; no fixture script runs on the host.
+        script = ('def get_single_fasta(pdb_id):\n    return "old"\n\n'
+                  'def get_pdb_title(pdb_id):\n    pass\npython pdb_ids.py\n')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'source'
+            (source / 'solution').mkdir(parents=True)
+            (source / 'tests').mkdir()
+            (source / 'solution/solve.sh').write_text(script)
+            (source / 'tests/test.sh').write_text('# synthetic verifier\n')
+            (source / 'task.toml').write_text('version = "1.0"\n')
+            (source / 'instruction.md').write_text('Synthetic task.\n')
+            with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                    'protein-assembly': hashlib.sha256(script.encode()).hexdigest()}):
+                repaired = prepare_repaired_task('protein-assembly', source, root / 'repaired-task')
+            original_task = Task(source)
+            paths = TrialPaths(root / 'trial')
+            paths.agent_dir.mkdir(parents=True)
+            agent = OracleAgent(logs_dir=paths.agent_dir, task_dir=repaired, trial_paths=paths)
+            env = SimpleNamespace(os=original_task.config.environment.os,
+                                  capabilities=SimpleNamespace(mounted=False),
+                                  upload_dir=AsyncMock(), download_file=AsyncMock(),
+                                  exec=AsyncMock(return_value=SimpleNamespace(return_code=0)),
+                                  scoped_exec_env=lambda _: contextlib.nullcontext())
+            asyncio.run(agent.run(original_task.instruction, env, AgentContext()))
+            env.upload_dir.assert_awaited_once_with(source_dir=repaired / 'solution', target_dir='/solution')
+            self.assertTrue(env.exec.await_count > 0)
+            self.assertFalse((paths.agent_dir / 'exit-code.txt').exists())
+            self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+            self.assertEqual((repaired / 'tests/test.sh').read_bytes(), (source / 'tests/test.sh').read_bytes())
+            with self.assertRaises(ValueError):
+                original_task.paths.validate_input_tree(repaired / 'solution')
+
     def test_parent_residues_expand_without_losing_adjacent_sequence(self):
         component = Mock(side_effect=lambda code: {'AAA': 'ACD', 'BBB': 'M'}[code])
         self.assertEqual(expand_sequence('MA\n(AAA)GG(BBB)Y', component), 'MAACDGGMY')

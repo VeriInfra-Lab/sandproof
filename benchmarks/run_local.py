@@ -26,7 +26,7 @@ from harbor.verifier.verifier import Verifier
 
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.check_browser_evidence import audit_browser_evidence
-from benchmarks.oracle_repairs import REPAIRS, repair_solution
+from benchmarks.oracle_repairs import REPAIRS, prepare_repaired_task
 from tools.benchmark_tasks import InvalidInput, verify
 
 BASE_FROM = {
@@ -302,12 +302,12 @@ async def run_task(args, entry, recipe):
         event('initialization')
         await asyncio.wait_for(environment.start(), task.config.environment.build_timeout_sec)
         event('oracle')
-        oracle = OracleAgent(logs_dir=paths.agent_dir, task_dir=task.paths.task_dir,
-                             trial_paths=paths, agent_timeout_sec=task.config.agent.timeout_sec)
+        oracle_task_dir = task.paths.task_dir
         if oracle_mode == 'repaired':
-            solution = repair_solution(task.name, task.paths.solution_dir,
-                                       paths.trial_dir / 'repaired-solution')
-            oracle._resolve_solution_paths = lambda: solution
+            oracle_task_dir = prepare_repaired_task(
+                task.name, task.paths.task_dir, paths.trial_dir / 'repaired-task')
+        oracle = OracleAgent(logs_dir=paths.agent_dir, task_dir=oracle_task_dir,
+                             trial_paths=paths, agent_timeout_sec=task.config.agent.timeout_sec)
         await asyncio.wait_for(oracle.run(task.instruction, environment, AgentContext()), task.config.agent.timeout_sec)
         row['oracle'] = 'failed' if (paths.agent_dir / 'exit-code.txt').exists() else 'passed'
         event('verifier')

@@ -26,6 +26,22 @@ POV_ARCHIVES = {
 }
 
 
+def prepare_repaired_task(name, original, destination):
+    """Give the unchanged Harbor agent a complete, independently rooted task.
+
+    Harbor checks that its solution belongs to its task root. A replacement
+    solution path under a different root is correctly rejected by that check.
+    The original task remains the verifier's source of truth.
+    """
+    if any(path.is_symlink() for path in original.rglob('*')):
+        raise InvalidInput('task symlinks are unsupported')
+    shutil.copytree(original, destination,
+                    ignore=lambda directory, names: ['solution'] if Path(directory) == original else [])
+    repair_solution(name, original / 'solution', destination / 'solution')
+    (destination / 'oracle-repair.json').rename(destination.parent / 'oracle-repair.json')
+    return destination
+
+
 def repair_solution(name, original, destination):
     if name not in REPAIRS:
         raise InvalidInput('no reviewed reference-solution repair for ' + name)
