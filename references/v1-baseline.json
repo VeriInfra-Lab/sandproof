@@ -1212,5 +1212,46 @@
     "residuals": "All passing probe VM identities ended without exact VMM PID/start, private jail, netns, cgroup child or test-UID process; the source base hash and host IPv4 forwarding (0) were unchanged. Completed probes removed their test configuration and node secrets. Their non-secret root-private logs, SQLite and claim tombstones were retained; twelve precisely identified 1 GiB private disk copies were removed after audit, and two empty dedicated cgroup parents were removed.",
     "commands": "On exact tested checkout: bash scripts/check-function.sh; bash scripts/check-compat.sh. Root on exclusive KVM host: python3 tests/system/server_prepare_recovery_isolation.py --server <tested debug binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <7c424b74 kernel> --rootfs <83f82ca1 legacy base> --uid-base <exclusive range> --scratch-parent /root/ta --cgroup-parent <private cgroup> --window <after-host|after-claim> --keep-artifacts; serially run the five server_process_crash.py windows, three server_activation_abort.py windows, server_recovery_isolation.py and sdk_lifecycle_races.py against the same binary.",
     "limits": "Only selected deterministic failures and one controller process; no arbitrary instruction-position SIGKILL, power loss, hostile host, independent concurrent workers, routed-base public/static IPv4 traffic on this commit, full C02 non-root data contract, Harbor or new Rust-to-Lean proof. The prior #10 network evidence is not silently upgraded to this source commit. Shared journal corruption and other unbound resource shapes remain fail-closed contracts with component/older tests, not a broad KVM fault matrix. Evidence documentation follows the tested source commit without changing production or probe code."
+  },
+  "issue11_integrated_acceptance": {
+    "issue": 11,
+    "tested_source_commit": "7739a806f89e787350b1019644206f294068aa36",
+    "history_sync_commit": "e4fe82d5b6840654c6a3461f5473f18329a33d26",
+    "identical_git_tree": "de8fad6b48c6dcb51b79f773f1fead1647ca4b09",
+    "server_sha256": "2b437048938866ab339852ee819944c0e8e1020650f4ed2d2a08c32724ecdb64",
+    "node_test_binary_sha256": "58d305b016204eb7f9a5f5d5c9edbccd1ddf73084d146eb84548609d9041d3bc",
+    "host": "ning; Linux 6.8.0-142-generic x86_64; /dev/kvm; root-only /root/ta scratch, exclusive UID ranges 9550000–9568999 and root-only /sys/fs/cgroup/sp11-accept-7739a80",
+    "fixed_inputs_sha256": {
+      "firecracker_1_16_1": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+      "jailer_1_16_1": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+      "kernel_6_1_176": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+      "fixed_base_before_after": "30a3861b873e077d2f9a1c215e1e68702261ef3a9af1db3e2c6e6f07b73d5391"
+    },
+    "probe_sha256": {
+      "sdk_c02_acceptance.py": "60151180bdc9014cd2100044be2f316fd03889b4e9830b89fefb00365905c4d3",
+      "server_process_crash.py": "de1e5f3660fb671f29f3bd0f29d04bb129fbea330f7a879a91cdc4babb3be039",
+      "server_prepare_recovery_isolation.py": "da1a904c1b61026b6530ca696fceb673f909f5ab7b6d1b0f8b5b6cae4fda59a1",
+      "server_activation_abort.py": "55b6ed9966df8a1759e2ab7c2422ca6b94a70f1c0b1def6d7504de60f8124d32",
+      "server_recovery_isolation.py": "87106ca6106e692775697c84c1e34afb774a18bd787d6420062b98e7cf82a730",
+      "server_unready_abort.py": "d2a0cde2765f892c74d348443ae6f93a15476d53a4d41dd94d5499df4c9ab45b",
+      "sdk_lifecycle_races.py": "42b1fdd7cd848c30148c8449a7cb1050af781bb94527d5790457042adf101fd1",
+      "server_vm_id_capacity.py": "c3b18be2cc20757eb35d81fd3e0bc51f23efc4b3128f59d937e2896015a3f5cd",
+      "sdk_network_receipt_crash.py": "7e13d4ef717aed4cd5c30ea07e19fd63b8c1c484187a3a383436ad476ceb421d",
+      "host_smoke.rs": "3b223db11d6b70f26a3375d0f6218658dcdf8e56a41b038984e9f61c032b9c07"
+    },
+    "checks": "The exact checkout passed scripts/check-function.sh locally and on Linux. Pinned E2B Python SDK 2.51.0 passed 46 wire checks locally and the Linux SDK/actual Rust gateway composition suite. The same debug server binary was used for all service-level KVM probes; the node test binary was copied into a root-only test directory and its SHA-256 matched before and after copying.",
+    "passed_windows": {
+      "complete_sdk_chain": "sdk_c02_acceptance.py: original SDK management, auth, sync/async ordinary-user command and file calls; four durable Destroyed rows and no exact physical residual",
+      "service_restart": ["before-host", "after-host", "before-activation", "after-activation", "after-guest-init"],
+      "prepare_local_error": ["after-host", "after-claim"],
+      "unknown_activation_terminal": ["before-stop", "after-stop", "after-cleanup"],
+      "other_service": ["two-VM StopVm observation failure isolation", "live but unready VMM deadline abort with lost AbortPrepare receipt", "SDK concurrent kill and failed create recovery", "VM ID capacity refusal preserving a live SDK VM through restart", "static IPv4 ConfigureNetwork and StopVm success with lost receipts"],
+      "node": ["repeated_stop_and_cleanup_preserve_another_live_vm", "real_worker_sigkill_reconciles_partial_cleanup", "partial_prepare_network_intent_is_reclaimed_by_exact_identity"]
+    },
+    "observed": "Across independently isolated runs, lost host receipts did not start a second VM or republish a stopped one. A local prepare/stop observation failure retained only its own unfinished sandbox and quota; unrelated VMs remained queryable or completed expiry. Unknown activation was retired only after exact stop evidence, including service exits before stop, after stop and after cleanup. Concurrent kill produced one durable Kill; late stop/cleanup preserved another VM's PID/start, network/disk/cgroup inodes and authenticated guest access. A same-name replacement cgroup blocked cleanup until the test removed its own empty replacement. Unbound claims blocked startup without deletion. The static IPv4 rule survived recovery without widening; host IPv4 forwarding was 0 both before and after the temporary traffic probe.",
+    "sanitized_stdout": "C02 namespace eb0c03127932d858: four Destroyed, no exact VM process/jail/netns/cgroup/UID process. Prepare after-host namespaces 4dbb368cac0e8c7e and after-claim d8eaf990a861651a: one local failure each, the other VM completed; no exact residual. Stop-observation isolation namespace 1298f47124c53eb1: one Revoking while the independent VM reached Destroyed; original stop later reconciled. Capacity namespace 887927c0bc55fac0: three Destroyed, refused admission unchanged before/after restart. No test credential or raw guest log is included here.",
+    "commands": "On source commit 7739a80: PATH=<pinned tools> bash scripts/check-function.sh; bash scripts/check-compat.sh. On the isolated host, build with cargo build -p sandproof-server --locked and uv sync --locked --offline --project tests/compat. Run each listed tests/system/<probe>.py serially as root with --server target/debug/sandproof-server --jailer <pinned 1.16.1> --firecracker <pinned 1.16.1> --kernel /root/sp110-062e8ba/vmlinux-6.1.176 --rootfs /root/sp110-062e8ba/base-110.ext4 --uid-base <exclusive range> --scratch-parent /root/ta; pass the listed --window and --cgroup-parent /sys/fs/cgroup/sp11-accept-7739a80 where supported. The network receipt probe temporarily enabled host IPv4 forwarding with a shell EXIT trap that restored the previously read value. For the three named node cases, run the same locked host_smoke test binary as root with unique state/jail/namespace/UID and the dedicated cgroup parent.",
+    "residuals": "Passing service probes removed their own temporary roots after exact checks. The three node-test roots were independently checked for no live test-UID processes, no matching netns or cgroup child, no VM jail below their exact names, then deleted with their test secrets and private logs. The dedicated empty cgroup parent and temporary network-test wrapper were removed. The fixed source base hash remained unchanged and host IPv4 forwarding returned to 0.",
+    "limits": "This supports only the #11 functional acceptance under its stated single-controller, trusted SQLite atomicity and accurate host-observation boundary. It samples deterministic persistence/host side-effect windows, not arbitrary instruction-position SIGKILL, host power loss, a hostile host, independently concurrent controllers/workers, SQLite write availability, unlimited capacity, all external network destinations, Harbor task scoring or a new Rust-to-Lean proof. If precise stop or a required durable write cannot be confirmed, the sandbox remains unresolved with quota held or startup fails closed; no false Destroyed success is promised. The evidence-only follow-up and the history-sync commit changed no tested production or probe bytes."
   }
 }
