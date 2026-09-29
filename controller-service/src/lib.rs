@@ -77,6 +77,7 @@ pub enum JournalError {
     UnresolvedAction,
     OperationFailed,
     InvalidHostEvidence,
+    ObsoleteReceipt,
 }
 
 impl Display for JournalError {
@@ -114,6 +115,9 @@ impl Display for JournalError {
             }
             Self::InvalidHostEvidence => {
                 formatter.write_str("host evidence does not establish this command result")
+            }
+            Self::ObsoleteReceipt => {
+                formatter.write_str("terminal operation no longer accepts this activation receipt")
             }
         }
     }

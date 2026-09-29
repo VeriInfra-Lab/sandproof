@@ -123,6 +123,14 @@ pub fn only_uncertain_prepare_for_abort(world: &World, sandbox: SandboxId) -> bo
 #[must_use]
 pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
     let sandbox = command.sandbox();
+    if crate::terminal::only_uncertain_activation_for_abort(world, sandbox) {
+        return world.effect_ids().iter().any(|id| {
+            crate::terminal::activation_in_current_abort(world, id)
+                && (crate::terminal::activation_stop(id).as_ref() == Some(command)
+                    || matches!(command, Command::InstallFence { epoch, terminal: true, .. }
+                        if world.sandboxes.get(&sandbox).is_some_and(|record| record.epoch == *epoch)))
+        });
+    }
     if !only_uncertain_prepare_for_abort(world, sandbox) {
         return false;
     }

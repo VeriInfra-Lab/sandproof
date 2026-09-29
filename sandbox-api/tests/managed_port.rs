@@ -1042,7 +1042,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
 }
 
 #[test]
-fn expired_unknown_activation_is_reconciled_before_terminal_cleanup_not_published_running() {
+fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_running() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let sandbox = core::SandboxId(1);
@@ -1089,9 +1089,9 @@ fn expired_unknown_activation_is_reconciled_before_terminal_cleanup_not_publishe
         config(),
     );
     let report = port.recover_on_startup().unwrap();
-    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.receipts_recovered, 0);
     assert_eq!(report.workflows_completed, 1);
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(
         port.get("1", &format!("sb-{NAMESPACE}-1")),
         Err(PortError::NotFound)
@@ -1110,7 +1110,7 @@ fn expired_unknown_activation_is_reconciled_before_terminal_cleanup_not_publishe
 }
 
 #[test]
-fn unavailable_activation_remains_terminal_and_unresolved_after_startup_deadline() {
+fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let sandbox = core::SandboxId(1);
@@ -1159,11 +1159,12 @@ fn unavailable_activation_remains_terminal_and_unresolved_after_startup_deadline
         port.get("1", &format!("sb-{NAMESPACE}-1")),
         Err(PortError::NotFound)
     );
-    assert_eq!(report.workflows_completed, 0);
-    assert_eq!(report.unresolved_sandboxes, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 0);
+    assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 0);
     drop(port);
     let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
-    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+    assert!(journal.uncertain_actions().unwrap().is_empty());
     assert_eq!(
         journal
             .world()
@@ -1171,7 +1172,7 @@ fn unavailable_activation_remains_terminal_and_unresolved_after_startup_deadline
             .sandbox_record(sandbox)
             .unwrap()
             .phase,
-        core::Phase::Revoking
+        core::Phase::Destroyed
     );
 }
 

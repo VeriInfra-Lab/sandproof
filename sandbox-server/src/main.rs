@@ -216,6 +216,7 @@ mod linux {
                         | (Some("stop_vm"), core::Command::StopVm { .. })
                         | (Some("activate_vm"), core::Command::ActivateVm { .. })
                         | (Some("abort_prepare"), core::Command::AbortPrepare { .. })
+                        | (Some("cleanup_vm"), core::Command::CleanupVm { .. })
                 ) {
                     std::process::exit(86);
                 }

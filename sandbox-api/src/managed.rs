@@ -490,7 +490,7 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
 
 fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
     match world.effect_status(effect) {
-        Some(core::EffectStatus::Acknowledged(_)) => false,
+        Some(core::EffectStatus::Acknowledged(_) | core::EffectStatus::RetiredByStop(_)) => false,
         Some(core::EffectStatus::Committed) => {
             // Failed creates can retain unclaimed startup actions. Use the
             // dispatcher's core preview to distinguish obsolete work; never
@@ -564,6 +564,14 @@ fn observe_recovery_action<H: HostAdapter>(
     if blocked.contains(&sandbox) || selected.is_some_and(|id| id != sandbox) {
         return None;
     }
+    if matches!(action.command.command(), core::Command::ActivateVm { .. })
+        && world
+            .sandbox_record(sandbox)
+            .is_some_and(|record| record.terminal)
+    {
+        // Terminal cleanup needs host stop evidence, never another guest RPC.
+        return None;
+    }
     let receipt = host.observe(action)?;
     if matches!(
         action.command.command(),
@@ -631,6 +639,13 @@ fn recover_locked<H: HostAdapter>(
     selected: Option<core::SandboxId>,
 ) -> Result<RecoveryReport, PortError> {
     let Inner { journal, host, .. } = inner;
+    // Expiry is a durable decision, not dependent on guest availability.
+    // Once terminal, never try initialization before performing exact stop.
+    if selected.is_none() {
+        journal
+            .abort_due_startups(now_ms()?, &mut NeverCrash)
+            .map_err(map_admission)?;
+    }
     let initial = journal.world().map_err(map_journal)?;
     // Use the state before reconciliation: work whose last cleanup receipt is
     // recovered in this scan must still finish and be counted once. Already
@@ -645,11 +660,7 @@ fn recover_locked<H: HostAdapter>(
             observe_recovery_action(host, &recovery_world, &blocked, selected, action)
         })
         .map_err(map_journal)?;
-    // Resolve the already-dispatched, repeat-safe initialization before a
-    // possibly elapsed startup deadline makes its create terminal. This does
-    // not publish Running: the durable deadline is checked next, before any
-    // create workflow resumes. A late successful initialization is therefore
-    // stopped by compensation, not exposed as a new usable sandbox.
+    // Host I/O can cross the deadline. Recheck before any Running publication.
     if selected.is_none() {
         journal
             .abort_due_startups(now_ms()?, &mut NeverCrash)

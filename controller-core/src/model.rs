@@ -388,6 +388,19 @@ pub enum EffectStatus {
     Dispatched,
     OutcomeUnknown,
     Acknowledged(EffectOutcome),
+    /// The activation's historical outcome is still unknown. Its exact VM
+    /// has been stopped by this terminal operation, so it must never execute
+    /// again. This is deliberately not a successful or failed receipt.
+    RetiredByStop(StopCoverage),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StopCoverage {
+    pub operation: OperationKey,
+    pub epoch: Epoch,
+    pub attempt: AttemptNo,
+    pub result: ResultDigest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -438,6 +451,10 @@ pub enum LogicalEffectResult {
     Failed {
         attempt: AttemptNo,
         failure: FailureKind,
+    },
+    RetiredByStop {
+        attempt: AttemptNo,
+        coverage: StopCoverage,
     },
 }
 
@@ -634,6 +651,7 @@ pub enum Event {
     EffectTimeout(EffectId),
     StartNextAttempt(EffectId, EffectId),
     FinalizeEffectFailure(EffectId, FailureKind),
+    RetireActivation(EffectId, EffectId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

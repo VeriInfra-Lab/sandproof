@@ -11,6 +11,10 @@ pub enum EffectInput {
     Timeout(EffectId),
     Retry(LogicalEffectId, FailureKind),
     FinalizeFailure(LogicalEffectId, FailureKind),
+    RetireActivation {
+        activation: EffectId,
+        stop: EffectId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +35,8 @@ pub enum EffectReject {
     NextAttemptExists,
     RetryStillAvailable,
     CounterExhausted,
+    InvalidRetirementEvidence,
+    EffectRetired,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -265,7 +271,8 @@ pub fn effect_succeeded_check(world: &World, command: &Command) -> bool {
             EffectStatus::Committed
             | EffectStatus::Dispatched
             | EffectStatus::OutcomeUnknown
-            | EffectStatus::Acknowledged(EffectOutcome::Failed(_)),
+            | EffectStatus::Acknowledged(EffectOutcome::Failed(_))
+            | EffectStatus::RetiredByStop(_),
         )
         | None => false,
     }
@@ -395,9 +402,11 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
             event: Event::DispatchEffect(id.clone()),
             next: dispatch_effect(world, id),
         }),
-        Some(EffectStatus::Dispatched | EffectStatus::Acknowledged(_)) => {
-            Err(EffectReject::NotDispatchable)
-        }
+        Some(
+            EffectStatus::Dispatched
+            | EffectStatus::Acknowledged(_)
+            | EffectStatus::RetiredByStop(_),
+        ) => Err(EffectReject::NotDispatchable),
     }
 }
 
@@ -413,6 +422,14 @@ pub fn handle_effect_receipt(
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
         Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => {
+            if matches!(id.command(), Command::ActivateVm { .. })
+                && world
+                    .sandboxes
+                    .get(&id.command().sandbox())
+                    .is_some_and(|record| record.terminal)
+            {
+                return Err(EffectReject::NotAwaitingResult);
+            }
             if !effect_outcome_valid(world, id.command(), outcome) {
                 return Err(EffectReject::InvalidOutcomeEvidence);
             }
@@ -431,6 +448,7 @@ pub fn handle_effect_receipt(
             })
         }
         Some(EffectStatus::Committed) => Err(EffectReject::NotAwaitingResult),
+        Some(EffectStatus::RetiredByStop(_)) => Err(EffectReject::EffectRetired),
     }
 }
 
@@ -449,9 +467,11 @@ pub fn handle_effect_timeout(world: &World, id: EffectId) -> Result<EffectDecisi
             event: Event::EffectTimeout(id),
             next: world.clone(),
         }),
-        Some(EffectStatus::Committed | EffectStatus::Acknowledged(_)) => {
-            Err(EffectReject::NotDispatched)
-        }
+        Some(
+            EffectStatus::Committed
+            | EffectStatus::Acknowledged(_)
+            | EffectStatus::RetiredByStop(_),
+        ) => Err(EffectReject::NotDispatched),
     }
 }
 
@@ -564,6 +584,9 @@ pub fn handle_effect(world: &World, input: EffectInput) -> Result<EffectDecision
         EffectInput::Retry(logical, failure) => handle_effect_retry(world, logical, failure),
         EffectInput::FinalizeFailure(logical, failure) => {
             handle_effect_finalize_failure(world, logical, failure)
+        }
+        EffectInput::RetireActivation { activation, stop } => {
+            crate::terminal::handle_retire_activation(world, activation, stop)
         }
     }
 }
