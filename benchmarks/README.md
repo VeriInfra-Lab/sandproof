@@ -130,3 +130,4 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 - `crack-7z-hash`：先用原 John 自带完整常用密码字典和原规则运行，并要求 John 确认破解成功；解压密码取自实际破解结果，替代原脚本的答案常量。没有任务专用候选表，也没有跳过破解计算。模式语义见 [John 官方说明](https://www.openwall.com/john/doc/MODES.shtml)。
 - `install-windows-3.11`：识别并复用原 supervisor 已启动、参数匹配的 VNC WebSocket 进程，避免重复绑定 8080 导致解答退出 1；不把任意端口监听都当成所需服务。原 QEMU 编译、镜像、启动与监控仍执行，原四项评分不变。
 - `torch-tensor-parallelism`：原生栈确认 Gloo 销毁时，主线程持有 GIL 等待工作线程，工作线程释放 tensor 又等待 GIL。修正版让模型持有直接 Gloo 后端引用，使用 [Torch 2.7.0 已有的释放 GIL 的析构绑定](https://github.com/pytorch/pytorch/blob/v2.7.0/torch/csrc/distributed/c10d/init.cpp)完成清理；不改集体通信、模型计算、PyTorch 版本或原评分。完整实跑结果按提交记录在独立的 repaired 模式报告中。
+- `mteb-leaderboard`：完整克隆 results 仓库时加 `--no-checkout`，避免先展开当前 HEAD 的大工作树占满 10 GiB 私有盘，再执行原脚本指定的 `c0fd3271442f8c0c839084a109fede85c8514dab` 检出。保留完整历史与对象，不使用浅克隆、稀疏检出或预填结果；原排行榜计算与评分不变。

@@ -18,6 +18,7 @@ REPAIRS = {
     'caffe-cifar-10': '771887de1ed557269c7f3160c777519aa9538e1e9b59771b2f6ef38c8952490c',
     'install-windows-3.11': '68a9221b9a29331b66fd34fccd71db71d2b5a720e917f2ef95f4a8a542a71ee4',
     'torch-tensor-parallelism': 'd083b7cbf9dbb6cc2ff38c8f2acc150f0059c04aea42d6c2183aeaecc5a19385',
+    'mteb-leaderboard': '4ed68831d4acf5d80d2d73eec1f21efd0896a6f51f23020f572cfc0af6da0410',
 }
 POV_ARCHIVES = {
     'POVDOC.TAR.Z': 'e70e44d1fe8835c4dff7c7a55bd6629b15e6a15b2ab7f2f49ee9e2dc016cc470',
@@ -94,6 +95,14 @@ def repair_solution(name, original, destination):
     mv cifar-10-batches-bin/* .
     rmdir cifar-10-batches-bin
 ) || exit 1''')
+    elif name == 'mteb-leaderboard':
+        # The solution immediately checks out its pinned historical commit.
+        # Preserve the complete clone, but do not first materialize today's
+        # larger HEAD tree, which can fill the original 10 GiB task disk.
+        marker = 'git clone https://github.com/embeddings-benchmark/results'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, 'git clone --no-checkout https://github.com/embeddings-benchmark/results')
     elif name == 'torch-tensor-parallelism':
         # In Torch 2.7.0, the direct Gloo Python holder releases the GIL on
         # destruction; its parent ProcessGroup's holder does not. Keep the

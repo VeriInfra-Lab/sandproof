@@ -3,7 +3,9 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -20,6 +22,48 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_historical_clone_skips_current_tree_but_keeps_full_history(self):
+        # Execute only this synthetic fixture, never a benchmark solution.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo = root / 'upstream'
+            def git(*args, cwd=repo):
+                return subprocess.check_output(['git', *args], cwd=cwd, text=True).strip()
+            git('init', '-q', str(repo), cwd=root)
+            git('config', 'user.name', 'Synthetic Test')
+            git('config', 'user.email', 'test@example.invalid')
+            (repo / 'historical.txt').write_text('historical result\n')
+            git('add', '.')
+            git('commit', '-qm', 'historical fixture')
+            historical = git('rev-parse', 'HEAD')
+            (repo / 'current-only.txt').write_text('current tree\n' * 1024)
+            git('add', '.')
+            git('commit', '-qm', 'current fixture')
+            current = git('rev-parse', 'HEAD')
+            script = ('set -eu\n'
+                      'git clone https://github.com/embeddings-benchmark/results\n'
+                      'test ! -e results/current-only.txt\n'
+                      'test ! -e results/historical.txt\n'
+                      'cd results\n'
+                      f'git checkout {historical}\n')
+            source = root / 'source'
+            source.mkdir()
+            (source / 'solve.sh').write_text(script)
+            with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                    'mteb-leaderboard': hashlib.sha256(script.encode()).hexdigest()}):
+                _, solve = repair_solution('mteb-leaderboard', source, root / 'repaired')
+            env = {**os.environ, 'GIT_CONFIG_COUNT': '1',
+                   'GIT_CONFIG_KEY_0': f'url.{repo.as_uri()}.insteadOf',
+                   'GIT_CONFIG_VALUE_0': 'https://github.com/embeddings-benchmark/results'}
+            subprocess.run(['bash', str(solve)], cwd=root, env=env, check=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            clone = root / 'results'
+            self.assertEqual(git('rev-parse', 'HEAD', cwd=clone), historical)
+            self.assertEqual(git('cat-file', '-t', current, cwd=clone), 'commit')
+            self.assertEqual(git('rev-parse', '--is-shallow-repository', cwd=clone), 'false')
+            self.assertFalse((clone / 'current-only.txt').exists())
+            self.assertEqual((clone / 'historical.txt').read_text(), 'historical result\n')
+
     def test_real_harbor_agent_accepts_repaired_task_without_bypassing_containment(self):
         # Exercise pinned Harbor's actual input validation and upload path.
         # The environment records commands; no fixture script runs on the host.
