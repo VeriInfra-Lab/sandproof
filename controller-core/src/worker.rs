@@ -1,7 +1,7 @@
 use crate::model::{
     AppliedFilePolicy, Authority, Command, EffectId, EffectStatus, LogicalEffectId, NetSlot,
-    OperationKey, Phase, RestoreSource, SandboxRecord, Snapshot, SnapshotStage, Vm, VmStatus,
-    WorkerFence, World,
+    OperationKey, OperationKind, OperationStatus, Phase, RestoreSource, SandboxRecord, Snapshot,
+    SnapshotStage, Vm, VmStatus, WorkerFence, World,
 };
 use crate::transition::{enqueue, operation_key};
 use crate::{Generation, NetSlotId, SandboxId, SnapshotId, SnapshotManifestRef, VmId};
@@ -44,6 +44,11 @@ pub enum WorkerEvent {
     StopVm {
         sandbox: SandboxId,
         vm: VmId,
+    },
+    AbortPrepare {
+        sandbox: SandboxId,
+        vm: VmId,
+        slot: NetSlotId,
     },
     CleanupVm {
         sandbox: SandboxId,
@@ -866,6 +871,82 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
             put_vm(&mut next, vm, stopped);
             Ok(WorkerDecision {
                 event: WorkerEvent::StopVm { sandbox, vm },
+                next,
+            })
+        }
+        Command::AbortPrepare {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+            slot,
+        } => {
+            let record = world
+                .sandboxes
+                .get(&sandbox)
+                .ok_or(WorkerReject::SandboxNotFound)?;
+            let (key, plan) = current_plan(world, sandbox, record)?;
+            let operation = record
+                .current_operation
+                .ok_or(WorkerReject::OperationNotFound)?;
+            if record.phase != Phase::Revoking
+                || !record.terminal
+                || operation.kind != OperationKind::Create
+                || !matches!(operation.status, OperationStatus::Compensating(_))
+            {
+                return Err(WorkerReject::WrongPhase);
+            }
+            if epoch != record.epoch
+                || generation != record.generation
+                || plan.key != key
+                || plan.epoch != epoch
+                || plan.generation != generation
+                || !plan.sealed
+                || plan.vm != Some(vm)
+                || plan.slot != Some(slot)
+                || !plan.stop_vms.contains(&vm)
+                || !plan.close_slots.contains(&slot)
+            {
+                return Err(WorkerReject::PlanMismatch);
+            }
+            if world.worker_fences.get(&sandbox)
+                != Some(&WorkerFence {
+                    epoch,
+                    terminal: true,
+                })
+            {
+                return Err(WorkerReject::FenceNotReady);
+            }
+            if world.vms.contains_key(&vm) || world.net_slots.contains_key(&slot) {
+                return Err(WorkerReject::ResultAlreadyPresent);
+            }
+            let mut next = world.clone();
+            put_vm(
+                &mut next,
+                vm,
+                Vm {
+                    owner: record.owner,
+                    sandbox,
+                    generation,
+                    status: VmStatus::Reclaimed,
+                },
+            );
+            put_slot(
+                &mut next,
+                slot,
+                NetSlot {
+                    owner: record.owner,
+                    sandbox,
+                    generation,
+                    vm,
+                    policy: record.policy.clone(),
+                    configured: false,
+                    active: false,
+                    reclaimed: true,
+                },
+            );
+            Ok(WorkerDecision {
+                event: WorkerEvent::AbortPrepare { sandbox, vm, slot },
                 next,
             })
         }

@@ -72,6 +72,9 @@ mod linux {
         max_disk_bytes_per_tenant: u64,
         cleanup_reserve_bytes: u64,
         max_timeout_secs: u64,
+        #[serde(default)]
+        max_lifetime_secs: Option<u64>,
+        #[serde(default = "default_timeout_secs")]
         default_timeout_secs: u64,
         #[serde(default)]
         public_ipv4_enabled: bool,
@@ -79,6 +82,10 @@ mod linux {
         /// Explicit opt-in while deployment/large-file KVM acceptance is pending.
         #[serde(default)]
         data_transfer: Option<gateway::TransferLimits>,
+    }
+
+    fn default_timeout_secs() -> u64 {
+        sandproof_controller_service::DEFAULT_TIMEOUT_SECS
     }
 
     pub(crate) struct NodeHost(LinuxWorker);
@@ -135,6 +142,25 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+            // Debug-only deterministic crash after the outbox dispatch claim,
+            // before any host side effect. Recovery must not assume the
+            // action was either executed or safely retryable.
+            #[cfg(debug_assertions)]
+            {
+                let target = std::env::var("SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION").ok();
+                if matches!(
+                    (target.as_deref(), action.command.command()),
+                    (
+                        Some("open_fence"),
+                        core::Command::InstallFence {
+                            terminal: false,
+                            ..
+                        }
+                    ) | (Some("stop_vm"), core::Command::StopVm { .. })
+                ) {
+                    std::process::exit(87);
+                }
+            }
             // Test-only, one-shot synchronization point after the durable
             // revocation/fence and before the physical stop. It lets a second
             // HTTP kill arrive while the first owns the lifecycle lock.
@@ -181,6 +207,7 @@ mod linux {
                             core::Command::ConfigureNetwork { .. }
                         )
                         | (Some("stop_vm"), core::Command::StopVm { .. })
+                        | (Some("abort_prepare"), core::Command::AbortPrepare { .. })
                 ) {
                     std::process::exit(86);
                 }
@@ -203,6 +230,7 @@ mod linux {
                         core::Command::PrepareVm { .. } => "prepare VM",
                         core::Command::ConfigureNetwork { .. } => "configure network",
                         core::Command::StopVm { .. } => "stop VM",
+                        core::Command::AbortPrepare { .. } => "abort prepare",
                         core::Command::CleanupVm { .. } => "cleanup VM",
                         _ => "other host action",
                     };
@@ -236,6 +264,33 @@ mod linux {
         ) -> Result<(), PortError> {
             self.0
                 .reclaim_incomplete_terminal_fence(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_open_fence(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_open_fence(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_stop(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_stop(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_abort_prepare(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_abort_prepare(action)
                 .map_err(|_| PortError::Busy)
         }
 
@@ -279,10 +334,11 @@ mod linux {
             return Err("at least one nonzero tenant credential is required".into());
         }
         if config.expiry_scan_seconds == 0
-            || config.default_timeout_secs == 0
+            || config.default_timeout_secs != default_timeout_secs()
             || config.default_timeout_secs > config.max_timeout_secs
+            || config.max_lifetime_secs == Some(0)
         {
-            return Err("invalid lifetime scanner or default".into());
+            return Err("invalid lifetime scanner/limit; E2B default must be 300 seconds".into());
         }
         private_root_path(config.database.parent().ok_or("database parent missing")?)?;
         crate::storage::validate_filesystems(
@@ -477,10 +533,10 @@ mod linux {
                     max_disk_bytes_per_tenant: config.max_disk_bytes_per_tenant,
                     cleanup_reserve_bytes: config.cleanup_reserve_bytes,
                     max_timeout_secs: config.max_timeout_secs,
+                    max_lifetime_secs: config.max_lifetime_secs.unwrap_or(config.max_timeout_secs),
                 },
                 disk_bytes,
                 file_policy_digest: core::PolicyDigest(config.file_policy_digest),
-                default_timeout_secs: config.default_timeout_secs,
                 cpu_count: u32::from(config.vcpu_count),
                 memory_mb: config.memory_mib,
                 disk_size_mb: u32::try_from(disk_bytes.div_ceil(1024 * 1024))?,

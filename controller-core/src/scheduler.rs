@@ -1,7 +1,7 @@
 use crate::effect::effect_succeeded_check;
 use crate::model::{
-    Command, Event, OperationKey, Phase, RestoreSource, SandboxRecord, SnapshotStage, WorkerFence,
-    World,
+    Command, EffectStatus, Event, OperationKey, OperationKind, OperationStatus, Phase,
+    RestoreSource, SandboxRecord, SnapshotStage, WorkerFence, World,
 };
 use crate::request::Decision;
 use crate::transition::{
@@ -51,6 +51,7 @@ pub enum SchedulerInput {
     SealSnapshot(SandboxId, SnapshotId, SnapshotManifestRef),
     CommitSnapshot(SandboxId, SnapshotId),
     StopVm(SandboxId, Generation, VmId),
+    AbortPrepare(SandboxId, Generation, VmId, NetSlotId),
     CleanupVm(SandboxId, Generation, VmId),
     CleanupSlot(SandboxId, Generation, NetSlotId),
 }
@@ -59,6 +60,103 @@ const fn stoppable_vm_status(status: crate::VmStatus) -> bool {
     match status {
         crate::VmStatus::Prepared | crate::VmStatus::Executing | crate::VmStatus::Frozen => true,
         crate::VmStatus::Stopped | crate::VmStatus::Reclaimed => false,
+    }
+}
+
+/// The only uncertainty permitted to coexist with terminal startup cleanup:
+/// an exact `PrepareVm` from the same sealed create plan. Other unknown host
+/// actions still block every new dispatch.
+#[must_use]
+pub fn only_uncertain_prepare_for_abort(world: &World, sandbox: SandboxId) -> bool {
+    let Some(record) = world.sandboxes.get(&sandbox) else {
+        return false;
+    };
+    let Some(operation) = record.current_operation else {
+        return false;
+    };
+    if record.phase != Phase::Revoking
+        || !record.terminal
+        || operation.kind != OperationKind::Create
+        || !matches!(operation.status, OperationStatus::Compensating(_))
+    {
+        return false;
+    }
+    let Some(plan) = world
+        .operation_plans
+        .get(&operation_key(sandbox, operation.id))
+    else {
+        return false;
+    };
+    let mut seen = false;
+    for id in world.effect_ids() {
+        if id.command().sandbox() != sandbox
+            || !matches!(
+                world.effect_status(id),
+                Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
+            )
+        {
+            continue;
+        }
+        seen = true;
+        if *id.command()
+            != (Command::PrepareVm {
+                sandbox,
+                epoch: plan.epoch,
+                generation: plan.generation,
+                vm: match plan.vm {
+                    Some(vm) => vm,
+                    None => return false,
+                },
+                slot: match plan.slot {
+                    Some(slot) => slot,
+                    None => return false,
+                },
+                source: plan.restore_from,
+            })
+        {
+            return false;
+        }
+    }
+    seen
+}
+
+#[must_use]
+pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
+    let sandbox = command.sandbox();
+    if !only_uncertain_prepare_for_abort(world, sandbox) {
+        return false;
+    }
+    let Some(record) = world.sandboxes.get(&sandbox) else {
+        return false;
+    };
+    match command {
+        Command::InstallFence {
+            epoch,
+            terminal: true,
+            ..
+        } => *epoch == record.epoch,
+        Command::AbortPrepare {
+            epoch,
+            generation,
+            vm,
+            slot,
+            ..
+        } => {
+            let Some(operation) = record.current_operation else {
+                return false;
+            };
+            let Some(plan) = world
+                .operation_plans
+                .get(&operation_key(sandbox, operation.id))
+            else {
+                return false;
+            };
+            *epoch == plan.epoch
+                && *generation == plan.generation
+                && plan.vm == Some(*vm)
+                && plan.slot == Some(*slot)
+        }
+        _ => false,
     }
 }
 
@@ -580,6 +678,95 @@ pub fn handle_schedule_stop_vm(
     })
 }
 
+/// Schedule exact reclamation of a reserved startup resource whose `PrepareVm`
+/// never produced a durable VM record. The terminal fence must already have
+/// been physically acknowledged. No other generation or operation qualifies.
+///
+/// # Errors
+/// Rejects an unplanned, already registered, or unfenced startup resource.
+pub fn handle_schedule_abort_prepare(
+    world: &World,
+    sandbox: SandboxId,
+    generation: Generation,
+    vm: VmId,
+    slot: NetSlotId,
+) -> Result<Decision, SchedulerReject> {
+    if !world.controller_up {
+        return Err(SchedulerReject::ControllerDown);
+    }
+    let record = world
+        .sandboxes
+        .get(&sandbox)
+        .ok_or(SchedulerReject::SandboxNotFound)?;
+    if record.phase != Phase::Revoking || !record.terminal {
+        return Err(SchedulerReject::WrongPhase);
+    }
+    let operation = record
+        .current_operation
+        .ok_or(SchedulerReject::OperationUnavailable)?;
+    if operation.kind != OperationKind::Create
+        || !matches!(operation.status, OperationStatus::Compensating(_))
+    {
+        return Err(SchedulerReject::WrongPhase);
+    }
+    let key = operation_key(sandbox, operation.id);
+    let plan = world
+        .operation_plans
+        .get(&key)
+        .ok_or(SchedulerReject::PlanUnavailable)?;
+    if plan.key != key
+        || plan.epoch != record.epoch
+        || plan.generation != generation
+        || record.generation != generation
+        || !plan.sealed
+        || plan.vm != Some(vm)
+        || plan.slot != Some(slot)
+        || !plan.stop_vms.contains(&vm)
+        || !plan.close_slots.contains(&slot)
+    {
+        return Err(SchedulerReject::PlanMismatch);
+    }
+    if world.vms.contains_key(&vm) || world.net_slots.contains_key(&slot) {
+        return Err(SchedulerReject::ResourceAlreadyExists);
+    }
+    if world.worker_fences.get(&sandbox)
+        != Some(&WorkerFence {
+            epoch: record.epoch,
+            terminal: true,
+        })
+        || !effect_succeeded_check(
+            world,
+            &Command::InstallFence {
+                sandbox,
+                epoch: record.epoch,
+                terminal: true,
+            },
+        )
+    {
+        return Err(SchedulerReject::FenceNotInstalled);
+    }
+    let mut next = world.clone();
+    enqueue(
+        &mut next,
+        Command::AbortPrepare {
+            sandbox,
+            epoch: record.epoch,
+            generation,
+            vm,
+            slot,
+        },
+    );
+    Ok(Decision {
+        event: Event::ScheduleAbortPrepare {
+            sandbox,
+            generation,
+            vm,
+            slot,
+        },
+        next,
+    })
+}
+
 fn not_current_vm_check(world: &World, sandbox: SandboxId, vm: VmId) -> bool {
     match world.sandboxes.get(&sandbox) {
         Some(record) => record.current_vm != Some(vm),
@@ -739,6 +926,9 @@ pub fn handle_scheduler(world: &World, input: SchedulerInput) -> Result<Decision
         }
         SchedulerInput::StopVm(sandbox, generation, vm) => {
             handle_schedule_stop_vm(world, sandbox, generation, vm)
+        }
+        SchedulerInput::AbortPrepare(sandbox, generation, vm, slot) => {
+            handle_schedule_abort_prepare(world, sandbox, generation, vm, slot)
         }
         SchedulerInput::CleanupVm(sandbox, generation, vm) => {
             handle_schedule_cleanup_vm(world, sandbox, generation, vm)

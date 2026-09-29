@@ -20,8 +20,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::watch;
 
 use crate::{
-    ConnectRequest, ControllerPort, CreateRequest, PortError, SandboxInfo, SandboxPage,
-    SandboxSession,
+    ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError, SandboxDetail,
+    SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
 };
 
 pub trait HostAdapter: Send + 'static {
@@ -123,6 +123,41 @@ pub trait HostAdapter: Send + 'static {
         Err(PortError::Busy)
     }
 
+    /// Complete the original opening fence only while the controller's
+    /// matching create is current. The host must reject a terminal-to-open
+    /// transition even if its earlier receipt was lost.
+    /// # Errors
+    /// A stale or unobservable fence remains unresolved.
+    fn reclaim_incomplete_open_fence(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Finish an already-dispatched stop for the current terminal operation.
+    /// This may signal only the exact recorded process; it is not permission
+    /// to re-dispatch arbitrary uncertain host commands.
+    /// # Errors
+    /// An unverified process or incomplete stop remains unresolved.
+    fn reclaim_incomplete_stop(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Resume only a dispatched, plan-matched `AbortPrepare` under the
+    /// terminal fence. The host verifies the original process identity.
+    /// # Errors
+    /// An ambiguous or live resource remains unresolved.
+    fn reclaim_incomplete_abort_prepare(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
     /// Finish exact, already-dispatched cleanup after proving the recorded
     /// VM is stopped. This may remove only resources owned by that VM.
     /// # Errors
@@ -178,7 +213,6 @@ pub struct ManagedConfig {
     pub limits: AdmissionLimits,
     pub disk_bytes: u64,
     pub file_policy_digest: core::PolicyDigest,
-    pub default_timeout_secs: u64,
     pub cpu_count: u32,
     pub memory_mb: u32,
     pub disk_size_mb: u32,
@@ -305,7 +339,9 @@ fn map_admission(error: AdmissionError) -> PortError {
         AdmissionError::InvalidTimeout
         | AdmissionError::TimeOverflow
         | AdmissionError::InvalidClock
+        | AdmissionError::MaxLifetimeExceeded
         | AdmissionError::InvalidCreateOptions => PortError::Invalid,
+        AdmissionError::ChangingState => PortError::Conflict,
         AdmissionError::QuotaExceeded => PortError::QuotaExceeded,
         AdmissionError::Unauthorized | AdmissionError::NotRunning | AdmissionError::Expired => {
             PortError::NotFound
@@ -332,12 +368,31 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
             continue;
         }
         match action.command.command() {
+            core::Command::InstallFence {
+                terminal: false, ..
+            } => {
+                if !journal
+                    .matches_current_open_fence(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_open_fence(&action)?;
+            }
             core::Command::PrepareVm { .. } => {
                 if !journal
                     .matches_current_prepare(world, &action)
                     .map_err(map_journal)?
                 {
                     return Err(PortError::Busy);
+                }
+                if world
+                    .sandbox_record(action.command.command().sandbox())
+                    .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+                {
+                    // Terminal startup cleanup, not the old opening action,
+                    // owns the physical stop. Observation follows afterwards.
+                    continue;
                 }
                 host.reclaim_incomplete_prepare(&action)?;
             }
@@ -362,6 +417,24 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
                 }
                 host.reclaim_incomplete_terminal_fence(&action)?;
             }
+            core::Command::StopVm { .. } => {
+                if !journal
+                    .matches_current_stop(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_stop(&action)?;
+            }
+            core::Command::AbortPrepare { .. } => {
+                if !journal
+                    .matches_current_abort_prepare(world, &action)
+                    .map_err(map_journal)?
+                {
+                    return Err(PortError::Busy);
+                }
+                host.reclaim_incomplete_abort_prepare(&action)?;
+            }
             core::Command::CleanupVm { .. } => {
                 if !journal
                     .matches_current_cleanup(world, &action)
@@ -377,15 +450,105 @@ fn reclaim_uncertain_actions<H: HostAdapter>(
     Ok(())
 }
 
-// Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
-// lets a repeated kill observe and finish its *existing* operation without
-// changing unrelated instances. It never accepts a second lifecycle input.
-fn recover_locked<H: HostAdapter>(
-    inner: &mut Inner<H>,
+fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
+    match world.effect_status(effect) {
+        Some(core::EffectStatus::Acknowledged(_)) => false,
+        Some(core::EffectStatus::Committed) => {
+            // Failed creates can retain unclaimed startup actions. Use the
+            // dispatcher's core preview to distinguish obsolete work; never
+            // suppress a dispatched action whose physical result is unknown.
+            let input = core::ControllerInput::Effect(core::EffectInput::Dispatch(effect.clone()));
+            core::handle_controller(world, input).map_or(true, |dispatched| {
+                core::handle_controller(
+                    &dispatched.next,
+                    core::ControllerInput::Worker(effect.clone()),
+                )
+                .is_ok()
+            })
+        }
+        Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown) | None => true,
+    }
+}
+
+fn reclaimed_sandboxes(world: &core::World) -> BTreeSet<core::SandboxId> {
+    let mut reclaimed = world
+        .sandbox_records()
+        .iter()
+        .filter_map(|(sandbox, record)| {
+            if record.phase != core::Phase::Destroyed
+                || !record.current_operation.is_some_and(|operation| {
+                    matches!(
+                        (operation.kind, operation.status),
+                        (core::OperationKind::Kill, core::OperationStatus::Succeeded)
+                            | (
+                                core::OperationKind::Create,
+                                core::OperationStatus::Failed(_)
+                            )
+                    )
+                })
+            {
+                return None;
+            }
+            let resources = world.resource_index(*sandbox);
+            // Destroyed alone is insufficient: physical cleanup follows its
+            // publication. Keep incomplete VM/slot cleanup in the recovery path.
+            (resources.snapshots.is_empty()
+                && resources.vms.iter().all(|vm| {
+                    world
+                        .vm_record(*vm)
+                        .is_some_and(|record| record.status == core::VmStatus::Reclaimed)
+                })
+                && resources.slots.iter().all(|slot| {
+                    world
+                        .slot_record(*slot)
+                        .is_some_and(|record| record.reclaimed)
+                }))
+            .then_some(*sandbox)
+        })
+        .collect::<BTreeSet<_>>();
+    for effect in world.effect_ids() {
+        let sandbox = effect.command().sandbox();
+        if reclaimed.contains(&sandbox) && effect_needs_recovery(world, effect) {
+            reclaimed.remove(&sandbox);
+        }
+    }
+    reclaimed
+}
+
+fn observe_recovery_action<H: HostAdapter>(
+    host: &H,
+    world: &core::World,
+    blocked: &BTreeSet<core::SandboxId>,
     selected: Option<core::SandboxId>,
-) -> Result<RecoveryReport, PortError> {
-    let Inner { journal, host, .. } = inner;
-    let initial = journal.world().map_err(map_journal)?;
+    action: &WorkAction<core::EffectId>,
+) -> Option<WorkReceipt<H::Evidence>> {
+    let sandbox = action.command.command().sandbox();
+    if blocked.contains(&sandbox) || selected.is_some_and(|id| id != sandbox) {
+        return None;
+    }
+    let receipt = host.observe(action)?;
+    if matches!(action.command.command(), core::Command::PrepareVm { .. })
+        && world
+            .sandbox_record(sandbox)
+            .is_some_and(|record| record.phase == core::Phase::Revoking && record.terminal)
+        && matches!(
+            receipt.outcome,
+            sandproof_protocol::WorkOutcome::ObservedSuccess(_)
+        )
+    {
+        // A late-ready VMM cannot undo a durable terminal abort. The exact
+        // abort action must stop it before the old prepare can be resolved.
+        return None;
+    }
+    Some(receipt)
+}
+
+fn blocked_launch_configs<H: HostAdapter>(
+    journal: &ControllerJournal,
+    host: &mut H,
+    initial: &core::World,
+    selected: Option<core::SandboxId>,
+) -> Result<BTreeSet<core::SandboxId>, PortError> {
     let mut blocked = BTreeSet::new();
     for (sandbox, record) in initial.sandbox_records() {
         if selected.is_some_and(|id| id != *sandbox)
@@ -417,23 +580,47 @@ fn recover_locked<H: HostAdapter>(
             }
         }
     }
+    Ok(blocked)
+}
+
+// Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
+// lets a repeated kill observe and finish its *existing* operation without
+// changing unrelated instances. It never accepts a second lifecycle input.
+fn recover_locked<H: HostAdapter>(
+    inner: &mut Inner<H>,
+    selected: Option<core::SandboxId>,
+) -> Result<RecoveryReport, PortError> {
+    let Inner { journal, host, .. } = inner;
+    if selected.is_none() {
+        journal
+            .abort_due_startups(now_ms()?, &mut NeverCrash)
+            .map_err(map_admission)?;
+    }
+    let initial = journal.world().map_err(map_journal)?;
+    // Use the state before reconciliation: work whose last cleanup receipt is
+    // recovered in this scan must still finish and be counted once. Already
+    // reclaimed history must not repeatedly replay the entire journal through
+    // each completed workflow while holding the management/data admission lock.
+    let reclaimed = reclaimed_sandboxes(&initial);
+    let blocked = blocked_launch_configs(journal, host, &initial, selected)?;
     reclaim_uncertain_actions(journal, host, &initial, &blocked, selected)?;
+    let recovery_world = journal.world().map_err(map_journal)?;
     let receipts_recovered = journal
         .reconcile_uncertain(&mut |action| {
-            let sandbox = action.command.command().sandbox();
-            (!blocked.contains(&sandbox) && selected.is_none_or(|id| id == sandbox))
-                .then(|| host.observe(action))
-                .flatten()
+            observe_recovery_action(host, &recovery_world, &blocked, selected, action)
         })
         .map_err(map_journal)?;
     let pending = journal.world().map_err(map_journal)?;
     let mut report = RecoveryReport {
         receipts_recovered,
-        unresolved_sandboxes: blocked.len(),
         ..RecoveryReport::default()
     };
+    let mut unresolved = blocked.clone();
     for (sandbox, record) in pending.sandbox_records() {
-        if blocked.contains(sandbox) || selected.is_some_and(|id| id != *sandbox) {
+        if blocked.contains(sandbox)
+            || reclaimed.contains(sandbox)
+            || selected.is_some_and(|id| id != *sandbox)
+        {
             continue;
         }
         let Some(operation) = record.current_operation else {
@@ -467,10 +654,16 @@ fn recover_locked<H: HostAdapter>(
         };
         match resume {
             Ok(()) | Err(JournalError::OperationFailed) => report.workflows_completed += 1,
-            Err(JournalError::UnresolvedAction) => report.unresolved_sandboxes += 1,
+            Err(JournalError::UnresolvedAction) => {
+                unresolved.insert(*sandbox);
+            }
             Err(error) => return Err(map_journal(error)),
         }
     }
+    for action in journal.uncertain_actions().map_err(map_journal)? {
+        unresolved.insert(action.command.command().sandbox());
+    }
+    report.unresolved_sandboxes = unresolved.len();
     Ok(report)
 }
 
@@ -681,6 +874,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             memory_mb: self.config.memory_mb,
             disk_size_mb: self.config.disk_size_mb,
             state: "running".into(),
+            volume_mounts: Vec::new(),
         })
     }
 }
@@ -697,10 +891,12 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let options = CreateOptions {
             env_vars: request.env_vars.unwrap_or_default(),
             metadata: request.metadata.unwrap_or_default(),
+            networking: Some(sandproof_controller_service::CreateNetworking {
+                allow_internet_access: request.allow_internet_access,
+                network: request.network,
+            }),
         };
-        let timeout = request.timeout.unwrap_or(
-            i64::try_from(self.config.default_timeout_secs).map_err(|_| PortError::Invalid)?,
-        );
+        let timeout = request.timeout.unwrap_or(300);
         let timeout = u64::try_from(timeout).map_err(|_| PortError::Invalid)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         if policy != core::NetworkPolicy::DenyAll && !inner.host.public_ipv4_ready()? {
@@ -785,53 +981,47 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         self.session(&inner, tenant, sandbox)
     }
 
-    fn get(&self, tenant: &str, external: &str) -> Result<SandboxInfo, PortError> {
+    fn get(&self, tenant: &str, external: &str) -> Result<SandboxDetail, PortError> {
         let tenant = tenant_id(tenant)?;
         let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let sandbox = sandbox_id(&inner.journal, external)?;
-        self.info(&inner, tenant, sandbox)
+        // Authorize owner, Running state and lifetime before reading a token.
+        let info = self.info(&inner, tenant, sandbox)?;
+        let networking = inner
+            .journal
+            .create_options(sandbox)
+            .map_err(map_admission)?
+            .networking;
+        Ok(SandboxDetail {
+            info,
+            envd_access_token: inner.host.token_for(sandbox)?,
+            domain: self.config.domain.clone(),
+            allow_internet_access: networking.as_ref().map(|input| input.allow_internet_access),
+            network: networking.and_then(|input| input.network),
+            lifecycle: SandboxLifecycle {
+                on_timeout: SandboxOnTimeout::Kill,
+                auto_resume: false,
+            },
+        })
     }
 
-    fn list(
-        &self,
-        tenant: &str,
-        limit: Option<u32>,
-        next_token: Option<String>,
-    ) -> Result<SandboxPage, PortError> {
+    fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError> {
         let tenant = tenant_id(tenant)?;
+        let selection = query.validate()?;
         let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let world = inner.journal.world().map_err(map_journal)?;
-        let start = next_token
-            .map(|token| token.parse::<u64>().map_err(|_| PortError::Invalid))
-            .transpose()?
-            .unwrap_or(0);
-        let limit = usize::try_from(limit.unwrap_or(100)).map_err(|_| PortError::Invalid)?;
-        if !(1..=100).contains(&limit) {
-            return Err(PortError::Invalid);
-        }
-        let mut matching = Vec::new();
+        let mut items = Vec::new();
         for (sandbox, record) in world.sandbox_records() {
-            if sandbox.0 <= start || record.owner != tenant || record.phase != core::Phase::Running
-            {
+            if record.owner != tenant || record.phase != core::Phase::Running {
                 continue;
             }
             match self.info(&inner, tenant, *sandbox) {
-                Ok(info) => matching.push((*sandbox, info)),
+                Ok(info) => items.push(info),
                 Err(PortError::NotFound) => {} // expired after last cleanup tick
                 Err(error) => return Err(error),
             }
         }
-        matching.sort_by_key(|(sandbox, _)| sandbox.0);
-        let next = if matching.len() > limit {
-            Some(matching[limit - 1].0.0.to_string())
-        } else {
-            None
-        };
-        matching.truncate(limit);
-        Ok(SandboxPage {
-            items: matching.into_iter().map(|(_, info)| info).collect(),
-            next_token: next,
-        })
+        selection.page(items)
     }
 
     fn kill(&self, tenant: &str, external: &str) -> Result<(), PortError> {
@@ -894,17 +1084,22 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let tenant = tenant_id(tenant)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let sandbox = sandbox_id(&inner.journal, external)?;
-        let seconds = u64::try_from(seconds).map_err(|_| PortError::Invalid)?;
-        inner
-            .journal
-            .set_lifetime(
-                &core::Actor::Tenant(tenant),
-                sandbox,
-                now_ms()?,
-                seconds,
-                self.config.limits,
+        let now = now_ms()?;
+        let updated =
+            inner
+                .journal
+                .set_lifetime(&core::Actor::Tenant(tenant), sandbox, now, seconds);
+        if matches!(&updated, Ok(lifetime) if lifetime.deadline_ms <= now)
+            || matches!(
+                &updated,
+                Err(AdmissionError::Journal(JournalError::CommitUncertain(_)))
             )
-            .map_err(map_admission)?;
+        {
+            // Stop admitted transfers immediately, without pretending the
+            // asynchronous expiry worker has already destroyed the VM.
+            inner.revoke_data(sandbox);
+        }
+        updated.map_err(map_admission)?;
         Ok(())
     }
 }

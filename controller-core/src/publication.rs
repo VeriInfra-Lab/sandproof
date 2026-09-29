@@ -94,6 +94,12 @@ fn stop_receipt_candidate(
             generation: command_generation,
             vm: command_vm,
             ..
+        }
+        | Command::AbortPrepare {
+            sandbox: command_sandbox,
+            generation: command_generation,
+            vm: command_vm,
+            ..
         } => {
             *command_sandbox == sandbox
                 && *command_generation == generation
@@ -141,6 +147,36 @@ fn indexed_stops_succeeded(world: &World, sandbox: SandboxId) -> bool {
             return false;
         }
         cursor += 1;
+    }
+    true
+}
+
+// Reservations are recorded before `PrepareVm` reaches the host. An empty
+// resource index therefore cannot prove that the reserved VM was stopped.
+fn planned_resources_closed(
+    world: &World,
+    sandbox: SandboxId,
+    plan: &crate::OperationPlan,
+) -> bool {
+    for vm_id in &plan.stop_vms {
+        let Some(vm) = world.vms.get(vm_id) else {
+            return false;
+        };
+        if vm.sandbox != sandbox
+            || vm.generation != plan.generation
+            || !matches!(vm.status, VmStatus::Stopped | VmStatus::Reclaimed)
+            || !vm_has_stop_receipt(world, sandbox, plan.generation, *vm_id)
+        {
+            return false;
+        }
+    }
+    for slot_id in &plan.close_slots {
+        let Some(slot) = world.net_slots.get(slot_id) else {
+            return false;
+        };
+        if slot.sandbox != sandbox || slot.generation != plan.generation || slot.active {
+            return false;
+        }
     }
     true
 }
@@ -671,6 +707,12 @@ pub fn handle_publish_failure(
         return Err(PublicationReject::WrongOperationKind);
     }
     let key = operation_key(sandbox, operation.id);
+    let Some(plan) = world.operation_plans.get(&key) else {
+        return Err(PublicationReject::OperationUnavailable);
+    };
+    if !planned_resources_closed(world, sandbox, plan) {
+        return Err(PublicationReject::ResourcesNotClosed);
+    }
     let Some(ledger) = world.operations.get(&key) else {
         return Err(PublicationReject::OperationUnavailable);
     };
@@ -712,9 +754,9 @@ mod tests {
     use crate::model::{
         AppliedFilePolicy, Authority, Command, EffectId, EffectOutcome, EffectStatus,
         FilePolicyRef, LogicalEffectId, NetworkPolicy, Operation, OperationInput, OperationKind,
-        OperationLedgerRecord, OperationResult, OperationStatus, Phase, ResourceIndex,
-        RestoreSource, SandboxRecord, Snapshot, SnapshotStage, Vm, VmStatus, WorkerFence,
-        WorkspaceApiAccess, World,
+        OperationLedgerRecord, OperationPlan, OperationResult, OperationStatus, Phase,
+        ResourceIndex, RestoreSource, SandboxRecord, Snapshot, SnapshotStage, Vm, VmStatus,
+        WorkerFence, WorkspaceApiAccess, World,
     };
     use crate::transition::operation_key;
     use crate::{
@@ -967,6 +1009,22 @@ mod tests {
             OperationKind::Kill => OperationInput::Kill { generation: 3 },
         };
         put_ledger(&mut world, operation, input);
+        world.operation_plans.put(
+            operation_key(SID, OPERATION),
+            OperationPlan {
+                key: operation_key(SID, OPERATION),
+                epoch: 5,
+                generation: 3,
+                vm: Some(VM),
+                slot: Some(SLOT),
+                restore_from: None,
+                target_snapshot: None,
+                stop_vms: vec![VM],
+                close_slots: vec![SLOT],
+                retry_limit: 3,
+                sealed: true,
+            },
+        );
         acknowledge(
             &mut world,
             Command::InstallFence {
@@ -1059,6 +1117,22 @@ mod tests {
         assert_eq!(
             handle_publish_failure(&world, SID, crate::FailureKind::InternalFailure),
             Err(PublicationReject::WrongOperationStatus)
+        );
+    }
+
+    #[test]
+    fn reserved_but_unregistered_startup_vm_cannot_vacuously_publish_failure() {
+        let failure = crate::FailureKind::DeadlineExceeded;
+        let mut world = terminal_ready_world(
+            OperationKind::Create,
+            OperationStatus::Compensating(failure),
+        );
+        world.vms = crate::Store::default();
+        world.net_slots = crate::Store::default();
+        world.resource_indexes.put(SID, ResourceIndex::default());
+        assert_eq!(
+            handle_publish_failure(&world, SID, failure),
+            Err(PublicationReject::ResourcesNotClosed)
         );
     }
 

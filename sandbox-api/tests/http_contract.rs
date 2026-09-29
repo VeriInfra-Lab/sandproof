@@ -5,8 +5,9 @@ use axum::{
     http::{Request, StatusCode},
 };
 use sandproof_api::{
-    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, PortError, SandboxInfo,
-    SandboxPage, SandboxSession, router,
+    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError,
+    SandboxDetail, SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
+    router,
 };
 use tower::ServiceExt;
 
@@ -48,6 +49,7 @@ fn info() -> SandboxInfo {
         memory_mb: 512,
         disk_size_mb: 1024,
         state: "running".into(),
+        volume_mounts: Vec::new(),
     }
 }
 
@@ -73,21 +75,26 @@ impl ControllerPort for FakePort {
         Ok(session())
     }
 
-    fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxInfo, PortError> {
+    fn get(&self, tenant: &str, sandbox_id: &str) -> Result<SandboxDetail, PortError> {
         self.record(format!("get:{tenant}:{sandbox_id}"));
         if tenant != "alice" {
             return Err(PortError::NotFound);
         }
-        Ok(info())
+        Ok(SandboxDetail {
+            info: info(),
+            envd_access_token: session().envd_access_token,
+            domain: session().domain,
+            allow_internet_access: Some(Some(false)),
+            network: None,
+            lifecycle: SandboxLifecycle {
+                on_timeout: SandboxOnTimeout::Kill,
+                auto_resume: false,
+            },
+        })
     }
 
-    fn list(
-        &self,
-        tenant: &str,
-        limit: Option<u32>,
-        next_token: Option<String>,
-    ) -> Result<SandboxPage, PortError> {
-        self.record(format!("list:{tenant}:{limit:?}:{next_token:?}"));
+    fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError> {
+        self.record(format!("list:{tenant}:{query:?}"));
         Ok(SandboxPage {
             items: if tenant == "alice" {
                 vec![info()]
@@ -95,6 +102,7 @@ impl ControllerPort for FakePort {
                 vec![]
             },
             next_token: Some("opaque-next".into()),
+            total_running: Some(usize::from(tenant == "alice")),
         })
     }
 
@@ -127,6 +135,45 @@ fn app(port: Arc<FakePort>) -> axum::Router {
         ],
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn details_include_owner_fields_but_list_never_serializes_a_token() {
+    let app = app(Arc::new(FakePort::default()));
+    let response = send(
+        app.clone(),
+        "GET",
+        "/sandboxes/sand-a",
+        Some(ALICE_KEY),
+        None,
+    )
+    .await;
+    let detail: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(detail["sandboxID"], "sand-a");
+    assert_eq!(detail["envdAccessToken"], "guest-only-token");
+    assert_eq!(detail["domain"], "example.invalid");
+    assert_eq!(detail["allowInternetAccess"], false);
+    assert_eq!(
+        detail["lifecycle"],
+        serde_json::json!({"onTimeout":"kill","autoResume":false})
+    );
+    assert_eq!(detail["volumeMounts"], serde_json::json!([]));
+    assert!(detail.get("network").is_none());
+    let response = send(app, "GET", "/v2/sandboxes", Some(ALICE_KEY), None).await;
+    let list: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    let listed = &list[0];
+    for key in [
+        "envdAccessToken",
+        "domain",
+        "allowInternetAccess",
+        "network",
+        "lifecycle",
+    ] {
+        assert!(listed.get(key).is_none(), "{key}");
+    }
+    assert_eq!(listed["volumeMounts"], serde_json::json!([]));
 }
 
 async fn send(
@@ -350,13 +397,14 @@ async fn list_pagination_and_timeout_contract() {
     let response = send(
         app.clone(),
         "GET",
-        "/v2/sandboxes?limit=1&nextToken=first",
+        "/v2/sandboxes?limit=1",
         Some(ALICE_KEY),
         None,
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()["x-next-token"], "opaque-next");
+    assert_eq!(response.headers()["x-total-running"], "1");
     let items: serde_json::Value =
         serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
     assert_eq!(items[0]["state"], "running");
@@ -382,7 +430,7 @@ async fn list_pagination_and_timeout_contract() {
         )
         .await
         .status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::OK
     );
     assert_eq!(
         send(
@@ -394,7 +442,7 @@ async fn list_pagination_and_timeout_contract() {
         )
         .await
         .status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::NO_CONTENT
     );
     assert_eq!(
         send(
@@ -408,11 +456,103 @@ async fn list_pagination_and_timeout_contract() {
         .status(),
         StatusCode::NO_CONTENT
     );
+    let calls = port.calls.lock().unwrap();
+    assert_eq!(calls.len(), 4);
+    assert!(calls[0].contains("limit: Some(1)"));
+    assert!(calls[1].contains("state: Some(\"paused\")"));
+    assert_eq!(calls[2], "timeout:alice:sand-a:0");
+    assert_eq!(calls[3], "timeout:alice:sand-a:60");
+}
+
+#[tokio::test]
+async fn list_filters_are_forwarded_and_invalid_queries_never_reach_the_port() {
+    let port = Arc::new(FakePort::default());
+    let app = app(Arc::clone(&port));
+    let query = "/v2/sandboxes?metadata=group%3Dred&state=running,paused&order=asc&template=base&startedAfter=2026-01-01T00%3A00%3A00Z";
     assert_eq!(
-        &*port.calls.lock().unwrap(),
-        &[
-            "list:alice:Some(1):Some(\"first\")",
-            "timeout:alice:sand-a:60"
-        ]
+        send(app.clone(), "GET", query, Some(ALICE_KEY), None)
+            .await
+            .status(),
+        StatusCode::OK
     );
+    let call = port.calls.lock().unwrap()[0].clone();
+    for value in [
+        "group=red",
+        "running,paused",
+        "Some(Asc)",
+        "base",
+        "2026-01-01T00:00:00Z",
+    ] {
+        assert!(call.contains(value), "{call}");
+    }
+    for query in [
+        "state=destroyed",
+        "state=running,bad",
+        "order=sideways",
+        "startedAfter=bad",
+        "template=base:latest",
+        "template=a/b/c",
+        "metadata=broken",
+        "metadata=x%3D%25QQ",
+        "nextToken=first",
+        "limit=101",
+        "limit=-1",
+        "unknown=true",
+    ] {
+        assert_eq!(
+            send(
+                app.clone(),
+                "GET",
+                &format!("/v2/sandboxes?{query}"),
+                Some(ALICE_KEY),
+                None
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST,
+            "{query}"
+        );
+    }
+    assert_eq!(port.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn set_timeout_preserves_signed_values_for_controller_clamping() {
+    let port = Arc::new(FakePort::default());
+    let app = app(Arc::clone(&port));
+    for seconds in [i64::MIN, -1, 0, i64::MAX] {
+        let body = format!("{{\"timeout\":{seconds}}}");
+        let response = send(
+            app.clone(),
+            "POST",
+            "/sandboxes/sand-a/timeout",
+            Some(ALICE_KEY),
+            Some(&body),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            port.calls.lock().unwrap().last().unwrap(),
+            &format!("timeout:alice:sand-a:{seconds}")
+        );
+    }
+    for body in [
+        "{}",
+        "{\"timeout\":1.5}",
+        "{\"timeout\":9223372036854775808}",
+    ] {
+        assert_eq!(
+            send(
+                app.clone(),
+                "POST",
+                "/sandboxes/sand-a/timeout",
+                Some(ALICE_KEY),
+                Some(body)
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(port.calls.lock().unwrap().len(), 4);
 }

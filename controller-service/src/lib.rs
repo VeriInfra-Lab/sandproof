@@ -13,8 +13,8 @@ mod journal;
 mod workflow;
 
 pub use controller::{
-    AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
-    HostEvidence, Lifetime,
+    AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateNetwork,
+    CreateNetworking, CreateOptions, DEFAULT_TIMEOUT_SECS, HostEvidence, Lifetime,
 };
 
 pub use dispatch::{DispatchResult, WorkerTransportError};

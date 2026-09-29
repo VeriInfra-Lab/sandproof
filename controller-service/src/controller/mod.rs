@@ -5,7 +5,10 @@ mod admission;
 mod identity;
 mod storage;
 
-pub use admission::{AdmissionError, AdmissionLimits, CreateAdmission, CreateOptions, Lifetime};
+pub use admission::{
+    AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
+    CreateOptions, DEFAULT_TIMEOUT_SECS, Lifetime,
+};
 
 use crate::{
     CrashInjector, CrashPoint, DispatchResult, Journal, JournalError, WorkerTransportError,
@@ -182,6 +185,157 @@ impl ControllerJournal {
             && action.identity.generation == plan.generation)
     }
 
+    /// A lost opening-fence receipt may be completed only while its original
+    /// create remains current and nonterminal. A later terminal fence must
+    /// never be reopened by recovery of an old action.
+    /// # Errors
+    /// Returns an error if the trusted journal identity cannot be encoded.
+    pub fn matches_current_open_fence(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::InstallFence {
+            sandbox,
+            epoch,
+            terminal: false,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        Ok(record.phase == core::Phase::Starting
+            && !record.terminal
+            && operation.kind == core::OperationKind::Create
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && *epoch == record.epoch
+            && *epoch == plan.epoch
+            && action.identity.generation == plan.generation
+            && plan.generation == record.generation)
+    }
+
+    /// Only the current terminal operation can complete an uncertain `StopVm`.
+    /// Its VM must be in the saved stop plan and still belong to the same
+    /// sandbox generation; the host separately verifies the physical process.
+    /// # Errors
+    /// Returns an error if the trusted journal identity cannot be encoded.
+    pub fn matches_current_stop(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::StopVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        let Some(resource) = world.vm_record(*vm) else {
+            return Ok(false);
+        };
+        Ok(record.phase == core::Phase::Revoking
+            && record.terminal
+            && matches!(
+                operation.kind,
+                core::OperationKind::Create | core::OperationKind::Kill
+            )
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && *epoch == record.epoch
+            && *epoch == plan.epoch
+            && action.identity.generation == *generation
+            && *generation == record.generation
+            && *generation == plan.generation
+            && plan.stop_vms.contains(vm)
+            && resource.sandbox == *sandbox
+            && resource.generation == *generation)
+    }
+
+    /// Bind an uncertain startup abort to the current compensated create and
+    /// both reserved resource IDs. The host separately proves exact exit.
+    /// # Errors
+    /// Rejects malformed persisted identities.
+    pub fn matches_current_abort_prepare(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::AbortPrepare {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+            slot,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let Some(plan) = world.operation_plan(key) else {
+            return Ok(false);
+        };
+        Ok(record.phase == core::Phase::Revoking
+            && record.terminal
+            && operation.kind == core::OperationKind::Create
+            && matches!(operation.status, core::OperationStatus::Compensating(_))
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && *epoch == record.epoch
+            && *epoch == plan.epoch
+            && action.identity.generation == *generation
+            && *generation == record.generation
+            && *generation == plan.generation
+            && plan.sealed
+            && plan.vm == Some(*vm)
+            && plan.slot == Some(*slot)
+            && plan.stop_vms.contains(vm)
+            && plan.close_slots.contains(slot))
+    }
+
     /// A cleanup can be resumed only for the current terminal workflow's
     /// exact stopped VM. Physical process and resource checks remain the
     /// host adapter's responsibility.
@@ -298,7 +452,7 @@ impl ControllerJournal {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=4).contains(&version) || stored != namespace {
+        if !(1..=5).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {
@@ -323,6 +477,15 @@ impl ControllerJournal {
             transaction.execute(
                 "INSERT OR IGNORE INTO sandbox_create_options (sandbox_id, options_json) SELECT sandbox_id, ?1 FROM sandboxes",
                 [b"{\"env_vars\":{},\"metadata\":{}}".as_slice()],
+            )?;
+        }
+        if version <= 4 {
+            // The original total limit was not recorded. Preserve only the
+            // already granted deadline; never reset the age during migration.
+            transaction.execute_batch(
+                "ALTER TABLE sandbox_lifetimes ADD COLUMN max_deadline_ms INTEGER CHECK(max_deadline_ms >= 0);
+                 UPDATE sandbox_lifetimes SET max_deadline_ms=deadline_ms;
+                 UPDATE controller_meta SET version=5 WHERE id=1;",
             )?;
         }
         storage::load_world(&transaction)?;
@@ -378,7 +541,14 @@ impl ControllerJournal {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let world = storage::load_world(&transaction)?;
-        if storage::unresolved(&world, sandbox) {
+        let terminal_prepare_abort =
+            core::scheduler::only_uncertain_prepare_for_abort(&world, sandbox)
+                && matches!(
+                    input,
+                    core::ControllerInput::Scheduler(core::SchedulerInput::AbortPrepare(..))
+                        | core::ControllerInput::Publication(core::PublicationInput::Failed(..))
+                );
+        if storage::unresolved(&world, sandbox) && !terminal_prepare_abort {
             return Err(JournalError::UnresolvedAction);
         }
         let decision = storage::apply(&transaction, &self.namespace, &world, input)?;
@@ -490,7 +660,9 @@ impl ControllerJournal {
             if selected.is_some_and(|sandbox| action.command.command().sandbox() != sandbox) {
                 continue;
             }
-            if storage::unresolved(&world, action.command.command().sandbox()) {
+            if storage::unresolved(&world, action.command.command().sandbox())
+                && !core::scheduler::dispatch_allowed_during_abort(&world, action.command.command())
+            {
                 continue;
             }
             let input =
