@@ -166,6 +166,16 @@ def exercise(args: argparse.Namespace) -> None:
         assert digest(args.rootfs) == digest(rootfs) == base_digest
         final = database_snapshot(database)
         stop_server(process)
+        # A similarly named but unbound claim is not eligible for the local
+        # exception. Startup must fail closed rather than borrowing an
+        # unrelated PrepareVm or silently deleting this directory.
+        unbound = root / "jails/.claims" / f"vm-{namespace}-999"
+        unbound.mkdir(mode=0o700)
+        process = start_server(binary, config, log, None)
+        assert process.wait(timeout=10) != 0
+        assert "unbound VM claims require operator reconciliation" in log.read_text()
+        assert unbound.is_dir()
+        unbound.rmdir()
         process = start_server(binary, config, log, None)
         wait_ready(opener, base_url, key, process)
         assert database_snapshot(database) == final, "idle restart changed terminal history"
@@ -174,6 +184,7 @@ def exercise(args: argparse.Namespace) -> None:
                           "base_sha256": base_digest, "vm_names": names,
                           "window": args.window,
                           "result": "failed PrepareVm recovery parked only sandbox 2; exact original action later reconciled",
+                          "unbound_claim": "startup rejected without deleting the foreign claim",
                           "residual": "no exact VMM process, jail, network namespace, cgroup or test UID process"}))
     finally:
         stop_server(process)
