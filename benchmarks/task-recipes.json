@@ -1973,6 +1973,10 @@
     "environment_sha256": "9d813ec4fdc2054717f253e7acbc2740fe43f97d35a5545c91a9c06986d9d595",
     "steps": [
       {
+        "run": "cat > /etc/apt/sources.list.d/sandproof-snapshot.list <<'APT_SOURCES'\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/20251001T000000Z noble-updates main\nAPT_SOURCES\ncat > /etc/apt/preferences.d/sandproof-curl <<'APT_PREFERENCES'\nPackage: curl libcurl4t64\nPin: version 8.5.0-2ubuntu10.6\nPin-Priority: 1001\nAPT_PREFERENCES\n",
+        "cwd": "/"
+      },
+      {
         "run": "apt-get update &&      apt-get install -y --no-install-recommends          python3          python3-pip          sudo &&      rm -rf /var/lib/apt/lists/*",
         "cwd": "/",
         "env": {}

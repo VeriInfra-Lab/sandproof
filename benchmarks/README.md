@@ -86,7 +86,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_local \
 
 基础环境与上游可变标签存在明确差异：Python 3.13/Bookworm 选择固定 3.13.9；其余官方标签解析为清单中的精确摘要。镜像中的 init/envd 是本服务需要的适配；金融文档题的 uv 0.8.14 和 reshard 题的 uv 0.8.15 使用显式固定版本安装，前者清理 builder 输入，后者从 Python wheel 获取。原任务标准解答和私有评分器保持源文件原样，不以环境适配冒充上游容器内容一致。
 
-来宾初始化补齐精简镜像缺少的 `/dev/fd`，使 Bash 进程替换可以访问 `/proc/self/fd`。Ubuntu 来宾初始化保留基础镜像已有的配置文件，避免非交互 apt 安装因 dpkg 配置确认而中断。个别任务还需要显式基础环境补齐：CompCert 题安装 findutils，MCMC/Stan 题补齐 RcppParallel 当前构建所需的 cmake，Git Webserver 题仅在来宾内解除 ssh 服务屏蔽；pMARS 和 POV-Ray 题分别使用经过原发行版签名验证的 2025-10-01 Debian/Ubuntu 历史仓库满足原脚本的版本约束。这些适配不改动标准解答、私有测试或原资源时限，历史仓库也不能代替对其他动态下载内容的完整锁定。
+来宾初始化补齐精简镜像缺少的 `/dev/fd`，使 Bash 进程替换可以访问 `/proc/self/fd`。Ubuntu 来宾初始化保留基础镜像已有的配置文件，避免非交互 apt 安装因 dpkg 配置确认而中断。个别任务还需要显式基础环境补齐：CompCert 题安装 findutils，MCMC/Stan 题补齐 RcppParallel 当前构建所需的 cmake，Git Webserver 题仅在来宾内解除 ssh 服务屏蔽；pMARS 使用经过原发行版签名验证的 2025-10-01 Debian 历史仓库，POV-Ray 与 RStan/PyStan 题使用同日期 Ubuntu 历史仓库，满足原脚本的版本约束。这些适配不改动标准解答、私有测试或原资源时限，历史仓库也不能代替对其他动态下载内容的完整锁定。
 
 hf-model-inference、pytorch-model-recovery 和两道 MTEB 题的原 pip 安装命令禁用下载缓存，减少 10 GiB 私有盘上的重复存储；保留原 PyTorch 版本及其依赖，不改用其他构建变体。
 
