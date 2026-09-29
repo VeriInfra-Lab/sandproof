@@ -95,11 +95,18 @@ def exercise(args: argparse.Namespace) -> None:
         "max_disk_bytes_global": disk_bytes * 3,
         "max_disk_bytes_per_tenant": disk_bytes * 3,
         "cleanup_reserve_bytes": disk_bytes,
-        "max_timeout_secs": 60,
-        "default_timeout_secs": 5,
+        "max_timeout_secs": 600,
+        "default_timeout_secs": 300,
         "expiry_scan_seconds": 1,
     }))
     config.chmod(0o600)
+    if args.cgroup_parent is not None:
+        configured = json.loads(config.read_text())
+        configured['host_resources'] = {
+            'cgroup_parent': str(args.cgroup_parent.resolve(strict=True)),
+            'memory_max_bytes': args.host_memory_max_bytes,
+        }
+        config.write_text(json.dumps(configured))
     log = root / "server.log"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     base_url = f"http://127.0.0.1:{port}"
@@ -120,12 +127,29 @@ def exercise(args: argparse.Namespace) -> None:
         pid, ticks = record["pid"], record["start_time_ticks"]
         assert record["resource_id"] == vm_name
         assert process_start_ticks(pid) == ticks, "test did not produce a live unready VMM"
+        network_inode = json.loads((claim / 'network.json').read_text())['namespace_inode']
+        cgroup = None
+        cgroup_evidence = None
+        if args.cgroup_parent is not None:
+            cgroup = args.cgroup_parent / vm_name
+            binding = json.loads((claim / 'cgroup.json').read_text())
+            assert cgroup.stat().st_ino == binding['inode']
+            limits = {name: (cgroup / name).read_text().strip() for name in
+                      ('cpu.max', 'cpu.max.burst', 'memory.max', 'memory.swap.max', 'memory.oom.group')}
+            assert limits == {'cpu.max': '100000 100000', 'cpu.max.burst': '0',
+                              'memory.max': str(args.host_memory_max_bytes),
+                              'memory.swap.max': '0', 'memory.oom.group': '1'}
+            membership = Path('/proc', str(pid), 'cgroup').read_text().strip()
+            assert membership == '0::/' + str(cgroup.relative_to('/sys/fs/cgroup'))
+            cgroup_evidence = {'inode': binding['inode'], 'limits': limits, 'membership': membership}
         assert process.wait(timeout=30) == 86, "debug exit after exact abort did not fire"
         assert process_start_ticks(pid) != ticks, "exact VMM survived durable abort"
         marker = claim / "failed-prepare.json"
         assert marker.is_file(), "physical reclaim marker missing before receipt"
         assert not (root / "jails" / args.firecracker.name / vm_name).exists()
         assert not Path(f"/run/netns/{vm_name}").exists()
+        if cgroup is not None:
+            assert not cgroup.exists()
         with sqlite3.connect(root / "db/controller.db") as database:
             inputs = [row[0] for row in database.execute("SELECT input_json FROM controller_inputs")]
             actions = [state for state, action in database.execute(
@@ -153,11 +177,26 @@ def exercise(args: argparse.Namespace) -> None:
         assert process_start_ticks(pid) != ticks
         assert not (root / "jails" / args.firecracker.name / vm_name).exists()
         assert not Path(f"/run/netns/{vm_name}").exists()
+        if cgroup is not None:
+            assert not cgroup.exists()
+        for entry in Path('/proc').iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                assert (entry / 'ns/net').stat().st_ino != network_inode, entry.name
+            except FileNotFoundError:
+                pass
         assert sha256_file(rootfs) == base_digest
         completed = True
         print(json.dumps({
             "scope": "real VMM, unready boot, durable deadline abort, receipt-loss restart",
             "binary_sha256": sha256_file(binary),
+            "base_sha256": base_digest,
+            "resource_id": vm_name,
+            "pid": pid,
+            "start_time_ticks": ticks,
+            "cgroup": cgroup_evidence,
+            "namespace_holders": [],
             "prepare_count": 1,
             "abort_receipt": "lost then observed on restart",
             "terminal": "Destroyed with no dispatched outbox actions",
@@ -165,10 +204,11 @@ def exercise(args: argparse.Namespace) -> None:
         }))
     finally:
         stop_server(process)
-        if completed:
+        if completed and not args.keep_artifacts:
             shutil.rmtree(root)
         else:
-            print(f"Exact failed-run artifacts retained: {root}", file=sys.stderr)
+            outcome = 'completed' if completed else 'failed'
+            print(f"Exact {outcome}-run artifacts retained: {root}", file=sys.stderr)
 
 
 if __name__ == "__main__":
@@ -180,4 +220,7 @@ if __name__ == "__main__":
     parser.add_argument("--rootfs", required=True, type=Path)
     parser.add_argument("--uid-base", required=True, type=int)
     parser.add_argument("--scratch-parent", required=True, type=Path)
+    parser.add_argument("--cgroup-parent", type=Path)
+    parser.add_argument("--host-memory-max-bytes", type=int, default=768 * 1024 * 1024)
+    parser.add_argument("--keep-artifacts", action="store_true")
     exercise(parser.parse_args())
