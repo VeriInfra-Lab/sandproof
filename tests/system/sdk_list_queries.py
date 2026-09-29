@@ -6,7 +6,8 @@ concurrent VMs. Host-side identity and residual auditing is required separately.
 
 import argparse
 import asyncio
-from datetime import timedelta
+from pathlib import Path
+import sys
 import importlib.metadata
 import json
 import os
@@ -14,11 +15,15 @@ from urllib.parse import quote, urlencode
 import uuid
 
 import httpx
-from e2b import AsyncSandbox, Sandbox, SandboxQuery, SandboxState
+from e2b import AsyncSandbox, Sandbox, SandboxQuery
 from e2b.exceptions import SandboxException, SandboxNotFoundException
 
 from sdk_command_input import call
 from sdk_server_smoke import options
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'compat'))
+from sdk_management_samples import SPECIAL_METADATA, query_cases, validate_list, validate_list_detail
 
 
 def ids(items):
@@ -42,7 +47,7 @@ async def exercise_client(cls, args):
     owner = options(os.environ['SANDPROOF_TEST_API_KEY'], args.api_url, args.sandbox_url)
     foreign = options(os.environ['SANDPROOF_TEST_FOREIGN_API_KEY'], args.api_url, args.sandbox_url)
     run = uuid.uuid4().hex
-    special = {'reserved &+%=': '雪 =+&/%'}
+    special = SPECIAL_METADATA
     common = {'query_run': run, **special}
     known, rows = [], []
 
@@ -59,12 +64,10 @@ async def exercise_client(cls, args):
         if order is not None:
             kwargs['order'] = order
         items, sizes = await all_pages(cls, owner, **kwargs)
-        assert ids(items) == expected, (name, ids(items), expected)
+        validate_list(items, expected)
         for item in items:
             full = await call(cls.get_info, item.sandbox_id, **owner)
-            for field in ('sandbox_id', 'template_id', 'metadata', 'started_at', 'end_at',
-                          'state', 'cpu_count', 'memory_mb', 'envd_version'):
-                assert getattr(full, field) == getattr(item, field), field
+            validate_list_detail(item, full)
         rows.append(dict(case=name, pages=sizes, matches=len(items)))
         return items
 
@@ -75,24 +78,10 @@ async def exercise_client(cls, args):
         first_info = await call(first.get_info)
         second_info = await call(second.get_info)
         assert first_info.started_at < second_info.started_at, 'fixture requires distinct starts'
-        newest = [second.sandbox_id, first.sandbox_id]
-        oldest = newest[::-1]
         query = SandboxQuery(metadata=common)
-        await check('default_newest_first', newest)
-        await check('descending', newest, query=query, order='desc')
-        await check('ascending', oldest, query=query, order='asc')
-        await check('metadata_unicode_reserved', newest, query=SandboxQuery(metadata=special))
-        await check('metadata_and', [first.sandbox_id], query=SandboxQuery(metadata={**common, 'colour': 'red'}))
-        await check('metadata_no_match', [], query=SandboxQuery(metadata={**common, 'colour': 'absent'}))
-        await check('running', newest, query=SandboxQuery(state=[SandboxState.RUNNING]))
-        await check('both_states', newest, query=SandboxQuery(state=[SandboxState.PAUSED, SandboxState.RUNNING]))
-        await check('paused', [], query=SandboxQuery(state=[SandboxState.PAUSED]))
-        await check('template_base', newest, query=SandboxQuery(template='base'))
-        await check('template_absent', [], query=SandboxQuery(template='unknown/base'))
-        await check('inclusive_started_after', [second.sandbox_id], query=SandboxQuery(started_after=second_info.started_at))
-        await check('after_latest', [], query=SandboxQuery(started_after=second_info.started_at + timedelta(microseconds=1)))
-        await check('combined', [second.sandbox_id], query=SandboxQuery(metadata={**common, 'colour': 'blue'}, state=[SandboxState.RUNNING], template='base', started_after=second_info.started_at), order='asc')
-        await check('maximum_page_size', newest, limit=100)
+        for name, expected, kwargs in query_cases(common, first.sandbox_id, second.sandbox_id,
+                                                  second_info.started_at):
+            await check(name, expected, **kwargs)
         foreign_items, _ = await all_pages(cls, foreign, query=query, limit=1)
         assert ids(foreign_items) == [other.sandbox_id]
         try:

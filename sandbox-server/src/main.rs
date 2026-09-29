@@ -72,6 +72,9 @@ mod linux {
         max_disk_bytes_per_tenant: u64,
         cleanup_reserve_bytes: u64,
         max_timeout_secs: u64,
+        #[serde(default)]
+        max_lifetime_secs: Option<u64>,
+        #[serde(default = "default_timeout_secs")]
         default_timeout_secs: u64,
         #[serde(default)]
         public_ipv4_enabled: bool,
@@ -79,6 +82,10 @@ mod linux {
         /// Explicit opt-in while deployment/large-file KVM acceptance is pending.
         #[serde(default)]
         data_transfer: Option<gateway::TransferLimits>,
+    }
+
+    fn default_timeout_secs() -> u64 {
+        sandproof_controller_service::DEFAULT_TIMEOUT_SECS
     }
 
     pub(crate) struct NodeHost(LinuxWorker);
@@ -327,10 +334,11 @@ mod linux {
             return Err("at least one nonzero tenant credential is required".into());
         }
         if config.expiry_scan_seconds == 0
-            || config.default_timeout_secs == 0
+            || config.default_timeout_secs != default_timeout_secs()
             || config.default_timeout_secs > config.max_timeout_secs
+            || config.max_lifetime_secs == Some(0)
         {
-            return Err("invalid lifetime scanner or default".into());
+            return Err("invalid lifetime scanner/limit; E2B default must be 300 seconds".into());
         }
         private_root_path(config.database.parent().ok_or("database parent missing")?)?;
         crate::storage::validate_filesystems(
@@ -525,10 +533,10 @@ mod linux {
                     max_disk_bytes_per_tenant: config.max_disk_bytes_per_tenant,
                     cleanup_reserve_bytes: config.cleanup_reserve_bytes,
                     max_timeout_secs: config.max_timeout_secs,
+                    max_lifetime_secs: config.max_lifetime_secs.unwrap_or(config.max_timeout_secs),
                 },
                 disk_bytes,
                 file_policy_digest: core::PolicyDigest(config.file_policy_digest),
-                default_timeout_secs: config.default_timeout_secs,
                 cpu_count: u32::from(config.vcpu_count),
                 memory_mb: config.memory_mib,
                 disk_size_mb: u32::try_from(disk_bytes.div_ceil(1024 * 1024))?,

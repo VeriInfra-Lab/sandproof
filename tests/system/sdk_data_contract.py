@@ -8,37 +8,26 @@ import argparse
 import asyncio
 import hashlib
 import importlib.metadata
-from io import BytesIO
 import json
 import os
+from pathlib import Path
 import shlex
+import sys
 import uuid
 
 import httpx
 from e2b import AsyncSandbox, Sandbox
 from e2b.sandbox.commands.command_handle import CommandExitException
-from e2b.sandbox.filesystem.filesystem import FileType
 
 from sdk_server_smoke import options
 
 
-FILES = {"text.txt": "spaces and 中文\n".encode(),
-         "nested/binary.bin": bytes(range(256)) * 129, "nested/deep/empty": b""}
-COMMAND = "pwd; printf '%s\\n' \"$SP_DATA_VALUE\"; id -un; printf 'data-stderr\\n' >&2"
-ENV = {"SP_DATA_VALUE": "spaces and 中文"}
-
-
-def validate_command(result, directory, user):
-    actual = (result.stdout, result.stderr, result.exit_code)
-    expected = (
-        f"{directory}\n{ENV['SP_DATA_VALUE']}\n{user}\n", "data-stderr\n", 0,
-    )
-    assert actual == expected, {"user": user, "actual": actual, "expected": expected}
-
-
-def validate_entries(entries, directory):
-    files = {entry.path: entry.size for entry in entries if entry.type == FileType.FILE}
-    assert files == {f"{directory}/{name}": len(data) for name, data in FILES.items()}, files
+# Import the same input bytes and assertions as the synthetic/gateway tests.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "compat"))
+from sdk_data_samples import (
+    COMMAND, ENV, FILES, NONZERO_COMMAND, file_entries, validate_command,
+    validate_content, validate_entries, validate_file_info, validate_nonzero,
+)
 
 
 def barrier_command(directory):
@@ -46,10 +35,6 @@ def barrier_command(directory):
     marker = shlex.quote(f"{directory}/starts")
     return (f"mkfifo {gate}; printf 'once\\n' >> {marker}; printf 'ready\\n'; "
             f"read -r value < {gate}; printf 'done\\n'")
-
-
-def file_entries(directory):
-    return [{"path": f"{directory}/{name}", "data": BytesIO(data)} for name, data in FILES.items()]
 
 
 def sync_case(sandbox, directory, user):
@@ -65,18 +50,18 @@ def sync_case(sandbox, directory, user):
     for name, expected in FILES.items():
         path = f"{directory}/{name}"
         info = sandbox.files.get_info(path, user=user)
-        assert (info.path, info.size, info.type) == (path, len(expected), FileType.FILE)
+        validate_file_info(info, path, expected)
         content = sandbox.files.read(path, format="bytes", user=user)
-        assert content == expected
+        validate_content(content, expected)
         with sandbox.files.read(path, format="stream", user=user) as chunks:
             streamed = b"".join(chunks)
-        assert streamed == expected
+        validate_content(streamed, expected)
         hashes[name] = hashlib.sha256(content).hexdigest()
     validate_command(sandbox.commands.run(COMMAND, cwd=directory, envs=ENV, user=user), directory, user)
     try:
-        sandbox.commands.run("printf failed >&2; exit 17", cwd=directory, user=user)
+        sandbox.commands.run(NONZERO_COMMAND, cwd=directory, user=user)
     except CommandExitException as error:
-        assert (error.exit_code, error.stderr) == (17, "failed")
+        validate_nonzero(error)
     else:
         raise AssertionError("nonzero command reported success")
     handle = sandbox.commands.run(barrier_command(directory), cwd=directory, user=user,
@@ -122,18 +107,18 @@ async def async_case(sandbox, directory, user):
     for name, expected in FILES.items():
         path = f"{directory}/{name}"
         info = await sandbox.files.get_info(path, user=user)
-        assert (info.path, info.size, info.type) == (path, len(expected), FileType.FILE)
+        validate_file_info(info, path, expected)
         content = await sandbox.files.read(path, format="bytes", user=user)
-        assert content == expected
+        validate_content(content, expected)
         async with await sandbox.files.read(path, format="stream", user=user) as chunks:
             streamed = b"".join([chunk async for chunk in chunks])
-        assert streamed == expected
+        validate_content(streamed, expected)
         hashes[name] = hashlib.sha256(content).hexdigest()
     validate_command(await sandbox.commands.run(COMMAND, cwd=directory, envs=ENV, user=user), directory, user)
     try:
-        await sandbox.commands.run("printf failed >&2; exit 17", cwd=directory, user=user)
+        await sandbox.commands.run(NONZERO_COMMAND, cwd=directory, user=user)
     except CommandExitException as error:
-        assert (error.exit_code, error.stderr) == (17, "failed")
+        validate_nonzero(error)
     else:
         raise AssertionError("async nonzero command reported success")
     ready = asyncio.Event()

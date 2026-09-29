@@ -213,7 +213,6 @@ pub struct ManagedConfig {
     pub limits: AdmissionLimits,
     pub disk_bytes: u64,
     pub file_policy_digest: core::PolicyDigest,
-    pub default_timeout_secs: u64,
     pub cpu_count: u32,
     pub memory_mb: u32,
     pub disk_size_mb: u32,
@@ -340,7 +339,9 @@ fn map_admission(error: AdmissionError) -> PortError {
         AdmissionError::InvalidTimeout
         | AdmissionError::TimeOverflow
         | AdmissionError::InvalidClock
+        | AdmissionError::MaxLifetimeExceeded
         | AdmissionError::InvalidCreateOptions => PortError::Invalid,
+        AdmissionError::ChangingState => PortError::Conflict,
         AdmissionError::QuotaExceeded => PortError::QuotaExceeded,
         AdmissionError::Unauthorized | AdmissionError::NotRunning | AdmissionError::Expired => {
             PortError::NotFound
@@ -895,9 +896,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                 network: request.network,
             }),
         };
-        let timeout = request.timeout.unwrap_or(
-            i64::try_from(self.config.default_timeout_secs).map_err(|_| PortError::Invalid)?,
-        );
+        let timeout = request.timeout.unwrap_or(300);
         let timeout = u64::try_from(timeout).map_err(|_| PortError::Invalid)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         if policy != core::NetworkPolicy::DenyAll && !inner.host.public_ipv4_ready()? {
@@ -1085,17 +1084,22 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let tenant = tenant_id(tenant)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let sandbox = sandbox_id(&inner.journal, external)?;
-        let seconds = u64::try_from(seconds).map_err(|_| PortError::Invalid)?;
-        inner
-            .journal
-            .set_lifetime(
-                &core::Actor::Tenant(tenant),
-                sandbox,
-                now_ms()?,
-                seconds,
-                self.config.limits,
+        let now = now_ms()?;
+        let updated =
+            inner
+                .journal
+                .set_lifetime(&core::Actor::Tenant(tenant), sandbox, now, seconds);
+        if matches!(&updated, Ok(lifetime) if lifetime.deadline_ms <= now)
+            || matches!(
+                &updated,
+                Err(AdmissionError::Journal(JournalError::CommitUncertain(_)))
             )
-            .map_err(map_admission)?;
+        {
+            // Stop admitted transfers immediately, without pretending the
+            // asynchronous expiry worker has already destroyed the VM.
+            inner.revoke_data(sandbox);
+        }
+        updated.map_err(map_admission)?;
         Ok(())
     }
 }

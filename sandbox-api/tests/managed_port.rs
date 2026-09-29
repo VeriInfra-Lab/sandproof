@@ -452,10 +452,10 @@ fn config() -> ManagedConfig {
             max_disk_bytes_per_tenant: 1_000,
             cleanup_reserve_bytes: 1_000,
             max_timeout_secs: 86_400,
+            max_lifetime_secs: 86_400,
         },
         disk_bytes: 1_000,
         file_policy_digest: core::PolicyDigest(1),
-        default_timeout_secs: 300,
         cpu_count: 1,
         memory_mb: 512,
         disk_size_mb: 1_024,
@@ -1889,6 +1889,135 @@ fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
     port.kill("1", &replacement.sandbox_id).unwrap();
     assert!(!*other_route.revocation.borrow());
     port.kill("2", &second.sandbox_id).unwrap();
+}
+
+#[test]
+fn nonpositive_timeout_revokes_existing_transfers_before_the_expiry_worker_runs() {
+    use sandproof_api::managed::DataKind;
+    for seconds in [0, -1, i64::MIN] {
+        let (directory, port) = setup();
+        let first = port.create("1", request()).unwrap();
+        let other = port.create("2", request()).unwrap();
+        let routes = [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite]
+            .map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+        let other_route = port
+            .data_permit(&other.envd_access_token, DataKind::Exec)
+            .unwrap();
+        assert_eq!(
+            port.set_timeout("2", &first.sandbox_id, seconds),
+            Err(PortError::NotFound)
+        );
+        assert!(routes.iter().all(|route| !*route.revocation.borrow()));
+        port.set_timeout("1", &first.sandbox_id, seconds).unwrap();
+        assert!(routes.iter().all(|route| *route.revocation.borrow()));
+        assert!(!*other_route.revocation.borrow());
+        assert_eq!(port.get("1", &first.sandbox_id), Err(PortError::NotFound));
+        assert_eq!(
+            port.connect("1", &first.sandbox_id, ConnectRequest::default()),
+            Err(PortError::NotFound)
+        );
+        assert_eq!(
+            port.set_timeout("1", &first.sandbox_id, 300),
+            Err(PortError::NotFound)
+        );
+        assert!(
+            port.data_permit(&first.envd_access_token, DataKind::Exec)
+                .is_err()
+        );
+        assert_eq!(port.expire_due().unwrap(), 1);
+        assert_eq!(port.expire_due().unwrap(), 0);
+        port.kill("2", &other.sandbox_id).unwrap();
+        drop(port);
+        let journal =
+            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        assert!(
+            journal
+                .world()
+                .unwrap()
+                .sandbox_records()
+                .iter()
+                .all(|(_, record)| record.phase == core::Phase::Destroyed)
+        );
+    }
+}
+
+#[test]
+fn fixed_harbor_day_request_is_preserved_when_the_trusted_budget_allows_it() {
+    let (_directory, port) = setup();
+    let mut input = request();
+    input.timeout = Some(86_400);
+    let created = port.create("1", input).unwrap();
+    let before = port.get("1", &created.sandbox_id).unwrap().info;
+    let start = time::OffsetDateTime::parse(
+        &before.started_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    let end = time::OffsetDateTime::parse(
+        &before.end_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    assert_eq!((end - start).whole_seconds(), 86_400);
+    port.connect("1", &created.sandbox_id, ConnectRequest::default())
+        .unwrap();
+    assert_eq!(
+        port.get("1", &created.sandbox_id).unwrap().info.end_at,
+        before.end_at
+    );
+    port.kill("1", &created.sandbox_id).unwrap();
+}
+
+#[test]
+fn renewal_contending_with_expiry_cleanup_cannot_resurrect_the_instance() {
+    for connect in [false, true] {
+        let gate = Arc::new(ActionGate::new());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (directory, port) = setup_with_host(FakeHost {
+            stop_gate: Some(Arc::clone(&gate)),
+            stop_calls: Some(Arc::clone(&calls)),
+            ..FakeHost::default()
+        });
+        let created = port.create("1", request()).unwrap();
+        port.set_timeout("1", &created.sandbox_id, 0).unwrap();
+        let expiring = Arc::clone(&port);
+        let worker = std::thread::spawn(move || expiring.expire_due());
+        gate.entered.wait(); // expiry is durable and its exact host stop is in flight
+        let renewing = Arc::clone(&port);
+        let ready = Arc::new(Barrier::new(2));
+        let caller_ready = Arc::clone(&ready);
+        let caller = std::thread::spawn(move || {
+            caller_ready.wait();
+            if connect {
+                renewing
+                    .connect("1", &created.sandbox_id, ConnectRequest::default())
+                    .map(|_| ())
+            } else {
+                renewing.set_timeout("1", &created.sandbox_id, 300)
+            }
+        });
+        ready.wait();
+        gate.release.wait();
+        assert_eq!(worker.join().unwrap(), Ok(1));
+        assert_eq!(caller.join().unwrap(), Err(PortError::NotFound));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        drop(port);
+        let journal =
+            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        let world = journal.world().unwrap();
+        assert_eq!(
+            world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+            core::Phase::Destroyed
+        );
+        assert_eq!(
+            world
+                .operation_records()
+                .iter()
+                .filter(|(_, op)| op.operation.kind == core::OperationKind::Kill)
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]

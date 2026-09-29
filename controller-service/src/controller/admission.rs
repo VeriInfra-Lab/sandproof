@@ -77,7 +77,11 @@ pub struct AdmissionLimits {
     /// process records and cleanup must remain possible at the admission edge.
     pub cleanup_reserve_bytes: u64,
     pub max_timeout_secs: u64,
+    /// Frozen into an absolute deadline when an instance is admitted.
+    pub max_lifetime_secs: u64,
 }
+
+pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
 
 /// One admission decision's immutable time, resource budget and launch data.
 #[derive(Clone, Debug)]
@@ -94,6 +98,7 @@ pub struct Lifetime {
     /// `None` only for records migrated from an older schema.
     pub started_at_ms: Option<i64>,
     pub deadline_ms: i64,
+    pub max_deadline_ms: i64,
     pub disk_bytes: u64,
 }
 
@@ -107,6 +112,8 @@ pub enum AdmissionError {
     Unauthorized,
     NotRunning,
     Expired,
+    MaxLifetimeExceeded,
+    ChangingState,
     NotDue,
     MissingLifetime,
     UnmanagedActive,
@@ -126,6 +133,8 @@ impl Display for AdmissionError {
             Self::Unauthorized => f.write_str("caller does not own sandbox"),
             Self::NotRunning => f.write_str("sandbox is not running"),
             Self::Expired => f.write_str("sandbox lifetime has expired"),
+            Self::MaxLifetimeExceeded => f.write_str("maximum sandbox lifetime exceeded"),
+            Self::ChangingState => f.write_str("sandbox is changing state"),
             Self::NotDue => f.write_str("sandbox lifetime has not expired"),
             Self::MissingLifetime => f.write_str("sandbox has no registered lifetime"),
             Self::UnmanagedActive => f.write_str("active sandbox has no quota reservation"),
@@ -179,19 +188,20 @@ fn read_lifetime(
     owner: core::TenantId,
 ) -> Result<Option<Lifetime>, AdmissionError> {
     let id = identity::sandbox_id(namespace, sandbox)?;
-    let stored: Option<(String, i64, i64, Option<i64>)> = tx
+    let stored: Option<(String, i64, i64, Option<i64>, i64)> = tx
         .query_row(
-            "SELECT owner_id, deadline_ms, disk_bytes, started_at_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
+            "SELECT owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
             [id.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .optional()?;
     stored.map_or(
         Ok(None),
-        |(stored_owner, deadline_ms, bytes, started_at_ms)| {
+        |(stored_owner, deadline_ms, bytes, started_at_ms, max_deadline_ms)| {
             if stored_owner != identity::owner_id(owner)?.as_str()
                 || deadline_ms < 0
                 || bytes <= 0
+                || deadline_ms > max_deadline_ms
                 || started_at_ms.is_some_and(|time| time < 0 || time > deadline_ms)
             {
                 return Err(AdmissionError::CorruptLifetime);
@@ -199,6 +209,7 @@ fn read_lifetime(
             Ok(Some(Lifetime {
                 started_at_ms,
                 deadline_ms,
+                max_deadline_ms,
                 disk_bytes: u64::try_from(bytes).map_err(|_| AdmissionError::CorruptLifetime)?,
             }))
         },
@@ -273,6 +284,17 @@ impl ControllerJournal {
         } = admission;
         let encoded_options = options.encoded()?;
         let end = deadline(now_ms, timeout_secs, limits)?;
+        if timeout_secs > limits.max_lifetime_secs {
+            return Err(AdmissionError::InvalidTimeout);
+        }
+        let max_deadline_ms = deadline(
+            now_ms,
+            limits.max_lifetime_secs,
+            AdmissionLimits {
+                max_timeout_secs: limits.max_lifetime_secs,
+                ..limits
+            },
+        )?;
         if disk_bytes == 0
             || disk_bytes > i64::MAX as u64
             || request.actor != core::Actor::Tenant(request.owner)
@@ -329,9 +351,9 @@ impl ControllerJournal {
             core::ControllerInput::Request(core::Request::Create(request)),
         )?;
         tx.execute(
-            "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes, started_at_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![identity::sandbox_id(&self.namespace, sandbox)?.as_str(),
-                identity::owner_id(owner)?.as_str(), end, i64::try_from(disk_bytes).map_err(|_| AdmissionError::QuotaExceeded)?, now_ms],
+                identity::owner_id(owner)?.as_str(), end, i64::try_from(disk_bytes).map_err(|_| AdmissionError::QuotaExceeded)?, now_ms, max_deadline_ms],
         )?;
         tx.execute(
             "INSERT INTO sandbox_create_options (sandbox_id, options_json) VALUES (?1, ?2)",
@@ -416,10 +438,10 @@ impl ControllerJournal {
         Ok(lifetime)
     }
 
-    /// Connect may only retain or extend the current deadline. Omitted timeout
-    /// leaves the deadline unchanged; explicit zero is rejected, not omitted.
+    /// Connect extends by the requested interval (default 300 seconds), capped
+    /// at the original instance limit. It never shortens the existing deadline.
     /// # Errors
-    /// Rejects owner/state/expiry/time errors.
+    /// Rejects invalid requests and owner/state/expiry/time errors.
     pub fn connect_lifetime(
         &mut self,
         actor: &core::Actor,
@@ -428,41 +450,16 @@ impl ControllerJournal {
         timeout_secs: Option<u64>,
         limits: AdmissionLimits,
     ) -> Result<Lifetime, AdmissionError> {
-        let candidate = timeout_secs
-            .map(|seconds| deadline(now_ms, seconds, limits))
-            .transpose()?;
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
-        let record = world
-            .sandbox_record(sandbox)
-            .ok_or(AdmissionError::NotRunning)?;
-        if actor != &core::Actor::Tenant(record.owner) {
-            return Err(AdmissionError::Unauthorized);
+        let seconds = timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS);
+        if seconds == 0 || seconds > limits.max_timeout_secs {
+            return Err(AdmissionError::InvalidTimeout);
         }
-        if record.phase != core::Phase::Running {
-            return Err(AdmissionError::NotRunning);
-        }
-        let mut lifetime = read_lifetime(&tx, &self.namespace, sandbox, record.owner)?
-            .ok_or(AdmissionError::MissingLifetime)?;
-        if lifetime.deadline_ms <= now_ms {
-            return Err(AdmissionError::Expired);
-        }
-        if let Some(candidate) = candidate.filter(|candidate| *candidate > lifetime.deadline_ms) {
-            let id = identity::sandbox_id(&self.namespace, sandbox)?;
-            tx.execute(
-                "UPDATE sandbox_lifetimes SET deadline_ms=?1 WHERE sandbox_id=?2",
-                params![candidate, id.as_str()],
-            )?;
-            lifetime.deadline_ms = candidate;
-        }
-        tx.commit().map_err(JournalError::CommitUncertain)?;
-        Ok(lifetime)
+        self.update_lifetime(actor, sandbox, now_ms, i128::from(seconds), false)
     }
 
-    /// Set timeout may shorten or extend the deadline from the server clock.
+    /// Reset from the service clock; nonpositive values expire immediately.
+    /// Oversized requests are capped at the immutable total lifetime, not
+    /// rejected as a create/connect duration would be.
     /// # Errors
     /// Rejects owner/state/expiry/time errors.
     pub fn set_lifetime(
@@ -470,10 +467,28 @@ impl ControllerJournal {
         actor: &core::Actor,
         sandbox: core::SandboxId,
         now_ms: i64,
-        timeout_secs: u64,
-        limits: AdmissionLimits,
+        timeout_secs: i64,
     ) -> Result<Lifetime, AdmissionError> {
-        let end = deadline(now_ms, timeout_secs, limits)?;
+        self.update_lifetime(
+            actor,
+            sandbox,
+            now_ms,
+            i128::from(timeout_secs.max(0)),
+            true,
+        )
+    }
+
+    fn update_lifetime(
+        &mut self,
+        actor: &core::Actor,
+        sandbox: core::SandboxId,
+        now_ms: i64,
+        seconds: i128,
+        allow_shorter: bool,
+    ) -> Result<Lifetime, AdmissionError> {
+        if now_ms < 0 {
+            return Err(AdmissionError::InvalidClock);
+        }
         let tx = self
             .journal
             .connection
@@ -485,20 +500,35 @@ impl ControllerJournal {
         if actor != &core::Actor::Tenant(record.owner) {
             return Err(AdmissionError::Unauthorized);
         }
+        if record.phase == core::Phase::Revoking {
+            return Err(AdmissionError::ChangingState);
+        }
         if record.phase != core::Phase::Running {
             return Err(AdmissionError::NotRunning);
         }
         let mut lifetime = read_lifetime(&tx, &self.namespace, sandbox, record.owner)?
             .ok_or(AdmissionError::MissingLifetime)?;
+        if lifetime.started_at_ms.is_some_and(|start| now_ms < start) {
+            return Err(AdmissionError::InvalidClock);
+        }
+        if now_ms > lifetime.max_deadline_ms {
+            return Err(AdmissionError::MaxLifetimeExceeded);
+        }
         if lifetime.deadline_ms <= now_ms {
             return Err(AdmissionError::Expired);
         }
-        let id = identity::sandbox_id(&self.namespace, sandbox)?;
-        tx.execute(
-            "UPDATE sandbox_lifetimes SET deadline_ms=?1 WHERE sandbox_id=?2",
-            params![end, id.as_str()],
-        )?;
-        lifetime.deadline_ms = end;
+        // Widen before multiplying: even i64::MAX seconds clamps correctly.
+        let capped =
+            (i128::from(now_ms) + seconds * 1000).min(i128::from(lifetime.max_deadline_ms));
+        let end = i64::try_from(capped).map_err(|_| AdmissionError::TimeOverflow)?;
+        if allow_shorter || end > lifetime.deadline_ms {
+            let id = identity::sandbox_id(&self.namespace, sandbox)?;
+            tx.execute(
+                "UPDATE sandbox_lifetimes SET deadline_ms=?1 WHERE sandbox_id=?2",
+                params![end, id.as_str()],
+            )?;
+            lifetime.deadline_ms = end;
+        }
         tx.commit().map_err(JournalError::CommitUncertain)?;
         Ok(lifetime)
     }
