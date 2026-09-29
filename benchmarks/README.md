@@ -2,7 +2,7 @@
 
 [文档目录](../docs/README.md) · [项目蓝图](../docs/project-blueprint.md) · [验收清单](../docs/testing-plan.md)
 
-当前入口实现完整题集的源码锁定、资源审计、Harbor/SDK 联合依赖与原任务加载检查，不执行任务代码或启动沙箱。范围为固定 Harbor registry 中 `terminal-bench@2.0` 的全部 **89 题**；不能在失败后删除任务或把未运行计为通过。
+预检入口实现完整题集的源码锁定、资源审计、Harbor/SDK 联合依赖与原任务加载检查，不执行任务代码或启动沙箱。独立的本地执行入口见下文，必须连接已配置并由外部监督器审计的真实服务。范围为固定 Harbor registry 中 `terminal-bench@2.0` 的全部 **89 题**；不能在失败后删除任务或把未运行计为通过。
 
 [锁文件](terminal-bench-2.0.lock.json)固定 Harbor、E2B SDK、registry 内容摘要、任务仓库提交，以及每题所有输入文件的路径、模式、大小和 SHA-256。文件按 environment、instruction、metadata、oracle、verifier 分别标记；标准解答和私有测试仅记录摘要，不能提前上传到智能体沙箱。原 `docker_image` 标签和 Dockerfile FROM 行只是上游环境参考，不是镜像内容锁，也不表示本服务支持模板构建。
 
@@ -64,3 +64,22 @@ python3 tools/benchmark_tasks.py audit \
 ## 后续执行前提
 
 逐任务审查初始化配方、固定 base 及依赖内容、工作目录/启动进程、网络策略和 Harbor 薄适配仍须实现并验收。Dockerfile 清单不是通用解释器，不能把上游镜像标签伪装成可用模板。缺少能力的任务保留在完整 89 题报告里，先记录阻塞再补齐；标准解答、原评分器、清理及同一智能体的 E2B 对照按验收清单执行。在线 E2B 与模型运行使用另行配置的凭据和预算，不由这个本地工具触发。
+
+## 本地标准解答探针
+
+[本地入口](run_local.py)使用固定 Harbor 的 `OracleAgent` 与 `Verifier`，通过原版异步 SDK 连接显式指定的回环服务。它只创建 `base`，不调用模板 API；[固定配方](ubuntu-recipes.json)列出 37 题的 Ubuntu 24.04 初始化命令与输入映射，运行时不解释 Dockerfile。其他基础镜像、多阶段构建与启动服务仍需单独配方；配方存在不代表初始化或评分通过。
+
+```sh
+uv run --locked --project benchmarks python -m benchmarks.run_local \
+  --registry artifacts/terminal-bench/registry.json \
+  --source artifacts/terminal-bench/source \
+  --lock benchmarks/terminal-bench-2.0.lock.json \
+  --api-url http://127.0.0.1:3000 --task regex-log \
+  --output artifacts/terminal-bench/run-regex-log
+```
+
+密钥通过 `SANDPROOF_TEST_API_KEY` 提供；程序不读取云端密钥。输出目录必须不存在。执行前复核全部 89 题源码，使用该题原始初始化、agent 与 verifier 时限；只在标准解答阶段上传 solution，只在评分阶段上传 tests，保留原退出码和 reward。输出包含该题日志、实际软件包清单以及仍含全部 89 题的 `full-set.json`，未执行不能算通过。失败和超时返回非零；销毁未确认会单独标记，必须先核对原资源，不能直接重跑。
+
+服务必须预先配置与当前题目一致的 CPU/内存、10 GiB 独立盘、86400 秒单次及总寿命上限，以及公网 IPv4 出站。配方仅适用于固定 Ubuntu 24.04 base；不把 Debian/Python 镜像假装为同一环境。DNS 使用公网解析器 1.1.1.1，宿主若有 Docker 的 FORWARD 默认拒绝策略，应由监督器按本轮唯一网卡配置和回收精确转发规则，不能关闭全局防火墙。执行入口不修改宿主网络、不启动服务，不代替独立的 PID/磁盘/cgroup/网络清理审计。
+
+上游初始化和评分脚本包含动态 apt/下载依赖，现阶段记录实际版本，尚未把所有远端依赖内容冻结。这是本地兼容与评分链实验，不是环境完全可复现、完整 Harbor Trial、全题集验收或在线 E2B/模型对照的完成声明。
