@@ -209,7 +209,9 @@ class WireContract(unittest.TestCase):
                     if query.template is not None:
                         params['template'] = [query.template]
                     if query.started_after is not None:
-                        params['startedAfter'] = [query.started_after.isoformat()]
+                        # The pinned SDK converts aware datetimes to the host's
+                        # local timezone before serializing the query parameter.
+                        params['startedAfter'] = [query.started_after.astimezone().isoformat()]
                     for index, record in enumerate(records):
                         actual = parse_qs(urlsplit(record['path']).query)
                         expected_params = {**params, **({'nextToken': [f'opaque-{index}']} if index else {})}

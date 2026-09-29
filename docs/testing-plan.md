@@ -201,3 +201,5 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 详情场景已在提交 `2e17d3ff49fc66405458c95e760b8d523b8eaaea` 的四台真实 VM 上通过：同步/异步各五组检查，各一次完整服务重启后保持原 VM 精确 PID/start 身份、详情和令牌不变；服务退出前四台全部销毁且进程、jail、netns、cgroup 无残留，基础盘未变。精确指纹和限制见[版本基线](../references/v1-baseline.json)的 `sandbox_detail_acceptance`。
 
 寿命目标场景已在生产提交 `e9c251d234492cb4cabb4bce91be16f9badb8e00`、探针提交 `7063d6a98ca0ca739efc84f5bdcf8965b3f0f3cb` 的同一二进制上通过：常规同步/异步各 36 项，共 72 项；12 秒总寿命配置各一组边界/重启场景。18＋2 台 VM 在服务退出前全部完成精确资源审计，基础盘不变。两次早期未完成实验分别为健康请求错误预期、监督器过早要求清理完成；另 12 台 VM 已独立核对收尾，失败不计为通过。到期后的 health 在本服务映射为 401，固定 SDK 抛 AuthenticationException，不能声称 is_running 返回 False。详见[版本基线](../references/v1-baseline.json)的 `lifetime_target_acceptance`。
+
+[运行起点聚焦探针](../tests/system/sdk_running_start.py)针对后续的 #9 修正，在单台真实 VM 上检查物理就绪后的可见起点与初始期限、同库服务重启后同一实例的起点不变、默认连接续期及总寿命截顶。组件另以可推进时钟和发布前事务故障注入，证明发布与起点写入不可拆分，恢复不重派已确认的宿主工作。实机一台 VM 已在精确提交上通过，原 PID/start 身份停止，私有 jail/netns 消失且基础盘不变；提交、指纹与未覆盖范围见[版本基线](../references/v1-baseline.json)的 `running_lifetime_origin_acceptance`。此探针只补启动耗时计入寿命的差异，不替代上面的同步/异步寿命矩阵或任意时刻崩溃验收。
