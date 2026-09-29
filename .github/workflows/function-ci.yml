@@ -41,6 +41,20 @@ jobs:
           "$RUNNER_TEMP/uv-bootstrap/bin/python" -m pip install --disable-pip-version-check uv==0.11.31
           PATH="$RUNNER_TEMP/uv-bootstrap/bin:$PATH" bash scripts/check-compat.sh
 
+  harbor-inputs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check joint Harbor and E2B SDK installation
+        # Imports and loopback contracts only; no task execution or cloud keys.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/uv-bootstrap"
+          "$RUNNER_TEMP/uv-bootstrap/bin/python" -m pip install --disable-pip-version-check uv==0.11.31
+          PATH="$RUNNER_TEMP/uv-bootstrap/bin:$PATH" bash scripts/check-bench.sh
+
   pr-title:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
