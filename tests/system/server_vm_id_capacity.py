@@ -137,7 +137,7 @@ def exercise(args):
             stop_server(process)
             process = start_server(binary, config, root / "server.log", None)
             assert process.wait(timeout=10) != 0, "legacy startup unexpectedly accepted invalid binding"
-            assert "slot filename or VM identity mismatch" in (root / "server.log").read_text()
+            assert "node VM ID exceeds allocated UID range" in (root / "server.log").read_text()
             check_no_resources(root, namespace, firecracker, args.uid_base)
             assert sha256_file(rootfs) == sha256_file(args.rootfs) == base_digest
             completed = True
