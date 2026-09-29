@@ -2178,10 +2178,7 @@
         "run": "mkdir -p /app",
         "cwd": "/"
       }
-    ],
-    "env": {
-      "USE_LIBUV": "0"
-    }
+    ]
   },
   "train-fasttext": {
     "base": "python-3.13.9-bookworm",

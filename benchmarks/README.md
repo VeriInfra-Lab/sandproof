@@ -112,7 +112,7 @@ Mailman 题在来宾补齐基础镜像缺少的 `/var/mail`（root:mail，2775�
 
 `custom-memory-heap-crash` 使用该题元数据指定的预构建镜像 `alexgshaw/custom-memory-heap-crash:20251031`，amd64 清单固定为 `sha256:1895d7d6240d5fb2ec774d6bfdd1057d170f8d199c15c582e4585d3c63802557`。原 Dockerfile 的两套 GCC 13.2.0 定制库已在其中构建，初始化无需在 600 秒内重新编译编译器。离线转换不执行镜像程序；加入固定 BusyBox/init 和 envd 后仍为 10 GiB 私有盘。执行时核对 task 专属标记、原 program/patches 内容摘要及两套库存在性。该 profile 仅允许原任务与原上游镜像引用使用；不允许其他任务复用，也不包含 solution/tests。原标准解答、评分器、CPU/内存及所有任务时限保持不变，是否实机通过仍以该提交的独立报告为准。
 
-PyTorch 张量并行题使用官方 `USE_LIBUV=0` 环境设置选择 TCPStore 的旧后端。本地诊断观察到原模型计算完成后卡在 `destroy_process_group`；短探针在该设置下连续两次结束，但完整原评分仍超时，因此它不是已验证的修复。该设置由 [PyTorch TCPStore 后端说明](https://docs.pytorch.org/tutorials/intermediate/TCPStore_libuv_backend.html)提供，不改变 PyTorch 2.7.0、Gloo 后端、模型、用例或资源限制。
+PyTorch 张量并行题保留原 TCPStore 默认后端、PyTorch 2.7.0、Gloo 与评分脚本。`USE_LIBUV=0` 短探针曾结束，但完整原评分仍超时，因此没有保留这项无效设置；原生栈定位到 Gloo 析构时的 GIL 死锁，候选修复单列在下方可选参考解答中。
 
 Windows 3.11 初始化下载仍使用原 archive.org URL，按 8 MiB 分段、最多四条连接下载，核对每个 HTTP Content-Range、总长度及固定 SHA-256 后才发布完整文件。该摘要通过原站公开 SHA-1 核对取得；下载发生在题目初始化预算内，没有在 VM 中预填镜像，也没有延长 600 秒时限。失败不会留下可误用的半成品；下载证据写入 verifier 日志目录。通用下载辅助程序来自本仓库，只允许注册的 helper 标识上传。
 
@@ -129,3 +129,4 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 - `caffe-cifar-10`：从 BrainChip 公开镜像下载相同 CIFAR-10 binary 数据，内容已核对[作者公布的 MD5](https://www.cs.toronto.edu/~kriz/cifar.html)，执行时再核对固定 SHA-256。下载、解压、原 Caffe 构建及训练均在 VM 原 agent 预算中，不预填数据或训练结果。
 - `crack-7z-hash`：先用原 John 自带完整常用密码字典和原规则运行，并要求 John 确认破解成功；解压密码取自实际破解结果，替代原脚本的答案常量。没有任务专用候选表，也没有跳过破解计算。模式语义见 [John 官方说明](https://www.openwall.com/john/doc/MODES.shtml)。
 - `install-windows-3.11`：识别并复用原 supervisor 已启动、参数匹配的 VNC WebSocket 进程，避免重复绑定 8080 导致解答退出 1；不把任意端口监听都当成所需服务。原 QEMU 编译、镜像、启动与监控仍执行，原四项评分不变。
+- `torch-tensor-parallelism`：原生栈确认 Gloo 销毁时，主线程持有 GIL 等待工作线程，工作线程释放 tensor 又等待 GIL。修正版让模型持有直接 Gloo 后端引用，使用 [Torch 2.7.0 已有的释放 GIL 的析构绑定](https://github.com/pytorch/pytorch/blob/v2.7.0/torch/csrc/distributed/c10d/init.cpp)完成清理；不改集体通信、模型计算、PyTorch 版本或原评分。该候选仍需完整实跑验证。

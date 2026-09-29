@@ -17,6 +17,7 @@ REPAIRS = {
     'crack-7z-hash': '2640463e6e14658426f3ea629e0702688e00553eb8006cf31ec3b9cff75c4b19',
     'caffe-cifar-10': '771887de1ed557269c7f3160c777519aa9538e1e9b59771b2f6ef38c8952490c',
     'install-windows-3.11': '68a9221b9a29331b66fd34fccd71db71d2b5a720e917f2ef95f4a8a542a71ee4',
+    'torch-tensor-parallelism': 'd083b7cbf9dbb6cc2ff38c8f2acc150f0059c04aea42d6c2183aeaecc5a19385',
 }
 POV_ARCHIVES = {
     'POVDOC.TAR.Z': 'e70e44d1fe8835c4dff7c7a55bd6629b15e6a15b2ab7f2f49ee9e2dc016cc470',
@@ -77,6 +78,22 @@ def repair_solution(name, original, destination):
     mv cifar-10-batches-bin/* .
     rmdir cifar-10-batches-bin
 ) || exit 1''')
+    elif name == 'torch-tensor-parallelism':
+        # In Torch 2.7.0, the direct Gloo Python holder releases the GIL on
+        # destruction; its parent ProcessGroup's holder does not. Keep the
+        # backend owned by the layer so its worker-thread join uses that holder.
+        # No collective, model computation, test or package is replaced.
+        marker = '        self.rank = dist.get_rank()\n'
+        if old.count(marker) != 2:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, marker + '''
+        # Keep Gloo alive through ProcessGroup teardown. The backend's own
+        # Python holder releases the GIL while joining its worker threads.
+        self._gloo_backend = (
+            dist.distributed_c10d._get_default_group()._get_backend(torch.device("cpu"))
+            if dist.get_backend() == "gloo" else None
+        )
+''')
     elif name == 'install-windows-3.11':
         # The original image CMD already runs this exact bridge via supervisor.
         # Reuse only that known command, not an arbitrary listener on port 8080.
