@@ -1,0 +1,7 @@
+{
+  "cpus": 1,
+  "memory_mib": 512,
+  "disk_mib": 1024,
+  "max_timeout_sec": 600,
+  "max_lifetime_sec": 600
+}
