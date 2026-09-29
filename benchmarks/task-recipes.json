@@ -627,10 +627,19 @@
       {
         "run": "mkdir -p /app",
         "cwd": "/"
+      },
+      {
+        "helper": "chromium-lifecycle"
+      },
+      {
+        "run": "chmod 755 /usr/local/lib/sandproof/guest_chromium.py",
+        "cwd": "/"
       }
     ],
     "env": {
-      "PYTEST_ADDOPTS": "-s -v"
+      "PYTEST_ADDOPTS": "-s -v",
+      "PYTHONUNBUFFERED": "1",
+      "SE_CHROME_PATH": "/usr/local/lib/sandproof/guest_chromium.py"
     }
   },
   "financial-document-processor": {

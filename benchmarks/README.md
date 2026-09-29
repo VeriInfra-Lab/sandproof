@@ -116,7 +116,7 @@ PyTorch 张量并行题使用官方 `USE_LIBUV=0` 环境设置选择 TCPStore �
 
 Windows 3.11 初始化下载仍使用原 archive.org URL，按 8 MiB 分段、最多四条连接下载，核对每个 HTTP Content-Range、总长度及固定 SHA-256 后才发布完整文件。该摘要通过原站公开 SHA-1 核对取得；下载发生在题目初始化预算内，没有在 VM 中预填镜像，也没有延长 600 秒时限。失败不会留下可误用的半成品；下载证据写入 verifier 日志目录。通用下载辅助程序来自本仓库，只允许注册的 helper 标识上传。
 
-HTML 过滤题启用 pytest 的 `-s -v` 日志，保留每个浏览器批次的执行、异常与收尾信息。用例、断言和时间限制不变；原测试会吞掉部分浏览器异常，必须检查日志中的超时/浏览器失败，不能只用原 reward 声称所有浏览器场景实际通过。
+HTML 过滤题启用 pytest 的 `-s -v` 与非缓冲日志，保留每个浏览器批次的执行、异常与收尾信息。原测试先杀 ChromeDriver 再调用 quit，实际观察到浏览器及 crashpad 进程持续遗留；该题通过 Selenium 官方 `SE_CHROME_PATH` 设置选择[浏览器启动包装器](guest_chromium.py)。包装器不改变 Chromium 参数，使用 pidfd 观察驱动生命周期；驱动退出后回收独立进程组与自己收养的后代，并记录剩余数量。合成进程回归覆盖驱动死亡和脱离原 session 的后代，原浏览器实测另计。用例、断言和时间限制不变；原测试会吞掉部分浏览器异常，必须检查日志中的超时/浏览器失败，不能只用原 reward 声称所有浏览器场景实际通过。环境接口见 [Selenium Manager 官方说明](https://www.selenium.dev/documentation/selenium_manager/)。
 
 MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transformers 4.57.6，保留完整 PyTorch/CUDA 构建。原无上限依赖会选入更新且更大的 CUDA 13 依赖，使随后原 results 完整克隆写满 10 GiB 私有盘；旧兼容依赖是否足以留出空间必须以原解答复测为准。没有预填结果、改变 Git checkout 目标或缩减评分。
 

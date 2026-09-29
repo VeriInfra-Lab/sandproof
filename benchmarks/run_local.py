@@ -25,6 +25,7 @@ from harbor.models.trial.paths import TrialPaths
 from harbor.verifier.verifier import Verifier
 
 from benchmarks.check_harbor import check_runtime, check_tasks
+from benchmarks.check_browser_evidence import audit_browser_evidence
 from benchmarks.oracle_repairs import REPAIRS, repair_solution
 from tools.benchmark_tasks import InvalidInput, verify
 
@@ -46,6 +47,8 @@ TASK_BASES = {
 GUEST_HELPERS = {
     'range-fetch': (Path(__file__).with_name('guest_fetch.py'),
                     '/usr/local/lib/sandproof/guest_fetch.py'),
+    'chromium-lifecycle': (Path(__file__).with_name('guest_chromium.py'),
+                           '/usr/local/lib/sandproof/guest_chromium.py'),
 }
 
 
@@ -313,6 +316,14 @@ async def run_task(args, entry, recipe):
         row['rewards'] = result.rewards
         row['verifier'] = 'passed' if result.rewards == {'reward': 1} else 'failed'
         row['status'] = 'passed' if row['oracle'] == row['verifier'] == 'passed' else 'failed'
+        if task.name == 'filter-js-from-html':
+            lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
+            row['verification_audit'] = audit_browser_evidence(
+                paths.test_stdout_path.read_text() if paths.test_stdout_path.exists() else '',
+                lifecycle.read_text() if lifecycle.exists() else '')
+            if not row['verification_audit']['complete']:
+                row['status'] = 'failed'
+                row['reason'] = 'browser verification incomplete; original reward retained'
         event('package_inventory')
         packages = await environment.exec("dpkg-query -W -f='${Package}=${Version}\\n'", cwd='/', timeout_sec=30)
         (paths.trial_dir / 'packages.txt').write_text(packages.stdout or '')
