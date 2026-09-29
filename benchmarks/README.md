@@ -111,3 +111,5 @@ GPT-2 题的标准解答预留大于来宾物理内存的虚拟地址空间；�
 Mailman 题在来宾补齐基础镜像缺少的 `/var/mail`（root:mail，2775），使 Postfix 能创建本地邮箱。两道 MIPS 题的原 Doom 共享版数据链接失效，改从 [SliTaz 列出的 TuxFamily 镜像](https://www.slitaz.org/en/get/)下载相同发行数据并校验固定 SHA-256；下载失败立即中止初始化，不能把 HTTP 错误正文当作 WAD 文件。
 
 `custom-memory-heap-crash` 使用该题元数据指定的预构建镜像 `alexgshaw/custom-memory-heap-crash:20251031`，amd64 清单固定为 `sha256:1895d7d6240d5fb2ec774d6bfdd1057d170f8d199c15c582e4585d3c63802557`。原 Dockerfile 的两套 GCC 13.2.0 定制库已在其中构建，初始化无需在 600 秒内重新编译编译器。离线转换不执行镜像程序；加入固定 BusyBox/init 和 envd 后仍为 10 GiB 私有盘。执行时核对 task 专属标记、原 program/patches 内容摘要及两套库存在性。该 profile 仅允许原任务与原上游镜像引用使用；不允许其他任务复用，也不包含 solution/tests。原标准解答、评分器、CPU/内存及所有任务时限保持不变，是否实机通过仍以该提交的独立报告为准。
+
+PyTorch 张量并行题使用官方 `USE_LIBUV=0` 环境设置选择 TCPStore 的旧后端。本地诊断已观察到原模型计算完成后卡在 `destroy_process_group`，使用该设置的同一模型调用连续两次正常结束；完整原评分仍须独立复测。该设置由 [PyTorch TCPStore 后端说明](https://docs.pytorch.org/tutorials/intermediate/TCPStore_libuv_backend.html)提供，不改变 PyTorch 2.7.0、Gloo 后端、模型、用例或资源限制；诊断不能证明所有分布式清理问题均已解决。
