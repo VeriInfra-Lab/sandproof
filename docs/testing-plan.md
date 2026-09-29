@@ -43,6 +43,8 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 
 固定版本的 SDK 调用清单位于[兼容合同](../tests/compat/contract.json)。`bash scripts/check-compat.sh` 使用 E2B Python SDK 2.51.0 和本机回环合成响应；[实机系统测试](../tests/system/sdk_server_smoke.py)则使用同版原 SDK，经真实控制器和网关驱动 Firecracker，覆盖显式禁网的创建、连接、查询、列表、续期、销毁，以及基本命令、文件、超时、终止、断线重连、1 MiB 输出、跨租户与旧令牌、非法文件路径、重复令牌、超限上传拒绝和到期清理。隔离 Linux/KVM 测试已通过，但只覆盖 S01–S05、S11–S12 的部分路径。
 
+[C02 收口入口](../tests/system/sdk_c02_acceptance.py)只编排上述实机测试与[双客户端数据合同测试](../tests/system/sdk_data_contract.py)：在同一精确提交、隔离服务和数据库上运行固定 SDK 的同步/异步调用，核对四条终局记录、专属进程/网络空间/jail 清理及基础盘摘要。它不复制既有场景断言，也不替代 #8 的文件流资源边界、#9 的寿命竞争或完整 V1 验收。
+
 网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
 
 - [网关组件测试](../sandbox-server/src/gateway/tests.rs)：在 Linux 上执行 `cargo test -p sandproof-server --locked`。通过实际网关的请求处理、响应限流及 HTTP 编码，覆盖 8 MiB 文件请求、1 MiB 命令输入、32 MiB 响应边界；区分已知长度、分块传输和上游 HTTP/1.0 未声明长度，检查中途 EOF、逐块传输、不重发及失败后的新请求，以及非 HTTP/1.1 请求在读取 body 前被拒绝。使用内存传输替换 envd，不覆盖鉴权、进程执行或 VM 隔离。响应上限计算 HTTP body 字节，包含 Connect 编码，不能直接等同于原始 stdout 大小。
