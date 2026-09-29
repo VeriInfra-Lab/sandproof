@@ -65,6 +65,8 @@ python3 tools/benchmark_tasks.py audit \
 
 全部任务的显式初始化配方、固定 base 指纹和 Harbor 薄适配已实现；每题是否初始化成功、标准解答与原评分器是否完成，仍以绑定提交和环境的实际报告为准。配方清单不是通用 Dockerfile 解释器，也不表示任意上游镜像标签都可作为模板。失败、超时和缺少能力的任务均保留在完整 89 题报告中；同一智能体的 E2B 对照按验收清单另行执行。在线 E2B 与模型运行需要单独配置的凭据和预算，不由这个本地工具触发。
 
+另有[预选两题](diagnostic-tasks.json)的手动诊断链路，由[实机脚本](../tests/system/harbor_diagnostic_chain.py)执行：要求锁定的 Harbor/E2B 联合环境、固定提交的原题源码、经核对的 Ubuntu 24.04 10 GiB base、隔离 KVM 宿主与预先批准且在整轮不变的公网 IPv4 策略。每题全新沙箱，先核对 CPU/内存/磁盘和空初态；来宾固定使用公网 DNS `1.1.1.1`，因为现有 base 的宿主本地 DNS 桩不可在 VM 内使用，此处是与原 Docker 环境的已知差异。`polyglot-c-py` 只在来宾内执行原 Dockerfile 的 `apt update && apt install -y gcc`；随后依次上传并运行原 `solution/solve.sh`。原评分器所需的 Python 3.13.9 固定运行时在解答结束后传入并核对哈希，避免原评分器访问其固定下载地址超时；运行时来源和哈希见预选清单，这是另一项明确的环境差异。接着上传并运行未改动的原 `tests/test.sh` 与 `test_outputs.py`，读取原 `reward.txt`。评分后销毁并检查数据库终态、精确进程/网络/磁盘与 base 指纹。失败保留本轮私有目录诊断，不将失败题从预选名单删除；不使用付费模型，不宣称原 Harbor 模板 API 或完整榜单兼容。 这条两题链路的运行时预填与报告独立于下方全题集入口；不能用两题通过代表其余 87 题，也不替代原 Harbor OracleAgent/Verifier 的全题集接入。
+
 ## 本地标准解答探针
 
 [本地入口](run_local.py)使用固定 Harbor 的 `OracleAgent` 与 `Verifier`，通过原版异步 SDK 连接显式指定的回环服务。它只创建 `base`，不调用模板 API；[固定配方](task-recipes.json)列出全部 89 题的初始化命令与输入映射，运行时不解释 Dockerfile。配方绑定七种通用基础环境及一个任务专用预制镜像的[固定指纹](base-profiles.lock.json)，其中多阶段文档准备显式删除中间源文件，Windows 3.11 题目在 VM 内启动其原 supervisord。配方存在不代表初始化或评分通过。
