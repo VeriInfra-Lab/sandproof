@@ -122,6 +122,8 @@ HTML 过滤题启用 pytest 的 `-s -v` 与非缓冲日志，保留每个浏览�
 
 MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transformers 4.57.6，保留完整 PyTorch/CUDA 构建。原无上限依赖会选入更新且更大的 CUDA 13 依赖，使随后原 results 完整克隆写满 10 GiB 私有盘；旧兼容依赖是否足以留出空间必须以原解答复测为准。没有预填结果、改变 Git checkout 目标或缩减评分。 初始化另外补齐 Pillow 11.3.0；[上游问题记录](https://github.com/harbor-framework/terminal-bench-2/pull/53)确认旧 MTEB 丢失该间接依赖后重新构建会导入失败。原 MTEB 版本保持 1.38.41。
 
+该题的 pip 安装使用 `--no-compile`，并设置 `PYTHONDONTWRITEBYTECODE=1`，避免可再生成的 Python 字节码缓存挤占原评分器安装 Python 3.13 所需的空间；Python 源码、原生库与完整 CUDA wheel 均保留。初始化记录实际缓存策略及可用空间，不扩大私有盘、不删除结果仓库或评分输入。
+
 ## 可选的参考解答修复
 
 显式 `--oracle-mode repaired` 只对[注册修复](oracle_repairs.py)生效。它先核对原 solve.sh 的完整摘要，在独立输出目录复制完整任务，仅对其中 solution 应用有限修改，不修改固定题库；报告记录模式、原文件与新文件摘要及完整 diff。原 Harbor OracleAgent 按副本任务根目录执行原路径校验，评分仍从原任务读取。评分源码和所有资源/时限保持不变。修正版通过必须单独报告，不能计为原标准解答通过，也不能改写原失败记录。未注册任务直接拒绝执行。

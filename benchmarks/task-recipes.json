@@ -1340,7 +1340,8 @@
     "environment_sha256": "b2745c5eba026bda7f3ef48b1cd53f267debc0daa58b701a7a7fa903f2060aa4",
     "env": {
       "PIP_CONSTRAINT": "/etc/sandproof-mteb-leaderboard-constraints.txt",
-      "UV_CONSTRAINT": "/etc/sandproof-mteb-leaderboard-constraints.txt"
+      "UV_CONSTRAINT": "/etc/sandproof-mteb-leaderboard-constraints.txt",
+      "PYTHONDONTWRITEBYTECODE": "1"
     },
     "steps": [
       {
@@ -1357,11 +1358,15 @@
         "cwd": "/"
       },
       {
-        "run": "pip install mteb==1.38.41 Pillow==11.3.0",
+        "run": "pip install --no-compile mteb==1.38.41 Pillow==11.3.0",
         "cwd": "/app",
         "env": {
           "PIP_NO_CACHE_DIR": "1"
         }
+      },
+      {
+        "run": "python - <<'PYGUEST'\nfrom pathlib import Path\nimport json, shutil, sys\nassert sys.dont_write_bytecode\nPath('/logs/verifier/python-storage-policy.json').write_text(json.dumps({'scope': 'ordinary pip install without bytecode cache; original wheel builds retained', 'dont_write_bytecode': sys.dont_write_bytecode, 'initial_free_bytes': shutil.disk_usage('/').free}) + '\\n')\nPYGUEST",
+        "cwd": "/"
       }
     ]
   },
