@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import json
+import hashlib
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -46,6 +47,25 @@ class LocalRunnerTests(unittest.TestCase):
                                    'upstream_image_reference': reference}]}
                 with patch('benchmarks.run_local.RECIPES', recipes), self.assertRaises(InvalidInput):
                     load_recipes(lock, Path(tmp))
+
+    def test_guest_helper_cannot_select_an_arbitrary_host_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = root / 'task' / 'environment'
+            environment.mkdir(parents=True)
+            dockerfile = environment / 'Dockerfile'
+            dockerfile.write_text('FROM ubuntu:24.04\n')
+            recipes = root / 'recipes.json'
+            lock = {'tasks': [{'name': 'task', 'dockerfile_from_lines': ['ubuntu:24.04']}]}
+            for helper in ('../../etc/passwd', 'unknown'):
+                recipes.write_text(json.dumps({'task': {
+                    'base': 'ubuntu-24.04',
+                    'environment_sha256': hashlib.sha256(dockerfile.read_bytes()).hexdigest(),
+                    'steps': [{'helper': helper}],
+                }}))
+                with self.subTest(helper=helper), patch('benchmarks.run_local.RECIPES', recipes):
+                    with self.assertRaises(InvalidInput):
+                        load_recipes(lock, root)
 
     def test_recipe_cannot_upload_private_phase(self):
         with tempfile.TemporaryDirectory() as tmp:

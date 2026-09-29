@@ -42,6 +42,10 @@ TASK_BASES = {
     'task-custom-memory-heap-crash': (
         'custom-memory-heap-crash', 'alexgshaw/custom-memory-heap-crash:20251031'),
 }
+GUEST_HELPERS = {
+    'range-fetch': (Path(__file__).with_name('guest_fetch.py'),
+                    '/usr/local/lib/sandproof/guest_fetch.py'),
+}
 
 
 def local_url(value):
@@ -84,7 +88,11 @@ def load_recipes(lock, source):
         if hashlib.sha256((root / 'Dockerfile').read_bytes()).hexdigest() != recipe['environment_sha256']:
             raise InvalidInput(name + ': recipe differs from the pinned environment')
         for step in recipe['steps']:
-            if 'copy' in step:
+            if 'helper' in step:
+                if set(step) != {'helper'} or step['helper'] not in GUEST_HELPERS:
+                    raise InvalidInput(name + ': unknown guest helper')
+                target = GUEST_HELPERS[step['helper']][1]
+            elif 'copy' in step:
                 if set(step) != {'copy', 'target'} or not input_path(root, step['copy']).exists():
                     raise InvalidInput(name + ': invalid recipe copy')
                 target = step['target']
@@ -155,7 +163,11 @@ class LocalBaseEnvironment(E2BEnvironment):
                 'Dpkg::Options { "--force-confdef"; "--force-confold"; };\n')
         await self.exec('mkdir -p /logs/agent /logs/verifier /logs/artifacts', cwd='/', timeout_sec=30)
         for step in self.recipe['steps']:
-            if 'copy' in step:
+            if 'helper' in step:
+                source, target = GUEST_HELPERS[step['helper']]
+                await self._sandbox.files.make_dir(str(PurePosixPath(target).parent))
+                await self.upload_file(source, target)
+            elif 'copy' in step:
                 source = input_path(self.environment_dir, step['copy'])
                 if source.is_dir():
                     await self.upload_dir(source, step['target'])

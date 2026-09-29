@@ -628,7 +628,10 @@
         "run": "mkdir -p /app",
         "cwd": "/"
       }
-    ]
+    ],
+    "env": {
+      "PYTEST_ADDOPTS": "-s -v"
+    }
   },
   "financial-document-processor": {
     "base": "ubuntu-24.04",
@@ -992,15 +995,11 @@
         }
       },
       {
-        "run": "wget -O /app/isos/win311.img https://archive.org/download/win311_202508/win311.img",
-        "cwd": "/app",
-        "env": {
-          "USER": "root",
-          "PASSWORD": "password1",
-          "DEBIAN_FRONTEND": "noninteractive",
-          "DEBCONF_NONINTERACTIVE_SEEN": "true",
-          "XKB_DEFAULT_RULES": "base"
-        }
+        "helper": "range-fetch"
+      },
+      {
+        "run": "python3 /usr/local/lib/sandproof/guest_fetch.py --url https://archive.org/download/win311_202508/win311.img --output /app/isos/win311.img --size 268435456 --sha256 58fb76014dccf13ec048e894ca1e44773eee940ccbc71c97a2ab3d07285da553 --proof /logs/verifier/windows-image-download.json",
+        "cwd": "/app"
       },
       {
         "copy": "isos/",
@@ -1326,8 +1325,15 @@
     "base": "python310",
     "workdir": "/app",
     "environment_sha256": "b2745c5eba026bda7f3ef48b1cd53f267debc0daa58b701a7a7fa903f2060aa4",
-    "env": {},
+    "env": {
+      "PIP_CONSTRAINT": "/etc/sandproof-mteb-leaderboard-constraints.txt",
+      "UV_CONSTRAINT": "/etc/sandproof-mteb-leaderboard-constraints.txt"
+    },
     "steps": [
+      {
+        "run": "printf '%s\\n' 'torch==2.7.1' 'transformers==4.57.6' > /etc/sandproof-mteb-leaderboard-constraints.txt",
+        "cwd": "/"
+      },
       {
         "run": "apt-get update && apt-get install -y      tmux asciinema gcc g++ git wget      && rm -rf /var/lib/apt/lists/*",
         "cwd": "/",

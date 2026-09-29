@@ -113,3 +113,9 @@ Mailman 题在来宾补齐基础镜像缺少的 `/var/mail`（root:mail，2775�
 `custom-memory-heap-crash` 使用该题元数据指定的预构建镜像 `alexgshaw/custom-memory-heap-crash:20251031`，amd64 清单固定为 `sha256:1895d7d6240d5fb2ec774d6bfdd1057d170f8d199c15c582e4585d3c63802557`。原 Dockerfile 的两套 GCC 13.2.0 定制库已在其中构建，初始化无需在 600 秒内重新编译编译器。离线转换不执行镜像程序；加入固定 BusyBox/init 和 envd 后仍为 10 GiB 私有盘。执行时核对 task 专属标记、原 program/patches 内容摘要及两套库存在性。该 profile 仅允许原任务与原上游镜像引用使用；不允许其他任务复用，也不包含 solution/tests。原标准解答、评分器、CPU/内存及所有任务时限保持不变，是否实机通过仍以该提交的独立报告为准。
 
 PyTorch 张量并行题使用官方 `USE_LIBUV=0` 环境设置选择 TCPStore 的旧后端。本地诊断已观察到原模型计算完成后卡在 `destroy_process_group`，使用该设置的同一模型调用连续两次正常结束；完整原评分仍须独立复测。该设置由 [PyTorch TCPStore 后端说明](https://docs.pytorch.org/tutorials/intermediate/TCPStore_libuv_backend.html)提供，不改变 PyTorch 2.7.0、Gloo 后端、模型、用例或资源限制；诊断不能证明所有分布式清理问题均已解决。
+
+Windows 3.11 初始化下载仍使用原 archive.org URL，按 8 MiB 分段、最多四条连接下载，核对每个 HTTP Content-Range、总长度及固定 SHA-256 后才发布完整文件。该摘要通过原站公开 SHA-1 核对取得；下载发生在题目初始化预算内，没有在 VM 中预填镜像，也没有延长 600 秒时限。失败不会留下可误用的半成品；下载证据写入 verifier 日志目录。通用下载辅助程序来自本仓库，只允许注册的 helper 标识上传。
+
+HTML 过滤题启用 pytest 的 `-s -v` 日志，保留每个浏览器批次的执行、异常与收尾信息。用例、断言和时间限制不变；原测试会吞掉部分浏览器异常，必须检查日志中的超时/浏览器失败，不能只用原 reward 声称所有浏览器场景实际通过。
+
+MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transformers 4.57.6，保留完整 PyTorch/CUDA 构建。原无上限依赖会选入更新且更大的 CUDA 13 依赖，使随后原 results 完整克隆写满 10 GiB 私有盘；旧兼容依赖是否足以留出空间必须以原解答复测为准。没有预填结果、改变 Git checkout 目标或缩减评分。
