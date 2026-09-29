@@ -175,20 +175,22 @@ worker 在删除点重新检查资源的 sid、generation、具体 ID、停止/�
 
 ## 9. Lean 证明到哪里为止
 
+下表描述历史 Lean 模型及已记录的纯核心证明，不表示当前服务和新增 Rust 输入已经通过对应验证。精确历史版本、类型变化导致的失效范围和开放义务统一见[证明覆盖记录](proof-coverage.md)。
+
 | Lean 已证明 | 仍需 refinement 或 adapter 证据 |
 |---|---|
 | 任意有限合法历史中的身份、代、权限和资源关系 | 生产二进制是否只通过已证明 reducer 改变状态 |
-| 请求、effect、调度、worker 和发布的纯处理器有双向覆盖；现有 Rust 公开输入已有带容量前提的对应证明 | 新增持久化、服务、真实执行与恢复路径的实现对应 |
+| 历史版本的请求、effect、调度、worker 和发布处理器有双向覆盖，Rust 对应证明带容量前提 | 当前新增 IPv4、启动中止及初始化退休输入，以及持久化、服务和真实恢复路径的实现对应 |
 | 操作计划一旦封存，资源身份和清理范围不可更换；有限资源索引与全局资源条件一致 | 资源发现和 journal 事务是否忠实维护这些索引 |
-| 明确进度合同与弱公平下，operation 最终并永久得到成功或失败结果 | VM/storage/network 最终响应，以及 fence/stop/close 安全收敛动作最终成功 |
-| controller crash 不丢持久 operation/effect 记录 | journal 的原子性与断电持久性 |
+| 抽象轨迹在显式进度合同与弱公平前提下有条件化完成性定理 | 内部预留条件保持、协议闭合和剩余进展义务尚未消除；外部响应与安全清理收敛也仍是条件 |
+| 模型中的 controller crash 转换保留 operation/effect 记录 | 真实 journal 的提交/重放与进程重启对应；宿主掉电不在当前 V1 故障边界 |
 | policy/manifest 的精确引用传递 | Linux 是否忠实应用策略并恢复内容、mode、owner、ACL |
 | 当前 generation 才能获得 managed authority | 网关、worker 和 Firecracker adapter 是否执行相同检查 |
 | fence、terminal、operation/effect 结果不倒退 | worker fence 的真实序列化和取消语义 |
 | cleanup 只指向精确旧资源 | 实际 delete/stop API 是否只影响该 VM 或 slot |
 | Paused/Destroyed 发布需要所有 VM 已 stop/reclaim 且无活动网络 | KVM、Firecracker、内核和网络栈的底层正确性 |
 
-`Reachable` 覆盖任意有限步数，证明的是 safety：坏状态到不了。无限轨迹与公平性定理另行处理完成性。最终完成定理要求有限进度量持续下降，并明确要求适配器响应和安全清理能够收敛；它不保证永久故障后自动恢复。
+`Reachable` 覆盖任意有限步数，证明的是 safety：坏状态到不了。无限轨迹与公平性定理另行处理完成性。有限进度量持续下降既需要外部响应条件，也需要尚未闭合的内部协议证明；不能把后者整体交给适配器保证。当前尚未闭合实际处理函数到上述进度合同的证明，不能据此宣称运行系统最终一定完成。
 
 `Controller.lean` 已给出请求准入、effect 派发/超时/回执/重试/最终失败、下一动作调度和稳定状态发布；`WorkerController.lean` 给出全部 worker 动作。每个接受结果都是合法 `Step` 且保持安全，对应的完备性模块证明规范允许且证据齐全的分支能够由处理函数产生。这仍是纯状态处理核心，不是已经部署的 controller 服务。
 
