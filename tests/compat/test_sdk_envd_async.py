@@ -1,5 +1,6 @@
 """Pinned asynchronous SDK wire calls; synthetic envd does not execute commands."""
 
+import base64
 import importlib.metadata
 from io import BytesIO
 import json
@@ -16,7 +17,12 @@ from e2b.sandbox.commands.command_handle import CommandExitException
 from protobuf import Oneof
 
 from sdk_support import isolated_sdk_environment
-from test_sdk_envd_wire import QuietHandler, SyntheticEnvd, ThreadedEnvd
+from sdk_data_samples import (
+    COMMAND, ENV, FILES, NONZERO_COMMAND, NONZERO_RESULT, command_result,
+    file_entries, validate_command, validate_content, validate_entries,
+    validate_file_info, validate_nonzero,
+)
+from test_sdk_envd_wire import QuietHandler, SyntheticEnvd, ThreadedEnvd, configure_data_files
 
 
 class AsyncEnvdWireContract(unittest.IsolatedAsyncioTestCase):
@@ -49,23 +55,28 @@ class AsyncEnvdWireContract(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_async_command_cwd_env_user_stdout_stderr_and_nonzero(self):
-        self.app.process.stderr_chunks = [b"synthetic stderr\n"]
-        result = await self.sandbox.commands.run(
-            "printf synthetic", cwd="/tmp/project", envs={"SP_VALUE": "spaces and 中文"},
-            user="ubuntu",
-        )
-        self.assertEqual((result.stdout, result.stderr, result.exit_code),
-                         ("synthetic\n", "synthetic stderr\n", 0))
-        config = self.app.process.starts[0].process
-        self.assertEqual(config.cwd, "/tmp/project")
-        self.assertEqual(dict(config.envs), {"SP_VALUE": "spaces and 中文"})
-        self.assertEqual(self.app.records[-1]["authorization"], "Basic dWJ1bnR1Og==")
-        self.assertEqual(self.app.records[-1]["access_token"], "synthetic-token")
-        self.app.process.exit_code = 17
-        with self.assertRaises(CommandExitException) as error:
-            await self.sandbox.commands.run("exit 17")
-        self.assertEqual(error.exception.exit_code, 17)
-        self.assertEqual(len(self.app.process.starts), 2)
+        for user in ("root", "ubuntu"):
+            with self.subTest(user=user):
+                directory = "/tmp/project/" + user
+                stdout, stderr, self.app.process.exit_code = command_result(directory, user)
+                self.app.process.stdout_chunks = [stdout.encode()]
+                self.app.process.stderr_chunks = [stderr.encode()]
+                result = await self.sandbox.commands.run(COMMAND, cwd=directory, envs=ENV, user=user)
+                validate_command(result, directory, user)
+                config = self.app.process.starts[-1].process
+                self.assertEqual((config.cmd, list(config.args)),
+                                 ("/bin/bash", ["-l", "-c", COMMAND]))
+                self.assertEqual(config.cwd, directory)
+                self.assertEqual(dict(config.envs), ENV)
+                self.assertEqual(self.app.records[-1]["authorization"],
+                                 "Basic " + base64.b64encode((user + ":").encode()).decode())
+                self.assertEqual(self.app.records[-1]["access_token"], "synthetic-token")
+                self.app.process.exit_code, stderr = NONZERO_RESULT
+                self.app.process.stderr_chunks = [stderr.encode()]
+                with self.assertRaises(CommandExitException) as error:
+                    await self.sandbox.commands.run(NONZERO_COMMAND, cwd=directory, user=user)
+                validate_nonzero(error.exception)
+        self.assertEqual(len(self.app.process.starts), 4)
 
     async def test_async_background_reconnect_and_kill_do_not_replay_start(self):
         handle = await self.sandbox.commands.run("synthetic-background", background=True)
@@ -99,22 +110,34 @@ class AsyncEnvdWireContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entries[0].path, "/tmp/input.txt")
         self.assertEqual(self.app.filesystem.list_requests[0].depth, 3)
         self.assertEqual(self.app.filesystem.mkdir_requests[0].path, "/tmp/project/nested")
-        written = await self.sandbox.files.write_files([
-            {"path": "/tmp/project/a.txt", "data": BytesIO(b"first")},
-            {"path": "/tmp/project/nested/b.bin", "data": BytesIO(b"\x00\xffsecond")},
-        ], user="ubuntu")
-        self.assertEqual([entry.path for entry in written],
-                         ["/tmp/project/a.txt", "/tmp/project/nested/b.bin"])
-        posts = self.app.records[-2:]
-        # Async uploads may reach the server in either order, even though the
-        # SDK preserves input order in the returned result list.
-        bodies_by_path = {p["query"]["path"][0]: p["body"] for p in posts}
-        self.assertEqual(bodies_by_path, {
-            "/tmp/project/a.txt": b"first",
-            "/tmp/project/nested/b.bin": b"\x00\xffsecond",
-        })
-        self.assertTrue(all(p["query"]["username"] == ["ubuntu"] for p in posts))
         self.assertEqual(await self.sandbox.files.read("/tmp/input.txt"), "synthetic file content\n")
+        for user in ("root", "ubuntu"):
+            with self.subTest(user=user):
+                directory = "/tmp/project/" + user
+                configure_data_files(self.app, directory)
+                self.assertTrue(await self.sandbox.files.make_dir(directory, user=user))
+                self.assertEqual(self.app.filesystem.mkdir_requests[-1].path, directory)
+                entries = file_entries(directory)
+                written = await self.sandbox.files.write_files(entries, user=user)
+                self.assertEqual([entry.path for entry in written], [e["path"] for e in entries])
+                posts = self.app.records[-len(FILES):]
+                # Requests may arrive in either order; returned entries retain
+                # the original input order, as checked above.
+                self.assertEqual({p["query"]["path"][0]: p["body"] for p in posts},
+                                 {f"{directory}/{name}": data for name, data in FILES.items()})
+                self.assertTrue(all(p["query"]["username"] == [user] for p in posts))
+                validate_entries(await self.sandbox.files.list(directory, depth=4, user=user), directory)
+                self.assertEqual(self.app.filesystem.list_requests[-1].depth, 4)
+                self.assertEqual(self.app.filesystem.list_requests[-1].path, directory)
+                for name, content in FILES.items():
+                    path = f"{directory}/{name}"
+                    info = await self.sandbox.files.get_info(path, user=user)
+                    validate_file_info(info, path, content)
+                    self.assertEqual(info.mode, 0o644)
+                    self.assertEqual(self.app.filesystem.stat_requests[-1].path, path)
+                    validate_content(await self.sandbox.files.read(path, format="bytes", user=user), content)
+                    async with await self.sandbox.files.read(path, format="stream", user=user) as chunks:
+                        validate_content(b"".join([chunk async for chunk in chunks]), content)
 
     async def test_async_batch_failure_does_not_replay_previous_uploads(self):
         # Async SDK uses gather: the other writes may already be in flight.

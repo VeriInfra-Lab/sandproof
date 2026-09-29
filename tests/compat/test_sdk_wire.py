@@ -1,12 +1,14 @@
 """Pinned E2B Python SDK against synthetic local HTTP responses, not a VM."""
 
 import asyncio
+from dataclasses import replace
 import importlib.metadata
+import inspect
 import json
 import threading
 import tomllib
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -20,6 +22,16 @@ from e2b.exceptions import (
 )
 
 from sdk_support import SANDBOX, isolated_sdk_environment
+from sdk_network_samples import (
+    DETAIL_FIELDS, DETAIL_NETWORK, PROFILES, validate_base_details, validate_network,
+)
+
+from sdk_management_samples import (
+    CONTEXT_KEYS, DEFAULT_LIFETIME, REJECTED_LIFETIMES, SPECIAL_METADATA,
+    creation_contexts, lifetime_arguments, lifetime_values, query_cases,
+    validate_bad_lifetime, validate_context, validate_created_lifetime,
+    validate_identity, validate_kill, validate_list, validate_list_detail,
+)
 
 
 class Recorder(BaseHTTPRequestHandler):
@@ -95,28 +107,136 @@ class WireContract(unittest.TestCase):
     def responses(self):
         return self.server.responses
 
+    @staticmethod
+    def call(function, *args, **kwargs):
+        result = function(*args, **kwargs)
+        return asyncio.run(result) if inspect.isawaitable(result) else result
+
+    def test_sync_async_creation_context_samples(self):
+        for cls in (Sandbox, AsyncSandbox):
+            for envs, metadata in creation_contexts('synthetic-context'):
+                self.responses.append((201, SANDBOX, {}))
+                sandbox = self.call(cls.create, template='base', envs=envs,
+                                    metadata=metadata, **self.options)
+                body = self.records[-1]['body']
+                self.assertEqual(body['envVars'], envs)
+                self.assertEqual(body['metadata'], metadata)
+                validate_context({key: body['envVars'].get(key) for key in CONTEXT_KEYS}, envs)
+                raw = {**SANDBOX, **DETAIL_FIELDS, 'metadata': metadata,
+                       'startedAt': '2026-01-01T00:00:00Z',
+                       'endAt': '2026-01-01T00:05:00Z', 'state': 'running'}
+                self.responses.append((200, raw, {}))
+                self.assertEqual(self.call(sandbox.get_info).metadata, metadata)
+
+    def test_sync_async_lifetime_samples(self):
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        for cls in (Sandbox, AsyncSandbox):
+            for operation in ('create', 'connect', 'set_timeout'):
+                for case, value in lifetime_values(600):
+                    with self.subTest(sdk=cls.__name__, operation=operation, case=case):
+                        function = getattr(cls, operation)
+                        positional = () if operation == 'create' else (SANDBOX['sandboxID'],)
+                        kwargs = lifetime_arguments(case, value)
+                        if operation == 'set_timeout' and case == 'omitted':
+                            count = len(self.records)
+                            with self.assertRaises(TypeError):
+                                self.call(function, *positional, **kwargs, **self.options)
+                            self.assertEqual(len(self.records), count)
+                            continue
+                        rejected = operation != 'set_timeout' and case in REJECTED_LIFETIMES
+                        status = 400 if rejected else {'create': 201, 'connect': 200, 'set_timeout': 204}[operation]
+                        reply = ({'code': 400, 'message': 'invalid lifetime'} if rejected
+                                 else None if operation == 'set_timeout' else SANDBOX)
+                        self.responses.append((status, reply, {}))
+                        if rejected:
+                            with self.assertRaises(SandboxException) as caught:
+                                self.call(function, *positional, **kwargs, **self.options)
+                            validate_bad_lifetime(caught.exception)
+                        else:
+                            result = self.call(function, *positional, **kwargs, **self.options)
+                            if operation == 'set_timeout':
+                                self.assertIsNone(result)
+                            else:
+                                validate_identity(result, SANDBOX['sandboxID'])
+                        body = self.records[-1]['body']
+                        if case == 'omitted':
+                            self.assertNotIn('timeout', body)
+                        else:
+                            self.assertEqual(body['timeout'], value)
+                        if operation == 'create' and not rejected:
+                            duration = DEFAULT_LIFETIME if case == 'omitted' else value
+                            raw = {**SANDBOX, **DETAIL_FIELDS, 'metadata': {}, 'state': 'running',
+                                   'startedAt': start.isoformat(),
+                                   'endAt': (start + timedelta(seconds=duration)).isoformat()}
+                            self.responses.append((200, raw, {}))
+                            validate_created_lifetime(self.call(result.get_info), case, value, DEFAULT_LIFETIME)
+
+    def test_sync_async_shared_list_queries(self):
+        latest = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=timezone.utc)
+        common = {'query_run': 'synthetic-query', **SPECIAL_METADATA}
+        fixtures = {}
+        for identity, colour, start in [('first', 'red', latest - timedelta(seconds=1)),
+                                        ('second', 'blue', latest)]:
+            fixtures[identity] = {**SANDBOX, **DETAIL_FIELDS, 'sandboxID': identity,
+                'templateID': 'base', 'metadata': {**common, 'colour': colour},
+                'startedAt': start.isoformat(), 'endAt': (start + timedelta(seconds=300)).isoformat(),
+                'state': 'running'}
+        for cls in (Sandbox, AsyncSandbox):
+            for name, expected, kwargs in query_cases(common, 'first', 'second', latest):
+                with self.subTest(sdk=cls.__name__, query=name):
+                    limit = kwargs.get('limit', 1)
+                    pages = [expected[i:i+limit] for i in range(0, len(expected), limit)] or [[]]
+                    for index, page in enumerate(pages):
+                        headers = {'X-Next-Token': f'opaque-{index+1}'} if index+1 < len(pages) else {}
+                        self.responses.append((200, [fixtures[key] for key in page], headers))
+                    first_record = len(self.records)
+                    paginator = cls.list(**{'limit': 1, **kwargs}, **self.options)
+                    items = []
+                    while paginator.has_next:
+                        items.extend(self.call(paginator.next_items))
+                    self.assertIsNone(paginator.next_token)
+                    validate_list(items, expected)
+                    records = self.records[first_record:]
+                    self.assertEqual(len(records), len(pages))
+                    query = kwargs.get('query') or SandboxQuery()
+                    params = {'limit': [str(limit)]}
+                    if 'order' in kwargs:
+                        params['order'] = [kwargs['order']]
+                    if query.metadata is not None:
+                        params['metadata'] = [urlencode({quote(k): quote(v) for k, v in query.metadata.items()})]
+                    if query.state is not None:
+                        params['state'] = [','.join(state.value for state in query.state)]
+                    if query.template is not None:
+                        params['template'] = [query.template]
+                    if query.started_after is not None:
+                        # The pinned SDK converts aware datetimes to the host's
+                        # local timezone before serializing the query parameter.
+                        params['startedAfter'] = [query.started_after.astimezone().isoformat()]
+                    for index, record in enumerate(records):
+                        actual = parse_qs(urlsplit(record['path']).query)
+                        expected_params = {**params, **({'nextToken': [f'opaque-{index}']} if index else {})}
+                        self.assertEqual(actual, expected_params)
+                        self.assertEqual((record['method'], urlsplit(record['path']).path), ('GET', '/v2/sandboxes'))
+                    for item in items:
+                        self.responses.append((200, fixtures[item.sandbox_id], {}))
+                        detail = self.call(cls.get_info, item.sandbox_id, **self.options)
+                        validate_list_detail(item, detail)
+
     def test_sync_async_detail_network_lifecycle_and_legacy_fields(self):
-        common = {**SANDBOX, "startedAt": "2026-01-01T00:00:00Z",
-                  "endAt": "2026-01-01T00:05:00Z", "cpuCount": 1,
-                  "memoryMB": 512, "diskSizeMB": 1024, "state": "running",
-                  "metadata": {"job": "雪"}, "volumeMounts": []}
+        common = {**SANDBOX, **DETAIL_FIELDS, "startedAt": "2026-01-01T00:00:00Z",
+                  "endAt": "2026-01-01T00:05:00Z", "state": "running",
+                  "metadata": {"job": "雪"}}
         for cls in (Sandbox, AsyncSandbox):
             for internet in (None, False, True):
-                self.responses.append((200, {**common, "allowInternetAccess": internet,
-                    "network": {"allowPublicTraffic": True, "allowOut": [],
-                                "denyOut": ["8.8.8.8", "1.2.3.4/24"]},
-                    "lifecycle": {"onTimeout": "kill", "autoResume": False}}, {}))
+                sample = replace(DETAIL_NETWORK, internet=internet)
+                raw = {**common, "allowInternetAccess": internet, "network": sample.wire_network}
+                self.responses.append((200, raw, {}))
                 info = cls.get_info(SANDBOX["sandboxID"], **self.options)
                 if cls is AsyncSandbox:
                     info = asyncio.run(info)
-                self.assertIs(info.allow_internet_access, internet)
-                self.assertEqual(info.network, {"allow_public_traffic": True, "allow_out": [],
-                                               "deny_out": ["8.8.8.8", "1.2.3.4/24"]})
-                self.assertEqual(info.lifecycle, {"on_timeout": "kill", "auto_resume": False})
-                self.assertEqual(info.sandbox_domain, "example.invalid")
-                self.assertEqual(info.volume_mounts, [])
-                self.assertEqual(info.metadata, {"job": "雪"})
-            legacy = {key: value for key, value in common.items() if key not in ("domain", "envdAccessToken")}
+                validate_network(info, raw, sample)
+                validate_base_details(info, raw, common["metadata"])
+            legacy = {key: value for key, value in common.items() if key not in ("domain", "envdAccessToken", "lifecycle")}
             self.responses.append((200, legacy, {}))
             info = cls.get_info(SANDBOX["sandboxID"], **self.options)
             if cls is AsyncSandbox:
@@ -127,7 +247,7 @@ class WireContract(unittest.TestCase):
             self.assertIsNone(info.sandbox_domain)
 
     def test_sync_async_list_filters_and_opaque_pagination_wire(self):
-        metadata = {"reserved &+%=": "雪 =+&/%", "group": "red"}
+        metadata = {**SPECIAL_METADATA, "group": "red"}
         started = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=timezone.utc)
         for cls in (Sandbox, AsyncSandbox):
             self.responses.extend([(200, [], {"X-Next-Token": "opaque-next"}), (200, [], {})])
@@ -181,20 +301,33 @@ class WireContract(unittest.TestCase):
         self.assertNotIn("secure", self.records[0]["body"])
 
     def test_create_static_ipv4_network_wire(self):
-        self.responses.append((201, SANDBOX, {}))
-        Sandbox.create(
-            network={"allow_out": ["1.1.1.1", "8.8.8.0/24"],
-                     "deny_out": ["0.0.0.0/0"]},
-            allow_internet_access=False,
-            **self.options,
-        )
-        body = self.records[0]["body"]
-        self.assertIs(body["allow_internet_access"], False)
-        self.assertEqual(body["network"], {
-            "allowPublicTraffic": True,
-            "allowOut": ["1.1.1.1", "8.8.8.0/24"],
-            "denyOut": ["0.0.0.0/0"],
-        })
+        for cls in (Sandbox, AsyncSandbox):
+            for sample in PROFILES:
+                with self.subTest(sdk=cls.__name__, profile=sample.name):
+                    self.responses.append((201, SANDBOX, {}))
+                    sandbox = cls.create(**sample.options, **self.options)
+                    if cls is AsyncSandbox:
+                        sandbox = asyncio.run(sandbox)
+                    body = self.records[-1]["body"]
+                    if 'allow_internet_access' in sample.options:
+                        self.assertIs(body['allow_internet_access'], sample.internet)
+                    else:
+                        self.assertNotIn('allow_internet_access', body)
+                    if sample.wire_network is None:
+                        self.assertNotIn('network', body)
+                    else:
+                        self.assertEqual(body['network'], sample.wire_network)
+                    raw = {**SANDBOX, **DETAIL_FIELDS,
+                           'startedAt': '2026-01-01T00:00:00Z',
+                           'endAt': '2026-01-01T00:05:00Z', 'state': 'running',
+                           'metadata': {}, 'allowInternetAccess': sample.internet}
+                    if sample.wire_network is not None:
+                        raw['network'] = sample.wire_network
+                    self.responses.append((200, raw, {}))
+                    info = sandbox.get_info()
+                    if cls is AsyncSandbox:
+                        info = asyncio.run(info)
+                    validate_network(info, raw, sample)
 
     def test_connect_uses_v2_and_preserves_explicit_zero(self):
         self.responses.extend([(200, SANDBOX, {}), (200, SANDBOX, {})])
@@ -207,13 +340,14 @@ class WireContract(unittest.TestCase):
         self.assertEqual(self.records[1]["body"]["timeout"], 0)
 
     def test_kill_success_and_not_found(self):
-        self.responses.extend(
-            [(204, None, {}), (404, {"code": 404, "message": "missing"}, {})]
-        )
-        self.assertIs(Sandbox.kill("probe-sandbox", **self.options), True)
-        self.assertIs(Sandbox.kill("probe-sandbox", **self.options), False)
-        self.assertEqual([r["method"] for r in self.records], ["DELETE", "DELETE"])
-        self.assertTrue(all(r["path"] == "/sandboxes/probe-sandbox" for r in self.records))
+        for cls in (Sandbox, AsyncSandbox):
+            self.responses.extend(
+                [(204, None, {}), (404, {"code": 404, "message": "missing"}, {})]
+            )
+            validate_kill(self.call(cls.kill, "probe-sandbox", **self.options), True)
+            validate_kill(self.call(cls.kill, "probe-sandbox", **self.options), False)
+            self.assertEqual([r["method"] for r in self.records[-2:]], ["DELETE", "DELETE"])
+            self.assertTrue(all(r["path"] == "/sandboxes/probe-sandbox" for r in self.records[-2:]))
 
     def test_set_timeout_forwards_zero_and_negative(self):
         for value in (-1, 0, 60):

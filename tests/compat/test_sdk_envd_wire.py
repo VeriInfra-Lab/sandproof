@@ -4,6 +4,7 @@ The ConnectRPC application below uses the SDK's pinned generated schema, but
 does not execute a process or touch a sandbox filesystem.
 """
 
+import base64
 import importlib.metadata
 from io import BytesIO
 import json
@@ -23,6 +24,11 @@ from e2b.exceptions import AuthenticationException, FileNotFoundException, NotEn
 from e2b.sandbox.commands.command_handle import CommandExitException
 
 from sdk_support import SANDBOX, isolated_sdk_environment
+from sdk_data_samples import (
+    COMMAND, ENV, FILES, NONZERO_COMMAND, NONZERO_RESULT, command_result,
+    file_entries, validate_command, validate_content, validate_entries,
+    validate_file_info, validate_nonzero,
+)
 
 
 class QuietHandler(WSGIRequestHandler):
@@ -159,9 +165,13 @@ class SyntheticFilesystem(filesystem_connect.FilesystemSync):
         self.list_requests = []
         self.mkdir_requests = []
         self.stat_requests = []
+        self.stat_entries = {}
+        self.list_entries = None
 
     def stat(self, request, _context):
         self.stat_requests.append(request)
+        if request.path in self.stat_entries:
+            return filesystem_pb.StatResponse(entry=self.stat_entries[request.path])
         return filesystem_pb.StatResponse(entry=filesystem_pb.EntryInfo(
             name="input.txt", path="/tmp/input.txt", type=filesystem_pb.FileType.FILE,
             size=15, mode=0o644,
@@ -169,6 +179,8 @@ class SyntheticFilesystem(filesystem_connect.FilesystemSync):
 
     def list_dir(self, request, _context):
         self.list_requests.append(request)
+        if self.list_entries is not None:
+            return filesystem_pb.ListDirResponse(entries=self.list_entries)
         return filesystem_pb.ListDirResponse(entries=[
             filesystem_pb.EntryInfo(
                 name="input.txt", path="/tmp/input.txt", type=filesystem_pb.FileType.FILE,
@@ -200,6 +212,7 @@ class SyntheticEnvd:
         self.download_length = True
         self.download_encoding = None
         self.download_gate = None
+        self.file_contents = {}
 
     def __call__(self, environ, start_response):
         path = environ["PATH_INFO"]
@@ -286,7 +299,7 @@ class SyntheticEnvd:
                                 gate = None
 
                     return chunks()
-                response = b"synthetic file content\n"
+                response = self.file_contents.get(target, b"synthetic file content\n")
                 start_response(
                     "200 OK", [("Content-Type", "text/plain"),
                                ("Content-Length", str(len(response) + int(self.truncate_file)))]
@@ -313,6 +326,18 @@ class SyntheticEnvd:
             [("Content-Type", "application/json"), ("Content-Length", str(len(response)))],
         )
         return [response]
+
+
+def configure_data_files(app, directory):
+    """Preset protocol replies, without emulating uploads or a filesystem."""
+    app.file_contents = {f"{directory}/{name}": data for name, data in FILES.items()}
+    app.filesystem.stat_entries = {
+        path: filesystem_pb.EntryInfo(name=path.rsplit("/", 1)[-1], path=path,
+                                      type=filesystem_pb.FileType.FILE,
+                                      size=len(data), mode=0o644)
+        for path, data in app.file_contents.items()
+    }
+    app.filesystem.list_entries = list(app.filesystem.stat_entries.values())
 
 
 class EnvdWireContract(unittest.TestCase):
@@ -357,15 +382,22 @@ class EnvdWireContract(unittest.TestCase):
         self.assertEqual(len(self.app.process.starts), 1)
 
     def test_command_cwd_env_user_and_stderr_are_preserved(self):
-        self.app.process.stderr_chunks = [b"synthetic stderr\n"]
-        result = self.sandbox.commands.run("printf synthetic", cwd="/tmp/project",
-                                           envs={"SP_VALUE": "spaces and \u4e2d\u6587"}, user="ubuntu")
-        self.assertEqual((result.stdout, result.stderr, result.exit_code),
-                         ("synthetic\n", "synthetic stderr\n", 0))
-        request = self.app.process.starts[0].process
-        self.assertEqual(request.cwd, "/tmp/project")
-        self.assertEqual(dict(request.envs), {"SP_VALUE": "spaces and \u4e2d\u6587"})
-        self.assertEqual(self.app.records[-1]["authorization"], "Basic dWJ1bnR1Og==")
+        for user in ("root", "ubuntu"):
+            with self.subTest(user=user):
+                directory = "/tmp/project/" + user
+                stdout, stderr, _exit = command_result(directory, user)
+                self.app.process.stdout_chunks = [stdout.encode()]
+                self.app.process.stderr_chunks = [stderr.encode()]
+                result = self.sandbox.commands.run(COMMAND, cwd=directory, envs=ENV, user=user)
+                validate_command(result, directory, user)
+                request = self.app.process.starts[-1].process
+                self.assertEqual((request.cmd, list(request.args)),
+                                 ("/bin/bash", ["-l", "-c", COMMAND]))
+                self.assertEqual(request.cwd, directory)
+                self.assertEqual(dict(request.envs), ENV)
+                self.assertEqual(self.app.records[-1]["authorization"],
+                                 "Basic " + base64.b64encode((user + ":").encode()).decode())
+                self.assertEqual(self.app.records[-1]["access_token"], "synthetic-token")
 
     def test_reconnect_and_signal_use_known_pid_without_start_replay(self):
         handle = self.sandbox.commands.run("synthetic-background", background=True)
@@ -384,14 +416,31 @@ class EnvdWireContract(unittest.TestCase):
         self.assertEqual((info.path, info.size, info.mode), ("/tmp/input.txt", 15, 0o644))
         self.assertEqual(self.app.filesystem.stat_requests[0].path, "/tmp/input.txt")
         self.assertEqual(self.app.records[-1]["authorization"], "Basic dWJ1bnR1Og==")
-        entries = [{"path": "/tmp/project/a.txt", "data": BytesIO(b"first")},
-                   {"path": "/tmp/project/nested/b.bin", "data": BytesIO(b"\x00\xffsecond")}]
-        written = self.sandbox.files.write_files(entries, user="ubuntu")
-        self.assertEqual([entry.path for entry in written], [entry["path"] for entry in entries])
-        posts = self.app.records[-2:]
-        self.assertEqual([p["query"]["path"][0] for p in posts], [e["path"] for e in entries])
-        self.assertEqual([p["body"] for p in posts], [b"first", b"\x00\xffsecond"])
-        self.assertTrue(all(p["query"]["username"] == ["ubuntu"] for p in posts))
+        for user in ("root", "ubuntu"):
+            with self.subTest(user=user):
+                directory = "/tmp/project/" + user
+                configure_data_files(self.app, directory)
+                self.assertTrue(self.sandbox.files.make_dir(directory, user=user))
+                self.assertEqual(self.app.filesystem.mkdir_requests[-1].path, directory)
+                entries = file_entries(directory)
+                written = self.sandbox.files.write_files(entries, user=user)
+                self.assertEqual([entry.path for entry in written], [e["path"] for e in entries])
+                posts = self.app.records[-len(FILES):]
+                self.assertEqual([p["query"]["path"][0] for p in posts], [e["path"] for e in entries])
+                self.assertEqual([p["body"] for p in posts], list(FILES.values()))
+                self.assertTrue(all(p["query"]["username"] == [user] for p in posts))
+                validate_entries(self.sandbox.files.list(directory, depth=4, user=user), directory)
+                self.assertEqual(self.app.filesystem.list_requests[-1].depth, 4)
+                self.assertEqual(self.app.filesystem.list_requests[-1].path, directory)
+                for name, content in FILES.items():
+                    path = f"{directory}/{name}"
+                    info = self.sandbox.files.get_info(path, user=user)
+                    validate_file_info(info, path, content)
+                    self.assertEqual(info.mode, 0o644)
+                    self.assertEqual(self.app.filesystem.stat_requests[-1].path, path)
+                    validate_content(self.sandbox.files.read(path, format="bytes", user=user), content)
+                    with self.sandbox.files.read(path, format="stream", user=user) as chunks:
+                        validate_content(b"".join(chunks), content)
 
     def test_batch_failure_does_not_replay_previous_uploads(self):
         self.app.file_statuses = [200, 507]
@@ -407,10 +456,11 @@ class EnvdWireContract(unittest.TestCase):
         self.assertEqual(self.sandbox.commands.run("healthy").exit_code, 0)
 
     def test_nonzero_command_exit_is_not_success(self):
-        self.app.process.exit_code = 17
+        self.app.process.exit_code, stderr = NONZERO_RESULT
+        self.app.process.stderr_chunks = [stderr.encode()]
         with self.assertRaises(CommandExitException) as failure:
-            self.sandbox.commands.run("exit 17")
-        self.assertEqual(failure.exception.exit_code, 17)
+            self.sandbox.commands.run(NONZERO_COMMAND)
+        validate_nonzero(failure.exception)
         self.assertEqual(len(self.app.process.starts), 1)
 
     def test_command_missing_end_is_not_auto_retried(self):

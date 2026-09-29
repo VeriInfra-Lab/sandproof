@@ -752,5 +752,229 @@
     "elapsed_seconds": 21.643,
     "residuals": "exactly four admitted sandbox rows, all Destroyed; all four exact VM PID/start identities stopped; jails/netns/cgroups absent, no namespace holders before service exit; live cgroup identity/limits sampled; base SHA unchanged",
     "limits": "selected creation-context contract, not every malformed/maximum-size combination, arbitrary crash location, public networking or #13 task initialization. Service restarted with same disk/config and both live VM identities, not merely new SDK objects. No production Rust/proof changes."
+  },
+  "network_clients_acceptance": {
+    "commit": "cfd15b5f17a6990a3f2c6af5f1f73ef71b9b4cee",
+    "test": "tests/system/sdk_network_clients.py",
+    "script_sha256": "a0d8f7a58e4683fb417bf0fb204bb7e48106b7910c594970a146949897a337af",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "all production Rust sources and Cargo manifests/lock unchanged between build and probe commit; verified before run",
+    "wrapper_sha256": "14fe2f0d3dcfde6d1fad26cdc41762b104f57746d9fe712fb5d132de2dab3e79",
+    "isolated_host_wrapper_sha256": "22e4ee50e78ecbd9fc3a8621b11870f61e183c24fc51442c70b6085ad297b95e",
+    "outside_helper_sha256": "22f63fdc63ab7a1e0f0e3f4c9b2a283444d63a82f5aa4b8cb26bdd7b8b2c424e",
+    "host_and_artifacts": "Linux 6.8.0-1065-azure/KVM, Firecracker/jailer 1.16.1, original E2B SDK 2.51.0/Python 3.13; same fixed kernel/envd inputs as lifetime_target_acceptance, new base recorded below; one vCPU/512 MiB guest, one CPU/768 MiB host cgroup, 1 GiB private disk; public IPv4 enabled only in isolated test service, 64/96 MiB streaming test profile",
+    "new_base": {
+      "recipe_commit": "f377e888bd2c6e1dd72420188b2dabe620f49778",
+      "image_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+      "image_bytes": 1073741824,
+      "builder_sha256": "ddc6543694d5b3261771f859db5ad7a9257d4bcd2ec8c105cbcc6e0d5246dd22",
+      "profile_sha256": "f89656adb855b03925f6ca498dfd66abd34cd620eb8de83816ef99978b825cac",
+      "service_helper_sha256": "bcd583245d4e9b518697771cf4723fe221cbd59e56e18255f07802c3b07aa8df",
+      "reason": "current fixed recipe adds guest default route via 172.16.0.1; old b5e677 image retained unchanged",
+      "preparation": "tools/build_base_guest.py with the unchanged fixed SquashFS/envd/packages inputs; private verified copies, content/ownership checks and e2fsck passed"
+    },
+    "command": "pinned-SDK Python tests/system/sdk_network_clients.py --api-url <own-loopback-service> --sandbox-url <same-service> --restart-dir <own-supervisor-barrier>; API credentials only from environment; Outside fixture and the entire service/SDK run inside a dedicated parent network namespace entered with nsenter --net to retain cgroup mount",
+    "result": "114 grouped cases (57/client): six original network option profiles, exact detail roundtrips including nullable internet flag, raw/noncanonical/duplicate CIDRs and empty lists; 64 TCP/UDP echo path checks plus two independent-cleanup positive controls; host-local address remains denied, foreign detail 404/list contains no token; 14 invalid-network creates return exact SandboxException 400 with no additional durable records",
+    "service_restarts": [
+      {
+        "sdk": "Sandbox",
+        "same_vm_identities": true,
+        "live_vms": 2
+      },
+      {
+        "sdk": "AsyncSandbox",
+        "same_vm_identities": true,
+        "live_vms": 2
+      }
+    ],
+    "durable_destroyed_rows": 12,
+    "probe_and_vm_audit_seconds": 107.375,
+    "residuals": "12 exact VM PID/start identities stopped; all durable rows Destroyed; private jails/netns/cgroups, VM root uplinks and nft tables absent with no namespace holders before service exit; live cgroup identity/limits sampled, new base SHA unchanged. Outside echo process/link/routes/namespace and private host network namespace removed. Shared host Docker filter rules (ignoring counters) and global forwarding unchanged; old base SHA unchanged",
+    "failed_attempts": [
+      "initial supervisor interpreter lacked the SDK import before VM/network creation; retained setup directory, corrected interpreter",
+      "shared host Docker FORWARD policy DROP: host echo control succeeded, first default-public VM could not reach echo endpoint; probe failed, its one VM and exact resources independently cleaned; shared firewall never relaxed",
+      "ip netns exec remounted sysfs and hid configured cgroup parent: service startup failed before VM creation; no cgroup limit removed; exact echo/supervisors/private namespaces cleaned, then used network-only nsenter"
+    ],
+    "limits": "same unmodified production code and SDK assertions passed in an isolated host-network topology; does not claim Internet endpoint reachability on the shared Docker host, DNS query-content enforcement, advanced IPv6 or arbitrary network/crash interleavings. No production Rust or proof changes. Twelve VMs belong to the passed run; one additional failed-run VM is separately audited and not counted as passing."
+  },
+  "routed_base_isolation_acceptance": {
+    "commit": "a580139075bd50fe17e3d40dfd7131672ec1ce96",
+    "new_test": "tests/system/sdk_private_root.py",
+    "probes_sha256": {
+      "sdk_private_root.py": "d95bfadbcebde98732e6d6c6fe7a3722dba505a398bc0dea47ed13cf5e349d6c",
+      "sdk_server_smoke.py": "0b771d17ec7be344d41e6dd6fb2685b29789d4656cd31ba0014b2b0abd9f6daf",
+      "sdk_data_contract.py": "5c158f26b9bf41aa5ec1070b8fe26218c8830e7efefcd755237eba27de8ac9cc",
+      "sdk_file_permissions.py": "4cf6ae1adc5f20e34fd5d9073a9de06762c5f95dc7857dcdf7f49ddaaa8de5b4"
+    },
+    "wrapper_sha256": "8f325fc1f7c1713fae923aa5743f88d8deb275b62e2855be58ff77ed34fccc87",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "all production Rust sources and Cargo manifests/lock unchanged between build and probe commit; verified before each run",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "base_preparation": "same fixed recipe, source inputs and imported service definition as network_clients_acceptance.new_base; that entry records the build and previous network evidence separately",
+    "host_and_configuration": "Linux 6.8.0-1065-azure/KVM, Firecracker/jailer 1.16.1, fixed envd 0.9.0 and kernel, original E2B SDK 2.51.0/Python 3.13; each VM one vCPU/512 MiB guest, one CPU/768 MiB host cgroup with swap disabled, 1 GiB private disk, explicit no-internet; streaming 64/96 MiB test budgets are not final deployment defaults",
+    "command": "pinned-SDK Python tests/system/sdk_private_root.py --api-url <own-loopback-service> --sandbox-url <same-service>; existing sdk_server_smoke.py, sdk_data_contract.py and sdk_file_permissions.py use the same service, with a disposable --host-canary for the latter; credentials from environment only, independent host supervisor required",
+    "runs": [
+      {
+        "mode": "legacy",
+        "durable_destroyed_rows": 14,
+        "probe_and_audit_seconds": 101.668,
+        "result": "new private-root probe: six VMs, six grouped cases per original SDK (12 total), different versions of a locally constructed Debian package at the same system paths, independent dpkg databases/config writes/removal/destruction, two clean replacement VMs; existing lifecycle/auth/expiry smoke: two VMs; sync/async root/ubuntu data contract: two VMs/four user cases; file-user/path/batch/host-canary probe: four VMs/70 grouped cases"
+      },
+      {
+        "mode": "streaming",
+        "durable_destroyed_rows": 6,
+        "probe_and_audit_seconds": 40.976,
+        "result": "existing sync/async root/ubuntu data contract: two VMs/four user cases; file-user/path/batch/host-canary probe: four VMs/70 grouped cases; local package/private-root probe not repeated in this configuration"
+      }
+    ],
+    "observations": "all 20 live VMs sampled for exact PID/start and cgroup identity/membership/limits, distinct concurrent private-disk device/inode versus base and each other, 1 GiB disk size, and actual Firecracker machine-config 1 vCPU/512 MiB matching SDK detail; host canary contents/device/inode/owner/mode unchanged in both runs",
+    "residuals": "20 durable rows Destroyed; exact PID/start stopped, private jails/netns/cgroups absent and no namespace holders, checked before each service exit; new base hash unchanged after each run; old b5e677 base independently unchanged; supervisors/services exited normally and test cgroup parent empty",
+    "failed_attempts": [],
+    "limits": "manual selected acceptance of the new routed base, not byte-identical ext4 reproduction, arbitrary package dependencies, guest-user DAC, all streaming boundaries on this image or #13 Harbor initialization/final budgets. No Internet/software repository accessed by the new package probe. Historical b5e677 large-transfer/fault evidence remains bound to its original image and commit. No production Rust or proof changes."
+  },
+  "shared_sdk_data_acceptance": {
+    "commit": "a73f83e774d2b2e21ccc6b2b6d6797694c18a36f",
+    "shared_samples": "tests/compat/sdk_data_samples.py",
+    "shared_samples_sha256": "493fa42ca042ab594899538395dc0ff53b08169404681d234d07a40529115609",
+    "real_test": "tests/system/sdk_data_contract.py",
+    "real_test_sha256": "d1bd8f78163b272e2aca8739c5b8e1d993533000fbf90168bc9c19abe55aaaa8",
+    "wrapper_sha256": "9458491fc402b71896a835895bf1e930763439c59b714e8c61e11614337800d6",
+    "synthetic_and_gateway": "check-compat.sh passed pinned SDK wire tests and actual Rust gateway composition in ordinary and streaming profiles; both original clients exercise the same root/ubuntu command, nonzero exit, text/binary/empty bytes, file metadata, directory and read/stream assertions as the real VM probe; retain independent wire arguments/auth headers/batch ordering/no-replay/failure checks",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "production Rust and Cargo manifests/lock verified unchanged before each real run",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "host_and_configuration": "same fixed artifacts/new routed base as routed_base_isolation_acceptance; Linux 6.8.0-1065-azure/KVM, Firecracker/jailer 1.16.1, envd 0.9.0, original SDK 2.51.0/Python 3.13; 1 vCPU/512 MiB guest, 1 CPU/768 MiB host cgroup, 1 GiB private disk, explicit no-internet; streaming 64/96 MiB budgets are test settings",
+    "command": "pinned-SDK Python tests/system/sdk_data_contract.py --api-url <own-loopback-service> --sandbox-url <same-service> --unprivileged-user ubuntu; credentials from environment, independent host supervisor",
+    "runs": [
+      {
+        "mode": "legacy",
+        "vm_count": 2,
+        "user_cases": 4,
+        "probe_and_audit_seconds": 10.011,
+        "result": "sync/async each root and ubuntu: identical shared command/file assertions, real content SHA-256, same-PID FIFO-barrier reconnect and kill, lifecycle/old-token checks passed"
+      },
+      {
+        "mode": "streaming",
+        "vm_count": 2,
+        "user_cases": 4,
+        "probe_and_audit_seconds": 9.836,
+        "result": "sync/async each root and ubuntu: identical shared command/file assertions, real content SHA-256, same-PID FIFO-barrier reconnect and kill, lifecycle/old-token checks passed"
+      }
+    ],
+    "residuals": "all four durable rows Destroyed; exact recorded PID/start stopped, jail/netns/cgroup absent and no namespace holders before service exit; each live cgroup identity/membership/limits, actual Firecracker machine-config and private disk size/inode sampled; base hash unchanged in both runs",
+    "failed_attempts": [],
+    "limits": "shared expectations for the selected command/basic-file subset, with synthetic fixtures supplying protocol replies and real guests executing independently; no production/proof change, no claim that synthetic execution proves VM behavior or that all lifecycle/network/fault expectations have been centralized. Final task budgets and Harbor inputs still depend on #13."
+  },
+  "shared_sdk_network_detail_acceptance": {
+    "commit": "5326a79fcba8275551c4f427cd5d4f7f16938e61",
+    "shared_samples": "tests/compat/sdk_network_samples.py",
+    "shared_samples_sha256": "658dd11027d5ef58508255af3ef44650cb2bc991c6915215ee79ef3245e3f5c1",
+    "real_tests": {
+      "sdk_network_clients.py": "7bc94082189adee20d78cac2ffd23517b28f1eeaa0ed556b1809104ada127d3b",
+      "sdk_sandbox_details.py": "817a87619e05469d7a0e8bbafe6c0fa599d43ac3e681550c478590cd79bb7a0a"
+    },
+    "supervisors_sha256": {
+      "network": "68831a045407a268f9c5cd2de78c02d589f2274d7310bf34d23ec776c36b2a20",
+      "isolated_host": "01ed11118fc8a725dcfb3e931b683d1ce5fad0e5746b71fb19c52642d3596fdc",
+      "details": "b807fc654f54a34d9d592bbe001bad38f3f13d0679afce4e5ffd04a9c2d8ba5b"
+    },
+    "synthetic": "fixed SDK 2.51.0 sync/async uses all six original network create profiles and identical network/detail assertions; independently checks omitted fields and original SDK wire spelling; nullable detail and legacy missing-field cases retained; complete check-compat.sh and contract matrix passed",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "production Rust and Cargo manifests/lock verified unchanged before each real run",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "host_and_configuration": "Linux 6.8.0-1065-azure/KVM, fixed Firecracker/jailer 1.16.1 and envd 0.9.0, SDK 2.51.0/Python 3.13; routed base from network_clients_acceptance; 1 vCPU/512 MiB guest, 1 CPU/768 MiB host cgroup, 1 GiB private disk; streaming 64/96 MiB test budgets. Network run enables public IPv4 only inside dedicated host netns; detail run explicitly denies Internet.",
+    "commands": [
+      "pinned-SDK Python tests/system/sdk_network_clients.py --api-url <own-loopback> --sandbox-url <same-service> --restart-dir <own-barrier>; Outside and service inside private host netns via nsenter --net; credentials from environment",
+      "pinned-SDK Python tests/system/sdk_sandbox_details.py --api-url <own-loopback> --sandbox-url <same-service> --restart-dir <own-barrier>; credentials from environment"
+    ],
+    "runs": [
+      {
+        "test": "sdk_network_clients.py",
+        "mode": "streaming",
+        "vm_count": 12,
+        "grouped_cases": 114,
+        "service_restarts": 2,
+        "probe_and_audit_seconds": 111.199,
+        "result": "same six create profiles, nullable/raw SDK+HTTP fields, TCP/UDP reachability, platform host-local denial, owner-only details/list, fourteen invalid creates with no extra admissions; two restarts preserve both original VM identities/policies; killing one preserves the other egress"
+      },
+      {
+        "test": "sdk_sandbox_details.py",
+        "mode": "streaming",
+        "vm_count": 4,
+        "grouped_cases": 10,
+        "service_restarts": 2,
+        "probe_and_audit_seconds": 16.296,
+        "result": "same SDK+HTTP detail assertions with omitted/supplied network, base resource fields, lifecycle, metadata, instance/class equality, lists without token, foreign/destroyed 404, working commands; same original VM/details/token across both restarts"
+      }
+    ],
+    "residuals": "all sixteen durable rows Destroyed; exact PID/start identities stopped, jails/netns/cgroups absent and no namespace holders before each service exit; live cgroup identity/membership/limits sampled; base SHA unchanged. Network VM uplinks/nft and Outside echo resources removed; dedicated host netns removed, shared filter hash and forwarding unchanged.",
+    "failed_attempts": [],
+    "limits": "static common inputs and assertions for the selected network/detail subset; synthetic replies do not prove packet behavior. No real Internet endpoint, advanced DNS/IPv6, production Rust or proof change. Other management/fault evidence retains its own scope; owner lifetime/startup corrections and #13 task inputs/budgets remain separate."
+  },
+  "shared_sdk_management_acceptance": {
+    "commit": "939cf8bea49df2d590fe7456af8b39731de1a4c7",
+    "shared_samples": "tests/compat/sdk_management_samples.py",
+    "shared_samples_sha256": "d535412748790077f7ae1d17a6211775e329466ebc89e2b603913cf5a614f686",
+    "real_tests": {
+      "sdk_create_context.py": "2d9e69e7855a91ebe0d852a769c5338dc22ac6fde18650362504adad178a42bc",
+      "sdk_list_queries.py": "6d05ec64a8bf41ece81cb8327b272bd51ba11c87e445462b5d2d0c57fe2b775b",
+      "sdk_lifetime_values.py": "1d7fd42e1e751b4dcc7f19ad11b1c5b94073cd53d984dd1b9f314d5d2ba9ce9b"
+    },
+    "synthetic": "18 wire tests and complete SDK/gateway suite passed: sync/async shared create env/metadata and detail roundtrip, six lifetime parameters for create/connect/set_timeout with omitted required argument/no request and exact 400 mapping, kill True/False, fifteen query cases with exact query encoding/opaque pagination and list/detail fields",
+    "sample_preservation": "one-off extraction/execution of prior test fixture declarations verified both creation contexts, six lifetime values and all fifteen query cases exactly match the pre-refactor probes; fixed expected records, no filtering engine or VM state model",
+    "server_build_commit": "e9c251d234492cb4cabb4bce91be16f9badb8e00",
+    "server_sha256": "6ac8f72d225f8a8fff74487a5fd8ea8c812152aa9d8ef29094ae957dc01665d5",
+    "server_source_equivalence": "production Rust and Cargo manifests/lock verified unchanged before all four real runs",
+    "base_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+    "host_and_configuration": "Linux 6.8.0-1065-azure/KVM; fixed Firecracker/jailer 1.16.1, envd 0.9.0 and routed base from network_clients_acceptance; SDK 2.51.0/Python 3.13; explicit no-internet; 1 vCPU/512 MiB guest, 1 CPU/768 MiB cgroup, 1 GiB private root; streaming 64/96 MiB budgets are test settings",
+    "commands": [
+      "pinned-SDK Python tests/system/sdk_create_context.py --api-url <own-loopback> --sandbox-url <same-service> --restart-dir <own-barrier>",
+      "pinned-SDK Python tests/system/sdk_list_queries.py --api-url <own-loopback> --sandbox-url <same-service>",
+      "pinned-SDK Python tests/system/sdk_lifetime_values.py --api-url <own-loopback> --sandbox-url <same-service> --supervisor-dir <own-barrier> --mode values --default-timeout 300 --max-timeout 600 --max-lifetime 600",
+      "pinned-SDK Python tests/system/sdk_lifetime_values.py --api-url <own-loopback> --sandbox-url <same-service> --supervisor-dir <own-barrier> --mode total --default-timeout 300 --max-timeout 600 --max-lifetime 12"
+    ],
+    "credentials": "test API keys supplied only through environment and root-only config; never logged",
+    "runs": [
+      {
+        "scenario": "context",
+        "mode": "streaming",
+        "vm_count": 4,
+        "grouped_cases": 62,
+        "probe_and_audit_seconds": 20.311,
+        "wrapper_sha256": "7f17087ec3aa20a3d8da472d88a730c4ff2b3f40f50ad6fc012798d6d96913d8"
+      },
+      {
+        "scenario": "list",
+        "mode": "streaming",
+        "vm_count": 8,
+        "grouped_cases": 64,
+        "probe_and_audit_seconds": 42.81,
+        "wrapper_sha256": "49fa59a2595b857c6c7f70571d2bb6678399050d0d4307090d7bd5cc78fa96f9"
+      },
+      {
+        "scenario": "lifetime-values",
+        "mode": "streaming",
+        "vm_count": 18,
+        "grouped_cases": 72,
+        "probe_and_audit_seconds": 105.902,
+        "wrapper_sha256": "6f7741190c44eab769cf011d31180204d17452997c1579fc98d7d630335699e8"
+      },
+      {
+        "scenario": "lifetime-total",
+        "mode": "streaming",
+        "vm_count": 2,
+        "grouped_cases": 2,
+        "probe_and_audit_seconds": 48.552,
+        "wrapper_sha256": "6f7741190c44eab769cf011d31180204d17452997c1579fc98d7d630335699e8"
+      }
+    ],
+    "result": "200 grouped checks across 32 VMs: create env/metadata isolation and two same-VM-pair service restarts; full existing list/filter/order/pagination/cursor/foreign/raw-boundary matrix; class/instance lifetime defaults, shortening/extension/clamping/rejections and automatic nonpositive expiry; two 12-second total-lifetime/same-VM restart groups. Four service restarts total, no replay of ambiguous creates.",
+    "residuals": "32 durable rows Destroyed; exact recorded PID/start identities stopped, private jails/netns/cgroups absent and no namespace holders before each final service exit; live cgroup identity/membership/limits sampled; base fingerprint unchanged in all four runs; cgroup parent empty after batch",
+    "failed_attempts": [],
+    "limits": "shared samples do not emulate server state, filtering, clock behavior or guest environments; these still execute on real VMs. No production Rust/proof changes. Lifetime/startup owner corrections #89/#84 are not in this commit; #13 frozen task inputs, initialization and final budgets remain outstanding. Prior non-finite/exhaustive fault and older-image evidence keeps its original scope."
   }
 }
