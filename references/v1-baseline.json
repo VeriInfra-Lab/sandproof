@@ -6,7 +6,7 @@
     "test_branch_at_contract_review": "9eba68821b8ad11f374a88f4a3450753e69c5ee1",
     "rust_toolchain": "1.97.0",
     "cargo_lock_sha256_at_contract_review": "04db1f9911a3009e40a0a3a5f0635aa596adca5c6341cd4b0c99354b11d9de26",
-    "cargo_lock_sha256": "c7c58684e22320643d9aeb2d4cafc1ae98cc5431eade138e37b7236608918d82",
+    "cargo_lock_sha256": "7ce52802be0983306cc868f5d02aa2e9bffa8b94a8b1cfe9e0e11cd748312331",
     "sdk_python": "e2b==2.51.0",
     "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
     "protocol_version": 1,
@@ -1111,5 +1111,22 @@
     "final_audit": "All 14 VM identities from passing windows, preliminary probe and current/parent SDK attempts were audited: durable Destroyed, no original PID/start, jail, netns, namespace holders or cgroup. Test API credentials and envd secret files deleted; empty dedicated cgroup removed; non-secret logs, database history and claim tombstones retained in private test roots. Shared source base unchanged.",
     "commands": "Local: bash scripts/check-function.sh and bash scripts/check-compat.sh with Python 3.13.14. Linux: cargo test --workspace --all-targets --locked; bash scripts/check-compat.sh; sudo python3 tests/system/server_activation_abort.py --server <tested-debug-binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <7c424b74 kernel> --rootfs <83f82ca1 legacy base> --uid-base 9300000 --scratch-parent /root/ta --cgroup-parent /sys/fs/cgroup/sp11-terminal-b5b9b63 --window <before-stop|after-stop|after-cleanup> --keep-artifacts. Run windows serially. C02 used the fixed SDK Python and tests/system/sdk_c02_acceptance.py with the same VM artifacts and UID base 9310000.",
     "limits": "Selected deterministic crash windows only, not arbitrary instruction interruption or full #11 closure. Single controller/serialized host dispatch; no concurrent independent workers, host power loss, hostile host, public-network regression, per-sandbox recovery-error isolation, Harbor or new Lean proofs. If precise stop cannot be established, the operation remains incomplete and quota held. V7 journals cannot be opened by older controllers. Only evidence/documentation changes follow the tested source commit."
+  },
+  "recovery_isolation_acceptance": {
+    "issue": 11,
+    "tested_source_commit": "4c485237d4c94a65abeb34c9676b3e683b353871",
+    "server_sha256": "6c2c5ab4827047a9e1e080aea0717d627266c2fb02beedff7d860a723eb5c10b",
+    "test_file": "tests/system/server_recovery_isolation.py",
+    "test_file_sha256": "87106ca6106e692775697c84c1e34afb774a18bd787d6420062b98e7cf82a730",
+    "host": "ning; Linux 6.8.0-142-generic x86_64; KVM; root-only /root/ta scratch, exclusive UID 65000–65999 and dedicated cgroup",
+    "firecracker_jailer": "1.16.1; same exact 2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7 / 1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd as terminal_activation_abort_acceptance",
+    "guest_kernel_sha256": "7c424b7447ea0a97d5ad8d9377b52cfbedfd564c7974f0ef9629e529305077a5",
+    "legacy_base_sha256_before_after": "83f82ca1925f47c1512199e670babfb128e36d1eee58b93183d804c594e7a7cd",
+    "configuration": "two real VMs, explicit no-internet, 1 vCPU/512 MiB guest, 768 MiB host cgroup per VM, 300-second default usable lifetime, max_active=2, expiry scan 3600 seconds; no host-global forwarding change",
+    "observed": "The first VM's StopVm physically succeeded but its receipt was lost at a deterministic service exit. A debug-only hook then refused exact stop observation for that sandbox before any new host I/O. Its durable phase stayed Revoking and the old dispatched action remained unknown while the second VM expired and reached Destroyed with exact process/jail/netns/cgroup cleanup. Removing the hook and restarting reconciled the first VM's original stop and cleanup without repeating it. A further idle restart left the terminal database snapshot unchanged.",
+    "component_evidence": "Five new managed-port tests cover local stop-observation error, rejected receipt, unknown expiry stop, rejected worker receipt and corrupt shared journal. The first case additionally checks the unresolved sandbox retains its tenant quota, the independent tenant can reuse its own reclaimed slot, and exact recovery releases the original slot. Full local functional check, Linux workspace tests and pinned SDK/gateway compatibility checks passed on the production-equivalent source.",
+    "residuals": "Both exact VM PID/start identities stopped; private jails, netns, cgroup children and test UID processes absent; no recorded network namespace holder. Original base hash unchanged. Test API configuration and node secret files deleted, empty dedicated cgroup parent removed; only non-secret DB/log/claim evidence retained in root-private /root/ta/si-5q97m4kn.",
+    "source_equivalence": "Subsequent changes in this PR add only managed-port regression assertions and this evidence documentation; controller, host and test-probe source remain identical to tested_source_commit.",
+    "limits": "Selected deterministic two-VM restart and expiry interleaving, not arbitrary crash schedules, host outage, parallel controller processes, full SDK data contract, Harbor or a formal proof. The old base's ubuntu home permission failure is tracked separately in #110 and is not counted as a passing non-root SDK test."
   }
 }
