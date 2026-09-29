@@ -32,6 +32,8 @@
 
 部分失败测试包括：磁盘已创建但 VM 未启动、网络部分配置、VM 已启动但回执未落盘、停止已生效但记录未提交。程序退出后还要从宿主检查进程/cgroup、TAP/网络空间、磁盘目录和端口，不只读服务自己的“成功”字段。
 
+#99 第 1 项以 S07–S09、S11 的编号边界为验收范围：[服务组件回归](../sandbox-api/tests/managed_port.rs)反复创建并销毁后保留最后一台运行实例，确认编号耗尽拒绝不撤销它的命令/文件权限，同配置重启后仍可使用和销毁；[宿主纯检查](../sandbox-node/src/identity.rs)覆盖编号转换、UID 保留值、加法溢出与合法配置端点。[实机入口](../tests/system/server_vm_id_capacity.py)使用 `max_vm_id=2`、固定 SDK 和新 base，核对三台 VM、拒绝前后完整数据库与宿主记录不变、原 VM 跨重启的进程身份和命令/文件访问，以及最终精确资源清理。脚本是否通过以[版本基线](../references/v1-baseline.json)的提交和实测记录为准，不把单元测试当作实机证据。
+
 S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IPv6 与其他 DNS 出站路径。若将来启用受控解析器，须用随机子域名、TXT/NS、委托链和携带数据的查询证明不会经解析器访问未授权外部服务；只固定解析器 IP 不算通过。
 
 `controller-service/tests/v1_workflow.rs` 已用确定性回执测试无部分副作用的明确失败：可重试时分配下一尝试；不可重试时撤销、停止、发布失败；补偿停止回执丢失时重启后先观察再完成。真实节点尚不能把任意 I/O 错误证明为无部分副作用，所以这些测试不覆盖部分网络创建、启动进程中断或恶意来宾流量。
@@ -42,6 +44,8 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 ## 3. 兼容与 Terminal-Bench 验收
 
 固定版本的 SDK 调用清单位于[兼容合同](../tests/compat/contract.json)。`bash scripts/check-compat.sh` 使用 E2B Python SDK 2.51.0 和本机回环合成响应；[实机系统测试](../tests/system/sdk_server_smoke.py)则使用同版原 SDK，经真实控制器和网关驱动 Firecracker，覆盖显式禁网的创建、连接、查询、列表、续期、销毁，以及基本命令、文件、超时、终止、断线重连、1 MiB 输出、跨租户与旧令牌、非法文件路径、重复令牌、超限上传拒绝和到期清理。隔离 Linux/KVM 测试已通过，但只覆盖 S01–S05、S11–S12 的部分路径。
+
+[C02 收口入口](../tests/system/sdk_c02_acceptance.py)只编排上述实机测试与[双客户端数据合同测试](../tests/system/sdk_data_contract.py)：在同一精确提交、隔离服务和数据库上运行固定 SDK 的同步/异步调用，核对四条终局记录、专属进程/网络空间/jail 清理及基础盘摘要。它不复制既有场景断言，也不替代 #8 的文件流资源边界、#9 的寿命竞争或完整 V1 验收。
 
 网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
 
@@ -148,7 +152,19 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 [网络与停止回执丢失实机脚本](../tests/system/sdk_network_receipt_crash.py)在调试构建中让服务进程分别恰在真实 `ConfigureNetwork`、`StopVm` 成功后、回执入库前退出。固定 SDK 2.51.0 创建静态 IPv4 沙箱；第一次重启后必须找到原 PID/启动时刻和原规则，准许目标可达、未授权与宿主地址不可达；第二次重启后沙箱不得重新发布，进程、jail、网络空间、根链路和 nft 表无残留。它只覆盖两个成功动作后的确定窗口，不替代安装中途的任意崩溃；同名出口接口替代另由上面的根级测试覆盖。
 
-[常驻服务故障测试](../tests/system/server_process_crash.py)在独立 Linux/KVM 测试机上使用仅调试构建可用的注入点。默认 `--window after-host`：真实 VM 启动、停止成功之后，服务进程在对应回执写入前直接退出。新增 `--window before-host`：开放围栏与停止动作已持久领取，但宿主副作用发生前退出。两种模式均重启同一服务和数据库；后一模式还核对首次退出时围栏、VM、网络尚未产生，停止前原 VM 仍存活且终止围栏已落盘。最终须观察同一 VM 的 PID 与启动时刻、真实停止，以及进程、网络空间和私有 jail 全无残留。已实测的提交与模式以对应 PR 证据为准；这仍只是四个确定窗口和单台 VM，不替代任意指令位置的 SIGKILL、并发负载或公网/静态规则验收。运行时须指定独占 UID 范围、可信 Firecracker/jailer、内核、envd 磁盘及 root 独占的临时目录；失败保留精确现场，不能按名称猜测清理其他资源。
+[常驻服务故障测试](../tests/system/server_process_crash.py)在独立 Linux/KVM 测试机上使用仅调试构建可用的注入点。默认 `--window after-host`：真实 VM 启动、停止成功之后，服务进程在对应回执写入前直接退出。`--window before-host`：开放围栏与停止动作已持久领取，但宿主副作用发生前退出。两种模式均重启同一服务和数据库；后一模式还核对首次退出时围栏、VM、网络尚未产生，停止前原 VM 仍存活且终止围栏已落盘。新增 `--window before-activation`、`after-activation`、`after-guest-init`，分别在初始化前、完成后回执前、来宾已接受 `/init` 但宿主未确认鉴权前中断；重启后还用固定 SDK 检查创建级环境变量。最终须观察同一 VM 的 PID 与启动时刻、真实停止，以及进程、网络空间和私有 jail 全无残留。已实测的提交与模式以对应 PR 证据为准；这些只是确定窗口和单台 VM，不替代任意指令位置的 SIGKILL、并发负载或公网/静态规则验收。运行时须指定独占 UID 范围、可信 Firecracker/jailer、内核、envd 磁盘及 root 独占的临时目录；失败保留精确现场，不能按名称猜测清理其他资源。
+
+三个初始化窗口已在固定源码 `436800f3f70529d72453fc324d93dc3fe14617bb` 的同一调试二进制上通过，原 VM 身份、创建级环境变量、销毁后残留及基础盘摘要均核对；精确指纹和未覆盖项见[版本基线](../references/v1-baseline.json)的 `activation_recovery_acceptance`。这不覆盖 envd 内部 `SetData` 任意位置中断，也不覆盖来宾持续无法观察时的自动清理。
+
+[未知初始化终止组件测试](../controller-service/tests/activation_abort.rs)检查停止前不能退休、停止未知/身份不符保持配额、终止意图与退休输入提交前后中断、围栏/停止/清理回执丢失、V6→V7 重放及迟到初始化拒绝。[专用 KVM 探针](../tests/system/server_activation_abort.py)在初始化已领取后退出服务，通过 pidfd 冻结本轮精确 VMM 并实际观察来宾健康请求超时；启动期限后重启，在 `before-stop`、`after-stop`、`after-cleanup` 三种窗口再次退出并恢复。它检查原进程停止、初始化回执仍缺失但终止覆盖已落盘、空闲重启不改变终局、配额允许新建及所有本轮物理资源回收。冻结是测试故障注入，不是 V1 暂停功能；指定独占 UID、可信产物、短且 root 独占的 `--scratch-parent`，可用独占 `--cgroup-parent` 检查 cgroup 回收。
+
+上述三个终止窗口已在 `8bbf8db8109a2eb9af532b75bf7ac3f52a1348bb`、同一调试二进制及独占 cgroup 上通过，共六台 VM；单元/事务组件、全工作区及 Linux SDK/网关检查通过。额外真实 SDK 基础闭环通过，但完整数据合同在旧 `83f82ca1…` 镜像的 ubuntu 用户权限处失败；修改前的 `6e0ac5e…` 对照复现相同失败，不计为完整 C02 通过。初次探针配置/销毁 URL 失败及清理记录也保留；所有 14 个测试 VM（含失败尝试与基线对照）最终均无精确进程、jail、netns 或 cgroup 残留，测试凭据已删除。详细指纹、命令、失败和范围见[版本基线](../references/v1-baseline.json)的 `terminal_activation_abort_acceptance`；本批不代表全部 #11 或新增形式化证明完成。
+
+[恢复错误隔离组件测试](../sandbox-api/tests/managed_port.rs)在两个独立沙箱上注入停止核对失败、错误回执、已派发工作错误和到期停止未知，检查出错者仍未完成、另一台按原身份正常恢复或销毁，随后原动作可在后续扫描中完成；损坏共享日志则必须让整个扫描报错。[双虚拟机真机探针](../tests/system/server_recovery_isolation.py)在调试构建中先让原 VM 停止成功但回执丢失，再在一次服务运行期间对该编号持续拒绝宿主观察；同时让第二台 VM 到期。第一台保持撤销中，第二台独立完成停止与清理；取消故障并重启后第一台按同一操作收尾。测试检查原 PID/启动时刻、jail、netns、cgroup、配额对应终局及基础盘摘要，使用短且 root 独占的测试目录与独占 UID 范围；失败保留现场待精确清理。脚本本身不能代替实机结果，精确提交与证据另记[版本基线](../references/v1-baseline.json)。
+
+[准备阶段错误隔离探针](../tests/system/server_prepare_recovery_isolation.py)增加两个确定窗口：已领取 `PrepareVm` 后只建立 claim、未写进程记录（`after-claim`），以及原 VM 已启动但回执未入库（`after-host`）。分别重启服务并仅让第二台的准备核对失败，要求第一台仍可查询、销毁，第二台不被发布为 Running；移除故障后只处理原动作。前者不得启动新 VM，后者须保持原 PID/启动时刻。两轮还各放入一个不属于任何计划的同名前缀 claim，要求服务整体拒绝启动、也不删除该资源。每轮结束核对精确进程、jail、netns、cgroup、UID 范围和基础盘摘要；调试注入仅用于测试，不属于产品接口。相关组件测试还检查两条准备动作并存时，局部失败不会重派任何 VM。该探针不能代替共享日志损坏、其他未知资源形态和任意位置宿主掉电的测试，具体实机结果只以绑定提交的证据为准。
+
+#11 的整包功能收口已将 S06–S09、S12 的上述关键窗口、原 SDK 数据调用、网络回执、并发销毁和旧资源身份核对放到同一代码树复测；精确提交、探针指纹、环境与未覆盖范围见[版本基线](../references/v1-baseline.json)的 `issue11_integrated_acceptance`。这是既定边界内的故障实验与合同复核，不表示任意指令位置崩溃、宿主掉电或新增形式化证明已完成。
 
 [创建上下文实机探针](../tests/system/sdk_create_context.py)在提交 `0bb82762ca3bcb5c7f5c5b9a01e7708e21da6469` 通过原同步/异步 SDK 各 31 组检查，共 62 组：每个客户端同时创建两台具有不同 envs/metadata 的真实 VM，核对 root/ubuntu 的默认环境、空值和 Unicode/特殊字符、命令临时覆盖不污染后续调用或另一台 VM、metadata 不进入来宾环境，以及详情/多页精确筛选/跨租户不可见。每种客户端均由外部监督器重启服务一次，前后两台 VM 的精确 PID/启动时刻、公开身份、令牌、环境和 metadata 保持不变。另有 16 次空名/等号/NUL/超大上下文创建被原 SDK 观察为 HTTP 400；监督器最终只发现四条准入记录和四台 VM，拒绝未产生额外记录。四台 VM 的进程、jail、netns、cgroup 和命名空间持有者均在服务退出前清理，base 不变，总耗时 21.643 秒。运行须传 `--restart-dir`，监督器收到 `request.json` 后核对两台活 VM、重启同一服务/配置并确认原身份，再写 `done`；不能只重建 SDK 客户端冒充服务重启。精确指纹见[基线](../references/v1-baseline.json)的 `create_context_acceptance`；该结果不替代 #13 固定任务初始化或所有畸形输入的验收。
 
@@ -204,5 +220,7 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 寿命目标场景已在生产提交 `e9c251d234492cb4cabb4bce91be16f9badb8e00`、探针提交 `7063d6a98ca0ca739efc84f5bdcf8965b3f0f3cb` 的同一二进制上通过：常规同步/异步各 36 项，共 72 项；12 秒总寿命配置各一组边界/重启场景。18＋2 台 VM 在服务退出前全部完成精确资源审计，基础盘不变。两次早期未完成实验分别为健康请求错误预期、监督器过早要求清理完成；另 12 台 VM 已独立核对收尾，失败不计为通过。到期后的 health 在本服务映射为 401，固定 SDK 抛 AuthenticationException，不能声称 is_running 返回 False。详见[版本基线](../references/v1-baseline.json)的 `lifetime_target_acceptance`。
 
 [运行起点聚焦探针](../tests/system/sdk_running_start.py)针对后续的 #9 修正，在单台真实 VM 上检查物理就绪后的可见起点与初始期限、同库服务重启后同一实例的起点不变、默认连接续期及总寿命截顶。组件另以可推进时钟和发布前事务故障注入，证明发布与起点写入不可拆分，恢复不重派已确认的宿主工作。实机一台 VM 已在精确提交上通过，原 PID/start 身份停止，私有 jail/netns 消失且基础盘不变；提交、指纹与未覆盖范围见[版本基线](../references/v1-baseline.json)的 `running_lifetime_origin_acceptance`。此探针只补启动耗时计入寿命的差异，不替代上面的同步/异步寿命矩阵或任意时刻崩溃验收。
+
+启动等待和可用寿命现在使用两条独立期限：服务配置 `startup_timeout_secs` 默认 300 秒，用户 `timeout` 不再缩短启动等待；可用寿命与总寿命只在 Running 发布时起算。控制服务测试用可推进时钟检查短用户寿命、启动期限边界、迟到发布拒绝和 V5→V6 迁移保留旧 Starting 截止点。未就绪 VM 的[专用实机脚本](../tests/system/server_unready_abort.py)显式将启动上限设为 5 秒；不能再靠请求中的 `timeout=5` 触发启动中止。旧版实机结果没有覆盖独立启动上限，本次实机结果必须另绑定精确提交。
 
 启动中止与寿命起点的组合回归绑定提交 `fbdbfd2d7d233d99ea0809e1c9e1a1d431309900`（test `4df1602`＋#84 `f6f7167`＋#89 `2c150df`），属于独立集成候选。服务组件验证已持久中止的创建不能被迟到 Running 发布复活，且新运行期限不会被旧启动期限中止。固定 `3f96c961…` base 上的未就绪 VM 中止/丢回执恢复、两处宿主动作前后崩溃窗口、并发销毁与失败创建恢复、运行起点探针、同步/异步 72 项寿命参数和 2 组总上限，以及普通/流式各 4 组 root/ubuntu 数据调用均通过。未就绪、寿命和数据探针启用并观察宿主 cgroup；原有崩溃/竞争/起点探针为 256 MiB 来宾且未配置该限额，不混用其证据。指纹、资源观察和范围见[版本基线](../references/v1-baseline.json)的 `lifecycle_integration_candidate_acceptance`；随后两项依赖已合入 test `fe37305`，本回归分支已基于该提交整理；生产源码与全部实机探针逐文件核对与原实测提交一致，保留原证据版本，不声称重新运行实机或完成完整证明、#13 固定任务验收。

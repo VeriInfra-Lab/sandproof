@@ -69,6 +69,9 @@ impl CreateOptions {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AdmissionLimits {
+    /// Highest VM ID that the configured host can represent and run.
+    /// This is a cumulative ID bound, not a concurrent VM quota.
+    pub max_vm_id: u64,
     pub max_active_global: u64,
     pub max_active_per_tenant: u64,
     pub max_disk_bytes_global: u64,
@@ -79,9 +82,45 @@ pub struct AdmissionLimits {
     pub max_timeout_secs: u64,
     /// Frozen into an absolute deadline when an instance is admitted.
     pub max_lifetime_secs: u64,
+    /// Trusted internal bound for reaching Running, independent of the
+    /// client's usable lifetime. Frozen with the accepted create.
+    pub startup_timeout_secs: u64,
 }
 
 pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
+pub const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 300;
+
+fn reserve_startup_in_admission(
+    tx: &Transaction<'_>,
+    namespace: &str,
+    decision: &core::ControllerDecision,
+    key: core::OperationKey,
+    max_vm_id: u64,
+) -> Result<core::ControllerDecision, AdmissionError> {
+    // Both reducer transitions must commit with the lease and launch options.
+    // Otherwise a crash before reservation can strand an accepted create.
+    let reserved = storage::apply(
+        tx,
+        namespace,
+        &decision.next,
+        core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
+    )
+    .map_err(|error| match error {
+        JournalError::ControllerRejected(core::controller::ControllerReject::Scheduler(
+            core::scheduler::SchedulerReject::CounterExhausted,
+        )) => AdmissionError::QuotaExceeded,
+        other => AdmissionError::Journal(other),
+    })?;
+    let core::ControllerEvent::Protocol(core::Event::ReserveStartupResources { vm, slot, .. }) =
+        reserved.event
+    else {
+        return Err(AdmissionError::Journal(JournalError::CorruptStore));
+    };
+    if vm.0 > max_vm_id || slot.0 > max_vm_id {
+        return Err(AdmissionError::QuotaExceeded);
+    }
+    Ok(reserved)
+}
 
 /// One admission decision's immutable time, resource budget and launch data.
 #[derive(Clone, Debug)]
@@ -99,6 +138,8 @@ pub struct Lifetime {
     pub started_at_ms: Option<i64>,
     pub deadline_ms: i64,
     pub max_deadline_ms: i64,
+    /// Immutable admission-time watchdog; never used to expire Running.
+    pub startup_deadline_ms: i64,
     pub disk_bytes: u64,
 }
 
@@ -173,6 +214,16 @@ fn deadline(now_ms: i64, seconds: u64, limits: AdmissionLimits) -> Result<i64, A
     if seconds == 0 || seconds > limits.max_timeout_secs {
         return Err(AdmissionError::InvalidTimeout);
     }
+    checked_deadline(now_ms, seconds)
+}
+
+fn checked_deadline(now_ms: i64, seconds: u64) -> Result<i64, AdmissionError> {
+    if now_ms < 0 {
+        return Err(AdmissionError::InvalidClock);
+    }
+    if seconds == 0 {
+        return Err(AdmissionError::InvalidTimeout);
+    }
     let milliseconds = seconds
         .checked_mul(1000)
         .ok_or(AdmissionError::TimeOverflow)?;
@@ -188,18 +239,26 @@ fn read_lifetime(
     owner: core::TenantId,
 ) -> Result<Option<Lifetime>, AdmissionError> {
     let id = identity::sandbox_id(namespace, sandbox)?;
-    let stored: Option<(String, i64, i64, Option<i64>, i64)> = tx
+    let stored: Option<(String, i64, i64, Option<i64>, i64, i64)> = tx
         .query_row(
-            "SELECT owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
+            "SELECT owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms, startup_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
             [id.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .optional()?;
     stored.map_or(
         Ok(None),
-        |(stored_owner, deadline_ms, bytes, started_at_ms, max_deadline_ms)| {
+        |(
+            stored_owner,
+            deadline_ms,
+            bytes,
+            started_at_ms,
+            max_deadline_ms,
+            startup_deadline_ms,
+        )| {
             if stored_owner != identity::owner_id(owner)?.as_str()
                 || deadline_ms < 0
+                || startup_deadline_ms < 0
                 || bytes <= 0
                 || deadline_ms > max_deadline_ms
                 || started_at_ms.is_some_and(|time| time < 0 || time > deadline_ms)
@@ -210,6 +269,7 @@ fn read_lifetime(
                 started_at_ms,
                 deadline_ms,
                 max_deadline_ms,
+                startup_deadline_ms,
                 disk_bytes: u64::try_from(bytes).map_err(|_| AdmissionError::CorruptLifetime)?,
             }))
         },
@@ -268,6 +328,11 @@ impl ControllerJournal {
             .ok_or(JournalError::CorruptStore)?;
         let admitted_at = lifetime.started_at_ms.ok_or(JournalError::CorruptStore)?;
         if started_at_ms < admitted_at {
+            return Err(JournalError::UnsupportedInput);
+        }
+        if started_at_ms >= lifetime.startup_deadline_ms {
+            // A late-ready VM cannot win a race against its persisted startup
+            // watchdog merely because the periodic scanner has not run yet.
             return Err(JournalError::UnsupportedInput);
         }
         let initial_ms = lifetime
@@ -348,6 +413,7 @@ impl ControllerJournal {
         } = admission;
         let encoded_options = options.encoded()?;
         let end = deadline(now_ms, timeout_secs, limits)?;
+        let startup_deadline_ms = checked_deadline(now_ms, limits.startup_timeout_secs)?;
         if timeout_secs > limits.max_lifetime_secs {
             return Err(AdmissionError::InvalidTimeout);
         }
@@ -407,6 +473,7 @@ impl ControllerJournal {
             return Err(AdmissionError::QuotaExceeded);
         }
         let sandbox = request.sandbox;
+        let operation = request.operation;
         let owner = request.owner;
         let decision = storage::apply(
             &tx,
@@ -414,10 +481,17 @@ impl ControllerJournal {
             &world,
             core::ControllerInput::Request(core::Request::Create(request)),
         )?;
+        let reserved = reserve_startup_in_admission(
+            &tx,
+            &self.namespace,
+            &decision,
+            core::OperationKey { sandbox, operation },
+            limits.max_vm_id,
+        )?;
         tx.execute(
-            "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms, startup_deadline_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![identity::sandbox_id(&self.namespace, sandbox)?.as_str(),
-                identity::owner_id(owner)?.as_str(), end, i64::try_from(disk_bytes).map_err(|_| AdmissionError::QuotaExceeded)?, now_ms, max_deadline_ms],
+                identity::owner_id(owner)?.as_str(), end, i64::try_from(disk_bytes).map_err(|_| AdmissionError::QuotaExceeded)?, now_ms, max_deadline_ms, startup_deadline_ms],
         )?;
         tx.execute(
             "INSERT INTO sandbox_create_options (sandbox_id, options_json) VALUES (?1, ?2)",
@@ -429,7 +503,7 @@ impl ControllerJournal {
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit().map_err(JournalError::CommitUncertain)?;
         crashes.hit(CrashPoint::AfterCommit)?;
-        Ok(decision)
+        Ok(reserved)
     }
 
     /// Read the immutable creation data for host initialization or metadata
@@ -655,7 +729,7 @@ impl ControllerJournal {
         for (sandbox, owner) in due {
             let lifetime = read_lifetime(&tx, &self.namespace, sandbox, owner)?
                 .ok_or(AdmissionError::UnmanagedActive)?;
-            if lifetime.deadline_ms > now_ms {
+            if lifetime.startup_deadline_ms > now_ms {
                 continue;
             }
             world = storage::apply(

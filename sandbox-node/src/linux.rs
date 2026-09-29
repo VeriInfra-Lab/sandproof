@@ -500,6 +500,32 @@ impl LinuxWorker {
         }
     }
 
+    /// Complete only the original guest initialization for the exact live VM.
+    /// The controller first proves that this outbox action still belongs to
+    /// the current create; this host check binds it to the open fence,
+    /// workspace, persisted credential/config and recorded VMM process.
+    /// Sending the same restricted `/init` body again is convergent for the
+    /// pinned envd version. An inconclusive request remains unknown.
+    /// # Errors
+    /// Rejects changed physical identity or an unobservable guest.
+    pub fn reclaim_incomplete_activation(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        self.validate_action(action)?;
+        let core::Command::ActivateVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Err("reclaim requires an ActivateVm action".into());
+        };
+        self.complete_guest_activation(*sandbox, *epoch, *generation, *vm)?;
+        Ok(())
+    }
+
     fn ensure_prepare_slot(
         &self,
         owner: &TenantId,
@@ -789,11 +815,8 @@ impl LinuxWorker {
         if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
             return Err("node state directory must be root-only".into());
         }
-        if config.uid_base == 0
-            || config.max_vm_id == 0
-            || config.vcpu_count == 0
-            || config.memory_mib < 128
-        {
+        crate::identity::validate_vm_id_range(config.uid_base, config.max_vm_id)?;
+        if config.vcpu_count == 0 || config.memory_mib < 128 {
             return Err("invalid node resource limits".into());
         }
         if let Some(settings) = &config.host_resources {
@@ -1169,15 +1192,7 @@ impl LinuxWorker {
 
     fn runtime(&self, sandbox: core::SandboxId, vm: core::VmId) -> NodeResult<Runtime> {
         let secret = self.secret(sandbox)?;
-        let id = u32::try_from(vm.0)?;
-        if vm.0 > self.config.max_vm_id {
-            return Err("node VM ID exceeds allocated UID range".into());
-        }
-        let uid = self
-            .config
-            .uid_base
-            .checked_add(id)
-            .ok_or("VM uid overflow")?;
+        let id = self.vm_uid(vm)?;
         let vm_name = self.vm_name(vm);
         Ok(Runtime::new(RuntimeConfig {
             jailer: self.config.jailer.clone(),
@@ -1185,14 +1200,22 @@ impl LinuxWorker {
             chroot_base: self.config.chroot_base.clone(),
             kernel: self.config.kernel.clone(),
             rootfs: self.config.rootfs.clone(),
-            vm_uid: uid,
-            vm_gid: uid,
+            vm_uid: id,
+            vm_gid: id,
             vcpu_count: self.config.vcpu_count,
             memory_mib: self.config.memory_mib,
             host_resources: self.config.host_resources.clone(),
             private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
             access_token_hash: Some(secret.sha512),
         })?)
+    }
+
+    fn vm_uid(&self, vm: core::VmId) -> NodeResult<u32> {
+        Ok(crate::identity::vm_uid(
+            self.config.uid_base,
+            self.config.max_vm_id,
+            vm.0,
+        )?)
     }
 
     fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
@@ -1341,6 +1364,10 @@ impl LinuxWorker {
                 if source.is_some() {
                     return Err("snapshot restore is outside V1".into());
                 }
+                self.vm_uid(*vm)?;
+                if slot.0 > self.config.max_vm_id {
+                    return Err("node network slot exceeds allocated range".into());
+                }
                 self.require_fence(*sandbox, *epoch, false)?;
                 let binding = SlotBinding {
                     owner: action.identity.owner.clone(),
@@ -1431,18 +1458,7 @@ impl LinuxWorker {
                 generation,
                 vm,
             } => {
-                self.require_fence(*sandbox, *epoch, false)?;
-                if self.vm_for_workspace(*sandbox, *generation)? != *vm {
-                    return Err("activation VM binding mismatch".into());
-                }
-                let observation = self.running(*sandbox, *vm)?;
-                self.initialize_guest(*sandbox, *vm)?;
-                let after = self.running(*sandbox, *vm)?;
-                if after.pid != observation.pid
-                    || after.start_time_ticks != observation.start_time_ticks
-                {
-                    return Err("VM changed while initializing guest service".into());
-                }
+                let after = self.complete_guest_activation(*sandbox, *epoch, *generation, *vm)?;
                 ObservedResult::Activated {
                     pid: after.pid,
                     start_ticks: after.start_time_ticks,
@@ -1667,6 +1683,26 @@ impl LinuxWorker {
         Ok(observation)
     }
 
+    fn complete_guest_activation(
+        &self,
+        sandbox: core::SandboxId,
+        epoch: core::Epoch,
+        generation: core::Generation,
+        vm: core::VmId,
+    ) -> NodeResult<Observation> {
+        self.require_fence(sandbox, epoch, false)?;
+        if self.vm_for_workspace(sandbox, generation)? != vm {
+            return Err("activation VM binding mismatch".into());
+        }
+        let before = self.running(sandbox, vm)?;
+        self.initialize_guest(sandbox, vm)?;
+        let after = self.running(sandbox, vm)?;
+        if after.pid != before.pid || after.start_time_ticks != before.start_time_ticks {
+            return Err("VM changed while initializing guest service".into());
+        }
+        Ok(after)
+    }
+
     fn initialize_guest(&self, sandbox: core::SandboxId, vm: core::VmId) -> NodeResult<()> {
         let name = self.vm_name(vm);
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -1691,6 +1727,16 @@ impl LinuxWorker {
         let body = serde_json::to_vec(&init)?;
         if Self::guest_status(&name, "POST", "/init", Some(&body))? != "204" {
             return Err("envd rejected authenticated initialization".into());
+        }
+        // A debug-only crash window after envd accepted the request but
+        // before the host can record authenticated readiness.
+        #[cfg(debug_assertions)]
+        if std::env::var("SANDPROOF_TEST_EXIT_AFTER_GUEST_INIT")
+            .ok()
+            .as_deref()
+            == Some("activate_vm")
+        {
+            std::process::exit(88);
         }
         if Self::guest_file_status(&name, &secret.token)? != "200" {
             return Err("envd authenticated file access not ready".into());

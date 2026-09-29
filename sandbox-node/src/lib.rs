@@ -3,6 +3,9 @@
 //! Trusted node-side worker. A physical observation is returned only after
 //! checking the exact claimed host resource; the guest cannot publish state.
 
+#[cfg(any(target_os = "linux", test))]
+mod identity;
+
 #[cfg(target_os = "linux")]
 mod linux;
 

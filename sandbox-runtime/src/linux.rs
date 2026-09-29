@@ -290,6 +290,16 @@ impl Runtime {
                     RuntimeError::Io(error)
                 }
             })?;
+        #[cfg(debug_assertions)]
+        if std::env::var("SANDPROOF_TEST_EXIT_AFTER_VM_CLAIM")
+            .ok()
+            .as_deref()
+            == Some(id)
+        {
+            // Deterministic service-crash window: the durable PrepareVm was
+            // dispatched, but no jailer, process record or VM exists yet.
+            std::process::exit(88);
+        }
         Ok(claim)
     }
 

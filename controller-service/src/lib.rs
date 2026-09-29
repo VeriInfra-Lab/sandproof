@@ -14,7 +14,8 @@ mod workflow;
 
 pub use controller::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateNetwork,
-    CreateNetworking, CreateOptions, DEFAULT_TIMEOUT_SECS, HostEvidence, Lifetime,
+    CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS,
+    HostEvidence, Lifetime,
 };
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
@@ -76,6 +77,28 @@ pub enum JournalError {
     UnresolvedAction,
     OperationFailed,
     InvalidHostEvidence,
+    ObsoleteReceipt,
+}
+
+impl JournalError {
+    /// A rejected observation or transition belongs to one sandbox. Durable
+    /// storage, replay, and commit errors are deliberately not in this list:
+    /// their scope cannot be established, so recovery must stop globally.
+    #[must_use]
+    pub fn is_local_recovery_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::Contract(_)
+                | Self::ReceiptBeforeDispatch
+                | Self::ConflictingReceipt
+                | Self::ControllerRejected(_)
+                | Self::UnsupportedInput
+                | Self::UnresolvedAction
+                | Self::OperationFailed
+                | Self::InvalidHostEvidence
+                | Self::ObsoleteReceipt
+        )
+    }
 }
 
 impl Display for JournalError {
@@ -113,6 +136,9 @@ impl Display for JournalError {
             }
             Self::InvalidHostEvidence => {
                 formatter.write_str("host evidence does not establish this command result")
+            }
+            Self::ObsoleteReceipt => {
+                formatter.write_str("terminal operation no longer accepts this activation receipt")
             }
         }
     }
