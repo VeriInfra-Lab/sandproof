@@ -207,6 +207,7 @@ mod linux {
                             core::Command::ConfigureNetwork { .. }
                         )
                         | (Some("stop_vm"), core::Command::StopVm { .. })
+                        | (Some("abort_prepare"), core::Command::AbortPrepare { .. })
                 ) {
                     std::process::exit(86);
                 }
@@ -229,6 +230,7 @@ mod linux {
                         core::Command::PrepareVm { .. } => "prepare VM",
                         core::Command::ConfigureNetwork { .. } => "configure network",
                         core::Command::StopVm { .. } => "stop VM",
+                        core::Command::AbortPrepare { .. } => "abort prepare",
                         core::Command::CleanupVm { .. } => "cleanup VM",
                         _ => "other host action",
                     };
@@ -280,6 +282,15 @@ mod linux {
         ) -> Result<(), PortError> {
             self.0
                 .reclaim_incomplete_stop(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_abort_prepare(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_abort_prepare(action)
                 .map_err(|_| PortError::Busy)
         }
 

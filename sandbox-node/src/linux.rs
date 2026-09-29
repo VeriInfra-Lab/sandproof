@@ -107,6 +107,7 @@ enum ObservedResult {
     Activated { pid: u32, start_ticks: u64 },
     FilePolicy { disk_inode: u64 },
     Stopped { pid: u32, start_ticks: u64 },
+    PrepareAborted,
     VmCleaned,
     SlotClosed,
 }
@@ -155,7 +156,8 @@ impl HostEvidence for HostObservation {
                 },
             ) => *namespace_inode != 0,
             (core::Command::CleanupVm { .. }, ObservedResult::VmCleaned)
-            | (core::Command::CleanupSlot { .. }, ObservedResult::SlotClosed) => true,
+            | (core::Command::CleanupSlot { .. }, ObservedResult::SlotClosed)
+            | (core::Command::AbortPrepare { .. }, ObservedResult::PrepareAborted) => true,
             _ => false,
         }
     }
@@ -483,9 +485,37 @@ impl LinuxWorker {
         else {
             return Err("reclaim requires a PrepareVm action".into());
         };
-        let slot_path = self.slot_path(*slot);
+        self.ensure_prepare_slot(&action.identity.owner, *sandbox, *generation, *vm, *slot)?;
+        let name = self.vm_name(*vm);
+        match self.runtime(*sandbox, *vm)?.observe(&name) {
+            Err(RuntimeError::MissingRecord) => {
+                self.reclaim_aborted_prepare(*sandbox, *generation, *vm, *slot)
+            }
+            Ok(Observation {
+                state: VmState::Stopped,
+                ..
+            }) => self.reclaim_stopped_prepare(*sandbox, *generation, *vm, *slot),
+            Ok(_) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn ensure_prepare_slot(
+        &self,
+        owner: &TenantId,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        vm: core::VmId,
+        slot: core::NetSlotId,
+    ) -> NodeResult<()> {
+        let slot_path = self.slot_path(slot);
         match fs::symlink_metadata(&slot_path) {
-            Ok(_) => self.require_slot(*sandbox, *generation, *vm, *slot)?,
+            Ok(_) => {
+                self.require_slot(sandbox, generation, vm, slot)?;
+                if self.slot(slot)?.owner != *owner {
+                    return Err("prepare slot owner mismatch".into());
+                }
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let inventory = self.inventory()?;
                 if !inventory.unbound_claims.is_empty()
@@ -494,11 +524,11 @@ impl LinuxWorker {
                     || inventory
                         .slots
                         .iter()
-                        .any(|known| known.vm == *vm || known.slot == *slot)
+                        .any(|known| known.vm == vm || known.slot == slot)
                 {
                     return Err("missing slot has an ambiguous host resource".into());
                 }
-                let name = self.vm_name(*vm);
+                let name = self.vm_name(vm);
                 require_absent(&self.config.chroot_base.join(".claims").join(&name))?;
                 require_absent(
                     &self
@@ -513,32 +543,59 @@ impl LinuxWorker {
                         .join(&name),
                 )?;
                 require_absent(Path::new(&format!("/run/netns/{name}")))?;
-                self.runtime(*sandbox, *vm)?.require_cgroup_absent(&name)?;
+                self.runtime(sandbox, vm)?.require_cgroup_absent(&name)?;
                 write_new_json(
                     &slot_path,
                     &SlotBinding {
-                        owner: action.identity.owner.clone(),
-                        sandbox: *sandbox,
-                        generation: *generation,
-                        vm: *vm,
-                        slot: *slot,
+                        owner: owner.clone(),
+                        sandbox,
+                        generation,
+                        vm,
+                        slot,
                     },
                 )?;
             }
             Err(error) => return Err(error.into()),
         }
-        let name = self.vm_name(*vm);
-        match self.runtime(*sandbox, *vm)?.observe(&name) {
-            Err(RuntimeError::MissingRecord) => {
-                self.reclaim_aborted_prepare(*sandbox, *generation, *vm, *slot)
-            }
-            Ok(Observation {
-                state: VmState::Stopped,
-                ..
-            }) => self.reclaim_stopped_prepare(*sandbox, *generation, *vm, *slot),
-            Ok(_) => Ok(()),
-            Err(error) => Err(error.into()),
+        Ok(())
+    }
+
+    fn observe_aborted_prepare(
+        &self,
+        sandbox: core::SandboxId,
+        epoch: core::Epoch,
+        generation: core::Generation,
+        vm: core::VmId,
+        slot: core::NetSlotId,
+    ) -> NodeResult<ObservedResult> {
+        self.require_fence(sandbox, epoch, true)?;
+        self.require_slot(sandbox, generation, vm, slot)?;
+        let name = self.vm_name(vm);
+        let runtime = self.runtime(sandbox, vm)?;
+        if !runtime.was_reclaimed_unlaunched(&name)?
+            && !runtime.was_reclaimed_stopped_prepare(&name)?
+        {
+            return Err("exact aborted prepare marker not observed".into());
         }
+        require_absent(Path::new(&format!("/run/netns/{name}")))?;
+        Ok(ObservedResult::PrepareAborted)
+    }
+
+    /// Resume a dispatched startup abort by exact identity. It never retries
+    /// `PrepareVm` and repeats only the same idempotent stop/reclaim operation.
+    /// # Errors
+    /// Refuses a changed process or incomplete physical cleanup.
+    pub fn reclaim_incomplete_abort_prepare(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        if !matches!(action.command.command(), core::Command::AbortPrepare { .. }) {
+            return Err("reclaim requires AbortPrepare".into());
+        }
+        if !matches!(self.perform(action)?.result, ObservedResult::PrepareAborted) {
+            return Err("aborted prepare not observed".into());
+        }
+        Ok(())
     }
 
     /// Complete only a dispatched cleanup whose operation was matched by A.
@@ -1018,6 +1075,13 @@ impl LinuxWorker {
                     start_ticks: observed.start_time_ticks,
                 }
             }
+            core::Command::AbortPrepare {
+                sandbox,
+                epoch,
+                generation,
+                vm,
+                slot,
+            } => self.observe_aborted_prepare(*sandbox, *epoch, *generation, *vm, *slot)?,
             core::Command::CleanupVm {
                 sandbox,
                 generation,
@@ -1192,6 +1256,7 @@ impl LinuxWorker {
         let command = action.command.command();
         let generation = match command {
             core::Command::PrepareVm { generation, .. }
+            | core::Command::AbortPrepare { generation, .. }
             | core::Command::ConfigureNetwork { generation, .. }
             | core::Command::ActivateVm { generation, .. }
             | core::Command::ApplyFilePolicy { generation, .. }
@@ -1214,7 +1279,8 @@ impl LinuxWorker {
             // including old cleanup and read-only observations, must carry
             // the same owner as that durable host binding.
             let bound_owner = match command {
-                core::Command::PrepareVm { slot, .. } => {
+                core::Command::PrepareVm { slot, .. }
+                | core::Command::AbortPrepare { slot, .. } => {
                     match fs::symlink_metadata(self.slot_path(*slot)) {
                         Ok(_) => Some(self.slot(*slot)?.owner),
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -1295,6 +1361,45 @@ impl LinuxWorker {
                     pid: observation.pid,
                     start_ticks: observation.start_time_ticks,
                 }
+            }
+            core::Command::AbortPrepare {
+                sandbox,
+                epoch,
+                generation,
+                vm,
+                slot,
+            } => {
+                self.require_fence(*sandbox, *epoch, true)?;
+                self.ensure_prepare_slot(
+                    &action.identity.owner,
+                    *sandbox,
+                    *generation,
+                    *vm,
+                    *slot,
+                )?;
+                let name = self.vm_name(*vm);
+                let runtime = self.runtime(*sandbox, *vm)?;
+                match runtime.observe(&name) {
+                    Err(RuntimeError::MissingRecord) => {
+                        self.reclaim_aborted_prepare(*sandbox, *generation, *vm, *slot)?;
+                    }
+                    Ok(Observation {
+                        state: VmState::Stopped,
+                        ..
+                    }) => {
+                        self.reclaim_stopped_prepare(*sandbox, *generation, *vm, *slot)?;
+                    }
+                    Ok(_) => {
+                        // Runtime::stop uses a pidfd and the durable process
+                        // start identity; no name-only or PID-only signal.
+                        if runtime.stop(&name)?.state != VmState::Stopped {
+                            return Err("exact VM exit not observed".into());
+                        }
+                        self.reclaim_stopped_prepare(*sandbox, *generation, *vm, *slot)?;
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+                self.observe_aborted_prepare(*sandbox, *epoch, *generation, *vm, *slot)?
             }
             core::Command::ConfigureNetwork {
                 sandbox,
@@ -1510,6 +1615,7 @@ impl LinuxWorker {
         let (kind, prefix, number) = match command {
             core::Command::InstallFence { sandbox, .. } => (ResourceKind::Sandbox, "sb", sandbox.0),
             core::Command::PrepareVm { vm, .. }
+            | core::Command::AbortPrepare { vm, .. }
             | core::Command::ActivateVm { vm, .. }
             | core::Command::StopVm { vm, .. }
             | core::Command::CleanupVm { vm, .. } => (ResourceKind::Vm, "vm", vm.0),

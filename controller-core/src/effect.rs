@@ -83,9 +83,11 @@ pub fn command_result_present(world: &World, command: &Command) -> bool {
             (Some(vm_record), Some(slot_record)) => {
                 vm_record.sandbox == *sandbox
                     && vm_record.generation == *generation
+                    && vm_record.status != VmStatus::Reclaimed
                     && slot_record.sandbox == *sandbox
                     && slot_record.generation == *generation
                     && slot_record.vm == *vm
+                    && !slot_record.reclaimed
             }
             _ => false,
         },
@@ -200,6 +202,25 @@ pub fn command_result_present(world: &World, command: &Command) -> bool {
                     && matches!(record.status, VmStatus::Stopped | VmStatus::Reclaimed)
             }
             None => false,
+        },
+        Command::AbortPrepare {
+            sandbox,
+            generation,
+            vm,
+            slot,
+            ..
+        } => match (world.vms.get(vm), world.net_slots.get(slot)) {
+            (Some(vm_record), Some(slot_record)) => {
+                vm_record.sandbox == *sandbox
+                    && vm_record.generation == *generation
+                    && vm_record.status == VmStatus::Reclaimed
+                    && slot_record.sandbox == *sandbox
+                    && slot_record.generation == *generation
+                    && slot_record.vm == *vm
+                    && slot_record.reclaimed
+                    && !slot_record.active
+            }
+            _ => false,
         },
         Command::CleanupVm {
             sandbox,
