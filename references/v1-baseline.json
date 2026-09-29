@@ -978,7 +978,10 @@
     "limits": "shared samples do not emulate server state, filtering, clock behavior or guest environments; these still execute on real VMs. No production Rust/proof changes. Lifetime/startup owner corrections #89/#84 are not in this commit; #13 frozen task inputs, initialization and final budgets remain outstanding. Prior non-finite/exhaustive fault and older-image evidence keeps its original scope."
   },
   "lifecycle_integration_candidate_acceptance": {
-    "status": "tested integration candidate; dependency PRs remain separate; not a test/main release",
+    "status": "historical candidate acceptance; production and real probes reconciled with merged dependencies; this follow-up is not yet a test/main release",
+    "rebased_on_test": "fe373052082ca6ce8e82665717d73cb6c3511351",
+    "rebased_code_commit": "cc4030d52d9987900593ed11021e2c7b6ee3f09d",
+    "rebase_equivalence": "Production Rust/Cargo inputs, v1_workflow regressions and all tests/system probes are byte-identical to the recorded real-run commit; upstream only adjusted SDK query-timezone expectation and contract description. Historical KVM evidence remains bound to its original commit; no new VM run claimed.",
     "commit": "fbdbfd2d7d233d99ea0809e1c9e1a1d431309900",
     "inputs": {
       "test": "4df1602006171da27912a11542c8c7b7609312af",
@@ -1071,6 +1074,6 @@
     "data_wrapper_sha256": "4f1b2340214110779095bc04091302fa7645ee1b14b3ff12f7bbd839cd302979",
     "supervised_resource_audit": "24 lifetime/data VMs all durable Destroyed and exact PID/start, jail/netns/cgroup absent, no namespace holders before server exit; live cgroup inode/membership/1 CPU/768 MiB sampled. Data runs additionally observed actual Firecracker 1 CPU/512 MiB and private disk inode/size. Final dedicated UID range had zero processes, cgroup parent empty, original base hash unchanged.",
     "commands": "root with fixed SDK Python for SDK scripts; standalone probes take --server --jailer --firecracker --kernel --rootfs --uid-base --scratch-parent; crash adds --window before-host or after-host; unready adds --cgroup-parent and --keep-artifacts. Hosted data/lifetime scripts use --api-url/--sandbox-url; lifetime uses --supervisor-dir and --mode values or total, default timeout 300, max timeout 600, total lifetime 600 or 12.",
-    "limits": "Only selected exact fault windows, not arbitrary SIGKILL or complete V1. No public-network regression or #13 frozen task initialization/final budgets in this batch; streaming 64/96 MiB remains test configuration. Controller core equals PR84 and old proofs do not cover AbortPrepare changes; no full proof acceptance claimed. Production source unchanged after tested commit; subsequent changes document this evidence only."
+    "limits": "Only selected exact fault windows, not arbitrary SIGKILL or complete V1. No public-network regression or #13 frozen task initialization/final budgets in this batch; streaming 64/96 MiB remains test configuration. Controller core equals PR84 and old proofs do not cover AbortPrepare changes; no full proof acceptance claimed. Production and real VM probes unchanged after tested commit; rebasing retains the upstream SDK timezone expectation correction and contract description."
   }
 }
