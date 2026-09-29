@@ -25,6 +25,7 @@ from harbor.models.trial.paths import TrialPaths
 from harbor.verifier.verifier import Verifier
 
 from benchmarks.check_harbor import check_runtime, check_tasks
+from benchmarks.oracle_repairs import REPAIRS, repair_solution
 from tools.benchmark_tasks import InvalidInput, verify
 
 BASE_FROM = {
@@ -284,7 +285,9 @@ async def run_task(args, entry, recipe):
         session_id=task.name, trial_paths=paths, task_env_config=task.config.environment,
         persistent_env=recipe.get('env', {}),
     )
+    oracle_mode = getattr(args, 'oracle_mode', 'original')
     row = {'name': task.name, 'status': 'running', 'stage': 'initialization',
+           'oracle_mode': oracle_mode,
            'oracle': 'not_run', 'verifier': 'not_run'}
     start = time.monotonic()
     def event(stage):
@@ -298,6 +301,10 @@ async def run_task(args, entry, recipe):
         event('oracle')
         oracle = OracleAgent(logs_dir=paths.agent_dir, task_dir=task.paths.task_dir,
                              trial_paths=paths, agent_timeout_sec=task.config.agent.timeout_sec)
+        if oracle_mode == 'repaired':
+            solution = repair_solution(task.name, task.paths.solution_dir,
+                                       paths.trial_dir / 'repaired-solution')
+            oracle._resolve_solution_paths = lambda: solution
         await asyncio.wait_for(oracle.run(task.instruction, environment, AgentContext()), task.config.agent.timeout_sec)
         row['oracle'] = 'failed' if (paths.agent_dir / 'exit-code.txt').exists() else 'passed'
         event('verifier')
@@ -364,6 +371,7 @@ def main():
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--task', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
     args = parser.parse_args()
     try:
         local_url(args.api_url)
@@ -372,11 +380,14 @@ def main():
         check_tasks(lock, args.source)
         recipes = load_recipes(lock, args.source)
         entry = next(t for t in lock['tasks'] if t['name'] == args.task)
+        if args.oracle_mode == 'repaired' and args.task not in REPAIRS:
+            raise InvalidInput('no reviewed reference-solution repair for ' + args.task)
         if args.task not in recipes:
             raise InvalidInput('task requires an additional reviewed base/initialization recipe')
         args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         (args.output / 'inputs.json').write_text(json.dumps({'source': lock['source'],
             'runtimes': runtimes, 'task': entry, 'recipe': recipes[args.task],
+            'oracle_mode': args.oracle_mode,
             'recipe_file_sha256': hashlib.sha256(RECIPES.read_bytes()).hexdigest()}, indent=2))
         rows = [{'name': t['name'], 'status': 'not_run',
                  'reason': 'recipe_available' if t['name'] in recipes else 'additional_base_or_initializer_required'}
@@ -385,6 +396,7 @@ def main():
         rows = [row if t['name'] == args.task else t for t in rows]
         (args.output / 'full-set.json').write_text(json.dumps({
             'task_count': len(rows), 'tasks': rows, 'scope': 'Harbor OracleAgent/Verifier via fixed-base adaptation; not upstream template compatibility or full-set acceptance',
+            'oracle_mode': args.oracle_mode,
             'source': lock['source'], 'dependencies': 'original task downloads; package inventory observed, remote contents not fully locked',
         }, indent=2) + '\n')
         return 0 if row['status'] == 'passed' else 1

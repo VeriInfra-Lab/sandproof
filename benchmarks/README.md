@@ -78,13 +78,13 @@ uv run --locked --project benchmarks python -m benchmarks.run_local \
   --output artifacts/terminal-bench/run-regex-log
 ```
 
-密钥通过 `SANDPROOF_TEST_API_KEY` 提供；程序不读取云端密钥。输出目录必须不存在。执行前复核全部 89 题源码，使用该题原始初始化、agent 与 verifier 时限；只在标准解答阶段上传 solution，只在评分阶段上传 tests，保留原退出码和 reward。`oracle=passed` 只表示原脚本退出 0；整题通过还要求原评分器返回 reward=1，不能只凭解答脚本退出码判断解题成功。输出包含可取得的该题日志和仍含全部 89 题的 `full-set.json`；原评分器返回后会尝试记录 dpkg 软件包清单，初始化或解答阶段中断时可能没有该清单。未执行不能算通过。失败和超时返回非零，记录已经开始的阶段与中断命令；失败后限时收集已有日志及来宾内存、磁盘诊断，诊断读取失败不影响随后尝试销毁。销毁未确认会单独标记，必须先核对原资源，不能直接重跑。
+密钥通过 `SANDPROOF_TEST_API_KEY` 提供；程序不读取云端密钥。输出目录必须不存在。默认 `--oracle-mode original`。执行前复核全部 89 题源码，使用该题原始初始化、agent 与 verifier 时限；只在标准解答阶段上传 solution，只在评分阶段上传 tests，保留原退出码和 reward。`oracle=passed` 只表示所选解答脚本退出 0；整题通过还要求原评分器返回 reward=1，不能只凭解答脚本退出码判断解题成功。输出包含可取得的该题日志和仍含全部 89 题的 `full-set.json`；原评分器返回后会尝试记录 dpkg 软件包清单，初始化或解答阶段中断时可能没有该清单。未执行不能算通过。失败和超时返回非零，记录已经开始的阶段与中断命令；失败后限时收集已有日志及来宾内存、磁盘诊断，诊断读取失败不影响随后尝试销毁。销毁未确认会单独标记，必须先核对原资源，不能直接重跑。
 
 服务必须预先配置与当前题目一致的 CPU/内存、10 GiB 独立盘、86400 秒单次及总寿命上限，以及公网 IPv4 出站。服务的固定 base 必须切换为该题配方指定的预制镜像；CPU/内存也按原题设置。原 SDK 仍仅请求 `base`，模板构建与任意 Dockerfile/OCI 转换不属于服务能力。Python/Debian 镜像以明确的官方 amd64 清单及所有层摘要固定，加入同一 envd、固定静态 BusyBox 启动配置和独立 guest 网络配置；这些本地实验镜像的隔离与启动证据必须分别取得。DNS 使用公网解析器 1.1.1.1，宿主若有 Docker 的 FORWARD 默认拒绝策略，应由监督器按本轮唯一网卡配置和回收精确转发规则，不能关闭全局防火墙。执行入口不修改宿主网络、不启动服务，不代替独立的 PID/磁盘/cgroup/网络清理审计。
 
 上游初始化和评分脚本包含动态 apt/下载依赖，现阶段记录实际版本，尚未把所有远端依赖内容冻结。这是本地兼容与评分链实验，不是环境完全可复现、完整 Harbor Trial、全题集验收或在线 E2B/模型对照的完成声明。
 
-基础环境与上游可变标签存在明确差异：Python 3.13/Bookworm 选择固定 3.13.9；其余官方标签解析为清单中的精确摘要。镜像中的 init/envd 是本服务需要的适配；金融文档题的 uv 0.8.14 和 reshard 题的 uv 0.8.15 使用显式固定版本安装，前者清理 builder 输入，后者从 Python wheel 获取。原任务标准解答和私有评分器保持源文件原样，不以环境适配冒充上游容器内容一致。
+基础环境与上游可变标签存在明确差异：Python 3.13/Bookworm 选择固定 3.13.9；其余官方标签解析为清单中的精确摘要。镜像中的 init/envd 是本服务需要的适配；金融文档题的 uv 0.8.14 和 reshard 题的 uv 0.8.15 使用显式固定版本安装，前者清理 builder 输入，后者从 Python wheel 获取。默认模式下标准解答和私有评分器保持源文件原样，不以环境适配冒充上游容器内容一致。
 
 来宾初始化补齐精简镜像缺少的 `/dev/fd`，使 Bash 进程替换可以访问 `/proc/self/fd`。Ubuntu 来宾初始化保留基础镜像已有的配置文件，避免非交互 apt 安装因 dpkg 配置确认而中断。个别任务还需要显式基础环境补齐：CompCert 题安装 findutils，MCMC/Stan 题补齐 RcppParallel 当前构建所需的 cmake，Git Webserver 题仅在来宾内解除 ssh 服务屏蔽；pMARS 使用经过原发行版签名验证的 2025-10-01 Debian 历史仓库，POV-Ray 与 RStan/PyStan 题使用同日期 Ubuntu 历史仓库，满足原脚本的版本约束。这些适配不改动标准解答、私有测试或原资源时限，历史仓库也不能代替对其他动态下载内容的完整锁定。
 
@@ -112,10 +112,19 @@ Mailman 题在来宾补齐基础镜像缺少的 `/var/mail`（root:mail，2775�
 
 `custom-memory-heap-crash` 使用该题元数据指定的预构建镜像 `alexgshaw/custom-memory-heap-crash:20251031`，amd64 清单固定为 `sha256:1895d7d6240d5fb2ec774d6bfdd1057d170f8d199c15c582e4585d3c63802557`。原 Dockerfile 的两套 GCC 13.2.0 定制库已在其中构建，初始化无需在 600 秒内重新编译编译器。离线转换不执行镜像程序；加入固定 BusyBox/init 和 envd 后仍为 10 GiB 私有盘。执行时核对 task 专属标记、原 program/patches 内容摘要及两套库存在性。该 profile 仅允许原任务与原上游镜像引用使用；不允许其他任务复用，也不包含 solution/tests。原标准解答、评分器、CPU/内存及所有任务时限保持不变，是否实机通过仍以该提交的独立报告为准。
 
-PyTorch 张量并行题使用官方 `USE_LIBUV=0` 环境设置选择 TCPStore 的旧后端。本地诊断已观察到原模型计算完成后卡在 `destroy_process_group`，使用该设置的同一模型调用连续两次正常结束；完整原评分仍须独立复测。该设置由 [PyTorch TCPStore 后端说明](https://docs.pytorch.org/tutorials/intermediate/TCPStore_libuv_backend.html)提供，不改变 PyTorch 2.7.0、Gloo 后端、模型、用例或资源限制；诊断不能证明所有分布式清理问题均已解决。
+PyTorch 张量并行题使用官方 `USE_LIBUV=0` 环境设置选择 TCPStore 的旧后端。本地诊断观察到原模型计算完成后卡在 `destroy_process_group`；短探针在该设置下连续两次结束，但完整原评分仍超时，因此它不是已验证的修复。该设置由 [PyTorch TCPStore 后端说明](https://docs.pytorch.org/tutorials/intermediate/TCPStore_libuv_backend.html)提供，不改变 PyTorch 2.7.0、Gloo 后端、模型、用例或资源限制。
 
 Windows 3.11 初始化下载仍使用原 archive.org URL，按 8 MiB 分段、最多四条连接下载，核对每个 HTTP Content-Range、总长度及固定 SHA-256 后才发布完整文件。该摘要通过原站公开 SHA-1 核对取得；下载发生在题目初始化预算内，没有在 VM 中预填镜像，也没有延长 600 秒时限。失败不会留下可误用的半成品；下载证据写入 verifier 日志目录。通用下载辅助程序来自本仓库，只允许注册的 helper 标识上传。
 
 HTML 过滤题启用 pytest 的 `-s -v` 日志，保留每个浏览器批次的执行、异常与收尾信息。用例、断言和时间限制不变；原测试会吞掉部分浏览器异常，必须检查日志中的超时/浏览器失败，不能只用原 reward 声称所有浏览器场景实际通过。
 
 MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transformers 4.57.6，保留完整 PyTorch/CUDA 构建。原无上限依赖会选入更新且更大的 CUDA 13 依赖，使随后原 results 完整克隆写满 10 GiB 私有盘；旧兼容依赖是否足以留出空间必须以原解答复测为准。没有预填结果、改变 Git checkout 目标或缩减评分。
+
+## 可选的参考解答修复
+
+显式 `--oracle-mode repaired` 只对[注册修复](oracle_repairs.py)生效。它先核对原 solve.sh 的完整摘要，在独立输出目录复制 solution 并应用有限修改，不修改固定题库；报告记录模式、原文件与新文件摘要及完整 diff。评分源码和所有资源/时限保持不变。修正版通过必须单独报告，不能计为原标准解答通过，也不能改写原失败记录。未注册任务直接拒绝执行。
+
+- `protein-assembly`：通过 [RCSB 官方 Data API](https://data.rcsb.org/)的 polymer entity 与 chemical component 字典还原修饰残基及有序母体残基；保留单一聚合物筛选，拒绝无法解析的序列。原 FASTA 将部分荧光团编码为 `X`，无法满足 DNA 翻译约束；修复不嵌入目标序列，原 DNA 优化和评分继续执行。
+- `build-pov-ray`：从 ICM 公开镜像下载相同三个 2.2 压缩包，并核对与[上游 PR #77](https://github.com/harbor-framework/terminal-bench-2/pull/77)相同的 SHA-256；其余编译与渲染流程不变。原站对直接下载返回 HTTP 403。
+- `caffe-cifar-10`：从 BrainChip 公开镜像下载相同 CIFAR-10 binary 数据，内容已核对[作者公布的 MD5](https://www.cs.toronto.edu/~kriz/cifar.html)，执行时再核对固定 SHA-256。下载、解压、原 Caffe 构建及训练均在 VM 原 agent 预算中，不预填数据或训练结果。
+- `crack-7z-hash`：先用原 John 自带完整常用密码字典和原规则运行，并要求 John 确认破解成功；解压密码取自实际破解结果，替代原脚本的答案常量。没有任务专用候选表，也没有跳过破解计算。模式语义见 [John 官方说明](https://www.openwall.com/john/doc/MODES.shtml)。
