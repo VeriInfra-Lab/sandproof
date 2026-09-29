@@ -60,7 +60,7 @@ A/B/C 是岗位占位符，不是 GitHub 用户名。实际认领后，在任务
 |---|---|---|---|
 | A：控制与恢复 | `controller-core/`、`controller-service/` | 唯一控制决策、事务记录、任务派发、授权判断、寿命、配额、恢复调度、状态发布 | B；接口变化另请 C |
 | B：节点执行与隔离 | `sandbox-node/`、`sandbox-runtime/` 及镜像/部署工具 | jailer 启停、资源身份观察、独立磁盘、固定 envd 接入、命令/文件传输、网络、真实停止及清理 | A；客户端行为另请 C |
-| C：接口与集成 | `sandbox-api/`、`sandbox-server/`、`tests/compat/`、`tests/system/`、`.github/`；计划新增 `benchmarks/` | E2B API 和访问网关、SDK 兼容、Harbor 薄适配、系统测试框架及 CI | A；运行环境另请 B |
+| C：接口与集成 | `sandbox-api/`、`sandbox-server/`、`tests/compat/`、`tests/system/`、`.github/`、`benchmarks/` | E2B API 和访问网关、SDK 兼容、Harbor 薄适配、系统测试框架及 CI | A；运行环境另请 B |
 
 目录存在不代表工作包已完整交付。共享消息位于 `sandbox-protocol/`；`sandbox-server/` 的跨模块组装由 C 集成、A/B 复核各自语义。新增 crate 只在对应任务中加入 workspace。
 
