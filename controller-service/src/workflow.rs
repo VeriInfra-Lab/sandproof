@@ -92,6 +92,7 @@ where
             .uncertain_actions()?
             .iter()
             .any(|action| action.command.command().sandbox() == sandbox)
+            && !core::scheduler::only_uncertain_prepare_for_abort(&journal.world()?, sandbox)
         {
             return Err(JournalError::UnresolvedAction);
         }
@@ -299,6 +300,27 @@ where
     let generation = record.generation;
     if record.phase == core::Phase::Revoking {
         drain(journal, sandbox, worker)?;
+        let world = journal.world()?;
+        if let (Some(vm), Some(slot)) = (plan.vm, plan.slot)
+            && world.vm_record(vm).is_none()
+        {
+            let abort = core::Command::AbortPrepare {
+                sandbox,
+                epoch: record.epoch,
+                generation,
+                vm,
+                slot,
+            };
+            if !scheduled(&world, &abort) {
+                journal.apply(
+                    core::ControllerInput::Scheduler(core::SchedulerInput::AbortPrepare(
+                        sandbox, generation, vm, slot,
+                    )),
+                    &mut NeverCrash,
+                )?;
+            }
+            drain(journal, sandbox, worker)?;
+        }
         for vm in plan.stop_vms {
             let world = journal.world()?;
             let Some(vm_record) = world.vm_record(vm) else {

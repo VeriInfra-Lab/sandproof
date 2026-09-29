@@ -290,6 +290,13 @@ pub enum Command {
         generation: Generation,
         vm: VmId,
     },
+    AbortPrepare {
+        sandbox: SandboxId,
+        epoch: Epoch,
+        generation: Generation,
+        vm: VmId,
+        slot: NetSlotId,
+    },
     CleanupVm {
         sandbox: SandboxId,
         generation: Generation,
@@ -315,6 +322,7 @@ impl Command {
             | Self::SealSnapshot { sandbox, .. }
             | Self::CommitSnapshot { sandbox, .. }
             | Self::StopVm { sandbox, .. }
+            | Self::AbortPrepare { sandbox, .. }
             | Self::CleanupVm { sandbox, .. }
             | Self::CleanupSlot { sandbox, .. } => *sandbox,
         }
@@ -331,7 +339,8 @@ impl Command {
             | Self::ApplyFilePolicy { epoch, .. }
             | Self::SealSnapshot { epoch, .. }
             | Self::CommitSnapshot { epoch, .. }
-            | Self::StopVm { epoch, .. } => Some(*epoch),
+            | Self::StopVm { epoch, .. }
+            | Self::AbortPrepare { epoch, .. } => Some(*epoch),
             Self::CleanupVm { .. } | Self::CleanupSlot { .. } => None,
         }
     }
@@ -603,6 +612,12 @@ pub enum Event {
         sandbox: SandboxId,
         generation: Generation,
         vm: VmId,
+    },
+    ScheduleAbortPrepare {
+        sandbox: SandboxId,
+        generation: Generation,
+        vm: VmId,
+        slot: NetSlotId,
     },
     ScheduleCleanupVm {
         sandbox: SandboxId,
