@@ -1147,6 +1147,7 @@
     },
     "commands": "Root: python3 tools/build_base_guest.py --squashfs <fixed SquashFS> --envd <fixed envd> --packages <fixed manifest> --output <new private base>; fixed E2B Python SDK 2.51.0: python tests/system/sdk_c02_acceptance.py --server <tested binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <b20af758 kernel> --rootfs <30a3861b new base> --uid-base 9313000 --scratch-parent <root-only directory>.",
     "result": "passed: fixed SDK root/auth/expiry/kill smoke and unchanged sync/async ubuntu commands, working directory, files and output assertions; four durable Destroyed rows; exact process, jail, netns, cgroup and dedicated UID range clear; input base unchanged",
+    "post_test_merge_acceptance": "After merging test@a01598c, reran the same two probes at source commit e43f27aa2b07cc6a38253fcebc46bb80729afa43, server SHA-256 9a47ab671d7e8ab3dee944254341cfcfb96413f031e7028dfab63bf79aa22c13, namespace 76943a05c9a9c053 and exclusive UID range 9314000-9315000. All four VMs were durably Destroyed; exact process, jail, netns, cgroup and UID range clear; source base SHA-256 unchanged.",
     "limits": "Selected manual C02 acceptance on one host and explicit no-internet only. No host cgroup quota configured in this probe. Does not prove full #8/#9/#10, arbitrary faults, Harbor tasks, general Ubuntu image support, deployment reproducibility across hosts or new Lean coverage."
   },
   "recovery_isolation_acceptance": {
