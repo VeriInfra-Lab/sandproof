@@ -97,6 +97,7 @@ def exercise(args: argparse.Namespace) -> None:
         "cleanup_reserve_bytes": disk_bytes,
         "max_timeout_secs": 600,
         "default_timeout_secs": 300,
+        "startup_timeout_secs": 5,
         "expiry_scan_seconds": 1,
     }))
     config.chmod(0o600)

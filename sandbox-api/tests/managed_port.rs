@@ -458,6 +458,7 @@ fn config() -> ManagedConfig {
             cleanup_reserve_bytes: 1_000,
             max_timeout_secs: 86_400,
             max_lifetime_secs: 86_400,
+            startup_timeout_secs: 300,
         },
         disk_bytes: 1_000,
         file_policy_digest: core::PolicyDigest(1),
@@ -525,6 +526,8 @@ fn due_unknown_prepare_fixture(
     let path = directory.path().join("controller.db");
     let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
+    let mut limits = config().limits;
+    limits.startup_timeout_secs = 1;
     journal
         .admit_create(
             core::CreateRequest {
@@ -541,7 +544,7 @@ fn due_unknown_prepare_fixture(
             0,
             1,
             1_000,
-            config().limits,
+            limits,
             &mut NeverCrash,
         )
         .unwrap();
