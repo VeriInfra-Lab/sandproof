@@ -143,11 +143,11 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
         sandbox.files.write("/tests/test.sh", (directory / "tests/test.sh").read_bytes())
         sandbox.files.write("/tests/test_outputs.py", (directory / "tests/test_outputs.py").read_bytes())
         scoring = sandbox.commands.run("bash /tests/test.sh", cwd="/app", timeout=int(entry["requirements"]["verifier_timeout_sec"]))
+        (root / f"{name}.score.stdout").write_text(scoring.stdout)
+        (root / f"{name}.score.stderr").write_text(scoring.stderr)
         reward = sandbox.files.read("/logs/verifier/reward.txt").strip()
         assert reward == "1", f"{name}: original scoring gave {reward!r}"
         assert sandbox.files.read("/logs/verifier/ctrf.json"), "original CTRF report missing"
-        (root / f"{name}.score.stdout").write_text(scoring.stdout)
-        (root / f"{name}.score.stderr").write_text(scoring.stderr)
         return {"name": name, "source_files_sha256": entry["files_sha256"], "reward": reward,
                 "guest_versions": version, "guest_profile": profile, "sandbox_id": sandbox.sandbox_id,
                 "original_verifier_sha256": next(item["sha256"] for item in entry["files"] if item["path"] == "tests/test.sh")}
