@@ -94,6 +94,8 @@ PyTorch 恢复题的原评分器还会用 uvx 创建独立 Torch 环境。该题
 
 MTEB 检索题也用此布局共享两个 Python 环境中相同的 wheel；原 pip 继续处理源码分发包，随后核对全部解析版本。该题另为 pip 和 uv 同时约束 Transformers 4.57.6，保留旧 MTEB 导入的 `AutoModelForVision2Seq`；该接口在 [Transformers 5 官方迁移说明](https://github.com/huggingface/transformers/blob/main/MIGRATION_GUIDE_V5.md)中列为已移除。不同 Python ABI 的 wheel 仍分别安装，不修改原评分器要求的 Python 版本。
 
+Windows 3.11 题补齐来宾 `/var/tmp`（1777）；其原 QEMU 5.2.0 在未设置 `TMPDIR` 时需要这个目录创建磁盘快照临时文件。保留原 QEMU 构建、Windows 镜像、启动参数和评分器。
+
 path-tracing-reverse 的原评分器会跨 `/app`、`/tmp` 重命名文件。该题初始化在 guest 内保存临时目录内容、停止独立 tmpfs 挂载并恢复到同一私有盘，保留目录内容和 sticky bit；不改动原评分器的文件操作。
 
 两道 QEMU 题的 Bullseye 源固定到与基础镜像构建注释一致的 2026-08-24 官方历史仓库，避免现有索引引用已返回 404 的软件包。历史源保留原 Debian keyring 的签名检查，仅对该固定快照停用过期时间检查；初始精简镜像尚无 CA bundle，apt 通过 HTTP 获取内容并核对签名及包摘要。
