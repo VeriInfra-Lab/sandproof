@@ -16,6 +16,7 @@ REPAIRS = {
     'build-pov-ray': '67c962a8b114fa1d55d1230c7d87309aa2b5ad643d9a955a2d74755fa8842e25',
     'crack-7z-hash': '2640463e6e14658426f3ea629e0702688e00553eb8006cf31ec3b9cff75c4b19',
     'caffe-cifar-10': '771887de1ed557269c7f3160c777519aa9538e1e9b59771b2f6ef38c8952490c',
+    'install-windows-3.11': '68a9221b9a29331b66fd34fccd71db71d2b5a720e917f2ef95f4a8a542a71ee4',
 }
 POV_ARCHIVES = {
     'POVDOC.TAR.Z': 'e70e44d1fe8835c4dff7c7a55bd6629b15e6a15b2ab7f2f49ee9e2dc016cc470',
@@ -76,6 +77,15 @@ def repair_solution(name, original, destination):
     mv cifar-10-batches-bin/* .
     rmdir cifar-10-batches-bin
 ) || exit 1''')
+    elif name == 'install-windows-3.11':
+        # The original image CMD already runs this exact bridge via supervisor.
+        # Reuse only that known command, not an arbitrary listener on port 8080.
+        new = old.replace('    websockify --web /usr/share/novnc 8080 localhost:5901 --daemon',
+                          '''    if pgrep -f '[/]websockify --web /usr/share/novnc 8080 (127[.]0[.]0[.]1|localhost):5901' > /dev/null; then
+        echo "Reusing the supervisor's existing VNC WebSocket bridge"
+    else
+        websockify --web /usr/share/novnc 8080 localhost:5901 --daemon
+    fi''')
     shutil.copytree(original, destination)
     (destination / 'solve.sh').write_text(new)
     if name == 'protein-assembly':
