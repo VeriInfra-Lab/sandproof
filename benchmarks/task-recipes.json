@@ -72,6 +72,10 @@
     "environment_sha256": "cb6cf421cb9b69d43bd25cd491e49bda982fbb865d47515178d017eda727194e",
     "steps": [
       {
+        "run": "cat > /etc/sandproof-cython-constraints.txt <<'PIP_CONSTRAINTS'\nplanarity @ https://files.pythonhosted.org/packages/5b/17/9a822cf44b9cad016def3085013edd2b2d7e7d6347778c00f4a835e33cc9/planarity-0.6.tar.gz#sha256=9852691d9c0d05e26a2fcbf2fce5a2632e8847ec462e816fa02e72d35013da68\nPIP_CONSTRAINTS\n",
+        "cwd": "/"
+      },
+      {
         "run": "mkdir -p /app",
         "cwd": "/"
       },
@@ -85,7 +89,10 @@
         "cwd": "/app",
         "env": {}
       }
-    ]
+    ],
+    "env": {
+      "PIP_CONSTRAINT": "/etc/sandproof-cython-constraints.txt"
+    }
   },
   "build-pmars": {
     "base": "debian13",
@@ -887,6 +894,10 @@
     "environment_sha256": "e1f57eb413b92c10565a8100e559f633c4f4ec5c0bcdd5a755a0eb92eb4de02f",
     "steps": [
       {
+        "run": "printf '1\\n' > /proc/sys/vm/overcommit_memory\ntest \"$(cat /proc/sys/vm/overcommit_memory)\" = 1",
+        "cwd": "/"
+      },
+      {
         "run": "mkdir -p /app",
         "cwd": "/"
       },
@@ -1160,6 +1171,10 @@
         "env": {}
       },
       {
+        "run": "install -d -o root -g mail -m 2775 /var/mail",
+        "cwd": "/"
+      },
+      {
         "copy": "src/eval.py",
         "target": "/app/eval.py"
       }
@@ -1199,7 +1214,7 @@
         "target": "/app/doomgeneric/doomgeneric/doomgeneric_img.c"
       },
       {
-        "run": "curl https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad > doom.wad",
+        "run": "curl --fail --location https://download.tuxfamily.org/slitaz/sources/packages/d/doom1.wad -o doom.wad && printf '%s  %s\\n' 1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771 doom.wad | sha256sum --check --strict",
         "cwd": "/app",
         "env": {}
       },
@@ -1248,7 +1263,7 @@
         "env": {}
       },
       {
-        "run": "curl https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad > doom.wad",
+        "run": "curl --fail --location https://download.tuxfamily.org/slitaz/sources/packages/d/doom1.wad -o doom.wad && printf '%s  %s\\n' 1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771 doom.wad | sha256sum --check --strict",
         "cwd": "/app",
         "env": {}
       }

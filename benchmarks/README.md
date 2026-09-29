@@ -78,7 +78,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_local \
   --output artifacts/terminal-bench/run-regex-log
 ```
 
-密钥通过 `SANDPROOF_TEST_API_KEY` 提供；程序不读取云端密钥。输出目录必须不存在。执行前复核全部 89 题源码，使用该题原始初始化、agent 与 verifier 时限；只在标准解答阶段上传 solution，只在评分阶段上传 tests，保留原退出码和 reward。输出包含该题日志、实际 dpkg 软件包清单以及仍含全部 89 题的 `full-set.json`，未执行不能算通过。失败和超时返回非零，记录已经开始的阶段与中断命令；失败后限时收集已有日志及来宾内存、磁盘诊断，诊断读取失败不影响随后尝试销毁。销毁未确认会单独标记，必须先核对原资源，不能直接重跑。
+密钥通过 `SANDPROOF_TEST_API_KEY` 提供；程序不读取云端密钥。输出目录必须不存在。执行前复核全部 89 题源码，使用该题原始初始化、agent 与 verifier 时限；只在标准解答阶段上传 solution，只在评分阶段上传 tests，保留原退出码和 reward。输出包含可取得的该题日志和仍含全部 89 题的 `full-set.json`；原评分器返回后会尝试记录 dpkg 软件包清单，初始化或解答阶段中断时可能没有该清单。未执行不能算通过。失败和超时返回非零，记录已经开始的阶段与中断命令；失败后限时收集已有日志及来宾内存、磁盘诊断，诊断读取失败不影响随后尝试销毁。销毁未确认会单独标记，必须先核对原资源，不能直接重跑。
 
 服务必须预先配置与当前题目一致的 CPU/内存、10 GiB 独立盘、86400 秒单次及总寿命上限，以及公网 IPv4 出站。服务的固定 base 必须切换为该题配方指定的预制镜像；CPU/内存也按原题设置。原 SDK 仍仅请求 `base`，模板构建与任意 Dockerfile/OCI 转换不属于服务能力。Python/Debian 镜像以明确的官方 amd64 清单及所有层摘要固定，加入同一 envd、固定静态 BusyBox 启动配置和独立 guest 网络配置；这些本地实验镜像的隔离与启动证据必须分别取得。DNS 使用公网解析器 1.1.1.1，宿主若有 Docker 的 FORWARD 默认拒绝策略，应由监督器按本轮唯一网卡配置和回收精确转发规则，不能关闭全局防火墙。执行入口不修改宿主网络、不启动服务，不代替独立的 PID/磁盘/cgroup/网络清理审计。
 
@@ -93,3 +93,9 @@ hf-model-inference、pytorch-model-recovery 和两道 MTEB 题的原 pip 安装�
 path-tracing-reverse 的原评分器会跨 `/app`、`/tmp` 重命名文件。该题初始化在 guest 内保存临时目录内容、停止独立 tmpfs 挂载并恢复到同一私有盘，保留目录内容和 sticky bit；不改动原评分器的文件操作。
 
 两道 QEMU 题的 Bullseye 源固定到与基础镜像构建注释一致的 2026-08-24 官方历史仓库，避免现有索引引用已返回 404 的软件包。历史源保留原 Debian keyring 的签名检查，仅对该固定快照停用过期时间检查；初始精简镜像尚无 CA bundle，apt 通过 HTTP 获取内容并核对签名及包摘要。
+
+Cython 扩展题使用独立 pip 约束将 Planarity 固定为带源码 SHA-256 的 0.6，保留 pyknotid 0.5.3 需要的图属性接口；原标准解答和测试不变。该约束只影响该题，依据为本地异常堆栈及[上游同类问题](https://github.com/harbor-framework/terminal-bench-2/issues/75)。
+
+GPT-2 题的标准解答预留大于来宾物理内存的虚拟地址空间；该题初始化仅在来宾设置 `vm.overcommit_memory=1`，允许延迟按需分配物理页。来宾 4 GiB 内存、宿主 cgroup 上限及原评分时限保持不变。
+
+Mailman 题在来宾补齐基础镜像缺少的 `/var/mail`（root:mail，2775），使 Postfix 能创建本地邮箱。两道 MIPS 题的原 Doom 共享版数据链接失效，改从 [SliTaz 列出的 TuxFamily 镜像](https://www.slitaz.org/en/get/)下载相同发行数据并校验固定 SHA-256；下载失败立即中止初始化，不能把 HTTP 错误正文当作 WAD 文件。
