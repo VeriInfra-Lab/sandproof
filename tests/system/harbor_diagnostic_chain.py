@@ -123,7 +123,8 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
         assert sandbox.get_info().state == "running"
         assert any(item.sandbox_id == sandbox.sandbox_id for item in Sandbox.list(**sdk_options).next_items())
         Sandbox.set_timeout(sandbox.sandbox_id, 86400, **sdk_options)
-        prepared = sandbox.commands.run("mkdir -p /app /tests /logs/verifier && test \"$(id -u)\" = 0 && grep -qx 'VERSION_ID=\"24.04\"' /etc/os-release && test ! -e " + pin["initial_absent"], cwd="/app", timeout=30)
+        sandbox.commands.run("mkdir -p /app /tests /logs/verifier", cwd="/", timeout=30)
+        prepared = sandbox.commands.run("test \"$(id -u)\" = 0 && grep -qx 'VERSION_ID=\"24.04\"' /etc/os-release && test ! -e " + pin["initial_absent"], cwd="/app", timeout=30)
         assert prepared.exit_code == 0
         profile = sandbox.commands.run("nproc; awk '/MemTotal/ {print $2}' /proc/meminfo; df -B1 --output=size / | tail -1", cwd="/app", timeout=30).stdout.splitlines()
         assert int(profile[0]) == 1 and int(profile[1]) >= 2_000_000 and int(profile[2]) >= 9 * GIB, profile
