@@ -2,7 +2,7 @@
 
 [文档目录](../docs/README.md) · [项目蓝图](../docs/project-blueprint.md) · [验收清单](../docs/testing-plan.md)
 
-当前入口实现完整题集的源码锁定、资源审计、Harbor/SDK 联合依赖与原任务加载检查，不执行任务代码或启动沙箱。范围为固定 Harbor registry 中 `terminal-bench@2.0` 的全部 **89 题**；不能在失败后删除任务或把未运行计为通过。
+当前入口实现完整题集的源码锁定、资源审计、Harbor/SDK 联合依赖与原任务加载检查。另有一条仅供隔离 Linux/KVM 手动验收的诊断链路，运行[预选的两题](diagnostic-tasks.json)；其结果不能代表未运行的 87 题。完整范围仍为固定 Harbor registry 中 `terminal-bench@2.0` 的全部 **89 题**；不能在失败后删除任务或把未运行计为通过。
 
 [锁文件](terminal-bench-2.0.lock.json)固定 Harbor、E2B SDK、registry 内容摘要、任务仓库提交，以及每题所有输入文件的路径、模式、大小和 SHA-256。文件按 environment、instruction、metadata、oracle、verifier 分别标记；标准解答和私有测试仅记录摘要，不能提前上传到智能体沙箱。原 `docker_image` 标签和 Dockerfile FROM 行只是上游环境参考，不是镜像内容锁，也不表示本服务支持模板构建。
 
@@ -63,4 +63,6 @@ python3 tools/benchmark_tasks.py audit \
 
 ## 后续执行前提
 
-逐任务审查初始化配方、固定 base 及依赖内容、工作目录/启动进程、网络策略和 Harbor 薄适配仍须实现并验收。Dockerfile 清单不是通用解释器，不能把上游镜像标签伪装成可用模板。缺少能力的任务保留在完整 89 题报告里，先记录阻塞再补齐；标准解答、原评分器、清理及同一智能体的 E2B 对照按验收清单执行。在线 E2B 与模型运行使用另行配置的凭据和预算，不由这个本地工具触发。
+逐任务审查初始化配方、固定 base 及依赖内容、工作目录/启动进程、网络策略和 Harbor 薄适配仍须实现并验收。Dockerfile 清单不是通用解释器，不能把上游镜像标签伪装成可用模板。缺少能力的任务保留在完整 89 题报告里，先记录阻塞再补齐；同一智能体的 E2B 对照按验收清单执行。在线 E2B 与模型运行使用另行配置的凭据和预算，不由这个本地工具触发。
+
+首条诊断链路由[实机脚本](../tests/system/harbor_diagnostic_chain.py)执行：要求锁定的 Harbor/E2B 联合环境、固定提交的原题源码、经核对的 Ubuntu 24.04 10 GiB base、隔离 KVM 宿主与预先批准且在整轮不变的公网 IPv4 策略。每题全新沙箱，先核对 CPU/内存/磁盘和空初态；来宾固定使用公网 DNS `1.1.1.1`，因为现有 base 的宿主本地 DNS 桩不可在 VM 内使用，此处是与原 Docker 环境的已知差异。`polyglot-c-py` 只在来宾内执行原 Dockerfile 的 `apt update && apt install -y gcc`；随后依次上传并运行原 `solution/solve.sh`。原评分器所需的 Python 3.13.9 固定运行时在解答结束后传入并核对哈希，避免原评分器访问其固定下载地址超时；运行时来源和哈希见预选清单，这是另一项明确的环境差异。接着上传并运行未改动的原 `tests/test.sh` 与 `test_outputs.py`，读取原 `reward.txt`。评分后销毁并检查数据库终态、精确进程/网络/磁盘与 base 指纹。失败保留本轮私有目录诊断，不将失败题从预选名单删除；不使用付费模型，不宣称原 Harbor 模板 API 或完整榜单兼容。
