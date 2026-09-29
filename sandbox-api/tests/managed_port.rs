@@ -2992,6 +2992,10 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     assert_eq!(first.workflows_completed, 1);
     assert_eq!(first.unresolved_sandboxes, 1);
     assert_eq!(first.failed_sandboxes, 1);
+    // The stopped but unconfirmed first VM still consumes its tenant slot;
+    // the other tenant can reuse only its own reclaimed slot.
+    assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
+    port.create("2", request()).unwrap();
     drop(port);
     let journal =
         ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
@@ -3021,6 +3025,8 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     assert_eq!(resumed.unresolved_sandboxes, 0);
     assert_eq!(resumed.failed_sandboxes, 0);
     assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 0);
+    // Quota becomes reusable only after exact recovery finishes.
+    port.create("1", request()).unwrap();
 }
 
 #[test]
