@@ -45,7 +45,11 @@ class OracleRepairTests(unittest.TestCase):
                       'test ! -e results/current-only.txt\n'
                       'test ! -e results/historical.txt\n'
                       'cd results\n'
-                      f'git checkout {historical}\n')
+                      f'git checkout {historical}\n'
+                      "cat > leaderboard.py <<'PY'\n"
+                      'import os\nfrom pathlib import Path\n'
+                      'assert Path(os.environ["MTEB_CACHE"]) / Path.cwd().name == Path.cwd()\n'
+                      'PY\npython leaderboard.py\n')
             source = root / 'source'
             source.mkdir()
             (source / 'solve.sh').write_text(script)

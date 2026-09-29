@@ -103,6 +103,13 @@ def repair_solution(name, original, destination):
         if old.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
         new = old.replace(marker, 'git clone --no-checkout https://github.com/embeddings-benchmark/results')
+        # In MTEB 1.38.41 results_repo is still a clone source, even for a
+        # local path. Its documented cache root must point at the parent of
+        # this complete checkout to avoid a second full working tree.
+        marker = 'python leaderboard.py'
+        if new.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = new.replace(marker, 'MTEB_CACHE="$(dirname "$PWD")" python leaderboard.py')
     elif name == 'torch-tensor-parallelism':
         # In Torch 2.7.0, the direct Gloo Python holder releases the GIL on
         # destruction; its parent ProcessGroup's holder does not. Keep the
