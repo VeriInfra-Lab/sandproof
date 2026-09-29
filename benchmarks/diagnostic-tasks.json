@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "dataset": "terminal-bench@2.0",
+  "source_commit": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+  "tasks": [
+    {
+      "name": "regex-log",
+      "files_sha256": "a923784a849ec03641c715706e81e83a6e3635389f0a8ff4c98c7fcbee8ac243",
+      "environment": "Ubuntu 24.04; /app; root; no task-specific Dockerfile packages",
+      "initial_absent": "/app/regex.txt"
+    },
+    {
+      "name": "polyglot-c-py",
+      "files_sha256": "432dd2d645eab232622180baa329fefa1a0cdbb532e7675237bb240cd2917283",
+      "environment": "Ubuntu 24.04; /app; root; Dockerfile installs gcc",
+      "initial_absent": "/app/polyglot"
+    }
+  ]
+}
