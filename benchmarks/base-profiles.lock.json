@@ -1,0 +1,284 @@
+{
+  "scope": "fixed local experiment artifacts; source and output identities, not a claim that every profile has passed VM acceptance",
+  "profiles": {
+    "ubuntu-24.04": {
+      "image_sha256": "e126328757b505d8f5e9b6c0ca3f9d7dbe7ed0208821a52dc8515d1186496ae0",
+      "image_bytes": 10737418240,
+      "base_source_sha256": "3f96c961155f7fbf20ae42c3049044d3563a35eb0cb99b4387f04264528ca0aa",
+      "image_file": "base-bench-10g.ext4"
+    },
+    "python-3.13.9-bookworm": {
+      "repository": "library/python",
+      "tag": "3.13.9-slim-bookworm",
+      "manifest_digest": "sha256:8cdd496996889eef0a8a7921c152c0a4a9f18a26c7a5e7257d3c90b431891894",
+      "manifest": {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+          "mediaType": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:63b467c66e26befa3ef52d69163d55129846c4f8adfaea6865c183a1c606ee95",
+          "size": 5543
+        },
+        "layers": [
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:8e44f01296e3a6fdc31a671bee1c2259c5d5ee8b49f29aec42b5d2af15600296",
+            "size": 28228449
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:4be30b3571281a0ebe5d50437f7420b16633fe587d5709296fe93622dcdf7dcc",
+            "size": 3515898
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:7596cb963a49bb65fe6127c3416adf145e6f202c1819d67b2723748fd5368c08",
+            "size": 12414985
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:78f5df08abd41c9bb8afe7c79221e41fd4e03248141d63ecf618aa049e0e40f7",
+            "size": 250
+          }
+        ],
+        "annotations": {
+          "com.docker.official-images.bashbrew.arch": "amd64",
+          "org.opencontainers.image.base.digest": "sha256:72ceb30c8c49e50d4bf87aa6eb5390c3bcf091c13f41e6382e79953ea44c11c8",
+          "org.opencontainers.image.base.name": "debian:bookworm-slim",
+          "org.opencontainers.image.created": "2025-11-18T05:49:27Z",
+          "org.opencontainers.image.revision": "3f2d7e4c339ab883455b81a873519f1d0f2cd80a",
+          "org.opencontainers.image.source": "https://github.com/docker-library/python.git#3f2d7e4c339ab883455b81a873519f1d0f2cd80a:3.13/slim-bookworm",
+          "org.opencontainers.image.url": "https://hub.docker.com/_/python",
+          "org.opencontainers.image.version": "3.13.9-slim-bookworm"
+        }
+      },
+      "image_sha256": "6a5003ffdb67c539acf63885e0a4499104b3dc70e486cd928496c90319995041",
+      "image_bytes": 10737418240,
+      "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "busybox_sha256": "b3c1009e1b5c927e537487c80639cdf404f69e3eb49371d9be5d841672be3ff9",
+      "image_file": "base-python313-bookworm-init-10g.ext4"
+    },
+    "debian13": {
+      "repository": "library/debian",
+      "tag": "13.0-slim",
+      "manifest_digest": "sha256:f2306da7a8fb6440535937baed0ce0018736742d6dc5beec9d6a31355b259726",
+      "manifest": {
+        "config": {
+          "data": "eyJhcmNoaXRlY3R1cmUiOiJhbWQ2NCIsImNvbmZpZyI6eyJDbWQiOlsiYmFzaCJdLCJFbnRyeXBvaW50IjpbXSwiRW52IjpbIlBBVEg9L3Vzci9sb2NhbC9zYmluOi91c3IvbG9jYWwvYmluOi91c3Ivc2JpbjovdXNyL2Jpbjovc2JpbjovYmluIl19LCJjcmVhdGVkIjoiMjAyNS0wOC0xMVQwMDowMDowMFoiLCJoaXN0b3J5IjpbeyJjb21tZW50IjoiZGVidWVycmVvdHlwZSAwLjE1IiwiY3JlYXRlZCI6IjIwMjUtMDgtMTFUMDA6MDA6MDBaIiwiY3JlYXRlZF9ieSI6IiMgZGViaWFuLnNoIC0tYXJjaCAnYW1kNjQnIG91dC8gJ3RyaXhpZScgJ0AxNzU0ODcwNDAwJyJ9XSwib3MiOiJsaW51eCIsInJvb3RmcyI6eyJkaWZmX2lkcyI6WyJzaGEyNTY6ZTZhMzg0MmViYzdmNWU0MWQ4YTM4ZjE5YTBhYTVlYTU2YzI1NTQ3NTY5NWFjNjY4Mjg4MjQyMDgwMGNmNTQ2NSJdLCJ0eXBlIjoibGF5ZXJzIn19Cg==",
+          "digest": "sha256:c4f2d356126a64905e3a04f1c23b3f9748411b795ced0b7a436b516b4a791cb6",
+          "mediaType": "application/vnd.oci.image.config.v1+json",
+          "size": 451
+        },
+        "layers": [
+          {
+            "digest": "sha256:396b1da7636e2dcd10565cb4f2f952cbb4a8a38b58d3b86a2cacb172fb70117c",
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "size": 29773285
+          }
+        ],
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "schemaVersion": 2
+      },
+      "image_sha256": "60bd9cd0b574f75219610adec1c11cbc1c6613facd214f4dbbb709422c511bad",
+      "image_bytes": 10737418240,
+      "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "busybox_sha256": "b3c1009e1b5c927e537487c80639cdf404f69e3eb49371d9be5d841672be3ff9",
+      "image_file": "base-debian13-10g.ext4"
+    },
+    "python311slim": {
+      "repository": "library/python",
+      "tag": "3.11-slim",
+      "manifest_digest": "sha256:174bec68e0451bffabbb08c7d5d21c6b253f772d81d52b9558af97bb3159b761",
+      "manifest": {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+          "mediaType": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:274d131132dbdc6058ed77088525d77adaf0749a6d99f2cf7d42feb9a10737c8",
+          "size": 5485
+        },
+        "layers": [
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:6b37362b3da78869050b894b799ad4df04f1f3b52774087db0d81151570244c8",
+            "size": 29830418
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:41e7217c2e506d048f89ca0c5cfef848c05ef990900627c19f99938c4aae57f8",
+            "size": 1294119
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:58abdd9670ca8c69d03432ce188995dee67f0979357caf83866fe1ef2ec37138",
+            "size": 14450867
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:0526d5e29bf341cb1941d46a6d4ab64fcde4fca3dc3adccfb4dbf5728b88b61e",
+            "size": 249
+          }
+        ],
+        "annotations": {
+          "com.docker.official-images.bashbrew.arch": "amd64",
+          "org.opencontainers.image.base.digest": "sha256:7792b1f7702a86946cd518db72b6a407302c3e9bc1635634368b878189e8221c",
+          "org.opencontainers.image.base.name": "debian:trixie-slim",
+          "org.opencontainers.image.created": "2026-09-19T00:59:13Z",
+          "org.opencontainers.image.revision": "688a0b86bb44289df16a363e9f41d90514c1a5f9",
+          "org.opencontainers.image.source": "https://github.com/docker-library/python.git#688a0b86bb44289df16a363e9f41d90514c1a5f9:3.11/slim-trixie",
+          "org.opencontainers.image.url": "https://hub.docker.com/_/python",
+          "org.opencontainers.image.version": "3.11.16-slim-trixie"
+        }
+      },
+      "image_sha256": "3ccb079d3655cefcc6c34931e7437dfd77863fab031e3751c4a9cebbe289c9a1",
+      "image_bytes": 10737418240,
+      "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "busybox_sha256": "b3c1009e1b5c927e537487c80639cdf404f69e3eb49371d9be5d841672be3ff9",
+      "image_file": "base-python311slim-10g.ext4"
+    },
+    "python310": {
+      "repository": "library/python",
+      "tag": "3.10-slim-bookworm",
+      "manifest_digest": "sha256:54b4fc9408ea4f5d1b1b9c63c7ef1968d46d3b927e00df8ab1f09364593f979f",
+      "manifest": {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+          "mediaType": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:89f2d1fc03aada50d59d99f604e17a5c58fc2dc0ab33c4cf966391a207980d66",
+          "size": 5505
+        },
+        "layers": [
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150",
+            "size": 28238443
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:f4e1e9a2343599a43df57ac4101a0f7f37c802f060f2071c5c9989997b6d4e14",
+            "size": 3533406
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:31d6fd81624c2920dbd6a955404ad1cdeedc10abcd107420a5db5f8c924f9118",
+            "size": 15468920
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:e53509eb15a45f3c48c7c2ac704890855114a65112a77591578968550d3262af",
+            "size": 249
+          }
+        ],
+        "annotations": {
+          "com.docker.official-images.bashbrew.arch": "amd64",
+          "org.opencontainers.image.base.digest": "sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+          "org.opencontainers.image.base.name": "debian:bookworm-slim",
+          "org.opencontainers.image.created": "2026-09-19T01:03:14Z",
+          "org.opencontainers.image.revision": "688a0b86bb44289df16a363e9f41d90514c1a5f9",
+          "org.opencontainers.image.source": "https://github.com/docker-library/python.git#688a0b86bb44289df16a363e9f41d90514c1a5f9:3.10/slim-bookworm",
+          "org.opencontainers.image.url": "https://hub.docker.com/_/python",
+          "org.opencontainers.image.version": "3.10.21-slim-bookworm"
+        }
+      },
+      "image_sha256": "53407537ac3490434f56aca8c5bbb64d9c9a0b2350280cfd17e07c84172e87a2",
+      "image_bytes": 10737418240,
+      "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "busybox_sha256": "b3c1009e1b5c927e537487c80639cdf404f69e3eb49371d9be5d841672be3ff9",
+      "image_file": "base-python310-10g.ext4"
+    },
+    "python311full": {
+      "repository": "library/python",
+      "tag": "3.11",
+      "manifest_digest": "sha256:32c5cfbb0990468833fb28e2c8cb68be7843842d14868940e6af3820ffdec2a5",
+      "manifest": {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+          "mediaType": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:a2a75bf6184fd4e4f996711e12df827be50bdb51b1c99a68027760d5a7629360",
+          "size": 6346
+        },
+        "layers": [
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:6eefb2f5d3e91a6cfc577476bbec26bb63f0d0fc31f904493f400833783aa2c2",
+            "size": 49379699
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:42f0cc32f2e355552fbfad163210ddc51f7b8bc7cfaddb2a41bd9c4a7c5e3c49",
+            "size": 25640088
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:38985a14f2b1b8215895ecb448f3dfc4067cb494aa00b547c78c9a012e9b2460",
+            "size": 67807472
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:e7272a918094ebc3b66e08b23223afd37614df4ba4518b2dfd9da5ee9247fce6",
+            "size": 236398594
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:428ecea118d32b9c3c6ec555fed40f861353450852ead40ca055f8bef04ac081",
+            "size": 6092339
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:55aabd477835f7e3b6f6c563c3bfb5ebeb6d354f2572ad4674677324ab3b7fb8",
+            "size": 24075890
+          },
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:762734b8a939fba54e568bb5c15ecdcd513b4c491689ee55ded0927ab9fd71d6",
+            "size": 249
+          }
+        ],
+        "annotations": {
+          "com.docker.official-images.bashbrew.arch": "amd64",
+          "org.opencontainers.image.base.digest": "sha256:e6454c82c2420d6a777c8d532ff4ddf2b3647c2caf2513a78911e045ef2b5163",
+          "org.opencontainers.image.base.name": "buildpack-deps:trixie",
+          "org.opencontainers.image.created": "2026-09-19T03:31:12Z",
+          "org.opencontainers.image.revision": "fe89472bda6128fef7e964d1f1991534e32dcfb7",
+          "org.opencontainers.image.source": "https://github.com/docker-library/python.git#fe89472bda6128fef7e964d1f1991534e32dcfb7:3.11/trixie",
+          "org.opencontainers.image.url": "https://hub.docker.com/_/python",
+          "org.opencontainers.image.version": "3.11.16-trixie"
+        }
+      },
+      "image_sha256": "c7d427024cbbc5e4aba957b1a7c7b11eabbe7fe0d69d4e0ebaeb6dca5f44c2c0",
+      "image_bytes": 10737418240,
+      "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "busybox_sha256": "b3c1009e1b5c927e537487c80639cdf404f69e3eb49371d9be5d841672be3ff9",
+      "image_file": "base-python311full-10g.ext4"
+    },
+    "bullseye": {
+      "repository": "library/debian",
+      "tag": "bullseye-slim",
+      "manifest_digest": "sha256:70509c95d1857a3704c0a5d92ee2e0adac95f612a9386889d70760bfd7c1ebba",
+      "manifest": {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+          "mediaType": "application/vnd.oci.image.config.v1+json",
+          "digest": "sha256:d38033c65c2a9d9b288116787724b5bae6667f79d6e2592154042ba312759ff8",
+          "size": 453,
+          "data": "eyJjb25maWciOnsiRW52IjpbIlBBVEg9L3Vzci9sb2NhbC9zYmluOi91c3IvbG9jYWwvYmluOi91c3Ivc2JpbjovdXNyL2Jpbjovc2JpbjovYmluIl0sIkVudHJ5cG9pbnQiOltdLCJDbWQiOlsiYmFzaCJdfSwiY3JlYXRlZCI6IjIwMjYtMDgtMjRUMDA6MDA6MDBaIiwiaGlzdG9yeSI6W3siY3JlYXRlZCI6IjIwMjYtMDgtMjRUMDA6MDA6MDBaIiwiY3JlYXRlZF9ieSI6IiMgZGViaWFuLnNoIC0tYXJjaCAnYW1kNjQnIG91dC8gJ2J1bGxzZXllJyAnQDE3ODc1Mjk2MDAnIiwiY29tbWVudCI6ImRlYnVlcnJlb3R5cGUgMC4xNyJ9XSwicm9vdGZzIjp7InR5cGUiOiJsYXllcnMiLCJkaWZmX2lkcyI6WyJzaGEyNTY6N2ZhNzE2ZDFlNWRjZDVlNDdiMTM1MDkyMDY3NjJhODJlMTIzYzI2ZDM4NDAxYTg0YjQ0Mjg3ZTg3MzFkZTdhMCJdfSwib3MiOiJsaW51eCIsImFyY2hpdGVjdHVyZSI6ImFtZDY0In0K"
+        },
+        "layers": [
+          {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": "sha256:4705738e5e0492efae5d2523aa791e06c852e2e1acb5e70a365cc08f9da0c556",
+            "size": 30259727
+          }
+        ]
+      },
+      "image_sha256": "f34eb64d8744a8cbf59d0003f220c5f1b6a2c9ba5e2fab0ef9820936e84bf67c",
+      "image_bytes": 10737418240,
+      "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "busybox_sha256": "b3c1009e1b5c927e537487c80639cdf404f69e3eb49371d9be5d841672be3ff9",
+      "image_file": "base-bullseye-10g.ext4"
+    }
+  }
+}

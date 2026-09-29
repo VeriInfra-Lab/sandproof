@@ -3,13 +3,29 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import json
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from benchmarks.run_local import InvalidInput, LocalBaseEnvironment, input_path, local_url
+from benchmarks.run_local import InvalidInput, LocalBaseEnvironment, input_path, local_url, load_recipes
 
 
 class LocalRunnerTests(unittest.TestCase):
+    def test_task_omission_is_rejected_before_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recipes = Path(tmp) / 'recipes.json'
+            recipes.write_text(json.dumps({}))
+            with patch('benchmarks.run_local.RECIPES', recipes), self.assertRaises(InvalidInput):
+                load_recipes({'tasks': [{'name': 'required-task'}]}, Path(tmp))
+
+    def test_base_substitution_is_rejected_before_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recipes = Path(tmp) / 'recipes.json'
+            recipes.write_text(json.dumps({'task': {'base': 'ubuntu-24.04'}}))
+            lock = {'tasks': [{'name': 'task', 'dockerfile_from_lines': ['python:3.13-slim-bookworm']}]}
+            with patch('benchmarks.run_local.RECIPES', recipes), self.assertRaises(InvalidInput):
+                load_recipes(lock, Path(tmp))
+
     def test_never_defaults_to_cloud(self):
         for url in ('https://api.e2b.dev', 'http://127.0.0.1.evil',
                     'http://user:secret@localhost', 'http://localhost/x',

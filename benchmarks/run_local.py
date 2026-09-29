@@ -27,7 +27,17 @@ from harbor.verifier.verifier import Verifier
 from benchmarks.check_harbor import check_runtime, check_tasks
 from tools.benchmark_tasks import InvalidInput, verify
 
-RECIPES = Path(__file__).with_name('ubuntu-recipes.json')
+BASE_FROM = {
+    'ubuntu-24.04': ['ubuntu:24.04'],
+    'python-3.13.9-bookworm': ['python:3.13-slim-bookworm'],
+    'python311slim': ['python:3.11-slim'],
+    'python310': ['python:3.10-slim-bookworm'],
+    'python311full': ['python:3.11'],
+    'debian13': ['debian:13.0-slim'],
+    'bullseye': ['debian:bullseye-slim'],
+}
+
+RECIPES = Path(__file__).with_name('task-recipes.json')
 
 
 def local_url(value):
@@ -52,10 +62,15 @@ def input_path(root, relative):
 def load_recipes(lock, source):
     recipes = json.loads(RECIPES.read_text())
     entries = {entry['name']: entry for entry in lock['tasks']}
+    if set(recipes) != set(entries):
+        raise InvalidInput('recipes must account for the entire pinned task set')
     for name, recipe in recipes.items():
         entry = entries[name]
-        if recipe['base'] != 'ubuntu-24.04' or entry['dockerfile_from_lines'] != ['ubuntu:24.04']:
-            raise InvalidInput(name + ': recipe requires the reviewed Ubuntu base')
+        expected_from = BASE_FROM.get(recipe['base'])
+        if name == 'financial-document-processor' and recipe['base'] == 'ubuntu-24.04':
+            expected_from = ['ubuntu:24.04 as build', 'ubuntu:24.04 AS target']
+        if expected_from is None or [x.strip() for x in entry['dockerfile_from_lines']] != expected_from:
+            raise InvalidInput(name + ': recipe requires its reviewed fixed base')
         root = source / name / 'environment'
         if hashlib.sha256((root / 'Dockerfile').read_bytes()).hexdigest() != recipe['environment_sha256']:
             raise InvalidInput(name + ': recipe differs from the pinned environment')
@@ -80,12 +95,14 @@ class LocalBaseEnvironment(E2BEnvironment):
         self.events = []
         self.sandbox_id = None
         self.kill_confirmed = False
+        self.create_dispatched = False
+        self._startup_handles = []
         super().__init__(**kwargs)
         self._workdir = recipe['workdir']
 
     @property
     def capabilities(self):
-        # Public IPv4 and create-time no-network only; do not inherit E2B's
+        # Public IPv4 only; do not inherit E2B's
         # unsupported dynamic policies, hostname allowlists or cloud promises.
         return EnvironmentCapabilities()
 
@@ -94,9 +111,11 @@ class LocalBaseEnvironment(E2BEnvironment):
             raise InvalidInput('online template builds are unsupported')
         if not self._network_is_public:
             raise InvalidInput('this local runner only accepts the reviewed public IPv4 policy')
+        self.create_dispatched = True
         self._sandbox = await AsyncSandbox.create(
             template='base', timeout=86400, allow_internet_access=True,
             metadata={'benchmark': 'terminal-bench-2.0', 'task': self.environment_name},
+            envs=self._startup_env(),
             **self.sdk_options,
         )
         self.sandbox_id = self._sandbox.sandbox_id
@@ -104,8 +123,15 @@ class LocalBaseEnvironment(E2BEnvironment):
         if (info.cpu_count, info.memory_mb) != (self.task_env_config.cpus, self.task_env_config.memory_mb):
             raise InvalidInput('actual SDK resource profile differs from the task')
         identity = await self.exec('cat /etc/os-release', cwd='/', timeout_sec=30)
-        if identity.return_code or 'ID=ubuntu\n' not in identity.stdout or 'VERSION_ID="24.04"' not in identity.stdout:
-            raise InvalidInput('guest OS differs from recipe base')
+        if identity.return_code:
+            raise InvalidInput('guest OS identity could not be observed')
+        if self.recipe['base'] == 'ubuntu-24.04':
+            if 'ID=ubuntu\n' not in identity.stdout or 'VERSION_ID="24.04"' not in identity.stdout:
+                raise InvalidInput('guest OS differs from recipe base')
+        else:
+            marker = await self._sandbox.files.read('/etc/sandproof-base-profile')
+            if marker.strip() != self.recipe['base']:
+                raise InvalidInput('guest fixed profile differs from recipe')
         await self._sandbox.files.write('/etc/resolv.conf', 'nameserver 1.1.1.1\noptions timeout:2 attempts:2\n')
         await self.exec('mkdir -p /logs/agent /logs/verifier /logs/artifacts', cwd='/', timeout_sec=30)
         for step in self.recipe['steps']:
@@ -121,6 +147,19 @@ class LocalBaseEnvironment(E2BEnvironment):
                                          timeout_sec=int(self.task_env_config.build_timeout_sec))
                 if result.return_code:
                     raise RuntimeError('initialization command failed')
+        if self.recipe.get('start_command'):
+            handle = await self._sandbox.commands.run(
+                self.recipe['start_command'] + ' > /logs/initializer-service.txt 2>&1',
+                background=True, cwd=self._workdir, envs=self._startup_env(), timeout=0, user='root')
+            self._startup_handles.append(handle)
+            # The only registered long-lived initializer is this task's
+            # supervisord. Require its actual PID file and live process.
+            ready = await self.exec(
+                'for i in $(seq 1 100); do test -s /root/supervisord.pid && '
+                'kill -0 $(cat /root/supervisord.pid) && exit 0; sleep 0.1; done; exit 1',
+                cwd='/', timeout_sec=15)
+            if ready.return_code:
+                raise RuntimeError('task startup service did not become ready')
         # Initializers cannot leave private solution/test material behind.
         boundary = await self.exec('test ! -e /solution && test ! -e /tests', cwd='/', timeout_sec=30)
         if boundary.return_code:
@@ -154,6 +193,7 @@ class LocalBaseEnvironment(E2BEnvironment):
 
     async def upload_dir(self, source_dir, target_dir):
         source = Path(source_dir)
+        await self._sandbox.files.make_dir(target_dir)
         for path in sorted(source.rglob('*')):
             if path.is_symlink():
                 raise InvalidInput('input symlink is unsupported')
@@ -203,6 +243,7 @@ async def run_task(args, entry, recipe):
             retries=0, request_timeout=60),
         environment_dir=task.paths.environment_dir, environment_name=task.name,
         session_id=task.name, trial_paths=paths, task_env_config=task.config.environment,
+        persistent_env=recipe.get('env', {}),
     )
     row = {'name': task.name, 'status': 'running', 'stage': 'initialization',
            'oracle': 'not_run', 'verifier': 'not_run'}
@@ -232,6 +273,8 @@ async def run_task(args, entry, recipe):
         (paths.trial_dir / 'error.txt').write_text(str(error))
     finally:
         row['sandbox_id'] = environment.sandbox_id
+        if environment.create_dispatched and environment.sandbox_id is None:
+            row['status'] = 'create_unknown'
         (paths.trial_dir / 'events.json').write_text(json.dumps(environment.events, indent=2))
         try:
             await environment.stop()

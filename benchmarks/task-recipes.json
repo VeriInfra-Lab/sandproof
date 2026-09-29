@@ -1,0 +1,2304 @@
+{
+  "adaptive-rejection-sampler": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "e644a3343e339303230f1441b7383f076d21c69a5a7aa6430b4f8a9d27f15c8b",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "protected.tar.gz.enc",
+        "target": "/protected/protected.tar.gz.enc"
+      }
+    ]
+  },
+  "bn-fit-modify": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "8b0b1056e9c66c01a14a3d79332cc425498f2926b6deda13d200591ee5e5e6cc",
+    "steps": [
+      {
+        "run": "apt-get update &&      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends          r-base          python3          python3-pip          build-essential          curl          sudo          gfortran          libblas-dev          liblapack-dev &&      rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "curl -fsSL \"${BN_URL}\" -o bn_sample_10k.csv",
+        "cwd": "/app",
+        "env": {
+          "BN_URL": "https://raw.githubusercontent.com/gdreiman1/t_bench_bn_dataset/main/bn_sample_10k.csv"
+        }
+      }
+    ]
+  },
+  "break-filter-js-from-html": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "456f7dbf9eb988d24598e46fd371f8f732061bcdc55031dff2f8fc79030be5c4",
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      wget      gnupg      unzip      chromium      chromium-driver      && apt-get clean      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "pip install --no-cache-dir selenium==4.35.0 beautifulsoup4==4.13.4",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "filter.py",
+        "target": "/app/filter.py"
+      },
+      {
+        "copy": "tests/test_outputs.py",
+        "target": "/app/test_outputs.py"
+      }
+    ]
+  },
+  "build-cython-ext": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "cb6cf421cb9b69d43bd25cd491e49bda982fbb865d47515178d017eda727194e",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update &&      apt-get install -y          git          build-essential          libgl1-mesa-glx &&      rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install numpy==2.3.0",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "build-pmars": {
+    "base": "debian13",
+    "workdir": "/app",
+    "environment_sha256": "ff0a9f766151b6304a33b8fe8787dc27d75f6ea679eec4e9a4f2c8876fe08b25",
+    "env": {},
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y tmux asciinema",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "warriors/flashpaper.red",
+        "target": "/app/flashpaper.red"
+      },
+      {
+        "copy": "warriors/rave.red",
+        "target": "/app/rave.red"
+      }
+    ]
+  },
+  "build-pov-ray": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "44f2b5fc7311d8f336daaaca99dd4216b49355e67f50b494ebacf1b0f7c14e92",
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      curl      wget      git      imagemagick      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "apt-get update && apt-get purge -y povray* || true",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "copy": "deps/illum1.pov",
+        "target": "/app/deps/illum1.pov"
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "caffe-cifar-10": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "e09b48207ea329b6a0f106d45c3307f8ad4f5acd1adbd5a2f874acf7bd048ea3",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y      git      curl      cmake      wget",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "cancel-async-tasks": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "1ee7bdb4a7536f5f114c11a3ac6ff42790abfea901fcba6b2a8ea8685f19140e",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "chess-best-move": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "d5697e7a11399e45f105bf43f40e5c95746d6a8601965ea6935a52b59bbbfa2b",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt update -y",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt clean && apt update -y",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt install -y curl",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt install -y python3-pip",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip3 install pillow==11.2.1 --break-system-packages",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /fonts",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "curl https://notofonts.github.io/symbols/fonts/NotoSansSymbols2/full/ttf/NotoSansSymbols2-Regular.ttf > /fonts/noto.ttf",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "make.py",
+        "target": "/app/make.py"
+      },
+      {
+        "run": "python3 make.py",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm make.py",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "circuit-fibsqrt": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "780c23986778f3e5f842567868af30b1135ed095ca9449e1c90b7f0e0483d3d4",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt-get install -y gcc",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "tests/sim.c",
+        "target": "/app/sim.c"
+      },
+      {
+        "copy": "gates.txt",
+        "target": "/app/gates.txt"
+      }
+    ]
+  },
+  "cobol-modernization": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "8b175c83fc03ec7d16d6101516bc5100230b592f480e435279f4fe051c9280b2",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "src/",
+        "target": "/app/src"
+      },
+      {
+        "copy": "data/",
+        "target": "/app/data"
+      },
+      {
+        "run": "apt-get update && apt-get install -y nano",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt-get install -y gnucobol3",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "code-from-image": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "5bd29db32ea0ef2b5c87c8526d0ac1b102be922dab66510f06439ab9dc84809c",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "code.png",
+        "target": "/app/code.png"
+      }
+    ]
+  },
+  "compile-compcert": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "c357ea41e4a4013c5c5980b8fef04af6a5ae250ccc6697cf3bad3127401a931f",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "configure-git-webserver": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "8c87039a43581841b7ef11d80c4ff1a5c5f43011877e167403063d55435aaa19",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt update -y && apt install -y curl",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "constraints-scheduling": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "7d9aba072a4a907229728b9739c8cf821fc2c98450babd64452682caf3759c84",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update   && apt-get install -y --no-install-recommends        python3        python3-pip   && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "inputs/",
+        "target": "/app"
+      }
+    ]
+  },
+  "count-dataset-tokens": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "972a00802b1b51e9b833a9f12d62e609db16748a1b4161246eeb21bece3f7e54",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "crack-7z-hash": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "387c60f7a21d4548c12e1af2453aa8bdd12c45bbe576666c3e48777c5b7c3ecb",
+    "steps": [
+      {
+        "run": "apt-get update",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "apt-get install git build-essential -y",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "git clone -o origin --single-branch https://github.com/openwall/john.git /app/john &&      cd /app/john &&      git reset --hard 8b5bfefbdc9b643513037f30c8200f5dc0ffc841 &&      git remote remove origin &&      git tag -d $(git tag -l) &&      git reflog expire --expire=now --all &&      git gc --prune=now --aggressive",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app/john/src",
+        "cwd": "/"
+      },
+      {
+        "run": "./configure --without-openssl && make",
+        "cwd": "/app/john/src",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "task-deps/",
+        "target": "/app"
+      }
+    ]
+  },
+  "custom-memory-heap-crash": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "6ee81e5a4fa2540443d7f27d577ba840728fc6aab9f301ab7919103673c78080",
+    "steps": [
+      {
+        "run": "apt-get update &&      apt-get install -y      asciinema      build-essential      g++      gcc      make      autoconf      automake      libtool      texinfo      tmux      python3      python3-pip      flex      bison      git      wget      file      libgmp-dev      libmpfr-dev      libmpc-dev      valgrind      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /build",
+        "cwd": "/"
+      },
+      {
+        "run": "cd /build &&      wget -q https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-13.2.0.tar.gz &&      tar -xzf gcc-13.2.0.tar.gz &&      mv gcc-releases-gcc-13.2.0 gcc-13.2.0 &&      rm gcc-13.2.0.tar.gz",
+        "cwd": "/build",
+        "env": {}
+      },
+      {
+        "copy": "patches/",
+        "target": "/build/patches"
+      },
+      {
+        "run": "cd /build/gcc-13.2.0 &&      patch -p0 < /build/patches/locale_classes.tcc.patch &&      patch -p0 < /build/patches/locale_init.cc.patch",
+        "cwd": "/build",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /build/gcc-build-debug &&      cd /build/gcc-build-debug &&      CXXFLAGS=\"-g -O0\" ../gcc-13.2.0/configure          --prefix=/usr/local/gcc-custom-debug          --disable-multilib          --disable-bootstrap          --enable-languages=c,c++          --enable-shared          --enable-threads=posix          --disable-libstdcxx-pch          --disable-werror &&      make -j$(nproc) all-target-libstdc++-v3 &&      make install-target-libstdc++-v3",
+        "cwd": "/build",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /build/gcc-build-release &&      cd /build/gcc-build-release &&      CXXFLAGS=\"-O2 -DNDEBUG\" ../gcc-13.2.0/configure          --prefix=/usr/local/gcc-custom-release          --disable-multilib          --disable-bootstrap          --enable-languages=c,c++          --enable-shared          --enable-threads=posix          --disable-libstdcxx-pch          --disable-werror &&      make -j$(nproc) all-target-libstdc++-v3 &&      make install-target-libstdc++-v3",
+        "cwd": "/build",
+        "env": {}
+      },
+      {
+        "run": "rm -rf /build/gcc-build-debug /build/gcc-build-release",
+        "cwd": "/build",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "program/",
+        "target": "/app"
+      }
+    ]
+  },
+  "db-wal-recovery": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "63a260531c62f4ae72060db17f295c0aa03cfc6321f8162c324b7aa6b3f81302",
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      python3      python3-pip      sqlite3      xxd      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "main.db",
+        "target": "/app/main.db"
+      },
+      {
+        "copy": "main.db-wal.encrypted",
+        "target": "/app/main.db-wal"
+      }
+    ]
+  },
+  "distribution-search": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "1eaa2eae5c9edd86316401ef3dca829dbe4125391b6845237fa73acd98c30012",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install numpy==2.1.2 scipy==1.15.3",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "dna-assembly": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "26e9e43a98f0b1d132bb638f44b7dc882b0d0ca32d56fa33048adeee00ab600d",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "sequences.fasta",
+        "target": "/app/sequences.fasta"
+      }
+    ]
+  },
+  "dna-insert": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "26e9e43a98f0b1d132bb638f44b7dc882b0d0ca32d56fa33048adeee00ab600d",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "sequences.fasta",
+        "target": "/app/sequences.fasta"
+      }
+    ]
+  },
+  "extract-elf": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "1c5c0a227bee1f5e2933710f3c9d89848a4dc9353c2516a549196fb18b842606",
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y nodejs npm gcc",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "copy": "task-deps/hi.c",
+        "target": "/app/hi.c"
+      },
+      {
+        "run": "gcc /app/hi.c -o /app/a.out",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "extract-moves-from-video": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "aa271a9df218d1ddc646ad3b1c5a5e55a75d758c094ba5e08a88226f5c5dc970",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "feal-differential-cryptanalysis": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "c40553e4cf830b7cd075a79dca1a29f5267c45c63b1cedb275383f58af356a30",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "pip install setuptools==80.9.0",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "feal.py",
+        "target": "/app/feal.py"
+      }
+    ]
+  },
+  "feal-linear-cryptanalysis": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "ef521cded1b5e0e9a11a6aa9c758e4474f2160e641fb9a177a20cdc728bfff1d",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt update -y && apt install -y gcc",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install setuptools==80.9.0",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "task-deps/",
+        "target": "/app"
+      },
+      {
+        "run": "gcc -O3 -o feal feal.c",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "gcc -O3 -o decrypt decrypt.c",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "python3 gen.py",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm orig_plaintexts.txt",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm gen.py",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "filter-js-from-html": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "c35743bdbd10286c8fb89f93b76fe084f900773d3435373082de660a8a6c1ed0",
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      chromium      chromium-driver      && apt-get clean      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "pip install --no-cache-dir selenium==4.35.0 beautifulsoup4==4.13.4",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "financial-document-processor": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "2ea485aead008998d7a551e8c80b6bd354a74cbffc310a1f4b88d0b7c53d23ff",
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y curl && curl -fsSL https://astral.sh/uv/0.8.14/install.sh -o /tmp/uv-install.sh && sh /tmp/uv-install.sh && cp /root/.local/bin/uv /root/.local/bin/uvx /bin/ && rm /tmp/uv-install.sh",
+        "cwd": "/",
+        "env": {
+          "DEBIAN_FRONTEND": "noninteractive"
+        }
+      },
+      {
+        "copy": "randomize_filenames.py",
+        "target": "/root/randomize_filenames.py"
+      },
+      {
+        "copy": "documents",
+        "target": "/tmp/original_documents"
+      },
+      {
+        "run": "uv run /root/randomize_filenames.py",
+        "cwd": "/root"
+      },
+      {
+        "run": "rm -rf /tmp/original_documents /root/randomize_filenames.py && test -d /app/documents",
+        "cwd": "/"
+      }
+    ]
+  },
+  "fix-code-vulnerability": {
+    "base": "python311slim",
+    "workdir": "/app",
+    "environment_sha256": "0917470986224df4daf4854a71302ae81c73ba5dd6e25be1232d29b758a5b3ab",
+    "env": {},
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y git nano sed tmux asciinema",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "git clone -o origin --single-branch https://github.com/bottlepy/bottle.git /app &&      cd /app &&      git reset --hard 0207a34f0c5716cd292dd4480253ad35d3da49f3 &&      git remote remove origin &&      git tag -d $(git tag -l) &&      git reflog expire --expire=now --all &&      git gc --prune=now --aggressive",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install --upgrade pip==24.2 && pip install flit==3.12.0",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "FLIT_ROOT_INSTALL=1 flit install",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install .",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "sed -i -e '1562,1563d' bottle.py",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "sed -i -e '1567,1568d' bottle.py",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "fix-git": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app/personal-site",
+    "environment_sha256": "dfd64a46955909f58d1b562ea233c3cace75195bbef5d75cd6b599f3b8967bb7",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y git",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "setup.sh",
+        "target": "/app/setup.sh"
+      },
+      {
+        "copy": "resources",
+        "target": "/app/resources"
+      },
+      {
+        "run": "bash /app/setup.sh",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app/personal-site",
+        "cwd": "/"
+      }
+    ]
+  },
+  "fix-ocaml-gc": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "36d7fd9cc31b3b26eb56079f2a2a0be8cf577df7c9d8f77a1b08249805d5a0df",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt update && apt install -y build-essential git gdb",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "git clone https://github.com/sadiqj/ocaml/ && cd ocaml && git checkout tag_purposefully_broken_sweeping_changes",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm -rf ocaml/.git # We don't want it cheating and just rolling back the recent changes",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "gcode-to-text": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "5383f514233180e5a264c1b3180d33b00f14f622217c5062a96d4aa970d4102e",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "text.gcode.gz",
+        "target": "/app/text.gcode.gz"
+      },
+      {
+        "run": "gzip -d /app/text.gcode.gz",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "git-leak-recovery": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "006bf5d2e3502a059f9a87bc855a7f85d6c40c67bf8a523dd3f1e9c6f64cc112",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y git",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app && chmod 755 /app",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "challenge-setup.sh",
+        "target": "/app/challenge-setup.sh"
+      },
+      {
+        "run": "chmod +x /app/challenge-setup.sh &&      bash /app/challenge-setup.sh &&      rm /app/challenge-setup.sh",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "git-multibranch": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "88d9a9f4fef1ae7fddf632799dedf5a2fb6489460a93b610c33dd8b122982821",
+    "steps": [
+      {
+        "run": "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y      nginx      openssh-server      git      curl      openssl      python3      python3-pip      net-tools      ca-certificates      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /etc/ssl/certs &&      mkdir -p /etc/ssl/private &&      openssl req -x509 -nodes -days 365      -subj \"/CN=localhost\"      -newkey rsa:2048      -keyout /etc/ssl/private/nginx-selfsigned.key      -out /etc/ssl/certs/nginx-selfsigned.crt",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /var/www/html /var/www/dev",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "default.conf",
+        "target": "/etc/nginx/sites-available/default"
+      }
+    ]
+  },
+  "gpt2-codegolf": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "e1f57eb413b92c10565a8100e559f633c4f4ec5c0bcdd5a755a0eb92eb4de02f",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y curl gcc",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "curl https://openaipublic.blob.core.windows.net/gpt-2/models/124M/vocab.bpe > vocab.bpe",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "curl https://openaipublic.blob.core.windows.net/gpt-2/models/124M/model.ckpt.data-00000-of-00001  > gpt2-124M.ckpt",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "headless-terminal": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "c17679907b17671ab6e363aebaa26464dac2d3d0cfd5680cb0bbe6160af17481",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update -y && apt-get install -y tmux screen expect",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "base_terminal.py",
+        "target": "/app/base_terminal.py"
+      }
+    ]
+  },
+  "hf-model-inference": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "ad4f71e919cc0889dd8ac33e49d5bdc48ffb9f7d44609ac95819f8ea663d3b2b",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "pip install transformers==4.56.0 torch==2.7.1 flask==3.1.1",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "install-windows-3.11": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "91aa5335320f7c7721835eb6838bb878fd22cd6a6af50ced1efbc2696dea8dbf",
+    "env": {
+      "USER": "root",
+      "PASSWORD": "password1",
+      "DEBIAN_FRONTEND": "noninteractive",
+      "DEBCONF_NONINTERACTIVE_SEEN": "true",
+      "XKB_DEFAULT_RULES": "base"
+    },
+    "steps": [
+      {
+        "run": "apt-get update &&      echo \"tzdata tzdata/Areas select America\" > ~/tx.txt &&      echo \"tzdata tzdata/Zones/America select New_York\" >> ~/tx.txt &&      debconf-set-selections ~/tx.txt &&      apt-get install -y      wget      ratpoison      novnc      websockify      libxv1      xauth      x11-utils      xserver-common      xserver-xorg-core      xserver-xorg-input-evdev      xserver-xorg-video-dummy      tightvncserver      x11-xkb-utils      gstreamer1.0-plugins-good      gstreamer1.0-pulseaudio      gstreamer1.0-tools      libgtk2.0-0      libopenal1      libsndfile1      nginx      pulseaudio      supervisor      ucspi-tcp      vncsnapshot      bc      file      build-essential      python3      pkg-config      libglib2.0-dev      libfdt-dev      libpixman-1-dev      zlib1g-dev      libnfs-dev      libiscsi-dev      ninja-build      meson      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {
+          "USER": "root",
+          "PASSWORD": "password1",
+          "DEBIAN_FRONTEND": "noninteractive",
+          "DEBCONF_NONINTERACTIVE_SEEN": "true",
+          "XKB_DEFAULT_RULES": "base"
+        }
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "etc/pulse/default.pa",
+        "target": "/etc/pulse/default.pa"
+      },
+      {
+        "copy": "etc/pulse/client.conf",
+        "target": "/etc/pulse/client.conf"
+      },
+      {
+        "copy": "etc/pulse/daemon.conf",
+        "target": "/etc/pulse/daemon.conf"
+      },
+      {
+        "copy": "etc/pipewire/client.conf",
+        "target": "/etc/pipewire/client.conf"
+      },
+      {
+        "copy": "etc/nginx/nginx.conf",
+        "target": "/etc/nginx/nginx.conf"
+      },
+      {
+        "copy": "webaudio.js",
+        "target": "/usr/share/novnc/core/webaudio.js"
+      },
+      {
+        "run": "sed -i \"/import RFB/a      import WebAudio from '/core/webaudio.js'\"      /usr/share/novnc/app/ui.js      && sed -i \"/UI.rfb.resizeSession/a      var loc = window.location, new_uri;      if (loc.protocol === 'https:') {      new_uri = 'wss:';      } else {      new_uri = 'ws:';      }      new_uri += '//' + loc.host;      new_uri += '/audio';      var wa = new WebAudio(new_uri);      document.addEventListener('keydown', e => { wa.start(); });\"      /usr/share/novnc/app/ui.js",
+        "cwd": "/app",
+        "env": {
+          "USER": "root",
+          "PASSWORD": "password1",
+          "DEBIAN_FRONTEND": "noninteractive",
+          "DEBCONF_NONINTERACTIVE_SEEN": "true",
+          "XKB_DEFAULT_RULES": "base"
+        }
+      },
+      {
+        "run": "mkdir -p /app/isos",
+        "cwd": "/app",
+        "env": {
+          "USER": "root",
+          "PASSWORD": "password1",
+          "DEBIAN_FRONTEND": "noninteractive",
+          "DEBCONF_NONINTERACTIVE_SEEN": "true",
+          "XKB_DEFAULT_RULES": "base"
+        }
+      },
+      {
+        "run": "wget -O /app/isos/win311.img https://archive.org/download/win311_202508/win311.img",
+        "cwd": "/app",
+        "env": {
+          "USER": "root",
+          "PASSWORD": "password1",
+          "DEBIAN_FRONTEND": "noninteractive",
+          "DEBCONF_NONINTERACTIVE_SEEN": "true",
+          "XKB_DEFAULT_RULES": "base"
+        }
+      },
+      {
+        "copy": "isos/",
+        "target": "/app/isos"
+      },
+      {
+        "copy": "etc/supervisor/supervisord.conf",
+        "target": "/etc/supervisor/supervisord.conf"
+      }
+    ],
+    "start_command": "supervisord -c /etc/supervisor/supervisord.conf"
+  },
+  "kv-store-grpc": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "47c9982789092437f950736110b2bd18899c39b8fd20f3af3c95b848e564a197",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "large-scale-text-editing": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "609759efe5a6bca4c0f4d0011dd1dda814896ca6873ead803af68d92b92d8aa2",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y vim && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "gen_large_csv.py",
+        "target": "/app/gen_large_csv.py"
+      },
+      {
+        "run": "python3 /app/gen_large_csv.py both && rm /app/gen_large_csv.py",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "largest-eigenval": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "93253c52a674766179244f2290ba8ed43680a7cbbbc0f7168322298c5f5a4b94",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "pip install numpy==2.3.0",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "src/eigen.py",
+        "target": "/app/eigen.py"
+      },
+      {
+        "copy": "src/eval.py",
+        "target": "/app/eval.py"
+      }
+    ]
+  },
+  "llm-inference-batching-scheduler": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "10a6193904ee0022ac098504182989893b196dfc74e626a3ca48534a8eacde48",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "./task_file",
+        "target": "/app/task_file"
+      }
+    ]
+  },
+  "log-summary-date-ranges": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "b479f6e987b63a6ec118fa1691b8bb85c437b2a6a0fe63feab5ed7154957fdfc",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "log_generator_deterministic.py",
+        "target": "/app/log_generator_deterministic.py"
+      },
+      {
+        "run": "python3 /app/log_generator_deterministic.py",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm -f /app/log_generator_deterministic.py",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "mailman": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "69f9fc624fa27eb7baf2a5b28b7d90e31899ee5bc18f4219cace00b8c7435784",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq      postfix      mailutils      mailman3",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt-get install -y -qq less nano net-tools &&      rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "src/eval.py",
+        "target": "/app/eval.py"
+      }
+    ]
+  },
+  "make-doom-for-mips": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "1da0fdafc36e59fcf685a8dbed9717b291195e251fe0e1247267bc5a0a9980ed",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update -y",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt-get install -y nodejs curl git make",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip3 install numpy==2.3.1 pillow==11.2.1 --break-system-packages",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "git clone -o origin --single-branch https://github.com/ozkl/doomgeneric &&      cd doomgeneric &&      git reset --hard b94eba35b7cf4b2002857c7c625aeb24e99f979e &&      git remote remove origin &&      git tag -d $(git tag -l) &&      git reflog expire --expire=now --all &&      git gc --prune=now --aggressive",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "task-deps/doomgeneric_img.c",
+        "target": "/app/doomgeneric/doomgeneric/doomgeneric_img.c"
+      },
+      {
+        "run": "curl https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad > doom.wad",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "task-deps/vm.js",
+        "target": "/app/vm.js"
+      }
+    ]
+  },
+  "make-mips-interpreter": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "7fe6814c68c28d907e72ac05176ba8f9f493d7eb6693bef96c97126462b8fedf",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update -y &&      apt-get install -y nodejs curl git make &&      apt-get install -y clang gcc-mips-linux-gnu g++-mips-linux-gnu llvm llvm-dev lld",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip3 install numpy==2.3.1 pillow==11.2.1 --break-system-packages",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "git clone -o origin --single-branch https://github.com/ozkl/doomgeneric &&      cd doomgeneric &&      git reset --hard b94eba35b7cf4b2002857c7c625aeb24e99f979e &&      git remote remove origin &&      git tag -d $(git tag -l) &&      git reflog expire --expire=now --all &&      git gc --prune=now --aggressive",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "task-deps/mips.patch",
+        "target": "/tmp/mips.patch"
+      },
+      {
+        "run": "cd doomgeneric && git apply /tmp/mips.patch",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "cd doomgeneric/doomgeneric && make all && cp doomgeneric_mips ../..",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "curl https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad > doom.wad",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "mcmc-sampling-stan": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "f91f9c77f711229a9757a1fc2b48bd547163c342295e6ca222e86cfd6b4bb385",
+    "steps": [
+      {
+        "run": "apt-get update &&      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends          r-base          python3          python3-pip          build-essential          curl          sudo &&      rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "task-deps/data.csv",
+        "target": "/app/data.csv"
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "merge-diff-arc-agi-task": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "4a03ae6f0c60b9c2f45c33f0413b5aa75c9811870254e3ff1968fd0119173fc6",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "task-deps/.",
+        "target": "/app"
+      }
+    ]
+  },
+  "model-extraction-relu-logits": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "598b1f80d3b7194e97cbf02c8d245de30e303909e0cbe6465125d1d3179fddb5",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "forward.py",
+        "target": "/app/forward.py"
+      },
+      {
+        "run": "pip install numpy==2.2.5",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "modernize-scientific-stack": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "cde5acd6f59b6680c32d8faa6a753a806ef69bfc1d9b60e7dd6a4ef63503f0e4",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y      gcc      g++      gfortran      libblas-dev      liblapack-dev      libhdf5-dev      pkg-config      git      curl      wget      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install --no-cache-dir      numpy==2.3.2      pandas==2.3.2      matplotlib==3.10.6      scipy==1.16.1",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "climate_analyzer/",
+        "target": "/app/climate_analyzer"
+      }
+    ]
+  },
+  "mteb-leaderboard": {
+    "base": "python310",
+    "workdir": "/app",
+    "environment_sha256": "b2745c5eba026bda7f3ef48b1cd53f267debc0daa58b701a7a7fa903f2060aa4",
+    "env": {},
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      tmux asciinema gcc g++ git wget      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "pip install mteb==1.38.41",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "mteb-retrieve": {
+    "base": "python310",
+    "workdir": "/app",
+    "environment_sha256": "97c880635fbfbaec860a9255f849b1a1c4630e2dca8588eb838c4a95669d917e",
+    "env": {},
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      tmux asciinema gcc g++     && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y wget",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install mteb==1.36.8",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "task-deps/",
+        "target": "/app"
+      }
+    ]
+  },
+  "multi-source-data-merger": {
+    "base": "python311slim",
+    "workdir": "/app",
+    "environment_sha256": "c95a40d3d35b473dc15ae1e8784ba7fb1725805c0583fc574dd2764325d75e4f",
+    "env": {
+      "PYTHONPATH": "/app:"
+    },
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      tmux      asciinema      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "pip install pandas==2.2.3 pyarrow==17.0.0",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "data",
+        "target": "/data"
+      }
+    ]
+  },
+  "nginx-request-logging": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "43003466d89ab83484a3fa618e35b58cdb74a002b1e8716ef30f12b3ac8302d8",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "pip install requests==2.32.4",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt-get update && apt-get install -y curl",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "openssl-selfsigned-cert": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "f590b523038be43afcaf5291d7b9e8ed1333c48d9994e77b8dee2f2c352f0f40",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y      openssl      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "overfull-hbox": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "f73659a7e258641b2b93affb1d854dbba93239478707255767003e59cf1d1477",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update &&      apt-get install -y --no-install-recommends texlive-latex-base=2023.20240207-1 &&      apt-get clean &&      rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "tests/main.tex",
+        "target": "/app/main.tex"
+      },
+      {
+        "copy": "tests/input.tex",
+        "target": "/app/input.tex"
+      },
+      {
+        "copy": "tests/synonyms.txt",
+        "target": "/app/synonyms.txt"
+      }
+    ]
+  },
+  "password-recovery": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "6fabcb9e1fcb7155bf8cfe106c17f2dfa3344103e97960dab580c2444b6c9fe0",
+    "steps": [
+      {
+        "run": "apt-get update -y      && apt-get install -y      extundelete      foremost      sleuthkit      e2fsprogs      binutils      zip      unzip      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "copy": "setup.sh",
+        "target": "/app/setup.sh"
+      },
+      {
+        "run": "bash /app/setup.sh      && rm /app/setup.sh",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "path-tracing": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "7aca02e4e20b04ed2269d627a29dd4e7337a02764a9652b641452bf09836a3d5",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update -y --fix-missing &&      apt-get install -y ffmpeg gcc curl",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "orig.c",
+        "target": "/app/orig.c"
+      },
+      {
+        "run": "gcc -o orig /app/orig.c -lm",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "./orig",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm /app/orig.c",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "path-tracing-reverse": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "35b7e409b40098d84a5ca88edb49d8be67ef7410e391dd36b2f89ddf916a3d8f",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y gcc g++ curl zlib1g-dev libjpeg-dev",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "orig.c",
+        "target": "/app/orig.c"
+      },
+      {
+        "run": "gcc -static -O3 -o mystery /app/orig.c -lm",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm /app/orig.c",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "polyglot-c-py": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "2eb537f29d2bc4ab30e1b35ff352578437a08b90f91ef6360ee28d8195d5098a",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt update -y && apt install -y gcc",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "polyglot-rust-c": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "d8a3dc4dc57fa9dac783a029aef3b3094d99a6fdbff57e5201a5fb16e84dee0d",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt update -y && apt install -y rustc g++ &&      rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "portfolio-optimization": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "3d0210dedc3a9c0a7956369ba7025fbf6cd4e1bf9eb556bd3a8cbd06092904e6",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y      gcc      g++      build-essential      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "benchmark.py",
+        "target": "/app/benchmark.py"
+      },
+      {
+        "copy": "portfolio_baseline.py",
+        "target": "/app/portfolio_baseline.py"
+      },
+      {
+        "copy": "portfolio_optimized.c",
+        "target": "/app/portfolio_optimized.c"
+      },
+      {
+        "copy": "portfolio_optimized.py",
+        "target": "/app/portfolio_optimized.py"
+      },
+      {
+        "copy": "setup.py",
+        "target": "/app/setup.py"
+      },
+      {
+        "run": "pip install --no-cache-dir      numpy==2.3.2      setuptools==78.1.1",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "protein-assembly": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "fad40752bc9fd32d60b946f076a03207fe9924cd71d7285ebd96a5e343808054",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "antibody.fasta",
+        "target": "/app/antibody.fasta"
+      },
+      {
+        "copy": "plasmid.gb",
+        "target": "/app/plasmid.gb"
+      },
+      {
+        "copy": "pdb_ids.txt",
+        "target": "/app/pdb_ids.txt"
+      }
+    ]
+  },
+  "prove-plus-comm": {
+    "base": "ubuntu-24.04",
+    "workdir": "/workspace",
+    "environment_sha256": "6daf1ee29aa4647b06c965d86cf963c21af96d8f0b8f5e0fd4afd31ffd5ebd89",
+    "steps": [
+      {
+        "run": "apt-get update &&      DEBIAN_FRONTEND=noninteractive apt-get install -y      coq      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /workspace",
+        "cwd": "/"
+      },
+      {
+        "copy": "partial_proof.v",
+        "target": "/workspace/plus_comm.v"
+      }
+    ]
+  },
+  "pypi-server": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "17a4e67580e4f2c6a151d04b9d74eb020666e7eec8e5259c4a5411f9e93858d0",
+    "steps": [
+      {
+        "run": "apt update -y && apt install -y curl vim",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "python3 -m pip install --upgrade pip==25.2",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "python3 -m pip install --upgrade setuptools==75.6.0 wheel==0.45.1",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "pytorch-model-cli": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "8fd5c0f21a6914cd440d10c84c9db06fec606f20dc3e0363b17a3b8c220dc4d9",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "task-deps/",
+        "target": "/app"
+      }
+    ]
+  },
+  "pytorch-model-recovery": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "35851b7561b3ab959ec9f5da34306264f5ab3ddd4c5755be397b7e7a9d13d06e",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "weights.pt",
+        "target": "/app/weights.pt"
+      },
+      {
+        "copy": "dataset.pt",
+        "target": "/app/dataset.pt"
+      },
+      {
+        "run": "apt-get update && apt-get install -y nano",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install torch==2.7.1",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "qemu-alpine-ssh": {
+    "base": "bullseye",
+    "workdir": "/app",
+    "environment_sha256": "015ce0601ff54758f66b33f4952e0d3a577d84c09aed8f3ec5945a570e8d168a",
+    "env": {},
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      qemu-system-x86      qemu-utils      wget      ca-certificates      openssh-client      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "wget -q https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-extended-3.19.0-x86_64.iso -O /app/alpine.iso",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "qemu-img create -f qcow2 /app/alpine-disk.qcow2 32G",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt update -y",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt install -y telnet netcat expect tmux asciinema",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "qemu-startup": {
+    "base": "bullseye",
+    "workdir": "/app",
+    "environment_sha256": "d60a2eca5ead7182f3b5d243ee0f8f52d3ff235589703c22c2e97147216dc850",
+    "env": {},
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      qemu-system-x86      qemu-utils      wget      ca-certificates      openssh-client      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "wget -q https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-extended-3.19.0-x86_64.iso -O /app/alpine.iso",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "qemu-img create -f qcow2 /app/alpine-disk.qcow2 32G",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt update -y",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt install -y telnet netcat expect tmux asciinema",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "query-optimize": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "064818771f200e0517d22068f87229a7a95d0a82b0778c84ca7203bf1926a0b8",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y curl",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "apt-get update && apt-get install -y sqlite3",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "curl -L -o /app/oewn.sqlite \"https://huggingface.co/datasets/pimpalgaonkar/terminalbench-sqlite-db/resolve/84e42d43436afd2c21b4d3f94c05383fd3a6f78e/oewn.sqlite\"",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "chmod 444 /app/oewn.sqlite",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "task-deps/my-sql-query.sql",
+        "target": "/app/my-sql-query.sql"
+      }
+    ]
+  },
+  "raman-fitting": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "8fd5c0f21a6914cd440d10c84c9db06fec606f20dc3e0363b17a3b8c220dc4d9",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "task-deps/",
+        "target": "/app"
+      }
+    ]
+  },
+  "regex-chess": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "2616cd775252303839dfda0ee2f047eb862952b053b0103bd6b2460ef90c11b7",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "check.py",
+        "target": "/app/check.py"
+      },
+      {
+        "run": "pip install chess",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "regex-log": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "5f264ff0bf62a49aee3c6398447de5108df141e7a2ad35c6de8ef39fa62049c6",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "reshard-c4-data": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "2ca4a0e68628b8160f5e4296f779a204f51e3a70a8d4239be30e845e1565b39d",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "python3 -m pip install uv==0.8.15",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "copy": "setup.py",
+        "target": "/app/setup.py"
+      },
+      {
+        "run": "uv run setup.py",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm setup.py",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "rstan-to-pystan": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "9d813ec4fdc2054717f253e7acbc2740fe43f97d35a5545c91a9c06986d9d595",
+    "steps": [
+      {
+        "run": "apt-get update &&      apt-get install -y --no-install-recommends          python3          python3-pip          sudo &&      rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "task-deps/train_X.csv",
+        "target": "/app/train_X.csv"
+      },
+      {
+        "copy": "task-deps/train_y.csv",
+        "target": "/app/train_y.csv"
+      },
+      {
+        "copy": "task-deps/test_X.csv",
+        "target": "/app/test_X.csv"
+      },
+      {
+        "copy": "task-deps/meta_public.json",
+        "target": "/app/meta_public.json"
+      },
+      {
+        "copy": "task-deps/gp_rstan.R",
+        "target": "/app/gp_rstan.R"
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "sam-cell-seg": {
+    "base": "python311full",
+    "workdir": "/app",
+    "environment_sha256": "43c8f78b721c30bff9e7e0d8b7fe89196664a49df53c97384da76a2cba26c494",
+    "env": {},
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update &&        apt-get install -y git  tmux asciinema &&        rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "resources/demo_metadata.csv",
+        "target": "/app/demo_metadata.csv"
+      },
+      {
+        "copy": "resources/demo_rgb.png",
+        "target": "/app/demo_rgb.png"
+      }
+    ]
+  },
+  "sanitize-git-repo": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app/dclm",
+    "environment_sha256": "bd91e6f3b7b3c0db2c1c7ca31a1028735ca3b129d1d7949f490cbd92b441437c",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y git",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "setup.sh",
+        "target": "/app/setup.sh"
+      },
+      {
+        "run": "bash /app/setup.sh && rm /app/setup.sh",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app/dclm",
+        "cwd": "/"
+      }
+    ]
+  },
+  "schemelike-metacircular-eval": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "9b3df76222e16aad360fbd34cb0f71a0be8986052c065b10b92c0cdf417b25c7",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "tests/interp.py",
+        "target": "/app/interp.py"
+      },
+      {
+        "copy": "tests/test",
+        "target": "/app/test"
+      }
+    ]
+  },
+  "sparql-university": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "dd0abcd64e90ab16141169bcbf88a8e5f52732f207cb37765d351cc7a48916a9",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "university_graph.ttl",
+        "target": "/app/university_graph.ttl"
+      }
+    ]
+  },
+  "sqlite-db-truncate": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "49ac9305c360f117c10c940b5d036a76fb4a29a0f4302e7d75e573c352db0aea",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "trunc.db",
+        "target": "/app/trunc.db"
+      }
+    ]
+  },
+  "sqlite-with-gcov": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "f4be72b64b710962e5d9d5236716b4823ec72401a5379423039101cc00a73cd6",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "vendor",
+        "target": "/app/vendor"
+      }
+    ]
+  },
+  "torch-pipeline-parallelism": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "c357ea41e4a4013c5c5980b8fef04af6a5ae250ccc6697cf3bad3127401a931f",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "torch-tensor-parallelism": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "5f264ff0bf62a49aee3c6398447de5108df141e7a2ad35c6de8ef39fa62049c6",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      }
+    ]
+  },
+  "train-fasttext": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "330e419b0c5cc46cbf749a9f4110cfc92dc55ddfabde36ffa39b0a9c49bb82e5",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y wget",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app/data",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "wget -P /app/data https://huggingface.co/datasets/Yelp/yelp_review_full/resolve/main/yelp_review_full/test-00000-of-00001.parquet",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "wget -P /app/data https://huggingface.co/datasets/Yelp/yelp_review_full/resolve/main/yelp_review_full/train-00000-of-00001.parquet",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "reformat_data.py",
+        "target": "/app/reformat_data.py"
+      },
+      {
+        "run": "pip install pandas==2.3.0 pyarrow==20.0.0",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "python reformat_data.py && rm reformat_data.py",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "tune-mjcf": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "9b78295361faa3a84399ee97e95e85a8f1032bb5c4cb609013335b51f5d0d006",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "pip install --no-cache-dir mujoco==3.3.5",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "src/eval.py",
+        "target": "/app/eval.py"
+      },
+      {
+        "copy": "src/model_ref.xml",
+        "target": "/app/model_ref.xml"
+      }
+    ]
+  },
+  "video-processing": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "d251d457e6bfb182afd6e2aaf209ada81339fb4415d3913c9db171a8995393f8",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y      libgl1-mesa-glx      libglib2.0-0      libsm6      libxext6      libxrender-dev      libgomp1      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "pip install \"opencv-contrib-python>=4.11.0.86\"",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "example_video.mp4",
+        "target": "/app/example_video.mp4"
+      }
+    ]
+  },
+  "vulnerable-secret": {
+    "base": "python-3.13.9-bookworm",
+    "workdir": "/app",
+    "environment_sha256": "26f994bdf7bd3d8e261a3fd273dc1c54632d8a7e208312b2f2034bef167118af",
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      gcc      && rm -rf /var/lib/apt/lists/*",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "copy": "vulnerable.c",
+        "target": "/app/vulnerable.c"
+      },
+      {
+        "run": "gcc -o vulnerable vulnerable.c -fno-stack-protector -no-pie -O2 -s",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "chmod +x vulnerable",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "run": "rm vulnerable.c",
+        "cwd": "/app",
+        "env": {}
+      }
+    ]
+  },
+  "winning-avg-corewars": {
+    "base": "debian13",
+    "workdir": "/app",
+    "environment_sha256": "645036f0bc26d9dccfa943bae20536e3d849540b919bcdbbd1c6e62a9ea4c9f9",
+    "env": {},
+    "steps": [
+      {
+        "run": "apt-get update && apt-get install -y      tmux      asciinema      build-essential      libncurses-dev      ca-certificates      dpkg-dev      devscripts",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "echo 'deb-src http://deb.debian.org/debian stable main' >> /etc/apt/sources.list.d/deb-src.list",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "apt-get update",
+        "cwd": "/",
+        "env": {}
+      },
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get source pmars &&      cd /app/pmars-*/src &&      sed -i 's/-DXWINGRAPHX//g' Makefile &&      sed -i 's/^LIB *=.*/LIB = -lncurses/' Makefile &&      make clean && make &&      install -m 0755 pmars /usr/local/bin/pmars",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "warriors/",
+        "target": "/app/warriors"
+      }
+    ]
+  },
+  "write-compressor": {
+    "base": "ubuntu-24.04",
+    "workdir": "/app",
+    "environment_sha256": "9a583d29d46818f6ff2be7c6a0879d03343106e5376fd5a48eb5926b402bb93b",
+    "steps": [
+      {
+        "run": "mkdir -p /app",
+        "cwd": "/"
+      },
+      {
+        "run": "apt-get update && apt-get install -y gcc rustc bc",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "decomp.c",
+        "target": "/app/decomp.c"
+      },
+      {
+        "run": "gcc -O3 decomp.c -o /app/decomp",
+        "cwd": "/app",
+        "env": {}
+      },
+      {
+        "copy": "data.txt",
+        "target": "/app/data.txt"
+      }
+    ]
+  }
+}
