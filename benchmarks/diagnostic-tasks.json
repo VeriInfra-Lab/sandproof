@@ -2,6 +2,13 @@
   "schema_version": 1,
   "dataset": "terminal-bench@2.0",
   "source_commit": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+  "verifier_python": {
+    "version": "3.13.9",
+    "source_url": "https://www.python.org/ftp/python/3.13.9/Python-3.13.9.tgz",
+    "source_sha256": "c4c066af19c98fb7835d473bebd7e23be84f6e9874d47db9e39a68ee5d0ce35c",
+    "runtime_archive_sha256": "0c5450b5ba835b0f653809712c2e012e795dd602105383581476da118a981572",
+    "phase": "after oracle, before original verifier"
+  },
   "tasks": [
     {
       "name": "regex-log",

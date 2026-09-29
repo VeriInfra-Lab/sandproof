@@ -30,6 +30,7 @@ from server_process_crash import (
 
 MAX_VM_ID = 1000
 GIB = 1024 ** 3
+VERIFIER_PYTHON_SHA256 = "0c5450b5ba835b0f653809712c2e012e795dd602105383581476da118a981572"
 
 
 def selected_inputs(checkout: Path, source: Path, names: list[str]) -> list[tuple[dict, dict]]:
@@ -43,7 +44,8 @@ def selected_inputs(checkout: Path, source: Path, names: list[str]) -> list[tupl
     selected = json.loads((checkout / "benchmarks/diagnostic-tasks.json").read_text())
     if (lock["task_count"] != 89 or selected["schema_version"] != 1
             or selected["source_commit"] != lock["source"]["commit"]
-            or selected["dataset"] != lock["dataset"]):
+            or selected["dataset"] != lock["dataset"]
+            or selected["verifier_python"]["runtime_archive_sha256"] != VERIFIER_PYTHON_SHA256):
         raise ValueError("diagnostic selection differs from the 89-task lock")
     if subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip() != selected["source_commit"]:
         raise ValueError("task source is not at the pinned commit")
@@ -111,8 +113,27 @@ def wait_destroyed(database: Path, count: int) -> None:
     raise AssertionError(f"durable VM states are not all Destroyed: {phases}")
 
 
+def stage_verifier_python(sandbox: Sandbox, archive: Path) -> None:
+    # The original test.sh installs uv and then asks uvx for Python 3.13.
+    # Stage only that runtime after the oracle phase, preserving agent visibility.
+    with archive.open("rb") as stream:
+        index = 0
+        while chunk := stream.read(2 * 1024 * 1024):
+            sandbox.files.write(f"/tmp/sp13-verifier-python.part-{index:03d}", chunk)
+            index += 1
+    assert index > 0
+    command = (
+        "cat /tmp/sp13-verifier-python.part-* > /tmp/sp13-verifier-python.tar.gz && "
+        f"echo '{VERIFIER_PYTHON_SHA256}  /tmp/sp13-verifier-python.tar.gz' | sha256sum -c - && "
+        "tar -xzf /tmp/sp13-verifier-python.tar.gz -C / && "
+        "ln -s /opt/sp13-python-3.13.9/bin/python3.13 /usr/local/bin/python3.13 && "
+        "python3.13 --version && rm /tmp/sp13-verifier-python.part-* /tmp/sp13-verifier-python.tar.gz"
+    )
+    sandbox.commands.run(command, cwd="/app", timeout=180)
+
+
 def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_key: str,
-                      root: Path) -> dict:
+                      root: Path, verifier_python: Path) -> dict:
     name = entry["name"]
     directory = source / entry["source_path"]
     sdk_options = options(api_key, base_url, base_url)
@@ -143,6 +164,7 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
         sandbox.commands.run("bash /tmp/sandproof-oracle.sh", cwd="/app", timeout=int(entry["requirements"]["agent_timeout_sec"]))
         sandbox.commands.run("rm /tmp/sandproof-oracle.sh", cwd="/app", timeout=30)
         assert sandbox.commands.run("test ! -e /tmp/sandproof-oracle.sh", cwd="/app", timeout=30).exit_code == 0
+        stage_verifier_python(sandbox, verifier_python)
         sandbox.files.write("/tests/test.sh", (directory / "tests/test.sh").read_bytes())
         sandbox.files.write("/tests/test_outputs.py", (directory / "tests/test_outputs.py").read_bytes())
         scoring = sandbox.commands.run("bash /tests/test.sh", cwd="/app", timeout=int(entry["requirements"]["verifier_timeout_sec"]))
@@ -180,6 +202,9 @@ def exercise(args: argparse.Namespace) -> None:
         raise RuntimeError("selected tasks require a full 10 GiB rootfs")
     if shutil.disk_usage(parent).free < args.rootfs.stat().st_size * (len(selection) + 2) + GIB:
         raise RuntimeError("not enough disk for private base and fresh task VMs")
+    verifier_python = args.verifier_python.resolve(strict=True)
+    if sha256_file(verifier_python) != VERIFIER_PYTHON_SHA256:
+        raise RuntimeError("verifier Python archive differs from pinned SHA-256")
     source_base_sha = sha256_file(args.rootfs)
     root = Path(tempfile.mkdtemp(prefix="sp13-", dir=parent))
     namespace = secrets.token_hex(8)
@@ -222,7 +247,7 @@ def exercise(args: argparse.Namespace) -> None:
         base_url = f"http://127.0.0.1:{port}"
         wait_ready(urllib.request.build_opener(urllib.request.ProxyHandler({})), base_url, key, process)
         for entry, pin in selection:
-            results.append(run_original_task(entry, pin, args.source, base_url, key, root))
+            results.append(run_original_task(entry, pin, args.source, base_url, key, root, verifier_python))
             wait_destroyed(root / "db/controller.db", len(results))
             no_exact_residual(root, namespace, args.uid_base, len(results), firecracker.name)
             assert sha256_file(rootfs) == source_base_sha, "private base changed"
@@ -232,6 +257,7 @@ def exercise(args: argparse.Namespace) -> None:
                           "server_sha256": sha256_file(binary), "base_sha256": source_base_sha,
                           "source_commit": json.loads((checkout / "benchmarks/diagnostic-tasks.json").read_text())["source_commit"],
                           "memory_mib": 2048, "disk_mib": 10240, "vcpu_count": 1,
+                          "verifier_python_sha256": VERIFIER_PYTHON_SHA256,
                           "network": "public IPv4 fixed for whole trial; guest DNS 1.1.1.1", "tasks": results,
                           "residual": "each VM durable Destroyed; no exact process, jail, netns, cgroup, test UID; base unchanged",
                           "scope": "selected original oracle/verifier chain, not full E2B equivalence or 89-task score"}))
@@ -245,7 +271,7 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for field in ("server", "jailer", "firecracker", "kernel", "rootfs", "source", "scratch-parent"):
+    for field in ("server", "jailer", "firecracker", "kernel", "rootfs", "source", "scratch-parent", "verifier-python"):
         parser.add_argument("--" + field, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--task", action="append", choices=("regex-log", "polyglot-c-py"), required=True)
