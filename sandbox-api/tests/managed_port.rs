@@ -112,6 +112,7 @@ struct FakeHost {
     prepare: PrepareObservation,
     recovered_actions: BTreeSet<RecoveredAction>,
     stop: StopObservation,
+    reclaim_stop_error_once: Option<PortError>,
     incomplete_cleanup: bool,
     stop_calls: Option<Arc<AtomicUsize>>,
     prepare_calls: Option<Arc<AtomicUsize>>,
@@ -133,6 +134,7 @@ impl Default for FakeHost {
             prepare: PrepareObservation::Missing,
             recovered_actions: BTreeSet::new(),
             stop: StopObservation::Normal,
+            reclaim_stop_error_once: None,
             incomplete_cleanup: false,
             stop_calls: None,
             prepare_calls: None,
@@ -413,6 +415,9 @@ impl HostAdapter for FakeHost {
             action.command.command(),
             core::Command::StopVm { .. }
         ));
+        if let Some(error) = self.reclaim_stop_error_once.take() {
+            return Err(error);
+        }
         if self.stop == StopObservation::Incomplete {
             self.stop = StopObservation::ObservedAfterRestart;
         }
@@ -2089,6 +2094,70 @@ fn repeated_kill_observes_one_persisted_stop_without_a_new_operation() {
         1
     );
     assert!(journal.uncertain_actions().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn accepted_kill_recovery_error_is_unknown_and_reuses_the_original_stop() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (directory, port) = setup_with_host(FakeHost {
+        stop: StopObservation::Incomplete,
+        reclaim_stop_error_once: Some(PortError::Busy),
+        stop_calls: Some(Arc::clone(&calls)),
+        ..FakeHost::default()
+    });
+    let created = port.create("1", request()).unwrap();
+    assert_eq!(
+        port.kill("1", &created.sandbox_id),
+        Err(PortError::OutcomeUnknown)
+    );
+    assert_eq!(port.get("1", &created.sandbox_id), Err(PortError::NotFound));
+    assert!(
+        port.list("1", ListQuery::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
+
+    let app = router(
+        Arc::clone(&port),
+        vec![ApiCredential {
+            tenant: "1".into(),
+            secret: KEY_ONE.into(),
+        }],
+    )
+    .unwrap();
+    let request = Request::builder()
+        .method("DELETE")
+        .uri(format!("/sandboxes/{}", created.sandbox_id))
+        .header("x-api-key", KEY_ONE)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let error: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(error["code"], 500);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    assert_eq!(port.kill("1", &created.sandbox_id), Ok(()));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        port.kill("1", &created.sandbox_id),
+        Err(PortError::NotFound)
+    );
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(1))
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
 }
 
 #[test]

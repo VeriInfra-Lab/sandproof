@@ -1038,9 +1038,18 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
 
     fn kill(&self, tenant: &str, external: &str) -> Result<(), PortError> {
         let tenant = tenant_id(tenant)?;
-        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        let sandbox = sandbox_id(&inner.journal, external)?;
-        let world = inner.journal.world().map_err(map_journal)?;
+        let mut inner = self.inner.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        // A repeated request may refer to a kill that was already accepted.
+        // If its durable identity/state cannot be inspected, do not return a
+        // retry-safe 503: the physical stop may already be in progress.
+        let sandbox = sandbox_id(&inner.journal, external).map_err(|error| match error {
+            PortError::NotFound | PortError::Invalid => error,
+            _ => PortError::OutcomeUnknown,
+        })?;
+        let world = inner
+            .journal
+            .world()
+            .map_err(|_| PortError::OutcomeUnknown)?;
         let record = world.sandbox_record(sandbox).ok_or(PortError::NotFound)?;
         if record.owner != tenant || record.phase == core::Phase::Destroyed {
             return Err(PortError::NotFound);
@@ -1054,8 +1063,11 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             // Reuse the already accepted kill. Observation may complete a
             // lost receipt, but it cannot allocate a new operation or VM.
             inner.revoke_data(sandbox);
-            recover_locked(&mut inner, Some(sandbox))?;
-            let recovered = inner.journal.world().map_err(map_journal)?;
+            recover_locked(&mut inner, Some(sandbox)).map_err(|_| PortError::OutcomeUnknown)?;
+            let recovered = inner
+                .journal
+                .world()
+                .map_err(|_| PortError::OutcomeUnknown)?;
             return if recovered
                 .sandbox_record(sandbox)
                 .is_some_and(|record| record.phase == core::Phase::Destroyed)
@@ -1088,7 +1100,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
             host.execute(action)
         })
-        .map_err(map_journal)?;
+        .map_err(|_| PortError::OutcomeUnknown)?;
         Ok(())
     }
 
