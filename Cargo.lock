@@ -521,6 +521,7 @@ dependencies = [
  "base64",
  "getrandom",
  "percent-encoding",
+ "rusqlite",
  "sandbox-controller-core",
  "sandproof-controller-service",
  "sandproof-protocol",
