@@ -43,6 +43,7 @@ fn limits() -> AdmissionLimits {
         cleanup_reserve_bytes: 1_000,
         max_timeout_secs: 86_400,
         max_lifetime_secs: 86_400,
+        startup_timeout_secs: 300,
     }
 }
 
@@ -421,7 +422,7 @@ fn legacy_migration_preserves_granted_time_without_inventing_a_new_total_limit()
     drop(journal);
     let path = directory.path().join("controller.db");
     let connection = rusqlite::Connection::open(&path).unwrap();
-    connection.execute_batch("ALTER TABLE sandbox_lifetimes DROP COLUMN max_deadline_ms; UPDATE controller_meta SET version=4 WHERE id=1;").unwrap();
+    connection.execute_batch("ALTER TABLE sandbox_lifetimes DROP COLUMN startup_deadline_ms; ALTER TABLE sandbox_lifetimes DROP COLUMN max_deadline_ms; UPDATE controller_meta SET version=4 WHERE id=1;").unwrap();
     drop(connection);
     let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
     let original = journal.live_lifetime(&owner, sandbox, 2_000).unwrap();
@@ -441,6 +442,43 @@ fn legacy_migration_preserves_granted_time_without_inventing_a_new_total_limit()
             .set_lifetime(&owner, sandbox, 3_100, i64::MAX)
             .unwrap(),
         original
+    );
+}
+
+#[test]
+fn version_five_startup_keeps_its_original_deadline_on_upgrade() {
+    let (directory, mut journal) = setup();
+    let sandbox = core::SandboxId(10);
+    journal
+        .admit_create(request(10, 1), 1_000, 5, 1_000, limits(), &mut NeverCrash)
+        .unwrap();
+    drop(journal);
+    let path = directory.path().join("controller.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(
+            "ALTER TABLE sandbox_lifetimes DROP COLUMN startup_deadline_ms;
+             UPDATE controller_meta SET version=5 WHERE id=1;",
+        )
+        .unwrap();
+    drop(connection);
+    let mut reopened = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    assert_eq!(
+        reopened.abort_due_startups(5_999, &mut NeverCrash).unwrap(),
+        0
+    );
+    assert_eq!(
+        reopened.abort_due_startups(6_000, &mut NeverCrash).unwrap(),
+        1
+    );
+    assert_eq!(
+        reopened
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Revoking
     );
 }
 

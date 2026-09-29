@@ -43,6 +43,8 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 
 固定版本的 SDK 调用清单位于[兼容合同](../tests/compat/contract.json)。`bash scripts/check-compat.sh` 使用 E2B Python SDK 2.51.0 和本机回环合成响应；[实机系统测试](../tests/system/sdk_server_smoke.py)则使用同版原 SDK，经真实控制器和网关驱动 Firecracker，覆盖显式禁网的创建、连接、查询、列表、续期、销毁，以及基本命令、文件、超时、终止、断线重连、1 MiB 输出、跨租户与旧令牌、非法文件路径、重复令牌、超限上传拒绝和到期清理。隔离 Linux/KVM 测试已通过，但只覆盖 S01–S05、S11–S12 的部分路径。
 
+[C02 收口入口](../tests/system/sdk_c02_acceptance.py)只编排上述实机测试与[双客户端数据合同测试](../tests/system/sdk_data_contract.py)：在同一精确提交、隔离服务和数据库上运行固定 SDK 的同步/异步调用，核对四条终局记录、专属进程/网络空间/jail 清理及基础盘摘要。它不复制既有场景断言，也不替代 #8 的文件流资源边界、#9 的寿命竞争或完整 V1 验收。
+
 网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
 
 - [网关组件测试](../sandbox-server/src/gateway/tests.rs)：在 Linux 上执行 `cargo test -p sandproof-server --locked`。通过实际网关的请求处理、响应限流及 HTTP 编码，覆盖 8 MiB 文件请求、1 MiB 命令输入、32 MiB 响应边界；区分已知长度、分块传输和上游 HTTP/1.0 未声明长度，检查中途 EOF、逐块传输、不重发及失败后的新请求，以及非 HTTP/1.1 请求在读取 body 前被拒绝。使用内存传输替换 envd，不覆盖鉴权、进程执行或 VM 隔离。响应上限计算 HTTP body 字节，包含 Connect 编码，不能直接等同于原始 stdout 大小。
@@ -204,5 +206,7 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 寿命目标场景已在生产提交 `e9c251d234492cb4cabb4bce91be16f9badb8e00`、探针提交 `7063d6a98ca0ca739efc84f5bdcf8965b3f0f3cb` 的同一二进制上通过：常规同步/异步各 36 项，共 72 项；12 秒总寿命配置各一组边界/重启场景。18＋2 台 VM 在服务退出前全部完成精确资源审计，基础盘不变。两次早期未完成实验分别为健康请求错误预期、监督器过早要求清理完成；另 12 台 VM 已独立核对收尾，失败不计为通过。到期后的 health 在本服务映射为 401，固定 SDK 抛 AuthenticationException，不能声称 is_running 返回 False。详见[版本基线](../references/v1-baseline.json)的 `lifetime_target_acceptance`。
 
 [运行起点聚焦探针](../tests/system/sdk_running_start.py)针对后续的 #9 修正，在单台真实 VM 上检查物理就绪后的可见起点与初始期限、同库服务重启后同一实例的起点不变、默认连接续期及总寿命截顶。组件另以可推进时钟和发布前事务故障注入，证明发布与起点写入不可拆分，恢复不重派已确认的宿主工作。实机一台 VM 已在精确提交上通过，原 PID/start 身份停止，私有 jail/netns 消失且基础盘不变；提交、指纹与未覆盖范围见[版本基线](../references/v1-baseline.json)的 `running_lifetime_origin_acceptance`。此探针只补启动耗时计入寿命的差异，不替代上面的同步/异步寿命矩阵或任意时刻崩溃验收。
+
+启动等待和可用寿命现在使用两条独立期限：服务配置 `startup_timeout_secs` 默认 300 秒，用户 `timeout` 不再缩短启动等待；可用寿命与总寿命只在 Running 发布时起算。控制服务测试用可推进时钟检查短用户寿命、启动期限边界、迟到发布拒绝和 V5→V6 迁移保留旧 Starting 截止点。未就绪 VM 的[专用实机脚本](../tests/system/server_unready_abort.py)显式将启动上限设为 5 秒；不能再靠请求中的 `timeout=5` 触发启动中止。旧版实机结果没有覆盖独立启动上限，本次实机结果必须另绑定精确提交。
 
 启动中止与寿命起点的组合回归绑定提交 `fbdbfd2d7d233d99ea0809e1c9e1a1d431309900`（test `4df1602`＋#84 `f6f7167`＋#89 `2c150df`），属于独立集成候选。服务组件验证已持久中止的创建不能被迟到 Running 发布复活，且新运行期限不会被旧启动期限中止。固定 `3f96c961…` base 上的未就绪 VM 中止/丢回执恢复、两处宿主动作前后崩溃窗口、并发销毁与失败创建恢复、运行起点探针、同步/异步 72 项寿命参数和 2 组总上限，以及普通/流式各 4 组 root/ubuntu 数据调用均通过。未就绪、寿命和数据探针启用并观察宿主 cgroup；原有崩溃/竞争/起点探针为 256 MiB 来宾且未配置该限额，不混用其证据。指纹、资源观察和范围见[版本基线](../references/v1-baseline.json)的 `lifecycle_integration_candidate_acceptance`；随后两项依赖已合入 test `fe37305`，本回归分支已基于该提交整理；生产源码与全部实机探针逐文件核对与原实测提交一致，保留原证据版本，不声称重新运行实机或完成完整证明、#13 固定任务验收。

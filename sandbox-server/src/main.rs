@@ -74,6 +74,8 @@ mod linux {
         max_timeout_secs: u64,
         #[serde(default)]
         max_lifetime_secs: Option<u64>,
+        #[serde(default = "default_startup_timeout_secs")]
+        startup_timeout_secs: u64,
         #[serde(default = "default_timeout_secs")]
         default_timeout_secs: u64,
         #[serde(default)]
@@ -86,6 +88,10 @@ mod linux {
 
     fn default_timeout_secs() -> u64 {
         sandproof_controller_service::DEFAULT_TIMEOUT_SECS
+    }
+
+    fn default_startup_timeout_secs() -> u64 {
+        sandproof_controller_service::DEFAULT_STARTUP_TIMEOUT_SECS
     }
 
     pub(crate) struct NodeHost(LinuxWorker);
@@ -334,6 +340,7 @@ mod linux {
             return Err("at least one nonzero tenant credential is required".into());
         }
         if config.expiry_scan_seconds == 0
+            || config.startup_timeout_secs == 0
             || config.default_timeout_secs != default_timeout_secs()
             || config.default_timeout_secs > config.max_timeout_secs
             || config.max_lifetime_secs == Some(0)
@@ -486,6 +493,32 @@ mod linux {
         }));
     }
 
+    fn managed_config(
+        config: &ConfigFile,
+        disk_bytes: u64,
+    ) -> Result<ManagedConfig, Box<dyn Error>> {
+        Ok(ManagedConfig {
+            public_ipv4_enabled: config.public_ipv4_enabled,
+            limits: AdmissionLimits {
+                max_active_global: config.max_active_global,
+                max_active_per_tenant: config.max_active_per_tenant,
+                max_disk_bytes_global: config.max_disk_bytes_global,
+                max_disk_bytes_per_tenant: config.max_disk_bytes_per_tenant,
+                cleanup_reserve_bytes: config.cleanup_reserve_bytes,
+                max_timeout_secs: config.max_timeout_secs,
+                max_lifetime_secs: config.max_lifetime_secs.unwrap_or(config.max_timeout_secs),
+                startup_timeout_secs: config.startup_timeout_secs,
+            },
+            disk_bytes,
+            file_policy_digest: core::PolicyDigest(config.file_policy_digest),
+            cpu_count: u32::from(config.vcpu_count),
+            memory_mb: config.memory_mib,
+            disk_size_mb: u32::try_from(disk_bytes.div_ceil(1024 * 1024))?,
+            envd_version: "0.9.0".into(),
+            domain: config.domain.clone(),
+        })
+    }
+
     pub async fn run() -> Result<(), Box<dyn Error>> {
         private_root_path(&std::env::current_exe()?)?;
         let mut args = std::env::args_os();
@@ -503,6 +536,7 @@ mod linux {
         }
         let config: ConfigFile = serde_json::from_slice(&fs::read(path)?)?;
         let disk_bytes = validate_config(&config)?;
+        let managed = managed_config(&config, disk_bytes)?;
         let node = LinuxWorker::new(NodeConfig {
             namespace: config.namespace.clone(),
             state_dir: config.node_state_dir,
@@ -521,29 +555,7 @@ mod linux {
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
         reclaim_uncertain_prepares(&node, &journal)?;
         audit_host_inventory(&node, &journal)?;
-        let port = Arc::new(ManagedPort::new(
-            journal,
-            NodeHost(node),
-            ManagedConfig {
-                public_ipv4_enabled: config.public_ipv4_enabled,
-                limits: AdmissionLimits {
-                    max_active_global: config.max_active_global,
-                    max_active_per_tenant: config.max_active_per_tenant,
-                    max_disk_bytes_global: config.max_disk_bytes_global,
-                    max_disk_bytes_per_tenant: config.max_disk_bytes_per_tenant,
-                    cleanup_reserve_bytes: config.cleanup_reserve_bytes,
-                    max_timeout_secs: config.max_timeout_secs,
-                    max_lifetime_secs: config.max_lifetime_secs.unwrap_or(config.max_timeout_secs),
-                },
-                disk_bytes,
-                file_policy_digest: core::PolicyDigest(config.file_policy_digest),
-                cpu_count: u32::from(config.vcpu_count),
-                memory_mb: config.memory_mib,
-                disk_size_mb: u32::try_from(disk_bytes.div_ceil(1024 * 1024))?,
-                envd_version: "0.9.0".into(),
-                domain: config.domain,
-            },
-        ));
+        let port = Arc::new(ManagedPort::new(journal, NodeHost(node), managed));
         let recovery = port.recover_on_startup().map_err(|error| {
             std::io::Error::other(format!("startup recovery failed: {error:?}"))
         })?;

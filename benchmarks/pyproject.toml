@@ -1,0 +1,12 @@
+[project]
+name = "sandproof-harbor-benchmarks"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
+dependencies = ["harbor[e2b]==0.23.0", "e2b==2.51.0"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+harbor = { git = "https://github.com/laude-institute/harbor.git", rev = "31668af15560fb50a9d0584816d12726036656cf" }
+e2b = { git = "https://github.com/e2b-dev/E2B.git", rev = "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b", subdirectory = "packages/python-sdk" }

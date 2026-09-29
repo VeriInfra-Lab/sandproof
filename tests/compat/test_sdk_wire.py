@@ -349,6 +349,18 @@ class WireContract(unittest.TestCase):
             self.assertEqual([r["method"] for r in self.records[-2:]], ["DELETE", "DELETE"])
             self.assertTrue(all(r["path"] == "/sandboxes/probe-sandbox" for r in self.records[-2:]))
 
+    def test_kill_conflict_and_unknown_are_not_replayed(self):
+        for cls in (Sandbox, AsyncSandbox):
+            for status in (409, 500):
+                with self.subTest(sdk=cls.__name__, status=status):
+                    before = len(self.records)
+                    self.responses.append((status, {"code": status, "message": "outcome unknown"}, {}))
+                    with self.assertRaises(SandboxException) as caught:
+                        self.call(cls.kill, "probe-sandbox", **{**self.options, "retries": 3})
+                    self.assertEqual(caught.exception.status_code, status)
+                    self.assertEqual(len(self.records), before + 1)
+                    self.assertEqual(self.records[-1]["method"], "DELETE")
+
     def test_set_timeout_forwards_zero_and_negative(self):
         for value in (-1, 0, 60):
             self.responses.append((204, None, {}))

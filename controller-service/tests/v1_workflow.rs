@@ -63,6 +63,7 @@ fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
         cleanup_reserve_bytes: 1_000,
         max_timeout_secs: 86_400,
         max_lifetime_secs: 86_400,
+        startup_timeout_secs: 300,
     };
     let request = create_request();
     journal
@@ -124,6 +125,7 @@ fn running_publication_resets_usable_lifetime_atomically_across_restart() {
         cleanup_reserve_bytes: 1_000,
         max_timeout_secs: 300,
         max_lifetime_secs: 600,
+        startup_timeout_secs: 300,
     };
     journal
         .admit_create(request.clone(), 1_000, 60, 2_000, limits, &mut NeverCrash)
@@ -203,6 +205,121 @@ fn running_publication_resets_usable_lifetime_atomically_across_restart() {
 }
 
 #[test]
+fn short_usable_lifetime_does_not_cut_off_a_healthy_startup() {
+    let (_directory, mut journal) = setup();
+    let request = create_request();
+    let limits = AdmissionLimits {
+        max_active_global: 2,
+        max_active_per_tenant: 1,
+        max_disk_bytes_global: 10_000,
+        max_disk_bytes_per_tenant: 5_000,
+        cleanup_reserve_bytes: 1_000,
+        max_timeout_secs: 300,
+        max_lifetime_secs: 600,
+        startup_timeout_secs: 20,
+    };
+    journal
+        .admit_create(request.clone(), 1_000, 5, 2_000, limits, &mut NeverCrash)
+        .unwrap();
+    assert_eq!(
+        journal.abort_due_startups(6_000, &mut NeverCrash).unwrap(),
+        0
+    );
+    let running = finish_admitted_create_v1_timed(
+        &mut journal,
+        request.sandbox,
+        request.operation,
+        &mut worker,
+        &mut || Ok(10_000),
+    )
+    .unwrap();
+    assert_eq!(
+        running.sandbox_record(SANDBOX).unwrap().phase,
+        core::Phase::Running
+    );
+    let lifetime = journal
+        .live_lifetime(&request.actor, SANDBOX, 10_001)
+        .unwrap();
+    assert_eq!(
+        (
+            lifetime.started_at_ms,
+            lifetime.deadline_ms,
+            lifetime.max_deadline_ms,
+            lifetime.startup_deadline_ms
+        ),
+        (Some(10_000), 15_000, 610_000, 21_000)
+    );
+    assert_eq!(
+        journal.abort_due_startups(21_000, &mut NeverCrash).unwrap(),
+        0
+    );
+    assert!(matches!(
+        journal.accept_expiry(SANDBOX, core::OperationId(102), 14_999, &mut NeverCrash),
+        Err(sandproof_controller_service::AdmissionError::NotDue)
+    ));
+    journal
+        .accept_expiry(SANDBOX, core::OperationId(102), 15_000, &mut NeverCrash)
+        .unwrap();
+}
+
+#[test]
+fn late_running_publication_cannot_win_before_startup_scanner() {
+    let (directory, mut journal) = setup();
+    let request = create_request();
+    let limits = AdmissionLimits {
+        max_active_global: 2,
+        max_active_per_tenant: 1,
+        max_disk_bytes_global: 10_000,
+        max_disk_bytes_per_tenant: 5_000,
+        cleanup_reserve_bytes: 1_000,
+        max_timeout_secs: 300,
+        max_lifetime_secs: 600,
+        startup_timeout_secs: 20,
+    };
+    journal
+        .admit_create(request.clone(), 1_000, 5, 2_000, limits, &mut NeverCrash)
+        .unwrap();
+    assert!(matches!(
+        finish_admitted_create_v1_timed(
+            &mut journal,
+            SANDBOX,
+            request.operation,
+            &mut worker,
+            &mut || Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit))
+        ),
+        Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit))
+    ));
+    drop(journal);
+    let mut reopened =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert!(matches!(
+        reopened.publish_running_at(SANDBOX, 21_000, &mut NeverCrash),
+        Err(JournalError::UnsupportedInput)
+    ));
+    assert_eq!(
+        reopened
+            .abort_due_startups(20_999, &mut NeverCrash)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        reopened
+            .abort_due_startups(21_000, &mut NeverCrash)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        reopened
+            .world()
+            .unwrap()
+            .sandbox_record(SANDBOX)
+            .unwrap()
+            .phase,
+        core::Phase::Revoking
+    );
+}
+
+#[test]
 fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
     let (directory, mut journal) = setup();
     let request = create_request();
@@ -214,6 +331,7 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
         cleanup_reserve_bytes: 1_000,
         max_timeout_secs: 300,
         max_lifetime_secs: 600,
+        startup_timeout_secs: 60,
     };
     journal
         .admit_create(request.clone(), 1_000, 60, 2_000, limits, &mut NeverCrash)
