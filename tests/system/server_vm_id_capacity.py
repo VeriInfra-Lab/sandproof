@@ -27,6 +27,8 @@ from server_process_crash import (
 
 
 MAX_VM_ID = 2
+LEGACY_SERVER_SHA256 = "6c2c5ab4827047a9e1e080aea0717d627266c2fb02beedff7d860a723eb5c10b"
+LEGACY_SOURCE_COMMIT = "4c485237d4c94a65abeb34c9676b3e683b353871"
 
 
 def durable_snapshot(database):
@@ -46,10 +48,22 @@ def check_rejection(opener, url, key, database, root):
     assert sorted((root / "jails/.claims").iterdir()) == claims, "refusal claimed a new VM"
 
 
+def check_no_resources(root, namespace, firecracker, uid_base):
+    for claim in (root / "jails/.claims").iterdir():
+        record = json.loads((claim / "record.json").read_text())
+        assert record["resource_id"] == claim.name
+        assert process_start_ticks(record["pid"]) != record["start_time_ticks"]
+    for parent in (root / "jails" / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
+        assert not list(parent.rglob(f"vm-{namespace}-*")), f"resource remains under {parent}"
+    assert not processes_in_uid_range(uid_base, uid_base + MAX_VM_ID)
+
+
 def exercise(args):
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("requires root on the isolated Linux/KVM host")
     assert importlib.metadata.version("e2b") == "2.51.0"
+    if args.reproduce_legacy and sha256_file(args.server) != LEGACY_SERVER_SHA256:
+        raise RuntimeError("legacy reproduction requires the recorded pre-fix binary")
     parent = args.scratch_parent.resolve(strict=True)
     if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o077:
         raise RuntimeError("scratch parent must be root-owned and private")
@@ -89,7 +103,8 @@ def exercise(args):
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(firecracker),
         "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
-        "uid_base": args.uid_base, "max_vm_id": MAX_VM_ID, "vcpu_count": 1, "memory_mib": 512,
+        "uid_base": args.uid_base, "max_vm_id": 1 if args.reproduce_legacy else MAX_VM_ID,
+        "vcpu_count": 1, "memory_mib": 512,
         "file_policy_digest": 1, "bind": f"127.0.0.1:{port}", "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": key}],
         "max_active_global": 2, "max_active_per_tenant": 2,
@@ -109,6 +124,31 @@ def exercise(args):
         for _ in range(2):
             sandbox = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
             assert Sandbox.kill(sandbox.sandbox_id, **owner)
+        if args.reproduce_legacy:
+            status, _ = fetch(opener, url, "POST", "/v2/sandboxes", key,
+                              {"templateID": "base", "allow_internet_access": False})
+            assert status == 500, f"expected legacy unknown create, got {status}"
+            with sqlite3.connect(database) as connection:
+                phases = [json.loads(row[0])["phase"] for row in connection.execute(
+                    "SELECT state_blob FROM sandboxes ORDER BY sandbox_id")]
+            assert phases == ["Destroyed", "Destroyed", "Starting"], phases
+            assert (root / "state/slots" / f"slot-{namespace}-2.json").exists()
+            assert not (root / "jails/.claims" / names[2]).exists()
+            stop_server(process)
+            process = start_server(binary, config, root / "server.log", None)
+            assert process.wait(timeout=10) != 0, "legacy startup unexpectedly accepted invalid binding"
+            assert "slot filename or VM identity mismatch" in (root / "server.log").read_text()
+            check_no_resources(root, namespace, firecracker, args.uid_base)
+            assert sha256_file(rootfs) == sha256_file(args.rootfs) == base_digest
+            completed = True
+            print(json.dumps({
+                "probe_commit": commit, "legacy_source_commit": LEGACY_SOURCE_COMMIT,
+                "server_sha256": LEGACY_SERVER_SHA256, "probe_sha256": sha256_file(Path(__file__)),
+                "base_sha256": base_digest, "namespace": namespace,
+                "result": "legacy failure reproduced: third create became unknown with out-of-range slot; same-config startup refused",
+                "residual": "both real VMs already destroyed; rejected third had no VMM claim; no exact process/jail/netns/cgroup/UID remains",
+            }))
+            return
         survivor = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
         survivor.files.write("/tmp/capacity.txt", "original-vm")
         claims = [json.loads((root / "jails/.claims" / name / "record.json").read_text()) for name in names]
@@ -131,13 +171,8 @@ def exercise(args):
         with sqlite3.connect(database) as connection:
             phases = [json.loads(row[0])["phase"] for row in connection.execute("SELECT state_blob FROM sandboxes")]
         assert phases == ["Destroyed"] * 3, phases
-        for name, claim in zip(names, claims):
-            assert claim["resource_id"] == name
-            assert process_start_ticks(claim["pid"]) != claim["start_time_ticks"]
-            assert not (root / "jails" / firecracker.name / name).exists()
-            assert not Path("/run/netns", name).exists()
-        assert not list(Path("/sys/fs/cgroup").rglob(f"vm-{namespace}-*"))
-        assert not processes_in_uid_range(args.uid_base, args.uid_base + MAX_VM_ID)
+        assert len(claims) == 3
+        check_no_resources(root, namespace, firecracker, args.uid_base)
         assert sha256_file(rootfs) == sha256_file(args.rootfs) == base_digest
         completed = True
         print(json.dumps({
@@ -161,4 +196,6 @@ if __name__ == "__main__":
     for argument in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
         parser.add_argument(f"--{argument}", type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
+    parser.add_argument("--reproduce-legacy", action="store_true",
+                        help="reproduce the recorded pre-fix failure; not a passing implementation acceptance")
     exercise(parser.parse_args())
