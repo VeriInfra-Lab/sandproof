@@ -118,6 +118,8 @@ Windows 3.11 初始化下载仍使用原 archive.org URL，按 8 MiB 分段、�
 
 HTML 过滤题启用 pytest 的 `-s -v` 与非缓冲日志，保留每个浏览器批次的执行、异常与收尾信息。原测试先杀 ChromeDriver 再调用 quit，实际观察到浏览器及 crashpad 进程持续遗留；该题通过 Selenium 官方 `SE_CHROME_PATH` 设置选择[浏览器启动包装器](guest_chromium.py)。包装器不改变 Chromium 参数，使用 pidfd 观察驱动生命周期；驱动退出后回收独立进程组与自己收养的后代，并记录剩余数量。合成进程回归覆盖驱动死亡和脱离原 session 的后代，原浏览器实测另计。用例、断言和时间限制不变；原测试会吞掉部分浏览器异常，必须检查日志中的超时/浏览器失败，不能只用原 reward 声称所有浏览器场景实际通过。环境接口见 [Selenium Manager 官方说明](https://www.selenium.dev/documentation/selenium_manager/)。
 
+该题另外设置来宾 `net.ipv4.tcp_syn_retries=2`，让失联外部资源的 TCP 建连在原页面加载预算内返回失败；读取并保存实际值到 `tcp-connect-policy.json`，不修改宿主网络参数。相同页面的独立 VM 对照覆盖默认值与该设置，并保留真实弹窗阳性及干净页面阴性检查。此配置不改 HTML、浏览器参数、原评分或 20 秒页面时限，也不替换 HTTP 响应；外部子资源仍可能不可达，浏览器测试完成不表示这些远端内容也已被验证。参数含义见 [Linux 内核文档](https://docs.kernel.org/networking/ip-sysctl.html#tcp-syn-retries-integer)。
+
 MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transformers 4.57.6，保留完整 PyTorch/CUDA 构建。原无上限依赖会选入更新且更大的 CUDA 13 依赖，使随后原 results 完整克隆写满 10 GiB 私有盘；旧兼容依赖是否足以留出空间必须以原解答复测为准。没有预填结果、改变 Git checkout 目标或缩减评分。 初始化另外补齐 Pillow 11.3.0；[上游问题记录](https://github.com/harbor-framework/terminal-bench-2/pull/53)确认旧 MTEB 丢失该间接依赖后重新构建会导入失败。原 MTEB 版本保持 1.38.41。
 
 ## 可选的参考解答修复
