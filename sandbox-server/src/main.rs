@@ -513,6 +513,7 @@ mod linux {
         Ok(ManagedConfig {
             public_ipv4_enabled: config.public_ipv4_enabled,
             limits: AdmissionLimits {
+                max_vm_id: config.max_vm_id,
                 max_active_global: config.max_active_global,
                 max_active_per_tenant: config.max_active_per_tenant,
                 max_disk_bytes_global: config.max_disk_bytes_global,

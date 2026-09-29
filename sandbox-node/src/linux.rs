@@ -817,6 +817,9 @@ impl LinuxWorker {
         }
         if config.uid_base == 0
             || config.max_vm_id == 0
+            || u64::from(config.uid_base)
+                .checked_add(config.max_vm_id)
+                .is_none_or(|last_uid| last_uid >= u64::from(u32::MAX))
             || config.vcpu_count == 0
             || config.memory_mib < 128
         {
@@ -1195,6 +1198,25 @@ impl LinuxWorker {
 
     fn runtime(&self, sandbox: core::SandboxId, vm: core::VmId) -> NodeResult<Runtime> {
         let secret = self.secret(sandbox)?;
+        let id = self.vm_uid(vm)?;
+        let vm_name = self.vm_name(vm);
+        Ok(Runtime::new(RuntimeConfig {
+            jailer: self.config.jailer.clone(),
+            firecracker: self.config.firecracker.clone(),
+            chroot_base: self.config.chroot_base.clone(),
+            kernel: self.config.kernel.clone(),
+            rootfs: self.config.rootfs.clone(),
+            vm_uid: id,
+            vm_gid: id,
+            vcpu_count: self.config.vcpu_count,
+            memory_mib: self.config.memory_mib,
+            host_resources: self.config.host_resources.clone(),
+            private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
+            access_token_hash: Some(secret.sha512),
+        })?)
+    }
+
+    fn vm_uid(&self, vm: core::VmId) -> NodeResult<u32> {
         let id = u32::try_from(vm.0)?;
         if vm.0 > self.config.max_vm_id {
             return Err("node VM ID exceeds allocated UID range".into());
@@ -1204,21 +1226,10 @@ impl LinuxWorker {
             .uid_base
             .checked_add(id)
             .ok_or("VM uid overflow")?;
-        let vm_name = self.vm_name(vm);
-        Ok(Runtime::new(RuntimeConfig {
-            jailer: self.config.jailer.clone(),
-            firecracker: self.config.firecracker.clone(),
-            chroot_base: self.config.chroot_base.clone(),
-            kernel: self.config.kernel.clone(),
-            rootfs: self.config.rootfs.clone(),
-            vm_uid: uid,
-            vm_gid: uid,
-            vcpu_count: self.config.vcpu_count,
-            memory_mib: self.config.memory_mib,
-            host_resources: self.config.host_resources.clone(),
-            private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
-            access_token_hash: Some(secret.sha512),
-        })?)
+        if uid == u32::MAX {
+            return Err("VM uid is reserved".into());
+        }
+        Ok(uid)
     }
 
     fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
@@ -1367,6 +1378,7 @@ impl LinuxWorker {
                 if source.is_some() {
                     return Err("snapshot restore is outside V1".into());
                 }
+                self.vm_uid(*vm)?;
                 self.require_fence(*sandbox, *epoch, false)?;
                 let binding = SlotBinding {
                     owner: action.identity.owner.clone(),

@@ -69,6 +69,9 @@ impl CreateOptions {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AdmissionLimits {
+    /// Highest VM ID that the configured host can represent and run.
+    /// This is a cumulative ID bound, not a concurrent VM quota.
+    pub max_vm_id: u64,
     pub max_active_global: u64,
     pub max_active_per_tenant: u64,
     pub max_disk_bytes_global: u64,
@@ -86,6 +89,38 @@ pub struct AdmissionLimits {
 
 pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
 pub const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 300;
+
+fn reserve_startup_in_admission(
+    tx: &Transaction<'_>,
+    namespace: &str,
+    decision: &core::ControllerDecision,
+    key: core::OperationKey,
+    max_vm_id: u64,
+) -> Result<core::ControllerDecision, AdmissionError> {
+    // Both reducer transitions must commit with the lease and launch options.
+    // Otherwise a crash before reservation can strand an accepted create.
+    let reserved = storage::apply(
+        tx,
+        namespace,
+        &decision.next,
+        core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
+    )
+    .map_err(|error| match error {
+        JournalError::ControllerRejected(core::controller::ControllerReject::Scheduler(
+            core::scheduler::SchedulerReject::CounterExhausted,
+        )) => AdmissionError::QuotaExceeded,
+        other => AdmissionError::Journal(other),
+    })?;
+    let core::ControllerEvent::Protocol(core::Event::ReserveStartupResources { vm, .. }) =
+        reserved.event
+    else {
+        return Err(AdmissionError::Journal(JournalError::CorruptStore));
+    };
+    if vm.0 > max_vm_id {
+        return Err(AdmissionError::QuotaExceeded);
+    }
+    Ok(reserved)
+}
 
 /// One admission decision's immutable time, resource budget and launch data.
 #[derive(Clone, Debug)]
@@ -438,12 +473,20 @@ impl ControllerJournal {
             return Err(AdmissionError::QuotaExceeded);
         }
         let sandbox = request.sandbox;
+        let operation = request.operation;
         let owner = request.owner;
         let decision = storage::apply(
             &tx,
             &self.namespace,
             &world,
             core::ControllerInput::Request(core::Request::Create(request)),
+        )?;
+        let reserved = reserve_startup_in_admission(
+            &tx,
+            &self.namespace,
+            &decision,
+            core::OperationKey { sandbox, operation },
+            limits.max_vm_id,
         )?;
         tx.execute(
             "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms, startup_deadline_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -460,7 +503,7 @@ impl ControllerJournal {
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit().map_err(JournalError::CommitUncertain)?;
         crashes.hit(CrashPoint::AfterCommit)?;
-        Ok(decision)
+        Ok(reserved)
     }
 
     /// Read the immutable creation data for host initialization or metadata
