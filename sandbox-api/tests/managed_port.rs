@@ -124,6 +124,10 @@ struct FakeHost {
     recovered_actions: BTreeSet<RecoveredAction>,
     stop: StopObservation,
     reclaim_stop_error_once: Option<PortError>,
+    reclaim_stop_error_for: Option<core::SandboxId>,
+    bad_stop_observation_for: Option<core::SandboxId>,
+    bad_execute_for: Option<core::SandboxId>,
+    unknown_stop_for: Option<core::SandboxId>,
     incomplete_cleanup: bool,
     stop_calls: Option<Arc<AtomicUsize>>,
     prepare_calls: Option<Arc<AtomicUsize>>,
@@ -148,6 +152,10 @@ impl Default for FakeHost {
             recovered_actions: BTreeSet::new(),
             stop: StopObservation::Normal,
             reclaim_stop_error_once: None,
+            reclaim_stop_error_for: None,
+            bad_stop_observation_for: None,
+            bad_execute_for: None,
+            unknown_stop_for: None,
             incomplete_cleanup: false,
             stop_calls: None,
             prepare_calls: None,
@@ -156,6 +164,48 @@ impl Default for FakeHost {
             stop_gate: None,
             prepare_gate: None,
         }
+    }
+}
+
+impl FakeHost {
+    fn injected_execute_receipt(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Option<WorkReceipt<Evidence>> {
+        let sandbox = action.command.command().sandbox();
+        if self.unknown_stop_for == Some(sandbox)
+            && matches!(action.command.command(), core::Command::StopVm { .. })
+        {
+            return Some(WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            });
+        }
+        if self.bad_execute_for == Some(sandbox) {
+            let mut identity = action.identity.clone();
+            identity.owner = "forged-owner".try_into().unwrap();
+            return Some(WorkReceipt {
+                identity,
+                outcome: WorkOutcome::ObservedSuccess(Evidence {
+                    resource: action.identity.resource.clone(),
+                    command: action.command.command().clone(),
+                }),
+            });
+        }
+        None
+    }
+}
+
+fn unknown_receipt(action: &WorkAction<core::EffectId>) -> WorkReceipt<Evidence> {
+    WorkReceipt {
+        identity: action.identity.clone(),
+        outcome: WorkOutcome::Unknown {
+            reason: UnknownReason::ObservationUnavailable,
+            last_observation: None,
+        },
     }
 }
 
@@ -223,6 +273,9 @@ impl HostAdapter for FakeHost {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        if let Some(receipt) = self.injected_execute_receipt(action) {
+            return Ok(receipt);
+        }
         if self.incomplete_open_fence
             && matches!(
                 action.command.command(),
@@ -232,13 +285,7 @@ impl HostAdapter for FakeHost {
                 }
             )
         {
-            return Ok(WorkReceipt {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                },
-            });
+            return Ok(unknown_receipt(action));
         }
         if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
             if let Some(calls) = &self.prepare_calls {
@@ -248,13 +295,7 @@ impl HostAdapter for FakeHost {
                 gate.block();
             }
             if self.prepare == PrepareObservation::LiveUnready {
-                return Ok(WorkReceipt {
-                    identity: action.identity.clone(),
-                    outcome: WorkOutcome::Unknown {
-                        reason: UnknownReason::ObservationUnavailable,
-                        last_observation: None,
-                    },
-                });
+                return Ok(unknown_receipt(action));
             }
         }
         if matches!(action.command.command(), core::Command::ActivateVm { .. })
@@ -263,13 +304,7 @@ impl HostAdapter for FakeHost {
                 ActivationObservation::Incomplete | ActivationObservation::Unavailable
             )
         {
-            return Ok(WorkReceipt {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                },
-            });
+            return Ok(unknown_receipt(action));
         }
         if matches!(action.command.command(), core::Command::AbortPrepare { .. }) {
             if let Some(calls) = &self.abort_calls {
@@ -283,13 +318,7 @@ impl HostAdapter for FakeHost {
             if std::mem::replace(&mut self.abort_receipt, AbortReceipt::Normal)
                 == AbortReceipt::LostOnce
             {
-                return Ok(WorkReceipt {
-                    identity: action.identity.clone(),
-                    outcome: WorkOutcome::Unknown {
-                        reason: UnknownReason::ObservationUnavailable,
-                        last_observation: None,
-                    },
-                });
+                return Ok(unknown_receipt(action));
             }
         }
         if matches!(action.command.command(), core::Command::StopVm { .. }) {
@@ -307,13 +336,7 @@ impl HostAdapter for FakeHost {
                 | StopObservation::Incomplete
         ) && matches!(action.command.command(), core::Command::StopVm { .. })
         {
-            return Ok(WorkReceipt {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                },
-            });
+            return Ok(unknown_receipt(action));
         }
         Ok(WorkReceipt {
             identity: action.identity.clone(),
@@ -325,6 +348,19 @@ impl HostAdapter for FakeHost {
     }
 
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
+        if self.bad_stop_observation_for == Some(action.command.command().sandbox())
+            && matches!(action.command.command(), core::Command::StopVm { .. })
+        {
+            let mut identity = action.identity.clone();
+            identity.owner = "forged-owner".try_into().unwrap();
+            return Some(WorkReceipt {
+                identity,
+                outcome: WorkOutcome::ObservedSuccess(Evidence {
+                    resource: action.identity.resource.clone(),
+                    command: action.command.command().clone(),
+                }),
+            });
+        }
         if self.prepare == PrepareObservation::Reclaimed
             && matches!(action.command.command(), core::Command::PrepareVm { .. })
         {
@@ -463,6 +499,10 @@ impl HostAdapter for FakeHost {
             action.command.command(),
             core::Command::StopVm { .. }
         ));
+        if self.reclaim_stop_error_for == Some(action.command.command().sandbox()) {
+            self.reclaim_stop_error_for = None;
+            return Err(PortError::Busy);
+        }
         if let Some(error) = self.reclaim_stop_error_once.take() {
             return Err(error);
         }
@@ -2895,4 +2935,264 @@ fn filtered_listing_survives_restart_and_never_counts_or_returns_foreign_instanc
         port.kill("1", &session.sandbox_id).unwrap();
     }
     port.kill("2", &foreign.sandbox_id).unwrap();
+}
+
+fn two_unknown_stops() -> (TempDir, ControllerJournal) {
+    let (directory, port) = setup();
+    let first = port.create("1", request()).unwrap();
+    let second = port.create("2", request()).unwrap();
+    assert_ne!(first.sandbox_id, second.sandbox_id);
+    drop(port);
+    let mut journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    for (sandbox, tenant) in [(1, 1), (2, 2)] {
+        let result = kill_v1(
+            &mut journal,
+            core::KillRequest {
+                actor: core::Actor::Tenant(core::TenantId(tenant)),
+                sandbox: core::SandboxId(sandbox),
+                operation: core::OperationId(2),
+            },
+            &mut |action| {
+                if matches!(action.command.command(), core::Command::StopVm { .. }) {
+                    return Ok(WorkReceipt::<Evidence> {
+                        identity: action.identity.clone(),
+                        outcome: WorkOutcome::Unknown {
+                            reason: UnknownReason::ObservationUnavailable,
+                            last_observation: None,
+                        },
+                    });
+                }
+                FakeHost::default().execute(action)
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(sandproof_controller_service::JournalError::UnresolvedAction)
+        ));
+    }
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 2);
+    (directory, journal)
+}
+
+#[test]
+fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
+    let (directory, journal) = two_unknown_stops();
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            stop: StopObservation::ObservedAfterRestart,
+            reclaim_stop_error_for: Some(core::SandboxId(1)),
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let first = port.recover_on_startup().unwrap();
+    assert_eq!(first.receipts_recovered, 1);
+    assert_eq!(first.workflows_completed, 1);
+    assert_eq!(first.unresolved_sandboxes, 1);
+    assert_eq!(first.failed_sandboxes, 1);
+    // The stopped but unconfirmed first VM still consumes its tenant slot;
+    // the other tenant can reuse only its own reclaimed slot.
+    assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
+    port.create("2", request()).unwrap();
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+        core::Phase::Revoking
+    );
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(2)).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    let unknown = journal.uncertain_actions().unwrap();
+    assert_eq!(unknown.len(), 1);
+    assert_eq!(unknown[0].command.command().sandbox(), core::SandboxId(1));
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            stop: StopObservation::ObservedAfterRestart,
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let resumed = port.recover_on_startup().unwrap();
+    assert_eq!(resumed.receipts_recovered, 1);
+    assert_eq!(resumed.workflows_completed, 1);
+    assert_eq!(resumed.unresolved_sandboxes, 0);
+    assert_eq!(resumed.failed_sandboxes, 0);
+    assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 0);
+    // Quota becomes reusable only after exact recovery finishes.
+    port.create("1", request()).unwrap();
+}
+
+#[test]
+fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
+    let (directory, journal) = two_unknown_stops();
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            stop: StopObservation::ObservedAfterRestart,
+            bad_stop_observation_for: Some(core::SandboxId(1)),
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.receipts_recovered, 1);
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.failed_sandboxes, 1);
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(1))
+            .unwrap()
+            .phase,
+        core::Phase::Revoking
+    );
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            stop: StopObservation::ObservedAfterRestart,
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+}
+
+#[test]
+fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
+    let (directory, port) = setup();
+    let first = port.create("1", request()).unwrap();
+    let second = port.create("2", request()).unwrap();
+    port.set_timeout("1", &first.sandbox_id, 0).unwrap();
+    port.set_timeout("2", &second.sandbox_id, 0).unwrap();
+    drop(port);
+
+    let port = ManagedPort::new(
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        FakeHost {
+            unknown_stop_for: Some(core::SandboxId(1)),
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let report = port.expire_due_report().unwrap();
+    assert_eq!(report.completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 1);
+    drop(port);
+
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+        core::Phase::Revoking
+    );
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(2)).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            stop: StopObservation::ObservedAfterRestart,
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 1);
+    assert_eq!(port.expire_due_report().unwrap().completed, 0);
+}
+
+#[test]
+fn rejected_worker_receipt_parks_only_its_create() {
+    let directory = TempDir::new().unwrap();
+    let mut journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let now = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    for sandbox in [1, 2] {
+        journal
+            .admit_create(
+                core::CreateRequest {
+                    actor: core::Actor::Tenant(core::TenantId(sandbox)),
+                    owner: core::TenantId(sandbox),
+                    sandbox: core::SandboxId(sandbox),
+                    workspace: core::FsId(sandbox),
+                    file_policy: core::FilePolicyRef {
+                        digest: core::PolicyDigest(1),
+                    },
+                    policy: core::NetworkPolicy::DenyAll,
+                    operation: core::OperationId(1),
+                },
+                now,
+                300,
+                1_000,
+                config().limits,
+                &mut NeverCrash,
+            )
+            .unwrap();
+    }
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            bad_execute_for: Some(core::SandboxId(1)),
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    let report = port.recover_on_startup().unwrap();
+    assert_eq!(report.workflows_completed, 1);
+    assert_eq!(report.unresolved_sandboxes, 1);
+    assert_eq!(report.failed_sandboxes, 1);
+    drop(port);
+    let journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(1)).unwrap().phase,
+        core::Phase::Starting
+    );
+    assert_eq!(
+        world.sandbox_record(core::SandboxId(2)).unwrap().phase,
+        core::Phase::Running
+    );
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+}
+
+#[test]
+fn corrupt_shared_journal_still_aborts_recovery() {
+    let (directory, journal) = two_unknown_stops();
+    let connection = rusqlite::Connection::open(directory.path().join("controller.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE controller_inputs SET input_json=X'00' WHERE sequence=1",
+            [],
+        )
+        .unwrap();
+    let port = ManagedPort::new(
+        journal,
+        FakeHost {
+            stop: StopObservation::ObservedAfterRestart,
+            ..FakeHost::default()
+        },
+        config(),
+    );
+    assert_eq!(port.recover_on_startup(), Err(PortError::Busy));
 }

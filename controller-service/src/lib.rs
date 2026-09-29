@@ -80,6 +80,27 @@ pub enum JournalError {
     ObsoleteReceipt,
 }
 
+impl JournalError {
+    /// A rejected observation or transition belongs to one sandbox. Durable
+    /// storage, replay, and commit errors are deliberately not in this list:
+    /// their scope cannot be established, so recovery must stop globally.
+    #[must_use]
+    pub fn is_local_recovery_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::Contract(_)
+                | Self::ReceiptBeforeDispatch
+                | Self::ConflictingReceipt
+                | Self::ControllerRejected(_)
+                | Self::UnsupportedInput
+                | Self::UnresolvedAction
+                | Self::OperationFailed
+                | Self::InvalidHostEvidence
+                | Self::ObsoleteReceipt
+        )
+    }
+}
+
 impl Display for JournalError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
