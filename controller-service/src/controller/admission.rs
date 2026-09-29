@@ -111,12 +111,12 @@ fn reserve_startup_in_admission(
         )) => AdmissionError::QuotaExceeded,
         other => AdmissionError::Journal(other),
     })?;
-    let core::ControllerEvent::Protocol(core::Event::ReserveStartupResources { vm, .. }) =
+    let core::ControllerEvent::Protocol(core::Event::ReserveStartupResources { vm, slot, .. }) =
         reserved.event
     else {
         return Err(AdmissionError::Journal(JournalError::CorruptStore));
     };
-    if vm.0 > max_vm_id {
+    if vm.0 > max_vm_id || slot.0 > max_vm_id {
         return Err(AdmissionError::QuotaExceeded);
     }
     Ok(reserved)

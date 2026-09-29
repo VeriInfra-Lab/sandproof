@@ -1379,6 +1379,9 @@ impl LinuxWorker {
                     return Err("snapshot restore is outside V1".into());
                 }
                 self.vm_uid(*vm)?;
+                if slot.0 > self.config.max_vm_id {
+                    return Err("node network slot exceeds allocated range".into());
+                }
                 self.require_fence(*sandbox, *epoch, false)?;
                 let binding = SlotBinding {
                     owner: action.identity.owner.clone(),
