@@ -32,7 +32,7 @@ mod linux {
         router,
     };
     use sandproof_controller_service::{AdmissionLimits, ControllerJournal, WorkerTransportError};
-    use sandproof_node::{HostObservation, LinuxWorker, NodeConfig};
+    use sandproof_node::{HostObservation, LinuxWorker, NodeConfig, ObservedSlot};
     #[cfg(debug_assertions)]
     use sandproof_protocol::WorkOutcome;
     use sandproof_protocol::{WorkAction, WorkReceipt};
@@ -254,6 +254,16 @@ mod linux {
             &mut self,
             action: &WorkAction<core::EffectId>,
         ) -> Result<(), PortError> {
+            #[cfg(debug_assertions)]
+            if std::env::var("SANDPROOF_TEST_FAIL_RECLAIM_PREPARE_SANDBOX")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                == Some(action.command.command().sandbox().0)
+            {
+                // Refuse only this sandbox's compensating observation. The
+                // original PrepareVm remains unknown; no launch is replayed.
+                return Err(PortError::Busy);
+            }
             self.0
                 .reclaim_incomplete_prepare(action)
                 .map_err(|_| PortError::Busy)
@@ -383,6 +393,32 @@ mod linux {
         Ok(disk_bytes)
     }
 
+    fn has_current_uncertain_prepare(
+        journal: &ControllerJournal,
+        world: &core::World,
+        slot: &ObservedSlot,
+        uncertain: &[WorkAction<core::EffectId>],
+    ) -> Result<bool, Box<dyn Error>> {
+        for action in uncertain {
+            if let core::Command::PrepareVm {
+                sandbox,
+                generation,
+                vm,
+                slot: network_slot,
+                ..
+            } = action.command.command()
+                && *sandbox == slot.sandbox
+                && *generation == slot.generation
+                && *vm == slot.vm
+                && *network_slot == slot.slot
+                && journal.matches_current_prepare(world, action)?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn audit_host_inventory(
         node: &LinuxWorker,
         journal: &ControllerJournal,
@@ -410,6 +446,7 @@ mod linux {
             .into());
         }
         let world = journal.world()?;
+        let uncertain = journal.uncertain_actions()?;
         for slot in inventory.slots {
             let record = world
                 .sandbox_record(slot.sandbox)
@@ -437,9 +474,18 @@ mod linux {
                 return Err("reclaimed failed PrepareVm still has physical resources".into());
             }
             if slot.claim_present && slot.process.is_none() && !slot.aborted_unlaunched {
-                return Err(
-                    "VM claim has no exact process record; manual reconciliation required".into(),
-                );
+                // A claim from the exact current uncertain PrepareVm may be
+                // an interrupted pre-launch. The per-sandbox recovery path
+                // will reclaim it or park this sandbox. All other claims
+                // remain a global startup error, never an inferred stop.
+                if record.phase == core::Phase::Destroyed
+                    || !has_current_uncertain_prepare(journal, &world, &slot, &uncertain)?
+                {
+                    return Err(
+                        "VM claim has no exact process record; manual reconciliation required"
+                            .into(),
+                    );
+                }
             }
             if let Some(vm) = world.vm_record(slot.vm) {
                 if vm.sandbox != slot.sandbox || vm.generation != slot.generation {
@@ -475,23 +521,6 @@ mod linux {
             {
                 return Err("terminal sandbox still has a live or unobservable VM".into());
             }
-        }
-        Ok(())
-    }
-
-    fn reclaim_uncertain_prepares(
-        node: &LinuxWorker,
-        journal: &ControllerJournal,
-    ) -> Result<(), Box<dyn Error>> {
-        let world = journal.world()?;
-        for action in journal.uncertain_actions()? {
-            if !matches!(action.command.command(), core::Command::PrepareVm { .. }) {
-                continue;
-            }
-            if !journal.matches_current_prepare(&world, &action)? {
-                return Err("uncertain PrepareVm differs from current durable plan".into());
-            }
-            node.reclaim_incomplete_prepare(&action)?;
         }
         Ok(())
     }
@@ -592,7 +621,6 @@ mod linux {
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
-        reclaim_uncertain_prepares(&node, &journal)?;
         audit_host_inventory(&node, &journal)?;
         let port = Arc::new(ManagedPort::new(journal, NodeHost(node), managed));
         let recovery = port.recover_on_startup().map_err(|error| {

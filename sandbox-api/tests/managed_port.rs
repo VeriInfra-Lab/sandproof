@@ -119,6 +119,7 @@ struct FakeHost {
     public_ipv4_ready: bool,
     incomplete_open_fence: bool,
     prepare: PrepareObservation,
+    reclaim_prepare_error_for: Option<core::SandboxId>,
     activation: ActivationObservation,
     activation_calls: Option<Arc<AtomicUsize>>,
     recovered_actions: BTreeSet<RecoveredAction>,
@@ -147,6 +148,7 @@ impl Default for FakeHost {
             public_ipv4_ready: false,
             incomplete_open_fence: false,
             prepare: PrepareObservation::Missing,
+            reclaim_prepare_error_for: None,
             activation: ActivationObservation::Normal,
             activation_calls: None,
             recovered_actions: BTreeSet::new(),
@@ -422,6 +424,9 @@ impl HostAdapter for FakeHost {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<(), PortError> {
+        if self.reclaim_prepare_error_for == Some(action.command.command().sandbox()) {
+            return Err(PortError::Busy);
+        }
         if self.prepare == PrepareObservation::Incomplete {
             assert!(matches!(
                 action.command.command(),
@@ -1481,6 +1486,123 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
     assert_eq!(again.receipts_recovered, 0);
     assert_eq!(again.workflows_completed, 0);
     assert_eq!(again.unresolved_sandboxes, 0);
+}
+
+fn two_unknown_prepares() -> (TempDir, ControllerJournal) {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let now_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    for id in [1, 2] {
+        let sandbox = core::SandboxId(id);
+        journal
+            .admit_create(
+                core::CreateRequest {
+                    actor: core::Actor::Tenant(core::TenantId(id)),
+                    owner: core::TenantId(id),
+                    sandbox,
+                    workspace: core::FsId(id),
+                    file_policy: core::FilePolicyRef {
+                        digest: core::PolicyDigest(1),
+                    },
+                    policy: core::NetworkPolicy::DenyAll,
+                    operation: core::OperationId(1),
+                },
+                now_ms,
+                300,
+                1_000,
+                config().limits,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        let attempted =
+            finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+                if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+                    Ok(WorkReceipt::<Evidence> {
+                        identity: action.identity.clone(),
+                        outcome: WorkOutcome::Unknown {
+                            reason: UnknownReason::ObservationUnavailable,
+                            last_observation: None,
+                        },
+                    })
+                } else {
+                    FakeHost::default().execute(action)
+                }
+            });
+        assert!(attempted.is_err());
+    }
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 2);
+    (directory, journal)
+}
+
+#[test]
+fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm() {
+    let (directory, journal) = two_unknown_prepares();
+    let path = directory.path().join("controller.db");
+    drop(journal);
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let mut host = FakeHost {
+        prepare: PrepareObservation::Successful,
+        reclaim_prepare_error_for: Some(core::SandboxId(1)),
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        ..FakeHost::default()
+    };
+    for id in [1, 2] {
+        host.put_secret(core::SandboxId(id), &"a".repeat(64))
+            .unwrap();
+    }
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        config(),
+    );
+    let first = port.recover_on_startup().unwrap();
+    assert_eq!(first.receipts_recovered, 1);
+    assert_eq!(first.workflows_completed, 1);
+    assert_eq!(first.unresolved_sandboxes, 1);
+    assert_eq!(first.failed_sandboxes, 1);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
+    assert_eq!(
+        port.get("2", &format!("sb-{NAMESPACE}-2"))
+            .unwrap()
+            .info
+            .state,
+        "running"
+    );
+    assert!(matches!(
+        port.get("1", &format!("sb-{NAMESPACE}-1")),
+        Err(PortError::NotFound)
+    ));
+    drop(port);
+    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
+    let mut host = FakeHost {
+        prepare: PrepareObservation::Successful,
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        ..FakeHost::default()
+    };
+    host.put_secret(core::SandboxId(1), &"a".repeat(64))
+        .unwrap();
+    let port = ManagedPort::new(journal, host, config());
+    let resumed = port.recover_on_startup().unwrap();
+    assert_eq!(resumed.receipts_recovered, 1);
+    assert_eq!(resumed.workflows_completed, 1);
+    assert_eq!(resumed.unresolved_sandboxes, 0);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        port.get("1", &format!("sb-{NAMESPACE}-1"))
+            .unwrap()
+            .info
+            .state,
+        "running"
+    );
 }
 
 #[test]
