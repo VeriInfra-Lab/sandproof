@@ -169,6 +169,7 @@ pub(super) fn input_sandbox(
             effect.command().sandbox()
         }
         I::Effect(E::Retry(effect, _) | E::FinalizeFailure(effect, _)) => effect.command.sandbox(),
+        I::Effect(E::RetireActivation { activation, .. }) => activation.command().sandbox(),
         _ => return Err(JournalError::UnsupportedInput),
     })
 }

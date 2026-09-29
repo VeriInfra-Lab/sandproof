@@ -139,7 +139,12 @@ fn fence_can_advance(old: Option<&WorkerFence>, epoch: u64, terminal: bool) -> b
 fn effect_awaiting(status: Option<&EffectStatus>) -> bool {
     match status {
         Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => true,
-        Some(EffectStatus::Committed | EffectStatus::Acknowledged(_)) | None => false,
+        Some(
+            EffectStatus::Committed
+            | EffectStatus::Acknowledged(_)
+            | EffectStatus::RetiredByStop(_),
+        )
+        | None => false,
     }
 }
 
