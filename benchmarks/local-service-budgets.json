@@ -1,0 +1,25 @@
+{
+  "max_active_global": 1,
+  "max_active_per_tenant": 1,
+  "max_disk_bytes_global": 42949672960,
+  "max_disk_bytes_per_tenant": 21474836480,
+  "cleanup_reserve_bytes": 10737418240,
+  "max_timeout_secs": 86400,
+  "max_lifetime_secs": 86400,
+  "default_timeout_secs": 300,
+  "expiry_scan_seconds": 1,
+  "data_transfer": {
+    "file_upload_bytes": 67108864,
+    "file_download_bytes": 100663296,
+    "command_input_bytes": 1048576,
+    "command_output_bytes": 33554432,
+    "rpc_request_bytes": 65536,
+    "rpc_response_bytes": 1048576,
+    "max_transfers": 16,
+    "max_transfers_per_vm": 8,
+    "control_reserve": 1,
+    "request_idle_seconds": 13000,
+    "file_idle_seconds": 30,
+    "write_idle_seconds": 13000
+  }
+}
