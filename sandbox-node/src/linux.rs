@@ -500,6 +500,32 @@ impl LinuxWorker {
         }
     }
 
+    /// Complete only the original guest initialization for the exact live VM.
+    /// The controller first proves that this outbox action still belongs to
+    /// the current create; this host check binds it to the open fence,
+    /// workspace, persisted credential/config and recorded VMM process.
+    /// Sending the same restricted `/init` body again is convergent for the
+    /// pinned envd version. An inconclusive request remains unknown.
+    /// # Errors
+    /// Rejects changed physical identity or an unobservable guest.
+    pub fn reclaim_incomplete_activation(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        self.validate_action(action)?;
+        let core::Command::ActivateVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Err("reclaim requires an ActivateVm action".into());
+        };
+        self.complete_guest_activation(*sandbox, *epoch, *generation, *vm)?;
+        Ok(())
+    }
+
     fn ensure_prepare_slot(
         &self,
         owner: &TenantId,
@@ -1431,18 +1457,7 @@ impl LinuxWorker {
                 generation,
                 vm,
             } => {
-                self.require_fence(*sandbox, *epoch, false)?;
-                if self.vm_for_workspace(*sandbox, *generation)? != *vm {
-                    return Err("activation VM binding mismatch".into());
-                }
-                let observation = self.running(*sandbox, *vm)?;
-                self.initialize_guest(*sandbox, *vm)?;
-                let after = self.running(*sandbox, *vm)?;
-                if after.pid != observation.pid
-                    || after.start_time_ticks != observation.start_time_ticks
-                {
-                    return Err("VM changed while initializing guest service".into());
-                }
+                let after = self.complete_guest_activation(*sandbox, *epoch, *generation, *vm)?;
                 ObservedResult::Activated {
                     pid: after.pid,
                     start_ticks: after.start_time_ticks,
@@ -1667,6 +1682,26 @@ impl LinuxWorker {
         Ok(observation)
     }
 
+    fn complete_guest_activation(
+        &self,
+        sandbox: core::SandboxId,
+        epoch: core::Epoch,
+        generation: core::Generation,
+        vm: core::VmId,
+    ) -> NodeResult<Observation> {
+        self.require_fence(sandbox, epoch, false)?;
+        if self.vm_for_workspace(sandbox, generation)? != vm {
+            return Err("activation VM binding mismatch".into());
+        }
+        let before = self.running(sandbox, vm)?;
+        self.initialize_guest(sandbox, vm)?;
+        let after = self.running(sandbox, vm)?;
+        if after.pid != before.pid || after.start_time_ticks != before.start_time_ticks {
+            return Err("VM changed while initializing guest service".into());
+        }
+        Ok(after)
+    }
+
     fn initialize_guest(&self, sandbox: core::SandboxId, vm: core::VmId) -> NodeResult<()> {
         let name = self.vm_name(vm);
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -1691,6 +1726,16 @@ impl LinuxWorker {
         let body = serde_json::to_vec(&init)?;
         if Self::guest_status(&name, "POST", "/init", Some(&body))? != "204" {
             return Err("envd rejected authenticated initialization".into());
+        }
+        // A debug-only crash window after envd accepted the request but
+        // before the host can record authenticated readiness.
+        #[cfg(debug_assertions)]
+        if std::env::var("SANDPROOF_TEST_EXIT_AFTER_GUEST_INIT")
+            .ok()
+            .as_deref()
+            == Some("activate_vm")
+        {
+            std::process::exit(88);
         }
         if Self::guest_file_status(&name, &secret.token)? != "200" {
             return Err("envd authenticated file access not ready".into());

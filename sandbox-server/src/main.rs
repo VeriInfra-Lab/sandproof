@@ -163,6 +163,7 @@ mod linux {
                             ..
                         }
                     ) | (Some("stop_vm"), core::Command::StopVm { .. })
+                        | (Some("activate_vm"), core::Command::ActivateVm { .. })
                 ) {
                     std::process::exit(87);
                 }
@@ -213,6 +214,7 @@ mod linux {
                             core::Command::ConfigureNetwork { .. }
                         )
                         | (Some("stop_vm"), core::Command::StopVm { .. })
+                        | (Some("activate_vm"), core::Command::ActivateVm { .. })
                         | (Some("abort_prepare"), core::Command::AbortPrepare { .. })
                 ) {
                     std::process::exit(86);
@@ -234,6 +236,7 @@ mod linux {
                         } => "open fence",
                         core::Command::InstallFence { terminal: true, .. } => "terminal fence",
                         core::Command::PrepareVm { .. } => "prepare VM",
+                        core::Command::ActivateVm { .. } => "activate VM",
                         core::Command::ConfigureNetwork { .. } => "configure network",
                         core::Command::StopVm { .. } => "stop VM",
                         core::Command::AbortPrepare { .. } => "abort prepare",
@@ -261,6 +264,15 @@ mod linux {
         ) -> Result<(), PortError> {
             self.0
                 .reclaim_incomplete_network(action)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn reclaim_incomplete_activation(
+            &mut self,
+            action: &WorkAction<core::EffectId>,
+        ) -> Result<(), PortError> {
+            self.0
+                .reclaim_incomplete_activation(action)
                 .map_err(|_| PortError::Busy)
         }
 

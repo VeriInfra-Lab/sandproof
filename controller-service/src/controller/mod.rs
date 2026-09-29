@@ -163,6 +163,75 @@ impl ControllerJournal {
             && network.policy == *policy)
     }
 
+    /// A dispatched guest initialization may be repeated only for the
+    /// original create, sealed VM plan and still-live starting generation.
+    /// The host additionally checks the exact process, open fence and saved
+    /// initialization data before sending the same request to envd.
+    /// # Errors
+    /// Rejects an unencodable trusted journal identity.
+    pub fn matches_current_activation(
+        &self,
+        world: &core::World,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<bool, JournalError> {
+        let core::Command::ActivateVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        } = action.command.command()
+        else {
+            return Ok(false);
+        };
+        let Some(record) = world.sandbox_record(*sandbox) else {
+            return Ok(false);
+        };
+        let Some(operation) = record.current_operation else {
+            return Ok(false);
+        };
+        let key = core::OperationKey {
+            sandbox: *sandbox,
+            operation: operation.id,
+        };
+        let (Some(plan), Some(resource), Some(slot)) = (
+            world.operation_plan(key),
+            world.vm_record(*vm),
+            record.net_slot.and_then(|id| world.slot_record(id)),
+        ) else {
+            return Ok(false);
+        };
+        Ok(operation.kind == core::OperationKind::Create
+            && matches!(
+                operation.status,
+                core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown
+            )
+            && record.phase == core::Phase::Starting
+            && !record.terminal
+            && record.current_vm == Some(*vm)
+            && record.generation == *generation
+            && record.epoch == *epoch
+            && plan.sealed
+            && plan.epoch == *epoch
+            && plan.generation == *generation
+            && plan.vm == Some(*vm)
+            && plan.slot == record.net_slot
+            && slot.owner == record.owner
+            && slot.sandbox == *sandbox
+            && slot.generation == *generation
+            && slot.vm == *vm
+            && slot.policy == record.policy
+            && slot.configured
+            && resource.owner == record.owner
+            && resource.sandbox == *sandbox
+            && resource.generation == *generation
+            && resource.status == core::VmStatus::Prepared
+            && action.identity.owner == identity::owner_id(record.owner)?
+            && action.identity.sandbox == identity::sandbox_id(&self.namespace, *sandbox)?
+            && action.identity.operation == identity::operation_id(&self.namespace, key)?
+            && action.identity.epoch == *epoch
+            && action.identity.generation == *generation)
+    }
+
     /// A lost terminal-fence receipt may be completed only for the current
     /// compensating operation. The host still enforces monotonicity.
     /// # Errors
