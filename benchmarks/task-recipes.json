@@ -1260,6 +1260,10 @@
     "environment_sha256": "f91f9c77f711229a9757a1fc2b48bd547163c342295e6ca222e86cfd6b4bb385",
     "steps": [
       {
+        "run": "apt-get update && apt-get install -y --no-install-recommends cmake",
+        "cwd": "/"
+      },
+      {
         "run": "apt-get update &&      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends          r-base          python3          python3-pip          build-essential          curl          sudo &&      rm -rf /var/lib/apt/lists/*",
         "cwd": "/",
         "env": {}
@@ -1356,7 +1360,9 @@
       {
         "run": "pip install mteb==1.38.41",
         "cwd": "/app",
-        "env": {}
+        "env": {
+          "PIP_NO_CACHE_DIR": "1"
+        }
       }
     ]
   },
@@ -1383,7 +1389,9 @@
       {
         "run": "pip install mteb==1.36.8",
         "cwd": "/app",
-        "env": {}
+        "env": {
+          "PIP_NO_CACHE_DIR": "1"
+        }
       },
       {
         "copy": "task-deps/",
@@ -1549,6 +1557,10 @@
     "workdir": "/app",
     "environment_sha256": "35b7e409b40098d84a5ca88edb49d8be67ef7410e391dd36b2f89ddf916a3d8f",
     "steps": [
+      {
+        "run": "set -eu\ntmp_stage=$(mktemp -d /var/tmp/sandproof-initial-tmp.XXXXXX)\ncp -a /tmp/. \"$tmp_stage\"/\nsystemctl stop tmp.mount\ncp -a \"$tmp_stage\"/. /tmp/\nchmod 1777 /tmp\nrm -r -- \"$tmp_stage\"\ntest \"$(stat -c %d /tmp)\" = \"$(stat -c %d /)\"\n",
+        "cwd": "/"
+      },
       {
         "run": "mkdir -p /app",
         "cwd": "/"
@@ -1756,7 +1768,9 @@
       {
         "run": "pip install torch==2.7.1",
         "cwd": "/app",
-        "env": {}
+        "env": {
+          "PIP_NO_CACHE_DIR": "1"
+        }
       }
     ]
   },
@@ -1766,6 +1780,10 @@
     "environment_sha256": "015ce0601ff54758f66b33f4952e0d3a577d84c09aed8f3ec5945a570e8d168a",
     "env": {},
     "steps": [
+      {
+        "run": "cat > /etc/apt/sources.list <<'APT_SOURCES'\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian/20260824T000000Z bullseye main\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian-security/20260824T000000Z bullseye-security main\nAPT_SOURCES\n",
+        "cwd": "/"
+      },
       {
         "run": "apt-get update && apt-get install -y      qemu-system-x86      qemu-utils      wget      ca-certificates      openssh-client      && rm -rf /var/lib/apt/lists/*",
         "cwd": "/",
@@ -1803,6 +1821,10 @@
     "environment_sha256": "d60a2eca5ead7182f3b5d243ee0f8f52d3ff235589703c22c2e97147216dc850",
     "env": {},
     "steps": [
+      {
+        "run": "cat > /etc/apt/sources.list <<'APT_SOURCES'\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian/20260824T000000Z bullseye main\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian-security/20260824T000000Z bullseye-security main\nAPT_SOURCES\n",
+        "cwd": "/"
+      },
       {
         "run": "apt-get update && apt-get install -y      qemu-system-x86      qemu-utils      wget      ca-certificates      openssh-client      && rm -rf /var/lib/apt/lists/*",
         "cwd": "/",
