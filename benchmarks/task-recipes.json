@@ -2022,6 +2022,10 @@
     "environment_sha256": "9d813ec4fdc2054717f253e7acbc2740fe43f97d35a5545c91a9c06986d9d595",
     "steps": [
       {
+        "run": "cat > /etc/sandproof-pystan-constraints.txt <<'PIP_CONSTRAINTS'\nsetuptools @ https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl#sha256=062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922\nPIP_CONSTRAINTS\n",
+        "cwd": "/"
+      },
+      {
         "run": "cat > /etc/apt/sources.list.d/sandproof-snapshot.list <<'APT_SOURCES'\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/20251001T000000Z noble-updates main\nAPT_SOURCES\ncat > /etc/apt/preferences.d/sandproof-curl <<'APT_PREFERENCES'\nPackage: curl libcurl4t64\nPin: version 8.5.0-2ubuntu10.6\nPin-Priority: 1001\nAPT_PREFERENCES\n",
         "cwd": "/"
       },
@@ -2058,7 +2062,10 @@
         "run": "mkdir -p /app",
         "cwd": "/"
       }
-    ]
+    ],
+    "env": {
+      "PIP_CONSTRAINT": "/etc/sandproof-pystan-constraints.txt"
+    }
   },
   "sam-cell-seg": {
     "base": "python311full",
