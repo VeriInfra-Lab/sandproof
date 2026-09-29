@@ -128,6 +128,23 @@ def prepare_payload(root, envd, packages, epoch):
     os.utime(root, (epoch, epoch))
 
 
+def verify_ubuntu_execution_paths(output):
+    """Check the fixed ordinary user's cwd and /bin/sh execution path."""
+    for name in ("/", "/home", "/usr", "/usr/bin", "/usr/bin/dash"):
+        metadata = debugfs(output, f"stat {name}")
+        expected_type = "regular" if name == "/usr/bin/dash" else "directory"
+        if f"Type: {expected_type}" not in metadata or "Mode:  0755" not in metadata:
+            raise ValueError(f"ubuntu cannot traverse or execute fixed path: {name}")
+    home = debugfs(output, "stat /home/ubuntu")
+    if ("Type: directory" not in home or "Mode:  0750" not in home
+            or not re.search(r"User:\s+1000\s+Group:\s+1000", home)):
+        raise ValueError("ubuntu home must be owned and accessible by the fixed non-root user")
+    for name, target in (("/bin", "usr/bin"), ("/bin/sh", "dash")):
+        metadata = debugfs(output, f"stat {name}")
+        if f'Fast link dest: "{target}"' not in metadata:
+            raise ValueError(f"unexpected fixed shell link: {name}")
+
+
 def verify_image(output, work, profile):
     extracted = work / "installed-envd"
     debugfs(output, f"dump {ENVD_GUEST} {extracted}")
@@ -140,8 +157,7 @@ def verify_image(output, work, profile):
     metadata = debugfs(output, f"stat {ENVD_GUEST}")
     if "Mode:  0755" not in metadata:
         raise ValueError("installed envd mode mismatch")
-    if not re.search(r"User:\s+1000\s+Group:\s+1000", debugfs(output, "stat /home/ubuntu")):
-        raise ValueError("ubuntu home must be accessible to the fixed non-root user")
+    verify_ubuntu_execution_paths(output)
     manifest = work / "installed-packages"
     debugfs(output, f"dump /etc/sandproof-base-packages.manifest {manifest}")
     if digest(manifest) != profile["packages"]["sha256"]:

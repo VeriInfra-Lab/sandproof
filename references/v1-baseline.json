@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "M0 固定来源、依赖和已有实机证据；不是 V1 全功能或形式化验收报告",
-  "recorded_on": "2026-09-28",
+  "recorded_on": "2026-09-29",
   "code_baseline": {
     "test_branch_at_contract_review": "9eba68821b8ad11f374a88f4a3450753e69c5ee1",
     "rust_toolchain": "1.97.0",
@@ -1111,6 +1111,44 @@
     "final_audit": "All 14 VM identities from passing windows, preliminary probe and current/parent SDK attempts were audited: durable Destroyed, no original PID/start, jail, netns, namespace holders or cgroup. Test API credentials and envd secret files deleted; empty dedicated cgroup removed; non-secret logs, database history and claim tombstones retained in private test roots. Shared source base unchanged.",
     "commands": "Local: bash scripts/check-function.sh and bash scripts/check-compat.sh with Python 3.13.14. Linux: cargo test --workspace --all-targets --locked; bash scripts/check-compat.sh; sudo python3 tests/system/server_activation_abort.py --server <tested-debug-binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <7c424b74 kernel> --rootfs <83f82ca1 legacy base> --uid-base 9300000 --scratch-parent /root/ta --cgroup-parent /sys/fs/cgroup/sp11-terminal-b5b9b63 --window <before-stop|after-stop|after-cleanup> --keep-artifacts. Run windows serially. C02 used the fixed SDK Python and tests/system/sdk_c02_acceptance.py with the same VM artifacts and UID base 9310000.",
     "limits": "Selected deterministic crash windows only, not arbitrary instruction interruption or full #11 closure. Single controller/serialized host dispatch; no concurrent independent workers, host power loss, hostile host, public-network regression, per-sandbox recovery-error isolation, Harbor or new Lean proofs. If precise stop cannot be established, the operation remains incomplete and quota held. V7 journals cannot be opened by older controllers. Only evidence/documentation changes follow the tested source commit."
+  },
+  "guest_home_acceptance": {
+    "issue": 110,
+    "builder_commit": "062e8baabe54bd1e337b694ac8dcaa60c9baa822",
+    "tested_source_commit": "f1779059aedae169f8a86af5bda50b596d67bddc",
+    "server_build_commit": "062e8baabe54bd1e337b694ac8dcaa60c9baa822",
+    "server_sha256": "07d43ef156e27ce224a0cc9c714750c607f3078f7d40df66b3d1a84154bd0cd9",
+    "host": "ning; Linux 6.8.0-142-generic x86_64; KVM; root-only isolated test root and exclusive UID range 9313000-9314000",
+    "firecracker_jailer": "1.16.1; sha256 2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7 / 1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+    "profile_sha256": "f89656adb855b03925f6ca498dfd66abd34cd620eb8de83816ef99978b825cac",
+    "builder_sha256": "ffc9b0f46075c8bc8684a1b157a2985d15e4d304b9747e1e205af70c2ee49ee5",
+    "input_sha256": {
+      "squashfs": "b8547327e5d19f4f2b90ed95fc62f2d8d54491e4a0009358fdd9a39f399a0566",
+      "packages": "2c0191925a1f1a9cd9253ae80dd37ee6992325d0055466cfa3b7255aa70a8ff2",
+      "envd": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "kernel": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4"
+    },
+    "image_sha256_before_after": "30a3861b873e077d2f9a1c215e1e68702261ef3a9af1db3e2c6e6f07b73d5391",
+    "image_bytes": 1073741824,
+    "test_namespace": "a91c3044a588a47b",
+    "build_tools_sha256": {
+      "unsquashfs": "b305985eb764b6d0ef757571e3e44044ebf71c827c4263efe576e9e14b4abcfb",
+      "mke2fs": "07cd24ce58a410cc9cee93c55ae5ac95986df016c5907dc7a49b55389bd41ed2",
+      "e2fsck": "c69c6315f602d389821b3a1dab1308618616259400f2cf5d997243c4a83c284c",
+      "debugfs": "1e83118cc9582afcad2711fbb7f40f56668adccb386d988cb6d9ad5c2d001049",
+      "mke2fs_conf": "def9e1d4dbf51f44c51303349338086cf23d60c3cc7e9e99442ee554eb9f5de6"
+    },
+    "static_guest_paths": "Verified / and /home traverse, /home/ubuntu owned by UID/GID 1000 with mode 0750, and /bin/sh -> /usr/bin/dash executable; e2fsck passed. The legacy root:root 0750 disk was not edited.",
+    "test": "tests/system/sdk_c02_acceptance.py",
+    "test_sha256": "60151180bdc9014cd2100044be2f316fd03889b4e9830b89fefb00365905c4d3",
+    "probe_sha256": {
+      "sdk_server_smoke.py": "0b771d17ec7be344d41e6dd6fb2685b29789d4656cd31ba0014b2b0abd9f6daf",
+      "sdk_data_contract.py": "d1bd8f78163b272e2aca8739c5b8e1d993533000fbf90168bc9c19abe55aaaa8"
+    },
+    "commands": "Root: python3 tools/build_base_guest.py --squashfs <fixed SquashFS> --envd <fixed envd> --packages <fixed manifest> --output <new private base>; fixed E2B Python SDK 2.51.0: python tests/system/sdk_c02_acceptance.py --server <tested binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <b20af758 kernel> --rootfs <30a3861b new base> --uid-base 9313000 --scratch-parent <root-only directory>.",
+    "result": "passed: fixed SDK root/auth/expiry/kill smoke and unchanged sync/async ubuntu commands, working directory, files and output assertions; four durable Destroyed rows; exact process, jail, netns, cgroup and dedicated UID range clear; input base unchanged",
+    "post_test_merge_acceptance": "After merging test@a01598c, reran the same two probes at source commit e43f27aa2b07cc6a38253fcebc46bb80729afa43, server SHA-256 9a47ab671d7e8ab3dee944254341cfcfb96413f031e7028dfab63bf79aa22c13, namespace 76943a05c9a9c053 and exclusive UID range 9314000-9315000. All four VMs were durably Destroyed; exact process, jail, netns, cgroup and UID range clear; source base SHA-256 unchanged.",
+    "limits": "Selected manual C02 acceptance on one host and explicit no-internet only. No host cgroup quota configured in this probe. Does not prove full #8/#9/#10, arbitrary faults, Harbor tasks, general Ubuntu image support, deployment reproducibility across hosts or new Lean coverage."
   },
   "recovery_isolation_acceptance": {
     "issue": 11,

@@ -544,6 +544,7 @@ fn config() -> ManagedConfig {
     ManagedConfig {
         public_ipv4_enabled: false,
         limits: AdmissionLimits {
+            max_vm_id: 10_000,
             max_active_global: 2,
             max_active_per_tenant: 1,
             max_disk_bytes_global: 4_000,
@@ -1385,17 +1386,18 @@ fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
             &mut NeverCrash,
         )
         .unwrap();
-    journal
-        .apply(
-            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(
-                core::OperationKey {
-                    sandbox,
-                    operation: core::OperationId(1),
-                },
-            )),
-            &mut NeverCrash,
-        )
-        .unwrap();
+    // Reservation itself is now atomic with admission. A missing credential
+    // becomes unsafe to replace only after a host action has been claimed.
+    assert!(matches!(
+        finish_admitted_create_v1::<Evidence, _>(
+            &mut journal,
+            sandbox,
+            core::OperationId(1),
+            &mut |_| Err(WorkerTransportError::ConnectionLost),
+        ),
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
     drop(journal);
     let port = ManagedPort::new(
         ControllerJournal::open(&path, NAMESPACE).unwrap(),
@@ -2720,6 +2722,49 @@ fn physical_disk_shortage_rejects_before_any_admission() {
             .items
             .is_empty()
     );
+}
+
+#[test]
+fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let host = FakeHost {
+        prepare_calls: Some(Arc::clone(&prepare_calls)),
+        ..FakeHost::default()
+    };
+    let mut policy = config();
+    policy.limits.max_vm_id = 1;
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        policy,
+    );
+
+    for _ in 0..2 {
+        let created = port.create("1", request()).unwrap();
+        port.kill("1", &created.sandbox_id).unwrap();
+    }
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
+    drop(port);
+
+    let mut policy = config();
+    policy.limits.max_vm_id = 1;
+    let reopened = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost {
+            prepare_calls: Some(Arc::clone(&prepare_calls)),
+            ..FakeHost::default()
+        },
+        policy,
+    );
+    assert_eq!(
+        reopened.create("1", request()),
+        Err(PortError::QuotaExceeded)
+    );
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]

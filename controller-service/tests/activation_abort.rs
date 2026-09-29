@@ -22,6 +22,7 @@ impl CrashInjector for CrashAt {
 
 fn limits() -> AdmissionLimits {
     AdmissionLimits {
+        max_vm_id: 10_000,
         max_active_global: 1,
         max_active_per_tenant: 1,
         max_disk_bytes_global: 10_000,
