@@ -133,6 +133,17 @@ class LocalBaseEnvironment(E2BEnvironment):
             if marker.strip() != self.recipe['base']:
                 raise InvalidInput('guest fixed profile differs from recipe')
         await self._sandbox.files.write('/etc/resolv.conf', 'nameserver 1.1.1.1\noptions timeout:2 attempts:2\n')
+        descriptors = await self.exec(
+            'test -e /dev/fd || ln -s /proc/self/fd /dev/fd', cwd='/', timeout_sec=30)
+        if descriptors.return_code:
+            raise RuntimeError('guest file descriptor directory is unavailable')
+        if self.recipe['base'] == 'ubuntu-24.04':
+            # The fixed VM base owns sysctl.conf before procps is installed.
+            # Preserve its existing settings when dpkg asks about a conffile;
+            # DEBIAN_FRONTEND alone does not control that prompt.
+            await self._sandbox.files.write(
+                '/etc/apt/apt.conf.d/99sandproof-conffiles',
+                'Dpkg::Options { "--force-confdef"; "--force-confold"; };\n')
         await self.exec('mkdir -p /logs/agent /logs/verifier /logs/artifacts', cwd='/', timeout_sec=30)
         for step in self.recipe['steps']:
             if 'copy' in step:
@@ -175,11 +186,18 @@ class LocalBaseEnvironment(E2BEnvironment):
 
     async def exec(self, command, **kwargs):
         started = time.monotonic()
-        result = await super().exec(command, **kwargs)
-        self.events.append({'command': command, 'return_code': result.return_code,
-                            'seconds': round(time.monotonic() - started, 3),
-                            'stdout': result.stdout, 'stderr': result.stderr})
-        return result
+        event = {'command': command, 'return_code': None}
+        self.events.append(event)
+        try:
+            result = await super().exec(command, **kwargs)
+            event.update(return_code=result.return_code,
+                         stdout=result.stdout, stderr=result.stderr)
+            return result
+        except BaseException as error:
+            event['error_type'] = type(error).__name__
+            raise
+        finally:
+            event['seconds'] = round(time.monotonic() - started, 3)
 
     async def upload_file(self, source_path, target_path):
         source = Path(source_path)
@@ -250,6 +268,8 @@ async def run_task(args, entry, recipe):
     start = time.monotonic()
     def event(stage):
         row['stage'] = stage
+        if stage in ('oracle', 'verifier'):
+            row[stage] = 'running'
         print(json.dumps({'task': task.name, 'stage': stage}), flush=True)
     try:
         event('initialization')
@@ -265,16 +285,43 @@ async def run_task(args, entry, recipe):
         row['rewards'] = result.rewards
         row['verifier'] = 'passed' if result.rewards == {'reward': 1} else 'failed'
         row['status'] = 'passed' if row['oracle'] == row['verifier'] == 'passed' else 'failed'
+        event('package_inventory')
         packages = await environment.exec("dpkg-query -W -f='${Package}=${Version}\\n'", cwd='/', timeout_sec=30)
         (paths.trial_dir / 'packages.txt').write_text(packages.stdout or '')
+        row['stage'] = 'verifier'
     except Exception as error:
         row['status'] = 'timeout' if isinstance(error, TimeoutError) else 'failed'
         row['error_type'] = type(error).__name__
         (paths.trial_dir / 'error.txt').write_text(str(error))
+        if row['stage'] in ('oracle', 'verifier'):
+            row[row['stage']] = row['status']
+        # Preserve partial diagnostics before destroying the VM. A log failure
+        # must neither hide the original result nor prevent cleanup.
+        if environment.sandbox_id is not None:
+            for remote, target in (
+                ('/logs/agent/oracle.txt', paths.agent_dir / 'oracle.txt'),
+                ('/logs/verifier/test-stdout.txt', paths.test_stdout_path),
+                ('/logs/verifier/reward.txt', paths.reward_text_path),
+            ):
+                if target.exists():
+                    continue
+                try:
+                    await asyncio.wait_for(environment.download_file(remote, target), 10)
+                except Exception as log_error:
+                    row.setdefault('diagnostic_errors', {})[remote] = type(log_error).__name__
     finally:
         row['sandbox_id'] = environment.sandbox_id
         if environment.create_dispatched and environment.sandbox_id is None:
             row['status'] = 'create_unknown'
+        if environment.sandbox_id is not None and row['status'] in ('failed', 'timeout'):
+            try:
+                observation = await asyncio.wait_for(environment.exec(
+                    'cat /proc/sys/vm/overcommit_memory /proc/meminfo\ndf -Pk /\ndf -Pi /',
+                    cwd='/', timeout_sec=10), 10)
+                (paths.trial_dir / 'environment-diagnostics.txt').write_text(
+                    (observation.stdout or '') + (observation.stderr or ''))
+            except Exception as diagnostic_error:
+                row.setdefault('diagnostic_errors', {})['environment'] = type(diagnostic_error).__name__
         (paths.trial_dir / 'events.json').write_text(json.dumps(environment.events, indent=2))
         try:
             await environment.stop()

@@ -94,6 +94,10 @@
     "env": {},
     "steps": [
       {
+        "run": "cat > /etc/apt/sources.list.d/sandproof-snapshot.list <<'APT_SOURCES'\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian/20251001T000000Z trixie main\ndeb-src [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian/20251001T000000Z trixie main\nAPT_SOURCES\ncat > /etc/apt/preferences.d/sandproof-snapshot <<'APT_PREFERENCES'\nPackage: *\nPin: origin \"snapshot.debian.org\"\nPin-Priority: 1001\nAPT_PREFERENCES\n",
+        "cwd": "/"
+      },
+      {
         "run": "apt-get update && apt-get install -y tmux asciinema",
         "cwd": "/",
         "env": {}
@@ -117,6 +121,10 @@
     "workdir": "/app",
     "environment_sha256": "44f2b5fc7311d8f336daaaca99dd4216b49355e67f50b494ebacf1b0f7c14e92",
     "steps": [
+      {
+        "run": "cat > /etc/apt/sources.list.d/sandproof-snapshot.list <<'APT_SOURCES'\ndeb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/20251001T000000Z noble-updates main\nAPT_SOURCES\ncat > /etc/apt/preferences.d/sandproof-wget <<'APT_PREFERENCES'\nPackage: wget\nPin: version 1.21.4-1ubuntu4.1\nPin-Priority: 1001\nAPT_PREFERENCES\n",
+        "cwd": "/"
+      },
       {
         "run": "apt-get update && apt-get install -y      curl      wget      git      imagemagick      && rm -rf /var/lib/apt/lists/*",
         "cwd": "/",
@@ -303,6 +311,10 @@
     "environment_sha256": "c357ea41e4a4013c5c5980b8fef04af6a5ae250ccc6697cf3bad3127401a931f",
     "steps": [
       {
+        "run": "apt-get update && apt-get install -y --no-install-recommends findutils",
+        "cwd": "/"
+      },
+      {
         "run": "mkdir -p /app",
         "cwd": "/"
       }
@@ -313,6 +325,10 @@
     "workdir": "/app",
     "environment_sha256": "8c87039a43581841b7ef11d80c4ff1a5c5f43011877e167403063d55435aaa19",
     "steps": [
+      {
+        "run": "systemctl unmask ssh.service ssh.socket",
+        "cwd": "/"
+      },
       {
         "run": "mkdir -p /app",
         "cwd": "/"
@@ -923,7 +939,9 @@
       {
         "run": "pip install transformers==4.56.0 torch==2.7.1 flask==3.1.1",
         "cwd": "/app",
-        "env": {}
+        "env": {
+          "PIP_NO_CACHE_DIR": "1"
+        }
       }
     ]
   },
