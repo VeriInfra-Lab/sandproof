@@ -78,7 +78,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_local \
   --output artifacts/terminal-bench/run-regex-log
 ```
 
-密钥通过 `SANDPROOF_TEST_API_KEY` 提供；程序不读取云端密钥。输出目录必须不存在。执行前复核全部 89 题源码，使用该题原始初始化、agent 与 verifier 时限；只在标准解答阶段上传 solution，只在评分阶段上传 tests，保留原退出码和 reward。输出包含可取得的该题日志和仍含全部 89 题的 `full-set.json`；原评分器返回后会尝试记录 dpkg 软件包清单，初始化或解答阶段中断时可能没有该清单。未执行不能算通过。失败和超时返回非零，记录已经开始的阶段与中断命令；失败后限时收集已有日志及来宾内存、磁盘诊断，诊断读取失败不影响随后尝试销毁。销毁未确认会单独标记，必须先核对原资源，不能直接重跑。
+密钥通过 `SANDPROOF_TEST_API_KEY` 提供；程序不读取云端密钥。输出目录必须不存在。执行前复核全部 89 题源码，使用该题原始初始化、agent 与 verifier 时限；只在标准解答阶段上传 solution，只在评分阶段上传 tests，保留原退出码和 reward。`oracle=passed` 只表示原脚本退出 0；整题通过还要求原评分器返回 reward=1，不能只凭解答脚本退出码判断解题成功。输出包含可取得的该题日志和仍含全部 89 题的 `full-set.json`；原评分器返回后会尝试记录 dpkg 软件包清单，初始化或解答阶段中断时可能没有该清单。未执行不能算通过。失败和超时返回非零，记录已经开始的阶段与中断命令；失败后限时收集已有日志及来宾内存、磁盘诊断，诊断读取失败不影响随后尝试销毁。销毁未确认会单独标记，必须先核对原资源，不能直接重跑。
 
 服务必须预先配置与当前题目一致的 CPU/内存、10 GiB 独立盘、86400 秒单次及总寿命上限，以及公网 IPv4 出站。服务的固定 base 必须切换为该题配方指定的预制镜像；CPU/内存也按原题设置。原 SDK 仍仅请求 `base`，模板构建与任意 Dockerfile/OCI 转换不属于服务能力。Python/Debian 镜像以明确的官方 amd64 清单及所有层摘要固定，加入同一 envd、固定静态 BusyBox 启动配置和独立 guest 网络配置；这些本地实验镜像的隔离与启动证据必须分别取得。DNS 使用公网解析器 1.1.1.1，宿主若有 Docker 的 FORWARD 默认拒绝策略，应由监督器按本轮唯一网卡配置和回收精确转发规则，不能关闭全局防火墙。执行入口不修改宿主网络、不启动服务，不代替独立的 PID/磁盘/cgroup/网络清理审计。
 
@@ -89,6 +89,10 @@ uv run --locked --project benchmarks python -m benchmarks.run_local \
 来宾初始化补齐精简镜像缺少的 `/dev/fd`，使 Bash 进程替换可以访问 `/proc/self/fd`。Ubuntu 来宾初始化保留基础镜像已有的配置文件，避免非交互 apt 安装因 dpkg 配置确认而中断。个别任务还需要显式基础环境补齐：CompCert 题安装 findutils，MCMC/Stan 题补齐 RcppParallel 当前构建所需的 cmake，Git Webserver 题仅在来宾内解除 ssh 服务屏蔽；pMARS 使用经过原发行版签名验证的 2025-10-01 Debian 历史仓库，POV-Ray 与 RStan/PyStan 题使用同日期 Ubuntu 历史仓库，满足原脚本的版本约束。这些适配不改动标准解答、私有测试或原资源时限，历史仓库也不能代替对其他动态下载内容的完整锁定。
 
 hf-model-inference、pytorch-model-recovery 和两道 MTEB 题的原 pip 安装命令禁用下载缓存，减少 10 GiB 私有盘上的重复存储；保留原 PyTorch 版本及其依赖，不改用其他构建变体。
+
+PyTorch 恢复题的原评分器还会用 uvx 创建独立 Torch 环境。该题先由原 pip 对 `torch==2.7.1` 做 dry-run 解析，记录完整 wheel 版本和摘要，再用与评分器相同的 uv 0.9.5 按这些摘要安装并硬链接缓存；随后仍执行原 pip 安装命令。评分环境通过 `UV_LINK_MODE=hardlink` 复用相同 wheel 的文件，避免两份 CUDA 库挤满私有盘。初始化核对实际版本及大文件链接数，并保存解析和布局记录；不修改原解答或评分器，不直接编辑 uv 缓存。
+
+MTEB 检索题也用此布局共享两个 Python 环境中相同的 wheel；原 pip 继续处理源码分发包，随后核对全部解析版本。该题另为 pip 和 uv 同时约束 Transformers 4.57.6，保留旧 MTEB 导入的 `AutoModelForVision2Seq`；该接口在 [Transformers 5 官方迁移说明](https://github.com/huggingface/transformers/blob/main/MIGRATION_GUIDE_V5.md)中列为已移除。不同 Python ABI 的 wheel 仍分别安装，不修改原评分器要求的 Python 版本。
 
 path-tracing-reverse 的原评分器会跨 `/app`、`/tmp` 重命名文件。该题初始化在 guest 内保存临时目录内容、停止独立 tmpfs 挂载并恢复到同一私有盘，保留目录内容和 sticky bit；不改动原评分器的文件操作。
 
