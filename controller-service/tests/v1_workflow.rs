@@ -56,6 +56,7 @@ fn create_publishes_after_all_results_and_kill_publishes_after_stop() {
 fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
     let (_directory, mut journal) = setup();
     let limits = AdmissionLimits {
+        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
         max_disk_bytes_global: 10_000,
@@ -118,6 +119,7 @@ fn running_publication_resets_usable_lifetime_atomically_across_restart() {
     let (directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
+        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
         max_disk_bytes_global: 10_000,
@@ -209,6 +211,7 @@ fn short_usable_lifetime_does_not_cut_off_a_healthy_startup() {
     let (_directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
+        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
         max_disk_bytes_global: 10_000,
@@ -267,6 +270,7 @@ fn late_running_publication_cannot_win_before_startup_scanner() {
     let (directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
+        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
         max_disk_bytes_global: 10_000,
@@ -324,6 +328,7 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
     let (directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
+        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
         max_disk_bytes_global: 10_000,

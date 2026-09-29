@@ -36,6 +36,7 @@ fn legacy_create_options_do_not_invent_original_network_parameters() {
 
 fn limits() -> AdmissionLimits {
     AdmissionLimits {
+        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
         max_disk_bytes_global: 3_000,
@@ -136,17 +137,9 @@ fn running(
     sandbox: core::SandboxId,
     operation: core::OperationId,
 ) {
-    let reserved = journal
-        .apply(
-            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(
-                core::OperationKey { sandbox, operation },
-            )),
-            &mut NeverCrash,
-        )
-        .unwrap();
     dispatch_all(journal);
-    let plan = reserved
-        .next
+    let world = journal.world().unwrap();
+    let plan = world
         .operation_plan(core::OperationKey { sandbox, operation })
         .unwrap();
     journal
@@ -166,6 +159,63 @@ fn running(
             &mut NeverCrash,
         )
         .unwrap();
+}
+
+#[test]
+fn vm_id_capacity_is_checked_before_admission_and_survives_restart() {
+    let (directory, mut journal) = setup();
+    let mut policy = limits();
+    policy.max_vm_id = 1;
+    policy.max_active_global = 3;
+    policy.max_active_per_tenant = 3;
+    policy.max_disk_bytes_global = 10_000;
+    policy.max_disk_bytes_per_tenant = 10_000;
+
+    for sandbox in [10, 11] {
+        let decision = journal
+            .admit_create(
+                request(sandbox, 1),
+                1_000,
+                60,
+                1_000,
+                policy,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        let key = core::OperationKey {
+            sandbox: core::SandboxId(sandbox),
+            operation: core::OperationId(sandbox * 10),
+        };
+        let plan = decision.next.operation_plan(key).unwrap();
+        assert_eq!(plan.vm, Some(core::VmId(sandbox - 10)));
+        assert_eq!(plan.slot, Some(core::NetSlotId(sandbox - 10)));
+    }
+    assert!(matches!(
+        journal.admit_create(request(12, 1), 1_000, 60, 1_000, policy, &mut NeverCrash),
+        Err(AdmissionError::QuotaExceeded)
+    ));
+    assert!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(12))
+            .is_none()
+    );
+
+    drop(journal);
+    let mut reopened =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert!(matches!(
+        reopened.admit_create(request(12, 1), 1_000, 60, 1_000, policy, &mut NeverCrash),
+        Err(AdmissionError::QuotaExceeded)
+    ));
+    assert!(
+        reopened
+            .world()
+            .unwrap()
+            .sandbox_record(core::SandboxId(12))
+            .is_none()
+    );
 }
 
 #[test]

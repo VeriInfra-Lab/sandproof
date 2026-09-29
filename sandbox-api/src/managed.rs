@@ -582,11 +582,24 @@ fn blocked_launch_configs<H: HostAdapter>(
             sandbox: *sandbox,
             operation: operation.id,
         };
-        let plan = initial.operation_plan(key).ok_or(PortError::Busy)?;
+        initial.operation_plan(key).ok_or(PortError::Busy)?;
         let options = journal.create_options(*sandbox).map_err(map_admission)?;
         match host.has_launch_config(*sandbox, &options.env_vars) {
             Ok(true) => {}
-            Ok(false) if plan.vm.is_none() => {
+            Ok(false)
+                if initial.effect_ids().iter().all(|effect| {
+                    effect.command().sandbox() != *sandbox
+                        || matches!(
+                            initial.effect_status(effect),
+                            Some(core::EffectStatus::Committed)
+                        )
+                }) =>
+            {
+                // The VM/slot identity is now reserved with the create intent.
+                // A missing credential may be created only if no host action
+                // was ever claimed. Once any action was claimed, losing the
+                // credential must remain unresolved instead of minting a new
+                // token for a possibly live VM.
                 if host
                     .put_launch_config(*sandbox, &token()?, &options.env_vars)
                     .is_err()
