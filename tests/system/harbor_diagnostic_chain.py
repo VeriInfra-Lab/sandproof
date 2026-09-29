@@ -206,7 +206,7 @@ def exercise(args: argparse.Namespace) -> None:
         "max_active_global": 1, "max_active_per_tenant": 1,
         "max_disk_bytes_global": 30 * GIB, "max_disk_bytes_per_tenant": 30 * GIB,
         "cleanup_reserve_bytes": 10 * GIB, "max_timeout_secs": 86400,
-        "max_lifetime_secs": 86400, "default_timeout_secs": 86400,
+        "max_lifetime_secs": 86400, "default_timeout_secs": 300,
         "expiry_scan_seconds": 1, "public_ipv4_enabled": True,
     }))
     config.chmod(0o600)
