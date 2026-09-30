@@ -30,8 +30,8 @@ PLATFORM = "/opt/sandproof"
 BOOT = """#!/opt/sandproof/busybox sh
 set -eu
 B=/opt/sandproof/busybox
-$B mount -o remount,rw /
 $B mount -t proc proc /proc
+$B mount -o remount,rw /
 $B mount -t sysfs sysfs /sys
 if ! $B mountpoint -q /dev; then $B mount -t devtmpfs devtmpfs /dev; fi
 $B mkdir -p /dev/pts /run /tmp
@@ -90,6 +90,8 @@ class Commands:
         try:
             self.drain(child)
             if child.wait() != 0:
+                if time.monotonic() >= self.deadline:
+                    raise TimeoutError("build deadline")
                 raise RuntimeError("tool failed: " + Path(args[0]).name)
         finally:
             terminate(child)

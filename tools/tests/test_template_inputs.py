@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.template_inputs import InvalidTemplate, extract_context, inspect_oci, startup_config
-from tools.template_worker import Commands, LogBudget, guest_path, install_platform, terminate, validate_request
+from tools.template_worker import AGENT, BOOT, Commands, LogBudget, guest_path, install_platform, terminate, validate_request
 
 
 def archive_bytes(entries):
@@ -158,6 +158,12 @@ class TemplateInputTests(unittest.TestCase):
         self.assertIn("/opt/sandproof/agent", (root / "etc/inittab").read_text())
         with self.assertRaisesRegex(InvalidTemplate, "reserved"):
             install_platform(root, binary, binary)
+
+    def test_boot_order_and_health_fail_closed(self):
+        self.assertLess(BOOT.index("mount -t proc"), BOOT.index("mount -o remount,rw"))
+        self.assertIn("mountpoint -q /dev", BOOT)
+        self.assertLess(BOOT.index("ip route add default"), BOOT.index("touch /run/sandproof-boot-ready"))
+        self.assertLess(AGENT.index("test -f /run/sandproof-boot-ready"), AGENT.index("exec /opt/sandproof/envd"))
 
     def test_worker_limits_are_explicit_no_boolean_or_unknown_field(self):
         request = {"kind": "dockerfile", "disk_mib": 1024, "min_free_mib": 64, "max_input_bytes": 100,
