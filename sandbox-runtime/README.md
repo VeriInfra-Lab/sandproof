@@ -46,6 +46,12 @@ sudo ./target/debug/sandproof-vm smoke \
 
 ## 固定 envd 与真实 SDK 测试
 
+### 显式预制多模板
+
+常驻服务配置可选 `templates` 目录，结构与检查以[模块合同](../docs/module-contracts.md#模板服务--创建准入1236)及[描述类型](../controller-service/src/templates.rs)为准。这是受保护的内核/ext4 输入，不是 Dockerfile/OCI 构建入口。必须同时配置 `host_resources`；每张模板的 `host_memory_bytes` 覆盖全局默认内存上限，CPU 上限由该模板 vCPU 数推导，父目录仍固定。建议把 `base` 别名指向一张明确共享的预装模板，保留原 SDK 的便利默认值。未配置目录时沿用旧 `base` 参数。
+
+部署者先批准每张镜像的摘要和长度、验证其可启动，再填完整的 `TemplateBinding`，不得把未知名称统统映射为 base。描述例子和双模板运行入口见[实机探针](../tests/system/server_templates.py)；脚本只复制已批准镜像，不能替代镜像构建或认证。旧实例清理、V8 数据迁移、编号不可改写及别名筛选规则见模块合同。源镜像丢失不妨碍已有私有 VM 的观察/停止/清理，但将拒绝新启动；不得把磁盘复制等价为共享卷或快照。
+
 [`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；本工具不跟随 latest，仍不接收用户 Dockerfile/OCI。通用构建/转换由计划中的 [#123](https://github.com/ningZhang-cs/sandproof/issues/123) 单独交付，整体在证明范围外，见[覆盖记录](../docs/proof-coverage.md)。本配置用于可复现联调，其历史证据不能视为通用模板或生产默认值验收。
 
 准备阶段按清单下载并校验输入，解开清单固定的 Go 工具链和 envd 源码，提前缓存 `packages/envd` 所需的 Go 模块（`go mod download`，保留 go.sum 校验）。在源码的 `packages/envd` 目录使用以下构建参数；离线时设置 `GOPROXY=off`，缺少依赖直接失败：

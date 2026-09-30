@@ -31,7 +31,10 @@ mod linux {
         managed::{HostAdapter, ManagedConfig, ManagedPort},
         router,
     };
-    use sandproof_controller_service::{AdmissionLimits, ControllerJournal, WorkerTransportError};
+    use sandproof_controller_service::{
+        AdmissionLimits, ControllerJournal, CreateOptions, WorkerTransportError,
+        templates::{TemplateBinding, TemplateCatalog},
+    };
     use sandproof_node::{HostObservation, LinuxWorker, NodeConfig, ObservedSlot};
     #[cfg(debug_assertions)]
     use sandproof_protocol::WorkOutcome;
@@ -84,6 +87,9 @@ mod linux {
         /// Explicit opt-in while deployment/large-file KVM acceptance is pending.
         #[serde(default)]
         data_transfer: Option<gateway::TransferLimits>,
+        /// Explicit opt-in: trusted prebuilt descriptors, not a build service.
+        #[serde(default)]
+        templates: Option<TemplateCatalog>,
     }
 
     fn default_timeout_secs() -> u64 {
@@ -98,6 +104,33 @@ mod linux {
 
     impl HostAdapter for NodeHost {
         type Evidence = HostObservation;
+
+        fn validate_template(&self, template: &TemplateBinding) -> Result<(), PortError> {
+            self.0
+                .validate_template(template)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn put_bound_launch_config(
+            &mut self,
+            sandbox: core::SandboxId,
+            token: &str,
+            options: &CreateOptions,
+        ) -> Result<(), PortError> {
+            self.0
+                .put_bound_launch_secret(sandbox, token, options)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn has_bound_launch_config(
+            &self,
+            sandbox: core::SandboxId,
+            options: &CreateOptions,
+        ) -> Result<bool, PortError> {
+            self.0
+                .has_bound_launch_secret(sandbox, options)
+                .map_err(|_| PortError::Busy)
+        }
 
         fn public_ipv4_ready(&self) -> Result<bool, PortError> {
             std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
@@ -356,6 +389,14 @@ mod linux {
     }
 
     fn validate_config(config: &ConfigFile) -> Result<u64, Box<dyn Error>> {
+        if let Some(catalog) = &config.templates {
+            catalog
+                .validate()
+                .map_err(|_| "invalid prebuilt template catalog")?;
+            if config.host_resources.is_none() {
+                return Err("templates require explicit host_resources".into());
+            }
+        }
         if let Some(limits) = &config.data_transfer {
             limits.validate()?;
         }
@@ -448,6 +489,11 @@ mod linux {
         let world = journal.world()?;
         let uncertain = journal.uncertain_actions()?;
         for slot in inventory.slots {
+            if !node
+                .has_bound_launch_secret(slot.sandbox, &journal.create_options(slot.sandbox)?)?
+            {
+                return Err("host slot has no matching durable launch configuration".into());
+            }
             let record = world
                 .sandbox_record(slot.sandbox)
                 .ok_or("host slot has no durable sandbox")?;
@@ -622,7 +668,12 @@ mod linux {
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
         audit_host_inventory(&node, &journal)?;
-        let port = Arc::new(ManagedPort::new(journal, NodeHost(node), managed));
+        let port = Arc::new(if let Some(catalog) = config.templates {
+            ManagedPort::with_templates(journal, NodeHost(node), managed, catalog)
+                .map_err(|_| "invalid prebuilt template configuration")?
+        } else {
+            ManagedPort::new(journal, NodeHost(node), managed)
+        });
         let recovery = port.recover_on_startup().map_err(|error| {
             std::io::Error::other(format!("startup recovery failed: {error:?}"))
         })?;

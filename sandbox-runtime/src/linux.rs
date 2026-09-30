@@ -165,6 +165,15 @@ impl Runtime {
     /// # Errors
     /// Rejects missing or untrusted filesystem paths and invalid limits.
     pub fn new(config: RuntimeConfig) -> Result<Self, RuntimeError> {
+        Self::validate_images(&config)?;
+        Self::for_existing(config)
+    }
+
+    /// Observe/stop/reclaim an exact recorded VM without depending on its
+    /// original source images. Launch still rechecks those inputs.
+    /// # Errors
+    /// Rejects untrusted executor paths, machine limits and host resources.
+    pub fn for_existing(config: RuntimeConfig) -> Result<Self, RuntimeError> {
         if rustix::process::geteuid().as_raw() != 0 {
             return Err(RuntimeError::InvalidConfiguration(
                 "jailer controller must run as root",
@@ -180,13 +189,7 @@ impl Runtime {
                 "invalid guest uid/gid or machine size",
             ));
         }
-        for path in [
-            &config.jailer,
-            &config.firecracker,
-            &config.chroot_base,
-            &config.kernel,
-            &config.rootfs,
-        ] {
+        for path in [&config.jailer, &config.firecracker, &config.chroot_base] {
             check_trusted_path(path)?;
         }
         if let Some(settings) = &config.host_resources {
@@ -218,11 +221,7 @@ impl Runtime {
                 "MMDS token hash requires a private network",
             ));
         }
-        if !config.jailer.is_file()
-            || !config.firecracker.is_file()
-            || !config.kernel.is_file()
-            || !config.rootfs.is_file()
-            || !config.chroot_base.is_dir()
+        if !config.jailer.is_file() || !config.firecracker.is_file() || !config.chroot_base.is_dir()
         {
             return Err(RuntimeError::InvalidConfiguration(
                 "expected binaries/images and chroot directory",
@@ -241,12 +240,25 @@ impl Runtime {
         Ok(Self { config })
     }
 
+    fn validate_images(config: &RuntimeConfig) -> Result<(), RuntimeError> {
+        for path in [&config.kernel, &config.rootfs] {
+            check_trusted_path(path)?;
+            if !path.is_file() {
+                return Err(RuntimeError::InvalidConfiguration(
+                    "expected template image files",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Claim a fresh resource ID, launch jailer, stage a private disk and boot.
     /// A failed/unknown launch leaves its claim for explicit reconciliation.
     ///
     /// # Errors
     /// Preserves partial resources when a launch phase fails.
     pub fn launch(&self, id: &str) -> Result<Observation, RuntimeError> {
+        Self::validate_images(&self.config)?;
         validate_id(id)?;
         self.validate_network_id(id)?;
         // Linux sockaddr_un.sun_path has 108 bytes including its trailing NUL.

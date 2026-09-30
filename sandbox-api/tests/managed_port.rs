@@ -113,6 +113,7 @@ impl ActionGate {
 
 struct FakeHost {
     secrets: BTreeMap<u64, (String, BTreeMap<String, String>)>,
+    templates: BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>,
     launch_error_once: Option<PortError>,
     token_error_once: AtomicBool,
     free_bytes: u64,
@@ -142,6 +143,7 @@ impl Default for FakeHost {
     fn default() -> Self {
         Self {
             secrets: BTreeMap::new(),
+            templates: BTreeMap::new(),
             launch_error_once: None,
             token_error_once: AtomicBool::new(false),
             free_bytes: 10_000,
@@ -213,6 +215,41 @@ fn unknown_receipt(action: &WorkAction<core::EffectId>) -> WorkReceipt<Evidence>
 
 impl HostAdapter for FakeHost {
     type Evidence = Evidence;
+
+    fn validate_template(
+        &self,
+        template: &sandproof_controller_service::templates::TemplateBinding,
+    ) -> Result<(), PortError> {
+        if template.is_valid() {
+            Ok(())
+        } else {
+            Err(PortError::Invalid)
+        }
+    }
+
+    fn put_bound_launch_config(
+        &mut self,
+        sandbox: core::SandboxId,
+        token: &str,
+        options: &sandproof_controller_service::CreateOptions,
+    ) -> Result<(), PortError> {
+        self.put_launch_config(sandbox, token, &options.env_vars)?;
+        if let Some(template) = &options.template {
+            self.templates.insert(sandbox.0, template.clone());
+        }
+        Ok(())
+    }
+
+    fn has_bound_launch_config(
+        &self,
+        sandbox: core::SandboxId,
+        options: &sandproof_controller_service::CreateOptions,
+    ) -> Result<bool, PortError> {
+        if self.templates.get(&sandbox.0) != options.template.as_ref() {
+            return Err(PortError::Busy);
+        }
+        self.has_launch_config(sandbox, &options.env_vars)
+    }
 
     fn public_ipv4_ready(&self) -> Result<bool, PortError> {
         Ok(self.public_ipv4_ready)
@@ -2021,6 +2058,246 @@ fn request() -> CreateRequest {
         metadata: None,
         env_vars: None,
     }
+}
+
+fn template_catalog() -> sandproof_controller_service::templates::TemplateCatalog {
+    use sandproof_controller_service::templates::{
+        ComputeLimits, ResourceShape, TemplateArtifact, TemplateBinding, TemplateCatalog,
+    };
+    let first = TemplateBinding {
+        template_id: "ubuntu-r1".into(),
+        revision: "r1".into(),
+        owner: Some(1),
+        kernel: TemplateArtifact {
+            path: "/opt/images/vmlinux".into(),
+            sha256: "a".repeat(64),
+            size_bytes: 1024,
+        },
+        rootfs: TemplateArtifact {
+            path: "/opt/images/ubuntu-r1.ext4".into(),
+            sha256: "b".repeat(64),
+            size_bytes: 1000,
+        },
+        resources: ResourceShape {
+            cpu_count: 1,
+            memory_mib: 128,
+            disk_bytes: 1000,
+            host_memory_bytes: 256 * 1024 * 1024,
+        },
+        envd_version: "0.9.0-r1".into(),
+    };
+    let mut second = first.clone();
+    second.template_id = "ubuntu-r2".into();
+    second.revision = "r2".into();
+    second.owner = None;
+    second.rootfs.path = "/opt/images/ubuntu-r2.ext4".into();
+    second.rootfs.size_bytes = 2000;
+    second.resources.disk_bytes = 2000;
+    second.resources.cpu_count = 2;
+    second.resources.memory_mib = 256;
+    second.resources.host_memory_bytes = 512 * 1024 * 1024;
+    second.envd_version = "0.9.0-r2".into();
+    TemplateCatalog {
+        templates: vec![first, second],
+        aliases: BTreeMap::from([("ubuntu".into(), "ubuntu-r1".into())]),
+        compute_limits: ComputeLimits {
+            max_vcpus_global: 3,
+            max_vcpus_per_tenant: 3,
+            max_memory_bytes_global: 768 * 1024 * 1024,
+            max_memory_bytes_per_tenant: 768 * 1024 * 1024,
+        },
+    }
+}
+
+fn template_config() -> ManagedConfig {
+    let mut settings = config();
+    settings.limits.max_active_per_tenant = 2;
+    settings.limits.max_active_global = 10;
+    settings.limits.max_disk_bytes_per_tenant = 10_000;
+    settings.limits.max_disk_bytes_global = 20_000;
+    settings
+}
+
+fn template_request(name: &str) -> CreateRequest {
+    CreateRequest {
+        template_id: name.into(),
+        ..request()
+    }
+}
+
+#[tokio::test]
+async fn template_http_selection_projection_and_compute_quota_release() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let port = Arc::new(
+        ManagedPort::with_templates(
+            ControllerJournal::open(&path, NAMESPACE).unwrap(),
+            FakeHost::default(),
+            template_config(),
+            template_catalog(),
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        port.create("2", template_request("ubuntu")),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(
+        port.create("1", template_request("missing")),
+        Err(PortError::Invalid)
+    );
+    let app = router(
+        port.clone(),
+        vec![ApiCredential {
+            tenant: "1".into(),
+            secret: KEY_ONE.into(),
+        }],
+    )
+    .unwrap();
+    let reply = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v2/sandboxes")
+                .header("X-API-Key", KEY_ONE)
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"templateID":"ubuntu","allow_internet_access":false}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply.status(), StatusCode::CREATED);
+    let first: serde_json::Value =
+        serde_json::from_slice(&to_bytes(reply.into_body(), 1_000_000).await.unwrap()).unwrap();
+    assert_eq!(first["templateID"], "ubuntu-r1");
+    assert_eq!(first["envdVersion"], "0.9.0-r1");
+    let first_id = first["sandboxID"].as_str().unwrap();
+    let second = port.create("1", template_request("ubuntu-r2")).unwrap();
+    let detail = port.get("1", &second.sandbox_id).unwrap();
+    assert_eq!(
+        (
+            detail.info.cpu_count,
+            detail.info.memory_mb,
+            detail.info.disk_size_mb
+        ),
+        (2, 256, 1)
+    );
+    assert_eq!(
+        port.list(
+            "1",
+            ListQuery {
+                template: Some("ubuntu-r2".into()),
+                ..ListQuery::default()
+            }
+        )
+        .unwrap()
+        .items
+        .len(),
+        1
+    );
+    // Count and disk still fit; the compute budget alone refuses a third VM.
+    assert_eq!(
+        port.create("1", template_request("ubuntu")),
+        Err(PortError::QuotaExceeded)
+    );
+    port.kill("1", first_id).unwrap();
+    let replacement = port.create("1", template_request("ubuntu")).unwrap();
+    port.kill("1", &replacement.sandbox_id).unwrap();
+    port.kill("1", &second.sandbox_id).unwrap();
+}
+
+#[test]
+fn alias_change_after_restart_does_not_rebind_old_instance() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let old = template_catalog();
+    let token = "a".repeat(64);
+    let mut host = FakeHost::default();
+    host.put_bound_launch_config(
+        core::SandboxId(1),
+        &token,
+        &sandproof_controller_service::CreateOptions {
+            template: Some(old.templates[0].clone()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    journal
+        .admit_template_create(
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(1)),
+                owner: core::TenantId(1),
+                sandbox: core::SandboxId(1),
+                workspace: core::FsId(1),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(1),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+            CreateAdmission {
+                now_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    .try_into()
+                    .unwrap(),
+                timeout_secs: 300,
+                disk_bytes: 1000,
+                limits: template_config().limits,
+                options: sandproof_controller_service::CreateOptions {
+                    template: Some(old.templates[0].clone()),
+                    ..Default::default()
+                },
+            },
+            old.compute_limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    finish_admitted_create_v1(
+        &mut journal,
+        core::SandboxId(1),
+        core::OperationId(1),
+        &mut |action| host.execute(action),
+    )
+    .unwrap();
+    drop(journal);
+    let mut changed = old;
+    changed.aliases.insert("ubuntu".into(), "ubuntu-r2".into());
+    let port = ManagedPort::with_templates(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        host,
+        template_config(),
+        changed,
+    )
+    .unwrap();
+    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    let detail = port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap();
+    assert_eq!(
+        (
+            detail.info.template_id.as_str(),
+            detail.info.cpu_count,
+            detail.envd_access_token.as_str()
+        ),
+        ("ubuntu-r1", 1, token.as_str())
+    );
+    assert_eq!(
+        port.connect(
+            "1",
+            &format!("sb-{NAMESPACE}-1"),
+            ConnectRequest { timeout: None }
+        )
+        .unwrap()
+        .envd_version,
+        "0.9.0-r1"
+    );
+    let second = port.create("1", template_request("ubuntu")).unwrap();
+    assert_eq!(second.template_id, "ubuntu-r2");
+    port.kill("1", &second.sandbox_id).unwrap();
+    port.kill("1", &detail.info.sandbox_id).unwrap();
 }
 
 #[test]

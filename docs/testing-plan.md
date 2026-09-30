@@ -201,6 +201,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 ## 4. 独立运行宿主预检
 
+显式预制模板基础使用[多模板实机探针](../tests/system/server_templates.py)：两张预先批准的不同容量 ext4、1/2 CPU 和不同来宾/宿主内存；原 SDK 创建与命令/文件调用、真实 cgroup/进程/磁盘形状、归属与超额拒绝、改变别名并重启仍保持旧 VM、源模板移走后仍可重启及精确销毁、拒绝不可变编号被改写，最后核对三台 VM 残留和基础产物摘要。运行须传两个 rootfs、既有委派的独占 cgroup 父目录及独占 UID 范围；缺环境/失败不算通过。该探针不执行构建、不跑 89 题，也不证明任意故障；精确实测提交另记版本基线。
+
 [宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。
 
 从[配置示例](../tests/system/host.example.json)复制一份到被忽略的 `artifacts/`，按已复核的测试环境填写绝对路径、四个指纹和资源最低余量。示例中的指纹占位符会被拒绝，磁盘/内存数值只是例子，须按本轮 VM 数量、磁盘副本、日志及收尾需求确定。指纹应来自已确认的发布产物或镜像构建记录；不要在不匹配时直接覆盖基线。
