@@ -46,7 +46,7 @@ sudo ./target/debug/sandproof-vm smoke \
 
 ## 固定 envd 与真实 SDK 测试
 
-[`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；不跟随 latest，也不接收用户提供的 Dockerfile/OCI。该配置用于可复现联调，尚未与 #13 的任务初始化及资源需求一起验收，不能视为通用任务镜像或生产默认值。
+[`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；本工具不跟随 latest，仍不接收用户 Dockerfile/OCI。通用构建/转换由计划中的 [#123](https://github.com/ningZhang-cs/sandproof/issues/123) 单独交付，整体在证明范围外，见[覆盖记录](../docs/proof-coverage.md)。本配置用于可复现联调，其历史证据不能视为通用模板或生产默认值验收。
 
 准备阶段按清单下载并校验输入，解开清单固定的 Go 工具链和 envd 源码，提前缓存 `packages/envd` 所需的 Go 模块（`go mod download`，保留 go.sum 校验）。在源码的 `packages/envd` 目录使用以下构建参数；离线时设置 `GOPROXY=off`，缺少依赖直接失败：
 
