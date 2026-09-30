@@ -55,6 +55,9 @@ fn info() -> SandboxInfo {
 
 impl ControllerPort for FakePort {
     fn create(&self, tenant: &str, request: CreateRequest) -> Result<SandboxSession, PortError> {
+        if request.template_id != "base" {
+            return Err(PortError::Invalid);
+        }
         self.record(format!("create:{tenant}:{:?}", request.timeout));
         Ok(session())
     }

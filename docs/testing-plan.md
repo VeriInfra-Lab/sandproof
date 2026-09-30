@@ -199,6 +199,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 提交 `a580139075bd50fe17e3d40dfd7131672ec1ce96` 已用带默认路由的 `3f96c961…` 新镜像通过这 12 组检查（6 台 VM），并重新运行现有生命周期/鉴权/到期、root/ubuntu 命令和文件、普通及流式配置的文件用户/路径/批量部分失败与宿主 canary 探针。普通配置共 14 台 VM、101.668 秒，流式配置共 6 台 VM、40.976 秒；文件路径探针各 70 组，软件包测试仅在普通配置运行。20 台的实际 Firecracker CPU/内存、独立盘 inode/容量和 cgroup 身份/限额均已采样，服务退出前检查精确进程、jail、netns、cgroup 无残留与无网络空间持有者；canary 和新镜像指纹不变，旧镜像也未被覆盖。指纹与逐配置范围见[基线](../references/v1-baseline.json)的 `routed_base_isolation_acceptance`；旧镜像的大文件边界/故障证据仍绑定旧镜像，不把本批说成全部参数或 Harbor 验收。
 
+显式预制模板基础使用[多模板实机探针](../tests/system/server_templates.py)：两张预先批准的不同容量 ext4、1/2 CPU 和不同来宾/宿主内存；原 SDK 创建与命令/文件调用、真实 cgroup/进程/磁盘形状、归属与超额拒绝、改变别名并重启仍保持旧 VM、源模板移走后仍可重启及精确销毁、拒绝不可变编号被改写，最后核对三台 VM 残留和基础产物摘要。运行须传两个 rootfs、既有委派的独占 cgroup 父目录及独占 UID 范围；缺环境/失败不算通过。提交 `74e671fc64ba514d2829637dfb993bef1f010367` 已独立通过；包含脚本失败原因和清理结果的证据见[版本基线](../references/v1-baseline.json)的 `prebuilt_template_runtime_acceptance`。该探针不执行构建、不跑 89 题，也不证明任意故障。
+
 ## 4. 独立运行宿主预检
 
 [宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。

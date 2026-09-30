@@ -1253,5 +1253,73 @@
     "commands": "On source commit 7739a80: PATH=<pinned tools> bash scripts/check-function.sh; bash scripts/check-compat.sh. On the isolated host, build with cargo build -p sandproof-server --locked and uv sync --locked --offline --project tests/compat. Run each listed tests/system/<probe>.py serially as root with --server target/debug/sandproof-server --jailer <pinned 1.16.1> --firecracker <pinned 1.16.1> --kernel /root/sp110-062e8ba/vmlinux-6.1.176 --rootfs /root/sp110-062e8ba/base-110.ext4 --uid-base <exclusive range> --scratch-parent /root/ta; pass the listed --window and --cgroup-parent /sys/fs/cgroup/sp11-accept-7739a80 where supported. The network receipt probe temporarily enabled host IPv4 forwarding with a shell EXIT trap that restored the previously read value. For the three named node cases, run the same locked host_smoke test binary as root with unique state/jail/namespace/UID and the dedicated cgroup parent.",
     "residuals": "Passing service probes removed their own temporary roots after exact checks. The three node-test roots were independently checked for no live test-UID processes, no matching netns or cgroup child, no VM jail below their exact names, then deleted with their test secrets and private logs. The dedicated empty cgroup parent and temporary network-test wrapper were removed. The fixed source base hash remained unchanged and host IPv4 forwarding returned to 0.",
     "limits": "This supports only the #11 functional acceptance under its stated single-controller, trusted SQLite atomicity and accurate host-observation boundary. It samples deterministic persistence/host side-effect windows, not arbitrary instruction-position SIGKILL, host power loss, a hostile host, independently concurrent controllers/workers, SQLite write availability, unlimited capacity, all external network destinations, Harbor task scoring or a new Rust-to-Lean proof. If precise stop or a required durable write cannot be confirmed, the sandbox remains unresolved with quota held or startup fails closed; no false Destroyed success is promised. The evidence-only follow-up and the history-sync commit changed no tested production or probe bytes."
+  },
+  "prebuilt_template_runtime_acceptance": {
+    "recorded_on": "2026-09-30",
+    "tested_commit": "74e671fc64ba514d2829637dfb993bef1f010367",
+    "scope": "#6/#9/#123 第一批：显式可信预制模板运行基础；不是自助构建平台或完整 V1",
+    "host": {
+      "alias": "ning",
+      "kernel_release": "6.8.0-142-generic",
+      "rust": "1.97.0",
+      "sdk": "e2b==2.51.0",
+      "envd": "0.9.0",
+      "firecracker": "1.16.1"
+    },
+    "artifacts": {
+      "server_sha256": "c3fa5f33bf75e699b8c308211e6233882767fdf953bc5400779e17237a234db2",
+      "probe_sha256": "692e7efa6ce5a91082b48b30c4b26ea01f7b3a23bdae11c9ccf42e610b0c3f83",
+      "firecracker_sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+      "jailer_sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+      "guest_kernel_sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+      "rootfs_1g_sha256": "30a3861b873e077d2f9a1c215e1e68702261ef3a9af1db3e2c6e6f07b73d5391",
+      "rootfs_10g_sha256": "7bb800552e74461d53f956620c984ba103bcdf13aca1c6a89b59f5c76af9278c"
+    },
+    "template_shapes": [
+      {
+        "template_id": "small-r1",
+        "vcpu": 1,
+        "guest_memory_mib": 256,
+        "host_memory_bytes": 536870912,
+        "disk_bytes": 1073741824
+      },
+      {
+        "template_id": "large-r1",
+        "vcpu": 2,
+        "guest_memory_mib": 512,
+        "host_memory_bytes": 805306368,
+        "disk_bytes": 10737418240
+      }
+    ],
+    "functional_checks": "macOS: scripts/check-function.sh；Linux: cargo clippy/test --workspace --all-targets --locked、服务构建、scripts/check-compat.sh。高权限忽略用例未由 cargo 绿色自动算作执行；真实 KVM 另行运行下述探针。",
+    "kvm_probe": "tests/system/server_templates.py",
+    "namespace_note": "资源前缀随机生成；探针成功前独立核对所有精确资源，随后删除私有根目录。",
+    "observed": [
+      "原 SDK 两模板同时创建、命令/文件和按实际模板编号筛选；HTTP 磁盘字段、来宾 CPU、私有盘容量、精确进程的 cgroup 归属及 CPU/内存限制一致。",
+      "未知/他人模板均 404，CPU 总额超限为 429，重启前后拒绝不改变持久/宿主资源；事务测试另验全局/租户 CPU 与内存的恰好边界。",
+      "别名改指向并重启仍保留旧实例的 PID/启动时刻、模板绑定与文件；新创建使用新目标。",
+      "已验证的源镜像被修改时缓存失效，新创建 503 且无准入；恢复原字节后摘要不变。",
+      "只移走本轮源镜像副本后，服务仍可重启、使用原 VM 并精确销毁；同一已登记编号被改成另一资源形状时 400 且无准入。",
+      "三个最终测试 VM 均销毁，无精确进程、jail、netns、cgroup 子组或测试 UID 进程；原镜像/内核摘要未改变。"
+    ],
+    "prior_attempts": [
+      {
+        "commit": "80201dcf71fd3e085ccd7c47b890c73dfecb3ed6",
+        "result": "第一次脚本误读取 SDK 不暴露的 disk_size_mb，非控制器失败；两台 VM 通过原控制服务精确销毁。",
+        "namespace": "5b9179c37fb15f90"
+      },
+      {
+        "commit": "2d26932024cb7e07d96d2be4eea785d0a22a9de9",
+        "result": "第二次脚本误把字典传给 SandboxQuery，非控制器失败；两台 VM 通过原控制服务精确销毁。",
+        "namespace": "217c170a164ca1d1"
+      },
+      {
+        "commit": "e64f851e5bb1f89c900323cc76973170cbee4566",
+        "result": "中间版本首次完整通过（三台 VM）；最终版本再独立运行，不挪用为最终提交证据。"
+      }
+    ],
+    "commands": "在精确提交构建并按固定摘要预检，root 使用固定 E2B Python 运行 tests/system/server_templates.py --server <tested binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <b20af758 kernel> --rootfs <30a3861b 1 GiB image> --second-rootfs <7bb80055 10 GiB image> --scratch-parent /root/ta --cgroup-parent /sys/fs/cgroup/sp-template-80201dc --uid-base 9430000。父目录预先独占并仅在本组委派 CPU/memory，不修改共享祖先或网络。",
+    "residuals": "两次脚本失败、两次完整通过共十台 VM 均已精确回收。本轮成功和失败的临时根、镜像副本、测试凭据及空 cgroup 父目录均删除；未清理其他人的目录。只保留脱敏原因、提交、摘要与结果。",
+    "limits": "仅可信预制输入、同步 SDK 的选定运行路径及确定性拒绝/重启窗口；不验 Dockerfile/OCI、用户登记/构建隔离、构建预算、所有 ENV/USER/CMD 转换、每模板两实例包数据库隔离、通用 Harbor 原任务/评分、公网/高级 DNS/IPv6、任意崩溃/掉电、长期容量或 Lean 证明。后续证据文档与矩阵变更未改测试的生产/探针字节。"
   }
 }

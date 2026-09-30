@@ -83,8 +83,8 @@ fn metadata_filter(value: &str) -> Result<BTreeMap<String, String>, PortError> {
 }
 
 fn template_filter(value: &str) -> Result<String, PortError> {
-    // V1 has one fixed base and no template registry. Valid other names match
-    // nothing; malformed names/tags still receive the upstream-style rejection.
+    // Match the immutable template ID reported by each instance. Catalog
+    // aliases are deliberately not re-resolved while listing old instances.
     let parts: Vec<_> = value.split('/').map(str::trim).collect();
     if parts.len() > 2
         || parts.iter().any(|part| {

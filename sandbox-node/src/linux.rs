@@ -3,6 +3,10 @@ use sandbox_controller_core as core;
 use sandbox_runtime::{
     Observation, Runtime, RuntimeConfig, RuntimeError, VmState, check_trusted_path,
 };
+use sandproof_controller_service::{
+    CreateOptions,
+    templates::{TemplateArtifact, TemplateBinding},
+};
 use sandproof_controller_service::{HostEvidence, WorkerTransportError};
 use sandproof_protocol::{
     FailureCode, ResourceEvidence, ResourceId, ResourceKind, ResourceRef, TenantId, UnknownReason,
@@ -17,6 +21,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command as Process, Stdio};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -76,6 +81,8 @@ struct GuestSecret {
     sha512: String,
     #[serde(default)]
     env_vars: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    template: Option<TemplateBinding>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,6 +173,35 @@ impl HostEvidence for HostObservation {
 pub struct LinuxWorker {
     config: NodeConfig,
     last_error: Option<String>,
+    validated_artifacts: Mutex<BTreeMap<PathBuf, ArtifactStamp>>,
+}
+
+#[derive(PartialEq, Eq)]
+struct ArtifactStamp {
+    device: u64,
+    inode: u64,
+    size: u64,
+    modified: (i64, i64),
+    changed: (i64, i64),
+    sha256: String,
+}
+
+impl ArtifactStamp {
+    fn read(artifact: &TemplateArtifact) -> NodeResult<Self> {
+        check_trusted_path(&artifact.path)?;
+        let metadata = fs::symlink_metadata(&artifact.path)?;
+        if !metadata.is_file() || metadata.len() != artifact.size_bytes {
+            return Err("template artifact type or size mismatch".into());
+        }
+        Ok(Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            size: metadata.len(),
+            modified: (metadata.mtime(), metadata.mtime_nsec()),
+            changed: (metadata.ctime(), metadata.ctime_nsec()),
+            sha256: artifact.sha256.clone(),
+        })
+    }
 }
 
 impl LinuxWorker {
@@ -852,6 +888,7 @@ impl LinuxWorker {
         Ok(Self {
             config,
             last_error: None,
+            validated_artifacts: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -873,6 +910,30 @@ impl LinuxWorker {
         token: &str,
         env_vars: &BTreeMap<String, String>,
     ) -> NodeResult<()> {
+        self.put_bound_launch_secret(
+            sandbox,
+            token,
+            &CreateOptions {
+                env_vars: env_vars.clone(),
+                ..CreateOptions::default()
+            },
+        )
+    }
+
+    /// Persist the exact admitted prebuilt template with the launch credential.
+    /// # Errors
+    /// Rejects invalid artifacts, credentials, configuration or record reuse.
+    pub fn put_bound_launch_secret(
+        &self,
+        sandbox: core::SandboxId,
+        token: &str,
+        options: &CreateOptions,
+    ) -> NodeResult<()> {
+        options.validate()?;
+        if let Some(template) = &options.template {
+            self.validate_template(template)?;
+        }
+        let env_vars = &options.env_vars;
         if token.len() < 32
             || token.len() > 128
             || !token
@@ -891,6 +952,7 @@ impl LinuxWorker {
             token: token.to_owned(),
             sha512,
             env_vars: env_vars.clone(),
+            template: options.template.clone(),
         };
         let path = self.secret_path(sandbox);
         write_new_json(&path, &value)
@@ -934,6 +996,66 @@ impl LinuxWorker {
             return Err("stored guest initialization differs from admitted create".into());
         }
         Ok(true)
+    }
+
+    /// # Errors
+    /// A mismatched descriptor is not permission to replace or relaunch a VM.
+    pub fn has_bound_launch_secret(
+        &self,
+        sandbox: core::SandboxId,
+        options: &CreateOptions,
+    ) -> NodeResult<bool> {
+        if !self.has_secret(sandbox)? {
+            return Ok(false);
+        }
+        let stored = self.secret(sandbox)?;
+        if stored.env_vars != options.env_vars || stored.template != options.template {
+            return Err("stored template or initialization differs from admitted create".into());
+        }
+        Ok(true)
+    }
+
+    /// Check protected inputs and cgroup limits before controller admission.
+    /// # Errors
+    /// Rejects missing, modified or untrusted artifacts and unavailable host limits.
+    pub fn validate_template(&self, template: &TemplateBinding) -> NodeResult<()> {
+        if !template.is_valid() {
+            return Err("invalid template descriptor".into());
+        }
+        self.validate_artifact(&template.kernel)?;
+        self.validate_artifact(&template.rootfs)?;
+        let mut resources = self
+            .config
+            .host_resources
+            .clone()
+            .ok_or("templates require explicit host resources")?;
+        resources.memory_max_bytes = template.resources.host_memory_bytes;
+        resources.validate(template.resources.memory_mib)?;
+        Ok(())
+    }
+
+    fn validate_artifact(&self, artifact: &TemplateArtifact) -> NodeResult<()> {
+        let stamp = ArtifactStamp::read(artifact)?;
+        let mut cache = self
+            .validated_artifacts
+            .lock()
+            .map_err(|_| "artifact cache lock failed")?;
+        if cache.get(&artifact.path) == Some(&stamp) {
+            return Ok(());
+        }
+        check_trusted_path(Path::new("/usr/bin/sha256sum"))?;
+        let output = Process::new("/usr/bin/sha256sum")
+            .arg("--")
+            .arg(&artifact.path)
+            .output()?;
+        if !output.status.success()
+            || output.stdout.get(..64) != Some(artifact.sha256.as_bytes())
+            || ArtifactStamp::read(artifact)? != stamp
+        {
+            return Err("template artifact digest mismatch or changed during verification".into());
+        }
+        cache.insert(artifact.path.clone(), stamp);
+        Ok(())
     }
 
     /// Execute one already claimed action. Any physical uncertainty becomes an
@@ -1166,6 +1288,10 @@ impl LinuxWorker {
         if value.token.len() < 32
             || value.sha512.len() != 128
             || hash_token(&value.token)? != value.sha512
+            || value
+                .template
+                .as_ref()
+                .is_some_and(|binding| !binding.is_valid())
         {
             return Err("stored guest secret hash mismatch".into());
         }
@@ -1194,17 +1320,32 @@ impl LinuxWorker {
         let secret = self.secret(sandbox)?;
         let id = self.vm_uid(vm)?;
         let vm_name = self.vm_name(vm);
-        Ok(Runtime::new(RuntimeConfig {
+        let mut kernel = self.config.kernel.clone();
+        let mut rootfs = self.config.rootfs.clone();
+        let mut vcpu_count = self.config.vcpu_count;
+        let mut memory_mib = self.config.memory_mib;
+        let mut host_resources = self.config.host_resources.clone();
+        if let Some(template) = &secret.template {
+            kernel.clone_from(&template.kernel.path);
+            rootfs.clone_from(&template.rootfs.path);
+            vcpu_count = template.resources.cpu_count;
+            memory_mib = template.resources.memory_mib;
+            host_resources
+                .as_mut()
+                .ok_or("templates require host limits")?
+                .memory_max_bytes = template.resources.host_memory_bytes;
+        }
+        Ok(Runtime::for_existing(RuntimeConfig {
             jailer: self.config.jailer.clone(),
             firecracker: self.config.firecracker.clone(),
             chroot_base: self.config.chroot_base.clone(),
-            kernel: self.config.kernel.clone(),
-            rootfs: self.config.rootfs.clone(),
+            kernel,
+            rootfs,
             vm_uid: id,
             vm_gid: id,
-            vcpu_count: self.config.vcpu_count,
-            memory_mib: self.config.memory_mib,
-            host_resources: self.config.host_resources.clone(),
+            vcpu_count,
+            memory_mib,
+            host_resources,
             private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
             access_token_hash: Some(secret.sha512),
         })?)
@@ -1363,6 +1504,9 @@ impl LinuxWorker {
             } => {
                 if source.is_some() {
                     return Err("snapshot restore is outside V1".into());
+                }
+                if let Some(template) = &self.secret(*sandbox)?.template {
+                    self.validate_template(template)?;
                 }
                 self.vm_uid(*vm)?;
                 if slot.0 > self.config.max_vm_id {

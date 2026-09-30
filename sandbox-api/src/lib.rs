@@ -307,7 +307,12 @@ async fn create<P: ControllerPort>(
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
     // Parse the pinned SDK's address-only policy before any host effect. The
     // managed port separately checks host readiness before durable admission.
-    if request.template_id != "base"
+    if request.template_id.is_empty()
+        || request.template_id.len() > 64
+        || !request
+            .template_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
         || network::selected_policy(&request).is_err()
         || !valid_timeout(request.timeout)
         || (CreateOptions {
@@ -317,6 +322,7 @@ async fn create<P: ControllerPort>(
                 allow_internet_access: request.allow_internet_access,
                 network: request.network.clone(),
             }),
+            template: None,
         })
         .validate()
         .is_err()
