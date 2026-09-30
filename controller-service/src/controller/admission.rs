@@ -597,7 +597,12 @@ impl ControllerJournal {
                 return Err(AdmissionError::InvalidCreateOptions);
             }
             tx.execute("INSERT OR IGNORE INTO admitted_templates (template_id, binding_json) VALUES (?1, ?2)", params![template.template_id, binding])?;
-            tx.execute("UPDATE controller_meta SET version=8 WHERE id=1", [])?;
+            // Older binaries must refuse journals containing startup defaults;
+            // admitting another legacy template must never lower this guard.
+            tx.execute(
+                "UPDATE controller_meta SET version=MAX(version, ?1) WHERE id=1",
+                [if template.startup.is_some() { 9 } else { 8 }],
+            )?;
         }
         let sandbox = request.sandbox;
         let operation = request.operation;

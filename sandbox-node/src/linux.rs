@@ -871,7 +871,7 @@ impl LinuxWorker {
         if longest_socket.as_os_str().as_bytes().len() >= 108 {
             return Err("Firecracker API socket path exceeds Linux limit".into());
         }
-        for subdir in ["secrets", "fences", "slots"] {
+        for subdir in ["secrets", "fences", "slots", "startup"] {
             let path = config.state_dir.join(subdir);
             if !path.exists() {
                 DirBuilder::new().mode(0o700).create(&path)?;
@@ -1840,6 +1840,7 @@ impl LinuxWorker {
         }
         let before = self.running(sandbox, vm)?;
         self.initialize_guest(sandbox, vm)?;
+        self.start_template_once(sandbox, vm, &before)?;
         let after = self.running(sandbox, vm)?;
         if after.pid != before.pid || after.start_time_ticks != before.start_time_ticks {
             return Err("VM changed while initializing guest service".into());
@@ -1860,14 +1861,11 @@ impl LinuxWorker {
             thread::sleep(Duration::from_millis(100));
         }
         let secret = self.secret(sandbox)?;
-        // Leave cwd to envd's per-user home resolution. A global /root default
-        // makes an otherwise valid non-root command fail before exec when the
-        // caller selects user but omits cwd. Explicit request cwd still wins.
-        let init = serde_json::json!({
-            "accessToken": &secret.token,
-            "defaultUser": "root",
-            "envVars": &secret.env_vars,
-        });
+        let startup = secret
+            .template
+            .as_ref()
+            .and_then(|value| value.startup.as_ref());
+        let init = crate::startup::init_payload(&secret.token, &secret.env_vars, startup);
         let body = serde_json::to_vec(&init)?;
         if Self::guest_status(&name, "POST", "/init", Some(&body))? != "204" {
             return Err("envd rejected authenticated initialization".into());
@@ -1886,6 +1884,116 @@ impl LinuxWorker {
             return Err("envd authenticated file access not ready".into());
         }
         Ok(())
+    }
+
+    /// Intent is durable before dispatch. Recovery reuses confirmed dispatch,
+    /// never repeats an unknown one. Start confirmation is not app readiness.
+    fn start_template_once(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        observation: &Observation,
+    ) -> NodeResult<()> {
+        let secret = self.secret(sandbox)?;
+        let Some(template) = secret.template else {
+            return Ok(());
+        };
+        let Some(startup) = &template.startup else {
+            return Ok(());
+        };
+        if startup.argv.is_empty() {
+            return Ok(());
+        }
+        let path = self
+            .config
+            .state_dir
+            .join("startup")
+            .join(format!("{}.json", self.vm_name(vm)));
+        let mut expected = crate::startup::StartupRecord {
+            sandbox: sandbox.0,
+            vm: vm.0,
+            vmm_pid: observation.pid,
+            start_ticks: observation.start_time_ticks,
+            template: template.clone(),
+            env_vars: secret.env_vars,
+            guest_pid: None,
+        };
+        match fs::symlink_metadata(&path) {
+            Ok(_) => {
+                check_trusted_path(&path)?;
+                let stored: crate::startup::StartupRecord =
+                    serde_json::from_reader(File::open(&path)?)?;
+                return stored.confirmed_for(&expected);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        write_new_json(&path, &expected)?;
+        let pid = self.dispatch_startup(&self.vm_name(vm), &secret.token, startup)?;
+        #[cfg(debug_assertions)]
+        if std::env::var("SANDPROOF_TEST_EXIT_AFTER_TEMPLATE_START")
+            .ok()
+            .as_deref()
+            == Some("activate_vm")
+        {
+            std::process::exit(88);
+        }
+        expected.guest_pid = Some(pid);
+        replace_json(&path, &expected)
+    }
+
+    fn dispatch_startup(
+        &self,
+        name: &str,
+        token: &str,
+        startup: &sandproof_controller_service::templates::TemplateStartup,
+    ) -> NodeResult<u32> {
+        // Neither the credential nor tenant argv enters host process argv.
+        // The root-only request body is removed by RAII on every normal exit.
+        let mut body = tempfile::NamedTempFile::new_in(self.config.state_dir.join("startup"))?;
+        body.as_file()
+            .set_permissions(fs::Permissions::from_mode(0o600))?;
+        body.write_all(&crate::startup::start_request(startup)?)?;
+        body.flush()?;
+        let mut child = Process::new("/usr/bin/ip")
+            .args([
+                "netns",
+                "exec",
+                name,
+                "/usr/bin/curl",
+                "-q",
+                "--noproxy",
+                "*",
+                "-fsN",
+                "--max-time",
+                "5",
+                "-K",
+                "-",
+                "-H",
+                "Content-Type: application/connect+json",
+                "-H",
+                "Connect-Protocol-Version: 1",
+                "--data-binary",
+            ])
+            .arg(format!("@{}", body.path().display()))
+            .arg(format!("{ENVD_URL}/process.Process/Start"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let result = (|| {
+            child
+                .stdin
+                .take()
+                .ok_or("curl stdin unavailable")?
+                .write_all(format!("header = \"X-Access-Token: {token}\"\n").as_bytes())?;
+            crate::startup::read_started(child.stdout.take().ok_or("curl stdout unavailable")?)
+        })();
+        // envd deliberately detaches child lifetime from the HTTP stream.
+        // Close the observation stream; never send a guest termination here.
+        let _ = child.kill();
+        child.wait()?;
+        result
     }
 
     fn guest_status(

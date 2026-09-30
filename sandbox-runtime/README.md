@@ -52,7 +52,7 @@ sudo ./target/debug/sandproof-vm smoke \
 
 [`tests/system/template_build.py`](../tests/system/template_build.py) 是可信操作方的离线最小实验，所需 `--tools` 目录包含 `buildctl`、`buildkitd`、`buildkit-runc`、`umoci`、固定 `envd` 与静态 `busybox`。前三项来自官方 `buildkit-v0.28.0.linux-amd64.tar.gz`（SHA-256 `bc5a158c97c1f7ace1af81c375e8c28bd27e6afeb283fc5b3bfb10777f48fc83`）；umoci 来自官方 `umoci.linux.amd64` v0.6.0（SHA-256 `b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71`）。验证摘要后只提取构建所需三项二进制，不把其他架构模拟器放到宿主 PATH。envd/BusyBox 与宿主文件系统工具指纹另随实测清单记录。工作器预算与运行服务额度不是同一配置；最终独立构建准入服务尚未实现。
 
-实验运行还需要 `--server`、`--jailer`、`--firecracker`、`--kernel`、含 Python/文件系统工具的 10 GiB 测试 `--rootfs`、root 独占 `--scratch-parent`、空且已委派的 `--cgroup-parent` 和独占 `--uid-base`；无公共网络、模型费用或生产配置。输出候选磁盘不是 Ready 模板，ENV/WORKDIR/USER/CMD 等仅记录、未自动启用。真正用户入口和发布检查仍待下一批接入；合同与边界见[模块合同](../docs/module-contracts.md)，实际测试提交见[版本基线](../references/v1-baseline.json)。
+实验运行还需要 `--server`、`--jailer`、`--firecracker`、`--kernel`、含 Python/文件系统工具的 10 GiB 测试 `--rootfs`、root 独占 `--scratch-parent`、空且已委派的 `--cgroup-parent` 和独占 `--uid-base`；无公共网络、模型费用或生产配置。输出候选磁盘不是 Ready 模板；可信验收器显式绑定规范化 `startup` 后测试 ENV/WORKDIR/USER 与 CMD/ENTRYPOINT 的真实执行，不自动发布。真正用户入口和发布检查仍待后续接入；合同、拒绝项及默认值差异见[模块合同](../docs/module-contracts.md)，实际测试提交见[版本基线](../references/v1-baseline.json)。
 
 ### 显式预制多模板
 
