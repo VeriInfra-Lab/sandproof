@@ -40,7 +40,7 @@ sudo ./target/debug/sandproof-vm smoke \
 
 部署者预先建立一个独占、root 拥有且模式为 0700 的 cgroup v2 父目录，保证它为空的 domain，向子组委派 CPU/memory 控制器。根或共享祖先须由宿主配置事先提供这些控制器；运行器不会修改共享祖先。每个部署须保持父目录与配置稳定，不能在仍有记录的 VM 存活或待清理时更换父目录、取消配置或改预算。
 
-多模板包数据库隔离由固定 SDK 的[实机脚本](../tests/system/server_template_isolation.py)检查。使用干净的精确提交、同提交服务二进制、两个经核对且容量不同的 Debian/Ubuntu 系统盘；探针固定两种测试形状为 1 CPU/512 MiB 和 2 CPU/1024 MiB，整个 VMM 各增加 256 MiB 宿主额度。四台 VM 并存，总计使用八个不可复用身份（含两次启动失败与两次替换），预留连续八个 UID；宿主至少六个可用 CPU、8 GiB 可用内存和三倍输入磁盘总量加 1 GiB 收尾空间。以下入口不调用云端或外部软件仓库：
+多模板包数据库与启动设置隔离由固定 SDK 的[实机脚本](../tests/system/server_template_isolation.py)检查。使用干净的精确提交、同提交服务二进制、两个经核对且容量不同的 Debian/Ubuntu 系统盘，均须具备 root/ubuntu 账户和可用 home；探针固定两种测试形状为 1 CPU/512 MiB 和 2 CPU/1024 MiB，整个 VMM 各增加 256 MiB 宿主额度。四台 VM 并存，模板默认用户分别为 ubuntu/root；双客户端检查命令/文件默认值与覆盖、别名变更及同库服务重启后的原启动进程不重派。总计使用八个不可复用身份（含两次启动失败与两次替换），预留连续八个 UID；宿主至少六个可用 CPU、8 GiB 可用内存和三倍输入磁盘总量加 1 GiB 收尾空间。以下入口不调用云端或外部软件仓库：
 
 ```sh
 sudo <固定 SDK Python> tests/system/server_template_isolation.py \

@@ -24,7 +24,7 @@ import time
 import urllib.request
 
 import httpx
-from e2b import Sandbox
+from e2b import AsyncSandbox, Sandbox
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_private_root import (
@@ -32,6 +32,10 @@ from sdk_private_root import (
     install, installed, run,
 )
 from sdk_server_smoke import options
+from sdk_template_defaults import (
+    LITERAL_ARG, START_CONTEXT, START_COUNT, START_PID, defaults, expected_context,
+    exercise as check_defaults,
+)
 from server_process_crash import (
     free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
 )
@@ -170,6 +174,8 @@ async def exercise(args):
     bad_kernel.chmod(0o444)
     templates = [descriptor("first-r1", kernel, images[0], 1, 512),
                  descriptor("second-r1", kernel, images[1], 2, 1024)]
+    for index, template in enumerate(templates):
+        template["startup"] = defaults(index)
     bad_templates = [descriptor(f"unbootable-{index}-r1", bad_kernel, images[index],
                                 value["resources"]["cpu_count"], value["resources"]["memory_mib"])
                      for index, value in enumerate(templates)]
@@ -186,7 +192,8 @@ async def exercise(args):
         "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 4, "max_active_per_tenant": 4,
         "max_disk_bytes_global": 2 * disk_sum + 1024 * MIB, "max_disk_bytes_per_tenant": 2 * disk_sum,
         "cleanup_reserve_bytes": 1024 * MIB, "max_timeout_secs": 1200, "startup_timeout_secs": 120,
-        "expiry_scan_seconds": 1, "templates": {"templates": templates + bad_templates, "aliases": {},
+        "expiry_scan_seconds": 1, "templates": {"templates": templates + bad_templates,
+        "aliases": {"first-choice": "first-r1", "second-choice": "second-r1"},
         "compute_limits": {"max_vcpus_global": 6, "max_vcpus_per_tenant": 6,
                            "max_memory_bytes_global": 4096 * MIB, "max_memory_bytes_per_tenant": 4096 * MIB}},
     }
@@ -201,6 +208,31 @@ async def exercise(args):
     live, evidence, cases = {}, [], []
     process = None
     completed = False
+
+    async def check_startup(sandbox, row):
+        deadline = time.monotonic() + 10
+        while not sandbox.files.exists(START_PID):
+            assert time.monotonic() < deadline, "template command did not publish its marker"
+            await asyncio.sleep(0.05)
+        assert sandbox.files.read(START_COUNT) == "once\n"
+        context = bytes(sandbox.files.read(START_CONTEXT, format="bytes")).decode().split("\0")
+        assert context == expected_context(row["template"]["startup"], row["instance"]) + [
+            "literal space", LITERAL_ARG, ""]
+        assert not sandbox.files.exists("/tmp/sandproof-template-injected")
+        pid = int(sandbox.files.read(START_PID))
+        stat = await run(sandbox, f"cat /proc/{pid}/stat")
+        fields = stat.rsplit(")", 1)[1].split()
+        assert fields[0] != "Z"
+        identity = {"pid": pid, "start_ticks": int(fields[19])}
+        if "startup_process" in row:
+            assert row["startup_process"] == identity, "template command was replaced"
+        row["startup_process"] = identity
+        next(item for item in evidence if item["sandbox_id"] == sandbox.sandbox_id)["startup_process"] = identity
+        record = json.loads((root / "state/startup" / (row["host"]["resource_id"] + ".json")).read_text())
+        assert record["guest_pid"] == pid
+        for file in row.get("default_files", []):
+            assert sandbox.files.read(file["path"], user="root") == file["content"]
+        return identity
 
     async def check_live(exclude=None):
         disks = set()
@@ -219,12 +251,15 @@ async def exercise(args):
                 await installed(sandbox, row["version"], sandbox.sandbox_id, config=row.get("config"),
                                 resources=(shape["cpu_count"], shape["memory_mib"]))
             assert not sandbox.files.exists(FAILED_INIT)
+            await check_startup(sandbox, row)
 
-    def create(template):
-        sandbox = Sandbox.create(template=template["template_id"], timeout=900,
+    def create(template, *, alias=None):
+        instance = secrets.token_hex(8)
+        sandbox = Sandbox.create(template=alias or template["template_id"], timeout=900,
+                                 envs={"INSTANCE_MARKER": instance, "LAYERED": "create-" + instance},
                                  allow_internet_access=False, **owner)
         # Record identity before further assertions so finally can stop this VM.
-        live[sandbox] = {"template": template, "version": None}
+        live[sandbox] = {"template": template, "version": None, "instance": instance}
         live[sandbox]["host"] = live_shape(root, args, sandbox, template, opener, url, key)
         evidence.append({"sandbox_id": sandbox.sandbox_id, "template_id": template["template_id"],
                          "host": live[sandbox]["host"]})
@@ -235,8 +270,28 @@ async def exercise(args):
     try:
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
-        original = [create(template) for template in templates for _ in range(2)]
+        original = [create(template, alias=("first-choice", "second-choice")[index])
+                    for index, template in enumerate(templates) for _ in range(2)]
         await check_live()
+        for stage in ("before-restart", "after-alias-change-and-restart"):
+            if stage != "before-restart":
+                stop_server(process)
+                settings["templates"]["aliases"] = {"first-choice": "second-r1", "second-choice": "first-r1"}
+                config.write_text(json.dumps(settings))
+                process = start_server(binary, config, root / "server.log", None)
+                wait_ready(opener, url, key, process)
+                await check_live()
+            for sandbox in original:
+                row = live[sandbox]
+                clients = [sandbox, await AsyncSandbox.connect(sandbox.sandbox_id, timeout=900, **owner)]
+                for client in clients:
+                    result = await check_defaults(client, row["template"]["startup"], row["instance"])
+                    row.setdefault("default_files", []).extend(result["files"])
+                    cases.append({"startup_defaults": {"stage": stage, "sandbox_id": sandbox.sandbox_id,
+                                                       **result}})
+                await check_live()
+            print(json.dumps({"event": "startup_defaults_verified", "stage": stage}), flush=True)
+        cases.append("four original VMM and startup PID/start identities survive alias changes and service restart without replay")
         for index, sandbox in enumerate(original):
             version = f"{index + 1}.0"
             await install(sandbox, version, sandbox.sandbox_id)
@@ -246,7 +301,7 @@ async def exercise(args):
         print(json.dumps({"event": "four_package_databases_verified"}), flush=True)
         for index in (0, 2):
             victim = original[index]
-            victim.files.write(CONFIG, victim.sandbox_id + "-changed\n")
+            victim.files.write(CONFIG, victim.sandbox_id + "-changed\n", user="root")
             live[victim]["config"] = victim.sandbox_id + "-changed"
             await check_live()
             await run(victim, f"dpkg --purge {PACKAGE}")
@@ -261,6 +316,7 @@ async def exercise(args):
         for index in (0, 2):
             victim = original[index]
             template = live[victim]["template"]
+            default_paths = {item["path"] for item in live[victim].get("default_files", [])}
             failure = await failed_initializer(victim)
             await check_live(exclude=victim)
             name = live[victim]["host"]["resource_id"]
@@ -299,6 +355,7 @@ async def exercise(args):
             await check_live()
             replacement = create(template)
             await clean(replacement)
+            assert all(not replacement.files.exists(path, user="root") for path in default_paths)
             await check_live()
         cases.append("replacements inherit no package records, system edits or failed initialization state")
         for sandbox in list(live):
@@ -307,6 +364,7 @@ async def exercise(args):
         assert len(phases(database)) == VM_COUNT and set(phases(database).values()) == {"Destroyed"}
         with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as connection:
             assert connection.execute("SELECT count(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0] == 0
+            assert connection.execute("SELECT version FROM controller_meta").fetchone()[0] == 9
         claims = sorted((root / "jails/.claims").iterdir())
         assert len(claims) == VM_COUNT
         cleanup = [audit_gone(root, args.firecracker, args.cgroup_parent, claim.name) for claim in claims]
@@ -323,12 +381,16 @@ async def exercise(args):
         assert subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip() == commit
         assert not subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"])
         report = {"source_commit": commit, "probe_sha256": sha256_file(Path(__file__)),
+                  "defaults_probe_sha256": sha256_file(Path(__file__).with_name("sdk_template_defaults.py")),
+                  "private_root_probe_sha256": sha256_file(Path(__file__).with_name("sdk_private_root.py")),
                   "host_kernel": os.uname().release, "sdk": "2.51.0", "namespace": namespace,
                   "inputs": inputs, "templates": templates, "observations": evidence, "cases": cases,
                   "vms_destroyed": VM_COUNT, "cleanup": cleanup, "shared_network_unchanged": True,
                   "probe_timeouts_seconds": {"request": 180, "startup": 120, "sandbox": 900},
                   "service_exited": True, "result": "passed",
-                  "scope": "trusted prebuilt templates; four concurrent SDK VMs, local packages, guest-init and boot failures; no self-service build, arbitrary crash, cloud/model, full V1 or proof claim"}
+                  "scope": "trusted prebuilt templates; four concurrent VMs, sync/async startup defaults and file paths, "
+                           "alias change plus service restart without command replay, local packages, guest-init and boot failures; "
+                           "no self-service build, arbitrary crash, cloud/model, full V1 or proof claim"}
         (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report), flush=True)
         completed = True
