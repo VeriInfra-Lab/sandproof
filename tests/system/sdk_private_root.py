@@ -28,7 +28,9 @@ FAILED_INIT = '/etc/sandproof-failed-initializer'
 
 
 async def run(sandbox, command):
-    result = await call(sandbox.commands.run, command, timeout=30)
+    # Package/system administration must remain explicit when a selected
+    # template has a non-root default. Default-user behavior is tested apart.
+    result = await call(sandbox.commands.run, command, user='root', timeout=30)
     assert result.exit_code == 0
     return result.stdout
 
@@ -47,10 +49,10 @@ async def install(sandbox, version, identity):
     control = (f'Package: {PACKAGE}\nVersion: {version}\nArchitecture: all\n'
                'Maintainer: Sandproof acceptance <test@example.invalid>\n'
                'Description: Disposable private-root isolation probe\n')
-    await call(sandbox.files.write, STAGING + '/DEBIAN/control', control)
-    await call(sandbox.files.write, STAGING + CONFIG, identity + '\n')
+    await call(sandbox.files.write, STAGING + '/DEBIAN/control', control, user='root')
+    await call(sandbox.files.write, STAGING + CONFIG, identity + '\n', user='root')
     await call(sandbox.files.write, STAGING + EXECUTABLE,
-               '#!/bin/sh\nprintf "%s\\n" ' + shlex.quote(identity) + '\n')
+               '#!/bin/sh\nprintf "%s\\n" ' + shlex.quote(identity) + '\n', user='root')
     await run(sandbox, f'chmod 0755 {STAGING + EXECUTABLE} && '
                       f'dpkg-deb --build --root-owner-group {STAGING} {STAGING}.deb && '
                       f'dpkg --install {STAGING}.deb')
@@ -89,7 +91,7 @@ async def failed_initializer(sandbox):
     try:
         await call(sandbox.commands.run,
                    f'nohup sleep 600 </dev/null >/dev/null 2>&1 & '
-                   f'printf "%s\\n" "$!" > {FAILED_INIT}; exit 42', timeout=15)
+                   f'printf "%s\\n" "$!" > {FAILED_INIT}; exit 42', user='root', timeout=15)
     except CommandExitException as error:
         assert error.exit_code == 42
     else:
