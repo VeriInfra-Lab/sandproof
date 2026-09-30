@@ -118,7 +118,7 @@ class BuildStore:
             raise ValueError("build budgets changed; explicit migration required")
         self.db.execute("INSERT OR IGNORE INTO settings VALUES(1, ?)", (encoded,))
         self.db.execute("""CREATE TABLE IF NOT EXISTS jobs (
-            id TEXT PRIMARY KEY, owner INTEGER NOT NULL, token TEXT NOT NULL, request TEXT NOT NULL,
+            id TEXT PRIMARY KEY, owner TEXT NOT NULL, token TEXT NOT NULL, request TEXT NOT NULL,
             state TEXT NOT NULL, created REAL NOT NULL, deadline REAL NOT NULL,
             reserved INTEGER NOT NULL, input_hash TEXT, candidate TEXT, failure TEXT, result TEXT,
             UNIQUE(owner,token))""")
@@ -161,21 +161,23 @@ class BuildStore:
         return result
 
     def submit(self, owner, request, token=None):
+        if type(owner) is not int or not 0 < owner < 2**64:
+            raise BuildError(400, "InvalidOwner")
         request = self.validate(request)
         token = token or secrets.token_hex(16)
         if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", token):
             raise BuildError(400, "InvalidIdempotencyKey")
         encoded = json.dumps(request, sort_keys=True)
         with self.lock, self.db:
-            old = self.db.execute("SELECT * FROM jobs WHERE owner=? AND token=?", (owner, token)).fetchone()
+            old = self.db.execute("SELECT * FROM jobs WHERE owner=? AND token=?", (str(owner), token)).fetchone()
             if old:
                 if old["request"] != encoded:
                     raise BuildError(409, "IdempotencyConflict")
                 return self.view(old)
             counts = self.db.execute("SELECT COUNT(*), COALESCE(SUM(reserved),0) FROM jobs").fetchone()
-            own = self.db.execute("SELECT COUNT(*), COALESCE(SUM(reserved),0) FROM jobs WHERE owner=?", (owner,)).fetchone()
+            own = self.db.execute("SELECT COUNT(*), COALESCE(SUM(reserved),0) FROM jobs WHERE owner=?", (str(owner),)).fetchone()
             active = self.db.execute("SELECT COUNT(*) FROM jobs WHERE reserved>0").fetchone()[0]
-            own_active = self.db.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND reserved>0", (owner,)).fetchone()[0]
+            own_active = self.db.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND reserved>0", (str(owner),)).fetchone()[0]
             # Independent VM disk + incoming material + two opaque candidate
             # copies (download/staging), kernel/log/journal margin. Failed and
             # unknown jobs retain this reservation until exact cleanup.
@@ -194,16 +196,16 @@ class BuildStore:
             self.directory(job).mkdir(mode=0o700)
             now = self.clock()
             self.db.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,NULL,NULL,NULL,NULL)",
-                (job, owner, token, encoded, "AwaitingInput" if request["kind"] == "dockerfile" else "Queued",
+                (job, str(owner), token, encoded, "AwaitingInput" if request["kind"] == "dockerfile" else "Queued",
                  now, now + request["timeoutSeconds"], cost))
             return self.view(self._row(job, owner))
 
     def _row(self, job, owner=None):
         identity(job)
         row = self.db.execute("SELECT * FROM jobs WHERE id=?", (job,)).fetchone()
-        if row is None or (owner is not None and row["owner"] != owner):
+        if row is None or (owner is not None and int(row["owner"]) != owner):
             raise BuildError(404, "NotFound")
-        return row
+        return dict(row) | {"owner": int(row["owner"])}
 
     def get(self, job, owner=None):
         with self.lock:
@@ -247,7 +249,7 @@ class BuildStore:
 
     def rows(self):
         with self.lock:
-            return [dict(row) for row in self.db.execute("SELECT * FROM jobs ORDER BY created,id")]
+            return [dict(row) | {"owner": int(row["owner"])} for row in self.db.execute("SELECT * FROM jobs ORDER BY created,id")]
 
     def logs(self, job, owner, offset, limit):
         self.get(job, owner)

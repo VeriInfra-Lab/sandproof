@@ -327,7 +327,10 @@ def build(work, source, request, profile, *, guest_boot_id):
                 if request["kind"] == "dockerfile":
                     extract_context(source, work / "context", **limits)
                 else:
-                    from template_build_store import public_image
+                    if __package__:
+                        from .template_build_store import public_image
+                    else:
+                        from template_build_store import public_image
                     image_reference = public_image(bounded_json(source)["image"])
                     (work / "context").mkdir(mode=0o700)
                     (work / "context/Dockerfile").write_text("FROM " + image_reference + "\n")

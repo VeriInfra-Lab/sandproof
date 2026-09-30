@@ -168,6 +168,13 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(backend.builds, [])
         self.assertEqual(self.store.get(job)["reserved"], 0)
 
+    def test_full_controller_owner_range_is_not_narrowed_by_sqlite(self):
+        owner = 2**64 - 1
+        job = self.store.submit(owner, {"kind": "oci", "image": "ubuntu:24.04"})["buildID"]
+        self.assertEqual(self.store.get(job, owner)["owner"], owner)
+        with self.assertRaises(BuildError):
+            self.store.query(job, owner - 1)
+
     def test_retained_logs_still_charge_workspace_after_vm_budget_release(self):
         job = self.job()
         backend = FakeBackend()

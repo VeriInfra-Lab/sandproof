@@ -86,6 +86,9 @@ def configuration(path):
             or limits["max_expanded_bytes"] > 32 * 1024 * MIB or limits["max_entries"] > 200000
             or limits["max_log_bytes"] > 16 * MIB or limits["max_jobs"] > 10000):
         raise ValueError("build limits exceed worker protocol")
+    if (limits["max_memory_mib"] < 128 or limits["max_disk_mib"] < 512
+            or limits["max_input_bytes"] < 512 or limits["max_expanded_bytes"] < 10240):
+        raise ValueError("build limits cannot represent a valid worker request")
     for tenant, global_field in (("max_jobs_per_tenant", "max_jobs"), ("max_pending_per_tenant", "max_pending"),
                                  ("workspace_bytes_per_tenant", "workspace_bytes")):
         if limits[tenant] > limits[global_field]:
