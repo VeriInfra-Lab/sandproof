@@ -135,7 +135,7 @@ def exercise(args):
             no_resources()
             template=published["template"]["templateId"]
             guest=Sandbox.create(template=template,timeout=180,allow_internet_access=False,**owner);active.append(guest.sandbox_id)
-            result=guest.commands.run("cat /workspace/built && cat /workspace/payload && test ! -e /workspace/removed && test ! -e /tmp/injected")
+            result=guest.commands.run("/bin/busybox cat /workspace/built && /bin/busybox cat /workspace/payload && test ! -e /workspace/removed && test ! -e /tmp/injected")
             assert result.exit_code==0 and "build-ok" in result.stdout and "copied-standard-context" in result.stdout
             guest.files.write("test.txt","build-inbox-sdk")
             assert guest.files.read("test.txt")=="build-inbox-sdk"
