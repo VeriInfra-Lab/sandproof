@@ -48,7 +48,7 @@ S13 新范围由 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)/#6
 
 候选构建批次使用[隔离构建实机实验](../tests/system/template_build.py)：固定 BuildKit 0.28.0/umoci 0.6.0，每项构建新建禁网 VM，以合成 Debian 兼容根目录运行标准多阶段 Dockerfile、COPY、RUN、层删除；导出 OCI 后另一个新 VM 导入转换；两种候选磁盘分别在新 VM 检查真实 SDK 命令/文件与删除结果。新版本还检查 ENV/WORKDIR/数字 USER 的规范化和实例默认值、创建与单次请求覆盖、ENTRYPOINT+CMD 的字面参数、普通重启不重复启动，以及两处激活崩溃：已确认启动但控制器回执丢失可恢复，启动确认丢失保持未知并到期精确清理。另检查构建失败和确定超时不产生候选，逐项销毁并核对精确资源与原镜像摘要。它不访问公共仓库，不证明真实 Debian 软件包兼容，也不代替用户自助/发布门、应用健康、完整 S13 或 89 题。脚本存在不是已实测；结果须绑定版本基线的精确提交。
 
-公开 OCI 获取使用[单元测试](../tools/tests/test_template_fetch.py)检查引用语法、平台选择、摘要不符、二进制输出与日志各自超限、非零退出及输出关闭后的期限；[KVM 探针](../tests/system/server_public_oci.py)固定 Debian 13 单架构摘要和 Ubuntu 24.04 多架构索引摘要，以四个全新构建 VM 验证两次成功、摘要不存在和下载超限。成功候选须在构建 VM 回收后经正式发布门，再用原 SDK 创建禁网实例检查发行版、默认用户/目录、文件和命令，共八台 VM。运行前需固定 regctl v0.11.6 指纹、独占 namespace/UID/cgroup 和受限公网转发；结束独立核对全部精确资源、共享网络规则恢复和基础镜像摘要。脚本存在不代表已实测；精确提交和结果记录在版本基线。该实验不经过用户构建 API，不代替私有仓库、完整恢复或 89 题验收。
+公开 OCI 获取使用[单元测试](../tools/tests/test_template_fetch.py)检查引用语法、平台选择、摘要不符、二进制输出与日志各自超限、非零退出及输出关闭后的期限；[KVM 探针](../tests/system/server_public_oci.py)固定 Debian 13 单架构摘要和 Ubuntu 24.04 多架构索引摘要，以四个全新构建 VM 验证两次成功、摘要不存在和下载超限。成功候选须在构建 VM 回收后经正式发布门，再用原 SDK 创建禁网实例检查发行版、默认用户/目录、文件和命令，共八台 VM。运行前需固定 regctl v0.11.6 指纹、独占 namespace/UID/cgroup 和受限公网转发；探针在构建 VM 写入固定公共 DNS，不继承宿主解析配置；结束独立核对全部精确资源、共享网络规则恢复和基础镜像摘要。脚本存在不代表已实测；精确提交和结果记录在版本基线。该实验不经过用户构建 API，不代替私有仓库、完整恢复或 89 题验收。
 
 提交 `3a42d7a09fc9c1e823f01a066add9fd78e232068` 已通过该实验（六台 VM）、基础检查、新输入/执行预算单元测试和 Linux 固定 SDK 网关组合；失败尝试的原因与原身份清理也保留在[基线](../references/v1-baseline.json)的 `isolated_template_candidate_acceptance`。候选仍不就绪；ENV/USER/WORKDIR/CMD 接入和用户自助发布尚未验收，不把这条离线实验说成完整模板服务。
 

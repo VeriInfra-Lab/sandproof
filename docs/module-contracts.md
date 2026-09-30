@@ -44,7 +44,7 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。自助构建请求/状态/日志服务和可靠构建恢复仍属于后续 #123。
 
-公开获取由[固定 regctl 客户端](../tools/template_fetch.py)在同一构建 VM 内执行；工作器的 `kind=registry` 接收仅含 `image` 的 JSON 文件，例如 `{"image":"docker.io/library/debian@sha256:<64位摘要>"}`。仅接受显式 DNS 仓库与 SHA-256，不接受可变标签、认证信息、端口或私有 IP 字面量；网络地址是否可达仍由既有公网 IPv4 隔离策略决定，字符串检查不代替网络隔离。regctl 固定 v0.11.6/linux-amd64 及 SHA-256，使用空 HOME/Docker/regctl 配置，不携带宿主仓库凭据。先验证输入清单原始字节摘要；OCI 清单直接使用，OCI/Docker 索引只允许唯一 linux/amd64 OCI 子清单，其他平台不下载；不支持 Docker schema2 镜像清单或嵌套索引。导出 OCI 布局后再校验所选清单、所有 blob、diff_ids 与展开限制，沿用原转换和发布门。导入不执行 ONBUILD，不使用宿主 Docker。
+公开获取由[固定 regctl 客户端](../tools/template_fetch.py)在同一构建 VM 内执行；工作器的 `kind=oci-reference` 接收仅含 `image` 的 JSON 文件，例如 `{"image":"docker.io/library/debian@sha256:<64位摘要>"}`。仅接受显式 DNS 仓库与 SHA-256，不接受可变标签、认证信息、端口或私有 IP 字面量；网络地址是否可达仍由既有公网 IPv4 隔离策略决定，字符串检查不代替网络隔离。regctl 固定 v0.11.6/linux-amd64 及 SHA-256，使用空 HOME/Docker/regctl 配置，不携带宿主仓库凭据。先验证输入清单原始字节摘要；OCI 清单直接使用，OCI/Docker 索引只允许唯一 linux/amd64 OCI 子清单，其他平台不下载；不支持 Docker schema2 镜像清单或嵌套索引。导出 OCI 布局后再校验所选清单、所有 blob、diff_ids 与展开限制，沿用原转换和发布门。导入不执行 ONBUILD，不使用宿主 Docker。
 
 获取清单与 OCI tar 的 stdout 合计受 `max_input_bytes` 限制（不含 HTTP 头、重试等线上字节），stderr 与其他工具共享 `max_log_bytes`，使用同一总期限和 VM 磁盘/内存限制。候选增加 `public_source` 记录原始引用/摘要、所选摘要、平台、下载产物字节及工具指纹；仍为 `candidate`。这是来宾工作器输入能力，尚未接入公开构建提交 API；不包含私有仓库认证、标签解析、可靠恢复或 Harbor 通用模板适配。
 

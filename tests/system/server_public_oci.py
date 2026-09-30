@@ -106,7 +106,7 @@ def exercise(args):
             assert not list(parent.glob(f"vm-{args.namespace}-*")), "test resource remains"
         assert not processes_in_uid_range(args.uid_base, args.uid_base + 10)
 
-    request = {"kind": "registry", "disk_mib": 1024, "min_free_mib": 64,
+    request = {"kind": "oci-reference", "disk_mib": 1024, "min_free_mib": 64,
                "max_input_bytes": 256 * MIB, "max_expanded_bytes": 1024 * MIB, "max_entries": 50000,
                "timeout_seconds": 240, "max_log_bytes": 2 * MIB}
     try:
@@ -120,6 +120,8 @@ def exercise(args):
             builder = Sandbox.create(timeout=600, allow_internet_access=True, **owner)
             active.append(builder.sandbox_id)
             checked(builder, "mkdir -p /input/tools /output")
+            # Trusted public DNS for this test builder; never inherit host DNS.
+            builder.files.write("/etc/resolv.conf", "nameserver 1.1.1.1\nnameserver 8.8.8.8\n", user="root")
             profile = {}
             for tool, digest in hashes.items():
                 upload(builder, args.tools / tool, "/input/tools/" + tool)
