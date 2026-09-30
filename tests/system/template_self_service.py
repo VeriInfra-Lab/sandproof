@@ -175,8 +175,8 @@ def exercise(args):
         template = result["template"]["templateId"]
         sandbox = Sandbox.create(template, timeout=120, allow_internet_access=False, **options(keys[0], urls[0], urls[0]))
         try:
-            assert sandbox.commands.run("cat /workspace/payload", user="app").stdout == "copied-standard-context"
-            assert "literal space" in sandbox.commands.run("cat /workspace/startup-result", user="app").stdout
+            assert sandbox.commands.run("/bin/busybox cat /workspace/payload", user="app").stdout == "copied-standard-context"
+            assert "literal space" in sandbox.commands.run("/bin/busybox cat /workspace/startup-result", user="app").stdout
             sandbox.files.write("/workspace/user-file", "self-service", user="app")
             assert sandbox.files.read("/workspace/user-file", user="app") == "self-service"
         finally:

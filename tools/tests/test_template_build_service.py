@@ -168,6 +168,34 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(backend.builds, [])
         self.assertEqual(self.store.get(job)["reserved"], 0)
 
+    def test_retained_logs_still_charge_workspace_after_vm_budget_release(self):
+        job = self.job()
+        backend = FakeBackend()
+        supervisor = Supervisor(self.store, backend)
+        supervisor.tick()
+        supervisor.tick()
+        cost = (limits()["builder_disk_bytes"] + limits()["max_input_bytes"]
+                + 2 * 1024 * MIB + limits()["artifact_margin_bytes"])
+        history = limits()["max_log_bytes"] + 256 * 1024
+        self.store.limits["workspace_bytes"] = cost + 2 * history - 1
+        with self.assertRaisesRegex(BuildError, "BuildBudgetExceeded"):
+            self.store.submit(2, {"kind": "dockerfile"})
+        self.assertEqual(self.store.query(job, 1)["state"], "Ready")
+
+    def test_candidate_checkpoint_restart_can_publish_without_rerun(self):
+        job = self.job()
+        backend = FakeBackend()
+        self.store.change(job, "Building")
+        status = backend.build(self.store, self.store.get(job))
+        self.store.change(job, "Cleaning", candidate=status)
+        self.store.close()
+        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+        supervisor = Supervisor(self.store, backend)
+        supervisor.tick()
+        supervisor.tick()
+        self.assertEqual(backend.builds, [job])
+        self.assertEqual(self.store.query(job, 1)["state"], "Ready")
+
     def test_http_contract_upload_owner_and_no_host_path_input(self):
         server = BuildHTTP(("127.0.0.1", 0), self.store, [{"tenant": 1, "secret": "owner"}, {"tenant": 2, "secret": "other"}])
         thread = threading.Thread(target=server.serve_forever, daemon=True)
