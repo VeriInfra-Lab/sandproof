@@ -45,6 +45,8 @@ TASK_BASES = {
         'custom-memory-heap-crash', 'alexgshaw/custom-memory-heap-crash:20251031'),
 }
 GUEST_HELPERS = {
+    'fix-git-source': (Path(__file__).with_name('guest_git_fixture.py'),
+                       '/usr/local/lib/sandproof/guest_git_fixture.py'),
     'range-fetch': (Path(__file__).with_name('guest_fetch.py'),
                     '/usr/local/lib/sandproof/guest_fetch.py'),
     'chromium-lifecycle': (Path(__file__).with_name('guest_chromium.py'),
