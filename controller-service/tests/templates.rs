@@ -1,10 +1,12 @@
 use sandproof_controller_service::templates::{
-    ComputeLimits, ResourceShape, TemplateArtifact, TemplateBinding, TemplateCatalog, TemplateError,
+    ComputeLimits, ResourceShape, TemplateArtifact, TemplateBinding, TemplateCatalog,
+    TemplateError, TemplateStartup,
 };
 use std::collections::BTreeMap;
 
 fn binding() -> TemplateBinding {
     TemplateBinding {
+        startup: None,
         template_id: "ubuntu-r1".into(),
         revision: "r1".into(),
         owner: Some(1),
@@ -95,4 +97,45 @@ fn artifact_and_resource_validation_precedes_admission() {
     value = binding();
     value.owner = Some(0);
     assert!(!value.is_valid());
+}
+
+#[test]
+fn startup_validation_bounds_and_legacy_serialization() {
+    let legacy = binding();
+    let wire = serde_json::to_value(&legacy).unwrap();
+    assert!(wire.get("startup").is_none());
+    assert_eq!(
+        serde_json::from_value::<TemplateBinding>(wire).unwrap(),
+        legacy
+    );
+    let startup = TemplateStartup {
+        user: "app".into(),
+        workdir: "/workspace".into(),
+        env_vars: BTreeMap::from([("KEY".into(), "$literal".into())]),
+        argv: vec!["/bin/app".into(), "a b".into()],
+    };
+    let mut template = legacy;
+    template.startup = Some(startup.clone());
+    assert!(template.is_valid());
+    for case in 0..8 {
+        let mut bad = startup.clone();
+        match case {
+            0 => bad.user = "1000:1000".into(),
+            1 => bad.workdir = "/../outside".into(),
+            2 => bad
+                .env_vars
+                .insert("BAD=KEY".into(), "x".into())
+                .map_or((), |_| ()),
+            3 => bad.argv[0] = String::new(),
+            4 => bad.argv = vec!["x".repeat(8192); 5],
+            5 => bad.argv.push("nul\0".into()),
+            6 => bad
+                .env_vars
+                .insert("KEY".into(), "x".repeat(8192))
+                .map_or((), |_| ()),
+            _ => bad.workdir = "relative".into(),
+        }
+        template.startup = Some(bad);
+        assert!(!template.is_valid());
+    }
 }

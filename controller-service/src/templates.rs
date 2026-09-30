@@ -68,6 +68,63 @@ pub struct TemplateBinding {
     pub rootfs: TemplateArtifact,
     pub resources: ResourceShape,
     pub envd_version: String,
+    /// Normalized OCI defaults. Absent for legacy prebuilt images, whose cwd
+    /// remains envd's per-user home. Frozen with the full admitted descriptor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup: Option<TemplateStartup>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateStartup {
+    pub env_vars: BTreeMap<String, String>,
+    /// A real account name: fixed envd resolves names, not UID:GID strings.
+    pub user: String,
+    pub workdir: String,
+    /// OCI Entrypoint followed by Cmd, without joining or shell expansion.
+    pub argv: Vec<String>,
+}
+
+impl TemplateStartup {
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        self.user.len() <= 64
+            && self
+                .user
+                .bytes()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
+            && self
+                .user
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
+            && self.workdir.starts_with('/')
+            && self.workdir.len() <= 4096
+            && !self.workdir.contains(['\0', '\\'])
+            && !self.workdir.split('/').any(|part| part == "..")
+            && self.env_vars.len() <= 256
+            && self.env_vars.iter().all(|(key, value)| {
+                key.bytes()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
+                    && key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                    && key.len() + value.len() <= 8192
+                    && !value.contains('\0')
+            })
+            && self.argv.len() <= 256
+            && self
+                .argv
+                .iter()
+                .all(|arg| arg.len() <= 8192 && !arg.contains('\0'))
+            && self.argv.first().is_none_or(|command| !command.is_empty())
+            && self
+                .env_vars
+                .iter()
+                .map(|(key, value)| key.len() + value.len())
+                .sum::<usize>()
+                + self.argv.iter().map(String::len).sum::<usize>()
+                <= 32 * 1024
+    }
 }
 
 fn valid_name(name: &str) -> bool {
@@ -91,6 +148,7 @@ impl TemplateBinding {
             && !self.envd_version.is_empty()
             && self.envd_version.len() <= 64
             && !self.envd_version.contains('\0')
+            && self.startup.as_ref().is_none_or(TemplateStartup::is_valid)
     }
 }
 
