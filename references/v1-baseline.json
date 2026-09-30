@@ -1321,5 +1321,51 @@
     "commands": "在精确提交构建并按固定摘要预检，root 使用固定 E2B Python 运行 tests/system/server_templates.py --server <tested binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <b20af758 kernel> --rootfs <30a3861b 1 GiB image> --second-rootfs <7bb80055 10 GiB image> --scratch-parent /root/ta --cgroup-parent /sys/fs/cgroup/sp-template-80201dc --uid-base 9430000。父目录预先独占并仅在本组委派 CPU/memory，不修改共享祖先或网络。",
     "residuals": "两次脚本失败、两次完整通过共十台 VM 均已精确回收。本轮成功和失败的临时根、镜像副本、测试凭据及空 cgroup 父目录均删除；未清理其他人的目录。只保留脱敏原因、提交、摘要与结果。",
     "limits": "仅可信预制输入、同步 SDK 的选定运行路径及确定性拒绝/重启窗口；不验 Dockerfile/OCI、用户登记/构建隔离、构建预算、所有 ENV/USER/CMD 转换、每模板两实例包数据库隔离、通用 Harbor 原任务/评分、公网/高级 DNS/IPv6、任意崩溃/掉电、长期容量或 Lean 证明。后续证据文档与矩阵变更未改测试的生产/探针字节。"
+  },
+  "isolated_template_candidate_acceptance": {
+    "recorded_on": "2026-09-30",
+    "tested_commit": "3a42d7a09fc9c1e823f01a066add9fd78e232068",
+    "scope": "#123 最小工具选择与候选构建实验；没有接入用户 API 或正式发布门",
+    "host": {"alias": "ning", "kernel": "6.8.0-142-generic", "rust": "1.97.0", "sdk": "e2b==2.51.0", "python": "3.12.3", "firecracker": "1.16.1"},
+    "artifacts": {
+      "server_sha256": "55df623c2f2470a87ef65b775a41d9eaf6e2f5a1fabfc10a489bffee6d3d99a1",
+      "worker_sha256": "21c3743a83bb57745ec170c6c1acd9d417d7035ad084cdcf7df672ccd59ffd8e",
+      "input_validator_sha256": "1299f20eb30796bda488e912007a2f7ccce19cf32a88093a587b6b85a85d2d34",
+      "probe_sha256": "7fb95c36c527fa1cb39d7ce02b37d65ac09f2335c41f92de16962c62149de09f",
+      "buildkit_tar_sha256": "bc5a158c97c1f7ace1af81c375e8c28bd27e6afeb283fc5b3bfb10777f48fc83",
+      "buildctl_sha256": "ac7c993de512a1bc7da410e7a9e3424879a5e383d4c17d804ddc54ef6d036703",
+      "buildkitd_sha256": "bf5d521895dd4fafdd9bb8ba3316f90fe0eae07b795ba979bd74fee816b29991",
+      "buildkit_runc_sha256": "ed94b57511421489ba02594bf311020bbdc4fbd229447f97e2734e50a3e7eeb0",
+      "umoci_sha256": "b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71",
+      "busybox_sha256": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
+      "envd_sha256": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "mke2fs_sha256": "07cd24ce58a410cc9cee93c55ae5ac95986df016c5907dc7a49b55389bd41ed2",
+      "e2fsck_sha256": "c69c6315f602d389821b3a1dab1308618616259400f2cf5d997243c4a83c284c",
+      "guest_kernel_sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+      "builder_base_sha256": "7bb800552e74461d53f956620c984ba103bcdf13aca1c6a89b59f5c76af9278c"
+    },
+    "tools": "BuildKit 0.28.0 的内置 Dockerfile frontend/native snapshotter/OCI worker（bundled runc）；umoci 0.6.0；BusyBox 1:1.36.1-6ubuntu3.1 静态版本；envd 0.9.0 固定 f455fd58 源码；构建 VM 内 e2fsprogs 1.47.0。工具只在构建 VM 执行，不改宿主 PATH，不启用 privileged Docker/共享宿主 socket。",
+    "kvm_probe": "tests/system/template_build.py",
+    "namespace": "0b1ec7350cd4b806",
+    "observed": [
+      "四项构建分别使用全新禁网 VM：多阶段 Dockerfile+COPY+RUN+删除文件、导出 OCI 后的新 VM 导入、RUN exit 17、确定 8 秒构建超时。",
+      "两张候选磁盘分别在独立新 VM 中通过真实固定 SDK 命令和文件读写，确认层删除结果及基础候选摘要未变；没有使用宿主镜像挂载/用户层解包。",
+      "Dockerfile/OCI 使用同一镜像摘要 sha256:ce900b322a7104487c2971bd42186d08b05c72ac8126636b5340d5936afa32ac。各磁盘 1073741824 字节、空闲 1000804352 字节，达到 67108864 字节最低空闲要求；不是将最低空闲当总盘容量。",
+      "候选 SHA-256 分别为 3fcb81d722357a487191033d2cc063d29059a8d76a60d59510abfa16b4f34902 和 bf80de5b52f2d152c74e3b0f8baa04ebd0f70d02368b6402a6a315fddcf90240；文件系统 UUID/时间未固定，不承诺磁盘字节可重复。",
+      "原始 ENV（含 BuildKit 默认 PATH）、WORKDIR、USER、CMD/ENTRYPOINT 均记录，startup_applied=false；所有候选 ready=false，故意失败/超时分别为 RuntimeError/TimeoutError，未生成候选。",
+      "最终六台 VM 均精确销毁；PID/启动时刻、jail、netns、cgroup 子组及全部独占 UID 范围清零；宿主 ip_forward 前后均为 0，原内核/镜像摘要保持一致。"
+    ],
+    "functional_checks": "实测提交 macOS scripts/check-function.sh 通过，新增 12 组工具单元测试；同提交 Linux 新测试通过，固定 SDK scripts/check-compat.sh 的 46 组环回样例与实际 Rust 网关两个组合通过（28/36 组）。普通 cargo 检查中的高权限忽略用例不计执行。",
+    "prior_attempts": [
+      {"commit": "1224cd2683ad830d38834c0cd4eb6690960dc34a", "namespace": "cfe62c2841ee2407", "vms": 1, "result": "BuildKit 自动探测未找到 runc，未构建成功；首版未在销毁前保存 daemon 日志，修正取证后重验。"},
+      {"commit": "9805e1095e43cf63e08b5ac78cd6c628ab1578a7", "namespace": "900e20e2017d097a", "vms": 1, "result": "保存日志确认 OCI worker 自动探测问题；修正为显式选择 OCI worker 和 bundled runc。"},
+      {"commit": "4b7a9a6b53d2641dea18c5369a9acebd5d43027b", "namespace": "a2b19d06c5bcb514", "vms": 1, "result": "构建与转换成功，脚本未预期标准构建器加入默认 PATH；断言修正，非产品失败。"},
+      {"commit": "b84b709f43058db98225bc34f30759bec9c0fe1b", "namespace": "ccb81af116175288", "vms": 2, "result": "候选 boot 重复挂载内核已有 devtmpfs，未配置网络；SDK 创建结果未知。按原数据库/命名空间重启原测试服务，在原启动期限已过后由正常恢复补偿精确收尾，未改 journal 或伪造回执。"},
+      {"commit": "16e0f42f1ca1abb0f8611764126013d491c3fcb7", "namespace": "a02fbef938e32fe8", "vms": 2, "result": "最小 boot 在挂 proc 前尝试 remount，失败；修正挂载顺序。候选未可用，原期限扫描完成回收。"},
+      {"commit": "fc18fcd93e6685ac6d2736c52b7d5983a39db9ea", "namespace": "5bf788be315354f1", "vms": 2, "result": "锁定 BusyBox 未编入 mountpoint，候选 boot 失败；改用已具备的 grep 检查 /proc/mounts，并在转换前校验所需 applets。原期限扫描完成回收。"}
+    ],
+    "commands": "在精确提交构建同一 server，root 使用固定 SDK Python 运行 tests/system/template_build.py --server <55df623c binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel /root/sp110-062e8ba/vmlinux-6.1.176 --rootfs /root/ta/sp13-profile-20260929/base-10g.ext4 --scratch-parent /root/ta --cgroup-parent /sys/fs/cgroup/sp-builder-cjoazh --tools /home/ning/sandproof-builder.cjoazH --uid-base 9440000。工具目录中的六项指纹由探针检查；各构建 VM 2 CPU、2048 MiB 来宾内存、2304 MiB 宿主内存、10 GiB 私有盘；两个候选启动各 1 CPU/256 MiB/512 MiB 宿主内存。只对本组委派 CPU/memory。",
+    "residuals": "六次失败尝试九台 VM 加最终通过六台，共十五台均清零。成功根由监督器自动删除；失败的六个精确根经独立复核后删除，包含测试凭据、重复镜像及私有日志；保留本页脱敏原因/身份/指纹。空专属 cgroup 父目录删除；其他旧测试目录和原始输入未动。独立源码/公开工具输入目录保留供复现，不含服务凭据。",
+    "limits": "合成 Debian 兼容根目录，不是官方 Debian/Ubuntu 包镜像或公开 OCI 拉取验收；不覆盖 apt/pip 依赖安装、所有 Dockerfile 特性、ENV/USER/WORKDIR/CMD 实际运行语义、自助请求/状态/日志服务、正式模板 owner/不可变发布门、可靠构建重启恢复、生产独立构建预算、恶意宿主/VM 逃逸、全部恶意层与任意崩溃、89 题或新 Lean 证明。boot_id/virtio 是误操作防护而非隔离证明；工程隔离依赖监督器确实创建并销毁独占 VM。证据-only 后续修改不改变实测 worker/input/probe/生产 Rust 字节。"
   }
 }

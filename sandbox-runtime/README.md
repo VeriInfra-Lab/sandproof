@@ -46,6 +46,14 @@ sudo ./target/debug/sandproof-vm smoke \
 
 ## 固定 envd 与真实 SDK 测试
 
+### 隔离候选构建实验（#123，未接入用户 API）
+
+[`tools/template_worker.py`](../tools/template_worker.py) 必须由外部监督器放到新建、限额、独占且可销毁的构建 VM 中执行；不能在宿主运行它处理用户输入，也不能只用 rootless 替代 VM 边界。调用需显式提供输入归档、全字段预算请求、受信任工具路径/SHA-256 清单和分配 VM 的 boot_id。工作器使用标准 [BuildKit](https://github.com/moby/buildkit/tree/v0.28.0) 与 [umoci](https://github.com/opencontainers/umoci/tree/v0.6.0)，不连接宿主 Docker；BuildKit 的 host 网络模式仅指这台禁网构建 VM 内部，不改变宿主网络权限。工具、输入及缓存都属于该项工作，不能跨租户复用。
+
+[`tests/system/template_build.py`](../tests/system/template_build.py) 是可信操作方的离线最小实验，所需 `--tools` 目录包含 `buildctl`、`buildkitd`、`buildkit-runc`、`umoci`、固定 `envd` 与静态 `busybox`。前三项来自官方 `buildkit-v0.28.0.linux-amd64.tar.gz`（SHA-256 `bc5a158c97c1f7ace1af81c375e8c28bd27e6afeb283fc5b3bfb10777f48fc83`）；umoci 来自官方 `umoci.linux.amd64` v0.6.0（SHA-256 `b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71`）。验证摘要后只提取构建所需三项二进制，不把其他架构模拟器放到宿主 PATH。envd/BusyBox 与宿主文件系统工具指纹另随实测清单记录。工作器预算与运行服务额度不是同一配置；最终独立构建准入服务尚未实现。
+
+实验运行还需要 `--server`、`--jailer`、`--firecracker`、`--kernel`、含 Python/文件系统工具的 10 GiB 测试 `--rootfs`、root 独占 `--scratch-parent`、空且已委派的 `--cgroup-parent` 和独占 `--uid-base`；无公共网络、模型费用或生产配置。输出候选磁盘不是 Ready 模板，ENV/WORKDIR/USER/CMD 等仅记录、未自动启用。真正用户入口和发布检查仍待下一批接入；合同与边界见[模块合同](../docs/module-contracts.md)，实际测试提交见[版本基线](../references/v1-baseline.json)。
+
 ### 显式预制多模板
 
 常驻服务配置可选 `templates` 目录，结构与检查以[模块合同](../docs/module-contracts.md#模板服务--创建准入1236)及[描述类型](../controller-service/src/templates.rs)为准。这是受保护的内核/ext4 输入，不是 Dockerfile/OCI 构建入口。必须同时配置 `host_resources`；每张模板的 `host_memory_bytes` 覆盖全局默认内存上限，CPU 上限由该模板 vCPU 数推导，父目录仍固定。建议把 `base` 别名指向一张明确共享的预装模板，保留原 SDK 的便利默认值。未配置目录时沿用旧 `base` 参数。
