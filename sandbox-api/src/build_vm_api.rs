@@ -18,6 +18,7 @@ pub struct BuildVmRequest {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildVmView {
+    #[serde(rename = "sandboxID")]
     pub sandbox_id: String,
     pub state: String,
     pub cleanup_complete: bool,

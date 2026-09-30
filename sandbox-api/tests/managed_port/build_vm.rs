@@ -73,6 +73,7 @@ fn private_pool_opt_in_reserved_metadata_and_tombstone() {
     assert!(dead.cleanup_complete);
     assert!(dead.session.is_none());
     assert_eq!(dead.sandbox_id, ids[0]);
+    assert_eq!(serde_json::to_value(&dead).unwrap()["sandboxID"], ids[0]);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
