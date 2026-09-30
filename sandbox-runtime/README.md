@@ -40,6 +40,19 @@ sudo ./target/debug/sandproof-vm smoke \
 
 部署者预先建立一个独占、root 拥有且模式为 0700 的 cgroup v2 父目录，保证它为空的 domain，向子组委派 CPU/memory 控制器。根或共享祖先须由宿主配置事先提供这些控制器；运行器不会修改共享祖先。每个部署须保持父目录与配置稳定，不能在仍有记录的 VM 存活或待清理时更换父目录、取消配置或改预算。
 
+多模板包数据库隔离由固定 SDK 的[实机脚本](../tests/system/server_template_isolation.py)检查。使用干净的精确提交、同提交服务二进制、两个经核对且容量不同的 Debian/Ubuntu 系统盘；探针固定两种测试形状为 1 CPU/512 MiB 和 2 CPU/1024 MiB，整个 VMM 各增加 256 MiB 宿主额度。四台 VM 并存，总计使用八个不可复用身份（含两次启动失败与两次替换），预留连续八个 UID；宿主至少六个可用 CPU、8 GiB 可用内存和三倍输入磁盘总量加 1 GiB 收尾空间。以下入口不调用云端或外部软件仓库：
+
+```sh
+sudo <固定 SDK Python> tests/system/server_template_isolation.py \
+  --server <同提交 sandproof-server> --jailer <固定 jailer> \
+  --firecracker <固定 firecracker> --kernel <固定内核> \
+  --rootfs <第一系统盘> --second-rootfs <第二系统盘> \
+  --scratch-parent <root 私有目录> --cgroup-parent <独占空父组> \
+  --uid-base <独占范围起点> --keep-artifacts
+```
+
+结果区分来宾初始化失败和内核启动失败；逐项范围见[验收清单](../docs/testing-plan.md)。探针显式使用 180 秒请求、120 秒启动和 900 秒实例寿命，给大盘核验/复制留出时间；这些是验收配置，不是生产默认值或启动时延承诺。失败只保留本次精确私有目录，不重派未知创建；按原 journal/实例身份恢复收尾。`--keep-artifacts` 也保留成功目录供独立审计，其中只有 `report.json` 是可导出的脱敏结果，配置和原始日志不得提交。完整确认资源已回收后再处理该目录；脚本存在不表示实跑通过。
+
 运行器在放行 jailer 前持久记录创建意图、宿主 boot ID、父目录和子组 inode、限额，再设置并读回限制。jailer 进入这个已配置的精确子组，不临时创建未记录的分组。运行观察核对限额、inode 与 PID 的实际 cgroup 归属；异常不会取得成功观察。停止仍使用原 PID/start-time 的 pidfd；清理要求精确身份且分组无任务，只删除该空子组，保留父目录。创建后 inode 尚未落盘的中断，仅在独占分配器的持久意图匹配、没有启动记录或 jail、分组为空时收尾；删除前补存 inode，防止下一次清理误处理同名替代组。缺少首个槽位、终止标记、丢失清理回执和服务启动盘点也检查 cgroup，不能只因磁盘已删除就报告资源全部回收。
 
 内核专用用例需要独占的父目录与 root scratch 目录，通过 `SANDPROOF_TEST_CGROUP_PARENT`、`SANDPROOF_TEST_SCRATCH` 指定，然后手动执行 `cargo test -p sandbox-runtime linux::cgroup::tests::real_ -- --ignored --nocapture --test-threads=1`。CPU 竞争探针要求至少两个可用宿主 CPU；失败或缺环境不是通过。节点回执恢复用例另通过 `SANDPROOF_TEST_HOST_RESOURCES` 接入同结构配置，仍须按每轮精确资源身份审计残留。上述新增 Linux 资源管理没有现有 Lean 对应证明。
