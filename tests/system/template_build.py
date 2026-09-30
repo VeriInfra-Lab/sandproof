@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -256,14 +257,23 @@ def exercise(args):
                           "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": 6, "evidence": evidence,
                           "scope": "offline synthetic fixture; no public OCI, user API, startup defaults or production Ready gate"}))
     finally:
-        for identity in active:
-            try:
-                if not Sandbox.kill(identity, **owner):
-                    raise RuntimeError("cleanup unconfirmed")
-            except Exception:
-                print("cleanup unknown for exact sandbox " + identity, file=sys.stderr)
-        no_resources()
-        stop_server(process)
+        # SDK create can fail after durable acceptance without returning an ID.
+        # Recover only identities in this fresh private journal, not global VM
+        # names or a Running-only list. Never allocate a replacement create.
+        try:
+            with sqlite3.connect(root / "db/controller.db") as database:
+                identities = [row[0] for row in database.execute("SELECT sandbox_id FROM sandboxes")]
+            for identity in identities:
+                assert identity.startswith("sb-" + namespace + "-")
+                try:
+                    status, _ = fetch(opener, url, "DELETE", "/sandboxes/" + identity, key)
+                    if status not in (200, 204, 404):
+                        raise RuntimeError("cleanup unconfirmed")
+                except Exception:
+                    print("cleanup unknown for exact sandbox " + identity, file=sys.stderr)
+            no_resources()
+        finally:
+            stop_server(process)
         if complete:
             shutil.rmtree(root)
         else:

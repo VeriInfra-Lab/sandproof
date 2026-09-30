@@ -30,9 +30,10 @@ PLATFORM = "/opt/sandproof"
 BOOT = """#!/opt/sandproof/busybox sh
 set -eu
 B=/opt/sandproof/busybox
+$B mount -o remount,rw /
 $B mount -t proc proc /proc
 $B mount -t sysfs sysfs /sys
-$B mount -t devtmpfs devtmpfs /dev
+if ! $B mountpoint -q /dev; then $B mount -t devtmpfs devtmpfs /dev; fi
 $B mkdir -p /dev/pts /run /tmp
 $B mount -t devpts devpts /dev/pts
 $B mount -t tmpfs -o mode=755 tmpfs /run
@@ -46,6 +47,7 @@ $B ip link set eth0 up
 $B ip link set lo up
 $B ip route add 169.254.169.254/32 dev eth0
 $B ip route add default via 172.16.0.1 dev eth0
+$B touch /run/sandproof-boot-ready
 """
 INITTAB = """::sysinit:/opt/sandproof/boot
 ::respawn:/opt/sandproof/agent
@@ -53,6 +55,7 @@ INITTAB = """::sysinit:/opt/sandproof/boot
 ::shutdown:/opt/sandproof/busybox umount -a -r
 """
 AGENT = """#!/opt/sandproof/busybox sh
+test -f /run/sandproof-boot-ready || exit 1
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 exec /opt/sandproof/envd -verbose -no-cgroups
 """
