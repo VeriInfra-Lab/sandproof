@@ -328,10 +328,23 @@ def exercise(args):
                 assert Sandbox.kill(sandbox_id, **owner)
             else:
                 code, body = fetch(opener, url, "GET", "/sandboxes/" + sandbox_id, key)
-                assert code == 200 and json.loads(body)["state"] != "running"
+                # Existing detail contract exposes only live Running instances,
+                # not a Starting response containing a usable guest credential.
+                assert code == 404, (code, body)
+                with sqlite3.connect(root / "db/controller.db") as database:
+                    saved = json.loads(database.execute("SELECT state_blob FROM sandboxes WHERE sandbox_id=?",
+                                                        (sandbox_id,)).fetchone()[0])
+                assert saved["phase"] == "Starting", saved["phase"]
                 deadline = time.monotonic() + 50
                 while process_start_ticks(record["vmm_pid"]) == record["start_ticks"]:
-                    assert startup_count(name, sandbox_id) == "started\n"
+                    try:
+                        assert startup_count(name, sandbox_id) == "started\n"
+                    except AssertionError:
+                        # Exact stop can win between the liveness check and
+                        # this read; a live guest must still answer exactly once.
+                        if process_start_ticks(record["vmm_pid"]) != record["start_ticks"]:
+                            break
+                        raise
                     assert time.monotonic() < deadline, "unknown startup was not retired"
                     time.sleep(0.2)
             deadline = time.monotonic() + 10
