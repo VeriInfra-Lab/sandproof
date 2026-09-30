@@ -15,6 +15,12 @@ from tools.template_build_service import Backend
 
 class BuildSdkSession(unittest.TestCase):
     def test_existing_private_vm_session_uses_real_sdk_without_second_create(self):
+        self.exercise("dockerfile")
+
+    def test_public_import_uploads_fetcher_and_seventh_tool_without_from_build(self):
+        self.exercise("oci")
+
+    def exercise(self, kind):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "source.tar"
@@ -23,10 +29,13 @@ class BuildSdkSession(unittest.TestCase):
             status = {"state": "candidate", "rootfs_sha256": hashlib.sha256(candidate).hexdigest()}
             profile = {"runtime": {"credentials": [{"tenant": 1, "secret": "runtime-key"}]},
                 "builder": {"bind": "127.0.0.1:1", "domain": "example.invalid", "credentials": [{"secret": "builder-key"}]},
-                "tools": {}, "dns_servers": ["1.1.1.1"]}
+                "tools": {name: {"path": str(source), "sha256": "a" * 64} for name in
+                    ("buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl")},
+                "dns_servers": ["1.1.1.1"]}
             backend = Backend(profile)
             row = {"id": "a" * 32, "input_hash": hashlib.sha256(source.read_bytes()).hexdigest(), "deadline": 1000,
-                "request": json.dumps({"kind": "dockerfile", "resources": {"diskMiB": 1, "minFreeMiB": 16}})}
+                "request": json.dumps({"kind": kind, "image": "docker.io/library/ubuntu:24.04",
+                    "resources": {"diskMiB": 1, "minFreeMiB": 16}})}
             store = SimpleNamespace(directory=lambda _: directory, clock=lambda: 0,
                 limits={"max_input_bytes": 65536, "max_expanded_bytes": 65536, "max_entries": 100, "max_log_bytes": 65536})
             session = {"sandboxID": "sb-test-1", "envdVersion": "0.9.0", "envdAccessToken": "private-token"}
@@ -45,3 +54,11 @@ class BuildSdkSession(unittest.TestCase):
                 config = files.call_args.args[2]
                 self.assertEqual(config.sandbox_headers["X-Access-Token"], "private-token")
                 self.assertEqual((directory / "candidate.ext4").stat().st_size, len(candidate))
+                writes = {call.args[0]: call.args[1] for call in files.return_value.write.call_args_list}
+                self.assertIn("/input/template_fetch.py", writes)
+                guest_profile = json.loads(writes["/input/profile.json"])
+                self.assertEqual("regctl" in guest_profile, kind == "oci")
+                worker = json.loads(writes["/input/request.json"])
+                self.assertEqual(worker["kind"], "oci-reference" if kind == "oci" else "dockerfile")
+                self.assertEqual(worker["dns_servers"], ["1.1.1.1"])
+                self.assertNotIn("/input/Dockerfile", writes)

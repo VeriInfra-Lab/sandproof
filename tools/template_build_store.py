@@ -1,7 +1,6 @@
 """Bounded durable self-service build journal. No untrusted archive is opened here."""
 import fcntl
 import hashlib
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -15,8 +14,12 @@ import time
 
 if __package__:
     from .template_stage import private_directory
+    from .template_fetch import reference
+    from .template_inputs import InvalidTemplate
 else:
     from template_stage import private_directory
+    from template_fetch import reference
+    from template_inputs import InvalidTemplate
 
 MIB = 1024 * 1024
 TERMINAL = {"Ready", "Failed"}
@@ -29,22 +32,11 @@ class BuildError(Exception):
 
 
 def public_image(value):
-    # No Dockerfile injection, credentials, local transports or custom ports.
-    # Host packet rules, not this lexical check, enforce private-address denial.
-    if (not isinstance(value, str) or len(value) > 256
-            or not re.fullmatch(r"[a-z0-9][a-z0-9./_-]*(?::[A-Za-z0-9_.-]+|@sha256:[0-9a-f]{64})?", value)
-            or ".." in value or "//" in value):
-        raise BuildError(400, "InvalidPublicImage")
-    first = value.split("/", 1)[0]
-    if "/" in value and ("." in first or first == "localhost"):
-        try:
-            ipaddress.ip_address(first)
-        except ValueError:
-            if first == "localhost" or first.endswith((".localhost", ".local", ".internal")):
-                raise BuildError(400, "InvalidPublicImage") from None
-        else:
-            raise BuildError(400, "InvalidPublicImage") from None
-    return value
+    try:
+        repository, identifier = reference(value)
+    except InvalidTemplate:
+        raise BuildError(400, "InvalidPublicImage") from None
+    return repository + ("@" if identifier.startswith("sha256:") else ":") + identifier
 
 
 def identity(value):

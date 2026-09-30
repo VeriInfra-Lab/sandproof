@@ -1,8 +1,8 @@
 """Exact-commit self-service HTTP -> isolated KVM -> registered template -> SDK.
 
 Root-only disposable deployment, two disjoint pools. No E2B cloud/paid model.
---public requires an explicitly approved temporary IPv4 forwarding setup;
-this script never changes global forwarding. Failure retains exact evidence.
+--temporarily-forward enables IPv4 forwarding for the approved public probe
+and restores its original value on exit. Failure retains exact evidence.
 """
 import argparse
 import json
@@ -23,8 +23,10 @@ from server_process_crash import fetch, free_loopback_port, start_server, stop_s
 from server_templates import descriptor
 from server_vm_id_capacity import check_no_resources
 from template_build import BUILDKIT_HASHES, FIXTURE
+from template_fetch import REGCTL_SHA256
 
 MIB = 1024 * 1024
+BUILD_TOOLS = dict(BUILDKIT_HASHES, regctl=REGCTL_SHA256)
 
 
 def exercise(args):
@@ -45,7 +47,7 @@ def exercise(args):
         raise RuntimeError("private root scratch required")
     if shutil.disk_usage(args.scratch_parent).free < 50 * 1024 * MIB:
         raise RuntimeError("50 GiB including cleanup reserve required")
-    for name, digest in BUILDKIT_HASHES.items():
+    for name, digest in BUILD_TOOLS.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed tool fingerprint mismatch: " + name)
     root = Path(tempfile.mkdtemp(prefix="ts-", dir=args.scratch_parent))
@@ -99,7 +101,7 @@ def exercise(args):
     (root / "builds").mkdir(mode=0o700)
     build = {"root": str(root / "builds"), "bind": f"127.0.0.1:{ports[2]}",
         "runtime_config": str(root / "0/config.json"), "builder_config": str(root / "1/config.json"),
-        "tools": {name: {"path": str(args.tools / name), "sha256": digest} for name, digest in BUILDKIT_HASHES.items()},
+        "tools": {name: {"path": str(args.tools / name), "sha256": digest} for name, digest in BUILD_TOOLS.items()},
         "dns_servers": ["1.1.1.1", "8.8.8.8"],
         "limits": {"max_cpu": 2, "max_memory_mib": 1024, "max_disk_mib": 2048, "timeout_seconds": 600,
             "max_jobs": 20, "max_jobs_per_tenant": 10, "max_pending": 3, "max_pending_per_tenant": 2,
@@ -229,6 +231,13 @@ def exercise(args):
             job = submit({"kind": "oci", "image": args.public_image, "timeoutSeconds": 600})
             result = wait_job(job)
             assert result["state"] == "Ready", result
+            import sqlite3
+            with sqlite3.connect(root / "builds/builds.db") as database:
+                candidate = json.loads(database.execute("SELECT candidate FROM jobs WHERE id=?", (job,)).fetchone()[0])
+            provenance = candidate["public_source"]
+            assert provenance["selected_digest"] == result["template"]["imageDigest"]
+            assert provenance["regctl_sha256"] == REGCTL_SHA256
+            assert provenance["download_bytes"] <= build["limits"]["max_input_bytes"]
             sandbox = Sandbox.create(result["template"]["templateId"], timeout=120, allow_internet_access=False, **options(keys[0], urls[0], urls[0]))
             try:
                 assert "ubuntu" in sandbox.commands.run("cat /etc/os-release", user="root").stdout.lower()
@@ -237,7 +246,7 @@ def exercise(args):
             finally:
                 sandbox.kill()
             evidence.append({"scenario": "public_oci_publish_sdk", "build": job, "image": args.public_image,
-                             "digest": result["template"]["imageDigest"], "result": "passed"})
+                             "digest": result["template"]["imageDigest"], "public_source": provenance, "result": "passed"})
             print(json.dumps(evidence[-1]), flush=True)
         for i in range(2):
             check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * 100)
@@ -248,7 +257,8 @@ def exercise(args):
             assert database.execute("SELECT SUM(reserved) FROM jobs").fetchone()[0] == 0
         complete = True
         (root / "report.json").write_text(json.dumps({"commit": commit, "scenarios": evidence,
-            "kernel_sha256": original[0], "base_sha256": original[1], "tools": BUILDKIT_HASHES,
+            "server_sha256": sha256_file(binary),
+            "kernel_sha256": original[0], "base_sha256": original[1], "tools": BUILD_TOOLS,
             "no_process_network_cgroup_jail_residue": True, "public": args.public}, indent=2))
         print("self-service acceptance passed; report=" + str(root / "report.json"), flush=True)
     finally:

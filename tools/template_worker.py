@@ -278,8 +278,10 @@ def validate_request(request):
             raise InvalidTemplate("invalid platform DNS") from error
 
 
-def check_tools(profile):
+def check_tools(profile, *, registry=False):
     required = {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox"}
+    if registry:
+        required.add("regctl")
     if set(profile) != required:
         raise InvalidTemplate("worker tool profile incomplete")
     tools = {}
@@ -307,10 +309,11 @@ def build(work, source, request, profile, *, guest_boot_id):
             or Path("/proc/sys/kernel/random/boot_id").read_text().strip() != guest_boot_id
             or not Path("/dev/vda").is_block_device()):
         raise InvalidTemplate("worker requires its assigned disposable build VM")
-    tools = check_tools(profile)
+    tools = check_tools(profile, registry=request["kind"] == "oci-reference")
     if not stat.S_ISREG(source.lstat().st_mode) or source.stat().st_size > request["max_input_bytes"]:
         raise InvalidTemplate("input archive limit or type")
-    if shutil.disk_usage(work.parent).free < request["disk_mib"] * MIB + request["max_expanded_bytes"] + 64 * MIB:
+    download_space = 2 * request["max_input_bytes"] if request["kind"] == "oci-reference" else 0
+    if shutil.disk_usage(work.parent).free < request["disk_mib"] * MIB + request["max_expanded_bytes"] + download_space + 64 * MIB:
         raise InvalidTemplate("build disk budget unavailable")
     work.mkdir(mode=0o700)  # exact identity is new; never reuse another job/cache
     daemon = None
@@ -323,17 +326,15 @@ def build(work, source, request, profile, *, guest_boot_id):
             commands = Commands(time.monotonic() + request["timeout_seconds"], log, request["max_log_bytes"])
             limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
             layout = work / "oci"
-            if request["kind"] in ("dockerfile", "oci-reference"):
-                if request["kind"] == "dockerfile":
-                    extract_context(source, work / "context", **limits)
+            public_source = None
+            if request["kind"] == "oci-reference":
+                if __package__:
+                    from .template_fetch import fetch
                 else:
-                    if __package__:
-                        from .template_build_store import public_image
-                    else:
-                        from template_build_store import public_image
-                    image_reference = public_image(bounded_json(source)["image"])
-                    (work / "context").mkdir(mode=0o700)
-                    (work / "context/Dockerfile").write_text("FROM " + image_reference + "\n")
+                    from template_fetch import fetch
+                public_source = fetch(source, work, layout, request, tools["regctl"], commands)
+            elif request["kind"] == "dockerfile":
+                extract_context(source, work / "context", **limits)
                 address = "unix://" + str(work / "buildkit.sock")
                 daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
                                        "--oci-worker=true",
@@ -396,6 +397,10 @@ def build(work, source, request, profile, *, guest_boot_id):
                      "free_bytes": free * 4096, "min_free_bytes": request["min_free_mib"] * MIB,
                      "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
                      "requires": ["external VM cleanup", "launch/envd/owner publish gate"]}
+            if public_source is not None:
+                if image["image_digest"] != public_source["selected_digest"]:
+                    raise InvalidTemplate("public image provenance mismatch")
+                state["public_source"] = public_source
             disk.chmod(0o444)
     except BaseException as error:
         state = {"state": "failed", "ready": False, "error_type": type(error).__name__}

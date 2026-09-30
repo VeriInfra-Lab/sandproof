@@ -96,7 +96,7 @@ def configuration(path):
     if limits["timeout_seconds"] + 60 > builder["max_timeout_secs"]:
         raise ValueError("builder lifetime must cover deadline and cleanup margin")
     tools = config["tools"]
-    if set(tools) != {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox"}:
+    if set(tools) != {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl"}:
         raise ValueError("fixed tool profile required")
     for spec in tools.values():
         path = Path(spec["path"])
@@ -192,11 +192,13 @@ class Backend:
         command("mkdir -p /input/tools /output")
         profile = {}
         for name, spec in self.config["tools"].items():
+            if name == "regctl" and request["kind"] != "oci":
+                continue
             with Path(spec["path"]).open("rb") as incoming:
                 sandbox.files.write("/input/tools/" + name, incoming, user="root")
             profile[name] = {"path": "/input/tools/" + name, "sha256": spec["sha256"]}
         command("chmod 755 /input/tools/*")
-        for name in ("template_worker.py", "template_inputs.py", "template_build_store.py", "template_stage.py"):
+        for name in ("template_worker.py", "template_inputs.py", "template_fetch.py"):
             with Path(__file__).with_name(name).open("rb") as incoming:
                 sandbox.files.write("/input/" + name, incoming, user="root")
         sandbox.files.write("/input/profile.json", json.dumps(profile), user="root")

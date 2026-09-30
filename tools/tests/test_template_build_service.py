@@ -80,8 +80,10 @@ class BuildTests(unittest.TestCase):
         for image in ("ubuntu\nRUN echo bad", "https://registry/repo", "localhost/x", "127.0.0.1/a", "user:password@registry/a", "registry.local/a", "registry:5000/a"):
             with self.subTest(image=image), self.assertRaises(BuildError):
                 public_image(image)
-        for image in ("ubuntu:24.04", "ghcr.io/company/image@sha256:" + "a" * 64):
-            self.assertEqual(public_image(image), image)
+        self.assertEqual(public_image("ubuntu:24.04"), "docker.io/library/ubuntu:24.04")
+        self.assertEqual(public_image("ghcr.io/company/image@sha256:" + "a" * 64),
+                         "ghcr.io/company/image@sha256:" + "a" * 64)
+        self.assertEqual(first, self.store.submit(1, {"kind": "oci", "image": "docker.io/library/ubuntu:24.04"}, "request"))
         for fields in ({"diskMiB": 10000000}, {"cpuCount": True}, {"minFreeMiB": 1024}):
             with self.assertRaises(BuildError):
                 self.store.submit(1, {"kind": "dockerfile", "resources": fields})
