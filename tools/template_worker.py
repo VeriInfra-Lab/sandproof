@@ -9,6 +9,7 @@ Never run this with tenant input on a host; no Docker socket is used.
 import argparse
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import selectors
 import shutil
@@ -202,6 +203,49 @@ def install_platform(root, envd, busybox):
         path.mkdir(exist_ok=True)
 
 
+def runtime_defaults(root, startup):
+    """Normalize to fixed envd's named-user contract, not arbitrary UID:GID.
+
+    Resolution is guest-only, bounded and fail-closed. An explicit alternate
+    primary group is unsupported; silently dropping it changes permissions.
+    No image environment is ever inherited by trusted PID 1 or envd itself.
+    """
+    def accounts(filename, count):
+        source = guest_path(root, filename)
+        if not source.is_file() or source.stat().st_size > MIB:
+            raise InvalidTemplate("account database type or size")
+        entries = [line.split(":") for line in source.read_text().splitlines() if line and not line.startswith("#")]
+        if any(len(row) != count for row in entries):
+            raise InvalidTemplate("malformed account database")
+        return entries
+    users = accounts("/etc/passwd", 7)
+    user, colon, group = startup["User"].partition(":")
+    matches = [row for row in users if (row[2] == str(int(user)) if user.isascii() and user.isdecimal() else row[0] == user)]
+    if len(matches) != 1:
+        raise InvalidTemplate("USER must resolve to one real account")
+    selected = matches[0]
+    if (not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", selected[0])
+            or any(not value.isascii() or not value.isdecimal() or int(value) > 2**32-1 for value in selected[2:4])):
+        raise InvalidTemplate("unsupported user account")
+    if colon:
+        groups = accounts("/etc/group", 4)
+        matched = [row for row in groups if (row[2] == str(int(group)) if group.isascii() and group.isdecimal() else row[0] == group)]
+        if len(matched) != 1 or matched[0][2] != selected[3]:
+            raise InvalidTemplate("alternate USER primary group unsupported")
+    directory = guest_path(root, startup["WorkingDir"])
+    if not directory.is_dir():
+        raise InvalidTemplate("WORKDIR does not exist in image")
+    env = dict(item.split("=", 1) for item in startup["Env"])
+    argv = startup["Entrypoint"] + startup["Cmd"]
+    if len(argv) > 256 or (argv and not argv[0]):
+        raise InvalidTemplate("invalid startup argv")
+    if (any(len(key.encode()) + len(value.encode()) > 8192 for key, value in env.items())
+            or sum(len(key.encode()) + len(value.encode()) for key, value in env.items())
+            + sum(len(arg.encode()) for arg in argv) > 32 * 1024):
+        raise InvalidTemplate("startup defaults byte limit")
+    return {"env_vars": env, "user": selected[0], "workdir": startup["WorkingDir"], "argv": argv}
+
+
 def validate_request(request):
     expected = {"kind", "disk_mib", "min_free_mib", "max_input_bytes", "max_expanded_bytes", "max_entries",
                 "timeout_seconds", "max_log_bytes"}
@@ -303,6 +347,7 @@ def build(work, source, request, profile, *, guest_boot_id):
             commands.run([str(tools["umoci"]), "unpack", "--image", str(layout) + ":candidate", str(work / "bundle")])
             root = work / "bundle/rootfs"
             install_platform(root, tools["envd"], tools["busybox"])
+            defaults = runtime_defaults(root, startup)
             disk = work / "candidate.ext4"
             with disk.open("xb") as output:
                 output.truncate(request["disk_mib"] * MIB)
@@ -320,11 +365,11 @@ def build(work, source, request, profile, *, guest_boot_id):
                 raise InvalidTemplate("unexpected ext4 accounting")
             if free * 4096 < request["min_free_mib"] * MIB:
                 raise InvalidTemplate("candidate minimum free disk not met")
-            state = {"state": "candidate", "ready": False, **image, "startup": startup,
+            state = {"state": "candidate", "ready": False, **image, "startup": startup, "runtime_defaults": defaults,
                      "startup_applied": False, "rootfs_sha256": sha256(disk), "disk_bytes": disk.stat().st_size,
                      "free_bytes": free * 4096, "min_free_bytes": request["min_free_mib"] * MIB,
                      "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
-                     "requires": ["external VM cleanup", "startup defaults integration", "launch/envd/owner publish gate"]}
+                     "requires": ["external VM cleanup", "launch/envd/owner publish gate"]}
             disk.chmod(0o444)
     except BaseException as error:
         state = {"state": "failed", "ready": False, "error_type": type(error).__name__}

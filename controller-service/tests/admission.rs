@@ -54,6 +54,7 @@ fn template_options() -> CreateOptions {
     };
     CreateOptions {
         template: Some(TemplateBinding {
+            startup: None,
             template_id: "ubuntu-r1".into(),
             revision: "r1".into(),
             owner: None,
@@ -169,6 +170,71 @@ fn template_commit_freezes_identity_and_rejects_legacy_writers_after_reopen() {
         Err(AdmissionError::InvalidCreateOptions)
     ));
     assert_eq!(reopened.world().unwrap().sandbox_records().len(), 1);
+}
+
+#[test]
+fn startup_binding_is_frozen_and_schema_guard_never_downgrades() {
+    use sandproof_controller_service::templates::TemplateStartup;
+    let (directory, mut journal) = setup();
+    let mut options = template_options();
+    options.template.as_mut().unwrap().startup = Some(TemplateStartup {
+        env_vars: BTreeMap::new(),
+        user: "root".into(),
+        workdir: "/".into(),
+        argv: vec!["/bin/app".into(), "literal arg".into()],
+    });
+    journal
+        .admit_template_create(
+            request(10, 1),
+            template_admission(options.clone()),
+            compute_limits(),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+    let mut journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(
+        journal.create_options(core::SandboxId(10)).unwrap(),
+        options
+    );
+    let mut changed = options;
+    changed
+        .template
+        .as_mut()
+        .unwrap()
+        .startup
+        .as_mut()
+        .unwrap()
+        .argv
+        .push("different".into());
+    assert!(matches!(
+        journal.admit_template_create(
+            request(11, 1),
+            template_admission(changed),
+            compute_limits(),
+            &mut NeverCrash
+        ),
+        Err(AdmissionError::InvalidCreateOptions)
+    ));
+    let mut legacy = template_options();
+    legacy.template.as_mut().unwrap().template_id = "legacy-other".into();
+    journal
+        .admit_template_create(
+            request(11, 1),
+            template_admission(legacy),
+            compute_limits(),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let connection = rusqlite::Connection::open(directory.path().join("controller.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT version FROM controller_meta", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        9
+    );
 }
 
 #[test]
