@@ -101,7 +101,17 @@ impl ControllerJournal {
     /// # Errors
     /// Schema/root mismatch is a shared storage error, not an empty catalog.
     pub fn has_template_registry(&self) -> Result<bool, JournalError> {
-        Ok(self.journal.connection.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='template_publications'", [], |row| row.get::<_, i64>(0))? == 1)
+        let version: i64 = self.journal.connection.query_row(
+            "SELECT version FROM controller_meta WHERE id=1",
+            [],
+            |row| row.get(0),
+        )?;
+        let count: i64 = self.journal.connection.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('template_publications','template_aliases','template_registry_meta')", [], |row| row.get(0))?;
+        match (version, count) {
+            (10, 3) => Ok(true),
+            (1..=9, 0) => Ok(false),
+            _ => Err(JournalError::CorruptStore),
+        }
     }
 
     /// Explicit opt-in; V10 prevents old binaries bypassing publication resolution.
@@ -114,6 +124,7 @@ impl ControllerJournal {
         if !config.is_valid() {
             return Err(JournalError::Conflict);
         }
+        self.has_template_registry()?;
         let tx = self
             .journal
             .connection

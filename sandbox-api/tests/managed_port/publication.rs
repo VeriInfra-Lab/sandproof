@@ -88,6 +88,38 @@ fn make_port(directory: &TempDir, host: FakeHost, store: CandidateStore) -> Mana
 const ONE: &str = "00000000000000000000000000000001";
 const TWO: &str = "00000000000000000000000000000002";
 
+#[test]
+fn artifact_byte_budget_boundary_and_partial_schema_cannot_be_silently_reset() {
+    let directory = TempDir::new().unwrap();
+    let store = store(&directory);
+    stage(&store, ONE, 1);
+    let value = store.candidate(1, ONE).unwrap();
+    let size = value.binding.kernel.size_bytes + value.binding.rootfs.size_bytes;
+    let mut limits = store.config().clone();
+    limits.max_artifact_bytes_per_tenant = size - 1;
+    let path = directory.path().join("controller.db");
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    journal.enable_template_registry(&limits).unwrap();
+    assert!(!journal.begin_template_publication(&value, &limits).unwrap());
+    limits.max_artifact_bytes_per_tenant = size;
+    assert!(journal.begin_template_publication(&value, &limits).unwrap());
+    drop(journal);
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute("DROP TABLE template_aliases", [])
+        .unwrap();
+    drop(connection);
+    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    assert!(matches!(
+        journal.has_template_registry(),
+        Err(JournalError::CorruptStore)
+    ));
+    assert!(matches!(
+        journal.enable_template_registry(&limits),
+        Err(JournalError::CorruptStore)
+    ));
+}
+
 #[tokio::test]
 #[expect(
     clippy::too_many_lines,
