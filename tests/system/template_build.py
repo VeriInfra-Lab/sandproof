@@ -172,7 +172,10 @@ def exercise(args):
     owner = options(key, url, url)
     process, active, complete, evidence = None, [], False, []
     def no_resources():
-        check_no_resources(root, namespace, firecracker, args.uid_base)
+        if (root / "jails/.claims").is_dir():
+            check_no_resources(root, namespace, firecracker, args.uid_base)
+        for parent in (root / "jails", Path("/run/netns"), Path("/sys/fs/cgroup")):
+            assert not list(parent.rglob(f"vm-{namespace}-*")), "test resource remains"
         assert not processes_in_uid_range(args.uid_base, args.uid_base + identity_count)
     request = {"kind": "dockerfile", "disk_mib": 1024, "min_free_mib": 64,
                "max_input_bytes": 256 * MIB, "max_expanded_bytes": 512 * MIB, "max_entries": 10000,
@@ -394,6 +397,40 @@ def exercise(args):
                                      "-fs", "--max-time", "5", "-K", "-"], input=curl_config, text=True, capture_output=True)
             assert result.returncode == 0, "private guest observation failed"
             return result.stdout
+        if args.registry:
+            # Activation succeeded physically, but the publisher never durably
+            # confirmed validation. Recovery may NOT turn that into Ready.
+            pending = staging()
+            stop_server(process)
+            process = start_server(binary,config,root / "server.log","activate_vm")
+            wait_ready(opener,url,key,process)
+            interrupted_request(lambda: publication(pending),process)
+            with sqlite3.connect(root / "db/controller.db") as database:
+                saved = json.loads(database.execute("SELECT record_json FROM template_publications WHERE candidate_id=?",(pending,)).fetchone()[0])
+                identities = database.execute("SELECT count(*) FROM sandboxes").fetchone()[0]
+            assert saved["state"] == "checking" and saved["checked"] is False
+            sandbox_id = f'sb-{namespace}-{saved["validation_sandbox"]}'
+            record = next(
+                json.loads(p.read_text()) for p in (root / "state/startup").glob("*.json")
+                if json.loads(p.read_text())["sandbox"] == saved["validation_sandbox"])
+            name = f'vm-{namespace}-{record["vm"]}'
+            assert startup_count(name,sandbox_id) == "started\n"
+            process = start_server(binary,config,root / "server.log",None)
+            wait_ready(opener,url,key,process)
+            assert fetch(opener,url,"GET","/sandboxes/" + sandbox_id,key)[0] == 404
+            assert startup_count(name,sandbox_id) == "started\n", "validation startup replayed"
+            deadline = time.monotonic() + 60
+            state = publication(pending)["state"]
+            while state == "checking":
+                assert time.monotonic() < deadline
+                time.sleep(0.2)
+                state = publication(pending)["state"]
+            assert state == "failed", "unconfirmed validation became Ready"
+            with sqlite3.connect(root / "db/controller.db") as database:
+                assert database.execute("SELECT count(*) FROM sandboxes").fetchone()[0] == identities
+            no_resources()
+            evidence.append({"kind": "publication-unconfirmed", "never_ready": True,
+                             "internal_session_hidden": True, "no_reprobe": True, "exact_cleanup": True})
         for window in ("confirmed", "unknown"):
             stop_server(process)
             process = start_server(binary, config, root / "server.log", "activate_vm" if window == "confirmed" else None,
@@ -456,7 +493,7 @@ def exercise(args):
         assert original == [sha256_file(path) for path in (args.kernel, args.rootfs)]
         complete = True
         print(json.dumps({"source_commit": commit, "server_sha256": sha256_file(binary), "namespace": namespace,
-                          "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": 12 if args.registry else 8, "evidence": evidence,
+                          "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": 13 if args.registry else 8, "evidence": evidence,
                           "scope": "formal publication/registry with offline synthetic builder fixture" if args.registry else
                           "offline synthetic fixture with defaults and argv dispatch; no public OCI, user API or production Ready gate"}))
     finally:
@@ -466,8 +503,11 @@ def exercise(args):
         # Recover only identities in this fresh private journal, not global VM
         # names or a Running-only list. Never allocate a replacement create.
         try:
-            with sqlite3.connect(root / "db/controller.db") as database:
-                identities = [row[0] for row in database.execute("SELECT sandbox_id FROM sandboxes")]
+            identities = []
+            if (root / "db/controller.db").is_file():
+                with sqlite3.connect("file:" + str(root / "db/controller.db") + "?mode=ro",uri=True) as database:
+                    if database.execute("SELECT count(*) FROM sqlite_master WHERE name='sandboxes'").fetchone()[0]:
+                        identities = [row[0] for row in database.execute("SELECT sandbox_id FROM sandboxes")]
             for identity in identities:
                 assert identity.startswith("sb-" + namespace + "-")
                 try:

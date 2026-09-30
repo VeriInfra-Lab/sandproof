@@ -37,7 +37,7 @@ def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib):
     root, kernel, disk = map(Path, (root, kernel, disk))
     for path in (root, root / "inbox", root / "artifacts"):
         private_directory(path)
-    if (type(owner) is not int or not 0 < owner < 2**63 or type(cpu) is not int or not 1 <= cpu <= 255
+    if (type(owner) is not int or not 0 < owner < 2**64 or type(cpu) is not int or not 1 <= cpu <= 255
             or type(memory_mib) is not int or not 128 <= memory_mib <= 2**32 - 1
             or type(host_memory_mib) is not int or not memory_mib < host_memory_mib <= 2**32 - 1):
         raise ValueError("invalid owner/resource shape")

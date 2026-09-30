@@ -49,7 +49,7 @@ class StagingTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 stage(self.root, self.kernel, self.disk, status, 1, 1, 256, 384)
         for owner, cpu, memory, host in ((0, 1, 256, 384), (1, 256, 256, 384),
-                                       (1, 1, 127, 384), (1, 1, 256, 256), (True, 1, 256, 384)):
+                                       (1, 1, 127, 384), (1, 1, 256, 256), (True, 1, 256, 384), (2**64, 1, 256, 384)):
             with self.assertRaises(ValueError):
                 stage(self.root, self.kernel, self.disk, self.status, owner, cpu, memory, host)
         self.assertEqual(list((self.root / "inbox").iterdir()), [])
