@@ -30,7 +30,7 @@ CONTEXT_COMMAND = (
 def defaults(index):
     return {'env_vars': {'TEMPLATE_MARKER': f'template-{index}', 'LAYERED': f'image-{index}'},
             'user': 'ubuntu' if index == 0 else 'root',
-            'workdir': '/tmp' if index == 0 else '/var/tmp',
+            'workdir': '/tmp' if index == 0 else '/',
             'argv': ['/bin/sh', '-c', START_SCRIPT, 'template-entry', 'literal space', LITERAL_ARG]}
 
 
@@ -83,9 +83,12 @@ async def exercise(sandbox, startup, instance):
     expected = expected_context(startup, instance)
     assert await command_context(sandbox) == expected + ['unset']
     other = 'root' if startup['user'] == 'ubuntu' else 'ubuntu'
-    actual = await command_context(sandbox, user=other, cwd='/var/tmp',
+    # Both directories are part of the approved boot environment. Minimal
+    # Ubuntu images need not contain /var/tmp, and a missing cwd must fail.
+    request_cwd = '/' if startup['workdir'] == '/tmp' else '/tmp'
+    actual = await command_context(sandbox, user=other, cwd=request_cwd,
                                    envs={'LAYERED': 'request-value', 'ONLY_REQUEST': 'one-call'})
-    assert actual == [other, home(other), '/var/tmp', expected[3], 'request-value', instance, 'one-call']
+    assert actual == [other, home(other), request_cwd, expected[3], 'request-value', instance, 'one-call']
     # Per-request overrides must not mutate envd defaults for the next call.
     assert await command_context(sandbox) == expected + ['unset']
     files = await check_files(sandbox, startup, instance, sdk)
