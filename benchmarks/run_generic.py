@@ -21,7 +21,8 @@ async def run_selected(args, lock):
     entries = {t['name']: t for t in lock['tasks']}
     if not selected or not selected <= entries.keys():
         raise InvalidInput('select task names from the complete locked task set')
-    rows = [{'name': t['name'], 'status': 'not_run', 'reason': 'not_selected'} for t in lock['tasks']]
+    rows = [{'name': t['name'], 'status': 'not_run',
+             'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
     def report():
         (args.output / 'full-set.json').write_text(json.dumps({
             'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
@@ -35,26 +36,34 @@ async def run_selected(args, lock):
         def factory(*, recipe, **kwargs):
             return GenericEnvironment(entry=entry, source=args.source, source_kind=args.source_kind,
                                       build_url=args.build_url, start_audit=getattr(args, 'start_audit', None), **kwargs)
+        row = {'name': name, 'status': 'runner_error', 'oracle': 'not_run', 'verifier': 'not_run',
+               'exact_cleanup': 'unknown'}
         try:
             row = await run_task(args, entry, {}, environment_factory=factory)
+        except asyncio.CancelledError:
+            row.update(status='interrupted', interrupted=True)
+            raise
         except Exception as error:
-            # Pure constructor/preflight failures precede all dispatch. Keep
-            # rejected tasks in the full report rather than dropping them.
-            row = {'name': name, 'status': 'failed', 'stage': 'preflight',
-                   'error_type': type(error).__name__, 'oracle': 'not_run', 'verifier': 'not_run'}
+            # An unexpected runner error is not evidence of a pre-dispatch
+            # refusal. Keep its identity/evidence and stop the suite for audit.
+            row['error_type'] = type(error).__name__
         finally:
             # Cancellation must still retain this trial in the complete report.
             result = args.output / name / 'result.json'
             if result.exists():
-                observed = json.loads(result.read_text())
-                rows = [observed if r['name'] == name else r for r in rows]
+                row = json.loads(result.read_text())
+            rows = [row if r['name'] == name else r for r in rows]
             report()
         rows = [row if r['name'] == name else r for r in rows]
         report()
         build_state = (row.get('build') or {}).get('state')
-        if (row['status'] in ('create_unknown', 'cleanup_unknown')
+        if (row['status'] in ('create_unknown', 'cleanup_unknown', 'runner_error')
                 or (row.get('build_dispatched') and build_state not in ('Ready', 'Failed'))):
             # Do not create more resources while the previous identity is uncertain.
+            for remaining in rows:
+                if remaining['name'] in selected and remaining['status'] == 'not_run':
+                    remaining['reason'] = 'previous_identity_requires_audit'
+            report()
             break
     return rows
 

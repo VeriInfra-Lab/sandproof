@@ -215,9 +215,14 @@ def exercise(args):
                     phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
                 if any(p != 'Destroyed' for p in phases):
                     raise RuntimeError('durable terminal cleanup incomplete')
-                check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * 100)
-                for claim in (root / str(i) / 'jails/.claims').iterdir():
-                    audit_gone(root / str(i), firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
+                claims = root / str(i) / 'jails/.claims'
+                if claims.exists():
+                    check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * 100)
+                    for claim in claims.iterdir():
+                        audit_gone(root / str(i), firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
+                else:
+                    for parent in (root / str(i) / 'jails', Path('/run/netns'), Path('/sys/fs/cgroup')):
+                        assert not list(parent.rglob(f'vm-{namespaces[i]}-*'))
             if processes_in_uid_range(args.uid_base, args.uid_base + 199):
                 raise RuntimeError('exact pool UID process remains')
             for row in current:

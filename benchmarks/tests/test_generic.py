@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from benchmarks.generic_environment import archive_context, build_request, GenericEnvironment, validate_template
+from benchmarks.run_generic import run_selected
 from tools.benchmark_tasks import InvalidInput
 
 
@@ -124,6 +125,35 @@ class GenericInputTests(unittest.TestCase):
             self.assertNotIn('cpu_count', create.call_args.kwargs)
             self.assertEqual(env.sandbox_id, 'sb-exact')
             env.exec.assert_awaited_once_with('test ! -e /solution && test ! -e /tests', cwd='/', user='root', timeout_sec=30)
+
+
+class GenericSuiteTests(unittest.TestCase):
+    def test_unknown_identity_stops_suite_without_dropping_other_tasks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=False, task=['a', 'b'],
+                                   source_kind='dockerfile', build_url='http://127.0.0.1:1')
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b', 'c')]}
+            first = {'name': 'a', 'status': 'create_unknown', 'sandbox_id': None}
+            with patch('benchmarks.run_generic.run_task', AsyncMock(return_value=first)) as trial:
+                rows = asyncio.run(run_selected(args, lock))
+            trial.assert_awaited_once()
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(rows[1]['reason'], 'previous_identity_requires_audit')
+            self.assertEqual(rows[2]['reason'], 'not_selected')
+            self.assertEqual(json.loads((Path(tmp) / 'full-set.json').read_text())['tasks'], rows)
+
+    def test_cancelled_trial_with_missing_report_is_interrupted_not_not_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=False, task=['a'],
+                                   source_kind='dockerfile', build_url='http://127.0.0.1:1')
+            lock = {'source': {}, 'tasks': [{'name': 'a'}, {'name': 'b'}]}
+            with patch('benchmarks.run_generic.run_task', AsyncMock(side_effect=asyncio.CancelledError())):
+                with self.assertRaises(asyncio.CancelledError):
+                    asyncio.run(run_selected(args, lock))
+            rows = json.loads((Path(tmp) / 'full-set.json').read_text())['tasks']
+            self.assertEqual(rows[0]['status'], 'interrupted')
+            self.assertEqual(rows[0]['exact_cleanup'], 'unknown')
+            self.assertEqual(rows[1]['status'], 'not_run')
 
 
 if __name__ == '__main__':

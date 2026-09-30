@@ -169,7 +169,7 @@ class Backend:
         return self.vm(row)["cleanupComplete"]
 
     def build(self, store, row):
-        from e2b import Sandbox, CommandExitException
+        from e2b import Sandbox, CommandExitException, FileNotFoundException
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
         vm = self.vm(row, create=True)
@@ -220,15 +220,24 @@ class Backend:
         boot = command("cat /proc/sys/kernel/random/boot_id").stdout.strip()
         if not re.fullmatch(r"[0-9a-f-]{36}", boot):
             raise BuildError(502, "InvalidBuildVmIdentity")
+        worker_error_log = None
         try:
             command("python3 /input/template_worker.py --work /output/job --source /input/source --request /input/request.json --profile /input/profile.json --guest-boot-id " + boot, worker["timeout_seconds"])
-        except CommandExitException:
-            pass  # Read bounded status/logs; never expose an unbounded exception.
+        except CommandExitException as error:
+            # Early guest guards can fail before creating status.json. Retain
+            # only bounded command output, never stringify the SDK exception.
+            worker_error_log = ((error.stdout or '') + (error.stderr or '')).encode()[:min(65536, store.limits['max_log_bytes'])]
         # Read only opaque bytes, never mount/unpack guest output on the host.
         def download(name, limit, exact=None):
             with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=max(1, row["deadline"] - store.clock())) as incoming:
                 return durable_write(directory / name, incoming, limit, exact=exact)
-        download("status.json", 128 * 1024)
+        try:
+            download("status.json", 128 * 1024)
+        except FileNotFoundException:
+            if worker_error_log is None:
+                raise
+            durable_write(directory / 'build.log', [worker_error_log], store.limits['max_log_bytes'])
+            raise BuildError(422, 'WorkerPreflightFailed') from None
         status = json.loads((directory / "status.json").read_text())
         total_log = bytearray()
         for name in ("build.log", "daemon.log"):
