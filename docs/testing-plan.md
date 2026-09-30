@@ -38,6 +38,8 @@ S13 新范围由 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)/#6
 
 提交 `3a42d7a09fc9c1e823f01a066add9fd78e232068` 已通过该实验（六台 VM）、基础检查、新输入/执行预算单元测试和 Linux 固定 SDK 网关组合；失败尝试的原因与原身份清理也保留在[基线](../references/v1-baseline.json)的 `isolated_template_candidate_acceptance`。候选仍不就绪；ENV/USER/WORKDIR/CMD 接入和用户自助发布尚未验收，不把这条离线实验说成完整模板服务。
 
+提交 `a11b4cc797238c6ce8407113e6f29d8063ca0bc3` 已通过新增默认值和两处启动回执故障的完整实验（八台 VM），详细摘要、范围及失败断言修正见同一[基线](../references/v1-baseline.json)的 `template_startup_acceptance`。构建候选仍不自动发布；应用健康、自助构建服务、生产独立构建预算和通用原任务链未验收。此证据不取代先前提交的限定记录或新增 Lean 证明。
+
 #99 第 1 项以 S07–S09、S11 的编号边界为验收范围：[服务组件回归](../sandbox-api/tests/managed_port.rs)反复创建并销毁后保留最后一台运行实例，确认编号耗尽拒绝不撤销它的命令/文件权限，同配置重启后仍可使用和销毁；[宿主纯检查](../sandbox-node/src/identity.rs)覆盖编号转换、UID 保留值、加法溢出与合法配置端点。[实机入口](../tests/system/server_vm_id_capacity.py)使用 `max_vm_id=2`、固定 SDK 和新 base，核对三台 VM、拒绝前后完整数据库与宿主记录不变、原 VM 跨重启的进程身份和命令/文件访问，以及最终精确资源清理。脚本是否通过以[版本基线](../references/v1-baseline.json)的提交和实测记录为准，不把单元测试当作实机证据。
 
 S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IPv6 与其他 DNS 出站路径。若将来启用受控解析器，须用随机子域名、TXT/NS、委托链和携带数据的查询证明不会经解析器访问未授权外部服务；只固定解析器 IP 不算通过。
