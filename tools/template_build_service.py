@@ -167,14 +167,18 @@ class Backend:
 
     def build(self, store, row):
         from e2b import Sandbox, CommandExitException
+        from e2b.connection_config import ConnectionConfig
+        from packaging.version import Version
         vm = self.vm(row, create=True)
         session = vm.get("session")
         if session is None:
             raise BuildError(502, "BuildVmLaunchUnknown")
         url = "http://" + self.config["builder"]["bind"]
-        sandbox = Sandbox(sandbox_id=session["sandboxID"], envd_version=session["envdVersion"],
-            envd_access_token=session["envdAccessToken"], api_url=url, sandbox_url=url,
-            domain=self.config["builder"]["domain"], api_key=self.builder_key, retries=0, request_timeout=30)
+        connection = ConnectionConfig(api_url=url, sandbox_url=url,
+            domain=self.config["builder"]["domain"], api_key=self.builder_key, retries=0, request_timeout=30,
+            extra_sandbox_headers={"X-Access-Token": session["envdAccessToken"]})
+        sandbox = Sandbox(sandbox_id=session["sandboxID"], sandbox_domain=self.config["builder"]["domain"],
+            envd_version=Version(session["envdVersion"]), envd_access_token=session["envdAccessToken"], connection_config=connection)
         request = json.loads(row["request"])
         directory = store.directory(row["id"])
         def command(value, timeout=30):
@@ -339,7 +343,7 @@ class Supervisor:
                     status = self.backend.build(self.store, row)
                     self.store.change(job, "Cleaning", candidate=status)
                 except Exception as error:
-                    reason = error.reason if isinstance(error, BuildError) else "BuildOrTransportFailed"
+                    reason = error.reason if isinstance(error, BuildError) else "BuildOrTransportFailed:" + type(error).__name__[:64]
                     self.store.change(job, "Cleaning", failure=reason)
                 self.finish(self.store.get(job))
             elif state in ("Cleaning", "CleanupUnknown"):
