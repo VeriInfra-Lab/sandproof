@@ -161,7 +161,7 @@ def guest_path(root, name):
     return root.joinpath(*current)
 
 
-def install_platform(root, envd, busybox):
+def install_platform(root, envd, busybox, dns_servers=None):
     release = guest_path(root, "/etc/os-release")
     if release.stat().st_size > 8192:
         raise InvalidTemplate("os-release limit")
@@ -196,6 +196,13 @@ def install_platform(root, envd, busybox):
         raise InvalidTemplate("unsafe inittab target")
     inittab.write_text(INITTAB)
     inittab.chmod(0o644)
+    if dns_servers:
+        resolver = etc / "resolv.conf"
+        if resolver.exists() and resolver.is_dir():
+            raise InvalidTemplate("resolv.conf is a directory")
+        resolver.unlink(missing_ok=True)  # replace container link, not its target
+        resolver.write_text("".join("nameserver " + v + "\n" for v in dns_servers))
+        resolver.chmod(0o644)
     for name in ("/proc", "/sys", "/dev", "/run", "/tmp"):
         path = guest_path(root, name)
         if path != root / name.lstrip("/"):
@@ -249,7 +256,7 @@ def runtime_defaults(root, startup):
 def validate_request(request):
     expected = {"kind", "disk_mib", "min_free_mib", "max_input_bytes", "max_expanded_bytes", "max_entries",
                 "timeout_seconds", "max_log_bytes"}
-    if set(request) != expected or request["kind"] not in ("dockerfile", "oci"):
+    if set(request) - {"dns_servers"} != expected or request["kind"] not in ("dockerfile", "oci", "oci-reference"):
         raise InvalidTemplate("invalid worker request")
     bounds = {"disk_mib": (512, 32768), "min_free_mib": (16, 32768),
               "max_input_bytes": (1, 8 * 1024 * MIB), "max_expanded_bytes": (10240, 32 * 1024 * MIB),
@@ -259,6 +266,16 @@ def validate_request(request):
             raise InvalidTemplate("invalid budget: " + field)
     if request["min_free_mib"] >= request["disk_mib"]:
         raise InvalidTemplate("minimum free disk must be smaller than total")
+    if "dns_servers" in request:
+        import ipaddress
+        dns = request["dns_servers"]
+        if not isinstance(dns, list) or not 1 <= len(dns) <= 2:
+            raise InvalidTemplate("invalid platform DNS")
+        try:
+            if any(not ipaddress.IPv4Address(v).is_global for v in dns):
+                raise InvalidTemplate("invalid platform DNS")
+        except ValueError as error:
+            raise InvalidTemplate("invalid platform DNS") from error
 
 
 def check_tools(profile):
@@ -306,8 +323,14 @@ def build(work, source, request, profile, *, guest_boot_id):
             commands = Commands(time.monotonic() + request["timeout_seconds"], log, request["max_log_bytes"])
             limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
             layout = work / "oci"
-            if request["kind"] == "dockerfile":
-                extract_context(source, work / "context", **limits)
+            if request["kind"] in ("dockerfile", "oci-reference"):
+                if request["kind"] == "dockerfile":
+                    extract_context(source, work / "context", **limits)
+                else:
+                    from template_build_store import public_image
+                    image_reference = public_image(bounded_json(source)["image"])
+                    (work / "context").mkdir(mode=0o700)
+                    (work / "context/Dockerfile").write_text("FROM " + image_reference + "\n")
                 address = "unix://" + str(work / "buildkit.sock")
                 daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
                                        "--oci-worker=true",
@@ -346,7 +369,7 @@ def build(work, source, request, profile, *, guest_boot_id):
             (layout / "index.json").write_text(json.dumps(index))
             commands.run([str(tools["umoci"]), "unpack", "--image", str(layout) + ":candidate", str(work / "bundle")])
             root = work / "bundle/rootfs"
-            install_platform(root, tools["envd"], tools["busybox"])
+            install_platform(root, tools["envd"], tools["busybox"], request.get("dns_servers"))
             defaults = runtime_defaults(root, startup)
             disk = work / "candidate.ext4"
             with disk.open("xb") as output:

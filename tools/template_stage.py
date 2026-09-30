@@ -33,7 +33,7 @@ def file_hash(path):
     return digest.hexdigest()
 
 
-def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib):
+def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id=None):
     root, kernel, disk = map(Path, (root, kernel, disk))
     for path in (root, root / "inbox", root / "artifacts"):
         private_directory(path)
@@ -56,8 +56,23 @@ def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib):
             raise ValueError("regular artifact required")
     if disk.stat().st_size != status["disk_bytes"] or file_hash(disk) != status.get("rootfs_sha256"):
         raise ValueError("candidate disk mismatch")
-    candidate = secrets.token_hex(16)
+    candidate = candidate_id or secrets.token_hex(16)
+    if not isinstance(candidate, str) or len(candidate) != 32 or any(c not in "0123456789abcdef" for c in candidate):
+        raise ValueError("invalid candidate identity")
     final = root / "inbox" / candidate
+    if final.exists():
+        private_directory(final)
+        manifest = json.loads((final / "manifest.json").read_text())
+        binding = manifest["binding"]
+        if (binding["owner"] != owner or binding["template_id"] != "tpl-" + candidate
+                or binding["resources"] != {"cpu_count": cpu, "memory_mib": memory_mib,
+                    "disk_bytes": status["disk_bytes"], "host_memory_bytes": host_memory_mib * 1024 * 1024}
+                or binding["startup"] != status["runtime_defaults"] or manifest["image_digest"] != digest
+                or manifest["min_free_bytes"] != status["min_free_bytes"]
+                or file_hash(final / "rootfs.ext4") != status["rootfs_sha256"]
+                or file_hash(final / "kernel") != file_hash(kernel)):
+            raise ValueError("staged identity conflict")
+        return candidate
     pending = Path(tempfile.mkdtemp(prefix=".stage-", dir=root / "inbox"))
     try:
         artifacts = {}

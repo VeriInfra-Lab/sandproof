@@ -305,6 +305,7 @@ pub struct ManagedPort<H: HostAdapter> {
     config: ManagedConfig,
     templates: Option<TemplateCatalog>,
     registry: Option<CandidateStore>,
+    internal_build_vms: bool,
     _evidence: PhantomData<fn() -> H::Evidence>,
 }
 
@@ -787,6 +788,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             config,
             templates: None,
             registry: None,
+            internal_build_vms: false,
             _evidence: PhantomData,
         }
     }
@@ -828,6 +830,70 @@ impl<H: HostAdapter> ManagedPort<H> {
             .map_err(map_journal)?;
         self.registry = Some(store);
         Ok(self)
+    }
+
+    /// Enable only on a separately configured private build pool.
+    #[must_use]
+    pub fn with_internal_build_vms(mut self, enabled: bool) -> Self {
+        self.internal_build_vms = enabled;
+        self
+    }
+
+    fn build_vm_locked(
+        &self,
+        inner: &Inner<H>,
+        tenant: core::TenantId,
+        id: &str,
+        request: Option<&crate::BuildVmRequest>,
+    ) -> Result<Option<crate::BuildVmView>, PortError> {
+        for (sandbox, record) in inner
+            .journal
+            .world()
+            .map_err(map_journal)?
+            .sandbox_records()
+        {
+            if record.owner != tenant {
+                continue;
+            }
+            let sandbox = *sandbox;
+            let options = inner
+                .journal
+                .create_options(sandbox)
+                .map_err(map_admission)?;
+            if options
+                .metadata
+                .get("_sandproof_build_id")
+                .map(String::as_str)
+                != Some(id)
+            {
+                continue;
+            }
+            if let Some(request) = request
+                && options.metadata.get("_sandproof_build_request")
+                    != Some(&format!(
+                        "{}:{}",
+                        request.timeout, request.allow_internet_access
+                    ))
+            {
+                return Err(PortError::Invalid);
+            }
+            return Ok(Some(crate::BuildVmView {
+                sandbox_id: inner
+                    .journal
+                    .sandbox_id(sandbox)
+                    .map_err(map_journal)?
+                    .as_str()
+                    .into(),
+                state: format!("{:?}", record.phase),
+                cleanup_complete: record.phase == core::Phase::Destroyed,
+                session: if record.phase == core::Phase::Running {
+                    self.session(inner, tenant, sandbox).ok()
+                } else {
+                    None
+                },
+            }));
+        }
+        Ok(None)
     }
 
     fn resolve_template(
@@ -1286,6 +1352,57 @@ impl<H: HostAdapter> ManagedPort<H> {
 }
 
 impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
+    fn build_vm(
+        &self,
+        tenant: &str,
+        id: &str,
+        create: Option<crate::BuildVmRequest>,
+    ) -> Result<crate::BuildVmView, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::NotFound);
+        }
+        if !valid_candidate_id(id) {
+            return Err(PortError::Invalid);
+        }
+        let tenant = tenant_id(tenant)?;
+        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        if let Some(value) = self.build_vm_locked(&inner, tenant, id, create.as_ref())? {
+            return Ok(value);
+        }
+        let request = create.ok_or(PortError::NotFound)?;
+        if request.allow_internet_access && !self.config.public_ipv4_enabled {
+            return Err(PortError::Invalid);
+        }
+        let options = CreateOptions {
+            metadata: BTreeMap::from([
+                ("_sandproof_build_id".into(), id.into()),
+                (
+                    "_sandproof_build_request".into(),
+                    format!("{}:{}", request.timeout, request.allow_internet_access),
+                ),
+            ]),
+            template: self.resolve_template(&inner, tenant, "base")?,
+            ..CreateOptions::default()
+        };
+        let policy = if request.allow_internet_access {
+            core::NetworkPolicy::Ipv4 {
+                internet_access: true,
+                allow_out: Vec::new(),
+                deny_out: Vec::new(),
+            }
+        } else {
+            core::NetworkPolicy::DenyAll
+        };
+        let result =
+            self.create_locked(&mut inner, tenant, &options, policy, request.timeout, None);
+        // Even when the launch/response is lost, admission already contains the
+        // anchor. Subsequent requests find that identity, including tombstones.
+        if let Some(value) = self.build_vm_locked(&inner, tenant, id, None)? {
+            return Ok(value);
+        }
+        result?;
+        Err(PortError::OutcomeUnknown)
+    }
     fn publish_template(
         &self,
         tenant: &str,
@@ -1516,6 +1633,13 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
     }
 
     fn create(&self, tenant: &str, request: CreateRequest) -> Result<SandboxSession, PortError> {
+        if request
+            .metadata
+            .as_ref()
+            .is_some_and(|values| values.keys().any(|key| key.starts_with("_sandproof_")))
+        {
+            return Err(PortError::Invalid);
+        }
         let tenant = tenant_id(tenant)?;
         let policy = crate::network::selected_policy(&request)?;
         if (self.templates.is_none() && request.template_id != "base")

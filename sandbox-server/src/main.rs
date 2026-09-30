@@ -92,6 +92,9 @@ mod linux {
         templates: Option<TemplateCatalog>,
         #[serde(default)]
         template_registry: Option<sandproof_controller_service::template_registry::RegistryConfig>,
+        /// Private, separate build pool only; never enable on the runtime endpoint.
+        #[serde(default)]
+        internal_build_vms: bool,
     }
 
     fn default_timeout_secs() -> u64 {
@@ -711,6 +714,10 @@ mod linux {
         } else {
             ManagedPort::new(journal, NodeHost(node), managed)
         };
+        if config.internal_build_vms && config.template_registry.is_some() {
+            return Err("internal build pool cannot also publish templates".into());
+        }
+        let port = port.with_internal_build_vms(config.internal_build_vms);
         let port = Arc::new(if let Some(registry) = config.template_registry {
             port.with_registry(
                 sandproof_controller_service::template_registry::CandidateStore::new(registry, 0)?,

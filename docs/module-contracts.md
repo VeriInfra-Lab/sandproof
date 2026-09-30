@@ -40,9 +40,9 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 第一次接受预制模板会原子升级数据库到 V8；第一次接受含 `startup` 的模板升至 V9，后续接受旧模板不能降级。旧二进制不可打开对应新库；同库此后拒绝旧式无计算额度准入，关闭配置不能绕过资源账本。启用前须精确清理仍占用资源的旧无绑定实例，不猜测其历史 CPU/内存；它们仍可查询和销毁。模板目录不是构建状态库，不接收用户上传，也不管理镜像回收。
 
-[#123 的候选构建工作器](../tools/template_worker.py)是未接入公开服务的一次性工具：只由监督器在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。OCI 首批接受单一 linux/amd64 OCI tar/gzip 层，检查摘要和展开预算后由 umoci 处理 whiteout；多架构、设备节点、容器卷及其他压缩格式明确拒绝。上下文只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
+[#123 的候选构建工作器](../tools/template_worker.py)由[自助构建监督服务](../tools/template_build_service.py)在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。公开 OCI 经来宾 BuildKit 的 FROM 获取并导出 linux/amd64 OCI；原 OCI tar 工具入口保留。检查摘要和展开预算后由 umoci 处理 whiteout；不兼容架构/操作系统、设备节点、容器卷及其他压缩格式明确拒绝。上下文只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
 
-转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。自助构建请求/状态/日志服务、公开 OCI 获取和可靠构建恢复仍属于后续 #123。
+转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。平台 resolver 来自可信构建配置；这不是对来宾 root 的防修改承诺，目的地址限制仍由宿主 IPv4 规则强制，不新增域名过滤/IPv6。
 
 正式发布门由可信构建监督方确认构建 VM 回收后，用[登记准备工具](../tools/template_stage.py)将候选字节放入 root 独占 `template_registry.root/inbox/<候选编号>`。HTTP 客户端只给随机 32 位十六进制候选编号，不能给宿主路径、owner、修订或 Ready 标志；API key 决定 owner，受保护清单必须匹配。服务检查只读普通文件、单链接、长度/SHA-256、绑定路径、envd 版本，以及 ext4 实际可用空间（扣除保留块），不信任工作器自报空闲值。持久接受发布意图后原子移入同盘 `artifacts/<编号>`；模板编号 `tpl-<候选编号>`、修订 r1 和完整形状不可改，变更须新候选。历史数量与内核+磁盘字节有全局/租户上限；失败和未决记录仍占额。本批不提供模板垃圾回收；可信监督方负责暂存预算，后续公开构建服务须另外限制和清理暂存，发布额度不是完整构建配额。
 
@@ -50,7 +50,30 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 `template_registry` 为可选可信配置，字段为 `root`（root 独占绝对目录，预建 inbox/artifacts）、`max_templates_global`（1～256）、`max_templates_per_tenant`、`max_artifact_bytes_global`、`max_artifact_bytes_per_tenant` 和 `validation_timeout_secs`（1～300，且不超过运行上限）；租户上限须为正且不超过全局。必须同时配置 `templates` 和 `host_resources`。首次启用升至 V10，并持久绑定唯一根目录，此后生产服务不可关闭登记配置，旧二进制拒绝新库。目录、数据库和私有盘须同文件系统，清理余量观察才能覆盖这些写入。
 
-来源镜像摘要由可信监督方登记，用于追踪输入；服务独立复算实际内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。公开构建入口尚未交付，不能声称客户端现在已可提交任意 Dockerfile 自助完成全链路。
+登记的 imageDigest 是 BuildKit 导出的 OCI 清单摘要，不把可变公开 tag 说成固定来源摘要；需要固定来源时提交 `@sha256:`。服务独立复算内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。明确拒绝私有仓库凭据、任意宿主挂载、特权/GPU、多服务及不兼容镜像，不声称支持任意 Dockerfile。
+
+### 自助构建入口、部署与恢复
+
+本批实现的是显式启用的 Sandproof 扩展，不是原 E2B 模板构建 API。运行与构建使用两个 `sandproof-server`、不同数据库/命名空间/状态目录/jail/UID 范围/cgroup 父目录。构建控制器只有独占可信凭据，启用 `internal_build_vms=true`，不可同时启用模板登记。第三个[监督服务](../tools/template_build_service.py)监听回环，由可信 TLS 前端转发构建路径，复用运行服务的 API key/租户；用户不能拿到构建池凭据或 VM 会话。临时模板启动检查仍占运行额度。
+
+| 接口 | 输入与结果 |
+|---|---|
+| `POST /sandproof/template-builds` | `kind=dockerfile` 或 `kind=oci` 加公开 `image`；可选 `resources={cpuCount,memoryMiB,diskMiB,minFreeMiB}`、`timeoutSeconds`、`allowInternetAccess`；返回 202 与 buildID、state、deadline |
+| `PUT /sandproof/template-builds/{id}/context` | tar/tar.gz，根目录有 Dockerfile；须有 Content-Length；超额/不完整拒绝，成功后不能覆盖 |
+| `GET /sandproof/template-builds/{id}` | 仅本人；状态、有限失败原因；只有 Ready 返回完整模板编号/修订/摘要/形状 |
+| `GET /sandproof/template-builds/{id}/logs?offset=0&limit=65536` | 按字节位置读至多 64 KiB，带 nextOffset；总日志受配置限制；当前在来宾构建结束后获取，不保证实时尾随 |
+
+不接受 owner、Ready、宿主路径、工具或凭据字段；陌生/他人编号均 404。可选 `Idempotency-Key`（1～64 个字母/数字/下划线/连字符）按租户绑定规范化请求，相同重提返回原编号，不同内容 409；缺省每次是独立工作。公开引用不接受凭据、本地 transport、自定义端口或显式 IP；私网与宿主地址保护仍依赖既有包规则，字符串检查不代表 DNS 安全证明。
+
+监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、六项 `tools={名称:{path,sha256}}`、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。
+
+独立 SQLite 采用进程锁与 WAL/FULL；材料/候选先同步再记录阶段。历史数量、未决数和保守工作盘预留分别限额；失败/未知清理继续占预留。构建实际 CPU/RAM/VM 私有盘上限由独立 Rust 池执行，不借用运行额度；同盘检查及预留保护运行清理余量。配置/预算指纹持久绑定，变更须显式迁移，重启不能隐式换池。总期限从提交起算，Rust 池另强制 VM 寿命，不因重启续期。
+
+阶段为 `AwaitingInput → Queued → Building → Cleaning → Publishing → Ready/Failed`；观察不了原 VM 时为 `CleanupUnknown`，不释放预留或再建新 VM。私有 `/sandproof/internal-build-vms/{buildID}` 在准入同一事务保存 buildID/请求，GET 能查未启动和已销毁身份；重复 POST 包括墓碑都不建替代。普通 create 拒绝 `_sandproof_` 保留 metadata。
+
+重启后的 Building 不重执行用户步骤，只观察/精确回收原 VM 并报告 InterruptedBuild；完整候选已同步的 Cleaning 可继续收尾和同编号登记；Publishing 只推进原发布，不重构建。Ready 必须通过既有发布门及临时 VM 的精确回收。只有确认构建 VM 已销毁才删除本工作临时输入/候选并释放预留；有限日志/历史保留，正式产物由登记预算管理。本批不增加模板/历史垃圾回收、多构建节点、原 E2B 模板协议或 Harbor。
+
+普通用户用[小客户端](../tools/template_build_client.py)，凭据从 `SANDBOX_API_KEY` 读取：`--url https://构建服务 --context context.tar.gz` 或 `--image public.ecr.aws/docker/library/ubuntu:24.04`；收到模板编号后使用现有 E2B SDK create。原 SDK 的沙箱合同不变，模板 API/解析器仍不兼容。
 
 鉴权扩展接口：`POST /sandproof/template-publications` 接 `{candidateID}`；`GET /sandproof/template-publications/{candidateID}` 返回 checking/ready/failed 与有限原因；`GET /sandproof/templates` 只列本人 Ready，编号升序、limit 1～100、cursor 为上页最后不可变编号；`GET /sandproof/templates/{编号或别名}` 查询本人 Ready。`PUT /sandproof/template-aliases/{别名}` 接 `{templateID, expectedTemplateID?}`，可比较后更新，目标必须本人 Ready 编号；DELETE 只删本人别名，不删产物/实例绑定。静态目录名称保留；未知、未就绪和他人模板均不可创建。别名更新只影响新准入，旧实例/重启始终绑定原字节。响应不含宿主路径、临时 VM 编号或凭据。这是 Sandproof 发布扩展，不宣称原生 E2B 构建协议完全兼容。
 
