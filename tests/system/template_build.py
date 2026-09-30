@@ -174,7 +174,9 @@ def exercise(args):
     def no_resources():
         if (root / "jails/.claims").is_dir():
             check_no_resources(root, namespace, firecracker, args.uid_base)
-        for parent in (root / "jails", Path("/run/netns"), Path("/sys/fs/cgroup")):
+        # .claims intentionally retains stopped identity tombstones; inspect
+        # their PID/start time above, not their directory names as live VMs.
+        for parent in (root / "jails" / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
             assert not list(parent.rglob(f"vm-{namespace}-*")), "test resource remains"
         assert not processes_in_uid_range(args.uid_base, args.uid_base + identity_count)
     request = {"kind": "dockerfile", "disk_mib": 1024, "min_free_mib": 64,
