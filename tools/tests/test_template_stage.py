@@ -54,6 +54,18 @@ class StagingTests(unittest.TestCase):
                 stage(self.root, self.kernel, self.disk, self.status, owner, cpu, memory, host)
         self.assertEqual(list((self.root / "inbox").iterdir()), [])
 
+    def test_stable_identity_reclaims_interrupted_stage_and_checks_conflict(self):
+        candidate = "123456789abcdef0123456789abcdef0"
+        partial = self.root / "inbox" / (".stage-" + candidate)
+        partial.mkdir(mode=0o700)
+        (partial / "partial-copy").write_bytes(b"interrupted")
+        arguments = (self.root, self.kernel, self.disk, self.status, 1, 1, 256, 384)
+        self.assertEqual(stage(*arguments, candidate_id=candidate), candidate)
+        self.assertFalse(partial.exists())
+        self.assertEqual(stage(*arguments, candidate_id=candidate), candidate)
+        with self.assertRaisesRegex(ValueError, "conflict"):
+            stage(self.root, self.kernel, self.disk, self.status, 2, 1, 256, 384, candidate_id=candidate)
+
     def test_nonprivate_or_symlink_root_and_input_are_rejected(self):
         self.root.chmod(0o755)
         with self.assertRaises(ValueError):

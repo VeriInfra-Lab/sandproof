@@ -73,7 +73,14 @@ def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *
                 or file_hash(final / "kernel") != file_hash(kernel)):
             raise ValueError("staged identity conflict")
         return candidate
-    pending = Path(tempfile.mkdtemp(prefix=".stage-", dir=root / "inbox"))
+    if candidate_id:
+        pending = root / "inbox" / (".stage-" + candidate)
+        if pending.exists():
+            private_directory(pending)
+            shutil.rmtree(pending)  # interrupted copy, exact stable build ID
+        pending.mkdir(mode=0o700)
+    else:
+        pending = Path(tempfile.mkdtemp(prefix=".stage-", dir=root / "inbox"))
     try:
         artifacts = {}
         for name, source in (("kernel", kernel), ("rootfs.ext4", disk)):

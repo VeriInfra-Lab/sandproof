@@ -254,10 +254,28 @@ class Backend:
         request = json.loads(row["request"])
         status = json.loads(row["candidate"])
         resources = request["resources"]
-        candidate = stage(Path(config["template_registry"]["root"]), Path(config["kernel"]),
-            store.directory(row["id"]) / "candidate.ext4", status, row["owner"],
-            resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + 256, candidate_id=row["id"])
+        try:
+            candidate = stage(Path(config["template_registry"]["root"]), Path(config["kernel"]),
+                store.directory(row["id"]) / "candidate.ext4", status, row["owner"],
+                resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + 256, candidate_id=row["id"])
+        except ValueError:
+            raise BuildError(400, "CandidateStagingRejected") from None
         return self.request("runtime", "POST", "/sandproof/template-publications", {"candidateID": candidate}, owner=row["owner"])
+
+    def discard_unpublished(self, row):
+        # Call only after a definitive pre-admission refusal. A publication
+        # that exists belongs to the registry budget, never this cleanup.
+        try:
+            self.request("runtime", "GET", "/sandproof/template-publications/" + row["id"], owner=row["owner"])
+            return False
+        except BuildError as error:
+            if error.code != 404:
+                return False
+        path = Path(self.config["runtime"]["template_registry"]["root"]) / "inbox" / row["id"]
+        if path.exists():
+            private_directory(path)
+            shutil.rmtree(path)  # exact supervisor-generated candidate identity
+        return True
 
 
 class Supervisor:
@@ -333,8 +351,9 @@ class Supervisor:
                     if isinstance(error, BuildError) and error.code in (400, 409, 429):
                         # These rejections occur before admission; no running
                         # validation VM is hidden behind a refused publication.
-                        self.remove_inputs(job)
-                        self.store.change(job, "Failed", failure="PublicationRejected", release=True)
+                        if self.backend.discard_unpublished(row):
+                            self.remove_inputs(job)
+                            self.store.change(job, "Failed", failure="PublicationRejected", release=True)
                     # Publishing is idempotent on the immutable candidate ID.
                     # Unknown publication never rebuilds or allocates a new ID.
                     continue
@@ -468,7 +487,15 @@ def main():
     stop = threading.Event()
     def work():
         while not stop.is_set():
-            supervisor.tick()
+            try:
+                supervisor.tick()
+            except Exception:
+                # Shared journal/host cleanup failures cannot be hidden behind
+                # a live API accepting more work. VM expiry is independently
+                # enforced by the Rust pool even when this process exits.
+                print("build supervisor stopped: shared state unavailable", file=sys.stderr, flush=True)
+                server.shutdown()
+                return
             stop.wait(1)
     thread = threading.Thread(target=work, daemon=True)
     thread.start()
