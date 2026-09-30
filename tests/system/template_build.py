@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 
 from e2b import Sandbox, CommandExitException
@@ -35,6 +36,8 @@ BUILDKIT_HASHES = {
     "buildkitd": "bf5d521895dd4fafdd9bb8ba3316f90fe0eae07b795ba979bd74fee816b29991",
     "buildkit-runc": "ed94b57511421489ba02594bf311020bbdc4fbd229447f97e2734e50a3e7eeb0",
     "umoci": "b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71",
+    "busybox": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
+    "envd": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
 }
 FIXTURE = r"""import json, os, pathlib, shutil, subprocess, tarfile
 p=pathlib.Path('/input/context')
@@ -106,6 +109,7 @@ def exercise(args):
         raise RuntimeError("40 GiB test disk including cleanup reserve required")
     root = Path(tempfile.mkdtemp(prefix="tb-", dir=args.scratch_parent))
     namespace, key = secrets.token_hex(8), secrets.token_hex(32)
+    print(f"test root={root} namespace={namespace} commit={commit}", flush=True)
     for name in ("db", "state", "jails", "images", "inputs"):
         (root / name).mkdir(mode=0o700)
     binary = root / "server"
@@ -126,7 +130,8 @@ def exercise(args):
         "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 2, "max_active_per_tenant": 2,
         "max_disk_bytes_global": 24 * 1024 * MIB, "max_disk_bytes_per_tenant": 24 * 1024 * MIB,
-        "cleanup_reserve_bytes": 256 * MIB, "max_timeout_secs": 1200, "expiry_scan_seconds": 3600,
+        "cleanup_reserve_bytes": 256 * MIB, "max_timeout_secs": 1200,
+        "startup_timeout_secs": 40, "expiry_scan_seconds": 2,
         "templates": {"templates": [base], "aliases": {"base": "builder-base"},
                       "compute_limits": {"max_vcpus_global": 4, "max_vcpus_per_tenant": 4,
                                          "max_memory_bytes_global": 4608 * MIB, "max_memory_bytes_per_tenant": 4608 * MIB}},
@@ -161,9 +166,6 @@ def exercise(args):
             for name, digest in BUILDKIT_HASHES.items():
                 upload(builder, args.tools / name, "/input/tools/" + name)
                 profile[name] = {"path": "/input/tools/" + name, "sha256": digest}
-            for name, source in (("busybox", args.tools / "busybox"), ("envd", args.tools / "envd")):
-                upload(builder, source, "/input/tools/" + name)
-                profile[name] = {"path": "/input/tools/" + name, "sha256": sha256_file(source)}
             checked(builder, "chmod 755 /input/tools/*")
             for name in ("template_worker.py", "template_inputs.py"):
                 upload(builder, checkout / "tools" / name, "/input/" + name)
@@ -199,6 +201,10 @@ def exercise(args):
                     (root / "inputs" / (kind + "-" + name)).write_text(builder.files.read("/output/job/" + name))
             if kind in ("failure", "timeout"):
                 assert result.exit_code != 0 and status["state"] == "failed" and not status["ready"]
+                if kind == "timeout":
+                    assert status["error_type"] == "TimeoutError"
+                else:
+                    assert "exit code: 17" in (root / "inputs/failure-build.log").read_text()
                 assert not builder.files.exists("/output/job/candidate.ext4")
                 evidence.append({"kind": kind, "status": status})
             else:
@@ -257,6 +263,8 @@ def exercise(args):
                           "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": 6, "evidence": evidence,
                           "scope": "offline synthetic fixture; no public OCI, user API, startup defaults or production Ready gate"}))
     finally:
+        if not complete:
+            print("Exact failed-run artifacts retained: " + str(root), file=sys.stderr)
         # SDK create can fail after durable acceptance without returning an ID.
         # Recover only identities in this fresh private journal, not global VM
         # names or a Running-only list. Never allocate a replacement create.
@@ -271,13 +279,22 @@ def exercise(args):
                         raise RuntimeError("cleanup unconfirmed")
                 except Exception:
                     print("cleanup unknown for exact sandbox " + identity, file=sys.stderr)
-            no_resources()
+            # A Starting create may have no accepted kill yet. The ordinary
+            # startup deadline scanner must fail-close and reclaim it; this
+            # harness never changes journal rows or fabricates host receipts.
+            deadline = time.monotonic() + 50
+            while True:
+                try:
+                    no_resources()
+                    break
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.2)
         finally:
             stop_server(process)
         if complete:
             shutil.rmtree(root)
-        else:
-            print("Exact failed-run artifacts retained: " + str(root), file=sys.stderr)
 
 
 if __name__ == "__main__":
