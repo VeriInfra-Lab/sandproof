@@ -142,6 +142,8 @@ PyTorch 张量并行题保留原 TCPStore 默认后端、PyTorch 2.7.0、Gloo �
 
 Windows 3.11 初始化下载仍使用原 archive.org URL，按 8 MiB 分段、最多四条连接下载，核对每个 HTTP Content-Range、总长度及固定 SHA-256 后才发布完整文件。该摘要通过原站公开 SHA-1 核对取得；下载发生在题目初始化预算内，没有在 VM 中预填镜像，也没有延长 600 秒时限。失败不会留下可误用的半成品；下载证据写入 verifier 日志目录。通用下载辅助程序来自本仓库，只允许注册的 helper 标识上传。
 
+`fix-git` 的原 GitHub 源仓库匿名访问已返回 404。该题改在原初始化预算内下载题目声明的 `alexgshaw/fix-git:20251031` 初始化层，固定 amd64 清单 `sha256:61e431c00c58df652287aadce5457634d9f9330cfdd153ebdf2802df0d540119` 及层/pack 摘要。[来宾辅助程序](guest_git_fixture.py) 只读取原克隆的两个 Git pack 文件，以镜像 reflog 记录的初始提交重建临时只含源码的仓库，不导入镜像工作树、配置、hooks、后置任务提交或 reflog。原 `setup.sh` 摘要校验后完整执行，仅在该进程内把原 clone URL 映射到临时源码；结束即删除临时仓库。原解答、评分、资源及时限不变，来源证据写入 `fix-git-source.json`。这项恢复的实机结果单列，不覆盖源仓库失效时的失败记录。
+
 HTML 过滤题启用 pytest 的 `-s -v` 与非缓冲日志，保留每个浏览器批次的执行、异常与收尾信息。原测试先杀 ChromeDriver 再调用 quit，实际观察到浏览器及 crashpad 进程持续遗留；该题通过 Selenium 官方 `SE_CHROME_PATH` 设置选择[浏览器启动包装器](guest_chromium.py)。包装器不改变 Chromium 参数，使用 pidfd 观察驱动生命周期；驱动退出后回收独立进程组与自己收养的后代，并记录剩余数量。合成进程回归覆盖驱动死亡和脱离原 session 的后代，原浏览器实测另计。用例、断言和时间限制不变；原测试会吞掉部分浏览器异常，必须检查日志中的超时/浏览器失败，不能只用原 reward 声称所有浏览器场景实际通过。环境接口见 [Selenium Manager 官方说明](https://www.selenium.dev/documentation/selenium_manager/)。
 
 该题另外设置来宾 `net.ipv4.tcp_syn_retries=2`，让失联外部资源的 TCP 建连在原页面加载预算内返回失败；读取并保存实际值到 `tcp-connect-policy.json`，不修改宿主网络参数。相同页面的独立 VM 对照覆盖默认值与该设置，并保留真实弹窗阳性及干净页面阴性检查。此配置不改 HTML、浏览器参数、原评分或 20 秒页面时限，也不替换 HTTP 响应；外部子资源仍可能不可达，浏览器测试完成不表示这些远端内容也已被验证。参数含义见 [Linux 内核文档](https://docs.kernel.org/networking/ip-sysctl.html#tcp-syn-retries-integer)。

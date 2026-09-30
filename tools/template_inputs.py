@@ -187,20 +187,18 @@ def inspect_oci(layout, *, max_bytes, max_entries):
 
 
 def startup_config(config):
-    """Record, never silently discard, container startup defaults.
-
-    This candidate builder does NOT yet connect these defaults to /init or
-    launch CMD/ENTRYPOINT. The publish gate must implement that contract first.
-    """
+    """Retain OCI argv and defaults; normalization happens inside the build VM."""
     result = {}
     for field, fallback in (("Env", []), ("WorkingDir", "/"), ("User", "root"),
                             ("Entrypoint", []), ("Cmd", [])):
-        value = config.get(field) or fallback
+        value = config.get(field)
+        if value is None or value == "":
+            value = fallback
         if isinstance(fallback, list):
             if not isinstance(value, list) or len(value) > 256 or any(
-                    not isinstance(item, str) or "\x00" in item or len(item) > 8192 for item in value):
+                    not isinstance(item, str) or "\x00" in item or len(item.encode()) > 8192 for item in value):
                 raise InvalidTemplate("invalid container " + field)
-        elif not isinstance(value, str) or "\x00" in value or len(value) > 4096:
+        elif not isinstance(value, str) or "\x00" in value or len(value.encode()) > 4096:
             raise InvalidTemplate("invalid container " + field)
         result[field] = value
     image_path(result["WorkingDir"].lstrip("/")) if result["WorkingDir"] != "/" else None
