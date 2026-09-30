@@ -143,6 +143,9 @@ def exercise(args):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     owner = options(key, url, url)
     process, active, complete, evidence = None, [], False, []
+    def no_resources():
+        check_no_resources(root, namespace, firecracker, args.uid_base)
+        assert not processes_in_uid_range(args.uid_base, args.uid_base + 12)
     request = {"kind": "dockerfile", "disk_mib": 1024, "min_free_mib": 64,
                "max_input_bytes": 256 * MIB, "max_expanded_bytes": 512 * MIB, "max_entries": 10000,
                "timeout_seconds": 120, "max_log_bytes": 2 * MIB}
@@ -187,6 +190,12 @@ def exercise(args):
             except CommandExitException as error:
                 result = error
             status = json.loads(builder.files.read("/output/job/status.json"))
+            # Save bounded evidence before destroying the build VM, including
+            # failures. No public/user inputs or credentials in this fixture.
+            (root / "inputs" / (kind + "-status.json")).write_text(json.dumps(status))
+            for name in ("build.log", "daemon.log"):
+                if builder.files.exists("/output/job/" + name):
+                    (root / "inputs" / (kind + "-" + name)).write_text(builder.files.read("/output/job/" + name))
             if kind in ("failure", "timeout"):
                 assert result.exit_code != 0 and status["state"] == "failed" and not status["ready"]
                 assert not builder.files.exists("/output/job/candidate.ext4")
@@ -222,7 +231,7 @@ def exercise(args):
                 evidence.append({"kind": kind, "status": status})
             assert Sandbox.kill(builder.sandbox_id, **owner)
             active.remove(builder.sandbox_id)
-            check_no_resources(root, namespace, firecracker, args.uid_base)
+            no_resources()
             if kind in ("dockerfile", "oci"):
                 stop_server(process)
                 settings["templates"]["templates"].append(descriptor("candidate-" + kind, args.kernel, disk, 1, 256))
@@ -238,7 +247,7 @@ def exercise(args):
                 guest.files.write("/workspace/private", "not-in-template")
                 assert Sandbox.kill(guest.sandbox_id, **owner)
                 active.remove(guest.sandbox_id)
-                check_no_resources(root, namespace, firecracker, args.uid_base)
+                no_resources()
                 assert sha256_file(disk) == status["rootfs_sha256"]
         assert original == [sha256_file(path) for path in (args.kernel, args.rootfs)]
         complete = True
@@ -252,6 +261,7 @@ def exercise(args):
                     raise RuntimeError("cleanup unconfirmed")
             except Exception:
                 print("cleanup unknown for exact sandbox " + identity, file=sys.stderr)
+        no_resources()
         stop_server(process)
         if complete:
             shutil.rmtree(root)
