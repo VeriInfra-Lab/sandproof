@@ -1326,8 +1326,8 @@ impl LinuxWorker {
         let mut memory_mib = self.config.memory_mib;
         let mut host_resources = self.config.host_resources.clone();
         if let Some(template) = &secret.template {
-            kernel = template.kernel.path.clone();
-            rootfs = template.rootfs.path.clone();
+            kernel.clone_from(&template.kernel.path);
+            rootfs.clone_from(&template.rootfs.path);
             vcpu_count = template.resources.cpu_count;
             memory_mib = template.resources.memory_mib;
             host_resources

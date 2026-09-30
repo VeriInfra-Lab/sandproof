@@ -98,6 +98,9 @@ def exercise(args):
         raise RuntimeError("Firecracker socket path too long")
     for name in ("db", "state", "jails", "images"):
         (root / name).mkdir(mode=0o700)
+    binary = root / "sandproof-server"
+    shutil.copyfile(args.server.resolve(strict=True), binary)
+    binary.chmod(0o700)
     kernel, first_image, second_image = (root / "images" / name for name in ("vmlinux", "small.ext4", "large.ext4"))
     for source, destination in ((args.kernel, kernel), (args.rootfs, first_image), (args.second_rootfs, second_image)):
         subprocess.run(["/usr/bin/cp", "--reflink=auto", "--sparse=always", str(source), str(destination)], check=True)
@@ -132,7 +135,7 @@ def exercise(args):
     process = None
     completed = False
     try:
-        process = start_server(args.server.resolve(strict=True), config, root / "server.log", None)
+        process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         for token, name, expected in ((foreign_key, "chosen", 404), (key, "missing", 400)):
             before = durable_snapshot(database)
@@ -153,17 +156,32 @@ def exercise(args):
         stop_server(process)
         settings["templates"]["aliases"]["chosen"] = "large-r1"
         save_config()
-        process = start_server(args.server.resolve(strict=True), config, root / "server.log", None)
+        process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         assert [assert_shape(root, firecracker, args.cgroup_parent, sandbox, template) for sandbox, template in zip((small, large), templates)] == original_claims
         assert small.files.read("/tmp/template-marker") == "small-private"
         assert Sandbox.connect(small.sandbox_id, **owner).get_info().template_id == "small-r1"
         assert Sandbox.kill(large.sandbox_id, **owner)
+        # Changing an artifact after its first cached validation must invalidate
+        # that cache and fail before admission, without affecting the live VM.
+        with first_image.open("r+b") as image:
+            original_byte = image.read(1)
+            image.seek(0)
+            image.write(bytes([original_byte[0] ^ 1]))
+            image.flush()
+            os.fsync(image.fileno())
+        before = durable_snapshot(database)
+        assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "small-r1", "allow_internet_access": False})[0] == 503
+        assert durable_snapshot(database) == before
+        with first_image.open("r+b") as image:
+            image.write(original_byte)
+            image.flush()
+            os.fsync(image.fileno())
         # The original small image is no longer available. It must not prevent
         # restart/observation/stop of its already-running private VM.
         first_image.rename(first_image.with_suffix(".unavailable"))
         stop_server(process)
-        process = start_server(args.server.resolve(strict=True), config, root / "server.log", None)
+        process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         assert small.commands.run("printf old-binding-ok").stdout == "old-binding-ok"
         assert Sandbox.kill(small.sandbox_id, **owner)
@@ -172,7 +190,7 @@ def exercise(args):
         stop_server(process)
         settings["templates"]["templates"][1]["resources"]["cpu_count"] = 1
         save_config()
-        process = start_server(args.server.resolve(strict=True), config, root / "server.log", None)
+        process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         before = durable_snapshot(database)
         assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "chosen", "allow_internet_access": False})[0] == 400
@@ -180,7 +198,7 @@ def exercise(args):
         stop_server(process)
         settings["templates"]["templates"][1]["resources"]["cpu_count"] = 2
         save_config()
-        process = start_server(args.server.resolve(strict=True), config, root / "server.log", None)
+        process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         replacement = Sandbox.create(template="chosen", timeout=300, allow_internet_access=False, **owner)
         assert_shape(root, firecracker, args.cgroup_parent, replacement, templates[1])
@@ -194,7 +212,7 @@ def exercise(args):
         assert sha256_file(first_image.with_suffix(".unavailable")) == templates[0]["rootfs"]["sha256"]
         assert sha256_file(second_image) == templates[1]["rootfs"]["sha256"]
         completed = True
-        print(json.dumps({"source_commit": commit, "server_sha256": sha256_file(args.server),
+        print(json.dumps({"source_commit": commit, "server_sha256": sha256_file(binary),
                           "probe_sha256": sha256_file(Path(__file__)), "host_kernel": os.uname().release,
                           "sdk": "2.51.0", "templates": templates, "vms_destroyed": 3,
                           "result": "shapes/private files/owner/quota/immutable IDs/alias restart/source loss/precise cleanup passed",
