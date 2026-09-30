@@ -1671,5 +1671,102 @@
     "evidence_manifest_sha256": "2feada7904efd424e5e15d897ae48c4c0e9ba34a30cc0ffe08dbe7e777ab5b9f",
     "residuals": "三轮共十四个 VM 均按 PID/start、jail、netns inode、cgroup 和独占 UID 范围独立复核无残留；停止测试服务后导出脱敏证据，删除三个精确测试目录中的凭据/磁盘副本及各自空 cgroup。固定输入和其他实验保留。",
     "limits": "仅可信预制 Debian/Ubuntu 镜像、同步 SDK、禁网和两种选定失败；不覆盖用户自助构建/发布、转换后的 ENV/USER/CMD、恶意镜像全面验收、任意崩溃/掉电、长期性能容量、原题全集或新 Lean 证明。旧证据不自动升级到本提交；后续仅记录证据的提交不改实测生产/探针代码。"
+  },
+  "multi_template_startup_isolation_acceptance": {
+    "test": "tests/system/server_template_isolation.py",
+    "defaults_probe": "tests/system/sdk_template_defaults.py",
+    "private_root_probe": "tests/system/sdk_private_root.py",
+    "commit": "6b52eeffd3e5083c8fdfcd4ff670344512f1be7a",
+    "probe_sha256": "1ab45ac102f4b8ed9f0017669ea3db872359e09a40cd42d58384e87a3038c8ba",
+    "defaults_probe_sha256": "06302fa056cdacaaf4987f52edb60ea2fd8e67c479a440f7f2743e0b10a4b224",
+    "private_root_probe_sha256": "4d540c4778a7027b4a4feea84612202d2c783541fc8a22984dd408210bcd6b3c",
+    "server_build_commit": "a4ad85361a4b6a42098eb6e12c008f25f4318f12",
+    "source_equivalence": "Service production Rust/Cargo bytes match the tested commit. Publication starts from test 8fe8f6d and preserves the tested commit in its history; all production Rust/Cargo and imported real-VM probe bytes match. Additional upstream benchmark/pressure changes are outside this exercised path. The final evidence update changes documentation only.",
+    "host_kernel": "6.8.0-1065-azure",
+    "sdk": "2.51.0",
+    "inputs": {
+      "server": {
+        "sha256": "990c55b43c3b002c96750493e1bff7a2bb77669c939291d2dd8b071850851e85",
+        "bytes": 77153136
+      },
+      "jailer": {
+        "sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+        "bytes": 2181264
+      },
+      "firecracker": {
+        "sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+        "bytes": 3527456
+      },
+      "kernel": {
+        "sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+        "bytes": 44649272
+      },
+      "rootfs": {
+        "sha256": "b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd",
+        "bytes": 1073741824
+      },
+      "second_rootfs": {
+        "sha256": "60bd9cd0b574f75219610adec1c11cbc1c6613facd214f4dbbb709422c511bad",
+        "bytes": 10737418240
+      }
+    },
+    "configuration": {
+      "templates": [
+        {
+          "id": "first-r1",
+          "shape": {
+            "cpu_count": 1,
+            "memory_mib": 512,
+            "disk_bytes": 1073741824,
+            "host_memory_bytes": 805306368
+          },
+          "default_user": "ubuntu",
+          "default_workdir": "/tmp"
+        },
+        {
+          "id": "second-r1",
+          "shape": {
+            "cpu_count": 2,
+            "memory_mib": 1024,
+            "disk_bytes": 10737418240,
+            "host_memory_bytes": 1342177280
+          },
+          "default_user": "root",
+          "default_workdir": "/"
+        }
+      ],
+      "parallel_vms": 4,
+      "max_vcpus": 6,
+      "max_vmm_memory_bytes": 4294967296,
+      "schema_version": 9,
+      "timeouts_seconds": {
+        "request": 180,
+        "startup": 120,
+        "sandbox": 900
+      },
+      "network": "allow_internet_access=false; shared host network unchanged"
+    },
+    "result": "Passed two templates with two concurrent instances each: original sync/async SDK defaults and request overrides, per-instance create environment overrides, relative/tilde/explicit-user file paths and ownership. After alias targets are swapped and the service restarts, all four original VMM and guest startup PID/start identities persist, startup markers stay once, arguments remain literal, and defaults/files remain isolated. Existing package/system edits, purge/reinstall, exit-42 initializer and invalid-kernel deadline cleanup also pass. Replacement VMs inherit none of the prior SDK files, packages or failed initializer writes.",
+    "observations": {
+      "sdk_default_suites": 16,
+      "file_path_and_owner_cases": 48,
+      "service_restarts": 1,
+      "original_live_vms": 4,
+      "replacement_vms": 2,
+      "invalid_kernel_vms": 2,
+      "vms_destroyed": 8,
+      "confirmed_startup_records": 6
+    },
+    "residuals": "Eight durable Destroyed records, zero dispatched actions; exact VMM PID/start identities stopped, private jails/disks/netns/cgroups and namespace holders absent. Independent post-exit audit found no service/relay or assigned-UID process. Startup records match the observed VMM and guest identities; approved inputs and shared network unchanged.",
+    "failed_attempt": {
+      "commit": "a4ad85361a4b6a42098eb6e12c008f25f4318f12",
+      "result": "failed",
+      "reason": "Probe assumed /var/tmp existed in both approved images; Ubuntu base correctly returned InvalidArgumentException on explicit command cwd. No passing default-isolation claim for this attempt.",
+      "vms_destroyed": 4,
+      "independent_exact_cleanup": true
+    },
+    "evidence_manifest_sha256": "210869b33b1fd12abac94e99147c652dfcaab787d0339c264c2e99058a1128b4",
+    "evidence_directory": "artifacts/template-defaults-6b52eef (ignored sanitized report/preflight/audits; private run credentials and directories removed after export)",
+    "limits": "trusted prebuilt templates; four concurrent VMs, sync/async startup defaults and file paths, alias change plus service restart without command replay, local packages, guest-init and boot failures; no self-service build, arbitrary crash, cloud/model, full V1 or proof claim. File user selection is the fixed envd path/ownership contract, not a guest DAC boundary. Prior 1876888 package-isolation evidence remains version-bound; no production Rust or proof changes relative to the new test base."
   }
 }
