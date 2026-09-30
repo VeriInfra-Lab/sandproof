@@ -1768,5 +1768,118 @@
     "evidence_manifest_sha256": "210869b33b1fd12abac94e99147c652dfcaab787d0339c264c2e99058a1128b4",
     "evidence_directory": "artifacts/template-defaults-6b52eef (ignored sanitized report/preflight/audits; private run credentials and directories removed after export)",
     "limits": "trusted prebuilt templates; four concurrent VMs, sync/async startup defaults and file paths, alias change plus service restart without command replay, local packages, guest-init and boot failures; no self-service build, arbitrary crash, cloud/model, full V1 or proof claim. File user selection is the fixed envd path/ownership contract, not a guest DAC boundary. Prior 1876888 package-isolation evidence remains version-bound; no production Rust or proof changes relative to the new test base."
+  },
+  "public_oci_acquisition_acceptance": {
+    "recorded_on": "2026-09-30",
+    "tested_commit": "918aac683ead757eb89acdaf4b8fbf2e7843b358",
+    "scope": "Guest-only pinned public OCI acquisition, conversion, formal publication and original SDK use; complementary to #135, not its public build API acceptance.",
+    "host": {
+      "alias": "local-isolated-kvm",
+      "kernel": "6.8.0-1065-azure",
+      "python": "3.12.11",
+      "sdk": "e2b==2.51.0",
+      "firecracker": "1.16.1",
+      "guest_kernel": "6.1.176",
+      "envd": "0.9.0"
+    },
+    "artifacts": {
+      "server_sha256": "761e9748ccedd8618fa2497e028a1bcce727bbaba99f571af6aa6a1216e85c04",
+      "kernel_sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+      "builder_base_sha256": "e126328757b505d8f5e9b6c0ca3f9d7dbe7ed0208821a52dc8515d1186496ae0",
+      "source_sha256": {
+        "tools/template_fetch.py": "8bc7f16f76897f1f073e42581510c4947c2c4812ba0752e79567ce49119d9625",
+        "tools/template_worker.py": "1d3f0b7aaac52d01140e736703b05da47ef7372e9a0c53e679e0cd4c6054f420",
+        "tools/template_inputs.py": "d01b37700e043953049e91f0e7f2a3fb85b9a739f53fca85d026075fe1cb5540",
+        "tests/system/server_public_oci.py": "131f7c4c1b94e3ed054cc6e2876db278d9f6584d903a38bae063efdeeff85baa"
+      }
+    },
+    "binary_note": "Built at 70ea8587be674bad55ea46bc2c413f456e694f9d; Rust sources and dependencies unchanged at tested commit. Worker/probe bytes correspond exactly to tested_commit; subsequent edits add only evidence/docs.",
+    "tools": {
+      "buildctl": "ac7c993de512a1bc7da410e7a9e3424879a5e383d4c17d804ddc54ef6d036703",
+      "buildkitd": "bf5d521895dd4fafdd9bb8ba3316f90fe0eae07b795ba979bd74fee816b29991",
+      "buildkit-runc": "ed94b57511421489ba02594bf311020bbdc4fbd229447f97e2734e50a3e7eeb0",
+      "umoci": "b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71",
+      "busybox": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
+      "envd": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "regctl": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
+    },
+    "regctl_release": "https://github.com/regclient/regclient/releases/download/v0.11.6/regctl-linux-amd64",
+    "namespace": "7fc2c55179f16cca",
+    "command": "root: tests/system/server_public_oci.py --server <fixed debug binary> --jailer <fixed jailer> --firecracker <fixed firecracker> --kernel <fixed kernel> --rootfs <fixed 10 GiB builder> --scratch-parent <private root> --cgroup-parent <exclusive empty delegated parent> --tools <seven fixed tools> --uid-base 63601 --namespace <new exclusive 16-hex namespace>",
+    "test_environment": "Builder 2 vCPU/2048 MiB, VMM 2304 MiB; candidate 1 vCPU/512 MiB, VMM 768 MiB, ext4 1 GiB/min free 64 MiB. Four sequential public builders use unique VM numbers 0,3,6,7; publication/SDK VMs are offline. Host already has ip_forward=1. Eight temporary DOCKER-USER rules each bind an exact builder veth, /32 address and eth0; runtime private-address denial remains active. Rules removed by verified identity; normalized shared nft/interfaces/ip_forward unchanged.",
+    "result": {
+      "exit_code": 0,
+      "vms_destroyed": 8,
+      "elapsed_seconds": 332.18,
+      "images": [
+        {
+          "kind": "debian13",
+          "source": {
+            "reference": "docker.io/library/debian@sha256:f2306da7a8fb6440535937baed0ce0018736742d6dc5beec9d6a31355b259726",
+            "source_digest": "sha256:f2306da7a8fb6440535937baed0ce0018736742d6dc5beec9d6a31355b259726",
+            "selected_digest": "sha256:f2306da7a8fb6440535937baed0ce0018736742d6dc5beec9d6a31355b259726",
+            "platform": "linux/amd64",
+            "download_bytes": 29782525,
+            "regctl_version": "v0.11.6",
+            "regctl_sha256": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
+          },
+          "rootfs_sha256": "72c04e039c25728ae3cc3d5660bf98efe3cfd789c620cfcccce4f87a5b9db91b",
+          "free_bytes": 919724032,
+          "publication": "ready",
+          "sdk_file_command": "passed",
+          "release": [
+            "debian",
+            "13"
+          ]
+        },
+        {
+          "kind": "ubuntu2404",
+          "source": {
+            "reference": "docker.io/library/ubuntu@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+            "source_digest": "sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+            "selected_digest": "sha256:496754492fb28b4d3049432f2ca787449331e23fb14f0dd3fffea86bf5a93eb4",
+            "platform": "linux/amd64",
+            "download_bytes": 29781024,
+            "regctl_version": "v0.11.6",
+            "regctl_sha256": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
+          },
+          "rootfs_sha256": "fb90844804c8ff639d85bd08ab8336c94d0c460ac1698ed8134d3d503514c85c",
+          "free_bytes": 919511040,
+          "publication": "ready",
+          "sdk_file_command": "passed",
+          "release": [
+            "ubuntu",
+            "24.04"
+          ]
+        }
+      ],
+      "rejections": {
+        "missing_digest": "Registry not-found confirmed from bounded diagnostic log; failed, no candidate.",
+        "download_limit": "Manifest plus tar limited to 4096 bytes; overflow is explicit failure, no candidate."
+      }
+    },
+    "checks": [
+      "check-function.sh passed: 84 Python workflow tests, documentation, Rust format/clippy/workspace tests and doctests.",
+      "Six new public fetch tests include invalid references, ambiguous/unsupported platform, wrong digest, stdout/log overflow, nonzero exit and closed-pipe timeout.",
+      "Eight real KVM instances: four builders, two publication checks and two original SDK command/file instances."
+    ],
+    "failed_attempts": [
+      {
+        "commit": "70ea8587be674bad55ea46bc2c413f456e694f9d",
+        "cause": "Builder had no usable DNS, regctl used loopback. Probe now installs explicit public DNS.",
+        "destroyed_vms": 1,
+        "evidence_manifest_sha256": "09d7637cf81aa999ca3638764d0215154a30caf074a2dd67e8fef64de9774ae1"
+      },
+      {
+        "commit": "918aac683ead757eb89acdaf4b8fbf2e7843b358",
+        "cause": "Operator forwarding covered VM 0 only; unique VM 3 uplink was denied. Corrected only per-run host rules, then reran complete same-source batch.",
+        "destroyed_vms": 4,
+        "evidence_manifest_sha256": "f89c80252b5d461fd9d09bdd576e8a2637dc86f41791cd5e4dd07ddb31af9091"
+      }
+    ],
+    "residuals": "All 13 VMs including failed attempts independently audited by PID/start time, jail, netns/inode holders, cgroup and reserved UID range. No dispatched actions remain. Three private run roots, credentials, candidate disks and empty delegated parents removed after sanitized export; approved base/kernel unchanged.",
+    "evidence_directory": "artifacts/public-oci-918aac6 (ignored sanitized report/preflight/source hashes/independent audit); failed attempts in artifacts/public-oci-70ea858-failed and public-oci-918aac6-failed; final private artifact removal in artifacts/public-oci-cleanup.json.",
+    "evidence_manifest_sha256": "50720bc3d0d6f0912329f3b34bda10da06b89810f696dbc88effe26a94237eb0",
+    "limits": "Explicit DNS registry and SHA-256 references only. OCI image or unique linux/amd64 OCI child from OCI/Docker index; tar/gzip layers. No mutable tags, Docker schema2 image manifests, private authentication, public build API, service recovery, Harbor/89 tasks or new proofs. max_input_bytes bounds manifest+tar output bytes, not HTTP wire traffic. regctl stays inside a VM; host network isolation remains required."
   }
 }
