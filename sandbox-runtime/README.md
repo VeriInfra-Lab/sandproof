@@ -162,3 +162,7 @@ sudo env \
 同一入口分别运行 `create_and_kill_use_real_host_receipts`、`real_worker_process_exit_reconciles_prepare_and_stop`、`real_worker_sigkill_reconciles_prepare_and_stop`、`real_worker_sigkill_reconciles_partial_cleanup`、`partial_prepare_without_first_slot_is_reclaimed_without_launch` 和 `partial_prepare_network_intent_is_reclaimed_by_exact_identity`；每次更换独立目录和 namespace。这些用例覆盖已固定的故障窗口，不代表任意位置崩溃。基础检查还运行 `missing_kvm_is_reported_explicitly`，确认缺失 KVM 路径返回专门错误；宿主预检负责检查实际 `/dev/kvm` 能否打开及 API 版本。
 
 报告须记录命令、退出码、测试二进制/配置摘要与固定镜像指纹。测试退出后，独立按 `.claims` 内记录的 PID/启动时刻检查进程退出，核对本轮 jail、网络空间和 cgroup 已消失、没有进程仍持有记录的网络空间 inode，并重新计算基础盘哈希。保留 root 私有编号记录和诊断日志，导出时只提取明确允许的结果字段；不发布 envd 令牌或整份私有配置。普通 CI 中这些实机用例是忽略项，不能把基础检查绿灯称为 KVM 通过。
+
+### 显式启用构建收件箱
+
+构建 API、配置、限额及未实现项以[模块合同](../docs/module-contracts.md)为准。部署方预建私有 `template_builds.root`，启用登记配置，准备专用构建租户及只授权给它的构建基础模板。用固定 E2B Python 环境在 root Linux/KVM 主机运行 `python tools/template_supervisor.py --config <root 私有服务配置> --profile <固定工具清单> --builder-tenant <专用租户编号> --builder-template <不可变构建基础模板> --url http://127.0.0.1:<端口>`；每次只领取一个请求。工具清单包含 buildctl/buildkitd/buildkit-runc/umoci/busybox/envd 的绝对路径及 SHA-256。路径是部署输入，不向用户开放。监督器拒绝已有未决 building，不能用删除记录或换编号恢复原工作；原 VM 由既有寿命/恢复流程收尾，可靠构建恢复仍待实现。客户端收到 candidate 编号后调用发布接口，不能把 candidate 直接用于创建。

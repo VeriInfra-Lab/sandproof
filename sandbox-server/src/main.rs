@@ -92,6 +92,8 @@ mod linux {
         templates: Option<TemplateCatalog>,
         #[serde(default)]
         template_registry: Option<sandproof_controller_service::template_registry::RegistryConfig>,
+        #[serde(default)]
+        template_builds: Option<sandproof_controller_service::build_requests::BuildConfig>,
     }
 
     fn default_timeout_secs() -> u64 {
@@ -391,6 +393,17 @@ mod linux {
     }
 
     fn validate_config(config: &ConfigFile) -> Result<u64, Box<dyn Error>> {
+        if let Some(builds) = &config.template_builds {
+            if config.template_registry.is_none() {
+                return Err("build inbox requires registry".into());
+            }
+            private_root_path(&builds.root)?;
+            crate::storage::validate_filesystems(
+                &config.database,
+                &builds.root,
+                &config.chroot_base,
+            )?;
+        }
         if let Some(registry) = &config.template_registry {
             if !registry.is_valid() || config.templates.is_none() || config.host_resources.is_none()
             {
@@ -667,6 +680,31 @@ mod linux {
         })
     }
 
+    fn template_services(
+        port: ManagedPort<NodeHost>,
+        registry: Option<sandproof_controller_service::template_registry::RegistryConfig>,
+        builds: Option<sandproof_controller_service::build_requests::BuildConfig>,
+    ) -> Result<ManagedPort<NodeHost>, Box<dyn Error>> {
+        let port = if let Some(registry) = registry {
+            port.with_registry(
+                sandproof_controller_service::template_registry::CandidateStore::new(registry, 0)?,
+            )
+            .map_err(|_| "invalid durable template registry configuration")?
+        } else {
+            port
+        };
+        let port = if let Some(builds) = builds {
+            port.with_builds(
+                sandproof_controller_service::build_requests::BuildStore::open(builds, 0)
+                    .map_err(|_| "invalid protected build inbox")?,
+            )
+            .map_err(|_| "build inbox requires template registry")?
+        } else {
+            port
+        };
+        Ok(port)
+    }
+
     pub async fn run() -> Result<(), Box<dyn Error>> {
         private_root_path(&std::env::current_exe()?)?;
         let mut args = std::env::args_os();
@@ -711,14 +749,11 @@ mod linux {
         } else {
             ManagedPort::new(journal, NodeHost(node), managed)
         };
-        let port = Arc::new(if let Some(registry) = config.template_registry {
-            port.with_registry(
-                sandproof_controller_service::template_registry::CandidateStore::new(registry, 0)?,
-            )
-            .map_err(|_| "invalid durable template registry configuration")?
-        } else {
-            port
-        });
+        let port = Arc::new(template_services(
+            port,
+            config.template_registry,
+            config.template_builds,
+        )?);
         let recovery = port.recover_on_startup().map_err(|error| {
             std::io::Error::other(format!("startup recovery failed: {error:?}"))
         })?;

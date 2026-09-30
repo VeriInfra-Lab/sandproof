@@ -7,6 +7,8 @@
 //! The lower-level `Journal` remains an opaque persistence primitive, not a
 //! second production writer. Physical host claims require a trusted adapter.
 
+#[cfg(unix)]
+pub mod build_requests;
 mod controller;
 mod dispatch;
 mod journal;

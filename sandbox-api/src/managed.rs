@@ -305,6 +305,7 @@ pub struct ManagedPort<H: HostAdapter> {
     config: ManagedConfig,
     templates: Option<TemplateCatalog>,
     registry: Option<CandidateStore>,
+    builds: Option<sandproof_controller_service::build_requests::BuildStore>,
     _evidence: PhantomData<fn() -> H::Evidence>,
 }
 
@@ -787,6 +788,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             config,
             templates: None,
             registry: None,
+            builds: None,
             _evidence: PhantomData,
         }
     }
@@ -827,6 +829,19 @@ impl<H: HostAdapter> ManagedPort<H> {
             .enable_template_registry(store.config())
             .map_err(map_journal)?;
         self.registry = Some(store);
+        Ok(self)
+    }
+
+    /// # Errors
+    /// Build requests require the publication gate to be configured first.
+    pub fn with_builds(
+        mut self,
+        store: sandproof_controller_service::build_requests::BuildStore,
+    ) -> Result<Self, PortError> {
+        if self.registry.is_none() {
+            return Err(PortError::Invalid);
+        }
+        self.builds = Some(store);
         Ok(self)
     }
 
@@ -1286,6 +1301,58 @@ impl<H: HostAdapter> ManagedPort<H> {
 }
 
 impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
+    fn submit_build(
+        &self,
+        tenant: &str,
+        request: &sandproof_controller_service::build_requests::BuildRequest,
+        input: &[u8],
+    ) -> Result<sandproof_controller_service::build_requests::BuildView, PortError> {
+        let owner = tenant_id(tenant)?.0.to_string();
+        let store = self.builds.as_ref().ok_or(PortError::NotFound)?;
+        let inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        match store.get(&owner, &request.build_id) {
+            Ok(_) => (), // A replay allocates no new input; validate its exact content below.
+            Err(sandproof_controller_service::build_requests::BuildError::Missing) => {
+                let required = self
+                    .config
+                    .limits
+                    .cleanup_reserve_bytes
+                    .saturating_add(2 * input.len() as u64);
+                if inner.host.available_disk_bytes()? < required {
+                    return Err(PortError::QuotaExceeded);
+                }
+            }
+            Err(error) => return Err(map_build(error)),
+        }
+        store.submit(&owner, request, input).map_err(map_build)
+    }
+    fn build(
+        &self,
+        tenant: &str,
+        id: &str,
+    ) -> Result<sandproof_controller_service::build_requests::BuildView, PortError> {
+        let owner = tenant_id(tenant)?.0.to_string();
+        self.builds
+            .as_ref()
+            .ok_or(PortError::NotFound)?
+            .get(&owner, id)
+            .map_err(map_build)
+    }
+    fn build_logs(
+        &self,
+        tenant: &str,
+        id: &str,
+        offset: u64,
+        limit: u32,
+    ) -> Result<sandproof_controller_service::build_requests::BuildLog, PortError> {
+        let owner = tenant_id(tenant)?.0.to_string();
+        self.builds
+            .as_ref()
+            .ok_or(PortError::NotFound)?
+            .logs(&owner, id, offset, limit)
+            .map_err(map_build)
+    }
+
     fn publish_template(
         &self,
         tenant: &str,
@@ -1651,5 +1718,16 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         }
         updated.map_err(map_admission)?;
         Ok(())
+    }
+}
+
+fn map_build(error: sandproof_controller_service::build_requests::BuildError) -> PortError {
+    use sandproof_controller_service::build_requests::BuildError;
+    match error {
+        BuildError::Invalid => PortError::Invalid,
+        BuildError::Missing => PortError::NotFound,
+        BuildError::Conflict => PortError::Conflict,
+        BuildError::Quota => PortError::QuotaExceeded,
+        BuildError::Storage => PortError::OutcomeUnknown,
     }
 }

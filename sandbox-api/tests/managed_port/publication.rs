@@ -587,3 +587,139 @@ fn publication_validation_identity_commits_with_create_and_not_before() {
         );
     }
 }
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn build_http_acceptance_replay_owner_checks_and_binary_size_limit() {
+    use sandproof_controller_service::build_requests::{BuildConfig, BuildStore, MAX_INPUT_BYTES};
+    let directory = TempDir::new().unwrap();
+    let root = directory.path().join("builds");
+    fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    let uid = fs::metadata(&root).unwrap().uid();
+    let builds = BuildStore::open(
+        BuildConfig {
+            root: root.canonicalize().unwrap(),
+            max_jobs_global: 3,
+            max_jobs_per_tenant: 2,
+            max_input_bytes_global: 1024 * 1024,
+            max_input_bytes_per_tenant: 1024 * 1024,
+            max_log_bytes: 1024,
+        },
+        uid,
+    )
+    .unwrap();
+    let port = Arc::new(
+        make_port(
+            &directory,
+            FakeHost {
+                free_bytes: 100_000_000,
+                ..FakeHost::default()
+            },
+            store(&directory),
+        )
+        .with_builds(builds)
+        .unwrap(),
+    );
+    let app = router(
+        port,
+        vec![
+            ApiCredential {
+                tenant: "1".into(),
+                secret: KEY_ONE.into(),
+            },
+            ApiCredential {
+                tenant: "2".into(),
+                secret: KEY_TWO.into(),
+            },
+        ],
+    )
+    .unwrap();
+    let submit = format!(
+        "/sandproof/template-builds?build_id={ONE}&kind=dockerfile&disk_mib=512&min_free_mib=16&cpu_count=1&memory_mib=256&host_memory_mib=512"
+    );
+    for (method, path, key, body, expected) in [
+        (
+            "POST",
+            submit.clone(),
+            "invalid",
+            vec![0; 32],
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "POST",
+            submit.clone(),
+            KEY_ONE,
+            vec![0; 70000],
+            StatusCode::ACCEPTED,
+        ),
+        (
+            "POST",
+            submit.clone(),
+            KEY_ONE,
+            vec![0; 70000],
+            StatusCode::ACCEPTED,
+        ),
+        (
+            "POST",
+            submit.clone(),
+            KEY_ONE,
+            vec![1; 70000],
+            StatusCode::CONFLICT,
+        ),
+        (
+            "GET",
+            format!("/sandproof/template-builds/{ONE}"),
+            KEY_TWO,
+            vec![],
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "GET",
+            format!("/sandproof/template-builds/{ONE}/logs"),
+            KEY_TWO,
+            vec![],
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "GET",
+            format!("/sandproof/template-builds/{ONE}"),
+            KEY_ONE,
+            vec![],
+            StatusCode::OK,
+        ),
+        (
+            "GET",
+            format!("/sandproof/template-builds/{ONE}/logs?limit=0"),
+            KEY_ONE,
+            vec![],
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "POST",
+            submit,
+            KEY_ONE,
+            vec![0; MAX_INPUT_BYTES + 1],
+            StatusCode::PAYLOAD_TOO_LARGE,
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(&path)
+                    .header("x-api-key", key)
+                    .header("content-type", "application/octet-stream")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected, "{method} {path}");
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(!text.contains(root.to_str().unwrap()));
+        assert!(!text.contains(KEY_ONE));
+    }
+}

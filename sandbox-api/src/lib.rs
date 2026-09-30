@@ -4,6 +4,7 @@
 //! This crate does not make lifecycle decisions: the trusted `ControllerPort`
 //! must authorize every operation against the durable controller state.
 
+mod build_api;
 mod list;
 pub mod managed;
 mod network;
@@ -186,6 +187,37 @@ pub enum SandboxOnTimeout {
 /// `create` must commit a unique admission before host I/O; an uncertain
 /// physical outcome must never be silently retried as another create.
 pub trait ControllerPort: Send + Sync + 'static {
+    /// # Errors
+    /// Disabled inboxes, invalid requests, quota exhaustion or uncertain writes.
+    fn submit_build(
+        &self,
+        _tenant: &str,
+        _request: &sandproof_controller_service::build_requests::BuildRequest,
+        _input: &[u8],
+    ) -> Result<sandproof_controller_service::build_requests::BuildView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Missing and foreign requests return the same error.
+    fn build(
+        &self,
+        _tenant: &str,
+        _id: &str,
+    ) -> Result<sandproof_controller_service::build_requests::BuildView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Invalid cursors and inaccessible logs are refused.
+    fn build_logs(
+        &self,
+        _tenant: &str,
+        _id: &str,
+        _offset: u64,
+        _limit: u32,
+    ) -> Result<sandproof_controller_service::build_requests::BuildLog, PortError> {
+        Err(PortError::NotFound)
+    }
+
     /// # Errors
     /// Disabled registries return `NotFound`; unknown work is not re-dispatched.
     fn publish_template(
@@ -506,6 +538,7 @@ pub fn router<P: ControllerPort>(
         .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
         .merge(template_api::routes::<P>())
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
+        .merge(build_api::routes::<P>())
         .with_state(state))
 }
 
