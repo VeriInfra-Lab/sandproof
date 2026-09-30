@@ -20,17 +20,27 @@ class PublicFetchTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
 
-    def test_only_explicit_digest_references_without_credentials_or_options(self):
+    def test_public_references_without_credentials_or_options(self):
         digest = 'a' * 64
         for repo in ('docker.io/library/debian', 'ghcr.io/org/sub/image', 'quay.io/image'):
             self.assertEqual(reference(repo + '@sha256:' + digest), (repo, 'sha256:' + digest))
-        for value in ('debian:latest', 'docker.io/debian:13', 'https://docker.io/library/debian',
+        for value in ('https://docker.io/library/debian',
                       'localhost/image', '127.0.0.1/image', '10.0.0.1/image', 'host.local/image',
                       'docker.io:5000/image', 'user:password@docker.io/image', 'docker.io/../image',
                       'docker.io/image\nRUN bad', '--host x/image', 'docker.io/image?x=1',
                       'docker.io/image#fragment', 'docker.io/image;echo x', 'docker.io//image'):
             with self.subTest(value=value), self.assertRaises(InvalidTemplate):
                 reference(value + '@sha256:' + digest)
+        for value, expected in (
+                ('ubuntu:24.04', ('docker.io/library/ubuntu', '24.04')),
+                ('ubuntu', ('docker.io/library/ubuntu', 'latest')),
+                ('org/image', ('docker.io/org/image', 'latest')),
+                ('ghcr.io/org/image:v1', ('ghcr.io/org/image', 'v1'))):
+            self.assertEqual(reference(value), expected)
+        for value in ('localhost/image', '10.0.0.1/image', 'host.local/image',
+                      'registry:5000/image', 'docker.io/image:bad/tag', 'ubuntu@sha256:bad'):
+            with self.subTest(value=value), self.assertRaises(InvalidTemplate):
+                reference(value)
 
     def test_platform_selection_does_not_guess_ambiguous_or_unsupported_image(self):
         digest = 'sha256:' + 'a' * 64
@@ -100,6 +110,25 @@ class PublicFetchTests(unittest.TestCase):
              patch('tools.template_fetch.extract_archive',side_effect=fake_extract):
             with self.assertRaisesRegex(InvalidTemplate,'selected digest'):
                 fetch(source,self.root,self.root/'oci',{'max_input_bytes':1024,'max_entries':100},Path('/tool'),None)
+
+    def test_mutable_tag_is_resolved_once_then_export_is_pinned(self):
+        manifest={'schemaVersion':2,'mediaType':OCI_MANIFEST}
+        data=json.dumps(manifest).encode();digest='sha256:'+hashlib.sha256(data).hexdigest()
+        source=self.root/'source.json';source.write_text(json.dumps({'image':'ubuntu:24.04'}))
+        def fake_capture(args, output, limit, commands):
+            output.write_bytes(data if 'manifest' in args else b'archive')
+            return output.stat().st_size
+        def fake_extract(source,layout,**limits):
+            layout.mkdir();(layout/'index.json').write_text(json.dumps({'manifests':[{'mediaType':OCI_MANIFEST,'digest':digest}]}))
+        with patch('tools.template_fetch.sha256',side_effect=['fixed',digest[7:]]), \
+             patch('tools.template_fetch.REGCTL_SHA256','fixed'), \
+             patch('tools.template_fetch.capture',side_effect=fake_capture) as calls, \
+             patch('tools.template_fetch.extract_archive',side_effect=fake_extract):
+            provenance=fetch(source,self.root,self.root/'oci',{'max_input_bytes':1024,'max_entries':100},Path('/tool'),None)
+        self.assertEqual(calls.call_args_list[0].args[0][3], 'docker.io/library/ubuntu:24.04')
+        self.assertEqual(calls.call_args_list[1].args[0][3], 'docker.io/library/ubuntu@'+digest)
+        self.assertEqual(provenance['source_digest'], digest)
+        self.assertEqual(provenance['selected_digest'], digest)
 
 
 if __name__=='__main__':

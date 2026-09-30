@@ -4,10 +4,12 @@
 //! This crate does not make lifecycle decisions: the trusted `ControllerPort`
 //! must authorize every operation against the durable controller state.
 
+mod build_vm_api;
 mod list;
 pub mod managed;
 mod network;
 mod template_api;
+pub use build_vm_api::{BuildVmRequest, BuildVmView};
 pub use list::{ListOrder, ListQuery};
 pub use sandproof_controller_service::template_registry::{
     PublicationView, TemplatePage, TemplateView,
@@ -186,6 +188,17 @@ pub enum SandboxOnTimeout {
 /// `create` must commit a unique admission before host I/O; an uncertain
 /// physical outcome must never be silently retried as another create.
 pub trait ControllerPort: Send + Sync + 'static {
+    /// Private build-pool identity API. Disabled on ordinary controllers.
+    /// # Errors
+    /// Missing identities return `NotFound`; an admitted identity is never replaced.
+    fn build_vm(
+        &self,
+        _tenant: &str,
+        _id: &str,
+        _create: Option<BuildVmRequest>,
+    ) -> Result<BuildVmView, PortError> {
+        Err(PortError::NotFound)
+    }
     /// # Errors
     /// Disabled registries return `NotFound`; unknown work is not re-dispatched.
     fn publish_template(
@@ -505,6 +518,7 @@ pub fn router<P: ControllerPort>(
         )
         .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
         .merge(template_api::routes::<P>())
+        .merge(build_vm_api::routes::<P>())
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
         .with_state(state))
 }

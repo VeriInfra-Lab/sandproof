@@ -23,20 +23,27 @@ DOCKER_INDEX = "application/vnd.docker.distribution.manifest.list.v2+json"
 
 
 def reference(value):
-    # Explicit DNS registry, no shorthand, tags, credentials, ports, scheme,
-    # flags or shell syntax. Actual address isolation is the host network policy.
+    # Normalize Docker's public shorthand without interpreting any user text
+    # as code. Address isolation remains the host network policy.
     if not isinstance(value, str) or len(value) > 512:
         raise InvalidTemplate("invalid public image reference")
-    match = re.fullmatch(r"([a-z0-9][a-z0-9.-]*)/([a-z0-9]+(?:[._-]+[a-z0-9]+)*(?:/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)*)@sha256:([0-9a-f]{64})", value)
+    match = re.fullmatch(r"([a-z0-9][a-z0-9./_-]*)(@sha256:[0-9a-f]{64}|:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?", value)
     if match is None:
-        raise InvalidTemplate("public image requires registry/repository@sha256 digest")
-    host, repo, digest = match.groups()
+        raise InvalidTemplate("invalid public image reference")
+    name, suffix = match.groups()
+    parts = name.split("/", 1)
+    if len(parts) == 2 and ("." in parts[0] or parts[0] == "localhost"):
+        host, repo = parts
+    else:
+        host, repo = "docker.io", name if "/" in name else "library/" + name
+    if not re.fullmatch(r"[a-z0-9]+(?:[._-]+[a-z0-9]+)*(?:/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)*", repo):
+        raise InvalidTemplate("invalid public image repository")
     labels = host.split(".")
     if (len(host) > 253 or len(labels) < 2 or not labels[-1].isalpha()
             or any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels)
             or labels[-1] in ("localhost", "local", "internal", "invalid", "test", "onion", "lan", "home")):
         raise InvalidTemplate("public DNS registry required")
-    return host + "/" + repo, "sha256:" + digest
+    return host + "/" + repo, suffix[1:] if suffix else "latest"
 
 
 def select_manifest(document, digest):
@@ -126,14 +133,18 @@ def fetch(source, work, layout, request, tool, commands):
     document = bounded_json(source, 4096)
     if not isinstance(document, dict) or set(document) != {"image"}:
         raise InvalidTemplate("expected a public image reference document")
-    repository, digest = reference(document["image"])
+    repository, identifier = reference(document["image"])
+    canonical = repository + ("@" if identifier.startswith("sha256:") else ":") + identifier
     if sha256(tool) != REGCTL_SHA256:
         raise InvalidTemplate("fixed regctl fingerprint required")
     manifest_path = work / "source-manifest.json"
-    metadata_bytes = capture([str(tool), "manifest", "get", document["image"], "--format", "raw-body"],
+    metadata_bytes = capture([str(tool), "manifest", "get", canonical, "--format", "raw-body"],
                              manifest_path, min(request["max_input_bytes"], 1024 * 1024), commands)
-    if "sha256:" + sha256(manifest_path) != digest:
+    digest = "sha256:" + sha256(manifest_path)
+    if identifier.startswith("sha256:") and digest != identifier:
         raise InvalidTemplate("public source manifest digest mismatch")
+    # A tag is resolved once. All subsequent layer/config acquisition uses
+    # the selected digest, so a tag update cannot mix two image revisions.
     selected = select_manifest(bounded_json(manifest_path), digest)
     archive = work / "download.tar"
     archive_bytes = capture([str(tool), "image", "export", repository + "@" + selected],
