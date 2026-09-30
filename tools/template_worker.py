@@ -33,7 +33,7 @@ B=/opt/sandproof/busybox
 $B mount -t proc proc /proc
 $B mount -o remount,rw /
 $B mount -t sysfs sysfs /sys
-if ! $B mountpoint -q /dev; then $B mount -t devtmpfs devtmpfs /dev; fi
+if ! $B grep -q ' /dev devtmpfs ' /proc/mounts; then $B mount -t devtmpfs devtmpfs /dev; fi
 $B mkdir -p /dev/pts /run /tmp
 $B mount -t devpts devpts /dev/pts
 $B mount -t tmpfs -o mode=755 tmpfs /run
@@ -230,6 +230,11 @@ def check_tools(profile):
                 or sha256(path) != artifact["sha256"]):
             raise InvalidTemplate("tool fingerprint mismatch: " + name)
         tools[name] = path
+    # BusyBox builds differ in enabled applets. Do not merely assume an applet
+    # exists because the binary/version matched the operator's descriptor.
+    applets = subprocess.check_output([str(tools["busybox"]), "--list"], timeout=5).decode().splitlines()
+    if not {"sh", "init", "mount", "grep", "mkdir", "chmod", "ln", "ip", "touch", "reboot", "umount"}.issubset(applets):
+        raise InvalidTemplate("BusyBox missing required platform applets")
     return tools
 
 

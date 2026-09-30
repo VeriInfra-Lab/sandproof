@@ -161,7 +161,7 @@ class TemplateInputTests(unittest.TestCase):
 
     def test_boot_order_and_health_fail_closed(self):
         self.assertLess(BOOT.index("mount -t proc"), BOOT.index("mount -o remount,rw"))
-        self.assertIn("mountpoint -q /dev", BOOT)
+        self.assertIn("grep -q ' /dev devtmpfs ' /proc/mounts", BOOT)
         self.assertLess(BOOT.index("ip route add default"), BOOT.index("touch /run/sandproof-boot-ready"))
         self.assertLess(AGENT.index("test -f /run/sandproof-boot-ready"), AGENT.index("exec /opt/sandproof/envd"))
 
