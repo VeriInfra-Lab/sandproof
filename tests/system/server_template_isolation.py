@@ -184,7 +184,7 @@ async def exercise(args):
         "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 768 * MIB},
         "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 4, "max_active_per_tenant": 4,
-        "max_disk_bytes_global": 2 * disk_sum, "max_disk_bytes_per_tenant": 2 * disk_sum,
+        "max_disk_bytes_global": 2 * disk_sum + 1024 * MIB, "max_disk_bytes_per_tenant": 2 * disk_sum,
         "cleanup_reserve_bytes": 1024 * MIB, "max_timeout_secs": 1200, "startup_timeout_secs": 120,
         "expiry_scan_seconds": 1, "templates": {"templates": templates + bad_templates, "aliases": {},
         "compute_limits": {"max_vcpus_global": 6, "max_vcpus_per_tenant": 6,
