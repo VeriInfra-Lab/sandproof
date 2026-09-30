@@ -4,7 +4,7 @@
 
 预检入口实现完整题集的源码锁定、资源审计、Harbor/SDK 联合依赖与原任务加载检查，不执行任务代码或启动沙箱。独立的本地执行入口见下文，必须连接已配置并由外部监督器审计的真实服务。范围为固定 Harbor registry 中 `terminal-bench@2.0` 的全部 **89 题**；不能在失败后删除任务或把未运行计为通过。
 
-[锁文件](terminal-bench-2.0.lock.json)固定 Harbor、E2B SDK、registry 内容摘要、任务仓库提交，以及每题所有输入文件的路径、模式、大小和 SHA-256。文件按 environment、instruction、metadata、oracle、verifier 分别标记；标准解答和私有测试仅记录摘要，不能提前上传到智能体沙箱。原 `docker_image` 标签和 Dockerfile FROM 行只是上游环境参考，不是镜像内容锁，也不表示本服务支持模板构建。
+[锁文件](terminal-bench-2.0.lock.json)固定 Harbor、E2B SDK、registry 内容摘要、任务仓库提交，以及每题所有输入文件的路径、模式、大小和 SHA-256。文件按 environment、instruction、metadata、oracle、verifier 分别标记；标准解答和私有测试仅记录摘要，不能提前上传到智能体沙箱。原 `docker_image` 标签和 Dockerfile FROM 行只是上游环境参考，不是镜像内容锁，也不能代替实际构建和可启动产物的证据。
 
 ## 获取和核对
 
@@ -84,6 +84,8 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 ```
 
 两端必须是已配置的本地服务；凭据用 `SANDPROOF_TEST_API_KEY` 提供。CPU、内存、**总盘容量**来自原任务，最小空闲空间另为 64 MiB；原构建/解答/评分时限不改，沙箱寿命仍请求 86400 秒，部署不足须拒绝而非截短。运行池与构建池的资源预算、输出磁盘下载预算必须分别满足请求，不能沿用小镜像探针的 2 GiB 下载上限。原镜像启动默认值来自正式登记结果，不在客户端解释 Dockerfile 的 WORKDIR/USER；平台初始化始终独立于用户 CMD。只接受本轮已约定的公网 IPv4 策略，不在初始化阶段临时扩大权限。
+
+构建盘与目标运行盘是两种资源：构建盘必须同时容纳工具/基础系统、解包暂存和完整目标盘；它的实际空闲空间不足时工作器拒绝，不因目标盘同为 10 GiB 就认为构建盘也只需 10 GiB。监督服务为候选完整字节、暂存及收尾分别记账；早期工作器尚未创建 status.json 时也保留有限失败日志。使用大构建盘不改变原题要求的运行盘大小。
 
 构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。只上传锁定的环境文件；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
 
