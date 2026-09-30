@@ -69,6 +69,10 @@ python3 tools/benchmark_tasks.py audit \
 
 ## 本地标准解答探针
 
+本入口是固定镜像/逐题初始化的诊断工具，不是 [#123](https://github.com/ningZhang-cs/sandproof/issues/123) 的通用模板产品接口；历史实验不能作为该新能力交付。
+
+本地报告写入失败（包括磁盘写满）必须仍尝试销毁原实例；缺少报告不能计为完整通过。可写的结果文件和最终标准输出保留 `report_errors`。主动取消记录 `interrupted`，收尾后继续传播取消信号，不记作仍在运行或成功；销毁未确认则保留 `cleanup_unknown` 和原沙箱身份。进程被直接强制终止或机器故障不能靠本运行器的收尾保证，仍需外部监督器按原资源身份审计，不自动重跑掩盖未知结果。
+
 [本地入口](run_local.py)使用固定 Harbor 的 `OracleAgent` 与 `Verifier`，通过原版异步 SDK 连接显式指定的回环服务。它只创建 `base`，不调用模板 API；[固定配方](task-recipes.json)列出全部 89 题的初始化命令与输入映射，运行时不解释 Dockerfile。配方绑定七种通用基础环境及一个任务专用预制镜像的[固定指纹](base-profiles.lock.json)，其中多阶段文档准备显式删除中间源文件，Windows 3.11 题目在 VM 内启动其原 supervisord。配方存在不代表初始化或评分通过。
 
 ```sh

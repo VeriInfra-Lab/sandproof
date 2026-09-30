@@ -274,6 +274,21 @@ class LocalBaseEnvironment(E2BEnvironment):
                 raise InvalidInput('guest log symlinks are unsupported')
 
 
+def write_report(path, content, row):
+    """Retain local reporting failures without preventing exact VM cleanup."""
+    try:
+        path.write_text(content)
+    except OSError as error:
+        row.setdefault('report_errors', {})[path.name] = {
+            'error_type': type(error).__name__, 'errno': error.errno,
+        }
+        # Missing local evidence cannot be advertised as a complete pass.
+        # Preserve interrupted/unknown outcomes and the original stage results.
+        if row['status'] == 'passed':
+            row['status'] = 'failed'
+            row['reason'] = 'local_report_write_failed'
+
+
 async def run_task(args, entry, recipe):
     task = Task(args.source / entry['name'])
     paths = TrialPaths(args.output / entry['name'])
@@ -328,12 +343,21 @@ async def run_task(args, entry, recipe):
         packages = await environment.exec("dpkg-query -W -f='${Package}=${Version}\\n'", cwd='/', timeout_sec=30)
         (paths.trial_dir / 'packages.txt').write_text(packages.stdout or '')
         row['stage'] = 'verifier'
+    except (asyncio.CancelledError, KeyboardInterrupt) as error:
+        row['status'] = 'interrupted'
+        row['error_type'] = type(error).__name__
+        row['interrupted'] = True
+        if row['stage'] in ('oracle', 'verifier'):
+            row[row['stage']] = 'interrupted'
+        # Do not turn cancellation into a completed run; finally still records
+        # the interruption and attempts cleanup before propagating it.
+        raise
     except Exception as error:
         row['status'] = 'timeout' if isinstance(error, TimeoutError) else 'failed'
         row['error_type'] = type(error).__name__
-        (paths.trial_dir / 'error.txt').write_text(str(error))
         if row['stage'] in ('oracle', 'verifier'):
             row[row['stage']] = row['status']
+        write_report(paths.trial_dir / 'error.txt', str(error), row)
         # Preserve partial diagnostics before destroying the VM. A log failure
         # must neither hide the original result nor prevent cleanup.
         if environment.sandbox_id is not None:
@@ -352,25 +376,34 @@ async def run_task(args, entry, recipe):
         row['sandbox_id'] = environment.sandbox_id
         if environment.create_dispatched and environment.sandbox_id is None:
             row['status'] = 'create_unknown'
-        if environment.sandbox_id is not None and row['status'] in ('failed', 'timeout'):
-            try:
-                observation = await asyncio.wait_for(environment.exec(
-                    'cat /proc/sys/vm/overcommit_memory /proc/meminfo\ndf -Pk /\ndf -Pi /',
-                    cwd='/', timeout_sec=10), 10)
-                (paths.trial_dir / 'environment-diagnostics.txt').write_text(
-                    (observation.stdout or '') + (observation.stderr or ''))
-            except Exception as diagnostic_error:
-                row.setdefault('diagnostic_errors', {})['environment'] = type(diagnostic_error).__name__
-        (paths.trial_dir / 'events.json').write_text(json.dumps(environment.events, indent=2))
         try:
-            await environment.stop()
-        except Exception as error:
-            row['cleanup_error_type'] = type(error).__name__
-            row['status'] = 'cleanup_unknown'
-        row['kill_confirmed'] = environment.kill_confirmed
-        row['seconds'] = round(time.monotonic() - start, 3)
-        (paths.trial_dir / 'result.json').write_text(json.dumps(row, indent=2) + '\n')
-        print(json.dumps(row), flush=True)
+            if environment.sandbox_id is not None and row['status'] in ('failed', 'timeout'):
+                try:
+                    observation = await asyncio.wait_for(environment.exec(
+                        'cat /proc/sys/vm/overcommit_memory /proc/meminfo\ndf -Pk /\ndf -Pi /',
+                        cwd='/', timeout_sec=10), 10)
+                    (paths.trial_dir / 'environment-diagnostics.txt').write_text(
+                        (observation.stdout or '') + (observation.stderr or ''))
+                except Exception as diagnostic_error:
+                    row.setdefault('diagnostic_errors', {})['environment'] = type(diagnostic_error).__name__
+            write_report(paths.trial_dir / 'events.json',
+                         json.dumps(environment.events, indent=2), row)
+        finally:
+            # Even diagnostics/serialization errors must reach this path.
+            try:
+                await environment.stop()
+            except (Exception, asyncio.CancelledError, KeyboardInterrupt) as error:
+                row['cleanup_error_type'] = type(error).__name__
+                row['status'] = 'cleanup_unknown'
+                if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt)):
+                    row['interrupted'] = True
+                    raise
+            finally:
+                row['kill_confirmed'] = environment.kill_confirmed
+                row['seconds'] = round(time.monotonic() - start, 3)
+                write_report(paths.trial_dir / 'result.json',
+                             json.dumps(row, indent=2) + '\n', row)
+                print(json.dumps(row), flush=True)
     return row
 
 
