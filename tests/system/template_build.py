@@ -25,7 +25,7 @@ from e2b import Sandbox, CommandExitException
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
-from server_process_crash import fetch, free_loopback_port, start_server, stop_server, wait_ready
+from server_process_crash import fetch, free_loopback_port, interrupted_request, process_start_ticks, start_server, stop_server, wait_ready
 from server_templates import descriptor
 from server_vm_id_capacity import check_no_resources
 
@@ -56,19 +56,26 @@ for line in subprocess.check_output(['ldd','/bin/bash'], text=True).splitlines()
             shutil.copyfile(part,dst)
             dst.chmod(0o755)
 (p/'rootfs/etc/os-release').write_text('ID=debian\nNAME="synthetic build fixture"\n')
-(p/'rootfs/etc/passwd').write_text('root:x:0:0:root:/root:/bin/bash\n')
-(p/'rootfs/etc/group').write_text('root:x:0:\n')
+(p/'rootfs/etc/passwd').write_text('root:x:0:0:root:/root:/bin/bash\napp:x:1000:1000:app:/home/app:/bin/bash\n')
+(p/'rootfs/etc/group').write_text('root:x:0:\napp:x:1000:\n')
+(p/'rootfs/workspace').mkdir()
+(p/'rootfs/workspace/start.sh').write_text('''#!/bin/bash
+printf 'started\\n' >> /workspace/start-count
+printf '%s\\n' "$USER" "$HOME" "$PWD" "$FIXTURE_VALUE" "$@" > /workspace/startup-result
+exec /bin/busybox sleep 600
+''')
 (p/'payload').write_text('copied-standard-context')
 (p/'Dockerfile').write_text('''FROM scratch AS build
 COPY rootfs/ /
-RUN /bin/busybox mkdir -p /root /tmp /opt /workspace && echo build-ok > /workspace/built && echo old > /workspace/removed
+RUN /bin/busybox mkdir -p /root /tmp /opt /home/app && /bin/busybox chown 1000:1000 /workspace /home/app && echo build-ok > /workspace/built && echo old > /workspace/removed
 RUN /bin/busybox rm /workspace/removed
 FROM build AS final
 COPY payload /workspace/payload
-ENV FIXTURE_VALUE=preserved-not-yet-activated
+ENV FIXTURE_VALUE=image-value
 WORKDIR /workspace
-USER root
-CMD ["/bin/bash", "-c", "printf startup"]
+USER 1000:1000
+ENTRYPOINT ["/bin/bash", "/workspace/start.sh", "entry arg"]
+CMD ["literal space", "$FIXTURE_VALUE; touch /tmp/injected"]
 ''')
 with tarfile.open('/input/context.tar','w') as out:
     for child in sorted(p.iterdir()): out.add(child,arcname=child.name)
@@ -211,7 +218,8 @@ def exercise(args):
                 assert result.exit_code == 0, (result.stderr, result.stdout)
                 assert status["state"] == "candidate" and not status["ready"] and not status["startup_applied"]
                 assert status["startup"]["WorkingDir"] == "/workspace"
-                assert "FIXTURE_VALUE=preserved-not-yet-activated" in status["startup"]["Env"]
+                assert "FIXTURE_VALUE=image-value" in status["startup"]["Env"]
+                assert status["runtime_defaults"]["user"] == "app"
                 assert any(value.startswith("PATH=") for value in status["startup"]["Env"])
                 assert status["free_bytes"] >= status["min_free_bytes"]
                 checked(builder, "gzip -1 -c /output/job/candidate.ext4 > /output/candidate.gz")
@@ -242,26 +250,104 @@ def exercise(args):
             no_resources()
             if kind in ("dockerfile", "oci"):
                 stop_server(process)
-                settings["templates"]["templates"].append(descriptor("candidate-" + kind, args.kernel, disk, 1, 256))
+                candidate = descriptor("candidate-" + kind, args.kernel, disk, 1, 256)
+                candidate["startup"] = status["runtime_defaults"]
+                settings["templates"]["templates"].append(candidate)
                 save()
                 process = start_server(binary, config, root / "server.log", None)
                 wait_ready(opener, url, key, process)
-                guest = Sandbox.create(template="candidate-" + kind, timeout=120, allow_internet_access=False, **owner)
+                guest = Sandbox.create(template="candidate-" + kind, envs={"FIXTURE_VALUE": "create-value"},
+                                       timeout=120, allow_internet_access=False, **owner)
                 active.append(guest.sandbox_id)
                 assert checked(guest, "printf sdk-boot-ok") == "sdk-boot-ok"
+                defaults = guest.commands.run('printf "%s|%s|%s" "$USER" "$PWD" "$FIXTURE_VALUE"')
+                assert defaults.stdout == "app|/workspace|create-value", defaults
+                explicit = guest.commands.run('printf "%s|%s|%s" "$USER" "$PWD" "$FIXTURE_VALUE"',
+                                              user="root", cwd="/tmp", envs={"FIXTURE_VALUE": "request-value"})
+                assert explicit.stdout == "root|/tmp|request-value"
+                deadline = time.monotonic() + 5
+                while not guest.files.exists("/workspace/startup-result"):
+                    assert time.monotonic() < deadline
+                    time.sleep(0.05)
+                expected = ["app", "/home/app", "/workspace", "create-value", "entry arg",
+                            "literal space", "$FIXTURE_VALUE; touch /tmp/injected"]
+                assert guest.files.read("/workspace/startup-result").splitlines() == expected
+                assert guest.files.read("/workspace/start-count") == "started\n"
+                assert not guest.files.exists("/tmp/injected")
                 assert guest.files.read("/workspace/payload") == "copied-standard-context"
                 assert guest.files.read("/workspace/built").strip() == "build-ok"
                 assert not guest.files.exists("/workspace/removed")
                 guest.files.write("/workspace/private", "not-in-template")
+                stop_server(process)
+                process = start_server(binary, config, root / "server.log", None)
+                wait_ready(opener, url, key, process)
+                assert guest.files.read("/workspace/start-count") == "started\n"
                 assert Sandbox.kill(guest.sandbox_id, **owner)
                 active.remove(guest.sandbox_id)
                 no_resources()
                 assert sha256_file(disk) == status["rootfs_sha256"]
+        # Two finite activation crash windows: confirmed guest Start but lost
+        # controller receipt, and Start accepted but host confirmation lost.
+        # This is not arbitrary application readiness or crash-site coverage.
+        def startup_count(name, sandbox_id):
+            secret = json.loads((root / "state/secrets" / sandbox_id).read_text())
+            curl_config = (f'url = "http://172.16.0.2:49983/files?path=%2Fworkspace%2Fstart-count"\n'
+                           f'header = "X-Access-Token: {secret["token"]}"\n')
+            result = subprocess.run(["/usr/bin/ip", "netns", "exec", name, "/usr/bin/curl", "-q", "--noproxy", "*",
+                                     "-fs", "--max-time", "5", "-K", "-"], input=curl_config, text=True, capture_output=True)
+            assert result.returncode == 0, "private guest observation failed"
+            return result.stdout
+        for window in ("confirmed", "unknown"):
+            stop_server(process)
+            process = start_server(binary, config, root / "server.log", "activate_vm" if window == "confirmed" else None,
+                                   template_start_target="activate_vm" if window == "unknown" else None)
+            wait_ready(opener, url, key, process)
+            interrupted_request(lambda: fetch(opener, url, "POST", "/v2/sandboxes", key,
+                {"templateID": "candidate-oci", "timeout": 120, "allow_internet_access": False}),
+                process, 86 if window == "confirmed" else 88)
+            records = [json.loads(path.read_text()) for path in (root / "state/startup").glob("*.json")]
+            record = max(records, key=lambda value: value["vm"])
+            sandbox_id, name = f'sb-{namespace}-{record["sandbox"]}', f'vm-{namespace}-{record["vm"]}'
+            assert (record["guest_pid"] is not None) == (window == "confirmed")
+            assert process_start_ticks(record["vmm_pid"]) == record["start_ticks"]
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    assert startup_count(name, sandbox_id) == "started\n"
+                    break
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
+            process = start_server(binary, config, root / "server.log", None)
+            wait_ready(opener, url, key, process)
+            assert startup_count(name, sandbox_id) == "started\n", "startup was replayed"
+            if window == "confirmed":
+                guest = Sandbox.connect(sandbox_id, **owner)
+                assert guest.files.read("/workspace/start-count") == "started\n"
+                assert Sandbox.kill(sandbox_id, **owner)
+            else:
+                code, body = fetch(opener, url, "GET", "/sandboxes/" + sandbox_id, key)
+                assert code == 200 and json.loads(body)["state"] != "running"
+                deadline = time.monotonic() + 50
+                while process_start_ticks(record["vmm_pid"]) == record["start_ticks"]:
+                    assert startup_count(name, sandbox_id) == "started\n"
+                    assert time.monotonic() < deadline, "unknown startup was not retired"
+                    time.sleep(0.2)
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    no_resources()
+                    break
+                except AssertionError:
+                    assert time.monotonic() < deadline
+                    time.sleep(0.1)
+            evidence.append({"kind": "activation-" + window, "no_startup_replay": True, "exact_cleanup": True})
         assert original == [sha256_file(path) for path in (args.kernel, args.rootfs)]
         complete = True
         print(json.dumps({"source_commit": commit, "server_sha256": sha256_file(binary), "namespace": namespace,
-                          "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": 6, "evidence": evidence,
-                          "scope": "offline synthetic fixture; no public OCI, user API, startup defaults or production Ready gate"}))
+                          "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": 8, "evidence": evidence,
+                          "scope": "offline synthetic fixture with defaults and argv dispatch; no public OCI, user API or production Ready gate"}))
     finally:
         if not complete:
             print("Exact failed-run artifacts retained: " + str(root), file=sys.stderr)

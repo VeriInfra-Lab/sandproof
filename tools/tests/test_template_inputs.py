@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.template_inputs import InvalidTemplate, extract_context, inspect_oci, startup_config
-from tools.template_worker import AGENT, BOOT, Commands, LogBudget, guest_path, install_platform, terminate, validate_request
+from tools.template_worker import AGENT, BOOT, Commands, LogBudget, guest_path, install_platform, runtime_defaults, terminate, validate_request
 
 
 def archive_bytes(entries):
@@ -143,6 +143,31 @@ class TemplateInputTests(unittest.TestCase):
         (root / "loop").symlink_to("loop")
         with self.assertRaisesRegex(InvalidTemplate, "loop"):
             guest_path(root, "/loop")
+
+    def test_runtime_defaults_resolve_numeric_user_and_preserve_argv(self):
+        root = self.root / "root"
+        (root / "etc").mkdir(parents=True)
+        (root / "workspace").mkdir()
+        (root / "etc/passwd").write_text("root:x:0:0:root:/root:/bin/sh\napp:x:1000:1000:app:/home/app:/bin/sh\n")
+        (root / "etc/group").write_text("root:x:0:\napp:x:1000:\nother:x:1001:\n")
+        config = startup_config({"Env": ["VALUE=old", "VALUE=literal $VALUE"], "User": "1000:1000",
+                                 "WorkingDir": "/workspace", "Entrypoint": ["/entry", "a b"], "Cmd": ["$NO;touch bad"]})
+        defaults = runtime_defaults(root, config)
+        self.assertEqual(defaults, {"env_vars": {"VALUE": "literal $VALUE"}, "user": "app",
+                                    "workdir": "/workspace", "argv": ["/entry", "a b", "$NO;touch bad"]})
+        for change in ({"User": "missing"}, {"User": "app:other"}, {"User": "app:"},
+                       {"WorkingDir": "/missing"}, {"Cmd": [""], "Entrypoint": []},
+                       {"Cmd": ["x"*8192]*5}):
+            with self.subTest(change=change), self.assertRaises(InvalidTemplate):
+                runtime_defaults(root, {**config, **change})
+        (root / "etc/passwd").write_text((root / "etc/passwd").read_text() + "alias:x:1000:1000:alias:/:/bin/sh\n")
+        with self.assertRaisesRegex(InvalidTemplate, "one real account"):
+            runtime_defaults(root, config)
+
+    def test_startup_false_values_and_combined_limits_are_not_silently_defaulted(self):
+        for change in ({"Cmd": False}, {"Env": 0}, {"User": False}, {"WorkingDir": []}, {"Cmd": ["汉"*3000]}):
+            with self.subTest(change=change), self.assertRaises(InvalidTemplate):
+                startup_config(change)
 
     def test_platform_reserves_trusted_init(self):
         root = self.root / "root"
