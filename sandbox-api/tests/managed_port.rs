@@ -27,6 +27,10 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+#[cfg(unix)]
+#[path = "managed_port/publication.rs"]
+mod publication;
+
 const NAMESPACE: &str = "0123456789abcdef";
 const KEY_ONE: &str = "tenant-one-test-key-00000000000000001";
 const KEY_TWO: &str = "tenant-two-test-key-00000000000000002";

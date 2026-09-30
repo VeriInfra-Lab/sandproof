@@ -10,6 +10,7 @@
 mod controller;
 mod dispatch;
 mod journal;
+pub mod template_registry;
 pub mod templates;
 mod workflow;
 

@@ -90,6 +90,8 @@ mod linux {
         /// Explicit opt-in: trusted prebuilt descriptors, not a build service.
         #[serde(default)]
         templates: Option<TemplateCatalog>,
+        #[serde(default)]
+        template_registry: Option<sandproof_controller_service::template_registry::RegistryConfig>,
     }
 
     fn default_timeout_secs() -> u64 {
@@ -389,6 +391,29 @@ mod linux {
     }
 
     fn validate_config(config: &ConfigFile) -> Result<u64, Box<dyn Error>> {
+        if let Some(registry) = &config.template_registry {
+            if !registry.is_valid() || config.templates.is_none() || config.host_resources.is_none()
+            {
+                return Err(
+                    "template registry requires valid limits, templates and host_resources".into(),
+                );
+            }
+            for path in [
+                &registry.root,
+                &registry.root.join("inbox"),
+                &registry.root.join("artifacts"),
+            ] {
+                private_root_path(path)?;
+                if !fs::metadata(path)?.is_dir() {
+                    return Err("registry path is not a directory".into());
+                }
+            }
+            crate::storage::validate_filesystems(
+                &config.database,
+                &registry.root,
+                &config.chroot_base,
+            )?;
+        }
         if let Some(catalog) = &config.templates {
             catalog
                 .validate()
@@ -676,12 +701,23 @@ mod linux {
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
         let journal = ControllerJournal::open(config.database, &config.namespace)?;
+        if journal.has_template_registry()? && config.template_registry.is_none() {
+            return Err("durable template registry cannot be disabled for this journal".into());
+        }
         audit_host_inventory(&node, &journal)?;
-        let port = Arc::new(if let Some(catalog) = config.templates {
+        let port = if let Some(catalog) = config.templates {
             ManagedPort::with_templates(journal, NodeHost(node), managed, catalog)
                 .map_err(|_| "invalid prebuilt template configuration")?
         } else {
             ManagedPort::new(journal, NodeHost(node), managed)
+        };
+        let port = Arc::new(if let Some(registry) = config.template_registry {
+            port.with_registry(
+                sandproof_controller_service::template_registry::CandidateStore::new(registry, 0)?,
+            )
+            .map_err(|_| "invalid durable template registry configuration")?
+        } else {
+            port
         });
         let recovery = port.recover_on_startup().map_err(|error| {
             std::io::Error::other(format!("startup recovery failed: {error:?}"))

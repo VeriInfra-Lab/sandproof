@@ -7,7 +7,11 @@
 mod list;
 pub mod managed;
 mod network;
+mod template_api;
 pub use list::{ListOrder, ListQuery};
+pub use sandproof_controller_service::template_registry::{
+    PublicationView, TemplatePage, TemplateView,
+};
 
 use std::{sync::Arc, time::Duration};
 
@@ -182,6 +186,51 @@ pub enum SandboxOnTimeout {
 /// `create` must commit a unique admission before host I/O; an uncertain
 /// physical outcome must never be silently retried as another create.
 pub trait ControllerPort: Send + Sync + 'static {
+    /// # Errors
+    /// Disabled registries return `NotFound`; unknown work is not re-dispatched.
+    fn publish_template(
+        &self,
+        _tenant: &str,
+        _candidate: &str,
+    ) -> Result<PublicationView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Missing and foreign publications are indistinguishable.
+    fn publication(&self, _tenant: &str, _candidate: &str) -> Result<PublicationView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Returns only owned, Ready registered templates.
+    fn template(&self, _tenant: &str, _name: &str) -> Result<TemplateView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Refuses invalid limits/cursors or unavailable storage.
+    fn templates(
+        &self,
+        _tenant: &str,
+        _limit: usize,
+        _cursor: Option<&str>,
+    ) -> Result<TemplatePage, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Refuses foreign/unready targets or a stale expected target.
+    fn set_template_alias(
+        &self,
+        _tenant: &str,
+        _name: &str,
+        _target: &str,
+        _expected: Option<&str>,
+    ) -> Result<TemplateView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Deletes only the caller's alias, never artifacts or admitted bindings.
+    fn delete_template_alias(&self, _tenant: &str, _name: &str) -> Result<(), PortError> {
+        Err(PortError::NotFound)
+    }
     /// # Errors
     /// Returns a typed rejection; an uncertain physical result is `OutcomeUnknown`.
     fn create(&self, tenant: &str, request: CreateRequest) -> Result<SandboxSession, PortError>;
@@ -455,6 +504,7 @@ pub fn router<P: ControllerPort>(
             get(get_sandbox::<P>).delete(kill::<P>),
         )
         .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
+        .merge(template_api::routes::<P>())
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
         .with_state(state))
 }

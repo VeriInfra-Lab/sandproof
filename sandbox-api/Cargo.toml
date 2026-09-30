@@ -19,6 +19,7 @@ time = { version = "=0.3.44", features = ["formatting", "parsing"] }
 tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 
 [dev-dependencies]
+sha2 = "=0.10.9"
 rusqlite = "=0.40.2"
 tempfile = "=3.23.0"
 tower = { version = "=0.5.2", features = ["util"] }

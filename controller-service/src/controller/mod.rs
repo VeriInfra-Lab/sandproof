@@ -3,6 +3,7 @@
 
 mod admission;
 mod identity;
+mod registry;
 mod storage;
 
 pub use admission::{
@@ -547,7 +548,7 @@ impl ControllerJournal {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=9).contains(&version) || stored != namespace {
+        if !(1..=10).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {

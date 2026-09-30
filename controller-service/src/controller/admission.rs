@@ -291,7 +291,11 @@ fn active(record: &core::SandboxRecord) -> bool {
     record.phase != core::Phase::Destroyed
 }
 
-fn accounted(world: &core::World, sandbox: core::SandboxId, record: &core::SandboxRecord) -> bool {
+pub(super) fn accounted(
+    world: &core::World,
+    sandbox: core::SandboxId,
+    record: &core::SandboxRecord,
+) -> bool {
     if active(record) {
         return true;
     }
@@ -415,7 +419,7 @@ impl ControllerJournal {
         admission: CreateAdmission,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
-        self.admit_with_compute(request, admission, None, crashes)
+        self.admit_with_compute(request, admission, None, None, crashes)
     }
 
     /// Atomically bind a prebuilt template and charge its actual resource shape.
@@ -428,7 +432,27 @@ impl ControllerJournal {
         compute: ComputeLimits,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
-        self.admit_with_compute(request, admission, Some(compute), crashes)
+        self.admit_with_compute(request, admission, Some(compute), None, crashes)
+    }
+
+    /// The validation VM identity and create intent commit together, before host work.
+    /// # Errors
+    /// Refuses an already attached, foreign, or changed publication.
+    pub fn admit_template_validation(
+        &mut self,
+        request: core::CreateRequest,
+        admission: CreateAdmission,
+        compute: ComputeLimits,
+        publication: &str,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<core::ControllerDecision, AdmissionError> {
+        self.admit_with_compute(
+            request,
+            admission,
+            Some(compute),
+            Some(publication),
+            crashes,
+        )
     }
 
     #[expect(
@@ -440,6 +464,7 @@ impl ControllerJournal {
         request: core::CreateRequest,
         admission: CreateAdmission,
         compute: Option<ComputeLimits>,
+        publication: Option<&str>,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
         let CreateAdmission {
@@ -632,6 +657,18 @@ impl ControllerJournal {
                 encoded_options
             ],
         )?;
+        if let Some(publication) = publication {
+            super::registry::attach_validation(
+                &tx,
+                publication,
+                owner.0,
+                sandbox,
+                options
+                    .template
+                    .as_ref()
+                    .ok_or(AdmissionError::InvalidCreateOptions)?,
+            )?;
+        }
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit().map_err(JournalError::CommitUncertain)?;
         crashes.hit(CrashPoint::AfterCommit)?;

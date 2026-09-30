@@ -32,7 +32,7 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 ### 模板服务 → 创建准入（#123/#6）
 
-以下是 2026-09-30 批准的目标合同。当前已实现**显式预制模板基础**：可信部署配置目录、创建时固定描述、CPU/宿主内存/磁盘准入、真实启动输入和查询投影；默认未配置目录仍为旧 `base` 路径。自助构建/转换/登记 API 尚未交付，不能把预制目录当成完整模板平台。测试层级见[验收清单](testing-plan.md)。
+以下是 2026-09-30 批准的目标合同。当前已实现**显式预制模板基础及正式发布登记**：可信部署目录、受保护候选发布门、持久归属/别名、创建时固定描述和资源准入；默认未配置目录仍为旧 `base` 路径。自助构建提交/状态/日志服务尚未交付，不能把发布登记当成完整模板平台。测试层级见[验收清单](testing-plan.md)。
 
 预制目录的 `templates` 包含不可变编号、修订、owner（null 为明确共享）、内核及 ext4 的绝对路径/长度/SHA-256、来宾 CPU/内存/磁盘及整个 VMM 的宿主内存上限；`aliases` 只在创建时解析，`compute_limits` 约束全局/租户 CPU 与宿主内存总额度。路径由可信部署方提供，客户端仅给模板名称；不存在逐题特殊入口。同一编号第一次成功准入后不得换描述，即使实例已销毁；变更产物或形状须使用新编号，别名可改指向。创建、连接、详情和列表报告实际不可变编号/形状，筛选也只匹配该编号，不动态解释别名。
 
@@ -42,7 +42,15 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 [#123 的候选构建工作器](../tools/template_worker.py)是未接入公开服务的一次性工具：只由监督器在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。OCI 首批接受单一 linux/amd64 OCI tar/gzip 层，检查摘要和展开预算后由 umoci 处理 whiteout；多架构、设备节点、容器卷及其他压缩格式明确拒绝。上下文只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
 
-转换产物始终为 `candidate`、`ready=false`，不登记到生产目录。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。可信验收器可把规范化默认值写入预制描述的可选 `startup`，执行真实候选启动实验；这不是产品发布门。自助请求/状态服务、公开 OCI 获取、可靠构建恢复和正式发布门仍属于后续 #123。
+转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。自助构建请求/状态/日志服务、公开 OCI 获取和可靠构建恢复仍属于后续 #123。
+
+正式发布门由可信构建监督方确认构建 VM 回收后，用[登记准备工具](../tools/template_stage.py)将候选字节放入 root 独占 `template_registry.root/inbox/<候选编号>`。HTTP 客户端只给随机 32 位十六进制候选编号，不能给宿主路径、owner、修订或 Ready 标志；API key 决定 owner，受保护清单必须匹配。服务检查只读普通文件、单链接、长度/SHA-256、绑定路径、envd 版本，以及 ext4 实际可用空间（扣除保留块），不信任工作器自报空闲值。持久接受发布意图后原子移入同盘 `artifacts/<编号>`；模板编号 `tpl-<候选编号>`、修订 r1 和完整形状不可改，变更须新候选。历史数量与内核+磁盘字节有全局/租户上限；失败和未决记录仍占额。本批不提供模板垃圾回收；可信监督方负责暂存预算，后续公开构建服务须另外限制和清理暂存，发布额度不是完整构建配额。
+
+临时启动检查复用正常资源准入、真实启动/envd 初始化和精确销毁，VM 身份与创建意图同事务提交，也占运行资源额度，但不暴露为用户沙箱会话。只有完整绑定成功 Running 已持久确认、且原 VM 和网络槽全部回收，才登记 Ready。文件/启动明确失败不发布；提交、启动或收尾未知保留 checking，同编号重提只返回原记录，不另起检查。重启只观察/推进原工作流；未持久确认检查成功的中断不得补造 Ready，原 VM 按既有启动/寿命期限回收。已确认检查成功但丢失清理回执，可在精确回收后登记 Ready。Ready 不保证用户程序持续健康，也不能用来宾 stdout 或清单自报代替管理通道检查。
+
+`template_registry` 为可选可信配置，字段为 `root`（root 独占绝对目录，预建 inbox/artifacts）、`max_templates_global`（1～256）、`max_templates_per_tenant`、`max_artifact_bytes_global`、`max_artifact_bytes_per_tenant` 和 `validation_timeout_secs`（1～300，且不超过运行上限）；租户上限须为正且不超过全局。必须同时配置 `templates` 和 `host_resources`。首次启用升至 V10，并持久绑定唯一根目录，此后生产服务不可关闭登记配置，旧二进制拒绝新库。目录、数据库和私有盘须同文件系统，清理余量观察才能覆盖这些写入。
+
+鉴权扩展接口：`POST /sandproof/template-publications` 接 `{candidateID}`；`GET /sandproof/template-publications/{candidateID}` 返回 checking/ready/failed 与有限原因；`GET /sandproof/templates` 只列本人 Ready，编号升序、limit 1～100、cursor 为上页最后不可变编号；`GET /sandproof/templates/{编号或别名}` 查询本人 Ready。`PUT /sandproof/template-aliases/{别名}` 接 `{templateID, expectedTemplateID?}`，可比较后更新，目标必须本人 Ready 编号；DELETE 只删本人别名，不删产物/实例绑定。静态目录名称保留；未知、未就绪和他人模板均不可创建。别名更新只影响新准入，旧实例/重启始终绑定原字节。响应不含宿主路径、临时 VM 编号或凭据。这是 Sandproof 发布扩展，不宣称原生 E2B 构建协议完全兼容。
 
 模板启动合同：仅 Linux/amd64 的 Debian/Ubuntu 兼容镜像；空 OCI USER/WORKDIR 按 root/根目录处理，不复制固定 E2B Dockerfile 解析器的 user/home 默认值。数字 UID 或 UID:GID 在构建 VM 内按有界账户文件解析为真实用户名；显式组必须是该账户的主组，否则拒绝（固定 envd 不支持替换主组）。目录须已存在，启动参数有数量与字节上限；Env 重复键后者优先。模板默认环境 < 创建环境 < 单次命令环境；显式命令用户/目录优先于模板默认值。无 `startup` 的旧镜像仍使用 root 和 envd 的每用户主目录，不改变旧合同。
 
