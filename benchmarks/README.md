@@ -94,6 +94,18 @@ uv run --locked --project benchmarks python -m benchmarks.run_local \
 
 [本地服务预算](local-service-budgets.json)固定本题集的串行实验配置，由监督器合入可信服务配置，不是生产默认值。上传 64 MiB 覆盖固定输入的最大单文件 12,640,606 字节；下载 96 MiB 与命令响应 32 MiB 分别约束日志和含 Connect 编码的输出。请求/写出空闲预算保持实跑使用的 13,000 秒，文件空闲预算为 30 秒；它们独立于题目最长 12,000 秒的执行时限，不代表已验收长时间空闲连接，也不延长任务自身时限。并发普通数据请求仍受每 VM 8 个名额中保留 1 个控制名额的限制，服务全局名额为 16。CPU、来宾内存和镜像按原题设置；每个 VMM 的 cgroup 内存上限为来宾内存加 512 MiB，不能当作整个服务的宿主内存上限。
 
+全局名额与服务/relay 资源观察使用[三 VM 实机探针](../tests/system/server_task_pressure.py)，详见[验收清单](../docs/testing-plan.md)。这项压力实验显式扩大 VM 准入，保持文件/命令/并发/空闲传输预算不变，不能当作串行题集配置或正式部署容量的验收。运行示例（路径须替换为预检过的 root 专用产物；脚本不创建或委派父 cgroup）：
+
+```sh
+sudo /path/to/pinned-python tests/system/server_task_pressure.py \
+  --server /private/sandproof-server --jailer /private/jailer \
+  --firecracker /private/firecracker --kernel /private/vmlinux \
+  --rootfs /private/base.ext4 --scratch-parent /private/pressure \
+  --cgroup-parent /sys/fs/cgroup/pressure --uid-base 63401 --keep-artifacts
+```
+
+完成后从本轮目录导出脱敏 `report.json`；配置与原始日志含测试凭据，保持 root 私有且不提交。成功报告核验六台实例已回收；保留目录仍需独立审计后按精确路径删除。
+
 最终镜像的隔离补验使用[原 SDK 私有盘探针](../tests/system/sdk_private_root.py)的 `--task-profile --expected-cpus N --expected-memory-mib M`：复用双客户端 root/ubuntu 数据断言，检查两个 VM 的包数据库与系统文件隔离，以及失败初始化留下的文件和存活子进程随 VM 销毁后不进入新实例。该场景明确把准入上限改为 2；串行题目实跑不表示已经验收双 VM 满载能力。独立监督器应记录真实 machine-config、10 GiB 私有盘身份、cgroup、宿主可用内存/磁盘与服务进程树，再核对精确资源清理和 base 摘要。失败初始化探针不代替控制器崩溃或全部宿主故障矩阵。
 
 上游初始化和评分脚本包含动态 apt/下载依赖，现阶段记录实际版本，尚未把所有远端依赖内容冻结。这是本地兼容与评分链实验，不是环境完全可复现、完整 Harbor Trial、全题集验收或在线 E2B/模型对照的完成声明。
