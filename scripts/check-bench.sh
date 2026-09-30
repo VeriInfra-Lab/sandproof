@@ -5,6 +5,7 @@ PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 uv run --locked --project benchmarks python -m benchmarks.check_harbor
+uv run --locked --project benchmarks python -m unittest discover -s benchmarks/tests -v
 uv run --locked --project benchmarks \
   python -m unittest discover -s tests/compat -p 'test_*.py' -v
 
