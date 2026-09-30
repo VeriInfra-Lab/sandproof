@@ -23,6 +23,7 @@ import tempfile
 import time
 import urllib.request
 
+import httpx
 from e2b import Sandbox
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
@@ -32,7 +33,7 @@ from sdk_private_root import (
 )
 from sdk_server_smoke import options
 from server_process_crash import (
-    fetch, free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
 )
 from server_templates import MIB, assert_shape, descriptor, record_for
 
@@ -57,7 +58,7 @@ def shared_network():
 
 def phases(database):
     with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as connection:
-        return {int(ident): json.loads(blob)["phase"] for ident, blob in
+        return {ident: json.loads(blob)["phase"] for ident, blob in
                 connection.execute("SELECT sandbox_id, state_blob FROM sandboxes")}
 
 
@@ -184,7 +185,7 @@ async def exercise(args):
         "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 4, "max_active_per_tenant": 4,
         "max_disk_bytes_global": 2 * disk_sum, "max_disk_bytes_per_tenant": 2 * disk_sum,
-        "cleanup_reserve_bytes": 1024 * MIB, "max_timeout_secs": 1200, "startup_timeout_secs": 20,
+        "cleanup_reserve_bytes": 1024 * MIB, "max_timeout_secs": 1200, "startup_timeout_secs": 120,
         "expiry_scan_seconds": 1, "templates": {"templates": templates + bad_templates, "aliases": {},
         "compute_limits": {"max_vcpus_global": 6, "max_vcpus_per_tenant": 6,
                            "max_memory_bytes_global": 4096 * MIB, "max_memory_bytes_per_tenant": 4096 * MIB}},
@@ -194,6 +195,9 @@ async def exercise(args):
     config.chmod(0o600)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     owner = options(key, url, url)
+    # Large private disks need time for validation/copy before create returns.
+    # This explicit probe request budget does not change production defaults.
+    owner["request_timeout"] = 180
     live, evidence, cases = {}, [], []
     process = None
     completed = False
@@ -224,6 +228,8 @@ async def exercise(args):
         live[sandbox]["host"] = live_shape(root, args, sandbox, template, opener, url, key)
         evidence.append({"sandbox_id": sandbox.sandbox_id, "template_id": template["template_id"],
                          "host": live[sandbox]["host"]})
+        print(json.dumps({"event": "created", "sandbox_id": sandbox.sandbox_id,
+                          "template_id": template["template_id"], "live": len(live)}), flush=True)
         return sandbox
 
     try:
@@ -237,6 +243,7 @@ async def exercise(args):
             live[sandbox]["version"] = version
             await check_live()
         cases.append("four concurrent VMs have independent files and dpkg versions at the same paths")
+        print(json.dumps({"event": "four_package_databases_verified"}), flush=True)
         for index in (0, 2):
             victim = original[index]
             victim.files.write(CONFIG, victim.sandbox_id + "-changed\n")
@@ -262,29 +269,33 @@ async def exercise(args):
             failure["cleanup"] = audit_gone(root, args.firecracker, args.cgroup_parent, name)
             failure["template_id"] = template["template_id"]
             cases.append({"guest_initializer_exit_42": failure})
+            print(json.dumps({"event": "guest_failure_reclaimed", "template_id": template["template_id"]}), flush=True)
             await check_live()
             # The valid manifest describes an intentionally invalid private
             # kernel. This reaches physical preparation, unlike a hash refusal.
             before = phases(database)
-            status, _ = fetch(opener, url, "POST", "/v2/sandboxes", key,
-                              {"templateID": bad_templates[index // 2]["template_id"],
-                               "timeout": 300, "allow_internet_access": False})
+            response = httpx.post(url + "/v2/sandboxes", headers={"X-API-Key": key},
+                                  json={"templateID": bad_templates[index // 2]["template_id"],
+                                        "timeout": 300, "allow_internet_access": False},
+                                  timeout=180, trust_env=False)
+            status = response.status_code
             assert status >= 500, f"invalid kernel unexpectedly accepted: {status}"
             added = set(phases(database)) - set(before)
             assert len(added) == 1, "failed create must keep one durable identity"
             ident = added.pop()
-            deadline = time.monotonic() + 45
+            deadline = time.monotonic() + 150
             while phases(database)[ident] != "Destroyed":
                 assert process.poll() is None and time.monotonic() < deadline, "failed boot cleanup unknown"
                 time.sleep(0.1)
             assert set(phases(database)) == set(before) | {ident}, "failed create allocated another identity"
             slots = [json.loads(path.read_text()) for path in (root / "state/slots").glob("*.json")]
-            slot = next(value for value in slots if value["sandbox"] == ident)
+            slot = next(value for value in slots if value["sandbox"] == int(ident.rsplit("-", 1)[1]))
             name = f"vm-{namespace}-{slot['vm']}"
             assert (root / "jails/.claims" / name / "failed-prepare.json").is_file()
             cases.append({"invalid_kernel_startup": {"template_id": bad_templates[index // 2]["template_id"],
                           "http_status": status, "terminal": "Destroyed",
                           "cleanup": audit_gone(root, args.firecracker, args.cgroup_parent, name)}})
+            print(json.dumps({"event": "boot_failure_reclaimed", "template_id": template["template_id"]}), flush=True)
             await check_live()
             replacement = create(template)
             await clean(replacement)
@@ -315,6 +326,7 @@ async def exercise(args):
                   "host_kernel": os.uname().release, "sdk": "2.51.0", "namespace": namespace,
                   "inputs": inputs, "templates": templates, "observations": evidence, "cases": cases,
                   "vms_destroyed": VM_COUNT, "cleanup": cleanup, "shared_network_unchanged": True,
+                  "probe_timeouts_seconds": {"request": 180, "startup": 120, "sandbox": 900},
                   "service_exited": True, "result": "passed",
                   "scope": "trusted prebuilt templates; four concurrent SDK VMs, local packages, guest-init and boot failures; no self-service build, arbitrary crash, cloud/model, full V1 or proof claim"}
         (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
