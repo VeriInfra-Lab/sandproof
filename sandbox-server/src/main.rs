@@ -489,84 +489,93 @@ mod linux {
         let world = journal.world()?;
         let uncertain = journal.uncertain_actions()?;
         for slot in inventory.slots {
-            if !node
-                .has_bound_launch_secret(slot.sandbox, &journal.create_options(slot.sandbox)?)?
-            {
-                return Err("host slot has no matching durable launch configuration".into());
-            }
-            let record = world
-                .sandbox_record(slot.sandbox)
-                .ok_or("host slot has no durable sandbox")?;
-            if slot.owner.as_str() != format!("tenant-{}", record.owner.0) {
-                return Err("host slot owner differs from durable sandbox".into());
-            }
-            let planned = world.operation_records().iter().any(|(key, _)| {
-                key.sandbox == slot.sandbox
-                    && world.operation_plan(*key).is_some_and(|plan| {
-                        plan.generation == slot.generation
-                            && plan.vm == Some(slot.vm)
-                            && plan.slot == Some(slot.slot)
-                    })
-            });
-            if !planned {
-                return Err("host slot has no matching durable resource plan".into());
-            }
-            if (slot.aborted_unlaunched || slot.failed_prepare_reclaimed)
-                && ((slot.aborted_unlaunched && slot.process.is_some())
-                    || slot.network_inode.is_some()
-                    || slot.disk_inode.is_some()
-                    || slot.cgroup_inode.is_some())
-            {
-                return Err("reclaimed failed PrepareVm still has physical resources".into());
-            }
-            if slot.claim_present && slot.process.is_none() && !slot.aborted_unlaunched {
-                // A claim from the exact current uncertain PrepareVm may be
-                // an interrupted pre-launch. The per-sandbox recovery path
-                // will reclaim it or park this sandbox. All other claims
-                // remain a global startup error, never an inferred stop.
-                if record.phase == core::Phase::Destroyed
-                    || !has_current_uncertain_prepare(journal, &world, &slot, &uncertain)?
-                {
-                    return Err(
-                        "VM claim has no exact process record; manual reconciliation required"
-                            .into(),
-                    );
-                }
-            }
-            if let Some(vm) = world.vm_record(slot.vm) {
-                if vm.sandbox != slot.sandbox || vm.generation != slot.generation {
-                    return Err("host VM identity differs from durable resource".into());
-                }
-                if vm.status == core::VmStatus::Reclaimed
-                    && (slot.disk_inode.is_some()
-                        || slot.network_inode.is_some()
-                        || slot.cgroup_inode.is_some()
-                        || slot.process.as_ref().is_some_and(|process| {
-                            process.state != sandbox_runtime::VmState::Stopped
-                        }))
-                {
-                    return Err("reclaimed VM still has physical resources".into());
-                }
-            }
-            if let Some(network) = world.slot_record(slot.slot) {
-                if network.sandbox != slot.sandbox
-                    || network.generation != slot.generation
-                    || network.vm != slot.vm
-                {
-                    return Err("host network identity differs from durable resource".into());
-                }
-                if network.reclaimed && slot.network_inode.is_some() {
-                    return Err("reclaimed network slot still exists on host".into());
-                }
-            }
+            audit_host_slot(node, journal, &world, &uncertain, &slot)?;
+        }
+        Ok(())
+    }
+
+    fn audit_host_slot(
+        node: &LinuxWorker,
+        journal: &ControllerJournal,
+        world: &core::World,
+        uncertain: &[WorkAction<core::EffectId>],
+        slot: &ObservedSlot,
+    ) -> Result<(), Box<dyn Error>> {
+        if !node.has_bound_launch_secret(slot.sandbox, &journal.create_options(slot.sandbox)?)? {
+            return Err("host slot has no matching durable launch configuration".into());
+        }
+        let record = world
+            .sandbox_record(slot.sandbox)
+            .ok_or("host slot has no durable sandbox")?;
+        if slot.owner.as_str() != format!("tenant-{}", record.owner.0) {
+            return Err("host slot owner differs from durable sandbox".into());
+        }
+        let planned = world.operation_records().iter().any(|(key, _)| {
+            key.sandbox == slot.sandbox
+                && world.operation_plan(*key).is_some_and(|plan| {
+                    plan.generation == slot.generation
+                        && plan.vm == Some(slot.vm)
+                        && plan.slot == Some(slot.slot)
+                })
+        });
+        if !planned {
+            return Err("host slot has no matching durable resource plan".into());
+        }
+        if (slot.aborted_unlaunched || slot.failed_prepare_reclaimed)
+            && ((slot.aborted_unlaunched && slot.process.is_some())
+                || slot.network_inode.is_some()
+                || slot.disk_inode.is_some()
+                || slot.cgroup_inode.is_some())
+        {
+            return Err("reclaimed failed PrepareVm still has physical resources".into());
+        }
+        if slot.claim_present && slot.process.is_none() && !slot.aborted_unlaunched {
+            // A claim from the exact current uncertain PrepareVm may be
+            // an interrupted pre-launch. The per-sandbox recovery path
+            // will reclaim it or park this sandbox. All other claims
+            // remain a global startup error, never an inferred stop.
             if record.phase == core::Phase::Destroyed
-                && slot
-                    .process
-                    .as_ref()
-                    .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped)
+                || !has_current_uncertain_prepare(journal, world, slot, uncertain)?
             {
-                return Err("terminal sandbox still has a live or unobservable VM".into());
+                return Err(
+                    "VM claim has no exact process record; manual reconciliation required".into(),
+                );
             }
+        }
+        if let Some(vm) = world.vm_record(slot.vm) {
+            if vm.sandbox != slot.sandbox || vm.generation != slot.generation {
+                return Err("host VM identity differs from durable resource".into());
+            }
+            if vm.status == core::VmStatus::Reclaimed
+                && (slot.disk_inode.is_some()
+                    || slot.network_inode.is_some()
+                    || slot.cgroup_inode.is_some()
+                    || slot
+                        .process
+                        .as_ref()
+                        .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped))
+            {
+                return Err("reclaimed VM still has physical resources".into());
+            }
+        }
+        if let Some(network) = world.slot_record(slot.slot) {
+            if network.sandbox != slot.sandbox
+                || network.generation != slot.generation
+                || network.vm != slot.vm
+            {
+                return Err("host network identity differs from durable resource".into());
+            }
+            if network.reclaimed && slot.network_inode.is_some() {
+                return Err("reclaimed network slot still exists on host".into());
+            }
+        }
+        if record.phase == core::Phase::Destroyed
+            && slot
+                .process
+                .as_ref()
+                .is_some_and(|process| process.state != sandbox_runtime::VmState::Stopped)
+        {
+            return Err("terminal sandbox still has a live or unobservable VM".into());
         }
         Ok(())
     }
