@@ -142,7 +142,7 @@ def exercise(args):
     try:
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
-        for token, name, expected in ((foreign_key, "chosen", 404), (key, "missing", 400)):
+        for token, name, expected in ((foreign_key, "chosen", 404), (key, "missing", 404)):
             before = durable_snapshot(database)
             assert fetch(opener, url, "POST", "/v2/sandboxes", token, {"templateID": name, "allow_internet_access": False})[0] == expected
             assert durable_snapshot(database) == before
@@ -166,6 +166,12 @@ def exercise(args):
         assert [assert_shape(root, firecracker, args.cgroup_parent, sandbox, template, opener, url, key) for sandbox, template in zip((small, large), templates)] == original_claims
         assert small.files.read("/tmp/template-marker") == "small-private"
         assert Sandbox.connect(small.sandbox_id, **owner).get_info().template_id == "small-r1"
+        # Validate the original artifact in this new service process, then
+        # refuse on its persisted compute charge. This also warms the cache
+        # whose invalidation is checked by the following mutation.
+        before = durable_snapshot(database)
+        assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "small-r1", "allow_internet_access": False})[0] == 429
+        assert durable_snapshot(database) == before
         assert Sandbox.kill(large.sandbox_id, **owner)
         # Changing an artifact after its first cached validation must invalidate
         # that cache and fail before admission, without affecting the live VM.

@@ -22,6 +22,7 @@ pub struct CreateOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub networking: Option<CreateNetworking>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Trusted resolved descriptor, never copied from a client's host-path input.
     pub template: Option<TemplateBinding>,
 }
 

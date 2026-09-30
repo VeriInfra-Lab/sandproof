@@ -2144,7 +2144,7 @@ async fn template_http_selection_projection_and_compute_quota_release() {
     );
     assert_eq!(
         port.create("1", template_request("missing")),
-        Err(PortError::Invalid)
+        Err(PortError::NotFound)
     );
     let app = router(
         port.clone(),

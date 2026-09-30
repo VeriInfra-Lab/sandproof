@@ -1073,8 +1073,10 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                     catalog
                         .resolve(tenant.0, &request.template_id)
                         .map_err(|error| match error {
-                            TemplateError::Unauthorized => PortError::NotFound,
-                            TemplateError::Invalid | TemplateError::Missing => PortError::Invalid,
+                            TemplateError::Unauthorized | TemplateError::Missing => {
+                                PortError::NotFound
+                            }
+                            TemplateError::Invalid => PortError::Invalid,
                         })
                 })
                 .transpose()?,
