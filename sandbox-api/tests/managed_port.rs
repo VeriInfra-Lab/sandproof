@@ -137,6 +137,7 @@ struct FakeHost {
     bad_execute_for: Option<core::SandboxId>,
     unknown_stop_for: Option<core::SandboxId>,
     incomplete_cleanup: bool,
+    unknown_cleanup_for: Option<core::SandboxId>,
     stop_calls: Option<Arc<AtomicUsize>>,
     prepare_calls: Option<Arc<AtomicUsize>>,
     abort_calls: Option<Arc<AtomicUsize>>,
@@ -167,6 +168,7 @@ impl Default for FakeHost {
             bad_execute_for: None,
             unknown_stop_for: None,
             incomplete_cleanup: false,
+            unknown_cleanup_for: None,
             stop_calls: None,
             prepare_calls: None,
             abort_calls: None,
@@ -365,6 +367,10 @@ impl HostAdapter for FakeHost {
             {
                 return Ok(unknown_receipt(action));
             }
+        }
+        if matches!(action.command.command(), core::Command::CleanupVm { sandbox, .. } if self.unknown_cleanup_for == Some(*sandbox))
+        {
+            return Ok(unknown_receipt(action));
         }
         if matches!(action.command.command(), core::Command::StopVm { .. }) {
             if let Some(calls) = &self.stop_calls {

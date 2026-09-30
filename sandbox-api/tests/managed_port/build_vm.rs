@@ -108,3 +108,37 @@ fn lost_launch_receipt_and_restart_keep_original_build_identity() {
     assert_eq!(first.sandbox_id, again.sandbox_id);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn destroyed_publication_does_not_release_build_budget_before_vm_reclaim() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("pool.db");
+    let port = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost {
+            unknown_cleanup_for: Some(core::SandboxId(1)),
+            ..FakeHost::default()
+        },
+        config(),
+    )
+    .with_internal_build_vms(true);
+    let created = port.build_vm("1", BUILD, Some(input())).unwrap();
+    assert!(matches!(
+        port.kill("1", &created.sandbox_id),
+        Err(PortError::OutcomeUnknown)
+    ));
+    let pending = port.build_vm("1", BUILD, None).unwrap();
+    assert_eq!(pending.state, "Destroyed");
+    assert!(!pending.cleanup_complete);
+    drop(port);
+    let restarted = ManagedPort::new(
+        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        FakeHost::default(),
+        config(),
+    )
+    .with_internal_build_vms(true);
+    restarted.recover_on_startup().unwrap();
+    let final_view = restarted.build_vm("1", BUILD, None).unwrap();
+    assert!(final_view.cleanup_complete);
+    assert_eq!(final_view.sandbox_id, created.sandbox_id);
+}

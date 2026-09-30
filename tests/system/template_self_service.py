@@ -268,5 +268,17 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--public", action="store_true")
+    parser.add_argument("--temporarily-forward", action="store_true", help="temporarily enable IPv4 forwarding for approved public test; restore on exit")
     parser.add_argument("--public-image", default="public.ecr.aws/docker/library/ubuntu:24.04")
-    exercise(parser.parse_args())
+    args = parser.parse_args()
+    original_forward = Path("/proc/sys/net/ipv4/ip_forward").read_text().strip()
+    if args.temporarily_forward and not args.public:
+        raise RuntimeError("temporary forwarding only applies to the public test")
+    changed_forward = args.public and args.temporarily_forward and original_forward == "0"
+    try:
+        if changed_forward:
+            subprocess.run(["/usr/sbin/sysctl", "-w", "net.ipv4.ip_forward=1"], check=True)
+        exercise(args)
+    finally:
+        if changed_forward:
+            subprocess.run(["/usr/sbin/sysctl", "-w", "net.ipv4.ip_forward=0"], check=True)

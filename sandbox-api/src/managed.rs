@@ -846,12 +846,9 @@ impl<H: HostAdapter> ManagedPort<H> {
         id: &str,
         request: Option<&crate::BuildVmRequest>,
     ) -> Result<Option<crate::BuildVmView>, PortError> {
-        for (sandbox, record) in inner
-            .journal
-            .world()
-            .map_err(map_journal)?
-            .sandbox_records()
-        {
+        let world = inner.journal.world().map_err(map_journal)?;
+        let reclaimed = reclaimed_sandboxes(&world);
+        for (sandbox, record) in world.sandbox_records() {
             if record.owner != tenant {
                 continue;
             }
@@ -885,7 +882,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                     .as_str()
                     .into(),
                 state: format!("{:?}", record.phase),
-                cleanup_complete: record.phase == core::Phase::Destroyed,
+                cleanup_complete: reclaimed.contains(&sandbox),
                 session: if record.phase == core::Phase::Running {
                     self.session(inner, tenant, sandbox).ok()
                 } else {
