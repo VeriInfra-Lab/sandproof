@@ -16,6 +16,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 
 if __package__:
@@ -57,9 +58,22 @@ exec /opt/sandproof/envd -verbose -no-cgroups
 """
 
 
+class LogBudget:
+    def __init__(self, remaining):
+        self.remaining = remaining
+        self.lock = threading.Lock()
+
+    def take(self, size):
+        with self.lock:
+            accepted = min(size, self.remaining)
+            self.remaining -= accepted
+            return accepted
+
+
 class Commands:
-    def __init__(self, deadline, log, max_log_bytes):
-        self.deadline, self.log, self.remaining = deadline, log, max_log_bytes
+    def __init__(self, deadline, log, max_log_bytes, *, budget=None):
+        self.deadline, self.log = deadline, log
+        self.budget = budget or LogBudget(max_log_bytes)
 
     def run(self, args, *, daemon=False):
         if time.monotonic() >= self.deadline:
@@ -88,15 +102,12 @@ class Commands:
                     data = os.read(key.fd, 65536)
                     if not data:
                         ready.unregister(key.fileobj)
-                    elif len(data) > self.remaining:
-                        self.log.write(data[:self.remaining])
-                        self.log.flush()
-                        self.remaining = 0
-                        raise InvalidTemplate("build log limit")
                     else:
-                        self.log.write(data)
+                        accepted = self.budget.take(len(data))
+                        self.log.write(data[:accepted])
                         self.log.flush()
-                        self.remaining -= len(data)
+                        if accepted < len(data):
+                            raise InvalidTemplate("build log limit")
 
 
 def terminate(child):
@@ -207,6 +218,8 @@ def check_tools(profile):
         raise InvalidTemplate("worker tool profile incomplete")
     tools = {}
     for name, artifact in profile.items():
+        if set(artifact) != {"path", "sha256"}:
+            raise InvalidTemplate("invalid tool descriptor")
         path = Path(artifact["path"])
         if (not path.is_absolute() or not stat.S_ISREG(path.lstat().st_mode)
                 or sha256(path) != artifact["sha256"]):
@@ -231,6 +244,8 @@ def build(work, source, request, profile, *, guest_boot_id):
     work.mkdir(mode=0o700)  # exact identity is new; never reuse another job/cache
     daemon = None
     state = {"state": "building", "ready": False}
+    input_digest = sha256(source)
+    filesystem_tools = {name: sha256(Path(name)) for name in ("/usr/sbin/mke2fs", "/usr/sbin/e2fsck")}
     (work / "status.json").write_text(json.dumps(state))
     try:
         with (work / "build.log").open("xb") as log:
@@ -241,16 +256,16 @@ def build(work, source, request, profile, *, guest_boot_id):
                 extract_context(source, work / "context", **limits)
                 address = "unix://" + str(work / "buildkit.sock")
                 daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
+                                       "--oci-worker=true",
                                        "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "native",
                                        "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True)
                 # Daemon logging is intentionally a separate bounded file,
                 # drained while the build client runs (see daemon reader below).
-                import threading
                 daemon_error = []
                 def read_daemon():
                     try:
                         with (work / "daemon.log").open("xb") as daemon_log:
-                            Commands(commands.deadline, daemon_log, request["max_log_bytes"]).drain(daemon)
+                            Commands(commands.deadline, daemon_log, request["max_log_bytes"], budget=commands.budget).drain(daemon)
                     except Exception as error:
                         daemon_error.append(error)
                         terminate(daemon)
@@ -298,7 +313,7 @@ def build(work, source, request, profile, *, guest_boot_id):
             state = {"state": "candidate", "ready": False, **image, "startup": startup,
                      "startup_applied": False, "rootfs_sha256": sha256(disk), "disk_bytes": disk.stat().st_size,
                      "free_bytes": free * 4096, "min_free_bytes": request["min_free_mib"] * MIB,
-                     "input_sha256": sha256(source), "tools": profile,
+                     "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
                      "requires": ["external VM cleanup", "startup defaults integration", "launch/envd/owner publish gate"]}
             disk.chmod(0o444)
     except BaseException as error:

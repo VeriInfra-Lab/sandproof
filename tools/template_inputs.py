@@ -157,7 +157,8 @@ def inspect_oci(layout, *, max_bytes, max_entries):
         raise InvalidTemplate("only linux/amd64 supported")
     layers = manifest.get("layers", [])
     diff_ids = config.get("rootfs", {}).get("diff_ids", [])
-    if not layers or len(layers) > 128 or len(diff_ids) != len(layers):
+    if (config.get("rootfs", {}).get("type") != "layers"
+            or not layers or len(layers) > 128 or len(diff_ids) != len(layers)):
         raise InvalidTemplate("invalid image layers")
     remaining_bytes, remaining_entries = max_bytes, max_entries
     for layer, expected_diff in zip(layers, diff_ids):
