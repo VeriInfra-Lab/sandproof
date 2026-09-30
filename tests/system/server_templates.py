@@ -17,7 +17,7 @@ import sys
 import tempfile
 import urllib.request
 
-from e2b import Sandbox
+from e2b import Sandbox, SandboxQuery
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
@@ -153,7 +153,7 @@ def exercise(args):
             sandbox.files.write("/tmp/template-marker", marker)
         assert small.files.read("/tmp/template-marker") == "small-private"
         assert large.files.read("/tmp/template-marker") == "large-private"
-        listing = Sandbox.list(query={"template": "large-r1"}, **owner).next_items()
+        listing = Sandbox.list(query=SandboxQuery(template="large-r1"), **owner).next_items()
         assert [item.sandbox_id for item in listing] == [large.sandbox_id]
         before = durable_snapshot(database)
         assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "chosen", "allow_internet_access": False})[0] == 429
