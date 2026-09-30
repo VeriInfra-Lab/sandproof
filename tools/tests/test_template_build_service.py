@@ -52,7 +52,7 @@ class FakeBackend:
         if self.lost_publish:
             self.lost_publish = False
             raise TimeoutError()
-        return {"state": "ready", "template": {"templateID": "tpl-" + row["id"], "revision": "r1", "imageDigest": "sha256:" + "a" * 64}}
+        return {"state": "ready", "template": {"templateId": "tpl-" + row["id"], "revision": "r1", "imageDigest": "sha256:" + "a" * 64}}
 
 
 class BuildTests(unittest.TestCase):
@@ -109,7 +109,7 @@ class BuildTests(unittest.TestCase):
         supervisor.tick()
         view = self.store.query(job, 1)
         self.assertEqual(view["state"], "Ready")
-        self.assertEqual(view["template"]["templateID"], "tpl-" + job)
+        self.assertEqual(view["template"]["templateId"], "tpl-" + job)
         self.assertEqual(self.store.get(job)["reserved"], 0)
         self.assertFalse((self.root / job / "candidate.ext4").exists())
         self.assertEqual(self.store.logs(job, 1, 0, 6)["text"], "first\n")

@@ -181,11 +181,14 @@ class BuildStore:
             # unknown jobs retain this reservation until exact cleanup.
             cost = (self.limits["builder_disk_bytes"] + self.limits["max_input_bytes"]
                     + 2 * request["resources"]["diskMiB"] * MIB + self.limits["artifact_margin_bytes"])
+            # Terminal jobs retain bounded logs and journal/status. Charge
+            # their worst-case bytes even after the active VM budget releases.
+            history = self.limits["max_log_bytes"] + 256 * 1024
             if (counts[0] >= self.limits["max_jobs"] or own[0] >= self.limits["max_jobs_per_tenant"]
                     or active >= self.limits["max_pending"] or own_active >= self.limits["max_pending_per_tenant"]
-                    or counts[1] + cost > self.limits["workspace_bytes"]
-                    or own[1] + cost > self.limits["workspace_bytes_per_tenant"]
-                    or self.free_bytes() < counts[1] + cost + self.limits["runtime_cleanup_reserve_bytes"]):
+                    or counts[1] + cost + (counts[0] + 1) * history > self.limits["workspace_bytes"]
+                    or own[1] + cost + (own[0] + 1) * history > self.limits["workspace_bytes_per_tenant"]
+                    or self.free_bytes() < counts[1] + cost + (counts[0] + 1) * history + self.limits["runtime_cleanup_reserve_bytes"]):
                 raise BuildError(429, "BuildBudgetExceeded")
             job = secrets.token_hex(16)
             self.directory(job).mkdir(mode=0o700)

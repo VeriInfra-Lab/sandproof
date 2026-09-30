@@ -172,7 +172,7 @@ def exercise(args):
         result = wait_job(job)
         assert result["state"] == "Ready", result
         assert request("GET", "/sandproof/template-builds/" + job, key=keys[2])[0] == 404
-        template = result["template"]["templateID"]
+        template = result["template"]["templateId"]
         sandbox = Sandbox.create(template, timeout=120, allow_internet_access=False, **options(keys[0], urls[0], urls[0]))
         try:
             assert sandbox.commands.run("cat /workspace/payload", user="app").stdout == "copied-standard-context"
@@ -223,7 +223,7 @@ def exercise(args):
             job = submit({"kind": "oci", "image": args.public_image, "timeoutSeconds": 600})
             result = wait_job(job)
             assert result["state"] == "Ready", result
-            sandbox = Sandbox.create(result["template"]["templateID"], timeout=120, allow_internet_access=False, **options(keys[0], urls[0], urls[0]))
+            sandbox = Sandbox.create(result["template"]["templateId"], timeout=120, allow_internet_access=False, **options(keys[0], urls[0], urls[0]))
             try:
                 assert "ubuntu" in sandbox.commands.run("cat /etc/os-release", user="root").stdout.lower()
                 sandbox.files.write("/tmp/public-image", "public-oci", user="root")
