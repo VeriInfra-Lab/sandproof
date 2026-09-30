@@ -795,6 +795,24 @@ impl<H: HostAdapter> ManagedPort<H> {
         Ok(port)
     }
 
+    fn resolve_template(
+        &self,
+        tenant: core::TenantId,
+        name: &str,
+    ) -> Result<Option<TemplateBinding>, PortError> {
+        self.templates
+            .as_ref()
+            .map(|catalog| {
+                catalog
+                    .resolve(tenant.0, name)
+                    .map_err(|error| match error {
+                        TemplateError::Unauthorized | TemplateError::Missing => PortError::NotFound,
+                        TemplateError::Invalid => PortError::Invalid,
+                    })
+            })
+            .transpose()
+    }
+
     /// Reconcile exact host observations before resuming accepted workflows.
     /// It never blindly repeats an uncertain action: only an identity-matched
     /// network setup or terminal fence may complete an idempotent host step.
@@ -1066,20 +1084,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                 allow_internet_access: request.allow_internet_access,
                 network: request.network,
             }),
-            template: self
-                .templates
-                .as_ref()
-                .map(|catalog| {
-                    catalog
-                        .resolve(tenant.0, &request.template_id)
-                        .map_err(|error| match error {
-                            TemplateError::Unauthorized | TemplateError::Missing => {
-                                PortError::NotFound
-                            }
-                            TemplateError::Invalid => PortError::Invalid,
-                        })
-                })
-                .transpose()?,
+            template: self.resolve_template(tenant, &request.template_id)?,
         };
         let disk_bytes = options
             .template
