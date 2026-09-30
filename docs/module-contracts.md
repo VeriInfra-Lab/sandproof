@@ -40,9 +40,13 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 第一次接受预制模板会原子升级数据库到 V8；第一次接受含 `startup` 的模板升至 V9，后续接受旧模板不能降级。旧二进制不可打开对应新库；同库此后拒绝旧式无计算额度准入，关闭配置不能绕过资源账本。启用前须精确清理仍占用资源的旧无绑定实例，不猜测其历史 CPU/内存；它们仍可查询和销毁。模板目录不是构建状态库，不接收用户上传，也不管理镜像回收。
 
-[#123 的候选构建工作器](../tools/template_worker.py)是未接入公开服务的一次性工具：只由监督器在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。OCI 首批接受单一 linux/amd64 OCI tar/gzip 层，检查摘要和展开预算后由 umoci 处理 whiteout；多架构、设备节点、容器卷及其他压缩格式明确拒绝。上下文只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
+[#123 的候选构建工作器](../tools/template_worker.py)是未接入公开服务的一次性工具：只由监督器在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。OCI 首批接受单一 linux/amd64 OCI tar/gzip 层，检查摘要和展开预算后由 umoci 处理 whiteout；上传布局的多架构、设备节点、容器卷及其他压缩格式明确拒绝。上下文只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
 
-转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。自助构建请求/状态/日志服务、公开 OCI 获取和可靠构建恢复仍属于后续 #123。
+转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。自助构建请求/状态/日志服务和可靠构建恢复仍属于后续 #123。
+
+公开获取由[固定 regctl 客户端](../tools/template_fetch.py)在同一构建 VM 内执行；工作器的 `kind=registry` 接收仅含 `image` 的 JSON 文件，例如 `{"image":"docker.io/library/debian@sha256:<64位摘要>"}`。仅接受显式 DNS 仓库与 SHA-256，不接受可变标签、认证信息、端口或私有 IP 字面量；网络地址是否可达仍由既有公网 IPv4 隔离策略决定，字符串检查不代替网络隔离。regctl 固定 v0.11.6/linux-amd64 及 SHA-256，使用空 HOME/Docker/regctl 配置，不携带宿主仓库凭据。先验证输入清单原始字节摘要；OCI 清单直接使用，OCI/Docker 索引只允许唯一 linux/amd64 OCI 子清单，其他平台不下载；不支持 Docker schema2 镜像清单或嵌套索引。导出 OCI 布局后再校验所选清单、所有 blob、diff_ids 与展开限制，沿用原转换和发布门。导入不执行 ONBUILD，不使用宿主 Docker。
+
+获取清单与 OCI tar 的 stdout 合计受 `max_input_bytes` 限制（不含 HTTP 头、重试等线上字节），stderr 与其他工具共享 `max_log_bytes`，使用同一总期限和 VM 磁盘/内存限制。候选增加 `public_source` 记录原始引用/摘要、所选摘要、平台、下载产物字节及工具指纹；仍为 `candidate`。这是来宾工作器输入能力，尚未接入公开构建提交 API；不包含私有仓库认证、标签解析、可靠恢复或 Harbor 通用模板适配。
 
 正式发布门由可信构建监督方确认构建 VM 回收后，用[登记准备工具](../tools/template_stage.py)将候选字节放入 root 独占 `template_registry.root/inbox/<候选编号>`。HTTP 客户端只给随机 32 位十六进制候选编号，不能给宿主路径、owner、修订或 Ready 标志；API key 决定 owner，受保护清单必须匹配。服务检查只读普通文件、单链接、长度/SHA-256、绑定路径、envd 版本，以及 ext4 实际可用空间（扣除保留块），不信任工作器自报空闲值。持久接受发布意图后原子移入同盘 `artifacts/<编号>`；模板编号 `tpl-<候选编号>`、修订 r1 和完整形状不可改，变更须新候选。历史数量与内核+磁盘字节有全局/租户上限；失败和未决记录仍占额。本批不提供模板垃圾回收；可信监督方负责暂存预算，后续公开构建服务须另外限制和清理暂存，发布额度不是完整构建配额。
 

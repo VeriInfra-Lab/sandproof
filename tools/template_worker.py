@@ -249,7 +249,7 @@ def runtime_defaults(root, startup):
 def validate_request(request):
     expected = {"kind", "disk_mib", "min_free_mib", "max_input_bytes", "max_expanded_bytes", "max_entries",
                 "timeout_seconds", "max_log_bytes"}
-    if set(request) != expected or request["kind"] not in ("dockerfile", "oci"):
+    if set(request) != expected or request["kind"] not in ("dockerfile", "oci", "registry"):
         raise InvalidTemplate("invalid worker request")
     bounds = {"disk_mib": (512, 32768), "min_free_mib": (16, 32768),
               "max_input_bytes": (1, 8 * 1024 * MIB), "max_expanded_bytes": (10240, 32 * 1024 * MIB),
@@ -261,8 +261,10 @@ def validate_request(request):
         raise InvalidTemplate("minimum free disk must be smaller than total")
 
 
-def check_tools(profile):
+def check_tools(profile, *, registry=False):
     required = {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox"}
+    if registry:
+        required.add("regctl")
     if set(profile) != required:
         raise InvalidTemplate("worker tool profile incomplete")
     tools = {}
@@ -290,10 +292,11 @@ def build(work, source, request, profile, *, guest_boot_id):
             or Path("/proc/sys/kernel/random/boot_id").read_text().strip() != guest_boot_id
             or not Path("/dev/vda").is_block_device()):
         raise InvalidTemplate("worker requires its assigned disposable build VM")
-    tools = check_tools(profile)
+    tools = check_tools(profile, registry=request["kind"] == "registry")
     if not stat.S_ISREG(source.lstat().st_mode) or source.stat().st_size > request["max_input_bytes"]:
         raise InvalidTemplate("input archive limit or type")
-    if shutil.disk_usage(work.parent).free < request["disk_mib"] * MIB + request["max_expanded_bytes"] + 64 * MIB:
+    download_space = 2 * request["max_input_bytes"] if request["kind"] == "registry" else 0
+    if shutil.disk_usage(work.parent).free < request["disk_mib"] * MIB + request["max_expanded_bytes"] + download_space + 64 * MIB:
         raise InvalidTemplate("build disk budget unavailable")
     work.mkdir(mode=0o700)  # exact identity is new; never reuse another job/cache
     daemon = None
@@ -306,7 +309,14 @@ def build(work, source, request, profile, *, guest_boot_id):
             commands = Commands(time.monotonic() + request["timeout_seconds"], log, request["max_log_bytes"])
             limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
             layout = work / "oci"
-            if request["kind"] == "dockerfile":
+            public_source = None
+            if request["kind"] == "registry":
+                if __package__:
+                    from .template_fetch import fetch
+                else:
+                    from template_fetch import fetch
+                public_source = fetch(source, work, layout, request, tools["regctl"], commands)
+            elif request["kind"] == "dockerfile":
                 extract_context(source, work / "context", **limits)
                 address = "unix://" + str(work / "buildkit.sock")
                 daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
@@ -370,6 +380,10 @@ def build(work, source, request, profile, *, guest_boot_id):
                      "free_bytes": free * 4096, "min_free_bytes": request["min_free_mib"] * MIB,
                      "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
                      "requires": ["external VM cleanup", "launch/envd/owner publish gate"]}
+            if public_source is not None:
+                if image["image_digest"] != public_source["selected_digest"]:
+                    raise InvalidTemplate("public image provenance mismatch")
+                state["public_source"] = public_source
             disk.chmod(0o444)
     except BaseException as error:
         state = {"state": "failed", "ready": False, "error_type": type(error).__name__}
