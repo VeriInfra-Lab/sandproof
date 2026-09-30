@@ -147,7 +147,13 @@ def exercise(args):
         deadline = time.monotonic() + 660
         while time.monotonic() < deadline:
             assert process.poll() is None, "build service exited"
-            code, result = request("GET", "/sandproof/template-builds/" + job)
+            try:
+                code, result = request("GET", "/sandproof/template-builds/" + job)
+            except OSError:
+                # Read-only query during explicit restart. Never repeat a
+                # lost create/submission; the original job ID stays fixed.
+                time.sleep(0.5)
+                continue
             assert code == 200
             if result["state"] in (("Ready", "Failed") if terminal else ("Building",)):
                 return result
