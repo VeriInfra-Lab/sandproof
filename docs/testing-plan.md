@@ -63,6 +63,8 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 
 [任务预算探针](../tests/system/sdk_task_budgets.py)复用原文件上传/下载边界、命令超量及断线重连断言，并在固定串行配置下用同步/异步 SDK 占满每实例普通请求名额，核对 429、保留控制请求、无重复执行及容量释放。它不覆盖全局多 VM 饱和或 13,000 秒空闲到期；这些范围不能从探针通过推断。
 
+[任务预算全局并发探针](../tests/system/server_task_pressure.py)保持同一文件的全部 `data_transfer` 值，将 VM 准入显式改为全局 3 台、每租户 2 台。同步/异步各用三台真实 VM，按 7＋7＋1 个等待 stdin 的命令占满全局普通请求名额；第三台仍有本地余量，其文件与 Start 请求必须得到 429。检查其他租户在仅单 VM 满额时仍可调用，满额时 health/SendInput/CloseStdin/SendSignal 保持可用，EOF 与信号后名额可复用、拒绝无副作用、命令只启动一次。随后三台并发进行 8 MiB 和 64 MiB 有界流式上传/下载，逐个核对来宾与客户端 SHA-256。监督器在明确屏障及名义 100 ms 间隔采样服务/relay 进程树 RSS、VMM cgroup 内存和宿主内存/磁盘余量，并核验真实 CPU/内存/私有盘身份、六台最终回收和共享网络/基础产物不变。RSS 求和可能重复计算共享页，采样不保证捕获峰值，宿主余量含其他工作负载；本探针不施加整个服务的宿主内存上限，不把观测值或扩大后的 VM 准入说成正式部署预算，也不覆盖长空闲期限或重跑题集。运行需固定 Python SDK、含 Python 的批准 base、空的独占 cgroup、独占 UID 范围和 root 私有目录；失败保留原身份现场。 提交 `e62f32fa454ec75ac9d5411ed9f4be8521efa189` 已通过两套 SDK、12 次文件往返及六台实例的独立回收审计；两次满载屏障均观察到 1 个服务进程、15 个 relay 和 3 个 VMM cgroup。483 次采样及指纹见[版本基线](../references/v1-baseline.json)的 `task_global_pressure_acceptance`。
+
 网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
 
 - [网关组件测试](../sandbox-server/src/gateway/tests.rs)：在 Linux 上执行 `cargo test -p sandproof-server --locked`。通过实际网关的请求处理、响应限流及 HTTP 编码，覆盖 8 MiB 文件请求、1 MiB 命令输入、32 MiB 响应边界；区分已知长度、分块传输和上游 HTTP/1.0 未声明长度，检查中途 EOF、逐块传输、不重发及失败后的新请求，以及非 HTTP/1.1 请求在读取 body 前被拒绝。使用内存传输替换 envd，不覆盖鉴权、进程执行或 VM 隔离。响应上限计算 HTTP body 字节，包含 Connect 编码，不能直接等同于原始 stdout 大小。

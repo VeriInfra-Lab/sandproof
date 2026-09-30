@@ -1398,6 +1398,98 @@
     "residuals": "六次失败尝试九台 VM 加最终通过六台，共十五台均清零。成功根由监督器自动删除；失败的六个精确根经独立复核后删除，包含测试凭据、重复镜像及私有日志；保留本页脱敏原因/身份/指纹。空专属 cgroup 父目录删除；其他旧测试目录和原始输入未动。独立源码/公开工具输入目录保留供复现，不含服务凭据。",
     "limits": "合成 Debian 兼容根目录，不是官方 Debian/Ubuntu 包镜像或公开 OCI 拉取验收；不覆盖 apt/pip 依赖安装、所有 Dockerfile 特性、ENV/USER/WORKDIR/CMD 实际运行语义、自助请求/状态/日志服务、正式模板 owner/不可变发布门、可靠构建重启恢复、生产独立构建预算、恶意宿主/VM 逃逸、全部恶意层与任意崩溃、89 题或新 Lean 证明。boot_id/virtio 是误操作防护而非隔离证明；工程隔离依赖监督器确实创建并销毁独占 VM。证据-only 后续修改不改变实测 worker/input/probe/生产 Rust 字节。"
   },
+  "task_global_pressure_acceptance": {
+    "test": "tests/system/server_task_pressure.py",
+    "sdk_probe": "tests/system/sdk_task_global_pressure.py",
+    "commit": "e62f32fa454ec75ac9d5411ed9f4be8521efa189",
+    "probe_sha256": "96bfe1fb70ebff926db8d283337eada4ebd3fbc92d840a2c26a1a8f5fa685adb",
+    "sdk_probe_sha256": "d95a572fa6c604375cc8d8a02e4c2ef5641fadad7139322cac6775495c1d0aba",
+    "server_build_commit": "88ce161daa01f4b7d43e019f432e1805a4ede5e9",
+    "server_source_equivalence": "All production Rust sources and Cargo manifests/lock match the test commit; final evidence update changes documentation only.",
+    "host_kernel": "6.8.0-1065-azure",
+    "sdk": "2.51.0",
+    "inputs": {
+      "server": {
+        "sha256": "3bd3b24325c3e52e5d08fed75ad5b45571fa1b6f9c9be62c19241e07d7444044",
+        "bytes": 76459008
+      },
+      "jailer": {
+        "sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+        "bytes": 2181264
+      },
+      "firecracker": {
+        "sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+        "bytes": 3527456
+      },
+      "kernel": {
+        "sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+        "bytes": 44649272
+      },
+      "rootfs": {
+        "sha256": "b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd",
+        "bytes": 1073741824
+      }
+    },
+    "configuration": {
+      "source": "benchmarks/local-service-budgets.json",
+      "data_transfer": {
+        "file_upload_bytes": 67108864,
+        "file_download_bytes": 100663296,
+        "command_input_bytes": 1048576,
+        "command_output_bytes": 33554432,
+        "rpc_request_bytes": 65536,
+        "rpc_response_bytes": 1048576,
+        "max_transfers": 16,
+        "max_transfers_per_vm": 8,
+        "control_reserve": 1,
+        "request_idle_seconds": 13000,
+        "file_idle_seconds": 30,
+        "write_idle_seconds": 13000
+      },
+      "max_active_global": 3,
+      "max_active_per_tenant": 2,
+      "tenants": 2,
+      "vm_lifetime_secs": 600,
+      "startup_timeout_secs": 120,
+      "vm_shape": {
+        "cpus": 1,
+        "guest_memory_mib": 512,
+        "vmm_host_memory_mib": 1024,
+        "private_disk_bytes": 1073741824
+      },
+      "vm_admission_scope": "Raised explicitly from serial task admission to exercise the unchanged global data transfer budget; not a recommended deployment capacity."
+    },
+    "result": "Original sync and async SDK each passed 7+7+1 held command streams on three VMs across two tenants. Local saturation leaves other-tenant capacity; global saturation rejects file/Start calls even on the VM with spare local slots. Health/input/EOF/signal retain reserved capacity, EOF/signal free reusable slots, refused paths stay absent, and each admitted command has one start marker. Twelve 8/64 MiB concurrent file round trips match guest and client SHA-256.",
+    "observations": {
+      "samples": 483,
+      "observed_seconds": 51.41229647491127,
+      "max_sampled_service_and_relay_rss_bytes": 148733952,
+      "max_sampled_vmm_memory_current_bytes": 636657664,
+      "min_host_memory_available_bytes": 29948448768,
+      "min_host_disk_available_bytes": 1428240502784,
+      "all_vmm_oom_events_zero": true
+    },
+    "global_full_barriers": [
+      {
+        "sdk": "Sandbox",
+        "service_and_relay_processes": 16,
+        "vmm_cgroups": 3,
+        "service_and_relay_rss_bytes": 109707264,
+        "vmm_memory_current_bytes": 460926976
+      },
+      {
+        "sdk": "AsyncSandbox",
+        "service_and_relay_processes": 16,
+        "vmm_cgroups": 3,
+        "service_and_relay_rss_bytes": 112033792,
+        "vmm_memory_current_bytes": 461750272
+      }
+    ],
+    "residuals": "Six durable Destroyed records, zero dispatched actions, original VMM PID/start identities stopped; private disks/jails/netns/cgroups and all namespace holders absent. Independent post-exit audit also found no service/relay or assigned-UID process. Source input hashes and shared host network unchanged.",
+    "evidence_manifest_sha256": "e4346c6d4645b924e027a1d52318c6d44268647bb1277b6c3190aac2ed5e917d",
+    "evidence_directory": "artifacts/task-global-pressure-e62f32f (ignored, sanitized report/summary/preflight/independent audit)",
+    "limits": "Fixed task transfer budgets; three-VM/two-tenant sync/async admission and concurrent 8/64 MiB hash-checked transfers. VM admission is explicitly raised from serial. 100 ms nominal sampling plus barriers; sampled RSS sums share pages and are not PSS, a strict peak or a whole-host cap. Host headroom includes unrelated processes. No long idle deadline, full task rerun, final production budget or proof claim. Fixed approved Ubuntu base, no public network. No production Rust changes; core/proof coverage unchanged."
+  },
   "multi_template_isolation_acceptance": {
     "recorded_on": "2026-09-30",
     "tested_commit": "187688875dfe96dd28f55e7b40e711094326f8db",
