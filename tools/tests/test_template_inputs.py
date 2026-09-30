@@ -4,14 +4,15 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import signal
 import tarfile
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tools.template_inputs import InvalidTemplate, extract_context, inspect_oci, startup_config
-from tools.template_worker import Commands, guest_path, install_platform, validate_request
+from tools.template_worker import Commands, LogBudget, guest_path, install_platform, terminate, validate_request
 
 
 def archive_bytes(entries):
@@ -180,6 +181,19 @@ class TemplateInputTests(unittest.TestCase):
                 Commands(time.monotonic() + 10, io.BytesIO(), 10).run(["/bin/sh", "-c", "exit 7"])
         with self.assertRaises(TimeoutError):
             Commands(time.monotonic() - 1, io.BytesIO(), 10).run(["/bin/sh", "-c", "exit 0"])
+
+    def test_process_group_cleanup_and_shared_log_budget(self):
+        child = MagicMock(pid=12345)
+        child.poll.return_value = None
+        child.wait.side_effect = [subprocess.TimeoutExpired("tool", 3), 0]
+        with patch("tools.template_worker.os.killpg") as kill:
+            terminate(child)
+            self.assertEqual(kill.call_args_list[0].args, (12345, signal.SIGTERM))
+            self.assertEqual(kill.call_args_list[1].args, (12345, signal.SIGKILL))
+        budget = LogBudget(10)
+        self.assertEqual(budget.take(6), 6)
+        self.assertEqual(budget.take(6), 4)
+        self.assertEqual(budget.take(1), 0)
 
 
 if __name__ == "__main__":

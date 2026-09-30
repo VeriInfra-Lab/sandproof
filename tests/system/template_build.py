@@ -204,7 +204,8 @@ def exercise(args):
                 assert result.exit_code == 0, (result.stderr, result.stdout)
                 assert status["state"] == "candidate" and not status["ready"] and not status["startup_applied"]
                 assert status["startup"]["WorkingDir"] == "/workspace"
-                assert status["startup"]["Env"] == ["FIXTURE_VALUE=preserved-not-yet-activated"]
+                assert "FIXTURE_VALUE=preserved-not-yet-activated" in status["startup"]["Env"]
+                assert any(value.startswith("PATH=") for value in status["startup"]["Env"])
                 assert status["free_bytes"] >= status["min_free_bytes"]
                 checked(builder, "gzip -1 -c /output/job/candidate.ext4 > /output/candidate.gz")
                 compressed = root / "images" / (kind + ".gz")
