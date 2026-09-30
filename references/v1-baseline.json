@@ -1367,5 +1367,100 @@
     "commands": "在精确提交构建同一 server，root 使用固定 SDK Python 运行 tests/system/template_build.py --server <55df623c binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel /root/sp110-062e8ba/vmlinux-6.1.176 --rootfs /root/ta/sp13-profile-20260929/base-10g.ext4 --scratch-parent /root/ta --cgroup-parent /sys/fs/cgroup/sp-builder-cjoazh --tools /home/ning/sandproof-builder.cjoazH --uid-base 9440000。工具目录中的六项指纹由探针检查；各构建 VM 2 CPU、2048 MiB 来宾内存、2304 MiB 宿主内存、10 GiB 私有盘；两个候选启动各 1 CPU/256 MiB/512 MiB 宿主内存。只对本组委派 CPU/memory。",
     "residuals": "六次失败尝试九台 VM 加最终通过六台，共十五台均清零。成功根由监督器自动删除；失败的六个精确根经独立复核后删除，包含测试凭据、重复镜像及私有日志；保留本页脱敏原因/身份/指纹。空专属 cgroup 父目录删除；其他旧测试目录和原始输入未动。独立源码/公开工具输入目录保留供复现，不含服务凭据。",
     "limits": "合成 Debian 兼容根目录，不是官方 Debian/Ubuntu 包镜像或公开 OCI 拉取验收；不覆盖 apt/pip 依赖安装、所有 Dockerfile 特性、ENV/USER/WORKDIR/CMD 实际运行语义、自助请求/状态/日志服务、正式模板 owner/不可变发布门、可靠构建重启恢复、生产独立构建预算、恶意宿主/VM 逃逸、全部恶意层与任意崩溃、89 题或新 Lean 证明。boot_id/virtio 是误操作防护而非隔离证明；工程隔离依赖监督器确实创建并销毁独占 VM。证据-only 后续修改不改变实测 worker/input/probe/生产 Rust 字节。"
+  },
+  "multi_template_isolation_acceptance": {
+    "recorded_on": "2026-09-30",
+    "tested_commit": "187688875dfe96dd28f55e7b40e711094326f8db",
+    "binary_build_commit": "88ce161daa01f4b7d43e019f432e1805a4ede5e9",
+    "production_sources_identical": true,
+    "scope": "#6: 同一服务两模板各两实例的包数据库/系统文件隔离与选定失败清理，不是完整通用模板验收",
+    "host": {
+      "kernel": "6.8.0-1065-azure",
+      "architecture": "x86_64",
+      "sdk": "e2b==2.51.0",
+      "python": "3.12.11",
+      "firecracker_jailer": "1.16.1",
+      "envd": "0.9.0",
+      "available_cpus": 8
+    },
+    "inputs": {
+      "server": {
+        "sha256": "3bd3b24325c3e52e5d08fed75ad5b45571fa1b6f9c9be62c19241e07d7444044",
+        "bytes": 76459008
+      },
+      "jailer": {
+        "sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+        "bytes": 2181264
+      },
+      "firecracker": {
+        "sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+        "bytes": 3527456
+      },
+      "kernel": {
+        "sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+        "bytes": 44649272
+      },
+      "rootfs": {
+        "sha256": "b5e677d5f0c00fc03c43b4132be09744d5fe515b9565d230d18c1a06d2b4d2dd",
+        "bytes": 1073741824
+      },
+      "second_rootfs": {
+        "sha256": "60bd9cd0b574f75219610adec1c11cbc1c6613facd214f4dbbb709422c511bad",
+        "bytes": 10737418240
+      }
+    },
+    "probe": "tests/system/server_template_isolation.py",
+    "probe_sha256": "0efd0cea0c1c51784416b2d1c1079dfa6d78a5206db2bec03cf449831e40b92e",
+    "template_shapes": [
+      {
+        "id": "first-r1",
+        "cpu_count": 1,
+        "memory_mib": 512,
+        "disk_bytes": 1073741824,
+        "host_memory_bytes": 805306368
+      },
+      {
+        "id": "second-r1",
+        "cpu_count": 2,
+        "memory_mib": 1024,
+        "disk_bytes": 10737418240,
+        "host_memory_bytes": 1342177280
+      }
+    ],
+    "probe_timeouts_seconds": {
+      "request": 180,
+      "startup": 120,
+      "sandbox": 900
+    },
+    "observed": [
+      "同一服务四台并存 VM，分别安装 1.0/2.0/3.0/4.0 的同名本地 Debian 包；同一系统路径和包数据库内容独立。",
+      "每模板选一实例修改系统文件、卸载并重新安装；逐步核对其他实例的包版本、配置及原 PID/start、私有盘 inode、cgroup 与 Firecracker 实际形状。",
+      "每模板来宾初始化命令保留系统写入及活子进程后退出 42；按原 SDK 销毁，其他实例保持可用。",
+      "每模板另创建一份描述摘要正确但私有内核损坏的负例；请求返回 500，启动期限后进入 Destroyed，保留精确失败准备标记，无新身份重派。",
+      "两台替换实例均无旧包记录、系统修改或失败初始化痕迹；六台成功启动 VM 与两台失败启动 VM 共八个终态，未决 dispatched outbox 为零。",
+      "实际 1/2 CPU、512/1024 MiB 来宾内存、1/10 GiB 独立盘，以及 768/1280 MiB 整个 VMM 宿主上限均读回；宿主共享网络、内核和原镜像摘要保持不变。"
+    ],
+    "prior_attempts": [
+      {
+        "commit": "88ce161daa01f4b7d43e019f432e1805a4ede5e9",
+        "namespace": "19b7d6d655c4fd38",
+        "vms_reclaimed": 3,
+        "result": "探针复用 30 秒请求及过短启动预算，第三次大盘创建发生 SDK ReadTimeout；未计通过。三台已分配 VM 最终 Destroyed，独立核对无精确残留。后续显式分离 180 秒请求与 120 秒启动预算，并修正字符串实例编号读取。"
+      },
+      {
+        "commit": "379e23a3132d933f09f969e474897bfe1303668b",
+        "namespace": "51a523e53622d7aa",
+        "vms_reclaimed": 3,
+        "result": "第四次创建正确返回 429：测试的全局磁盘额度漏计 1 GiB 清理预留。修正测试配置后全套重跑；原三台实例已销毁并独立审计。未改变产品准入逻辑。"
+      }
+    ],
+    "namespace": "09a02feb6ce4767b",
+    "successful_attempt_vms_destroyed": 8,
+    "all_attempts_vms_destroyed": 14,
+    "functional_checks": "最终代码通过 scripts/check-function.sh；固定 Harbor/SDK Git 来源与导入检查通过；实机单独执行，不把 cargo 忽略用例计为通过。",
+    "commands": "干净 tested_commit 上构建 sandproof-server（与 binary_build_commit 的 Rust 源/依赖字节相同）。固定 SDK Python 以 root 执行 tests/system/server_template_isolation.py --server <recorded binary> --jailer <1.16.1> --firecracker <1.16.1> --kernel <b20af758> --rootfs <b5e677d5 1 GiB Ubuntu> --second-rootfs <60bd9cd0 10 GiB Debian> --scratch-parent <root-only> --cgroup-parent <dedicated empty CPU/memory parent> --uid-base 63301 --keep-artifacts。并存资源为 6 vCPU/4096 MiB VMM 上限；全局磁盘为 22 GiB 私有盘加 1 GiB 清理预留。",
+    "evidence_manifest_sha256": "2feada7904efd424e5e15d897ae48c4c0e9ba34a30cc0ffe08dbe7e777ab5b9f",
+    "residuals": "三轮共十四个 VM 均按 PID/start、jail、netns inode、cgroup 和独占 UID 范围独立复核无残留；停止测试服务后导出脱敏证据，删除三个精确测试目录中的凭据/磁盘副本及各自空 cgroup。固定输入和其他实验保留。",
+    "limits": "仅可信预制 Debian/Ubuntu 镜像、同步 SDK、禁网和两种选定失败；不覆盖用户自助构建/发布、转换后的 ENV/USER/CMD、恶意镜像全面验收、任意崩溃/掉电、长期性能容量、原题全集或新 Lean 证明。旧证据不自动升级到本提交；后续仅记录证据的提交不改实测生产/探针代码。"
   }
 }

@@ -36,6 +36,8 @@ S13 新范围由 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)/#6
 
 [#6 多模板隔离实机入口](../tests/system/server_template_isolation.py)在同一服务中为两种可信 Debian/Ubuntu 模板各创建两个并存实例，使用来宾内构造的本地 Debian 包验证相同路径、包数据库、修改、卸载及重新安装的隔离。每种模板另验证来宾初始化退出 42 后的销毁，以及私有无效内核模板启动失败后的期限回收；其他实例须保持原 PID、资源和包内容，替换实例不得继承旧写入。核对 Firecracker 实际 CPU/内存、私有盘身份/容量、cgroup 限制、共享镜像摘要和精确进程/网络/磁盘残留。脚本不下载依赖，不把来宾命令失败当控制器崩溃；也不代替自助构建/发布或完整 S13。执行命令见[运行说明](../sandbox-runtime/README.md)，是否通过以绑定提交的实机证据为准。
 
+提交 `187688875dfe96dd28f55e7b40e711094326f8db` 已在 Linux/KVM 通过上述场景：Ubuntu 1 GiB/1 CPU/512 MiB 与 Debian 10 GiB/2 CPU/1024 MiB，同一服务四台并存，最终八个实例（含两个失败启动）精确回收。两次探针配置失败及其六个实例的清理单独记录；均不计通过。固定输入、配置、范围及复现命令见[版本基线](../references/v1-baseline.json)的 `multi_template_isolation_acceptance`，不外推为 #6/#123 全部交付。
+
 候选构建批次使用[隔离构建实机实验](../tests/system/template_build.py)：固定 BuildKit 0.28.0/umoci 0.6.0，每项构建新建禁网 VM，以合成 Debian 兼容根目录运行标准多阶段 Dockerfile、COPY、RUN、层删除；导出 OCI 后另一个新 VM 导入转换；两种候选磁盘分别在新 VM 检查真实 SDK 命令/文件与删除结果。另检查构建失败和确定超时不产生候选，逐项销毁并核对精确资源与原镜像摘要。它不访问公共仓库，不证明真实 Debian 软件包兼容，不执行保留的启动设置，也不代替用户自助/发布门、完整 S13 或 89 题。脚本存在不是已实测；结果须绑定版本基线的精确提交。
 
 提交 `3a42d7a09fc9c1e823f01a066add9fd78e232068` 已通过该实验（六台 VM）、基础检查、新输入/执行预算单元测试和 Linux 固定 SDK 网关组合；失败尝试的原因与原身份清理也保留在[基线](../references/v1-baseline.json)的 `isolated_template_candidate_acceptance`。候选仍不就绪；ENV/USER/WORKDIR/CMD 接入和用户自助发布尚未验收，不把这条离线实验说成完整模板服务。
