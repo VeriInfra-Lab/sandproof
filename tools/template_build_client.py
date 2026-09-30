@@ -9,6 +9,41 @@ import time
 import urllib.parse
 
 
+class BuildClient:
+    """Bounded authenticated calls; no retry of submissions or context uploads."""
+    def __init__(self, url, key):
+        self.url = urllib.parse.urlsplit(url)
+        if (self.url.scheme not in ("http", "https") or not self.url.hostname
+                or self.url.username or self.url.password or self.url.path not in ("", "/")
+                or self.url.query or self.url.fragment):
+            raise ValueError("service origin required")
+        self.key = key
+
+    def request(self, method, path, body=None, *, size=None, token=None):
+        connection_class = http.client.HTTPSConnection if self.url.scheme == "https" else http.client.HTTPConnection
+        connection = connection_class(self.url.hostname, self.url.port, timeout=30)
+        headers = {"X-API-Key": self.key}
+        if isinstance(body, dict):
+            body = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        if size is not None:
+            headers["Content-Length"] = str(size)
+        if token:
+            headers["Idempotency-Key"] = token
+        try:
+            connection.request(method, path, body, headers)
+            response = connection.getresponse()
+            data = response.read(65537)
+            if len(data) > 65536:
+                raise RuntimeError("oversized build response")
+            value = json.loads(data)
+            if response.status >= 400:
+                raise RuntimeError(value.get("error", "BuildRequestFailed"))
+            return value
+        finally:
+            connection.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", required=True)
@@ -26,46 +61,21 @@ def main():
     key = os.environ.get("SANDBOX_API_KEY")
     if not key:
         raise SystemExit("SANDBOX_API_KEY required; do not put credentials in arguments")
-    url = urllib.parse.urlsplit(args.url)
-    if url.scheme not in ("http", "https") or url.username or url.password or url.path not in ("", "/") or url.query or url.fragment:
-        raise SystemExit("service origin required")
-    def request(method, path, body=None, size=None):
-        connection_class = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
-        connection = connection_class(url.hostname, url.port, timeout=30)
-        headers = {"X-API-Key": key}
-        if isinstance(body, dict):
-            body = json.dumps(body).encode()
-            headers["Content-Type"] = "application/json"
-        if size is not None:
-            headers["Content-Length"] = str(size)
-        if args.idempotency_key:
-            headers["Idempotency-Key"] = args.idempotency_key
-        try:
-            connection.request(method, path, body, headers)
-            response = connection.getresponse()
-            data = response.read(65537)
-            if len(data) > 65536:
-                raise RuntimeError("oversized build response")
-            value = json.loads(data)
-            if response.status >= 400:
-                raise RuntimeError(value.get("error", "BuildRequestFailed"))
-            return value
-        finally:
-            connection.close()
+    client = BuildClient(args.url, key)
     body = {"kind": "oci" if args.image else "dockerfile", "timeoutSeconds": args.timeout,
             "allowInternetAccess": not args.offline,
             "resources": {"cpuCount": args.cpu, "memoryMiB": args.memory_mib, "diskMiB": args.disk_mib, "minFreeMiB": args.min_free_mib}}
     if args.image:
         body["image"] = args.image
-    result = request("POST", "/sandproof/template-builds", body)
+    result = client.request("POST", "/sandproof/template-builds", body, token=args.idempotency_key)
     path = "/sandproof/template-builds/" + result["buildID"]
     print(json.dumps(result), flush=True)
     if args.context and result["state"] == "AwaitingInput":
         with args.context.open("rb") as incoming:
-            request("PUT", path + "/context", incoming, args.context.stat().st_size)
+            client.request("PUT", path + "/context", incoming, size=args.context.stat().st_size)
     deadline = time.monotonic() + args.timeout + 120
     while time.monotonic() < deadline:
-        result = request("GET", path)
+        result = client.request("GET", path)
         if result["state"] in ("Ready", "Failed", "CleanupUnknown"):
             print(json.dumps(result), flush=True)
             if result["state"] != "Ready":

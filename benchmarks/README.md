@@ -63,11 +63,31 @@ python3 tools/benchmark_tasks.py audit \
 
 ## 执行与验收边界
 
-2026-09-30 的目标已改为[#123 通用模板链](https://github.com/ningZhang-cs/sandproof/issues/123)，由 #13 适配原 Dockerfile/OCI 与资源需求；新链路尚未交付。下述固定 base 手动诊断是旧路线的局部实验，不是最终产品接口，也不能代替通用构建/转换能力。后续按[验收清单](../docs/testing-plan.md)保留原解答与原评分，全部 89 题不因失败删除；修订解答和跨提交汇总必须单独报告。
+2026-09-30 的目标已改为[#123 通用模板链](https://github.com/ningZhang-cs/sandproof/issues/123)。自助构建服务和下述 #13 通用执行入口已实现；实现存在不等于全部 89 题验收通过。下述固定 base 手动诊断是旧路线的局部实验，不是最终产品接口，也不能代替通用构建/转换能力。后续按[验收清单](../docs/testing-plan.md)保留原解答与原评分，全部 89 题不因失败删除；修订解答和跨提交汇总必须单独报告。
 
 现有诊断工具已实现全部任务的显式初始化配方、固定 base 指纹和 Harbor 薄适配；每题是否初始化成功、标准解答与原评分器是否完成，仍以绑定提交和环境的实际报告为准。配方清单不是通用 Dockerfile 解释器，也不表示任意上游镜像标签都可作为模板。
 
-通用模板链的环境构建、依赖内容、工作目录/启动进程、网络策略和 Harbor 模板适配仍须实现并验收。缺少能力的任务保留在完整 89 题报告里，先记录阻塞再补齐；同一智能体的 E2B 对照按验收清单执行。在线 E2B 与模型运行使用另行配置的凭据和预算，不由这个本地工具触发。
+通用模板链的各类实际任务仍须逐批验收。缺少能力的任务保留在完整 89 题报告里，先记录阻塞再补齐；同一智能体的 E2B 对照按验收清单执行。在线 E2B 与模型运行使用另行配置的凭据和预算，不由这个本地工具触发。
+
+## 通用模板标准解答入口
+
+[通用入口](run_generic.py)只替换 Harbor 的模板准备：提交自有构建 API，等待不可变模板，再使用原 `AsyncSandbox`、`OracleAgent` 和 `Verifier`。不使用 `task-recipes.json`、预制任务镜像替换或修正版解答，不调用 E2B 云模板服务。默认 `--source-kind oci` 与固定 Harbor 优先使用 `docker_image` 一致；显式 `dockerfile` 则打包原 `environment/`，原样交给标准 BuildKit。两条来源在报告中分开记录，不将 Dockerfile 重建声称为上游预构建标签的相同字节。客户端不调用固定 SDK 的 Dockerfile 解析器，因此多阶段不受其限制。
+
+```sh
+uv run --locked --project benchmarks python -m benchmarks.run_generic \
+  --registry artifacts/terminal-bench/registry.json \
+  --source artifacts/terminal-bench/source \
+  --lock benchmarks/terminal-bench-2.0.lock.json \
+  --api-url http://127.0.0.1:3000 --build-url http://127.0.0.1:3001 \
+  --source-kind dockerfile --task regex-log --task polyglot-c-py \
+  --output artifacts/terminal-bench/generic-run
+```
+
+两端必须是已配置的本地服务；凭据用 `SANDPROOF_TEST_API_KEY` 提供。CPU、内存、**总盘容量**来自原任务，最小空闲空间另为 64 MiB；原构建/解答/评分时限不改，沙箱寿命仍请求 86400 秒，部署不足须拒绝而非截短。运行池与构建池的资源预算、输出磁盘下载预算必须分别满足请求，不能沿用小镜像探针的 2 GiB 下载上限。原镜像启动默认值来自正式登记结果，不在客户端解释 Dockerfile 的 WORKDIR/USER；平台初始化始终独立于用户 CMD。只接受本轮已约定的公网 IPv4 策略，不在初始化阶段临时扩大权限。
+
+构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。只上传锁定的环境文件；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
+
+[实机监督入口](../tests/system/harbor_generic_chain.py)额外记录实际 Firecracker 配置、CPU/内存 cgroup、私有盘身份与模板摘要，并在服务退出前核对精确进程、网络空间持有者、jail/cgroup、构建预留和持久终态。它需要独占 root/KVM 主机、固定工具、完整题库、两个已委派的独占 cgroup 和新 UID 范围；`--repetitions 2` 为全新构建/沙箱重复实验。临时开启转发仅在事前授权后使用 `--temporarily-forward`，退出恢复原值。实际结果和提交在 PR/#13 记录，不把脚本存在、替身测试或旧路线成绩算作新链路通过。
 
 另有[预选两题](diagnostic-tasks.json)的手动诊断链路，由[实机脚本](../tests/system/harbor_diagnostic_chain.py)执行：要求锁定的 Harbor/E2B 联合环境、固定提交的原题源码、经核对的 Ubuntu 24.04 10 GiB base、隔离 KVM 宿主与预先批准且在整轮不变的公网 IPv4 策略。每题全新沙箱，先核对 CPU/内存/磁盘和空初态；来宾固定使用公网 DNS `1.1.1.1`，因为现有 base 的宿主本地 DNS 桩不可在 VM 内使用，此处是与原 Docker 环境的已知差异。`polyglot-c-py` 只在来宾内执行原 Dockerfile 的 `apt update && apt install -y gcc`；随后依次上传并运行原 `solution/solve.sh`。原评分器所需的 Python 3.13.9 固定运行时在解答结束后传入并核对哈希，避免原评分器访问其固定下载地址超时；运行时来源和哈希见预选清单，这是另一项明确的环境差异。接着上传并运行未改动的原 `tests/test.sh` 与 `test_outputs.py`，读取原 `reward.txt`。评分后销毁并检查数据库终态、精确进程/网络/磁盘与 base 指纹。失败保留本轮私有目录诊断，不将失败题从预选名单删除；不使用付费模型，不宣称原 Harbor 模板 API 或完整榜单兼容。 这条两题链路的运行时预填与报告独立于下方全题集入口；不能用两题通过代表其余 87 题，也不替代原 Harbor OracleAgent/Verifier 的全题集接入。
 

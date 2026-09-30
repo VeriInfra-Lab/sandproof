@@ -15,7 +15,7 @@ import sys
 import time
 from urllib.parse import urlsplit
 
-from e2b import AsyncSandbox, FileType
+from e2b import AsyncSandbox
 from harbor.agents.oracle import OracleAgent
 from harbor.environments.capabilities import EnvironmentCapabilities
 from harbor.environments.e2b import E2BEnvironment
@@ -27,6 +27,7 @@ from harbor.verifier.verifier import Verifier
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.check_browser_evidence import audit_browser_evidence
 from benchmarks.oracle_repairs import REPAIRS, prepare_repaired_task
+from benchmarks.sdk_environment import SdkEnvironment
 from tools.benchmark_tasks import InvalidInput, verify
 
 BASE_FROM = {
@@ -111,16 +112,11 @@ def load_recipes(lock, source):
     return recipes
 
 
-class LocalBaseEnvironment(E2BEnvironment):
+class LocalBaseEnvironment(SdkEnvironment):
     def __init__(self, *, recipe, sdk_options, **kwargs):
         self.recipe = recipe
-        self.sdk_options = sdk_options
-        self.events = []
-        self.sandbox_id = None
-        self.kill_confirmed = False
-        self.create_dispatched = False
         self._startup_handles = []
-        super().__init__(**kwargs)
+        super().__init__(sdk_options=sdk_options, **kwargs)
         self._workdir = recipe['workdir']
 
     @property
@@ -203,79 +199,6 @@ class LocalBaseEnvironment(E2BEnvironment):
         if boundary.return_code:
             raise InvalidInput('initialization leaked a reserved phase directory')
 
-    async def stop(self, delete=True):
-        if self._sandbox is not None:
-            # Do not swallow an unknown cleanup result or repeat create.
-            self.kill_confirmed = await self._sandbox.kill()
-            if not self.kill_confirmed:
-                raise RuntimeError('sandbox deletion was not acknowledged')
-            self._sandbox = None
-
-    async def exec(self, command, **kwargs):
-        started = time.monotonic()
-        event = {'command': command, 'return_code': None}
-        self.events.append(event)
-        try:
-            result = await super().exec(command, **kwargs)
-            event.update(return_code=result.return_code,
-                         stdout=result.stdout, stderr=result.stderr)
-            return result
-        except BaseException as error:
-            event['error_type'] = type(error).__name__
-            raise
-        finally:
-            event['seconds'] = round(time.monotonic() - started, 3)
-
-    async def upload_file(self, source_path, target_path):
-        source = Path(source_path)
-        if source.is_symlink() or not source.is_file():
-            raise InvalidInput('only verified regular input files may be uploaded')
-        await self._sandbox.files.write(target_path, source.read_bytes())
-        mode = '755' if source.stat().st_mode & 0o111 else '644'
-        result = await self.exec('chmod ' + mode + ' -- ' + shlex.quote(target_path), cwd='/', timeout_sec=30)
-        if result.return_code:
-            raise RuntimeError('input mode restoration failed')
-
-    async def upload_dir(self, source_dir, target_dir):
-        source = Path(source_dir)
-        await self._sandbox.files.make_dir(target_dir)
-        for path in sorted(source.rglob('*')):
-            if path.is_symlink():
-                raise InvalidInput('input symlink is unsupported')
-            target = str(PurePosixPath(target_dir) / path.relative_to(source).as_posix())
-            if path.is_dir():
-                await self._sandbox.files.make_dir(target)
-            elif path.is_file():
-                await self.upload_file(path, target)
-
-    async def download_file(self, source_path, target_path):
-        target = Path(target_path)
-        root = self.trial_paths.trial_dir.resolve()
-        if target.is_symlink() or not target.resolve().is_relative_to(root):
-            raise InvalidInput('guest log destination escapes the trial directory')
-        data = await self._sandbox.files.read(source_path, format='bytes')
-        if len(data) > 96 * 1024**2:
-            raise InvalidInput('guest log exceeds download budget')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-
-    async def download_dir(self, source_dir, target_dir):
-        # Original E2B downloader trusts guest path fields. Bound each basename
-        # before joining a host path and never follow guest symlinks.
-        source = PurePosixPath(source_dir)
-        for entry in await self._sandbox.files.list(source_dir):
-            path = PurePosixPath(entry.path)
-            if path.parent != source or path.name in ('.', '..'):
-                raise InvalidInput('guest returned an unexpected log path')
-            target = Path(target_dir) / path.name
-            if entry.type == FileType.FILE:
-                await self.download_file(str(path), target)
-            elif entry.type == FileType.DIR:
-                await self.download_dir(str(path), target)
-            else:
-                raise InvalidInput('guest log symlinks are unsupported')
-
-
 def write_report(path, content, row):
     """Retain local reporting failures without preventing exact VM cleanup."""
     try:
@@ -291,13 +214,15 @@ def write_report(path, content, row):
             row['reason'] = 'local_report_write_failed'
 
 
-async def run_task(args, entry, recipe):
+async def run_task(args, entry, recipe, *, environment_factory=None):
     task = Task(args.source / entry['name'])
     paths = TrialPaths(args.output / entry['name'])
     paths.trial_dir.mkdir(mode=0o700)
     for directory in (paths.agent_dir, paths.verifier_dir, paths.artifacts_dir):
         directory.mkdir(mode=0o700)
-    environment = LocalBaseEnvironment(
+    recipe = recipe or {}
+    factory = environment_factory or LocalBaseEnvironment
+    environment = factory(
         recipe=recipe, sdk_options=dict(api_key=os.environ['SANDPROOF_TEST_API_KEY'],
             api_url=args.api_url, sandbox_url=args.api_url, domain='example.invalid',
             retries=0, request_timeout=60),
@@ -333,7 +258,7 @@ async def run_task(args, entry, recipe):
         row['rewards'] = result.rewards
         row['verifier'] = 'passed' if result.rewards == {'reward': 1} else 'failed'
         row['status'] = 'passed' if row['oracle'] == row['verifier'] == 'passed' else 'failed'
-        if task.name == 'filter-js-from-html':
+        if environment_factory is None and task.name == 'filter-js-from-html':
             lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
             row['verification_audit'] = audit_browser_evidence(
                 paths.test_stdout_path.read_text() if paths.test_stdout_path.exists() else '',
@@ -376,6 +301,11 @@ async def run_task(args, entry, recipe):
                     row.setdefault('diagnostic_errors', {})[remote] = type(log_error).__name__
     finally:
         row['sandbox_id'] = environment.sandbox_id
+        if hasattr(environment, 'build_id'):
+            row.update(build_id=environment.build_id, build=environment.build_result,
+                       template=environment.template, exact_cleanup='not_audited',
+                       build_dispatched=environment.build_dispatched,
+                       submission_key=environment.submission_key)
         if environment.create_dispatched and environment.sandbox_id is None:
             row['status'] = 'create_unknown'
         try:
