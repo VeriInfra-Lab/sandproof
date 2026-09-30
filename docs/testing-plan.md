@@ -36,7 +36,11 @@ S13 新范围由 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)/#6
 
 [#6 多模板隔离实机入口](../tests/system/server_template_isolation.py)在同一服务中为两种可信 Debian/Ubuntu 模板各创建两个并存实例，使用来宾内构造的本地 Debian 包验证相同路径、包数据库、修改、卸载及重新安装的隔离。每种模板另验证来宾初始化退出 42 后的销毁，以及私有无效内核模板启动失败后的期限回收；其他实例须保持原 PID、资源和包内容，替换实例不得继承旧写入。核对 Firecracker 实际 CPU/内存、私有盘身份/容量、cgroup 限制、共享镜像摘要和精确进程/网络/磁盘残留。脚本不下载依赖，不把来宾命令失败当控制器崩溃；也不代替自助构建/发布或完整 S13。执行命令见[运行说明](../sandbox-runtime/README.md)，是否通过以绑定提交的实机证据为准。
 
-提交 `187688875dfe96dd28f55e7b40e711094326f8db` 已在 Linux/KVM 通过上述场景：Ubuntu 1 GiB/1 CPU/512 MiB 与 Debian 10 GiB/2 CPU/1024 MiB，同一服务四台并存，最终八个实例（含两个失败启动）精确回收。两次探针配置失败及其六个实例的清理单独记录；均不计通过。固定输入、配置、范围及复现命令见[版本基线](../references/v1-baseline.json)的 `multi_template_isolation_acceptance`，不外推为 #6/#123 全部交付。
+新版入口还使用[双客户端默认设置断言](../tests/system/sdk_template_defaults.py)：两种模板分别以 ubuntu/root、不同 WORKDIR/环境运行一次启动命令，四台实例各有独立的创建环境覆盖。同步/异步 SDK 核对默认命令、单次 user/cwd/env 覆盖与下一请求恢复，以及相对路径、`~/` 和显式文件用户的 home/归属；固定 envd 的非空相对文件路径基于用户 home，不能把命令 WORKDIR 套用到文件路径。随后交换别名并重启同一服务，重复检查四台原 VMM、启动命令 PID/启动时刻和持久绑定均不变、启动标记仅一次。替换实例不得继承旧 SDK 文件；包管理与失败初始化探针显式使用 root，避免依赖模板的默认身份。这些是运行基础工程断言，不是候选的生产发布门或来宾用户间 DAC 隔离证明。
+
+提交 `187688875dfe96dd28f55e7b40e711094326f8db` 已在 Linux/KVM 通过原包隔离及失败回收场景：Ubuntu 1 GiB/1 CPU/512 MiB 与 Debian 10 GiB/2 CPU/1024 MiB，同一服务四台并存，最终八个实例（含两个失败启动）精确回收。两次探针配置失败及其六个实例的清理单独记录；均不计通过。固定输入、配置、范围及复现命令见[版本基线](../references/v1-baseline.json)的 `multi_template_isolation_acceptance`；它不包含新版默认设置断言，不外推为 #6/#123 全部交付。
+
+提交 `6b52eeffd3e5083c8fdfcd4ff670344512f1be7a` 已在含模板启动支持的同一服务版本通过完整新版探针：16 组双客户端默认设置、48 组文件路径/归属、一次别名交换及服务重启，以及原包隔离与失败回收场景；成功轮八台全部回收。首轮 `a4ad853` 因探针错误假定精简 Ubuntu 有 `/var/tmp` 而中止，四台已独立核验清理，不计通过；修正为两镜像均有的 `/`、`/tmp` 后全新实例重跑。新版指纹、范围、失败原因和审计见[版本基线](../references/v1-baseline.json)的 `multi_template_startup_isolation_acceptance`。
 
 候选构建批次使用[隔离构建实机实验](../tests/system/template_build.py)：固定 BuildKit 0.28.0/umoci 0.6.0，每项构建新建禁网 VM，以合成 Debian 兼容根目录运行标准多阶段 Dockerfile、COPY、RUN、层删除；导出 OCI 后另一个新 VM 导入转换；两种候选磁盘分别在新 VM 检查真实 SDK 命令/文件与删除结果。新版本还检查 ENV/WORKDIR/数字 USER 的规范化和实例默认值、创建与单次请求覆盖、ENTRYPOINT+CMD 的字面参数、普通重启不重复启动，以及两处激活崩溃：已确认启动但控制器回执丢失可恢复，启动确认丢失保持未知并到期精确清理。另检查构建失败和确定超时不产生候选，逐项销毁并核对精确资源与原镜像摘要。它不访问公共仓库，不证明真实 Debian 软件包兼容，也不代替用户自助/发布门、应用健康、完整 S13 或 89 题。脚本存在不是已实测；结果须绑定版本基线的精确提交。
 
