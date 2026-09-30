@@ -50,6 +50,8 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 `template_registry` 为可选可信配置，字段为 `root`（root 独占绝对目录，预建 inbox/artifacts）、`max_templates_global`（1～256）、`max_templates_per_tenant`、`max_artifact_bytes_global`、`max_artifact_bytes_per_tenant` 和 `validation_timeout_secs`（1～300，且不超过运行上限）；租户上限须为正且不超过全局。必须同时配置 `templates` 和 `host_resources`。首次启用升至 V10，并持久绑定唯一根目录，此后生产服务不可关闭登记配置，旧二进制拒绝新库。目录、数据库和私有盘须同文件系统，清理余量观察才能覆盖这些写入。
 
+来源镜像摘要由可信监督方登记，用于追踪输入；服务独立复算实际内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。公开构建入口尚未交付，不能声称客户端现在已可提交任意 Dockerfile 自助完成全链路。
+
 鉴权扩展接口：`POST /sandproof/template-publications` 接 `{candidateID}`；`GET /sandproof/template-publications/{candidateID}` 返回 checking/ready/failed 与有限原因；`GET /sandproof/templates` 只列本人 Ready，编号升序、limit 1～100、cursor 为上页最后不可变编号；`GET /sandproof/templates/{编号或别名}` 查询本人 Ready。`PUT /sandproof/template-aliases/{别名}` 接 `{templateID, expectedTemplateID?}`，可比较后更新，目标必须本人 Ready 编号；DELETE 只删本人别名，不删产物/实例绑定。静态目录名称保留；未知、未就绪和他人模板均不可创建。别名更新只影响新准入，旧实例/重启始终绑定原字节。响应不含宿主路径、临时 VM 编号或凭据。这是 Sandproof 发布扩展，不宣称原生 E2B 构建协议完全兼容。
 
 模板启动合同：仅 Linux/amd64 的 Debian/Ubuntu 兼容镜像；空 OCI USER/WORKDIR 按 root/根目录处理，不复制固定 E2B Dockerfile 解析器的 user/home 默认值。数字 UID 或 UID:GID 在构建 VM 内按有界账户文件解析为真实用户名；显式组必须是该账户的主组，否则拒绝（固定 envd 不支持替换主组）。目录须已存在，启动参数有数量与字节上限；Env 重复键后者优先。模板默认环境 < 创建环境 < 单次命令环境；显式命令用户/目录优先于模板默认值。无 `startup` 的旧镜像仍使用 root 和 envd 的每用户主目录，不改变旧合同。

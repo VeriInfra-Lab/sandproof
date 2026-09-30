@@ -1322,6 +1322,93 @@
     "residuals": "两次脚本失败、两次完整通过共十台 VM 均已精确回收。本轮成功和失败的临时根、镜像副本、测试凭据及空 cgroup 父目录均删除；未清理其他人的目录。只保留脱敏原因、提交、摘要与结果。",
     "limits": "仅可信预制输入、同步 SDK 的选定运行路径及确定性拒绝/重启窗口；不验 Dockerfile/OCI、用户登记/构建隔离、构建预算、所有 ENV/USER/CMD 转换、每模板两实例包数据库隔离、通用 Harbor 原任务/评分、公网/高级 DNS/IPv6、任意崩溃/掉电、长期容量或 Lean 证明。后续证据文档与矩阵变更未改测试的生产/探针字节。"
   },
+  "template_registry_publication_acceptance": {
+    "recorded_on": "2026-09-30",
+    "tested_commit": "a167c37b0e5c865bae6c39157c8ad2062f68d795",
+    "scope": "#123 第一批正式模板发布/登记；可信监督方暂存候选，用户鉴权发布/查询/别名/创建；非完整自助构建平台",
+    "host": {
+      "alias": "ning",
+      "kernel": "6.8.0-142-generic",
+      "rust": "1.97.0",
+      "sdk": "e2b==2.51.0",
+      "python": "3.12.3",
+      "firecracker": "1.16.1"
+    },
+    "artifacts": {
+      "server_sha256": "c921b6d7f2b11c49f20843b864a6942ce3f84a33859ef1b1a3c16770a5542fab",
+      "probe_sha256": "49bbb8a1c1f6461655ab1191945b0692aacd66ba21237c3abce7a91c81050dfd",
+      "kernel_sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+      "builder_base_sha256": "7bb800552e74461d53f956620c984ba103bcdf13aca1c6a89b59f5c76af9278c"
+    },
+    "binary_note": "该提交执行 cargo build -p sandproof-server --locked；Rust 源与依赖锁字节同 6835873dbdc6c5add8ab21406a94a3ee9eeaa5d9，二进制复用并再次核对 SHA-256。后续仅证据/文档更新未改变生产或探针字节。",
+    "namespace": "e084935b3cdb166d",
+    "fixed_tools": "六项 BuildKit/umoci/BusyBox/envd 摘要与 isolated_template_candidate_acceptance 相同，由实机探针逐项强制核对；内核与构建 base 完整 SHA-256 在本批再次核对。",
+    "commands": "root 运行 tests/system/template_build.py --registry --server <本批指纹的 debug binary> --jailer /opt/sandproof/firecracker/release-v1.16.1-x86_64/jailer-v1.16.1-x86_64 --firecracker /opt/sandproof/firecracker/release-v1.16.1-x86_64/firecracker-v1.16.1-x86_64 --kernel /root/sp110-062e8ba/vmlinux-6.1.176 --rootfs /root/ta/sp13-profile-20260929/base-10g.ext4 --scratch-parent /root/ta --cgroup-parent /sys/fs/cgroup/sp-registry123-6835873 --tools /home/ning/sandproof-builder.cjoazH --uid-base 9450000。测试父组新建 root-only，仅向自身委派已有 CPU/memory；不改共享祖先或网络。复现须重新建立独占空父组。",
+    "result": {
+      "exit_code": 0,
+      "vm_identity_attempts": 13,
+      "published_initial_candidates": 2,
+      "publication_states_final": {
+        "ready": 3,
+        "failed": 2
+      },
+      "evidence": [
+        {
+          "kind": "published-dockerfile",
+          "cleanup_before_ready": true,
+          "duplicate_no_vm": true,
+          "foreign_hidden": true
+        },
+        {
+          "kind": "published-oci",
+          "cleanup_before_ready": true,
+          "duplicate_no_vm": true,
+          "foreign_hidden": true
+        },
+        {
+          "kind": "publication-restart",
+          "cleanup_receipt_lost": true,
+          "no_reprobe": true,
+          "failed_kernel_not_ready": true,
+          "alias_binding_persisted": true
+        },
+        {
+          "kind": "publication-unconfirmed",
+          "never_ready": true,
+          "internal_session_hidden": true,
+          "no_reprobe": true,
+          "exact_cleanup": true
+        },
+        {
+          "kind": "activation-confirmed",
+          "no_startup_replay": true,
+          "exact_cleanup": true
+        },
+        {
+          "kind": "activation-unknown",
+          "no_startup_replay": true,
+          "exact_cleanup": true
+        }
+      ]
+    },
+    "checks": [
+      "macOS/Linux 功能检查通过；新增 7 个 Rust 发布/SQLite/HTTP 组件测试、3 个暂存工具单元测试。",
+      "固定 SDK 46 个回环合同通过；Linux 两个实际网关组合用例通过（非 VM）。",
+      "Harbor 联合依赖与 42 个测试通过，1 个 Linux 专属用例在 macOS 明确跳过；未跑任务或模型。"
+    ],
+    "preflight_and_probe_failures": [
+      {
+        "commit": "6835873dbdc6c5add8ab21406a94a3ee9eeaa5d9",
+        "cause": "传入 jailer 符号链接、随后专用 cgroup 目录为 0755，分别在启动前被拒绝；改用真实二进制和本组 0700，不削弱预检，无 VM 创建。"
+      },
+      {
+        "commit": "a1047ce140571bffa95466b494f8f8631b053e30",
+        "cause": "探针误将 .claims 已停止身份留档当作运行资源；原 PID/时期及真实 jail/网络/cgroup 均已回收。修正探针而不删除审计墓碑，最终提交重新完整实测。"
+      }
+    ],
+    "residuals": "最终 13 个创建/启动场景的原进程、jail、网络空间和 cgroup 均精确回收，原内核/base 摘要不变；成功夹具及随机测试凭据自动删除。失败夹具的 config/秘密文件另按精确路径删除，保留 root 私有脱敏错误与停止身份留档；本轮空父 cgroup 已删除，未清理他人目录。",
+    "limits": "未验用户构建提交/状态/日志 API、公开 OCI 下载、独立生产构建预算/恢复、模板历史垃圾回收、通用 Harbor 原题链与 89 题、任意崩溃/掉电或 Lean。源码镜像摘要来自可信监督方，实测核对实际内核/盘字节，不证明镜像内容等价或供应链认证。"
+  },
   "template_startup_acceptance": {
     "recorded_on": "2026-09-30",
     "tested_commit": "a11b4cc797238c6ce8407113e6f29d8063ca0bc3",
