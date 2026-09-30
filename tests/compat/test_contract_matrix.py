@@ -56,13 +56,17 @@ class CapabilityMatrix(unittest.TestCase):
                     self.assertRegex(scenario, r"^S\d{2}$")
                     self.assertIn(f"| {scenario} |", SCENARIOS)
 
-    def test_removed_template_chain_is_not_listed_as_an_unfinished_v1_test(self):
-        self.assertFalse(
-            any("template build" in gap for gap in self.manifest["not_yet_tested"])
+    def test_new_template_target_is_not_misreported_as_already_tested(self):
+        self.assertTrue(
+            any("template build/import" in gap for gap in self.manifest["not_yet_tested"])
         )
         template = self.manifest["capabilities"][16]
         self.assertEqual(template["id"], 17)
-        self.assertEqual(template["target"], "intentional_difference")
+        self.assertEqual(template["target"], "limited_support")
+        self.assertEqual(template["current"], "partial")
+        self.assertIn(123, template["issues"])
+        self.assertEqual(template["source"], "owner_templates")
+        self.assertIn("未交付", template["difference"])
 
 
 if __name__ == "__main__":
