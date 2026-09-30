@@ -1768,5 +1768,77 @@
     "evidence_manifest_sha256": "210869b33b1fd12abac94e99147c652dfcaab787d0339c264c2e99058a1128b4",
     "evidence_directory": "artifacts/template-defaults-6b52eef (ignored sanitized report/preflight/audits; private run credentials and directories removed after export)",
     "limits": "trusted prebuilt templates; four concurrent VMs, sync/async startup defaults and file paths, alias change plus service restart without command replay, local packages, guest-init and boot failures; no self-service build, arbitrary crash, cloud/model, full V1 or proof claim. File user selection is the fixed envd path/ownership contract, not a guest DAC boundary. Prior 1876888 package-isolation evidence remains version-bound; no production Rust or proof changes relative to the new test base."
+  },
+  "template_build_requests_acceptance": {
+    "recorded_on": "2026-09-30",
+    "tested_commit": "004de02f369f0bf2d574aa70bb9906c4b053fa5f",
+    "scope": "#123 默认关闭的用户构建提交/状态/有限日志与串行隔离监督器；离线合成 Dockerfile → candidate → 正式发布 → 固定 SDK",
+    "host": {
+      "kernel": "6.8.0-1065-azure",
+      "guest_kernel": "6.1.176",
+      "python": "3.12.11",
+      "sdk": "e2b==2.51.0",
+      "firecracker": "1.16.1"
+    },
+    "namespace": "5ddbac273761e33b",
+    "server_sha256": "c69e92354e606d7b1eaf16e9e4a401ecf49380f4c1a70c0790869e22a93d2c4c",
+    "source_fingerprints": {
+      "tools/template_supervisor.py": "0ef5c9f6f13cf89f2674ae4998b5b9a5a31a59f189d598ed23233de4fc2d021e",
+      "tools/template_worker.py": "7de307d2af11b74ae0b25b74af56647965a21ae2df197a1910fd1ac8dcc39d11",
+      "tools/template_inputs.py": "d01b37700e043953049e91f0e7f2a3fb85b9a739f53fca85d026075fe1cb5540",
+      "tests/system/server_build_requests.py": "aabee1b62a841c50fcc9da06de548f5eea000fce175505d071c3a06b02f82d08"
+    },
+    "fixed_inputs": {
+      "bin/firecracker": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+      "bin/jailer": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+      "images/vmlinux": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+      "images/base-bench-10g.ext4": "e126328757b505d8f5e9b6c0ca3f9d7dbe7ed0208821a52dc8515d1186496ae0"
+    },
+    "fixed_tools": {
+      "buildctl": "ac7c993de512a1bc7da410e7a9e3424879a5e383d4c17d804ddc54ef6d036703",
+      "buildkitd": "bf5d521895dd4fafdd9bb8ba3316f90fe0eae07b795ba979bd74fee816b29991",
+      "buildkit-runc": "ed94b57511421489ba02594bf311020bbdc4fbd229447f97e2734e50a3e7eeb0",
+      "umoci": "b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71",
+      "busybox": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
+      "envd": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749"
+    },
+    "binary_note": "服务二进制构建于 fd910aafa8c97e2d2f8e1fc4aca2eb7dfa729c54；004de02 仅修正探针使用最小镜像已有 BusyBox，实跑前确认生产 Rust/Cargo.lock 字节相同。",
+    "commands": "固定 SDK Python 以 root 运行 tests/system/server_build_requests.py --server <上述 SHA-256> --jailer <固定 jailer> --firecracker <固定 firecracker> --kernel <固定 vmlinux> --rootfs <固定 Ubuntu 24.04 base-bench-10g.ext4> --scratch-parent <独占 root 私有目录> --cgroup-parent <新建空 CPU/memory 委派子组> --tools <六项固定工具目录> --uid-base 63501；同 UID 范围不可同时复用。",
+    "result": {
+      "exit_code": 0,
+      "vm_count": 5,
+      "vm_roles": [
+        "context_fixture",
+        "successful_build",
+        "publication_validation",
+        "sdk_instance",
+        "failed_build"
+      ],
+      "input_bytes": 6184960,
+      "success_log_bytes": 3641,
+      "failed_log_bytes": 3126,
+      "assertions": [
+        "原始上下文经 HTTP 提交；同编号同内容重试返回原状态，重启后 queued 保留。",
+        "其他租户不能查询请求；构建使用独立租户 99，新建 VM 身份持久绑定，用户 1 得到候选。",
+        "多阶段 Dockerfile 的 COPY/RUN/层删除经过隔离工作器；candidate 后由既有真实启动/回收门发布 Ready。",
+        "原固定 SDK 创建新实例，命令读取构建结果并确认删除/无注入，文件写入/读取通过。",
+        "故意 RUN exit 17 得到 failed、无候选；独立审计确认有限日志含 exit code: 17，不以其他异常充当预期失败。",
+        "成功及失败结束后同编号重提不再次领取，原 VM/PID/启动时刻、网络、cgroup 和独占 UID 均无存活残留。"
+      ]
+    },
+    "checks": [
+      "scripts/check-function.sh 通过：新增 3 个真实 SQLite/保护路径/跨语言队列用例及 1 个 HTTP 多场景用例。",
+      "scripts/check-compat.sh 通过：固定 SDK 46 项回环合同及实际 Rust 网关 28/36 项；不代替 KVM 证据。"
+    ],
+    "first_attempt": {
+      "commit": "fd910aafa8c97e2d2f8e1fc4aca2eb7dfa729c54",
+      "namespace": "92686dfa17660be8",
+      "result": "构建/发布成功，探针使用最小镜像没有的独立 cat，SDK 命令 exit 127。修正探针后完整新资源重跑；不是生产实现修复或验收通过。",
+      "vms_reclaimed": 4,
+      "artifact_manifest_sha256": "7a0a49adaa2c65750515a150872e93960528eda569a873c4316e6b3283a355d2"
+    },
+    "evidence_manifest_sha256": "5dfeb3d2c7837d2e69d4747fca3ad57d3b95b7df93524271159b8ea4d177765f",
+    "residuals": "成功 5 台、失败夹具 4 台共 9 台均独立核对原 PID/时期、网络 inode/cgroup/UID 和 Destroyed 状态；V10 控制库无 dispatched 工作。两批精确测试根、随机凭据/临时磁盘及两个空父子组均已清理，固定基础盘/内核/工具保留且摘要不变。脱敏摘要与失败原因保存在 ignored artifacts。",
+    "limits": "仅离线合成 Dockerfile；未验证本入口的离线 OCI 分支或公开 OCI 下载，未跑真实包镜像/89 题/付费模型/云 E2B。日志非实时；监督器显式单次执行，未决 building 阻止派发，未实现可靠构建恢复、独立生产构建资源池和历史回收。构建预算为试验值；没有新增 Lean 或整套 V1 验收结论。"
   }
 }

@@ -257,3 +257,5 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 ### 构建收件箱与串行监督器（#123）
 
 `controller-service/tests/build_requests.rs` 与 `sandbox-api/tests/managed_port/publication.rs` 检查真实 SQLite 的同编号重放/冲突、归属隐藏、跨 Rust/Python 领取及迟到回执、历史占额、保护目录/数据库拒绝、有限二进制日志和 HTTP 上传限制。`tests/system/server_build_requests.py` 为独立 Linux/KVM 探针：原始上下文上传、请求持久化后重启、独立构建租户 VM、多阶段 Dockerfile、候选发布、固定 SDK 命令/文件和失败构建回收。必须绑定干净提交、固定工具/基础盘和独占资源；组件测试不能替代此探针。公开 OCI 拉取、实时日志、生产构建预算、未知创建/停止自动恢复及 89 题不在该探针覆盖内。
+
+该构建链已在 `004de02f369f0bf2d574aa70bb9906c4b053fa5f` 完成上述离线 Dockerfile 实机验收，成功批次五台 VM 全部回收；精确输入、首次夹具错误和覆盖边界见[版本基线](../references/v1-baseline.json)的 `template_build_requests_acceptance`。不将该结果扩展为本入口的 OCI 分支或生产恢复验收。
