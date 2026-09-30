@@ -6,6 +6,9 @@
 #[cfg(any(target_os = "linux", test))]
 mod identity;
 
+#[cfg(any(target_os = "linux", test))]
+mod startup;
+
 #[cfg(target_os = "linux")]
 mod linux;
 
