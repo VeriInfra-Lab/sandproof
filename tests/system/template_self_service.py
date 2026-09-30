@@ -49,6 +49,9 @@ def exercise(args):
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed tool fingerprint mismatch: " + name)
     root = Path(tempfile.mkdtemp(prefix="ts-", dir=args.scratch_parent))
+    binary = root / "server"
+    shutil.copyfile(args.server, binary)
+    binary.chmod(0o700)
     print(f"root={root} commit={commit}", flush=True)
     namespaces = [secrets.token_hex(8), secrets.token_hex(8)]
     firecracker = args.firecracker.resolve(strict=True)
@@ -152,7 +155,7 @@ def exercise(args):
         raise AssertionError("build deadline exceeded: " + job)
     try:
         for i in range(2):
-            server = start_server(args.server, root / str(i) / "config.json", root / str(i) / "server.log", None)
+            server = start_server(binary, root / str(i) / "config.json", root / str(i) / "server.log", None)
             controllers.append(server)
             wait_ready(opener, urls[i], keys[i], server)
         process = start_builds()
