@@ -51,12 +51,17 @@ def record_for(root, sandbox):
     return secret, name, claim
 
 
-def assert_shape(root, firecracker, cgroup_parent, sandbox, expected):
+def assert_shape(root, firecracker, cgroup_parent, sandbox, expected, opener, url, key):
     info = sandbox.get_info()
     shape = expected["resources"]
-    assert (info.template_id, info.cpu_count, info.memory_mb, info.disk_size_mb) == (
-        expected["template_id"], shape["cpu_count"], shape["memory_mib"], shape["disk_bytes"] // MIB,
+    assert (info.template_id, info.cpu_count, info.memory_mb) == (
+        expected["template_id"], shape["cpu_count"], shape["memory_mib"],
     )
+    status, body = fetch(opener, url, "GET", f"/sandboxes/{sandbox.sandbox_id}", key)
+    assert status == 200
+    # The pinned SDK SandboxInfo intentionally omits diskSizeMB; check the
+    # actual management response instead of inventing a Python SDK attribute.
+    assert json.loads(body)["diskSizeMB"] == shape["disk_bytes"] // MIB
     secret, name, claim = record_for(root, sandbox)
     assert secret["template"] == expected
     assert process_start_ticks(claim["pid"]) == claim["start_time_ticks"]
@@ -143,7 +148,7 @@ def exercise(args):
             assert durable_snapshot(database) == before
         small = Sandbox.create(template="chosen", timeout=300, allow_internet_access=False, **owner)
         large = Sandbox.create(template="large-r1", timeout=300, allow_internet_access=False, **owner)
-        original_claims = [assert_shape(root, firecracker, args.cgroup_parent, sandbox, template) for sandbox, template in zip((small, large), templates)]
+        original_claims = [assert_shape(root, firecracker, args.cgroup_parent, sandbox, template, opener, url, key) for sandbox, template in zip((small, large), templates)]
         for sandbox, marker in ((small, "small-private"), (large, "large-private")):
             sandbox.files.write("/tmp/template-marker", marker)
         assert small.files.read("/tmp/template-marker") == "small-private"
@@ -158,7 +163,7 @@ def exercise(args):
         save_config()
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
-        assert [assert_shape(root, firecracker, args.cgroup_parent, sandbox, template) for sandbox, template in zip((small, large), templates)] == original_claims
+        assert [assert_shape(root, firecracker, args.cgroup_parent, sandbox, template, opener, url, key) for sandbox, template in zip((small, large), templates)] == original_claims
         assert small.files.read("/tmp/template-marker") == "small-private"
         assert Sandbox.connect(small.sandbox_id, **owner).get_info().template_id == "small-r1"
         assert Sandbox.kill(large.sandbox_id, **owner)
@@ -201,7 +206,7 @@ def exercise(args):
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         replacement = Sandbox.create(template="chosen", timeout=300, allow_internet_access=False, **owner)
-        assert_shape(root, firecracker, args.cgroup_parent, replacement, templates[1])
+        assert_shape(root, firecracker, args.cgroup_parent, replacement, templates[1], opener, url, key)
         assert not replacement.files.exists("/tmp/template-marker")
         assert Sandbox.kill(replacement.sandbox_id, **owner)
         check_no_resources(root, namespace, firecracker, args.uid_base)
