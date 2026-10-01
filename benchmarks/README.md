@@ -93,6 +93,8 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 构建盘与目标运行盘是两种资源：构建盘必须同时容纳工具/基础系统、解包暂存和完整目标盘；它的实际空闲空间不足时工作器拒绝，不因目标盘同为 10 GiB 就认为构建盘也只需 10 GiB。监督服务为候选完整字节、暂存及收尾分别记账；早期工作器尚未创建 status.json 时也保留有限失败日志。使用大构建盘不改变原题要求的运行盘大小。
 
+实机监督可用 `--build-input-max-bytes` 和 `--build-expanded-max-bytes` 显式配置构建下载/输入与展开层的预算，默认分别为 4 GiB 和 8 GiB，仍受构建服务 8 GiB 和 32 GiB 的硬上限约束。原公开 OCI 可能含大于默认下载额度的层；调整时必须同时提供已核对的更大构建盘。配置、构建池上传额度、工作区预留、宿主磁盘预检及 worker 空闲量检查使用同一组数值，并写入 `capacity.json` 和 `acceptance-budgets.json`；原任务运行盘、CPU/内存、评分和时限保持不变。例如原运行盘为 10 GiB，选择 8 GiB 输入与 32 GiB 展开额度时，构建盘须有至少 58 GiB + 64 MiB 实际空闲空间，原 32 GiB 构建盘会在派发前拒绝。提高上限不是构建或原题已通过的证据。
+
 构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。只上传锁定的环境文件；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
 
 通用 KVM 监督入口使用[统一验收配置](template-service-budgets.json)及[配置生成/预检](../tools/template_acceptance.py)，运行池传输和寿命字段直接复用[已有任务配置](local-service-budgets.json)。同时计入构建池和运行池的完整 CPU/VMM 内存额度、额外存活私有盘、发布产物、构建工作区、证据和清理余量；预检使用当前 CPU affinity、可用内存和剩余磁盘。服务/relay 的份额由[显式服务 cgroup 入口](../tools/service_cgroup.py)落实；控制服务与构建监督服务及其子进程共用限额，VM 使用各自独立分组。仅生成配置仍标记为未观察到执行，监督入口在核对实际服务 PID 归属后才记录已施加上限；当前数值仍不是已实测的生产总预算。报告保存实际生成配置及来源摘要，旧提交的实跑仍只绑定旧配置。

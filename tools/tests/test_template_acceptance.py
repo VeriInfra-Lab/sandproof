@@ -20,21 +20,21 @@ def inputs(count=4):
     return plan(entries, 1, 32 * GIB, 64 * MIB)
 
 
-def configured(root, deployment):
+def configured(root, deployment, *, builder_bytes=32 * GIB):
     """Real protected config reader, synthetic sparse disk; never launch it."""
     kernel = root / 'kernel'
     kernel.write_bytes(b'kernel')
     disk = root / 'base.ext4'
     with disk.open('wb') as output:
-        output.truncate(32 * GIB)
+        output.truncate(builder_bytes)
     pool_files = []
     for i, kind in enumerate(('runtime', 'builder')):
         directory = root / str(i)
         directory.mkdir(mode=0o700)
         pool = copy.deepcopy(deployment[kind])
         shape = deployment['builder_shape'] if i else {'cpu_count': 1, 'memory_mib': 2048, 'host_memory_bytes': 2304 * MIB}
-        base = {'template_id': 'base', 'owner': None, 'rootfs': {'path': str(disk), 'size_bytes': 32 * GIB},
-                'resources': shape | {'disk_bytes': 32 * GIB}}
+        base = {'template_id': 'base', 'owner': None, 'rootfs': {'path': str(disk), 'size_bytes': builder_bytes},
+                'resources': shape | {'disk_bytes': builder_bytes}}
         pool.update(namespace=str(i), database=str(directory / 'db'), node_state_dir=str(directory),
                     chroot_base=str(directory), bind=f'127.0.0.1:{3100 + i}', uid_base=1000 + 100 * i,
                     max_vm_id=99, credentials=[{'tenant': 1, 'secret': f'pool-{i}'}], kernel=str(kernel),
@@ -65,6 +65,26 @@ def configured(root, deployment):
 
 
 class AcceptanceConfigTests(unittest.TestCase):
+    def test_large_import_requires_larger_builder_and_real_service_accepts_consistent_budgets(self):
+        entries = [{'name': 'large-public-image', 'requirements': {'cpus': 1, 'memory_mib': 2048,
+                    'disk_mib': 10240, 'build_timeout_sec': 600}}]
+        def capacity(builder_bytes):
+            return plan(entries, 1, builder_bytes, 64 * MIB,
+                        input_bytes=8 * GIB, expanded_bytes=32 * GIB)
+        with self.assertRaisesRegex(ValueError, 'builder disk'):
+            budgets(capacity(32 * GIB), 32 * GIB, 64 * MIB)
+        large = budgets(capacity(64 * GIB), 64 * GIB, 64 * MIB)
+        with tempfile.TemporaryDirectory() as temporary:
+            cfg = configured(Path(temporary).resolve(), large, builder_bytes=64 * GIB)
+        self.assertEqual(cfg['limits']['max_input_bytes'], 8 * GIB)
+        self.assertEqual(cfg['limits']['max_expanded_bytes'], 32 * GIB)
+        self.assertEqual(cfg['limits']['builder_disk_bytes'], 64 * GIB)
+        self.assertGreater(cfg['builder']['data_transfer']['file_upload_bytes'], 8 * GIB)
+        self.assertEqual(cfg['limits']['max_disk_mib'], 10240)
+        self.assertEqual(cfg['limits']['timeout_seconds'], 600)
+        self.assertEqual(cfg['limits']['max_memory_mib'], 2048)
+        self.assertEqual(cfg['runtime']['data_transfer'], json.loads(RUNTIME_PROFILE.read_text())['data_transfer'])
+
     def test_complete_profile_is_accepted_by_real_service_configuration(self):
         with tempfile.TemporaryDirectory() as temporary:
             cfg = configured(Path(temporary).resolve(), budgets(inputs(), 32 * GIB, 64 * MIB))

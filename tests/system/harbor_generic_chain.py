@@ -29,7 +29,7 @@ from server_template_isolation import audit_gone
 from server_vm_id_capacity import check_no_resources
 from template_self_service import BUILD_TOOLS
 from tools.benchmark_tasks import verify
-from tools.generic_capacity import plan
+from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.runtime_create_recovery import recover_runtime_create
 from tools.template_acceptance import budgets, check_headroom
 from tools import service_cgroup
@@ -62,7 +62,8 @@ def exercise(args):
                                 for i in range(2))
     capacity = plan(capacity_entries, args.repetitions,
                     args.rootfs.stat().st_size, args.kernel.stat().st_size,
-                    artifact_bytes=args.artifact_limits['max_bytes'])
+                    artifact_bytes=args.artifact_limits['max_bytes'],
+                    input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes)
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size)
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
@@ -467,6 +468,10 @@ if __name__ == '__main__':
     parser.add_argument('--resource-pressure', action='store_true',
                         help='after two original tasks pass, test their published templates together')
     parser.add_argument('--temporarily-forward', action='store_true')
+    parser.add_argument('--build-input-max-bytes', type=int, default=INPUT_BYTES,
+                        help='bounded build input/download bytes; default 4 GiB, service maximum 8 GiB')
+    parser.add_argument('--build-expanded-max-bytes', type=int, default=EXPANDED_BYTES,
+                        help='bounded expanded image layers; default 8 GiB, service maximum 32 GiB')
     add_artifact_arguments(parser)
     args = parser.parse_args()
     args.artifact_limits = artifact_limits_from_args(args)
