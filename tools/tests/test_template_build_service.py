@@ -89,6 +89,129 @@ class BuildTests(unittest.TestCase):
         self.store.upload(job, owner, iter([b"opaque tar"]), 10)
         return job
 
+    def publication(self):
+        job = self.job()
+        Supervisor(self.store, FakeBackend()).tick()
+        self.assertEqual(self.store.get(job)['state'], 'Publishing')
+        registry = self.root / 'registry'
+        (registry / 'inbox').mkdir(parents=True, mode=0o700)
+        backend = object.__new__(Backend)
+        backend.config = {'runtime': {'template_registry': {'root': str(registry)},
+                                      'kernel': str(self.root / 'kernel')}}
+        backend.request = Mock(side_effect=BuildError(404, 'NotFound'))
+        return job, backend, registry
+
+    def test_candidate_expiring_during_unknown_cleanup_never_starts_publication(self):
+        job = self.job()
+        backend = FakeBackend()
+        backend.cleanup_known = False
+        supervisor = Supervisor(self.store, backend)
+        supervisor.tick()
+        self.now = self.store.get(job)['deadline']
+        supervisor.tick()
+        self.assertEqual(self.store.get(job)['state'], 'CleanupUnknown')
+        self.assertGreater(self.store.get(job)['reserved'], 0)
+        self.assertTrue((self.root / job / 'candidate.ext4').exists())
+        backend.cleanup_known = True
+        supervisor.tick()
+        self.assertEqual(self.store.get(job)['state'], 'Failed')
+        self.assertEqual(self.store.get(job)['failure'], 'BuildDeadlineExceeded')
+        self.assertEqual(self.store.get(job)['reserved'], 0)
+        self.assertEqual(backend.publications, set())
+        self.assertFalse(backend.vms)
+
+    def test_expired_absent_publication_never_stages_or_posts(self):
+        job, backend, _ = self.publication()
+        self.now = self.store.get(job)['deadline']
+        with patch('tools.template_build_service.stage') as stage:
+            with self.assertRaisesRegex(BuildError, 'BuildDeadlineExceeded'):
+                backend.publish(self.store, self.store.get(job))
+        stage.assert_not_called()
+        backend.request.assert_called_once_with('runtime', 'GET',
+            '/sandproof/template-publications/' + job, owner=1)
+
+    def test_staging_crossing_deadline_discards_only_unadmitted_candidate(self):
+        job, backend, registry = self.publication()
+        unrelated = registry / 'inbox' / ('f' * 32)
+        unrelated.mkdir(mode=0o700)
+        (unrelated / 'keep').write_bytes(b'unrelated')
+        staged = registry / 'inbox' / job
+        def stage(*args, **kwargs):
+            self.assertEqual(kwargs['candidate_id'], job)
+            staged.mkdir(mode=0o700)
+            (staged / 'rootfs.ext4').write_bytes(b'opaque')
+            self.now = self.store.get(job)['deadline']
+            return job
+        with patch('tools.template_build_service.stage', side_effect=stage):
+            Supervisor(self.store, backend).tick()
+        self.assertEqual(self.store.get(job)['state'], 'Failed')
+        self.assertEqual(self.store.get(job)['failure'], 'BuildDeadlineExceeded')
+        self.assertEqual(self.store.get(job)['reserved'], 0)
+        self.assertFalse(staged.exists())
+        self.assertFalse((self.root / job / 'candidate.ext4').exists())
+        self.assertEqual((unrelated / 'keep').read_bytes(), b'unrelated')
+        self.assertEqual([call.args[1] for call in backend.request.call_args_list], ['GET', 'GET'])
+
+    def test_publication_post_uses_deadline_remaining_after_staging(self):
+        job, backend, _ = self.publication()
+        backend.request.side_effect = [BuildError(404, 'NotFound'), {'state': 'checking'}]
+        def stage(*args, **kwargs):
+            self.now += 20
+            return job
+        with patch('tools.template_build_service.stage', side_effect=stage):
+            result = backend.publish(self.store, self.store.get(job))
+        self.assertEqual(result, {'state': 'checking'})
+        backend.request.assert_called_with('runtime', 'POST', '/sandproof/template-publications',
+            {'candidateID': job}, owner=1, timeout=280)
+
+    def test_lost_publication_post_recovers_existing_identity_after_deadline_and_restart(self):
+        job, backend, _ = self.publication()
+        accepted, ready = False, False
+        def request(pool, method, path, body=None, **kwargs):
+            nonlocal accepted
+            if method == 'GET':
+                self.assertEqual(path, '/sandproof/template-publications/' + job)
+                if not accepted:
+                    raise BuildError(404, 'NotFound')
+                return {'state': 'ready', 'template': {'templateId': 'tpl-' + job}} if ready else {'state': 'checking'}
+            self.assertFalse(accepted)
+            self.assertLess(self.now, self.store.get(job)['deadline'])
+            self.assertEqual(body, {'candidateID': job})
+            accepted = True
+            self.now = self.store.get(job)['deadline'] + 1
+            raise TimeoutError('lost publication reply')
+        backend.request.side_effect = request
+        with patch('tools.template_build_service.stage', return_value=job) as stage:
+            Supervisor(self.store, backend).tick()
+            self.assertEqual(self.store.get(job)['state'], 'Publishing')
+            self.assertGreater(self.store.get(job)['reserved'], 0)
+            self.store.close()
+            self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+            supervisor = Supervisor(self.store, backend)
+            supervisor.tick()
+            self.assertEqual(self.store.get(job)['state'], 'Publishing')
+            self.assertGreater(self.store.get(job)['reserved'], 0)
+            ready = True
+            supervisor.tick()
+            self.assertEqual(self.store.get(job)['state'], 'Ready')
+            self.assertEqual(self.store.get(job)['reserved'], 0)
+            stage.assert_called_once()
+        self.assertEqual([call.args[1] for call in backend.request.call_args_list], ['GET', 'POST', 'GET', 'GET'])
+
+    def test_expired_unknown_publication_keeps_reservation_and_never_posts(self):
+        job, backend, _ = self.publication()
+        self.now = self.store.get(job)['deadline']
+        for error in (TimeoutError(), BuildError(502, 'Unknown'), BuildError(408, 'ControllerRejectedOrUnknown')):
+            with self.subTest(error=type(error).__name__), patch('tools.template_build_service.stage') as stage:
+                backend.request.reset_mock(side_effect=True)
+                backend.request.side_effect = error
+                Supervisor(self.store, backend).tick()
+                self.assertEqual(self.store.get(job)['state'], 'Publishing')
+                self.assertGreater(self.store.get(job)['reserved'], 0)
+                self.assertTrue((self.root / job / 'candidate.ext4').exists())
+                stage.assert_not_called()
+                self.assertEqual([call.args[1] for call in backend.request.call_args_list], ['GET'])
+
     def client(self, key="owner"):
         server = BuildHTTP(("127.0.0.1", 0), self.store,
                            [{"tenant": 1, "secret": "owner"}, {"tenant": 2, "secret": "other"}])

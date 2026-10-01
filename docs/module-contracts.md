@@ -88,6 +88,8 @@ Ready 返回的模板形状使用 Rust `TemplateView` 的规范字段 `cpuCount`
 
 重启后的 Building 不重执行用户步骤，只观察/精确回收原 VM 并报告 InterruptedBuild；完整候选已同步的 Cleaning 可继续收尾和同编号登记；Publishing 只推进原发布，不重构建。Ready 必须通过既有发布门及临时 VM 的精确回收。只有确认构建 VM、网络槽和相关未决动作全部回收才删除本工作临时输入/候选并释放预留；Destroyed 状态或 DELETE 成功不能替代 cleanupComplete。有限日志/历史保留，正式产物由登记预算管理。本批不增加模板/历史垃圾回收、多构建节点、原 E2B 模板协议或 Harbor。
 
+原构建期限也限制发起新的发布请求：构建 VM 精确回收后已到期的候选不进入新发布；确认原发布不存在后，在 staging 前后分别检查期限，POST 的等待使用剩余期限。staging 跨过期限时，只在再次确认未被受理后清理该候选并报告 BuildDeadlineExceeded。已受理或响应丢失的发布仍按原编号观察和收尾；过期不证明既有副作用已终止，查询未知时继续保留预留，不重发 POST。已受理发布稍后的就绪回执可以完成原记录，但不能据此声称调用方在原期限内完成。
+
 普通用户用[小客户端](../tools/template_build_client.py)，凭据从 `SANDBOX_API_KEY` 读取：`--url https://构建服务 --context context.tar.gz` 或 `--image public.ecr.aws/docker/library/ubuntu:24.04`；收到模板编号后使用现有 E2B SDK create。原 SDK 的沙箱合同不变，模板 API/解析器仍不兼容。
 
 鉴权扩展接口：`POST /sandproof/template-publications` 接 `{candidateID}`；`GET /sandproof/template-publications/{candidateID}` 返回 checking/ready/failed 与有限原因；`GET /sandproof/templates` 只列本人 Ready，编号升序、limit 1～100、cursor 为上页最后不可变编号；`GET /sandproof/templates/{编号或别名}` 查询本人 Ready。`PUT /sandproof/template-aliases/{别名}` 接 `{templateID, expectedTemplateID?}`，可比较后更新，目标必须本人 Ready 编号；DELETE 只删本人别名，不删产物/实例绑定。静态目录名称保留；未知、未就绪和他人模板均不可创建。别名更新只影响新准入，旧实例/重启始终绑定原字节。响应不含宿主路径、临时 VM 编号或凭据。这是 Sandproof 发布扩展，不宣称原生 E2B 构建协议完全兼容。
