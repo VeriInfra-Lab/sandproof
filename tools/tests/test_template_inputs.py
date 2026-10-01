@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import signal
+import sys
 import tarfile
 import tempfile
 import time
@@ -256,6 +257,51 @@ class TemplateInputTests(unittest.TestCase):
         self.assertIn("grep -q ' /dev devtmpfs ' /proc/mounts", BOOT)
         self.assertLess(BOOT.index("ip route add default"), BOOT.index("touch /run/sandproof-boot-ready"))
         self.assertLess(AGENT.index("test -f /run/sandproof-boot-ready"), AGENT.index("exec /opt/sandproof/envd"))
+
+    def test_boot_shared_memory_mount_and_failure_gate(self):
+        # Execute the actual shell control flow with a recording applet binary;
+        # this test never mounts filesystems or touches host /dev or /run.
+        applet = self.root / 'busybox'
+        applet.write_text(f'#!{sys.executable}\n' + '''import json, os, sys
+args = sys.argv[1:]
+with open(os.environ['BOOT_TEST_LOG'], 'a') as out:
+    out.write(json.dumps(args) + '\\n')
+if args[0] == 'grep':
+    sys.exit(int(os.environ['BOOT_TEST_DEV_MISSING']))
+if args[0] == 'mount' and args[-1] == '/dev/shm':
+    sys.exit(int(os.environ['BOOT_TEST_SHM_FAILURE']))
+''')
+        applet.chmod(0o755)
+        boot = self.root / 'boot'
+        boot.write_text(BOOT.replace('B=/opt/sandproof/busybox', f'B={applet}'))
+        log = self.root / 'calls.jsonl'
+        for dev_missing in (0, 1):
+            for failure in (0, 73):
+                with self.subTest(dev_missing=dev_missing, failure=failure):
+                    log.write_text('')
+                    result = subprocess.run(['/bin/sh', str(boot)], capture_output=True, timeout=10,
+                        env={**os.environ, 'BOOT_TEST_LOG': str(log),
+                             'BOOT_TEST_DEV_MISSING': str(dev_missing),
+                             'BOOT_TEST_SHM_FAILURE': str(failure)})
+                    calls = [json.loads(line) for line in log.read_text().splitlines()]
+                    self.assertEqual(result.returncode, failure, result.stderr)
+                    mounts = [call for call in calls if call[0] == 'mount' and call[-1] == '/dev/shm']
+                    self.assertEqual(len(mounts), 1)
+                    mount = mounts[0]
+                    self.assertEqual(mount[1:4], ['-t', 'tmpfs', '-o'])
+                    self.assertEqual(set(mount[4].split(',')),
+                                     {'nosuid', 'nodev', 'noexec', 'mode=1777', 'size=64m'})
+                    mkdir = next(call for call in calls if call[0] == 'mkdir' and '/dev/shm' in call)
+                    self.assertLess(calls.index(mkdir), calls.index(mount))
+                    if dev_missing:
+                        device_mount = ['mount', '-t', 'devtmpfs', 'devtmpfs', '/dev']
+                        self.assertLess(calls.index(device_mount), calls.index(mkdir))
+                    ready = ['touch', '/run/sandproof-boot-ready']
+                    if failure:
+                        self.assertNotIn(ready, calls)
+                        self.assertEqual(calls[-1], mount)
+                    else:
+                        self.assertEqual(calls[-1], ready)
 
     def test_worker_limits_are_explicit_no_boolean_or_unknown_field(self):
         request = {"kind": "dockerfile", "disk_mib": 1024, "min_free_mib": 64, "max_input_bytes": 100,
