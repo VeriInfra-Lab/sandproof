@@ -95,7 +95,7 @@ class OracleRepairTests(unittest.TestCase):
                                   exec=AsyncMock(return_value=SimpleNamespace(return_code=0)),
                                   scoped_exec_env=lambda _: contextlib.nullcontext())
             asyncio.run(agent.run(original_task.instruction, env, AgentContext()))
-            env.upload_dir.assert_awaited_once_with(source_dir=repaired / 'solution', target_dir='/solution')
+            env.upload_dir.assert_awaited_once_with(source_dir=(repaired / 'solution').resolve(), target_dir='/solution')
             self.assertTrue(env.exec.await_count > 0)
             self.assertFalse((paths.agent_dir / 'exit-code.txt').exists())
             self.assertEqual((source / 'solution/solve.sh').read_text(), script)

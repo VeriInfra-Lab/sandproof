@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.template_build_service import Backend
+from tools.template_build_store import BuildError
+from e2b import CommandExitException, FileNotFoundException
 
 
 class BuildSdkSession(unittest.TestCase):
@@ -20,7 +22,10 @@ class BuildSdkSession(unittest.TestCase):
     def test_public_import_uploads_fetcher_and_seventh_tool_without_from_build(self):
         self.exercise("oci")
 
-    def exercise(self, kind):
+    def test_worker_preflight_failure_retains_bounded_cause_without_status_file(self):
+        self.exercise('dockerfile', early_failure=True)
+
+    def exercise(self, kind, early_failure=False):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "source.tar"
@@ -40,15 +45,31 @@ class BuildSdkSession(unittest.TestCase):
                 limits={"max_input_bytes": 65536, "max_expanded_bytes": 65536, "max_entries": 100, "max_log_bytes": 65536})
             session = {"sandboxID": "sb-test-1", "envdVersion": "0.9.0", "envdAccessToken": "private-token"}
             def stream(path, **_opts):
+                if early_failure and path.endswith('status.json'):
+                    raise FileNotFoundException('no early status')
                 data = json.dumps(status).encode() if path.endswith("status.json") else candidate if path.endswith("candidate.ext4") else b"bounded log\n"
                 return contextlib.nullcontext(iter([data]))
+            def execute(command, **_opts):
+                if early_failure and command.startswith('python3 /input/template_worker.py'):
+                    raise CommandExitException('build disk budget unavailable\n' + 'x' * 100000,
+                                               '', 1, None)
+                return SimpleNamespace(stdout='12345678-1234-1234-1234-123456789abc\n')
             # Keep Sandbox itself real: incorrect kwargs/version/configuration
             # must fail here, not hide behind a constructor test double.
             with patch.object(backend, "vm", return_value={"session": session}) as identity, \
                     patch("e2b.sandbox_sync.main.Filesystem") as files, \
                     patch("e2b.sandbox_sync.main.Commands") as commands:
                 files.return_value.read.side_effect = stream
-                commands.return_value.run.return_value.stdout = "12345678-1234-1234-1234-123456789abc\n"
+                commands.return_value.run.side_effect = execute
+                if early_failure:
+                    with self.assertRaises(BuildError) as caught:
+                        backend.build(store, row)
+                    self.assertEqual(caught.exception.reason, 'WorkerPreflightFailed')
+                    self.assertEqual((directory / 'build.log').stat().st_size, 65536)
+                    self.assertTrue((directory / 'build.log').read_text().startswith('build disk budget unavailable'))
+                    self.assertFalse((directory / 'candidate.ext4').exists())
+                    identity.assert_called_once_with(row, create=True)
+                    return
                 self.assertEqual(backend.build(store, row), status)
                 identity.assert_called_once_with(row, create=True)
                 config = files.call_args.args[2]
