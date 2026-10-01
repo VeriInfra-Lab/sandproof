@@ -30,6 +30,10 @@ cargo test --release -p sandproof-api --test managed_port \
 
 历史点须按实际构造成本扩展；外部中止时保留 `in_progress`、已完成点和待测点，不把未测规模算失败或通过。此入口不访问 KVM/E2B 云、不运行题集，不改变准入阈值、缓存或锁范围，也不据组件耗时宣称正式历史上限、无限运行或整体 #99 完成。生产支持边界仍需目标任务、实际宿主预算与相同配置的系统验收。
 
+#99 易失已提交状态缓存的组件回归位于[服务差分测试](../controller-service/src/controller/cache_tests.rs)与[数据通道回归](../sandbox-api/tests/managed_port/committed_world.rs)。独立完整日志重放对比缓存全量 World；事务快照检查输入、投影、动作、回执、寿命与登记表。覆盖同一对象在提交前失败/回滚、提交后故障点、真实 COMMIT 或 ROLLBACK 后返回不确定错误、成功回执双输入、创建与预留、批量补偿部分失败、SQL-only 寿命/登记、外部旧历史/投影修改及旧底层 Journal 句柄拒绝。组件层另用 SQLite 延迟外键制造实际提交失败，检查 kill/expiry/set_timeout 的撤销订阅、未确认派发不调用宿主、重新授权只使用确认后的原持久状态；这不是宿主掉电或 KVM 故障证据。
+
+缓存性能复测复用上面的 #152 release 入口和相同 0/4/16/64 历史点，分别记录打开重放、首次操作、暖态路径和受控慢宿主干扰。不得把 tmpfs/受控 HostAdapter 结果冒称物理磁盘、KVM 或吞吐 SLA；缓存不改变全局宿主持锁范围，不宣称移除全部历史相关成本。
+
 ## 2. 系统场景
 
 以下 ID 用于 issue/PR 的验收引用。

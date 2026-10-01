@@ -1,11 +1,11 @@
 //! Durable template publication/aliases; not a second sandbox lifecycle.
-use super::{ControllerJournal, admission::accounted};
+use super::{ControllerJournal, admission::accounted, transaction::WorldTransaction};
 use crate::{
     JournalError,
     template_registry::{Publication, PublicationFailure, PublicationState, RegistryConfig},
     templates::TemplateBinding,
 };
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 
 fn decode(bytes: &[u8]) -> Result<Publication, JournalError> {
@@ -101,6 +101,8 @@ impl ControllerJournal {
     /// # Errors
     /// Schema/root mismatch is a shared storage error, not an empty catalog.
     pub fn has_template_registry(&self) -> Result<bool, JournalError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
         let version: i64 = self.journal.connection.query_row(
             "SELECT version FROM controller_meta WHERE id=1",
             [],
@@ -125,10 +127,7 @@ impl ControllerJournal {
             return Err(JournalError::Conflict);
         }
         self.has_template_registry()?;
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         tx.execute_batch("CREATE TABLE IF NOT EXISTS template_registry_meta (id INTEGER PRIMARY KEY CHECK(id=1), root TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS template_publications (candidate_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, record_json BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS template_aliases (owner_id TEXT NOT NULL, name TEXT NOT NULL, candidate_id TEXT NOT NULL REFERENCES template_publications(candidate_id), PRIMARY KEY(owner_id,name));")?;
@@ -148,7 +147,7 @@ impl ControllerJournal {
             [root],
         )?;
         tx.execute("UPDATE controller_meta SET version=10 WHERE id=1", [])?;
-        tx.commit().map_err(JournalError::CommitUncertain)
+        tx.commit()
     }
 
     /// Returns only the caller's record, including pending/failed states.
@@ -159,6 +158,8 @@ impl ControllerJournal {
         owner: u64,
         id: &str,
     ) -> Result<Option<Publication>, JournalError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
         Ok(load(&self.journal.connection, id)?.filter(|value| value.binding.owner == Some(owner)))
     }
 
@@ -177,10 +178,7 @@ impl ControllerJournal {
         {
             return Err(JournalError::Conflict);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         if load(&tx, &value.candidate_id)?.is_some() {
             return Err(JournalError::Conflict);
         }
@@ -234,7 +232,7 @@ impl ControllerJournal {
                 serde_json::to_vec(value)?
             ],
         )?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         Ok(true)
     }
 
@@ -263,12 +261,9 @@ impl ControllerJournal {
             return Err(JournalError::Conflict);
         }
         value.checked = true;
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         save(&tx, &value)?;
-        tx.commit().map_err(JournalError::CommitUncertain)
+        tx.commit()
     }
 
     /// Definitive pre-validation failure; a possibly live VM must first be reclaimed.
@@ -288,12 +283,9 @@ impl ControllerJournal {
         }
         value.state = PublicationState::Failed;
         value.failure = Some(reason);
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         save(&tx, &value)?;
-        tx.commit().map_err(JournalError::CommitUncertain)
+        tx.commit()
     }
 
     /// Reconcile without re-running publication probes. Call under the controller lock.
@@ -328,10 +320,7 @@ impl ControllerJournal {
                 return Err(JournalError::CorruptStore);
             }
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         for mut value in values {
             if value.state != PublicationState::Checking {
                 continue;
@@ -358,7 +347,7 @@ impl ControllerJournal {
                 save(&tx, &value)?;
             }
         }
-        tx.commit().map_err(JournalError::CommitUncertain)
+        tx.commit()
     }
 
     /// # Errors
@@ -368,6 +357,8 @@ impl ControllerJournal {
         owner: u64,
         name: &str,
     ) -> Result<Option<Publication>, JournalError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
         let candidate = if let Some(id) = name.strip_prefix("tpl-") {
             Some(id.to_owned())
         } else {
@@ -393,6 +384,8 @@ impl ControllerJournal {
     /// # Errors
     /// Lists only Ready revisions owned by this tenant; history is globally bounded.
     pub fn registered_templates(&self, owner: u64) -> Result<Vec<Publication>, JournalError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
         let mut statement = self.journal.connection.prepare(
             "SELECT record_json FROM template_publications WHERE owner_id=?1 ORDER BY candidate_id",
         )?;
@@ -412,6 +405,8 @@ impl ControllerJournal {
     /// # Errors
     /// Aliases cannot cross owners; IDs are always immutable.
     pub fn template_aliases(&self, owner: u64, id: &str) -> Result<Vec<String>, JournalError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
         let mut statement = self.journal.connection.prepare(
             "SELECT name FROM template_aliases WHERE owner_id=?1 AND candidate_id=?2 ORDER BY name",
         )?;
@@ -439,10 +434,7 @@ impl ControllerJournal {
         if target != value.binding.template_id {
             return Err(JournalError::Conflict);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         let previous: Option<String> = tx
             .query_row(
                 "SELECT candidate_id FROM template_aliases WHERE owner_id=?1 AND name=?2",
@@ -463,21 +455,18 @@ impl ControllerJournal {
         }
         tx.execute("INSERT INTO template_aliases VALUES(?1,?2,?3) ON CONFLICT(owner_id,name) DO UPDATE SET candidate_id=excluded.candidate_id",
             params![owner.to_string(),name,value.candidate_id])?;
-        tx.commit().map_err(JournalError::CommitUncertain)
+        tx.commit()
     }
 
     /// # Errors
     /// Deleting a name never deletes a revision or a running instance's binding.
     pub fn delete_template_alias(&mut self, owner: u64, name: &str) -> Result<bool, JournalError> {
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         let changed = tx.execute(
             "DELETE FROM template_aliases WHERE owner_id=?1 AND name=?2",
             params![owner.to_string(), name],
         )?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         Ok(changed == 1)
     }
 }
