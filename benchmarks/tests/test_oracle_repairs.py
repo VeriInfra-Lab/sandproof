@@ -26,6 +26,8 @@ class OracleRepairTests(unittest.TestCase):
         # Only synthetic shell fixtures run here. Commands are recording stubs;
         # no package manager, R compiler or benchmark solution runs on the host.
         cases = {
+            'build-cython-ext': (
+                'pip install -e .\n', ['pip install planarity==0.6 -e .']),
             'mcmc-sampling-stan': (
                 'set -e\nsudo apt-get install -y \\\n    gfortran=4:13.2.0-7ubuntu1\nR model.R\n',
                 ['apt-get install -y cmake gfortran=4:13.2.0-7ubuntu1', 'R model.R']),
@@ -50,7 +52,7 @@ class OracleRepairTests(unittest.TestCase):
                 stub = ('#!/bin/bash\nname=${0##*/}\n'
                         'printf "%s %s\\n" "$name" "$*" >> "$REPAIR_TEST_LOG"\n'
                         'if [[ "$name $*" == "$REPAIR_TEST_FAIL" ]]; then exit 42; fi\n')
-                for command in ('apt-get', 'apt', 'R', 'make', 'sudo'):
+                for command in ('apt-get', 'apt', 'R', 'make', 'sudo', 'pip'):
                     path = bin_dir / command
                     path.write_text('#!/bin/bash\nexec "$@"\n' if command == 'sudo' else stub)
                     path.chmod(0o700)
