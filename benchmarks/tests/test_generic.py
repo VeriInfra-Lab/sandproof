@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from benchmarks.generic_environment import archive_context, build_request, GenericEnvironment, validate_template
 from benchmarks.run_generic import run_selected
+from benchmarks.artifact_budget import ArtifactBudget, DEFAULT_ARTIFACT_LIMITS
 from tools.benchmark_tasks import InvalidInput
 
 
@@ -155,6 +156,7 @@ class GenericInputTests(unittest.TestCase):
                     env.entry, env.source_kind = entry(), 'oci'
                     env.task_env_config = config()
                     env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
+                    env.artifact_budget = ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
                     env.submission_key = 'a' * 32
                     env.build_log_error = None
                     job = 'b' * 32
@@ -176,9 +178,91 @@ class GenericInputTests(unittest.TestCase):
                     self.assertEqual([call.args[:2] for call in env.client.request.call_args_list], [
                         ('POST', '/sandproof/template-builds'),
                         ('GET', '/sandproof/template-builds/' + job),
-                        ('GET', '/sandproof/template-builds/' + job + '/logs?offset=0&limit=16384')])
+                        ('GET', '/sandproof/template-builds/' + job + '/logs?offset=0&limit=65536')])
                     if not log_failure:
-                        self.assertEqual(json.loads((Path(tmp) / 'build-log.json').read_text()), log)
+                        self.assertEqual(json.loads((Path(tmp) / 'build-log.json').read_text()),
+                                         log | {'complete': state in ('Ready', 'Failed'), 'truncated': False})
+
+
+class BuildLogTests(unittest.IsolatedAsyncioTestCase):
+    async def capture(self, root, pages, *, cap=8, page_size=4, budget=None):
+        env = object.__new__(GenericEnvironment)
+        env.trial_paths = SimpleNamespace(trial_dir=root)
+        env.artifact_budget = budget or ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
+        env.client = SimpleNamespace(request=Mock(side_effect=pages))
+        env.build_result = {'state': 'Failed'}
+        with patch('benchmarks.generic_environment.BUILD_LOG_BYTES', cap), \
+             patch('benchmarks.generic_environment.BUILD_LOG_PAGE', page_size):
+            await env.capture_build_log('/build')
+        return env, json.loads((root / 'build-log.json').read_text())
+
+    async def test_raw_offsets_keep_tail_and_charge_json_expansion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = await self.capture(Path(tmp), [
+                {'offset': 0, 'nextOffset': 4, 'text': '\ufffd' * 4},
+                {'offset': 4, 'nextOffset': 8, 'text': 'tail'},
+                {'offset': 8, 'nextOffset': 8, 'text': ''}])
+            self.assertEqual(log['text'], '\ufffd' * 4 + 'tail')
+            self.assertTrue(log['complete'])
+            self.assertFalse(log['truncated'])
+            self.assertEqual([c.args[1] for c in env.client.request.call_args_list], [
+                '/build/logs?offset=0&limit=4', '/build/logs?offset=4&limit=4',
+                '/build/logs?offset=8&limit=1'])
+            self.assertEqual(env.artifact_budget.bytes, (Path(tmp) / 'build-log.json').stat().st_size)
+
+    async def test_over_cap_is_explicit_and_does_not_retain_extra_byte(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = await self.capture(Path(tmp), [
+                {'offset': 0, 'nextOffset': 4, 'text': 'head'},
+                {'offset': 4, 'nextOffset': 8, 'text': 'tail'},
+                {'offset': 8, 'nextOffset': 9, 'text': '!'}])
+            self.assertEqual(log['text'], 'headtail')
+            self.assertEqual(log['nextOffset'], 8)
+            self.assertTrue(log['truncated'])
+            self.assertFalse(log['complete'])
+            self.assertEqual(env.client.request.call_count, 3)
+
+    async def test_later_network_or_malformed_page_keeps_first_page(self):
+        for bad in (OSError('credential-bearing error'),
+                    {'offset': 0, 'nextOffset': 4, 'text': 'back'},
+                    {'offset': 4, 'nextOffset': 9, 'text': 'large'},
+                    {'offset': 4, 'nextOffset': 4, 'text': 'invalid'},
+                    {'offset': 4, 'nextOffset': 5, 'text': 'too long'}):
+            with self.subTest(bad=type(bad).__name__), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises((OSError, InvalidInput)):
+                    await self.capture(Path(tmp), [{'offset': 0, 'nextOffset': 4, 'text': 'head'}, bad])
+                log = json.loads((Path(tmp) / 'build-log.json').read_text())
+                self.assertEqual(log, {'offset': 0, 'nextOffset': 4, 'text': 'head',
+                                       'complete': False, 'truncated': False})
+
+    async def test_trial_budget_cannot_be_bypassed_by_build_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            budget = ArtifactBudget(dict(max_bytes=8, max_entries=1, max_depth=1, max_file_bytes=8))
+            with self.assertRaises(InvalidInput):
+                await self.capture(Path(tmp), [{'offset': 0, 'nextOffset': 0, 'text': ''}], budget=budget)
+            self.assertIsNotNone(budget.failure)
+            self.assertFalse((Path(tmp) / 'build-log.json').exists())
+
+    async def test_cancelled_read_preserves_partial_log_and_propagates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            entered = asyncio.Event()
+            calls = []
+            async def request(_call, method, path):
+                calls.append(path)
+                if len(calls) == 1:
+                    return {'offset': 0, 'nextOffset': 4, 'text': 'head'}
+                entered.set()
+                await asyncio.Future()
+            with patch('benchmarks.generic_environment.asyncio.to_thread', request):
+                running = asyncio.create_task(self.capture(Path(tmp), []))
+                await asyncio.wait_for(entered.wait(), 1)
+                running.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await running
+            log = json.loads((Path(tmp) / 'build-log.json').read_text())
+            self.assertEqual(log['text'], 'head')
+            self.assertFalse(log['complete'])
+            self.assertEqual(len(calls), 2)
 
 
 class GenericSuiteTests(unittest.TestCase):

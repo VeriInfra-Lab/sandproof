@@ -295,9 +295,11 @@ def exercise(args):
             output.mkdir(mode=0o700)
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
+                'failure_diagnostics': args.failure_diagnostics,
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
                 api_url=urls[0], build_url=urls[2], source_kind=args.source_kind,
+                failure_diagnostics=args.failure_diagnostics,
                 artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
             old_key = os.environ.get('SANDPROOF_TEST_API_KEY')
             os.environ['SANDPROOF_TEST_API_KEY'] = key
@@ -373,6 +375,7 @@ def exercise(args):
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
+                'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
                 'no_process_network_cgroup_jail_residue': True,
@@ -430,6 +433,8 @@ if __name__ == '__main__':
     parser.add_argument('--namespace')
     parser.add_argument('--build-namespace')
     parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
+    parser.add_argument('--failure-diagnostics', action='store_true',
+                        help='retain registered post-score guest probes without changing original scores')
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
     parser.add_argument('--resource-pressure', action='store_true',
                         help='after two original tasks pass, test their published templates together')

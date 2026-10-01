@@ -21,6 +21,8 @@ from tools.benchmark_tasks import InvalidInput
 from tools.template_build_client import BuildClient
 
 MIB = 1024 * 1024
+BUILD_LOG_BYTES = 2 * MIB
+BUILD_LOG_PAGE = 65536
 
 
 def archive_context(entry, source, output):
@@ -145,12 +147,46 @@ class GenericEnvironment(SdkEnvironment):
         finally:
             # Bounded best-effort diagnostics, not a cleanup or success witness.
             try:
-                log = await asyncio.to_thread(self.client.request, 'GET', path + '/logs?offset=0&limit=16384')
-                self.checkpoint('build-log.json', log)
+                await self.capture_build_log(path)
             except Exception as error:
                 # Keep the original build outcome and retain only the error
                 # class: exception text may include request credentials.
                 self.build_log_error = type(error).__name__
+
+    async def capture_build_log(self, path):
+        log = {'offset': 0, 'nextOffset': 0, 'text': '', 'complete': False, 'truncated': False}
+        try:
+            async with asyncio.timeout(30):
+                while True:
+                    remaining = BUILD_LOG_BYTES - log['nextOffset']
+                    # At the exact cap, one byte distinguishes EOF from truncation.
+                    limit = min(BUILD_LOG_PAGE, remaining) if remaining else 1
+                    page = await asyncio.to_thread(self.client.request, 'GET',
+                        path + f'/logs?offset={log["nextOffset"]}&limit={limit}')
+                    if (not isinstance(page, dict) or type(page.get('offset')) is not int
+                            or page['offset'] != log['nextOffset']
+                            or type(page.get('nextOffset')) is not int
+                            or not 0 <= page['nextOffset'] - page['offset'] <= limit
+                            or not isinstance(page.get('text'), str)):
+                        raise InvalidInput('invalid build log page')
+                    size = page['nextOffset'] - page['offset']
+                    # Offsets count raw bytes, not Unicode characters/re-encoding.
+                    if (len(page['text'].encode('utf-8')) > 3 * size
+                            or bool(page['text']) != bool(size)):
+                        raise InvalidInput('invalid build log text')
+                    if size > remaining:
+                        log['truncated'] = True
+                        break
+                    log['nextOffset'] = page['nextOffset']
+                    log['text'] += page['text']
+                    if size < limit:
+                        log['complete'] = self.build_result['state'] in ('Ready', 'Failed')
+                        break
+        finally:
+            # Retain partial pages even if a later request fails. JSON expansion
+            # and this additional copy count against the trial evidence budget.
+            self.retain_text(self.trial_paths.trial_dir / 'build-log.json',
+                             json.dumps(log, indent=2) + '\n')
 
     def checkpoint(self, name, value):
         path = self.trial_paths.trial_dir / name

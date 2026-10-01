@@ -28,6 +28,7 @@ async def run_selected(args, lock):
         (args.output / 'full-set.json').write_text(json.dumps({
             'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
             'source_kind': args.source_kind, 'oracle_mode': 'original',
+            'failure_diagnostics': getattr(args, 'failure_diagnostics', False),
             'scope': 'generic templates and original Harbor oracle/verifier; exact host cleanup requires external audit',
             'dependencies': 'output image digest recorded; dynamic build/verifier downloads not fully locked',
         }, indent=2) + '\n')
@@ -92,6 +93,8 @@ def main():
     # Match fixed Harbor's OCI preference by default; the Dockerfile path is
     # an explicit ORIGINAL source alternative, never a rewritten task recipe.
     parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
+    parser.add_argument('--failure-diagnostics', action='store_true',
+                        help='after an original failed score, run registered guest diagnostics separately')
     add_artifact_arguments(parser)
     args = parser.parse_args()
     try:
@@ -106,6 +109,7 @@ def main():
         args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         (args.output / 'inputs.json').write_text(json.dumps({
             'source': lock['source'], 'runtimes': runtimes, 'source_kind': args.source_kind,
+            'failure_diagnostics': args.failure_diagnostics,
             'artifact_limits': args.artifact_limits,
             'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']},
             'original_harbor_template_preference': 'public OCI when docker_image is set',
