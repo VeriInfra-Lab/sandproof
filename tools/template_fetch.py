@@ -47,6 +47,17 @@ def reference(value):
     return host + "/" + repo, suffix[1:] if suffix else "latest"
 
 
+def mirror_registry(value):
+    """Trusted deployment hostname only; not a client-selected URL or credential."""
+    if (not isinstance(value, str) or len(value) > 253
+            or not re.fullmatch(r"[a-z0-9.-]+", value)):
+        raise InvalidTemplate("public mirror hostname required")
+    repository, _ = reference(value + "/library/probe:latest")
+    if repository != value + "/library/probe":
+        raise InvalidTemplate("public mirror hostname required")
+    return value
+
+
 def select_manifest(document, digest):
     if not isinstance(document, dict) or document.get("schemaVersion") != 2:
         raise InvalidTemplate("unsupported public manifest")
@@ -135,7 +146,12 @@ def fetch(source, work, layout, request, tool, commands):
     if not isinstance(document, dict) or set(document) != {"image"}:
         raise InvalidTemplate("expected a public image reference document")
     repository, identifier = reference(document["image"])
-    canonical = repository + ("@" if identifier.startswith("sha256:") else ":") + identifier
+    transport_repository = repository
+    if "docker_hub_mirror" in request:
+        mirror = mirror_registry(request["docker_hub_mirror"])
+        if repository.startswith("docker.io/"):
+            transport_repository = mirror + repository.removeprefix("docker.io")
+    canonical = transport_repository + ("@" if identifier.startswith("sha256:") else ":") + identifier
     if sha256(tool) != REGCTL_SHA256:
         raise InvalidTemplate("fixed regctl fingerprint required")
     manifest_path = work / "source-manifest.json"
@@ -148,7 +164,7 @@ def fetch(source, work, layout, request, tool, commands):
     # the selected digest, so a tag update cannot mix two image revisions.
     selected = select_manifest(bounded_json(manifest_path), digest)
     archive = work / "download.tar"
-    archive_bytes = capture([str(tool), "image", "export", repository + "@" + selected],
+    archive_bytes = capture([str(tool), "image", "export", transport_repository + "@" + selected],
                             archive, request["max_input_bytes"] - metadata_bytes, commands)
     extract_archive(archive, layout, max_bytes=request["max_input_bytes"], max_entries=request["max_entries"])
     index = bounded_json(layout / "index.json")
@@ -181,6 +197,8 @@ def fetch(source, work, layout, request, tool, commands):
     if converted is not None:
         result["converted_digest"] = converted
         result["conversion"] = "docker-schema2-to-oci"
+    if transport_repository != repository:
+        result["transport_registry"] = transport_repository.split("/", 1)[0]
     return result
 
 

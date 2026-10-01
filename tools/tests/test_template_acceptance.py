@@ -20,7 +20,7 @@ def inputs(count=4):
     return plan(entries, 1, 32 * GIB, 64 * MIB)
 
 
-def configured(root, deployment):
+def configured(root, deployment, **extra_config):
     """Real protected config reader, synthetic sparse disk; never launch it."""
     kernel = root / 'kernel'
     kernel.write_bytes(b'kernel')
@@ -58,6 +58,7 @@ def configured(root, deployment):
               'runtime_config': str(pool_files[0]), 'builder_config': str(pool_files[1]),
               'tools': {name: {'path': str(kernel), 'sha256': hashlib.sha256(b'kernel').hexdigest()} for name in tools},
               'limits': deployment['limits'], 'dns_servers': ['1.1.1.1']}
+    config.update(extra_config)
     path = root / 'build.json'
     path.write_text(json.dumps(config))
     path.chmod(0o600)
@@ -65,6 +66,17 @@ def configured(root, deployment):
 
 
 class AcceptanceConfigTests(unittest.TestCase):
+    def test_optional_mirror_is_in_protected_configuration_and_binding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            cfg = configured(root, budgets(inputs(), 32 * GIB, 64 * MIB),
+                             docker_hub_mirror='docker.1ms.run')
+            self.assertEqual(cfg['docker_hub_mirror'], 'docker.1ms.run')
+            original = cfg.pop('binding')
+            self.assertEqual(original, hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest())
+            del cfg['docker_hub_mirror']
+            self.assertNotEqual(original, hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest())
+
     def test_explicit_small_host_profile_preserves_four_instance_cohort_and_headroom(self):
         profile = load(PROFILE.with_name('template-service-budgets-16g.json'))
         entries = [{'name': str(i), 'requirements': {'cpus': 1, 'memory_mib': 2048,

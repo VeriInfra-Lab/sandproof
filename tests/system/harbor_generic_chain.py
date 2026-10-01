@@ -150,6 +150,8 @@ def exercise(args):
         'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in BUILD_TOOLS.items()},
         'dns_servers': ['1.1.1.1', '8.8.8.8'],
         'limits': deployment['limits']}
+    if args.docker_hub_mirror is not None:
+        build['docker_hub_mirror'] = args.docker_hub_mirror
     (root / 'build.json').write_text(json.dumps(build))
     (root / 'build.json').chmod(0o600)
     from tools.template_build_service import configuration
@@ -376,6 +378,7 @@ def exercise(args):
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
+                'docker_hub_mirror': args.docker_hub_mirror,
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
@@ -441,6 +444,8 @@ if __name__ == '__main__':
                         help='after two original tasks pass, test their published templates together')
     parser.add_argument('--budget-profile', type=Path, default=PROFILE,
                         help='explicit operator acceptance profile; original larger profile remains the default')
+    parser.add_argument('--docker-hub-mirror',
+                        help='trusted HTTPS registry hostname for OCI transport only; original task references remain unchanged')
     parser.add_argument('--temporarily-forward', action='store_true')
     add_artifact_arguments(parser)
     args = parser.parse_args()
