@@ -1,5 +1,6 @@
 """Probe failure/cancellation must retain identities and attempt every cleanup."""
 import asyncio
+import copy
 import json
 from pathlib import Path
 import sys
@@ -67,6 +68,43 @@ class PressureReplayTests(unittest.TestCase):
 
 
 class PressureFailureTests(unittest.TestCase):
+    def test_slow_read_reobserves_original_builder_without_mutating_or_extending_deadline(self):
+        vm = {'session': {'known': True}, 'sandboxID': 'original'}
+        read = AsyncMock(side_effect=[TimeoutError('disk preparation'), vm])
+        status = AsyncMock(return_value={'state': 'Running'})
+        with patch.object(pressure.time, 'time', return_value=10), \
+             patch.object(pressure.asyncio, 'sleep', AsyncMock()):
+            result = asyncio.run(pressure.wait_builder_session(read, status, 20, Mock(poll=lambda: None)))
+        self.assertIs(result, vm)
+        self.assertEqual(read.await_count, 2)
+        status.assert_awaited_once_with()
+
+    def test_builder_read_retry_retains_original_deadline_and_does_not_hide_terminal_or_other_errors(self):
+        for value in ('deadline', 'Ready', 'unexpected'):
+            with self.subTest(value=value):
+                read = AsyncMock(side_effect=ValueError('bad identity') if value == 'unexpected' else TimeoutError())
+                status = AsyncMock(return_value={'state': 'Ready'})
+                clock = [10, 21] if value == 'deadline' else [10, 10]
+                with patch.object(pressure.time, 'time', side_effect=clock), \
+                     patch.object(pressure.asyncio, 'sleep', AsyncMock()), \
+                     self.assertRaises(ValueError if value == 'unexpected' else AssertionError):
+                    asyncio.run(pressure.wait_builder_session(read, status, 20, Mock(poll=lambda: None)))
+                read.assert_awaited_once_with()
+                self.assertEqual(status.await_count, int(value == 'Ready'))
+
+    def test_pressure_requires_ready_and_exact_cleanup_but_never_changes_failed_scores(self):
+        rows = [row | {'status': 'failed', 'rewards': {'reward': 0.0}, 'build': {'state': 'Ready'},
+                      'exact_cleanup': 'passed'} for row in templates()]
+        original = copy.deepcopy(rows)
+        self.assertTrue(pressure.ready_for_pressure(rows))
+        self.assertEqual(rows, original)
+        for changes in ({'exact_cleanup': 'unknown'}, {'build': {'state': 'Failed'}},
+                        {'template': None}, {'build': None}):
+            with self.subTest(changes=changes):
+                self.assertFalse(pressure.ready_for_pressure([rows[0], rows[1] | changes]))
+        for count in (0, 1, 3):
+            self.assertFalse(pressure.ready_for_pressure([rows[0]] * count))
+
     def test_four_instance_cpu_memory_and_disk_checked_before_dispatch(self):
         shape = {'cpus': 1, 'memory_mib': 2048, 'disk_mib': 10240}
         pressure.validate_cohort([shape, shape], deployment())
