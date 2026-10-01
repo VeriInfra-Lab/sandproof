@@ -192,6 +192,20 @@ pub(crate) fn write_accepted<C: Serialize>(
     Ok(next_revision)
 }
 
+// A handle opened before ControllerJournal took ownership must also be
+// rejected. Check inside each write transaction, not only at open time.
+fn require_generic_store(connection: &Connection) -> Result<(), JournalError> {
+    let controller: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_meta')",
+        [],
+        |row| row.get(0),
+    )?;
+    if controller {
+        return Err(JournalError::UnsupportedStore);
+    }
+    Ok(())
+}
+
 impl Journal {
     /// Opens one local `SQLite` database. WAL + FULL + IMMEDIATE transactions
     /// are part of this format's operating contract, not caller preferences.
@@ -199,7 +213,18 @@ impl Journal {
     /// # Errors
     /// Rejects unsupported/corrupt stores, unsuitable journal settings, and I/O errors.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
+        Self::open_inner(path, false)
+    }
+
+    pub(crate) fn open_controller(path: impl AsRef<Path>) -> Result<Self, JournalError> {
+        Self::open_inner(path, true)
+    }
+
+    fn open_inner(path: impl AsRef<Path>, controller: bool) -> Result<Self, JournalError> {
         let connection = Connection::open(path)?;
+        if !controller {
+            require_generic_store(&connection)?;
+        }
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON;")?;
 
@@ -311,6 +336,7 @@ impl Journal {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_generic_store(&transaction)?;
         let next_revision = write_accepted(&transaction, write)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         transaction
@@ -451,6 +477,7 @@ impl Journal {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_generic_store(&transaction)?;
         let row: Option<(i64, Vec<u8>)> = transaction
             .query_row(
                 "SELECT id, action_json FROM outbox
@@ -489,6 +516,7 @@ impl Journal {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_generic_store(&transaction)?;
         let row: Option<ExistingReceiptRow> = transaction
             .query_row(
                 "SELECT id, dispatch_state, action_json, receipt_json FROM outbox
