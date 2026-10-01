@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 from tools.template_build_store import BuildError, BuildStore, MIB, public_image
 from tools.template_build_service import Backend, BuildHTTP, Supervisor
+from tools.template_build_client import BuildClient, LOG_RESPONSE_BYTES
 
 
 def limits():
@@ -87,6 +88,54 @@ class BuildTests(unittest.TestCase):
         job = self.store.submit(owner, {"kind": "dockerfile"}, token)["buildID"]
         self.store.upload(job, owner, iter([b"opaque tar"]), 10)
         return job
+
+    def client(self, key="owner"):
+        server = BuildHTTP(("127.0.0.1", 0), self.store,
+                           [{"tenant": 1, "secret": "owner"}, {"tenant": 2, "secret": "other"}])
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        def close():
+            server.shutdown()
+            server.server_close()
+            thread.join()
+        self.addCleanup(close)
+        return BuildClient("http://127.0.0.1:" + str(server.server_port), key)
+
+    def test_client_reads_full_raw_log_page_with_bounded_json_expansion(self):
+        job = self.job()
+        client = self.client()
+        path = "/sandproof/template-builds/" + job + "/logs"
+        for payload in (b"x" * 65536, b"\x00" * 65536, b"\xff" * 65536,
+                        "\U0001f600".encode() * 16384):
+            with self.subTest(prefix=payload[:4]):
+                (self.root / job / "build.log").write_bytes(payload)
+                page = client.request("GET", path + "?offset=0&limit=65536")
+                self.assertEqual(page["text"], payload.decode("utf-8", errors="replace"))
+                self.assertEqual((page["offset"], page["nextOffset"]), (0, 65536))
+                self.assertEqual(client.request("GET", path + "?offset=65536&limit=1")["text"], "")
+        # The generic runner's smaller page can also exceed 64 KiB on wire.
+        (self.root / job / "build.log").write_bytes(b"\x00" * 16384)
+        page = client.request("GET", path + "?offset=0&limit=16384")
+        self.assertEqual(page["text"], "\x00" * 16384)
+        self.assertEqual(page["nextOffset"], 16384)
+
+    def test_client_log_allowance_preserves_owner_and_response_limits(self):
+        job = self.job()
+        client = self.client()
+        path = "/sandproof/template-builds/" + job
+        (self.root / job / "build.log").write_bytes(b"private build material")
+        with self.assertRaisesRegex(RuntimeError, "NotFound"):
+            self.client("other").request("GET", path + "/logs")
+        with self.assertRaisesRegex(RuntimeError, "InvalidLogRange"):
+            client.request("GET", path + "/logs?limit=65537")
+        with patch.object(self.store, "query", return_value={"text": "x" * 65536}) as query:
+            with self.assertRaisesRegex(RuntimeError, "oversized build response"):
+                client.request("GET", path)
+            query.assert_called_once()
+        with patch.object(self.store, "logs", return_value={"text": "x" * LOG_RESPONSE_BYTES}) as logs:
+            with self.assertRaisesRegex(RuntimeError, "oversized build response"):
+                client.request("GET", path + "/logs")
+            logs.assert_called_once()
 
     def test_request_identity_owner_and_budget_boundaries(self):
         first = self.store.submit(1, {"kind": "oci", "image": "ubuntu:24.04"}, "request")

@@ -1,5 +1,5 @@
 import unittest
-from tools.generic_capacity import GIB, plan
+from tools.generic_capacity import GIB, MIB, plan
 
 
 class GenericCapacityTests(unittest.TestCase):
@@ -22,6 +22,16 @@ class GenericCapacityTests(unittest.TestCase):
         self.assertEqual(twice['registry_bytes'],2*p['registry_bytes'])
         self.assertGreater(twice['uid_stride'],2*178)
         self.assertGreater(twice['required_free_bytes'],p['required_free_bytes'])
+
+    def test_trial_budget_and_retained_original_contexts_are_additive(self):
+        tasks = self.tasks(89)
+        tasks[0]['files'] = [{'role': 'environment', 'bytes': 123456, 'path': 'environment/Dockerfile'},
+                             {'role': 'oracle', 'bytes': GIB, 'path': 'solution/private'}]
+        p = plan(tasks, 2, 32 * GIB, 44649272, artifact_bytes=128 * MIB)
+        larger = plan(tasks, 2, 32 * GIB, 44649272, artifact_bytes=256 * MIB)
+        self.assertEqual(larger['required_free_bytes'] - p['required_free_bytes'], 178 * 128 * MIB)
+        self.assertEqual(p['context_reserve_bytes'], 178 * 10240 + 2 * (123456 + len('environment/Dockerfile') + 4096))
+        self.assertEqual(p['trial_evidence_bytes'], 178 * 132 * MIB)
 
     def test_invalid_shapes_are_rejected_without_silent_clamping(self):
         for field,value in [('cpus',True),('memory_mib',32768),('disk_mib',0),
