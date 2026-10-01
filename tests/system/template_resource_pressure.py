@@ -56,7 +56,7 @@ async def hold_input(sandbox, marker, tracked):
         if 'ready\n' in output:
             ready.set()
     # POSIX tools only; neither a benchmark recipe nor a Python installation.
-    command = "printf 'once\\n' > " + shlex.quote(marker) + "; printf 'ready\\n'; exec cat"
+    command = "printf 'once\\n' >> " + shlex.quote(marker) + "; printf 'ready\\n'; exec cat"
     handle = await sandbox.commands.run(command, user='root', stdin=True, background=True,
                                        timeout=180, on_stdout=received)
     item = {'handle': handle, 'sandbox': sandbox, 'marker': marker, 'done': False}
@@ -71,6 +71,11 @@ async def finish_input(item):
     result = await item['handle'].wait()
     assert (result.stdout, result.stderr, result.exit_code) == ('ready\nreserved-control\n', '', 0)
     item['done'] = True
+
+
+async def verify_no_replay(tracked):
+    for item in tracked:
+        assert await item['sandbox'].files.read(item['marker'], user='root') == 'once\n'
 
 
 async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor,
@@ -210,8 +215,7 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
             await finish_input(item)
         await wait_capacity(cohort[2], '/tmp')
         assert not await cohort[2].files.exists('/tmp/refused-pressure-file')
-        for item in tracked:
-            assert await item['sandbox'].files.read(item['marker'], user='root') == 'once\n'
+        await verify_no_replay(tracked)
         await verify_packages()
         cases.append('reserved-stdin-eof-no-command-replay')
         supervisor = restart()
