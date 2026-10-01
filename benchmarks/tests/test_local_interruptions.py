@@ -168,6 +168,60 @@ class LocalFinalizationTests(unittest.TestCase):
             ):
                 yield args, env, oracle, verifier, root / task_name, output
 
+    def test_generic_browser_reward_requires_actual_execution_evidence(self):
+        complete = ('Total batches to test: 1\nRUN BATCH 0 (contains 1 tests)\n'
+                    '  No alert detected\n')
+        for stdout, passed in ((None, False), ('PASSED\n', False),
+                               (complete + '  Failed to load URL: unavailable\n', False),
+                               (complete, True)):
+            with self.subTest(stdout=stdout), self.fixture(task_name='filter-js-from-html') as (
+                    args, env, oracle, verifier, trial, output):
+                async def verify():
+                    if stdout is not None:
+                        (trial / 'verifier/test-stdout.txt').write_text(stdout)
+                    return SimpleNamespace(rewards={'reward': 1})
+                verifier.verify.side_effect = verify
+                with patch.object(runner, 'Verifier', return_value=verifier) as constructor:
+                    row = asyncio.run(runner.run_task(args, {'name': 'filter-js-from-html'}, {},
+                        environment_factory=lambda **kwargs: env))
+                self.assertEqual(row['status'], 'passed' if passed else 'failed')
+                self.assertEqual(row['rewards'], {'reward': 1})
+                self.assertEqual(row['oracle'], 'passed')
+                self.assertEqual(row['verifier'], 'passed')
+                self.assertEqual(row['verification_audit']['browser_lifecycle_audit'], 'not_instrumented')
+                self.assertEqual(constructor.call_args.kwargs['override_env'],
+                                 {'PYTEST_ADDOPTS': '-s -v', 'PYTHONUNBUFFERED': '1'})
+                self.assertEqual(row['verifier_observation_env'], constructor.call_args.kwargs['override_env'])
+                env.start.assert_awaited_once()
+                env.stop.assert_awaited_once()
+                self.assertTrue(row['kill_confirmed'])
+                self.assertEqual(json.loads((trial / 'result.json').read_text()), row)
+
+    def test_browser_observation_does_not_change_other_verifiers(self):
+        with self.fixture() as (args, env, oracle, verifier, trial, output):
+            with patch.object(runner, 'Verifier', return_value=verifier) as constructor:
+                row = asyncio.run(runner.run_task(args, {'name': 'sample'}, {},
+                    environment_factory=lambda **kwargs: env))
+            self.assertNotIn('override_env', constructor.call_args.kwargs)
+            self.assertNotIn('verification_audit', row)
+            self.assertNotIn('verifier_observation_env', row)
+            self.assertEqual(row['status'], 'passed')
+
+    def test_fixed_base_browser_still_requires_lifecycle_evidence(self):
+        with self.fixture(task_name='filter-js-from-html') as (args, env, oracle, verifier, trial, output):
+            async def verify():
+                (trial / 'verifier/test-stdout.txt').write_text(
+                    'Total batches to test: 1\nRUN BATCH 0 (contains 1 tests)\n  No alert detected\n')
+                (trial / 'verifier/browser-lifecycle.jsonl').write_text('malformed')
+                return SimpleNamespace(rewards={'reward': 1})
+            verifier.verify.side_effect = verify
+            row = asyncio.run(runner.run_task(args, {'name': 'filter-js-from-html'}, {}))
+            self.assertEqual(row['rewards'], {'reward': 1})
+            self.assertEqual(row['verifier'], 'passed')
+            self.assertEqual(row['status'], 'failed')
+            self.assertEqual(row['verification_audit']['browser_lifecycle_audit'], 'failed')
+            env.stop.assert_awaited_once()
+
     def test_post_score_probe_is_opt_in_and_preserves_original_failure(self):
         from benchmarks.failure_diagnostics import CYTHON_COMMAND
         for enabled, reward, name in ((True, 0, 'build-cython-ext'), (False, 0, 'build-cython-ext'),

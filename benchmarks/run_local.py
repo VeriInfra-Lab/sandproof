@@ -26,7 +26,7 @@ from harbor.verifier.verifier import Verifier
 
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
-from benchmarks.check_browser_evidence import audit_browser_evidence
+from benchmarks.check_browser_evidence import audit_browser_evidence, audit_browser_execution
 from benchmarks.failure_diagnostics import collect as collect_failure_diagnostics
 from benchmarks.oracle_repairs import REPAIRS, prepare_repaired_task
 from benchmarks.sdk_environment import SdkEnvironment
@@ -270,17 +270,29 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
         row['oracle'] = 'failed' if (paths.agent_dir / 'exit-code.txt').exists() else 'passed'
         record_artifact_status(environment, row)
         event('verifier')
-        verifier = Verifier(task=task, trial_paths=paths, environment=environment)
+        verifier_options = {}
+        if task.name == 'filter-js-from-html':
+            # Pytest otherwise hides successful-test stdout, including browser
+            # errors that this original verifier catches and treats as success.
+            # Apply observation settings only to the verifier, never the oracle.
+            row['verifier_observation_env'] = {'PYTEST_ADDOPTS': '-s -v', 'PYTHONUNBUFFERED': '1'}
+            verifier_options['override_env'] = row['verifier_observation_env']
+        verifier = Verifier(task=task, trial_paths=paths, environment=environment, **verifier_options)
         result = await asyncio.wait_for(verifier.verify(), task.config.verifier.timeout_sec)
         row['rewards'] = result.rewards
         row['verifier'] = 'passed' if result.rewards == {'reward': 1} else 'failed'
         row['status'] = 'passed' if row['oracle'] == row['verifier'] == 'passed' else 'failed'
         record_artifact_status(environment, row)
-        if environment_factory is None and task.name == 'filter-js-from-html':
-            lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
-            row['verification_audit'] = audit_browser_evidence(
-                paths.test_stdout_path.read_text() if paths.test_stdout_path.exists() else '',
-                lifecycle.read_text() if lifecycle.exists() else '')
+        if task.name == 'filter-js-from-html':
+            stdout = paths.test_stdout_path.read_text() if paths.test_stdout_path.exists() else ''
+            if environment_factory is None:
+                lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
+                row['verification_audit'] = audit_browser_evidence(
+                    stdout, lifecycle.read_text() if lifecycle.exists() else '')
+            else:
+                # Generic OCI/Dockerfile runs do not install the fixed-base
+                # lifecycle wrapper. Do not claim its process cleanup evidence.
+                row['verification_audit'] = audit_browser_execution(stdout)
             if not row['verification_audit']['complete']:
                 row['status'] = 'failed'
                 row['reason'] = 'browser verification incomplete; original reward retained'

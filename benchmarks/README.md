@@ -75,6 +75,8 @@ python3 tools/benchmark_tasks.py audit \
 
 构建诊断按服务返回的原始字节偏移分页保存到 `build-log.json`，总上限 2 MiB、读取期限 30 秒，JSON 展开后的文件也计入逐试验产物预算。`complete` 仅表示已到达终态构建日志末尾，超限记录 `truncated`；读取失败保留已有页和错误类型，不改写原构建终态或重新提交构建。
 
+`filter-js-from-html` 的原评分器会吞掉部分浏览器错误并给出成功奖励。通用链只在评分阶段设置 `PYTEST_ADDOPTS=-s -v` 和 `PYTHONUNBUFFERED=1`，保存逐批浏览器日志，并额外检查批次数、连续批次编号、实际完成的无弹窗检查及被吞掉的超时/浏览器错误；缺日志或检查失败不能报告整题通过，原 reward 与 oracle/verifier 状态仍保留。这不修改原镜像、解答、评分源码、资源或时限，也不安装固定 base 的浏览器包装器。通用链的 `browser_lifecycle_audit=not_instrumented` 明确表示未观察每批浏览器进程回收，最终 VM 资源仍须外部审计；它不是浏览器超时的修复或实机通过证据。
+
 通用入口及实机监督可显式加 `--failure-diagnostics`，在原评分已失败后、销毁原实例前执行[已登记的来宾诊断](failure_diagnostics.py)。当前仅覆盖 `build-cython-ext`：核对原解答已克隆的 pyknotid 提交和测试文件，直接展开原先被外层断言隐藏的内部 pytest 输出，并记录 Python/依赖版本。额外诊断最多 60 秒，共享逐试验产物预算，不编辑测试或安装依赖；输出为独立的 `failure-diagnostic.txt/json`，不更新原 reward、解答或评分状态，取消和错误仍须清理原实例。它属于评分后的独立复现，不延长原解答/评分期限，未实际运行不能记为已定位或已修复。
 
 ```sh
