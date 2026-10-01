@@ -1,5 +1,6 @@
 """Regression cases for interrupted commands and best-effort diagnostics."""
 import asyncio
+from benchmarks.artifact_budget import ArtifactBudget, DEFAULT_ARTIFACT_LIMITS
 import contextlib
 import errno
 import io
@@ -17,6 +18,7 @@ from benchmarks import run_local as runner
 class InterruptedRunTests(unittest.TestCase):
     def test_interrupted_command_records_attempt_without_replay(self):
         env = object.__new__(runner.LocalBaseEnvironment)
+        env.artifact_budget = ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
         env.events = []
         call = AsyncMock(side_effect=TimeoutError("command deadline"))
         with patch.object(runner.E2BEnvironment, "exec", call):
@@ -52,6 +54,8 @@ class InterruptedRunTests(unittest.TestCase):
                 exec=AsyncMock(side_effect=None if logs_available else OSError("observation unavailable"),
                                return_value=SimpleNamespace(stdout="guest observations\n", stderr="")),
             )
+
+            env.retain_text = lambda path, content: path.write_text(content)
 
             async def stop():
                 env.kill_confirmed = True
@@ -134,6 +138,8 @@ class LocalFinalizationTests(unittest.TestCase):
                 events=[], start=AsyncMock(), download_file=AsyncMock(side_effect=OSError("no log")),
                 exec=AsyncMock(return_value=SimpleNamespace(stdout="", stderr="")),
             )
+
+            env.retain_text = lambda path, content: path.write_text(content)
 
             async def stop():
                 if cleanup_error is not None:
