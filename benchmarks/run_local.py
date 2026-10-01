@@ -353,7 +353,7 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                     and row['status'] == 'failed' and row['verifier'] == 'failed'):
                 try:
                     row['failure_diagnostic'] = await collect_failure_diagnostics(
-                        environment, task.name, paths.trial_dir)
+                        environment, task.name, paths.trial_dir, oracle_mode=oracle_mode)
                 except (asyncio.CancelledError, KeyboardInterrupt):
                     row['failure_diagnostic'] = {'status': 'interrupted'}
                     row['interrupted'] = True

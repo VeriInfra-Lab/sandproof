@@ -79,7 +79,7 @@ python3 tools/benchmark_tasks.py audit \
 
 通用入口及实机监督可显式加 `--failure-diagnostics`，在原评分已失败后、销毁原实例前执行[已登记的来宾诊断](failure_diagnostics.py)。`build-cython-ext` 诊断会核对原解答已克隆的 pyknotid 提交和测试文件，直接展开原先被外层断言隐藏的内部 pytest 输出，并记录 Python/依赖版本。额外诊断最多 60 秒，共享逐试验产物预算，不编辑测试或安装依赖；输出为独立的 `failure-diagnostic.txt/json`，不更新原 reward、解答或评分状态，取消和错误仍须清理原实例。它属于评分后的独立复现，不延长原解答/评分期限，未实际运行不能记为已定位或已修复。
 
-`gpt2-codegolf` 的评分后诊断只使用原镜像已有的 Bash、GCC 和基础命令，不依赖系统 Python。它核对原 `gpt2.c` 的固定摘要，记录来宾 overcommit/内存信息，在临时副本中为两次原内存分配加入空指针检查，随后立即退出；分配失败分别返回 77/78，记录 errno，避免诊断再次解引用空指针。副本不运行模型推理，退出时删除临时目录并复核原文件未变；不修改内存策略、资源限制或评分结果。该探针同样需要显式启用 `--failure-diagnostics`，受 60 秒和逐试验产物预算约束。
+`gpt2-codegolf` 的评分后诊断仅用于 original 模式，只使用原镜像已有的 Bash、GCC 和基础命令，不依赖系统 Python。它核对原 `gpt2.c` 的固定摘要，记录来宾 overcommit/内存信息，在临时副本中为两次原内存分配加入空指针检查，随后立即退出；分配失败分别返回 77/78，记录 errno，避免诊断再次解引用空指针。副本不运行模型推理，退出时删除临时目录并复核原文件未变；不修改内存策略、资源限制或评分结果。该探针同样需要显式启用 `--failure-diagnostics`，受 60 秒和逐试验产物预算约束。
 
 ```sh
 uv run --locked --project benchmarks python -m benchmarks.run_generic \
@@ -206,6 +206,7 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 - `pytorch-model-recovery`：在原解答前清理来宾 pip 下载缓存，使用评分器同版 uv 0.9.5 逐个重新安装原版本的大型 Torch/CUDA wheel，并通过公开 hardlink 接口与缓存共享文件。PyPI 解析结果须包含固定版本和 SHA-256；重新安装前后校验代码及数据摘要、完整版本清单与大文件硬链接数，不编辑 uv 缓存内部结构。仅修正版评分器设置 `UV_LINK_MODE=hardlink`，原评分源码、Torch 构建变体及 10 GiB 私有盘预算保持不变；辅助证据写入来宾 `/logs/verifier/torch-wheel-sharing.json`。组件检查不代替完整实机评分。
 - `qemu-alpine-ssh`、`qemu-startup`：原 Bullseye 软件源索引引用的 curl 依赖已返回 404。修正版先核对来宾发行版、密钥环、题目输入和软件源布局，再切换至 [Debian 官方快照](https://snapshot.debian.org/)的 2026-08-24 仓库并刷新索引；仅固定快照允许过期元数据，仍由 Debian 原密钥环验证仓库签名和包摘要。原 QEMU/Alpine 镜像、解答与评分流程保留；原软件源另存来宾评分日志目录。
 - `rstan-to-pystan`：为原脚本固定的 curl/libcurl 8.5.0-2ubuntu10.6 补充 Ubuntu 官方 2025-10-01 签名快照，并用 wheel URL/SHA-256 将 setuptools 约束至 80.9.0，保留 PyStan 3.10.0 使用的 `pkg_resources`。这将已有固定环境的依赖适配接入通用链的显式修正版；原 Python 3.10、httpstan 源码构建、模型、采样、pip 安装命令和评分继续执行，时限保持不变。
+- `gpt2-codegolf`：以 Linux `mmap(MAP_NORESERVE)` 预留原大小的工作区，按触页实际占用内存；工作区或词表分配失败时分别返回 77/78。原模型计算、编译方式和小于 5000 字节的源码约束保持一致，来宾内核策略、物理内存及评分时限不变。此方式仍受地址空间限制约束；[内核文档](https://docs.kernel.org/mm/overcommit-accounting.html)说明严格 overcommit 模式会忽略 `MAP_NORESERVE`，因此仍须检查分配失败。组件实验不能代替完整模型实跑。
 - `build-pov-ray`：从 ICM 公开镜像下载相同三个 2.2 压缩包，并核对与[上游 PR #77](https://github.com/harbor-framework/terminal-bench-2/pull/77)相同的 SHA-256；其余编译与渲染流程不变。原站对直接下载返回 HTTP 403。
 - `caffe-cifar-10`：从 BrainChip 公开镜像下载相同 CIFAR-10 binary 数据，内容已核对[作者公布的 MD5](https://www.cs.toronto.edu/~kriz/cifar.html)，执行时再核对固定 SHA-256。下载、解压、原 Caffe 构建及训练均在 VM 原 agent 预算中，不预填数据或训练结果。
 - `crack-7z-hash`：先用原 John 自带完整常用密码字典和原规则运行，并要求 John 确认破解成功；解压密码取自实际破解结果，替代原脚本的答案常量。没有任务专用候选表，也没有跳过破解计算。模式语义见 [John 官方说明](https://www.openwall.com/john/doc/MODES.shtml)。

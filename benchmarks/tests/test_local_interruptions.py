@@ -315,6 +315,24 @@ class LocalFinalizationTests(unittest.TestCase):
                     self.assertEqual(calls[0].kwargs, {'cwd': '/app', 'timeout_sec': 60})
                 env.stop.assert_awaited_once()
 
+    def test_repaired_gpt2_keeps_its_failure_without_running_original_probe(self):
+        from benchmarks.failure_diagnostics import GPT2_COMMAND
+        with self.fixture(task_name='gpt2-codegolf') as (
+                args, env, oracle, verifier, trial, output):
+            args.oracle_mode = 'repaired'
+            args.failure_diagnostics = True
+            verifier.verify.return_value = SimpleNamespace(rewards={'reward': 0})
+            with patch.object(runner, 'prepare_repaired_task', return_value=args.source / 'repaired'):
+                row = asyncio.run(runner.run_task(args, {'name': 'gpt2-codegolf'}, {}))
+            self.assertFalse(any(call.args[0] == GPT2_COMMAND for call in env.exec.call_args_list))
+            self.assertEqual(row['rewards'], {'reward': 0})
+            self.assertEqual(row['status'], 'failed')
+            self.assertEqual(row['verifier'], 'failed')
+            self.assertEqual(row['failure_diagnostic'], {
+                'status': 'not_applicable', 'reason': 'probe_requires_original_oracle'})
+            self.assertFalse((trial / 'failure-diagnostic.txt').exists())
+            env.stop.assert_awaited_once()
+
     def test_failed_diagnostic_does_not_replace_original_score_or_skip_cleanup(self):
         from benchmarks.failure_diagnostics import CYTHON_COMMAND
         for failure in (TimeoutError('private detail'), OSError('private detail')):

@@ -16,6 +16,7 @@ CHROMIUM_LIFECYCLE_PATH = '/usr/local/lib/sandproof/guest_chromium.py'
 REPAIRS = {
     'filter-js-from-html': '9686e12af48346d2df538c3b46710122ee8dc80dfd0eecacb7a1476bf892ec9f',
     'git-multibranch': '300ca96b79db8d77f14742109aaf76048aafc4644ced750b1bc5c2761e8d0175',
+    'gpt2-codegolf': '8c288a53bdf566d7278a35eda08d6baaf50883b0e1917ceb638b823cf6456b70',
     'build-cython-ext': '41bbdde88617070366a70e518eedca466a4ea1acd7e96899b2fb7da988e40abc',
     'mcmc-sampling-stan': 'd084666cc006911c5c80959969fba5c5699cbac92ab172db5c67eca00b1d0a97',
     'make-doom-for-mips': 'a9cd034a5e76fa2b22481717a9669869214f43fec5b4fedc957d83dd2ef6a84a',
@@ -84,6 +85,20 @@ if ! command -v tmux >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tmux
 fi
 ''')
+    elif name == 'gpt2-codegolf':
+        # The original arena reserves 6.75 GiB for the 124M model, while pages
+        # are touched only as the unchanged model uses them. Keep the same
+        # address range with Linux demand paging and check both allocations.
+        # Guest kernel policy, physical memory and address-space limits apply.
+        include = '#include<stdio.h>\n'
+        allocation = 'D=malloc(2LL*V*V*C*zz);\nbpe=malloc(1e9);'
+        if old.count(include) != 1 or old.count(allocation) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(include, include + '#include<sys/mman.h>\n')
+        new = new.replace(allocation, '''D=mmap(0,2LL*V*V*C*zz,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE,-1,0);
+if(D==MAP_FAILED)return 77;
+bpe=malloc(1e9);
+if(!bpe)return 78;''')
     elif name == 'build-cython-ext':
         # pyknotid 0.5.3 consumes planarity's pre-1.0 node attribute names.
         # Pin the compatible dependency in the same editable installation;
