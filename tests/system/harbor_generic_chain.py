@@ -157,13 +157,27 @@ def exercise(args):
     service_record = root / 'service-cgroup.json'
     service_prefix = service_cgroup.prefix(service_record)
     service_samples = []
-    def observe_services():
-        processes = [p for p in [*controllers, supervisor] if p is not None]
+    def observe_services(*, require_builder=True, minimum_relays=0):
+        processes = [p for p in [*controllers, *([supervisor] if require_builder else [])] if p is not None]
         if any(p.poll() is not None for p in processes):
             raise RuntimeError('service exited; retain original resources for recovery')
         snapshot = service_cgroup.observe(service_record, pids=[p.pid for p in processes])
         if snapshot['memory_events'].get('oom_kill', 0):
             raise RuntimeError('service cgroup OOM; retain original identities for recovery')
+        relays = []
+        for pid in snapshot['pids']:
+            try:
+                start = process_start_ticks(pid)
+                argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+                if start is not None and argv[:2] == [os.fsencode(binary), b'relay']:
+                    service_cgroup.observe(service_record, pids=[pid])
+                    if process_start_ticks(pid) == start:
+                        relays.append({'pid': pid, 'start_time_ticks': start})
+            except FileNotFoundError:
+                continue
+        if len(relays) < minimum_relays:
+            raise RuntimeError('blocked data relays were not observed inside the service budget')
+        snapshot['relays'] = relays
         service_samples.append(snapshot)
         (root / 'service-resources.json').write_text(json.dumps(service_samples, indent=2))
         return snapshot
@@ -311,7 +325,8 @@ def exercise(args):
                 try:
                     pressure_report = asyncio.run(pressure(root=root, urls=urls, key=key, builder_key=builder_key,
                         rows=current, deployment=deployment, supervisor=supervisor, restart=restart_builds,
-                        source_entry=capacity_entries[0], audit_shape=audit_shape, completion_audit=completion_audit))
+                        source_entry=capacity_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
+                        service_audit=lambda count: observe_services(require_builder=False, minimum_relays=count)))
                 except Exception:
                     # Retain the separate failed probe and original task scores.
                     # The common physical audit below must still pass before exit.
