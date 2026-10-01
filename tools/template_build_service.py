@@ -130,13 +130,13 @@ class Backend:
         self.runtime_keys = {c["tenant"]: c["secret"] for c in config["runtime"]["credentials"]}
         self.builder_key = config["builder"]["credentials"][0]["secret"]
 
-    def request(self, pool, method, path, body=None, *, owner=None):
+    def request(self, pool, method, path, body=None, *, owner=None, timeout=60):
         key = self.builder_key if pool == "builder" else self.runtime_keys[owner]
         encoded = json.dumps(body).encode() if body is not None else None
         request = urllib.request.Request("http://" + self.config[pool]["bind"] + path, data=encoded, method=method,
             headers={"X-API-Key": key, "Content-Type": "application/json"})
         try:
-            with self.opener.open(request, timeout=60) as response:
+            with self.opener.open(request, timeout=timeout) as response:
                 data = response.read(65537)
                 if len(data) > 65536:
                     raise BuildError(502, "ControllerResponseTooLarge")
@@ -149,7 +149,15 @@ class Backend:
     def vm(self, row, create=False):
         request = json.loads(row["request"])
         body = {"timeout": request["timeoutSeconds"] + 60, "allowInternetAccess": request["allowInternetAccess"]} if create else None
-        return self.request("builder", "POST" if create else "GET", "/sandproof/internal-build-vms/" + row["id"], body)
+        timeout = 60
+        if create:
+            # Private create includes copying the bounded builder disk. Its
+            # wait belongs to the original build deadline, not a 60s RPC cap.
+            timeout = min(request["timeoutSeconds"], row["deadline"] - time.time())
+            if timeout <= 0:
+                raise BuildError(408, "BuildDeadlineExceeded")
+        return self.request("builder", "POST" if create else "GET", "/sandproof/internal-build-vms/" + row["id"], body,
+                            timeout=timeout)
 
     def cleanup(self, row):
         try:

@@ -119,7 +119,8 @@ def exercise(args):
             'max_active_global': 2, 'max_active_per_tenant': 2,
             'max_disk_bytes_global': 2 * args.rootfs.stat().st_size, 'max_disk_bytes_per_tenant': 2 * args.rootfs.stat().st_size,
             'cleanup_reserve_bytes': capacity['cleanup_bytes'], 'max_timeout_secs': capacity['max_build_seconds'] + 60 if i else 86400,
-            'max_lifetime_secs': capacity['max_build_seconds'] + 60 if i else 86400, 'startup_timeout_secs': 60,
+            'max_lifetime_secs': capacity['max_build_seconds'] + 60 if i else 86400,
+            'startup_timeout_secs': capacity['max_build_seconds'],
             'expiry_scan_seconds': 2, 'public_ipv4_enabled': True,
             'templates': {'templates': [base], 'aliases': {'base': base['template_id']},
                 'compute_limits': {'max_vcpus_global': 8, 'max_vcpus_per_tenant': 8,
@@ -190,7 +191,10 @@ def exercise(args):
                 'pid': claim['pid'], 'start_time_ticks': claim['start_time_ticks'],
                 'disk_inode': disk.stat().st_ino, 'machine': machine}
     def completion_audit(row):
-        deadline = time.monotonic() + 90
+        # A lost reply may precede completion of the same admitted disk copy.
+        # Observe through its original deadline plus a bounded cleanup margin.
+        original_deadline = (row.get('build') or {}).get('deadline', time.time())
+        deadline = time.monotonic() + max(0, original_deadline - time.time()) + 90
         while True:
             with sqlite3.connect(root / 'builds/builds.db') as db:
                 pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
