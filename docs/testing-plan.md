@@ -32,6 +32,8 @@ cargo test --release -p sandproof-api --test managed_port \
 
 #99 易失已提交状态缓存的组件回归位于[服务差分测试](../controller-service/src/controller/cache_tests.rs)与[数据通道回归](../sandbox-api/tests/managed_port/committed_world.rs)。独立完整日志重放对比缓存全量 World；事务快照检查输入、投影、动作、回执、寿命与登记表。覆盖同一对象在提交前失败/回滚、提交后故障点、真实 COMMIT 或 ROLLBACK 后返回不确定错误、成功回执双输入、创建与预留、批量补偿部分失败、SQL-only 寿命/登记、外部旧历史/投影修改及旧底层 Journal 句柄拒绝。组件层另用 SQLite 延迟外键制造实际提交失败，检查 kill/expiry/set_timeout 的撤销订阅、未确认派发不调用宿主、重新授权只使用确认后的原持久状态；这不是宿主掉电或 KVM 故障证据。
 
+#99 持久身份高水位回归位于[分配器服务测试](../controller-service/src/controller/allocator_tests.rs)与[API 耗尽测试](../sandbox-api/tests/managed_port/allocators.rs)。使用真实 SQLite 覆盖基础格式 1→2 播种/失败回滚、重开与功能门保持、格式 2 缺失元数据失败关闭、旧通用句柄拒绝、稀疏/删除最大 SQL 身份后的不复用、真实回执完成与重复回执、u64/i64 边界、输入重放哨兵、批量分配拒绝、提交前失败、提交结果丢失的两种持久结果、外部计数器写入与第二控制器租约拒绝。API 回归分别检查准入前耗尽无新身份/宿主动作，以及准入后耗尽保留原操作、可查询且返回结果未知。测试中的删除仅发生在独立合成数据库，用于隔离分配行为，不构成生产历史裁剪入口或 GC 安全验收；完整工作流编号预留、长期有界空间、宿主槽位复用、KVM 和形式化证明均未由这些测试建立。
+
 缓存性能复测复用上面的 #152 release 入口和相同 0/4/16/64 历史点，分别记录打开重放、首次操作、暖态路径和受控慢宿主干扰。不得把 tmpfs/受控 HostAdapter 结果冒称物理磁盘、KVM 或吞吐 SLA；缓存不改变全局宿主持锁范围，不宣称移除全部历史相关成本。
 
 ## 2. 系统场景
