@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sys
 
+from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.generic_environment import GenericEnvironment
 from benchmarks.run_local import local_url, run_task
@@ -91,8 +92,10 @@ def main():
     # Match fixed Harbor's OCI preference by default; the Dockerfile path is
     # an explicit ORIGINAL source alternative, never a rewritten task recipe.
     parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
+    add_artifact_arguments(parser)
     args = parser.parse_args()
     try:
+        args.artifact_limits = artifact_limits_from_args(args)
         local_url(args.api_url)
         local_url(args.build_url)
         if not os.environ.get('SANDPROOF_TEST_API_KEY'):
@@ -103,6 +106,7 @@ def main():
         args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         (args.output / 'inputs.json').write_text(json.dumps({
             'source': lock['source'], 'runtimes': runtimes, 'source_kind': args.source_kind,
+            'artifact_limits': args.artifact_limits,
             'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']},
             'original_harbor_template_preference': 'public OCI when docker_image is set',
         }, indent=2) + '\n')

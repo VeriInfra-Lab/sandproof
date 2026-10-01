@@ -26,9 +26,13 @@ import urllib.request
 if __package__:
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from .template_stage import file_hash, private_directory, stage
+    from .template_inputs import platform_dns_servers
+    from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from template_stage import file_hash, private_directory, stage
+    from template_inputs import platform_dns_servers
+    from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 
 
 def protected_json(path, maximum=65536):
@@ -93,8 +97,6 @@ def configuration(path):
                                  ("workspace_bytes_per_tenant", "workspace_bytes")):
         if limits[tenant] > limits[global_field]:
             raise ValueError("tenant budget exceeds global budget")
-    if limits["timeout_seconds"] + 60 > builder["max_timeout_secs"]:
-        raise ValueError("builder lifetime must cover deadline and cleanup margin")
     tools = config["tools"]
     if set(tools) != {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl"}:
         raise ValueError("fixed tool profile required")
@@ -102,10 +104,7 @@ def configuration(path):
         path = Path(spec["path"])
         if path.resolve(strict=True) != path or not path.is_file() or file_hash(path) != spec["sha256"]:
             raise ValueError("tool fingerprint mismatch")
-    import ipaddress
-    dns = config["dns_servers"]
-    if not isinstance(dns, list) or not 1 <= len(dns) <= 2 or any(not ipaddress.IPv4Address(v).is_global for v in dns):
-        raise ValueError("one or two trusted public IPv4 DNS servers required")
+    platform_dns_servers(config["dns_servers"])
     if not re.fullmatch(r"127\.0\.0\.1:[0-9]{1,5}", config["bind"]):
         raise ValueError("loopback build listener required")
     for settings in (runtime, builder):
@@ -113,7 +112,17 @@ def configuration(path):
             raise ValueError("loopback controllers required")
     if config["bind"] in (runtime["bind"], builder["bind"]):
         raise ValueError("build listener conflicts with a controller")
-    limits["builder_disk_bytes"] = Path(builder["rootfs"]).stat().st_size
+    catalog = builder["templates"]
+    base_id = catalog["aliases"].get("base", "base")
+    bases = [entry for entry in catalog["templates"] if entry["template_id"] == base_id]
+    if len(bases) != 1 or bases[0]["owner"] not in (None, builder["credentials"][0]["tenant"]):
+        raise ValueError("builder base must resolve to an authorized immutable template")
+    base = bases[0]
+    limits["builder_disk_bytes"] = validate_capacity(runtime, builder, limits, base,
+        kernel_bytes=Path(runtime["kernel"]).stat().st_size,
+        largest_tool_bytes=max(Path(spec["path"]).stat().st_size for spec in tools.values()))
+    if Path(base["rootfs"]["path"]).stat().st_size != limits["builder_disk_bytes"]:
+        raise ValueError("builder base disk size differs from its immutable descriptor")
     limits["runtime_cleanup_reserve_bytes"] = runtime["cleanup_reserve_bytes"] + builder["cleanup_reserve_bytes"]
     limits["artifact_margin_bytes"] = Path(runtime["kernel"]).stat().st_size + limits["max_log_bytes"] + 64 * MIB
     config["runtime"], config["builder"] = runtime, builder
@@ -232,9 +241,15 @@ class Backend:
         try:
             command("python3 /input/template_worker.py --work /output/job --source /input/source --request /input/request.json --profile /input/profile.json --guest-boot-id " + boot, worker["timeout_seconds"])
         except CommandExitException as error:
-            # Early guest guards can fail before creating status.json. Retain
-            # only bounded command output, never stringify the SDK exception.
-            worker_error_log = ((error.stdout or '') + (error.stderr or '')).encode()[:min(65536, store.limits['max_log_bytes'])]
+            # Guards and conversion checks may fail without writing tool logs,
+            # even when status.json exists. Retain only bounded guest output;
+            # never stringify an SDK exception with host connection context.
+            maximum = min(65536, store.limits['max_log_bytes'])
+            # Python's final exception line is at the end of stderr. Verbose
+            # stdout must not displace it; byte slicing stays UTF-8 agnostic.
+            stderr = (error.stderr or '')[-maximum:].encode()[-maximum:]
+            stdout = (error.stdout or '')[:maximum].encode()[:maximum - len(stderr)]
+            worker_error_log = stdout + stderr
         # Read only opaque bytes, never mount/unpack guest output on the host.
         def download(name, limit, exact=None):
             with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=max(1, row["deadline"] - store.clock())) as incoming:
@@ -258,10 +273,22 @@ class Backend:
             except Exception as error:
                 if isinstance(error, BuildError):
                     raise
-                # OCI unpack failures can have no daemon log.
-                if name == "build.log":
+                # A failed worker can exit before opening either tool log.
+                if not isinstance(error, FileNotFoundException) or (name == "build.log" and worker_error_log is None):
                     raise
+        if worker_error_log is not None:
+            # Give the actual failure priority over the tail of verbose tool
+            # output. Diagnostic bytes share, rather than extend, the log cap.
+            marker = b"\n[worker command failed]\n"
+            if store.limits["max_log_bytes"] < 2 * len(marker):
+                marker = b""
+            room = store.limits["max_log_bytes"] - len(marker)
+            diagnostic = marker + worker_error_log[-room:]
+            del total_log[max(0, store.limits["max_log_bytes"] - len(diagnostic)):]
+            total_log.extend(diagnostic)
         durable_write(directory / "build.log", [total_log], store.limits["max_log_bytes"])
+        if worker_error_log is not None and status.get("state") == "candidate":
+            raise BuildError(422, "WorkerFailed:CommandExit")
         if status.get("state") != "candidate":
             failure = status.get("error_type")
             raise BuildError(422, "WorkerFailed:" + (failure if failure in {"InvalidTemplate", "TimeoutError", "RuntimeError"} else "BuildError"))
@@ -283,7 +310,7 @@ class Backend:
         try:
             candidate = stage(Path(config["template_registry"]["root"]), Path(config["kernel"]),
                 store.directory(row["id"]) / "candidate.ext4", status, row["owner"],
-                resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + 256, candidate_id=row["id"])
+                resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + HOST_MEMORY_OVERHEAD_MIB, candidate_id=row["id"])
         except ValueError:
             raise BuildError(400, "CandidateStagingRejected") from None
         return self.request("runtime", "POST", "/sandproof/template-publications", {"candidateID": candidate}, owner=row["owner"])

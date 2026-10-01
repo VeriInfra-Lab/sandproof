@@ -77,7 +77,7 @@ def build_request(entry, config, source_kind):
 def validate_template(template, entry):
     req = entry['requirements']
     if (not isinstance(template, dict)
-            or (template.get('cpuCount'), template.get('memoryMiB'), template.get('diskBytes'))
+            or (template.get('cpuCount'), template.get('memoryMib'), template.get('diskBytes'))
                != (req['cpus'], req['memory_mib'], req['disk_mib'] * MIB)
             or not re.fullmatch(r'tpl-[0-9a-f]{32}', template.get('templateId', ''))
             or not template.get('revision')
@@ -93,6 +93,7 @@ class GenericEnvironment(SdkEnvironment):
         self.entry, self.source, self.source_kind = entry, source, source_kind
         self.client = BuildClient(build_url, sdk_options['api_key'])
         self.build_result = None
+        self.build_log_error = None
         self.build_id = None
         self.build_dispatched = False
         self.submission_key = secrets.token_hex(16)
@@ -146,8 +147,10 @@ class GenericEnvironment(SdkEnvironment):
             try:
                 log = await asyncio.to_thread(self.client.request, 'GET', path + '/logs?offset=0&limit=16384')
                 self.checkpoint('build-log.json', log)
-            except Exception:
-                pass
+            except Exception as error:
+                # Keep the original build outcome and retain only the error
+                # class: exception text may include request credentials.
+                self.build_log_error = type(error).__name__
 
     def checkpoint(self, name, value):
         path = self.trial_paths.trial_dir / name
@@ -160,7 +163,11 @@ class GenericEnvironment(SdkEnvironment):
     async def start(self, force_build=False):
         if not self._network_is_public:
             raise InvalidInput('only the fixed public IPv4 policy is supported in this runner')
+        deadline = time.monotonic() + self.entry['requirements']['build_timeout_sec']
         await self.prepare_template()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('original initialization deadline before runtime create')
         startup = self.template['startup']
         self._workdir = startup['workdir']
         self.default_user = startup['user']
@@ -169,7 +176,7 @@ class GenericEnvironment(SdkEnvironment):
             template=self.template['templateId'], timeout=86400, allow_internet_access=True,
             metadata={'benchmark': 'terminal-bench-2.0', 'task': self.environment_name,
                       'build': self.build_id, 'revision': self.template['revision']},
-            envs=self._startup_env(), **self.sdk_options)
+            envs=self._startup_env(), **(self.sdk_options | {'request_timeout': remaining}))
         self.sandbox_id = self._sandbox.sandbox_id
         self.checkpoint('runtime-identity.json', {'sandbox_id': self.sandbox_id, 'template': self.template})
         info = await self._sandbox.get_info()

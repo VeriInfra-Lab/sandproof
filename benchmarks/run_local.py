@@ -24,6 +24,7 @@ from harbor.models.task.task import Task
 from harbor.models.trial.paths import TrialPaths
 from harbor.verifier.verifier import Verifier
 
+from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.check_browser_evidence import audit_browser_evidence
 from benchmarks.oracle_repairs import REPAIRS, prepare_repaired_task
@@ -214,6 +215,16 @@ def write_report(path, content, row):
             row['reason'] = 'local_report_write_failed'
 
 
+def record_artifact_status(environment, row):
+    budget = getattr(environment, 'artifact_budget', None)
+    if budget is not None:
+        row['artifact_budget'] = budget.report()
+        row['evidence_complete'] = budget.failure is None
+        if budget.failure is not None and row['status'] == 'passed':
+            row['status'] = 'failed'
+            row['reason'] = 'artifact_evidence_incomplete'
+
+
 async def run_task(args, entry, recipe, *, environment_factory=None):
     task = Task(args.source / entry['name'])
     paths = TrialPaths(args.output / entry['name'])
@@ -229,6 +240,7 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
         environment_dir=task.paths.environment_dir, environment_name=task.name,
         session_id=task.name, trial_paths=paths, task_env_config=task.config.environment,
         persistent_env=recipe.get('env', {}),
+        artifact_limits=getattr(args, 'artifact_limits', None),
     )
     oracle_mode = getattr(args, 'oracle_mode', 'original')
     row = {'name': task.name, 'status': 'running', 'stage': 'initialization',
@@ -252,12 +264,14 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                              trial_paths=paths, agent_timeout_sec=task.config.agent.timeout_sec)
         await asyncio.wait_for(oracle.run(task.instruction, environment, AgentContext()), task.config.agent.timeout_sec)
         row['oracle'] = 'failed' if (paths.agent_dir / 'exit-code.txt').exists() else 'passed'
+        record_artifact_status(environment, row)
         event('verifier')
         verifier = Verifier(task=task, trial_paths=paths, environment=environment)
         result = await asyncio.wait_for(verifier.verify(), task.config.verifier.timeout_sec)
         row['rewards'] = result.rewards
         row['verifier'] = 'passed' if result.rewards == {'reward': 1} else 'failed'
         row['status'] = 'passed' if row['oracle'] == row['verifier'] == 'passed' else 'failed'
+        record_artifact_status(environment, row)
         if environment_factory is None and task.name == 'filter-js-from-html':
             lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
             row['verification_audit'] = audit_browser_evidence(
@@ -268,7 +282,7 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                 row['reason'] = 'browser verification incomplete; original reward retained'
         event('package_inventory')
         packages = await environment.exec("dpkg-query -W -f='${Package}=${Version}\\n'", cwd='/', timeout_sec=30)
-        (paths.trial_dir / 'packages.txt').write_text(packages.stdout or '')
+        environment.retain_text(paths.trial_dir / 'packages.txt', packages.stdout or '')
         row['stage'] = 'verifier'
     except (asyncio.CancelledError, KeyboardInterrupt) as error:
         row['status'] = 'interrupted'
@@ -300,9 +314,11 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                 except Exception as log_error:
                     row.setdefault('diagnostic_errors', {})[remote] = type(log_error).__name__
     finally:
+        record_artifact_status(environment, row)
         row['sandbox_id'] = environment.sandbox_id
         if hasattr(environment, 'build_id'):
             row.update(build_id=environment.build_id, build=environment.build_result,
+                       build_log_error=getattr(environment, 'build_log_error', None),
                        template=environment.template, exact_cleanup='not_audited',
                        build_dispatched=environment.build_dispatched,
                        submission_key=environment.submission_key)
@@ -314,8 +330,8 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                     observation = await asyncio.wait_for(environment.exec(
                         'cat /proc/sys/vm/overcommit_memory /proc/meminfo\ndf -Pk /\ndf -Pi /',
                         cwd='/', timeout_sec=10), 10)
-                    (paths.trial_dir / 'environment-diagnostics.txt').write_text(
-                        (observation.stdout or '') + (observation.stderr or ''))
+                    environment.retain_text(paths.trial_dir / 'environment-diagnostics.txt',
+                                            (observation.stdout or '') + (observation.stderr or ''))
                 except Exception as diagnostic_error:
                     row.setdefault('diagnostic_errors', {})['environment'] = type(diagnostic_error).__name__
             write_report(paths.trial_dir / 'events.json',
@@ -331,6 +347,7 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                     row['interrupted'] = True
                     raise
             finally:
+                record_artifact_status(environment, row)
                 row['kill_confirmed'] = environment.kill_confirmed
                 row['seconds'] = round(time.monotonic() - start, 3)
                 write_report(paths.trial_dir / 'result.json',
@@ -348,8 +365,10 @@ def main():
     parser.add_argument('--task', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
+    add_artifact_arguments(parser)
     args = parser.parse_args()
     try:
+        args.artifact_limits = artifact_limits_from_args(args)
         local_url(args.api_url)
         runtimes = check_runtime()
         lock = verify(json.loads(args.lock.read_text()), args.registry, args.source)
@@ -363,7 +382,7 @@ def main():
         args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         (args.output / 'inputs.json').write_text(json.dumps({'source': lock['source'],
             'runtimes': runtimes, 'task': entry, 'recipe': recipes[args.task],
-            'oracle_mode': args.oracle_mode,
+            'oracle_mode': args.oracle_mode, 'artifact_limits': args.artifact_limits,
             'recipe_file_sha256': hashlib.sha256(RECIPES.read_bytes()).hexdigest()}, indent=2))
         rows = [{'name': t['name'], 'status': 'not_run',
                  'reason': 'recipe_available' if t['name'] in recipes else 'additional_base_or_initializer_required'}
