@@ -12,6 +12,7 @@ import shutil
 from tools.benchmark_tasks import InvalidInput
 
 REPAIRS = {
+    'build-cython-ext': '41bbdde88617070366a70e518eedca466a4ea1acd7e96899b2fb7da988e40abc',
     'mcmc-sampling-stan': 'd084666cc006911c5c80959969fba5c5699cbac92ab172db5c67eca00b1d0a97',
     'make-doom-for-mips': 'a9cd034a5e76fa2b22481717a9669869214f43fec5b4fedc957d83dd2ef6a84a',
     'build-pmars': '105292ca0e8bc399831550fc54c451002bd300644eb9beef1760dbfa7f8b7543',
@@ -55,7 +56,15 @@ def repair_solution(name, original, destination):
     old = (original / 'solve.sh').read_text()
     if hashlib.sha256((original / 'solve.sh').read_bytes()).hexdigest() != REPAIRS[name]:
         raise InvalidInput('reference solution no longer matches the reviewed repair')
-    if name == 'mcmc-sampling-stan':
+    if name == 'build-cython-ext':
+        # pyknotid 0.5.3 consumes planarity's pre-1.0 node attribute names.
+        # Pin the compatible dependency in the same editable installation;
+        # keep the task's NumPy, Cython extensions and repository tests intact.
+        marker = 'pip install -e .'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, 'pip install "planarity==0.6" -e .')
+    elif name == 'mcmc-sampling-stan':
         # RcppParallel's current source requires cmake. Keep the original R,
         # RStan pins, model, sampling procedure and budget.
         marker = 'sudo apt-get install -y \\\n'
