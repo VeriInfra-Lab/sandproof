@@ -29,6 +29,43 @@ def templates():
                           'memoryMib': 2048, 'diskBytes': 10 * GIB}} for i in (1, 2)]
 
 
+class PressureReplayTests(unittest.TestCase):
+    def exercise_marker(self, executions):
+        async def run(root):
+            marker = root / "marker with ' quote"
+            async def execute(command, **kwargs):
+                for _ in range(executions):
+                    process = await asyncio.create_subprocess_exec(
+                        'sh', '-c', command, stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    stdout, stderr = await process.communicate(b'')
+                    self.assertEqual(process.returncode, 0)
+                    self.assertEqual(stderr, b'')
+                    kwargs['on_stdout'](stdout.decode())
+                return SimpleNamespace()
+            sandbox = SimpleNamespace(
+                commands=SimpleNamespace(run=AsyncMock(side_effect=execute)),
+                files=SimpleNamespace(read=AsyncMock(
+                    side_effect=lambda path, **_: Path(path).read_text())))
+            tracked = []
+            await pressure.hold_input(sandbox, str(marker), tracked)
+            sandbox.commands.run.assert_awaited_once()
+            self.assertEqual(marker.read_text(), 'once\n' * executions)
+            if executions == 1:
+                await pressure.verify_no_replay(tracked)
+            else:
+                with self.assertRaises(AssertionError):
+                    await pressure.verify_no_replay(tracked)
+        with tempfile.TemporaryDirectory() as temporary:
+            asyncio.run(run(Path(temporary)))
+
+    def test_single_command_execution_passes_replay_check(self):
+        self.exercise_marker(1)
+
+    def test_duplicate_command_execution_fails_replay_check(self):
+        self.exercise_marker(2)
+
+
 class PressureFailureTests(unittest.TestCase):
     def test_four_instance_cpu_memory_and_disk_checked_before_dispatch(self):
         shape = {'cpus': 1, 'memory_mib': 2048, 'disk_mib': 10240}
