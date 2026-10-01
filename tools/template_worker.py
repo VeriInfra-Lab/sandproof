@@ -305,7 +305,7 @@ def runtime_defaults(root, startup):
 def validate_request(request):
     expected = {"kind", "disk_mib", "min_free_mib", "max_input_bytes", "max_expanded_bytes", "max_entries",
                 "timeout_seconds", "max_log_bytes"}
-    if set(request) - {"dns_servers"} != expected or request["kind"] not in ("dockerfile", "oci", "oci-reference"):
+    if set(request) - {"dns_servers", "docker_hub_mirror"} != expected or request["kind"] not in ("dockerfile", "oci", "oci-reference"):
         raise InvalidTemplate("invalid worker request")
     bounds = {"disk_mib": (512, 32768), "min_free_mib": (16, 32768),
               "max_input_bytes": (1, 8 * 1024 * MIB), "max_expanded_bytes": (10240, 32 * 1024 * MIB),
@@ -317,6 +317,14 @@ def validate_request(request):
         raise InvalidTemplate("minimum free disk must be smaller than total")
     if "dns_servers" in request:
         platform_dns_servers(request["dns_servers"])
+    if "docker_hub_mirror" in request:
+        if request["kind"] != "oci-reference":
+            raise InvalidTemplate("registry mirror only applies to public OCI acquisition")
+        if __package__:
+            from .template_fetch import mirror_registry
+        else:
+            from template_fetch import mirror_registry
+        mirror_registry(request["docker_hub_mirror"])
 
 
 def check_tools(profile, *, registry=False):
