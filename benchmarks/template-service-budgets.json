@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "runtime": {
+    "max_active": 4,
+    "max_vcpus": 4,
+    "max_host_memory_bytes": 12884901888,
+    "validation_timeout_secs": 45
+  },
+  "builder": {
+    "cpu_count": 2,
+    "memory_mib": 8192,
+    "max_pending": 1,
+    "file_idle_seconds": 60
+  },
+  "host": {
+    "control_cpu_allowance": 1,
+    "cpu_headroom": 1,
+    "control_memory_allowance_bytes": 2147483648,
+    "memory_headroom_bytes": 2147483648
+  }
+}
