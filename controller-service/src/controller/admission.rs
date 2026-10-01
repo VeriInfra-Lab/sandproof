@@ -1,10 +1,10 @@
 //! Lease and admission accounting lives beside the reducer's accepted-input
 //! transaction. The core still owns lifecycle transitions and authorization.
 
-use super::{ControllerJournal, identity, storage};
+use super::{ControllerJournal, identity, storage, transaction::WorldTransaction};
 use crate::templates::{ComputeLimits, TemplateBinding};
 use crate::{CrashInjector, CrashPoint, JournalError};
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -102,9 +102,8 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
 pub const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 300;
 
 fn reserve_startup_in_admission(
-    tx: &Transaction<'_>,
+    tx: &WorldTransaction<'_>,
     namespace: &str,
-    decision: &core::ControllerDecision,
     key: core::OperationKey,
     max_vm_id: u64,
 ) -> Result<core::ControllerDecision, AdmissionError> {
@@ -113,7 +112,6 @@ fn reserve_startup_in_admission(
     let reserved = storage::apply(
         tx,
         namespace,
-        &decision.next,
         core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
     )
     .map_err(|error| match error {
@@ -327,11 +325,8 @@ impl ControllerJournal {
         if started_at_ms < 0 {
             return Err(JournalError::UnsupportedInput);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         if storage::unresolved(&world, sandbox) {
             return Err(JournalError::UnresolvedAction);
         }
@@ -367,7 +362,6 @@ impl ControllerJournal {
         let decision = storage::apply(
             &tx,
             &self.namespace,
-            &world,
             core::ControllerInput::Publication(core::PublicationInput::Running(sandbox)),
         )?;
         let id = identity::sandbox_id(&self.namespace, sandbox)?;
@@ -376,7 +370,7 @@ impl ControllerJournal {
             params![started_at_ms, end, max_end, id.as_str()],
         )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(decision.next)
     }
@@ -502,10 +496,7 @@ impl ControllerJournal {
         {
             return Err(AdmissionError::Unauthorized);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         let schema: i64 = tx.query_row(
             "SELECT version FROM controller_meta WHERE id=1",
             [],
@@ -515,7 +506,7 @@ impl ControllerJournal {
         if compute.is_none() && schema >= 8 {
             return Err(AdmissionError::InvalidCreateOptions);
         }
-        let world = storage::load_world(&tx)?;
+        let world = tx.world();
         if storage::unresolved(&world, request.sandbox) {
             return Err(JournalError::UnresolvedAction.into());
         }
@@ -632,16 +623,14 @@ impl ControllerJournal {
         let sandbox = request.sandbox;
         let operation = request.operation;
         let owner = request.owner;
-        let decision = storage::apply(
+        storage::apply(
             &tx,
             &self.namespace,
-            &world,
             core::ControllerInput::Request(core::Request::Create(request)),
         )?;
         let reserved = reserve_startup_in_admission(
             &tx,
             &self.namespace,
-            &decision,
             core::OperationKey { sandbox, operation },
             limits.max_vm_id,
         )?;
@@ -670,7 +659,7 @@ impl ControllerJournal {
             )?;
         }
         crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(reserved)
     }
@@ -683,6 +672,8 @@ impl ControllerJournal {
         &self,
         sandbox: core::SandboxId,
     ) -> Result<CreateOptions, AdmissionError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
         let id = identity::sandbox_id(&self.namespace, sandbox)?;
         let encoded: Option<Vec<u8>> = self
             .journal
@@ -796,11 +787,8 @@ impl ControllerJournal {
         if now_ms < 0 {
             return Err(AdmissionError::InvalidClock);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         let record = world
             .sandbox_record(sandbox)
             .ok_or(AdmissionError::NotRunning)?;
@@ -836,7 +824,7 @@ impl ControllerJournal {
             )?;
             lifetime.deadline_ms = end;
         }
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         Ok(lifetime)
     }
 
@@ -877,11 +865,8 @@ impl ControllerJournal {
         if now_ms < 0 {
             return Err(AdmissionError::InvalidClock);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         let mut aborted = 0;
         let due: Vec<_> = world
             .sandbox_records()
@@ -901,10 +886,9 @@ impl ControllerJournal {
             if lifetime.startup_deadline_ms > now_ms {
                 continue;
             }
-            world = storage::apply(
+            storage::apply(
                 &tx,
                 &self.namespace,
-                &world,
                 core::ControllerInput::Request(core::Request::Compensate(
                     core::CompensationRequest {
                         sandbox,
@@ -912,13 +896,12 @@ impl ControllerJournal {
                         evidence: None,
                     },
                 )),
-            )?
-            .next;
+            )?;
             aborted += 1;
         }
         if aborted > 0 {
             crashes.hit(CrashPoint::BeforeCommit)?;
-            tx.commit().map_err(JournalError::CommitUncertain)?;
+            tx.commit()?;
             crashes.hit(CrashPoint::AfterCommit)?;
         }
         Ok(aborted)
@@ -939,11 +922,8 @@ impl ControllerJournal {
         if now_ms < 0 {
             return Err(AdmissionError::InvalidClock);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         let record = world
             .sandbox_record(sandbox)
             .ok_or(AdmissionError::NotRunning)?;
@@ -961,7 +941,6 @@ impl ControllerJournal {
         let decision = storage::apply(
             &tx,
             &self.namespace,
-            &world,
             core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
                 actor: core::Actor::SystemController,
                 sandbox,
@@ -969,7 +948,7 @@ impl ControllerJournal {
             })),
         )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(decision)
     }

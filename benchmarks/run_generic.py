@@ -14,9 +14,10 @@ import sys
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.generic_environment import GenericEnvironment
-from benchmarks.run_local import local_url, run_task
+from benchmarks.run_local import local_url, run_task, write_report
 from benchmarks.oracle_repairs import REPAIRS
 from tools.benchmark_tasks import InvalidInput, verify
+from tools.runtime_create_recovery import load_runtime_intent
 
 
 def validate_oracle_mode(args, selected):
@@ -36,65 +37,118 @@ async def run_selected(args, lock):
     mode = validate_oracle_mode(args, selected)
     rows = [{'name': t['name'], 'status': 'not_run',
              'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
-    def report():
-        (args.output / 'full-set.json').write_text(json.dumps({
+    def report(current=None):
+        text = json.dumps({
             'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
             'source_kind': args.source_kind, 'oracle_mode': mode,
             'failure_diagnostics': getattr(args, 'failure_diagnostics', False),
             'scope': ('generic templates; ' + mode + ' oracle and original verifier; '
                       'exact host cleanup requires external audit'),
             'dependencies': 'output image digest recorded; dynamic build/verifier downloads not fully locked',
-        }, indent=2) + '\n')
+        }, indent=2) + '\n'
+        if current is None:
+            # Before dispatch there is nothing to reconcile if publication fails.
+            (args.output / 'full-set.json').write_text(text)
+        else:
+            write_report(args.output / 'full-set.json', text, current)
     report()
     for name in sorted(selected):
         entry = entries[name]
+        environment = None
         def factory(*, recipe, **kwargs):
-            return GenericEnvironment(entry=entry, source=args.source, source_kind=args.source_kind,
-                                      build_url=args.build_url, start_audit=getattr(args, 'start_audit', None), **kwargs)
+            nonlocal environment
+            environment = GenericEnvironment(entry=entry, source=args.source, source_kind=args.source_kind,
+                build_url=args.build_url, start_audit=getattr(args, 'start_audit', None), **kwargs)
+            return environment
         row = {'name': name, 'status': 'runner_error', 'oracle': 'not_run', 'verifier': 'not_run',
                'exact_cleanup': 'unknown'}
         try:
-            row = await run_task(args, entry, {}, environment_factory=factory)
+            row = await run_task(args, entry, {}, environment_factory=factory, result_row=row)
         except asyncio.CancelledError:
-            row.update(status='interrupted', interrupted=True)
+            if row['status'] == 'runner_error':
+                row['status'] = 'interrupted'
+            row.setdefault('execution_status', 'interrupted')
+            row['interrupted'] = True
             raise
         except Exception as error:
             # An unexpected runner error is not evidence of a pre-dispatch
             # refusal. Keep its identity/evidence and stop the suite for audit.
-            row['error_type'] = type(error).__name__
+            row.setdefault('error_type', type(error).__name__)
+            row['runner_error_type'] = type(error).__name__
+            if row['status'] == 'passed':
+                row.update(status='failed', reason='runner_finalization_failed')
         finally:
-            # Cancellation must still retain this trial in the complete report.
+            # Use the live row, including on cancellation. A partial, stale or
+            # unreadable result.json must never replace it or prevent cleanup.
             result = args.output / name / 'result.json'
-            if result.exists():
-                row = json.loads(result.read_text())
-            rows = [row if r['name'] == name else r for r in rows]
-            report()
+            audit_cancelled = None
+            if environment is not None and environment.create_dispatched:
+                row.setdefault('create_dispatched', True)
+                row.setdefault('sandbox_id', environment.sandbox_id)
+                row.setdefault('kill_confirmed', environment.kill_confirmed)
+                row.setdefault('build_dispatched', environment.build_dispatched)
+                row.setdefault('build_id', environment.build_id)
+                row.setdefault('build', environment.build_result)
+                row.setdefault('template', environment.template)
+                if not row.get('runtime_intent'):
+                    try:
+                        row['runtime_intent'] = load_runtime_intent(
+                            result.parent, task=name, runtime_attempt=environment.runtime_attempt,
+                            build_id=environment.build_id, template=environment.template)
+                    except (OSError, ValueError, TypeError) as error:
+                        row.setdefault('execution_status', row['status'])
+                        row.update(status='cleanup_unknown', exact_cleanup='unknown',
+                                   intent_error_type=type(error).__name__)
             # Also runs while unwinding cancellation: keep the controllers
             # alive long enough to reconcile the original dispatched create.
             if getattr(args, 'completion_audit', None) is not None:
+                audit = asyncio.create_task(asyncio.to_thread(args.completion_audit, row))
                 try:
-                    row.update(await asyncio.to_thread(args.completion_audit, row))
+                    while not audit.done():
+                        try:
+                            await asyncio.shield(audit)
+                        except asyncio.CancelledError as error:
+                            # The callback owns the same reconciliation, not a
+                            # replacement create. Do not stop its controllers
+                            # while the worker thread still needs them.
+                            audit_cancelled = error
+                            row.setdefault('execution_status', row['status'])
+                            row['interrupted'] = True
+                            if row['status'] == 'passed':
+                                row['status'] = 'interrupted'
+                    row.update(audit.result())
                 except Exception as error:
+                    row.setdefault('execution_status', row['status'])
                     row.update(status='cleanup_unknown', exact_cleanup='unknown',
                                audit_error_type=type(error).__name__)
-                # Persist the external audit separately from the SDK receipt.
-                rows = [row if r['name'] == name else r for r in rows]
-                report()
+            # Only after reconciliation attempt may reporting fail. Keep those
+            # errors in the same live row and do not dispatch a later task.
+            rows = [row if r['name'] == name else r for r in rows]
+            report(row)
+            try:
                 result.parent.mkdir(parents=True, exist_ok=True)
-                result.write_text(json.dumps(row, indent=2) + '\n')
+            except OSError as error:
+                row.setdefault('report_errors', {})['trial_directory'] = {
+                    'error_type': type(error).__name__, 'errno': error.errno}
+                if row['status'] == 'passed':
+                    row['status'] = 'failed'
+            write_report(result, json.dumps(row, indent=2) + '\n', row)
+            report(row)
+            if audit_cancelled is not None:
+                raise audit_cancelled
         rows = [row if r['name'] == name else r for r in rows]
-        report()
         build_state = (row.get('build') or {}).get('state')
         recovered = (row.get('exact_cleanup') == 'passed'
                      and (row.get('runtime_recovery') or {}).get('status') == 'destroyed')
-        if ((row['status'] in ('create_unknown', 'cleanup_unknown') and not recovered)
+        if (row.get('report_errors') or row.get('intent_error_type') or row.get('runner_error_type')
+                or (row['status'] in ('create_unknown', 'cleanup_unknown') and not recovered)
                 or row['status'] == 'runner_error'
                 or (row.get('build_dispatched') and build_state not in ('Ready', 'Failed'))):
             # Do not create more resources while the previous identity is uncertain.
             for remaining in rows:
                 if remaining['name'] in selected and remaining['status'] == 'not_run':
                     remaining['reason'] = 'previous_identity_requires_audit'
-            report()
+            report(row)
             break
     return rows
 
