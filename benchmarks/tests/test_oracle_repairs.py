@@ -22,6 +22,44 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_browser_repair_installs_supervisor_and_preserves_solution_and_failure(self):
+        # Synthetic commands only; never install into the host or run task code.
+        script = 'printf "filter unchanged\\n" >> "$REPAIR_TEST_LOG"\n'
+        for failure in ('', 'install'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'filter-js-from-html': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('filter-js-from-html', source, root / 'repaired')
+                install = bin_dir / 'install'
+                install.write_text('#!/bin/bash\nprintf "install %s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                   'if [[ "$REPAIR_TEST_FAIL" == install ]]; then exit 42; fi\n')
+                install.chmod(0o700)
+                log = root / 'commands'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')], env={
+                    **os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                    'REPAIR_TEST_FAIL': failure})
+                self.assertEqual(result.returncode, 42 if failure else 0)
+                commands = ['install -D -m 755 /solution/guest_chromium.py '
+                            '/usr/local/lib/sandproof/guest_chromium.py']
+                if not failure:
+                    commands.append('filter unchanged')
+                self.assertEqual(log.read_text().splitlines(), commands)
+                self.assertTrue((repaired / 'solution/solve.sh').read_text().endswith(script))
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                self.assertEqual((repaired / 'tests/test.sh').read_bytes(), (source / 'tests/test.sh').read_bytes())
+                helper = Path(__file__).parents[1] / 'guest_chromium.py'
+                self.assertEqual((repaired / 'solution/guest_chromium.py').read_bytes(), helper.read_bytes())
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['repaired_files']['guest_chromium.py'], hashlib.sha256(helper.read_bytes()).hexdigest())
+                self.assertEqual(evidence['oracle_mode'], 'repaired')
+
     def test_missing_tmux_is_installed_before_configuration_without_hiding_failures(self):
         # Synthetic shell only: package manager and tmux are local recording
         # stubs. No original solution or real package installation runs here.

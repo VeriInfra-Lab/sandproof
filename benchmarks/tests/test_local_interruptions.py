@@ -207,6 +207,36 @@ class LocalFinalizationTests(unittest.TestCase):
             self.assertNotIn('verifier_observation_env', row)
             self.assertEqual(row['status'], 'passed')
 
+    def test_repaired_generic_browser_requires_supervised_lifecycle_and_keeps_reward(self):
+        for lifecycle, reward, passed in ((None, 1, False), ('malformed', 1, False),
+                ('{"remaining_owned_children": [123]}\n', 1, False),
+                ('{"remaining_owned_children": []}\n', 1, True),
+                ('{"remaining_owned_children": []}\n', 0, False)):
+            with self.subTest(lifecycle=lifecycle, reward=reward), self.fixture(task_name='filter-js-from-html') as (
+                    args, env, oracle, verifier, trial, output):
+                args.oracle_mode = 'repaired'
+                async def verify():
+                    (trial / 'verifier/test-stdout.txt').write_text(
+                        'Total batches to test: 1\nRUN BATCH 0 (contains 1 tests)\n  No alert detected\n')
+                    if lifecycle is not None:
+                        (trial / 'verifier/browser-lifecycle.jsonl').write_text(lifecycle)
+                    return SimpleNamespace(rewards={'reward': reward})
+                verifier.verify.side_effect = verify
+                with patch.object(runner, 'prepare_repaired_task', return_value=args.source / 'repaired'), \
+                        patch.object(runner, 'Verifier', return_value=verifier) as constructor:
+                    row = asyncio.run(runner.run_task(args, {'name': 'filter-js-from-html'}, {},
+                        environment_factory=lambda **kwargs: env))
+                self.assertEqual(row['status'], 'passed' if passed else 'failed')
+                self.assertEqual(row['rewards'], {'reward': reward})
+                self.assertEqual(row['oracle_mode'], 'repaired')
+                self.assertEqual(constructor.call_args.kwargs['override_env'], {
+                    'PYTEST_ADDOPTS': '-s -v', 'PYTHONUNBUFFERED': '1',
+                    'SE_CHROME_PATH': '/usr/local/lib/sandproof/guest_chromium.py'})
+                self.assertEqual(row['verifier_repair_env'], {
+                    'SE_CHROME_PATH': '/usr/local/lib/sandproof/guest_chromium.py'})
+                self.assertNotEqual(row['verification_audit']['browser_lifecycle_audit'], 'not_instrumented')
+                env.stop.assert_awaited_once()
+
     def test_fixed_base_browser_still_requires_lifecycle_evidence(self):
         with self.fixture(task_name='filter-js-from-html') as (args, env, oracle, verifier, trial, output):
             async def verify():
