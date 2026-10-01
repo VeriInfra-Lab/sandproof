@@ -12,6 +12,9 @@ import shutil
 from tools.benchmark_tasks import InvalidInput
 
 REPAIRS = {
+    'mcmc-sampling-stan': 'd084666cc006911c5c80959969fba5c5699cbac92ab172db5c67eca00b1d0a97',
+    'make-doom-for-mips': 'a9cd034a5e76fa2b22481717a9669869214f43fec5b4fedc957d83dd2ef6a84a',
+    'build-pmars': '105292ca0e8bc399831550fc54c451002bd300644eb9beef1760dbfa7f8b7543',
     'protein-assembly': '3502b801f1260857a68a2ecbdc4497f8f7034e6a472990cd5fb9cd0eebc7dec9',
     'build-pov-ray': '67c962a8b114fa1d55d1230c7d87309aa2b5ad643d9a955a2d74755fa8842e25',
     'crack-7z-hash': '2640463e6e14658426f3ea629e0702688e00553eb8006cf31ec3b9cff75c4b19',
@@ -52,7 +55,31 @@ def repair_solution(name, original, destination):
     old = (original / 'solve.sh').read_text()
     if hashlib.sha256((original / 'solve.sh').read_bytes()).hexdigest() != REPAIRS[name]:
         raise InvalidInput('reference solution no longer matches the reviewed repair')
-    if name == 'protein-assembly':
+    if name == 'mcmc-sampling-stan':
+        # RcppParallel's current source requires cmake. Keep the original R,
+        # RStan pins, model, sampling procedure and budget.
+        marker = 'sudo apt-get install -y \\\n'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, marker + '    cmake \\\n')
+    elif name == 'make-doom-for-mips':
+        # The OCI image's apt indices reference packages removed by updates.
+        # Refresh them in the guest, inside the unchanged oracle deadline.
+        marker = 'apt install -y clang gcc-mips-linux-gnu g++-mips-linux-gnu llvm llvm-dev lld'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, 'apt-get update && ' + marker + ' || exit $?')
+    elif name == 'build-pmars':
+        # Keep the package set and original Debian source/build commands;
+        # use the refreshed configured repository's versions. The run records
+        # the actual installed package inventory, not the obsolete pins.
+        new = old
+        for package in ('build-essential=12.12', 'libncurses-dev=6.5+20250216-2',
+                        'ca-certificates=20250419', 'dpkg-dev=1.22.21', 'devscripts=2.25.15+deb13u1'):
+            if new.count(package) != 1:
+                raise InvalidInput('reference solution no longer matches the reviewed repair')
+            new = new.replace(package, package.split('=')[0])
+    elif name == 'protein-assembly':
         start = old.index('def get_single_fasta(pdb_id):')
         end = old.index('def get_pdb_title(pdb_id):', start)
         new = old[:start] + 'from protein_sequences import get_single_fasta\n\n\n' + old[end:]

@@ -34,7 +34,7 @@ from tools.template_acceptance import budgets, check_headroom
 from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
-from benchmarks.run_generic import run_selected
+from benchmarks.run_generic import run_selected, validate_oracle_mode
 
 MIB = 1024**2
 
@@ -52,6 +52,7 @@ def exercise(args):
     selected = {t['name'] for t in lock['tasks']} if args.all else set(args.task)
     if not selected or selected - {t['name'] for t in lock['tasks']}:
         raise RuntimeError('unknown original task')
+    oracle_mode = validate_oracle_mode(args, selected)
     capacity_entries = [t for t in lock['tasks'] if t['name'] in selected]
     if args.resource_pressure:
         if len(selected) != 2 or args.repetitions != 1:
@@ -294,10 +295,12 @@ def exercise(args):
             output = root / f'run-{repetition}'
             output.mkdir(mode=0o700)
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
+                'oracle_mode': oracle_mode,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
                 'failure_diagnostics': args.failure_diagnostics,
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
+                oracle_mode=oracle_mode,
                 api_url=urls[0], build_url=urls[2], source_kind=args.source_kind,
                 failure_diagnostics=args.failure_diagnostics,
                 artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
@@ -379,14 +382,15 @@ def exercise(args):
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
                 'no_process_network_cgroup_jail_residue': True,
-                'original_oracle_verifier': True, 'paid_model_used': False}, indent=2) + '\n')
+                'oracle_mode': oracle_mode, 'original_verifier': True,
+                'original_oracle_verifier': oracle_mode == 'original', 'paid_model_used': False}, indent=2) + '\n')
             passed = (len(current) == len(selected) and all(r['status'] == 'passed' for r in current)
                       and (not args.resource_pressure or pressure_report['status'] == 'passed'))
             all_passed = all_passed and passed
             print(json.dumps({'repetition': repetition, 'execution_passed': passed,
                               'tasks': [{k: r.get(k) for k in ('name', 'status', 'stage', 'error_type', 'exact_cleanup')} for r in current]}), flush=True)
             if not passed:
-                print('original task failures retained; no pass claim for this batch', flush=True)
+                print('task failures retained; no pass claim for this batch', flush=True)
             if any(r.get('exact_cleanup') != 'passed' for r in current):
                 raise RuntimeError('unresolved per-task identity; no further repetition permitted')
         assert original == [sha256_file(p) for p in (args.kernel, args.rootfs)]
@@ -433,6 +437,7 @@ if __name__ == '__main__':
     parser.add_argument('--namespace')
     parser.add_argument('--build-namespace')
     parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
+    parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
     parser.add_argument('--failure-diagnostics', action='store_true',
                         help='retain registered post-score guest probes without changing original scores')
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
