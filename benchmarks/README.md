@@ -71,7 +71,7 @@ python3 tools/benchmark_tasks.py audit \
 
 ## 通用模板标准解答入口
 
-[通用入口](run_generic.py)只替换 Harbor 的模板准备：提交自有构建 API，等待不可变模板，再使用原 `AsyncSandbox`、`OracleAgent` 和 `Verifier`。不使用 `task-recipes.json` 或预制任务镜像替换，不调用 E2B 云模板服务。默认使用原解答；通用入口与实机监督均可显式传 `--oracle-mode repaired`，仅运行下述已注册修复，报告独立标记模式，不计为原解答通过。默认 `--source-kind oci` 与固定 Harbor 优先使用 `docker_image` 一致；显式 `dockerfile` 则打包原 `environment/`，原样交给标准 BuildKit。两条来源在报告中分开记录，不将 Dockerfile 重建声称为上游预构建标签的相同字节。客户端不调用固定 SDK 的 Dockerfile 解析器，因此多阶段不受其限制。
+[通用入口](run_generic.py)只替换 Harbor 的模板准备：提交自有构建 API，等待不可变模板，再使用原 `AsyncSandbox`、`OracleAgent` 和 `Verifier`。不使用 `task-recipes.json`、预制任务镜像替换或修正版解答，不调用 E2B 云模板服务。默认 `--source-kind oci` 与固定 Harbor 优先使用 `docker_image` 一致；显式 `dockerfile` 则打包原 `environment/`，原样交给标准 BuildKit。两条来源在报告中分开记录，不将 Dockerfile 重建声称为上游预构建标签的相同字节。客户端不调用固定 SDK 的 Dockerfile 解析器，因此多阶段不受其限制。
 
 构建诊断按服务返回的原始字节偏移分页保存到 `build-log.json`，总上限 2 MiB、读取期限 30 秒，JSON 展开后的文件也计入逐试验产物预算。`complete` 仅表示已到达终态构建日志末尾，超限记录 `truncated`；读取失败保留已有页和错误类型，不改写原构建终态或重新提交构建。
 
@@ -186,12 +186,8 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 
 ## 可选的参考解答修复
 
-显式 `--oracle-mode repaired` 只对[注册修复](oracle_repairs.py)生效。它先核对原 solve.sh 的完整摘要，在独立输出目录复制完整任务，仅对其中 solution 应用有限修改，不修改固定题库；报告记录模式、原文件与新文件摘要及完整 diff。原 Harbor OracleAgent 按副本任务根目录执行原路径校验，评分仍从原任务读取。评分源码和所有资源/时限保持不变。修正版通过必须单独报告，不能计为原标准解答通过，也不能改写原失败记录。选择修正版时，整批选题须全部已注册；混入未注册题或选择包含未注册题的 `--all` 会在派发任何构建/VM 前拒绝，不能先跑部分题再失败。
+显式 `--oracle-mode repaired` 只对[注册修复](oracle_repairs.py)生效。它先核对原 solve.sh 的完整摘要，在独立输出目录复制完整任务，仅对其中 solution 应用有限修改，不修改固定题库；报告记录模式、原文件与新文件摘要及完整 diff。原 Harbor OracleAgent 按副本任务根目录执行原路径校验，评分仍从原任务读取。评分源码和所有资源/时限保持不变。修正版通过必须单独报告，不能计为原标准解答通过，也不能改写原失败记录。未注册任务直接拒绝执行。
 
-- `build-cython-ext`：在原 editable 安装中固定 `planarity==0.6`，保留 pyknotid 0.5.3 所需的 `pos/start/end` 节点属性。[上游记录](https://github.com/harbor-framework/terminal-bench-2/issues/75)与本地评分后诊断均定位为 1.0.0 属性改名导致 `KeyError: pos`；不改 NumPy 2.3.0、原 Cython 编译、仓库测试或外层评分。
-- `mcmc-sampling-stan`：在原系统依赖安装中补齐 RcppParallel 源码构建所需的 `cmake`；保留原 R/RStan 版本选择、模型和采样流程。
-- `make-doom-for-mips`：在安装交叉编译工具前刷新来宾软件包索引，避免镜像旧索引指向已移除包；刷新或安装失败立即停止，不继续用缺失工具构建。
-- `build-pmars`：保留同一组 Debian 构建依赖，使用刷新索引后的仓库版本，移除已不可获取的版本固定；保留原 Debian 源码获取、curses 编译与安装，实际版本由运行时依赖清单记录。
 - `protein-assembly`：通过 [RCSB 官方 Data API](https://data.rcsb.org/)的 polymer entity 与 chemical component 字典还原修饰残基及有序母体残基；保留单一聚合物筛选，拒绝无法解析的序列。原 FASTA 将部分荧光团编码为 `X`，无法满足 DNA 翻译约束；修复不嵌入目标序列，原 DNA 优化和评分继续执行。
 - `build-pov-ray`：从 ICM 公开镜像下载相同三个 2.2 压缩包，并核对与[上游 PR #77](https://github.com/harbor-framework/terminal-bench-2/pull/77)相同的 SHA-256；其余编译与渲染流程不变。原站对直接下载返回 HTTP 403。
 - `caffe-cifar-10`：从 BrainChip 公开镜像下载相同 CIFAR-10 binary 数据，内容已核对[作者公布的 MD5](https://www.cs.toronto.edu/~kriz/cifar.html)，执行时再核对固定 SHA-256。下载、解压、原 Caffe 构建及训练均在 VM 原 agent 预算中，不预填数据或训练结果。

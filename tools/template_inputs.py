@@ -30,9 +30,8 @@ def platform_dns_servers(value):
     return value
 
 
-def image_path(name, *, allow_backslash=False):
-    if (not isinstance(name, str) or not name or "\x00" in name
-            or (not allow_backslash and "\\" in name)):
+def image_path(name):
+    if not isinstance(name, str) or not name or "\x00" in name or "\\" in name:
         raise InvalidTemplate("invalid archive path")
     path = PurePosixPath(name)
     if path.is_absolute() or ".." in path.parts:
@@ -57,14 +56,12 @@ def check_members(archive, *, max_bytes, max_entries, context):
     """Validate without extracting; umoci handles actual OCI layer semantics.
 
     Absolute image symlinks are normal (e.g. /bin); these are allowed only in
-    OCI layers, never followed here. Linux layer names/links retain literal
-    backslashes (e.g. systemd escaped unit names); never decode or replace them.
-    Contexts reject backslashes, symlink ancestors, hard
+    OCI layers, never followed here. Contexts reject symlink ancestors, hard
     links, devices, FIFOs, duplicate paths and sparse payloads.
     """
     members, names, links, total = [], set(), set(), 0
     for entry in archive:
-        path = image_path(entry.name, allow_backslash=not context)
+        path = image_path(entry.name)
         if len(members) >= max_entries or entry.size < 0 or entry.sparse:
             raise InvalidTemplate("archive entry limit or sparse payload")
         total += entry.size
@@ -73,11 +70,11 @@ def check_members(archive, *, max_bytes, max_entries, context):
         if not (entry.isfile() or entry.isdir() or entry.issym() or (not context and entry.islnk())):
             raise InvalidTemplate("unsupported archive file type")
         if entry.islnk():
-            image_path(entry.linkname, allow_backslash=True)
+            image_path(entry.linkname)
         if entry.issym():
             if context:
                 relative_link(entry.name, entry.linkname)
-            elif not entry.linkname or "\x00" in entry.linkname:
+            elif not entry.linkname or "\x00" in entry.linkname or "\\" in entry.linkname:
                 raise InvalidTemplate("invalid image symlink")
             links.add(path)
         if context and path in names:

@@ -13,7 +13,7 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from tools.template_inputs import InvalidTemplate, check_members, extract_context, inspect_oci, startup_config
+from tools.template_inputs import InvalidTemplate, extract_context, inspect_oci, startup_config
 from tools.template_worker import AGENT, BOOT, Commands, LogBudget, guest_path, install_platform, install_loopback_hosts, runtime_defaults, terminate, validate_request
 
 
@@ -114,8 +114,6 @@ class TemplateInputTests(unittest.TestCase):
 
     def test_context_boundaries(self):
         cases = [
-            [(r"unit\x2dname", b"x", tarfile.REGTYPE, "")],
-            [("link", b"", tarfile.SYMTYPE, r"unit\x2dname")],
             [("../escape", b"x", tarfile.REGTYPE, "")],
             [("/escape", b"x", tarfile.REGTYPE, "")],
             [("link", b"", tarfile.SYMTYPE, "../escape")],
@@ -167,28 +165,6 @@ class TemplateInputTests(unittest.TestCase):
         result = inspect_oci(layout, max_bytes=100000, max_entries=20)
         self.assertEqual(result["container_config"]["User"], "1000")
         self.assertTrue(result["image_digest"].startswith("sha256:"))
-
-    def test_oci_linux_backslashes_remain_literal_in_names_and_links(self):
-        unit = r"usr/lib/systemd/system/system-systemd\x2dcryptsetup.slice"
-        entries = [(unit, b"synthetic unit\n", tarfile.REGTYPE, ""),
-                   (r"units\hardlink", b"", tarfile.LNKTYPE, unit),
-                   ("unit-link", b"", tarfile.SYMTYPE, "/" + unit),
-                   (r"literal\..\name", b"literal", tarfile.REGTYPE, "")]
-        layout, _ = self.make_oci(entries)
-        inspect_oci(layout, max_bytes=100000, max_entries=20)
-        with tarfile.open(fileobj=io.BytesIO(archive_bytes(entries))) as archive:
-            checked = check_members(archive, max_bytes=100000, max_entries=20, context=False)
-        self.assertEqual([(m.name, m.linkname) for m in checked], [(n, link) for n, _, _, link in entries])
-
-    def test_oci_backslash_support_does_not_allow_posix_path_escape(self):
-        for path in (r"/absolute\name", r"../outside\name", r"dir\name/../../outside", "bad\x00name", ""):
-            for hardlink in (False, True):
-                with self.subTest(path=path, hardlink=hardlink):
-                    entry = tarfile.TarInfo("link" if hardlink else path)
-                    entry.type = tarfile.LNKTYPE if hardlink else tarfile.REGTYPE
-                    entry.linkname = path if hardlink else ""
-                    with self.assertRaises(InvalidTemplate):
-                        check_members([entry], max_bytes=100000, max_entries=20, context=False)
 
     def test_oci_bad_hash_bomb_path_device_and_multiindex(self):
         layout, layer = self.make_oci()
