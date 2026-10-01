@@ -194,7 +194,11 @@ def exercise(args):
         # A lost reply may precede completion of the same admitted disk copy.
         # Observe through its original deadline plus a bounded cleanup margin.
         original_deadline = (row.get('build') or {}).get('deadline', time.time())
-        deadline = time.monotonic() + max(0, original_deadline - time.time()) + 90
+        # Publication can admit its own check VM after a slow artifact check.
+        # Keep both controllers alive through that VM's bounded preparation
+        # and lifetime, rather than killing the reclaimer after a 90s pause.
+        deadline = (time.monotonic() + max(0, original_deadline - time.time())
+                    + 2 * capacity['max_build_seconds'] + 90)
         while True:
             with sqlite3.connect(root / 'builds/builds.db') as db:
                 pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
