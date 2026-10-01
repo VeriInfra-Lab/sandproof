@@ -40,6 +40,22 @@ sudo ./target/debug/sandproof-vm smoke \
 
 部署者预先建立一个独占、root 拥有且模式为 0700 的 cgroup v2 父目录，保证它为空的 domain，向子组委派 CPU/memory 控制器。根或共享祖先须由宿主配置事先提供这些控制器；运行器不会修改共享祖先。每个部署须保持父目录与配置稳定，不能在仍有记录的 VM 存活或待清理时更换父目录、取消配置或改预算。
 
+控制服务、构建监督服务和继承其分组的 relay 可显式使用[服务限额入口](../tools/service_cgroup.py)。它在执行程序前让启动器自身加入同一个已记录的叶组；不通过外部 PID 迁移运行中的服务。两个 VM 池必须使用与该服务父目录互不包含的独立父组，外部恢复程序留在限额组之外。共享服务组设置 `cpu.max`、`memory.max`、零 swap 和整组 OOM；这限制普通调度类的合计 CPU 带宽与内存，不预留物理核，不保证 OOM 后服务仍在线。行为依据 [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)。
+
+操作方先准备独占、root 0700 的父组和证据目录，再执行以下示例；CPU/内存值只是统一验收配置的当前值，尚非实测生产默认值：
+
+```sh
+sudo python3 tools/service_cgroup.py prepare \
+  --parent /sys/fs/cgroup/sandproof-services --name svc-control \
+  --record /var/lib/sandproof/service-budget.json \
+  --cpu-quota-us 100000 --memory-bytes 2147483648
+sudo python3 tools/service_cgroup.py exec \
+  --record /var/lib/sandproof/service-budget.json -- \
+  /usr/local/bin/sandproof-server /etc/sandproof/runtime.json
+```
+
+构建池服务与构建监督程序须经同一 `exec --record` 启动或重启，不能只有一个服务使用限额。`check --record` 核对 boot ID、父/子组 inode、实际限额、成员与计数；`remove --record` 只删除身份匹配且没有进程/子组的组，保留记录。限额篡改、同名替换、记录创建中断或仍有进程时均保留现场，不能按名称猜测回收。服务异常或 OOM 后由外部操作方按原配置和原 VM 身份恢复；不将杀服务等同于 VM 清理完成。独立内核验证入口与真实 VM 组合验收范围见[验收清单](../docs/testing-plan.md)。
+
 多模板包数据库与启动设置隔离由固定 SDK 的[实机脚本](../tests/system/server_template_isolation.py)检查。使用干净的精确提交、同提交服务二进制、两个经核对且容量不同的 Debian/Ubuntu 系统盘，均须具备 root/ubuntu 账户和可用 home；探针固定两种测试形状为 1 CPU/512 MiB 和 2 CPU/1024 MiB，整个 VMM 各增加 256 MiB 宿主额度。四台 VM 并存，模板默认用户分别为 ubuntu/root；双客户端检查命令/文件默认值与覆盖、别名变更及同库服务重启后的原启动进程不重派。总计使用八个不可复用身份（含两次启动失败与两次替换），预留连续八个 UID；宿主至少六个可用 CPU、8 GiB 可用内存和三倍输入磁盘总量加 1 GiB 收尾空间。以下入口不调用云端或外部软件仓库：
 
 ```sh
