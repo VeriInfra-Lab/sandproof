@@ -30,6 +30,8 @@ from server_vm_id_capacity import check_no_resources
 from template_self_service import BUILD_TOOLS
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import plan
+from tools.template_build_config import UPLOAD_ENVELOPE_BYTES
+from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected
 
@@ -50,7 +52,8 @@ def exercise(args):
     if not selected or selected - {t['name'] for t in lock['tasks']}:
         raise RuntimeError('unknown original task')
     capacity = plan([t for t in lock['tasks'] if t['name'] in selected], args.repetitions,
-                    args.rootfs.stat().st_size, args.kernel.stat().st_size)
+                    args.rootfs.stat().st_size, args.kernel.stat().st_size,
+                    artifact_bytes=args.artifact_limits['max_bytes'])
     # Trusted operator-provided ext4 base; read metadata without mounting it.
     superblock = subprocess.check_output(['/usr/sbin/dumpe2fs', '-h', str(args.rootfs)],
                                         text=True, env={**os.environ, 'LC_ALL': 'C'}, stderr=subprocess.DEVNULL)
@@ -125,7 +128,8 @@ def exercise(args):
             'templates': {'templates': [base], 'aliases': {'base': base['template_id']},
                 'compute_limits': {'max_vcpus_global': 8, 'max_vcpus_per_tenant': 8,
                     'max_memory_bytes_global': 18 * 1024 * MIB, 'max_memory_bytes_per_tenant': 18 * 1024 * MIB}},
-            'data_transfer': {'file_upload_bytes': 512 * MIB, 'file_download_bytes': (16 * 1024 * MIB if i else 96 * MIB),
+            'data_transfer': {'file_upload_bytes': capacity['input_bytes'] + UPLOAD_ENVELOPE_BYTES if i else 512 * MIB,
+                'file_download_bytes': (16 * 1024 * MIB if i else 96 * MIB),
                 'command_input_bytes': MIB, 'command_output_bytes': 32 * MIB,
                 'rpc_request_bytes': MIB, 'rpc_response_bytes': MIB, 'max_transfers': 16,
                 'max_transfers_per_vm': 8, 'control_reserve': 1,
@@ -162,7 +166,7 @@ def exercise(args):
         template = env.template
         secret, name, claim = record_for(root / '0', env._sandbox)
         bound = secret['template']
-        expected = {'cpu_count': template['cpuCount'], 'memory_mib': template['memoryMiB'],
+        expected = {'cpu_count': template['cpuCount'], 'memory_mib': template['memoryMib'],
                     'disk_bytes': template['diskBytes'], 'host_memory_bytes': template['hostMemoryBytes']}
         assert bound['resources'] == expected
         assert bound['template_id'] == template['templateId'] and bound['revision'] == template['revision']
@@ -186,7 +190,7 @@ def exercise(args):
                 response.begin()
                 assert response.status == 200
                 machine = json.loads(response.read(65536))
-        assert (machine['vcpu_count'], machine['mem_size_mib']) == (template['cpuCount'], template['memoryMiB'])
+        assert (machine['vcpu_count'], machine['mem_size_mib']) == (template['cpuCount'], template['memoryMib'])
         return {'template_id': template['templateId'], 'revision': template['revision'], 'resources': expected,
                 'pid': claim['pid'], 'start_time_ticks': claim['start_time_ticks'],
                 'disk_inode': disk.stat().st_ino, 'machine': machine}
@@ -232,8 +236,8 @@ def exercise(args):
                 raise RuntimeError('unknown build submission requires identity reconciliation')
             if result['build']['state'] not in ('Ready', 'Failed'):
                 raise RuntimeError('build state remains uncertain after physical audit')
-        if row.get('template'):
-            template = row['template']
+        template = row.get('template') or (result.get('build') or {}).get('template')
+        if template:
             source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
             assert sha256_file(source) == template['rootfsSha256']
         return result
@@ -260,9 +264,11 @@ def exercise(args):
             output = root / f'run-{repetition}'
             output.mkdir(mode=0o700)
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
-                'source_kind': args.source_kind, 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
+                'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
+                'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
-                api_url=urls[0], build_url=urls[2], source_kind=args.source_kind, start_audit=audit_shape, completion_audit=completion_audit)
+                api_url=urls[0], build_url=urls[2], source_kind=args.source_kind,
+                artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
             old_key = os.environ.get('SANDPROOF_TEST_API_KEY')
             os.environ['SANDPROOF_TEST_API_KEY'] = key
             with (root / f'run-{repetition}.log').open('wb') as out:
@@ -306,8 +312,8 @@ def exercise(args):
                 raise RuntimeError('exact pool UID process remains')
             for row in current:
                 row['repetition'] = repetition
-                if row.get('template'):
-                    template = row['template']
+                template = row.get('template') or (row.get('build') or {}).get('template')
+                if template:
                     source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
                     assert sha256_file(source) == template['rootfsSha256']
             rows.extend(current)
@@ -358,7 +364,9 @@ if __name__ == '__main__':
     parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
     parser.add_argument('--temporarily-forward', action='store_true')
+    add_artifact_arguments(parser)
     args = parser.parse_args()
+    args.artifact_limits = artifact_limits_from_args(args)
     forward = Path('/proc/sys/net/ipv4/ip_forward').read_text().strip()
     try:
         if forward == '0' and args.temporarily_forward:

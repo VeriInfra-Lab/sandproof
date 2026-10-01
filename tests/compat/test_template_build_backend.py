@@ -36,7 +36,7 @@ class BuildSdkSession(unittest.TestCase):
                 "builder": {"bind": "127.0.0.1:1", "domain": "example.invalid", "credentials": [{"secret": "builder-key"}]},
                 "tools": {name: {"path": str(source), "sha256": "a" * 64} for name in
                     ("buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl")},
-                "dns_servers": ["1.1.1.1"]}
+                "dns_servers": ["1.1.1.1", "8.8.8.8"]}
             backend = Backend(profile)
             row = {"id": "a" * 32, "input_hash": hashlib.sha256(source.read_bytes()).hexdigest(), "deadline": 1000,
                 "request": json.dumps({"kind": kind, "image": "docker.io/library/ubuntu:24.04",
@@ -81,5 +81,6 @@ class BuildSdkSession(unittest.TestCase):
                 self.assertEqual("regctl" in guest_profile, kind == "oci")
                 worker = json.loads(writes["/input/request.json"])
                 self.assertEqual(worker["kind"], "oci-reference" if kind == "oci" else "dockerfile")
-                self.assertEqual(worker["dns_servers"], ["1.1.1.1"])
+                self.assertEqual(worker["dns_servers"], profile["dns_servers"])
+                self.assertEqual(writes["/etc/resolv.conf"], "nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
                 self.assertNotIn("/input/Dockerfile", writes)
