@@ -229,7 +229,7 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 ## 4. 独立运行宿主预检
 
-自助模板入口用[组件测试](../tools/tests/test_template_build_service.py)核对真实 SQLite 重开、租户/幂等键、上传中断、预算/原期限、丢失构建响应、未知清理保留预留及同编号发布；[私有构建池测试](../sandbox-api/tests/managed_port/build_vm.rs)核对禁用入口、保留 metadata、并发重复准入、墓碑、丢失启动回执，以及已销毁但尚未完成 VM 回收时不释放预算。[实机探针](../tests/system/template_self_service.py)部署两个独占 Rust 池与监督服务，走用户 HTTP 上传、多阶段构建、正式发布、原 SDK 命令/文件、明确构建失败、VM 已启动后 SIGKILL 监督服务并重启，最后独立检查两池进程/jail/netns/cgroup 和构建预留。`--public` 增加公开 OCI 拉取/发布/原 SDK；仅已获准临时修改全局转发时加 `--temporarily-forward`，脚本退出时恢复原值。精确提交/产物/结果记录在 PR，不把未运行模式、macOS 或替身测试算成真实隔离验收。
+自助模板入口用[组件测试](../tools/tests/test_template_build_service.py)核对真实 SQLite 重开、租户/幂等键、上传中断、预算/原期限、丢失构建响应、未知清理保留预留及同编号发布；同一真实 HTTP/SQLite 组件链另检查小客户端读取完整日志页时的 JSON 转义放大、原始字节偏移、跨租户拒绝和响应上限，通用评测回归检查诊断读取失败不改写构建终态或跳过收尾；[私有构建池测试](../sandbox-api/tests/managed_port/build_vm.rs)核对禁用入口、保留 metadata、并发重复准入、墓碑、丢失启动回执，以及已销毁但尚未完成 VM 回收时不释放预算。[实机探针](../tests/system/template_self_service.py)部署两个独占 Rust 池与监督服务，走用户 HTTP 上传、多阶段构建、正式发布、原 SDK 命令/文件、明确构建失败、VM 已启动后 SIGKILL 监督服务并重启，最后独立检查两池进程/jail/netns/cgroup 和构建预留。`--public` 增加公开 OCI 拉取/发布/原 SDK；仅已获准临时修改全局转发时加 `--temporarily-forward`，脚本退出时恢复原值。精确提交/产物/结果记录在 PR，不把未运行模式、macOS 或替身测试算成真实隔离验收。
 
 [宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。
 

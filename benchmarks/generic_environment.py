@@ -93,6 +93,7 @@ class GenericEnvironment(SdkEnvironment):
         self.entry, self.source, self.source_kind = entry, source, source_kind
         self.client = BuildClient(build_url, sdk_options['api_key'])
         self.build_result = None
+        self.build_log_error = None
         self.build_id = None
         self.build_dispatched = False
         self.submission_key = secrets.token_hex(16)
@@ -146,8 +147,10 @@ class GenericEnvironment(SdkEnvironment):
             try:
                 log = await asyncio.to_thread(self.client.request, 'GET', path + '/logs?offset=0&limit=16384')
                 self.checkpoint('build-log.json', log)
-            except Exception:
-                pass
+            except Exception as error:
+                # Keep the original build outcome and retain only the error
+                # class: exception text may include request credentials.
+                self.build_log_error = type(error).__name__
 
     def checkpoint(self, name, value):
         path = self.trial_paths.trial_dir / name

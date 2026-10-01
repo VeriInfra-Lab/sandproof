@@ -126,6 +126,39 @@ class GenericInputTests(unittest.TestCase):
             self.assertEqual(env.sandbox_id, 'sb-exact')
             env.exec.assert_awaited_once_with('test ! -e /solution && test ! -e /tests', cwd='/', user='root', timeout_sec=30)
 
+    def test_build_diagnostics_keep_terminal_result_and_original_identity(self):
+        for state in ('Ready', 'Failed', 'CleanupUnknown'):
+            for log_failure in (False, True):
+                with self.subTest(state=state, log_failure=log_failure), tempfile.TemporaryDirectory() as tmp:
+                    env = object.__new__(GenericEnvironment)
+                    env.entry, env.source_kind = entry(), 'oci'
+                    env.task_env_config = config()
+                    env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
+                    env.submission_key = 'a' * 32
+                    env.build_log_error = None
+                    job = 'b' * 32
+                    outcome = {'buildID': job, 'state': state, 'failure': 'original build failure',
+                               'template': template() if state == 'Ready' else None}
+                    log = OSError('must not retain credential-bearing exception text') if log_failure else {
+                        'offset': 0, 'nextOffset': 16384, 'text': '\x00' * 16384}
+                    env.client = SimpleNamespace(request=Mock(side_effect=[
+                        {'buildID': job, 'state': 'Queued'}, outcome, log]))
+                    if state == 'Ready':
+                        asyncio.run(env.prepare_template())
+                        self.assertEqual(env.template, template())
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'original build failure'):
+                            asyncio.run(env.prepare_template())
+                    self.assertEqual(env.build_result, outcome)
+                    self.assertEqual(env.build_id, job)
+                    self.assertEqual(env.build_log_error, 'OSError' if log_failure else None)
+                    self.assertEqual([call.args[:2] for call in env.client.request.call_args_list], [
+                        ('POST', '/sandproof/template-builds'),
+                        ('GET', '/sandproof/template-builds/' + job),
+                        ('GET', '/sandproof/template-builds/' + job + '/logs?offset=0&limit=16384')])
+                    if not log_failure:
+                        self.assertEqual(json.loads((Path(tmp) / 'build-log.json').read_text()), log)
+
 
 class GenericSuiteTests(unittest.TestCase):
     def test_unknown_identity_stops_suite_without_dropping_other_tasks(self):
