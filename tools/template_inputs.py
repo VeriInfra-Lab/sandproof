@@ -157,6 +157,23 @@ def blob(layout, descriptor, max_bytes):
     return path
 
 
+class LayerReader:
+    """Hash and bound every decompressed byte as the tar parser consumes it."""
+
+    def __init__(self, stream, maximum):
+        self.stream, self.maximum = stream, maximum
+        self.digest, self.expanded = hashlib.sha256(), 0
+
+    def read(self, size=-1):
+        size = 1024 * 1024 if size < 0 else min(size, 1024 * 1024)
+        block = self.stream.read(min(size, self.maximum - self.expanded + 1))
+        self.expanded += len(block)
+        if self.expanded > self.maximum:
+            raise InvalidTemplate("OCI expanded byte limit")
+        self.digest.update(block)
+        return block
+
+
 def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False):
     """Only one linux/amd64 manifest; no silently chosen multiarch/attestation."""
     if bounded_json(layout / "oci-layout") != {"imageLayoutVersion": "1.0.0"}:
@@ -191,20 +208,19 @@ def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False):
         if media not in layer_media or layer.get("urls"):
             raise InvalidTemplate("only tar/gzip OCI layers supported")
         opener = gzip.open if media.endswith(("+gzip", ".gzip")) else open
-        # Count ALL decompressed bytes, including headers/padding: a stream of
-        # zero padding must not bypass the expanded-size budget.
-        digest, expanded = hashlib.sha256(), 0
-        with opener(path, "rb") as stream:
-            while block := stream.read(1024 * 1024):
-                expanded += len(block)
-                if expanded > remaining_bytes:
-                    raise InvalidTemplate("OCI expanded byte limit")
-                digest.update(block)
-        if expected_diff != "sha256:" + digest.hexdigest():
+        # Parse headers and verify diff_id through the same forward-only
+        # decompressor. Drain after tar EOF: padding and trailing gzip members
+        # still count toward the byte limit, digest and gzip integrity checks.
+        with opener(path, "rb") as source:
+            stream = LayerReader(source, remaining_bytes)
+            with tarfile.open(fileobj=stream, mode="r|", bufsize=1024 * 1024) as archive:
+                entries = check_members(archive, max_bytes=remaining_bytes,
+                                        max_entries=remaining_entries, context=False)
+            while stream.read(1024 * 1024):
+                pass
+        if expected_diff != "sha256:" + stream.digest.hexdigest():
             raise InvalidTemplate("OCI diff_id mismatch")
-        with tarfile.open(path, "r:*") as archive:
-            entries = check_members(archive, max_bytes=remaining_bytes, max_entries=remaining_entries, context=False)
-        remaining_bytes -= expanded
+        remaining_bytes -= stream.expanded
         remaining_entries -= len(entries)
     return {"image_digest": descriptor["digest"], "config_digest": manifest["config"]["digest"],
             "container_config": config.get("config", {})}
