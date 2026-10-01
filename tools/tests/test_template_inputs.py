@@ -335,6 +335,53 @@ if args[0] == 'mount' and args[-1] == '/dev/shm':
             with self.subTest(changes=changes), self.assertRaises(InvalidTemplate):
                 validate_request({**request, **changes})
 
+    def test_fresh_run_mount_restores_lock_symlink_target_before_guest_is_ready(self):
+        # Run the real boot shell against a sandboxed filesystem applet. Its
+        # simulated /run mount discards baked-in content; no host mounts occur.
+        applet = self.root / 'lock-busybox'
+        applet.write_text(f'#!{sys.executable}\n' + '''import os, shutil, sys
+from pathlib import Path
+root = Path(os.environ['BOOT_TEST_ROOT'])
+args = sys.argv[1:]
+if args[0] == 'mount' and args[-1] == '/run':
+    shutil.rmtree(root / 'run')
+    (root / 'run').mkdir()
+elif args[0] == 'mkdir':
+    if '/run/lock' in args and os.environ['BOOT_TEST_FAILURE'] == 'mkdir':
+        sys.exit(73)
+    for value in args[1:]:
+        if value.startswith('/'):
+            (root / value.lstrip('/')).mkdir(parents=True, exist_ok=True)
+elif args[0] == 'chmod':
+    if args[-1] == '/run/lock' and os.environ['BOOT_TEST_FAILURE'] == 'chmod':
+        sys.exit(74)
+    (root / args[-1].lstrip('/')).chmod(int(args[1], 8))
+elif args[0] == 'touch':
+    (root / args[-1].lstrip('/')).touch()
+''')
+        applet.chmod(0o755)
+        boot = self.root / 'lock-boot'
+        boot.write_text(BOOT.replace('B=/opt/sandproof/busybox', f'B={applet}'))
+        for failure, code in (('', 0), ('mkdir', 73), ('chmod', 74)):
+            with self.subTest(failure=failure):
+                root = self.root / ('guest-' + (failure or 'success'))
+                (root / 'run/lock').mkdir(parents=True)
+                (root / 'run/lock/baked-in').touch()
+                (root / 'var').mkdir()
+                (root / 'var/lock').symlink_to('../run/lock')
+                result = subprocess.run(['/bin/sh', str(boot)], capture_output=True, timeout=10,
+                    env={**os.environ, 'BOOT_TEST_ROOT': str(root), 'BOOT_TEST_FAILURE': failure})
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertFalse((root / 'run/lock/baked-in').exists())
+                self.assertEqual((root / 'run/sandproof-boot-ready').exists(), not failure)
+                self.assertEqual((root / 'var/lock').readlink(), Path('../run/lock'))
+                if not failure:
+                    # Reproduce the original application's operation through
+                    # its unchanged /var/lock symlink after boot.
+                    (root / 'var/lock/mailman').mkdir()
+                    self.assertTrue((root / 'run/lock/mailman').is_dir())
+                    self.assertEqual((root / 'run/lock').stat().st_mode & 0o7777, 0o1777)
+
     def test_command_nonzero_deadline_and_bounded_output(self):
         log = io.BytesIO()
         runner = Commands(time.monotonic() + 10, log, 3)

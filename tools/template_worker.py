@@ -40,6 +40,8 @@ $B mkdir -p /dev/pts /dev/shm /run /tmp
 $B mount -t devpts devpts /dev/pts
 $B mount -t tmpfs -o nosuid,nodev,noexec,mode=1777,size=64m tmpfs /dev/shm
 $B mount -t tmpfs -o mode=755 tmpfs /run
+$B mkdir -p /run/lock
+$B chmod 1777 /run/lock
 $B chmod 1777 /tmp
 $B ln -sf /proc/self/fd /dev/fd
 $B ln -sf /proc/self/fd/0 /dev/stdin
