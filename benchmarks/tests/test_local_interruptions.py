@@ -123,11 +123,11 @@ class InterruptedRunTests(unittest.TestCase):
 
 class LocalFinalizationTests(unittest.TestCase):
     @contextlib.contextmanager
-    def fixture(self, *, write_failure=None, oracle_error=None, cleanup_error=None):
+    def fixture(self, *, write_failure=None, oracle_error=None, cleanup_error=None, task_name='sample'):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             task = SimpleNamespace(
-                name="sample", instruction="fixture",
+                name=task_name, instruction="fixture",
                 paths=SimpleNamespace(environment_dir=root / "environment", task_dir=root / "task"),
                 config=SimpleNamespace(environment=SimpleNamespace(build_timeout_sec=1),
                                        agent=SimpleNamespace(timeout_sec=1),
@@ -166,7 +166,95 @@ class LocalFinalizationTests(unittest.TestCase):
                 patch.dict(os.environ, {"SANDPROOF_TEST_API_KEY": "fixture-key"}),
                 contextlib.redirect_stdout(io.StringIO()) as output,
             ):
-                yield args, env, oracle, verifier, root / "sample", output
+                yield args, env, oracle, verifier, root / task_name, output
+
+    def test_post_score_probe_is_opt_in_and_preserves_original_failure(self):
+        from benchmarks.failure_diagnostics import CYTHON_COMMAND
+        for enabled, reward, name in ((True, 0, 'build-cython-ext'), (False, 0, 'build-cython-ext'),
+                                      (True, 1, 'build-cython-ext'), (True, 0, 'sample')):
+            with self.subTest(enabled=enabled, reward=reward, name=name), self.fixture(task_name=name) as (
+                    args, env, oracle, verifier, trial, output):
+                args.failure_diagnostics = enabled
+                verifier.verify.return_value = SimpleNamespace(rewards={'reward': reward})
+                env.exec.return_value = SimpleNamespace(stdout='nested assertion\n', stderr='', return_code=1)
+                row = asyncio.run(runner.run_task(args, {'name': name}, {}))
+                expected = enabled and reward == 0 and name == 'build-cython-ext'
+                calls = [c for c in env.exec.call_args_list if c.args[0] == CYTHON_COMMAND]
+                self.assertEqual(len(calls), int(expected))
+                self.assertEqual(row['rewards'], {'reward': reward})
+                self.assertEqual(row['status'], 'passed' if reward else 'failed')
+                self.assertEqual(row['verifier'], 'passed' if reward else 'failed')
+                self.assertEqual(row['oracle'], 'passed')
+                if expected:
+                    self.assertEqual(row['failure_diagnostic']['return_code'], 1)
+                    self.assertEqual((trial / 'failure-diagnostic.txt').read_text(), 'nested assertion\n')
+                    self.assertEqual(calls[0].kwargs, {'cwd': '/app/pyknotid', 'timeout_sec': 60})
+                env.stop.assert_awaited_once()
+
+    def test_failed_diagnostic_does_not_replace_original_score_or_skip_cleanup(self):
+        from benchmarks.failure_diagnostics import CYTHON_COMMAND
+        for failure in (TimeoutError('private detail'), OSError('private detail')):
+            with self.subTest(failure=type(failure).__name__), self.fixture(task_name='build-cython-ext') as (
+                    args, env, oracle, verifier, trial, output):
+                args.failure_diagnostics = True
+                verifier.verify.return_value = SimpleNamespace(rewards={'reward': 0})
+                async def execute(command, **kwargs):
+                    if command == CYTHON_COMMAND:
+                        raise failure
+                    return SimpleNamespace(stdout='', stderr='', return_code=0)
+                env.exec.side_effect = execute
+                row = asyncio.run(runner.run_task(args, {'name': 'build-cython-ext'}, {}))
+                self.assertEqual(row['rewards'], {'reward': 0})
+                self.assertEqual(row['status'], 'failed')
+                self.assertEqual(row['failure_diagnostic']['error_type'], type(failure).__name__)
+                self.assertNotIn('private detail', (trial / 'failure-diagnostic.json').read_text())
+                env.stop.assert_awaited_once()
+
+    def test_cancelled_diagnostic_preserves_score_and_still_cleans_original_vm(self):
+        from benchmarks.failure_diagnostics import CYTHON_COMMAND
+        with self.fixture(task_name='build-cython-ext') as (args, env, oracle, verifier, trial, output):
+            args.failure_diagnostics = True
+            verifier.verify.return_value = SimpleNamespace(rewards={'reward': 0})
+            async def cancel():
+                entered = asyncio.Event()
+                async def execute(command, **kwargs):
+                    if command == CYTHON_COMMAND:
+                        entered.set()
+                        await asyncio.Future()
+                    return SimpleNamespace(stdout='', stderr='', return_code=0)
+                env.exec.side_effect = execute
+                running = asyncio.create_task(runner.run_task(args, {'name': 'build-cython-ext'}, {}))
+                await asyncio.wait_for(entered.wait(), 1)
+                running.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await running
+            asyncio.run(cancel())
+            row = json.loads((trial / 'result.json').read_text())
+            self.assertEqual(row['rewards'], {'reward': 0})
+            self.assertEqual(row['verifier'], 'failed')
+            self.assertEqual(row['failure_diagnostic']['status'], 'interrupted')
+            self.assertTrue(row['kill_confirmed'])
+            env.stop.assert_awaited_once()
+
+    def test_post_score_output_uses_trial_budget_and_still_cleans_up(self):
+        from benchmarks.sdk_environment import SdkEnvironment
+        with self.fixture(task_name='build-cython-ext') as (args, env, oracle, verifier, trial, output):
+            args.failure_diagnostics = True
+            env.trial_paths = SimpleNamespace(trial_dir=trial)
+            env.artifact_budget = ArtifactBudget(dict(max_bytes=8, max_entries=8, max_depth=1, max_file_bytes=8))
+            env.retain_text = lambda path, content: SdkEnvironment.retain_text(env, path, content)
+            verifier.verify.return_value = SimpleNamespace(rewards={'reward': 0})
+            async def execute(command, **kwargs):
+                return SimpleNamespace(stdout='' if command.startswith('dpkg-query') else '123456789',
+                                       stderr='', return_code=1)
+            env.exec.side_effect = execute
+            row = asyncio.run(runner.run_task(args, {'name': 'build-cython-ext'}, {}))
+            self.assertEqual(row['rewards'], {'reward': 0})
+            self.assertEqual(row['status'], 'failed')
+            self.assertFalse(row['evidence_complete'])
+            self.assertEqual(row['failure_diagnostic']['error_type'], 'ArtifactBudgetExceeded')
+            self.assertFalse((trial / 'failure-diagnostic.txt').exists())
+            env.stop.assert_awaited_once()
 
     def test_local_report_enospc_never_skips_cleanup_or_reports_success(self):
         for filename in ("error.txt", "events.json", "result.json"):

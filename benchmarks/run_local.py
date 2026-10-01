@@ -27,6 +27,7 @@ from harbor.verifier.verifier import Verifier
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.check_browser_evidence import audit_browser_evidence
+from benchmarks.failure_diagnostics import collect as collect_failure_diagnostics
 from benchmarks.oracle_repairs import REPAIRS, prepare_repaired_task
 from benchmarks.sdk_environment import SdkEnvironment
 from tools.benchmark_tasks import InvalidInput, verify
@@ -325,6 +326,15 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
         if environment.create_dispatched and environment.sandbox_id is None:
             row['status'] = 'create_unknown'
         try:
+            if (getattr(args, 'failure_diagnostics', False) and environment.sandbox_id is not None
+                    and row['status'] == 'failed' and row['verifier'] == 'failed'):
+                try:
+                    row['failure_diagnostic'] = await collect_failure_diagnostics(
+                        environment, task.name, paths.trial_dir)
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    row['failure_diagnostic'] = {'status': 'interrupted'}
+                    row['interrupted'] = True
+                    raise
             if environment.sandbox_id is not None and row['status'] in ('failed', 'timeout'):
                 try:
                     observation = await asyncio.wait_for(environment.exec(
