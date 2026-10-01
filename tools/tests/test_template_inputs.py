@@ -2,6 +2,7 @@ import gzip
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import signal
@@ -12,7 +13,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.template_inputs import InvalidTemplate, extract_context, inspect_oci, startup_config
-from tools.template_worker import AGENT, BOOT, Commands, LogBudget, guest_path, install_platform, runtime_defaults, terminate, validate_request
+from tools.template_worker import AGENT, BOOT, Commands, LogBudget, guest_path, install_platform, install_loopback_hosts, runtime_defaults, terminate, validate_request
 
 
 def archive_bytes(entries):
@@ -44,6 +45,71 @@ class TemplateInputTests(unittest.TestCase):
                       ("payload", b"hello", tarfile.REGTYPE, ""), ("link", b"", tarfile.SYMTYPE, "payload")])
         self.assertEqual((self.root / "context/link").read_bytes(), b"hello")
         self.assertEqual((self.root / "context/payload").stat().st_mode & 0o7777, 0o755)
+
+    def test_localhost_missing_empty_custom_and_ipv6_hosts(self):
+        for old, expected in (
+            (None, b"127.0.0.1 localhost\n"),
+            (b"", b"127.0.0.1 localhost\n"),
+            (b"192.0.2.10 service # localhost", b"192.0.2.10 service # localhost\n127.0.0.1 localhost\n"),
+            (b"::1 localhost\n", b"::1 localhost\n127.0.0.1 localhost\n"),
+            (b"127.0.0.1 LocalHost local\n", b"127.0.0.1 LocalHost local\n"),
+        ):
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / "etc").mkdir()
+                hosts = root / "etc/hosts"
+                if old is not None:
+                    hosts.write_bytes(old)
+                install_loopback_hosts(root)
+                self.assertEqual(hosts.read_bytes(), expected)
+                self.assertEqual(hosts.stat().st_mode & 0o777, 0o644)
+                install_loopback_hosts(root)
+                self.assertEqual(hosts.read_bytes(), expected)
+
+    def test_localhost_rejects_conflicting_address_without_changing_input(self):
+        for content in (b"192.0.2.1 localhost\n", b"invalid localhost\n", b"127.0.0.1 localhost\n192.0.2.1 localhost\n"):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / "etc").mkdir()
+                hosts = root / "etc/hosts"
+                hosts.write_bytes(content)
+                with self.assertRaises(InvalidTemplate):
+                    install_loopback_hosts(root)
+                self.assertEqual(hosts.read_bytes(), content)
+
+    def test_localhost_replaces_links_without_writing_the_target(self):
+        for link in ('symbolic', 'hard'):
+            with self.subTest(link=link), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / 'root'
+                (root / 'etc').mkdir(parents=True)
+                target = Path(tmp) / 'untouched'
+                target.write_bytes(b'192.0.2.10 service\n')
+                hosts = root / 'etc/hosts'
+                if link == 'symbolic':
+                    hosts.symlink_to(target)
+                else:
+                    os.link(target, hosts)
+                install_loopback_hosts(root)
+                self.assertEqual(target.read_bytes(), b'192.0.2.10 service\n')
+                self.assertNotEqual(hosts.stat().st_ino, target.stat().st_ino)
+                self.assertFalse(hosts.is_symlink())
+                self.assertIn(b'127.0.0.1 localhost\n', hosts.read_bytes())
+
+    def test_localhost_bounds_and_special_files_fail_closed(self):
+        for kind in ('large', 'directory', 'fifo'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / 'etc').mkdir()
+                hosts = root / 'etc/hosts'
+                if kind == 'large':
+                    hosts.write_bytes(b'#' * 65536)
+                elif kind == 'directory':
+                    hosts.mkdir()
+                else:
+                    os.mkfifo(hosts)
+                with self.assertRaises(InvalidTemplate):
+                    install_loopback_hosts(root)
+                self.assertTrue(hosts.exists())
 
     def test_context_boundaries(self):
         cases = [
@@ -181,6 +247,7 @@ class TemplateInputTests(unittest.TestCase):
         install_platform(root, binary, binary)
         self.assertEqual((root / "usr/sbin/init").readlink(), Path("/opt/sandproof/busybox"))
         self.assertIn("/opt/sandproof/agent", (root / "etc/inittab").read_text())
+        self.assertEqual((root / "etc/hosts").read_bytes(), b"127.0.0.1 localhost\n")
         with self.assertRaisesRegex(InvalidTemplate, "reserved"):
             install_platform(root, binary, binary)
 

@@ -221,6 +221,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 普通公网 DNS 的缺口验收使用同一部署/模板 resolver，先从独立监督器确认选定解析器和外部目的地可达，再在全新公开模板实例中读取 `/etc/resolv.conf`、完成真实 A 查询及按域名的公网连接；重启后原实例/策略不变。相同模板的禁网/未允许 resolver 的静态模式必须阻断查询，即使来宾 root 改 resolver；管理通道保持可用。模板来源可各选 Dockerfile 和公开 OCI，复用现有公开构建及网络探针与精确回收监督；记录解析器、目的地、配置摘要、代码/模板摘要与真实结果。当前 registry 构建 DNS 的局部成功和 UDP/TCP 53 地址层探针只覆盖各自范围；未执行的通用查询/连接仍记未运行，不声称高级域名过滤、DNS 隧道防护或 IPv6 支持。
 
+候选的本地回环解析另以[输入测试](../tools/tests/test_template_inputs.py)覆盖空/缺失 hosts、自定义条目、IPv6-only 条目、冲突地址、大小边界、特殊文件和链接目标不被改写。隔离 Linux 名字空间可在无外网环境比较空 hosts 与候选生成文件的真实 NSS/SSH 解析，检查宿主配置和名字空间不变；这属于组件实验，不代替原题 KVM 回归。`configure-git-webserver` 须在新构建模板下执行未修改的解答与评分，完整保留失败、成绩及两池/服务组回收证据；curl 对 localhost 的成功访问本身不能证明系统 NSS/SSH 解析正常。
+
 [Rust 模板响应测试](../controller-service/tests/template_wire.rs)与[Harbor 输入测试](../benchmarks/tests/test_generic.py)共用同一规范 JSON，检查响应字段及真实形状一致。适配器的运行实例 create 等待使用原初始化期限的剩余时间；期限已耗尽时不得发起 create，仍保留原构建编号及结果。
 
 失败复现先保留原成绩，再按[评测入口](../benchmarks/README.md)显式运行评分后诊断。组件检查覆盖构建日志跨页尾部、原始字节偏移、恰好/超限、后页失败保留前页及产物预算；诊断检查默认关闭、成功题不执行、内部失败输出不替换原 reward，以及读取/超时/取消后仍销毁原实例。组件通过不代替原题实机复现，原评分失败不得因诊断成功改为通过。
