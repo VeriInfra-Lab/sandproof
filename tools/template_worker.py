@@ -34,10 +34,14 @@ set -eu
 B=/opt/sandproof/busybox
 $B mount -t proc proc /proc
 $B mount -o remount,rw /
+# The root can initially be read-only. Invalidate before the remaining setup;
+# AGENT also rejects on-disk markers if either preceding mount fails.
+$B rm -f /run/sandproof-boot-ready
 $B mount -t sysfs sysfs /sys
 if ! $B grep -q ' /dev devtmpfs ' /proc/mounts; then $B mount -t devtmpfs devtmpfs /dev; fi
-$B mkdir -p /dev/pts /run /tmp
+$B mkdir -p /dev/pts /dev/shm /run /tmp
 $B mount -t devpts devpts /dev/pts
+$B mount -t tmpfs -o nosuid,nodev,noexec,mode=1777,size=64m tmpfs /dev/shm
 $B mount -t tmpfs -o mode=755 tmpfs /run
 $B chmod 1777 /tmp
 $B ln -sf /proc/self/fd /dev/fd
@@ -57,6 +61,13 @@ INITTAB = """::sysinit:/opt/sandproof/boot
 ::shutdown:/opt/sandproof/busybox umount -a -r
 """
 AGENT = """#!/opt/sandproof/busybox sh
+B=/opt/sandproof/busybox
+# Candidates cold-boot from ext4: imported /run contents are not readiness.
+# Check the actual filesystem, not an image-supplied /proc/mounts file.
+test ! -L /run || exit 1
+run_type=$($B stat -f -c %t /run) || exit 1
+test "$run_type" = 1021994 || exit 1
+test ! -L /run/sandproof-boot-ready || exit 1
 test -f /run/sandproof-boot-ready || exit 1
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 exec /opt/sandproof/envd -verbose -no-cgroups
@@ -210,6 +221,10 @@ def install_platform(root, envd, busybox, dns_servers=None):
         if path != root / name.lstrip("/"):
             raise InvalidTemplate("platform mount path redirected")
         path.mkdir(exist_ok=True)
+    # Remove only this reserved directory entry, never its symlink/hardlink
+    # target. A directory or failed unlink rejects the candidate. The checked
+    # /run parent cannot redirect this write out of the candidate tree.
+    (root / "run/sandproof-boot-ready").unlink(missing_ok=True)
 
 
 def install_loopback_hosts(root):
@@ -330,8 +345,14 @@ def check_tools(profile, *, registry=False):
     # BusyBox builds differ in enabled applets. Do not merely assume an applet
     # exists because the binary/version matched the operator's descriptor.
     applets = subprocess.check_output([str(tools["busybox"]), "--list"], timeout=5).decode().splitlines()
-    if not {"sh", "init", "mount", "grep", "mkdir", "chmod", "ln", "ip", "touch", "reboot", "umount"}.issubset(applets):
+    if not {"sh", "init", "mount", "grep", "mkdir", "chmod", "ln", "ip", "touch", "reboot", "umount",
+            "rm", "stat"}.issubset(applets):
         raise InvalidTemplate("BusyBox missing required platform applets")
+    # stat can exist without filesystem/format support in a custom BusyBox.
+    # Probe the exact read-only operation used by the cold-boot envd gate.
+    filesystem = subprocess.check_output([str(tools["busybox"]), "stat", "-f", "-c", "%t", "/"], timeout=5)
+    if not re.fullmatch(rb"[0-9a-fA-F]+\n?", filesystem):
+        raise InvalidTemplate("BusyBox filesystem stat format unavailable")
     return tools
 
 
