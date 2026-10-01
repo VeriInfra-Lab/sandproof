@@ -69,21 +69,26 @@ async def run_selected(args, lock):
                 row = json.loads(result.read_text())
             rows = [row if r['name'] == name else r for r in rows]
             report()
-        if getattr(args, 'completion_audit', None) is not None:
-            try:
-                row.update(await asyncio.to_thread(args.completion_audit, row))
-            except Exception as error:
-                row.update(status='cleanup_unknown', exact_cleanup='unknown',
-                           audit_error_type=type(error).__name__)
-            # Persist the external audit separately from the SDK kill receipt.
-            rows = [row if r['name'] == name else r for r in rows]
-            report()
-            result.parent.mkdir(parents=True, exist_ok=True)
-            result.write_text(json.dumps(row, indent=2) + '\n')
+            # Also runs while unwinding cancellation: keep the controllers
+            # alive long enough to reconcile the original dispatched create.
+            if getattr(args, 'completion_audit', None) is not None:
+                try:
+                    row.update(await asyncio.to_thread(args.completion_audit, row))
+                except Exception as error:
+                    row.update(status='cleanup_unknown', exact_cleanup='unknown',
+                               audit_error_type=type(error).__name__)
+                # Persist the external audit separately from the SDK receipt.
+                rows = [row if r['name'] == name else r for r in rows]
+                report()
+                result.parent.mkdir(parents=True, exist_ok=True)
+                result.write_text(json.dumps(row, indent=2) + '\n')
         rows = [row if r['name'] == name else r for r in rows]
         report()
         build_state = (row.get('build') or {}).get('state')
-        if (row['status'] in ('create_unknown', 'cleanup_unknown', 'runner_error')
+        recovered = (row.get('exact_cleanup') == 'passed'
+                     and (row.get('runtime_recovery') or {}).get('status') == 'destroyed')
+        if ((row['status'] in ('create_unknown', 'cleanup_unknown') and not recovered)
+                or row['status'] == 'runner_error'
                 or (row.get('build_dispatched') and build_state not in ('Ready', 'Failed'))):
             # Do not create more resources while the previous identity is uncertain.
             for remaining in rows:

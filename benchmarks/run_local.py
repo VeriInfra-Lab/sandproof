@@ -316,13 +316,16 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                     row.setdefault('diagnostic_errors', {})[remote] = type(log_error).__name__
     finally:
         record_artifact_status(environment, row)
+        row['execution_status'] = row['status']
         row['sandbox_id'] = environment.sandbox_id
+        row['create_dispatched'] = environment.create_dispatched
         if hasattr(environment, 'build_id'):
             row.update(build_id=environment.build_id, build=environment.build_result,
                        build_log_error=getattr(environment, 'build_log_error', None),
                        template=environment.template, exact_cleanup='not_audited',
                        build_dispatched=environment.build_dispatched,
                        submission_key=environment.submission_key)
+            row['runtime_intent'] = getattr(environment, 'runtime_intent', None)
         if environment.create_dispatched and environment.sandbox_id is None:
             row['status'] = 'create_unknown'
         try:
