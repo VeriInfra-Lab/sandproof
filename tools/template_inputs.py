@@ -13,6 +13,23 @@ class InvalidTemplate(ValueError):
     pass
 
 
+def platform_dns_servers(value):
+    """Trusted public IPv4 unicast resolver addresses; never a query filter."""
+    import ipaddress
+    if not isinstance(value, list) or not 1 <= len(value) <= 2:
+        raise InvalidTemplate("one or two public IPv4 DNS strings required")
+    for item in value:
+        if not isinstance(item, str):
+            raise InvalidTemplate("public IPv4 DNS addresses must be strings")
+        try:
+            address = ipaddress.IPv4Address(item)
+        except ValueError as error:
+            raise InvalidTemplate("invalid public IPv4 DNS address") from error
+        if not address.is_global or address.is_multicast or address.is_reserved:
+            raise InvalidTemplate("public unicast IPv4 DNS address required")
+    return value
+
+
 def image_path(name):
     if not isinstance(name, str) or not name or "\x00" in name or "\\" in name:
         raise InvalidTemplate("invalid archive path")
