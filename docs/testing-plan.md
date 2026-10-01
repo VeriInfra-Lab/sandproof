@@ -246,7 +246,7 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 候选的本地回环解析另以[输入测试](../tools/tests/test_template_inputs.py)覆盖空/缺失 hosts、自定义条目、IPv6-only 条目、冲突地址、大小边界、特殊文件和链接目标不被改写。隔离 Linux 名字空间可在无外网环境比较空 hosts 与候选生成文件的真实 NSS/SSH 解析，检查宿主配置和名字空间不变；这属于组件实验，不代替原题 KVM 回归。`configure-git-webserver` 须在新构建模板下执行未修改的解答与评分，完整保留失败、成绩及两池/服务组回收证据；curl 对 localhost 的成功访问本身不能证明系统 NSS/SSH 解析正常。
 
-同一输入测试通过记录 applet 执行真实启动脚本控制流，检查 `/dev/shm` 的创建/挂载顺序、容量与权限，以及挂载失败后不再执行后续步骤或发布就绪；它不实际挂载文件系统。Linux 组件实验须使用独立挂载名字空间、真实 BusyBox 挂载和 Python 多进程锁/进程池/共享内存，比较缺失挂载的失败与修复后的成功，并观察普通用户权限、64 MiB 容量拒绝、独立挂载间数据隔离和宿主挂载不变。组件结果不能代替 KVM 验收；原 `largest-eigenval` 与 `headless-terminal` 须经新构建/发布链执行未改解答和评分，不放宽原时限或修改成绩，最终核对三组资源清理。
+同一输入测试通过记录 applet 执行生成的启动脚本控制流，检查 `/dev/shm` 的创建/挂载顺序、容量与权限，以及挂载失败后不再执行后续步骤或写入本地就绪标记；它不实际挂载文件系统。另用真实 `install_platform` 与生成的 BOOT/AGENT，在临时目录中覆盖普通/符号/悬空/硬链接及 FIFO 标记清除、目录/清除失败与重定向 `/run` 拒绝、正常启动和 envd 重启；受控 applet 模拟新 `/run` tmpfs，在 proc、根盘重挂载、标记清除、sysfs、shm、run、网络和最终 touch 注入失败，检查独立 agent 不执行 envd。stat 返回正确类型却退出非零、标记或 `/run` 符号链接均拒绝；构建工具检查覆盖缺少 applet、缺少 stat 格式及操作失败。测试通过普通 shell 执行，文件系统类型和挂载由替身模拟，不验证实际 BusyBox 二进制、PID 1、systemd 或 Linux 挂载语义；只证明该冷启动本地门的控制流，不能推出整个 boot、外部 Ready 发布或宿主隔离验收通过，也不覆盖成功后手工重跑 boot 或来宾 root 篡改。Linux 组件实验须使用独立挂载名字空间、真实 BusyBox 挂载和 Python 多进程锁/进程池/共享内存，比较缺失挂载的失败与修复后的成功，并观察普通用户权限、64 MiB 容量拒绝、独立挂载间数据隔离和宿主挂载不变。组件结果不能代替 KVM 验收；原 `largest-eigenval` 与 `headless-terminal` 须经新构建/发布链执行未改解答和评分，不放宽原时限或修改成绩，最终核对三组资源清理。
 
 [Rust 模板响应测试](../controller-service/tests/template_wire.rs)与[Harbor 输入测试](../benchmarks/tests/test_generic.py)共用同一规范 JSON，检查响应字段及真实形状一致。适配器的运行实例 create 等待使用原初始化期限的剩余时间；期限已耗尽时不得发起 create，仍保留原构建编号及结果。
 
