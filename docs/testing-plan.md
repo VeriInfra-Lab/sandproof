@@ -79,6 +79,8 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 
 [任务预算探针](../tests/system/sdk_task_budgets.py)复用原文件上传/下载边界、命令超量及断线重连断言，并在固定串行配置下用同步/异步 SDK 占满每实例普通请求名额，核对 429、保留控制请求、无重复执行及容量释放。它不覆盖全局多 VM 饱和或 13,000 秒空闲到期；这些范围不能从探针通过推断。
 
+正式模板链的统一资源验收使用[通用监督入口](../tests/system/harbor_generic_chain.py)和[预算配置](../benchmarks/template-service-budgets.json)，复用原任务传输配置。预检覆盖两个池的额度总量、运行盘与构建/发布/证据保留，调用真实构建配置校验器核对可实现性。[组件回归](../tools/tests/test_template_acceptance.py)使用真实 HTTP/SQLite 检查满额时状态/日志可读、幂等请求仍指向原工作、清理未知不释放预留、同库重开与回收后名额可复用；[探针故障回归](../benchmarks/tests/test_template_pressure.py)检查丢失创建响应不重试、取消或单个停止失败仍尝试其余原实例收尾。加 `--resource-pressure` 后，两个原题的已发布模板各创建两个实例，检查包数据库/系统文件隔离，15 个有屏障的等待 stdin 命令占满普通数据名额，在构建服务中断时验证另一个实例仍可销毁，并按原 buildID 恢复回收。压力结果不混入原题评分；完整 KVM 模式尚待实跑。服务/relay 份额目前仅预留而未施加整体 cgroup 上限，不将主机余量检查说成宿主总内存强制上界。
+
 [任务预算全局并发探针](../tests/system/server_task_pressure.py)保持同一文件的全部 `data_transfer` 值，将 VM 准入显式改为全局 3 台、每租户 2 台。同步/异步各用三台真实 VM，按 7＋7＋1 个等待 stdin 的命令占满全局普通请求名额；第三台仍有本地余量，其文件与 Start 请求必须得到 429。检查其他租户在仅单 VM 满额时仍可调用，满额时 health/SendInput/CloseStdin/SendSignal 保持可用，EOF 与信号后名额可复用、拒绝无副作用、命令只启动一次。随后三台并发进行 8 MiB 和 64 MiB 有界流式上传/下载，逐个核对来宾与客户端 SHA-256。监督器在明确屏障及名义 100 ms 间隔采样服务/relay 进程树 RSS、VMM cgroup 内存和宿主内存/磁盘余量，并核验真实 CPU/内存/私有盘身份、六台最终回收和共享网络/基础产物不变。RSS 求和可能重复计算共享页，采样不保证捕获峰值，宿主余量含其他工作负载；本探针不施加整个服务的宿主内存上限，不把观测值或扩大后的 VM 准入说成正式部署预算，也不覆盖长空闲期限或重跑题集。运行需固定 Python SDK、含 Python 的批准 base、空的独占 cgroup、独占 UID 范围和 root 私有目录；失败保留原身份现场。 提交 `e62f32fa454ec75ac9d5411ed9f4be8521efa189` 已通过两套 SDK、12 次文件往返及六台实例的独立回收审计；两次满载屏障均观察到 1 个服务进程、15 个 relay 和 3 个 VMM cgroup。483 次采样及指纹见[版本基线](../references/v1-baseline.json)的 `task_global_pressure_acceptance`。
 
 网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
