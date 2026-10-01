@@ -7,6 +7,7 @@ Never run this with tenant input on a host; no Docker socket is used.
 """
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -21,9 +22,9 @@ import threading
 import time
 
 if __package__:
-    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config
+    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 else:
-    from template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config
+    from template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 
 
 MIB = 1024 * 1024
@@ -196,6 +197,7 @@ def install_platform(root, envd, busybox, dns_servers=None):
         raise InvalidTemplate("unsafe inittab target")
     inittab.write_text(INITTAB)
     inittab.chmod(0o644)
+    install_loopback_hosts(root)
     if dns_servers:
         resolver = etc / "resolv.conf"
         if resolver.exists() and resolver.is_dir():
@@ -208,6 +210,38 @@ def install_platform(root, envd, busybox, dns_servers=None):
         if path != root / name.lstrip("/"):
             raise InvalidTemplate("platform mount path redirected")
         path.mkdir(exist_ok=True)
+
+
+def install_loopback_hosts(root):
+    """Supply the container runtime's localhost entry in the candidate VM."""
+    hosts = guest_path(root, "/etc") / "hosts"
+    content = b""
+    if not hosts.is_symlink() and hosts.exists():
+        if not hosts.is_file() or hosts.stat().st_size > 65536:
+            raise InvalidTemplate("hosts file type or size limit")
+        content = hosts.read_bytes()
+    ipv4_localhost = False
+    for line in content.splitlines():
+        fields = line.split(b"#", 1)[0].split()
+        if len(fields) < 2 or b"localhost" not in [word.lower() for word in fields[1:]]:
+            continue
+        try:
+            address = ipaddress.ip_address(fields[0].decode("ascii"))
+        except (ValueError, UnicodeDecodeError) as error:
+            raise InvalidTemplate("invalid localhost address") from error
+        if not address.is_loopback:
+            raise InvalidTemplate("localhost must resolve to loopback")
+        ipv4_localhost |= address.version == 4
+    if not ipv4_localhost:
+        content += (b"\n" if content and not content.endswith(b"\n") else b"") + b"127.0.0.1 localhost\n"
+    if len(content) > 65536:
+        raise InvalidTemplate("hosts file size limit")
+    # Replace the directory entry, never follow a container symlink or alter
+    # another image file that was hard-linked to hosts. The worker is guest-only.
+    hosts.unlink(missing_ok=True)
+    with hosts.open("xb") as output:
+        output.write(content)
+    hosts.chmod(0o644)
 
 
 def runtime_defaults(root, startup):
@@ -267,15 +301,7 @@ def validate_request(request):
     if request["min_free_mib"] >= request["disk_mib"]:
         raise InvalidTemplate("minimum free disk must be smaller than total")
     if "dns_servers" in request:
-        import ipaddress
-        dns = request["dns_servers"]
-        if not isinstance(dns, list) or not 1 <= len(dns) <= 2:
-            raise InvalidTemplate("invalid platform DNS")
-        try:
-            if any(not ipaddress.IPv4Address(v).is_global for v in dns):
-                raise InvalidTemplate("invalid platform DNS")
-        except ValueError as error:
-            raise InvalidTemplate("invalid platform DNS") from error
+        platform_dns_servers(request["dns_servers"])
 
 
 def check_tools(profile, *, registry=False):
