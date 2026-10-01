@@ -9,7 +9,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from tools.template_fetch import OCI_INDEX, OCI_MANIFEST, capture, fetch, reference, select_manifest
+from tools.template_fetch import DOCKER_MANIFEST, OCI_INDEX, OCI_MANIFEST, capture, fetch, reference, select_manifest
 from tools.template_inputs import InvalidTemplate
 from tools.template_worker import Commands
 
@@ -53,10 +53,21 @@ class PublicFetchTests(unittest.TestCase):
         self.assertEqual(select_manifest(index, 'parent'), digest)
         for manifests in ([selected, selected], [other], [], [dict(selected, size=True)],
                           [dict(selected, digest='sha256:no')], [dict(selected, platform=None)],
-                          [dict(selected, mediaType='application/vnd.docker.distribution.manifest.v2+json')],
+                          [dict(selected, mediaType='application/vnd.docker.distribution.manifest.v1+json')],
                           [dict(selected, platform={'os':'linux','architecture':'amd64','variant':'v3'})]):
             with self.subTest(manifests=manifests), self.assertRaises(InvalidTemplate):
                 select_manifest(dict(index, manifests=manifests), 'parent')
+
+    def test_docker_manifest_and_index_select_without_schema1_or_platform_guessing(self):
+        digest = 'sha256:' + 'd' * 64
+        manifest = {'schemaVersion': 2, 'mediaType': DOCKER_MANIFEST}
+        self.assertEqual(select_manifest(manifest, digest), digest)
+        descriptor = {'mediaType': DOCKER_MANIFEST, 'digest': digest, 'size': 100,
+                      'platform': {'os': 'linux', 'architecture': 'amd64'}}
+        self.assertEqual(select_manifest({'schemaVersion': 2, 'mediaType': OCI_INDEX,
+                                         'manifests': [descriptor]}, 'parent'), digest)
+        with self.assertRaises(InvalidTemplate):
+            select_manifest(dict(manifest, schemaVersion=1), digest)
 
     def test_binary_capture_exact_limit_and_separate_bounded_log(self):
         log = io.BytesIO()

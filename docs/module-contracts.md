@@ -43,9 +43,9 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 [#123 的候选构建工作器](../tools/template_worker.py)由[自助构建监督服务](../tools/template_build_service.py)在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。公开 OCI 由固定 regctl 直接导入；原 OCI tar 工具入口保留。检查摘要和展开预算后由 umoci 处理 whiteout；不兼容架构/操作系统、设备节点、容器卷及其他压缩格式明确拒绝。上下文只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
 
 转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。平台 resolver 来自可信构建配置；这不是对来宾 root 的防修改承诺，目的地址限制仍由宿主 IPv4 规则强制，不新增域名过滤/IPv6。
-公开获取由[固定 regctl 客户端](../tools/template_fetch.py)在同一构建 VM 内执行；工作器的 `kind=oci-reference` 接收仅含 `image` 的 JSON 文件。入口接受公开仓库的标签或 SHA-256 引用，`ubuntu:24.04` 等简写规范化为 Docker Hub 的完整名称。标签只在本次构建开始时解析一次，记录实际原始清单摘要，后续下载按选定摘要固定；用户需要跨构建复现时使用 `@sha256:`。拒绝认证信息、端口、私有 DNS 名或 IP 字面量；地址可达性仍由既有公网 IPv4 隔离策略决定。regctl 固定 v0.11.6/linux-amd64 及 SHA-256，使用空 HOME/Docker/regctl 配置，不携带宿主仓库凭据。摘要输入须匹配原始字节；OCI 清单直接使用，OCI/Docker 索引只允许唯一 linux/amd64 OCI 子清单，不下载其他平台；不支持 Docker schema2 镜像清单或嵌套索引。导出后校验所选清单、所有 blob、diff_ids 与展开限制。导入不执行 ONBUILD；Dockerfile 构建仍遵循标准构建器的 ONBUILD 语义。
+公开获取由[固定 regctl 客户端](../tools/template_fetch.py)在同一构建 VM 内执行；工作器的 `kind=oci-reference` 接收仅含 `image` 的 JSON 文件。入口接受公开仓库的标签或 SHA-256 引用，`ubuntu:24.04` 等简写规范化为 Docker Hub 的完整名称。标签只在本次构建开始时解析一次，记录实际原始清单摘要，后续下载按选定摘要固定；用户需要跨构建复现时使用 `@sha256:`。拒绝认证信息、端口、私有 DNS 名或 IP 字面量；地址可达性仍由既有公网 IPv4 隔离策略决定。regctl 固定 v0.11.6/linux-amd64 及 SHA-256，使用空 HOME/Docker/regctl 配置，不携带宿主仓库凭据。摘要输入须匹配原始字节；OCI 清单直接使用，OCI/Docker 索引只允许唯一 linux/amd64 OCI 或 Docker schema2 子清单，不下载其他平台；不支持 schema1 或嵌套索引。Docker schema2 先校验所有 blob、diff_ids、tar 路径与展开限制，再在构建 VM 内由同一固定 regctl 对本地 layout 执行 `image mod --to-oci`，不重新获取来源；转换前后配置与各层的摘要、大小、顺序必须一致，转换结果再次通过 OCI 检查。拒绝外部 layer URL 和 foreign layer。导出后校验所选清单、所有 blob、diff_ids 与展开限制。导入不执行 ONBUILD；Dockerfile 构建仍遵循标准构建器的 ONBUILD 语义。
 
-获取清单与 OCI tar 的 stdout 合计受 `max_input_bytes` 限制（不含 HTTP 头、重试等线上字节），stderr 与其他工具共享 `max_log_bytes`，使用同一总期限和 VM 磁盘/内存限制。候选增加 `public_source` 记录原始引用/实际摘要、所选摘要、平台、下载产物字节及工具指纹。此能力已接入自助构建 API；私有仓库认证后置。Harbor 的自有构建适配与原模板 API 的差异见[评测入口](../benchmarks/README.md)，不宣称原 E2B 模板 API 全兼容。
+获取清单与 OCI tar 的 stdout 合计受 `max_input_bytes` 限制（不含 HTTP 头、重试等线上字节），stderr 与其他工具共享 `max_log_bytes`，使用同一总期限和 VM 磁盘/内存限制。候选增加 `public_source` 记录原始引用/实际摘要、所选摘要、平台、下载产物字节及工具指纹；schema2 转换另记 `converted_digest` 和 `conversion=docker-schema2-to-oci`，原始/所选来源摘要保持不变。此能力已接入自助构建 API；私有仓库认证后置。Harbor 的自有构建适配与原模板 API 的差异见[评测入口](../benchmarks/README.md)，不宣称原 E2B 模板 API 全兼容。
 
 正式发布门由可信构建监督方确认构建 VM 回收后，用[登记准备工具](../tools/template_stage.py)将候选字节放入 root 独占 `template_registry.root/inbox/<候选编号>`。HTTP 客户端只给随机 32 位十六进制候选编号，不能给宿主路径、owner、修订或 Ready 标志；API key 决定 owner，受保护清单必须匹配。服务检查只读普通文件、单链接、长度/SHA-256、绑定路径、envd 版本，以及 ext4 实际可用空间（扣除保留块），不信任工作器自报空闲值。持久接受发布意图后原子移入同盘 `artifacts/<编号>`；模板编号 `tpl-<候选编号>`、修订 r1 和完整形状不可改，变更须新候选。历史数量与内核+磁盘字节有全局/租户上限；失败和未决记录仍占额。本批不提供模板垃圾回收；可信监督方负责暂存预算，后续公开构建服务须另外限制和清理暂存，发布额度不是完整构建配额。
 
@@ -53,7 +53,7 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 `template_registry` 为可选可信配置，字段为 `root`（root 独占绝对目录，预建 inbox/artifacts）、`max_templates_global`（1～256）、`max_templates_per_tenant`、`max_artifact_bytes_global`、`max_artifact_bytes_per_tenant` 和 `validation_timeout_secs`（1～300，且不超过运行上限）；租户上限须为正且不超过全局。必须同时配置 `templates` 和 `host_resources`。首次启用升至 V10，并持久绑定唯一根目录，此后生产服务不可关闭登记配置，旧二进制拒绝新库。目录、数据库和私有盘须同文件系统，清理余量观察才能覆盖这些写入。
 
-登记的 imageDigest 是实际使用的 linux/amd64 OCI 清单摘要：Dockerfile 为 BuildKit 导出结果，公开 OCI 为固定的源清单或选定子清单。可变 tag 不代表跨构建固定来源，需要固定来源时提交 `@sha256:`。服务独立复算内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。明确拒绝私有仓库凭据、任意宿主挂载、特权/GPU、多服务及不兼容镜像，不声称支持任意 Dockerfile。
+登记的 imageDigest 是实际使用的 linux/amd64 OCI 清单摘要：Dockerfile 为 BuildKit 导出结果，公开 OCI 为固定的源清单或选定子清单；Docker schema2 为转换后的 OCI 清单摘要，原始来源保存在 `public_source`。可变 tag 不代表跨构建固定来源，需要固定来源时提交 `@sha256:`。服务独立复算内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。明确拒绝私有仓库凭据、任意宿主挂载、特权/GPU、多服务及不兼容镜像，不声称支持任意 Dockerfile。
 
 ### 自助构建入口、部署与恢复
 

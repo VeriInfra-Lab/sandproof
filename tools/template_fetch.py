@@ -11,12 +11,13 @@ import subprocess
 import time
 
 if __package__:
-    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, sha256
+    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, inspect_oci, blob, sha256
 else:
-    from template_inputs import InvalidTemplate, bounded_json, extract_archive, sha256
+    from template_inputs import InvalidTemplate, bounded_json, extract_archive, inspect_oci, blob, sha256
 
 REGCTL_VERSION = "v0.11.6"
 REGCTL_SHA256 = "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
+DOCKER_MANIFEST = "application/vnd.docker.distribution.manifest.v2+json"
 OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
 OCI_INDEX = "application/vnd.oci.image.index.v1+json"
 DOCKER_INDEX = "application/vnd.docker.distribution.manifest.list.v2+json"
@@ -49,10 +50,10 @@ def reference(value):
 def select_manifest(document, digest):
     if not isinstance(document, dict) or document.get("schemaVersion") != 2:
         raise InvalidTemplate("unsupported public manifest")
-    if document.get("mediaType") == OCI_MANIFEST:
+    if document.get("mediaType") in (OCI_MANIFEST, DOCKER_MANIFEST):
         return digest
     if document.get("mediaType") not in (OCI_INDEX, DOCKER_INDEX):
-        raise InvalidTemplate("public image must provide an OCI manifest")
+        raise InvalidTemplate("public image must provide an OCI or Docker schema2 manifest")
     manifests = document.get("manifests")
     if not isinstance(manifests, list) or not 1 <= len(manifests) <= 128:
         raise InvalidTemplate("public image index limit")
@@ -64,14 +65,14 @@ def select_manifest(document, digest):
         if (platform.get("os"), platform.get("architecture")) == ("linux", "amd64"):
             if platform.get("variant", "") not in ("", "v1") or platform.get("os.version") or platform.get("os.features"):
                 raise InvalidTemplate("unsupported platform variant")
-            if (item.get("mediaType") != OCI_MANIFEST
+            if (item.get("mediaType") not in (OCI_MANIFEST, DOCKER_MANIFEST)
                     or not isinstance(item.get("digest"), str)
                     or not re.fullmatch(r"sha256:[0-9a-f]{64}", item["digest"])
                     or type(item.get("size")) is not int or not 0 < item["size"] <= 1024 * 1024):
                 raise InvalidTemplate("invalid public image descriptor")
             selected.append(item["digest"])
     if len(selected) != 1:
-        raise InvalidTemplate("expected one linux/amd64 OCI image")
+        raise InvalidTemplate("expected one linux/amd64 image")
     return selected[0]
 
 
@@ -153,11 +154,38 @@ def fetch(source, work, layout, request, tool, commands):
     index = bounded_json(layout / "index.json")
     items = index.get("manifests") if isinstance(index, dict) else None
     if (not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict)
-            or items[0].get("digest") != selected or items[0].get("mediaType") != OCI_MANIFEST):
+            or items[0].get("digest") != selected or items[0].get("mediaType") not in (OCI_MANIFEST, DOCKER_MANIFEST)):
         raise InvalidTemplate("downloaded manifest does not match selected digest")
+    converted = None
+    if items[0]["mediaType"] == DOCKER_MANIFEST:
+        # Validate the original bytes before the trusted converter sees them.
+        # Conversion is local-only and must preserve config/layer bytes exactly.
+        limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
+        inspect_oci(layout, **limits, allow_docker=True)
+        original = payload_identity(layout, request["max_input_bytes"])
+        raw = work / "source-oci"
+        layout.rename(raw)
+        archive.unlink()  # two layout copies replace tar+layout in disk budget
+        commands.run([str(tool), "image", "mod", "ocidir://" + str(raw) + "@" + selected,
+                      "--to-oci", "--create", "ocidir://" + str(layout) + ":candidate"])
+        normalized = inspect_oci(layout, **limits)
+        if payload_identity(layout, request["max_input_bytes"]) != original:
+            raise InvalidTemplate("OCI conversion changed image config or layers")
+        converted = normalized["image_digest"]
     # inspect_oci rehashes every manifest/config/layer and checks diff_ids,
     # architecture, expanded bytes and entries before any umoci unpacking.
-    return {"reference": document["image"], "source_digest": digest,
+    result = {"reference": document["image"], "source_digest": digest,
             "selected_digest": selected, "platform": "linux/amd64",
             "download_bytes": metadata_bytes + archive_bytes, "regctl_version": REGCTL_VERSION,
             "regctl_sha256": REGCTL_SHA256}
+    if converted is not None:
+        result["converted_digest"] = converted
+        result["conversion"] = "docker-schema2-to-oci"
+    return result
+
+
+def payload_identity(layout, maximum):
+    """Compare ordered immutable blobs after inspect_oci has verified them."""
+    descriptor = bounded_json(layout / "index.json")["manifests"][0]
+    manifest = bounded_json(blob(layout, descriptor, maximum))
+    return [(item["digest"], item["size"]) for item in [manifest["config"], *manifest["layers"]]]
