@@ -7,7 +7,7 @@ import threading
 import unittest
 
 from tools.generic_capacity import GIB, MIB, plan
-from tools.template_acceptance import budgets, check_headroom, load, RUNTIME_PROFILE
+from tools.template_acceptance import budgets, check_headroom, load, PROFILE, RUNTIME_PROFILE
 from tools.template_build_client import BuildClient
 from tools.template_build_service import BuildHTTP, Supervisor, configuration
 from tools.template_build_store import BuildStore
@@ -65,6 +65,35 @@ def configured(root, deployment):
 
 
 class AcceptanceConfigTests(unittest.TestCase):
+    def test_explicit_small_host_profile_preserves_four_instance_cohort_and_headroom(self):
+        profile = load(PROFILE.with_name('template-service-budgets-16g.json'))
+        entries = [{'name': str(i), 'requirements': {'cpus': 1, 'memory_mib': 2048,
+                    'disk_mib': 10240, 'build_timeout_sec': 600}} for i in range(4)]
+        capacity = plan(entries, 1, 32 * GIB, 64 * MIB)
+        deployment = budgets(capacity, 32 * GIB, 64 * MIB, profile=profile)
+        self.assertEqual(deployment['runtime']['max_active_global'], 4)
+        self.assertEqual(deployment['runtime_compute']['max_memory_bytes_global'], 4 * 2304 * MIB)
+        self.assertEqual(deployment['builder_shape']['memory_mib'], 2048)
+        self.assertEqual(deployment['host']['minimum_available_memory_bytes'], 13568 * MIB)
+        self.assertEqual(deployment['host']['memory_headroom_bytes'], GIB)
+        self.assertEqual(deployment['service_cgroup']['memory_bytes'], GIB)
+        with tempfile.TemporaryDirectory() as temporary:
+            configured(Path(temporary).resolve(), deployment)
+        exact = dict(cpus=8, available_memory=13568 * MIB,
+                     free_disk=deployment['host']['minimum_free_disk_bytes'])
+        check_headroom(deployment, **exact)
+        with self.assertRaisesRegex(ValueError, 'memory'):
+            check_headroom(deployment, **(exact | {'available_memory': exact['available_memory'] - 1}))
+        # Keep original defaults and shape admission: requested memory beyond
+        # the runtime quota must not be silently reduced to fit this host.
+        self.assertEqual(load()['builder']['memory_mib'], 8192)
+        self.assertNotEqual(deployment['profile_canonical_sha256'],
+                            budgets(capacity, 32 * GIB, 64 * MIB)['profile_canonical_sha256'])
+        larger = plan([{'name': 'large', 'requirements': {'cpus': 1, 'memory_mib': 16384,
+                       'disk_mib': 10240, 'build_timeout_sec': 600}}], 1, 32 * GIB, 64 * MIB)
+        with self.assertRaises(ValueError):
+            budgets(larger, 32 * GIB, 64 * MIB, profile=profile)
+
     def test_complete_profile_is_accepted_by_real_service_configuration(self):
         with tempfile.TemporaryDirectory() as temporary:
             cfg = configured(Path(temporary).resolve(), budgets(inputs(), 32 * GIB, 64 * MIB))

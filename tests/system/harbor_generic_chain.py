@@ -30,7 +30,7 @@ from server_vm_id_capacity import check_no_resources
 from template_self_service import BUILD_TOOLS
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import plan
-from tools.template_acceptance import budgets, check_headroom
+from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
@@ -61,7 +61,8 @@ def exercise(args):
     capacity = plan(capacity_entries, args.repetitions,
                     args.rootfs.stat().st_size, args.kernel.stat().st_size,
                     artifact_bytes=args.artifact_limits['max_bytes'])
-    deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size)
+    deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
+                         profile=load(args.budget_profile))
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
         validate_cohort([t['requirements'] for t in capacity_entries[:2]], deployment)
@@ -438,6 +439,8 @@ if __name__ == '__main__':
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
     parser.add_argument('--resource-pressure', action='store_true',
                         help='after two original tasks pass, test their published templates together')
+    parser.add_argument('--budget-profile', type=Path, default=PROFILE,
+                        help='explicit operator acceptance profile; original larger profile remains the default')
     parser.add_argument('--temporarily-forward', action='store_true')
     add_artifact_arguments(parser)
     args = parser.parse_args()
