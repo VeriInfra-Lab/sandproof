@@ -15,6 +15,8 @@ import stat
 import sys
 import tempfile
 
+ZERO_BLOCK = bytes(64 * 1024)
+
 
 def private_directory(path):
     path = Path(path)
@@ -31,6 +33,27 @@ def file_hash(path):
         while block := incoming.read(1024 * 1024):
             digest.update(block)
     return digest.hexdigest()
+
+
+def write_sparse(output, block):
+    """Write opaque bytes to a new private file, seeking over zero spans.
+
+    No filesystem/image parsing. The caller must truncate at the final logical
+    position before fsync: a trailing seek alone does not extend the file.
+    """
+    for offset in range(0, len(block), len(ZERO_BLOCK)):
+        chunk = block[offset:offset + len(ZERO_BLOCK)]
+        if chunk == ZERO_BLOCK[:len(chunk)]:
+            output.seek(len(chunk), os.SEEK_CUR)
+        else:
+            output.write(chunk)
+
+
+def copy_sparse(source, target):
+    with source.open("rb") as incoming, target.open("xb") as output:
+        while block := incoming.read(1024 * 1024):
+            write_sparse(output, block)
+        output.truncate()
 
 
 def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id=None):
@@ -85,7 +108,7 @@ def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *
         artifacts = {}
         for name, source in (("kernel", kernel), ("rootfs.ext4", disk)):
             target = pending / name
-            shutil.copyfile(source, target)
+            copy_sparse(source, target)
             target.chmod(0o444)
             with target.open("rb") as saved:
                 os.fsync(saved.fileno())

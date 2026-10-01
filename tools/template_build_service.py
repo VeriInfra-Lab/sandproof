@@ -251,9 +251,9 @@ class Backend:
             stdout = (error.stdout or '')[:maximum].encode()[:maximum - len(stderr)]
             worker_error_log = stdout + stderr
         # Read only opaque bytes, never mount/unpack guest output on the host.
-        def download(name, limit, exact=None):
+        def download(name, limit, exact=None, *, sparse=False):
             with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=max(1, row["deadline"] - store.clock())) as incoming:
-                return durable_write(directory / name, incoming, limit, exact=exact)
+                return durable_write(directory / name, incoming, limit, exact=exact, sparse=sparse)
         try:
             download("status.json", 128 * 1024)
         except FileNotFoundException:
@@ -292,7 +292,8 @@ class Backend:
         if status.get("state") != "candidate":
             failure = status.get("error_type")
             raise BuildError(422, "WorkerFailed:" + (failure if failure in {"InvalidTemplate", "TimeoutError", "RuntimeError"} else "BuildError"))
-        _, digest = download("candidate.ext4", request["resources"]["diskMiB"] * MIB, request["resources"]["diskMiB"] * MIB)
+        _, digest = download("candidate.ext4", request["resources"]["diskMiB"] * MIB,
+                             request["resources"]["diskMiB"] * MIB, sparse=True)
         if digest != status.get("rootfs_sha256"):
             raise BuildError(502, "CandidateDigestMismatch")
         return status
