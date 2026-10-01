@@ -241,9 +241,15 @@ class Backend:
         try:
             command("python3 /input/template_worker.py --work /output/job --source /input/source --request /input/request.json --profile /input/profile.json --guest-boot-id " + boot, worker["timeout_seconds"])
         except CommandExitException as error:
-            # Early guest guards can fail before creating status.json. Retain
-            # only bounded command output, never stringify the SDK exception.
-            worker_error_log = ((error.stdout or '') + (error.stderr or '')).encode()[:min(65536, store.limits['max_log_bytes'])]
+            # Guards and conversion checks may fail without writing tool logs,
+            # even when status.json exists. Retain only bounded guest output;
+            # never stringify an SDK exception with host connection context.
+            maximum = min(65536, store.limits['max_log_bytes'])
+            # Python's final exception line is at the end of stderr. Verbose
+            # stdout must not displace it; byte slicing stays UTF-8 agnostic.
+            stderr = (error.stderr or '')[-maximum:].encode()[-maximum:]
+            stdout = (error.stdout or '')[:maximum].encode()[:maximum - len(stderr)]
+            worker_error_log = stdout + stderr
         # Read only opaque bytes, never mount/unpack guest output on the host.
         def download(name, limit, exact=None):
             with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=max(1, row["deadline"] - store.clock())) as incoming:
@@ -267,10 +273,22 @@ class Backend:
             except Exception as error:
                 if isinstance(error, BuildError):
                     raise
-                # OCI unpack failures can have no daemon log.
-                if name == "build.log":
+                # A failed worker can exit before opening either tool log.
+                if not isinstance(error, FileNotFoundException) or (name == "build.log" and worker_error_log is None):
                     raise
+        if worker_error_log is not None:
+            # Give the actual failure priority over the tail of verbose tool
+            # output. Diagnostic bytes share, rather than extend, the log cap.
+            marker = b"\n[worker command failed]\n"
+            if store.limits["max_log_bytes"] < 2 * len(marker):
+                marker = b""
+            room = store.limits["max_log_bytes"] - len(marker)
+            diagnostic = marker + worker_error_log[-room:]
+            del total_log[max(0, store.limits["max_log_bytes"] - len(diagnostic)):]
+            total_log.extend(diagnostic)
         durable_write(directory / "build.log", [total_log], store.limits["max_log_bytes"])
+        if worker_error_log is not None and status.get("state") == "candidate":
+            raise BuildError(422, "WorkerFailed:CommandExit")
         if status.get("state") != "candidate":
             failure = status.get("error_type")
             raise BuildError(422, "WorkerFailed:" + (failure if failure in {"InvalidTemplate", "TimeoutError", "RuntimeError"} else "BuildError"))
