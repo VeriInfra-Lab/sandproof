@@ -68,7 +68,11 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 不接受 owner、Ready、宿主路径、工具或凭据字段；陌生/他人编号均 404。可选 `Idempotency-Key`（1～64 个字母/数字/下划线/连字符）按租户绑定规范化请求，相同重提返回原编号，不同内容 409；缺省每次是独立工作。公开引用不接受凭据、本地 transport、自定义端口或显式 IP；私网与宿主地址保护仍依赖既有包规则，字符串检查不代表 DNS 安全证明。
 
+日志页的 64 KiB 上限与 offset/nextOffset 按原始日志字节计数；无效 UTF-8 以替换字符展示。JSON 转义可能放大响应，小客户端仅对日志 GET 保留有界的转义与封装余量，其他响应仍限 64 KiB，不增加日志原始总量或单页预算。通用评测报告用 `build_log_error` 单独记录诊断读取/保存失败的异常类型，不覆盖原构建终态，不保存可能含凭据的异常文本，也不为取日志重发构建。
+
 监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。私有构建 VM 的同步准备请求使用该工作剩余的原构建期限，避免固定短 RPC 等待将大盘准备提前变为未知；已过期时不发起创建，丢失响应仍只观察原编号。
+
+监督服务启动时还核对跨池必要条件：构建期限加 60 秒同时不超过构建池单次/总寿命；启动检查期限同时满足运行池两个寿命上限；构建池上传覆盖输入/工具及有界 HTTP 开销，下载覆盖完整候选；目标最大形状可被空运行池与发布产物额度接收。构建私有盘预算取私有 API 实际解析的已授权不可变 `base` 描述，不取可能不同的旧 `rootfs` 字段；声明长度须匹配真实文件。盘总量须至少容纳目标盘、展开上限和两份获取输入，实际来宾可用块仍由工作器检查。上述配置检查不是动态资源预留，不能替代运行时配额/真实余量或失败收尾。现有显式部署若不满足这些条件必须调整可信配置后再启用，不能静默缩短已接受请求。普通公网 DNS 仅接收 1–2 个公开单播 IPv4 字符串，拒绝数字、私网、组播、IPv6 与域名；构建与候选复用同一值，仍不承诺域名内容过滤。
 
 独立 SQLite 采用进程锁与 WAL/FULL；材料/候选先同步再记录阶段。历史数量、未决数和保守工作盘预留分别限额；失败/未知清理继续占预留。构建实际 CPU/RAM/VM 私有盘上限由独立 Rust 池执行，不借用运行额度；同盘检查及预留保护运行清理余量。配置/预算指纹持久绑定，变更须显式迁移，重启不能隐式换池。总期限从提交起算，Rust 池另强制 VM 寿命，不因重启续期。
 
