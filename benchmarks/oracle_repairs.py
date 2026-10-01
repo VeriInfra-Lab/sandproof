@@ -12,6 +12,7 @@ import shutil
 from tools.benchmark_tasks import InvalidInput
 
 REPAIRS = {
+    'git-multibranch': '300ca96b79db8d77f14742109aaf76048aafc4644ced750b1bc5c2761e8d0175',
     'build-cython-ext': '41bbdde88617070366a70e518eedca466a4ea1acd7e96899b2fb7da988e40abc',
     'mcmc-sampling-stan': 'd084666cc006911c5c80959969fba5c5699cbac92ab172db5c67eca00b1d0a97',
     'make-doom-for-mips': 'a9cd034a5e76fa2b22481717a9669869214f43fec5b4fedc957d83dd2ef6a84a',
@@ -56,7 +57,20 @@ def repair_solution(name, original, destination):
     old = (original / 'solve.sh').read_text()
     if hashlib.sha256((original / 'solve.sh').read_bytes()).hexdigest() != REPAIRS[name]:
         raise InvalidInput('reference solution no longer matches the reviewed repair')
-    if name == 'build-cython-ext':
+    if name == 'git-multibranch':
+        # The original image omits tmux, but the solution's final command
+        # requires it. Install the missing tool before configuring services;
+        # retain the original tmux command and all Git/SSH/nginx behavior.
+        marker = 'set -e\n'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, marker + '''
+if ! command -v tmux >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tmux
+fi
+''')
+    elif name == 'build-cython-ext':
         # pyknotid 0.5.3 consumes planarity's pre-1.0 node attribute names.
         # Pin the compatible dependency in the same editable installation;
         # keep the task's NumPy, Cython extensions and repository tests intact.
