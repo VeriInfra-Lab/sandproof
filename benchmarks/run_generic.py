@@ -16,6 +16,7 @@ from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.generic_environment import GenericEnvironment
 from benchmarks.run_local import local_url, run_task
 from benchmarks.oracle_repairs import REPAIRS
+from benchmarks.environment_repairs import PRUNED_SOURCE, SOURCE_KINDS, validate_source_kind
 from tools.benchmark_tasks import InvalidInput, verify
 
 
@@ -34,12 +35,14 @@ async def run_selected(args, lock):
     if not selected or not selected <= entries.keys():
         raise InvalidInput('select task names from the complete locked task set')
     mode = validate_oracle_mode(args, selected)
+    validate_source_kind(args.source_kind, [entries[name] for name in selected])
     rows = [{'name': t['name'], 'status': 'not_run',
              'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
     def report():
         (args.output / 'full-set.json').write_text(json.dumps({
             'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
             'source_kind': args.source_kind, 'oracle_mode': mode,
+            'original_environment': args.source_kind != PRUNED_SOURCE,
             'failure_diagnostics': getattr(args, 'failure_diagnostics', False),
             'scope': ('generic templates; ' + mode + ' oracle and original verifier; '
                       'exact host cleanup requires external audit'),
@@ -52,6 +55,8 @@ async def run_selected(args, lock):
             return GenericEnvironment(entry=entry, source=args.source, source_kind=args.source_kind,
                                       build_url=args.build_url, start_audit=getattr(args, 'start_audit', None), **kwargs)
         row = {'name': name, 'status': 'runner_error', 'oracle': 'not_run', 'verifier': 'not_run',
+               'oracle_mode': mode, 'environment_source_kind': args.source_kind,
+               'original_environment': args.source_kind != PRUNED_SOURCE,
                'exact_cleanup': 'unknown'}
         try:
             row = await run_task(args, entry, {}, environment_factory=factory)
@@ -108,9 +113,9 @@ def main():
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--task', action='append')
     selection.add_argument('--all', action='store_true')
-    # Match fixed Harbor's OCI preference by default; the Dockerfile path is
-    # an explicit ORIGINAL source alternative, never a rewritten task recipe.
-    parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
+    # Original sources remain the default. A reviewed source variant requires
+    # explicit selection and is never reported as the original environment.
+    parser.add_argument('--source-kind', choices=SOURCE_KINDS, default='oci')
     parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
     parser.add_argument('--failure-diagnostics', action='store_true',
                         help='after an original failed score, run registered guest diagnostics separately')
@@ -126,10 +131,13 @@ def main():
         lock = verify(json.loads(args.lock.read_text()), args.registry, args.source)
         check_tasks(lock, args.source)
         validate_oracle_mode(args, {t['name'] for t in lock['tasks']} if args.all else args.task)
+        selected = {t['name'] for t in lock['tasks']} if args.all else set(args.task)
+        validate_source_kind(args.source_kind, [t for t in lock['tasks'] if t['name'] in selected])
         args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         (args.output / 'inputs.json').write_text(json.dumps({
             'source': lock['source'], 'runtimes': runtimes, 'source_kind': args.source_kind,
             'oracle_mode': args.oracle_mode,
+            'original_environment': args.source_kind != PRUNED_SOURCE,
             'failure_diagnostics': args.failure_diagnostics,
             'artifact_limits': args.artifact_limits,
             'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']},

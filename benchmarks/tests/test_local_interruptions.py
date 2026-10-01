@@ -168,6 +168,33 @@ class LocalFinalizationTests(unittest.TestCase):
             ):
                 yield args, env, oracle, verifier, root / task_name, output
 
+    def test_environment_variant_pass_is_not_an_original_environment_result(self):
+        from benchmarks.environment_repairs import PRUNED_SOURCE
+        from benchmarks.run_generic import run_selected
+        name = 'mteb-leaderboard'
+        lock = json.loads((Path(__file__).parents[1] / 'terminal-bench-2.0.lock.json').read_text())
+        entry = next(row for row in lock['tasks'] if row['name'] == name)
+        with self.fixture(task_name=name) as (args, env, oracle, verifier, trial, output):
+            args.all, args.task, args.source_kind = False, [name], PRUNED_SOURCE
+            args.oracle_mode, args.build_url = 'original', 'http://127.0.0.1:1'
+            env.source_kind, env.build_id, env.build_dispatched = PRUNED_SOURCE, 'b' * 32, True
+            env.build_result, env.template, env.submission_key = {'state': 'Ready'}, {}, 'c' * 32
+            env.environment_repair = {'kind': PRUNED_SOURCE, 'original_environment': False}
+            with patch('benchmarks.run_generic.GenericEnvironment', return_value=env):
+                rows = asyncio.run(run_selected(args, {'tasks': [entry], 'source': lock['source']}))
+            result = json.loads((trial / 'result.json').read_text())
+            report = json.loads((args.output / 'full-set.json').read_text())
+            self.assertEqual(rows[0]['status'], 'passed')
+            self.assertEqual(result['oracle_mode'], 'original')
+            self.assertFalse(result['original_environment'])
+            self.assertEqual(result['environment_source_kind'], PRUNED_SOURCE)
+            self.assertEqual(result['environment_repair'], env.environment_repair)
+            self.assertFalse(report['original_environment'])
+            self.assertEqual(report['source_kind'], PRUNED_SOURCE)
+            oracle.run.assert_awaited_once()
+            verifier.verify.assert_awaited_once()
+            env.stop.assert_awaited_once()
+
     def test_generic_browser_reward_requires_actual_execution_evidence(self):
         complete = ('Total batches to test: 1\nRUN BATCH 0 (contains 1 tests)\n'
                     '  No alert detected\n')
