@@ -1881,5 +1881,171 @@
     "evidence_directory": "artifacts/public-oci-918aac6 (ignored sanitized report/preflight/source hashes/independent audit); failed attempts in artifacts/public-oci-70ea858-failed and public-oci-918aac6-failed; final private artifact removal in artifacts/public-oci-cleanup.json.",
     "evidence_manifest_sha256": "50720bc3d0d6f0912329f3b34bda10da06b89810f696dbc88effe26a94237eb0",
     "limits": "Explicit DNS registry and SHA-256 references only. OCI image or unique linux/amd64 OCI child from OCI/Docker index; tar/gzip layers. No mutable tags, Docker schema2 image manifests, private authentication, public build API, service recovery, Harbor/89 tasks or new proofs. max_input_bytes bounds manifest+tar output bytes, not HTTP wire traffic. regctl stays inside a VM; host network isolation remains required."
+  },
+  "generic_original_task_diagnostic_acceptance": {
+    "date": "2026-10-01",
+    "tested_source_commit": "6c5321c037ff2beb9a1a37c2c638a6c4dc9a9c41",
+    "scope": "Original task image -> public self-service build API -> immutable publication -> original E2B SDK -> original Harbor oracle/verifier; two-task diagnostic acceptance.",
+    "host": {
+      "kernel": "6.8.0-1065-azure",
+      "architecture": "x86_64",
+      "python": "3.12.11",
+      "rust": "1.97.0",
+      "build_profile": "release",
+      "firecracker": "1.16.1",
+      "sdk": "2.51.0",
+      "harbor": "0.23.0"
+    },
+    "server_sha256": "5e084618a88404591dc3c0ddbe3a08cf97501e9e07193da65332694d709279bb",
+    "kernel_sha256": "b20af7585283b051f16f6ece46e7064165054efe112c4ab0e26a06ff8ebe9da4",
+    "builder_base_sha256": "5fbfe365c82b597473ccc733424a1a001080ae6721ace4b8a00dacebd2ec5dd5",
+    "builder_shape": {
+      "cpu_count": 2,
+      "memory_mib": 8192,
+      "disk_bytes": 34359738368,
+      "host_memory_bytes": 8858370048
+    },
+    "source": {
+      "repository": "https://github.com/laude-institute/terminal-bench-2.git",
+      "commit": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c"
+    },
+    "tools_sha256": {
+      "buildctl": "ac7c993de512a1bc7da410e7a9e3424879a5e383d4c17d804ddc54ef6d036703",
+      "buildkitd": "bf5d521895dd4fafdd9bb8ba3316f90fe0eae07b795ba979bd74fee816b29991",
+      "buildkit-runc": "ed94b57511421489ba02594bf311020bbdc4fbd229447f97e2734e50a3e7eeb0",
+      "umoci": "b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71",
+      "busybox": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
+      "envd": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
+      "regctl": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
+    },
+    "probe_sha256": "64046192a8905287ecf9d3d64e222e0fda5041e2d9aa01715ca3a07db98b52b4",
+    "task_lock_sha256": "b50b07194610c09017d927debccfe1c18ac3fb8651a5bd7d372482bde6956aeb",
+    "execution": {
+      "entrypoint": "tests/system/harbor_generic_chain.py --source-kind oci --task polyglot-c-py --task regex-log --repetitions 1",
+      "operator_elapsed_seconds": 1044.401,
+      "original_initialization_limit_seconds": 600,
+      "oracle_mode": "original",
+      "modified_task_files": false,
+      "verifier_dependencies_prefilled": false,
+      "paid_model_used": false,
+      "cloud_e2b_used": false
+    },
+    "tasks": [
+      {
+        "name": "polyglot-c-py",
+        "build_id": "eec708a722b972c7746e937cec3ac1eb",
+        "sandbox_id": "sb-955c26a47007431d-2",
+        "status": "passed",
+        "oracle": "passed",
+        "verifier": "passed",
+        "reward": 1.0,
+        "seconds": 503.236,
+        "original_image": {
+          "reference": "docker.io/alexgshaw/polyglot-c-py:20251031",
+          "source_digest": "sha256:0f1c3b7816d70cf5551573fd6aeef76893f2ae3000be2419997b6871b5d987ed",
+          "selected_digest": "sha256:0f1c3b7816d70cf5551573fd6aeef76893f2ae3000be2419997b6871b5d987ed",
+          "platform": "linux/amd64",
+          "download_bytes": 148554676,
+          "regctl_version": "v0.11.6",
+          "regctl_sha256": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd",
+          "converted_digest": "sha256:de3aa800b71c6d5ddacf665eb0eaab50f3505a7c18afb353007aad6b5e649128",
+          "conversion": "docker-schema2-to-oci"
+        },
+        "rootfs_sha256": "73c22bda122753b223420a8e96e0c39f18b9c17fc84f3af2bd4a3f01a9eb9631",
+        "actual_resources": {
+          "cpu_count": 1,
+          "memory_mib": 2048,
+          "disk_bytes": 10737418240,
+          "host_memory_bytes": 2415919104
+        },
+        "evidence_complete": true,
+        "artifact_bytes": 35778,
+        "exact_cleanup": "passed"
+      },
+      {
+        "name": "regex-log",
+        "build_id": "84e041497fca2394d86f00ffea797d8d",
+        "sandbox_id": "sb-955c26a47007431d-4",
+        "status": "passed",
+        "oracle": "passed",
+        "verifier": "passed",
+        "reward": 1.0,
+        "seconds": 384.142,
+        "original_image": {
+          "reference": "docker.io/alexgshaw/regex-log:20251031",
+          "source_digest": "sha256:90101b2e815323a8da20528a1439bebc407eb9761c9c68a3d557730856c878e9",
+          "selected_digest": "sha256:90101b2e815323a8da20528a1439bebc407eb9761c9c68a3d557730856c878e9",
+          "platform": "linux/amd64",
+          "download_bytes": 29735647,
+          "regctl_version": "v0.11.6",
+          "regctl_sha256": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd",
+          "converted_digest": "sha256:95b6808f3201ba8e7e8a26f3d0d6123755b84bebf50ed8080c746a0a8727d13e",
+          "conversion": "docker-schema2-to-oci"
+        },
+        "rootfs_sha256": "1dfadd06fae43741627dccc3ce4e86d0407b363d3ef487ab48d5442b00867cc6",
+        "actual_resources": {
+          "cpu_count": 1,
+          "memory_mib": 2048,
+          "disk_bytes": 10737418240,
+          "host_memory_bytes": 2415919104
+        },
+        "evidence_complete": true,
+        "artifact_bytes": 32048,
+        "exact_cleanup": "passed"
+      }
+    ],
+    "cleanup": {
+      "runtime_namespace": "955c26a47007431d",
+      "builder_namespace": "fa9891106310cdaf",
+      "uid_range": [
+        64001,
+        64200
+      ],
+      "destroyed_vms": 6,
+      "build_reservations": 0,
+      "network_restored": true,
+      "source_inputs_unchanged": true,
+      "exact_resources_gone": true,
+      "private_run_and_empty_groups_removed": true
+    },
+    "verification": {
+      "local": [
+        "check-function.sh",
+        "check-bench.sh",
+        "check-compat.sh"
+      ],
+      "ci_run": "https://github.com/ningZhang-cs/sandproof/actions/runs/36808157069",
+      "ci_jobs": [
+        "rust",
+        "sdk-contract",
+        "harbor-inputs",
+        "pr-title",
+        "pr-policy"
+      ]
+    },
+    "prior_failed_attempts": [
+      {
+        "commit": "507c7418966c9449cf92eac95ca4aa0f2ccb88f9",
+        "cause": "Private builder create RPC timed out at 60 seconds during 32 GiB disk preparation; original build failed and its VM was reclaimed.",
+        "destroyed_vms": 1,
+        "evidence_manifest_sha256": "4977ae2d9a5c3f2aadd30fa067f8c37022d9c9d984ff0e4c61896317dddc47af"
+      },
+      {
+        "commit": "e99c0531b953cc91b44bec60a3bdf3155b121fa2",
+        "cause": "Debug artifact hashing exceeded the original initialization deadline during publication. Recovered the same interrupted build/controller identities; no replacement submission.",
+        "destroyed_vms": 2,
+        "evidence_manifest_sha256": "aaa8a6048b68c6642eea0b67eec74aee5e537aa42c80166d86eab688a8e2af5f"
+      },
+      {
+        "commit": "73f42daf8963de1636f7827fa5ba57801d414e55",
+        "cause": "Both original images converted and published, but the adapter expected memoryMiB instead of the actual memoryMib response. Neither oracle/verifier ran.",
+        "destroyed_vms": 4,
+        "evidence_manifest_sha256": "c81452109703c5ee7cfd7d1128119843ec26afed3d73760e809083f3521e55ae"
+      }
+    ],
+    "setup_cancellation": "332b6bd stopped before configuration/build admission/VM dispatch to include merged artifact-budget changes; zero task executions and zero VMs, separately retained in artifacts/generic-schema2-332b6bd-setup-cancelled.",
+    "evidence_directory": "artifacts/generic-original-6c5321c (ignored sanitized task reports, original oracle/verifier logs, provenance, shape checks, independent audit and exact cleanup)",
+    "evidence_manifest_sha256": "ad4475fadc991329a7c7740fc117a679007e5632d8d103a2d5326a19bf1ec52e",
+    "limits": "Only these two tasks and their declared shapes passed. The 89-row report retains 87 not-selected entries; no full-set, Dockerfile-source, agent/E2B comparison, arbitrary recovery or new Lean acceptance claim. Original mutable image references resolve to the recorded digests; dynamic verifier downloads are not fully locked. Prior fixed-base/repaired scores retain their old scope. Subsequent documentation changes do not change tested production/probe bytes."
   }
 }
