@@ -1,6 +1,6 @@
-use super::identity;
+use super::{identity, transaction::WorldTransaction};
 use crate::{AcceptedWrite, JournalError, journal::write_accepted};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use sandbox_controller_core as core;
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +12,8 @@ struct StoredInput {
 }
 
 pub(super) fn load_world(connection: &Connection) -> Result<core::World, JournalError> {
+    #[cfg(test)]
+    FULL_REPLAYS.with(|count| count.set(count.get() + 1));
     let mut statement = connection
         .prepare("SELECT sequence, input_json FROM controller_inputs ORDER BY sequence")?;
     let rows = statement.query_map([], |row| {
@@ -34,18 +36,18 @@ pub(super) fn load_world(connection: &Connection) -> Result<core::World, Journal
 }
 
 pub(super) fn apply(
-    transaction: &Transaction<'_>,
+    transaction: &WorldTransaction<'_>,
     namespace: &str,
-    world: &core::World,
     input: core::ControllerInput,
 ) -> Result<core::ControllerDecision, JournalError> {
+    let world = transaction.world();
     let sandbox = identity::input_sandbox(&input)?;
     let serialized = serde_json::to_vec(&StoredInput {
         version: 1,
         input: input.clone(),
     })?;
     let decision =
-        core::handle_controller(world, input).map_err(JournalError::ControllerRejected)?;
+        core::handle_controller(&world, input).map_err(JournalError::ControllerRejected)?;
     let record = decision
         .next
         .sandbox_record(sandbox)
@@ -71,7 +73,7 @@ pub(super) fn apply(
         .map(u64::try_from)
         .transpose()
         .map_err(|_| JournalError::CorruptStore)?;
-    let actions = identity::new_actions(transaction, namespace, world, &decision.next, sandbox)?;
+    let actions = identity::new_actions(transaction, namespace, &world, &decision.next, sandbox)?;
     write_accepted(
         transaction,
         &AcceptedWrite {
@@ -89,6 +91,7 @@ pub(super) fn apply(
         "INSERT INTO controller_inputs(input_json) VALUES (?1)",
         params![serialized],
     )?;
+    transaction.advance(decision.next.clone());
     Ok(decision)
 }
 
@@ -100,4 +103,9 @@ pub(super) fn unresolved(world: &core::World, sandbox: core::SandboxId) -> bool 
                 Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
             )
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static FULL_REPLAYS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }

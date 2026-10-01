@@ -138,6 +138,19 @@ class CapacityTests(unittest.TestCase):
 
 
 class DnsTests(unittest.TestCase):
+    def test_mirror_worker_setting_is_typed_and_only_for_public_oci(self):
+        request = {'kind': 'oci-reference', 'disk_mib': 1024, 'min_free_mib': 64,
+                   'max_input_bytes': 1024, 'max_expanded_bytes': 10240,
+                   'max_entries': 10, 'timeout_seconds': 30, 'max_log_bytes': 1024,
+                   'docker_hub_mirror': 'docker.1ms.run'}
+        validate_request(request)
+        for kind in ('dockerfile', 'oci'):
+            with self.assertRaises(InvalidTemplate):
+                validate_request(request | {'kind': kind})
+        for mirror in (None, 'https://docker.1ms.run', '10.0.0.1', 'host.local', 'docker.1ms.run/path'):
+            with self.subTest(mirror=mirror), self.assertRaises(InvalidTemplate):
+                validate_request(request | {'docker_hub_mirror': mirror})
+
     def test_same_typed_public_unicast_contract_for_service_and_worker(self):
         request = {'kind': 'dockerfile', 'disk_mib': 1024, 'min_free_mib': 64,
                    'max_input_bytes': 1024, 'max_expanded_bytes': 10240,
