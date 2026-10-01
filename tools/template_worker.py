@@ -390,7 +390,7 @@ def build(work, source, request, profile, *, guest_boot_id):
                      "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
                      "requires": ["external VM cleanup", "launch/envd/owner publish gate"]}
             if public_source is not None:
-                if image["image_digest"] != public_source["selected_digest"]:
+                if image["image_digest"] != public_source.get("converted_digest", public_source["selected_digest"]):
                     raise InvalidTemplate("public image provenance mismatch")
                 state["public_source"] = public_source
             disk.chmod(0o444)

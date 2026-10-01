@@ -48,6 +48,8 @@ S13 新范围由 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)/#6
 
 候选构建批次使用[隔离构建实机实验](../tests/system/template_build.py)：固定 BuildKit 0.28.0/umoci 0.6.0，每项构建新建禁网 VM，以合成 Debian 兼容根目录运行标准多阶段 Dockerfile、COPY、RUN、层删除；导出 OCI 后另一个新 VM 导入转换；两种候选磁盘分别在新 VM 检查真实 SDK 命令/文件与删除结果。新版本还检查 ENV/WORKDIR/数字 USER 的规范化和实例默认值、创建与单次请求覆盖、ENTRYPOINT+CMD 的字面参数、普通重启不重复启动，以及两处激活崩溃：已确认启动但控制器回执丢失可恢复，启动确认丢失保持未知并到期精确清理。另检查构建失败和确定超时不产生候选，逐项销毁并核对精确资源与原镜像摘要。它不访问公共仓库，不证明真实 Debian 软件包兼容，也不代替用户自助/发布门、应用健康、完整 S13 或 89 题。脚本存在不是已实测；结果须绑定版本基线的精确提交。
 
+Docker schema2 转换使用[回归测试](../tools/tests/test_template_conversion.py)核对配置/层逐字节保持、原始来源与转换摘要分开、损坏层和外部 layer URL 在转换前拒绝、转换后内容变化拒绝；保留 ONBUILD 元数据但不执行。
+
 公开 OCI 获取使用[单元测试](../tools/tests/test_template_fetch.py)检查引用语法、平台选择、摘要不符、二进制输出与日志各自超限、非零退出及输出关闭后的期限；[KVM 探针](../tests/system/server_public_oci.py)固定 Debian 13 单架构摘要和 Ubuntu 24.04 多架构索引摘要，以四个全新构建 VM 验证两次成功、摘要不存在和下载超限。成功候选须在构建 VM 回收后经正式发布门，再用原 SDK 创建禁网实例检查发行版、默认用户/目录、文件和命令，共八台 VM。运行前需固定 regctl v0.11.6 指纹、独占 namespace/UID/cgroup 和受限公网转发；探针在构建 VM 写入固定公共 DNS，不继承宿主解析配置；结束独立核对全部精确资源、共享网络规则恢复和基础镜像摘要。脚本存在不代表已实测；精确提交和结果记录在版本基线。该实验不经过用户构建 API，不代替私有仓库、完整恢复或 89 题验收。
 
 提交 `918aac683ead757eb89acdaf4b8fbf2e7843b358` 已通过公开 OCI 完整探针：Debian 13 直接摘要、Ubuntu 24.04 索引选择、正式发布和原 SDK 命令/文件，以及摘要不存在、下载超限拒绝；八台 VM 均精确回收。两次测试环境配置失败及另外五台 VM 的清理也如实保留；全部临时公网规则已恢复，凭据/候选盘/独占父组已删除。来源与工具摘要、332.18 秒实跑、范围及失败原因见[版本基线](../references/v1-baseline.json)的 `public_oci_acquisition_acceptance`；这不计作 #135 用户构建 API 全链验收。
@@ -215,7 +217,9 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 普通公网 DNS 的缺口验收使用同一部署/模板 resolver，先从独立监督器确认选定解析器和外部目的地可达，再在全新公开模板实例中读取 `/etc/resolv.conf`、完成真实 A 查询及按域名的公网连接；重启后原实例/策略不变。相同模板的禁网/未允许 resolver 的静态模式必须阻断查询，即使来宾 root 改 resolver；管理通道保持可用。模板来源可各选 Dockerfile 和公开 OCI，复用现有公开构建及网络探针与精确回收监督；记录解析器、目的地、配置摘要、代码/模板摘要与真实结果。当前 registry 构建 DNS 的局部成功和 UDP/TCP 53 地址层探针只覆盖各自范围；未执行的通用查询/连接仍记未运行，不声称高级域名过滤、DNS 隧道防护或 IPv6 支持。
 
-通用链路使用[原题执行入口](../benchmarks/run_generic.py)和[独立实机监督](../tests/system/harbor_generic_chain.py)，复现方法与来源模式见[评测说明](../benchmarks/README.md)。先验收少量不同构建环境及重复运行，再执行完整 89 题。保留原 Dockerfile/context 或 OCI 引用、构建编号、模板修订/摘要、原解答/评分摘要及失败；SDK 销毁回执与精确宿主残留审计分开，后者须同时检查构建池和运行池。不得预填评分器依赖后声称未改环境，或将旧逐题配方的跨版本结果计入新链路。
+[Rust 模板响应测试](../controller-service/tests/template_wire.rs)与[Harbor 输入测试](../benchmarks/tests/test_generic.py)共用同一规范 JSON，检查响应字段及真实形状一致。适配器的运行实例 create 等待使用原初始化期限的剩余时间；期限已耗尽时不得发起 create，仍保留原构建编号及结果。
+
+通用链路使用[原题执行入口](../benchmarks/run_generic.py)和[独立实机监督](../tests/system/harbor_generic_chain.py)，复现方法与来源模式见[评测说明](../benchmarks/README.md)。先验收少量不同构建环境及重复运行，再执行完整 89 题。保留原 Dockerfile/context 或 OCI 引用、构建编号、模板修订/摘要、原解答/评分摘要及失败；SDK 销毁回执与精确宿主残留审计分开，后者须同时检查构建池和运行池。监督入口按选题数和重复次数预留不可变模板总量、历史日志、逐试验产物/报告、锁定的原环境上下文、峰值工作盘和两池不复用 VM 编号；在派发前检查宿主空间/内存/CPU 及可信基础盘空闲量。每题结束后等待原构建预留归零、核对持久终态和物理资源，再观察原构建编号；普通失败保留并继续，身份或回收未知立即停止后续派发。不得预填评分器依赖后声称未改环境，或将旧逐题配方的跨版本结果计入新链路。
 
 暂停恢复和安全竞争用 S 类专门测试扩展，不能用 Terminal-Bench 通过代替。形式化阶段再证明声明范围内任意历史的性质；V1 测试报告只记录实验结果。
 

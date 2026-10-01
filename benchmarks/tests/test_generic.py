@@ -26,13 +26,32 @@ def entry():
 
 
 def template():
-    return {'templateId': 'tpl-' + 'a' * 32, 'revision': 'r1', 'imageDigest': 'sha256:' + 'b' * 64,
-            'kernelSha256': 'c' * 64, 'rootfsSha256': 'd' * 64,
-            'cpuCount': 2, 'memoryMiB': 4096, 'diskBytes': 10240 * 1024**2,
-            'startup': {'user': 'app', 'workdir': '/final', 'env_vars': {}, 'argv': []}}
+    # The Rust serializer verifies this exact fixture in template_wire.rs.
+    fixture = Path(__file__).resolve().parents[2] / 'tests/compat/template-view.json'
+    return json.loads(fixture.read_text())
 
 
 class GenericInputTests(unittest.TestCase):
+    def test_expired_initialization_never_dispatches_runtime_create(self):
+        from harbor.models.task.config import NetworkMode
+        env = object.__new__(GenericEnvironment)
+        env._network_policy = SimpleNamespace(network_mode=NetworkMode.PUBLIC)
+        env.entry, env.create_dispatched = entry(), False
+        env.prepare_template = AsyncMock()
+        with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock()) as create, \
+             patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1600]))):
+            with self.assertRaises(TimeoutError):
+                asyncio.run(env.start())
+        create.assert_not_awaited()
+        self.assertFalse(env.create_dispatched)
+
+    def test_shared_rust_response_requires_canonical_memory_field(self):
+        self.assertEqual(validate_template(template(), entry()), template())
+        wrong = template()
+        wrong['memoryMiB'] = wrong.pop('memoryMib')
+        with self.assertRaises(InvalidInput):
+            validate_template(wrong, entry())
+
     def test_exact_multistage_context_excludes_private_phases(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -116,12 +135,14 @@ class GenericInputTests(unittest.TestCase):
             env.exec = AsyncMock(return_value=SimpleNamespace(return_code=0))
             sandbox = SimpleNamespace(sandbox_id='sb-exact', get_info=AsyncMock(return_value=SimpleNamespace(
                 template_id=env.template['templateId'], cpu_count=2, memory_mb=4096)))
-            with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(return_value=sandbox)) as create:
+            with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(return_value=sandbox)) as create, \
+                 patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1120]))):
                 asyncio.run(env.start())
             self.assertEqual(env._workdir, '/final')
             self.assertEqual(env.default_user, 'app')
             self.assertEqual(create.call_args.kwargs['template'], env.template['templateId'])
             self.assertEqual(create.call_args.kwargs['timeout'], 86400)
+            self.assertEqual(create.call_args.kwargs['request_timeout'], 480)
             self.assertNotIn('cpu_count', create.call_args.kwargs)
             self.assertEqual(env.sandbox_id, 'sb-exact')
             env.exec.assert_awaited_once_with('test ! -e /solution && test ! -e /tests', cwd='/', user='root', timeout_sec=30)
@@ -161,6 +182,35 @@ class GenericInputTests(unittest.TestCase):
 
 
 class GenericSuiteTests(unittest.TestCase):
+    def test_original_failed_build_audit_allows_next_task_without_erasing_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audit = Mock(return_value={'exact_cleanup': 'passed', 'build': {'state': 'Failed'}})
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                                   source_kind='oci', build_url='http://127.0.0.1:1', completion_audit=audit)
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+            results = [{'name': name, 'status': 'failed', 'build_dispatched': True,
+                        'build': {'state': 'Building'}} for name in ('a', 'b')]
+            with patch('benchmarks.run_generic.run_task', AsyncMock(side_effect=results)) as trial:
+                rows = asyncio.run(run_selected(args, lock))
+            self.assertEqual(trial.await_count, 2)
+            self.assertEqual(audit.call_count, 2)
+            self.assertTrue(all(r['status'] == 'failed' and r['exact_cleanup'] == 'passed' for r in rows))
+            self.assertEqual(json.loads((Path(tmp) / 'full-set.json').read_text())['tasks'], rows)
+
+    def test_failed_external_audit_stops_suite_even_with_successful_sdk_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                                   source_kind='oci', build_url='http://127.0.0.1:1',
+                                   completion_audit=Mock(side_effect=RuntimeError('live VM')))
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+            with patch('benchmarks.run_generic.run_task', AsyncMock(return_value={
+                    'name': 'a', 'status': 'passed', 'cleanup_acknowledged': True})) as trial:
+                rows = asyncio.run(run_selected(args, lock))
+            trial.assert_awaited_once()
+            self.assertEqual(rows[0]['status'], 'cleanup_unknown')
+            self.assertEqual(rows[1]['reason'], 'previous_identity_requires_audit')
+            self.assertEqual(json.loads((Path(tmp) / 'a/result.json').read_text()), rows[0])
+
     def test_unknown_identity_stops_suite_without_dropping_other_tasks(self):
         with tempfile.TemporaryDirectory() as tmp:
             args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=False, task=['a', 'b'],

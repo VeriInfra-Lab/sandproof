@@ -43,9 +43,9 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 [#123 的候选构建工作器](../tools/template_worker.py)由[自助构建监督服务](../tools/template_build_service.py)在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。公开 OCI 由固定 regctl 直接导入；原 OCI tar 工具入口保留。检查摘要和展开预算后由 umoci 处理 whiteout；不兼容架构/操作系统、设备节点、容器卷及其他压缩格式明确拒绝。上下文只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
 
 转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。平台 resolver 来自可信构建配置；这不是对来宾 root 的防修改承诺，目的地址限制仍由宿主 IPv4 规则强制，不新增域名过滤/IPv6。
-公开获取由[固定 regctl 客户端](../tools/template_fetch.py)在同一构建 VM 内执行；工作器的 `kind=oci-reference` 接收仅含 `image` 的 JSON 文件。入口接受公开仓库的标签或 SHA-256 引用，`ubuntu:24.04` 等简写规范化为 Docker Hub 的完整名称。标签只在本次构建开始时解析一次，记录实际原始清单摘要，后续下载按选定摘要固定；用户需要跨构建复现时使用 `@sha256:`。拒绝认证信息、端口、私有 DNS 名或 IP 字面量；地址可达性仍由既有公网 IPv4 隔离策略决定。regctl 固定 v0.11.6/linux-amd64 及 SHA-256，使用空 HOME/Docker/regctl 配置，不携带宿主仓库凭据。摘要输入须匹配原始字节；OCI 清单直接使用，OCI/Docker 索引只允许唯一 linux/amd64 OCI 子清单，不下载其他平台；不支持 Docker schema2 镜像清单或嵌套索引。导出后校验所选清单、所有 blob、diff_ids 与展开限制。导入不执行 ONBUILD；Dockerfile 构建仍遵循标准构建器的 ONBUILD 语义。
+公开获取由[固定 regctl 客户端](../tools/template_fetch.py)在同一构建 VM 内执行；工作器的 `kind=oci-reference` 接收仅含 `image` 的 JSON 文件。入口接受公开仓库的标签或 SHA-256 引用，`ubuntu:24.04` 等简写规范化为 Docker Hub 的完整名称。标签只在本次构建开始时解析一次，记录实际原始清单摘要，后续下载按选定摘要固定；用户需要跨构建复现时使用 `@sha256:`。拒绝认证信息、端口、私有 DNS 名或 IP 字面量；地址可达性仍由既有公网 IPv4 隔离策略决定。regctl 固定 v0.11.6/linux-amd64 及 SHA-256，使用空 HOME/Docker/regctl 配置，不携带宿主仓库凭据。摘要输入须匹配原始字节；OCI 清单直接使用，OCI/Docker 索引只允许唯一 linux/amd64 OCI 或 Docker schema2 子清单，不下载其他平台；不支持 schema1 或嵌套索引。Docker schema2 先校验所有 blob、diff_ids、tar 路径与展开限制，再在构建 VM 内由同一固定 regctl 对本地 layout 执行 `image mod --to-oci`，不重新获取来源；转换前后配置与各层的摘要、大小、顺序必须一致，转换结果再次通过 OCI 检查。拒绝外部 layer URL 和 foreign layer。导出后校验所选清单、所有 blob、diff_ids 与展开限制。导入不执行 ONBUILD；Dockerfile 构建仍遵循标准构建器的 ONBUILD 语义。
 
-获取清单与 OCI tar 的 stdout 合计受 `max_input_bytes` 限制（不含 HTTP 头、重试等线上字节），stderr 与其他工具共享 `max_log_bytes`，使用同一总期限和 VM 磁盘/内存限制。候选增加 `public_source` 记录原始引用/实际摘要、所选摘要、平台、下载产物字节及工具指纹。此能力已接入自助构建 API；私有仓库认证后置。Harbor 的自有构建适配与原模板 API 的差异见[评测入口](../benchmarks/README.md)，不宣称原 E2B 模板 API 全兼容。
+获取清单与 OCI tar 的 stdout 合计受 `max_input_bytes` 限制（不含 HTTP 头、重试等线上字节），stderr 与其他工具共享 `max_log_bytes`，使用同一总期限和 VM 磁盘/内存限制。候选增加 `public_source` 记录原始引用/实际摘要、所选摘要、平台、下载产物字节及工具指纹；schema2 转换另记 `converted_digest` 和 `conversion=docker-schema2-to-oci`，原始/所选来源摘要保持不变。此能力已接入自助构建 API；私有仓库认证后置。Harbor 的自有构建适配与原模板 API 的差异见[评测入口](../benchmarks/README.md)，不宣称原 E2B 模板 API 全兼容。
 
 正式发布门由可信构建监督方确认构建 VM 回收后，用[登记准备工具](../tools/template_stage.py)将候选字节放入 root 独占 `template_registry.root/inbox/<候选编号>`。HTTP 客户端只给随机 32 位十六进制候选编号，不能给宿主路径、owner、修订或 Ready 标志；API key 决定 owner，受保护清单必须匹配。服务检查只读普通文件、单链接、长度/SHA-256、绑定路径、envd 版本，以及 ext4 实际可用空间（扣除保留块），不信任工作器自报空闲值。持久接受发布意图后原子移入同盘 `artifacts/<编号>`；模板编号 `tpl-<候选编号>`、修订 r1 和完整形状不可改，变更须新候选。历史数量与内核+磁盘字节有全局/租户上限；失败和未决记录仍占额。本批不提供模板垃圾回收；可信监督方负责暂存预算，后续公开构建服务须另外限制和清理暂存，发布额度不是完整构建配额。
 
@@ -53,7 +53,7 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 `template_registry` 为可选可信配置，字段为 `root`（root 独占绝对目录，预建 inbox/artifacts）、`max_templates_global`（1～256）、`max_templates_per_tenant`、`max_artifact_bytes_global`、`max_artifact_bytes_per_tenant` 和 `validation_timeout_secs`（1～300，且不超过运行上限）；租户上限须为正且不超过全局。必须同时配置 `templates` 和 `host_resources`。首次启用升至 V10，并持久绑定唯一根目录，此后生产服务不可关闭登记配置，旧二进制拒绝新库。目录、数据库和私有盘须同文件系统，清理余量观察才能覆盖这些写入。
 
-登记的 imageDigest 是实际使用的 linux/amd64 OCI 清单摘要：Dockerfile 为 BuildKit 导出结果，公开 OCI 为固定的源清单或选定子清单。可变 tag 不代表跨构建固定来源，需要固定来源时提交 `@sha256:`。服务独立复算内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。明确拒绝私有仓库凭据、任意宿主挂载、特权/GPU、多服务及不兼容镜像，不声称支持任意 Dockerfile。
+登记的 imageDigest 是实际使用的 linux/amd64 OCI 清单摘要：Dockerfile 为 BuildKit 导出结果，公开 OCI 为固定的源清单或选定子清单；Docker schema2 为转换后的 OCI 清单摘要，原始来源保存在 `public_source`。可变 tag 不代表跨构建固定来源，需要固定来源时提交 `@sha256:`。服务独立复算内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。明确拒绝私有仓库凭据、任意宿主挂载、特权/GPU、多服务及不兼容镜像，不声称支持任意 Dockerfile。
 
 ### 自助构建入口、部署与恢复
 
@@ -66,11 +66,13 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 | `GET /sandproof/template-builds/{id}` | 仅本人；状态、有限失败原因；只有 Ready 返回完整模板编号/修订/摘要/形状 |
 | `GET /sandproof/template-builds/{id}/logs?offset=0&limit=65536` | 按字节位置读至多 64 KiB，带 nextOffset；总日志受配置限制；当前在来宾构建结束后获取，不保证实时尾随 |
 
+Ready 返回的模板形状使用 Rust `TemplateView` 的规范字段 `cpuCount`、`memoryMib`、`diskBytes`、`hostMemoryBytes`；构建请求的资源字段仍为 `memoryMiB`。Rust 序列化和 Harbor 适配共用[响应样例](../tests/compat/template-view.json)检查该边界。
+
 不接受 owner、Ready、宿主路径、工具或凭据字段；陌生/他人编号均 404。可选 `Idempotency-Key`（1～64 个字母/数字/下划线/连字符）按租户绑定规范化请求，相同重提返回原编号，不同内容 409；缺省每次是独立工作。公开引用不接受凭据、本地 transport、自定义端口或显式 IP；私网与宿主地址保护仍依赖既有包规则，字符串检查不代表 DNS 安全证明。
 
 日志页的 64 KiB 上限与 offset/nextOffset 按原始日志字节计数；无效 UTF-8 以替换字符展示。JSON 转义可能放大响应，小客户端仅对日志 GET 保留有界的转义与封装余量，其他响应仍限 64 KiB，不增加日志原始总量或单页预算。通用评测报告用 `build_log_error` 单独记录诊断读取/保存失败的异常类型，不覆盖原构建终态，不保存可能含凭据的异常文本，也不为取日志重发构建。
 
-监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。
+监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。私有构建 VM 的同步准备请求使用该工作剩余的原构建期限，避免固定短 RPC 等待将大盘准备提前变为未知；已过期时不发起创建，丢失响应仍只观察原编号。
 
 监督服务启动时还核对跨池必要条件：构建期限加 60 秒同时不超过构建池单次/总寿命；启动检查期限同时满足运行池两个寿命上限；构建池上传覆盖输入/工具及有界 HTTP 开销，下载覆盖完整候选；目标最大形状可被空运行池与发布产物额度接收。构建私有盘预算取私有 API 实际解析的已授权不可变 `base` 描述，不取可能不同的旧 `rootfs` 字段；声明长度须匹配真实文件。盘总量须至少容纳目标盘、展开上限和两份获取输入，实际来宾可用块仍由工作器检查。上述配置检查不是动态资源预留，不能替代运行时配额/真实余量或失败收尾。现有显式部署若不满足这些条件必须调整可信配置后再启用，不能静默缩短已接受请求。普通公网 DNS 仅接收 1–2 个公开单播 IPv4 字符串，拒绝数字、私网、组播、IPv6 与域名；构建与候选复用同一值，仍不承诺域名内容过滤。
 

@@ -55,6 +55,17 @@ async def run_selected(args, lock):
                 row = json.loads(result.read_text())
             rows = [row if r['name'] == name else r for r in rows]
             report()
+        if getattr(args, 'completion_audit', None) is not None:
+            try:
+                row.update(await asyncio.to_thread(args.completion_audit, row))
+            except Exception as error:
+                row.update(status='cleanup_unknown', exact_cleanup='unknown',
+                           audit_error_type=type(error).__name__)
+            # Persist the external audit separately from the SDK kill receipt.
+            rows = [row if r['name'] == name else r for r in rows]
+            report()
+            result.parent.mkdir(parents=True, exist_ok=True)
+            result.write_text(json.dumps(row, indent=2) + '\n')
         rows = [row if r['name'] == name else r for r in rows]
         report()
         build_state = (row.get('build') or {}).get('state')

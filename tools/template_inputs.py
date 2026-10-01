@@ -154,7 +154,7 @@ def blob(layout, descriptor, max_bytes):
     return path
 
 
-def inspect_oci(layout, *, max_bytes, max_entries):
+def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False):
     """Only one linux/amd64 manifest; no silently chosen multiarch/attestation."""
     if bounded_json(layout / "oci-layout") != {"imageLayoutVersion": "1.0.0"}:
         raise InvalidTemplate("unsupported OCI layout")
@@ -163,11 +163,15 @@ def inspect_oci(layout, *, max_bytes, max_entries):
     if index.get("schemaVersion") != 2 or len(manifests) != 1:
         raise InvalidTemplate("expected one OCI image, no index selection")
     descriptor = manifests[0]
-    if descriptor.get("mediaType") != "application/vnd.oci.image.manifest.v1+json":
+    docker = descriptor.get("mediaType") == "application/vnd.docker.distribution.manifest.v2+json"
+    if descriptor.get("mediaType") != "application/vnd.oci.image.manifest.v1+json" and not (allow_docker and docker):
         raise InvalidTemplate("unsupported OCI manifest")
+    config_media = "application/vnd.docker.container.image.v1+json" if docker else "application/vnd.oci.image.config.v1+json"
+    layer_media = ("application/vnd.docker.image.rootfs.diff.tar.gzip",) if docker else (
+        "application/vnd.oci.image.layer.v1.tar", "application/vnd.oci.image.layer.v1.tar+gzip")
     manifest = bounded_json(blob(layout, descriptor, max_bytes))
     if (manifest.get("schemaVersion") != 2
-            or manifest.get("config", {}).get("mediaType") != "application/vnd.oci.image.config.v1+json"):
+            or manifest.get("config", {}).get("mediaType") != config_media):
         raise InvalidTemplate("unsupported OCI image config")
     config = bounded_json(blob(layout, manifest["config"], max_bytes))
     if (config.get("os"), config.get("architecture")) != ("linux", "amd64"):
@@ -181,9 +185,9 @@ def inspect_oci(layout, *, max_bytes, max_entries):
     for layer, expected_diff in zip(layers, diff_ids):
         path = blob(layout, layer, max_bytes)
         media = layer.get("mediaType")
-        if media not in ("application/vnd.oci.image.layer.v1.tar", "application/vnd.oci.image.layer.v1.tar+gzip"):
+        if media not in layer_media or layer.get("urls"):
             raise InvalidTemplate("only tar/gzip OCI layers supported")
-        opener = gzip.open if media.endswith("+gzip") else open
+        opener = gzip.open if media.endswith(("+gzip", ".gzip")) else open
         # Count ALL decompressed bytes, including headers/padding: a stream of
         # zero padding must not bypass the expanded-size budget.
         digest, expanded = hashlib.sha256(), 0
