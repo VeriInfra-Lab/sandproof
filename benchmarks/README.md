@@ -71,7 +71,11 @@ python3 tools/benchmark_tasks.py audit \
 
 ## 通用模板标准解答入口
 
-[通用入口](run_generic.py)只替换 Harbor 的模板准备：提交自有构建 API，等待不可变模板，再使用原 `AsyncSandbox`、`OracleAgent` 和 `Verifier`。不使用 `task-recipes.json`、预制任务镜像替换或修正版解答，不调用 E2B 云模板服务。默认 `--source-kind oci` 与固定 Harbor 优先使用 `docker_image` 一致；显式 `dockerfile` 则打包原 `environment/`，原样交给标准 BuildKit。两条来源在报告中分开记录，不将 Dockerfile 重建声称为上游预构建标签的相同字节。客户端不调用固定 SDK 的 Dockerfile 解析器，因此多阶段不受其限制。
+[通用入口](run_generic.py)只替换 Harbor 的模板准备：提交自有构建 API，等待不可变模板，再使用原 `AsyncSandbox`、`OracleAgent` 和 `Verifier`。不使用 `task-recipes.json` 或预制任务镜像替换，不调用 E2B 云模板服务。默认使用原解答；通用入口与实机监督均可显式传 `--oracle-mode repaired`，仅运行下述已注册修复，报告独立标记模式，不计为原解答通过。默认 `--source-kind oci` 与固定 Harbor 优先使用 `docker_image` 一致；显式 `dockerfile` 则打包原 `environment/`，原样交给标准 BuildKit。两条来源在报告中分开记录，不将 Dockerfile 重建声称为上游预构建标签的相同字节。客户端不调用固定 SDK 的 Dockerfile 解析器，因此多阶段不受其限制。
+
+构建诊断按服务返回的原始字节偏移分页保存到 `build-log.json`，总上限 2 MiB、读取期限 30 秒，JSON 展开后的文件也计入逐试验产物预算。`complete` 仅表示已到达终态构建日志末尾，超限记录 `truncated`；读取失败保留已有页和错误类型，不改写原构建终态或重新提交构建。
+
+通用入口及实机监督可显式加 `--failure-diagnostics`，在原评分已失败后、销毁原实例前执行[已登记的来宾诊断](failure_diagnostics.py)。当前仅覆盖 `build-cython-ext`：核对原解答已克隆的 pyknotid 提交和测试文件，直接展开原先被外层断言隐藏的内部 pytest 输出，并记录 Python/依赖版本。额外诊断最多 60 秒，共享逐试验产物预算，不编辑测试或安装依赖；输出为独立的 `failure-diagnostic.txt/json`，不更新原 reward、解答或评分状态，取消和错误仍须清理原实例。它属于评分后的独立复现，不延长原解答/评分期限，未实际运行不能记为已定位或已修复。
 
 ```sh
 uv run --locked --project benchmarks python -m benchmarks.run_generic \
@@ -89,7 +93,13 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。只上传锁定的环境文件；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
 
-[实机监督入口](../tests/system/harbor_generic_chain.py)额外记录实际 Firecracker 配置、CPU/内存 cgroup、私有盘身份与模板摘要，并在服务退出前核对精确进程、网络空间持有者、jail/cgroup、构建预留和持久终态。它需要独占 root/KVM 主机、固定工具、完整题库、两个已委派的独占 cgroup 和新 UID 范围；`--repetitions 2` 为全新构建/沙箱重复实验。临时开启转发仅在事前授权后使用 `--temporarily-forward`，退出恢复原值。实机使用同一精确提交的 `cargo build --release -p sandproof-server --bin sandproof-server --locked` 产物，报告须记录二进制摘要和构建 profile；调试构建对大磁盘的摘要校验可能耗尽原题期限。选择 `--all` 可运行全部锁定题目；监督入口根据题目资源及重复次数预留模板存储、工作区和 VM 编号，派发前校验宿主资源与可信构建盘空闲量。每题结束后审计原任务身份和两池回收，明确失败可继续，未知则停止；收尾等待还覆盖迟到发布检查 VM 的有界启动/存活期限，期间保持原控制器运行，不把题目执行期限一起延长；任一选中题失败/未运行时返回非零。私有配置保留到操作者完成独立审计，失败时可用原身份恢复，审计后再精确删除本轮目录。实际结果和提交在 PR/#13 记录，不把脚本存在、替身测试或旧路线成绩算作新链路通过。
+通用 KVM 监督入口使用[统一验收配置](template-service-budgets.json)及[配置生成/预检](../tools/template_acceptance.py)，运行池传输和寿命字段直接复用[已有任务配置](local-service-budgets.json)。同时计入构建池和运行池的完整 CPU/VMM 内存额度、额外存活私有盘、发布产物、构建工作区、证据和清理余量；预检使用当前 CPU affinity、可用内存和剩余磁盘。服务/relay 的份额由[显式服务 cgroup 入口](../tools/service_cgroup.py)落实；控制服务与构建监督服务及其子进程共用限额，VM 使用各自独立分组。仅生成配置仍标记为未观察到执行，监督入口在核对实际服务 PID 归属后才记录已施加上限；当前数值仍不是已实测的生产总预算。报告保存实际生成配置及来源摘要，旧提交的实跑仍只绑定旧配置。
+
+在两个原题均通过后，可在同一监督命令加 `--resource-pressure`（必须恰好两个 `--task`、单轮，且两模板各两个实例能同时准入）。[组合探针](../tests/system/template_resource_pressure.py)用正式发布的模板另开四个实例，验证包数据库/系统文件隔离、运行与构建拒绝、占满数据通道时的控制调用与销毁、构建服务 SIGKILL 后原编号回收及替换实例干净。它使用来宾内的 Debian 包工具和 POSIX shell，不预装原题评分依赖；压力结果另存 `resource-pressure.json`，不改原题成绩。创建与构建意图先留存，清理失败不跳过其余实例，未知资源保留现场。当前只有配置/HTTP/SQLite/取消回归通过；新增组合 KVM 场景待独立运行，不能沿用两题旧实测作为通过证据。
+
+原题运行器与固定 base 诊断入口共用逐试验产物预算。可显式传 `--artifact-max-bytes`（默认 134217728，即 128 MiB）、`--artifact-max-file-bytes`（默认 100663296，即 96 MiB）、`--artifact-max-entries`（4096）和 `--artifact-max-depth`（16，最多 64）；数值须为正整数，单文件可调低但不得超过既有 96 MiB 硬上限或总字节。它们是可配置验收默认值，不是已实测的生产容量。命令事件、来宾下载与另存诊断共同计费，重复/失败不退额；原奖励与阶段单独保留，缺证据不能报告完整通过。边界和排除项见[模块合同](../docs/module-contracts.md)，用例见[验收清单](../docs/testing-plan.md)。监督入口按每试验字节上限 × 题数 × 次数计入磁盘预检（默认 89 题两轮仅此项为 22.25 GiB），另计锁定的原环境上下文、构建日志、报告副本、数据库及收尾余量；来宾实际可用块和运行时配额仍须独立检查。
+
+[实机监督入口](../tests/system/harbor_generic_chain.py)额外记录实际 Firecracker 配置、CPU/内存 cgroup、私有盘身份与模板摘要，并在服务退出前核对精确进程、网络空间持有者、jail/cgroup、构建预留和持久终态。它需要独占 root/KVM 主机、固定工具、完整题库、三个已委派的独占 cgroup 父组（运行池、构建池、`--service-cgroup-parent`）和新 UID 范围；`--repetitions 2` 为全新构建/沙箱重复实验。临时开启转发仅在事前授权后使用 `--temporarily-forward`，退出恢复原值。实机使用同一精确提交的 `cargo build --release -p sandproof-server --bin sandproof-server --locked` 产物，报告须记录二进制摘要和构建 profile；调试构建对大磁盘的摘要校验可能耗尽原题期限。选择 `--all` 可运行全部锁定题目；监督入口根据题目资源及重复次数预留模板存储、工作区和 VM 编号，派发前校验宿主资源与可信构建盘空闲量。每题结束后审计原任务身份和两池回收，明确失败可继续，未知则停止；收尾等待还覆盖迟到发布检查 VM 的有界启动/存活期限，期间保持原控制器运行，不把题目执行期限一起延长；任一选中题失败/未运行时返回非零。私有配置保留到操作者完成独立审计，失败时可用原身份恢复，审计后再精确删除本轮目录。实际结果和提交在 PR/#13 记录，不把脚本存在、替身测试或旧路线成绩算作新链路通过。
 
 另有[预选两题](diagnostic-tasks.json)的手动诊断链路，由[实机脚本](../tests/system/harbor_diagnostic_chain.py)执行：要求锁定的 Harbor/E2B 联合环境、固定提交的原题源码、经核对的 Ubuntu 24.04 10 GiB base、隔离 KVM 宿主与预先批准且在整轮不变的公网 IPv4 策略。每题全新沙箱，先核对 CPU/内存/磁盘和空初态；来宾固定使用公网 DNS `1.1.1.1`，因为现有 base 的宿主本地 DNS 桩不可在 VM 内使用，此处是与原 Docker 环境的已知差异。`polyglot-c-py` 只在来宾内执行原 Dockerfile 的 `apt update && apt install -y gcc`；随后依次上传并运行原 `solution/solve.sh`。原评分器所需的 Python 3.13.9 固定运行时在解答结束后传入并核对哈希，避免原评分器访问其固定下载地址超时；运行时来源和哈希见预选清单，这是另一项明确的环境差异。接着上传并运行未改动的原 `tests/test.sh` 与 `test_outputs.py`，读取原 `reward.txt`。评分后销毁并检查数据库终态、精确进程/网络/磁盘与 base 指纹。失败保留本轮私有目录诊断，不将失败题从预选名单删除；不使用付费模型，不宣称原 Harbor 模板 API 或完整榜单兼容。 这条两题链路的运行时预填与报告独立于下方全题集入口；不能用两题通过代表其余 87 题，也不替代原 Harbor OracleAgent/Verifier 的全题集接入。
 
@@ -176,8 +186,11 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 
 ## 可选的参考解答修复
 
-显式 `--oracle-mode repaired` 只对[注册修复](oracle_repairs.py)生效。它先核对原 solve.sh 的完整摘要，在独立输出目录复制完整任务，仅对其中 solution 应用有限修改，不修改固定题库；报告记录模式、原文件与新文件摘要及完整 diff。原 Harbor OracleAgent 按副本任务根目录执行原路径校验，评分仍从原任务读取。评分源码和所有资源/时限保持不变。修正版通过必须单独报告，不能计为原标准解答通过，也不能改写原失败记录。未注册任务直接拒绝执行。
+显式 `--oracle-mode repaired` 只对[注册修复](oracle_repairs.py)生效。它先核对原 solve.sh 的完整摘要，在独立输出目录复制完整任务，仅对其中 solution 应用有限修改，不修改固定题库；报告记录模式、原文件与新文件摘要及完整 diff。原 Harbor OracleAgent 按副本任务根目录执行原路径校验，评分仍从原任务读取。评分源码和所有资源/时限保持不变。修正版通过必须单独报告，不能计为原标准解答通过，也不能改写原失败记录。选择修正版时，整批选题须全部已注册；混入未注册题或选择包含未注册题的 `--all` 会在派发任何构建/VM 前拒绝，不能先跑部分题再失败。
 
+- `mcmc-sampling-stan`：在原系统依赖安装中补齐 RcppParallel 源码构建所需的 `cmake`；保留原 R/RStan 版本选择、模型和采样流程。
+- `make-doom-for-mips`：在安装交叉编译工具前刷新来宾软件包索引，避免镜像旧索引指向已移除包；刷新或安装失败立即停止，不继续用缺失工具构建。
+- `build-pmars`：保留同一组 Debian 构建依赖，使用刷新索引后的仓库版本，移除已不可获取的版本固定；保留原 Debian 源码获取、curses 编译与安装，实际版本由运行时依赖清单记录。
 - `protein-assembly`：通过 [RCSB 官方 Data API](https://data.rcsb.org/)的 polymer entity 与 chemical component 字典还原修饰残基及有序母体残基；保留单一聚合物筛选，拒绝无法解析的序列。原 FASTA 将部分荧光团编码为 `X`，无法满足 DNA 翻译约束；修复不嵌入目标序列，原 DNA 优化和评分继续执行。
 - `build-pov-ray`：从 ICM 公开镜像下载相同三个 2.2 压缩包，并核对与[上游 PR #77](https://github.com/harbor-framework/terminal-bench-2/pull/77)相同的 SHA-256；其余编译与渲染流程不变。原站对直接下载返回 HTTP 403。
 - `caffe-cifar-10`：从 BrainChip 公开镜像下载相同 CIFAR-10 binary 数据，内容已核对[作者公布的 MD5](https://www.cs.toronto.edu/~kriz/cifar.html)，执行时再核对固定 SHA-256。下载、解压、原 Caffe 构建及训练均在 VM 原 agent 预算中，不预填数据或训练结果。

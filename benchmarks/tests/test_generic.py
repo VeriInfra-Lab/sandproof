@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from benchmarks.generic_environment import archive_context, build_request, GenericEnvironment, validate_template
 from benchmarks.run_generic import run_selected
+from benchmarks.artifact_budget import ArtifactBudget, DEFAULT_ARTIFACT_LIMITS
 from tools.benchmark_tasks import InvalidInput
 
 
@@ -26,13 +27,32 @@ def entry():
 
 
 def template():
-    return {'templateId': 'tpl-' + 'a' * 32, 'revision': 'r1', 'imageDigest': 'sha256:' + 'b' * 64,
-            'kernelSha256': 'c' * 64, 'rootfsSha256': 'd' * 64,
-            'cpuCount': 2, 'memoryMiB': 4096, 'diskBytes': 10240 * 1024**2,
-            'startup': {'user': 'app', 'workdir': '/final', 'env_vars': {}, 'argv': []}}
+    # The Rust serializer verifies this exact fixture in template_wire.rs.
+    fixture = Path(__file__).resolve().parents[2] / 'tests/compat/template-view.json'
+    return json.loads(fixture.read_text())
 
 
 class GenericInputTests(unittest.TestCase):
+    def test_expired_initialization_never_dispatches_runtime_create(self):
+        from harbor.models.task.config import NetworkMode
+        env = object.__new__(GenericEnvironment)
+        env._network_policy = SimpleNamespace(network_mode=NetworkMode.PUBLIC)
+        env.entry, env.create_dispatched = entry(), False
+        env.prepare_template = AsyncMock()
+        with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock()) as create, \
+             patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1600]))):
+            with self.assertRaises(TimeoutError):
+                asyncio.run(env.start())
+        create.assert_not_awaited()
+        self.assertFalse(env.create_dispatched)
+
+    def test_shared_rust_response_requires_canonical_memory_field(self):
+        self.assertEqual(validate_template(template(), entry()), template())
+        wrong = template()
+        wrong['memoryMiB'] = wrong.pop('memoryMib')
+        with self.assertRaises(InvalidInput):
+            validate_template(wrong, entry())
+
     def test_exact_multistage_context_excludes_private_phases(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -116,18 +136,165 @@ class GenericInputTests(unittest.TestCase):
             env.exec = AsyncMock(return_value=SimpleNamespace(return_code=0))
             sandbox = SimpleNamespace(sandbox_id='sb-exact', get_info=AsyncMock(return_value=SimpleNamespace(
                 template_id=env.template['templateId'], cpu_count=2, memory_mb=4096)))
-            with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(return_value=sandbox)) as create:
+            with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(return_value=sandbox)) as create, \
+                 patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1120]))):
                 asyncio.run(env.start())
             self.assertEqual(env._workdir, '/final')
             self.assertEqual(env.default_user, 'app')
             self.assertEqual(create.call_args.kwargs['template'], env.template['templateId'])
             self.assertEqual(create.call_args.kwargs['timeout'], 86400)
+            self.assertEqual(create.call_args.kwargs['request_timeout'], 480)
             self.assertNotIn('cpu_count', create.call_args.kwargs)
             self.assertEqual(env.sandbox_id, 'sb-exact')
             env.exec.assert_awaited_once_with('test ! -e /solution && test ! -e /tests', cwd='/', user='root', timeout_sec=30)
 
+    def test_build_diagnostics_keep_terminal_result_and_original_identity(self):
+        for state in ('Ready', 'Failed', 'CleanupUnknown'):
+            for log_failure in (False, True):
+                with self.subTest(state=state, log_failure=log_failure), tempfile.TemporaryDirectory() as tmp:
+                    env = object.__new__(GenericEnvironment)
+                    env.entry, env.source_kind = entry(), 'oci'
+                    env.task_env_config = config()
+                    env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
+                    env.artifact_budget = ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
+                    env.submission_key = 'a' * 32
+                    env.build_log_error = None
+                    job = 'b' * 32
+                    outcome = {'buildID': job, 'state': state, 'failure': 'original build failure',
+                               'template': template() if state == 'Ready' else None}
+                    log = OSError('must not retain credential-bearing exception text') if log_failure else {
+                        'offset': 0, 'nextOffset': 16384, 'text': '\x00' * 16384}
+                    env.client = SimpleNamespace(request=Mock(side_effect=[
+                        {'buildID': job, 'state': 'Queued'}, outcome, log]))
+                    if state == 'Ready':
+                        asyncio.run(env.prepare_template())
+                        self.assertEqual(env.template, template())
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'original build failure'):
+                            asyncio.run(env.prepare_template())
+                    self.assertEqual(env.build_result, outcome)
+                    self.assertEqual(env.build_id, job)
+                    self.assertEqual(env.build_log_error, 'OSError' if log_failure else None)
+                    self.assertEqual([call.args[:2] for call in env.client.request.call_args_list], [
+                        ('POST', '/sandproof/template-builds'),
+                        ('GET', '/sandproof/template-builds/' + job),
+                        ('GET', '/sandproof/template-builds/' + job + '/logs?offset=0&limit=65536')])
+                    if not log_failure:
+                        self.assertEqual(json.loads((Path(tmp) / 'build-log.json').read_text()),
+                                         log | {'complete': state in ('Ready', 'Failed'), 'truncated': False})
+
+
+class BuildLogTests(unittest.IsolatedAsyncioTestCase):
+    async def capture(self, root, pages, *, cap=8, page_size=4, budget=None):
+        env = object.__new__(GenericEnvironment)
+        env.trial_paths = SimpleNamespace(trial_dir=root)
+        env.artifact_budget = budget or ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
+        env.client = SimpleNamespace(request=Mock(side_effect=pages))
+        env.build_result = {'state': 'Failed'}
+        with patch('benchmarks.generic_environment.BUILD_LOG_BYTES', cap), \
+             patch('benchmarks.generic_environment.BUILD_LOG_PAGE', page_size):
+            await env.capture_build_log('/build')
+        return env, json.loads((root / 'build-log.json').read_text())
+
+    async def test_raw_offsets_keep_tail_and_charge_json_expansion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = await self.capture(Path(tmp), [
+                {'offset': 0, 'nextOffset': 4, 'text': '\ufffd' * 4},
+                {'offset': 4, 'nextOffset': 8, 'text': 'tail'},
+                {'offset': 8, 'nextOffset': 8, 'text': ''}])
+            self.assertEqual(log['text'], '\ufffd' * 4 + 'tail')
+            self.assertTrue(log['complete'])
+            self.assertFalse(log['truncated'])
+            self.assertEqual([c.args[1] for c in env.client.request.call_args_list], [
+                '/build/logs?offset=0&limit=4', '/build/logs?offset=4&limit=4',
+                '/build/logs?offset=8&limit=1'])
+            self.assertEqual(env.artifact_budget.bytes, (Path(tmp) / 'build-log.json').stat().st_size)
+
+    async def test_over_cap_is_explicit_and_does_not_retain_extra_byte(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = await self.capture(Path(tmp), [
+                {'offset': 0, 'nextOffset': 4, 'text': 'head'},
+                {'offset': 4, 'nextOffset': 8, 'text': 'tail'},
+                {'offset': 8, 'nextOffset': 9, 'text': '!'}])
+            self.assertEqual(log['text'], 'headtail')
+            self.assertEqual(log['nextOffset'], 8)
+            self.assertTrue(log['truncated'])
+            self.assertFalse(log['complete'])
+            self.assertEqual(env.client.request.call_count, 3)
+
+    async def test_later_network_or_malformed_page_keeps_first_page(self):
+        for bad in (OSError('credential-bearing error'),
+                    {'offset': 0, 'nextOffset': 4, 'text': 'back'},
+                    {'offset': 4, 'nextOffset': 9, 'text': 'large'},
+                    {'offset': 4, 'nextOffset': 4, 'text': 'invalid'},
+                    {'offset': 4, 'nextOffset': 5, 'text': 'too long'}):
+            with self.subTest(bad=type(bad).__name__), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises((OSError, InvalidInput)):
+                    await self.capture(Path(tmp), [{'offset': 0, 'nextOffset': 4, 'text': 'head'}, bad])
+                log = json.loads((Path(tmp) / 'build-log.json').read_text())
+                self.assertEqual(log, {'offset': 0, 'nextOffset': 4, 'text': 'head',
+                                       'complete': False, 'truncated': False})
+
+    async def test_trial_budget_cannot_be_bypassed_by_build_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            budget = ArtifactBudget(dict(max_bytes=8, max_entries=1, max_depth=1, max_file_bytes=8))
+            with self.assertRaises(InvalidInput):
+                await self.capture(Path(tmp), [{'offset': 0, 'nextOffset': 0, 'text': ''}], budget=budget)
+            self.assertIsNotNone(budget.failure)
+            self.assertFalse((Path(tmp) / 'build-log.json').exists())
+
+    async def test_cancelled_read_preserves_partial_log_and_propagates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            entered = asyncio.Event()
+            calls = []
+            async def request(_call, method, path):
+                calls.append(path)
+                if len(calls) == 1:
+                    return {'offset': 0, 'nextOffset': 4, 'text': 'head'}
+                entered.set()
+                await asyncio.Future()
+            with patch('benchmarks.generic_environment.asyncio.to_thread', request):
+                running = asyncio.create_task(self.capture(Path(tmp), []))
+                await asyncio.wait_for(entered.wait(), 1)
+                running.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await running
+            log = json.loads((Path(tmp) / 'build-log.json').read_text())
+            self.assertEqual(log['text'], 'head')
+            self.assertFalse(log['complete'])
+            self.assertEqual(len(calls), 2)
+
 
 class GenericSuiteTests(unittest.TestCase):
+    def test_repair_mode_is_explicit_and_preserved_in_complete_report(self):
+        for mode in ('original', 'repaired'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=False,
+                    task=['build-pmars'], source_kind='oci', build_url='http://127.0.0.1:1')
+                if mode == 'repaired':
+                    args.oracle_mode = mode
+                lock = {'source': {}, 'tasks': [{'name': 'build-pmars'}, {'name': 'sample'}]}
+                result = {'name': 'build-pmars', 'status': 'passed', 'oracle_mode': mode}
+                with patch('benchmarks.run_generic.run_task', AsyncMock(return_value=result)) as trial:
+                    rows = asyncio.run(run_selected(args, lock))
+                self.assertEqual(getattr(trial.call_args.args[0], 'oracle_mode', 'original'), mode)
+                report = json.loads((Path(tmp) / 'full-set.json').read_text())
+                self.assertEqual(report['oracle_mode'], mode)
+                self.assertEqual(report['tasks'], rows)
+                self.assertEqual(rows[1]['status'], 'not_run')
+
+    def test_mixed_or_unknown_repairs_reject_before_any_trial_or_report(self):
+        for mode in ('repaired', 'unknown'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True,
+                    task=None, oracle_mode=mode, source_kind='oci', build_url='http://127.0.0.1:1')
+                lock = {'source': {}, 'tasks': [{'name': 'build-pmars'}, {'name': 'sample'}]}
+                with patch('benchmarks.run_generic.run_task', AsyncMock()) as trial:
+                    with self.assertRaises(InvalidInput):
+                        asyncio.run(run_selected(args, lock))
+                trial.assert_not_awaited()
+                self.assertEqual(list(Path(tmp).iterdir()), [])
+
     def test_original_failed_build_audit_allows_next_task_without_erasing_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             audit = Mock(return_value={'exact_cleanup': 'passed', 'build': {'state': 'Failed'}})

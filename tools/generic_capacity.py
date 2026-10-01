@@ -9,9 +9,9 @@ LOG_BYTES = 2 * MIB
 CLEANUP_BYTES = GIB
 
 
-def plan(entries, repetitions, builder_bytes, kernel_bytes):
+def plan(entries, repetitions, builder_bytes, kernel_bytes, *, artifact_bytes=128 * MIB):
     if (not entries or type(repetitions) is not int or repetitions not in (1, 2)
-            or any(type(v) is not int or v <= 0 for v in (builder_bytes, kernel_bytes))):
+            or any(type(v) is not int or v <= 0 for v in (builder_bytes, kernel_bytes, artifact_bytes))):
         raise ValueError('invalid acceptance inputs')
     if len({e['name'] for e in entries}) != len(entries):
         raise ValueError('duplicate task selection')
@@ -31,9 +31,18 @@ def plan(entries, repetitions, builder_bytes, kernel_bytes):
     registry = sum(r['disk_mib'] * MIB + kernel_bytes for r in req) * repetitions
     history = jobs * (LOG_BYTES + 256 * 1024)
     workspace = builder_bytes + INPUT_BYTES + 2 * disk + kernel_bytes + LOG_BYTES + 64 * MIB + history
+    # Original Dockerfile contexts are retained per trial, unlike the build
+    # service's temporary input. Reserve payload, PAX headers and tar padding.
+    contexts = repetitions * sum(10240 + sum(f['bytes'] + len(f['path'].encode()) + 4096
+        for f in entry.get('files', []) if f['role'] == 'environment') for entry in entries)
+    # Bounded guest/command evidence plus small controller-owned reports,
+    # checkpoints and their aggregate copies (outside ArtifactBudget).
+    evidence = jobs * (artifact_bytes + 4 * MIB)
     return {'jobs': jobs, 'uid_stride': max(100, 2 * jobs + 4),
             'registry_bytes': registry, 'workspace_bytes': workspace,
-            'required_free_bytes': registry + workspace + 2 * CLEANUP_BYTES,
+            'artifact_bytes_per_trial': artifact_bytes, 'trial_evidence_bytes': evidence,
+            'context_reserve_bytes': contexts,
+            'required_free_bytes': registry + workspace + evidence + contexts + 2 * CLEANUP_BYTES,
             'max_cpu': max(r['cpus'] for r in req), 'max_memory_mib': max(r['memory_mib'] for r in req),
             'max_disk_mib': disk // MIB, 'max_build_seconds': int(max(r['build_timeout_sec'] for r in req)),
             'input_bytes': INPUT_BYTES, 'expanded_bytes': EXPANDED_BYTES, 'log_bytes': LOG_BYTES,
