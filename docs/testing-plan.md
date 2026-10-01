@@ -213,7 +213,13 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 - 逐题审查实际需要的网络、启动进程和依赖；不因任务名称或 Dockerfile 关键词推断 GPU、域名授权等要求。任务确需未实现的域名策略、动态网络切换、额外服务等能力时，预检查须拒绝执行并保留该题的明确阻塞，不得静默扩大网络权限。完整题集验收前必须补齐实际需要的能力并按蓝图更新边界。
 - 在线 E2B 和模型评测需要单独的凭据、资源和费用预算，不加入普通 PR 的默认检查。
 
-通用链路使用[原题执行入口](../benchmarks/run_generic.py)和[独立实机监督](../tests/system/harbor_generic_chain.py)，复现方法与来源模式见[评测说明](../benchmarks/README.md)。先验收少量不同构建环境及重复运行，再执行完整 89 题。保留原 Dockerfile/context 或 OCI 引用、构建编号、模板修订/摘要、原解答/评分摘要及失败；SDK 销毁回执与精确宿主残留审计分开，后者须同时检查构建池和运行池。监督入口按选题数和重复次数预留不可变模板总量、历史日志、峰值工作盘和两池不复用 VM 编号；在派发前检查宿主空间/内存/CPU 及可信基础盘空闲量。每题结束后等待原构建预留归零、核对持久终态和物理资源，再观察原构建编号；普通失败保留并继续，身份或回收未知立即停止后续派发。不得预填评分器依赖后声称未改环境，或将旧逐题配方的跨版本结果计入新链路。
+#6/#8/#9 的跨池配置使用[定向测试](../tools/tests/test_template_build_config.py)检查两个寿命上限、实际别名绑定的构建盘计费、完整目标盘下载、上传含开销，以及计算/磁盘/发布额度的恰好及不足边界。测试配置只用于边界断言，不是正式部署推荐值。DNS 配置共享验证与候选解析器链接替换有普通文件测试；固定 SDK 的构建会话测试核对 builder resolver 与候选 request 相同。它们均不是 Linux/KVM 或公网连通性结果，不替代通用任务最终容量验收。
+
+普通公网 DNS 的缺口验收使用同一部署/模板 resolver，先从独立监督器确认选定解析器和外部目的地可达，再在全新公开模板实例中读取 `/etc/resolv.conf`、完成真实 A 查询及按域名的公网连接；重启后原实例/策略不变。相同模板的禁网/未允许 resolver 的静态模式必须阻断查询，即使来宾 root 改 resolver；管理通道保持可用。模板来源可各选 Dockerfile 和公开 OCI，复用现有公开构建及网络探针与精确回收监督；记录解析器、目的地、配置摘要、代码/模板摘要与真实结果。当前 registry 构建 DNS 的局部成功和 UDP/TCP 53 地址层探针只覆盖各自范围；未执行的通用查询/连接仍记未运行，不声称高级域名过滤、DNS 隧道防护或 IPv6 支持。
+
+[Rust 模板响应测试](../controller-service/tests/template_wire.rs)与[Harbor 输入测试](../benchmarks/tests/test_generic.py)共用同一规范 JSON，检查响应字段及真实形状一致。适配器的运行实例 create 等待使用原初始化期限的剩余时间；期限已耗尽时不得发起 create，仍保留原构建编号及结果。
+
+通用链路使用[原题执行入口](../benchmarks/run_generic.py)和[独立实机监督](../tests/system/harbor_generic_chain.py)，复现方法与来源模式见[评测说明](../benchmarks/README.md)。先验收少量不同构建环境及重复运行，再执行完整 89 题。保留原 Dockerfile/context 或 OCI 引用、构建编号、模板修订/摘要、原解答/评分摘要及失败；SDK 销毁回执与精确宿主残留审计分开，后者须同时检查构建池和运行池。监督入口按选题数和重复次数预留不可变模板总量、历史日志、逐试验产物/报告、锁定的原环境上下文、峰值工作盘和两池不复用 VM 编号；在派发前检查宿主空间/内存/CPU 及可信基础盘空闲量。每题结束后等待原构建预留归零、核对持久终态和物理资源，再观察原构建编号；普通失败保留并继续，身份或回收未知立即停止后续派发。不得预填评分器依赖后声称未改环境，或将旧逐题配方的跨版本结果计入新链路。
 
 暂停恢复和安全竞争用 S 类专门测试扩展，不能用 Terminal-Bench 通过代替。形式化阶段再证明声明范围内任意历史的性质；V1 测试报告只记录实验结果。
 
@@ -229,9 +235,11 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 显式预制模板基础使用[多模板实机探针](../tests/system/server_templates.py)：两张预先批准的不同容量 ext4、1/2 CPU 和不同来宾/宿主内存；原 SDK 创建与命令/文件调用、真实 cgroup/进程/磁盘形状、归属与超额拒绝、改变别名并重启仍保持旧 VM、源模板移走后仍可重启及精确销毁、拒绝不可变编号被改写，最后核对三台 VM 残留和基础产物摘要。运行须传两个 rootfs、既有委派的独占 cgroup 父目录及独占 UID 范围；缺环境/失败不算通过。提交 `74e671fc64ba514d2829637dfb993bef1f010367` 已独立通过；包含脚本失败原因和清理结果的证据见[版本基线](../references/v1-baseline.json)的 `prebuilt_template_runtime_acceptance`。该探针不执行构建、不跑 89 题，也不证明任意故障。
 
+逐试验产物预算的[组件回归](../benchmarks/tests/test_artifact_budget.py)通过固定 SDK 流读取器与合成 HTTP 传输核对两文件累计恰好/多一字节、单文件限制、零字节文件耗尽条目、递归深度、重复路径、读取中/EOF 关闭中取消、二次取消、关闭超时不覆盖原异常、精确临时文件删除、重试不返还额度、宿主/来宾符号链接拒绝、事件保留量与诊断共享预算。原固定 Harbor OracleAgent/Verifier 的合成环境用例专门验证 Oracle 吞下日志异常后仍保留原 reward=1，但试验明确失败、证据不完整且只尝试一次 kill；超量后的回退诊断不能绕过预算。此处不运行原题、KVM、E2B 云或模型，不改上游依赖/评分器；实机容量和完整原题验收仍另测。原有浏览器生命周期测试在无 `/proc/self/task/<pid>/children` 的受限环境失败须保留，不能为本批删除或放松。
+
 ## 4. 独立运行宿主预检
 
-自助模板入口用[组件测试](../tools/tests/test_template_build_service.py)核对真实 SQLite 重开、租户/幂等键、上传中断、预算/原期限、丢失构建响应、未知清理保留预留及同编号发布；[私有构建池测试](../sandbox-api/tests/managed_port/build_vm.rs)核对禁用入口、保留 metadata、并发重复准入、墓碑、丢失启动回执，以及已销毁但尚未完成 VM 回收时不释放预算。[实机探针](../tests/system/template_self_service.py)部署两个独占 Rust 池与监督服务，走用户 HTTP 上传、多阶段构建、正式发布、原 SDK 命令/文件、明确构建失败、VM 已启动后 SIGKILL 监督服务并重启，最后独立检查两池进程/jail/netns/cgroup 和构建预留。`--public` 增加公开 OCI 拉取/发布/原 SDK；仅已获准临时修改全局转发时加 `--temporarily-forward`，脚本退出时恢复原值。精确提交/产物/结果记录在 PR，不把未运行模式、macOS 或替身测试算成真实隔离验收。
+自助模板入口用[组件测试](../tools/tests/test_template_build_service.py)核对真实 SQLite 重开、租户/幂等键、上传中断、预算/原期限、丢失构建响应、未知清理保留预留及同编号发布；同一真实 HTTP/SQLite 组件链另检查小客户端读取完整日志页时的 JSON 转义放大、原始字节偏移、跨租户拒绝和响应上限，通用评测回归检查诊断读取失败不改写构建终态或跳过收尾；[私有构建池测试](../sandbox-api/tests/managed_port/build_vm.rs)核对禁用入口、保留 metadata、并发重复准入、墓碑、丢失启动回执，以及已销毁但尚未完成 VM 回收时不释放预算。[实机探针](../tests/system/template_self_service.py)部署两个独占 Rust 池与监督服务，走用户 HTTP 上传、多阶段构建、正式发布、原 SDK 命令/文件、明确构建失败、VM 已启动后 SIGKILL 监督服务并重启，最后独立检查两池进程/jail/netns/cgroup 和构建预留。`--public` 增加公开 OCI 拉取/发布/原 SDK；仅已获准临时修改全局转发时加 `--temporarily-forward`，脚本退出时恢复原值。精确提交/产物/结果记录在 PR，不把未运行模式、macOS 或替身测试算成真实隔离验收。
 
 [宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。
 

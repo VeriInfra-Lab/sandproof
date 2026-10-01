@@ -1,0 +1,21 @@
+{
+  "templateId": "tpl-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "revision": "r1",
+  "imageDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "cpuCount": 2,
+  "kernelSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "rootfsSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "memoryMib": 4096,
+  "diskBytes": 10737418240,
+  "freeBytes": 9663676416,
+  "minFreeBytes": 67108864,
+  "hostMemoryBytes": 4563402752,
+  "envdVersion": "0.9.0",
+  "startup": {
+    "env_vars": {},
+    "user": "app",
+    "workdir": "/final",
+    "argv": []
+  },
+  "aliases": []
+}
