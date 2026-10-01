@@ -361,7 +361,7 @@ def build(work, source, request, profile, *, guest_boot_id):
                     from .template_fetch import fetch
                 else:
                     from template_fetch import fetch
-                public_source = fetch(source, work, layout, request, tools["regctl"], commands)
+                public_source, image = fetch(source, work, layout, request, tools["regctl"], commands)
             elif request["kind"] == "dockerfile":
                 extract_context(source, work / "context", **limits)
                 address = "unix://" + str(work / "buildkit.sock")
@@ -395,7 +395,8 @@ def build(work, source, request, profile, *, guest_boot_id):
                     raise RuntimeError("builder daemon did not finish cleanly")
             else:
                 extract_archive(source, layout, **limits)
-            image = inspect_oci(layout, **limits)
+            if request["kind"] != "oci-reference":
+                image = inspect_oci(layout, **limits)
             startup = startup_config(image["container_config"])
             index = bounded_json(layout / "index.json")
             index["manifests"][0].setdefault("annotations", {})["org.opencontainers.image.ref.name"] = "candidate"

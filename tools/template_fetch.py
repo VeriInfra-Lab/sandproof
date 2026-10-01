@@ -131,6 +131,12 @@ def capture(args, output, limit, commands):
 
 
 def fetch(source, work, layout, request, tool, commands):
+    """Return provenance and the fully inspected, private layout for immediate unpacking.
+
+    Inspection is local to this acquisition: it is not a cache reusable after
+    changing the layout or across jobs. Source Docker bytes are checked before
+    conversion, and the final OCI bytes are checked before returning.
+    """
     document = bounded_json(source, 4096)
     if not isinstance(document, dict) or set(document) != {"image"}:
         raise InvalidTemplate("expected a public image reference document")
@@ -157,10 +163,11 @@ def fetch(source, work, layout, request, tool, commands):
             or items[0].get("digest") != selected or items[0].get("mediaType") not in (OCI_MANIFEST, DOCKER_MANIFEST)):
         raise InvalidTemplate("downloaded manifest does not match selected digest")
     converted = None
+    original = None
+    limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
     if items[0]["mediaType"] == DOCKER_MANIFEST:
         # Validate the original bytes before the trusted converter sees them.
         # Conversion is local-only and must preserve config/layer bytes exactly.
-        limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
         inspect_oci(layout, **limits, allow_docker=True)
         original = payload_identity(layout, request["max_input_bytes"])
         raw = work / "source-oci"
@@ -168,7 +175,11 @@ def fetch(source, work, layout, request, tool, commands):
         archive.unlink()  # two layout copies replace tar+layout in disk budget
         commands.run([str(tool), "image", "mod", "ocidir://" + str(raw) + "@" + selected,
                       "--to-oci", "--create", "ocidir://" + str(layout) + ":candidate"])
-        normalized = inspect_oci(layout, **limits)
+    # Every public input, including native OCI, is fully inspected here. The
+    # worker consumes this result immediately instead of decompressing the same
+    # unchanged layout again before unpacking.
+    normalized = inspect_oci(layout, **limits)
+    if original is not None:
         if payload_identity(layout, request["max_input_bytes"]) != original:
             raise InvalidTemplate("OCI conversion changed image config or layers")
         converted = normalized["image_digest"]
@@ -181,7 +192,7 @@ def fetch(source, work, layout, request, tool, commands):
     if converted is not None:
         result["converted_digest"] = converted
         result["conversion"] = "docker-schema2-to-oci"
-    return result
+    return result, normalized
 
 
 def payload_identity(layout, maximum):
