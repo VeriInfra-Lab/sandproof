@@ -235,6 +235,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 显式预制模板基础使用[多模板实机探针](../tests/system/server_templates.py)：两张预先批准的不同容量 ext4、1/2 CPU 和不同来宾/宿主内存；原 SDK 创建与命令/文件调用、真实 cgroup/进程/磁盘形状、归属与超额拒绝、改变别名并重启仍保持旧 VM、源模板移走后仍可重启及精确销毁、拒绝不可变编号被改写，最后核对三台 VM 残留和基础产物摘要。运行须传两个 rootfs、既有委派的独占 cgroup 父目录及独占 UID 范围；缺环境/失败不算通过。提交 `74e671fc64ba514d2829637dfb993bef1f010367` 已独立通过；包含脚本失败原因和清理结果的证据见[版本基线](../references/v1-baseline.json)的 `prebuilt_template_runtime_acceptance`。该探针不执行构建、不跑 89 题，也不证明任意故障。
 
+逐试验产物预算的[组件回归](../benchmarks/tests/test_artifact_budget.py)通过固定 SDK 流读取器与合成 HTTP 传输核对两文件累计恰好/多一字节、单文件限制、零字节文件耗尽条目、递归深度、重复路径、读取中/EOF 关闭中取消、二次取消、关闭超时不覆盖原异常、精确临时文件删除、重试不返还额度、宿主/来宾符号链接拒绝、事件保留量与诊断共享预算。原固定 Harbor OracleAgent/Verifier 的合成环境用例专门验证 Oracle 吞下日志异常后仍保留原 reward=1，但试验明确失败、证据不完整且只尝试一次 kill；超量后的回退诊断不能绕过预算。此处不运行原题、KVM、E2B 云或模型，不改上游依赖/评分器；实机容量和完整原题验收仍另测。原有浏览器生命周期测试在无 `/proc/self/task/<pid>/children` 的受限环境失败须保留，不能为本批删除或放松。
+
 ## 4. 独立运行宿主预检
 
 自助模板入口用[组件测试](../tools/tests/test_template_build_service.py)核对真实 SQLite 重开、租户/幂等键、上传中断、预算/原期限、丢失构建响应、未知清理保留预留及同编号发布；同一真实 HTTP/SQLite 组件链另检查小客户端读取完整日志页时的 JSON 转义放大、原始字节偏移、跨租户拒绝和响应上限，通用评测回归检查诊断读取失败不改写构建终态或跳过收尾；[私有构建池测试](../sandbox-api/tests/managed_port/build_vm.rs)核对禁用入口、保留 metadata、并发重复准入、墓碑、丢失启动回执，以及已销毁但尚未完成 VM 回收时不释放预算。[实机探针](../tests/system/template_self_service.py)部署两个独占 Rust 池与监督服务，走用户 HTTP 上传、多阶段构建、正式发布、原 SDK 命令/文件、明确构建失败、VM 已启动后 SIGKILL 监督服务并重启，最后独立检查两池进程/jail/netns/cgroup 和构建预留。`--public` 增加公开 OCI 拉取/发布/原 SDK；仅已获准临时修改全局转发时加 `--temporarily-forward`，脚本退出时恢复原值。精确提交/产物/结果记录在 PR，不把未运行模式、macOS 或替身测试算成真实隔离验收。
