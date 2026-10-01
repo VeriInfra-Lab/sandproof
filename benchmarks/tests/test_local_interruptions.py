@@ -187,6 +187,23 @@ class LocalFinalizationTests(unittest.TestCase):
                     self.assertEqual(row["rewards"], {"reward": 1})
                     self.assertEqual(row["verifier"], "passed")
 
+    def test_generic_log_failure_is_reported_without_masking_stage_or_cleanup(self):
+        with self.fixture() as (args, env, oracle, verifier, trial, output):
+            env.build_id = "a" * 32
+            env.build_result = {"state": "Ready"}
+            env.build_log_error = "OSError"
+            env.template = {"templateId": "tpl-" + "b" * 32}
+            env.build_dispatched = True
+            env.submission_key = "c" * 32
+            row = asyncio.run(runner.run_task(args, {"name": "sample"}, {},
+                                            environment_factory=lambda **_kwargs: env))
+            self.assertEqual(row["build_log_error"], "OSError")
+            self.assertEqual(row["build"], {"state": "Ready"})
+            self.assertEqual(row["status"], "passed")
+            self.assertTrue(row["kill_confirmed"])
+            env.stop.assert_awaited_once()
+            self.assertEqual(json.loads((trial / "result.json").read_text()), row)
+
     def test_actual_task_cancellation_records_interrupted_stage_after_cleanup(self):
         for stage in ("initialization", "oracle", "verifier"):
             with self.subTest(stage=stage), self.fixture() as (args, env, oracle, verifier, trial, output):

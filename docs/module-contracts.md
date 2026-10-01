@@ -68,6 +68,8 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 不接受 owner、Ready、宿主路径、工具或凭据字段；陌生/他人编号均 404。可选 `Idempotency-Key`（1～64 个字母/数字/下划线/连字符）按租户绑定规范化请求，相同重提返回原编号，不同内容 409；缺省每次是独立工作。公开引用不接受凭据、本地 transport、自定义端口或显式 IP；私网与宿主地址保护仍依赖既有包规则，字符串检查不代表 DNS 安全证明。
 
+日志页的 64 KiB 上限与 offset/nextOffset 按原始日志字节计数；无效 UTF-8 以替换字符展示。JSON 转义可能放大响应，小客户端仅对日志 GET 保留有界的转义与封装余量，其他响应仍限 64 KiB，不增加日志原始总量或单页预算。通用评测报告用 `build_log_error` 单独记录诊断读取/保存失败的异常类型，不覆盖原构建终态，不保存可能含凭据的异常文本，也不为取日志重发构建。
+
 监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。
 
 独立 SQLite 采用进程锁与 WAL/FULL；材料/候选先同步再记录阶段。历史数量、未决数和保守工作盘预留分别限额；失败/未知清理继续占预留。构建实际 CPU/RAM/VM 私有盘上限由独立 Rust 池执行，不借用运行额度；同盘检查及预留保护运行清理余量。配置/预算指纹持久绑定，变更须显式迁移，重启不能隐式换池。总期限从提交起算，Rust 池另强制 VM 寿命，不因重启续期。

@@ -303,6 +303,7 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
         row['sandbox_id'] = environment.sandbox_id
         if hasattr(environment, 'build_id'):
             row.update(build_id=environment.build_id, build=environment.build_result,
+                       build_log_error=getattr(environment, 'build_log_error', None),
                        template=environment.template, exact_cleanup='not_audited',
                        build_dispatched=environment.build_dispatched,
                        submission_key=environment.submission_key)

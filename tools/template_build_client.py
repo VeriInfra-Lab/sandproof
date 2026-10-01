@@ -5,8 +5,17 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import time
 import urllib.parse
+
+
+# A log page is bounded in source bytes. JSON can expand each byte to a
+# six-byte escape (including replacement characters for invalid UTF-8).
+# Keep ordinary status/error responses at their existing 64 KiB limit.
+RESPONSE_BYTES = 65536
+LOG_RESPONSE_BYTES = 6 * 65536 + 1024
+LOG_PATH = re.compile(r"/sandproof/template-builds/[0-9a-f]{32}/logs")
 
 
 class BuildClient:
@@ -30,11 +39,14 @@ class BuildClient:
             headers["Content-Length"] = str(size)
         if token:
             headers["Idempotency-Key"] = token
+        response_limit = RESPONSE_BYTES
+        if method == "GET" and LOG_PATH.fullmatch(urllib.parse.urlsplit(path).path):
+            response_limit = LOG_RESPONSE_BYTES
         try:
             connection.request(method, path, body, headers)
             response = connection.getresponse()
-            data = response.read(65537)
-            if len(data) > 65536:
+            data = response.read(response_limit + 1)
+            if len(data) > response_limit:
                 raise RuntimeError("oversized build response")
             value = json.loads(data)
             if response.status >= 400:
