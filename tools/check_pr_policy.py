@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the task-branch -> test -> main workflow from PR event data."""
+"""Validate the normal workflow and the owner-approved dot-ning batch."""
 
 import argparse
 import json
@@ -24,10 +24,29 @@ def validate(event):
         return "Missing pull-request head/base metadata."
     if not isinstance(head, str) or not isinstance(base, str):
         return "Branch names must be strings."
-    if base not in {"main", "test"}:
-        return "Pull requests must target test or main."
+    if base not in {"main", "test", "dot-ning"}:
+        return "Pull requests must target test, main, or the temporary dot-ning batch."
     if head == base:
         return "Source and target branches must differ."
+
+    # Temporary, exact-name exception for the owner's current integration batch.
+    # Handle it before main/test promotion so those branches cannot enter it.
+    if base == "dot-ning":
+        if len(head) > 100 or not TASK_BRANCH.fullmatch(head):
+            return "The dot-ning batch accepts only normally named task branches."
+        try:
+            head_repo = pr["head"]["repo"]["id"]
+            base_repo = pr["base"]["repo"]["id"]
+        except (KeyError, TypeError):
+            return "The dot-ning batch requires repository identity metadata."
+        if (
+            type(head_repo) is not int
+            or type(base_repo) is not int
+            or head_repo <= 0
+            or head_repo != base_repo
+        ):
+            return "The dot-ning batch accepts only this repository's task branches."
+        return None
 
     if head in {"main", "test"}:
         try:
