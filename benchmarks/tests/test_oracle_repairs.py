@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -22,6 +23,57 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_stan_pins_reach_r_subprocesses_and_r_failure_stops_the_solution(self):
+        # Exercise the real repaired shell with recording R/package-manager
+        # boundaries; never install packages or execute benchmark code here.
+        expression = ("remotes::install_version('StanHeaders', version='2.32.10'); "
+                      "remotes::install_version('rstan', version='2.32.7')")
+        script = ('set -e\nsudo apt-get install -y \\\n    gfortran\n'
+                  f'R -e "{expression}"\nRscript model.R\n')
+        for failure in ('', 'R'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                model = 'parameters { real x[2]; } model { x ~ normal(0, 1); }\n'
+                (source / 'solution/model.R').write_text(model)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                (source / 'task.toml').write_text('[agent]\ntimeout_sec = 1800.0\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'mcmc-sampling-stan': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('mcmc-sampling-stan', source, root / 'repaired')
+                for command, content in {
+                        'sudo': '#!/bin/bash\nexec "$@"\n',
+                        'apt-get': '#!/bin/bash\nexit 0\n'}.items():
+                    path = bin_dir / command
+                    path.write_text(content)
+                    path.chmod(0o700)
+                for command in ('R', 'Rscript'):
+                    path = bin_dir / command
+                    path.write_text(f'#!{sys.executable}\n'
+                                    'import json, os, sys\nfrom pathlib import Path\n'
+                                    'name = Path(sys.argv[0]).name\n'
+                                    'with open(os.environ["REPAIR_TEST_LOG"], "a") as log:\n'
+                                    '    log.write(json.dumps([name, sys.argv[1:], '
+                                    'os.environ.get("R_REMOTES_UPGRADE")]) + "\\n")\n'
+                                    'raise SystemExit(42 if os.environ["REPAIR_TEST_FAIL"] == name else 0)\n')
+                    path.chmod(0o700)
+                log = root / 'commands.jsonl'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')], env={
+                    **os.environ, 'PATH': str(bin_dir), 'R_REMOTES_UPGRADE': 'always',
+                    'REPAIR_TEST_LOG': str(log), 'REPAIR_TEST_FAIL': failure})
+                self.assertEqual(result.returncode, 42 if failure else 0)
+                expected = [['R', ['-e', expression], 'never']]
+                if not failure:
+                    expected.append(['Rscript', ['model.R'], 'never'])
+                self.assertEqual([json.loads(line) for line in log.read_text().splitlines()], expected)
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                for relative in ('solution/model.R', 'tests/test.sh', 'task.toml'):
+                    self.assertEqual((source / relative).read_bytes(), (repaired / relative).read_bytes())
+
     def test_browser_repair_installs_supervisor_and_preserves_solution_and_failure(self):
         # Synthetic commands only; never install into the host or run task code.
         script = 'printf "filter unchanged\\n" >> "$REPAIR_TEST_LOG"\n'

@@ -197,7 +197,7 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 - `filter-js-from-html`：原评分器先终止 ChromeDriver，再调用 quit，会留下仍存活的 Chromium 进程树。修正版在 solution 副本中携带并安装已有浏览器监督器，仅对本题评分进程设置 `SE_CHROME_PATH`，使浏览器及其后代随原驱动退出而回收；完整原过滤实现、Chromium 程序/参数、评分源码与任务限额保留。报告记录 helper 摘要和 `verifier_repair_env`，除原 reward 外还要求所有浏览器批次执行成功及对应回收记录完整。安装失败、吞掉的浏览器错误、缺失/异常回收证据均不能算通过；默认原模式不启用。此修复不调整 TCP 或其他网络策略，也不代表当前提交已完成原题实机验收。
 - `build-cython-ext`：在原 editable 安装中固定 `planarity==0.6`，保留 pyknotid 0.5.3 所需的 `pos/start/end` 节点属性。[上游记录](https://github.com/harbor-framework/terminal-bench-2/issues/75)与本地评分后诊断均定位为 1.0.0 属性改名导致 `KeyError: pos`；不改 NumPy 2.3.0、原 Cython 编译、仓库测试或外层评分。
 - `git-multibranch`：原镜像未安装原解答最后一步要求的 `tmux`；修正版仅在工具缺失时刷新包索引并安装，然后执行完整原 Git/SSH/nginx 配置及原 tmux 命令。安装失败立即停止，下载/安装计入原 agent 时限；已存在的 tmux 不重装。原题库、评分、资源和原失败记录保留，修正版成绩单独报告。
-- `mcmc-sampling-stan`：在原系统依赖安装中补齐 RcppParallel 源码构建所需的 `cmake`；保留原 R/RStan 版本选择、模型和采样流程。
+- `mcmc-sampling-stan`：在原系统依赖安装中补齐 RcppParallel 源码构建所需的 `cmake`，并设置 `R_REMOTES_UPGRADE=never`，避免后续 RStan 安装自动升级原解答已固定的依赖；缺失依赖仍正常安装，原 R/RStan 版本选择、模型和采样流程保留。
 - `make-doom-for-mips`：在安装交叉编译工具前刷新来宾软件包索引，避免镜像旧索引指向已移除包；刷新或安装失败立即停止，不继续用缺失工具构建。
 - `build-pmars`：保留同一组 Debian 构建依赖，使用刷新索引后的仓库版本，移除已不可获取的版本固定；保留原 Debian 源码获取、curses 编译与安装，实际版本由运行时依赖清单记录。
 - `protein-assembly`：通过 [RCSB 官方 Data API](https://data.rcsb.org/)的 polymer entity 与 chemical component 字典还原修饰残基及有序母体残基；保留单一聚合物筛选，拒绝无法解析的序列。原 FASTA 将部分荧光团编码为 `X`，无法满足 DNA 翻译约束；修复不嵌入目标序列，原 DNA 优化和评分继续执行。
