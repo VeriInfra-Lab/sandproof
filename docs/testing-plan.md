@@ -14,6 +14,22 @@
 
 #123 发布故障必须区分两侧：检查已持久确认、清理回执丢失，可在原资源精确回收后 Ready；物理激活成功但检查确认未提交，恢复不能补造 Ready，内部检查会话不可查询/连接，期限回收后失败。两侧均以原身份完成，不重新创建检查 VM。构建服务、公开 OCI 获取和模板垃圾回收仍是独立后续范围，不为本批追加完整矩阵。
 
+#99 第 6 项使用[历史容量组件回归](../sandbox-api/tests/managed_port/history_capacity.rs)：真实 `ManagedPort`、SQLite 和现有控制转换保持两台运行实例，逐步增加完整 create/kill 历史；只有宿主动作使用既有合同测试替身。普通 CI 只运行 0/3 历史的语义回归，检查旧令牌拒绝、原 VM 身份不变、重开与空闲恢复不追加动作，以及一个实例的 StopVm 被屏障阻塞时其他实例的查询、数据准入和第三实例到期能在释放后正确收尾，不设耗时阈值。到期由正式 `set_timeout(0)` 接口确定，不依赖随机等待。
+
+按需定量运行（从仓库根目录执行，产物目录已忽略）：
+
+```sh
+SANDPROOF_SOURCE_REVISION="$(git rev-parse HEAD)" \
+SANDPROOF_SOURCE_TREE="$(git rev-parse HEAD^{tree})" \
+SANDPROOF_HISTORY_POINTS=0,4,16,64 SANDPROOF_HISTORY_SAMPLES=7 \
+cargo test --release -p sandproof-api --test managed_port \
+  history_capacity::history_capacity_profile --locked -- --ignored --exact --nocapture
+```
+
+默认结果为 `artifacts/history-capacity.json`；`SANDPROOF_HISTORY_OUTPUT` 可指定绝对路径。只在干净的已记录提交上运行用于比较的报告；另记实际运行命令与环境。报告逐点保存已完成历史数、输入/操作/动作/回执行数、DB/WAL 字节、宿主调用计数和原始单调时钟纳秒样本；采用 nearest-rank 统计，七个样本的 p95 就是最大值，不能解释为稳定尾延迟。建库/真实创建销毁成本、连接重开校验、首次恢复/命令准入和暖态样本分别计时；暖态每条路径先预热一次。重开仍在同一进程和暖文件系统缓存中，不是主机冷启动。`authorize_data(FileRead)` 与生产网关实际使用的 `data_permit(Exec)` 分开测量；后者只代表命令转发前准入，不是 envd 命令启动或执行时间。另以外部观察者在 StopVm 屏障内保留名义 250 ms 窗口，记录其他实例请求的总耗时；线程报告已开始不证明它已到达互斥锁，结果含调度、锁等待及重放，不能冒称精确锁驻留时间。
+
+历史点须按实际构造成本扩展；外部中止时保留 `in_progress`、已完成点和待测点，不把未测规模算失败或通过。此入口不访问 KVM/E2B 云、不运行题集，不改变准入阈值、缓存或锁范围，也不据组件耗时宣称正式历史上限、无限运行或整体 #99 完成。生产支持边界仍需目标任务、实际宿主预算与相同配置的系统验收。
+
 ## 2. 系统场景
 
 以下 ID 用于 issue/PR 的验收引用。
