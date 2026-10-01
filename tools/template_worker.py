@@ -36,8 +36,9 @@ $B mount -t proc proc /proc
 $B mount -o remount,rw /
 $B mount -t sysfs sysfs /sys
 if ! $B grep -q ' /dev devtmpfs ' /proc/mounts; then $B mount -t devtmpfs devtmpfs /dev; fi
-$B mkdir -p /dev/pts /run /tmp
+$B mkdir -p /dev/pts /dev/shm /run /tmp
 $B mount -t devpts devpts /dev/pts
+$B mount -t tmpfs -o nosuid,nodev,noexec,mode=1777,size=64m tmpfs /dev/shm
 $B mount -t tmpfs -o mode=755 tmpfs /run
 $B chmod 1777 /tmp
 $B ln -sf /proc/self/fd /dev/fd
