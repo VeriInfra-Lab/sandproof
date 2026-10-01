@@ -24,6 +24,7 @@ REPAIRS = {
     'pytorch-model-recovery': '175a7802777b43e0fa4f629d71f7c68fb40706813c342aaddc72108d89bd5b2c',
     'qemu-alpine-ssh': '1cd31186c427b91bb00499d22aa4f0214fc1ca93b40b6e4cfa969611b848db2a',
     'qemu-startup': 'a6a644e03c4bbde4039f222d9509a884e62b4a3402990482688b67ed5dc7919d',
+    'rstan-to-pystan': '069ac635c9ceda6d5235995ce7f005d924b911e3499895fb3bbad2311be56518',
     'build-pov-ray': '67c962a8b114fa1d55d1230c7d87309aa2b5ad643d9a955a2d74755fa8842e25',
     'crack-7z-hash': '2640463e6e14658426f3ea629e0702688e00553eb8006cf31ec3b9cff75c4b19',
     'caffe-cifar-10': '771887de1ed557269c7f3160c777519aa9538e1e9b59771b2f6ef38c8952490c',
@@ -129,6 +130,9 @@ fi
         new = 'python /solution/guest_wheel_sharing.py || exit $?\n' + old
     elif name in ('qemu-alpine-ssh', 'qemu-startup'):
         new = 'bash /solution/guest_bullseye_snapshot.sh || exit $?\n' + old
+    elif name == 'rstan-to-pystan':
+        new = ('bash /solution/guest_pystan_dependencies.sh || exit $?\n'
+               'export PIP_CONSTRAINT=/solution/pystan-constraints.txt\n' + old)
     elif name == 'build-pov-ray':
         # Exact archive digests independently checked against upstream PR #77.
         new = old
@@ -212,6 +216,9 @@ fi
         shutil.copyfile(Path(__file__).with_name('guest_wheel_sharing.py'), destination / 'guest_wheel_sharing.py')
     if name in ('qemu-alpine-ssh', 'qemu-startup'):
         shutil.copyfile(Path(__file__).with_name('guest_bullseye_snapshot.sh'), destination / 'guest_bullseye_snapshot.sh')
+    if name == 'rstan-to-pystan':
+        for filename in ('guest_pystan_dependencies.sh', 'pystan-constraints.txt'):
+            shutil.copyfile(Path(__file__).with_name(filename), destination / filename)
     if name == 'filter-js-from-html':
         shutil.copyfile(Path(__file__).with_name('guest_chromium.py'), destination / 'guest_chromium.py')
     def digest(path):
