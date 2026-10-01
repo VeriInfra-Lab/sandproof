@@ -1,7 +1,8 @@
 """Run original Harbor oracle/verifier through the generic self-service chain.
 
 SDK kill acknowledgment is reported separately from external exact-resource
-audit. No paid model, cloud E2B call, fixed-base recipe or oracle repair.
+audit. Original solutions by default; registered repairs require explicit opt-in.
+No paid model, cloud E2B call or fixed-base recipe.
 """
 import argparse
 import asyncio
@@ -14,7 +15,17 @@ from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_f
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.generic_environment import GenericEnvironment
 from benchmarks.run_local import local_url, run_task
+from benchmarks.oracle_repairs import REPAIRS
 from tools.benchmark_tasks import InvalidInput, verify
+
+
+def validate_oracle_mode(args, selected):
+    mode = getattr(args, 'oracle_mode', 'original')
+    if mode not in ('original', 'repaired'):
+        raise InvalidInput('unknown oracle mode')
+    if mode == 'repaired' and set(selected) - REPAIRS.keys():
+        raise InvalidInput('repaired mode requires reviewed repairs for every selected task')
+    return mode
 
 
 async def run_selected(args, lock):
@@ -22,14 +33,16 @@ async def run_selected(args, lock):
     entries = {t['name']: t for t in lock['tasks']}
     if not selected or not selected <= entries.keys():
         raise InvalidInput('select task names from the complete locked task set')
+    mode = validate_oracle_mode(args, selected)
     rows = [{'name': t['name'], 'status': 'not_run',
              'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
     def report():
         (args.output / 'full-set.json').write_text(json.dumps({
             'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
-            'source_kind': args.source_kind, 'oracle_mode': 'original',
+            'source_kind': args.source_kind, 'oracle_mode': mode,
             'failure_diagnostics': getattr(args, 'failure_diagnostics', False),
-            'scope': 'generic templates and original Harbor oracle/verifier; exact host cleanup requires external audit',
+            'scope': ('generic templates; ' + mode + ' oracle and original verifier; '
+                      'exact host cleanup requires external audit'),
             'dependencies': 'output image digest recorded; dynamic build/verifier downloads not fully locked',
         }, indent=2) + '\n')
     report()
@@ -93,6 +106,7 @@ def main():
     # Match fixed Harbor's OCI preference by default; the Dockerfile path is
     # an explicit ORIGINAL source alternative, never a rewritten task recipe.
     parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
+    parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
     parser.add_argument('--failure-diagnostics', action='store_true',
                         help='after an original failed score, run registered guest diagnostics separately')
     add_artifact_arguments(parser)
@@ -106,9 +120,11 @@ def main():
         runtimes = check_runtime()
         lock = verify(json.loads(args.lock.read_text()), args.registry, args.source)
         check_tasks(lock, args.source)
+        validate_oracle_mode(args, {t['name'] for t in lock['tasks']} if args.all else args.task)
         args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         (args.output / 'inputs.json').write_text(json.dumps({
             'source': lock['source'], 'runtimes': runtimes, 'source_kind': args.source_kind,
+            'oracle_mode': args.oracle_mode,
             'failure_diagnostics': args.failure_diagnostics,
             'artifact_limits': args.artifact_limits,
             'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']},
