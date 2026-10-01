@@ -21,9 +21,9 @@ import threading
 import time
 
 if __package__:
-    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config
+    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 else:
-    from template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config
+    from template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 
 
 MIB = 1024 * 1024
@@ -267,15 +267,7 @@ def validate_request(request):
     if request["min_free_mib"] >= request["disk_mib"]:
         raise InvalidTemplate("minimum free disk must be smaller than total")
     if "dns_servers" in request:
-        import ipaddress
-        dns = request["dns_servers"]
-        if not isinstance(dns, list) or not 1 <= len(dns) <= 2:
-            raise InvalidTemplate("invalid platform DNS")
-        try:
-            if any(not ipaddress.IPv4Address(v).is_global for v in dns):
-                raise InvalidTemplate("invalid platform DNS")
-        except ValueError as error:
-            raise InvalidTemplate("invalid platform DNS") from error
+        platform_dns_servers(request["dns_servers"])
 
 
 def check_tools(profile, *, registry=False):

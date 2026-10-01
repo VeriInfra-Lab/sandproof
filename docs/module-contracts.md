@@ -72,6 +72,8 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。
 
+监督服务启动时还核对跨池必要条件：构建期限加 60 秒同时不超过构建池单次/总寿命；启动检查期限同时满足运行池两个寿命上限；构建池上传覆盖输入/工具及有界 HTTP 开销，下载覆盖完整候选；目标最大形状可被空运行池与发布产物额度接收。构建私有盘预算取私有 API 实际解析的已授权不可变 `base` 描述，不取可能不同的旧 `rootfs` 字段；声明长度须匹配真实文件。盘总量须至少容纳目标盘、展开上限和两份获取输入，实际来宾可用块仍由工作器检查。上述配置检查不是动态资源预留，不能替代运行时配额/真实余量或失败收尾。现有显式部署若不满足这些条件必须调整可信配置后再启用，不能静默缩短已接受请求。普通公网 DNS 仅接收 1–2 个公开单播 IPv4 字符串，拒绝数字、私网、组播、IPv6 与域名；构建与候选复用同一值，仍不承诺域名内容过滤。
+
 独立 SQLite 采用进程锁与 WAL/FULL；材料/候选先同步再记录阶段。历史数量、未决数和保守工作盘预留分别限额；失败/未知清理继续占预留。构建实际 CPU/RAM/VM 私有盘上限由独立 Rust 池执行，不借用运行额度；同盘检查及预留保护运行清理余量。配置/预算指纹持久绑定，变更须显式迁移，重启不能隐式换池。总期限从提交起算，Rust 池另强制 VM 寿命，不因重启续期。
 
 阶段为 `AwaitingInput → Queued → Building → Cleaning → Publishing → Ready/Failed`；观察不了原 VM 时为 `CleanupUnknown`，不释放预留或再建新 VM。私有 `/sandproof/internal-build-vms/{buildID}` 在准入同一事务保存 buildID/请求，GET 能查未启动和已销毁身份；重复 POST 包括墓碑都不建替代。普通 create 拒绝 `_sandproof_` 保留 metadata。
