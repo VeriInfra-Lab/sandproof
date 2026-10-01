@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tarfile
 import tempfile
+import threading
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -33,6 +34,30 @@ def template():
 
 
 class GenericInputTests(unittest.TestCase):
+    def test_lost_create_receipt_has_durable_intent_before_dispatch_and_no_retry(self):
+        from harbor.models.task.config import NetworkMode
+        with tempfile.TemporaryDirectory() as tmp:
+            env = object.__new__(GenericEnvironment)
+            env._network_policy = SimpleNamespace(network_mode=NetworkMode.PUBLIC)
+            env.template, env.entry = template(), entry()
+            env.environment_name, env.build_id = 'sample', 'a' * 32
+            env.sdk_options = {'api_key': 'synthetic'}
+            env.prepare_template = AsyncMock()
+            env._startup_env = Mock(return_value={})
+            env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
+            env.sandbox_id = None
+            async def lost(**kwargs):
+                intent = json.loads((Path(tmp) / 'runtime-intent.json').read_text())
+                self.assertEqual(intent['metadata'], kwargs['metadata'])
+                self.assertEqual(intent['template'], env.template)
+                raise TimeoutError('lost create reply')
+            with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(side_effect=lost)) as create:
+                with self.assertRaises(TimeoutError):
+                    asyncio.run(env.start())
+            create.assert_awaited_once()
+            self.assertTrue(env.create_dispatched)
+            self.assertIsNone(env.sandbox_id)
+
     def test_expired_initialization_never_dispatches_runtime_create(self):
         from harbor.models.task.config import NetworkMode
         env = object.__new__(GenericEnvironment)
@@ -146,6 +171,9 @@ class GenericInputTests(unittest.TestCase):
             self.assertEqual(create.call_args.kwargs['request_timeout'], 480)
             self.assertNotIn('cpu_count', create.call_args.kwargs)
             self.assertEqual(env.sandbox_id, 'sb-exact')
+            intent = json.loads((Path(tmp) / 'runtime-intent.json').read_text())
+            self.assertEqual(intent['metadata'], create.call_args.kwargs['metadata'])
+            self.assertEqual(intent['template'], env.template)
             env.exec.assert_awaited_once_with('test ! -e /solution && test ! -e /tests', cwd='/', user='root', timeout_sec=30)
 
     def test_build_diagnostics_keep_terminal_result_and_original_identity(self):
@@ -266,6 +294,89 @@ class BuildLogTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GenericSuiteTests(unittest.TestCase):
+    def test_cancel_during_external_audit_waits_for_same_audit_before_propagating(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                source_kind='oci', build_url='http://127.0.0.1:1')
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+            finished = threading.Event()
+            async def exercise():
+                entered = asyncio.Event()
+                release = threading.Event()
+                loop = asyncio.get_running_loop()
+                def audit(row):
+                    loop.call_soon_threadsafe(entered.set)
+                    if not release.wait(2):
+                        raise TimeoutError('test did not release audit')
+                    finished.set()
+                    return {'exact_cleanup': 'passed'}
+                args.completion_audit = Mock(side_effect=audit)
+                running = asyncio.create_task(run_selected(args, lock))
+                await asyncio.wait_for(entered.wait(), 1)
+                running.cancel()
+                await asyncio.sleep(0)
+                self.assertFalse(running.done())
+                running.cancel()
+                release.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await running
+                self.assertTrue(finished.is_set())
+            with patch('benchmarks.run_generic.run_task', AsyncMock(return_value={
+                    'name': 'a', 'status': 'failed', 'execution_status': 'timeout',
+                    'error_type': 'TimeoutError'})) as trial:
+                asyncio.run(exercise())
+            trial.assert_awaited_once()
+            args.completion_audit.assert_called_once()
+            rows = json.loads((Path(tmp) / 'full-set.json').read_text())['tasks']
+            self.assertEqual(rows[0]['execution_status'], 'timeout')
+            self.assertEqual(rows[0]['error_type'], 'TimeoutError')
+            self.assertTrue(rows[0]['interrupted'])
+            self.assertEqual(rows[0]['exact_cleanup'], 'passed')
+            self.assertEqual(rows[1]['status'], 'not_run')
+
+    def test_recovered_create_failure_keeps_score_and_continues_only_after_physical_audit(self):
+        for exact in ('passed', 'unknown'):
+            with self.subTest(exact=exact), tempfile.TemporaryDirectory() as tmp:
+                audit = Mock(return_value={'exact_cleanup': exact,
+                    'sandbox_id': 'sb-original', 'runtime_recovery': {'status': 'destroyed'}})
+                args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                    source_kind='oci', build_url='http://127.0.0.1:1', completion_audit=audit)
+                lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+                first = {'name': 'a', 'status': 'create_unknown', 'execution_status': 'timeout',
+                         'kill_confirmed': False, 'oracle': 'not_run', 'verifier': 'not_run'}
+                with patch('benchmarks.run_generic.run_task', AsyncMock(side_effect=[first,
+                        {'name': 'b', 'status': 'passed'}])) as trial:
+                    rows = asyncio.run(run_selected(args, lock))
+                self.assertEqual(trial.await_count, 2 if exact == 'passed' else 1)
+                self.assertEqual(rows[0]['status'], 'create_unknown')
+                self.assertEqual(rows[0]['execution_status'], 'timeout')
+                self.assertFalse(rows[0]['kill_confirmed'])
+                self.assertEqual(rows[0]['verifier'], 'not_run')
+
+    def test_cancelled_trial_still_calls_external_recovery_without_starting_next_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audit = Mock(return_value={'exact_cleanup': 'passed'})
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                source_kind='oci', build_url='http://127.0.0.1:1', completion_audit=audit)
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+            async def interrupted(*args, **kwargs):
+                result = Path(tmp) / 'a/result.json'
+                result.parent.mkdir()
+                kwargs['result_row'].update(name='a', status='create_unknown',
+                    interrupted=True, runtime_intent={'original': True})
+                result.write_text(json.dumps(kwargs['result_row']))
+                raise asyncio.CancelledError()
+            with patch('benchmarks.run_generic.run_task', AsyncMock(side_effect=interrupted)) as trial:
+                with self.assertRaises(asyncio.CancelledError):
+                    asyncio.run(run_selected(args, lock))
+            trial.assert_awaited_once()
+            audit.assert_called_once()
+            self.assertEqual(audit.call_args.args[0]['runtime_intent'], {'original': True})
+            rows = json.loads((Path(tmp) / 'full-set.json').read_text())['tasks']
+            self.assertTrue(rows[0]['interrupted'])
+            self.assertEqual(rows[0]['exact_cleanup'], 'passed')
+            self.assertEqual(rows[1]['status'], 'not_run')
+
     def test_repair_mode_is_explicit_and_preserved_in_complete_report(self):
         for mode in ('original', 'repaired'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:

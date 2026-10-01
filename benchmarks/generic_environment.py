@@ -100,6 +100,8 @@ class GenericEnvironment(SdkEnvironment):
         self.build_dispatched = False
         self.submission_key = secrets.token_hex(16)
         self.template = None
+        self.runtime_intent = None
+        self.runtime_attempt = None
         self.start_audit = start_audit
         super().__init__(sdk_options=sdk_options, **kwargs)
 
@@ -195,6 +197,11 @@ class GenericEnvironment(SdkEnvironment):
             output.flush()
             import os
             os.fsync(output.fileno())
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
     async def start(self, force_build=False):
         if not self._network_is_public:
@@ -207,11 +214,19 @@ class GenericEnvironment(SdkEnvironment):
         startup = self.template['startup']
         self._workdir = startup['workdir']
         self.default_user = startup['user']
+        self.runtime_attempt = secrets.token_hex(16)
+        metadata = {'benchmark': 'terminal-bench-2.0', 'task': self.environment_name,
+                    'build': self.build_id, 'revision': self.template['revision'],
+                    'runtime_attempt': self.runtime_attempt}
+        # This is a correlation identity, not an idempotency key. Never replay
+        # create after a lost response. The local operator can find Starting
+        # records in its private journal; the public list only shows Running.
+        self.runtime_intent = {'metadata': metadata, 'template': self.template}
+        self.checkpoint('runtime-intent.json', self.runtime_intent)
         self.create_dispatched = True
         self._sandbox = await AsyncSandbox.create(
             template=self.template['templateId'], timeout=86400, allow_internet_access=True,
-            metadata={'benchmark': 'terminal-bench-2.0', 'task': self.environment_name,
-                      'build': self.build_id, 'revision': self.template['revision']},
+            metadata=metadata,
             envs=self._startup_env(), **(self.sdk_options | {'request_timeout': remaining}))
         self.sandbox_id = self._sandbox.sandbox_id
         self.checkpoint('runtime-identity.json', {'sandbox_id': self.sandbox_id, 'template': self.template})

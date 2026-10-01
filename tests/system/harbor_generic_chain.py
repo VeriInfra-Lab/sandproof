@@ -31,6 +31,7 @@ from template_self_service import BUILD_TOOLS
 from template_resource_pressure import ready_for_pressure
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import plan
+from tools.runtime_create_recovery import recover_runtime_create
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
@@ -38,6 +39,14 @@ from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected, validate_oracle_mode
 
 MIB = 1024**2
+
+
+def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressure_report):
+    """A separate pressure pass never replaces task scores or oracle provenance."""
+    passed = (len(rows) == len(selected) and all(row['status'] == 'passed' for row in rows)
+              and (not resource_pressure or pressure_report['status'] == 'passed'))
+    return {'execution_passed': passed, 'oracle_mode': oracle_mode,
+            'original_verifier': True, 'original_oracle_verifier': oracle_mode == 'original'}
 
 
 def exercise(args):
@@ -232,6 +241,18 @@ def exercise(args):
         # and lifetime, rather than killing the reclaimer after a 90s pause.
         deadline = (time.monotonic() + max(0, original_deadline - time.time())
                     + 2 * capacity['max_build_seconds'] + 90)
+        result = {}
+        if row.get('create_dispatched') and not row.get('kill_confirmed'):
+            if not row.get('runtime_intent'):
+                raise RuntimeError('missing runtime creation intent; retain original identity')
+            # The public SDK list omits Starting instances. Only this trusted
+            # operator reads its own private journal, including pending creates.
+            recovery = recover_runtime_create(
+                root / '0/db/controller.db', row['runtime_intent'],
+                owner=settings[0]['credentials'][0]['tenant'], namespace=namespaces[0],
+                sandbox_id=row.get('sandbox_id'), deadline=deadline,
+                delete=lambda identity: fetch(opener, urls[0], 'DELETE', '/sandboxes/' + identity, key)[0])
+            result.update(sandbox_id=recovery['sandbox_id'], runtime_recovery=recovery)
         while True:
             with sqlite3.connect(root / 'builds/builds.db') as db:
                 pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
@@ -242,19 +263,27 @@ def exercise(args):
             time.sleep(0.5)
         for i in range(2):
             pool = root / str(i)
-            with sqlite3.connect(pool / 'db/controller.db') as db:
-                phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
-                pending_actions = db.execute("SELECT COUNT(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0]
-            if pending_actions or any(p != 'Destroyed' for p in phases):
-                raise RuntimeError('pool still owns an unreclaimed identity')
-            claims = pool / 'jails/.claims'
-            if claims.exists():
-                check_no_resources(pool, namespaces[i], firecracker, args.uid_base + i * stride)
-                for claim in claims.iterdir():
-                    audit_gone(pool, firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
+            while True:
+                if controllers[i].poll() is not None:
+                    raise RuntimeError('controller exited before exact cleanup')
+                with sqlite3.connect(pool / 'db/controller.db') as db:
+                    phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
+                    pending_actions = db.execute("SELECT COUNT(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0]
+                try:
+                    assert not pending_actions and all(p == 'Destroyed' for p in phases)
+                    claims = pool / 'jails/.claims'
+                    if claims.exists():
+                        check_no_resources(pool, namespaces[i], firecracker, args.uid_base + i * stride)
+                        for claim in claims.iterdir():
+                            audit_gone(pool, firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
+                    break
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('pool still owns an unreclaimed identity') from None
+                    time.sleep(.5)
         if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
             raise RuntimeError('assigned UID still owns a live process')
-        result = {'exact_cleanup': 'passed'}
+        result['exact_cleanup'] = 'passed'
         if row.get('build_dispatched'):
             from tools.template_build_client import BuildClient
             client = BuildClient(urls[2], key)
@@ -379,6 +408,8 @@ def exercise(args):
             report['exact_cleanup_audit'] = ('passed' if all(r.get('exact_cleanup') == 'passed' for r in current)
                                              else 'unknown')
             (output / 'full-set.json').write_text(json.dumps(report, indent=2) + '\n')
+            outcome = repetition_outcome(current, selected, oracle_mode=oracle_mode,
+                resource_pressure=args.resource_pressure, pressure_report=pressure_report)
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
@@ -387,10 +418,8 @@ def exercise(args):
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
                 'no_process_network_cgroup_jail_residue': True,
-                'oracle_mode': oracle_mode, 'original_verifier': True,
-                'original_oracle_verifier': oracle_mode == 'original', 'paid_model_used': False}, indent=2) + '\n')
-            passed = (len(current) == len(selected) and all(r['status'] == 'passed' for r in current)
-                      and (not args.resource_pressure or pressure_report['status'] == 'passed'))
+                **outcome, 'paid_model_used': False}, indent=2) + '\n')
+            passed = outcome['execution_passed']
             all_passed = all_passed and passed
             print(json.dumps({'repetition': repetition, 'execution_passed': passed,
                               'tasks': [{k: r.get(k) for k in ('name', 'status', 'stage', 'error_type', 'exact_cleanup')} for r in current]}), flush=True)

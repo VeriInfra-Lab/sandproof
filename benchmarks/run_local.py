@@ -226,7 +226,7 @@ def record_artifact_status(environment, row):
             row['reason'] = 'artifact_evidence_incomplete'
 
 
-async def run_task(args, entry, recipe, *, environment_factory=None):
+async def run_task(args, entry, recipe, *, environment_factory=None, result_row=None):
     task = Task(args.source / entry['name'])
     paths = TrialPaths(args.output / entry['name'])
     paths.trial_dir.mkdir(mode=0o700)
@@ -244,9 +244,12 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
         artifact_limits=getattr(args, 'artifact_limits', None),
     )
     oracle_mode = getattr(args, 'oracle_mode', 'original')
-    row = {'name': task.name, 'status': 'running', 'stage': 'initialization',
-           'oracle_mode': oracle_mode,
-           'oracle': 'not_run', 'verifier': 'not_run'}
+    # The enclosing supervisor retains this same row even when cancellation
+    # propagates and result.json cannot be published. Disk reports are evidence,
+    # not the only channel carrying the original identity and failure to cleanup.
+    row = result_row if result_row is not None else {}
+    row.update(name=task.name, status='running', stage='initialization',
+               oracle_mode=oracle_mode, oracle='not_run', verifier='not_run')
     start = time.monotonic()
     def event(stage):
         row['stage'] = stage
@@ -316,13 +319,16 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
                     row.setdefault('diagnostic_errors', {})[remote] = type(log_error).__name__
     finally:
         record_artifact_status(environment, row)
+        row['execution_status'] = row['status']
         row['sandbox_id'] = environment.sandbox_id
+        row['create_dispatched'] = environment.create_dispatched
         if hasattr(environment, 'build_id'):
             row.update(build_id=environment.build_id, build=environment.build_result,
                        build_log_error=getattr(environment, 'build_log_error', None),
                        template=environment.template, exact_cleanup='not_audited',
                        build_dispatched=environment.build_dispatched,
                        submission_key=environment.submission_key)
+            row['runtime_intent'] = getattr(environment, 'runtime_intent', None)
         if environment.create_dispatched and environment.sandbox_id is None:
             row['status'] = 'create_unknown'
         try:

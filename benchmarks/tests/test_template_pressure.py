@@ -13,8 +13,10 @@ SYSTEM = Path(__file__).resolve().parents[2] / 'tests/system'
 sys.path.insert(0, str(SYSTEM))
 try:
     import template_resource_pressure as pressure
+    import harbor_generic_chain as chain
 finally:
     sys.path.remove(str(SYSTEM))
+from benchmarks.run_generic import run_selected
 from tools.generic_capacity import GIB, MIB, plan
 from tools.template_acceptance import budgets
 
@@ -68,6 +70,43 @@ class PressureReplayTests(unittest.TestCase):
 
 
 class PressureFailureTests(unittest.TestCase):
+    def test_repaired_ready_templates_and_pressure_pass_retain_failed_batch_and_mode(self):
+        names = ['build-cython-ext', 'build-pmars']
+        trials = [row | {'name': name, 'status': 'failed', 'oracle_mode': 'repaired',
+                         'rewards': {'reward': 0.0}, 'build': {'state': 'Ready'},
+                         'exact_cleanup': 'passed'} for name, row in zip(names, templates())]
+        original = copy.deepcopy(trials)
+        with tempfile.TemporaryDirectory() as temporary:
+            args = SimpleNamespace(source=Path(temporary), output=Path(temporary), all=False,
+                task=names, source_kind='oci', build_url='http://127.0.0.1:1', oracle_mode='repaired',
+                completion_audit=Mock(return_value={'exact_cleanup': 'passed'}))
+            lock = {'source': {}, 'tasks': [{'name': name} for name in names]}
+            with patch('benchmarks.run_generic.run_task', AsyncMock(side_effect=trials)) as run:
+                rows = asyncio.run(run_selected(args, lock))
+            report = json.loads((args.output / 'full-set.json').read_text())
+        self.assertEqual(run.await_count, 2)
+        self.assertEqual(rows, original)
+        self.assertEqual(report['oracle_mode'], 'repaired')
+        self.assertEqual(report['tasks'], original)
+        self.assertTrue(pressure.ready_for_pressure(rows))
+        outcome = chain.repetition_outcome(rows, names, oracle_mode=report['oracle_mode'],
+            resource_pressure=True, pressure_report={'status': 'passed'})
+        self.assertFalse(outcome['execution_passed'])
+        self.assertEqual(outcome['oracle_mode'], 'repaired')
+        self.assertTrue(outcome['original_verifier'])
+        self.assertFalse(outcome['original_oracle_verifier'])
+        self.assertEqual(rows, original)
+        for mode in ('original', 'repaired'):
+            passed_rows = [row | {'status': 'passed', 'oracle_mode': mode, 'rewards': {'reward': 1.0}}
+                           for row in rows]
+            with self.subTest(mode=mode):
+                passed = chain.repetition_outcome(passed_rows, names, oracle_mode=mode,
+                    resource_pressure=True, pressure_report={'status': 'passed'})
+                self.assertTrue(passed['execution_passed'])
+                self.assertEqual(passed['original_oracle_verifier'], mode == 'original')
+                self.assertFalse(chain.repetition_outcome(passed_rows, names, oracle_mode=mode,
+                    resource_pressure=True, pressure_report={'status': 'failed'})['execution_passed'])
+
     def test_slow_read_reobserves_original_builder_without_mutating_or_extending_deadline(self):
         vm = {'session': {'known': True}, 'sandboxID': 'original'}
         read = AsyncMock(side_effect=[TimeoutError('disk preparation'), vm])
