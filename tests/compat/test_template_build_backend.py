@@ -22,6 +22,9 @@ class BuildSdkSession(unittest.TestCase):
     def test_public_import_uploads_fetcher_and_seventh_tool_without_from_build(self):
         self.exercise("oci")
 
+    def test_sparse_candidate_digest_mismatch_still_refuses_without_second_create(self):
+        self.exercise('oci', bad_digest=True)
+
     def test_worker_preflight_failure_retains_bounded_cause_without_status_file(self):
         self.exercise('dockerfile', early_failure=True)
 
@@ -56,13 +59,15 @@ class BuildSdkSession(unittest.TestCase):
     def test_nonzero_worker_cannot_publish_even_if_it_wrote_candidate_status(self):
         self.exercise('oci', failure={'state': 'candidate', 'reason': 'WorkerFailed:CommandExit'})
 
-    def exercise(self, kind, early_failure=False, failure=None):
+    def exercise(self, kind, early_failure=False, failure=None, bad_digest=False):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "source.tar"
             source.write_bytes(b"opaque input")
             candidate = b"\0" * (1024 * 1024)
             status = {"state": "candidate", "rootfs_sha256": hashlib.sha256(candidate).hexdigest()}
+            if bad_digest:
+                status['rootfs_sha256'] = 'f' * 64
             if failure is not None:
                 status.update(state=failure.get('state', 'failed'), error_type='InvalidTemplate')
             profile = {"runtime": {"credentials": [{"tenant": 1, "secret": "runtime-key"}]},
@@ -124,11 +129,18 @@ class BuildSdkSession(unittest.TestCase):
                     self.assertFalse((directory / 'candidate.ext4').exists())
                     identity.assert_called_once_with(row, create=True)
                     return
-                self.assertEqual(backend.build(store, row), status)
+                if bad_digest:
+                    with self.assertRaisesRegex(BuildError, 'CandidateDigestMismatch'):
+                        backend.build(store, row)
+                else:
+                    self.assertEqual(backend.build(store, row), status)
                 identity.assert_called_once_with(row, create=True)
                 config = files.call_args.args[2]
                 self.assertEqual(config.sandbox_headers["X-Access-Token"], "private-token")
                 self.assertEqual((directory / "candidate.ext4").stat().st_size, len(candidate))
+                self.assertEqual((directory / "candidate.ext4").read_bytes(), candidate)
+                if hasattr((directory / "candidate.ext4").stat(), 'st_blocks'):
+                    self.assertLess((directory / "candidate.ext4").stat().st_blocks * 512, len(candidate) // 4)
                 writes = {call.args[0]: call.args[1] for call in files.return_value.write.call_args_list}
                 self.assertIn("/input/template_fetch.py", writes)
                 guest_profile = json.loads(writes["/input/profile.json"])

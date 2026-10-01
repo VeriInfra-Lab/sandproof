@@ -13,11 +13,11 @@ import threading
 import time
 
 if __package__:
-    from .template_stage import private_directory
+    from .template_stage import private_directory, write_sparse
     from .template_fetch import reference
     from .template_inputs import InvalidTemplate
 else:
-    from template_stage import private_directory
+    from template_stage import private_directory, write_sparse
     from template_fetch import reference
     from template_inputs import InvalidTemplate
 
@@ -45,7 +45,7 @@ def identity(value):
     return value
 
 
-def durable_write(path, blocks, limit, *, exact=None):
+def durable_write(path, blocks, limit, *, exact=None, sparse=False):
     """Private supervisor-owned destination. fsync before journal checkpoint."""
     temporary = path.with_suffix(".partial")
     count, digest = 0, hashlib.sha256()
@@ -57,9 +57,14 @@ def durable_write(path, blocks, limit, *, exact=None):
                 if count > limit:
                     raise BuildError(413, "InputOrArtifactTooLarge")
                 digest.update(block)
-                output.write(block)
+                if sparse:
+                    write_sparse(output, block)
+                else:
+                    output.write(block)
             if exact is not None and count != exact:
                 raise BuildError(400, "IncompleteInputOrArtifact")
+            if sparse:
+                output.truncate(count)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary, path)
