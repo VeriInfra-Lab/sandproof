@@ -74,7 +74,7 @@ async def finish_input(item):
 
 
 async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor,
-                   restart, source_entry, audit_shape, completion_audit):
+                   restart, source_entry, audit_shape, completion_audit, service_audit=None):
     templates = [r['template'] for r in rows]
     assert len({t['templateId'] for t in templates}) == 2
     validate_cohort([{'cpus': t['cpuCount'], 'memory_mib': t['memoryMib'],
@@ -195,6 +195,10 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
                 await hold_input(sandbox, '/tmp/pressure-' + str(number), tracked)
                 remaining -= 1
         assert remaining == 0
+        if service_audit is not None:
+            report['service_pressure'] = await asyncio.to_thread(
+                service_audit, transfer['max_transfers'] - transfer['control_reserve'])
+            checkpoint()
         await limited(cohort[2].files.write, '/tmp/refused-pressure-file', b'must-not-arrive')
         await health(cohort[2], urls[0])
         # The fourth VM is independent of the 15 blocked data streams. Its

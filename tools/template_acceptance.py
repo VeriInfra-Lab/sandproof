@@ -1,8 +1,9 @@
-"""Shared acceptance budgets, not production defaults or a host-wide cgroup cap.
+"""Shared acceptance budgets, not production defaults.
 
 Runtime transfer/deadline values come from the existing task profile. Plan for
 both complete controller quotas, even when a task runner dispatches serially.
-The service/relay allowance and host headroom must still be measured on KVM.
+The service/relay leaf is enforced by the explicit cgroup launcher. Generated
+budgets alone do not prove that processes joined it; the runner must observe it.
 """
 import copy
 import hashlib
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from tools.generic_capacity import MIB
 from tools.template_build_config import HOST_MEMORY_OVERHEAD_MIB, UPLOAD_ENVELOPE_BYTES, validate_capacity
+from tools.service_cgroup import limits as service_limits
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / 'benchmarks/template-service-budgets.json'
@@ -45,6 +47,7 @@ def budgets(capacity, builder_bytes, kernel_bytes, *, profile=None):
     if type(builder_bytes) is not int or builder_bytes <= 0 or type(kernel_bytes) is not int or kernel_bytes <= 0:
         raise ValueError('positive fixed artifact sizes required')
     r, b, h = (profile[key] for key in ('runtime', 'builder', 'host'))
+    service_limits(h['control_cpu_allowance'] * 100000, h['control_memory_allowance_bytes'])
     target = capacity['max_disk_mib'] * MIB
     runtime = json.loads(RUNTIME_PROFILE.read_text())
     # Include the trusted fallback base, without claiming that four of the
@@ -106,6 +109,8 @@ def budgets(capacity, builder_bytes, kernel_bytes, *, profile=None):
             'builder_compute': builder_compute, 'builder_shape': {'cpu_count': b['cpu_count'],
             'memory_mib': b['memory_mib'], 'host_memory_bytes': builder_memory},
             'registry': registry, 'limits': limits, 'host': host, 'profile': profile,
+            'service_cgroup': {'cpu_quota_us': h['control_cpu_allowance'] * 100000,
+                               'memory_bytes': h['control_memory_allowance_bytes']},
             'profile_canonical_sha256': hashlib.sha256(json.dumps(profile, sort_keys=True).encode()).hexdigest(),
             'runtime_profile_sha256': hashlib.sha256(RUNTIME_PROFILE.read_bytes()).hexdigest()}
 

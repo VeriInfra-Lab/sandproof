@@ -229,6 +229,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 宿主资源验收使用[运行层的显式 cgroup 配置](../sandbox-runtime/README.md)，区分来宾 RAM、VMM 宿主上限与服务/relay 总预算。必须先实测限额被读回、进程属于精确分组，再用受控竞争证明 CPU 被节流、内存超限只终止该组工作负载；空组、含任务组、限额篡改、inode 替代、配置变更、创建记录中断与重复清理分别检查。随后在同配置运行真实 VM/SDK 和启动/停止/清理回执丢失用例，独立观察进程、cgroup、网络空间和私有盘；单独内核探针通过不等于真实 VM 或整个宿主容量已验收。
 
+[服务组内核探针](../tests/system/service_cgroup_budget.py)使用两个独立小限额组，通过管道屏障检查 exec 前入组、子进程继承和共同 CPU 节流、64 MiB 组内 OOM 而另一组仍存活、原记录重新启动及精确空组删除；它不运行 VM 或真实服务/relay。运行须传 `--parent <已委派 root 私有父组> --evidence <新的 root 私有空目录>`，保留精确提交、inode、读回限额、内核计数和收尾。普通基础检查另覆盖篡改、替换、旧 boot、创建中断与活组拒绝清理。通用 KVM 入口要求第三个独占父组 `--service-cgroup-parent`，从统一预算生成服务合计限额，控制器与监督器重启均经同一记录启动；运行报告与 `service-resources.json`、`service-cleanup.json` 分开保存成员观察和服务收尾，未知或 OOM 不计通过。实测结果仅按 PR/基线绑定的提交报告，旧双池结果不背书新服务组配置。
+
 显式配置下，节点实机回归还须核对运行进程的 cgroup 归属与 inode，临时收紧 CPU 限额后盘点必须拒绝。首个槽位缺失时，未绑定的同名 cgroup 必须阻止失败收尾；清理回执丢失后新建的同名替代组必须让观察与再次清理拒绝，且替代组保持存在。测试只移除自己创建的空组后再继续恢复，不凭控制器终态判断物理资源已消失。已运行的选定用例及资源指纹见[版本基线](../references/v1-baseline.json)，不表示真实磁盘满、完整 SDK 故障矩阵或 #13 任务预算已验收。
 
 固定 base 制备按[运行层配方](../sandbox-runtime/README.md)和[输入清单](../tests/system/base-inputs.json)记录源码、工具链、二进制和镜像指纹。接受新 profile 前须验证错误指纹/已有输出/路径逃逸被拒绝，检查安装内容、登录配置与文件系统，再以新镜像运行两 VM 私有根盘、原 SDK、停止及残留场景；组装成功不能代替 S03、S10、S11 或 #13 任务初始化。历史 CI 镜像的结果不能直接背书新 profile。

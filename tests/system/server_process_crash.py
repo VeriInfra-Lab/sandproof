@@ -94,6 +94,7 @@ def start_server(
     fail_reclaim_prepare_sandbox: int | None = None,
     exit_after_vm_claim: str | None = None,
     template_start_target: str | None = None,
+    command_prefix: list[str] | None = None,
 ) -> subprocess.Popen[bytes]:
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
     if target is not None:
@@ -114,7 +115,7 @@ def start_server(
         environment["SANDPROOF_TEST_STOP_GATE"] = str(stop_gate)
     with log.open("ab") as output:
         return subprocess.Popen(
-            [str(binary), str(config)],
+            [*(command_prefix or []), str(binary), str(config)],
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=subprocess.STDOUT,
