@@ -1,6 +1,7 @@
 import errno
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -79,6 +80,75 @@ class SparseArtifactTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             copy_sparse(source, self.path)
         self.assertEqual(self.path.read_bytes(), payload)
+
+    def test_extent_short_copies_and_fallback_after_partial_copy_preserve_bytes(self):
+        source = self.root / 'source'
+        size = 2 * 1024 * 1024 + 19
+        with source.open('wb') as output:
+            output.write(b'head' * 1024)
+            output.seek(size // 2)
+            output.write(b'center' * 1024)
+            output.truncate(size)
+        expected = source.read_bytes()
+        original_copy = os.sendfile
+        for failure in (None, errno.EXDEV, errno.ENOSYS, errno.EOPNOTSUPP, 0):
+            calls = []
+            def short_copy(dst, src, offset, count):
+                calls.append(count)
+                if len(calls) > 1 and failure is not None:
+                    if failure == 0:
+                        return 0
+                    raise OSError(failure, 'injected unsupported copy')
+                return original_copy(dst, src, offset, min(count, 1024))
+            with self.subTest(failure=failure), patch('tools.template_stage.os.sendfile', short_copy):
+                target = self.root / ('copy-' + str(failure))
+                copy_sparse(source, target)
+                self.assertEqual(target.read_bytes(), expected)
+                self.assertNotEqual(target.stat().st_ino, source.stat().st_ino)
+                self.assertLess(target.stat().st_blocks * 512, size // 4)
+                self.assertGreater(len(calls), 1)
+            self.assertEqual(source.read_bytes(), expected)
+
+    def test_unsupported_extent_lookup_and_all_hole_sources_keep_exact_length(self):
+        source = self.root / 'source'
+        for payload in (b'', bytes(131075), b'head' + bytes(131075) + b'tail'):
+            with source.open('wb') as output:
+                if payload.strip(b'\0'):
+                    output.write(payload)
+                else:
+                    output.truncate(len(payload))
+            for unsupported in (False, True):
+                with self.subTest(size=len(payload), unsupported=unsupported):
+                    self.path.unlink(missing_ok=True)
+                    if unsupported:
+                        with patch('tools.template_stage.os.lseek', side_effect=OSError(errno.EINVAL, 'unsupported')):
+                            copy_sparse(source, self.path)
+                    else:
+                        copy_sparse(source, self.path)
+                    self.assertEqual(self.path.read_bytes(), payload)
+                    self.assertEqual(self.path.stat().st_size, len(payload))
+
+    def test_real_io_errors_and_source_size_changes_do_not_succeed(self):
+        source = self.root / 'source'
+        source.write_bytes(b'payload' * 4096)
+        for error in (errno.EIO, errno.ENOSPC):
+            with self.subTest(error=error), patch('tools.template_stage.os.sendfile',
+                    side_effect=OSError(error, 'injected real copy failure')):
+                with self.assertRaises(OSError) as raised:
+                    copy_sparse(source, self.root / ('error-' + str(error)))
+                self.assertEqual(raised.exception.errno, error)
+        original_copy = os.sendfile
+        for change in (-1, 1):
+            source.write_bytes(b'payload' * 4096)
+            size = source.stat().st_size
+            def changed_copy(dst, src, offset, count):
+                result = original_copy(dst, src, offset, count)
+                with source.open('r+b') as output:
+                    output.truncate(size + change)
+                return result
+            with self.subTest(change=change), patch('tools.template_stage.os.sendfile', changed_copy):
+                with self.assertRaisesRegex(OSError, 'source size changed'):
+                    copy_sparse(source, self.root / ('changed-' + str(change)))
 
     def test_staging_records_full_shape_checks_digest_and_recovers_same_candidate(self):
         registry = self.root / 'registry'
