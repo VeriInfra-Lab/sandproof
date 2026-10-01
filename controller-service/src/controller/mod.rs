@@ -2,9 +2,12 @@
 //! accepted inputs, not a second implementation of lifecycle decisions.
 
 #[cfg(test)]
+mod allocator_tests;
+#[cfg(test)]
 mod cache_tests;
 
 mod admission;
+mod allocators;
 mod identity;
 mod registry;
 mod storage;
@@ -533,6 +536,7 @@ impl ControllerJournal {
             |row| row.get(0),
         )?;
         if existing == 0 {
+            allocators::require_legacy_base(&transaction)?;
             let rows: i64 =
                 transaction.query_row("SELECT count(*) FROM sandboxes", [], |row| row.get(0))?;
             if rows != 0 {
@@ -588,6 +592,7 @@ impl ControllerJournal {
             transaction.execute("UPDATE controller_meta SET version=7 WHERE id=1", [])?;
         }
         let world = storage::load_world(&transaction)?;
+        allocators::migrate(&transaction, &world)?;
         let committed_world = transaction::CommittedWorld::new(&transaction, world)?;
         transaction
             .commit()
@@ -874,9 +879,10 @@ impl ControllerJournal {
         }
         let next = apply_outcome(&transaction, &self.namespace, &action, receipt, id)?;
         let serialized = serde_json::to_vec(receipt)?;
+        let receipt_sequence = allocators::next_sql(&transaction, allocators::SqlId::Receipt)?;
         transaction.execute(
-            "INSERT INTO controller_receipt_history(outbox_id,receipt_json) VALUES (?1,?2)",
-            params![id, &serialized],
+            "INSERT INTO controller_receipt_history(sequence,outbox_id,receipt_json) VALUES (?1,?2,?3)",
+            params![receipt_sequence, id, &serialized],
         )?;
         transaction.execute(
             "UPDATE outbox SET dispatch_state='receipted',receipt_json=?1 WHERE id=?2",
