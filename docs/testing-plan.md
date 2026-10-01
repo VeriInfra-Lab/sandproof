@@ -217,6 +217,8 @@ uv run --locked --project tests/compat python tests/system/sdk_data_contract.py 
 
 普通公网 DNS 的缺口验收使用同一部署/模板 resolver，先从独立监督器确认选定解析器和外部目的地可达，再在全新公开模板实例中读取 `/etc/resolv.conf`、完成真实 A 查询及按域名的公网连接；重启后原实例/策略不变。相同模板的禁网/未允许 resolver 的静态模式必须阻断查询，即使来宾 root 改 resolver；管理通道保持可用。模板来源可各选 Dockerfile 和公开 OCI，复用现有公开构建及网络探针与精确回收监督；记录解析器、目的地、配置摘要、代码/模板摘要与真实结果。当前 registry 构建 DNS 的局部成功和 UDP/TCP 53 地址层探针只覆盖各自范围；未执行的通用查询/连接仍记未运行，不声称高级域名过滤、DNS 隧道防护或 IPv6 支持。
 
+[Rust 模板响应测试](../controller-service/tests/template_wire.rs)与[Harbor 输入测试](../benchmarks/tests/test_generic.py)共用同一规范 JSON，检查响应字段及真实形状一致。适配器的运行实例 create 等待使用原初始化期限的剩余时间；期限已耗尽时不得发起 create，仍保留原构建编号及结果。
+
 通用链路使用[原题执行入口](../benchmarks/run_generic.py)和[独立实机监督](../tests/system/harbor_generic_chain.py)，复现方法与来源模式见[评测说明](../benchmarks/README.md)。先验收少量不同构建环境及重复运行，再执行完整 89 题。保留原 Dockerfile/context 或 OCI 引用、构建编号、模板修订/摘要、原解答/评分摘要及失败；SDK 销毁回执与精确宿主残留审计分开，后者须同时检查构建池和运行池。监督入口按选题数和重复次数预留不可变模板总量、历史日志、峰值工作盘和两池不复用 VM 编号；在派发前检查宿主空间/内存/CPU 及可信基础盘空闲量。每题结束后等待原构建预留归零、核对持久终态和物理资源，再观察原构建编号；普通失败保留并继续，身份或回收未知立即停止后续派发。不得预填评分器依赖后声称未改环境，或将旧逐题配方的跨版本结果计入新链路。
 
 暂停恢复和安全竞争用 S 类专门测试扩展，不能用 Terminal-Bench 通过代替。形式化阶段再证明声明范围内任意历史的性质；V1 测试报告只记录实验结果。

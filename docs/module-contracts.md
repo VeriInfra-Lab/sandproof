@@ -66,6 +66,8 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 | `GET /sandproof/template-builds/{id}` | 仅本人；状态、有限失败原因；只有 Ready 返回完整模板编号/修订/摘要/形状 |
 | `GET /sandproof/template-builds/{id}/logs?offset=0&limit=65536` | 按字节位置读至多 64 KiB，带 nextOffset；总日志受配置限制；当前在来宾构建结束后获取，不保证实时尾随 |
 
+Ready 返回的模板形状使用 Rust `TemplateView` 的规范字段 `cpuCount`、`memoryMib`、`diskBytes`、`hostMemoryBytes`；构建请求的资源字段仍为 `memoryMiB`。Rust 序列化和 Harbor 适配共用[响应样例](../tests/compat/template-view.json)检查该边界。
+
 不接受 owner、Ready、宿主路径、工具或凭据字段；陌生/他人编号均 404。可选 `Idempotency-Key`（1～64 个字母/数字/下划线/连字符）按租户绑定规范化请求，相同重提返回原编号，不同内容 409；缺省每次是独立工作。公开引用不接受凭据、本地 transport、自定义端口或显式 IP；私网与宿主地址保护仍依赖既有包规则，字符串检查不代表 DNS 安全证明。
 
 日志页的 64 KiB 上限与 offset/nextOffset 按原始日志字节计数；无效 UTF-8 以替换字符展示。JSON 转义可能放大响应，小客户端仅对日志 GET 保留有界的转义与封装余量，其他响应仍限 64 KiB，不增加日志原始总量或单页预算。通用评测报告用 `build_log_error` 单独记录诊断读取/保存失败的异常类型，不覆盖原构建终态，不保存可能含凭据的异常文本，也不为取日志重发构建。

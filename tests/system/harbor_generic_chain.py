@@ -125,7 +125,7 @@ def exercise(args):
             'templates': {'templates': [base], 'aliases': {'base': base['template_id']},
                 'compute_limits': {'max_vcpus_global': 8, 'max_vcpus_per_tenant': 8,
                     'max_memory_bytes_global': 18 * 1024 * MIB, 'max_memory_bytes_per_tenant': 18 * 1024 * MIB}},
-            'data_transfer': {'file_upload_bytes': 512 * MIB, 'file_download_bytes': (16 * 1024 * MIB if i else 96 * MIB),
+            'data_transfer': {'file_upload_bytes': capacity['input_bytes'] + 65536 if i else 512 * MIB, 'file_download_bytes': (16 * 1024 * MIB if i else 96 * MIB),
                 'command_input_bytes': MIB, 'command_output_bytes': 32 * MIB,
                 'rpc_request_bytes': MIB, 'rpc_response_bytes': MIB, 'max_transfers': 16,
                 'max_transfers_per_vm': 8, 'control_reserve': 1,
@@ -162,7 +162,7 @@ def exercise(args):
         template = env.template
         secret, name, claim = record_for(root / '0', env._sandbox)
         bound = secret['template']
-        expected = {'cpu_count': template['cpuCount'], 'memory_mib': template['memoryMiB'],
+        expected = {'cpu_count': template['cpuCount'], 'memory_mib': template['memoryMib'],
                     'disk_bytes': template['diskBytes'], 'host_memory_bytes': template['hostMemoryBytes']}
         assert bound['resources'] == expected
         assert bound['template_id'] == template['templateId'] and bound['revision'] == template['revision']
@@ -186,7 +186,7 @@ def exercise(args):
                 response.begin()
                 assert response.status == 200
                 machine = json.loads(response.read(65536))
-        assert (machine['vcpu_count'], machine['mem_size_mib']) == (template['cpuCount'], template['memoryMiB'])
+        assert (machine['vcpu_count'], machine['mem_size_mib']) == (template['cpuCount'], template['memoryMib'])
         return {'template_id': template['templateId'], 'revision': template['revision'], 'resources': expected,
                 'pid': claim['pid'], 'start_time_ticks': claim['start_time_ticks'],
                 'disk_inode': disk.stat().st_ino, 'machine': machine}
@@ -232,8 +232,8 @@ def exercise(args):
                 raise RuntimeError('unknown build submission requires identity reconciliation')
             if result['build']['state'] not in ('Ready', 'Failed'):
                 raise RuntimeError('build state remains uncertain after physical audit')
-        if row.get('template'):
-            template = row['template']
+        template = row.get('template') or (result.get('build') or {}).get('template')
+        if template:
             source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
             assert sha256_file(source) == template['rootfsSha256']
         return result
@@ -306,8 +306,8 @@ def exercise(args):
                 raise RuntimeError('exact pool UID process remains')
             for row in current:
                 row['repetition'] = repetition
-                if row.get('template'):
-                    template = row['template']
+                template = row.get('template') or (row.get('build') or {}).get('template')
+                if template:
                     source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
                     assert sha256_file(source) == template['rootfsSha256']
             rows.extend(current)

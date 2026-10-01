@@ -26,13 +26,32 @@ def entry():
 
 
 def template():
-    return {'templateId': 'tpl-' + 'a' * 32, 'revision': 'r1', 'imageDigest': 'sha256:' + 'b' * 64,
-            'kernelSha256': 'c' * 64, 'rootfsSha256': 'd' * 64,
-            'cpuCount': 2, 'memoryMiB': 4096, 'diskBytes': 10240 * 1024**2,
-            'startup': {'user': 'app', 'workdir': '/final', 'env_vars': {}, 'argv': []}}
+    # The Rust serializer verifies this exact fixture in template_wire.rs.
+    fixture = Path(__file__).resolve().parents[2] / 'tests/compat/template-view.json'
+    return json.loads(fixture.read_text())
 
 
 class GenericInputTests(unittest.TestCase):
+    def test_expired_initialization_never_dispatches_runtime_create(self):
+        from harbor.models.task.config import NetworkMode
+        env = object.__new__(GenericEnvironment)
+        env._network_policy = SimpleNamespace(network_mode=NetworkMode.PUBLIC)
+        env.entry, env.create_dispatched = entry(), False
+        env.prepare_template = AsyncMock()
+        with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock()) as create, \
+             patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1600]))):
+            with self.assertRaises(TimeoutError):
+                asyncio.run(env.start())
+        create.assert_not_awaited()
+        self.assertFalse(env.create_dispatched)
+
+    def test_shared_rust_response_requires_canonical_memory_field(self):
+        self.assertEqual(validate_template(template(), entry()), template())
+        wrong = template()
+        wrong['memoryMiB'] = wrong.pop('memoryMib')
+        with self.assertRaises(InvalidInput):
+            validate_template(wrong, entry())
+
     def test_exact_multistage_context_excludes_private_phases(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -116,12 +135,14 @@ class GenericInputTests(unittest.TestCase):
             env.exec = AsyncMock(return_value=SimpleNamespace(return_code=0))
             sandbox = SimpleNamespace(sandbox_id='sb-exact', get_info=AsyncMock(return_value=SimpleNamespace(
                 template_id=env.template['templateId'], cpu_count=2, memory_mb=4096)))
-            with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(return_value=sandbox)) as create:
+            with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(return_value=sandbox)) as create, \
+                 patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1120]))):
                 asyncio.run(env.start())
             self.assertEqual(env._workdir, '/final')
             self.assertEqual(env.default_user, 'app')
             self.assertEqual(create.call_args.kwargs['template'], env.template['templateId'])
             self.assertEqual(create.call_args.kwargs['timeout'], 86400)
+            self.assertEqual(create.call_args.kwargs['request_timeout'], 480)
             self.assertNotIn('cpu_count', create.call_args.kwargs)
             self.assertEqual(env.sandbox_id, 'sb-exact')
             env.exec.assert_awaited_once_with('test ! -e /solution && test ! -e /tests', cwd='/', user='root', timeout_sec=30)
