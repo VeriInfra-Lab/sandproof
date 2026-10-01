@@ -22,6 +22,53 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_dependency_repairs_execute_in_order_and_preserve_failure(self):
+        # Only synthetic shell fixtures run here. Commands are recording stubs;
+        # no package manager, R compiler or benchmark solution runs on the host.
+        cases = {
+            'mcmc-sampling-stan': (
+                'set -e\nsudo apt-get install -y \\\n    gfortran=4:13.2.0-7ubuntu1\nR model.R\n',
+                ['apt-get install -y cmake gfortran=4:13.2.0-7ubuntu1', 'R model.R']),
+            'make-doom-for-mips': (
+                'apt install -y clang gcc-mips-linux-gnu g++-mips-linux-gnu llvm llvm-dev lld\nmake doom\n',
+                ['apt-get update', 'apt install -y clang gcc-mips-linux-gnu g++-mips-linux-gnu llvm llvm-dev lld', 'make doom']),
+            'build-pmars': (
+                'set -e\napt-get update\napt-get install -y build-essential=12.12 libncurses-dev=6.5+20250216-2 ca-certificates=20250419 dpkg-dev=1.22.21 devscripts=2.25.15+deb13u1\napt-get source pmars\nmake\n',
+                ['apt-get update', 'apt-get install -y build-essential libncurses-dev ca-certificates dpkg-dev devscripts', 'apt-get source pmars', 'make']),
+        }
+        for name, (script, expected) in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source = root / 'source'
+                source.mkdir()
+                (source / 'solve.sh').write_text(script)
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        name: hashlib.sha256(script.encode()).hexdigest()}):
+                    _, solve = repair_solution(name, source, root / 'repaired')
+                bin_dir = root / 'bin'
+                bin_dir.mkdir()
+                stub = ('#!/bin/bash\nname=${0##*/}\n'
+                        'printf "%s %s\\n" "$name" "$*" >> "$REPAIR_TEST_LOG"\n'
+                        'if [[ "$name $*" == "$REPAIR_TEST_FAIL" ]]; then exit 42; fi\n')
+                for command in ('apt-get', 'apt', 'R', 'make', 'sudo'):
+                    path = bin_dir / command
+                    path.write_text('#!/bin/bash\nexec "$@"\n' if command == 'sudo' else stub)
+                    path.chmod(0o700)
+                log = root / 'commands'
+                env = {**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                       'REPAIR_TEST_FAIL': ''}
+                subprocess.run(['/bin/bash', str(solve)], env=env, check=True)
+                self.assertEqual([line.rstrip() for line in log.read_text().splitlines()], expected)
+                log.unlink()
+                env['REPAIR_TEST_FAIL'] = expected[0]
+                failed = subprocess.run(['/bin/bash', str(solve)], env=env)
+                self.assertEqual(failed.returncode, 42)
+                self.assertEqual(log.read_text().splitlines(), [expected[0]])
+                self.assertEqual((source / 'solve.sh').read_text(), script)
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['original_files']['solve.sh'], hashlib.sha256(script.encode()).hexdigest())
+                self.assertEqual(evidence['repaired_files']['solve.sh'], hashlib.sha256(solve.read_bytes()).hexdigest())
+
     def test_historical_clone_skips_current_tree_but_keeps_full_history(self):
         # Execute only this synthetic fixture, never a benchmark solution.
         with tempfile.TemporaryDirectory() as temp:

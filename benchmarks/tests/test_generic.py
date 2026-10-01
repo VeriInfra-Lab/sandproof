@@ -266,6 +266,35 @@ class BuildLogTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GenericSuiteTests(unittest.TestCase):
+    def test_repair_mode_is_explicit_and_preserved_in_complete_report(self):
+        for mode in ('original', 'repaired'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=False,
+                    task=['build-pmars'], source_kind='oci', build_url='http://127.0.0.1:1')
+                if mode == 'repaired':
+                    args.oracle_mode = mode
+                lock = {'source': {}, 'tasks': [{'name': 'build-pmars'}, {'name': 'sample'}]}
+                result = {'name': 'build-pmars', 'status': 'passed', 'oracle_mode': mode}
+                with patch('benchmarks.run_generic.run_task', AsyncMock(return_value=result)) as trial:
+                    rows = asyncio.run(run_selected(args, lock))
+                self.assertEqual(getattr(trial.call_args.args[0], 'oracle_mode', 'original'), mode)
+                report = json.loads((Path(tmp) / 'full-set.json').read_text())
+                self.assertEqual(report['oracle_mode'], mode)
+                self.assertEqual(report['tasks'], rows)
+                self.assertEqual(rows[1]['status'], 'not_run')
+
+    def test_mixed_or_unknown_repairs_reject_before_any_trial_or_report(self):
+        for mode in ('repaired', 'unknown'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True,
+                    task=None, oracle_mode=mode, source_kind='oci', build_url='http://127.0.0.1:1')
+                lock = {'source': {}, 'tasks': [{'name': 'build-pmars'}, {'name': 'sample'}]}
+                with patch('benchmarks.run_generic.run_task', AsyncMock()) as trial:
+                    with self.assertRaises(InvalidInput):
+                        asyncio.run(run_selected(args, lock))
+                trial.assert_not_awaited()
+                self.assertEqual(list(Path(tmp).iterdir()), [])
+
     def test_original_failed_build_audit_allows_next_task_without_erasing_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             audit = Mock(return_value={'exact_cleanup': 'passed', 'build': {'state': 'Failed'}})
