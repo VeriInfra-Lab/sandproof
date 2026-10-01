@@ -31,6 +31,7 @@ from template_self_service import BUILD_TOOLS
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import plan
 from tools.template_acceptance import budgets, check_headroom
+from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected
@@ -77,10 +78,13 @@ def exercise(args):
         raise RuntimeError('exclusive UID pools occupied')
     if Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
         raise RuntimeError('approved public forwarding required')
-    for parent in (args.cgroup_parent, args.build_cgroup_parent, args.scratch_parent):
+    group_parents = (args.cgroup_parent, args.build_cgroup_parent, args.service_cgroup_parent)
+    if any(a.is_relative_to(b) for i, a in enumerate(group_parents) for j, b in enumerate(group_parents) if i != j):
+        raise RuntimeError('service and VM cgroup parents must be disjoint')
+    for parent in (*group_parents, args.scratch_parent):
         if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o077:
             raise RuntimeError('private root parents required')
-    for parent in (args.cgroup_parent, args.build_cgroup_parent):
+    for parent in group_parents:
         if (parent / 'cgroup.procs').read_text().strip() or any(p.is_dir() for p in parent.iterdir()):
             raise RuntimeError('exclusive empty delegated cgroups required')
     available = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines()
@@ -150,11 +154,39 @@ def exercise(args):
     from tools.template_build_service import configuration
     configuration(root / 'build.json')  # Validate the exact written cross-pool configuration.
     controllers, supervisor, log = [], None, None
+    service_record = root / 'service-cgroup.json'
+    service_prefix = service_cgroup.prefix(service_record)
+    service_samples = []
+    def observe_services(*, require_builder=True, minimum_relays=0):
+        processes = [p for p in [*controllers, *([supervisor] if require_builder else [])] if p is not None]
+        if any(p.poll() is not None for p in processes):
+            raise RuntimeError('service exited; retain original resources for recovery')
+        snapshot = service_cgroup.observe(service_record, pids=[p.pid for p in processes])
+        if snapshot['memory_events'].get('oom_kill', 0):
+            raise RuntimeError('service cgroup OOM; retain original identities for recovery')
+        relays = []
+        for pid in snapshot['pids']:
+            try:
+                start = process_start_ticks(pid)
+                argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+                if start is not None and argv[:2] == [os.fsencode(binary), b'relay']:
+                    service_cgroup.observe(service_record, pids=[pid])
+                    if process_start_ticks(pid) == start:
+                        relays.append({'pid': pid, 'start_time_ticks': start})
+            except FileNotFoundError:
+                continue
+        if len(relays) < minimum_relays:
+            raise RuntimeError('blocked data relays were not observed inside the service budget')
+        snapshot['relays'] = relays
+        service_samples.append(snapshot)
+        (root / 'service-resources.json').write_text(json.dumps(service_samples, indent=2))
+        return snapshot
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True
     pressure_report = ({'status': 'not_run', 'reason': 'requires_two_passed_tasks'}
                        if args.resource_pressure else None)
     def audit_shape(env):
+        observe_services()
         template = env.template
         secret, name, claim = record_for(root / '0', env._sandbox)
         bound = secret['template']
@@ -235,12 +267,15 @@ def exercise(args):
         return result
 
     try:
+        service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
+                               **deployment['service_cgroup'])
         for i in range(2):
-            p = start_server(binary, root / str(i) / 'config.json', root / str(i) / 'server.log', None)
+            p = start_server(binary, root / str(i) / 'config.json', root / str(i) / 'server.log', None,
+                             command_prefix=service_prefix)
             controllers.append(p)
             wait_ready(opener, urls[i], builder_key if i else key, p)
         log = (root / 'build-service.log').open('ab')
-        supervisor = subprocess.Popen([sys.executable, str(checkout / 'tools/template_build_service.py'),
+        supervisor = subprocess.Popen([*service_prefix, sys.executable, str(checkout / 'tools/template_build_service.py'),
             '--config', str(root / 'build.json')], stdout=log, stderr=subprocess.STDOUT)
         for _ in range(60):
             try:
@@ -252,6 +287,9 @@ def exercise(args):
                 time.sleep(0.5)
         else:
             raise RuntimeError('build endpoint did not become ready')
+        observe_services()
+        deployment['host']['control_allowance_enforced_by_cgroup'] = True
+        (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
         for repetition in range(args.repetitions):
             output = root / f'run-{repetition}'
             output.mkdir(mode=0o700)
@@ -281,13 +319,14 @@ def exercise(args):
                 from template_resource_pressure import exercise as pressure
                 def restart_builds():
                     nonlocal supervisor
-                    supervisor = subprocess.Popen([sys.executable, str(checkout / 'tools/template_build_service.py'),
+                    supervisor = subprocess.Popen([*service_prefix, sys.executable, str(checkout / 'tools/template_build_service.py'),
                         '--config', str(root / 'build.json')], stdout=log, stderr=subprocess.STDOUT)
                     return supervisor
                 try:
                     pressure_report = asyncio.run(pressure(root=root, urls=urls, key=key, builder_key=builder_key,
                         rows=current, deployment=deployment, supervisor=supervisor, restart=restart_builds,
-                        source_entry=capacity_entries[0], audit_shape=audit_shape, completion_audit=completion_audit))
+                        source_entry=capacity_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
+                        service_audit=lambda count: observe_services(require_builder=False, minimum_relays=count)))
                 except Exception:
                     # Retain the separate failed probe and original task scores.
                     # The common physical audit below must still pass before exit.
@@ -327,6 +366,7 @@ def exercise(args):
                     source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
                     assert sha256_file(source) == template['rootfsSha256']
             rows.extend(current)
+            observe_services()
             report['exact_cleanup_audit'] = ('passed' if all(r.get('exact_cleanup') == 'passed' for r in current)
                                              else 'unknown')
             (output / 'full-set.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -334,6 +374,7 @@ def exercise(args):
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
+                'service_cgroup': service_samples[-1],
                 'no_process_network_cgroup_jail_residue': True,
                 'original_oracle_verifier': True, 'paid_model_used': False}, indent=2) + '\n')
             passed = (len(current) == len(selected) and all(r['status'] == 'passed' for r in current)
@@ -350,22 +391,37 @@ def exercise(args):
         print('generic task run and cleanup complete; report=' + str(root / 'report.json'), flush=True)
         return 0 if all_passed else 1
     finally:
-        if supervisor:
-            stop_server(supervisor)
+        stop_errors = []
+        for p in [supervisor, *reversed(controllers)]:
+            try:
+                stop_server(p)
+            except Exception as error:
+                stop_errors.append(type(error).__name__)
         if log:
             log.close()
-        for p in reversed(controllers):
-            stop_server(p)
+        if service_record.exists():
+            try:
+                # Keep the original group usable for service restart while any
+                # VM identity or cleanup remains unresolved outside this leaf.
+                snapshot = (service_cgroup.remove(service_record) if complete else
+                            service_cgroup.observe(service_record) | {'removed': False,
+                                'reason': 'retained_for_original_vm_recovery'})
+                (root / 'service-cleanup.json').write_text(json.dumps(snapshot, indent=2))
+            except Exception as error:
+                stop_errors.append(type(error).__name__)
         # Preserve private credentials until the operator independently audits
         # both pools, including failures; deleting them can prevent recovery.
         if not complete:
             print('failure evidence retained at ' + str(root), flush=True)
+        if stop_errors:
+            (root / 'service-cleanup-errors.json').write_text(json.dumps(stop_errors))
+            raise RuntimeError('service cleanup incomplete; retain recorded resources')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('server', 'firecracker', 'jailer', 'kernel', 'rootfs', 'tools', 'scratch-parent',
-                 'cgroup-parent', 'build-cgroup-parent', 'registry', 'source'):
+                 'cgroup-parent', 'build-cgroup-parent', 'service-cgroup-parent', 'registry', 'source'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--uid-base', type=int, required=True)
     selection = parser.add_mutually_exclusive_group(required=True)
