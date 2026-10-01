@@ -28,6 +28,7 @@ from server_templates import descriptor, record_for
 from server_template_isolation import audit_gone
 from server_vm_id_capacity import check_no_resources
 from template_self_service import BUILD_TOOLS
+from template_resource_pressure import ready_for_pressure
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import plan
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
@@ -186,7 +187,7 @@ def exercise(args):
         return snapshot
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True
-    pressure_report = ({'status': 'not_run', 'reason': 'requires_two_passed_tasks'}
+    pressure_report = ({'status': 'not_run', 'reason': 'requires_two_published_audited_templates'}
                        if args.resource_pressure else None)
     def audit_shape(env):
         observe_services()
@@ -320,7 +321,7 @@ def exercise(args):
                         os.environ['SANDPROOF_TEST_API_KEY'] = old_key
             report = json.loads((output / 'full-set.json').read_text())
             current = [r for r in report['tasks'] if r['status'] != 'not_run']
-            if args.resource_pressure and len(current) == 2 and all(r['status'] == 'passed' for r in current):
+            if args.resource_pressure and ready_for_pressure(current):
                 from template_resource_pressure import exercise as pressure
                 def restart_builds():
                     nonlocal supervisor
@@ -441,7 +442,7 @@ if __name__ == '__main__':
                         help='retain registered post-score guest probes without changing original scores')
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
     parser.add_argument('--resource-pressure', action='store_true',
-                        help='after two original tasks pass, test their published templates together')
+                        help='test two Ready templates after exact task cleanup; original failed scores remain failed')
     parser.add_argument('--budget-profile', type=Path, default=PROFILE,
                         help='explicit operator acceptance profile; original larger profile remains the default')
     parser.add_argument('--docker-hub-mirror',

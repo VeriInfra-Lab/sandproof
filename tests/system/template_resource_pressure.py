@@ -25,6 +25,18 @@ from tools.template_build_client import BuildClient
 MIB = 1024**2
 
 
+def ready_for_pressure(rows):
+    """Independent resource probe, not a replacement for the original score.
+
+    Only known Ready templates after exact per-task reclaim are eligible.
+    Benchmark failure remains a failure in the enclosing report/exit status.
+    """
+    return len(rows) == 2 and all(
+        (row.get('build') or {}).get('state') == 'Ready'
+        and row.get('template') and row.get('exact_cleanup') == 'passed'
+        for row in rows)
+
+
 def validate_cohort(requirements, deployment):
     if len(requirements) != 2:
         raise ValueError('exactly two published template shapes required')

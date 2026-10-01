@@ -1,5 +1,6 @@
 """Probe failure/cancellation must retain identities and attempt every cleanup."""
 import asyncio
+import copy
 import json
 from pathlib import Path
 import sys
@@ -67,6 +68,19 @@ class PressureReplayTests(unittest.TestCase):
 
 
 class PressureFailureTests(unittest.TestCase):
+    def test_pressure_requires_ready_and_exact_cleanup_but_never_changes_failed_scores(self):
+        rows = [row | {'status': 'failed', 'rewards': {'reward': 0.0}, 'build': {'state': 'Ready'},
+                      'exact_cleanup': 'passed'} for row in templates()]
+        original = copy.deepcopy(rows)
+        self.assertTrue(pressure.ready_for_pressure(rows))
+        self.assertEqual(rows, original)
+        for changes in ({'exact_cleanup': 'unknown'}, {'build': {'state': 'Failed'}},
+                        {'template': None}, {'build': None}):
+            with self.subTest(changes=changes):
+                self.assertFalse(pressure.ready_for_pressure([rows[0], rows[1] | changes]))
+        for count in (0, 1, 3):
+            self.assertFalse(pressure.ready_for_pressure([rows[0]] * count))
+
     def test_four_instance_cpu_memory_and_disk_checked_before_dispatch(self):
         shape = {'cpus': 1, 'memory_mib': 2048, 'disk_mib': 10240}
         pressure.validate_cohort([shape, shape], deployment())
