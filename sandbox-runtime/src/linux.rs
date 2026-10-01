@@ -6,7 +6,7 @@ use serde_json::json;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -1187,10 +1187,72 @@ fn check_kvm(path: &Path) -> Result<(), RuntimeError> {
 }
 
 fn copy_private_disk(source: &Path, destination: &Path) -> Result<(), RuntimeError> {
-    fs::copy(source, destination)?;
-    // A root-owned read-only template must still produce a writable private
-    // guest disk. fs::copy preserves the source mode, including 0444.
-    fs::set_permissions(destination, fs::Permissions::from_mode(0o600))?;
+    let mut input = File::open(source)?;
+    let metadata = input.metadata()?;
+    if !metadata.is_file() {
+        return Err(RuntimeError::InvalidConfiguration("template is not a file"));
+    }
+    // Each new jail owns a fresh disk. Never overwrite an existing file or
+    // follow a destination symlink after an interrupted preparation.
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(destination)?;
+    let length = metadata.len();
+    let mut position = 0;
+    while position < length {
+        // Skip source holes without reading tens of GiB of zeroes. Filesystems
+        // without extent queries fall back to bounded scanning below.
+        let data = match rustix::fs::seek(&input, rustix::fs::SeekFrom::Data(position)) {
+            Ok(data) => data,
+            Err(rustix::io::Errno::NXIO) => break,
+            Err(rustix::io::Errno::INVAL) => position,
+            Err(error) => return Err(errno_to_io(error).into()),
+        };
+        let end = match rustix::fs::seek(&input, rustix::fs::SeekFrom::Hole(data)) {
+            Ok(end) => end.min(length),
+            Err(rustix::io::Errno::INVAL) => length,
+            Err(error) => return Err(errno_to_io(error).into()),
+        };
+        if data < position || data >= length || end <= data {
+            return Err(RuntimeError::InvalidConfiguration(
+                "invalid template extent",
+            ));
+        }
+        input.seek(SeekFrom::Start(data))?;
+        output.seek(SeekFrom::Start(data))?;
+        copy_sparse_range(&mut input, &mut output, end - data)?;
+        position = end;
+    }
+    // Seeking over a trailing hole does not extend a file. Its logical size
+    // still determines the guest disk and all admission/accounting budgets.
+    output.set_len(length)?;
+    output.set_permissions(fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+fn copy_sparse_range(
+    input: &mut impl Read,
+    output: &mut (impl Write + Seek),
+    mut length: u64,
+) -> io::Result<()> {
+    let mut buffer = vec![0_u8; 64 * 1024];
+    while length > 0 {
+        let count = usize::try_from(length.min(buffer.len() as u64))
+            .expect("count is bounded by the buffer size");
+        let block = &mut buffer[..count];
+        input.read_exact(block)?;
+        // Also reclaim allocated zero blocks in dense imported templates.
+        if block.iter().all(|byte| *byte == 0) {
+            output.seek(SeekFrom::Current(
+                i64::try_from(count).expect("64 KiB fits i64"),
+            ))?;
+        } else {
+            output.write_all(block)?;
+        }
+        length -= count as u64;
+    }
     Ok(())
 }
 
@@ -1652,5 +1714,110 @@ mod tests {
         fs::remove_file(destination).unwrap();
         fs::remove_file(source).unwrap();
         fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn private_disk_preserves_holes_bytes_and_logical_length() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("template");
+        let destination = directory.path().join("private");
+        let mut file = File::create(&source).unwrap();
+        file.seek(SeekFrom::Start(1024 * 1024 + 7)).unwrap();
+        file.write_all(b"first unaligned extent").unwrap();
+        file.seek(SeekFrom::Start(3 * 1024 * 1024 - 3)).unwrap();
+        file.write_all(b"cross a block boundary").unwrap();
+        file.set_len(8 * 1024 * 1024 + 13).unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
+
+        copy_private_disk(&source, &destination).unwrap();
+        let original = fs::metadata(&source).unwrap();
+        let copied = fs::metadata(&destination).unwrap();
+        assert_eq!(original.len(), copied.len());
+        assert_ne!(original.ino(), copied.ino());
+        assert_eq!(fs::read(&source).unwrap(), fs::read(&destination).unwrap());
+        assert!(copied.blocks() * 512 < copied.len() / 2);
+        let mut private = OpenOptions::new().write(true).open(&destination).unwrap();
+        private.seek(SeekFrom::Start(1024 * 1024 + 7)).unwrap();
+        private.write_all(b"guest overwrite").unwrap();
+        let mut original_file = File::open(&source).unwrap();
+        original_file
+            .seek(SeekFrom::Start(1024 * 1024 + 7))
+            .unwrap();
+        let mut bytes = [0; 5];
+        original_file.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"first");
+        assert_eq!(fs::metadata(&source).unwrap().mode() & 0o777, 0o444);
+        assert_eq!(copied.mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn private_disk_handles_empty_all_hole_and_dense_zero_templates() {
+        let directory = tempfile::tempdir().unwrap();
+        for (name, length, dense) in [
+            ("empty", 0, false),
+            ("hole", 1_048_593, false),
+            ("dense", 1_048_593, true),
+        ] {
+            let source = directory.path().join(name);
+            let destination = source.with_extension("private");
+            let mut file = File::create(&source).unwrap();
+            if dense {
+                file.write_all(&vec![0; length]).unwrap();
+            } else {
+                file.set_len(length as u64).unwrap();
+            }
+            copy_private_disk(&source, &destination).unwrap();
+            let copied = fs::metadata(&destination).unwrap();
+            assert_eq!(copied.len(), length as u64);
+            assert_eq!(fs::read(&source).unwrap(), fs::read(&destination).unwrap());
+            if length > 0 {
+                assert!(copied.blocks() * 512 < copied.len() / 2);
+            }
+        }
+    }
+
+    #[test]
+    fn private_disk_refuses_existing_files_and_symlinks() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("template");
+        let existing = directory.path().join("existing");
+        let link = directory.path().join("link");
+        fs::write(&source, b"template bytes").unwrap();
+        fs::write(&existing, b"do not overwrite").unwrap();
+        std::os::unix::fs::symlink(&existing, &link).unwrap();
+        for destination in [&existing, &link, &source] {
+            assert!(copy_private_disk(&source, destination).is_err());
+        }
+        assert_eq!(fs::read(existing).unwrap(), b"do not overwrite");
+        assert_eq!(fs::read(source).unwrap(), b"template bytes");
+    }
+
+    #[test]
+    fn sparse_range_fallback_handles_short_reads_and_rejects_truncation() {
+        struct ShortReads(std::io::Cursor<Vec<u8>>);
+        impl Read for ShortReads {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                let length = buffer.len().min(97);
+                self.0.read(&mut buffer[..length])
+            }
+        }
+        let mut bytes = vec![0; 3 * 64 * 1024 + 7];
+        bytes[65536..65541].copy_from_slice(b"data!");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("fallback");
+        let mut output = File::create(&path).unwrap();
+        copy_sparse_range(
+            &mut ShortReads(io::Cursor::new(bytes.clone())),
+            &mut output,
+            bytes.len() as u64,
+        )
+        .unwrap();
+        output.set_len(bytes.len() as u64).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(output.metadata().unwrap().blocks() * 512 < bytes.len() as u64 / 2);
+        let error = copy_sparse_range(&mut &b"short"[..], &mut output, 6).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        let mut readonly = File::open(&path).unwrap();
+        assert!(copy_sparse_range(&mut &b"write"[..], &mut readonly, 5).is_err());
     }
 }

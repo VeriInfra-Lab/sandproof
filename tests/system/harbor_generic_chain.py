@@ -219,7 +219,9 @@ def exercise(args):
         assert (machine['vcpu_count'], machine['mem_size_mib']) == (template['cpuCount'], template['memoryMib'])
         return {'template_id': template['templateId'], 'revision': template['revision'], 'resources': expected,
                 'pid': claim['pid'], 'start_time_ticks': claim['start_time_ticks'],
-                'disk_inode': disk.stat().st_ino, 'machine': machine}
+                'disk_inode': disk.stat().st_ino, 'disk_logical_bytes': disk.stat().st_size,
+                'disk_allocated_bytes': disk.stat().st_blocks * 512,
+                'template_allocated_bytes': source.stat().st_blocks * 512, 'machine': machine}
     def completion_audit(row):
         # A lost reply may precede completion of the same admitted disk copy.
         # Observe through its original deadline plus a bounded cleanup margin.

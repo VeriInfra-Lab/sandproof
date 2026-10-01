@@ -8,6 +8,8 @@
 
 运行器要求调用者为 root，jailer、Firecracker、内核、基础 ext4 和 jailer 基目录的每级路径均由 root 拥有且不可由其他用户修改。基础盘在每次启动时复制到独立 jail 中；调用者必须为不同 VM 分配不同非 root UID/GID。当前 CLI 是开发诊断工具，不是常驻控制服务；从短命 SSH 会话单独执行 `launch` 不能保证 VM 在会话结束后继续存活。
 
+私有磁盘复制保留源文件的稀疏区域，并以 64 KiB 缓冲跳过分配过但全零的数据块；不支持 extent 查询的文件系统退回逐块读取。目标是新建的独立可写文件，遇到已有目标或符号链接拒绝覆盖。逻辑长度、镜像内容和原有磁盘准入预算保持不变，实际占用会随来宾写入增加；节省初始写入量不代表可以降低容量预留。该路径的 KVM 验收仍须绑定实际源码提交和二进制。
+
 Linux 实机可运行 `cargo test -p sandbox-runtime --locked` 和 `cargo clippy -p sandbox-runtime --all-targets --locked -- -D warnings`。准备固定镜像及 root 拥有的 jailer 目录后，使用唯一的全小写资源编号执行：
 
 ```sh
