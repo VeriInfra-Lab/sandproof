@@ -6,9 +6,10 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from unittest.mock import Mock, patch
 
 from tools.template_build_store import BuildError, BuildStore, MIB, public_image
-from tools.template_build_service import BuildHTTP, Supervisor
+from tools.template_build_service import Backend, BuildHTTP, Supervisor
 
 
 def limits():
@@ -56,6 +57,23 @@ class FakeBackend:
 
 
 class BuildTests(unittest.TestCase):
+    def test_private_create_uses_remaining_original_deadline_without_replacement(self):
+        backend = object.__new__(Backend)
+        backend.request = Mock()
+        row = {'id': 'a' * 32, 'deadline': 1500,
+               'request': json.dumps({'timeoutSeconds': 600, 'allowInternetAccess': True})}
+        with patch('tools.template_build_service.time.time', return_value=1000):
+            backend.vm(row, create=True)
+        self.assertEqual(backend.request.call_args.kwargs['timeout'], 500)
+        self.assertEqual(backend.request.call_args.args[2], '/sandproof/internal-build-vms/' + row['id'])
+        with patch('tools.template_build_service.time.time', return_value=1500):
+            with self.assertRaisesRegex(BuildError, 'BuildDeadlineExceeded'):
+                backend.vm(row, create=True)
+        self.assertEqual(backend.request.call_count, 1)
+        backend.vm(row)
+        self.assertEqual(backend.request.call_args.args[1], 'GET')
+        self.assertEqual(backend.request.call_args.kwargs['timeout'], 60)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

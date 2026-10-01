@@ -128,6 +128,35 @@ class GenericInputTests(unittest.TestCase):
 
 
 class GenericSuiteTests(unittest.TestCase):
+    def test_original_failed_build_audit_allows_next_task_without_erasing_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audit = Mock(return_value={'exact_cleanup': 'passed', 'build': {'state': 'Failed'}})
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                                   source_kind='oci', build_url='http://127.0.0.1:1', completion_audit=audit)
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+            results = [{'name': name, 'status': 'failed', 'build_dispatched': True,
+                        'build': {'state': 'Building'}} for name in ('a', 'b')]
+            with patch('benchmarks.run_generic.run_task', AsyncMock(side_effect=results)) as trial:
+                rows = asyncio.run(run_selected(args, lock))
+            self.assertEqual(trial.await_count, 2)
+            self.assertEqual(audit.call_count, 2)
+            self.assertTrue(all(r['status'] == 'failed' and r['exact_cleanup'] == 'passed' for r in rows))
+            self.assertEqual(json.loads((Path(tmp) / 'full-set.json').read_text())['tasks'], rows)
+
+    def test_failed_external_audit_stops_suite_even_with_successful_sdk_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                                   source_kind='oci', build_url='http://127.0.0.1:1',
+                                   completion_audit=Mock(side_effect=RuntimeError('live VM')))
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+            with patch('benchmarks.run_generic.run_task', AsyncMock(return_value={
+                    'name': 'a', 'status': 'passed', 'cleanup_acknowledged': True})) as trial:
+                rows = asyncio.run(run_selected(args, lock))
+            trial.assert_awaited_once()
+            self.assertEqual(rows[0]['status'], 'cleanup_unknown')
+            self.assertEqual(rows[1]['reason'], 'previous_identity_requires_audit')
+            self.assertEqual(json.loads((Path(tmp) / 'a/result.json').read_text()), rows[0])
+
     def test_unknown_identity_stops_suite_without_dropping_other_tasks(self):
         with tempfile.TemporaryDirectory() as tmp:
             args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=False, task=['a', 'b'],

@@ -9,6 +9,7 @@ import contextlib
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -28,6 +29,7 @@ from server_template_isolation import audit_gone
 from server_vm_id_capacity import check_no_resources
 from template_self_service import BUILD_TOOLS
 from tools.benchmark_tasks import verify
+from tools.generic_capacity import plan
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected
 
@@ -44,9 +46,21 @@ def exercise(args):
     lock = verify(json.loads((checkout / 'benchmarks/terminal-bench-2.0.lock.json').read_text()), args.registry, args.source)
     runtimes = check_runtime()
     check_tasks(lock, args.source)
-    if set(args.task) - {t['name'] for t in lock['tasks']}:
+    selected = {t['name'] for t in lock['tasks']} if args.all else set(args.task)
+    if not selected or selected - {t['name'] for t in lock['tasks']}:
         raise RuntimeError('unknown original task')
-    if processes_in_uid_range(args.uid_base, args.uid_base + 199):
+    capacity = plan([t for t in lock['tasks'] if t['name'] in selected], args.repetitions,
+                    args.rootfs.stat().st_size, args.kernel.stat().st_size)
+    # Trusted operator-provided ext4 base; read metadata without mounting it.
+    superblock = subprocess.check_output(['/usr/sbin/dumpe2fs', '-h', str(args.rootfs)],
+                                        text=True, env={**os.environ, 'LC_ALL': 'C'}, stderr=subprocess.DEVNULL)
+    fields = dict(line.split(':', 1) for line in superblock.splitlines() if ':' in line)
+    if int(fields['Free blocks']) * int(fields['Block size']) < capacity['worker_required_free_bytes']:
+        raise RuntimeError('builder base lacks free space for bounded import and candidate')
+    stride = capacity['uid_stride']
+    if args.uid_base < 1000 or args.uid_base + 2 * stride >= 2**32 - 1:
+        raise RuntimeError('invalid exclusive UID ranges')
+    if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
         raise RuntimeError('exclusive UID pools occupied')
     if Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
         raise RuntimeError('approved public forwarding required')
@@ -56,8 +70,13 @@ def exercise(args):
     for parent in (args.cgroup_parent, args.build_cgroup_parent):
         if (parent / 'cgroup.procs').read_text().strip() or any(p.is_dir() for p in parent.iterdir()):
             raise RuntimeError('exclusive empty delegated cgroups required')
-    if shutil.disk_usage(args.scratch_parent).free < 120 * 1024 * MIB:
-        raise RuntimeError('120 GiB including cleanup reserve required')
+    if shutil.disk_usage(args.scratch_parent).free < capacity['required_free_bytes']:
+        raise RuntimeError('selected task artifacts, workspace and cleanup reserve exceed free disk')
+    available = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines()
+                         if line.startswith('MemAvailable:'))) * 1024
+    if (available < (capacity['max_memory_mib'] + 8448 + 2048) * MIB
+            or os.cpu_count() < capacity['max_cpu'] + 2):
+        raise RuntimeError('host headroom insufficient for build and task pools')
     for name, digest in BUILD_TOOLS.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError('fixed tool mismatch: ' + name)
@@ -67,7 +86,15 @@ def exercise(args):
     shutil.copyfile(args.server, binary)
     binary.chmod(0o700)
     original = [sha256_file(p) for p in (args.kernel, args.rootfs)]
-    namespaces = [secrets.token_hex(8), secrets.token_hex(8)]
+    namespaces = [args.namespace or secrets.token_hex(8), args.build_namespace or secrets.token_hex(8)]
+    if (any(not re.fullmatch('[0-9a-f]{16}', n) for n in namespaces)
+            or namespaces[0][:6] == namespaces[1][:6]):
+        raise ValueError('disjoint deployment namespaces required')
+    if any(len(os.fsencode(root / str(i) / 'jails' / args.firecracker.name /
+                           f'vm-{n}-{stride - 1}' / 'root/api.socket')) >= 108
+           for i, n in enumerate(namespaces)):
+        raise RuntimeError('test path too long for Firecracker socket')
+    (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
     ports = [free_loopback_port() for _ in range(3)]
     urls = [f'http://127.0.0.1:{p}' for p in ports]
     key, builder_key = secrets.token_hex(32), secrets.token_hex(32)
@@ -79,19 +106,21 @@ def exercise(args):
         for name in ('db', 'state', 'jails'):
             (pool / name).mkdir(mode=0o700)
         cpu = 2 if i else 1
-        base = descriptor('builder-base' if i else 'runtime-base', args.kernel, args.rootfs, cpu, 2048)
+        memory = 8192 if i else 2048
+        base = descriptor('builder-base' if i else 'runtime-base', args.kernel, args.rootfs, cpu, memory)
         cfg = {'namespace': namespaces[i], 'database': str(pool / 'db/controller.db'),
             'node_state_dir': str(pool / 'state'), 'chroot_base': str(pool / 'jails'),
             'jailer': str(args.jailer), 'firecracker': str(firecracker),
-            'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base + 100 * i,
-            'max_vm_id': 99, 'vcpu_count': cpu, 'memory_mib': 2048,
-            'host_resources': {'cgroup_parent': str(args.build_cgroup_parent if i else args.cgroup_parent), 'memory_max_bytes': 2304 * MIB},
+            'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base + stride * i,
+            'max_vm_id': stride - 1, 'vcpu_count': cpu, 'memory_mib': memory,
+            'host_resources': {'cgroup_parent': str(args.build_cgroup_parent if i else args.cgroup_parent), 'memory_max_bytes': (memory + 256) * MIB},
             'file_policy_digest': 1, 'bind': f'127.0.0.1:{ports[i]}', 'domain': 'example.invalid',
             'credentials': [{'tenant': 1, 'secret': builder_key if i else key}],
             'max_active_global': 2, 'max_active_per_tenant': 2,
-            'max_disk_bytes_global': 40 * 1024 * MIB, 'max_disk_bytes_per_tenant': 40 * 1024 * MIB,
-            'cleanup_reserve_bytes': 256 * MIB, 'max_timeout_secs': 1300 if i else 86400,
-            'max_lifetime_secs': 1300 if i else 86400, 'startup_timeout_secs': 60,
+            'max_disk_bytes_global': 2 * args.rootfs.stat().st_size, 'max_disk_bytes_per_tenant': 2 * args.rootfs.stat().st_size,
+            'cleanup_reserve_bytes': capacity['cleanup_bytes'], 'max_timeout_secs': capacity['max_build_seconds'] + 60 if i else 86400,
+            'max_lifetime_secs': capacity['max_build_seconds'] + 60 if i else 86400,
+            'startup_timeout_secs': capacity['max_build_seconds'],
             'expiry_scan_seconds': 2, 'public_ipv4_enabled': True,
             'templates': {'templates': [base], 'aliases': {'base': base['template_id']},
                 'compute_limits': {'max_vcpus_global': 8, 'max_vcpus_per_tenant': 8,
@@ -106,9 +135,9 @@ def exercise(args):
         else:
             for p in (root / 'registry', root / 'registry/inbox', root / 'registry/artifacts'):
                 p.mkdir(mode=0o700)
-            cfg['template_registry'] = {'root': str(root / 'registry'), 'max_templates_global': 128,
-                'max_templates_per_tenant': 128, 'max_artifact_bytes_global': 300 * 1024 * MIB,
-                'max_artifact_bytes_per_tenant': 300 * 1024 * MIB, 'validation_timeout_secs': 45}
+            cfg['template_registry'] = {'root': str(root / 'registry'), 'max_templates_global': capacity['jobs'],
+                'max_templates_per_tenant': capacity['jobs'], 'max_artifact_bytes_global': capacity['registry_bytes'],
+                'max_artifact_bytes_per_tenant': capacity['registry_bytes'], 'validation_timeout_secs': 45}
         settings.append(cfg)
         (pool / 'config.json').write_text(json.dumps(cfg))
         (pool / 'config.json').chmod(0o600)
@@ -117,16 +146,18 @@ def exercise(args):
         'runtime_config': str(root / '0/config.json'), 'builder_config': str(root / '1/config.json'),
         'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in BUILD_TOOLS.items()},
         'dns_servers': ['1.1.1.1', '8.8.8.8'],
-        'limits': {'max_cpu': 4, 'max_memory_mib': 8192, 'max_disk_mib': 16384, 'timeout_seconds': 1200,
-            'max_jobs': 100, 'max_jobs_per_tenant': 100, 'max_pending': 2, 'max_pending_per_tenant': 2,
-            'workspace_bytes': 200 * 1024 * MIB, 'workspace_bytes_per_tenant': 200 * 1024 * MIB,
-            'max_input_bytes': 512 * MIB, 'max_expanded_bytes': 4 * 1024 * MIB,
-            'max_entries': 200000, 'max_log_bytes': 2 * MIB}}
+        'limits': {'max_cpu': capacity['max_cpu'], 'max_memory_mib': capacity['max_memory_mib'],
+            'max_disk_mib': capacity['max_disk_mib'], 'timeout_seconds': capacity['max_build_seconds'],
+            'max_jobs': capacity['jobs'], 'max_jobs_per_tenant': capacity['jobs'],
+            'max_pending': 1, 'max_pending_per_tenant': 1,
+            'workspace_bytes': capacity['workspace_bytes'], 'workspace_bytes_per_tenant': capacity['workspace_bytes'],
+            'max_input_bytes': capacity['input_bytes'], 'max_expanded_bytes': capacity['expanded_bytes'],
+            'max_entries': 200000, 'max_log_bytes': capacity['log_bytes']}}
     (root / 'build.json').write_text(json.dumps(build))
     (root / 'build.json').chmod(0o600)
     controllers, supervisor, log = [], None, None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    rows, complete = [], False
+    rows, complete, all_passed = [], False, True
     def audit_shape(env):
         template = env.template
         secret, name, claim = record_for(root / '0', env._sandbox)
@@ -159,6 +190,54 @@ def exercise(args):
         return {'template_id': template['templateId'], 'revision': template['revision'], 'resources': expected,
                 'pid': claim['pid'], 'start_time_ticks': claim['start_time_ticks'],
                 'disk_inode': disk.stat().st_ino, 'machine': machine}
+    def completion_audit(row):
+        # A lost reply may precede completion of the same admitted disk copy.
+        # Observe through its original deadline plus a bounded cleanup margin.
+        original_deadline = (row.get('build') or {}).get('deadline', time.time())
+        # Publication can admit its own check VM after a slow artifact check.
+        # Keep both controllers alive through that VM's bounded preparation
+        # and lifetime, rather than killing the reclaimer after a 90s pause.
+        deadline = (time.monotonic() + max(0, original_deadline - time.time())
+                    + 2 * capacity['max_build_seconds'] + 90)
+        while True:
+            with sqlite3.connect(root / 'builds/builds.db') as db:
+                pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
+            if not pending:
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError('original build still owns its reservation')
+            time.sleep(0.5)
+        for i in range(2):
+            pool = root / str(i)
+            with sqlite3.connect(pool / 'db/controller.db') as db:
+                phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
+                pending_actions = db.execute("SELECT COUNT(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0]
+            if pending_actions or any(p != 'Destroyed' for p in phases):
+                raise RuntimeError('pool still owns an unreclaimed identity')
+            claims = pool / 'jails/.claims'
+            if claims.exists():
+                check_no_resources(pool, namespaces[i], firecracker, args.uid_base + i * stride)
+                for claim in claims.iterdir():
+                    audit_gone(pool, firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
+        if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
+            raise RuntimeError('assigned UID still owns a live process')
+        result = {'exact_cleanup': 'passed'}
+        if row.get('build_dispatched'):
+            from tools.template_build_client import BuildClient
+            client = BuildClient(urls[2], key)
+            # Reobserve the original idempotent request. A POST is forbidden.
+            if row.get('build_id'):
+                result['build'] = client.request('GET', '/sandproof/template-builds/' + row['build_id'])
+            else:
+                raise RuntimeError('unknown build submission requires identity reconciliation')
+            if result['build']['state'] not in ('Ready', 'Failed'):
+                raise RuntimeError('build state remains uncertain after physical audit')
+        if row.get('template'):
+            template = row['template']
+            source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
+            assert sha256_file(source) == template['rootfsSha256']
+        return result
+
     try:
         for i in range(2):
             p = start_server(binary, root / str(i) / 'config.json', root / str(i) / 'server.log', None)
@@ -182,8 +261,8 @@ def exercise(args):
             output.mkdir(mode=0o700)
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
                 'source_kind': args.source_kind, 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
-            run_args = SimpleNamespace(source=args.source, output=output, task=args.task, all=False,
-                api_url=urls[0], build_url=urls[2], source_kind=args.source_kind, start_audit=audit_shape)
+            run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
+                api_url=urls[0], build_url=urls[2], source_kind=args.source_kind, start_audit=audit_shape, completion_audit=completion_audit)
             old_key = os.environ.get('SANDPROOF_TEST_API_KEY')
             os.environ['SANDPROOF_TEST_API_KEY'] = key
             with (root / f'run-{repetition}.log').open('wb') as out:
@@ -217,37 +296,41 @@ def exercise(args):
                     raise RuntimeError('durable terminal cleanup incomplete')
                 claims = root / str(i) / 'jails/.claims'
                 if claims.exists():
-                    check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * 100)
+                    check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * stride)
                     for claim in claims.iterdir():
                         audit_gone(root / str(i), firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
                 else:
                     for parent in (root / str(i) / 'jails', Path('/run/netns'), Path('/sys/fs/cgroup')):
                         assert not list(parent.rglob(f'vm-{namespaces[i]}-*'))
-            if processes_in_uid_range(args.uid_base, args.uid_base + 199):
+            if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
                 raise RuntimeError('exact pool UID process remains')
             for row in current:
-                row['exact_cleanup'] = 'passed'
                 row['repetition'] = repetition
                 if row.get('template'):
                     template = row['template']
                     source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
                     assert sha256_file(source) == template['rootfsSha256']
             rows.extend(current)
-            report['exact_cleanup_audit'] = 'passed'
+            report['exact_cleanup_audit'] = ('passed' if all(r.get('exact_cleanup') == 'passed' for r in current)
+                                             else 'unknown')
             (output / 'full-set.json').write_text(json.dumps(report, indent=2) + '\n')
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
                 'no_process_network_cgroup_jail_residue': True,
                 'original_oracle_verifier': True, 'paid_model_used': False}, indent=2) + '\n')
-            passed = len(current) == len(set(args.task)) and all(r['status'] == 'passed' for r in current)
+            passed = len(current) == len(selected) and all(r['status'] == 'passed' for r in current)
+            all_passed = all_passed and passed
             print(json.dumps({'repetition': repetition, 'execution_passed': passed,
                               'tasks': [{k: r.get(k) for k in ('name', 'status', 'stage', 'error_type', 'exact_cleanup')} for r in current]}), flush=True)
             if not passed:
-                raise RuntimeError('original task execution failed; original report retained')
+                print('original task failures retained; no pass claim for this batch', flush=True)
+            if any(r.get('exact_cleanup') != 'passed' for r in current):
+                raise RuntimeError('unresolved per-task identity; no further repetition permitted')
         assert original == [sha256_file(p) for p in (args.kernel, args.rootfs)]
         complete = True
-        print('generic task acceptance passed; report=' + str(root / 'report.json'), flush=True)
+        print('generic task run and cleanup complete; report=' + str(root / 'report.json'), flush=True)
+        return 0 if all_passed else 1
     finally:
         if supervisor:
             stop_server(supervisor)
@@ -255,8 +338,8 @@ def exercise(args):
             log.close()
         for p in reversed(controllers):
             stop_server(p)
-        for p in (root / 'build.json', root / '0/config.json', root / '1/config.json'):
-            p.unlink(missing_ok=True)  # exact test-only credentials; evidence remains private
+        # Preserve private credentials until the operator independently audits
+        # both pools, including failures; deleting them can prevent recovery.
         if not complete:
             print('failure evidence retained at ' + str(root), flush=True)
 
@@ -267,7 +350,11 @@ if __name__ == '__main__':
                  'cgroup-parent', 'build-cgroup-parent', 'registry', 'source'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--uid-base', type=int, required=True)
-    parser.add_argument('--task', action='append', required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument('--task', action='append')
+    selection.add_argument('--all', action='store_true')
+    parser.add_argument('--namespace')
+    parser.add_argument('--build-namespace')
     parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
     parser.add_argument('--temporarily-forward', action='store_true')
@@ -276,7 +363,7 @@ if __name__ == '__main__':
     try:
         if forward == '0' and args.temporarily_forward:
             subprocess.run(['/usr/sbin/sysctl', '-w', 'net.ipv4.ip_forward=1'], check=True)
-        exercise(args)
+        sys.exit(exercise(args))
     finally:
         if forward == '0' and args.temporarily_forward:
             subprocess.run(['/usr/sbin/sysctl', '-w', 'net.ipv4.ip_forward=0'], check=True)
