@@ -1,5 +1,6 @@
 """Conservative serial KVM acceptance budgets, derived before any dispatch."""
 import math
+from .template_inputs import MAX_INPUT_BYTES
 
 MIB = 1024**2
 GIB = 1024 * MIB
@@ -15,7 +16,7 @@ def plan(entries, repetitions, builder_bytes, kernel_bytes, *, artifact_bytes=12
             or any(type(v) is not int or v <= 0 for v in (builder_bytes, kernel_bytes, artifact_bytes))):
         raise ValueError('invalid acceptance inputs')
     for name, value, minimum, maximum in (
-            ('input_bytes', input_bytes, 512, 8 * GIB),
+            ('input_bytes', input_bytes, 512, MAX_INPUT_BYTES),
             ('expanded_bytes', expanded_bytes, 10240, 32 * GIB)):
         if type(value) is not int or not minimum <= value <= maximum:
             raise ValueError('build budget outside service protocol: ' + name)

@@ -469,7 +469,7 @@ if __name__ == '__main__':
                         help='after two original tasks pass, test their published templates together')
     parser.add_argument('--temporarily-forward', action='store_true')
     parser.add_argument('--build-input-max-bytes', type=int, default=INPUT_BYTES,
-                        help='bounded build input/download bytes; default 4 GiB, service maximum 8 GiB')
+                        help='bounded build input/download bytes; default 4 GiB, service maximum 16 GiB')
     parser.add_argument('--build-expanded-max-bytes', type=int, default=EXPANDED_BYTES,
                         help='bounded expanded image layers; default 8 GiB, service maximum 32 GiB')
     add_artifact_arguments(parser)

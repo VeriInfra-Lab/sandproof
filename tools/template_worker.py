@@ -22,9 +22,9 @@ import threading
 import time
 
 if __package__:
-    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
+    from .template_inputs import MAX_INPUT_BYTES, InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 else:
-    from template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
+    from template_inputs import MAX_INPUT_BYTES, InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 
 
 MIB = 1024 * 1024
@@ -296,7 +296,7 @@ def validate_request(request):
     if set(request) - {"dns_servers"} != expected or request["kind"] not in ("dockerfile", "oci", "oci-reference"):
         raise InvalidTemplate("invalid worker request")
     bounds = {"disk_mib": (512, 32768), "min_free_mib": (16, 32768),
-              "max_input_bytes": (1, 8 * 1024 * MIB), "max_expanded_bytes": (10240, 32 * 1024 * MIB),
+              "max_input_bytes": (1, MAX_INPUT_BYTES), "max_expanded_bytes": (10240, 32 * 1024 * MIB),
               "max_entries": (1, 200000), "timeout_seconds": (1, 3600), "max_log_bytes": (1, 16 * MIB)}
     for field, (lower, upper) in bounds.items():
         if type(request[field]) is not int or not lower <= request[field] <= upper:
