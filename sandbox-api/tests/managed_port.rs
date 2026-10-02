@@ -126,6 +126,7 @@ impl ActionGate {
 }
 
 struct FakeHost {
+    candidate_checks: Option<Arc<AtomicUsize>>,
     secrets: BTreeMap<u64, (String, BTreeMap<String, String>)>,
     templates: BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>,
     launch_error_once: Option<PortError>,
@@ -158,6 +159,7 @@ struct FakeHost {
 impl Default for FakeHost {
     fn default() -> Self {
         Self {
+            candidate_checks: None,
             secrets: BTreeMap::new(),
             templates: BTreeMap::new(),
             launch_error_once: None,
@@ -242,6 +244,18 @@ impl HostAdapter for FakeHost {
             Ok(())
         } else {
             Err(PortError::Invalid)
+        }
+    }
+
+    fn cache_candidate_verification(
+        &self,
+        template: &sandproof_controller_service::templates::TemplateBinding,
+        verification: &sandproof_controller_service::template_registry::CandidateVerification,
+    ) {
+        assert!(verification.matches(&template.kernel));
+        assert!(verification.matches(&template.rootfs));
+        if let Some(count) = &self.candidate_checks {
+            count.fetch_add(1, Ordering::SeqCst);
         }
     }
 
