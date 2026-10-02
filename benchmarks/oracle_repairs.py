@@ -197,6 +197,14 @@ if(!bpe)return 78;''')
                            + ' https://ftp.icm.edu.pl/packages/povray/Old-Versions/Official-2.2/' + archive
                            + "\nprintf '%s\\n' '" + digest + '  ' + archive + "' | sha256sum -c")
             new = new.replace(command, replacement)
+        # The original recipe changes void main to int under C89, but leaves
+        # its normal-exit hook empty. Define that existing platform hook so a
+        # completed render returns zero; all earlier error exits remain intact.
+        marker = 'echo "void unix_init_POVRAY();" >> config.h'
+        if new.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = new.replace(marker, marker + '\n'
+                          "printf '%s\\n' '#define FINISH_POVRAY return 0;' >> config.h")
     elif name == 'crack-7z-hash':
         # Try the unmodified bundled common-password list first. No expected
         # password, special mask or task-specific candidate list is supplied.
