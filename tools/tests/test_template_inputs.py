@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import signal
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -14,7 +15,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.template_inputs import InvalidTemplate, check_members, extract_context, inspect_oci, startup_config
-from tools.template_worker import AGENT, BOOT, Commands, LogBudget, guest_path, install_platform, install_loopback_hosts, runtime_defaults, terminate, validate_request
+from tools.template_worker import AGENT, BOOT, Commands, LogBudget, check_tools, guest_path, install_platform, install_loopback_hosts, runtime_defaults, terminate, validate_request
 
 
 def archive_bytes(entries):
@@ -333,6 +334,8 @@ class TemplateInputTests(unittest.TestCase):
 
     def test_boot_order_and_health_fail_closed(self):
         self.assertLess(BOOT.index("mount -t proc"), BOOT.index("mount -o remount,rw"))
+        self.assertLess(BOOT.index("mount -o remount,rw"), BOOT.index("rm -f /run/sandproof-boot-ready"))
+        self.assertLess(BOOT.index("rm -f /run/sandproof-boot-ready"), BOOT.index("mount -t sysfs"))
         self.assertIn("grep -q ' /dev devtmpfs ' /proc/mounts", BOOT)
         self.assertLess(BOOT.index("ip route add default"), BOOT.index("touch /run/sandproof-boot-ready"))
         self.assertLess(AGENT.index("test -f /run/sandproof-boot-ready"), AGENT.index("exec /opt/sandproof/envd"))
@@ -389,6 +392,29 @@ if args[0] == 'mount' and args[-1] == '/dev/shm':
         for changes in ({"timeout_seconds": True}, {"disk_mib": 0}, {"min_free_mib": 1024}, {"extra": 1}):
             with self.subTest(changes=changes), self.assertRaises(InvalidTemplate):
                 validate_request({**request, **changes})
+
+    def test_busybox_requires_cleanup_and_filesystem_stat_capabilities(self):
+        binary = self.root / 'tool'
+        binary.write_bytes(b'trusted fixture')
+        descriptor = {'path': str(binary), 'sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
+        profile = dict.fromkeys(('buildctl', 'buildkitd', 'buildkit-runc', 'umoci', 'envd', 'busybox'), descriptor)
+        applets = {'sh', 'init', 'mount', 'grep', 'mkdir', 'chmod', 'ln', 'ip', 'touch', 'reboot', 'umount', 'rm', 'stat'}
+        listing = '\n'.join(sorted(applets)).encode()
+        for missing in ('rm', 'stat'):
+            with self.subTest(missing=missing), patch('tools.template_worker.subprocess.check_output',
+                    return_value='\n'.join(sorted(applets - {missing})).encode()) as command:
+                with self.assertRaisesRegex(InvalidTemplate, 'missing required'):
+                    check_tools(profile)
+                self.assertEqual(command.call_count, 1)
+        for output in (b'ef53\n', b'1021994\n'):
+            with self.subTest(output=output), patch('tools.template_worker.subprocess.check_output',
+                    side_effect=[listing, output]) as command:
+                self.assertEqual(check_tools(profile)['busybox'], binary)
+                self.assertEqual(command.call_args.args[0], [str(binary), 'stat', '-f', '-c', '%t', '/'])
+        for invalid in (b'', b'%t\n', b'wrong format\n', subprocess.CalledProcessError(1, 'stat', output=b'1021994\n')):
+            with self.subTest(invalid=invalid), patch('tools.template_worker.subprocess.check_output',
+                    side_effect=[listing, invalid]), self.assertRaises((InvalidTemplate, subprocess.CalledProcessError)):
+                check_tools(profile)
 
     def test_fresh_run_mount_restores_lock_symlink_target_before_guest_is_ready(self):
         # Run the real boot shell against a sandboxed filesystem applet. Its
@@ -464,6 +490,202 @@ elif args[0] == 'touch':
         self.assertEqual(budget.take(6), 6)
         self.assertEqual(budget.take(6), 4)
         self.assertEqual(budget.take(1), 0)
+
+
+class RuntimeReadinessTests(unittest.TestCase):
+    """Generated shell control flow, with no real mounts, PID 1 or guest execution."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.work = Path(temporary.name)
+        self.root = self.work / 'root'
+        for name in ('etc', 'sbin', 'run'):
+            (self.root / name).mkdir(parents=True)
+        (self.root / 'etc/os-release').write_text('ID=debian\n')
+        (self.root / 'etc/passwd').write_text('root:x:0:0:root:/root:/bin/sh\n')
+        self.target = self.work / 'untouched'
+        self.target.write_text('image data')
+        self.marker = self.root / 'run/sandproof-boot-ready'
+        self.busybox = self.work / 'fake-busybox'
+        self.busybox.write_text(f'#!{sys.executable}\n' + r'''import json, os, sys
+from pathlib import Path
+root = Path(os.environ['BOOT_TEST_ROOT'])
+work = root.parent
+args = sys.argv[1:]
+guest_args = [value.replace(str(root), '') for value in args]
+with (work / 'calls.jsonl').open('a') as output:
+    output.write(json.dumps(guest_args) + '\n')
+if ' '.join(guest_args) == os.environ.get('BOOT_TEST_FAILURE'):
+    if args[0] == 'stat':
+        print('1021994')  # Correct-looking stdout must not hide a failed syscall.
+    sys.exit(73)
+if args[0] == 'grep':
+    sys.exit(0)
+elif args[0] == 'rm':
+    assert guest_args == ['rm', '-f', '/run/sandproof-boot-ready']
+    (root / 'run/sandproof-boot-ready').unlink(missing_ok=True)
+elif args[0] == 'mount':
+    if guest_args[-1] == '/run':
+        # Model a fresh overlay with private directories, never mount anything.
+        (root / 'run').rename(root / 'run-underlay')
+        (root / 'run').mkdir()
+        (work / 'run-is-tmpfs').touch()
+elif args[0] == 'stat':
+    assert guest_args == ['stat', '-f', '-c', '%t', '/run']
+    print('1021994' if (work / 'run-is-tmpfs').exists() else 'ef53')
+elif args[0] == 'touch':
+    assert guest_args == ['touch', '/run/sandproof-boot-ready']
+    (root / 'run/sandproof-boot-ready').touch()
+elif args[0] not in ('mkdir', 'chmod', 'ln', 'ip'):
+    raise AssertionError('unexpected applet: ' + repr(args))
+''')
+        self.busybox.chmod(0o755)
+        self.envd = self.work / 'fake-envd'
+        self.envd.write_text('#!/bin/sh\nprintf "envd_started\\n"\n')
+        self.envd.chmod(0o755)
+        self.log = self.work / 'calls.jsonl'
+        self.log.write_text('')
+
+    def seed_marker(self, kind):
+        if kind == 'regular':
+            self.marker.write_text('imported ready')
+        elif kind == 'symlink':
+            self.marker.symlink_to(self.target)
+        elif kind == 'dangling':
+            self.marker.symlink_to(self.work / 'missing')
+        elif kind == 'directory':
+            self.marker.mkdir()
+        elif kind == 'fifo':
+            os.mkfifo(self.marker)
+        elif kind == 'hardlink':
+            os.link(self.target, self.marker)
+
+    def install(self):
+        install_platform(self.root, self.envd, self.busybox)
+        # Only trusted executable paths and the shell's /run predicates are
+        # relocated. All mount/network/etc. operations go to recording fakes.
+        for name in ('boot', 'agent'):
+            path = self.root / 'opt/sandproof' / name
+            path.write_text(path.read_text().replace('/opt/sandproof', str(self.root / 'opt/sandproof'))
+                            .replace('/run', str(self.root / 'run')))
+
+    def run_script(self, name, failure=''):
+        return subprocess.run(['/bin/sh', str(self.root / 'opt/sandproof' / name)],
+            env={**os.environ, 'BOOT_TEST_ROOT': str(self.root), 'BOOT_TEST_FAILURE': failure},
+            capture_output=True, text=True, timeout=10)
+
+    def calls(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def assert_agent_refuses(self, failure=''):
+        agent = self.run_script('agent', failure)
+        self.assertNotEqual(agent.returncode, 0)
+        self.assertNotIn('envd_started', agent.stdout)
+
+    def test_install_discards_imported_ready_leaf_without_following_links(self):
+        for kind in ('regular', 'symlink', 'dangling', 'fifo', 'hardlink'):
+            with self.subTest(kind=kind):
+                case = RuntimeReadinessTests()
+                case.setUp()
+                try:
+                    case.seed_marker(kind)
+                    case.install()
+                    self.assertFalse(case.marker.exists())
+                    self.assertFalse(case.marker.is_symlink())
+                    self.assertEqual(case.target.read_text(), 'image data')
+                    case.assert_agent_refuses()
+                finally:
+                    case.doCleanups()
+
+    def test_install_rejects_directory_or_failed_invalidation(self):
+        self.seed_marker('directory')
+        with self.assertRaises((InvalidTemplate, OSError)):
+            self.install()
+        self.marker.rmdir()
+        shutil.rmtree(self.root / 'opt/sandproof')
+        self.seed_marker('regular')
+        unlink = Path.unlink
+        def deny_marker(path, *args, **kwargs):
+            if path == self.marker:
+                raise PermissionError('injected readiness invalidation failure')
+            return unlink(path, *args, **kwargs)
+        with patch.object(Path, 'unlink', deny_marker), self.assertRaises(PermissionError):
+            self.install()
+        self.assertEqual(self.marker.read_text(), 'imported ready')
+
+    def test_install_rejects_redirected_run_before_removing_any_target(self):
+        self.root.joinpath('run').rmdir()
+        outside = self.work / 'outside'
+        outside.mkdir()
+        marker = outside / 'sandproof-boot-ready'
+        marker.write_text('do not remove')
+        self.root.joinpath('run').symlink_to(outside)
+        with self.assertRaisesRegex(InvalidTemplate, 'mount path redirected'):
+            self.install()
+        self.assertEqual(marker.read_text(), 'do not remove')
+
+    def test_clean_boot_admits_envd_and_respawn_after_all_setup(self):
+        self.install()
+        self.assert_agent_refuses()
+        boot = self.run_script('boot')
+        self.assertEqual(boot.returncode, 0, boot.stderr)
+        self.assertEqual(self.calls()[-1], ['touch', '/run/sandproof-boot-ready'])
+        for _ in range(2):
+            agent = self.run_script('agent')
+            self.assertEqual(agent.returncode, 0, agent.stderr)
+            self.assertEqual(agent.stdout, 'envd_started\n')
+        self.assertEqual(sum(call[0] == 'touch' for call in self.calls()), 1)
+
+    def test_each_boot_failure_blocks_envd_even_with_stale_input(self):
+        failures = (
+            'mount -t proc proc /proc',
+            'mount -o remount,rw /',
+            'rm -f /run/sandproof-boot-ready',
+            'mount -t sysfs sysfs /sys',
+            'mount -t tmpfs -o nosuid,nodev,noexec,mode=1777,size=64m tmpfs /dev/shm',
+            'mount -t tmpfs -o mode=755 tmpfs /run',
+            'ip route add default via 172.16.0.1 dev eth0',
+            'touch /run/sandproof-boot-ready',
+        )
+        for kind in ('regular', 'symlink'):
+            for failure in failures:
+                with self.subTest(kind=kind, failure=failure):
+                    # Every case has its own installed root and fake mount state.
+                    case = RuntimeReadinessTests()
+                    case.setUp()
+                    try:
+                        case.seed_marker(kind)
+                        case.install()
+                        # Also exercise defense in depth against an on-disk
+                        # stale leaf if cleanup had not removed it. This is
+                        # an ext4 cold-boot model, not active guest-root defense.
+                        if not case.marker.exists() and not case.marker.is_symlink():
+                            case.seed_marker(kind)
+                        boot = case.run_script('boot', failure)
+                        self.assertEqual(boot.returncode, 73, boot.stderr)
+                        calls = case.calls()
+                        self.assertEqual(' '.join(calls[-1]), failure)
+                        if failure != failures[-1]:
+                            self.assertNotIn(['touch', '/run/sandproof-boot-ready'], calls)
+                        case.assert_agent_refuses()
+                        self.assertEqual(case.target.read_text(), 'image data')
+                    finally:
+                        case.doCleanups()
+    def test_agent_rejects_symlink_marker_or_failed_filesystem_check(self):
+        self.install()
+        boot = self.run_script('boot')
+        self.assertEqual(boot.returncode, 0, boot.stderr)
+        self.assert_agent_refuses('stat -f -c %t /run')
+        self.marker.unlink()
+        self.seed_marker('symlink')
+        self.assert_agent_refuses()
+        self.assertEqual(self.target.read_text(), 'image data')
+        self.marker.unlink()
+        self.seed_marker('regular')
+        self.root.joinpath('run').rename(self.root / 'old-run')
+        self.root.joinpath('run').symlink_to(self.root / 'old-run')
+        self.assert_agent_refuses()
 
 
 if __name__ == "__main__":
