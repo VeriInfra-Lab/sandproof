@@ -363,32 +363,19 @@ fn sandbox_id(journal: &ControllerJournal, external: &str) -> Result<core::Sandb
 }
 
 fn next_sandbox(journal: &ControllerJournal) -> Result<core::SandboxId, PortError> {
-    let world = journal.world().map_err(map_journal)?;
-    let largest = world
-        .sandbox_records()
-        .iter()
-        .map(|(id, _)| id.0)
-        .max()
-        .unwrap_or(0);
-    Ok(core::SandboxId(
-        largest.checked_add(1).ok_or(PortError::QuotaExceeded)?,
-    ))
+    journal.next_sandbox_id().map_err(map_journal)
 }
 
 fn next_operation(
-    world: &core::World,
+    journal: &ControllerJournal,
     sandbox: core::SandboxId,
 ) -> Result<core::OperationId, PortError> {
-    let largest = world
-        .operation_records()
-        .iter()
-        .filter(|(key, _)| key.sandbox == sandbox)
-        .map(|(key, _)| key.operation.0)
-        .max()
-        .unwrap_or(0);
-    Ok(core::OperationId(
-        largest.checked_add(1).ok_or(PortError::Conflict)?,
-    ))
+    journal
+        .next_operation_id(sandbox)
+        .map_err(|error| match error {
+            JournalError::IdentifierExhausted => PortError::Conflict,
+            other => map_journal(other),
+        })
 }
 
 fn map_journal(error: JournalError) -> PortError {
@@ -403,6 +390,7 @@ fn map_journal(error: JournalError) -> PortError {
             PortError::OutcomeUnknown
         }
         JournalError::OperationFailed => PortError::Failed,
+        JournalError::IdentifierExhausted => PortError::QuotaExceeded,
         _ => PortError::Busy,
     };
     drop(error);
@@ -1044,15 +1032,14 @@ impl<H: HostAdapter> ManagedPort<H> {
         let due = inner.journal.due_lifetimes(now).map_err(map_admission)?;
         let mut report = ExpiryReport::default();
         for sandbox in due {
-            let operation =
-                match next_operation(&inner.journal.world().map_err(map_journal)?, sandbox) {
-                    Ok(operation) => operation,
-                    Err(PortError::Conflict) => {
-                        report.unresolved_sandboxes += 1;
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                };
+            let operation = match next_operation(&inner.journal, sandbox) {
+                Ok(operation) => operation,
+                Err(PortError::Conflict) => {
+                    report.unresolved_sandboxes += 1;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             let accepted = inner
                 .journal
                 .accept_expiry(sandbox, operation, now, &mut NeverCrash);
@@ -1229,7 +1216,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         if record.terminal {
             return Err(PortError::OutcomeUnknown);
         }
-        let operation = next_operation(&world, sandbox)?;
+        let operation = next_operation(&inner.journal, sandbox)?;
         let accepted = inner.journal.apply(
             core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
                 actor: core::Actor::Tenant(tenant),
