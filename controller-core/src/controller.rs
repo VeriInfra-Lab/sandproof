@@ -10,11 +10,12 @@ use crate::request::{Decision as RequestDecision, Reject as RequestReject, Reque
 use crate::scheduler::{SchedulerInput, SchedulerReject};
 use crate::worker::{WorkerDecision, WorkerEvent, WorkerReject};
 
-/// Every state-changing or state-observing input owned by the verified pure
+/// Every state-changing or state-observing input owned by the pure
 /// controller boundary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ControllerInput {
+    Maintenance(crate::maintenance::MaintenanceInput),
     Request(Request),
     Effect(EffectInput),
     Scheduler(SchedulerInput),
@@ -29,6 +30,7 @@ pub enum ControllerInput {
 /// point cannot confuse two domains with similarly shaped payloads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ControllerEvent {
+    Maintenance(crate::maintenance::MaintenanceEvent),
     Protocol(Event),
     Worker(WorkerEvent),
     Publication(PublicationEvent),
@@ -40,6 +42,7 @@ pub enum ControllerEvent {
 /// such as exhausted counters remain visible in their originating domain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControllerReject {
+    Maintenance(crate::maintenance::MaintenanceReject),
     Request(RequestReject),
     Effect(EffectReject),
     Scheduler(SchedulerReject),
@@ -103,13 +106,16 @@ fn runtime_decision(decision: RuntimeDecision) -> ControllerDecision {
 ///
 /// # Errors
 ///
-/// Returns the first ordered rejection of the selected verified sub-handler.
+/// Returns the first ordered rejection of the selected sub-handler.
+/// Maintenance additions are not covered by the historical refinement proofs.
 /// A rejection never returns a successor state.
 pub fn handle_controller(
     world: &World,
     input: ControllerInput,
 ) -> Result<ControllerDecision, ControllerReject> {
     match input {
+        ControllerInput::Maintenance(input) => crate::maintenance::handle_maintenance(world, input)
+            .map_err(ControllerReject::Maintenance),
         ControllerInput::Request(request_input) => {
             match crate::request::handle(world, request_input) {
                 Ok(decision) => Ok(protocol_decision(decision)),
