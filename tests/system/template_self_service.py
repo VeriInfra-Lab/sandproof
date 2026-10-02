@@ -13,7 +13,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import bounded_acceptance_layout, acceptance_pool_disk_budget, require_bounded_host_tools
+from tools.bounded_acceptance import bounded_acceptance_layout, acceptance_pool_disk_budget, require_bounded_host_tools, wait_private_build_window
 
 import argparse
 from contextlib import closing
@@ -280,11 +280,9 @@ def exercise(args):
         wait_job(job, terminal=False)
         private_window = None
         if build_mode == "windowed":
-            import sqlite3
-            with closing(sqlite3.connect((root / "builds/builds.db").as_uri() + "?mode=ro", uri=True)) as database:
-                encoded = database.execute("SELECT private_window FROM jobs WHERE id=?", (job,)).fetchone()[0]
-            assert encoded, "accepted build must retain its original private request window"
-            private_window = json.loads(encoded)
+            # Building is published before the backend persists its private
+            # window. Observe the original row only, then query its real VM.
+            private_window = wait_private_build_window(root / "builds/builds.db", job)
         query = "?" + urllib.parse.urlencode({"requestWindow": private_window}) if private_window else ""
         for _ in range(120):
             code, data = fetch(opener, urls[1], "GET", "/sandproof/internal-build-vms/" + job + query, keys[1])

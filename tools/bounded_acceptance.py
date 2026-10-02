@@ -4,13 +4,52 @@ No deployment identity is generated or rewritten here. The operator chooses
 the root and both namespaces before preparing one immutable physical profile;
 Rust remains the only activator and the existing validators own all budgets.
 """
+from contextlib import closing
 from pathlib import Path
+import json
+import math
 import os
 import re
+import sqlite3
 import stat
+import time
 
 from .template_build_config import MIB, validate_acceptance_build_policy
+from .template_build_store import TERMINAL
 from .template_physical_storage import MAXIMUM, envelope
+
+
+def wait_private_build_window(database, job, *, timeout=60, clock=time.monotonic, sleep=time.sleep):
+    """Observe the original job's committed window; never create or retry work.
+
+    Building is committed before the private window, so NULL is an observable
+    intermediate state. Each observation closes its read-only connection before
+    waiting, allowing the supervisor to checkpoint and persist the same window.
+    """
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("positive finite private window observation timeout required")
+    deadline = clock() + timeout
+    uri = Path(database).as_uri() + "?mode=ro"
+    while True:
+        with closing(sqlite3.connect(uri, uri=True, timeout=0)) as connection:
+            row = connection.execute("SELECT state,private_window FROM jobs WHERE id=?", (job,)).fetchone()
+        if row is None:
+            raise ValueError("original build record is missing")
+        state, encoded = row
+        if encoded is not None:
+            try:
+                window = json.loads(encoded) if type(encoded) is str else None
+            except json.JSONDecodeError as error:
+                raise ValueError("invalid original private request window") from error
+            if type(window) is not str or re.fullmatch(r"[A-Za-z0-9_-]{1,512}", window) is None:
+                raise ValueError("invalid original private request window")
+            return window
+        if state in TERMINAL:
+            raise ValueError("original build ended before saving its private request window")
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise TimeoutError("original private request window was not saved before the observation deadline")
+        sleep(min(0.1, remaining))
 
 
 def require_bounded_host_tools():

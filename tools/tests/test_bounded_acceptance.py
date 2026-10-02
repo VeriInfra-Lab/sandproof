@@ -1,14 +1,19 @@
 """Static supervision fixtures only: no VM, mount or production activation."""
 import copy
+from contextlib import closing
 import hashlib
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools.bounded_acceptance import acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools
+from tools.bounded_acceptance import (
+    acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools,
+    wait_private_build_window,
+)
 from tools.template_build_service import configuration
 from tools.template_build_store import BuildStore
 from tools.tests.test_template_build_config import GIB, MIB, inputs, transfer_settings
@@ -90,6 +95,68 @@ def service_fixture(root):
                          "workspace_bytes": limits["workspace_bytes"],
                          "workspace_bytes_per_tenant": limits["workspace_bytes_per_tenant"]}}
     return root / "service.json", policy, profile, namespaces
+
+
+class PrivateBuildWindowObservationTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.database = Path(temporary.name).resolve() / "builds.db"
+        self.job = "a" * 32
+        with closing(sqlite3.connect(self.database)) as connection:
+            connection.execute("CREATE TABLE jobs(id TEXT PRIMARY KEY,state TEXT,private_window TEXT)")
+            connection.execute("INSERT INTO jobs VALUES(?,?,?)", (self.job, "Building", None))
+            connection.execute("INSERT INTO jobs VALUES(?,?,?)", ("b" * 32, "Building", '"bw-other"'))
+            connection.commit()
+        self.now = 0.0
+
+    def test_null_then_committed_original_window_closes_reader_before_wait(self):
+        connect = sqlite3.connect
+        readers = []
+
+        def observe(*args, **kwargs):
+            self.assertEqual(args, (self.database.as_uri() + "?mode=ro",))
+            self.assertEqual(kwargs, {"uri": True, "timeout": 0})
+            connection = connect(*args, **kwargs)
+            readers.append(connection)
+            return connection
+
+        def persist_original(delay):
+            with self.assertRaises(sqlite3.ProgrammingError):
+                readers[-1].execute("SELECT 1")
+            with closing(connect(self.database)) as writer:
+                writer.execute("UPDATE jobs SET private_window=? WHERE id=?", ('"bw-private-1-0"', self.job))
+                writer.commit()
+            self.now += delay
+
+        with patch("tools.bounded_acceptance.sqlite3.connect", side_effect=observe):
+            self.assertEqual(wait_private_build_window(self.database, self.job,
+                clock=lambda: self.now, sleep=persist_original), "bw-private-1-0")
+        self.assertEqual(len(readers), 2)
+        for reader in readers:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                reader.execute("SELECT 1")
+
+    def test_permanent_null_terminal_missing_or_invalid_original_window_refuses(self):
+        def advance(delay):
+            self.now += delay
+
+        with self.assertRaisesRegex(TimeoutError, "observation deadline"):
+            wait_private_build_window(self.database, self.job, timeout=0.25,
+                clock=lambda: self.now, sleep=advance)
+        self.assertEqual(self.now, 0.25)
+        for state, window in (("Ready", None), ("Failed", None), ("Building", "not-json"),
+                              ("Building", '""'), ("Building", "null"), ("Building", '{}')):
+            with self.subTest(state=state, window=window):
+                with closing(sqlite3.connect(self.database)) as connection:
+                    connection.execute("UPDATE jobs SET state=?,private_window=? WHERE id=?", (state, window, self.job))
+                    connection.commit()
+                with self.assertRaises(ValueError):
+                    wait_private_build_window(self.database, self.job, clock=lambda: self.now,
+                        sleep=lambda _delay: self.fail("invalid or terminal record must not wait"))
+        with self.assertRaisesRegex(ValueError, "record is missing"):
+            wait_private_build_window(self.database, "c" * 32, clock=lambda: self.now,
+                sleep=lambda _delay: self.fail("missing original record must not wait"))
 
 
 class BoundedToolsTests(unittest.TestCase):
