@@ -316,7 +316,7 @@ Dockerfile 的 BuildKit 内容存储复用须核对真实 image exporter 的单�
 
 [宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。
 
-可选 BuildKit igzip 用[解压器回归](../tools/tests/test_template_decoder.py)与[配置回归](../tools/tests/test_template_build_config.py)检查双产物准入、缺项/陌生工具/指纹错误/符号链接拒绝、真实子进程的固定搜索路径、错误退出传播及环境隔离。两项模板实机探针的 `--igzip` 选项使用固定 ISA-L 2.31.0 指纹；需记录实际配置工具、构建发布和精确回收。原始大镜像对照另比较默认/igzip/igzip/默认四组解压、原层/容器配置、文件内容/元数据与完整 OCI 校验；组件性能不代替原预算下的完整任务重跑。
+可选 BuildKit igzip 用[解压器回归](../tools/tests/test_template_decoder.py)与[配置回归](../tools/tests/test_template_build_config.py)检查双产物准入、缺项/陌生工具/指纹错误/符号链接拒绝、真实子进程的固定搜索路径、错误退出传播及环境隔离。模板实机探针与[通用评测链](../tests/system/harbor_generic_chain.py)的 `--igzip` 选项使用固定 ISA-L 2.31.0 指纹；需记录实际配置工具、构建发布和精确回收。原始大镜像对照另比较默认/igzip/igzip/默认四组解压、原层/容器配置、文件内容/元数据与完整 OCI 校验；组件性能不代替原预算下的完整任务重跑。
 
 构建阶段日志用[定向回归](../tools/tests/test_template_phase_logs.py)核对阶段开始可读、可控单调时钟耗时、失败不记完成、与守护进程共享日志总量，以及诊断失败不替换原异常；[获取链回归](../tools/tests/test_template_worker_acquisition.py)同时核对真实校验到解包失败边界的阶段顺序。[工具退出期限回归](../tools/tests/test_template_command_deadline.py)以真实子进程关闭 stdout/stderr 的屏障推进时钟，检查剩余时间等待、已到期回收、迟到成功拒绝及期限内成功，不依靠随机等待复现。实机日志只提供阶段定位，不能把某个 completed 标记当作整个模板或评测通过。
 
