@@ -31,7 +31,10 @@ pub(super) fn owner_id(owner: core::TenantId) -> Result<TenantId, JournalError> 
     Ok(TenantId::try_from(format!("tenant-{}", owner.0))?)
 }
 
-fn resource(namespace: &str, command: &core::Command) -> Result<ResourceRef, JournalError> {
+pub(super) fn resource(
+    namespace: &str,
+    command: &core::Command,
+) -> Result<ResourceRef, JournalError> {
     use core::Command;
     let (kind, prefix, number) = match command {
         Command::InstallFence { sandbox, .. } => (ResourceKind::Sandbox, "sb", sandbox.0),

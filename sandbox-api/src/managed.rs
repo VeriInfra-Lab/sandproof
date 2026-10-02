@@ -30,8 +30,10 @@ use crate::{
 };
 
 mod data_drain;
+mod maintenance;
 mod relay_child;
 pub use data_drain::DataLease;
+pub use maintenance::MaintenanceReport;
 pub use relay_child::TrackedRelayChild;
 
 pub trait HostAdapter: Send + 'static {

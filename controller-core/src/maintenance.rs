@@ -82,6 +82,11 @@ impl World {
 }
 
 impl MaintenanceState {
+    /// Permanent identity barriers, including identities with expired results.
+    #[must_use]
+    pub const fn identity_frontiers(&self) -> (Option<u64>, Option<u64>) {
+        (self.sandbox_frontier, self.workspace_frontier)
+    }
     #[must_use]
     pub fn limits(&self) -> MaintenanceLimits {
         MaintenanceLimits {

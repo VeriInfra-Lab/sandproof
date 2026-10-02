@@ -1,5 +1,6 @@
 //! Opt-in physical positions, durably paired with the existing core reducer.
-//! No retirement, checkpointing or general maintenance API is enabled here.
+//! This module owns binding/release; the separately enabled checkpoint adapter
+//! owns historical retirement. There is no public raw maintenance input API.
 use super::{ControllerJournal, storage, transaction::WorldTransaction};
 use crate::{AdmissionError, CrashInjector, CrashPoint, JournalError, WorkerTransportError};
 use rusqlite::{Connection, Transaction, params};
@@ -68,7 +69,10 @@ pub struct HostSlotContext {
 
 pub(super) fn config(connection: &Connection) -> Result<Option<BoundedHostConfig>, JournalError> {
     let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if format != crate::journal::BOUNDED_FORMAT_VERSION {
+    if !matches!(
+        format,
+        crate::journal::BOUNDED_FORMAT_VERSION | crate::journal::MAINTAINED_FORMAT_VERSION
+    ) {
         return Ok(None);
     }
     let bytes: Vec<u8> = connection.query_row(
@@ -149,7 +153,7 @@ fn contexts(connection: &Connection) -> Result<Vec<HostSlotContext>, JournalErro
     Ok(contexts)
 }
 
-fn validate_contexts(
+pub(super) fn validate_contexts(
     connection: &Connection,
     world: &core::World,
     config: &BoundedHostConfig,
@@ -396,6 +400,13 @@ impl ControllerJournal {
                         binding: context.binding,
                     }
                 }),
+            )?;
+        }
+        if confirmed && super::checkpoint::config(&tx)?.is_some() {
+            super::checkpoint::record_release_witness(
+                &tx,
+                context,
+                row.phase != HostSlotPhase::Free,
             )?;
         }
         crashes.hit(CrashPoint::BeforeCommit)?;

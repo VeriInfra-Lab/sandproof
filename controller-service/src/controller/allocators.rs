@@ -62,7 +62,7 @@ impl SqlId {
     }
 }
 
-fn decode(value: &str) -> Result<u64, JournalError> {
+pub(super) fn decode(value: &str) -> Result<u64, JournalError> {
     let number = value
         .parse::<u64>()
         .map_err(|_| JournalError::CorruptStore)?;
@@ -72,7 +72,7 @@ fn decode(value: &str) -> Result<u64, JournalError> {
     Ok(number)
 }
 
-fn read(connection: &Connection, kind: &str, scope: &str) -> Result<u64, JournalError> {
+pub(super) fn read(connection: &Connection, kind: &str, scope: &str) -> Result<u64, JournalError> {
     let value: Option<String> = connection
         .query_row(
             "SELECT high_water FROM controller_id_highwaters WHERE kind=?1 AND scope=?2",
@@ -139,6 +139,7 @@ pub(super) fn migrate(tx: &Transaction<'_>, world: &core::World) -> Result<(), J
         tx.pragma_update(None, "user_version", CONTROLLER_FORMAT_VERSION)?;
     } else if version != CONTROLLER_FORMAT_VERSION
         && version != crate::journal::BOUNDED_FORMAT_VERSION
+        && version != crate::journal::MAINTAINED_FORMAT_VERSION
     {
         return Err(JournalError::UnsupportedStore);
     }
@@ -146,7 +147,7 @@ pub(super) fn migrate(tx: &Transaction<'_>, world: &core::World) -> Result<(), J
 }
 
 /// Never reseed an existing frontier from the currently retained rows.
-fn validate(connection: &Connection, world: &core::World) -> Result<(), JournalError> {
+pub(super) fn validate(connection: &Connection, world: &core::World) -> Result<(), JournalError> {
     let mut statement =
         connection.prepare("SELECT kind,scope,high_water FROM controller_id_highwaters")?;
     for row in statement.query_map([], |row| {
@@ -183,11 +184,14 @@ fn validate(connection: &Connection, world: &core::World) -> Result<(), JournalE
     for family in SqlId::ALL {
         let frontier = read(connection, family.name(), "")?;
         let maximum = family.maximum(connection)?;
-        // Until checkpoints are implemented, every committed input must still
-        // exist. A missing suffix is corruption, not permission to reuse it.
+        // Legacy replay requires every input row. The format-4 recovery loader
+        // instead checks the checkpoint cut plus the exact contiguous tail;
+        // a missing suffix still cannot lower the durable input frontier.
         if frontier > family.limit()
             || frontier < maximum
-            || (matches!(family, SqlId::Input) && frontier != maximum)
+            || (matches!(family, SqlId::Input)
+                && frontier != maximum
+                && super::checkpoint::config(connection)?.is_none())
         {
             return Err(JournalError::CorruptStore);
         }
@@ -270,9 +274,54 @@ impl ControllerJournal {
     ) -> Result<core::OperationId, JournalError> {
         self.committed_world
             .ensure_ready(&self.journal.connection)?;
+        if self.world()?.sandbox_record(sandbox).is_none() {
+            return Err(JournalError::Conflict);
+        }
         read(&self.journal.connection, OPERATION, &sandbox.0.to_string())?
             .checked_add(1)
             .map(core::OperationId)
             .ok_or(JournalError::IdentifierExhausted)
     }
+}
+
+pub(super) fn input_high_water(connection: &Connection) -> Result<u64, JournalError> {
+    read(connection, "input", "")
+}
+
+pub(super) fn snapshot(
+    connection: &Connection,
+) -> Result<Vec<super::checkpoint::AllocatorCursor>, JournalError> {
+    let mut statement = connection.prepare(
+        "SELECT kind,scope,high_water FROM controller_id_highwaters ORDER BY kind,scope",
+    )?;
+    let mut values = Vec::new();
+    for row in statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })? {
+        let (kind, scope, value) = row?;
+        values.push(super::checkpoint::AllocatorCursor {
+            kind,
+            scope,
+            high_water: decode(&value)?,
+        });
+    }
+    Ok(values)
+}
+
+pub(super) fn remove_retired_scope(
+    tx: &Transaction<'_>,
+    sandbox: core::SandboxId,
+) -> Result<(), JournalError> {
+    if tx.execute(
+        "DELETE FROM controller_id_highwaters WHERE kind='operation' AND scope=?1",
+        [sandbox.0.to_string()],
+    )? != 1
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(())
 }

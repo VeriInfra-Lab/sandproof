@@ -11,12 +11,14 @@ mod cache_tests;
 mod admission;
 mod allocators;
 mod bounded;
+mod checkpoint;
 mod identity;
 mod registry;
 mod storage;
 mod transaction;
 
 pub use bounded::{BoundedHostConfig, HostSlotContext};
+pub use checkpoint::{CheckpointInfo, HostReleaseWitness, MaintenanceConfig, RetirementCandidate};
 
 pub use admission::{
     AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
@@ -76,6 +78,17 @@ pub struct ControllerJournal {
     namespace: String,
     committed_world: transaction::CommittedWorld,
     _lease: File,
+}
+
+fn validate_namespace(namespace: &str) -> Result<(), JournalError> {
+    if namespace.len() != 16
+        || !namespace
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(JournalError::UnsupportedStore);
+    }
+    Ok(())
 }
 
 impl ControllerJournal {
@@ -505,7 +518,7 @@ impl ControllerJournal {
     /// Rejects a second writer, namespace mismatch, legacy opaque state, or
     /// corrupt input history. No arbitrary serialized World is accepted.
     pub fn open(path: impl AsRef<Path>, namespace: &str) -> Result<Self, JournalError> {
-        Self::open_with_bounded(path, namespace, None, 0)
+        Self::open_with_bounded(path, namespace, None, None, 0)
     }
 
     /// Open an explicitly configured bounded host store. Legacy nonempty stores
@@ -519,22 +532,17 @@ impl ControllerJournal {
         now_ms: u64,
     ) -> Result<Self, JournalError> {
         config.validate()?;
-        Self::open_with_bounded(path, namespace, Some(config), now_ms)
+        Self::open_with_bounded(path, namespace, Some(config), None, now_ms)
     }
 
     fn open_with_bounded(
         path: impl AsRef<Path>,
         namespace: &str,
         bounded: Option<BoundedHostConfig>,
+        maintenance: Option<MaintenanceConfig>,
         now_ms: u64,
     ) -> Result<Self, JournalError> {
-        if namespace.len() != 16
-            || !namespace
-                .bytes()
-                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-        {
-            return Err(JournalError::UnsupportedStore);
-        }
+        validate_namespace(namespace)?;
         let path = path.as_ref();
         if path.is_symlink() {
             return Err(JournalError::UnsupportedStore);
@@ -554,7 +562,8 @@ impl ControllerJournal {
             .truncate(false)
             .open(lock_path)?;
         lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
-        let mut journal = Journal::open_controller(&path, bounded.is_some())?;
+        let mut journal =
+            Journal::open_controller(&path, bounded.is_some(), maintenance.is_some())?;
         let transaction = journal
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -622,6 +631,7 @@ impl ControllerJournal {
         let world = storage::load_world(&transaction)?;
         allocators::migrate(&transaction, &world)?;
         let world = bounded::configure(&transaction, world, bounded, now_ms)?;
+        checkpoint::configure(&transaction, &world, maintenance)?;
         let committed_world = transaction::CommittedWorld::new(&transaction, world)?;
         transaction
             .commit()

@@ -489,3 +489,6 @@ fn relay_spawn_rechecks_authority_after_the_initial_route_permit() {
     ));
     assert_eq!(host.0.lock().unwrap().relay_spawns, 1);
 }
+
+#[path = "bounded_slots/maintenance.rs"]
+mod maintenance;
