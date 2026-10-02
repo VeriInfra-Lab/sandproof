@@ -27,8 +27,12 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+#[path = "managed_port/allocators.rs"]
+mod allocators;
 #[path = "managed_port/build_vm.rs"]
 mod build_vm;
+#[path = "managed_port/committed_world.rs"]
+mod committed_world;
 #[path = "managed_port/history_capacity.rs"]
 mod history_capacity;
 #[cfg(unix)]
