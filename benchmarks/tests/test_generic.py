@@ -14,6 +14,13 @@ from benchmarks.generic_environment import archive_context, build_request, Gener
 from benchmarks.run_generic import run_selected
 from benchmarks.artifact_budget import ArtifactBudget, DEFAULT_ARTIFACT_LIMITS
 from tools.benchmark_tasks import InvalidInput
+from tools.template_build_client import BuildClient
+
+
+def build_client(side_effect):
+    client = BuildClient('http://127.0.0.1:1', 'synthetic')
+    client.request = Mock(side_effect=side_effect)
+    return client
 
 
 def config():
@@ -134,7 +141,7 @@ class GenericInputTests(unittest.TestCase):
             env.task_env_config = config()
             env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
             env.submission_key = 'a' * 32
-            env.client = SimpleNamespace(request=Mock(side_effect=[{'requestWindow': {'namespace': 17, 'sequence': 0}}, OSError('lost response')]))
+            env.client = build_client([{'requestWindow': {'namespace': 17, 'sequence': 0}}, OSError('lost response')])
             with self.assertRaises(OSError):
                 asyncio.run(env.prepare_template())
             self.assertTrue(env.build_dispatched)
@@ -142,6 +149,7 @@ class GenericInputTests(unittest.TestCase):
             intent = json.loads((Path(tmp) / 'build-intent.json').read_text())
             self.assertEqual(intent['idempotency_key'], env.submission_key)
             self.assertEqual(intent['requestWindow'], {'namespace': 17, 'sequence': 0})
+            self.assertEqual({key: intent[key] for key in env.client.intent_binding()}, env.client.intent_binding())
             self.assertEqual(env.client.request.call_args.kwargs['token'], env.submission_key)
 
     def test_dockerfile_retry_reuses_original_archive_window_and_key(self):
@@ -158,8 +166,8 @@ class GenericInputTests(unittest.TestCase):
             env.task_env_config = config()
             env.trial_paths = SimpleNamespace(trial_dir=root)
             env.submission_key = 'a' * 32
-            env.client = SimpleNamespace(request=Mock(side_effect=[
-                {'requestWindow': {'namespace': 17, 'sequence': 9}}, OSError('lost first reply')]))
+            env.client = build_client([
+                {'requestWindow': {'namespace': 17, 'sequence': 9}}, OSError('lost first reply')])
             with self.assertRaises(OSError):
                 asyncio.run(env.prepare_template())
             original = (root / 'context.tar').read_bytes()
@@ -183,7 +191,7 @@ class GenericInputTests(unittest.TestCase):
             env.task_env_config = config()
             env.trial_paths = SimpleNamespace(trial_dir=Path(temporary))
             env.submission_key, env.build_mode = 'a' * 32, 'legacy-unbounded'
-            env.client = SimpleNamespace(request=Mock(side_effect=OSError('lost legacy reply')))
+            env.client = build_client(OSError('lost legacy reply'))
             with self.assertRaises(OSError):
                 asyncio.run(env.prepare_template())
             env.client.request.assert_called_once()
@@ -191,6 +199,35 @@ class GenericInputTests(unittest.TestCase):
             saved = json.loads((Path(temporary) / 'build-intent.json').read_text())
             self.assertEqual(saved['build_mode'], 'legacy-unbounded')
             self.assertIsNone(saved['requestWindow'])
+
+    def test_unbound_original_intent_is_retained_without_any_request(self):
+        for mode in ('windowed', 'legacy-unbounded'):
+            for missing in (('origin',), ('credential_sha256',), ('origin', 'credential_sha256')):
+                with self.subTest(mode=mode, missing=missing), tempfile.TemporaryDirectory() as tmp:
+                    env = object.__new__(GenericEnvironment)
+                    env.entry, env.source_kind, env.build_mode = entry(), 'oci', mode
+                    env.task_env_config = config()
+                    env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
+                    env.submission_key = 'a' * 32
+                    replies = ([{'requestWindow': {'namespace': 17, 'sequence': 0}}]
+                               if mode == 'windowed' else []) + [OSError('lost reply')]
+                    env.client = build_client(replies)
+                    with self.assertRaises(OSError):
+                        asyncio.run(env.prepare_template())
+                    path = Path(tmp) / 'build-intent.json'
+                    saved = json.loads(path.read_text())
+                    for key in missing:
+                        del saved[key]
+                    path.write_text(json.dumps(saved))
+                    original = path.read_bytes()
+                    env.client.request = Mock(side_effect=AssertionError('must not dispatch'))
+                    with self.assertRaisesRegex(InvalidInput, 'original build intent conflicts'):
+                        asyncio.run(env.prepare_template())
+                    env.client.request.assert_not_called()
+                    self.assertEqual(path.read_bytes(), original)
+                    self.assertEqual(saved['idempotency_key'], 'a' * 32)
+                    self.assertEqual(saved['requestWindow'],
+                                     {'namespace': 17, 'sequence': 0} if mode == 'windowed' else None)
 
     def test_create_selects_immutable_template_defaults_not_dockerfile_guess(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -241,9 +278,9 @@ class GenericInputTests(unittest.TestCase):
                                'template': template() if state == 'Ready' else None}
                     log = OSError('must not retain credential-bearing exception text') if log_failure else {
                         'offset': 0, 'nextOffset': 16384, 'text': '\x00' * 16384}
-                    env.client = SimpleNamespace(request=Mock(side_effect=[
+                    env.client = build_client([
                         {'requestWindow': {'namespace': 17, 'sequence': 0}},
-                        {'buildID': job, 'state': 'Queued'}, outcome, log]))
+                        {'buildID': job, 'state': 'Queued'}, outcome, log])
                     if state == 'Ready':
                         asyncio.run(env.prepare_template())
                         self.assertEqual(env.template, template())

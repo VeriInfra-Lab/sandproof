@@ -30,6 +30,11 @@ class BuildClient:
             raise ValueError("service origin required")
         self.key = key
 
+    def intent_binding(self):
+        """Non-secret origin/credential identity required for safe recovery."""
+        return {"origin": urllib.parse.urlunsplit(self.url),
+                "credential_sha256": hashlib.sha256(self.key.encode()).hexdigest()}
+
     def request(self, method, path, body=None, *, size=None, token=None):
         connection_class = http.client.HTTPSConnection if self.url.scheme == "https" else http.client.HTTPConnection
         connection = connection_class(self.url.hostname, self.url.port, timeout=30)
@@ -70,8 +75,8 @@ def saved_intent(path, client, request, *, build_mode, token=None, context=None)
             while block := incoming.read(1024 * 1024):
                 hasher.update(block)
         digest = hasher.hexdigest()
-    expected = {"origin": urllib.parse.urlunsplit(client.url), "request": request, "context_sha256": digest,
-                "build_mode": build_mode, "credential_sha256": hashlib.sha256(client.key.encode()).hexdigest()}
+    expected = client.intent_binding() | {"request": request, "context_sha256": digest,
+                                          "build_mode": build_mode}
     if path.exists():
         if path.is_symlink() or path.stat().st_size > 65536:
             raise ValueError("invalid saved build intent")

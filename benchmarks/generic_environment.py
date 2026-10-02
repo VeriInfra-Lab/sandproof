@@ -147,7 +147,7 @@ class GenericEnvironment(SdkEnvironment):
         else:
             context_hash = None
         mode = getattr(self, 'build_mode', 'windowed')
-        intent = {'build_mode': mode, 'request': request, 'context_sha256': context_hash,
+        intent = self.client.intent_binding() | {'build_mode': mode, 'request': request, 'context_sha256': context_hash,
                   'task_files_sha256': self.entry['files_sha256'], 'source_kind': self.source_kind,
                   'original_environment': self.source_kind != PRUNED_SOURCE,
                   'environment_repair': self.environment_repair}
