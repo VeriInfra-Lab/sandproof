@@ -36,7 +36,7 @@ from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from server_process_crash import fetch, free_loopback_port, start_server, stop_server, wait_ready
 from server_templates import descriptor
 from server_vm_id_capacity import check_no_resources
-from template_build import BUILDKIT_HASHES, FIXTURE
+from template_build import BUILDKIT_HASHES, FIXTURE, IGZIP_HASHES
 from template_fetch import REGCTL_SHA256
 
 MIB = 1024 * 1024
@@ -65,7 +65,8 @@ def exercise(args):
         raise RuntimeError("private root scratch required")
     if shutil.disk_usage(args.scratch_parent).free < 50 * 1024 * MIB:
         raise RuntimeError("50 GiB including cleanup reserve required")
-    for name, digest in BUILD_TOOLS.items():
+    build_tools = BUILD_TOOLS | (IGZIP_HASHES if args.igzip else {})
+    for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed tool fingerprint mismatch: " + name)
     if bounded_policy is not None:
@@ -137,7 +138,7 @@ def exercise(args):
     (root / "builds").mkdir(mode=0o700)
     build = {"root": str(root / "builds"), "bind": f"127.0.0.1:{ports[2]}",
         "runtime_config": str(root / "0/config.json"), "builder_config": str(root / "1/config.json"),
-        "tools": {name: {"path": str(args.tools / name), "sha256": digest} for name, digest in BUILD_TOOLS.items()},
+        "tools": {name: {"path": str(args.tools / name), "sha256": digest} for name, digest in build_tools.items()},
         "dns_servers": ["1.1.1.1", "8.8.8.8"],
         "limits": {"max_cpu": 2, "max_memory_mib": 1024, "max_disk_mib": 2048, "timeout_seconds": 600,
             "max_jobs": 20, "max_jobs_per_tenant": 10, "max_pending": 3, "max_pending_per_tenant": 2,
@@ -344,7 +345,7 @@ def exercise(args):
         (root / "report.json").write_text(json.dumps({"commit": commit, "scenarios": evidence,
             "server_sha256": sha256_file(binary),
             "kernel_sha256": original[0], "base_sha256": original[1], "builder_base_sha256": original[2],
-            "build_mode": build_mode, "physical_profile": bounded_policy is not None, "tools": BUILD_TOOLS,
+            "build_mode": build_mode, "physical_profile": bounded_policy is not None, "tools": build_tools,
             "no_process_network_cgroup_jail_residue": True, "public": args.public}, indent=2))
         print("self-service acceptance passed; report=" + str(root / "report.json"), flush=True)
     finally:
@@ -372,6 +373,7 @@ if __name__ == "__main__":
     mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
     parser.add_argument("--public", action="store_true")
     parser.add_argument("--publication-unknown", action="store_true", help="delay the original publication POST across expiry and SQLite restart (#189)")
+    parser.add_argument("--igzip", action="store_true", help="check and use the fixed optional ISA-L decoder pair")
     parser.add_argument("--temporarily-forward", action="store_true", help="temporarily enable IPv4 forwarding for approved public test; restore on exit")
     parser.add_argument("--public-image", default="public.ecr.aws/docker/library/ubuntu:24.04")
     args = parser.parse_args()
