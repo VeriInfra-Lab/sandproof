@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::{self, DirBuilder, File};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -217,6 +217,80 @@ fn artifact_digest(mut input: impl Read) -> std::io::Result<String> {
         }
     }
     Ok(format!("{:x}", digest.finalize()))
+}
+
+fn artifact_file_digest(input: File) -> std::io::Result<String> {
+    artifact_file_digest_with(input, |file, from| rustix::fs::seek(file, from))
+}
+
+fn artifact_file_digest_with(
+    mut input: File,
+    seek_extent: impl FnMut(&File, rustix::fs::SeekFrom) -> rustix::io::Result<u64>,
+) -> std::io::Result<String> {
+    let length = input.metadata()?.len();
+    let result = if let Some(digest) = artifact_extent_digest(&mut input, length, seek_extent)? {
+        format!("{:x}", digest.finalize())
+    } else {
+        // A filesystem may reject extent queries after partial progress.
+        // Restart both the input and hash rather than accepting a prefix.
+        input.rewind()?;
+        artifact_digest(&mut input)?
+    };
+    if input.metadata()?.len() != length {
+        return Err(std::io::Error::other(
+            "artifact size changed during hashing",
+        ));
+    }
+    Ok(result)
+}
+
+fn artifact_extent_digest(
+    input: &mut File,
+    length: u64,
+    mut seek_extent: impl FnMut(&File, rustix::fs::SeekFrom) -> rustix::io::Result<u64>,
+) -> std::io::Result<Option<Sha256>> {
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024];
+    let zeros = vec![0_u8; 64 * 1024];
+    let mut position = 0;
+    while position < length {
+        let data = match seek_extent(input, rustix::fs::SeekFrom::Data(position)) {
+            Ok(data) if position <= data && data < length => data,
+            Ok(_) => return Err(std::io::Error::other("invalid artifact data extent")),
+            Err(rustix::io::Errno::NXIO) => length,
+            Err(rustix::io::Errno::INVAL) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        // Holes contribute exactly the same zero bytes to SHA-256. Avoid
+        // reading/materializing them in the filesystem page cache; do not
+        // omit logical bytes or substitute an allocated-extents-only digest.
+        while position < data {
+            let count = usize::try_from((data - position).min(zeros.len() as u64))
+                .expect("count is bounded by the buffer size");
+            digest.update(&zeros[..count]);
+            position += count as u64;
+        }
+        if position == length {
+            break;
+        }
+        let end = match seek_extent(input, rustix::fs::SeekFrom::Hole(data)) {
+            Ok(end) => end.min(length),
+            Err(rustix::io::Errno::INVAL) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        if end <= data {
+            return Err(std::io::Error::other("invalid artifact hole extent"));
+        }
+        input.seek(std::io::SeekFrom::Start(data))?;
+        while position < end {
+            let count = usize::try_from((end - position).min(buffer.len() as u64))
+                .expect("count is bounded by the buffer size");
+            input.read_exact(&mut buffer[..count])?;
+            digest.update(&buffer[..count]);
+            position += count as u64;
+        }
+    }
+    Ok(Some(digest))
 }
 
 impl LinuxWorker {
@@ -1058,7 +1132,7 @@ impl LinuxWorker {
         if cache.get(&artifact.path) == Some(&stamp) {
             return Ok(());
         }
-        if artifact_digest(File::open(&artifact.path)?)? != artifact.sha256
+        if artifact_file_digest(File::open(&artifact.path)?)? != artifact.sha256
             || ArtifactStamp::read(artifact)? != stamp
         {
             return Err("template artifact digest mismatch or changed during verification".into());
@@ -2160,7 +2234,10 @@ fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Fence, artifact_digest, fence_can_advance, require_absent, write_new_json};
+    use super::{
+        Fence, artifact_digest, artifact_file_digest, artifact_file_digest_with, fence_can_advance,
+        require_absent, write_new_json,
+    };
     use std::io::{Cursor, Error, ErrorKind, Read, Seek, SeekFrom, Write};
 
     #[test]
@@ -2173,6 +2250,10 @@ mod tests {
         file.rewind().unwrap();
         let expected = "f7c9f35110eefc8d8c8ded4d76ac5ffc1fbcf5849e0dc96549302f774f0a7b56";
         assert_eq!(artifact_digest(&mut file).unwrap(), expected);
+        assert_eq!(
+            artifact_file_digest(file.try_clone().unwrap()).unwrap(),
+            expected
+        );
         let mut dense = vec![0_u8; 192 * 1024 + 7];
         dense[..6].copy_from_slice(b"prefix");
         dense[128 * 1024 - 1..128 * 1024 + 3].copy_from_slice(b"edge");
@@ -2181,6 +2262,87 @@ mod tests {
         file.write_all(b"x").unwrap();
         file.rewind().unwrap();
         assert_ne!(artifact_digest(file).unwrap(), expected);
+    }
+
+    #[test]
+    fn file_digest_handles_empty_all_hole_and_dense_zero_files() {
+        for (length, dense) in [(0, false), (1, false), (131_079, false), (131_079, true)] {
+            let mut file = tempfile::tempfile().unwrap();
+            let bytes = vec![0; length];
+            if dense {
+                file.write_all(&bytes).unwrap();
+            } else {
+                file.set_len(length as u64).unwrap();
+            }
+            assert_eq!(
+                artifact_file_digest(file).unwrap(),
+                artifact_digest(Cursor::new(bytes)).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_extent_queries_restart_hash_even_after_data_was_read() {
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(b"first").unwrap();
+        file.seek(SeekFrom::Start(128 * 1024 + 3)).unwrap();
+        file.write_all(b"last").unwrap();
+        file.set_len(256 * 1024 + 7).unwrap();
+        file.rewind().unwrap();
+        let expected = artifact_digest(&mut file).unwrap();
+        for fail_on in [1, 2, 3] {
+            let mut queries = 0;
+            let result = artifact_file_digest_with(file.try_clone().unwrap(), |input, from| {
+                queries += 1;
+                if queries == fail_on {
+                    Err(rustix::io::Errno::INVAL)
+                } else {
+                    rustix::fs::seek(input, from)
+                }
+            })
+            .unwrap();
+            assert_eq!(queries, fail_on);
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn invalid_extents_and_real_seek_errors_do_not_produce_a_digest() {
+        use rustix::io::Errno;
+        for replies in [
+            vec![Ok(8)],
+            vec![Ok(0), Ok(0)],
+            vec![Ok(0), Ok(1), Ok(0)],
+            vec![Err(Errno::IO)],
+            vec![Ok(0), Err(Errno::IO)],
+        ] {
+            let mut file = tempfile::tempfile().unwrap();
+            file.write_all(b"12345678").unwrap();
+            let mut replies = replies.into_iter();
+            assert!(artifact_file_digest_with(file, |_, _| replies.next().unwrap()).is_err());
+            assert!(replies.next().is_none());
+        }
+    }
+
+    #[test]
+    fn file_digest_rejects_truncation_and_growth_during_extent_queries() {
+        for truncate in [false, true] {
+            let mut file = tempfile::tempfile().unwrap();
+            file.write_all(b"12345678").unwrap();
+            let result = artifact_file_digest_with(file, |input, from| {
+                let value = rustix::fs::seek(input, from)?;
+                if matches!(from, rustix::fs::SeekFrom::Hole(_)) {
+                    input.set_len(if truncate { 2 } else { 9 }).unwrap();
+                }
+                Ok(value)
+            });
+            let error = result.unwrap_err();
+            if truncate {
+                assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+            } else {
+                assert!(error.to_string().contains("size changed"));
+            }
+        }
     }
 
     struct InterruptedReader {

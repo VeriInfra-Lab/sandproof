@@ -12,6 +12,7 @@ pub mod auxiliary;
 pub mod controller;
 pub mod effect;
 pub mod ids;
+pub mod maintenance;
 pub mod model;
 pub mod network;
 pub mod publication;

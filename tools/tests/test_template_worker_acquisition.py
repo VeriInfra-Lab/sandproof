@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tarfile
 import unittest
 from unittest.mock import patch
@@ -55,7 +57,8 @@ class WorkerAcquisitionTests(unittest.TestCase):
                     layer = self.fixture.manifest['layers'][0]
                     (self.fixture.layout / 'blobs/sha256' / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
             else:
-                self.assertEqual(args[:2], ['/never-execute-umoci', 'unpack'])
+                self.assertEqual(args[:3], ['/never-execute-umoci', 'raw', 'unpack'])
+                self.assertEqual(args[-1], str(self.work / 'bundle/rootfs'))
                 self.unpacked.append(args)
                 raise ReachedUnpack()
         def tool_hash(path):
@@ -142,6 +145,58 @@ class WorkerAcquisitionTests(unittest.TestCase):
                 with self.assertRaises(InvalidTemplate):
                     self.acquire()
                 self.assertEqual(self.unpacked, [])
+
+
+    def test_dockerfile_image_export_is_validated_before_unpack_after_daemon_stops(self):
+        self.native_oci()
+        self.source.write_bytes(fixtures.archive_bytes([('Dockerfile', b'FROM scratch\n', tarfile.REGTYPE, '')]))
+        self.request['kind'] = 'dockerfile'
+        tools = {name: Path('/never-execute-' + name) for name in ('buildkitd', 'buildctl', 'buildkit-runc', 'umoci')}
+        real_read = Path.read_text
+        def read_text(path, *args, **kwargs):
+            if str(path) == '/proc/sys/kernel/random/boot_id':
+                return 'synthetic-boot'
+            return real_read(path, *args, **kwargs)
+        for corrupt in (False, True):
+            with self.subTest(corrupt=corrupt):
+                self.work = self.root / ('dockerfile-bad' if corrupt else 'dockerfile-good')
+                daemons = []
+                def command(args, **kwargs):
+                    if kwargs.get('daemon'):
+                        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                                 start_new_session=True)
+                        daemons.append(child)
+                        return child
+                    if args[0] == str(tools['buildctl']):
+                        self.assertEqual(args[args.index('--output') + 1],
+                                         'type=image,oci-mediatypes=true,compression=gzip,push=false,store=false')
+                        store = self.work / 'cache/runc-native/content/blobs/sha256'
+                        shutil.copytree(self.original_layout / 'blobs/sha256', store)
+                        descriptor = json.loads((self.original_layout / 'index.json').read_text())['manifests'][0]
+                        (self.work / 'image-metadata.json').write_text(json.dumps({
+                            'containerimage.descriptor': descriptor,
+                            'containerimage.digest': descriptor['digest'],
+                            'containerimage.config.digest': self.fixture.manifest['config']['digest']}))
+                        if corrupt:
+                            layer = self.fixture.manifest['layers'][0]
+                            (store / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
+                        return
+                    self.assertEqual(args[:3], [str(tools['umoci']), 'raw', 'unpack'])
+                    self.assertEqual(args[-1], str(self.work / 'bundle/rootfs'))
+                    self.assertIsNotNone(daemons[0].poll())
+                    raise ReachedUnpack()
+                with patch.object(worker.os, 'geteuid', return_value=0), \
+                     patch.object(worker.sys, 'platform', 'linux'), \
+                     patch.object(Path, 'is_block_device', return_value=True), \
+                     patch.object(Path, 'read_text', read_text), \
+                     patch.object(worker, 'check_tools', return_value=tools), \
+                     patch.object(worker, 'sha256', return_value='fixed'), \
+                     patch.object(worker.Commands, 'run', side_effect=command):
+                    with self.assertRaises(InvalidTemplate if corrupt else ReachedUnpack):
+                        worker.build(self.work, self.source, self.request, {}, guest_boot_id='synthetic-boot')
+                self.assertEqual(len(daemons), 1)
+                self.assertIsNotNone(daemons[0].poll())
 
 
 if __name__ == '__main__':

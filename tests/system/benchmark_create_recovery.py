@@ -135,10 +135,20 @@ def exercise(args):
         finally:
             httpx.AsyncClient.send = original_send
         assert report['create_requests'] == 1 and env.create_dispatched and env.sandbox_id is None
+        def delete_settled_create(identity):
+            found = matching_runtime(root / 'db/controller.db', env.runtime_intent,
+                                     owner=1, namespace=namespace, sandbox_id=identity)
+            assert found is not None and found['phase'] != 'Starting'
+            report.setdefault('delete_observations', []).append(found)
+            return fetch(opener, url, 'DELETE', '/sandboxes/' + identity, key)[0]
         recovery = recover_runtime_create(root / 'db/controller.db', env.runtime_intent,
             owner=1, namespace=namespace, deadline=time.monotonic() + 120,
-            delete=lambda identity: fetch(opener, url, 'DELETE', '/sandboxes/' + identity, key)[0])
+            delete=delete_settled_create)
         report['recovery'] = recovery
+        assert recovery['status'] == 'destroyed' and recovery['delete_acknowledged']
+        assert len(report['delete_observations']) == 1
+        if args.drop_phase == 'starting':
+            assert recovery['pending_create_observed'], 'pending recovery window was missed'
         report['physical_audit'] = [audit_gone(root, args.firecracker, args.cgroup_parent, p.name)
                                     for p in (root / 'jails/.claims').iterdir()]
         check_no_resources(root, namespace, args.firecracker, args.uid_base)

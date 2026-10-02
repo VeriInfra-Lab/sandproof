@@ -28,7 +28,9 @@ from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_f
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.check_browser_evidence import audit_browser_evidence, audit_browser_execution
 from benchmarks.failure_diagnostics import collect as collect_failure_diagnostics
-from benchmarks.oracle_repairs import CHROMIUM_LIFECYCLE_PATH, REPAIRS, prepare_repaired_task
+from benchmarks.oracle_repairs import (
+    CHROMIUM_LIFECYCLE_PATH, MTEB_VERIFIER_CONSTRAINTS, REPAIRS, prepare_repaired_task,
+)
 from benchmarks.sdk_environment import SdkEnvironment
 from tools.benchmark_tasks import InvalidInput, verify
 
@@ -287,6 +289,12 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
                 verifier_options['override_env'].update(row['verifier_repair_env'])
         if task.name == 'pytorch-model-recovery' and oracle_mode == 'repaired':
             row['verifier_repair_env'] = {'UV_LINK_MODE': 'hardlink'}
+            verifier_options['override_env'] = dict(row['verifier_repair_env'])
+        if task.name == 'mteb-retrieve' and oracle_mode == 'repaired':
+            row['verifier_repair_env'] = {
+                'UV_CONSTRAINT': MTEB_VERIFIER_CONSTRAINTS,
+                'UV_LINK_MODE': 'hardlink',
+            }
             verifier_options['override_env'] = dict(row['verifier_repair_env'])
         verifier = Verifier(task=task, trial_paths=paths, environment=environment, **verifier_options)
         result = await asyncio.wait_for(verifier.verify(), task.config.verifier.timeout_sec)

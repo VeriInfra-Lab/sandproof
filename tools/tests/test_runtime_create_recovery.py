@@ -1,4 +1,5 @@
 import copy
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -26,12 +27,12 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             'resources': {'cpu_count': 2, 'memory_mib': 4096, 'disk_bytes': 10737418240,
                           'host_memory_bytes': self.template['hostMemoryBytes']}}}
         self.now = 0
-        with sqlite3.connect(self.database) as db:
+        with closing(sqlite3.connect(self.database)) as db, db:
             db.executescript('CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,state_blob BLOB);'
                              'CREATE TABLE sandbox_create_options(sandbox_id TEXT PRIMARY KEY,options_json BLOB);')
 
     def insert(self, identity='sb-test-1', *, phase='Starting', owner=1, options=None):
-        with sqlite3.connect(self.database) as db:
+        with closing(sqlite3.connect(self.database)) as db, db:
             db.execute('INSERT OR REPLACE INTO sandboxes VALUES (?,?)',
                        (identity, json.dumps({'owner': owner, 'phase': phase})))
             db.execute('INSERT OR REPLACE INTO sandbox_create_options VALUES (?,?)',
@@ -49,6 +50,9 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             self.tick(seconds)
             if self.now == .5:
                 self.insert()
+            elif self.now == 1:
+                delete.assert_not_called()
+                self.insert(phase='Running')
             elif self.now == 1.5:
                 self.insert(phase='Destroyed')
         delete = Mock(return_value=204)
@@ -56,13 +60,37 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         delete.assert_called_once_with('sb-test-1')
         self.assertEqual(result['status'], 'destroyed')
         self.assertTrue(result['delete_acknowledged'])
+        self.assertTrue(result['pending_create_observed'])
+        self.assertEqual(result['delete_phase'], 'Running')
+
+    def test_pending_create_uses_original_deadline_without_delete(self):
+        self.insert()
+        delete = Mock()
+        with self.assertRaises(TimeoutError):
+            self.recover(delete)
+        delete.assert_not_called()
+        self.assertEqual(self.now, 2)
+
+    def test_failed_pending_create_can_reach_tombstone_without_delete(self):
+        self.insert()
+        def advance(seconds):
+            self.tick(seconds)
+            self.insert(phase='Destroyed')
+        delete = Mock()
+        result = self.recover(delete, sleep=advance)
+        delete.assert_not_called()
+        self.assertEqual(result['status'], 'destroyed')
+        self.assertTrue(result['pending_create_observed'])
+        self.assertFalse(result['delete_acknowledged'])
 
     def test_lost_delete_receipt_is_not_repeated_and_does_not_become_sdk_ack(self):
-        self.insert()
+        self.insert(phase='Running')
         def delete(identity):
             self.insert(identity, phase='Destroyed')
             raise OSError('private credential-bearing transport text')
-        result = self.recover(Mock(side_effect=delete))
+        request = Mock(side_effect=delete)
+        result = self.recover(request)
+        request.assert_called_once_with('sb-test-1')
         self.assertEqual(result['status'], 'destroyed')
         self.assertFalse(result['delete_acknowledged'])
         self.assertEqual(result['delete_error_type'], 'OSError')
@@ -81,7 +109,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         for status in (404, 204):
             with self.subTest(status=status):
                 self.now = 0
-                self.insert()
+                self.insert(phase='Running')
                 delete = Mock(return_value=status)
                 with self.assertRaises(TimeoutError):
                     self.recover(delete)

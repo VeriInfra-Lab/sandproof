@@ -263,6 +263,33 @@ class LocalFinalizationTests(unittest.TestCase):
                 self.assertTrue(row['kill_confirmed'])
                 env.stop.assert_awaited_once()
 
+    def test_mteb_cpu_wheels_only_apply_to_explicit_repaired_verifier(self):
+        for name, mode in (('mteb-retrieve', 'original'), ('mteb-retrieve', 'repaired'),
+                           ('mteb-leaderboard', 'repaired'), ('sample', 'repaired')):
+            for reward in (0, 1):
+                with self.subTest(name=name, mode=mode, reward=reward), self.fixture(task_name=name) as (
+                        args, env, oracle, verifier, trial, output):
+                    args.oracle_mode = mode
+                    verifier.verify.return_value = SimpleNamespace(rewards={'reward': reward})
+                    with (patch.object(runner, 'prepare_repaired_task', return_value=args.source),
+                          patch.object(runner, 'Verifier', return_value=verifier) as constructor):
+                        row = asyncio.run(runner.run_task(args, {'name': name}, {},
+                            environment_factory=lambda **kwargs: env))
+                    if name == 'mteb-retrieve' and mode == 'repaired':
+                        expected = {'UV_CONSTRAINT': '/etc/sandproof-mteb-verifier-constraints.txt',
+                                    'UV_LINK_MODE': 'hardlink'}
+                        self.assertEqual(constructor.call_args.kwargs['override_env'], expected)
+                        self.assertEqual(row['verifier_repair_env'], expected)
+                    else:
+                        self.assertNotIn('override_env', constructor.call_args.kwargs)
+                        self.assertNotIn('verifier_repair_env', row)
+                    self.assertEqual(row['rewards'], {'reward': reward})
+                    self.assertEqual(row['status'], 'passed' if reward else 'failed')
+                    self.assertEqual(row['oracle_mode'], mode)
+                    self.assertTrue(row['kill_confirmed'])
+                    oracle.run.assert_awaited_once()
+                    env.stop.assert_awaited_once()
+
     def test_repaired_generic_browser_requires_supervised_lifecycle_and_keeps_reward(self):
         for lifecycle, reward, passed in ((None, 1, False), ('malformed', 1, False),
                 ('{"remaining_owned_children": [123]}\n', 1, False),
