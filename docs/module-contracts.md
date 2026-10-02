@@ -124,7 +124,7 @@ GET 404 不是发布取消或未受理屏障：先前 POST 仍可能排队等待
 
 私有池须显式配置 `build_retry_windows={window_duration_ms,max_anchors}` 并启用 bounded_host/maintenance。监督器先向 `POST /sandproof/internal-build-windows` 签发窗口，将原字符串窗口持久写入公开作业后才 POST 原 buildID；GET 同样带原 requestWindow。收尾先在 `/sandproof/internal-build-windows/{window}/close` 建立持久准入围栏，再解释 GET404。实际 cleanupComplete 或围栏后确切缺席后，先在公开 SQLite 提交原 `{requestWindow,sandboxID}` 的 builder-settled 证据，再 POST `/sandproof/internal-build-vms/{buildID}/settle`，收到 ack 后持久记录。ack 丢失只重发原身份和已保存证据；没有保存窗口意味着尚未派发 VM POST，旧域未知工作不享受该推断。窗口关闭不消灭已接受的迟到 POST。
 
-普通用户用[小客户端](../tools/template_build_client.py)，凭据从 `SANDBOX_API_KEY` 读取：`--url https://构建服务 --intent 原请求.json --context context.tar.gz` 或 `--image public.ecr.aws/docker/library/ubuntu:24.04`。客户端先同步保存 namespace/window/key、原请求及上下文摘要，未知回复后重用同一 intent，绝不自动换窗口。通用任务链也先同步相同信息；明确 `legacy-unbounded` 兼容模式不声称满足窗口/退休保证，不允许从窗口请求失败静默降级。两个硬件配置生成器须明确选择 `--legacy-unbounded` 或 `--bounded-policy`；后者仅透传显式 runtime/builder 的 bounded_host/maintenance、私有 build_retry_windows 及 public 的 bounded_builds/独立 workspace 字节预算，并复用配置检查，不生成生产默认。收到模板编号后仍使用原 E2B SDK create，普通沙箱创建合同不添加窗口/键字段。
+普通用户用[小客户端](../tools/template_build_client.py)，凭据从 `SANDBOX_API_KEY` 读取：`--url https://构建服务 --build-mode windowed --intent 原请求.json --context context.tar.gz` 或 `--image public.ecr.aws/docker/library/ubuntu:24.04`。旧部署须显式选择 `--build-mode legacy-unbounded`，不调用窗口接口。两种模式均先同步保存原 key、原请求及上下文摘要，窗口模式另保存 namespace/window；intent 同时绑定服务地址、模式及凭据摘要（不保存凭据），冲突或切换均拒绝。未知回复后重用同一 intent，绝不自动换窗口。通用任务链也先同步相同信息；明确 `legacy-unbounded` 兼容模式不声称满足窗口/退休保证，不允许从窗口请求失败静默降级。两个硬件配置生成器须明确选择 `--legacy-unbounded` 或 `--bounded-policy`；后者仅透传显式 runtime/builder 的 bounded_host/maintenance、私有 build_retry_windows 及 public 的 bounded_builds/独立 workspace 字节预算，并复用配置检查，不生成生产默认。收到模板编号后仍使用原 E2B SDK create，普通沙箱创建合同不添加窗口/键字段。
 
 鉴权扩展接口：`POST /sandproof/template-publications` 接 `{candidateID}`；`GET /sandproof/template-publications/{candidateID}` 返回 checking/ready/failed 与有限原因；`GET /sandproof/templates` 只列本人 Ready，编号升序、limit 1～100、cursor 为上页最后不可变编号；`GET /sandproof/templates/{编号或别名}` 查询本人 Ready。`PUT /sandproof/template-aliases/{别名}` 接 `{templateID, expectedTemplateID?}`，可比较后更新，目标必须本人 Ready 编号；DELETE 只删本人别名，不删产物/实例绑定。静态目录名称保留；未知、未就绪和他人模板均不可创建。别名更新只影响新准入，旧实例/重启始终绑定原字节。响应不含宿主路径、临时 VM 编号或凭据。这是 Sandproof 发布扩展，不宣称原生 E2B 构建协议完全兼容。
 
@@ -217,7 +217,7 @@ SQLite 提交本身若报告结果不确定，调用方必须按操作编号重�
 
 2026-10-02 owner 确认采用现有状态机内的维护操作，不另建清理控制器或更换 SQLite。目标是在活跃对象、未决工作、保留结果和模板的条数/字节都有显式额度时，反复创建销毁不使在线记录及宿主登记按累计次数增长；重启从有限当前状态和有限输入尾恢复。容量不足拒绝新工作，但不能侵占已接受工作的收尾预留。宿主永远不可观察时仍保留未知工作，不承诺无条件继续接单；有限整数身份耗尽仍明确拒绝，不能据此声称数学意义的无限新身份。
 
-纯核心基础之上，服务、管理适配器和 Linux 宿主已接通显式 `bounded_host` 物理位置复用；只通过云端组件/事务/合成传输测试，未执行本版 KVM、root 网络或长期宿主容量验收。未配置时维持原模式。公开原始维护入口仍拒绝。另显式配置顶层 `maintenance` 后，格式 4 的受限无 outbox 路径已接通退休、结果过期、检查点与覆盖输入删除；请求窗口迁移另见自助构建合同。增加明确的 `maintenance.capacity`、`console_policy=discard` 和下述物理部署 profile 后才属于完整容量模式；仅启用旧维护配置不获得未来收尾或物理空间保证，组件检查也不代替实机验收。
+纯核心基础之上，服务、管理适配器和 Linux 宿主已接通显式 `bounded_host` 物理位置复用；只通过云端组件/事务/合成传输测试，未执行本版 KVM、root 网络或长期宿主容量验收。未配置时维持原模式。公开原始维护入口仍拒绝。另显式配置顶层 `maintenance` 后，格式 4 的受限无 outbox 路径已接通退休、结果过期、检查点与覆盖输入删除；请求窗口迁移另见自助构建合同。增加明确的 `maintenance.capacity`、`console_policy=discard` 和下述物理部署 profile 后才属于完整容量模式；生产入口拒绝缺少 capacity 的顶层维护配置；库级无预留模式只保留作组件/迁移测试，不获得未来收尾或物理空间保证，组件检查也不代替实机验收。
 
 - 显式启用维护时从已重放的 sandbox/workspace 记录固定身份前沿；此前的乱序显式编号仍按原语义重放。此后新创建必须同时高于两个前沿，只有接受才推进，删除历史不降低它们。零是合法编号；最大整数不回绕。老的活跃对象可以继续服务，不阻止更大编号的终止对象独立退休。
 - 退休必须核对终止状态、关闭权限、精确资源回收回执、全部操作终局和没有未决派发/未知动作。已有 `RetiredByStop` 保留其停止覆盖含义；未派发且已被终止取代的动作只能按既有工作资格判断为不可执行，不能伪造成功回执。扫描实际资源/账本并核对跨对象引用，不能只相信可能不完整的索引。含快照的历史在该 V1 基础中拒绝退休。
@@ -246,7 +246,7 @@ SQLite 提交本身若报告结果不确定，调用方必须按操作编号重�
 
 ### 完整容量、请求结算与物理部署前提
 
-`maintenance.capacity` 是额外显式策略，未提供时保留原维护模式。它的正整数参数为 `max_live_sandboxes`、`max_sql_rows`、`max_sql_bytes`、`max_sql_value_bytes`、`max_receipt_bytes`、`max_transaction_inputs`、`max_transaction_bytes`、`max_database_bytes`、`max_wal_bytes`、`max_shm_bytes`、`checkpoint_scratch_bytes`、`max_online_storage_bytes`。`max_transaction_bytes` 限制一次事务新增的控制输入批次，不冒充所有 SQL 修改的字节数；SQL、页与 WAL 另有整体上限。最大原子批次必须能放入尾部，单条输入、未来命令/回执包装、完整标量宽度和检查点替换空间也必须可表示；配置不足或溢出明确拒绝。新完整模式只在受支持的空控制状态启用，不自动为旧的无预留在途工作补造额度。
+`maintenance.capacity` 是显式收尾预留策略；生产服务启用顶层 `maintenance` 时必须提供，在缺少预留时拒绝打开数据库或接单。库级无预留维护模式仅保留为检查点组件/迁移测试接口，不作为可接单的生产配置。它的正整数参数为 `max_live_sandboxes`、`max_sql_rows`、`max_sql_bytes`、`max_sql_value_bytes`、`max_receipt_bytes`、`max_transaction_inputs`、`max_transaction_bytes`、`max_database_bytes`、`max_wal_bytes`、`max_shm_bytes`、`checkpoint_scratch_bytes`、`max_online_storage_bytes`。`max_transaction_bytes` 限制一次事务新增的控制输入批次，不冒充所有 SQL 修改的字节数；SQL、页与 WAL 另有整体上限。最大原子批次必须能放入尾部，单条输入、未来命令/回执包装、完整标量宽度和检查点替换空间也必须可表示；配置不足或溢出明确拒绝。新完整模式只在受支持的空控制状态启用，不自动为旧的无预留在途工作补造额度。
 
 每个接受的 V1 创建在同一事务拥有后续行、引用、编码字节、实际 SQL 编号和两个结果的额度；固定重试上界来自核心常量，并保守涵盖成功创建、文件策略、失败准备/初始化、终止抢占及合法终止重试。未知对象保留自身额度，不钉住无关历史。结果、开放窗口及发布验证证据的未来增长/到期转换也必须计入；最后一次清理可以消费其已预留编号，不能用永远不释放的“加一”假预留阻止最后一步。编号只在实际插入时前进，不预先跳过输入序号。静态界与现行 V1 图对应，不表示已经新增自动终止失败重试器或任意将来操作；新状态/命令须重新核对界限。
 

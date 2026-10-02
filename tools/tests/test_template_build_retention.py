@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 from tools.template_build_client import BuildClient, saved_intent
 from tools.template_build_service import Backend, BuildHTTP, Supervisor
 from tools.template_build_store import BuildError, BuildStore, MIB
-from tools.template_stage import stage_delete, stage_inventory
+from tools.template_stage import file_hash, stage_delete, stage_inventory
 from tools.tests.test_template_build_service import limits, PowerLoss, FakeBackend
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -496,6 +496,76 @@ class RetentionTests(unittest.TestCase):
             self.store.retire_results()
             self.assertEqual(self.store.rows(), [])
 
+    def handoff_publication(self):
+        job = self.submit()
+        registry = self.root / 'registry'
+        for path in (registry, registry / 'inbox', registry / 'artifacts'):
+            path.mkdir(mode=0o700)
+        kernel = self.root / 'kernel'
+        kernel.write_bytes(b'kernel')
+        disk = self.store.directory(job) / 'candidate.ext4'
+        disk.write_bytes(b'opaque disk' + bytes(65536))
+        disk.chmod(0o600)
+        status = dict(state='candidate', ready=False, startup_applied=False,
+            disk_bytes=disk.stat().st_size, min_free_bytes=1,
+            image_digest='sha256:' + 'b' * 64, rootfs_sha256=file_hash(disk),
+            runtime_defaults=dict(env_vars={}, user='root', workdir='/', argv=[]))
+        self.store.private_checkpoint(job, builder_settled={'sandboxID': 'sb-original'}, private_ack=1)
+        self.store.change(job, 'Publishing', candidate=status)
+        backend = object.__new__(Backend)
+        backend.config = {'runtime': {'template_registry': {'root': str(registry)}, 'kernel': str(kernel)}}
+        return job, backend, registry, disk
+
+    def test_bounded_handoff_keeps_original_inode_and_unknown_publication_after_restart(self):
+        job, backend, registry, disk = self.handoff_publication()
+        inode = disk.stat().st_ino
+        backend.request = Mock(side_effect=[BuildError(404, 'NotFound'), TimeoutError('lost reply')])
+        with self.assertRaises(TimeoutError):
+            backend.publish(self.store, self.store.get(job))
+        final = registry / 'inbox' / job
+        self.assertFalse(disk.exists())
+        self.assertEqual((final / 'rootfs.ext4').stat().st_ino, inode)
+        ownership = {'id': job, 'nonce': self.store.get(job)['fs_nonce']}
+        stage_inventory(final, ownership)
+        self.reopen()
+        backend.request = Mock(side_effect=BuildError(404, 'NotFound'))
+        with patch('tools.template_build_service.stage', side_effect=AssertionError('must not restage')):
+            Supervisor(self.store, backend).tick()
+        self.assertEqual(self.store.get(job)['state'], 'Publishing')
+        self.assertGreater(self.store.get(job)['reserved'], 0)
+        self.assertTrue(self.store.get(job)['publication_attempted'])
+        self.assertEqual((final / 'rootfs.ext4').stat().st_ino, inode)
+        self.assertTrue(all(call.args[1] == 'GET' for call in backend.request.call_args_list))
+
+    def test_bounded_handoff_refusal_deletes_only_committed_inode_inventory(self):
+        job, backend, registry, disk = self.handoff_publication()
+        backend.request = Mock(side_effect=[BuildError(404, 'NotFound'), BuildError(400, 'Rejected')])
+        with self.assertRaisesRegex(BuildError, 'Rejected'):
+            backend.publish(self.store, self.store.get(job))
+        self.assertFalse(disk.exists())
+        self.assertFalse(self.store.get(job)['publication_attempted'])
+        final = registry / 'inbox' / job
+        unrelated = registry / 'inbox' / ('f' * 32)
+        unrelated.mkdir(mode=0o700)
+        (unrelated / 'keep').write_text('foreign')
+        backend.request = Mock(side_effect=BuildError(404, 'NotFound'))
+        self.fault_once('after_staging_delete_intent')
+        with self.assertRaises(PowerLoss):
+            backend.discard_unpublished(self.store, self.store.get(job))
+        self.assertIsNotNone(self.store.get(job)['staging_cleanup'])
+        self.reopen()
+        old = final / 'kernel'
+        replacement = final / 'replacement'
+        replacement.write_bytes(b'foreign replacement')
+        os.replace(replacement, old)
+        with self.assertRaisesRegex(ValueError, 'identity changed'):
+            backend.discard_unpublished(self.store, self.store.get(job))
+        self.assertEqual(old.read_bytes(), b'foreign replacement')
+        self.assertTrue((final / 'rootfs.ext4').exists())
+        self.assertIsNotNone(self.store.get(job)['staging_cleanup'])
+        self.assertGreater(self.store.get(job)['reserved'], 0)
+        self.assertEqual((unrelated / 'keep').read_text(), 'foreign')
+
     def test_whole_record_bound_rejects_candidate_and_failure_growth(self):
         job = self.submit()
         for values in ({'candidate': {'data': 'x' * 65536}}, {'failure': 'x' * 65536}, {'result': {'x': 'y' * 8192}}):
@@ -614,13 +684,18 @@ class RetentionTests(unittest.TestCase):
             request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 30}
             path = self.root.parent / ('intent-' + self.root.name + '.json')
             self.addCleanup(lambda: path.unlink(missing_ok=True))
-            intent = saved_intent(path, client, request, token='original')
+            intent = saved_intent(path, client, request, build_mode='windowed', token='original')
             result = client.request('POST', '/sandproof/template-builds', request | {'requestWindow': intent['requestWindow']}, token='original')
             self.store.close_window(1, intent['requestWindow'])
-            recovered = saved_intent(path, client, request)
+            recovered = saved_intent(path, client, request, build_mode='windowed')
             duplicate = client.request('POST', '/sandproof/template-builds', request | {'requestWindow': recovered['requestWindow']}, token=recovered['idempotency_key'])
             self.assertEqual(result['buildID'], duplicate['buildID'])
             self.assertEqual(intent, recovered)
+            with self.assertRaisesRegex(ValueError, 'conflicts'):
+                saved_intent(path, client, request, build_mode='legacy-unbounded')
+            with self.assertRaisesRegex(RuntimeError, 'RequestWindowRequired'):
+                client.request('POST', '/sandproof/template-builds', request, token='new-legacy')
+            self.assertEqual(len(self.store.rows()), 1)
         finally:
             server.shutdown()
             server.server_close()

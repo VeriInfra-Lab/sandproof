@@ -499,7 +499,14 @@ async fn forward_request(
 pub async fn relay(bounded: bool) -> Result<(), Box<dyn Error>> {
     let stream = tokio::net::TcpStream::connect(ENVD_ADDRESS).await?;
     let (reader, writer) = stream.into_split();
-    tunnel::relay(bounded, tokio::io::stdin(), tokio::io::stdout(), reader, writer).await?;
+    tunnel::relay(
+        bounded,
+        tokio::io::stdin(),
+        tokio::io::stdout(),
+        reader,
+        writer,
+    )
+    .await?;
     Ok(())
 }
 

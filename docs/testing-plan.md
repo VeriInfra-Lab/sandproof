@@ -391,6 +391,8 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 
 ### #99 收尾额度与完整部署 profile 验收
 
+#200/#201/#205 的组合修复另覆盖：两种生产中继模式在来宾已观察写 EOF 但尚未回复的同步屏障后仍接收完整大响应；I/O 错误与已有精确撤销/reaping 测试共同约束收尾。生产服务拒绝无 capacity 的维护配置且不创建数据库。普通客户端在真实 HTTP/SQLite 上分别使用窗口和旧模式；旧服务不调用窗口接口，关闭窗口/丢回复重试保持同一身份，模式/地址/凭据/原参数切换拒绝且不静默降级。候选交接覆盖同 inode、两种模式的进程中断恢复、错误 nonce/未知目录项拒绝，以及真实有界账本重开后未知发布不得再 staging 或退款、已提交删除清单遇到替换 inode 必须保留。测试不启动虚拟机，不计作实机验收。
+
 [容量回归](../controller-service/src/controller/checkpoint/tests/capacity.rs)、[提交/终止重试回归](../controller-service/src/controller/checkpoint/tests/capacity_protocol.rs)和[构建/验证容量组合](../controller-service/src/controller/checkpoint/tests/build_capacity.rs)核对：固定 V1 图的后续行/引用/字节/编号额度，包含 ApplyFilePolicy 与 AbortPrepare 的保守命令全集；紧配额拒绝新工作但不提前删结果；首次未知＋最终回执、合法终止重试/耗尽仍持有额度；错误后续包装长度、标量宽度变化、输入最后可表示编号、窗口/结果到期信用转移；外部读者、SQLite_FULL、自动发布与分批删除的两种未知提交结果、外部写者窗口、空闲不增长、实际页上限读回。持续创建/销毁与旧 Running/unknown 并存，记录核心/SQL 各族、输入前缀/尾、DB/WAL/SHM 文件峰值和重开观测，不把一次短成功称为无限运行证明。
 
 私有构建和验证在同一完整策略下补紧额度组合：同位置跨多轮 close/query/settle、保留结果饱和/到期、旧未知锚点保持原信用、输入边界仍完成最后结算，Ready/Failed/未进入验证的失败证据在 SQL 饱和时使用预留空间；退休原创建选项后重开仍能返回证据。普通 SDK create 合同保持原行为，受限维护没有公共 HTTP 断言入口。

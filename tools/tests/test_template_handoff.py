@@ -37,7 +37,8 @@ class DownloadHandoffTests(unittest.TestCase):
         self.final = self.root / 'inbox' / self.identity
 
     def stage(self):
-        return stage_downloaded(*self.args, candidate_id=self.identity)
+        return stage_downloaded(*self.args, candidate_id=self.identity,
+                                ownership=getattr(self, 'ownership', None))
 
     def assert_complete(self):
         target = self.final / 'rootfs.ext4'
@@ -83,31 +84,59 @@ from pathlib import Path
 from tools.template_stage import stage_downloaded
 args = json.loads(sys.argv[1])
 args[:3] = map(Path, args[:3])
-identity, crash_source = sys.argv[2:]
+identity, crash_source, ownership = sys.argv[2:]
 rename = os.rename
 def crash_after_rename(source, target):
     rename(source, target)
     if str(source) == crash_source:
         os._exit(67)
 os.rename = crash_after_rename
-stage_downloaded(*args, candidate_id=identity)
+stage_downloaded(*args, candidate_id=identity, ownership=json.loads(ownership))
 '''
-        for crash_source in (self.disk, self.pending):
-            with self.subTest(crash_source=crash_source):
+        for ownership, crash_source in ((owner, source) for owner in (None, {'id': self.identity, 'nonce': 'e' * 32})
+                                        for source in (self.disk, self.pending)):
+            self.ownership = ownership
+            with self.subTest(crash_source=crash_source, bounded=ownership is not None):
                 if self.final.exists():
                     os.rename(self.final / 'rootfs.ext4', self.disk)
                     self.disk.chmod(0o600)
                     (self.final / 'kernel').unlink()
                     (self.final / 'manifest.json').unlink()
+                    (self.final / '.build-owner.json').unlink(missing_ok=True)
                     self.final.rmdir()
                 args = [str(value) if isinstance(value, Path) else value for value in self.args]
                 result = subprocess.run([sys.executable, '-c', script, json.dumps(args),
-                                         self.identity, str(crash_source)], check=False, timeout=15)
+                                         self.identity, str(crash_source), json.dumps(ownership)], check=False, timeout=15)
                 self.assertEqual(result.returncode, 67)
                 self.assertFalse(self.disk.exists())
                 self.assertEqual(self.stage(), self.identity)
                 self.assertEqual((self.final / 'rootfs.ext4').stat().st_ino, self.original_inode)
                 self.assert_complete()
+
+    def test_bounded_pending_requires_same_nonce_and_known_entries_before_resume(self):
+        self.ownership = {'id': self.identity, 'nonce': 'e' * 32}
+        self.pending.mkdir(mode=0o700)
+        marker = self.pending / '.build-owner.json'
+        marker.write_text(json.dumps(self.ownership | {'nonce': 'f' * 32}, sort_keys=True))
+        os.rename(self.disk, self.pending / 'rootfs.ext4')
+        with self.assertRaisesRegex(ValueError, 'ownership'):
+            self.stage()
+        self.assertFalse(self.disk.exists())
+        self.assertEqual((self.pending / 'rootfs.ext4').stat().st_ino, self.original_inode)
+        marker.write_text(json.dumps(self.ownership, sort_keys=True))
+        foreign = self.pending / 'foreign'
+        foreign.write_text('keep')
+        with self.assertRaisesRegex(ValueError, 'entry'):
+            self.stage()
+        self.assertEqual(foreign.read_text(), 'keep')
+        foreign.unlink()
+        self.assertEqual(self.stage(), self.identity)
+        self.assertEqual((self.final / 'rootfs.ext4').stat().st_ino, self.original_inode)
+        self.assert_complete()
+        with self.assertRaisesRegex(ValueError, 'ownership'):
+            stage_downloaded(*self.args, candidate_id=self.identity,
+                             ownership=self.ownership | {'nonce': 'f' * 32})
+        self.assert_complete()
 
     def test_failed_readback_restores_download_without_touching_another_identity(self):
         unrelated = self.root / 'inbox' / ('c' * 32)

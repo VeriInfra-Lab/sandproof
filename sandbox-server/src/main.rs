@@ -718,6 +718,11 @@ mod linux {
                 return Err("maintenance requires explicit bounded_host configuration".into());
             }
             maintenance.validate()?;
+            if maintenance.capacity.is_none() {
+                return Err(
+                    "production maintenance requires explicit cleanup capacity reservations".into(),
+                );
+            }
             if maintenance.capacity.is_some()
                 && bounded.and_then(|config| config.console_policy)
                     != Some(sandproof_controller_service::ConsolePolicy::Discard)
@@ -1075,6 +1080,7 @@ mod linux {
         bounded: Option<BoundedHostConfig>,
         maintenance: Option<MaintenanceConfig>,
     ) -> Result<ControllerJournal, Box<dyn Error>> {
+        validate_maintenance_config(bounded.as_ref(), maintenance.as_ref())?;
         // Node construction has already independently refused legacy metadata
         // or resources. The journal now rechecks its own empty state/config in
         // the enable transaction; neither check substitutes for the other.
@@ -1376,6 +1382,28 @@ mod linux {
         }
 
         #[test]
+        fn production_maintenance_cannot_accept_work_without_cleanup_reservations() {
+            let value = maintained_settings();
+            assert!(check(value.clone()).is_err());
+            let config: ConfigFile = serde_json::from_value(value).unwrap();
+            let database = std::env::temp_dir().join(format!(
+                "sandproof-unreserved-maintenance-{}.db",
+                std::process::id()
+            ));
+            assert!(
+                open_journal(
+                    database.clone(),
+                    &config.namespace,
+                    Some(resolve(settings())),
+                    config.maintenance
+                )
+                .is_err()
+            );
+            // Refusal must happen before any database/host initialization.
+            assert!(!database.exists());
+        }
+
+        #[test]
         fn explicit_console_policy_is_strict_and_not_inferred() {
             assert!(resolve(settings()).console_policy.is_none());
             let mut value = settings();
@@ -1399,7 +1427,7 @@ mod linux {
 
         #[test]
         fn private_retry_policy_requires_explicit_maintained_private_pool() {
-            let mut value = maintained_settings();
+            let mut value = full_capacity_settings();
             value["internal_build_vms"] = json!(true);
             value["build_retry_windows"] = json!({"window_duration_ms": 100, "max_anchors": 2});
             assert!(check(value.clone()).is_ok());
@@ -1426,7 +1454,7 @@ mod linux {
         #[test]
         fn maintenance_configuration_is_explicit_strict_and_requires_bounded_host() {
             assert!(check(settings()).is_ok());
-            assert!(check(maintained_settings()).is_ok());
+            assert!(check(full_capacity_settings()).is_ok());
             for field in [
                 "retention_ms",
                 "max_checkpoint_bytes",
@@ -1446,14 +1474,14 @@ mod linux {
                     Value::Null,
                     json!(u64::MAX),
                 ] {
-                    let mut value = maintained_settings();
+                    let mut value = full_capacity_settings();
                     value["maintenance"][field] = invalid;
                     assert!(
                         check(value).is_err(),
                         "accepted invalid maintenance {field}"
                     );
                 }
-                let mut value = maintained_settings();
+                let mut value = full_capacity_settings();
                 value["maintenance"].as_object_mut().unwrap().remove(field);
                 assert!(
                     check(value).is_err(),
@@ -1490,8 +1518,8 @@ mod linux {
             fs::create_dir(&directory).unwrap();
             let scratch = Scratch(directory);
             let database = scratch.0.join("controller.db");
-            let config: ConfigFile = serde_json::from_value(maintained_settings()).unwrap();
-            let host = resolve(settings());
+            let config: ConfigFile = serde_json::from_value(full_capacity_settings()).unwrap();
+            let host = resolve(full_capacity_settings());
             let policy = config.maintenance.unwrap();
             drop(
                 open_journal(

@@ -89,8 +89,11 @@ mod tests {
             guest.shutdown().await.unwrap();
         };
         tokio::time::timeout(Duration::from_secs(5), async {
-            let (result, (), ()) =
-                tokio::join!(relay(bounded, input, output, reader, writer), client, server);
+            let (result, (), ()) = tokio::join!(
+                relay(bounded, input, output, reader, writer),
+                client,
+                server
+            );
             result.unwrap();
         })
         .await
@@ -111,11 +114,49 @@ mod tests {
         let (stream, mut guest) = tokio::io::duplex(23);
         let (reader, writer) = tokio::io::split(stream);
         guest.write_all(b"response").await.unwrap();
-        let error =
-            tokio::time::timeout(Duration::from_secs(5), relay(bounded, input, output, reader, writer))
-                .await
-                .expect("failed response waited for upload EOF")
-                .unwrap_err();
+        let error = tokio::time::timeout(
+            Duration::from_secs(5),
+            relay(bounded, input, output, reader, writer),
+        )
+        .await
+        .expect("failed response waited for upload EOF")
+        .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[tokio::test]
+    async fn upload_eof_waits_for_explicitly_delayed_response_in_both_modes() {
+        for bounded in [false, true] {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let (mut client_input, input) = tokio::io::duplex(17);
+                let (output, mut client_output) = tokio::io::duplex(19);
+                let (stream, mut guest) = tokio::io::duplex(23);
+                let (reader, writer) = tokio::io::split(stream);
+                let task = tokio::spawn(relay(bounded, input, output, reader, writer));
+                client_input.write_all(b"request").await.unwrap();
+                client_input.shutdown().await.unwrap();
+                let mut request = Vec::new();
+                guest.read_to_end(&mut request).await.unwrap();
+                assert_eq!(request, b"request");
+                // The guest has observed FIN, but deliberately has not replied.
+                // No sleep: observing FIN is the scheduling barrier.
+                tokio::task::yield_now().await;
+                assert!(!task.is_finished(), "upload EOF cancelled the response");
+                let expected = vec![0x42; 256 * 1024 + 3];
+                let send = async {
+                    guest.write_all(&expected).await.unwrap();
+                    guest.shutdown().await.unwrap();
+                };
+                let receive = async {
+                    let mut bytes = Vec::new();
+                    client_output.read_to_end(&mut bytes).await.unwrap();
+                    assert_eq!(bytes, expected);
+                };
+                tokio::join!(send, receive);
+                task.await.unwrap().unwrap();
+            })
+            .await
+            .expect("delayed half-close response stalled");
+        }
     }
 }

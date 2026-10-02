@@ -2478,8 +2478,9 @@ fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Fence, NodeResult, RuntimeError, artifact_digest, fence_can_advance,
-        artifact_file_digest, artifact_file_digest_with, helper_observation_pending, require_absent, write_new_json,
+        Fence, NodeResult, RuntimeError, artifact_digest, artifact_file_digest,
+        artifact_file_digest_with, fence_can_advance, helper_observation_pending, require_absent,
+        write_new_json,
     };
     use std::io::{Cursor, Error, ErrorKind, Read, Seek, SeekFrom, Write};
 
