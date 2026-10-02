@@ -11,6 +11,8 @@ from tools.template_acceptance import budgets, check_headroom, load, PROFILE, RU
 from tools.template_build_client import BuildClient
 from tools.template_build_service import BuildHTTP, Supervisor, configuration
 from tools.template_build_store import BuildStore
+from tools.template_worker import validate_request
+from tools.template_inputs import InvalidTemplate
 from tools.tests.test_template_build_service import FakeBackend, PowerLoss
 
 
@@ -66,6 +68,40 @@ def configured(root, deployment, *, builder_bytes=32 * GIB, **extra_config):
 
 
 class AcceptanceConfigTests(unittest.TestCase):
+    def test_above_eight_gib_input_reaches_service_and_worker_with_matching_reserves(self):
+        entries = [{'name': 'large-public-image', 'requirements': {'cpus': 1, 'memory_mib': 2048,
+                    'disk_mib': 10240, 'build_timeout_sec': 600}}]
+        for input_gib, builder_gib in ((10, 64), (16, 96)):
+            with self.subTest(input_gib=input_gib):
+                capacity = plan(entries, 1, builder_gib * GIB, 64 * MIB,
+                                input_bytes=input_gib * GIB, expanded_bytes=32 * GIB)
+                deployment = budgets(capacity, builder_gib * GIB, 64 * MIB)
+                with tempfile.TemporaryDirectory() as temporary:
+                    cfg = configured(Path(temporary).resolve(), deployment, builder_bytes=builder_gib * GIB)
+                limits = cfg['limits']
+                request = {'kind': 'oci-reference', 'disk_mib': limits['max_disk_mib'], 'min_free_mib': 64,
+                           **{key: limits[key] for key in ('max_input_bytes', 'max_expanded_bytes',
+                                                          'max_entries', 'max_log_bytes', 'timeout_seconds')}}
+                validate_request(request)
+                self.assertEqual(limits['max_input_bytes'], input_gib * GIB)
+                self.assertEqual(capacity['worker_required_free_bytes'], (42 + 2 * input_gib) * GIB + 64 * MIB)
+                default = plan(entries, 1, builder_gib * GIB, 64 * MIB)
+                self.assertEqual(capacity['workspace_bytes'] - default['workspace_bytes'], (input_gib - 4) * GIB)
+                self.assertGreater(cfg['builder']['data_transfer']['file_upload_bytes'], input_gib * GIB)
+                self.assertEqual((request['disk_mib'], request['timeout_seconds']), (10240, 600))
+                self.assertEqual(cfg['runtime']['data_transfer'], json.loads(RUNTIME_PROFILE.read_text())['data_transfer'])
+                with self.assertRaisesRegex(ValueError, 'builder disk'):
+                    budgets(capacity, 32 * GIB, 64 * MIB)
+        # The larger ceiling remains a hard bound at every receiving boundary.
+        for invalid in (True, 16 * GIB + 1, str(16 * GIB)):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(InvalidTemplate):
+                    validate_request(request | {'max_input_bytes': invalid})
+                broken = copy.deepcopy(deployment)
+                broken['limits']['max_input_bytes'] = invalid
+                with tempfile.TemporaryDirectory() as temporary, self.assertRaises(ValueError):
+                    configured(Path(temporary).resolve(), broken, builder_bytes=96 * GIB)
+
     def test_optional_mirror_is_in_protected_configuration_and_binding(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()

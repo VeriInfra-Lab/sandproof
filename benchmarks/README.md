@@ -95,7 +95,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 通用模板启动会挂载空的 `/run`，随后重新创建权限为 `1777` 的 `/run/lock`，让原镜像的 `/var/lock → /run/lock` 链接可用。目录创建或权限设置失败时不发布启动就绪标记；不改原链接、应用配置或评分。这是平台启动目录适配，组件回归不能代替 Mailman 等原任务的实机验收。
 
-实机监督可用 `--build-input-max-bytes` 和 `--build-expanded-max-bytes` 显式配置构建下载/输入与展开层的预算，默认分别为 4 GiB 和 8 GiB，仍受构建服务 8 GiB 和 32 GiB 的硬上限约束。原公开 OCI 可能含大于默认下载额度的层；调整时必须同时提供已核对的更大构建盘。配置、构建池上传额度、工作区预留、宿主磁盘预检及 worker 空闲量检查使用同一组数值，并写入 `capacity.json` 和 `acceptance-budgets.json`；原任务运行盘、CPU/内存、评分和时限保持不变。例如原运行盘为 10 GiB，选择 8 GiB 输入与 32 GiB 展开额度时，构建盘须有至少 58 GiB + 64 MiB 实际空闲空间，原 32 GiB 构建盘会在派发前拒绝。提高上限不是构建或原题已通过的证据。
+实机监督可用 `--build-input-max-bytes` 和 `--build-expanded-max-bytes` 显式配置构建下载/输入与展开层的预算，默认分别为 4 GiB 和 8 GiB，仍受构建服务 16 GiB 和 32 GiB 的硬上限约束。原公开 OCI 可能含大于默认下载额度的层；调整时必须同时提供已核对的更大构建盘。配置、构建池上传额度、工作区预留、宿主磁盘预检及 worker 空闲量检查使用同一组数值，并写入 `capacity.json` 和 `acceptance-budgets.json`；原任务运行盘、CPU/内存、评分和时限保持不变。例如原运行盘为 10 GiB，选择 8 GiB 输入与 32 GiB 展开额度时，构建盘须有至少 58 GiB + 64 MiB 实际空闲空间，原 32 GiB 构建盘会在派发前拒绝。提高上限不是构建或原题已通过的证据。
 
 构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。只上传锁定的环境文件；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
 

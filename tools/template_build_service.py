@@ -26,13 +26,13 @@ import urllib.request
 if __package__:
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from .template_stage import file_hash, private_directory, stage
-    from .template_inputs import platform_dns_servers
+    from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers
     from .template_fetch import mirror_registry
     from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from template_stage import file_hash, private_directory, stage
-    from template_inputs import platform_dns_servers
+    from template_inputs import MAX_INPUT_BYTES, platform_dns_servers
     from template_fetch import mirror_registry
     from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 
@@ -90,7 +90,7 @@ def configuration(path):
     if set(limits) != required or any(type(v) is not int or v <= 0 for v in limits.values()):
         raise ValueError("invalid independent build limits")
     if (limits["max_cpu"] > 255 or limits["max_memory_mib"] > 16384 or limits["max_disk_mib"] > 32768
-            or limits["timeout_seconds"] > 3600 or limits["max_input_bytes"] > 8 * 1024 * MIB
+            or limits["timeout_seconds"] > 3600 or limits["max_input_bytes"] > MAX_INPUT_BYTES
             or limits["max_expanded_bytes"] > 32 * 1024 * MIB or limits["max_entries"] > 200000
             or limits["max_log_bytes"] > 16 * MIB or limits["max_jobs"] > 10000):
         raise ValueError("build limits exceed worker protocol")

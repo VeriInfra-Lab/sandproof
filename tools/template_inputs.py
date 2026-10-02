@@ -8,6 +8,8 @@ import re
 import stat
 import tarfile
 
+MAX_INPUT_BYTES = 16 * 1024**3
+
 
 class InvalidTemplate(ValueError):
     pass

@@ -54,7 +54,7 @@ class GenericCapacityTests(unittest.TestCase):
             self.assertEqual(large[key], original[key])
 
     def test_invalid_import_limits_are_not_clamped_to_protocol_bounds(self):
-        for field, values in (('input_bytes', (True, 511, 8 * GIB + 1, '8589934592')),
+        for field, values in (('input_bytes', (True, 511, 16 * GIB + 1, '17179869184')),
                               ('expanded_bytes', (True, 10239, 32 * GIB + 1, float('inf')))):
             for value in values:
                 with self.subTest(field=field, value=value), self.assertRaises(ValueError):
