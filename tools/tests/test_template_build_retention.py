@@ -693,7 +693,7 @@ class RetentionTests(unittest.TestCase):
             self.assertEqual(intent, recovered)
             with self.assertRaisesRegex(ValueError, 'conflicts'):
                 saved_intent(path, client, request, build_mode='legacy-unbounded')
-            with self.assertRaisesRegex(RuntimeError, 'RequestWindowRequired'):
+            with self.assertRaisesRegex(RuntimeError, 'LegacyBuildDomainClosed'):
                 client.request('POST', '/sandproof/template-builds', request, token='new-legacy')
             self.assertEqual(len(self.store.rows()), 1)
         finally:
