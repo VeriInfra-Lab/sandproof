@@ -57,7 +57,8 @@ class WorkerAcquisitionTests(unittest.TestCase):
                     layer = self.fixture.manifest['layers'][0]
                     (self.fixture.layout / 'blobs/sha256' / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
             else:
-                self.assertEqual(args[:2], ['/never-execute-umoci', 'unpack'])
+                self.assertEqual(args[:3], ['/never-execute-umoci', 'raw', 'unpack'])
+                self.assertEqual(args[-1], str(self.work / 'bundle/rootfs'))
                 self.unpacked.append(args)
                 raise ReachedUnpack()
         def tool_hash(path):
@@ -181,7 +182,8 @@ class WorkerAcquisitionTests(unittest.TestCase):
                             layer = self.fixture.manifest['layers'][0]
                             (store / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
                         return
-                    self.assertEqual(args[:2], [str(tools['umoci']), 'unpack'])
+                    self.assertEqual(args[:3], [str(tools['umoci']), 'raw', 'unpack'])
+                    self.assertEqual(args[-1], str(self.work / 'bundle/rootfs'))
                     self.assertIsNotNone(daemons[0].poll())
                     raise ReachedUnpack()
                 with patch.object(worker.os, 'geteuid', return_value=0), \

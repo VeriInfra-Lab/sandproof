@@ -66,6 +66,8 @@ S13 新范围由 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)/#6
 
 候选构建批次使用[隔离构建实机实验](../tests/system/template_build.py)：固定 BuildKit 0.28.0/umoci 0.6.0，每项构建新建禁网 VM，以合成 Debian 兼容根目录运行标准多阶段 Dockerfile、COPY、RUN、层删除；导出 OCI 后另一个新 VM 导入转换；两种候选磁盘分别在新 VM 检查真实 SDK 命令/文件与删除结果。新版本还检查 ENV/WORKDIR/数字 USER 的规范化和实例默认值、创建与单次请求覆盖、ENTRYPOINT+CMD 的字面参数、普通重启不重复启动，以及两处激活崩溃：已确认启动但控制器回执丢失可恢复，启动确认丢失保持未知并到期精确清理。另检查构建失败和确定超时不产生候选，逐项销毁并核对精确资源与原镜像摘要。它不访问公共仓库，不证明真实 Debian 软件包兼容，也不代替用户自助/发布门、应用健康、完整 S13 或 89 题。脚本存在不是已实测；结果须绑定版本基线的精确提交。
 
+候选构建批次还运行[来宾内解包对比](../tests/system/umoci_unpack_guest.py)：Dockerfile 和上传 OCI 两条路径分别对比固定 umoci 普通/raw 解包的文件内容、UID/GID、权限、mtime、绝对/相对符号链接、硬链接分组和扩展属性；合成多层输入须验证普通及 opaque whiteout、非 root 所有权和特殊权限。raw 输出不得生成未使用的 mtree/bundle 历史，私有父目录保持 0700。小型合成输入的顺序执行计时不代替大型题目性能数据；仍需独立候选启动、失败回收及正式评测。
+
 Docker schema2 转换使用[回归测试](../tools/tests/test_template_conversion.py)核对配置/层逐字节保持、原始来源与转换摘要分开、损坏层和外部 layer URL 在转换前拒绝、转换后内容变化拒绝；保留 ONBUILD 元数据但不执行。
 
 Dockerfile 构建的自动 snapshotter 验收须保存固定 BuildKit 的实际选择；[隔离构建实机实验](../tests/system/template_build.py)在成功场景要求该记录，并继续核对多阶段 COPY、RUN、层删除、候选内容及独立实例启动。探测回退不表示 OverlayFS 已实测；基础检查和来宾内核能力列表也不能替代新提交的实机结果。性能比较保持原构建盘、CPU/内存、时限与输入，分别报告构建、导出、校验和发布阶段。

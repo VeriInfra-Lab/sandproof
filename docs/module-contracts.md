@@ -90,6 +90,8 @@ Dockerfile 构建使用固定 BuildKit 的 `auto` snapshotter，在每项独占�
 
 Dockerfile 的固定 BuildKit 使用不推送、不登记的 image exporter，将 OCI 清单、配置和层留在本次私有内容存储。守护进程停止后，worker 仅按导出描述符将引用的普通文件硬链接到新的 OCI layout，避免在同一构建 VM 内重复复制大层。此路径限定 BuildKit 0.28.0 的单个 `runc-overlayfs`、`runc-fuse-overlayfs` 或 `runc-native` 内容目录；目录/文件符号链接、缺失或歧义的存储、大小/身份变化及不一致的清单/配置摘要均拒绝。硬链接不代表已校验：所有 blob 摘要、diff_ids、tar/gzip 完整性及累计展开/条目限额仍在 umoci 解包前检查，仍由 umoci 处理层删除和权限。固定版本的目录结构变化需要重新适配和实测，不能改用未验证的裸目录作为候选根文件系统。
 
+候选盘转换使用固定 umoci 0.6.0 的 `raw unpack`，在新建的 0700 私有目录内提取 rootfs。它与普通 `unpack` 使用相同的层解包、ID 映射和 whiteout 处理，省去供 `repack` 使用的全目录 mtree 摘要扫描及未使用的 OCI runtime bundle 配置；不省略输入校验、候选磁盘完整摘要或启动验收。启动参数仍来自已校验的镜像配置，通过平台启动路径应用。此候选根目录不用于 umoci `repack`。
+
 监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。私有构建 VM 的同步准备请求使用该工作剩余的原构建期限，避免固定短 RPC 等待将大盘准备提前变为未知；已过期时不发起创建，丢失响应仍只观察原编号。
 
 监督服务启动时还核对跨池必要条件：构建期限加 60 秒同时不超过构建池单次/总寿命；启动检查期限同时满足运行池两个寿命上限；构建池上传覆盖输入/工具及有界 HTTP 开销，下载覆盖完整候选；目标最大形状可被空运行池与发布产物额度接收。构建私有盘预算取私有 API 实际解析的已授权不可变 `base` 描述，不取可能不同的旧 `rootfs` 字段；声明长度须匹配真实文件。盘总量须至少容纳目标盘、展开上限和两份获取输入，实际来宾可用块仍由工作器检查。上述配置检查不是动态资源预留，不能替代运行时配额/真实余量或失败收尾。现有显式部署若不满足这些条件必须调整可信配置后再启用，不能静默缩短已接受请求。普通公网 DNS 仅接收 1–2 个公开单播 IPv4 字符串，拒绝数字、私网、组播、IPv6 与域名；构建与候选复用同一值，仍不承诺域名内容过滤。

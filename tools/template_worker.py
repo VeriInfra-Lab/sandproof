@@ -403,6 +403,17 @@ def buildkit_layout(cache, metadata, layout, *, max_bytes):
     (layout / "index.json").write_text(json.dumps({"schemaVersion": 2, "manifests": [descriptor]}))
 
 
+def unpack_rootfs(commands, umoci, layout, bundle):
+    # Both fixed umoci commands use UnpackRootfs with the same ID mappings and
+    # whiteout handling. We never repack this bundle, so omit the extra full-tree
+    # mtree hashing and unused OCI runtime config. Startup comes from the
+    # validated image config; this VM boots the separately installed platform.
+    bundle.mkdir(mode=0o700)
+    root = bundle / "rootfs"
+    commands.run([str(umoci), "raw", "unpack", "--image", str(layout) + ":candidate", str(root)])
+    return root
+
+
 def build(work, source, request, profile, *, guest_boot_id):
     validate_request(request)
     # Accidental-host guard only, NOT remote attestation. The supervisor must
@@ -477,8 +488,7 @@ def build(work, source, request, profile, *, guest_boot_id):
             index = bounded_json(layout / "index.json")
             index["manifests"][0].setdefault("annotations", {})["org.opencontainers.image.ref.name"] = "candidate"
             (layout / "index.json").write_text(json.dumps(index))
-            commands.run([str(tools["umoci"]), "unpack", "--image", str(layout) + ":candidate", str(work / "bundle")])
-            root = work / "bundle/rootfs"
+            root = unpack_rootfs(commands, tools["umoci"], layout, work / "bundle")
             install_platform(root, tools["envd"], tools["busybox"], request.get("dns_servers"))
             defaults = runtime_defaults(root, startup)
             disk = work / "candidate.ext4"
