@@ -9,12 +9,20 @@ import time
 import unittest
 from unittest.mock import patch
 
-from tools.template_fetch import DOCKER_MANIFEST, OCI_INDEX, OCI_MANIFEST, capture, fetch, reference, select_manifest
+from tools.template_fetch import DOCKER_MANIFEST, OCI_INDEX, OCI_MANIFEST, capture, fetch, reference, select_manifest, mirror_registry
 from tools.template_inputs import InvalidTemplate
 from tools.template_worker import Commands
 
 
 class PublicFetchTests(unittest.TestCase):
+    def test_mirror_accepts_only_a_public_hostname(self):
+        self.assertEqual(mirror_registry('docker.1ms.run'), 'docker.1ms.run')
+        for value in (None, True, '', 'mirror', 'localhost', '127.0.0.1', 'host.local',
+                      'https://mirror.example.org', 'mirror.example.org/path', 'mirror.example.org:443',
+                      'user:secret@mirror.example.org', 'mirror.example.org\n', '--host mirror.example.org'):
+            with self.subTest(value=value), self.assertRaises(InvalidTemplate):
+                mirror_registry(value)
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -123,9 +131,22 @@ class PublicFetchTests(unittest.TestCase):
                 fetch(source,self.root,self.root/'oci',{'max_input_bytes':1024,'max_entries':100},Path('/tool'),None)
 
     def test_mutable_tag_is_resolved_once_then_export_is_pinned(self):
+        self.check_tag_transport('ubuntu:24.04', None, 'docker.io/library/ubuntu')
+
+    def test_mirror_preserves_original_reference_and_pins_all_downloads(self):
+        result = self.check_tag_transport('ubuntu:24.04', 'docker.1ms.run', 'docker.1ms.run/library/ubuntu')
+        self.assertEqual(result['reference'], 'ubuntu:24.04')
+        self.assertEqual(result['transport_registry'], 'docker.1ms.run')
+
+    def test_mirror_does_not_rewrite_other_registries(self):
+        result = self.check_tag_transport('public.ecr.aws/docker/library/ubuntu:24.04',
+                                         'docker.1ms.run', 'public.ecr.aws/docker/library/ubuntu')
+        self.assertNotIn('transport_registry', result)
+
+    def check_tag_transport(self, image, mirror, repository):
         manifest={'schemaVersion':2,'mediaType':OCI_MANIFEST}
         data=json.dumps(manifest).encode();digest='sha256:'+hashlib.sha256(data).hexdigest()
-        source=self.root/'source.json';source.write_text(json.dumps({'image':'ubuntu:24.04'}))
+        source=self.root/'source.json';source.write_text(json.dumps({'image':image}))
         def fake_capture(args, output, limit, commands):
             output.write_bytes(data if 'manifest' in args else b'archive')
             return output.stat().st_size
@@ -136,14 +157,17 @@ class PublicFetchTests(unittest.TestCase):
              patch('tools.template_fetch.capture',side_effect=fake_capture) as calls, \
              patch('tools.template_fetch.extract_archive',side_effect=fake_extract), \
              patch('tools.template_fetch.inspect_oci',return_value={'image_digest':digest}) as inspect:
-            provenance,image=fetch(source,self.root,self.root/'oci',{'max_input_bytes':1024,
-                'max_expanded_bytes':10240,'max_entries':100},Path('/tool'),None)
-        self.assertEqual(calls.call_args_list[0].args[0][3], 'docker.io/library/ubuntu:24.04')
-        self.assertEqual(calls.call_args_list[1].args[0][3], 'docker.io/library/ubuntu@'+digest)
+            request = {'max_input_bytes':1024, 'max_expanded_bytes':10240, 'max_entries':100}
+            if mirror is not None:
+                request['docker_hub_mirror'] = mirror
+            provenance,image=fetch(source,self.root,self.root/'oci',request,Path('/tool'),None)
+        self.assertEqual(calls.call_args_list[0].args[0][3], repository + ':24.04')
+        self.assertEqual(calls.call_args_list[1].args[0][3], repository + '@' + digest)
         self.assertEqual(provenance['source_digest'], digest)
         self.assertEqual(provenance['selected_digest'], digest)
         self.assertEqual(image, {'image_digest':digest})
         inspect.assert_called_once_with(self.root/'oci', max_bytes=10240, max_entries=100)
+        return provenance
 
 
 if __name__=='__main__':
