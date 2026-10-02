@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools.template_worker import Commands, populate_ext4
+from tools.template_worker import Commands, populate_ext4, unmount_ext4
 
 
 class Ext4PopulationTests(unittest.TestCase):
@@ -37,6 +37,7 @@ class Ext4PopulationTests(unittest.TestCase):
 
         with patch('tools.template_worker.time.monotonic', side_effect=lambda: now[0]), \
              patch('tools.template_worker.os.path.ismount', side_effect=lambda p: active[0]), \
+             patch('tools.template_worker.loop_backing', return_value=None), \
              patch.object(Commands, 'run', run):
             error = None
             try:
@@ -83,6 +84,36 @@ class Ext4PopulationTests(unittest.TestCase):
         self.assertIs(error, original)
         self.assertEqual(error.__notes__, ['candidate mount cleanup failed; external VM cleanup required'])
         self.assertTrue(active)
+
+    def test_delayed_loop_release_is_observed_within_the_cleanup_deadline(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('tools.template_worker.loop_backing', side_effect=['original', 'original', None]), \
+             patch('tools.template_worker.os.path.ismount', return_value=False), \
+             patch('tools.template_worker.time.monotonic', return_value=100), \
+             patch('tools.template_worker.time.sleep') as wait:
+            commands = Commands(105, io.BytesIO(), 4096)
+            with patch.object(commands, 'run') as run:
+                unmount_ext4(commands, Path(directory))
+            run.assert_called_once()
+            wait.assert_called_once_with(0.01)
+
+    def test_still_associated_loop_at_deadline_prevents_success(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('tools.template_worker.loop_backing', return_value='original'), \
+             patch('tools.template_worker.os.path.ismount', return_value=False), \
+             patch('tools.template_worker.time.monotonic', return_value=105):
+            commands = Commands(105, io.BytesIO(), 4096)
+            with patch.object(commands, 'run'), self.assertRaisesRegex(TimeoutError, 'loop cleanup deadline'):
+                unmount_ext4(commands, Path(directory))
+
+    def test_device_reused_after_original_release_is_not_detached_again(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('tools.template_worker.loop_backing', side_effect=['original', 'different file']), \
+             patch('tools.template_worker.os.path.ismount', return_value=False):
+            commands = Commands(105, io.BytesIO(), 4096)
+            with patch.object(commands, 'run') as run:
+                unmount_ext4(commands, Path(directory))
+            run.assert_called_once()
 
 
 if __name__ == '__main__':

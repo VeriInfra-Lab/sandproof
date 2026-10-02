@@ -9,7 +9,7 @@ import time
 
 sys.path.insert(0, '/input')
 from template_inputs import sha256
-from template_worker import Commands, populate_ext4
+from template_worker import Commands, populate_ext4, unmount_ext4
 
 
 def snapshot(root, names):
@@ -92,7 +92,7 @@ def exercise():
                     assert observed == expected, 'candidate content or metadata changed'
                     assert (mount / 'data/sparse').stat().st_blocks * 512 < 1024**2
                 finally:
-                    commands.run(['/usr/bin/umount', str(mount)])
+                    unmount_ext4(commands, mount)
                     mount.rmdir()
             assert not any(path.read_text().strip() == str(disk)
                            for path in Path('/sys/block').glob('loop*/loop/backing_file'))
