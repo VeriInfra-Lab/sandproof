@@ -13,6 +13,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import sqlite3
@@ -233,6 +234,11 @@ def exercise(args):
             for name in ("build.log", "daemon.log"):
                 if builder.files.exists("/output/job/" + name):
                     (root / "inputs" / (kind + "-" + name)).write_text(builder.files.read("/output/job/" + name))
+            daemon_log = root / "inputs" / (kind + "-daemon.log")
+            selected = re.findall(r'msg="auto snapshotter: using (overlayfs|fuse-overlayfs|native)"',
+                                  daemon_log.read_text()) if daemon_log.exists() else []
+            assert len(selected) <= 1, "one private BuildKit worker per build"
+            snapshotter = selected[0] if selected else None
             if kind in ("failure", "timeout"):
                 assert result.exit_code != 0 and status["state"] == "failed" and not status["ready"]
                 if kind == "timeout":
@@ -240,9 +246,11 @@ def exercise(args):
                 else:
                     assert "exit code: 17" in (root / "inputs/failure-build.log").read_text()
                 assert not builder.files.exists("/output/job/candidate.ext4")
-                evidence.append({"kind": kind, "status": status})
+                evidence.append({"kind": kind, "status": status, "snapshotter": snapshotter})
             else:
                 assert result.exit_code == 0, (result.stderr, result.stdout)
+                if kind == "dockerfile":
+                    assert snapshotter is not None, "retain actual automatic snapshotter selection"
                 assert status["state"] == "candidate" and not status["ready"] and not status["startup_applied"]
                 assert status["startup"]["WorkingDir"] == "/workspace"
                 assert "FIXTURE_VALUE=image-value" in status["startup"]["Env"]
@@ -271,7 +279,7 @@ def exercise(args):
                     with (root / "inputs/built-oci.tar.gz").open("xb") as output:
                         for block in builder.files.read("/output/oci.tar.gz", format="stream", user="root"):
                             output.write(block)
-                evidence.append({"kind": kind, "status": status})
+                evidence.append({"kind": kind, "status": status, "snapshotter": snapshotter})
             assert Sandbox.kill(builder.sandbox_id, **owner)
             active.remove(builder.sandbox_id)
             no_resources()
