@@ -5,6 +5,14 @@ Uses the SDK constructor only for the already-created guest. This deliberately
 does not claim to test Sandbox.create/kill, controller authorization, or Harbor.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 from contextlib import contextmanager
@@ -133,7 +141,8 @@ def probe_edge_cases(sandbox, config):
     assert sandbox.commands.run("printf alive").stdout == "alive"
 
     pending = sandbox.commands.run("sleep 30", background=True)
-    assert pending.kill() is True
+    _kill_confirmed = (pending.kill() is True)
+    assert _kill_confirmed
     try:
         pending.wait()
     except CommandExitException:

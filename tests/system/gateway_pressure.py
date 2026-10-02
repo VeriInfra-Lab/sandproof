@@ -7,6 +7,14 @@ Raw HTTP is used only to control upload progress precisely. Downloads use
 the original SDK stream so a truncated response must surface as its error.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import hashlib
@@ -147,7 +155,8 @@ async def admission(first, second, directory, url):
         await healthy(second, directory + '/after-eof')
         d = await start_input(second, directory + '/d', tracked)
         await limited(first.files.read, directory + '/a')
-        assert await call(b['handle'].kill), 'reserved SendSignal failed'
+        _kill_confirmed = (await call(b['handle'].kill))
+        assert _kill_confirmed, 'reserved SendSignal failed'
         try:
             await call(b['handle'].wait)
         except CommandExitException as error:
@@ -364,7 +373,8 @@ async def exercise(args):
             errors = []
             for sandbox in sandboxes:
                 try:
-                    assert await call(sandbox.kill)
+                    _kill_confirmed = (await call(sandbox.kill))
+                    assert _kill_confirmed
                 except Exception as error:
                     errors.append(error)
             if errors:

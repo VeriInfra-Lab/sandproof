@@ -1,5 +1,10 @@
 """Compare fixed BuildKit exporters inside the synthetic offline builder VM."""
 
+import sys as _guard_sys
+if _guard_sys.flags.optimize:
+    raise RuntimeError("optimized_python")
+
+
 import json
 from pathlib import Path
 import stat

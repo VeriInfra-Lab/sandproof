@@ -6,6 +6,14 @@ and invalid-kernel startup failures are distinct cases; neither is a controller
 crash test. Failed runs retain their exact private directory for recovery.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import http.client
@@ -320,7 +328,8 @@ async def exercise(args):
             failure = await failed_initializer(victim)
             await check_live(exclude=victim)
             name = live[victim]["host"]["resource_id"]
-            assert victim.kill(), "failed initializer VM destruction unconfirmed"
+            _kill_confirmed = (victim.kill())
+            assert _kill_confirmed, "failed initializer VM destruction unconfirmed"
             del live[victim]
             failure["cleanup"] = audit_gone(root, args.firecracker, args.cgroup_parent, name)
             failure["template_id"] = template["template_id"]
@@ -359,7 +368,8 @@ async def exercise(args):
             await check_live()
         cases.append("replacements inherit no package records, system edits or failed initialization state")
         for sandbox in list(live):
-            assert sandbox.kill()
+            _kill_confirmed = (sandbox.kill())
+            assert _kill_confirmed
             del live[sandbox]
         assert len(phases(database)) == VM_COUNT and set(phases(database).values()) == {"Destroyed"}
         with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as connection:

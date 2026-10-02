@@ -4,6 +4,14 @@ Requires explicit data_transfer budgets matching the arguments and the fixed
 SDK/base used by gateway_stream_limits.py. Creates and kills its own sandbox.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import hashlib
@@ -195,7 +203,8 @@ async def exercise(args):
         report['command_overflow'] = await command_overflow(sandbox, directory, args.command_output_bytes)
         report['disconnect'] = await disconnect_and_reconnect(sandbox, directory)
     finally:
-        assert await AsyncSandbox.kill(sandbox.sandbox_id, **owner), 'test sandbox destruction was not confirmed'
+        _kill_confirmed = (await AsyncSandbox.kill(sandbox.sandbox_id, **owner))
+        assert _kill_confirmed, 'test sandbox destruction was not confirmed'
     report['scope'] = 'real async SDK boundaries, output failure and known-PID reconnect; host residuals and remaining concurrency/timeout/revocation cases require separate evidence'
     print(json.dumps(report, indent=2))
 

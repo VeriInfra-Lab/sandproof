@@ -1,4 +1,9 @@
 """Run only inside an isolated build VM with the worker modules in /input."""
+
+import sys as _guard_sys
+if _guard_sys.flags.optimize:
+    raise RuntimeError("optimized_python")
+
 from pathlib import Path
 import hashlib
 import json

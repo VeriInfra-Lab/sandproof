@@ -4,6 +4,14 @@ Requires pinned SDK 2.51.0, fixed base with bash/coreutils and the selected
 non-root user. Creates and destroys only its own sandbox. Not a synthetic test.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import hashlib
@@ -83,7 +91,8 @@ def sync_case(sandbox, directory, user):
     finally:
         handle.kill()  # Only the known PID, never another Start to discover its result.
     killed = sandbox.commands.run("sleep 60", user=user, background=True, timeout=30)
-    assert killed.kill()
+    _kill_confirmed = (killed.kill())
+    assert _kill_confirmed
     try:
         killed.wait()
     except CommandExitException as error:
@@ -144,7 +153,8 @@ async def async_case(sandbox, directory, user):
     finally:
         await handle.kill()
     killed = await sandbox.commands.run("sleep 60", user=user, background=True, timeout=30)
-    assert await killed.kill()
+    _kill_confirmed = (await killed.kill())
+    assert _kill_confirmed
     try:
         await killed.wait()
     except CommandExitException as error:
@@ -166,7 +176,8 @@ async def async_service_cases(args, owner):
             cases.append(await async_case(connected, directory, user))
         return {"sandbox_id": sandbox.sandbox_id, "cases": cases}
     finally:
-        assert await AsyncSandbox.kill(sandbox.sandbox_id, **owner), "async destruction not confirmed"
+        _kill_confirmed = (await AsyncSandbox.kill(sandbox.sandbox_id, **owner))
+        assert _kill_confirmed, "async destruction not confirmed"
         async with httpx.AsyncClient(base_url=args.sandbox_url, trust_env=False, timeout=10) as client:
             assert (await client.get("/health", headers={"X-Access-Token": sandbox._envd_access_token})).status_code == 401
 
@@ -186,7 +197,8 @@ def exercise(args):
             cases.append(sync_case(connected, directory, user))
         report["sync"] = {"sandbox_id": sandbox.sandbox_id, "cases": cases}
     finally:
-        assert Sandbox.kill(sandbox.sandbox_id, **owner), "sync destruction not confirmed"
+        _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **owner))
+        assert _kill_confirmed, "sync destruction not confirmed"
         with httpx.Client(base_url=args.sandbox_url, trust_env=False, timeout=10) as client:
             assert client.get("/health", headers={"X-Access-Token": sandbox._envd_access_token}).status_code == 401
     report["async"] = asyncio.run(async_service_cases(args, owner))

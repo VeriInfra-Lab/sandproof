@@ -4,6 +4,14 @@ Prebuilt template component probe, not an OCI build or benchmark score. The
 HTTPX wrapper calls the original transport, then drops one successful receipt.
 Requires an isolated host and two exclusive delegated cgroup parents.
 """
+
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 import argparse
 import asyncio
 import contextlib

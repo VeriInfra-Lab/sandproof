@@ -4,6 +4,14 @@ A negative SDK timeout becomes 1 ms, so a fast valid response can beat it.
 A timeout never proves a mutating request did not execute; it is not replayed.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata
@@ -173,7 +181,8 @@ async def exercise(args):
                     rows.append(await command_case(sandbox, operation, case, value))
             results.append(dict(sdk=cls.__name__, cases=rows))
         finally:
-            assert await call(sandbox.kill)
+            _kill_confirmed = (await call(sandbox.kill))
+            assert _kill_confirmed
     print(json.dumps(dict(sdk_version='2.51.0', results=results,
                           scope='selected unary filesystem and command request timeout values; '
                                 'negative 1 ms may race success; not lifecycle or watcher API'), indent=2))
