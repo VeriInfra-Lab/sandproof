@@ -60,6 +60,42 @@ pub struct CandidateManifest {
     pub min_free_bytes: u64,
 }
 
+/// Trusted durable evidence copied from the controller, never from a guest report.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ValidationEffect {
+    pub effect: sandbox_controller_core::EffectId,
+    pub origin: sandbox_controller_core::EffectOrigin,
+    pub result: sandbox_controller_core::ResultDigest,
+}
+
+/// Engineering-only settlement of one exact validation incarnation. This
+/// preserves publication evidence after detailed core history is retired; it
+/// does not attest physical slot release or replace its host-side protocol.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ValidationCertificate {
+    pub version: u16,
+    pub owner: u64,
+    pub candidate_id: String,
+    pub binding: TemplateBinding,
+    pub image_digest: String,
+    pub free_bytes: u64,
+    pub min_free_bytes: u64,
+    pub sandbox: sandbox_controller_core::SandboxId,
+    pub terminal: sandbox_controller_core::SandboxRecord,
+    pub terminal_operation: sandbox_controller_core::OperationLedgerRecord,
+    pub activation: Option<ValidationEffect>,
+    pub cleanup: Vec<ValidationEffect>,
+    pub vms: Vec<(sandbox_controller_core::VmId, sandbox_controller_core::Vm)>,
+    pub slots: Vec<(
+        sandbox_controller_core::NetSlotId,
+        sandbox_controller_core::NetSlot,
+    )>,
+    pub outcome: PublicationState,
+    pub failure: Option<PublicationFailure>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Publication {
     pub candidate_id: String,
@@ -70,6 +106,10 @@ pub struct Publication {
     pub state: PublicationState,
     pub checked: bool,
     pub validation_sandbox: Option<u64>,
+    /// Absent for legacy records and active validations. Only the journal may
+    /// construct this value after exact terminal cleanup has been verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_certificate: Option<ValidationCertificate>,
     pub failure: Option<PublicationFailure>,
 }
 
@@ -297,6 +337,7 @@ impl CandidateStore {
             state: PublicationState::Checking,
             checked: false,
             validation_sandbox: None,
+            validation_certificate: None,
             failure: None,
         })
     }

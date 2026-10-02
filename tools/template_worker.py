@@ -7,6 +7,8 @@ Never run this with tenant input on a host; no Docker socket is used.
 """
 
 import argparse
+from contextlib import contextmanager
+import ipaddress
 import json
 import os
 import re
@@ -21,9 +23,9 @@ import threading
 import time
 
 if __package__:
-    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config
+    from .template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 else:
-    from template_inputs import InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config
+    from template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 
 
 MIB = 1024 * 1024
@@ -33,11 +35,17 @@ set -eu
 B=/opt/sandproof/busybox
 $B mount -t proc proc /proc
 $B mount -o remount,rw /
+# The root can initially be read-only. Invalidate before the remaining setup;
+# AGENT also rejects on-disk markers if either preceding mount fails.
+$B rm -f /run/sandproof-boot-ready
 $B mount -t sysfs sysfs /sys
 if ! $B grep -q ' /dev devtmpfs ' /proc/mounts; then $B mount -t devtmpfs devtmpfs /dev; fi
-$B mkdir -p /dev/pts /run /tmp
+$B mkdir -p /dev/pts /dev/shm /run /tmp
 $B mount -t devpts devpts /dev/pts
+$B mount -t tmpfs -o nosuid,nodev,noexec,mode=1777,size=64m tmpfs /dev/shm
 $B mount -t tmpfs -o mode=755 tmpfs /run
+$B mkdir -p /run/lock
+$B chmod 1777 /run/lock
 $B chmod 1777 /tmp
 $B ln -sf /proc/self/fd /dev/fd
 $B ln -sf /proc/self/fd/0 /dev/stdin
@@ -56,6 +64,13 @@ INITTAB = """::sysinit:/opt/sandproof/boot
 ::shutdown:/opt/sandproof/busybox umount -a -r
 """
 AGENT = """#!/opt/sandproof/busybox sh
+B=/opt/sandproof/busybox
+# Candidates cold-boot from ext4: imported /run contents are not readiness.
+# Check the actual filesystem, not an image-supplied /proc/mounts file.
+test ! -L /run || exit 1
+run_type=$($B stat -f -c %t /run) || exit 1
+test "$run_type" = 1021994 || exit 1
+test ! -L /run/sandproof-boot-ready || exit 1
 test -f /run/sandproof-boot-ready || exit 1
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 exec /opt/sandproof/envd -verbose -no-cgroups
@@ -78,6 +93,36 @@ class Commands:
     def __init__(self, deadline, log, max_log_bytes, *, budget=None):
         self.deadline, self.log = deadline, log
         self.budget = budget or LogBudget(max_log_bytes)
+        self.started = time.monotonic()
+
+    @contextmanager
+    def phase(self, name):
+        """Flush bounded diagnostics before work; preserve its original failure."""
+        started = time.monotonic()
+
+        def event(state):
+            data = ("\n[sandproof-phase] " + json.dumps({
+                "phase": name, "state": state,
+                "started_seconds": round(started - self.started, 6),
+                "elapsed_seconds": round(time.monotonic() - started, 6),
+            }, separators=(",", ":")) + "\n").encode()
+            accepted = self.budget.take(len(data))
+            self.log.write(data[:accepted])
+            self.log.flush()
+            if accepted < len(data):
+                raise InvalidTemplate("build log limit")
+
+        event("started")
+        try:
+            yield
+        except BaseException:
+            try:
+                event("failed")
+            except Exception:
+                pass  # Diagnostic I/O or exhausted budget must not hide the cause.
+            raise
+        else:
+            event("completed")
 
     def run(self, args, *, daemon=False):
         if time.monotonic() >= self.deadline:
@@ -90,9 +135,18 @@ class Commands:
             return child
         try:
             self.drain(child)
-            if child.wait() != 0:
-                if time.monotonic() >= self.deadline:
-                    raise TimeoutError("build deadline")
+            # EOF only closes the log stream; the tool can still be running.
+            # Waiting for it must use the same deadline, including a late exit.
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("build deadline")
+            try:
+                result = child.wait(timeout=remaining)
+            except subprocess.TimeoutExpired as error:
+                raise TimeoutError("build deadline") from error
+            if time.monotonic() >= self.deadline:
+                raise TimeoutError("build deadline")
+            if result != 0:
                 raise RuntimeError("tool failed: " + Path(args[0]).name)
         finally:
             terminate(child)
@@ -196,6 +250,7 @@ def install_platform(root, envd, busybox, dns_servers=None):
         raise InvalidTemplate("unsafe inittab target")
     inittab.write_text(INITTAB)
     inittab.chmod(0o644)
+    install_loopback_hosts(root)
     if dns_servers:
         resolver = etc / "resolv.conf"
         if resolver.exists() and resolver.is_dir():
@@ -208,6 +263,42 @@ def install_platform(root, envd, busybox, dns_servers=None):
         if path != root / name.lstrip("/"):
             raise InvalidTemplate("platform mount path redirected")
         path.mkdir(exist_ok=True)
+    # Remove only this reserved directory entry, never its symlink/hardlink
+    # target. A directory or failed unlink rejects the candidate. The checked
+    # /run parent cannot redirect this write out of the candidate tree.
+    (root / "run/sandproof-boot-ready").unlink(missing_ok=True)
+
+
+def install_loopback_hosts(root):
+    """Supply the container runtime's localhost entry in the candidate VM."""
+    hosts = guest_path(root, "/etc") / "hosts"
+    content = b""
+    if not hosts.is_symlink() and hosts.exists():
+        if not hosts.is_file() or hosts.stat().st_size > 65536:
+            raise InvalidTemplate("hosts file type or size limit")
+        content = hosts.read_bytes()
+    ipv4_localhost = False
+    for line in content.splitlines():
+        fields = line.split(b"#", 1)[0].split()
+        if len(fields) < 2 or b"localhost" not in [word.lower() for word in fields[1:]]:
+            continue
+        try:
+            address = ipaddress.ip_address(fields[0].decode("ascii"))
+        except (ValueError, UnicodeDecodeError) as error:
+            raise InvalidTemplate("invalid localhost address") from error
+        if not address.is_loopback:
+            raise InvalidTemplate("localhost must resolve to loopback")
+        ipv4_localhost |= address.version == 4
+    if not ipv4_localhost:
+        content += (b"\n" if content and not content.endswith(b"\n") else b"") + b"127.0.0.1 localhost\n"
+    if len(content) > 65536:
+        raise InvalidTemplate("hosts file size limit")
+    # Replace the directory entry, never follow a container symlink or alter
+    # another image file that was hard-linked to hosts. The worker is guest-only.
+    hosts.unlink(missing_ok=True)
+    with hosts.open("xb") as output:
+        output.write(content)
+    hosts.chmod(0o644)
 
 
 def runtime_defaults(root, startup):
@@ -256,10 +347,10 @@ def runtime_defaults(root, startup):
 def validate_request(request):
     expected = {"kind", "disk_mib", "min_free_mib", "max_input_bytes", "max_expanded_bytes", "max_entries",
                 "timeout_seconds", "max_log_bytes"}
-    if set(request) - {"dns_servers"} != expected or request["kind"] not in ("dockerfile", "oci", "oci-reference"):
+    if set(request) - {"dns_servers", "docker_hub_mirror"} != expected or request["kind"] not in ("dockerfile", "oci", "oci-reference"):
         raise InvalidTemplate("invalid worker request")
     bounds = {"disk_mib": (512, 32768), "min_free_mib": (16, 32768),
-              "max_input_bytes": (1, 8 * 1024 * MIB), "max_expanded_bytes": (10240, 32 * 1024 * MIB),
+              "max_input_bytes": (1, MAX_INPUT_BYTES), "max_expanded_bytes": (10240, 32 * 1024 * MIB),
               "max_entries": (1, 200000), "timeout_seconds": (1, 3600), "max_log_bytes": (1, 16 * MIB)}
     for field, (lower, upper) in bounds.items():
         if type(request[field]) is not int or not lower <= request[field] <= upper:
@@ -267,15 +358,15 @@ def validate_request(request):
     if request["min_free_mib"] >= request["disk_mib"]:
         raise InvalidTemplate("minimum free disk must be smaller than total")
     if "dns_servers" in request:
-        import ipaddress
-        dns = request["dns_servers"]
-        if not isinstance(dns, list) or not 1 <= len(dns) <= 2:
-            raise InvalidTemplate("invalid platform DNS")
-        try:
-            if any(not ipaddress.IPv4Address(v).is_global for v in dns):
-                raise InvalidTemplate("invalid platform DNS")
-        except ValueError as error:
-            raise InvalidTemplate("invalid platform DNS") from error
+        platform_dns_servers(request["dns_servers"])
+    if "docker_hub_mirror" in request:
+        if request["kind"] != "oci-reference":
+            raise InvalidTemplate("registry mirror only applies to public OCI acquisition")
+        if __package__:
+            from .template_fetch import mirror_registry
+        else:
+            from template_fetch import mirror_registry
+        mirror_registry(request["docker_hub_mirror"])
 
 
 def check_tools(profile, *, registry=False):
@@ -296,9 +387,157 @@ def check_tools(profile, *, registry=False):
     # BusyBox builds differ in enabled applets. Do not merely assume an applet
     # exists because the binary/version matched the operator's descriptor.
     applets = subprocess.check_output([str(tools["busybox"]), "--list"], timeout=5).decode().splitlines()
-    if not {"sh", "init", "mount", "grep", "mkdir", "chmod", "ln", "ip", "touch", "reboot", "umount"}.issubset(applets):
+    if not {"sh", "init", "mount", "grep", "mkdir", "chmod", "ln", "ip", "touch", "reboot", "umount",
+            "rm", "stat"}.issubset(applets):
         raise InvalidTemplate("BusyBox missing required platform applets")
+    # stat can exist without filesystem/format support in a custom BusyBox.
+    # Probe the exact read-only operation used by the cold-boot envd gate.
+    filesystem = subprocess.check_output([str(tools["busybox"]), "stat", "-f", "-c", "%t", "/"], timeout=5)
+    if not re.fullmatch(rb"[0-9a-fA-F]+\n?", filesystem):
+        raise InvalidTemplate("BusyBox filesystem stat format unavailable")
     return tools
+
+
+def buildkit_layout(cache, metadata, layout, *, max_bytes):
+    """Link one stopped, private BuildKit 0.28 OCI worker's image for validation.
+
+    The image exporter commits the exact manifest/config/layers to its content
+    store. Avoid copying those bytes through the OCI exporter back into the same
+    VM. This is not a validation cache: inspect_oci must still validate all blob
+    digests, diff_ids, tar members and cumulative limits before unpacking.
+    """
+    def directory(path):
+        if not stat.S_ISDIR(path.lstat().st_mode):
+            raise InvalidTemplate("BuildKit content directory must not be a link")
+    directory(cache)
+    stores = []
+    for name in ("runc-overlayfs", "runc-fuse-overlayfs", "runc-native"):
+        worker = cache / name
+        if not worker.exists() and not worker.is_symlink():
+            continue
+        path = worker
+        directory(path)
+        for component in ("content", "blobs", "sha256"):
+            path /= component
+            directory(path)
+        stores.append(path)
+    if len(stores) != 1:
+        raise InvalidTemplate("expected one private BuildKit content store")
+    exported = bounded_json(metadata)
+    if not isinstance(exported, dict):
+        raise InvalidTemplate("invalid BuildKit export metadata")
+    descriptor = exported.get("containerimage.descriptor", {})
+    media = "application/vnd.oci.image.manifest.v1+json"
+    if (not isinstance(descriptor, dict) or descriptor.get("mediaType") != media
+            or descriptor.get("digest") != exported.get("containerimage.digest")):
+        raise InvalidTemplate("expected one exported OCI manifest")
+    layout.mkdir(mode=0o700)
+    (layout / "blobs").mkdir(mode=0o700)
+    target_blobs = layout / "blobs/sha256"
+    target_blobs.mkdir(mode=0o700)
+    def link(entry):
+        if not isinstance(entry, dict):
+            raise InvalidTemplate("invalid BuildKit descriptor")
+        digest, size = entry.get("digest", ""), entry.get("size")
+        if (not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                or type(size) is not int or not 0 < size <= max_bytes or entry.get("urls")):
+            raise InvalidTemplate("invalid BuildKit descriptor")
+        source = stores[0] / digest[7:]
+        before = source.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_size != size:
+            raise InvalidTemplate("invalid BuildKit content file")
+        target = target_blobs / digest[7:]
+        if not target.exists() and not target.is_symlink():
+            os.link(source, target, follow_symlinks=False)
+        after = target.lstat()
+        if (not stat.S_ISREG(after.st_mode) or after.st_size != size
+                or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)):
+            raise InvalidTemplate("BuildKit content identity changed")
+        return target
+    link(descriptor)
+    manifest = bounded_json(blob(layout, descriptor, max_bytes))
+    if not isinstance(manifest, dict):
+        raise InvalidTemplate("invalid BuildKit image manifest")
+    config, layers = manifest.get("config", {}), manifest.get("layers", [])
+    if (manifest.get("schemaVersion") != 2 or not isinstance(config, dict)
+            or config.get("digest") != exported.get("containerimage.config.digest")
+            or config.get("mediaType") != "application/vnd.oci.image.config.v1+json"
+            or not isinstance(layers, list) or not 1 <= len(layers) <= 128):
+        raise InvalidTemplate("invalid BuildKit image manifest")
+    link(config)
+    for layer in layers:
+        link(layer)
+    (layout / "oci-layout").write_text(json.dumps({"imageLayoutVersion": "1.0.0"}))
+    (layout / "index.json").write_text(json.dumps({"schemaVersion": 2, "manifests": [descriptor]}))
+
+
+def unpack_rootfs(commands, umoci, layout, bundle):
+    # Both fixed umoci commands use UnpackRootfs with the same ID mappings and
+    # whiteout handling. We never repack this bundle, so omit the extra full-tree
+    # mtree hashing and unused OCI runtime config. Startup comes from the
+    # validated image config; this VM boots the separately installed platform.
+    bundle.mkdir(mode=0o700)
+    root = bundle / "rootfs"
+    commands.run([str(umoci), "raw", "unpack", "--image", str(layout) + ":candidate", str(root)])
+    return root
+
+
+def loop_backing(device):
+    path = Path(f"/sys/dev/block/{os.major(device)}:{os.minor(device)}/loop/backing_file")
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        return None
+
+
+def unmount_ext4(commands, mount):
+    device = mount.stat().st_dev
+    backing = loop_backing(device)
+    commands.run(["/usr/bin/umount", "--detach-loop", str(mount)])
+    if os.path.ismount(mount):
+        raise RuntimeError("candidate filesystem remains mounted")
+    # Linux loop autoclear can finish after umount returns. Observe only this
+    # device's original association; never detach a subsequently reused device.
+    while backing is not None and loop_backing(device) == backing:
+        remaining = commands.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("candidate loop cleanup deadline")
+        time.sleep(min(0.01, remaining))
+
+
+def populate_ext4(commands, root, disk):
+    """Populate a new filesystem inside the disposable build VM only."""
+    mount = disk.parent / "candidate-mount"
+    mount.mkdir(mode=0o700)
+    commands.run(["/usr/sbin/mke2fs", "-t", "ext4", "-F", "-b", "4096", "-m", "0",
+                  "-E", "lazy_itable_init=0,lazy_journal_init=0", str(disk)])
+    try:
+        commands.run(["/usr/bin/mount", "-t", "ext4", "-o", "loop,nosuid,nodev,noexec",
+                      str(disk), str(mount)])
+        if not os.path.ismount(mount):
+            raise RuntimeError("candidate filesystem was not mounted")
+        # Explicit xattr preservation makes failures fatal (preserve=all can
+        # ignore them). Never follow image symlinks or read special-file data.
+        commands.run(["/usr/bin/cp", "--recursive", "--no-dereference",
+                      "--preserve=mode,ownership,timestamps,links,xattr",
+                      "--sparse=always", "--reflink=never", "--", str(root) + "/.", str(mount)])
+        # A successful copy can leave dirty filesystem data. Completing its
+        # unmount is build work and retains the original remaining deadline.
+        # The short grace below is only for reclamation after failure.
+        unmount_ext4(commands, mount)
+    finally:
+        failure = sys.exception()
+        try:
+            if os.path.ismount(mount):
+                # Only reclamation gets a separate bounded grace period; it
+                # cannot extend the job deadline or allow a late candidate.
+                cleanup = Commands(time.monotonic() + 5, commands.log, 0, budget=commands.budget)
+                unmount_ext4(cleanup, mount)
+            mount.rmdir()
+        except Exception:
+            if failure is None:
+                raise
+            failure.add_note("candidate mount cleanup failed; external VM cleanup required")
 
 
 def build(work, source, request, profile, *, guest_boot_id):
@@ -319,7 +558,8 @@ def build(work, source, request, profile, *, guest_boot_id):
     daemon = None
     state = {"state": "building", "ready": False}
     input_digest = sha256(source)
-    filesystem_tools = {name: sha256(Path(name)) for name in ("/usr/sbin/mke2fs", "/usr/sbin/e2fsck")}
+    filesystem_tools = {name: sha256(Path(name)) for name in (
+        "/usr/sbin/mke2fs", "/usr/sbin/e2fsck", "/usr/bin/cp", "/usr/bin/mount", "/usr/bin/umount")}
     (work / "status.json").write_text(json.dumps(state))
     try:
         with (work / "build.log").open("xb") as log:
@@ -327,60 +567,74 @@ def build(work, source, request, profile, *, guest_boot_id):
             limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
             layout = work / "oci"
             public_source = None
-            if request["kind"] == "oci-reference":
-                if __package__:
-                    from .template_fetch import fetch
-                else:
-                    from template_fetch import fetch
-                public_source = fetch(source, work, layout, request, tools["regctl"], commands)
-            elif request["kind"] == "dockerfile":
-                extract_context(source, work / "context", **limits)
-                address = "unix://" + str(work / "buildkit.sock")
-                daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
-                                       "--oci-worker=true",
-                                       "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "native",
-                                       "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True)
-                # Daemon logging is intentionally a separate bounded file,
-                # drained while the build client runs (see daemon reader below).
-                daemon_error = []
-                def read_daemon():
+            with commands.phase("acquire"):
+                if request["kind"] == "oci-reference":
+                    if __package__:
+                        from .template_fetch import fetch
+                    else:
+                        from template_fetch import fetch
+                    public_source, image = fetch(source, work, layout, request, tools["regctl"], commands)
+                elif request["kind"] == "dockerfile":
+                    extract_context(source, work / "context", **limits)
+                    address = "unix://" + str(work / "buildkit.sock")
+                    daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
+                                           "--oci-worker=true",
+                                           "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "auto",
+                                           "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True)
+                    # Daemon logging is intentionally a separate bounded file,
+                    # drained while the build client runs (see daemon reader below).
+                    daemon_error = []
+                    def read_daemon():
+                        try:
+                            with (work / "daemon.log").open("xb") as daemon_log:
+                                Commands(commands.deadline, daemon_log, request["max_log_bytes"], budget=commands.budget).drain(daemon)
+                        except Exception as error:
+                            daemon_error.append(error)
+                            terminate(daemon)
+                        finally:
+                            daemon.stdout.close()
+                    reader = threading.Thread(target=read_daemon, daemon=True)
+                    reader.start()
                     try:
-                        with (work / "daemon.log").open("xb") as daemon_log:
-                            Commands(commands.deadline, daemon_log, request["max_log_bytes"], budget=commands.budget).drain(daemon)
-                    except Exception as error:
-                        daemon_error.append(error)
-                        terminate(daemon)
+                        commands.run([str(tools["buildctl"]), "--addr", address, "--wait", "build", "--progress", "plain",
+                                      "--frontend", "dockerfile.v0", "--local", "context=" + str(work / "context"),
+                                      "--local", "dockerfile=" + str(work / "context"), "--opt", "platform=linux/amd64",
+                                      "--metadata-file", str(work / "image-metadata.json"),
+                                      "--output", "type=image,oci-mediatypes=true,compression=gzip,push=false,store=false"])
                     finally:
-                        daemon.stdout.close()
-                reader = threading.Thread(target=read_daemon, daemon=True)
-                reader.start()
-                try:
-                    commands.run([str(tools["buildctl"]), "--addr", address, "--wait", "build", "--progress", "plain",
-                                  "--frontend", "dockerfile.v0", "--local", "context=" + str(work / "context"),
-                                  "--local", "dockerfile=" + str(work / "context"), "--opt", "platform=linux/amd64",
-                                  "--output", "type=oci,tar=false,compression=gzip,dest=" + str(layout)])
-                finally:
-                    terminate(daemon)
-                    reader.join(timeout=4)
-                if reader.is_alive() or daemon_error:
-                    raise RuntimeError("builder daemon did not finish cleanly")
-            else:
-                extract_archive(source, layout, **limits)
-            image = inspect_oci(layout, **limits)
+                        terminate(daemon)
+                        reader.join(timeout=4)
+                    if reader.is_alive() or daemon_error:
+                        raise RuntimeError("builder daemon did not finish cleanly")
+                    buildkit_layout(work / "cache", work / "image-metadata.json", layout,
+                                    max_bytes=request["max_expanded_bytes"])
+                else:
+                    extract_archive(source, layout, **limits)
+            if request["kind"] != "oci-reference":
+                with commands.phase("oci_validate"):
+                    image = inspect_oci(layout, **limits)
+            if request["kind"] == "dockerfile":
+                # The daemon has stopped and the selected blobs have their own
+                # validated layout links. Drop only this job's unused snapshots
+                # before allocating another rootfs and the candidate disk.
+                with commands.phase("build_cache_cleanup"):
+                    shutil.rmtree(work / "cache")
             startup = startup_config(image["container_config"])
             index = bounded_json(layout / "index.json")
             index["manifests"][0].setdefault("annotations", {})["org.opencontainers.image.ref.name"] = "candidate"
             (layout / "index.json").write_text(json.dumps(index))
-            commands.run([str(tools["umoci"]), "unpack", "--image", str(layout) + ":candidate", str(work / "bundle")])
-            root = work / "bundle/rootfs"
-            install_platform(root, tools["envd"], tools["busybox"], request.get("dns_servers"))
-            defaults = runtime_defaults(root, startup)
+            with commands.phase("rootfs_unpack"):
+                root = unpack_rootfs(commands, tools["umoci"], layout, work / "bundle")
+            with commands.phase("platform_install"):
+                install_platform(root, tools["envd"], tools["busybox"], request.get("dns_servers"))
+                defaults = runtime_defaults(root, startup)
             disk = work / "candidate.ext4"
             with disk.open("xb") as output:
                 output.truncate(request["disk_mib"] * MIB)
-            commands.run(["/usr/sbin/mke2fs", "-t", "ext4", "-F", "-b", "4096", "-m", "0",
-                          "-E", "lazy_itable_init=0,lazy_journal_init=0", "-d", str(root), str(disk)])
-            commands.run(["/usr/sbin/e2fsck", "-fn", str(disk)])
+            with commands.phase("ext4_create"):
+                populate_ext4(commands, root, disk)
+            with commands.phase("ext4_check"):
+                commands.run(["/usr/sbin/e2fsck", "-fn", str(disk)])
             # Read structural accounting from the ext4 superblock. Do not use
             # builder filesystem free space as the candidate's free capacity.
             import struct
@@ -392,8 +646,10 @@ def build(work, source, request, profile, *, guest_boot_id):
                 raise InvalidTemplate("unexpected ext4 accounting")
             if free * 4096 < request["min_free_mib"] * MIB:
                 raise InvalidTemplate("candidate minimum free disk not met")
+            with commands.phase("disk_digest"):
+                rootfs_digest = sha256(disk)
             state = {"state": "candidate", "ready": False, **image, "startup": startup, "runtime_defaults": defaults,
-                     "startup_applied": False, "rootfs_sha256": sha256(disk), "disk_bytes": disk.stat().st_size,
+                     "startup_applied": False, "rootfs_sha256": rootfs_digest, "disk_bytes": disk.stat().st_size,
                      "free_bytes": free * 4096, "min_free_bytes": request["min_free_mib"] * MIB,
                      "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
                      "requires": ["external VM cleanup", "launch/envd/owner publish gate"]}

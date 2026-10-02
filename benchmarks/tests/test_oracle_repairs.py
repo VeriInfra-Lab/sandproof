@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -22,6 +23,265 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_mteb_constraints_install_failure_stops_before_unchanged_oracle(self):
+        script = 'printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'
+        constraints = Path(__file__).parents[1] / 'mteb-verifier-constraints.txt'
+        for code in (0, 42):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                (source / 'task.toml').write_text('[agent]\ntimeout_sec = 1800.0\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'mteb-retrieve': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('mteb-retrieve', source, root / 'repaired')
+                stub = bin_dir / 'install'
+                stub.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                f'exit {code}\n')
+                stub.chmod(0o700)
+                log = root / 'commands'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')],
+                    env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log)})
+                self.assertEqual(result.returncode, code)
+                expected = ['-D -m 644 /solution/mteb-verifier-constraints.txt '
+                            '/etc/sandproof-mteb-verifier-constraints.txt']
+                if not code:
+                    expected.append('original solution')
+                self.assertEqual(log.read_text().splitlines(), expected)
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                for relative in ('tests/test.sh', 'task.toml'):
+                    self.assertEqual((source / relative).read_bytes(), (repaired / relative).read_bytes())
+                self.assertEqual((repaired / 'solution/mteb-verifier-constraints.txt').read_bytes(),
+                                 constraints.read_bytes())
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['repaired_files']['mteb-verifier-constraints.txt'],
+                                 hashlib.sha256(constraints.read_bytes()).hexdigest())
+                self.assertNotIn('UV_CONSTRAINT', (repaired / 'solution/solve.sh').read_text())
+
+    def test_torch_layout_failure_stops_before_unchanged_solution(self):
+        script = 'printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'
+        for code in (0, 42):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                (source / 'task.toml').write_text('[agent]\ntimeout_sec = 900.0\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'pytorch-model-recovery': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('pytorch-model-recovery', source, root / 'repaired')
+                stub = bin_dir / 'python'
+                stub.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                f'exit {code}\n')
+                stub.chmod(0o700)
+                log = root / 'commands'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')],
+                    env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log)})
+                self.assertEqual(result.returncode, code)
+                expected = ['/solution/guest_wheel_sharing.py']
+                if not code:
+                    expected.append('original solution')
+                self.assertEqual(log.read_text().splitlines(), expected)
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                for relative in ('tests/test.sh', 'task.toml'):
+                    self.assertEqual((source / relative).read_bytes(), (repaired / relative).read_bytes())
+                helper = Path(__file__).parents[1] / 'guest_wheel_sharing.py'
+                self.assertEqual((repaired / 'solution/guest_wheel_sharing.py').read_bytes(), helper.read_bytes())
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['repaired_files']['guest_wheel_sharing.py'],
+                                 hashlib.sha256(helper.read_bytes()).hexdigest())
+
+    def test_stan_pins_reach_r_subprocesses_and_r_failure_stops_the_solution(self):
+        # Exercise the real repaired shell with recording R/package-manager
+        # boundaries; never install packages or execute benchmark code here.
+        expression = ("remotes::install_version('StanHeaders', version='2.32.10'); "
+                      "remotes::install_version('rstan', version='2.32.7')")
+        script = ('set -e\nsudo apt-get install -y \\\n    gfortran\n'
+                  f'R -e "{expression}"\nRscript model.R\n')
+        for failure in ('', 'R'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                model = 'parameters { real x[2]; } model { x ~ normal(0, 1); }\n'
+                (source / 'solution/model.R').write_text(model)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                (source / 'task.toml').write_text('[agent]\ntimeout_sec = 1800.0\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'mcmc-sampling-stan': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('mcmc-sampling-stan', source, root / 'repaired')
+                for command, content in {
+                        'sudo': '#!/bin/bash\nexec "$@"\n',
+                        'apt-get': '#!/bin/bash\nexit 0\n'}.items():
+                    path = bin_dir / command
+                    path.write_text(content)
+                    path.chmod(0o700)
+                for command in ('R', 'Rscript'):
+                    path = bin_dir / command
+                    path.write_text(f'#!{sys.executable}\n'
+                                    'import json, os, sys\nfrom pathlib import Path\n'
+                                    'name = Path(sys.argv[0]).name\n'
+                                    'with open(os.environ["REPAIR_TEST_LOG"], "a") as log:\n'
+                                    '    log.write(json.dumps([name, sys.argv[1:], '
+                                    'os.environ.get("R_REMOTES_UPGRADE")]) + "\\n")\n'
+                                    'raise SystemExit(42 if os.environ["REPAIR_TEST_FAIL"] == name else 0)\n')
+                    path.chmod(0o700)
+                log = root / 'commands.jsonl'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')], env={
+                    **os.environ, 'PATH': str(bin_dir), 'R_REMOTES_UPGRADE': 'always',
+                    'REPAIR_TEST_LOG': str(log), 'REPAIR_TEST_FAIL': failure})
+                self.assertEqual(result.returncode, 42 if failure else 0)
+                expected = [['R', ['-e', expression], 'never']]
+                if not failure:
+                    expected.append(['Rscript', ['model.R'], 'never'])
+                self.assertEqual([json.loads(line) for line in log.read_text().splitlines()], expected)
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                for relative in ('solution/model.R', 'tests/test.sh', 'task.toml'):
+                    self.assertEqual((source / relative).read_bytes(), (repaired / relative).read_bytes())
+
+    def test_browser_repair_installs_supervisor_and_preserves_solution_and_failure(self):
+        # Synthetic commands only; never install into the host or run task code.
+        script = 'printf "filter unchanged\\n" >> "$REPAIR_TEST_LOG"\n'
+        for failure in ('', 'install'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'filter-js-from-html': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('filter-js-from-html', source, root / 'repaired')
+                install = bin_dir / 'install'
+                install.write_text('#!/bin/bash\nprintf "install %s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                   'if [[ "$REPAIR_TEST_FAIL" == install ]]; then exit 42; fi\n')
+                install.chmod(0o700)
+                log = root / 'commands'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')], env={
+                    **os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                    'REPAIR_TEST_FAIL': failure})
+                self.assertEqual(result.returncode, 42 if failure else 0)
+                commands = ['install -D -m 755 /solution/guest_chromium.py '
+                            '/usr/local/lib/sandproof/guest_chromium.py']
+                if not failure:
+                    commands.append('filter unchanged')
+                self.assertEqual(log.read_text().splitlines(), commands)
+                self.assertTrue((repaired / 'solution/solve.sh').read_text().endswith(script))
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                self.assertEqual((repaired / 'tests/test.sh').read_bytes(), (source / 'tests/test.sh').read_bytes())
+                helper = Path(__file__).parents[1] / 'guest_chromium.py'
+                self.assertEqual((repaired / 'solution/guest_chromium.py').read_bytes(), helper.read_bytes())
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['repaired_files']['guest_chromium.py'], hashlib.sha256(helper.read_bytes()).hexdigest())
+                self.assertEqual(evidence['oracle_mode'], 'repaired')
+
+    def test_missing_tmux_is_installed_before_configuration_without_hiding_failures(self):
+        # Synthetic shell only: package manager and tmux are local recording
+        # stubs. No original solution or real package installation runs here.
+        script = ('set -e\nprintf "configure\\n" >> "$REPAIR_TEST_LOG"\n'
+                  'tmux new -d -s dummy "tail -f /dev/null"\n')
+        for available, failure in ((False, ''), (True, ''), (False, 'update'),
+                                   (False, 'install'), (False, 'tmux')):
+            with self.subTest(available=available, failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                source.mkdir()
+                bin_dir.mkdir()
+                (source / 'solve.sh').write_text(script)
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'git-multibranch': hashlib.sha256(script.encode()).hexdigest()}):
+                    _, solve = repair_solution('git-multibranch', source, root / 'repaired')
+                tmux = root / 'tmux-fixture'
+                tmux.write_text('#!/bin/bash\nprintf "tmux %s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                'if [[ "$REPAIR_TEST_FAIL" == tmux ]]; then exit 42; fi\n')
+                tmux.chmod(0o700)
+                apt = bin_dir / 'apt-get'
+                apt.write_text('#!/bin/bash\nprintf "apt-get %s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                               'if [[ "$REPAIR_TEST_FAIL" == "$1" ]]; then exit 42; fi\n'
+                               'if [[ "$1" == install ]]; then\n'
+                               '  test "$DEBIAN_FRONTEND" = noninteractive || exit 43\n'
+                               '  /bin/cp "$REPAIR_TEST_TMUX" "$REPAIR_TEST_BIN/tmux"\nfi\n')
+                apt.chmod(0o700)
+                if available:
+                    (bin_dir / 'tmux').symlink_to(tmux)
+                log = root / 'commands'
+                env = {**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                       'REPAIR_TEST_FAIL': failure, 'REPAIR_TEST_TMUX': str(tmux),
+                       'REPAIR_TEST_BIN': str(bin_dir)}
+                result = subprocess.run(['/bin/bash', str(solve)], env=env)
+                self.assertEqual(result.returncode, 42 if failure else 0)
+                commands = [] if available else ['apt-get update']
+                if not available and failure != 'update':
+                    commands.append('apt-get install -y --no-install-recommends tmux')
+                if failure not in ('update', 'install'):
+                    commands.extend(['configure', 'tmux new -d -s dummy tail -f /dev/null'])
+                self.assertEqual(log.read_text().splitlines(), commands)
+                self.assertEqual((source / 'solve.sh').read_text(), script)
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['oracle_mode'], 'repaired')
+                self.assertEqual(evidence['original_files']['solve.sh'], hashlib.sha256(script.encode()).hexdigest())
+
+    def test_dependency_repairs_execute_in_order_and_preserve_failure(self):
+        # Only synthetic shell fixtures run here. Commands are recording stubs;
+        # no package manager, R compiler or benchmark solution runs on the host.
+        cases = {
+            'build-cython-ext': (
+                'pip install -e .\n', ['pip install planarity==0.6 -e .']),
+            'mcmc-sampling-stan': (
+                'set -e\nsudo apt-get install -y \\\n    gfortran=4:13.2.0-7ubuntu1\nR model.R\n',
+                ['apt-get install -y cmake gfortran=4:13.2.0-7ubuntu1', 'R model.R']),
+            'make-doom-for-mips': (
+                'apt install -y clang gcc-mips-linux-gnu g++-mips-linux-gnu llvm llvm-dev lld\nmake doom\n',
+                ['apt-get update', 'apt install -y clang gcc-mips-linux-gnu g++-mips-linux-gnu llvm llvm-dev lld', 'make doom']),
+            'build-pmars': (
+                'set -e\napt-get update\napt-get install -y build-essential=12.12 libncurses-dev=6.5+20250216-2 ca-certificates=20250419 dpkg-dev=1.22.21 devscripts=2.25.15+deb13u1\napt-get source pmars\nmake\n',
+                ['apt-get update', 'apt-get install -y build-essential libncurses-dev ca-certificates dpkg-dev devscripts', 'apt-get source pmars', 'make']),
+        }
+        for name, (script, expected) in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source = root / 'source'
+                source.mkdir()
+                (source / 'solve.sh').write_text(script)
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        name: hashlib.sha256(script.encode()).hexdigest()}):
+                    _, solve = repair_solution(name, source, root / 'repaired')
+                bin_dir = root / 'bin'
+                bin_dir.mkdir()
+                stub = ('#!/bin/bash\nname=${0##*/}\n'
+                        'printf "%s %s\\n" "$name" "$*" >> "$REPAIR_TEST_LOG"\n'
+                        'if [[ "$name $*" == "$REPAIR_TEST_FAIL" ]]; then exit 42; fi\n')
+                for command in ('apt-get', 'apt', 'R', 'make', 'sudo', 'pip'):
+                    path = bin_dir / command
+                    path.write_text('#!/bin/bash\nexec "$@"\n' if command == 'sudo' else stub)
+                    path.chmod(0o700)
+                log = root / 'commands'
+                env = {**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                       'REPAIR_TEST_FAIL': ''}
+                subprocess.run(['/bin/bash', str(solve)], env=env, check=True)
+                self.assertEqual([line.rstrip() for line in log.read_text().splitlines()], expected)
+                log.unlink()
+                env['REPAIR_TEST_FAIL'] = expected[0]
+                failed = subprocess.run(['/bin/bash', str(solve)], env=env)
+                self.assertEqual(failed.returncode, 42)
+                self.assertEqual(log.read_text().splitlines(), [expected[0]])
+                self.assertEqual((source / 'solve.sh').read_text(), script)
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['original_files']['solve.sh'], hashlib.sha256(script.encode()).hexdigest())
+                self.assertEqual(evidence['repaired_files']['solve.sh'], hashlib.sha256(solve.read_bytes()).hexdigest())
+
     def test_historical_clone_skips_current_tree_but_keeps_full_history(self):
         # Execute only this synthetic fixture, never a benchmark solution.
         with tempfile.TemporaryDirectory() as temp:

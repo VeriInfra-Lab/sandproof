@@ -4,6 +4,14 @@ The configured budget counts the encoded Process RPC body, not raw stdin bytes.
 Requires an isolated server with the explicit command input budget below.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import hashlib
@@ -119,7 +127,8 @@ async def exercise(args):
             results.append(dict(sdk=cls.__name__,
                                 **await stdin_boundary(sandbox, args.command_input_bytes)))
         finally:
-            assert await call(sandbox.kill)
+            _kill_confirmed = (await call(sandbox.kill))
+            assert _kill_confirmed
     print(json.dumps(dict(sdk_version='2.51.0', cases=results,
                           scope='selected per-request SendInput boundaries and integrity; '
                                 'base64 length granularity, not every encoded byte; '

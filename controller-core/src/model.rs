@@ -656,6 +656,7 @@ pub enum Event {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct World {
+    pub(crate) maintenance: Option<crate::maintenance::MaintenanceState>,
     pub(crate) sandboxes: Store<SandboxId, SandboxRecord>,
     pub(crate) vms: Store<VmId, Vm>,
     pub(crate) filesystems: Store<FsId, Filesystem>,
@@ -680,6 +681,7 @@ pub struct World {
 impl Default for World {
     fn default() -> Self {
         Self {
+            maintenance: None,
             sandboxes: Store::default(),
             vms: Store::default(),
             filesystems: Store::default(),

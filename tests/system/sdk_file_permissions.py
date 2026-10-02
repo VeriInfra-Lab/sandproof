@@ -5,6 +5,14 @@ not a guest DAC boundary. The caller supplies only a disposable host canary
 path; the KVM harness must independently verify its content stays unchanged.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import hashlib
@@ -215,7 +223,8 @@ async def exercise(args):
                                 control=control.sandbox_id, cases=cases))
         finally:
             for sandbox in reversed(live):
-                assert await call(sandbox.kill), 'destruction not confirmed'
+                _kill_confirmed = (await call(sandbox.kill))
+                assert _kill_confirmed, 'destruction not confirmed'
     print(json.dumps(dict(sdk_version='2.51.0', results=results,
                           scope='file user/home/ownership, selected path errors, partial batches, '
                                 'private VM path controls; invoking harness must audit host canary '

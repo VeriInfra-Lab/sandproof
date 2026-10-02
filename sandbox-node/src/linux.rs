@@ -4,7 +4,7 @@ use sandbox_runtime::{
     Observation, Runtime, RuntimeConfig, RuntimeError, VmState, check_trusted_path,
 };
 use sandproof_controller_service::{
-    CreateOptions,
+    BoundedHostConfig, CreateOptions, HostSlotContext,
     templates::{TemplateArtifact, TemplateBinding},
 };
 use sandproof_controller_service::{HostEvidence, WorkerTransportError};
@@ -13,10 +13,11 @@ use sandproof_protocol::{
     WorkAction, WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::{self, DirBuilder, File};
-use std::io::Write;
+use std::io::{Read, Seek, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -26,10 +27,25 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
+#[path = "child_process.rs"]
+mod child_process;
+#[path = "host_lease.rs"]
+mod host_lease;
+#[path = "host_slots.rs"]
+mod host_slots;
+#[path = "node_staging.rs"]
+mod node_staging;
+#[path = "storage_envelope.rs"]
+mod storage_envelope;
+pub use storage_envelope::HostMetadataEnvelope;
+
+const NODE_STATE_DIRECTORIES: &[&str] = &["secrets", "fences", "slots", "startup"];
+
 const ENVD_URL: &str = "http://172.16.0.2:49983";
 
 /// Deployment inputs are fixed, root-owned host paths, not API request data.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NodeConfig {
     pub namespace: String,
     pub state_dir: PathBuf,
@@ -40,6 +56,8 @@ pub struct NodeConfig {
     pub rootfs: PathBuf,
     pub uid_base: u32,
     pub max_vm_id: u64,
+    /// Explicit bounded physical mapping; permanent VM identities remain monotonic.
+    pub bounded_host: Option<BoundedHostConfig>,
     pub vcpu_count: u8,
     pub memory_mib: u32,
     pub host_resources: Option<sandbox_runtime::HostResources>,
@@ -59,6 +77,10 @@ pub struct HostInventory {
 }
 
 #[derive(Clone, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "inventory carries independent physical evidence and one explicit unknown flag, not a second lifecycle state machine"
+)]
 pub struct ObservedSlot {
     pub owner: TenantId,
     pub sandbox: core::SandboxId,
@@ -66,6 +88,9 @@ pub struct ObservedSlot {
     pub vm: core::VmId,
     pub slot: core::NetSlotId,
     pub claim_present: bool,
+    /// Exact registered identity is retained, but a surviving helper prevents
+    /// a stable physical observation. This is never stopped/cleanup evidence.
+    pub helper_pending: bool,
     pub aborted_unlaunched: bool,
     pub failed_prepare_reclaimed: bool,
     pub process: Option<Observation>,
@@ -170,8 +195,19 @@ impl HostEvidence for HostObservation {
     }
 }
 
+/// The durable relay census reached a configured global or per-slot budget.
+#[derive(Debug)]
+pub struct RouteCapacityExceeded;
+impl std::fmt::Display for RouteCapacityExceeded {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("durable data-route capacity exhausted")
+    }
+}
+impl Error for RouteCapacityExceeded {}
+
 pub struct LinuxWorker {
     config: NodeConfig,
+    host_lease: Option<host_lease::HostLease>,
     last_error: Option<String>,
     validated_artifacts: Mutex<BTreeMap<PathBuf, ArtifactStamp>>,
 }
@@ -204,6 +240,94 @@ impl ArtifactStamp {
     }
 }
 
+fn artifact_digest(mut input: impl Read) -> std::io::Result<String> {
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        match input.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => digest.update(&buffer[..count]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn artifact_file_digest(input: File) -> std::io::Result<String> {
+    artifact_file_digest_with(input, |file, from| rustix::fs::seek(file, from))
+}
+
+fn artifact_file_digest_with(
+    mut input: File,
+    seek_extent: impl FnMut(&File, rustix::fs::SeekFrom) -> rustix::io::Result<u64>,
+) -> std::io::Result<String> {
+    let length = input.metadata()?.len();
+    let result = if let Some(digest) = artifact_extent_digest(&mut input, length, seek_extent)? {
+        format!("{:x}", digest.finalize())
+    } else {
+        // A filesystem may reject extent queries after partial progress.
+        // Restart both the input and hash rather than accepting a prefix.
+        input.rewind()?;
+        artifact_digest(&mut input)?
+    };
+    if input.metadata()?.len() != length {
+        return Err(std::io::Error::other(
+            "artifact size changed during hashing",
+        ));
+    }
+    Ok(result)
+}
+
+fn artifact_extent_digest(
+    input: &mut File,
+    length: u64,
+    mut seek_extent: impl FnMut(&File, rustix::fs::SeekFrom) -> rustix::io::Result<u64>,
+) -> std::io::Result<Option<Sha256>> {
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024];
+    let zeros = vec![0_u8; 64 * 1024];
+    let mut position = 0;
+    while position < length {
+        let data = match seek_extent(input, rustix::fs::SeekFrom::Data(position)) {
+            Ok(data) if position <= data && data < length => data,
+            Ok(_) => return Err(std::io::Error::other("invalid artifact data extent")),
+            Err(rustix::io::Errno::NXIO) => length,
+            Err(rustix::io::Errno::INVAL) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        // Holes contribute exactly the same zero bytes to SHA-256. Avoid
+        // reading/materializing them in the filesystem page cache; do not
+        // omit logical bytes or substitute an allocated-extents-only digest.
+        while position < data {
+            let count = usize::try_from((data - position).min(zeros.len() as u64))
+                .expect("count is bounded by the buffer size");
+            digest.update(&zeros[..count]);
+            position += count as u64;
+        }
+        if position == length {
+            break;
+        }
+        let end = match seek_extent(input, rustix::fs::SeekFrom::Hole(data)) {
+            Ok(end) => end.min(length),
+            Err(rustix::io::Errno::INVAL) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        if end <= data {
+            return Err(std::io::Error::other("invalid artifact hole extent"));
+        }
+        input.seek(std::io::SeekFrom::Start(data))?;
+        while position < end {
+            let count = usize::try_from((end - position).min(buffer.len() as u64))
+                .expect("count is bounded by the buffer size");
+            input.read_exact(&mut buffer[..count])?;
+            digest.update(&buffer[..count]);
+            position += count as u64;
+        }
+    }
+    Ok(Some(digest))
+}
+
 impl LinuxWorker {
     /// Enumerate slots, VM claims and network handles in this deployment
     /// namespace, including incomplete launches. This is evidence for
@@ -218,7 +342,13 @@ impl LinuxWorker {
     pub fn inventory(&self) -> NodeResult<HostInventory> {
         let prefix = format!("slot-{}-", self.config.namespace);
         let mut slots = Vec::new();
-        let mut bound = BTreeSet::new();
+        let host_slots = self.host_slot_inventory()?;
+        let retiring: BTreeSet<_> = host_slots
+            .iter()
+            .filter(|(_, phase)| *phase != core::maintenance::slots::HostSlotPhase::Occupied)
+            .map(|(context, _)| self.vm_name(context.binding.vm))
+            .collect();
+        let mut bound = retiring.clone();
         for entry in fs::read_dir(self.config.state_dir.join("slots"))? {
             let entry = entry?;
             let name = entry
@@ -240,13 +370,32 @@ impl LinuxWorker {
                 return Err("untrusted slot record".into());
             }
             let binding: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
-            if binding.slot.0 != number || binding.vm.0 > self.config.max_vm_id {
+            if binding.slot.0 != number
+                || (self.config.bounded_host.is_none() && binding.vm.0 > self.config.max_vm_id)
+            {
                 return Err("slot filename or VM identity mismatch".into());
             }
             let vm_name = self.vm_name(binding.vm);
+            if retiring.contains(&vm_name) {
+                let (context, _) = host_slots
+                    .iter()
+                    .find(|(context, _)| context.binding.vm == binding.vm)
+                    .ok_or("missing retiring context")?;
+                host_slots::require_slot_binding(&binding, context.binding)?;
+                continue;
+            }
+            self.require_occupied_binding(&binding)?;
             if !bound.insert(vm_name.clone()) {
                 return Err("one VM is bound to multiple network slots".into());
             }
+            let helper_pending = if let Some(position) = self.physical_slot_for_vm(binding.vm)? {
+                let context = self.runtime_host_slot(position, binding.vm)?;
+                helper_observation_pending(
+                    context.helper_gate.try_acquire(Some(&context)).map(drop),
+                )?
+            } else {
+                false
+            };
             let claim = self.config.chroot_base.join(".claims").join(&vm_name);
             let claim_present = match fs::symlink_metadata(&claim) {
                 Ok(metadata)
@@ -261,14 +410,16 @@ impl LinuxWorker {
                 Err(error) => return Err(error.into()),
             };
             let aborted_unlaunched = claim_present
+                && !helper_pending
                 && self
                     .runtime(binding.sandbox, binding.vm)?
                     .was_reclaimed_unlaunched(&vm_name)?;
             let failed_prepare_reclaimed = claim_present
+                && !helper_pending
                 && self
                     .runtime(binding.sandbox, binding.vm)?
                     .was_reclaimed_stopped_prepare(&vm_name)?;
-            let process = if claim_present {
+            let process = if claim_present && !helper_pending {
                 match self.runtime(binding.sandbox, binding.vm)?.observe(&vm_name) {
                     Ok(observed) => Some(observed),
                     Err(RuntimeError::MissingRecord) => None,
@@ -326,6 +477,7 @@ impl LinuxWorker {
                 vm: binding.vm,
                 slot: binding.slot,
                 claim_present,
+                helper_pending,
                 aborted_unlaunched,
                 failed_prepare_reclaimed,
                 process,
@@ -356,7 +508,7 @@ impl LinuxWorker {
                         .and_then(|number| number.parse::<u64>().ok())
                         .ok_or("invalid VM claim number")?;
                     let metadata = fs::symlink_metadata(entry.path())?;
-                    if number > self.config.max_vm_id
+                    if (self.config.bounded_host.is_none() && number > self.config.max_vm_id)
                         || !entry.file_type()?.is_dir()
                         || metadata.uid() != 0
                         || metadata.mode().trailing_zeros() < 6
@@ -397,7 +549,7 @@ impl LinuxWorker {
                         .ok_or("invalid network namespace number")?;
                     let metadata = fs::symlink_metadata(entry.path())?;
                     if name != format!("{vm_prefix}{number}")
-                        || number > self.config.max_vm_id
+                        || (self.config.bounded_host.is_none() && number > self.config.max_vm_id)
                         || !metadata.is_file()
                         || metadata.uid() != 0
                     {
@@ -484,7 +636,7 @@ impl LinuxWorker {
                     .strip_prefix(&prefix)
                     .and_then(|value| value.parse::<u64>().ok())
                     .ok_or("invalid cgroup VM number")?;
-                if number > self.config.max_vm_id
+                if (self.config.bounded_host.is_none() && number > self.config.max_vm_id)
                     || name != format!("{prefix}{number}")
                     || !entry.file_type()?.is_dir()
                 {
@@ -573,6 +725,7 @@ impl LinuxWorker {
         let slot_path = self.slot_path(slot);
         match fs::symlink_metadata(&slot_path) {
             Ok(_) => {
+                self.sync_node_record(&slot_path)?;
                 self.require_slot(sandbox, generation, vm, slot)?;
                 if self.slot(slot)?.owner != *owner {
                     return Err("prepare slot owner mismatch".into());
@@ -606,7 +759,7 @@ impl LinuxWorker {
                 )?;
                 require_absent(Path::new(&format!("/run/netns/{name}")))?;
                 self.runtime(sandbox, vm)?.require_cgroup_absent(&name)?;
-                write_new_json(
+                self.write_node_json(
                     &slot_path,
                     &SlotBinding {
                         owner: owner.clone(),
@@ -851,7 +1004,11 @@ impl LinuxWorker {
         if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
             return Err("node state directory must be root-only".into());
         }
-        crate::identity::validate_vm_id_range(config.uid_base, config.max_vm_id)?;
+        if let Some(bounded) = &config.bounded_host {
+            host_slots::validate_limits(bounded)?;
+        } else {
+            crate::identity::validate_vm_id_range(config.uid_base, config.max_vm_id)?;
+        }
         if config.vcpu_count == 0 || config.memory_mib < 128 {
             return Err("invalid node resource limits".into());
         }
@@ -866,12 +1023,26 @@ impl LinuxWorker {
                     .file_name()
                     .ok_or("invalid firecracker name")?,
             )
-            .join(format!("vm-{}-{}", config.namespace, config.max_vm_id))
+            .join(format!(
+                "vm-{}-{}",
+                config.namespace,
+                if config.bounded_host.is_some() {
+                    u64::MAX
+                } else {
+                    config.max_vm_id
+                }
+            ))
             .join("root/api.socket");
         if longest_socket.as_os_str().as_bytes().len() >= 108 {
             return Err("Firecracker API socket path exceeds Linux limit".into());
         }
-        for subdir in ["secrets", "fences", "slots", "startup"] {
+        let host_lease = if config.bounded_host.is_some() {
+            let expected = host_slots::stored_lease_identity(&config)?;
+            Some(host_lease::HostLease::acquire(&config, expected.as_ref())?)
+        } else {
+            None
+        };
+        for subdir in NODE_STATE_DIRECTORIES {
             let path = config.state_dir.join(subdir);
             if !path.exists() {
                 DirBuilder::new().mode(0o700).create(&path)?;
@@ -885,11 +1056,14 @@ impl LinuxWorker {
         for binary in ["/usr/bin/ip", "/usr/bin/curl", "/usr/bin/sha512sum"] {
             check_trusted_path(Path::new(binary))?;
         }
-        Ok(Self {
+        let worker = Self {
             config,
+            host_lease,
             last_error: None,
             validated_artifacts: Mutex::new(BTreeMap::new()),
-        })
+        };
+        worker.initialize_host_slots()?;
+        Ok(worker)
     }
 
     /// Create a one-time root-only credential before accepting a sandbox.
@@ -929,6 +1103,7 @@ impl LinuxWorker {
         token: &str,
         options: &CreateOptions,
     ) -> NodeResult<()> {
+        self.require_occupied_sandbox(sandbox)?;
         options.validate()?;
         if let Some(template) = &options.template {
             self.validate_template(template)?;
@@ -955,7 +1130,7 @@ impl LinuxWorker {
             template: options.template.clone(),
         };
         let path = self.secret_path(sandbox);
-        write_new_json(&path, &value)
+        self.write_node_json(&path, &value)
     }
 
     /// Read a credential only for the authenticated API response or worker.
@@ -974,6 +1149,7 @@ impl LinuxWorker {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error.into()),
             Ok(_) => {
+                self.sync_node_record(&path)?;
                 self.secret(sandbox)?;
                 Ok(true)
             }
@@ -1043,13 +1219,7 @@ impl LinuxWorker {
         if cache.get(&artifact.path) == Some(&stamp) {
             return Ok(());
         }
-        check_trusted_path(Path::new("/usr/bin/sha256sum"))?;
-        let output = Process::new("/usr/bin/sha256sum")
-            .arg("--")
-            .arg(&artifact.path)
-            .output()?;
-        if !output.status.success()
-            || output.stdout.get(..64) != Some(artifact.sha256.as_bytes())
+        if artifact_file_digest(File::open(&artifact.path)?)? != artifact.sha256
             || ArtifactStamp::read(artifact)? != stamp
         {
             return Err("template artifact digest mismatch or changed during verification".into());
@@ -1193,7 +1363,7 @@ impl LinuxWorker {
                 }
                 let observed = self.running(*sandbox, *vm)?;
                 let token = self.secret(*sandbox)?.token;
-                if Self::guest_file_status(&self.vm_name(*vm), &token)? != "200" {
+                if self.guest_file_status(&self.vm_name(*vm), &token)? != "200" {
                     return Err("guest authentication not observed".into());
                 }
                 ObservedResult::Activated {
@@ -1274,6 +1444,30 @@ impl LinuxWorker {
         self.last_error.as_deref()
     }
 
+    fn sync_node_record(&self, path: &Path) -> NodeResult<()> {
+        if self.config.bounded_host.is_some() {
+            node_staging::cleanup(&self.config, path)?;
+        }
+        File::open(path.parent().ok_or("node record parent")?)?.sync_all()?;
+        Ok(())
+    }
+
+    fn write_node_json<T: Serialize>(&self, path: &Path, value: &T) -> NodeResult<()> {
+        if self.config.bounded_host.is_some() {
+            node_staging::write(&self.config, path, &serde_json::to_vec(value)?, false)
+        } else {
+            write_new_json(path, value)
+        }
+    }
+
+    fn replace_node_json<T: Serialize>(&self, path: &Path, value: &T) -> NodeResult<()> {
+        if self.config.bounded_host.is_some() {
+            node_staging::write(&self.config, path, &serde_json::to_vec(value)?, true)
+        } else {
+            replace_json(path, value)
+        }
+    }
+
     fn secret_path(&self, sandbox: core::SandboxId) -> PathBuf {
         self.config
             .state_dir
@@ -1284,7 +1478,8 @@ impl LinuxWorker {
     fn secret(&self, sandbox: core::SandboxId) -> NodeResult<GuestSecret> {
         let path = self.secret_path(sandbox);
         check_trusted_path(&path)?;
-        let value: GuestSecret = serde_json::from_reader(File::open(path)?)?;
+        let value: GuestSecret = serde_json::from_reader(File::open(&path)?)?;
+        File::open(path.parent().ok_or("secret parent")?)?.sync_all()?;
         if value.token.len() < 32
             || value.sha512.len() != 128
             || hash_token(&value.token)? != value.sha512
@@ -1317,6 +1512,14 @@ impl LinuxWorker {
     }
 
     fn runtime(&self, sandbox: core::SandboxId, vm: core::VmId) -> NodeResult<Runtime> {
+        Ok(Runtime::for_existing(self.runtime_config(sandbox, vm)?)?)
+    }
+
+    fn runtime_config(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+    ) -> NodeResult<RuntimeConfig> {
         let secret = self.secret(sandbox)?;
         let id = self.vm_uid(vm)?;
         let vm_name = self.vm_name(vm);
@@ -1335,7 +1538,17 @@ impl LinuxWorker {
                 .ok_or("templates require host limits")?
                 .memory_max_bytes = template.resources.host_memory_bytes;
         }
-        Ok(Runtime::for_existing(RuntimeConfig {
+        Ok(RuntimeConfig {
+            console_policy: self
+                .config
+                .bounded_host
+                .as_ref()
+                .and_then(|config| config.console_policy)
+                .map(|policy| match policy {
+                    sandproof_controller_service::ConsolePolicy::Discard => {
+                        sandbox_runtime::ConsolePolicy::Discard
+                    }
+                }),
             jailer: self.config.jailer.clone(),
             firecracker: self.config.firecracker.clone(),
             chroot_base: self.config.chroot_base.clone(),
@@ -1348,10 +1561,20 @@ impl LinuxWorker {
             host_resources,
             private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
             access_token_hash: Some(secret.sha512),
-        })?)
+            host_slot: self
+                .physical_slot_for_vm(vm)?
+                .map(|position| self.runtime_host_slot(position, vm))
+                .transpose()?,
+        })
     }
 
     fn vm_uid(&self, vm: core::VmId) -> NodeResult<u32> {
+        if let Some(config) = &self.config.bounded_host {
+            let position = self
+                .physical_slot_for_vm(vm)?
+                .ok_or("unbound physical host slot")?;
+            return host_slots::position_uid(config, position);
+        }
         Ok(crate::identity::vm_uid(
             self.config.uid_base,
             self.config.max_vm_id,
@@ -1362,7 +1585,8 @@ impl LinuxWorker {
     fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
         let path = self.slot_path(slot);
         check_trusted_path(&path)?;
-        let value: SlotBinding = serde_json::from_reader(File::open(path)?)?;
+        let value: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
+        File::open(path.parent().ok_or("slot parent")?)?.sync_all()?;
         if value.slot != slot {
             return Err("slot mapping identity mismatch".into());
         }
@@ -1399,7 +1623,9 @@ impl LinuxWorker {
     fn fence(&self, sandbox: core::SandboxId) -> NodeResult<Fence> {
         let path = self.fence_path(sandbox);
         check_trusted_path(&path)?;
-        Ok(serde_json::from_reader(File::open(path)?)?)
+        let value = serde_json::from_reader(File::open(&path)?)?;
+        File::open(path.parent().ok_or("fence parent")?)?.sync_all()?;
+        Ok(value)
     }
 
     fn require_fence(
@@ -1417,6 +1643,7 @@ impl LinuxWorker {
 
     fn validate_action(&self, action: &WorkAction<core::EffectId>) -> NodeResult<()> {
         action.identity.validate_version()?;
+        self.require_occupied_action(action)?;
         let command = action.command.command();
         let generation = match command {
             core::Command::PrepareVm { generation, .. }
@@ -1486,11 +1713,13 @@ impl LinuxWorker {
                     if !fence_can_advance(prior, next) {
                         return Err("stale or reopened host fence".into());
                     }
-                    if prior != next {
-                        replace_json(&path, &next)?;
+                    if prior == next {
+                        self.sync_node_record(&path)?;
+                    } else {
+                        self.replace_node_json(&path, &next)?;
                     }
                 } else {
-                    write_new_json(&path, &next)?;
+                    self.write_node_json(&path, &next)?;
                 }
                 ObservedResult::Fence(self.fence(*sandbox)?)
             }
@@ -1509,7 +1738,7 @@ impl LinuxWorker {
                     self.validate_template(template)?;
                 }
                 self.vm_uid(*vm)?;
-                if slot.0 > self.config.max_vm_id {
+                if self.config.bounded_host.is_none() && slot.0 > self.config.max_vm_id {
                     return Err("node network slot exceeds allocated range".into());
                 }
                 self.require_fence(*sandbox, *epoch, false)?;
@@ -1520,7 +1749,7 @@ impl LinuxWorker {
                     vm: *vm,
                     slot: *slot,
                 };
-                write_new_json(&self.slot_path(*slot), &binding)?;
+                self.write_node_json(&self.slot_path(*slot), &binding)?;
                 let observation = self.runtime(*sandbox, *vm)?.launch(&self.vm_name(*vm))?;
                 if observation.state != VmState::VmmRunning
                     || observation.pid == 0
@@ -1671,18 +1900,21 @@ impl LinuxWorker {
                 return Err("unsupported network policy".into());
             }
         };
-        let output = Process::new("/usr/bin/ip")
-            .args([
-                "netns",
-                "exec",
-                &name,
-                "/usr/bin/ip",
-                "-4",
-                "route",
-                "show",
-                "default",
-            ])
-            .output()?;
+        let (gate, mut command) = self.namespace_command(&name)?;
+        command.args([
+            "netns",
+            "exec",
+            &name,
+            "/usr/bin/ip",
+            "-4",
+            "route",
+            "show",
+            "default",
+        ]);
+        let output = self
+            .spawn_namespace_command(&name, gate.as_ref(), &mut command)?
+            .wait_output()?;
+        Self::finish_namespace_command(gate.as_ref())?;
         if !output.status.success()
             || (matches!(policy, core::NetworkPolicy::DenyAll) && !output.stdout.is_empty())
             || (matches!(policy, core::NetworkPolicy::Ipv4 { .. }) && output.stdout.is_empty())
@@ -1717,11 +1949,7 @@ impl LinuxWorker {
             .join(self.vm_name(vm))
             .join("root/rootfs.ext4");
         let metadata = fs::symlink_metadata(&disk)?;
-        let uid = self
-            .config
-            .uid_base
-            .checked_add(u32::try_from(vm.0)?)
-            .ok_or("VM uid overflow")?;
+        let uid = self.vm_uid(vm)?;
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
             || metadata.mode() & 0o777 != 0o600
@@ -1802,6 +2030,7 @@ impl LinuxWorker {
         slot: core::NetSlotId,
     ) -> NodeResult<()> {
         let binding = self.slot(slot)?;
+        self.require_occupied_binding(&binding)?;
         if binding.sandbox != sandbox
             || binding.generation != generation
             || binding.vm != vm
@@ -1852,7 +2081,7 @@ impl LinuxWorker {
         let name = self.vm_name(vm);
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            if Self::guest_status(&name, "GET", "/health", None)? == "204" {
+            if self.guest_status(&name, "GET", "/health", None)? == "204" {
                 break;
             }
             if Instant::now() >= deadline {
@@ -1867,7 +2096,7 @@ impl LinuxWorker {
             .and_then(|value| value.startup.as_ref());
         let init = crate::startup::init_payload(&secret.token, &secret.env_vars, startup);
         let body = serde_json::to_vec(&init)?;
-        if Self::guest_status(&name, "POST", "/init", Some(&body))? != "204" {
+        if self.guest_status(&name, "POST", "/init", Some(&body))? != "204" {
             return Err("envd rejected authenticated initialization".into());
         }
         // A debug-only crash window after envd accepted the request but
@@ -1880,7 +2109,7 @@ impl LinuxWorker {
         {
             std::process::exit(88);
         }
-        if Self::guest_file_status(&name, &secret.token)? != "200" {
+        if self.guest_file_status(&name, &secret.token)? != "200" {
             return Err("envd authenticated file access not ready".into());
         }
         Ok(())
@@ -1921,6 +2150,7 @@ impl LinuxWorker {
         match fs::symlink_metadata(&path) {
             Ok(_) => {
                 check_trusted_path(&path)?;
+                self.sync_node_record(&path)?;
                 let stored: crate::startup::StartupRecord =
                     serde_json::from_reader(File::open(&path)?)?;
                 return stored.confirmed_for(&expected);
@@ -1928,7 +2158,7 @@ impl LinuxWorker {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        write_new_json(&path, &expected)?;
+        self.write_node_json(&path, &expected)?;
         let pid = self.dispatch_startup(&self.vm_name(vm), &secret.token, startup)?;
         #[cfg(debug_assertions)]
         if std::env::var("SANDPROOF_TEST_EXIT_AFTER_TEMPLATE_START")
@@ -1939,7 +2169,7 @@ impl LinuxWorker {
             std::process::exit(88);
         }
         expected.guest_pid = Some(pid);
-        replace_json(&path, &expected)
+        self.replace_node_json(&path, &expected)
     }
 
     fn dispatch_startup(
@@ -1949,13 +2179,30 @@ impl LinuxWorker {
         startup: &sandproof_controller_service::templates::TemplateStartup,
     ) -> NodeResult<u32> {
         // Neither the credential nor tenant argv enters host process argv.
-        // The root-only request body is removed by RAII on every normal exit.
-        let mut body = tempfile::NamedTempFile::new_in(self.config.state_dir.join("startup"))?;
-        body.as_file()
-            .set_permissions(fs::Permissions::from_mode(0o600))?;
-        body.write_all(&crate::startup::start_request(startup)?)?;
-        body.flush()?;
-        let mut child = Process::new("/usr/bin/ip")
+        // Bounded bodies are retired by the exact per-incarnation manifest;
+        // legacy request bodies retain their original RAII lifetime.
+        let payload = crate::startup::start_request(startup)?;
+        let durable_path = self
+            .config
+            .state_dir
+            .join("startup")
+            .join(format!("{name}.request"));
+        let temporary = if self.config.bounded_host.is_some() {
+            node_staging::write(&self.config, &durable_path, &payload, false)?;
+            None
+        } else {
+            let mut body = tempfile::NamedTempFile::new_in(self.config.state_dir.join("startup"))?;
+            body.as_file()
+                .set_permissions(fs::Permissions::from_mode(0o600))?;
+            body.write_all(&payload)?;
+            body.flush()?;
+            Some(body)
+        };
+        let body_path = temporary
+            .as_ref()
+            .map_or(durable_path.as_path(), |body| body.path());
+        let (gate, mut command) = self.namespace_command(name)?;
+        command
             .args([
                 "netns",
                 "exec",
@@ -1975,12 +2222,11 @@ impl LinuxWorker {
                 "Connect-Protocol-Version: 1",
                 "--data-binary",
             ])
-            .arg(format!("@{}", body.path().display()))
+            .arg(format!("@{}", body_path.display()))
             .arg(format!("{ENVD_URL}/process.Process/Start"))
             .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stdout(Stdio::piped());
+        let mut child = self.spawn_namespace_command(name, gate.as_ref(), &mut command)?;
         let result = (|| {
             child
                 .stdin
@@ -1991,18 +2237,90 @@ impl LinuxWorker {
         })();
         // envd deliberately detaches child lifetime from the HTTP stream.
         // Close the observation stream; never send a guest termination here.
+        // Tracked launch execs curl in the recorded SAME PID; stopping this
+        // exact child cannot orphan a supervisor's separate descendant.
         let _ = child.kill();
         child.wait()?;
+        Self::finish_namespace_command(gate.as_ref())?;
         result
     }
 
+    fn namespace_command(
+        &self,
+        name: &str,
+    ) -> NodeResult<(Option<sandbox_runtime::RuntimeHelperGuard>, Process)> {
+        let guard = if self.config.bounded_host.is_some() {
+            let number = name
+                .strip_prefix(&format!("vm-{}-", self.config.namespace))
+                .ok_or("namespace helper identity")?
+                .parse::<u64>()?;
+            let vm = core::VmId(number);
+            if self.vm_name(vm) != name {
+                return Err("namespace helper identity not canonical".into());
+            }
+            let position = self
+                .physical_slot_for_vm(vm)?
+                .ok_or("namespace helper lacks physical binding")?;
+            let context = self.runtime_host_slot(position, vm)?;
+            Some(context.helper_gate.try_acquire_shared(Some(&context))?)
+        } else {
+            None
+        };
+        let mut command = Process::new("/usr/bin/ip");
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        Ok((guard, command))
+    }
+
+    fn spawn_namespace_command(
+        &self,
+        name: &str,
+        guard: Option<&sandbox_runtime::RuntimeHelperGuard>,
+        command: &mut Process,
+    ) -> NodeResult<child_process::OwnedChild> {
+        if let Some(guard) = guard {
+            let vm = core::VmId(
+                name.strip_prefix(&format!("vm-{}-", self.config.namespace))
+                    .ok_or("namespace helper identity")?
+                    .parse::<u64>()?,
+            );
+            let position = self
+                .physical_slot_for_vm(vm)?
+                .ok_or("namespace helper binding missing")?;
+            let context = self.runtime_host_slot(position, vm)?;
+            let args = command
+                .get_args()
+                .map(|arg| arg.to_str().ok_or("non-UTF8 namespace helper argument"))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(child_process::OwnedChild(guard.spawn_tracked(
+                &context,
+                "/usr/bin/ip",
+                &args,
+            )?))
+        } else {
+            Ok(child_process::OwnedChild(command.spawn()?))
+        }
+    }
+
+    fn finish_namespace_command(
+        guard: Option<&sandbox_runtime::RuntimeHelperGuard>,
+    ) -> NodeResult<()> {
+        if let Some(guard) = guard {
+            guard.finish_tracked()?;
+        }
+        Ok(())
+    }
+
     fn guest_status(
+        &self,
         name: &str,
         method: &str,
         path: &str,
         input: Option<&[u8]>,
     ) -> NodeResult<String> {
-        let mut command = Process::new("/usr/bin/ip");
+        let (gate, mut command) = self.namespace_command(name)?;
         command.args([
             "netns",
             "exec",
@@ -2030,11 +2348,8 @@ impl LinuxWorker {
             ]);
         }
         command.arg(format!("{ENVD_URL}{path}"));
-        command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        let mut child = command.spawn()?;
+        command.stdin(Stdio::piped()).stdout(Stdio::piped());
+        let mut child = self.spawn_namespace_command(name, gate.as_ref(), &mut command)?;
         if let Some(input) = input {
             child
                 .stdin
@@ -2042,15 +2357,17 @@ impl LinuxWorker {
                 .ok_or("curl stdin unavailable")?
                 .write_all(input)?;
         }
-        let output = child.wait_with_output()?;
+        let output = child.wait_output()?;
+        Self::finish_namespace_command(gate.as_ref())?;
         if !output.status.success() {
             return Ok(String::new());
         }
         Ok(String::from_utf8(output.stdout)?.trim().to_owned())
     }
 
-    fn guest_file_status(name: &str, token: &str) -> NodeResult<String> {
-        let mut child = Process::new("/usr/bin/ip")
+    fn guest_file_status(&self, name: &str, token: &str) -> NodeResult<String> {
+        let (gate, mut command) = self.namespace_command(name)?;
+        command
             .args([
                 "netns",
                 "exec",
@@ -2070,9 +2387,8 @@ impl LinuxWorker {
                 "-",
             ])
             .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stdout(Stdio::piped());
+        let mut child = self.spawn_namespace_command(name, gate.as_ref(), &mut command)?;
         let config = format!(
             "url = \"{ENVD_URL}/files?path=%2Fetc%2Fpasswd\"\nheader = \"X-Access-Token: {token}\"\n"
         );
@@ -2081,11 +2397,20 @@ impl LinuxWorker {
             .take()
             .ok_or("curl stdin unavailable")?
             .write_all(config.as_bytes())?;
-        let output = child.wait_with_output()?;
+        let output = child.wait_output()?;
+        Self::finish_namespace_command(gate.as_ref())?;
         if !output.status.success() {
             return Err("envd file observation failed".into());
         }
         Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+    }
+}
+
+fn helper_observation_pending(result: Result<(), RuntimeError>) -> NodeResult<bool> {
+    match result {
+        Ok(()) => Ok(false),
+        Err(RuntimeError::InvalidConfiguration(_)) => Ok(true),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -2098,17 +2423,18 @@ fn require_absent(path: &Path) -> NodeResult<()> {
 }
 
 fn hash_token(token: &str) -> NodeResult<String> {
-    let mut child = Process::new("/usr/bin/sha512sum")
+    let child = Process::new("/usr/bin/sha512sum")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
+    let mut child = child_process::OwnedChild(child);
     child
         .stdin
         .take()
         .ok_or("sha512 stdin unavailable")?
         .write_all(token.as_bytes())?;
-    let output = child.wait_with_output()?;
+    let output = child.wait_output()?;
     if !output.status.success() {
         return Err("sha512 computation failed".into());
     }
@@ -2151,7 +2477,163 @@ fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Fence, fence_can_advance, require_absent, write_new_json};
+    use super::{
+        Fence, NodeResult, RuntimeError, artifact_digest, artifact_file_digest,
+        artifact_file_digest_with, fence_can_advance, helper_observation_pending, require_absent,
+        write_new_json,
+    };
+    use std::io::{Cursor, Error, ErrorKind, Read, Seek, SeekFrom, Write};
+
+    #[test]
+    fn artifact_digest_includes_sparse_holes_cross_buffer_data_and_trailing_bytes() {
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(b"prefix").unwrap();
+        file.seek(SeekFrom::Start(128 * 1024 - 1)).unwrap();
+        file.write_all(b"edge").unwrap();
+        file.set_len(192 * 1024 + 7).unwrap();
+        file.rewind().unwrap();
+        let expected = "f7c9f35110eefc8d8c8ded4d76ac5ffc1fbcf5849e0dc96549302f774f0a7b56";
+        assert_eq!(artifact_digest(&mut file).unwrap(), expected);
+        assert_eq!(
+            artifact_file_digest(file.try_clone().unwrap()).unwrap(),
+            expected
+        );
+        let mut dense = vec![0_u8; 192 * 1024 + 7];
+        dense[..6].copy_from_slice(b"prefix");
+        dense[128 * 1024 - 1..128 * 1024 + 3].copy_from_slice(b"edge");
+        assert_eq!(artifact_digest(Cursor::new(dense)).unwrap(), expected);
+        file.seek(SeekFrom::End(-1)).unwrap();
+        file.write_all(b"x").unwrap();
+        file.rewind().unwrap();
+        assert_ne!(artifact_digest(file).unwrap(), expected);
+    }
+
+    #[test]
+    fn file_digest_handles_empty_all_hole_and_dense_zero_files() {
+        for (length, dense) in [(0, false), (1, false), (131_079, false), (131_079, true)] {
+            let mut file = tempfile::tempfile().unwrap();
+            let bytes = vec![0; length];
+            if dense {
+                file.write_all(&bytes).unwrap();
+            } else {
+                file.set_len(length as u64).unwrap();
+            }
+            assert_eq!(
+                artifact_file_digest(file).unwrap(),
+                artifact_digest(Cursor::new(bytes)).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_extent_queries_restart_hash_even_after_data_was_read() {
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(b"first").unwrap();
+        file.seek(SeekFrom::Start(128 * 1024 + 3)).unwrap();
+        file.write_all(b"last").unwrap();
+        file.set_len(256 * 1024 + 7).unwrap();
+        file.rewind().unwrap();
+        let expected = artifact_digest(&mut file).unwrap();
+        for fail_on in [1, 2, 3] {
+            let mut queries = 0;
+            let result = artifact_file_digest_with(file.try_clone().unwrap(), |input, from| {
+                queries += 1;
+                if queries == fail_on {
+                    Err(rustix::io::Errno::INVAL)
+                } else {
+                    rustix::fs::seek(input, from)
+                }
+            })
+            .unwrap();
+            assert_eq!(queries, fail_on);
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn invalid_extents_and_real_seek_errors_do_not_produce_a_digest() {
+        use rustix::io::Errno;
+        for replies in [
+            vec![Ok(8)],
+            vec![Ok(0), Ok(0)],
+            vec![Ok(0), Ok(1), Ok(0)],
+            vec![Err(Errno::IO)],
+            vec![Ok(0), Err(Errno::IO)],
+        ] {
+            let mut file = tempfile::tempfile().unwrap();
+            file.write_all(b"12345678").unwrap();
+            let mut replies = replies.into_iter();
+            assert!(artifact_file_digest_with(file, |_, _| replies.next().unwrap()).is_err());
+            assert!(replies.next().is_none());
+        }
+    }
+
+    #[test]
+    fn file_digest_rejects_truncation_and_growth_during_extent_queries() {
+        for truncate in [false, true] {
+            let mut file = tempfile::tempfile().unwrap();
+            file.write_all(b"12345678").unwrap();
+            let result = artifact_file_digest_with(file, |input, from| {
+                let value = rustix::fs::seek(input, from)?;
+                if matches!(from, rustix::fs::SeekFrom::Hole(_)) {
+                    input.set_len(if truncate { 2 } else { 9 }).unwrap();
+                }
+                Ok(value)
+            });
+            let error = result.unwrap_err();
+            if truncate {
+                assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+            } else {
+                assert!(error.to_string().contains("size changed"));
+            }
+        }
+    }
+
+    struct InterruptedReader {
+        bytes: Cursor<Vec<u8>>,
+        next_interrupt: bool,
+        fail_at_end: bool,
+    }
+
+    impl Read for InterruptedReader {
+        fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+            self.next_interrupt = !self.next_interrupt;
+            if self.next_interrupt {
+                return Err(ErrorKind::Interrupted.into());
+            }
+            if self.bytes.position() == self.bytes.get_ref().len() as u64 && self.fail_at_end {
+                return Err(Error::from(ErrorKind::PermissionDenied));
+            }
+            let limit = output.len().min(1);
+            self.bytes.read(&mut output[..limit])
+        }
+    }
+
+    #[test]
+    fn artifact_digest_retries_interrupted_short_reads_without_losing_bytes() {
+        let input = InterruptedReader {
+            bytes: Cursor::new(b"abc".to_vec()),
+            next_interrupt: false,
+            fail_at_end: false,
+        };
+        assert_eq!(
+            artifact_digest(input).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn artifact_digest_never_accepts_a_prefix_when_a_read_fails() {
+        let input = InterruptedReader {
+            bytes: Cursor::new(b"abc".to_vec()),
+            next_interrupt: false,
+            fail_at_end: true,
+        };
+        assert_eq!(
+            artifact_digest(input).unwrap_err().kind(),
+            ErrorKind::PermissionDenied
+        );
+    }
 
     #[test]
     fn fence_may_close_in_same_epoch_but_never_reopen_or_go_back() {
@@ -2198,6 +2680,34 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(),
             first
+        );
+    }
+    #[test]
+    fn known_live_helper_parks_only_its_slot_but_corruption_rejects_inventory() {
+        let observations = [
+            Ok(()),
+            Err(RuntimeError::InvalidConfiguration(
+                "previous tracked helper is still alive",
+            )),
+            Ok(()),
+        ];
+        let pending = observations
+            .into_iter()
+            .map(helper_observation_pending)
+            .collect::<NodeResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(pending, vec![false, true, false]);
+        let corrupt = [
+            Ok(()),
+            Err(RuntimeError::IdentityMismatch("tracked helper context")),
+            Ok(()),
+        ];
+        assert!(
+            corrupt
+                .into_iter()
+                .map(helper_observation_pending)
+                .collect::<NodeResult<Vec<_>>>()
+                .is_err()
         );
     }
 }

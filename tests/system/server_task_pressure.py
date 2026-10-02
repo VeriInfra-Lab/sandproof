@@ -6,6 +6,14 @@ These observations are not a production memory cap or a final deployment budget.
 Failure retains exact artifacts; only known SDK identities are killed.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import http.client
@@ -257,7 +265,8 @@ async def exercise(args):
             results.append({'sdk': cls.__name__, **await pressure(cohort, url, budgets['data_transfer'], observe)})
             assert [await live_shape(root, args, sandbox) for sandbox in cohort] == monitor.live
             for sandbox in cohort:
-                assert await call(sandbox.kill)
+                _kill_confirmed = (await call(sandbox.kill))
+                assert _kill_confirmed
                 known.remove(sandbox)
             audit_gone(root, args, monitor.live)
             monitor.live = []
@@ -309,7 +318,8 @@ async def exercise(args):
             # recovery by the operator. Never blindly create a replacement.
             for sandbox in known:
                 try:
-                    assert await call(sandbox.kill)
+                    _kill_confirmed = (await call(sandbox.kill))
+                    assert _kill_confirmed
                 except Exception as error:
                     cleanup_errors.append(error)
         finally:

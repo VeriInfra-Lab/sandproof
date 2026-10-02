@@ -26,16 +26,18 @@ use sandproof_api::{
     managed::{DataKind, ManagedPort},
 };
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf},
+    io::{AsyncRead, AsyncWrite, ReadBuf},
     process::{ChildStdin, ChildStdout, Command},
 };
 
 use crate::linux::NodeHost;
 
 mod admission;
+mod drain;
 mod idle;
 mod limits;
 mod revocation;
+mod tunnel;
 mod upload;
 pub(crate) use admission::Gateway;
 use admission::{LeasedBody, control_request};
@@ -186,20 +188,22 @@ pub async fn handle(
         Ok(token) => token,
         Err(status) => return response(status),
     };
-    let mut permit = match tokio::task::spawn_blocking(move || port.data_permit(&token, kind)).await
-    {
-        Ok(Ok(value)) => value,
-        Ok(Err(PortError::NotFound | PortError::Invalid)) => {
-            return response(StatusCode::UNAUTHORIZED);
-        }
-        Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
-    };
+    let authorization_port = Arc::clone(&port);
+    let mut permit =
+        match tokio::task::spawn_blocking(move || authorization_port.data_permit(&token, kind))
+            .await
+        {
+            Ok(Ok(value)) => value,
+            Ok(Err(PortError::NotFound | PortError::Invalid)) => {
+                return response(StatusCode::UNAUTHORIZED);
+            }
+            Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
+        };
     let destination = permit.target;
+    let control = control_request(&request);
     let lease = match &gateway {
-        Some(gateway) => match gateway.acquire(
-            (destination.vm.0, destination.generation),
-            control_request(&request),
-        ) {
+        Some(gateway) => match gateway.acquire((destination.vm.0, destination.generation), control)
+        {
             Ok(lease) => Some(lease),
             Err(status) => return response(status),
         },
@@ -217,13 +221,17 @@ pub async fn handle(
         None => return response(StatusCode::UNAUTHORIZED),
     };
     let namespace_name = format!("vm-{namespace}-{}", destination.vm.0);
-    let Ok(mut child) = spawn_relay(&namespace_name) else {
+    let (returned_permit, mut child) =
+        match launch_data_route(Arc::clone(&port), permit, namespace_name, control).await {
+            Ok(value) => value,
+            Err(status) => return response(status),
+        };
+    permit = returned_permit;
+    let mut relay_exit = drain::RelayExit::new(permit.drain.clone());
+    let Ok((read, write)) = child.take_pipes() else {
         return response(StatusCode::BAD_GATEWAY);
     };
-    let tunnel = StdioTunnel {
-        read: child.stdout.take().expect("piped stdout"),
-        write: child.stdin.take().expect("piped stdin"),
-    };
+    let tunnel = StdioTunnel { read, write };
     let tunnel = WriteIdle::new(
         tunnel,
         limits.map(|limits| Duration::from_secs(limits.write_idle_seconds)),
@@ -238,7 +246,7 @@ pub async fn handle(
     )
     .await;
     let Some(Ok((mut sender, connection))) = handshake else {
-        let _ = child.kill().await;
+        relay_exit.stop(&mut child).await;
         return response(if handshake.is_none() {
             StatusCode::UNAUTHORIZED
         } else {
@@ -249,7 +257,7 @@ pub async fn handle(
     let mut connection_revocation = permit.revocation.clone();
     tokio::spawn(async move {
         let _ = until_revoked(&mut connection_revocation, connection).await;
-        let _ = child.kill().await;
+        relay_exit.stop(&mut child).await;
         drop(connection_lease);
     });
     let response = until_revoked(
@@ -258,10 +266,35 @@ pub async fn handle(
     )
     .await
     .unwrap_or_else(|| response(StatusCode::UNAUTHORIZED));
+    let response = drain::DrainBody::wrap(response, permit.drain);
     match lease {
         Some(lease) => LeasedBody::wrap(response, lease),
         None => response,
     }
+}
+
+async fn launch_data_route<H: sandproof_api::managed::HostAdapter>(
+    port: Arc<ManagedPort<H>>,
+    permit: sandproof_api::managed::DataPermit,
+    namespace: String,
+    control: bool,
+) -> Result<(sandproof_api::managed::DataPermit, drain::RelayProcess), StatusCode> {
+    let (permit, launched) = tokio::task::spawn_blocking(move || {
+        let result = port.spawn_data_relay(&permit, control);
+        (permit, result)
+    })
+    .await
+    .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let child = match launched {
+        Ok(Some(child)) => drain::RelayProcess::Tracked(Some(child)),
+        Ok(None) => drain::RelayProcess::Legacy(
+            spawn_relay(&namespace).map_err(|_| StatusCode::BAD_GATEWAY)?,
+        ),
+        Err(PortError::NotFound | PortError::Invalid) => return Err(StatusCode::UNAUTHORIZED),
+        Err(PortError::QuotaExceeded) => return Err(StatusCode::TOO_MANY_REQUESTS),
+        Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE),
+    };
+    Ok((permit, child))
 }
 
 // Shared by the authenticated production path and transport regression tests.
@@ -463,22 +496,17 @@ async fn forward_request(
 ///
 /// # Errors
 /// Fails when envd is unreachable or the caller disconnects.
-pub async fn relay() -> Result<(), Box<dyn Error>> {
+pub async fn relay(bounded: bool) -> Result<(), Box<dyn Error>> {
     let stream = tokio::net::TcpStream::connect(ENVD_ADDRESS).await?;
-    let (mut reader, mut writer) = stream.into_split();
-    let mut input = tokio::io::stdin();
-    let mut output = tokio::io::stdout();
-    let upstream = async {
-        tokio::io::copy(&mut input, &mut writer).await?;
-        writer.shutdown().await?;
-        Ok::<(), io::Error>(())
-    };
-    let downstream = async {
-        tokio::io::copy(&mut reader, &mut output).await?;
-        output.flush().await?;
-        Ok::<(), io::Error>(())
-    };
-    tokio::try_join!(upstream, downstream)?;
+    let (reader, writer) = stream.into_split();
+    tunnel::relay(
+        bounded,
+        tokio::io::stdin(),
+        tokio::io::stdout(),
+        reader,
+        writer,
+    )
+    .await?;
     Ok(())
 }
 

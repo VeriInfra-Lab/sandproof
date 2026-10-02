@@ -27,8 +27,16 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+#[path = "managed_port/allocators.rs"]
+mod allocators;
+#[path = "managed_port/bounded_slots.rs"]
+mod bounded_slots;
 #[path = "managed_port/build_vm.rs"]
 mod build_vm;
+#[path = "managed_port/committed_world.rs"]
+mod committed_world;
+#[path = "managed_port/history_capacity.rs"]
+mod history_capacity;
 #[cfg(unix)]
 #[path = "managed_port/publication.rs"]
 mod publication;
@@ -143,6 +151,7 @@ struct FakeHost {
     abort_calls: Option<Arc<AtomicUsize>>,
     abort_receipt: AbortReceipt,
     stop_gate: Option<Arc<ActionGate>>,
+    history_stop_gate: Option<(core::SandboxId, Arc<history_capacity::HostGate>)>,
     prepare_gate: Option<Arc<ActionGate>>,
 }
 
@@ -174,6 +183,7 @@ impl Default for FakeHost {
             abort_calls: None,
             abort_receipt: AbortReceipt::Normal,
             stop_gate: None,
+            history_stop_gate: None,
             prepare_gate: None,
         }
     }
@@ -377,6 +387,11 @@ impl HostAdapter for FakeHost {
                 calls.fetch_add(1, Ordering::SeqCst);
             }
             if let Some(gate) = &self.stop_gate {
+                gate.block();
+            }
+            if let Some((sandbox, gate)) = &self.history_stop_gate
+                && *sandbox == action.command.command().sandbox()
+            {
                 gate.block();
             }
         }

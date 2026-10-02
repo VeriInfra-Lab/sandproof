@@ -1,11 +1,13 @@
 import copy
+import errno
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from tools.template_stage import file_hash, stage
+from tools.template_stage import copy_sparse, file_hash, stage
 
 
 class StagingTests(unittest.TestCase):
@@ -79,6 +81,43 @@ class StagingTests(unittest.TestCase):
         source.symlink_to(self.disk)
         with self.assertRaises(ValueError):
             stage(self.root, self.kernel, source, self.status, 1, 1, 256, 384)
+
+    def test_corrupted_copy_is_rejected_before_manifest_and_can_retry_same_identity(self):
+        candidate = 'b' * 32
+        arguments = (self.root, self.kernel, self.disk, self.status, 1, 1, 256, 384)
+        def corrupt_copy(source, target):
+            copy_sparse(source, target)
+            if source == self.disk:
+                with target.open('r+b') as output:
+                    output.write(b'!')
+        with patch('tools.template_stage.copy_sparse', corrupt_copy):
+            with self.assertRaisesRegex(ValueError, 'changed during staging'):
+                stage(*arguments, candidate_id=candidate)
+        self.assertEqual(list((self.root / 'inbox').iterdir()), [])
+        self.assertEqual(self.disk.read_bytes(), b'candidate disk')
+        self.assertEqual(stage(*arguments, candidate_id=candidate), candidate)
+
+    def test_io_failure_cleans_partial_without_removing_another_candidate(self):
+        existing = stage(self.root, self.kernel, self.disk, self.status, 1, 1, 256, 384)
+        def interrupted_copy(source, target):
+            target.write_bytes(b'partial')
+            raise OSError(errno.EIO, 'injected disk error')
+        with patch('tools.template_stage.copy_sparse', interrupted_copy):
+            with self.assertRaises(OSError):
+                stage(self.root, self.kernel, self.disk, self.status, 1, 1, 256, 384,
+                      candidate_id='c' * 32)
+        self.assertEqual([p.name for p in (self.root / 'inbox').iterdir()], [existing])
+        self.assertEqual(self.disk.read_bytes(), b'candidate disk')
+
+    def test_changed_source_is_rejected_for_new_and_repeated_candidate(self):
+        candidate = 'd' * 32
+        arguments = (self.root, self.kernel, self.disk, self.status, 1, 1, 256, 384)
+        stage(*arguments, candidate_id=candidate)
+        self.disk.write_bytes(b'changed source')
+        for identity in (candidate, 'e' * 32):
+            with self.subTest(identity=identity), self.assertRaises(ValueError):
+                stage(*arguments, candidate_id=identity)
+        self.assertEqual([p.name for p in (self.root / 'inbox').iterdir()], [candidate])
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncBufReadExt, BufReader, DuplexStream},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream},
     sync::oneshot,
     time::timeout,
 };

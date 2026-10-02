@@ -3,6 +3,7 @@
 No registry protocol, credentials, Dockerfile evaluation, or host unpacking is
 implemented here. The caller owns the disposable VM and its public IPv4 policy.
 """
+import json
 import os
 import re
 import selectors
@@ -11,9 +12,9 @@ import subprocess
 import time
 
 if __package__:
-    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, inspect_oci, blob, sha256
+    from .template_inputs import InvalidTemplate, LayerChecks, bounded_json, extract_archive, inspect_oci, blob, sha256
 else:
-    from template_inputs import InvalidTemplate, bounded_json, extract_archive, inspect_oci, blob, sha256
+    from template_inputs import InvalidTemplate, LayerChecks, bounded_json, extract_archive, inspect_oci, blob, sha256
 
 REGCTL_VERSION = "v0.11.6"
 REGCTL_SHA256 = "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
@@ -45,6 +46,17 @@ def reference(value):
             or labels[-1] in ("localhost", "local", "internal", "invalid", "test", "onion", "lan", "home")):
         raise InvalidTemplate("public DNS registry required")
     return host + "/" + repo, suffix[1:] if suffix else "latest"
+
+
+def mirror_registry(value):
+    """Trusted deployment hostname only; not a client-selected URL or credential."""
+    if (not isinstance(value, str) or len(value) > 253
+            or not re.fullmatch(r"[a-z0-9.-]+", value)):
+        raise InvalidTemplate("public mirror hostname required")
+    repository, _ = reference(value + "/library/probe:latest")
+    if repository != value + "/library/probe":
+        raise InvalidTemplate("public mirror hostname required")
+    return value
 
 
 def select_manifest(document, digest):
@@ -131,11 +143,22 @@ def capture(args, output, limit, commands):
 
 
 def fetch(source, work, layout, request, tool, commands):
+    """Return provenance and the fully inspected, private layout for immediate unpacking.
+
+    Inspection is local to this acquisition: it is not a cache reusable after
+    changing the layout or across jobs. Source Docker bytes are checked before
+    conversion, and the final OCI bytes are checked before returning.
+    """
     document = bounded_json(source, 4096)
     if not isinstance(document, dict) or set(document) != {"image"}:
         raise InvalidTemplate("expected a public image reference document")
     repository, identifier = reference(document["image"])
-    canonical = repository + ("@" if identifier.startswith("sha256:") else ":") + identifier
+    transport_repository = repository
+    if "docker_hub_mirror" in request:
+        mirror = mirror_registry(request["docker_hub_mirror"])
+        if repository.startswith("docker.io/"):
+            transport_repository = mirror + repository.removeprefix("docker.io")
+    canonical = transport_repository + ("@" if identifier.startswith("sha256:") else ":") + identifier
     if sha256(tool) != REGCTL_SHA256:
         raise InvalidTemplate("fixed regctl fingerprint required")
     manifest_path = work / "source-manifest.json"
@@ -148,7 +171,7 @@ def fetch(source, work, layout, request, tool, commands):
     # the selected digest, so a tag update cannot mix two image revisions.
     selected = select_manifest(bounded_json(manifest_path), digest)
     archive = work / "download.tar"
-    archive_bytes = capture([str(tool), "image", "export", repository + "@" + selected],
+    archive_bytes = capture([str(tool), "image", "export", transport_repository + "@" + selected],
                             archive, request["max_input_bytes"] - metadata_bytes, commands)
     extract_archive(archive, layout, max_bytes=request["max_input_bytes"], max_entries=request["max_entries"])
     index = bounded_json(layout / "index.json")
@@ -157,23 +180,33 @@ def fetch(source, work, layout, request, tool, commands):
             or items[0].get("digest") != selected or items[0].get("mediaType") not in (OCI_MANIFEST, DOCKER_MANIFEST)):
         raise InvalidTemplate("downloaded manifest does not match selected digest")
     converted = None
+    original = None
+    limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
     if items[0]["mediaType"] == DOCKER_MANIFEST:
+        limits["layer_checks"] = LayerChecks(layout)
         # Validate the original bytes before the trusted converter sees them.
         # Conversion is local-only and must preserve config/layer bytes exactly.
-        limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
         inspect_oci(layout, **limits, allow_docker=True)
         original = payload_identity(layout, request["max_input_bytes"])
-        raw = work / "source-oci"
-        layout.rename(raw)
-        archive.unlink()  # two layout copies replace tar+layout in disk budget
-        commands.run([str(tool), "image", "mod", "ocidir://" + str(raw) + "@" + selected,
-                      "--to-oci", "--create", "ocidir://" + str(layout) + ":candidate"])
-        normalized = inspect_oci(layout, **limits)
+        # This private index has exactly the selected, verified descriptor.
+        # A local tag lets regctl replace it without copying every payload blob
+        # into a second layout or leaving two manifests in the output index.
+        items[0]["annotations"] = {"org.opencontainers.image.ref.name": "candidate"}
+        (layout / "index.json").write_text(json.dumps(index))
+        archive.unlink()
+        commands.run([str(tool), "image", "mod", "ocidir://" + str(layout) + ":candidate",
+                      "--to-oci", "--replace"])
+    # Every public input, including native OCI, is fully inspected here. The
+    # worker consumes this result immediately instead of decompressing the same
+    # unchanged layout again before unpacking.
+    normalized = inspect_oci(layout, **limits)
+    if original is not None:
         if payload_identity(layout, request["max_input_bytes"]) != original:
             raise InvalidTemplate("OCI conversion changed image config or layers")
         converted = normalized["image_digest"]
-    # inspect_oci rehashes every manifest/config/layer and checks diff_ids,
-    # architecture, expanded bytes and entries before any umoci unpacking.
+    # Rehash every current manifest/config/layer. Only identical layer bytes,
+    # encoding and diff_id reuse the earlier full tar/gzip check; cumulative
+    # expanded bytes and entries are charged again before umoci unpacking.
     result = {"reference": document["image"], "source_digest": digest,
             "selected_digest": selected, "platform": "linux/amd64",
             "download_bytes": metadata_bytes + archive_bytes, "regctl_version": REGCTL_VERSION,
@@ -181,7 +214,9 @@ def fetch(source, work, layout, request, tool, commands):
     if converted is not None:
         result["converted_digest"] = converted
         result["conversion"] = "docker-schema2-to-oci"
-    return result
+    if transport_repository != repository:
+        result["transport_registry"] = transport_repository.split("/", 1)[0]
+    return result, normalized
 
 
 def payload_identity(layout, maximum):

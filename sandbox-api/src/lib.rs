@@ -9,7 +9,9 @@ mod list;
 pub mod managed;
 mod network;
 mod template_api;
-pub use build_vm_api::{BuildVmRequest, BuildVmView};
+pub use build_vm_api::{
+    BuildSettlementRequest, BuildSettlementView, BuildVmRequest, BuildVmView, BuildWindowClosed,
+};
 pub use list::{ListOrder, ListQuery};
 pub use sandproof_controller_service::template_registry::{
     PublicationView, TemplatePage, TemplateView,
@@ -197,6 +199,48 @@ pub trait ControllerPort: Send + Sync + 'static {
         _id: &str,
         _create: Option<BuildVmRequest>,
     ) -> Result<BuildVmView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// Exact private retry tuple lookup, including accepted closed windows.
+    /// # Errors
+    /// Unknown identities are not proof that delayed admission is impossible.
+    fn build_vm_in_window(
+        &self,
+        tenant: &str,
+        id: &str,
+        window: Option<&str>,
+        create: Option<BuildVmRequest>,
+    ) -> Result<BuildVmView, PortError> {
+        if window.is_some() {
+            return Err(PortError::NotFound);
+        }
+        self.build_vm(tenant, id, create)
+    }
+    /// # Errors
+    /// Requires explicitly configured private retry windows.
+    fn issue_build_window(
+        &self,
+        _tenant: &str,
+    ) -> Result<sandproof_controller_service::BuildWindow, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Unknown commits do not establish an admission fence.
+    fn close_build_window(
+        &self,
+        _tenant: &str,
+        _window: &str,
+    ) -> Result<BuildWindowClosed, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Exact closed admission and core cleanup are required before releasing anchors.
+    fn settle_build_vm(
+        &self,
+        _tenant: &str,
+        _id: &str,
+        _request: BuildSettlementRequest,
+    ) -> Result<BuildSettlementView, PortError> {
         Err(PortError::NotFound)
     }
     /// # Errors

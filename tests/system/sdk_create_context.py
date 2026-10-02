@@ -6,6 +6,14 @@ verify both VM PID/start identities, then create done. Final host audit must
 find exactly four admitted sandboxes: rejected requests must add no records.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata

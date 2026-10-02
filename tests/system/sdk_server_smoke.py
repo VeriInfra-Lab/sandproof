@@ -4,6 +4,14 @@ Requires an isolated Linux/KVM server. Never points at the public E2B cloud.
 Secrets come from the caller's environment and are never printed.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import importlib.metadata
 import json
@@ -50,7 +58,8 @@ def exercise(args: argparse.Namespace) -> None:
                 pass
             else:
                 raise AssertionError("foreign tenant connected to owner's sandbox")
-            assert Sandbox.kill(ident, **foreign) is False
+            _kill_confirmed = (Sandbox.kill(ident, **foreign) is False)
+            assert _kill_confirmed
             assert Sandbox.list(**foreign).next_items() == []
 
         assert sandbox.commands.run("printf controller-ok").stdout == "controller-ok"
@@ -66,7 +75,8 @@ def exercise(args: argparse.Namespace) -> None:
         handle.disconnect()
         assert sandbox.commands.connect(process_id).wait().stdout == "reconnect-ok"
         handle = sandbox.commands.run("sleep 30", background=True)
-        assert handle.kill() is True
+        _kill_confirmed = (handle.kill() is True)
+        assert _kill_confirmed
         large = sandbox.commands.run("head -c 1048576 /dev/zero | tr '\\000' Z").stdout
         assert len(large) == 1_048_576 and large.startswith("Z")
 
@@ -92,7 +102,8 @@ def exercise(args: argparse.Namespace) -> None:
         assert sandbox.commands.run("printf after-rejection").stdout == "after-rejection"
     finally:
         if sandbox is not None:
-            assert Sandbox.kill(sandbox.sandbox_id, **owner)
+            _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **owner))
+            assert _kill_confirmed
             with httpx.Client(base_url=args.sandbox_url, trust_env=False, timeout=10) as client:
                 assert client.get("/health", headers={"X-Access-Token": sandbox._envd_access_token}).status_code == 401
 

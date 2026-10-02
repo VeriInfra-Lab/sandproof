@@ -5,6 +5,14 @@ tenant two). All data_transfer values stay identical to the serial task file.
 Run both original SDK clients; stdin readiness is the admission barrier.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import asyncio
 import hashlib
 import shlex
@@ -51,7 +59,8 @@ async def admission(sandboxes, url, limits, observe):
         await start_input(sandboxes[2], directory + '/refill', tracked)
         await limited(sandboxes[2].files.read, directory + '/other-tenant')
         victim = tracked[per_vm]
-        assert await call(victim['handle'].kill)
+        _kill_confirmed = (await call(victim['handle'].kill))
+        assert _kill_confirmed
         try:
             await call(victim['handle'].wait)
         except CommandExitException as error:

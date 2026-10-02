@@ -5,6 +5,14 @@ Run against an isolated service with two test tenants. A supervisor may watch
 The supervisor must audit exact live identities and resources independently.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata
@@ -80,7 +88,8 @@ async def exercise_client(cls, args):
                     after = await verify()
                     assert after == before, 'service restart changed instance details or credentials'
                     rows.append({'case':'same_details_after_service_restart'})
-                assert await call(sandbox.kill)
+                _kill_confirmed = (await call(sandbox.kill))
+                assert _kill_confirmed
                 try:
                     await call(cls.get_info, sandbox.sandbox_id, **owner)
                 except SandboxNotFoundException:

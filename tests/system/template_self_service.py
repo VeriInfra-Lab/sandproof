@@ -4,6 +4,16 @@ Root-only disposable deployment, two disjoint pools. No E2B cloud/paid model.
 --temporarily-forward enables IPv4 forwarding for the approved public probe
 and restores its original value on exit. Failure retains exact evidence.
 """
+
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
+
 import argparse
 import json
 import os
@@ -30,6 +40,8 @@ BUILD_TOOLS = dict(BUILDKIT_HASHES, regctl=REGCTL_SHA256)
 
 
 def exercise(args):
+    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None),
+        legacy_unbounded=getattr(args, "legacy_unbounded", False))
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("isolated root Linux/KVM required")
     checkout = Path(__file__).resolve().parents[2]
@@ -112,9 +124,15 @@ def exercise(args):
     if not args.public:
         settings[1]["public_ipv4_enabled"] = True
         (root / "1/config.json").write_text(json.dumps(settings[1]))
+    build_mode = apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy)
+    for i, config in enumerate(settings):
+        (root / str(i) / "config.json").write_text(json.dumps(config))
+    (root / "build-mode.json").write_text(json.dumps({"build_mode": build_mode}))
     build_config = root / "build.json"
     build_config.write_text(json.dumps(build))
     build_config.chmod(0o600)
+    from tools.template_build_service import configuration
+    configuration(build_config)
     fixture_root = root / "fixture"
     fixture_root.mkdir(mode=0o700)
     (fixture_root / "tools").mkdir()
@@ -134,8 +152,28 @@ def exercise(args):
     def request(method, path, body=None, key=keys[0]):
         code, data = fetch(opener, urls[2], method, path, key, body)
         return code, json.loads(data)
+    def wait_builds():
+        # A child PID is not a listening endpoint. Observe readiness with GET;
+        # never repair a startup race by retrying a mutating build submission.
+        for _ in range(60):
+            try:
+                if request("GET", "/missing")[0] == 404:
+                    return
+            except OSError:
+                assert process.poll() is None, "build service exited before readiness"
+            time.sleep(0.5)
+        raise AssertionError("build endpoint did not become ready")
     def submit(body, source=None):
-        code, result = request("POST", "/sandproof/template-builds", body)
+        if build_mode == "windowed":
+            from tools.template_build_client import BuildClient, saved_intent
+            client = BuildClient(urls[2], keys[0])
+            intent_path = root / ("build-intent-" + secrets.token_hex(16) + ".json")
+            intent = saved_intent(intent_path, client, body | {"timeoutSeconds": body.get("timeoutSeconds", build["limits"]["timeout_seconds"])},
+                                  build_mode=build_mode, context=source)
+            result = client.request("POST", "/sandproof/template-builds", body | {"requestWindow": intent["requestWindow"]}, token=intent["idempotency_key"])
+            code = 202
+        else:
+            code, result = request("POST", "/sandproof/template-builds", body)
         assert code == 202, (code, result)
         job = result["buildID"]
         if source:
@@ -167,13 +205,7 @@ def exercise(args):
             controllers.append(server)
             wait_ready(opener, urls[i], keys[i], server)
         process = start_builds()
-        for _ in range(60):
-            try:
-                if request("GET", "/missing")[0] == 404:
-                    break
-            except OSError:
-                assert process.poll() is None
-                time.sleep(0.5)
+        wait_builds()
         basic = {"kind": "dockerfile", "allowInternetAccess": False, "timeoutSeconds": 600,
                  "resources": {"cpuCount": 1, "memoryMiB": 256, "diskMiB": 1024, "minFreeMiB": 64}}
         job = submit(basic, context)
@@ -191,6 +223,16 @@ def exercise(args):
             sandbox.kill()
         evidence.append({"scenario": "multistage_context_publish_sdk", "build": job, "template": template, "result": "passed"})
         print(json.dumps(evidence[-1]), flush=True)
+        if getattr(args, "publication_unknown", False):
+            # One exclusive store lease: stop the background supervisor before
+            # driving the actual production functions through the HTTP barrier.
+            stop_server(process)
+            log.close()
+            from template_publication_unknown import exercise as publication_unknown
+            evidence.append(publication_unknown(build_config, context, basic))
+            print(json.dumps(evidence[-1]), flush=True)
+            process = start_builds()
+            wait_builds()
         # Explicit worker failure produces bounded logs and exact VM reclaim.
         dockerfile = fixture_root / "context/Dockerfile"
         dockerfile.write_text("FROM scratch\nCOPY rootfs/ /\nRUN exit 17\n")
@@ -220,6 +262,7 @@ def exercise(args):
         process.wait(timeout=10)
         log.close()
         process = start_builds()
+        wait_builds()
         result = wait_job(job)
         assert result["state"] == "Failed" and result["failure"] == "InterruptedBuild", result
         code, body = fetch(opener, urls[1], "POST", "/sandproof/internal-build-vms/" + job, keys[1], {"timeout": 660, "allowInternetAccess": False})
@@ -277,7 +320,11 @@ if __name__ == "__main__":
     for name in ("server", "firecracker", "jailer", "kernel", "rootfs", "tools", "scratch-parent", "cgroup-parent", "build-cgroup-parent"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
+    mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
     parser.add_argument("--public", action="store_true")
+    parser.add_argument("--publication-unknown", action="store_true", help="delay the original publication POST across expiry and SQLite restart (#189)")
     parser.add_argument("--temporarily-forward", action="store_true", help="temporarily enable IPv4 forwarding for approved public test; restore on exit")
     parser.add_argument("--public-image", default="public.ecr.aws/docker/library/ubuntu:24.04")
     args = parser.parse_args()
