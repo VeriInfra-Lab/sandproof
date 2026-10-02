@@ -6,6 +6,14 @@ No Internet endpoint is contacted. A supervisor handles --restart-dir exactly
 as sdk_create_context.py and audits twelve admissions plus host resources.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata
@@ -150,16 +158,19 @@ async def exercise_client(cls, args):
                 after = await verify(cls, sandbox, profile, owner, foreign, client, 'after_restart', rows)
                 assert after == before, 'restart changed original network details or identity'
             rows.append(dict(case='restart_preserved_policies_and_details'))
-            assert await call(paired[1].kill)
+            _kill_confirmed = (await call(paired[1].kill))
+            assert _kill_confirmed
             assert await echo(paired[0], '11.22.33.1', 'tcp')
             rows.append(dict(case='cleanup_preserved_other_vm_egress'))
-            assert await call(paired[0].kill)
+            _kill_confirmed = (await call(paired[0].kill))
+            assert _kill_confirmed
             for profile in PROFILES[2:]:
                 sandbox = await call(cls.create, template='base', timeout=300,
                                      metadata={'network_run':run, 'profile':profile.name}, **profile.options, **owner)
                 known.add(sandbox.sandbox_id)
                 await verify(cls, sandbox, profile, owner, foreign, client, 'single_vm', rows)
-                assert await call(sandbox.kill)
+                _kill_confirmed = (await call(sandbox.kill))
+                assert _kill_confirmed
         finally:
             # Discover only this run if an original response was lost; never
             # issue another create to resolve an unknown creation result.

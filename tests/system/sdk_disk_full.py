@@ -5,6 +5,14 @@ its own guest root filesystem, never a host path. Exact host residual checks
 remain the responsibility of the invoking KVM harness.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import errno
@@ -126,7 +134,8 @@ async def case(cls, owner, max_disk_bytes):
         result = await call(victim.commands.run, fill_command(directory, max_disk_bytes), timeout=60)
         report['refill'] = json.loads(result.stdout)
         assert report['refill']['errno'] == errno.ENOSPC
-        assert await call(cls.kill, victim.sandbox_id, **owner), 'full guest destruction was not confirmed'
+        _kill_confirmed = (await call(cls.kill, victim.sandbox_id, **owner))
+        assert _kill_confirmed, 'full guest destruction was not confirmed'
         live.remove(victim)
         report['killed_while_full'] = True
         await healthy(control, marker, expected)
@@ -141,7 +150,8 @@ async def case(cls, owner, max_disk_bytes):
         errors = []
         for sandbox in reversed(live):
             try:
-                assert await call(cls.kill, sandbox.sandbox_id, **owner), 'test guest destruction was not confirmed'
+                _kill_confirmed = (await call(cls.kill, sandbox.sandbox_id, **owner))
+                assert _kill_confirmed, 'test guest destruction was not confirmed'
             except Exception as error:
                 errors.append(error)
         if errors:

@@ -5,6 +5,14 @@ Internet. The caller must temporarily enable and later restore host IPv4
 forwarding; this script refuses to change the global setting itself.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import hashlib
 import importlib.metadata
@@ -351,7 +359,8 @@ def exercise(args: argparse.Namespace) -> None:
             assert not guest_ping(static, "11.22.34.1"), "static policy widened after restart"
             assert guest_ping(public, "11.22.33.1"), "public policy lost after restart"
             assert not guest_ping(public, "11.22.33.2"), "host isolation lost after restart"
-            assert Sandbox.kill(static.sandbox_id, **options)
+            _kill_confirmed = (Sandbox.kill(static.sandbox_id, **options))
+            assert _kill_confirmed
             sandboxes.remove(static)
             clean_vm(root, args.firecracker, namespace, 0, identities[0])
             assert guest_ping(public, "11.22.33.1"), "first VM cleanup broke the second VM"
@@ -367,7 +376,8 @@ def exercise(args: argparse.Namespace) -> None:
             closed.commands.run("printf 'nameserver 11.22.33.1\\n' > /etc/resolv.conf")
             probe_ports(closed, "11.22.33.1", False)
             probe_guest_ipv6(closed, namespace, 2)
-            assert Sandbox.kill(closed.sandbox_id, **options)
+            _kill_confirmed = (Sandbox.kill(closed.sandbox_id, **options))
+            assert _kill_confirmed
             sandboxes.remove(closed)
             clean_vm(root, args.firecracker, namespace, 2, closed_identity)
             assert guest_ping(public, "11.22.33.1"), "closed VM cleanup broke public VM"
@@ -382,10 +392,12 @@ def exercise(args: argparse.Namespace) -> None:
                 assert guest_tcp_connect(explicit, args.public_probe_ip,
                                          args.public_probe_port), "explicit public Internet path failed"
             assert not guest_ping(explicit, "11.22.33.2"), "explicit public reached host"
-            assert Sandbox.kill(explicit.sandbox_id, **options)
+            _kill_confirmed = (Sandbox.kill(explicit.sandbox_id, **options))
+            assert _kill_confirmed
             sandboxes.remove(explicit)
             clean_vm(root, args.firecracker, namespace, 3, explicit_identity)
-            assert Sandbox.kill(public.sandbox_id, **options)
+            _kill_confirmed = (Sandbox.kill(public.sandbox_id, **options))
+            assert _kill_confirmed
             sandboxes.clear()
             clean_vm(root, args.firecracker, namespace, 1, identities[1])
         completed = True

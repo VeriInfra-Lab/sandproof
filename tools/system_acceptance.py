@@ -27,7 +27,7 @@ CODES = {"invalid_configuration", "preflight_failed", "source_mismatch", "hash_m
          "cleanup_failed", "report_write_failed", "unexpected_error", "unresolved_intent",
          "export_write_failed"}
 HASH_NAMES = ("host_config", "service_config", "server", "firecracker", "jailer", "kernel",
-              "rootfs", "python", "runner", "report_helper", "preflight_helper", "server_helper",
+              "rootfs", "python", "runner", "assertions_guard", "report_helper", "preflight_helper", "server_helper",
               "sdk_server_smoke.py", "sdk_data_contract.py", "sdk_data_samples.py")
 PREFLIGHT_NAMES = ("source", "host", "identity", "kvm", "tun", "cgroup_v2", "host_tools",
                    "disk", "memory", "firecracker", "firecracker_version", "jailer",

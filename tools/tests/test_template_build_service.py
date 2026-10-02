@@ -2,15 +2,17 @@ import io
 import json
 from pathlib import Path
 import sqlite3
+import socket
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
 from unittest.mock import Mock, patch
 
 from tools.template_build_store import BuildError, BuildStore, MIB, public_image
-from tools.template_build_service import Backend, BuildHTTP, Supervisor
+from tools.template_build_service import Backend, BuildHTTP, Handler, Supervisor
 from tools.template_build_client import BuildClient, LOG_RESPONSE_BYTES, saved_intent
 
 
@@ -594,6 +596,163 @@ class BuildTests(unittest.TestCase):
         self.store.upload(job, 1, iter([b"validinput"]), 10)
         with self.assertRaises(BuildError):
             self.store.upload(job, 1, iter([b"different!"]), 10)
+
+    def test_upload_rejects_late_final_block_and_eof(self):
+        for boundary in ("block", "eof"):
+            with self.subTest(boundary=boundary):
+                job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+                deadline = self.store.get(job)["deadline"]
+                def blocks():
+                    if boundary == "block":
+                        self.now = deadline
+                    yield b"input"
+                    self.now = deadline
+                with self.assertRaisesRegex(BuildError, "BuildDeadlineExceeded") as failure:
+                    self.store.upload(job, 1, blocks(), 5)
+                self.assertEqual(failure.exception.code, 408)
+                self.assertEqual(self.store.get(job)["state"], "AwaitingInput")
+                self.assertNotIn(job, self.store.uploads)
+                self.assertFalse((self.store.directory(job) / "source.tar").exists())
+                self.assertFalse((self.store.directory(job) / "source.partial").exists())
+                Supervisor(self.store, FakeBackend()).tick()
+                self.assertEqual(self.store.get(job)["state"], "Failed")
+                self.assertEqual(self.store.get(job)["reserved"], 0)
+
+    def test_upload_original_deadline_covers_file_and_directory_fsync(self):
+        for boundary in ("file", "directory"):
+            with self.subTest(boundary=boundary):
+                job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+                deadline = self.store.get(job)["deadline"]
+                import os
+                import stat
+                actual_fsync = os.fsync
+                def delayed(fd):
+                    actual_fsync(fd)
+                    is_directory = stat.S_ISDIR(os.fstat(fd).st_mode)
+                    if is_directory == (boundary == "directory"):
+                        self.now = deadline
+                with patch("tools.template_build_store.os.fsync", side_effect=delayed):
+                    with self.assertRaisesRegex(BuildError, "BuildDeadlineExceeded"):
+                        self.store.upload(job, 1, [b"input"], 5)
+                self.assertEqual(self.store.get(job)["state"], "AwaitingInput")
+                self.assertNotIn(job, self.store.uploads)
+                self.assertFalse((self.store.directory(job) / "source.tar").exists())
+                self.assertFalse((self.store.directory(job) / "source.partial").exists())
+                Supervisor(self.store, FakeBackend()).tick()
+
+    def test_upload_checks_original_deadline_immediately_before_commit(self):
+        job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+        def expire(point):
+            if point == "before_commit":
+                self.now = self.store.get(job)["deadline"]
+        self.store.fault = expire
+        with self.assertRaisesRegex(BuildError, "BuildDeadlineExceeded"):
+            self.store.upload(job, 1, [b"input"], 5)
+        self.store.fault = lambda _point: None
+        self.assertEqual(self.store.get(job)["state"], "AwaitingInput")
+        self.assertNotIn(job, self.store.uploads)
+        self.assertFalse((self.store.directory(job) / "source.tar").exists())
+
+    def test_upload_lost_committed_reply_preserves_original_input(self):
+        job = self.store.submit(1, {"kind": "dockerfile"})["buildID"]
+        def lost(point):
+            if point == "after_commit":
+                raise OSError("lost commit reply")
+        self.store.fault = lost
+        with self.assertRaises(OSError):
+            self.store.upload(job, 1, [b"input"], 5)
+        self.store.fault = lambda _point: None
+        self.assertEqual(self.store.get(job)["state"], "Queued")
+        self.assertEqual((self.store.directory(job) / "source.tar").read_bytes(), b"input")
+        self.assertNotIn(job, self.store.uploads)
+
+    def test_upload_deadline_cleanup_keeps_replaced_partial_pinned(self):
+        job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+        partial = self.store.directory(job) / "source.partial"
+        def blocks():
+            yield b"input"
+            partial.rename(self.root / "original-upload-inode")
+            partial.write_bytes(b"foreign")
+            self.now = self.store.get(job)["deadline"]
+        with self.assertRaisesRegex(BuildError, "InputCleanupIdentityUnknown"):
+            self.store.upload(job, 1, blocks(), 5)
+        self.assertNotIn(job, self.store.uploads)
+        self.assertEqual(self.store.get(job)["state"], "CleanupUnknown")
+        self.assertGreater(self.store.get(job)["reserved"], 0)
+        Supervisor(self.store, FakeBackend()).tick()
+        self.assertEqual(partial.read_bytes(), b"foreign")
+        self.assertGreater(self.store.get(job)["reserved"], 0)
+
+    def test_http_slow_fragments_return_to_original_deadline(self):
+        job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+        deadline = self.store.get(job)["deadline"]
+        first_fragment = threading.Event()
+        reads = []
+        testcase = self
+        class FragmentHandler(Handler):
+            def setup(self):
+                super().setup()
+                incoming = self.rfile
+                class Fragments:
+                    def read1(self, size):
+                        block = incoming.read1(size)
+                        if block:
+                            reads.append(block)
+                            testcase.now = deadline - .25 if len(reads) == 1 else deadline
+                            first_fragment.set()
+                        return block
+                    def __getattr__(self, name):
+                        return getattr(incoming, name)
+                self.rfile = Fragments()
+        server = BuildHTTP(("127.0.0.1", 0), self.store, [{"tenant": 1, "secret": "owner"}])
+        server.RequestHandlerClass = FragmentHandler
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with socket.create_connection(server.server_address, timeout=2) as connection:
+                connection.sendall(("PUT /sandproof/template-builds/" + job + "/context HTTP/1.0\r\n"
+                    "X-API-Key: owner\r\nContent-Length: 2\r\n\r\n").encode() + b"a")
+                self.assertTrue(first_fragment.wait(1), "buffered read hid the first fragment")
+                connection.sendall(b"b")
+                from http.client import HTTPResponse
+                with HTTPResponse(connection) as response:
+                    response.begin()
+                    self.assertEqual(response.status, 408)
+                    self.assertEqual(json.load(response), {"error": "BuildDeadlineExceeded"})
+            self.assertEqual(reads, [b"a", b"b"])
+            self.assertEqual(self.store.get(job)["state"], "AwaitingInput")
+            self.assertNotIn(job, self.store.uploads)
+            self.assertFalse((self.store.directory(job) / "source.tar").exists())
+            self.assertFalse((self.store.directory(job) / "source.partial").exists())
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_http_blocked_upload_wait_uses_original_remaining_deadline(self):
+        job = self.store.submit(1, {"kind": "dockerfile"})["buildID"]
+        self.store.clock = time.monotonic
+        deadline = time.monotonic() + .2
+        self.store.db.execute("UPDATE jobs SET deadline=? WHERE id=?", (deadline, job))
+        self.store.db.commit()
+        server = BuildHTTP(("127.0.0.1", 0), self.store, [{"tenant": 1, "secret": "owner"}])
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with socket.create_connection(server.server_address, timeout=2) as connection:
+                connection.sendall(("PUT /sandproof/template-builds/" + job + "/context HTTP/1.0\r\n"
+                    "X-API-Key: owner\r\nContent-Length: 2\r\n\r\n").encode() + b"a")
+                from http.client import HTTPResponse
+                with HTTPResponse(connection) as response:
+                    response.begin()
+                    self.assertEqual(response.status, 408)
+                    self.assertEqual(json.load(response), {"error": "BuildDeadlineExceeded"})
+            self.assertEqual(self.store.get(job)["state"], "AwaitingInput")
+            self.assertNotIn(job, self.store.uploads)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
     def test_success_reclaim_before_publish_and_bounded_log_offsets(self):
         job = self.job()

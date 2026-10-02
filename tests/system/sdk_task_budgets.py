@@ -5,6 +5,14 @@ host-resource supervisor. Admission is serial (one sandbox); only the per-VM
 transfer limit can be saturated. Global multi-VM pressure is a separate test.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata
@@ -46,7 +54,8 @@ async def admission(sandbox, url, transfer):
         await start_input(sandbox, directory + '/refill', tracked)
         await limited(sandbox.files.read, directory + '/start-0')
         victim = tracked[1]
-        assert await call(victim['handle'].kill)
+        _kill_confirmed = (await call(victim['handle'].kill))
+        assert _kill_confirmed
         try:
             await call(victim['handle'].wait)
         except CommandExitException as error:
@@ -93,7 +102,8 @@ async def exercise(args):
                 row['disconnect'] = await call(disconnect_and_reconnect, sandbox, directory)
             row['admission'] = await admission(sandbox, args.sandbox_url, transfer)
         finally:
-            assert await call(sandbox.kill), 'destruction not confirmed'
+            _kill_confirmed = (await call(sandbox.kill))
+            assert _kill_confirmed, 'destruction not confirmed'
         rows.append(row)
     print(json.dumps(dict(sdk_version='2.51.0', budgets=budgets, results=rows,
                           scope='Original sync file/output boundaries and sync/async '

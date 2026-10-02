@@ -5,6 +5,14 @@ file / write idle timers of at least 30 seconds, and two VMs per tenant. Uses
 original SDK calls plus a bounded producer barrier; no host fault injection.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata
@@ -103,7 +111,8 @@ async def interrupted_monitor(monitor, timeout=10):
 async def trigger(sandbox, mode, monitor):
     started = time.monotonic()
     if mode == 'kill':
-        assert await call(sandbox.kill), 'kill was not confirmed'
+        _kill_confirmed = (await call(sandbox.kill))
+        assert _kill_confirmed, 'kill was not confirmed'
     else:
         await call(sandbox.set_timeout, 2)
     error = await interrupted_monitor(monitor)
@@ -225,7 +234,8 @@ async def client_cases(cls, owner, args):
                         if not monitor.cancelled():
                             monitor.exception()
     finally:
-        assert await call(control.kill), 'control VM destruction not confirmed'
+        _kill_confirmed = (await call(control.kill))
+        assert _kill_confirmed, 'control VM destruction not confirmed'
     return results
 
 

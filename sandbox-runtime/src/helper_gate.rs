@@ -562,7 +562,16 @@ impl RuntimeHelperGuard {
         args: &[&str],
     ) -> Result<Child, RuntimeError> {
         sync_parent(stage)?;
-        let mut child = OwnedChild::new(self.gated_command(program, args).spawn()?);
+        let mut child = match self.gated_command(program, args).spawn() {
+            Ok(child) => OwnedChild::new(child),
+            Err(error) => {
+                // No child obtained permission or published a process witness.
+                // Remove only this still-empty reservation; otherwise a clean
+                // shared data pin would prevent its later exclusive recovery.
+                self.abandon_unspawned_stage(stage, &staged)?;
+                return Err(error.into());
+            }
+        };
         self.publish_and_release(
             context,
             route_index,
@@ -575,6 +584,24 @@ impl RuntimeHelperGuard {
             &mut child,
         )?;
         Ok(child.into_child())
+    }
+
+    fn abandon_unspawned_stage(&self, stage: &Path, staged: &File) -> Result<(), RuntimeError> {
+        let original = staged.metadata()?;
+        let current = private_metadata(stage, self.owner)?.ok_or(
+            RuntimeError::IdentityMismatch("unspawned helper reservation disappeared"),
+        )?;
+        if current.dev() != original.dev()
+            || current.ino() != original.ino()
+            || current.len() != 0
+            || original.len() != 0
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "unspawned helper reservation changed",
+            ));
+        }
+        fs::remove_file(stage)?;
+        sync_parent(stage)
     }
 
     #[expect(
@@ -1200,6 +1227,58 @@ mod tests {
         drop(guard);
         finish(child);
         assert!(acquire(&context, false).is_ok());
+    }
+
+    #[test]
+    fn failed_gate_spawn_clears_its_stage_while_a_clean_shared_data_pin_remains() {
+        let (_temp, context) = fixture(3);
+        let pin = acquire(&context, true).unwrap().into_file();
+        let mut guard = acquire(&context, true).unwrap();
+        guard.shell = context.helper_gate.path.with_file_name("missing-shell");
+        assert!(matches!(
+            guard.spawn_route(&context, false, "/bin/true", &[]),
+            Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::NotFound
+        ));
+        let (path, stage) = context.helper_gate.route_paths(0).unwrap();
+        assert!(!path.exists());
+        assert!(!stage.exists());
+        drop(guard);
+        // A new control request can acquire its shared gate without waiting
+        // for the unrelated request's clean pin to disappear.
+        let control = acquire(&context, true).unwrap();
+        assert!(control.route_idle(0).unwrap());
+        drop(control);
+        drop(pin);
+    }
+
+    #[test]
+    fn unspawned_stage_cleanup_preserves_replacement_inodes_and_changed_bytes() {
+        let (temp, context) = fixture(1);
+        let guard = acquire(&context, true).unwrap();
+        let (_, stage) = context.helper_gate.route_paths(0).unwrap();
+        let mut original = File::options()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&stage)
+            .unwrap();
+        fs::rename(&stage, temp.path().join("original-reservation")).unwrap();
+        let mut replacement = File::options()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&stage)
+            .unwrap();
+        assert!(guard.abandon_unspawned_stage(&stage, &original).is_err());
+        assert!(stage.exists());
+        replacement.write_all(b"foreign").unwrap();
+        assert!(guard.abandon_unspawned_stage(&stage, &replacement).is_err());
+        assert_eq!(fs::read(&stage).unwrap(), b"foreign");
+        original.write_all(b"original").unwrap();
+        assert_eq!(
+            fs::read(temp.path().join("original-reservation")).unwrap(),
+            b"original"
+        );
     }
 
     #[test]

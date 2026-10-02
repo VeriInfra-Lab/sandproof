@@ -4,6 +4,14 @@ This is a separate engineering probe: it never modifies original task files or
 scores. Four private VMs coexist with one interrupted build. Failure retains
 identities before attempting exact cleanup; no create or build POST is retried.
 """
+
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 import asyncio
 import hashlib
 import json
@@ -237,7 +245,8 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
         await health(cohort[2], urls[0])
         # The fourth VM is independent of the 15 blocked data streams. Its
         # management stop must work while both pools still own their quotas.
-        assert await cohort[3].kill(request_timeout=60)
+        _kill_confirmed = (await cohort[3].kill(request_timeout=60))
+        assert _kill_confirmed
         live.remove(cohort[3])
         cases.append('runtime-stop-survives-full-data-and-interrupted-builder')
         for item in tracked:
@@ -295,7 +304,8 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
                 errors.append(error)
         for sandbox in reversed(live):
             try:
-                assert await sandbox.kill(request_timeout=60)
+                _kill_confirmed = (await sandbox.kill(request_timeout=60))
+                assert _kill_confirmed
             except BaseException as error:
                 errors.append(error)
         try:

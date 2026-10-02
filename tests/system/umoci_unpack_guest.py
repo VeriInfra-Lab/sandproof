@@ -1,5 +1,10 @@
 """Compare fixed umoci rootfs extraction inside the offline disposable VM."""
 
+import sys as _guard_sys
+if _guard_sys.flags.optimize:
+    raise RuntimeError("optimized_python")
+
+
 import gzip
 import hashlib
 import io
