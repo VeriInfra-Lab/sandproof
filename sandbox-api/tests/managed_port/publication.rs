@@ -587,3 +587,115 @@ fn publication_validation_identity_commits_with_create_and_not_before() {
         );
     }
 }
+
+#[test]
+fn verification_follows_only_the_exact_sealed_artifacts() {
+    let directory = TempDir::new().unwrap();
+    let store = store(&directory);
+    stage(&store, ONE, 1);
+    let (value, verification) = store.verified_candidate(1, ONE).unwrap();
+    assert!(!verification.matches(&value.binding.rootfs));
+    store.seal(&value).unwrap();
+    for artifact in [&value.binding.kernel, &value.binding.rootfs] {
+        assert!(verification.matches(artifact));
+        let mut changed = artifact.clone();
+        changed.sha256 = "b".repeat(64);
+        assert!(!verification.matches(&changed));
+        changed = artifact.clone();
+        changed.size_bytes += 1;
+        assert!(!verification.matches(&changed));
+        changed = artifact.clone();
+        changed.path = directory.path().join(artifact.path.file_name().unwrap());
+        fs::copy(&artifact.path, &changed.path).unwrap();
+        assert!(!verification.matches(&changed));
+    }
+}
+
+#[test]
+fn verification_rejects_replaced_modified_writable_linked_or_missing_artifacts() {
+    use std::io::{Seek, SeekFrom, Write};
+    for mutation in [
+        "replace", "modify", "writable", "hardlink", "symlink", "missing",
+    ] {
+        let directory = TempDir::new().unwrap();
+        let store = store(&directory);
+        stage(&store, ONE, 1);
+        let (value, verification) = store.verified_candidate(1, ONE).unwrap();
+        store.seal(&value).unwrap();
+        let artifact = &value.binding.rootfs;
+        let before = fs::metadata(&artifact.path).unwrap();
+        match mutation {
+            "replace" => {
+                let other = directory.path().join("replacement");
+                fs::copy(&artifact.path, &other).unwrap();
+                fs::rename(other, &artifact.path).unwrap();
+            }
+            "modify" => {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+                loop {
+                    fs::set_permissions(&artifact.path, fs::Permissions::from_mode(0o644)).unwrap();
+                    let current = fs::metadata(&artifact.path).unwrap();
+                    if (current.ctime(), current.ctime_nsec())
+                        != (before.ctime(), before.ctime_nsec())
+                    {
+                        break;
+                    }
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "ctime did not advance"
+                    );
+                    std::thread::yield_now();
+                }
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .open(&artifact.path)
+                    .unwrap();
+                file.seek(SeekFrom::End(-1)).unwrap();
+                file.write_all(b"x").unwrap();
+                file.set_modified(before.modified().unwrap()).unwrap();
+                fs::set_permissions(&artifact.path, before.permissions()).unwrap();
+                let after = fs::metadata(&artifact.path).unwrap();
+                assert_eq!(before.ino(), after.ino());
+                assert_eq!(before.len(), after.len());
+                assert_eq!(before.modified().unwrap(), after.modified().unwrap());
+            }
+            "writable" => {
+                fs::set_permissions(&artifact.path, fs::Permissions::from_mode(0o644)).unwrap();
+            }
+            "hardlink" => fs::hard_link(&artifact.path, directory.path().join("link")).unwrap(),
+            "symlink" => {
+                let other = directory.path().join("original");
+                fs::rename(&artifact.path, &other).unwrap();
+                std::os::unix::fs::symlink(other, &artifact.path).unwrap();
+            }
+            "missing" => fs::remove_file(&artifact.path).unwrap(),
+            _ => unreachable!(),
+        }
+        assert!(!verification.matches(artifact), "{mutation}");
+        assert!(verification.matches(&value.binding.kernel));
+    }
+}
+
+#[test]
+fn publication_offers_sealed_evidence_once_and_still_requires_validation_and_cleanup() {
+    let directory = TempDir::new().unwrap();
+    let store = store(&directory);
+    stage(&store, ONE, 1);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let port = make_port(
+        &directory,
+        FakeHost {
+            candidate_checks: Some(Arc::clone(&calls)),
+            free_bytes: 1_000_000,
+            stop: StopObservation::LoseReceipt,
+            ..FakeHost::default()
+        },
+        store,
+    );
+    let result = port.publish_template("1", ONE).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(result.state, PublicationState::Checking);
+    assert!(result.template.is_none());
+    port.publish_template("1", ONE).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}

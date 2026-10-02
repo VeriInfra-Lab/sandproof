@@ -10,8 +10,8 @@ use std::{
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::template_registry::{
-    CandidateStore, PublicationFailure, PublicationView, TemplatePage, TemplateView, valid_alias,
-    valid_candidate_id,
+    CandidateStore, CandidateVerification, PublicationFailure, PublicationView, TemplatePage,
+    TemplateView, valid_alias, valid_candidate_id,
 };
 use sandproof_controller_service::templates::{TemplateBinding, TemplateCatalog, TemplateError};
 use sandproof_controller_service::{
@@ -41,6 +41,15 @@ pub trait HostAdapter: Send + 'static {
     /// An adapter without multi-template support must reject, not use base.
     fn validate_template(&self, _template: &TemplateBinding) -> Result<(), PortError> {
         Err(PortError::Invalid)
+    }
+
+    /// Optionally reuse this process's registry hash checks after sealing.
+    /// This is only a cache hint; `validate_template` remains mandatory.
+    fn cache_candidate_verification(
+        &self,
+        _template: &TemplateBinding,
+        _verification: &CandidateVerification,
+    ) {
     }
 
     /// Persist the exact admitted template alongside the one-time launch credential.
@@ -1424,8 +1433,8 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             ));
         }
         // Paths and ownership come from protected staging, never request JSON.
-        let value = store
-            .candidate(owner.0, candidate)
+        let (value, verification) = store
+            .verified_candidate(owner.0, candidate)
             .map_err(|_| PortError::NotFound)?;
         if !inner
             .journal
@@ -1440,6 +1449,9 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                 .reject_template_publication(owner.0, candidate, PublicationFailure::ArtifactCheck)
                 .map_err(map_journal)?;
         } else {
+            inner
+                .host
+                .cache_candidate_verification(&value.binding, &verification);
             let result = self.create_locked(
                 &mut inner,
                 owner,

@@ -33,6 +33,7 @@ mod linux {
     };
     use sandproof_controller_service::{
         AdmissionLimits, ControllerJournal, CreateOptions, WorkerTransportError,
+        template_registry::CandidateVerification,
         templates::{TemplateBinding, TemplateCatalog},
     };
     use sandproof_node::{HostObservation, LinuxWorker, NodeConfig, ObservedSlot};
@@ -114,6 +115,14 @@ mod linux {
             self.0
                 .validate_template(template)
                 .map_err(|_| PortError::Busy)
+        }
+
+        fn cache_candidate_verification(
+            &self,
+            template: &TemplateBinding,
+            verification: &CandidateVerification,
+        ) {
+            self.0.cache_candidate_verification(template, verification);
         }
 
         fn put_bound_launch_config(

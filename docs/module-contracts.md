@@ -116,6 +116,8 @@ Dockerfile 的固定 BuildKit 使用不推送、不登记的 image exporter，�
 
 鉴权扩展接口：`POST /sandproof/template-publications` 接 `{candidateID}`；`GET /sandproof/template-publications/{candidateID}` 返回 checking/ready/failed 与有限原因；`GET /sandproof/templates` 只列本人 Ready，编号升序、limit 1～100、cursor 为上页最后不可变编号；`GET /sandproof/templates/{编号或别名}` 查询本人 Ready。`PUT /sandproof/template-aliases/{别名}` 接 `{templateID, expectedTemplateID?}`，可比较后更新，目标必须本人 Ready 编号；DELETE 只删本人别名，不删产物/实例绑定。静态目录名称保留；未知、未就绪和他人模板均不可创建。别名更新只影响新准入，旧实例/重启始终绑定原字节。响应不含宿主路径、临时 VM 编号或凭据。这是 Sandproof 发布扩展，不宣称原生 E2B 构建协议完全兼容。
 
+发布登记完整计算候选内核和磁盘 SHA-256 后，可向同进程工作器传递不可序列化的校验记录。密封目录移入正式路径后，工作器只在精确描述符、设备/inode、长度、修改/变更时间、属主/组、权限和硬链接数均未变化且完整路径可信时复用摘要；记录失效、缺失或服务重启均回到完整摘要校验。复用延续原节点缓存的部署前提：正式产物由可信 root 独占且保持不可变，文件时间戳不用于防御可任意修改宿主文件的 root。此记录不代表 Ready，不能替代资源准入、真实启动及临时 VM 精确清理。校验前后同时核对打开文件和路径身份，途中变化拒绝登记。
+
 模板启动合同：仅 Linux/amd64 的 Debian/Ubuntu 兼容镜像；空 OCI USER/WORKDIR 按 root/根目录处理，不复制固定 E2B Dockerfile 解析器的 user/home 默认值。数字 UID 或 UID:GID 在构建 VM 内按有界账户文件解析为真实用户名；显式组必须是该账户的主组，否则拒绝（固定 envd 不支持替换主组）。目录须已存在，启动参数有数量与字节上限；Env 重复键后者优先。模板默认环境 < 创建环境 < 单次命令环境；显式命令用户/目录优先于模板默认值。无 `startup` 的旧镜像仍使用 root 和 envd 的每用户主目录，不改变旧合同。
 
 节点把默认用户、目录及合并环境写入受鉴权 `/init`，不把镜像环境注入可信 PID 1/envd。启动 argv 是 Entrypoint 后接 Cmd，原样发给 envd，不拼接成 shell 脚本；shell-form 本身由标准构建器转成 argv。空 argv 不启动用户进程。发送前把绑定原 VM/PID/启动时刻、不可变模板与创建环境的意图同步到 root 独占记录；收到完整 Start 事件后才持久确认。确认后的激活恢复不重复发送；未知、损坏或身份不符保持未知并由独立启动期限中止原 VM，不能发布 Running。启动事件只表示进程已启动，不承诺应用健康、持续存活或退出码为零；用户程序可退出而管理通道仍保持可用。正式发布仍需独立检查，不能把此合同说成任意 Docker 容器或原生 E2B 构建接口完全等价。节点启动意图/确认记录随现有不可复用 VM 编号保留作审计，不是存活资源占额。
