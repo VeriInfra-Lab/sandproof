@@ -87,7 +87,9 @@ class WorkerAcquisitionTests(unittest.TestCase):
 
     def test_docker_rehashes_both_formats_without_repeating_decompression_before_unpack(self):
         digest = self.fixture.manifest['layers'][0]['digest'][7:]
+        from tools.template_inputs import BlobReader
         with patch('gzip.GzipFile', wraps=gzip.GzipFile) as decoder, \
+             patch.object(BlobReader, 'verify', autospec=True, side_effect=BlobReader.verify) as streamed, \
              patch('tools.template_inputs.sha256', wraps=sha256) as hashes:
             with self.assertRaises(ReachedUnpack):
                 self.acquire()
@@ -100,7 +102,9 @@ class WorkerAcquisitionTests(unittest.TestCase):
         self.assertEqual([(e['phase'], e['state']) for e in events],
                          [('acquire', 'started'), ('acquire', 'completed'),
                           ('rootfs_unpack', 'started'), ('rootfs_unpack', 'failed')])
-        self.assertEqual(sum(call.args[0].name == digest for call in hashes.call_args_list), 2)
+        self.assertEqual(sum(call.args[0].descriptor['digest'][7:] == digest
+                             for call in streamed.call_args_list), 1)
+        self.assertEqual(sum(call.args[0].name == digest for call in hashes.call_args_list), 1)
 
     def test_native_public_oci_checks_layers_once_before_unpack(self):
         self.native_oci()
@@ -118,14 +122,18 @@ class WorkerAcquisitionTests(unittest.TestCase):
         self.assertEqual(self.unpacked, [])
 
     def test_native_public_and_uploaded_oci_still_reject_corrupt_layers(self):
+        layer = self.fixture.manifest['layers'][0]
+        path = self.original_layout / 'blobs/sha256' / layer['digest'][7:]
+        original = path.read_bytes()
         for kind in ('oci-reference', 'oci'):
             with self.subTest(kind=kind):
                 # Each job has a fresh private work directory; no inspection cache.
                 self.work = self.root / ('worker-' + kind)
                 self.request['kind'] = kind
                 self.native_oci()
-                layer = self.fixture.manifest['layers'][0]
-                (self.original_layout / 'blobs/sha256' / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
+                damaged = bytearray(original)
+                damaged[4] ^= 1  # Valid gzip, unchanged diff_id, wrong encoded fingerprint.
+                path.write_bytes(damaged)
                 with self.assertRaisesRegex(InvalidTemplate, 'fingerprint'):
                     self.acquire()
                 self.assertEqual(self.unpacked, [])
@@ -192,7 +200,10 @@ class WorkerAcquisitionTests(unittest.TestCase):
                             'containerimage.config.digest': self.fixture.manifest['config']['digest']}))
                         if outcome == 'corrupt':
                             layer = self.fixture.manifest['layers'][0]
-                            (store / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
+                            path = store / layer['digest'][7:]
+                            damaged = bytearray(path.read_bytes())
+                            damaged[4] ^= 1
+                            path.write_bytes(damaged)
                         return
                     self.assertEqual(args[:3], [str(tools['umoci']), 'raw', 'unpack'])
                     self.assertEqual(args[-1], str(self.work / 'bundle/rootfs'))

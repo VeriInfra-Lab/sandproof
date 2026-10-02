@@ -287,7 +287,9 @@ class TemplateInputTests(unittest.TestCase):
         with self.assertRaisesRegex(InvalidTemplate, "expanded byte limit"):
             inspect_oci(layout, max_bytes=1024, max_entries=20)
         path = layout / "blobs/sha256" / layer["digest"][7:]
-        path.write_bytes(b"x" * layer["size"])
+        damaged = bytearray(path.read_bytes())
+        damaged[4] ^= 1  # Valid gzip with unchanged decoded tar, but wrong blob digest.
+        path.write_bytes(damaged)
         with self.assertRaisesRegex(InvalidTemplate, "fingerprint"):
             inspect_oci(layout, max_bytes=100000, max_entries=20)
         for name, kind in (("../outside", tarfile.REGTYPE), ("dev/x", tarfile.CHRTYPE)):
@@ -305,6 +307,104 @@ class TemplateInputTests(unittest.TestCase):
                         inspect_oci(layout, max_bytes=100000, max_entries=20)
                 finally:
                     self.root = old
+
+    def test_first_validation_reads_each_layer_payload_once(self):
+        for compressed in (False, True):
+            with self.subTest(compressed=compressed), tempfile.TemporaryDirectory() as tmp:
+                self.root = Path(tmp)
+                layout, layer = self.make_oci(compressed=compressed)
+                path = layout / "blobs/sha256" / layer["digest"][7:]
+                counts = []
+                class Counted:
+                    def __init__(self, source):
+                        self.source = source
+                        self.count = 0
+                        counts.append(self)
+                    def read(self, *args):
+                        data = self.source.read(*args)
+                        self.count += len(data)
+                        return data
+                    def readinto(self, buffer):
+                        size = self.source.readinto(buffer)
+                        self.count += size
+                        return size
+                    def __getattr__(self, name):
+                        return getattr(self.source, name)
+                    def __enter__(self):
+                        return self
+                    def __exit__(self, *args):
+                        self.source.close()
+                import builtins
+                actual_io, actual_builtin = io.open, builtins.open
+                def counted(opener):
+                    def opening(name, mode='r', *args, **kwargs):
+                        source = opener(name, mode, *args, **kwargs)
+                        return Counted(source) if name == path and mode == 'rb' else source
+                    return opening
+                with patch('io.open', counted(actual_io)), patch('builtins.open', counted(actual_builtin)):
+                    inspect_oci(layout, max_bytes=100000, max_entries=20)
+                self.assertEqual(sum(source.count for source in counts), layer['size'])
+
+    def test_streaming_corrupt_valid_gzip_never_populates_cache(self):
+        layout, layer = self.make_oci()
+        path = layout / "blobs/sha256" / layer["digest"][7:]
+        original = path.read_bytes()
+        checks = LayerChecks(layout)
+        for cached in (False, True):
+            path.write_bytes(original)
+            if cached:
+                inspect_oci(layout, max_bytes=100000, max_entries=20, layer_checks=checks)
+            damaged = bytearray(original)
+            damaged[4] ^= 1
+            path.write_bytes(damaged)
+            with self.assertRaisesRegex(InvalidTemplate, "fingerprint"):
+                inspect_oci(layout, max_bytes=100000, max_entries=20, layer_checks=checks)
+            if not cached:
+                self.assertFalse(checks.layers)
+
+    def test_streaming_bad_gzip_remains_rejected(self):
+        layout, layer = self.make_oci()
+        path = layout / "blobs/sha256" / layer["digest"][7:]
+        path.write_bytes(b"x" * layer["size"])
+        checks = LayerChecks(layout)
+        with self.assertRaises((InvalidTemplate, gzip.BadGzipFile)):
+            inspect_oci(layout, max_bytes=100000, max_entries=20, layer_checks=checks)
+        self.assertFalse(checks.layers)
+
+    def test_streaming_fingerprint_includes_second_gzip_header(self):
+        layer = archive_bytes([('payload', b'original', tarfile.REGTYPE, '')])
+        first, second = gzip.compress(layer), gzip.compress(bytes(10000))
+        with patch('gzip.compress', return_value=first + second):
+            layout, descriptor = self.make_oci(layer_bytes=layer + bytes(10000))
+        path = layout / "blobs/sha256" / descriptor["digest"][7:]
+        data = bytearray(path.read_bytes())
+        data[len(first) + 4] ^= 1
+        path.write_bytes(data)
+        with self.assertRaisesRegex(InvalidTemplate, "fingerprint"):
+            inspect_oci(layout, max_bytes=100000, max_entries=20)
+
+    def test_streaming_size_changes_between_metadata_check_and_read(self):
+        for extra in (True, False):
+            with self.subTest(extra=extra), tempfile.TemporaryDirectory() as tmp:
+                self.root = Path(tmp)
+                layout, layer = self.make_oci()
+                path = layout / "blobs/sha256" / layer["digest"][7:]
+                data = path.read_bytes()
+                actual_open = Path.open
+                changed = False
+                def opening(p, mode='r', *args, **kwargs):
+                    nonlocal changed
+                    if p == path and mode == 'rb' and not changed:
+                        changed = True
+                        with io.open(p, 'wb') as target:
+                            target.write(data + bytes(10000) if extra else data[:-4])
+                    return actual_open(p, mode, *args, **kwargs)
+                checks = LayerChecks(layout)
+                with patch.object(Path, 'open', opening):
+                    with self.assertRaises((InvalidTemplate, EOFError)):
+                        inspect_oci(layout, max_bytes=100000, max_entries=20, layer_checks=checks)
+                self.assertTrue(changed)
+                self.assertFalse(checks.layers)
 
     def test_startup_preserved_not_executed_and_rejects_unsupported(self):
         config = {"Env": ["KEY=$(touch /tmp/nope)"], "WorkingDir": "/app", "User": "1000:1000",

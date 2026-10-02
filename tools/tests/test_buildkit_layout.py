@@ -1,4 +1,5 @@
 """Private BuildKit store linking still feeds the complete OCI validator."""
+import gzip
 import hashlib
 import json
 import shutil
@@ -128,8 +129,13 @@ class BuildkitLayoutTests(unittest.TestCase):
         with self.assertRaises(InvalidTemplate):
             self.inspect(max_entries=0)
         path = self.store / self.fixture.manifest['layers'][0]['digest'][7:]
-        path.write_bytes(b'x' * path.stat().st_size)
+        damaged = bytearray(path.read_bytes())
+        damaged[4] ^= 1  # A valid gzip header change leaves the decoded tar intact.
+        path.write_bytes(damaged)
         with self.assertRaisesRegex(InvalidTemplate, 'fingerprint'):
+            self.inspect()
+        path.write_bytes(b'x' * path.stat().st_size)
+        with self.assertRaises(gzip.BadGzipFile):
             self.inspect()
 
     def test_manifest_corruption_and_oversized_descriptors_are_rejected(self):
