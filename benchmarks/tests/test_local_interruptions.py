@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from benchmarks import run_local as runner
 
@@ -491,6 +491,143 @@ class LocalFinalizationTests(unittest.TestCase):
                 env.stop.assert_awaited_once()
                 oracle.run.assert_awaited_once()
                 verifier.verify.assert_not_awaited()
+
+    @contextlib.contextmanager
+    def generic_fixture(self):
+        from benchmarks import run_generic
+        with self.fixture() as (args, env, oracle, verifier, trial, output):
+            args.all, args.task, args.source_kind = True, None, 'oci'
+            args.build_url = 'http://127.0.0.1:1'
+            env.sandbox_id, env.kill_confirmed = None, False
+            env.build_id, env.runtime_attempt = 'a' * 32, 'e' * 32
+            env.build_result, env.build_dispatched = {'state': 'Ready'}, True
+            env.submission_key = 'c' * 32
+            env.template = json.loads((Path(__file__).resolve().parents[2] /
+                'tests/compat/template-view.json').read_text())
+            intent = {'metadata': {'benchmark': 'terminal-bench-2.0', 'task': 'sample',
+                'build': env.build_id, 'revision': 'r1', 'runtime_attempt': env.runtime_attempt},
+                'template': env.template}
+            env.runtime_intent = intent
+            env.stop = AsyncMock()
+            observations = []
+            def audit(row):
+                observations.append(json.loads(json.dumps(row)))
+                if not row.get('runtime_intent'):
+                    raise RuntimeError('no exact runtime identity')
+                return {'exact_cleanup': 'passed', 'sandbox_id': 'sb-original',
+                        'runtime_recovery': {'status': 'destroyed'}}
+            args.completion_audit = Mock(side_effect=audit)
+            lock = {'source': {}, 'tasks': [{'name': 'sample'}, {'name': 'zzz-next'}]}
+            with patch.object(run_generic, 'GenericEnvironment', return_value=env) as factory:
+                yield run_generic, args, lock, env, trial, intent, observations, factory
+
+    def test_generic_full_report_enospc_audits_before_stopping_later_dispatch(self):
+        with self.generic_fixture() as (suite, args, lock, env, trial, intent, observed, factory):
+            env.start.side_effect = TimeoutError('original create deadline')
+            original_write = Path.write_text
+            writes = 0
+            def write(path, text, *a, **kw):
+                nonlocal writes
+                if path.name == 'full-set.json':
+                    writes += 1
+                    if writes > 1:
+                        raise OSError(errno.ENOSPC, 'report full')
+                return original_write(path, text, *a, **kw)
+            with patch.object(Path, 'write_text', write):
+                rows = asyncio.run(suite.run_selected(args, lock))
+            self.assertEqual(len(observed), 1)
+            self.assertEqual(observed[0]['runtime_intent'], intent)
+            self.assertEqual(rows[0]['execution_status'], 'timeout')
+            self.assertEqual(rows[0]['error_type'], 'TimeoutError')
+            self.assertFalse(rows[0]['kill_confirmed'])
+            self.assertEqual(rows[0]['exact_cleanup'], 'passed')
+            self.assertEqual(rows[0]['report_errors']['full-set.json']['errno'], errno.ENOSPC)
+            self.assertEqual(rows[1]['status'], 'not_run')
+            env.start.assert_awaited_once()
+            factory.assert_called_once()
+
+    def test_generic_partial_result_is_not_read_as_cleanup_identity(self):
+        with self.generic_fixture() as (suite, args, lock, env, trial, intent, observed, factory):
+            env.start.side_effect = TimeoutError('original create deadline')
+            original_write = Path.write_text
+            writes = 0
+            def write(path, text, *a, **kw):
+                nonlocal writes
+                if path.name == 'result.json':
+                    writes += 1
+                    if writes == 1:
+                        original_write(path, '{')
+                        raise OSError(errno.ENOSPC, 'partial result')
+                return original_write(path, text, *a, **kw)
+            with patch.object(Path, 'write_text', write):
+                rows = asyncio.run(suite.run_selected(args, lock))
+            self.assertEqual(len(observed), 1)
+            self.assertEqual(observed[0]['runtime_intent'], intent)
+            self.assertEqual(observed[0]['execution_status'], 'timeout')
+            self.assertEqual(rows[0]['error_type'], 'TimeoutError')
+            self.assertEqual(rows[0]['exact_cleanup'], 'passed')
+            self.assertEqual(rows[1]['status'], 'not_run')
+            self.assertEqual(json.loads((trial / 'result.json').read_text()), rows[0])
+            env.start.assert_awaited_once()
+            factory.assert_called_once()
+
+    def test_generic_cancel_with_unwritable_result_retains_live_intent_and_cancellation(self):
+        with self.generic_fixture() as (suite, args, lock, env, trial, intent, observed, factory):
+            async def cancel():
+                entered = asyncio.Event()
+                async def stalled_create():
+                    entered.set()
+                    await asyncio.Future()
+                env.start.side_effect = stalled_create
+                running = asyncio.create_task(suite.run_selected(args, lock))
+                await asyncio.wait_for(entered.wait(), 1)
+                running.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await running
+            original_write = Path.write_text
+            def write(path, text, *a, **kw):
+                if path.name == 'result.json':
+                    raise OSError(errno.ENOSPC, 'no result publication')
+                return original_write(path, text, *a, **kw)
+            with patch.object(Path, 'write_text', write):
+                asyncio.run(cancel())
+            self.assertEqual(len(observed), 1)
+            self.assertEqual(observed[0]['runtime_intent'], intent)
+            self.assertEqual(observed[0]['execution_status'], 'interrupted')
+            self.assertEqual(observed[0]['error_type'], 'CancelledError')
+            self.assertFalse(observed[0]['kill_confirmed'])
+            report = json.loads((args.output / 'full-set.json').read_text())['tasks']
+            self.assertTrue(report[0]['interrupted'])
+            self.assertEqual(report[0]['exact_cleanup'], 'passed')
+            self.assertEqual(report[1]['status'], 'not_run')
+            env.start.assert_awaited_once()
+            factory.assert_called_once()
+
+    def test_generic_checkpoint_fallback_is_bound_to_live_attempt_not_previous_run(self):
+        for stale in (False, True):
+            with self.subTest(stale=stale), self.generic_fixture() as (
+                    suite, args, lock, env, trial, intent, observed, factory):
+                env.runtime_intent = None
+                lock['tasks'] = lock['tasks'][:1]
+                async def lost():
+                    checkpoint = json.loads(json.dumps(intent))
+                    if stale:
+                        checkpoint['metadata']['runtime_attempt'] = 'f' * 32
+                    (trial / 'runtime-intent.json').write_text(json.dumps(checkpoint))
+                    raise TimeoutError('original lost response')
+                env.start.side_effect = lost
+                rows = asyncio.run(suite.run_selected(args, lock))
+                self.assertEqual(rows[0]['execution_status'], 'timeout')
+                self.assertEqual(rows[0]['error_type'], 'TimeoutError')
+                if stale:
+                    self.assertEqual(rows[0]['status'], 'cleanup_unknown')
+                    self.assertEqual(rows[0]['exact_cleanup'], 'unknown')
+                    self.assertEqual(rows[0]['intent_error_type'], 'ValueError')
+                    self.assertFalse(observed[0].get('runtime_intent'))
+                else:
+                    self.assertEqual(observed[0]['runtime_intent'], intent)
+                    self.assertEqual(rows[0]['exact_cleanup'], 'passed')
+                env.start.assert_awaited_once()
 
 
 if __name__ == "__main__":
