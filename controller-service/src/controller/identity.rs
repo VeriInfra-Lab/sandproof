@@ -1,5 +1,6 @@
+use super::allocators::{self, SqlId};
 use crate::JournalError;
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 use sandproof_protocol::{
     ActionIdentity, LogicalActionId, OperationId, PROTOCOL_VERSION, ResourceId, ResourceKind,
@@ -71,15 +72,23 @@ pub(super) fn new_actions(
             return Err(JournalError::CorruptStore);
         }
         let logical = serde_json::to_vec(&effect.logical)?;
-        transaction.execute(
-            "INSERT OR IGNORE INTO controller_effect_keys(logical_json) VALUES (?1)",
-            [&logical],
-        )?;
-        let logical_number: i64 = transaction.query_row(
-            "SELECT id FROM controller_effect_keys WHERE logical_json=?1",
-            [&logical],
-            |row| row.get(0),
-        )?;
+        let existing: Option<i64> = transaction
+            .query_row(
+                "SELECT id FROM controller_effect_keys WHERE logical_json=?1",
+                [&logical],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let logical_number = if let Some(number) = existing {
+            number
+        } else {
+            let number = allocators::next_sql(transaction, SqlId::Effect)?;
+            transaction.execute(
+                "INSERT INTO controller_effect_keys(id,logical_json) VALUES (?1,?2)",
+                params![number, &logical],
+            )?;
+            number
+        };
         let generation = match effect.command() {
             core::Command::PrepareVm { generation, .. }
             | core::Command::AbortPrepare { generation, .. }

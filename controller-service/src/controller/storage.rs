@@ -1,6 +1,10 @@
-use super::identity;
-use crate::{AcceptedWrite, JournalError, journal::write_accepted};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use super::{
+    allocators::{self, SqlId},
+    identity,
+    transaction::WorldTransaction,
+};
+use crate::{AcceptedWrite, JournalError, journal::write_accepted_with_ids};
+use rusqlite::{Connection, OptionalExtension, params};
 use sandbox_controller_core as core;
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +16,8 @@ struct StoredInput {
 }
 
 pub(super) fn load_world(connection: &Connection) -> Result<core::World, JournalError> {
+    #[cfg(test)]
+    FULL_REPLAYS.with(|count| count.set(count.get() + 1));
     let mut statement = connection
         .prepare("SELECT sequence, input_json FROM controller_inputs ORDER BY sequence")?;
     let rows = statement.query_map([], |row| {
@@ -34,18 +40,18 @@ pub(super) fn load_world(connection: &Connection) -> Result<core::World, Journal
 }
 
 pub(super) fn apply(
-    transaction: &Transaction<'_>,
+    transaction: &WorldTransaction<'_>,
     namespace: &str,
-    world: &core::World,
     input: core::ControllerInput,
 ) -> Result<core::ControllerDecision, JournalError> {
+    let world = transaction.world();
     let sandbox = identity::input_sandbox(&input)?;
     let serialized = serde_json::to_vec(&StoredInput {
         version: 1,
         input: input.clone(),
     })?;
     let decision =
-        core::handle_controller(world, input).map_err(JournalError::ControllerRejected)?;
+        core::handle_controller(&world, input).map_err(JournalError::ControllerRejected)?;
     let record = decision
         .next
         .sandbox_record(sandbox)
@@ -59,6 +65,11 @@ pub(super) fn apply(
         .next
         .operation_record(key)
         .ok_or(JournalError::CorruptStore)?;
+    if world.operation_record(key).is_none() {
+        allocators::require_available(transaction)?;
+    }
+    allocators::record_accepted(transaction, &world, sandbox, operation.id)?;
+    let sequence = allocators::next_sql(transaction, SqlId::Input)?;
     let public_sandbox = identity::sandbox_id(namespace, sandbox)?;
     let revision: Option<i64> = transaction
         .query_row(
@@ -71,8 +82,9 @@ pub(super) fn apply(
         .map(u64::try_from)
         .transpose()
         .map_err(|_| JournalError::CorruptStore)?;
-    let actions = identity::new_actions(transaction, namespace, world, &decision.next, sandbox)?;
-    write_accepted(
+    let actions = identity::new_actions(transaction, namespace, &world, &decision.next, sandbox)?;
+    let outbox_ids = allocators::reserve_sql(transaction, SqlId::Outbox, actions.len())?;
+    write_accepted_with_ids(
         transaction,
         &AcceptedWrite {
             owner: identity::owner_id(record.owner)?,
@@ -83,12 +95,14 @@ pub(super) fn apply(
             operation_state: serde_json::to_vec(ledger)?,
             actions,
         },
+        Some(&outbox_ids),
     )?;
     identity::update_operation_projections(transaction, namespace, &decision.next, sandbox)?;
     transaction.execute(
-        "INSERT INTO controller_inputs(input_json) VALUES (?1)",
-        params![serialized],
+        "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
+        params![sequence, serialized],
     )?;
+    transaction.advance(decision.next.clone());
     Ok(decision)
 }
 
@@ -100,4 +114,9 @@ pub(super) fn unresolved(world: &core::World, sandbox: core::SandboxId) -> bool 
                 Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
             )
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static FULL_REPLAYS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
