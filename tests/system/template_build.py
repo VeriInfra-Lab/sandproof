@@ -5,6 +5,8 @@ Synthetic Debian-compatible fixture only: not public OCI acceptance. Each
 build job gets a new VM; candidate health probes are separate new VMs. This
 operator-only harness is NOT a public build API. --registry also exercises
 the production publication gate, immutable registry and owner-scoped aliases.
+The server must include debug fault-injection hooks. For a CPU-limited service,
+use an optimized build with CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true.
 """
 
 import argparse
@@ -410,6 +412,23 @@ def exercise(args):
                                      "-fs", "--max-time", "5", "-K", "-"], input=curl_config, text=True, capture_output=True)
             assert result.returncode == 0, "private guest observation failed"
             return result.stdout
+        def wait_started(name, sandbox_id):
+            # Start acknowledges process creation; the child may not yet have
+            # written its first file. Observe that witness before crashing or
+            # restarting again, without replaying Start or extending a VM lease.
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    count = startup_count(name, sandbox_id)
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                else:
+                    assert count in ("", "started\n"), "startup ran more than once"
+                    if count:
+                        return
+                    assert time.monotonic() < deadline, "startup witness missing"
+                time.sleep(0.05)
         if args.registry:
             # Activation succeeded physically, but the publisher never durably
             # confirmed validation. Recovery may NOT turn that into Ready.
@@ -427,7 +446,7 @@ def exercise(args):
                 json.loads(p.read_text()) for p in (root / "state/startup").glob("*.json")
                 if json.loads(p.read_text())["sandbox"] == saved["validation_sandbox"])
             name = f'vm-{namespace}-{record["vm"]}'
-            assert startup_count(name,sandbox_id) == "started\n"
+            wait_started(name, sandbox_id)
             process = start_server(binary,config,root / "server.log",None)
             wait_ready(opener,url,key,process)
             assert fetch(opener,url,"GET","/sandboxes/" + sandbox_id,key)[0] == 404
@@ -457,15 +476,7 @@ def exercise(args):
             sandbox_id, name = f'sb-{namespace}-{record["sandbox"]}', f'vm-{namespace}-{record["vm"]}'
             assert (record["guest_pid"] is not None) == (window == "confirmed")
             assert process_start_ticks(record["vmm_pid"]) == record["start_ticks"]
-            deadline = time.monotonic() + 5
-            while True:
-                try:
-                    assert startup_count(name, sandbox_id) == "started\n"
-                    break
-                except AssertionError:
-                    if time.monotonic() >= deadline:
-                        raise
-                    time.sleep(0.05)
+            wait_started(name, sandbox_id)
             process = start_server(binary, config, root / "server.log", None)
             wait_ready(opener, url, key, process)
             assert startup_count(name, sandbox_id) == "started\n", "startup was replayed"
@@ -521,6 +532,12 @@ def exercise(args):
                 with sqlite3.connect("file:" + str(root / "db/controller.db") + "?mode=ro",uri=True) as database:
                     if database.execute("SELECT count(*) FROM sqlite_master WHERE name='sandboxes'").fetchone()[0]:
                         identities = [row[0] for row in database.execute("SELECT sandbox_id FROM sandboxes")]
+            if identities and (process is None or process.poll() is not None):
+                # A failed observation can happen after the intentional service
+                # crash. Resume its original journal without injection so exact
+                # cleanup can reconcile; never replace the pending sandbox.
+                process = start_server(binary, config, root / "server.log", None)
+                wait_ready(opener, url, key, process)
             for identity in identities:
                 assert identity.startswith("sb-" + namespace + "-")
                 try:
