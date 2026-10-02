@@ -125,9 +125,18 @@ class Commands:
             return child
         try:
             self.drain(child)
-            if child.wait() != 0:
-                if time.monotonic() >= self.deadline:
-                    raise TimeoutError("build deadline")
+            # EOF only closes the log stream; the tool can still be running.
+            # Waiting for it must use the same deadline, including a late exit.
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("build deadline")
+            try:
+                result = child.wait(timeout=remaining)
+            except subprocess.TimeoutExpired as error:
+                raise TimeoutError("build deadline") from error
+            if time.monotonic() >= self.deadline:
+                raise TimeoutError("build deadline")
+            if result != 0:
                 raise RuntimeError("tool failed: " + Path(args[0]).name)
         finally:
             terminate(child)
