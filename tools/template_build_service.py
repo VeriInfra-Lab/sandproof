@@ -647,6 +647,10 @@ class Supervisor:
 
     def finish(self, row):
         job = row["id"]
+        if row["failure"] in ("InputCleanupIdentityUnknown", "InputCleanupUnknown"):
+            # No VM cleanup witness can authorize deleting an unknown upload
+            # entry. Keep its original reservation until operator reconciliation.
+            return
         try:
             if isinstance(self.backend, Backend) and self.store.bounded:
                 cleaned = self.backend.cleanup(row, self.store)
@@ -819,13 +823,22 @@ class Handler(BaseHTTPRequestHandler):
                 # An upload cannot hold a job beyond its original deadline.
                 deadline = store.get(job, owner)["deadline"]
                 while remaining:
-                    if store.clock() >= deadline:
-                        raise BuildError(408, "BuildDeadlineExceeded")
-                    block = self.rfile.read(min(65536, remaining))
+                    left = store.remaining_deadline(deadline)
+                    # read1 performs at most one socket read. Buffered read(n)
+                    # can keep accepting slow fragments without returning to
+                    # the original deadline check.
+                    self.request.settimeout(min(30, left))
+                    try:
+                        block = self.rfile.read1(min(65536, remaining))
+                    except TimeoutError:
+                        store.remaining_deadline(deadline)
+                        raise
+                    store.remaining_deadline(deadline)
                     if not block:
                         break
                     remaining -= len(block)
                     yield block
+                store.remaining_deadline(deadline)
             store.upload(job, owner, blocks(), size)
             return 200, store.query(job, owner)
         raise BuildError(404, "NotFound")
