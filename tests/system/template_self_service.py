@@ -210,6 +210,15 @@ def exercise(args):
             sandbox.kill()
         evidence.append({"scenario": "multistage_context_publish_sdk", "build": job, "template": template, "result": "passed"})
         print(json.dumps(evidence[-1]), flush=True)
+        if getattr(args, "publication_unknown", False):
+            # One exclusive store lease: stop the background supervisor before
+            # driving the actual production functions through the HTTP barrier.
+            stop_server(process)
+            log.close()
+            from template_publication_unknown import exercise as publication_unknown
+            evidence.append(publication_unknown(build_config, context, basic))
+            print(json.dumps(evidence[-1]), flush=True)
+            process = start_builds()
         # Explicit worker failure produces bounded logs and exact VM reclaim.
         dockerfile = fixture_root / "context/Dockerfile"
         dockerfile.write_text("FROM scratch\nCOPY rootfs/ /\nRUN exit 17\n")
@@ -300,6 +309,7 @@ if __name__ == "__main__":
     mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
     mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
     parser.add_argument("--public", action="store_true")
+    parser.add_argument("--publication-unknown", action="store_true", help="delay the original publication POST across expiry and SQLite restart (#189)")
     parser.add_argument("--temporarily-forward", action="store_true", help="temporarily enable IPv4 forwarding for approved public test; restore on exit")
     parser.add_argument("--public-image", default="public.ecr.aws/docker/library/ubuntu:24.04")
     args = parser.parse_args()
