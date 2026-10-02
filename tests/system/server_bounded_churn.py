@@ -9,6 +9,7 @@ experiment, not a proof of unbounded service uptime or a two-pool build acceptan
 """
 
 import argparse
+from contextlib import closing
 import copy
 import hashlib
 import importlib.metadata
@@ -155,7 +156,7 @@ class FilePeaks:
 def database_snapshot(database):
     # WAL-aware read-only connection. Close promptly: persistent external readers
     # are intentionally not supported by this deployment's write contract.
-    with sqlite3.connect(f'file:{database}?mode=ro', uri=True, timeout=2) as connection:
+    with closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True, timeout=2)) as connection:
         tables = [row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
         counts, payload = {}, 0
@@ -210,7 +211,7 @@ def context_for(snapshot, ident):
 
 
 def capture_actions(database, ident):
-    with sqlite3.connect(f'file:{database}?mode=ro', uri=True, timeout=2) as connection:
+    with closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True, timeout=2)) as connection:
         return [json.loads(row[0]) for row in connection.execute(
             'SELECT action_json FROM outbox WHERE sandbox_id=? ORDER BY id', (ident,))]
 

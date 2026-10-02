@@ -8,6 +8,7 @@ from tools.template_build_config import acceptance_build_policy, apply_acceptanc
 from tools.bounded_acceptance import bounded_acceptance_layout, acceptance_pool_disk_budget, require_bounded_host_tools
 
 import argparse
+from contextlib import closing
 import json
 import os
 import re
@@ -272,7 +273,7 @@ def exercise(args):
         private_window = None
         if build_mode == "windowed":
             import sqlite3
-            with sqlite3.connect((root / "builds/builds.db").as_uri() + "?mode=ro", uri=True) as database:
+            with closing(sqlite3.connect((root / "builds/builds.db").as_uri() + "?mode=ro", uri=True)) as database:
                 encoded = database.execute("SELECT private_window FROM jobs WHERE id=?", (job,)).fetchone()[0]
             assert encoded, "accepted build must retain its original private request window"
             private_window = json.loads(encoded)
@@ -310,7 +311,7 @@ def exercise(args):
             result = wait_job(job)
             assert result["state"] == "Ready", result
             import sqlite3
-            with sqlite3.connect(root / "builds/builds.db") as database:
+            with closing(sqlite3.connect((root / "builds/builds.db").as_uri() + "?mode=ro", uri=True)) as database:
                 candidate = json.loads(database.execute("SELECT candidate FROM jobs WHERE id=?", (job,)).fetchone()[0])
             provenance = candidate["public_source"]
             assert provenance["selected_digest"] == result["template"]["imageDigest"]
@@ -331,7 +332,7 @@ def exercise(args):
         assert not processes_in_uid_range(args.uid_base, args.uid_base + 120)
         assert original == [sha256_file(path) for path in original_paths]
         import sqlite3
-        with sqlite3.connect((root / "builds/builds.db").as_uri() + "?mode=ro", uri=True) as database:
+        with closing(sqlite3.connect((root / "builds/builds.db").as_uri() + "?mode=ro", uri=True)) as database:
             assert database.execute("SELECT COALESCE(SUM(reserved), 0) FROM jobs").fetchone()[0] == 0
         complete = True
         (root / "report.json").write_text(json.dumps({"commit": commit, "scenarios": evidence,

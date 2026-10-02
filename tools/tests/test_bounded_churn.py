@@ -142,13 +142,27 @@ class ObservationTests(unittest.TestCase):
             writer.execute('INSERT INTO controller_id_highwaters VALUES(?,?,?)', ('sandbox', '', '9'))
             writer.execute('INSERT INTO outbox VALUES(?,?,1)', ('sb-x-9', b'{"accepted":"real"}'))
             writer.commit()
-            snapshot = probe.database_snapshot(database)
+            original_connect = sqlite3.connect
+            readers = []
+
+            def track_reader(*args, **kwargs):
+                reader = original_connect(*args, **kwargs)
+                readers.append(reader)
+                return reader
+
+            with patch.object(probe.sqlite3, 'connect', side_effect=track_reader):
+                snapshot = probe.database_snapshot(database)
+                actions = probe.capture_actions(database, 'sb-x-9')
+            self.assertEqual(len(readers), 2)
+            for reader in readers:
+                with self.assertRaises(sqlite3.ProgrammingError):
+                    reader.execute('SELECT 1')
             self.assertEqual(snapshot['phases'], {'sb-x-9': 'Running'})
             self.assertEqual(snapshot['tail'], {'rows': 1, 'bytes': 4})
             self.assertEqual(snapshot['checkpoint']['deleted_through'], 2)
             self.assertEqual(snapshot['highwaters'], {'sandbox:': 9})
             self.assertEqual(probe.context_for(snapshot, 'sb-x-9'), context)
-            self.assertEqual(probe.capture_actions(database, 'sb-x-9'), [{'accepted': 'real'}])
+            self.assertEqual(actions, [{'accepted': 'real'}])
             # The observation does not keep an external reader pinned.
             self.assertEqual(writer.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0], 0)
 
