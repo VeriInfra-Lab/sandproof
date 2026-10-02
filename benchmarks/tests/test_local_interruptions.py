@@ -275,6 +275,25 @@ class LocalFinalizationTests(unittest.TestCase):
                     self.assertEqual(calls[0].kwargs, {'cwd': '/app/pyknotid', 'timeout_sec': 60})
                 env.stop.assert_awaited_once()
 
+    def test_gpt2_allocation_failure_is_diagnostic_only(self):
+        from benchmarks.failure_diagnostics import GPT2_COMMAND
+        for enabled, reward in ((True, 0), (False, 0), (True, 1)):
+            with self.subTest(enabled=enabled, reward=reward), self.fixture(task_name='gpt2-codegolf') as (
+                    args, env, oracle, verifier, trial, output):
+                args.failure_diagnostics = enabled
+                verifier.verify.return_value = SimpleNamespace(rewards={'reward': reward})
+                env.exec.return_value = SimpleNamespace(stdout='allocation failed\n', stderr='', return_code=77)
+                row = asyncio.run(runner.run_task(args, {'name': 'gpt2-codegolf'}, {}))
+                calls = [c for c in env.exec.call_args_list if c.args[0] == GPT2_COMMAND]
+                self.assertEqual(len(calls), int(enabled and reward == 0))
+                self.assertEqual(row['rewards'], {'reward': reward})
+                self.assertEqual(row['status'], 'passed' if reward else 'failed')
+                self.assertEqual(row['verifier'], 'passed' if reward else 'failed')
+                if calls:
+                    self.assertEqual(row['failure_diagnostic']['return_code'], 77)
+                    self.assertEqual(calls[0].kwargs, {'cwd': '/app', 'timeout_sec': 60})
+                env.stop.assert_awaited_once()
+
     def test_failed_diagnostic_does_not_replace_original_score_or_skip_cleanup(self):
         from benchmarks.failure_diagnostics import CYTHON_COMMAND
         for failure in (TimeoutError('private detail'), OSError('private detail')):
