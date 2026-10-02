@@ -374,6 +374,8 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 
 ### #99 显式物理位置复用组件与后续实机验收
 
+完整模式需 root 所有、不可被非可信用户写入的 `/usr/sbin/conntrack`。验收入口在宿主初始化前检查依赖存在且可执行；生产初始盘点与按原地址精确观察使用 conntrack-tools 的 `--dump --family ipv4`，不清空共享表、不将工具错误或无法确认的观察当作无残留。此宿主路径尚未形式化证明，仍须真实工具及 KVM 验收。
+
 [有限周转实机入口](../tests/system/server_bounded_churn.py)只接受事前审定的单运行池完整 capacity/physical profile：两物理位置中保留一台原 VM，另一个位置实际周转四轮，观察原保留期后的退休、检查点及永久编号跨越旧 `max_vm_id`。同库重启后核对原 PID/start 和文件；将退休前真实保存的宿主动作交给[独立迟到动作驱动](../sandbox-node/examples/stale_host_actions.rs)，同时独立核对两台现存 VM 及节点/声明文件不变。记录每阶段逻辑行/字节、检查点/短尾、登记量及采样 DB/WAL/SHM 峰值。输入、报告和失败现场保留在 root 私有目录，不生成新 profile、不删除旧数据库、不修改全局网络。本入口与[组件回归](../tools/tests/test_bounded_churn.py)分别记录；它不覆盖旧 namespace FD 持有者、持续未知工作、双池构建、掉电或无限运行证明。双池自助入口另外使用精确固定身份、原构建窗口与结算证据，禁止把旧模式结果算作完整模式通过。
 
 位置复用采用现有控制器维护转换；接口与配置只以[模块合同](module-contracts.md)为准。组件回归必须覆盖：单位置跨越旧 max_vm_id 的永久身份 churn、另一位置长期存活、准入事务回滚/不确定提交、绑定/释放确认丢失和重开、所有旧动作与围栏迟到、初始化后位置文件缺失、错误 owner/资源/inode、未知清理、数据 body/relay 未排空及控制器重启后的旧 namespace 持有者、root helper 丢弃继承 FD 后仍由 PID marker 阻塞、同 PID 启动门各中断点、route cell 并发/迟到旧清除/满额拒绝、取消的 blocking 派发与 pipe 错误仍完成 reaping、第二控制器启动租约互斥、Initializing/staging 合法中断恢复、配置关闭/变更/地址重叠拒绝。已有事务与合成宿主测试不能代替真实清理。
