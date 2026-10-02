@@ -3,6 +3,7 @@
 No database writes, guessed IDs, public-list inference, or create retries.
 Destroyed is only a durable witness; the caller must still audit host resources.
 """
+from contextlib import closing
 import json
 from pathlib import Path
 import re
@@ -21,7 +22,7 @@ def matching_runtime(database, intent, *, owner, namespace, sandbox_id=None):
     matches = []
     # One read transaction includes both options and state. Missing files must
     # not silently create a new empty database and appear to prove absence.
-    with sqlite3.connect(Path(database).resolve().as_uri() + '?mode=ro', uri=True) as db:
+    with closing(sqlite3.connect(Path(database).resolve().as_uri() + '?mode=ro', uri=True)) as db:
         rows = db.execute('SELECT s.sandbox_id,s.state_blob,o.options_json FROM sandboxes s '
                           'JOIN sandbox_create_options o USING (sandbox_id)').fetchall()
     for identity, state_blob, options_blob in rows:
@@ -49,20 +50,27 @@ def matching_runtime(database, intent, *, owner, namespace, sandbox_id=None):
 
 def recover_runtime_create(database, intent, *, owner, namespace, delete, deadline,
                            sandbox_id=None, monotonic=time.monotonic, sleep=time.sleep):
-    """Wait for admission, delete the exact identity once, observe its tombstone.
+    """Wait for the original create, delete its identity once, observe its tombstone.
 
     An absent row or a 404 is not evidence that a delayed create cannot commit.
+    Starting may still own a dispatched PrepareVm that cannot be superseded by
+    Kill. Keep observing that same create within the caller's cleanup deadline;
+    an early rejected DELETE must not stop its controller mid-preparation.
     A lost DELETE receipt is observed without repeating the operation.
     """
-    outcome = {'status': 'unknown', 'delete_dispatched': False, 'delete_acknowledged': False}
+    outcome = {'status': 'unknown', 'delete_dispatched': False, 'delete_acknowledged': False,
+               'pending_create_observed': False}
     while monotonic() < deadline:
         found = matching_runtime(database, intent, owner=owner, namespace=namespace, sandbox_id=sandbox_id)
         if found is not None:
             outcome['sandbox_id'] = found['sandbox_id']
             if found['phase'] == 'Destroyed':
                 return outcome | {'status': 'destroyed'}
-            if not outcome['delete_dispatched']:
+            if found['phase'] == 'Starting':
+                outcome['pending_create_observed'] = True
+            elif not outcome['delete_dispatched']:
                 outcome['delete_dispatched'] = True
+                outcome['delete_phase'] = found['phase']
                 try:
                     status = delete(found['sandbox_id'])
                     outcome['delete_http_status'] = status
