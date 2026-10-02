@@ -24,6 +24,29 @@ class BrowserEvidenceTests(unittest.TestCase):
     def test_missing_execution_log_is_not_success(self):
         self.assertFalse(audit_browser_evidence('', '')['complete'])
 
+    def test_load_failure_does_not_misreport_successful_process_cleanup(self):
+        stdout = ('Total batches to test: 2\nRUN BATCH 0 (contains 1 tests)\n'
+                  '  No alert detected\nRUN BATCH 1 (contains 1 tests)\n'
+                  '  Failed to load URL: timed out\n')
+        record = json.dumps({'remaining_owned_children': []}) + '\n'
+        result = audit_browser_evidence(stdout, record * 2)
+        self.assertFalse(result['complete'])
+        self.assertEqual(result['swallowed_errors']['load_error'], 1)
+        self.assertEqual(result['browser_lifecycle_audit'], 'passed')
+        for lifecycle in (record, record * 3,
+                          record + json.dumps({'remaining_owned_children': [123]})):
+            with self.subTest(lifecycle=lifecycle):
+                result = audit_browser_evidence(stdout, lifecycle)
+                self.assertFalse(result['complete'])
+                self.assertEqual(result['browser_lifecycle_audit'], 'failed')
+
+    def test_lifecycle_needs_a_positive_declared_batch_count(self):
+        for stdout in ('', 'Total batches to test: 0\n'):
+            with self.subTest(stdout=stdout):
+                result = audit_browser_evidence(stdout, '')
+                self.assertFalse(result['complete'])
+                self.assertEqual(result['browser_lifecycle_audit'], 'failed')
+
     def test_generic_execution_cannot_claim_browser_process_cleanup(self):
         stdout = 'Total batches to test: 1\nRUN BATCH 0 (contains 1 tests)\n  No alert detected\n'
         result = audit_browser_execution(stdout)

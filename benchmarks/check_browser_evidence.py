@@ -33,8 +33,10 @@ def audit_browser_evidence(stdout, lifecycle):
                     for row in records)
     except ValueError:
         records, valid = [], False
-    complete = (report['complete'] and valid
-                and len(records) == report['declared_batches'])
+    expected = report['declared_batches']
+    lifecycle_complete = (valid and expected is not None and expected > 0
+                          and len(records) == expected)
+    complete = report['complete'] and lifecycle_complete
     return report | {'complete': complete, 'browser_lifecycle_records': len(records),
-                     'browser_lifecycle_audit': 'passed' if complete else 'failed',
+                     'browser_lifecycle_audit': 'passed' if lifecycle_complete else 'failed',
                      'scope': 'Additional execution and lifecycle evidence gate; original reward and tests are not modified.'}
