@@ -28,7 +28,7 @@ from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_f
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.check_browser_evidence import audit_browser_evidence, audit_browser_execution
 from benchmarks.failure_diagnostics import collect as collect_failure_diagnostics
-from benchmarks.oracle_repairs import REPAIRS, prepare_repaired_task
+from benchmarks.oracle_repairs import CHROMIUM_LIFECYCLE_PATH, REPAIRS, prepare_repaired_task
 from benchmarks.sdk_environment import SdkEnvironment
 from tools.benchmark_tasks import InvalidInput, verify
 
@@ -276,7 +276,12 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
             # errors that this original verifier catches and treats as success.
             # Apply observation settings only to the verifier, never the oracle.
             row['verifier_observation_env'] = {'PYTEST_ADDOPTS': '-s -v', 'PYTHONUNBUFFERED': '1'}
-            verifier_options['override_env'] = row['verifier_observation_env']
+            verifier_options['override_env'] = dict(row['verifier_observation_env'])
+            if oracle_mode == 'repaired':
+                # Installed by this task's copied solution, selected only for
+                # this verifier. No implicit modification of original runs.
+                row['verifier_repair_env'] = {'SE_CHROME_PATH': CHROMIUM_LIFECYCLE_PATH}
+                verifier_options['override_env'].update(row['verifier_repair_env'])
         verifier = Verifier(task=task, trial_paths=paths, environment=environment, **verifier_options)
         result = await asyncio.wait_for(verifier.verify(), task.config.verifier.timeout_sec)
         row['rewards'] = result.rewards
@@ -285,7 +290,7 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
         record_artifact_status(environment, row)
         if task.name == 'filter-js-from-html':
             stdout = paths.test_stdout_path.read_text() if paths.test_stdout_path.exists() else ''
-            if environment_factory is None:
+            if environment_factory is None or oracle_mode == 'repaired':
                 lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
                 row['verification_audit'] = audit_browser_evidence(
                     stdout, lifecycle.read_text() if lifecycle.exists() else '')

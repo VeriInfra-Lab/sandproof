@@ -11,7 +11,10 @@ import shutil
 
 from tools.benchmark_tasks import InvalidInput
 
+CHROMIUM_LIFECYCLE_PATH = '/usr/local/lib/sandproof/guest_chromium.py'
+
 REPAIRS = {
+    'filter-js-from-html': '9686e12af48346d2df538c3b46710122ee8dc80dfd0eecacb7a1476bf892ec9f',
     'git-multibranch': '300ca96b79db8d77f14742109aaf76048aafc4644ced750b1bc5c2761e8d0175',
     'build-cython-ext': '41bbdde88617070366a70e518eedca466a4ea1acd7e96899b2fb7da988e40abc',
     'mcmc-sampling-stan': 'd084666cc006911c5c80959969fba5c5699cbac92ab172db5c67eca00b1d0a97',
@@ -57,7 +60,14 @@ def repair_solution(name, original, destination):
     old = (original / 'solve.sh').read_text()
     if hashlib.sha256((original / 'solve.sh').read_bytes()).hexdigest() != REPAIRS[name]:
         raise InvalidInput('reference solution no longer matches the reviewed repair')
-    if name == 'git-multibranch':
+    if name == 'filter-js-from-html':
+        # The original verifier kills ChromeDriver before quit, leaving live
+        # browser trees behind. The explicit repaired run installs the existing
+        # driver-lifetime supervisor; run_task selects it only for the verifier.
+        # Preserve the complete filter implementation and all browser options.
+        new = ('install -D -m 755 /solution/guest_chromium.py '
+               + CHROMIUM_LIFECYCLE_PATH + ' || exit $?\n' + old)
+    elif name == 'git-multibranch':
         # The original image omits tmux, but the solution's final command
         # requires it. Install the missing tool before configuring services;
         # retain the original tmux command and all Git/SSH/nginx behavior.
@@ -189,6 +199,8 @@ fi
     (destination / 'solve.sh').write_text(new)
     if name == 'protein-assembly':
         shutil.copyfile(Path(__file__).with_name('protein_sequences.py'), destination / 'protein_sequences.py')
+    if name == 'filter-js-from-html':
+        shutil.copyfile(Path(__file__).with_name('guest_chromium.py'), destination / 'guest_chromium.py')
     def digest(path):
         return hashlib.sha256(path.read_bytes()).hexdigest()
     evidence = {
