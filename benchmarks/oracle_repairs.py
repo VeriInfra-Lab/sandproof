@@ -238,9 +238,9 @@ if(!bpe)return 78;''')
         new = ('install -D -m 644 /solution/mteb-verifier-constraints.txt '
                + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + new)
     elif name == 'mteb-leaderboard':
-        # Only this historical tree is used by the original computation.
-        # Fetch all of its files without unrelated history or today's tree;
-        # their combined size can fill the original 10 GiB task disk.
+        # Keep all objects for the fixed snapshot, but materialize only complete
+        # directories of models selected by the original filename-only filter.
+        # Even the historical full working tree cannot fit the original disk.
         marker = 'git clone https://github.com/embeddings-benchmark/results'
         checkout = 'git checkout ' + MTEB_RESULTS_COMMIT
         if old.count(marker) != 1 or old.count(checkout) != 1:
@@ -249,13 +249,16 @@ if(!bpe)return 78;''')
             'git init results\n'
             'git -C results remote add origin https://github.com/embeddings-benchmark/results\n'
             'git -C results fetch --depth=1 --no-tags origin ' + MTEB_RESULTS_COMMIT)
+        new = new.replace(checkout, 'git reset --mixed ' + MTEB_RESULTS_COMMIT)
         # In MTEB 1.38.41 results_repo is still a clone source, even for a
         # local path. Its documented cache root must point at the parent of
-        # this complete checkout to avoid a second full working tree.
+        # this existing checkout to avoid a second full working tree.
         marker = 'python leaderboard.py'
         if new.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
-        new = new.replace(marker, 'MTEB_CACHE="$(dirname "$PWD")" python leaderboard.py')
+        new = new.replace(marker,
+            'python "$(dirname "$0")/guest_mteb_results.py"\n'
+            'MTEB_CACHE="$(dirname "$PWD")" python leaderboard.py')
     elif name == 'torch-tensor-parallelism':
         # In Torch 2.7.0, the direct Gloo Python holder releases the GIL on
         # destruction; its parent ProcessGroup's holder does not. Keep the
@@ -290,6 +293,8 @@ if(!bpe)return 78;''')
     if name == 'mteb-retrieve':
         shutil.copyfile(Path(__file__).with_name('mteb-verifier-constraints.txt'),
                         destination / 'mteb-verifier-constraints.txt')
+    if name == 'mteb-leaderboard':
+        shutil.copyfile(Path(__file__).with_name('guest_mteb_results.py'), destination / 'guest_mteb_results.py')
     if name in ('qemu-alpine-ssh', 'qemu-startup'):
         shutil.copyfile(Path(__file__).with_name('guest_bullseye_snapshot.sh'), destination / 'guest_bullseye_snapshot.sh')
     if name == 'rstan-to-pystan':
