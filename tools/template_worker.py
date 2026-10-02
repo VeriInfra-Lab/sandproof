@@ -482,6 +482,29 @@ def unpack_rootfs(commands, umoci, layout, bundle):
     return root
 
 
+def loop_backing(device):
+    path = Path(f"/sys/dev/block/{os.major(device)}:{os.minor(device)}/loop/backing_file")
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        return None
+
+
+def unmount_ext4(commands, mount):
+    device = mount.stat().st_dev
+    backing = loop_backing(device)
+    commands.run(["/usr/bin/umount", "--detach-loop", str(mount)])
+    if os.path.ismount(mount):
+        raise RuntimeError("candidate filesystem remains mounted")
+    # Linux loop autoclear can finish after umount returns. Observe only this
+    # device's original association; never detach a subsequently reused device.
+    while backing is not None and loop_backing(device) == backing:
+        remaining = commands.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("candidate loop cleanup deadline")
+        time.sleep(min(0.01, remaining))
+
+
 def populate_ext4(commands, root, disk):
     """Populate a new filesystem inside the disposable build VM only."""
     mount = disk.parent / "candidate-mount"
@@ -505,9 +528,7 @@ def populate_ext4(commands, root, disk):
                 # Only reclamation gets a separate bounded grace period; it
                 # cannot extend the job deadline or allow a late candidate.
                 cleanup = Commands(time.monotonic() + 5, commands.log, 0, budget=commands.budget)
-                cleanup.run(["/usr/bin/umount", str(mount)])
-                if os.path.ismount(mount):
-                    raise RuntimeError("candidate filesystem remains mounted")
+                unmount_ext4(cleanup, mount)
             mount.rmdir()
         except Exception:
             if failure is None:
