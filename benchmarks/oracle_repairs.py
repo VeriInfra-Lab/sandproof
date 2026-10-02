@@ -21,6 +21,7 @@ REPAIRS = {
     'make-doom-for-mips': 'a9cd034a5e76fa2b22481717a9669869214f43fec5b4fedc957d83dd2ef6a84a',
     'build-pmars': '105292ca0e8bc399831550fc54c451002bd300644eb9beef1760dbfa7f8b7543',
     'protein-assembly': '3502b801f1260857a68a2ecbdc4497f8f7034e6a472990cd5fb9cd0eebc7dec9',
+    'pytorch-model-recovery': '175a7802777b43e0fa4f629d71f7c68fb40706813c342aaddc72108d89bd5b2c',
     'build-pov-ray': '67c962a8b114fa1d55d1230c7d87309aa2b5ad643d9a955a2d74755fa8842e25',
     'crack-7z-hash': '2640463e6e14658426f3ea629e0702688e00553eb8006cf31ec3b9cff75c4b19',
     'caffe-cifar-10': '771887de1ed557269c7f3160c777519aa9538e1e9b59771b2f6ef38c8952490c',
@@ -122,6 +123,8 @@ fi
         if new.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
         new = new.replace(marker, 'cp /solution/protein_sequences.py /app/protein_sequences.py\n' + marker)
+    elif name == 'pytorch-model-recovery':
+        new = 'python /solution/guest_wheel_sharing.py || exit $?\n' + old
     elif name == 'build-pov-ray':
         # Exact archive digests independently checked against upstream PR #77.
         new = old
@@ -201,6 +204,8 @@ fi
     (destination / 'solve.sh').write_text(new)
     if name == 'protein-assembly':
         shutil.copyfile(Path(__file__).with_name('protein_sequences.py'), destination / 'protein_sequences.py')
+    if name == 'pytorch-model-recovery':
+        shutil.copyfile(Path(__file__).with_name('guest_wheel_sharing.py'), destination / 'guest_wheel_sharing.py')
     if name == 'filter-js-from-html':
         shutil.copyfile(Path(__file__).with_name('guest_chromium.py'), destination / 'guest_chromium.py')
     def digest(path):

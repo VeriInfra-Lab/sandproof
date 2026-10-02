@@ -207,6 +207,27 @@ class LocalFinalizationTests(unittest.TestCase):
             self.assertNotIn('verifier_observation_env', row)
             self.assertEqual(row['status'], 'passed')
 
+    def test_torch_sharing_environment_only_applies_to_explicit_repair(self):
+        for name, mode in (('pytorch-model-recovery', 'original'),
+                           ('pytorch-model-recovery', 'repaired'), ('sample', 'repaired')):
+            with self.subTest(name=name, mode=mode), self.fixture(task_name=name) as (
+                    args, env, oracle, verifier, trial, output):
+                args.oracle_mode = mode
+                with (patch.object(runner, 'prepare_repaired_task', return_value=args.source),
+                      patch.object(runner, 'Verifier', return_value=verifier) as constructor):
+                    row = asyncio.run(runner.run_task(args, {'name': name}, {},
+                        environment_factory=lambda **kwargs: env))
+                if name == 'pytorch-model-recovery' and mode == 'repaired':
+                    self.assertEqual(constructor.call_args.kwargs['override_env'], {'UV_LINK_MODE': 'hardlink'})
+                    self.assertEqual(row['verifier_repair_env'], {'UV_LINK_MODE': 'hardlink'})
+                else:
+                    self.assertNotIn('override_env', constructor.call_args.kwargs)
+                    self.assertNotIn('verifier_repair_env', row)
+                self.assertEqual(row['status'], 'passed')
+                self.assertEqual(row['rewards'], {'reward': 1})
+                self.assertTrue(row['kill_confirmed'])
+                env.stop.assert_awaited_once()
+
     def test_repaired_generic_browser_requires_supervised_lifecycle_and_keeps_reward(self):
         for lifecycle, reward, passed in ((None, 1, False), ('malformed', 1, False),
                 ('{"remaining_owned_children": [123]}\n', 1, False),

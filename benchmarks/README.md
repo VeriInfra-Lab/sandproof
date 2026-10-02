@@ -203,6 +203,7 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 - `make-doom-for-mips`：在安装交叉编译工具前刷新来宾软件包索引，避免镜像旧索引指向已移除包；刷新或安装失败立即停止，不继续用缺失工具构建。
 - `build-pmars`：保留同一组 Debian 构建依赖，使用刷新索引后的仓库版本，移除已不可获取的版本固定；保留原 Debian 源码获取、curses 编译与安装，实际版本由运行时依赖清单记录。
 - `protein-assembly`：通过 [RCSB 官方 Data API](https://data.rcsb.org/)的 polymer entity 与 chemical component 字典还原修饰残基及有序母体残基；保留单一聚合物筛选，拒绝无法解析的序列。原 FASTA 将部分荧光团编码为 `X`，无法满足 DNA 翻译约束；修复不嵌入目标序列，原 DNA 优化和评分继续执行。
+- `pytorch-model-recovery`：在原解答前清理来宾 pip 下载缓存，使用评分器同版 uv 0.9.5 逐个重新安装原版本的大型 Torch/CUDA wheel，并通过公开 hardlink 接口与缓存共享文件。PyPI 解析结果须包含固定版本和 SHA-256；重新安装前后校验代码及数据摘要、完整版本清单与大文件硬链接数，不编辑 uv 缓存内部结构。仅修正版评分器设置 `UV_LINK_MODE=hardlink`，原评分源码、Torch 构建变体及 10 GiB 私有盘预算保持不变；辅助证据写入来宾 `/logs/verifier/torch-wheel-sharing.json`。组件检查不代替完整实机评分。
 - `build-pov-ray`：从 ICM 公开镜像下载相同三个 2.2 压缩包，并核对与[上游 PR #77](https://github.com/harbor-framework/terminal-bench-2/pull/77)相同的 SHA-256；其余编译与渲染流程不变。原站对直接下载返回 HTTP 403。
 - `caffe-cifar-10`：从 BrainChip 公开镜像下载相同 CIFAR-10 binary 数据，内容已核对[作者公布的 MD5](https://www.cs.toronto.edu/~kriz/cifar.html)，执行时再核对固定 SHA-256。下载、解压、原 Caffe 构建及训练均在 VM 原 agent 预算中，不预填数据或训练结果。
 - `crack-7z-hash`：先用原 John 自带完整常用密码字典和原规则运行，并要求 John 确认破解成功；解压密码取自实际破解结果，替代原脚本的答案常量。没有任务专用候选表，也没有跳过破解计算。模式语义见 [John 官方说明](https://www.openwall.com/john/doc/MODES.shtml)。

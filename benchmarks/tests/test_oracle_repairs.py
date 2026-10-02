@@ -23,6 +23,42 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_torch_layout_failure_stops_before_unchanged_solution(self):
+        script = 'printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'
+        for code in (0, 42):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                (source / 'task.toml').write_text('[agent]\ntimeout_sec = 900.0\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'pytorch-model-recovery': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('pytorch-model-recovery', source, root / 'repaired')
+                stub = bin_dir / 'python'
+                stub.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                f'exit {code}\n')
+                stub.chmod(0o700)
+                log = root / 'commands'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')],
+                    env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log)})
+                self.assertEqual(result.returncode, code)
+                expected = ['/solution/guest_wheel_sharing.py']
+                if not code:
+                    expected.append('original solution')
+                self.assertEqual(log.read_text().splitlines(), expected)
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                for relative in ('tests/test.sh', 'task.toml'):
+                    self.assertEqual((source / relative).read_bytes(), (repaired / relative).read_bytes())
+                helper = Path(__file__).parents[1] / 'guest_wheel_sharing.py'
+                self.assertEqual((repaired / 'solution/guest_wheel_sharing.py').read_bytes(), helper.read_bytes())
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['repaired_files']['guest_wheel_sharing.py'],
+                                 hashlib.sha256(helper.read_bytes()).hexdigest())
+
     def test_stan_pins_reach_r_subprocesses_and_r_failure_stops_the_solution(self):
         # Exercise the real repaired shell with recording R/package-manager
         # boundaries; never install packages or execute benchmark code here.

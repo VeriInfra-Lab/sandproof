@@ -282,6 +282,9 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
                 # this verifier. No implicit modification of original runs.
                 row['verifier_repair_env'] = {'SE_CHROME_PATH': CHROMIUM_LIFECYCLE_PATH}
                 verifier_options['override_env'].update(row['verifier_repair_env'])
+        if task.name == 'pytorch-model-recovery' and oracle_mode == 'repaired':
+            row['verifier_repair_env'] = {'UV_LINK_MODE': 'hardlink'}
+            verifier_options['override_env'] = dict(row['verifier_repair_env'])
         verifier = Verifier(task=task, trial_paths=paths, environment=environment, **verifier_options)
         result = await asyncio.wait_for(verifier.verify(), task.config.verifier.timeout_sec)
         row['rewards'] = result.rewards
