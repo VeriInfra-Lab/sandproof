@@ -144,6 +144,17 @@ def exercise(args):
     def request(method, path, body=None, key=keys[0]):
         code, data = fetch(opener, urls[2], method, path, key, body)
         return code, json.loads(data)
+    def wait_builds():
+        # A child PID is not a listening endpoint. Observe readiness with GET;
+        # never repair a startup race by retrying a mutating build submission.
+        for _ in range(60):
+            try:
+                if request("GET", "/missing")[0] == 404:
+                    return
+            except OSError:
+                assert process.poll() is None, "build service exited before readiness"
+            time.sleep(0.5)
+        raise AssertionError("build endpoint did not become ready")
     def submit(body, source=None):
         if build_mode == "windowed":
             from tools.template_build_client import BuildClient, saved_intent
@@ -186,13 +197,7 @@ def exercise(args):
             controllers.append(server)
             wait_ready(opener, urls[i], keys[i], server)
         process = start_builds()
-        for _ in range(60):
-            try:
-                if request("GET", "/missing")[0] == 404:
-                    break
-            except OSError:
-                assert process.poll() is None
-                time.sleep(0.5)
+        wait_builds()
         basic = {"kind": "dockerfile", "allowInternetAccess": False, "timeoutSeconds": 600,
                  "resources": {"cpuCount": 1, "memoryMiB": 256, "diskMiB": 1024, "minFreeMiB": 64}}
         job = submit(basic, context)
@@ -210,6 +215,16 @@ def exercise(args):
             sandbox.kill()
         evidence.append({"scenario": "multistage_context_publish_sdk", "build": job, "template": template, "result": "passed"})
         print(json.dumps(evidence[-1]), flush=True)
+        if getattr(args, "publication_unknown", False):
+            # One exclusive store lease: stop the background supervisor before
+            # driving the actual production functions through the HTTP barrier.
+            stop_server(process)
+            log.close()
+            from template_publication_unknown import exercise as publication_unknown
+            evidence.append(publication_unknown(build_config, context, basic))
+            print(json.dumps(evidence[-1]), flush=True)
+            process = start_builds()
+            wait_builds()
         # Explicit worker failure produces bounded logs and exact VM reclaim.
         dockerfile = fixture_root / "context/Dockerfile"
         dockerfile.write_text("FROM scratch\nCOPY rootfs/ /\nRUN exit 17\n")
@@ -239,6 +254,7 @@ def exercise(args):
         process.wait(timeout=10)
         log.close()
         process = start_builds()
+        wait_builds()
         result = wait_job(job)
         assert result["state"] == "Failed" and result["failure"] == "InterruptedBuild", result
         code, body = fetch(opener, urls[1], "POST", "/sandproof/internal-build-vms/" + job, keys[1], {"timeout": 660, "allowInternetAccess": False})
@@ -300,6 +316,7 @@ if __name__ == "__main__":
     mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
     mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
     parser.add_argument("--public", action="store_true")
+    parser.add_argument("--publication-unknown", action="store_true", help="delay the original publication POST across expiry and SQLite restart (#189)")
     parser.add_argument("--temporarily-forward", action="store_true", help="temporarily enable IPv4 forwarding for approved public test; restore on exit")
     parser.add_argument("--public-image", default="public.ecr.aws/docker/library/ubuntu:24.04")
     args = parser.parse_args()
