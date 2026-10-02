@@ -49,6 +49,17 @@ class RetentionTests(unittest.TestCase):
         return BuildStore(self.root, self.limits, bounded=self.config, clock=lambda: self.now,
                           free_bytes=lambda: 1000000 * MIB, **kwargs)
 
+    def test_configuration_reserves_future_encoded_result_and_framing(self):
+        from tools.template_build_store import bounded_configuration, future_record_fields
+        config = self.config | {'max_request_bytes': 4096, 'max_result_bytes': 32768}
+        with self.assertRaisesRegex(ValueError, 'insufficient encoded record'):
+            bounded_configuration(config)  # The formerly accepted 64 KiB profile.
+        minimum = 2 * config['max_request_bytes'] + sum(future_record_fields(config).values()) + 4096
+        bounded_configuration(config | {'max_record_bytes': minimum})
+        with self.assertRaisesRegex(ValueError, 'insufficient encoded record'):
+            bounded_configuration(config | {'max_record_bytes': minimum - 1})
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM jobs').fetchone()[0], 0)
+
     def reopen(self):
         self.store.close()
         self.store = None
