@@ -115,6 +115,8 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 完整容量模式还须同时提供 `--run-root <事前指定的新目录>`、`--namespace <16位小写十六进制>`、`--build-namespace <独立身份>`；两个身份的前六位也须不同。私有策略中的数据库、节点目录、jail、构建工作区和注册库必须逐项绑定这些原路径，不会为了测试搬迁或改写 profile。操作者另准备空的私有协调文件。入口先静态核对配置，两个 Rust 池启动并激活原 profile 后再让 Python 监督服务加入原租约；静态预检不是启动授权。自助模板探针可用 `--builder-rootfs` 指定独立构建基盘，磁盘字段取完整 profile 的原额度，而非沿用固定 24 GiB。首次启用需要空且静止的受管目录；已有部署、部分策略或身份不符直接拒绝，旧夹具须显式使用 `--legacy-unbounded`。
 
+最终服务预算的两项慢流/内存收尾使用[独立监督入口](../tests/system/server_slow_boundaries.py)，参数为 `--server`、`--server-sha256`、`--host-config`、`--scratch-parent`、`--cgroup-parent`、`--service-cgroup-parent` 和 `--uid-base`。它不运行题目或联网；范围、原时间边界与精确清理规则只以[验收清单](../docs/testing-plan.md)为准，不用旧的缩短空闲配置替代最终配置。
+
 ## 本地标准解答探针
 
 本入口是固定镜像/逐题初始化的诊断工具，不是 [#123](https://github.com/ningZhang-cs/sandproof/issues/123) 的通用模板产品接口；历史实验不能作为该新能力交付。
