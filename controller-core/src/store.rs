@@ -45,6 +45,11 @@ impl<K: PartialEq, V> Store<K, V> {
         self.entries.push((key, value));
     }
 
+    /// Remove only entries selected by the controller's checked maintenance path.
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&K, &V) -> bool) {
+        self.entries.retain(|(key, value)| keep(key, value));
+    }
+
     #[must_use]
     pub fn entries(&self) -> &[(K, V)] {
         &self.entries

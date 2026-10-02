@@ -880,3 +880,48 @@ fn panic_before_commit_rolls_back_candidate_and_same_object_remains_usable() {
     admit(&mut j, 1, &mut NeverCrash).unwrap();
     parity(&j);
 }
+
+#[test]
+fn pure_maintenance_is_not_a_production_pruning_entry() {
+    let (_dir, mut journal) = setup();
+    journal.apply(create(1), &mut NeverCrash).unwrap();
+    let before = journal.world().unwrap();
+    let input_count: i64 = journal
+        .journal
+        .connection
+        .query_row("SELECT COUNT(*) FROM controller_inputs", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let input = core::ControllerInput::Maintenance(core::maintenance::MaintenanceInput::Enable {
+        limits: core::maintenance::MaintenanceLimits {
+            max_retained_results: 4,
+            max_host_slots: 2,
+            windows: core::maintenance::windows::WindowLimits::new(2, 100).unwrap(),
+        },
+        now_ms: 0,
+    });
+    assert!(matches!(
+        journal.apply(input, &mut NeverCrash),
+        Err(JournalError::UnsupportedInput)
+    ));
+    assert_eq!(journal.world().unwrap(), before);
+    let after_count: i64 = journal
+        .journal
+        .connection
+        .query_row("SELECT COUNT(*) FROM controller_inputs", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(input_count, after_count);
+}
+
+#[test]
+fn serialized_window_limits_cannot_bypass_checked_constructor() {
+    for (count, duration) in [(0_u64, 100_u64), (2, 0)] {
+        let value = serde_json::json!({"max_retained_results":4,"max_host_slots":2,
+            "windows":{"max_open_windows":count,"max_duration_ms":duration}});
+        let parsed = serde_json::from_value::<core::maintenance::MaintenanceLimits>(value);
+        assert!(parsed.is_err());
+    }
+}
