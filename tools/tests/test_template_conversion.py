@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools.template_fetch import DOCKER_MANIFEST, OCI_MANIFEST, fetch
-from tools.template_inputs import InvalidTemplate, inspect_oci, sha256
+from tools.template_inputs import BlobReader, InvalidTemplate, inspect_oci, sha256
 from tools.tests.test_template_inputs import archive_bytes
 
 
@@ -112,9 +112,14 @@ class ConversionTests(unittest.TestCase):
         path = self.layout / 'blobs/sha256' / self.manifest['layers'][0]['digest'][7:]
         self.commands.run.side_effect = self.convert
         with patch('tools.template_inputs.sha256', wraps=sha256) as hashes, \
+             patch.object(BlobReader, 'verify', autospec=True, side_effect=BlobReader.verify) as streamed, \
              patch('gzip.GzipFile', wraps=gzip.GzipFile) as decompressor:
             self.run_fetch()
-        self.assertEqual(sum(call.args[0] == path for call in hashes.call_args_list), 2)
+        # The first fingerprint is checked while decoding; conversion must
+        # still perform an independent complete hash before reusing that result.
+        self.assertEqual(sum(call.args[0].descriptor['digest'][7:] == path.name
+                             for call in streamed.call_args_list), 1)
+        self.assertEqual(sum(call.args[0] == path for call in hashes.call_args_list), 1)
         self.assertEqual(decompressor.call_count, 1)
 
     def test_converter_corrupting_previously_verified_bytes_is_rejected(self):
@@ -187,7 +192,10 @@ class ConversionTests(unittest.TestCase):
 
     def test_corrupt_source_layer_is_rejected_before_converter_runs(self):
         layer = self.manifest['layers'][0]
-        (self.layout / 'blobs/sha256' / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
+        path = self.layout / 'blobs/sha256' / layer['digest'][7:]
+        damaged = bytearray(path.read_bytes())
+        damaged[4] ^= 1  # Valid gzip must still match the original encoded digest.
+        path.write_bytes(damaged)
         with self.assertRaisesRegex(InvalidTemplate, 'fingerprint'):
             self.run_fetch()
         self.commands.run.assert_not_called()
