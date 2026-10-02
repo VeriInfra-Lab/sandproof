@@ -90,11 +90,13 @@ fi
         new = old.replace(marker, 'pip install "planarity==0.6" -e .')
     elif name == 'mcmc-sampling-stan':
         # RcppParallel's current source requires cmake. Keep the original R,
-        # RStan pins, model, sampling procedure and budget.
+        # RStan pins, model, sampling procedure and budget. Non-interactive
+        # remotes otherwise upgrades already installed dependencies, replacing
+        # the pinned StanHeaders compiler with one rejecting the old model.
         marker = 'sudo apt-get install -y \\\n'
         if old.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
-        new = old.replace(marker, marker + '    cmake \\\n')
+        new = old.replace(marker, 'export R_REMOTES_UPGRADE=never\n' + marker + '    cmake \\\n')
     elif name == 'make-doom-for-mips':
         # The OCI image's apt indices reference packages removed by updates.
         # Refresh them in the guest, inside the unchanged oracle deadline.
