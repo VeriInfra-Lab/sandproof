@@ -5,6 +5,7 @@ use sandbox_runtime::{
 };
 use sandproof_controller_service::{
     BoundedHostConfig, CreateOptions, HostSlotContext,
+    template_registry::CandidateVerification,
     templates::{TemplateArtifact, TemplateBinding},
 };
 use sandproof_controller_service::{HostEvidence, WorkerTransportError};
@@ -1208,6 +1209,28 @@ impl LinuxWorker {
         resources.memory_max_bytes = template.resources.host_memory_bytes;
         resources.validate(template.resources.memory_mib)?;
         Ok(())
+    }
+
+    /// Reuse completed registry hashes only for unchanged, trusted sealed files.
+    /// Missing/stale evidence leaves the normal node cache/hash checks in place.
+    pub fn cache_candidate_verification(
+        &self,
+        template: &TemplateBinding,
+        verification: &CandidateVerification,
+    ) {
+        let Ok(mut cache) = self.validated_artifacts.lock() else {
+            return;
+        };
+        for artifact in [&template.kernel, &template.rootfs] {
+            let Ok(stamp) = ArtifactStamp::read(artifact) else {
+                continue;
+            };
+            if verification.matches(artifact)
+                && ArtifactStamp::read(artifact).is_ok_and(|current| current == stamp)
+            {
+                cache.insert(artifact.path.clone(), stamp);
+            }
+        }
     }
 
     fn validate_artifact(&self, artifact: &TemplateArtifact) -> NodeResult<()> {
@@ -2711,3 +2734,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod publication_tests;
