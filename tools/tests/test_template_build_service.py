@@ -162,7 +162,7 @@ class BuildTests(unittest.TestCase):
         (pending / 'rootfs.ext4').write_bytes(b'keep until admission is known')
         backend.request.side_effect = TimeoutError('unknown publication')
         with self.assertRaises(TimeoutError):
-            backend.discard_unpublished(self.store.get(job))
+            backend.discard_unpublished(self.store, self.store.get(job))
         self.assertTrue(pending.exists())
 
     def test_staging_crossing_deadline_discards_only_unadmitted_candidate(self):
