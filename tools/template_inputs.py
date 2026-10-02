@@ -1,5 +1,6 @@
 """Bounded template inputs. No Dockerfile interpretation or host execution."""
 
+from contextlib import nullcontext
 import gzip
 import hashlib
 import json
@@ -146,17 +147,45 @@ def bounded_json(path, limit=1024 * 1024):
     return json.loads(path.read_bytes())
 
 
-def blob(layout, descriptor, max_bytes):
+def _blob_path(layout, descriptor, max_bytes):
     digest = descriptor.get("digest", "")
     size = descriptor.get("size")
     if (not re.fullmatch(r"sha256:[0-9a-f]{64}", digest) or type(size) is not int
             or not 0 < size <= max_bytes):
         raise InvalidTemplate("invalid OCI descriptor")
     path = layout / "blobs/sha256" / digest[7:]
-    if (not stat.S_ISREG(path.lstat().st_mode) or path.stat().st_size != size
-            or sha256(path) != digest[7:]):
+    if not stat.S_ISREG(path.lstat().st_mode) or path.stat().st_size != size:
         raise InvalidTemplate("OCI blob fingerprint mismatch")
     return path
+
+
+def blob(layout, descriptor, max_bytes):
+    path = _blob_path(layout, descriptor, max_bytes)
+    if sha256(path) != descriptor["digest"][7:]:
+        raise InvalidTemplate("OCI blob fingerprint mismatch")
+    return path
+
+
+class BlobReader:
+    """Bind the compressed fingerprint to the bytes consumed by the decoder."""
+
+    def __init__(self, source, descriptor):
+        self.source, self.descriptor = source, descriptor
+        self.digest, self.count = hashlib.sha256(), 0
+
+    def read(self, size=-1):
+        size = 1024 * 1024 if size < 0 else min(size, 1024 * 1024)
+        block = self.source.read(min(size, self.descriptor["size"] - self.count + 1))
+        self.count += len(block)
+        if self.count > self.descriptor["size"]:
+            raise InvalidTemplate("OCI blob fingerprint mismatch")
+        self.digest.update(block)
+        return block
+
+    def verify(self):
+        if (self.count != self.descriptor["size"]
+                or self.digest.hexdigest() != self.descriptor["digest"][7:]):
+            raise InvalidTemplate("OCI blob fingerprint mismatch")
 
 
 class LayerReader:
@@ -228,7 +257,7 @@ def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False, layer_che
         raise InvalidTemplate("invalid image layers")
     remaining_bytes, remaining_entries = max_bytes, max_entries
     for layer, expected_diff in zip(layers, diff_ids):
-        path = blob(layout, layer, max_bytes)
+        path = _blob_path(layout, layer, max_bytes)
         media = layer.get("mediaType")
         if media not in layer_media or layer.get("urls"):
             raise InvalidTemplate("only tar/gzip OCI layers supported")
@@ -236,10 +265,11 @@ def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False, layer_che
             raise InvalidTemplate("OCI diff_id mismatch")
         compressed = media.endswith(("+gzip", ".gzip"))
         key = layer["digest"], layer["size"], compressed, expected_diff
-        # blob() above rehashes the current file even on a cache hit. A Docker
-        # -> OCI media-type conversion may retain identical compressed bytes;
-        # only that same encoding and diff_id can reuse tar/gzip validation.
+        # Cache hits still rehash the whole current file. Fresh validation
+        # hashes the encoded bytes during the same read used by the decoder.
         if checked is not None and key in checked:
+            if sha256(path) != layer["digest"][7:]:
+                raise InvalidTemplate("OCI blob fingerprint mismatch")
             expanded, entries = checked[key]
             if expanded > remaining_bytes:
                 raise InvalidTemplate("OCI expanded byte limit")
@@ -248,17 +278,19 @@ def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False, layer_che
             remaining_bytes -= expanded
             remaining_entries -= entries
             continue
-        opener = gzip.open if compressed else open
-        # Parse headers and verify diff_id through the same forward-only
-        # decompressor. Drain after tar EOF: padding and trailing gzip members
-        # still count toward the byte limit, digest and gzip integrity checks.
-        with opener(path, "rb") as source:
-            stream = LayerReader(source, remaining_bytes)
-            with tarfile.open(fileobj=stream, mode="r|", bufsize=1024 * 1024) as archive:
-                entries = check_members(archive, max_bytes=remaining_bytes,
-                                        max_entries=remaining_entries, context=False)
-            while stream.read(1024 * 1024):
-                pass
+        # Drain after tar EOF: padding and trailing gzip members still count
+        # toward both fingerprints, the byte limit and gzip integrity checks.
+        with path.open("rb") as raw:
+            encoded = BlobReader(raw, layer)
+            decoded = gzip.GzipFile(fileobj=encoded, mode="rb") if compressed else nullcontext(encoded)
+            with decoded as source:
+                stream = LayerReader(source, remaining_bytes)
+                with tarfile.open(fileobj=stream, mode="r|", bufsize=1024 * 1024) as archive:
+                    entries = check_members(archive, max_bytes=remaining_bytes,
+                                            max_entries=remaining_entries, context=False)
+                while stream.read(1024 * 1024):
+                    pass
+            encoded.verify()
         if expected_diff != "sha256:" + stream.digest.hexdigest():
             raise InvalidTemplate("OCI diff_id mismatch")
         if checked is not None:
