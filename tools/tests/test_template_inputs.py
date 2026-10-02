@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from tools.template_inputs import InvalidTemplate, check_members, extract_context, inspect_oci, startup_config
+from tools.template_inputs import InvalidTemplate, LayerChecks, check_members, extract_context, inspect_oci, startup_config
 from tools.template_worker import AGENT, BOOT, Commands, LogBudget, check_tools, guest_path, install_platform, install_loopback_hosts, runtime_defaults, terminate, validate_request
 
 
@@ -179,6 +179,42 @@ class TemplateInputTests(unittest.TestCase):
         with patch('gzip.GzipFile', wraps=gzip.GzipFile) as decompressor:
             inspect_oci(layout, max_bytes=100000, max_entries=20)
         self.assertEqual(decompressor.call_count, 1)
+
+    def test_reused_layer_checks_still_charge_every_occurrence_and_current_limits(self):
+        layer = archive_bytes([('payload', b'original', tarfile.REGTYPE, '')])
+        layout, _ = self.make_oci(layer_bytes=layer, copies=2)
+        checks = LayerChecks(layout)
+        with patch('gzip.GzipFile', wraps=gzip.GzipFile) as decompressor:
+            for _ in range(2):
+                inspect_oci(layout, max_bytes=2 * len(layer), max_entries=2, layer_checks=checks)
+            with self.assertRaisesRegex(InvalidTemplate, 'expanded byte limit'):
+                inspect_oci(layout, max_bytes=2 * len(layer) - 1, max_entries=2, layer_checks=checks)
+            with self.assertRaisesRegex(InvalidTemplate, 'entry limit'):
+                inspect_oci(layout, max_bytes=2 * len(layer), max_entries=1, layer_checks=checks)
+        self.assertEqual(decompressor.call_count, 1)
+
+    def test_layer_checks_cannot_be_reused_for_another_or_replaced_directory(self):
+        layout, _ = self.make_oci()
+        checks = LayerChecks(layout)
+        inspect_oci(layout, max_bytes=100000, max_entries=20, layer_checks=checks)
+        other = self.root / 'other'
+        shutil.copytree(layout, other)
+        with self.assertRaisesRegex(InvalidTemplate, 'another layout'):
+            inspect_oci(other, max_bytes=100000, max_entries=20, layer_checks=checks)
+        layout.rename(self.root / 'previous')
+        other.rename(layout)
+        with self.assertRaisesRegex(InvalidTemplate, 'another layout'):
+            inspect_oci(layout, max_bytes=100000, max_entries=20, layer_checks=checks)
+
+    def test_failed_gzip_validation_never_becomes_reusable(self):
+        layer = archive_bytes([('payload', b'original', tarfile.REGTYPE, '')])
+        damaged = gzip.compress(layer)[:-4]
+        with patch('gzip.compress', return_value=damaged):
+            layout, _ = self.make_oci(layer_bytes=layer)
+        checks = LayerChecks(layout)
+        for _ in range(2):
+            with self.assertRaises(EOFError):
+                inspect_oci(layout, max_bytes=100000, max_entries=20, layer_checks=checks)
 
     def test_oci_tar_eof_does_not_skip_trailing_bytes_or_diff_id(self):
         layer = archive_bytes([('payload', b'original', tarfile.REGTYPE, '')])

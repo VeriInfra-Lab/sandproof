@@ -16,6 +16,9 @@ from tools.tests.test_template_inputs import archive_bytes
 
 class ConversionTests(unittest.TestCase):
     def setUp(self):
+        self.new_acquisition()
+
+    def new_acquisition(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -104,6 +107,60 @@ class ConversionTests(unittest.TestCase):
     def test_original_docker_layout_is_rejected_without_explicit_conversion(self):
         with self.assertRaisesRegex(InvalidTemplate, 'unsupported OCI manifest'):
             inspect_oci(self.layout, max_bytes=100000, max_entries=20)
+
+    def test_conversion_rehashes_both_sides_but_decompresses_unchanged_layers_once(self):
+        path = self.layout / 'blobs/sha256' / self.manifest['layers'][0]['digest'][7:]
+        self.commands.run.side_effect = self.convert
+        with patch('tools.template_inputs.sha256', wraps=sha256) as hashes, \
+             patch('gzip.GzipFile', wraps=gzip.GzipFile) as decompressor:
+            self.run_fetch()
+        self.assertEqual(sum(call.args[0] == path for call in hashes.call_args_list), 2)
+        self.assertEqual(decompressor.call_count, 1)
+
+    def test_converter_corrupting_previously_verified_bytes_is_rejected(self):
+        def convert(args):
+            self.convert(args)
+            layer = self.manifest['layers'][0]
+            (self.layout / 'blobs/sha256' / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
+        self.commands.run.side_effect = convert
+        with self.assertRaisesRegex(InvalidTemplate, 'fingerprint'):
+            self.run_fetch()
+
+    def test_converted_encoding_and_diff_id_cannot_borrow_old_checks(self):
+        def convert(args):
+            self.convert(args)
+            manifest = json.loads(self.raw)
+            if change == 'encoding':
+                manifest['layers'][0]['mediaType'] = 'application/vnd.oci.image.layer.v1.tar'
+            elif change == 'diff_id':
+                config = json.loads((self.layout / 'blobs/sha256' / manifest['config']['digest'][7:]).read_bytes())
+                config['rootfs']['diff_ids'] = ['sha256:' + '0' * 64]
+                manifest['config'] = self.add(json.dumps(config).encode(), manifest['config']['mediaType'])
+            else:
+                manifest['layers'][0]['urls'] = ['https://example.com/foreign']
+            self.write_manifest(manifest)
+        # Each subcase starts a fresh acquisition and private layout.
+        for change, error in (('encoding', tarfile.ReadError), ('diff_id', InvalidTemplate),
+                              ('foreign', InvalidTemplate)):
+            with self.subTest(change=change):
+                self.new_acquisition()
+                self.commands.run.side_effect = convert
+                with self.assertRaises(error):
+                    self.run_fetch()
+
+    def test_new_layer_digest_requires_full_path_validation(self):
+        def convert(args):
+            self.convert(args)
+            manifest = json.loads(self.raw)
+            layer = archive_bytes([('../escape', b'bad', tarfile.REGTYPE, '')])
+            manifest['layers'] = [self.add(gzip.compress(layer), manifest['layers'][0]['mediaType'])]
+            config = json.loads((self.layout / 'blobs/sha256' / manifest['config']['digest'][7:]).read_bytes())
+            config['rootfs']['diff_ids'] = ['sha256:' + hashlib.sha256(layer).hexdigest()]
+            manifest['config'] = self.add(json.dumps(config).encode(), manifest['config']['mediaType'])
+            self.write_manifest(manifest)
+        self.commands.run.side_effect = convert
+        with self.assertRaisesRegex(InvalidTemplate, 'escapes root'):
+            self.run_fetch()
 
     def test_converter_leaving_multiple_manifests_is_rejected(self):
         def convert(args):
