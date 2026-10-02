@@ -9,6 +9,13 @@ it does not test the 13000-second expiry, async SDK, or final host reclamation.
 Credentials come only from SANDPROOF_TEST_API_KEY / _FOREIGN_API_KEY.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 import argparse
 import asyncio
 from contextlib import nullcontext
