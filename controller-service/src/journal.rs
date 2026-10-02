@@ -10,6 +10,7 @@ use std::time::Duration;
 
 const APPLICATION_ID: i64 = 0x5350_4631; // SPF1
 const FORMAT_VERSION: i64 = 1;
+pub(crate) const CONTROLLER_FORMAT_VERSION: i64 = 2;
 type ExistingReceiptRow = (i64, String, Vec<u8>, Option<Vec<u8>>);
 
 /// Bytes are a projection supplied by the controller reducer's adapter.
@@ -106,6 +107,19 @@ pub(crate) fn write_accepted<C: Serialize>(
     transaction: &rusqlite::Transaction<'_>,
     write: &AcceptedWrite<C>,
 ) -> Result<u64, JournalError> {
+    write_accepted_with_ids(transaction, write, None)
+}
+
+/// Controller-owned journals supply transactionally reserved outbox IDs.
+/// The generic journal retains its existing opaque-store allocation contract.
+pub(crate) fn write_accepted_with_ids<C: Serialize>(
+    transaction: &rusqlite::Transaction<'_>,
+    write: &AcceptedWrite<C>,
+    outbox_ids: Option<&[i64]>,
+) -> Result<u64, JournalError> {
+    if outbox_ids.is_some_and(|ids| ids.len() != write.actions.len()) {
+        return Err(JournalError::CorruptStore);
+    }
     for action in &write.actions {
         action.identity.validate_version()?;
         if action.identity.owner != write.owner
@@ -171,14 +185,15 @@ pub(crate) fn write_accepted<C: Serialize>(
         return Err(JournalError::Conflict);
     }
 
-    for action in &write.actions {
+    for (index, action) in write.actions.iter().enumerate() {
         transaction
             .execute(
                 "INSERT INTO outbox
-                 (sandbox_id, owner_id, operation_id, logical_action_id, attempt,
+                 (id, sandbox_id, owner_id, operation_id, logical_action_id, attempt,
                   action_json, dispatch_state)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ready')",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'ready')",
                 params![
+                    outbox_ids.map(|ids| ids[index]),
                     write.sandbox.as_str(),
                     write.owner.as_str(),
                     write.operation.as_str(),
@@ -192,6 +207,24 @@ pub(crate) fn write_accepted<C: Serialize>(
     Ok(next_revision)
 }
 
+// A handle opened before ControllerJournal took ownership must also be
+// rejected. Check inside each write transaction, not only at open time.
+fn require_generic_store(connection: &Connection) -> Result<(), JournalError> {
+    let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if !matches!(format, 0 | FORMAT_VERSION) {
+        return Err(JournalError::UnsupportedStore);
+    }
+    let controller: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_meta')",
+        [],
+        |row| row.get(0),
+    )?;
+    if controller {
+        return Err(JournalError::UnsupportedStore);
+    }
+    Ok(())
+}
+
 impl Journal {
     /// Opens one local `SQLite` database. WAL + FULL + IMMEDIATE transactions
     /// are part of this format's operating contract, not caller preferences.
@@ -199,7 +232,18 @@ impl Journal {
     /// # Errors
     /// Rejects unsupported/corrupt stores, unsuitable journal settings, and I/O errors.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
+        Self::open_inner(path, false)
+    }
+
+    pub(crate) fn open_controller(path: impl AsRef<Path>) -> Result<Self, JournalError> {
+        Self::open_inner(path, true)
+    }
+
+    fn open_inner(path: impl AsRef<Path>, controller: bool) -> Result<Self, JournalError> {
         let connection = Connection::open(path)?;
+        if !controller {
+            require_generic_store(&connection)?;
+        }
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON;")?;
 
@@ -252,7 +296,9 @@ impl Journal {
                  PRAGMA user_version=1;
                  COMMIT;",
             )?;
-        } else if app_id != APPLICATION_ID || format != FORMAT_VERSION {
+        } else if app_id != APPLICATION_ID
+            || (format != FORMAT_VERSION && !(controller && format == CONTROLLER_FORMAT_VERSION))
+        {
             return Err(JournalError::UnsupportedStore);
         }
 
@@ -311,6 +357,7 @@ impl Journal {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_generic_store(&transaction)?;
         let next_revision = write_accepted(&transaction, write)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         transaction
@@ -451,6 +498,7 @@ impl Journal {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_generic_store(&transaction)?;
         let row: Option<(i64, Vec<u8>)> = transaction
             .query_row(
                 "SELECT id, action_json FROM outbox
@@ -489,6 +537,7 @@ impl Journal {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_generic_store(&transaction)?;
         let row: Option<ExistingReceiptRow> = transaction
             .query_row(
                 "SELECT id, dispatch_state, action_json, receipt_json FROM outbox

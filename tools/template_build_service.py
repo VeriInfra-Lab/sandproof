@@ -27,11 +27,13 @@ if __package__:
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from .template_stage import file_hash, private_directory, stage
     from .template_inputs import platform_dns_servers
+    from .template_fetch import mirror_registry
     from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from template_stage import file_hash, private_directory, stage
     from template_inputs import platform_dns_servers
+    from template_fetch import mirror_registry
     from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 
 
@@ -47,8 +49,10 @@ def protected_json(path, maximum=65536):
 
 def configuration(path):
     config = protected_json(path)
-    if set(config) != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
+    if set(config) - {"docker_hub_mirror"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
         raise ValueError("invalid build service config")
+    if "docker_hub_mirror" in config:
+        mirror_registry(config["docker_hub_mirror"])
     runtime, builder = protected_json(config["runtime_config"]), protected_json(config["builder_config"])
     if (not runtime.get("template_registry") or runtime.get("internal_build_vms")
             or not builder.get("internal_build_vms") or builder.get("template_registry")
@@ -233,6 +237,8 @@ class Backend:
             "max_entries": store.limits["max_entries"], "max_log_bytes": store.limits["max_log_bytes"],
             "timeout_seconds": max(1, int(row["deadline"] - store.clock()))}
         worker["dns_servers"] = self.config["dns_servers"]
+        if request["kind"] == "oci" and "docker_hub_mirror" in self.config:
+            worker["docker_hub_mirror"] = self.config["docker_hub_mirror"]
         sandbox.files.write("/input/request.json", json.dumps(worker), user="root")
         boot = command("cat /proc/sys/kernel/random/boot_id").stdout.strip()
         if not re.fullmatch(r"[0-9a-f-]{36}", boot):
