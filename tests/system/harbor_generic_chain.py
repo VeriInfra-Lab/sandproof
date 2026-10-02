@@ -40,6 +40,7 @@ from server_template_isolation import audit_gone
 from server_vm_id_capacity import check_no_resources
 from template_self_service import BUILD_TOOLS
 from template_resource_pressure import ready_for_pressure
+from template_build import IGZIP_HASHES
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.runtime_create_recovery import recover_runtime_create
@@ -119,7 +120,8 @@ def exercise(args):
                          if line.startswith('MemAvailable:'))) * 1024
     check_headroom(deployment, cpus=len(os.sched_getaffinity(0)), available_memory=available,
                    free_disk=shutil.disk_usage(args.scratch_parent).free)
-    for name, digest in BUILD_TOOLS.items():
+    build_tools = BUILD_TOOLS | (IGZIP_HASHES if args.igzip else {})
+    for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError('fixed tool mismatch: ' + name)
     if bounded_policy is not None:
@@ -185,7 +187,7 @@ def exercise(args):
     (root / 'builds').mkdir(mode=0o700)
     build = {'root': str(root / 'builds'), 'bind': f'127.0.0.1:{ports[2]}',
         'runtime_config': str(root / '0/config.json'), 'builder_config': str(root / '1/config.json'),
-        'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in BUILD_TOOLS.items()},
+        'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in build_tools.items()},
         'dns_servers': ['1.1.1.1', '8.8.8.8'],
         'limits': deployment['limits']}
     original_workspace = build['limits']['workspace_bytes']
@@ -452,7 +454,7 @@ def exercise(args):
             outcome = repetition_outcome(current, selected, oracle_mode=oracle_mode,
                 resource_pressure=args.resource_pressure, pressure_report=pressure_report)
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
-                'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
+                'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': build_tools,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'docker_hub_mirror': args.docker_hub_mirror,
@@ -519,6 +521,7 @@ if __name__ == '__main__':
                         help='exact fresh run root already declared in the full physical profile')
     parser.add_argument('--source-kind', choices=SOURCE_KINDS, default='oci')
     parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
+    parser.add_argument('--igzip', action='store_true', help='use the fixed optional ISA-L decoder pair in the build VM')
     parser.add_argument('--failure-diagnostics', action='store_true',
                         help='retain registered post-score guest probes without changing original scores')
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
