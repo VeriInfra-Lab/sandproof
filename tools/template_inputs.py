@@ -18,6 +18,14 @@ class InvalidTemplate(ValueError):
     pass
 
 
+def validate_tool_names(profile, *, registry=False):
+    required = {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox"}
+    if registry:
+        required.add("regctl")
+    if set(profile) not in (required, required | {"igzip", "libisal.so.2"}):
+        raise InvalidTemplate("fixed tool profile required; igzip needs libisal.so.2")
+
+
 def platform_dns_servers(value):
     """Trusted public IPv4 unicast resolver addresses; never a query filter."""
     import ipaddress

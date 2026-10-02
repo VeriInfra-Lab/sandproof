@@ -47,6 +47,12 @@ BUILDKIT_HASHES = {
     "busybox": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
     "envd": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
 }
+# Optional Ubuntu 24.04 ISA-L 2.31.0 artifacts; validated inside the build VM.
+IGZIP_HASHES = {
+    "igzip": "1e0f85d554ae96ec35fe709c0be256bce1764e18b4e0a6ffa8db9f9cb3c0a51e",
+    "libisal.so.2": "40ccd5e5abaff0451feff750d2b011370a546ac4706d1b06b9285ac26eda2c3c",
+}
+
 FIXTURE = r"""import json, os, pathlib, shutil, subprocess, tarfile
 p=pathlib.Path('/input/context')
 (p/'rootfs/bin').mkdir(parents=True)
@@ -116,7 +122,8 @@ def exercise(args):
     if subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
         raise RuntimeError("clean exact source commit required")
     commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
-    for name, digest in BUILDKIT_HASHES.items():
+    build_tools = BUILDKIT_HASHES | (IGZIP_HASHES if args.igzip else {})
+    for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed official tool fingerprint mismatch: " + name)
     if args.scratch_parent.stat().st_uid != 0 or args.scratch_parent.stat().st_mode & 0o077:
@@ -200,7 +207,7 @@ def exercise(args):
             active.append(builder.sandbox_id)
             checked(builder, "mkdir -p /input/tools /output")
             profile = {}
-            for name, digest in BUILDKIT_HASHES.items():
+            for name, digest in build_tools.items():
                 upload(builder, args.tools / name, "/input/tools/" + name)
                 profile[name] = {"path": "/input/tools/" + name, "sha256": digest}
             checked(builder, "chmod 755 /input/tools/*")
@@ -574,4 +581,5 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--registry", action="store_true")
+    parser.add_argument("--igzip", action="store_true", help="check and use the fixed optional ISA-L decoder pair")
     exercise(parser.parse_args())

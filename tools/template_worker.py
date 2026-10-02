@@ -23,9 +23,9 @@ import threading
 import time
 
 if __package__:
-    from .template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
+    from .template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers, validate_tool_names
 else:
-    from template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
+    from template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers, validate_tool_names
 
 
 MIB = 1024 * 1024
@@ -79,6 +79,10 @@ class LogBudget:
             return accepted
 
 
+COMMAND_ENV = {"PATH": "/usr/local/bin:/usr/sbin:/usr/bin:/bin", "LC_ALL": "C",
+               "HOME": "/var/empty", "DOCKER_CONFIG": "/var/empty"}
+
+
 class Commands:
     def __init__(self, deadline, log, max_log_bytes, *, budget=None):
         self.deadline, self.log = deadline, log
@@ -114,13 +118,12 @@ class Commands:
         else:
             event("completed")
 
-    def run(self, args, *, daemon=False):
+    def run(self, args, *, daemon=False, env=None):
         if time.monotonic() >= self.deadline:
             raise TimeoutError("build deadline")
         child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, start_new_session=True,
-                                 env={"PATH": "/usr/local/bin:/usr/sbin:/usr/bin:/bin", "LC_ALL": "C",
-                                      "HOME": "/var/empty", "DOCKER_CONFIG": "/var/empty"})
+                                 env=COMMAND_ENV if env is None else env)
         if daemon:
             return child
         try:
@@ -348,11 +351,7 @@ def validate_request(request):
 
 
 def check_tools(profile, *, registry=False):
-    required = {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox"}
-    if registry:
-        required.add("regctl")
-    if set(profile) != required:
-        raise InvalidTemplate("worker tool profile incomplete")
+    validate_tool_names(profile, registry=registry)
     tools = {}
     for name, artifact in profile.items():
         if set(artifact) != {"path", "sha256"}:
@@ -368,6 +367,21 @@ def check_tools(profile, *, registry=False):
     if not {"sh", "init", "mount", "grep", "mkdir", "chmod", "ln", "ip", "touch", "reboot", "umount"}.issubset(applets):
         raise InvalidTemplate("BusyBox missing required platform applets")
     return tools
+
+
+def buildkit_environment(tools, work):
+    """Select only the operator's checked decoder, in this disposable VM."""
+    env = dict(COMMAND_ENV, CONTAINERD_DISABLE_IGZIP="1", CONTAINERD_DISABLE_PIGZ="1")
+    if "igzip" in tools:
+        directory = work / "gzip-tools"
+        directory.mkdir(mode=0o700)
+        # Canonical names let containerd and the dynamic loader find the two
+        # checked artifacts even when their original filenames include versions.
+        for name in ("igzip", "libisal.so.2"):
+            os.link(tools[name], directory / name, follow_symlinks=False)
+        env.update(PATH=str(directory) + ":" + COMMAND_ENV["PATH"],
+                   LD_LIBRARY_PATH=str(directory), CONTAINERD_DISABLE_IGZIP="0")
+    return env
 
 
 def buildkit_layout(cache, metadata, layout, *, max_bytes):
@@ -549,10 +563,16 @@ def build(work, source, request, profile, *, guest_boot_id):
                 elif request["kind"] == "dockerfile":
                     extract_context(source, work / "context", **limits)
                     address = "unix://" + str(work / "buildkit.sock")
+                    builder_env = buildkit_environment(tools, work)
+                    if "igzip" in tools:
+                        # Fail before downloading layers if the pinned binary
+                        # or its library cannot run in this builder image.
+                        commands.run([str(work / "gzip-tools/igzip"), "--version"], env=builder_env)
                     daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
                                            "--oci-worker=true",
                                            "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "auto",
-                                           "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True)
+                                           "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True,
+                                          env=builder_env)
                     # Daemon logging is intentionally a separate bounded file,
                     # drained while the build client runs (see daemon reader below).
                     daemon_error = []

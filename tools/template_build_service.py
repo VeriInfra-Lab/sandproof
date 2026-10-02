@@ -27,12 +27,12 @@ import urllib.request
 if __package__:
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from .template_stage import file_hash, private_directory, stage_downloaded as stage
-    from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers
+    from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
     from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from template_stage import file_hash, private_directory, stage_downloaded as stage
-    from template_inputs import MAX_INPUT_BYTES, platform_dns_servers
+    from template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
     from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 
 
@@ -127,8 +127,7 @@ def configuration(path):
         if limits[tenant] > limits[global_field]:
             raise ValueError("tenant budget exceeds global budget")
     tools = config["tools"]
-    if set(tools) != {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl"}:
-        raise ValueError("fixed tool profile required")
+    validate_tool_names(tools, registry=True)
     for spec in tools.values():
         path = Path(spec["path"])
         if path.resolve(strict=True) != path or not path.is_file() or file_hash(path) != spec["sha256"]:

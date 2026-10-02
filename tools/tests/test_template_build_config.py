@@ -131,6 +131,17 @@ class CapacityTests(unittest.TestCase):
             path.write_text(json.dumps(cfg))
             path.chmod(0o600)
             self.assertEqual(configuration(path)['limits']['builder_disk_bytes'], 32 * GIB)
+            original_tools = dict(cfg['tools'])
+            for names, accepted in ((('igzip', 'libisal.so.2'), True), (('igzip',), False),
+                                    (('libisal.so.2',), False), (('unpigz',), False)):
+                cfg['tools'] = original_tools | {name: original_tools['buildctl'] for name in names}
+                path.write_text(json.dumps(cfg))
+                if accepted:
+                    self.assertEqual(set(configuration(path)['tools']), set(cfg['tools']))
+                else:
+                    with self.assertRaisesRegex(ValueError, 'tool profile'):
+                        configuration(path)
+            cfg['tools'] = original_tools
             cfg['dns_servers'] = [134744072]
             path.write_text(json.dumps(cfg))
             with self.assertRaisesRegex(ValueError, 'strings'):
