@@ -9,7 +9,7 @@ from tools.template_worker import Commands, populate_ext4, unmount_ext4
 
 
 class Ext4PopulationTests(unittest.TestCase):
-    def exercise(self, *, fail=None, mounted=True, cleanup_fails=False):
+    def exercise(self, *, fail=None, mounted=True, cleanup_fails=False, unmount_seconds=0):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         directory = Path(temporary.name)
@@ -18,6 +18,7 @@ class Ext4PopulationTests(unittest.TestCase):
         active, events, now = [False], [], [100.0]
         commands = Commands(110.0, io.BytesIO(), 4096)
         original = TimeoutError('original population failure')
+        unmount_delays = [unmount_seconds]
 
         def run(runner, args, **kwargs):
             tool = Path(args[0]).name
@@ -31,6 +32,9 @@ class Ext4PopulationTests(unittest.TestCase):
                 self.assertGreater(runner.deadline, now[0])
                 self.assertIs(runner.budget, commands.budget)
                 self.assertIs(runner.log, commands.log)
+                now[0] += unmount_delays.pop() if unmount_delays else 0
+                if now[0] >= runner.deadline:
+                    raise original
                 if cleanup_fails:
                     raise RuntimeError('cleanup failure')
                 active[0] = False
@@ -59,6 +63,27 @@ class Ext4PopulationTests(unittest.TestCase):
         self.assertEqual(events[-1], 'umount')
         self.assertFalse(active)
         self.assertFalse(mount.exists())
+
+    def test_successful_unmount_can_use_remaining_build_time_beyond_cleanup_grace(self):
+        error, _, events, active, mount = self.exercise(unmount_seconds=6)
+        self.assertIsNone(error)
+        self.assertEqual(events.count('umount'), 1)
+        self.assertFalse(active)
+        self.assertFalse(mount.exists())
+
+    def test_normal_unmount_expiry_cannot_use_cleanup_grace_to_become_successful(self):
+        error, original, events, active, mount = self.exercise(unmount_seconds=11)
+        self.assertIs(error, original)
+        self.assertEqual(events.count('umount'), 2)
+        self.assertFalse(active)
+        self.assertFalse(mount.exists())
+
+    def test_failed_copy_cleanup_still_has_only_the_reclamation_grace(self):
+        error, original, events, active, _ = self.exercise(fail='cp', unmount_seconds=6)
+        self.assertIs(error, original)
+        self.assertEqual(events.count('umount'), 1)
+        self.assertTrue(active)
+        self.assertEqual(error.__notes__, ['candidate mount cleanup failed; external VM cleanup required'])
 
     def test_mount_reporting_failure_after_mounting_still_gets_reclaimed(self):
         error, original, events, active, _ = self.exercise(fail='mount')
