@@ -18,7 +18,7 @@ use std::{
 
 const EXEC_GATE: &str =
     "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec \"$@\"";
-const MAX_MARKER_BYTES: u64 = 16_384;
+pub const MAX_HELPER_MARKER_BYTES: u64 = 16_384;
 
 /// Fixed gate inode created by the trusted node's mapping initialization.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,6 +146,34 @@ pub struct RuntimeHelperGuard {
     expected: Option<RuntimeHostSlot>,
 }
 
+impl RuntimeHostSlot {
+    /// Pure preflight for the largest future singleton or route marker. The
+    /// context must carry maximum-width incarnation and inode fields when
+    /// used to validate a deployment before its first helper-gate write.
+    /// # Errors
+    /// Rejects contexts whose fixed records would exceed the enforced cap.
+    pub fn validate_marker_capacity(&self) -> Result<(), RuntimeError> {
+        let record = InflightRecord {
+            version: u32::MAX,
+            context: self.clone(),
+            process: RuntimeProcessIdentity {
+                pid: u32::MAX,
+                start_time_ticks: u64::MAX,
+                boot_id: "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
+            },
+            command_digest: [u8::MAX; 32],
+            route_index: Some(u64::MAX),
+            control: Some(false),
+        };
+        if serde_json::to_vec(&record)?.len() as u64 > MAX_HELPER_MARKER_BYTES {
+            return Err(RuntimeError::InvalidConfiguration(
+                "future helper marker exceeds byte limit",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl RuntimeHelperGate {
     /// Fixed canonical and staging files beside the immutable gate inode.
     /// # Errors
@@ -231,7 +259,7 @@ impl RuntimeHelperGate {
             let staged = private_metadata(&stage, owner)?;
             if staged
                 .as_ref()
-                .is_some_and(|metadata| metadata.len() > MAX_MARKER_BYTES)
+                .is_some_and(|metadata| metadata.len() > MAX_HELPER_MARKER_BYTES)
             {
                 return Err(RuntimeError::IdentityMismatch(
                     "route census staging byte bound",
@@ -574,7 +602,7 @@ impl RuntimeHelperGuard {
             control,
         };
         let bytes = serde_json::to_vec(&record)?;
-        if bytes.len() as u64 > MAX_MARKER_BYTES {
+        if bytes.len() as u64 > MAX_HELPER_MARKER_BYTES {
             return Err(RuntimeError::InvalidConfiguration(
                 "helper marker exceeds byte limit",
             ));
@@ -661,7 +689,7 @@ impl RuntimeHelperGuard {
             // Even shared admission rejects malformed/foreign staged objects.
             if let Some(metadata) = private_metadata(&staged, self.owner)? {
                 route_stage_dirty = true;
-                if metadata.len() > MAX_MARKER_BYTES {
+                if metadata.len() > MAX_HELPER_MARKER_BYTES {
                     return Err(RuntimeError::IdentityMismatch(
                         "data route staging exceeds byte bound",
                     ));
@@ -716,7 +744,7 @@ impl RuntimeHelperGuard {
             fs::remove_file(path)?;
         }
         if let Some(metadata) = private_metadata(stage, self.owner)? {
-            if metadata.len() > MAX_MARKER_BYTES {
+            if metadata.len() > MAX_HELPER_MARKER_BYTES {
                 return Err(RuntimeError::IdentityMismatch(
                     "helper staging exceeds byte bound",
                 ));
@@ -756,16 +784,16 @@ fn read_marker(
     let Some(metadata) = private_metadata(path, owner)? else {
         return Ok(None);
     };
-    if metadata.len() > MAX_MARKER_BYTES {
+    if metadata.len() > MAX_HELPER_MARKER_BYTES {
         return Err(RuntimeError::IdentityMismatch(
             "helper marker exceeds byte bound",
         ));
     }
     let mut bytes = Vec::new();
     File::open(path)?
-        .take(MAX_MARKER_BYTES + 1)
+        .take(MAX_HELPER_MARKER_BYTES + 1)
         .read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_MARKER_BYTES {
+    if bytes.len() as u64 > MAX_HELPER_MARKER_BYTES {
         return Err(RuntimeError::IdentityMismatch("helper marker grew"));
     }
     let record: InflightRecord = serde_json::from_slice(&bytes)?;

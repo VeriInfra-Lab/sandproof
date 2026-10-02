@@ -141,6 +141,7 @@ pub(super) fn record_release(
 
 fn pinned(
     connection: &Connection,
+    world: &core::World,
     namespace: &str,
     sandbox: core::SandboxId,
 ) -> Result<bool, JournalError> {
@@ -155,7 +156,7 @@ fn pinned(
     if let Some(bytes) = options {
         let options: super::super::CreateOptions = serde_json::from_slice(&bytes)?;
         options.validate().map_err(|_| JournalError::CorruptStore)?;
-        if options.metadata.contains_key("_sandproof_build_id") {
+        if super::super::private_build::pinned(connection, world, namespace, sandbox, &options)? {
             return Ok(true);
         }
     }
@@ -170,7 +171,8 @@ fn candidate(
     let Some(row) = world.sandbox_record(sandbox) else {
         return Ok(None);
     };
-    if row.phase != core::Phase::Destroyed || pinned(connection, &namespace(connection)?, sandbox)?
+    if row.phase != core::Phase::Destroyed
+        || pinned(connection, world, &namespace(connection)?, sandbox)?
     {
         return Ok(None);
     }
@@ -218,6 +220,7 @@ fn delete_details(
     sandbox: core::SandboxId,
 ) -> Result<(), JournalError> {
     let id = super::super::identity::sandbox_id(namespace, sandbox)?;
+    super::super::capacity::retire(tx, namespace, sandbox)?;
     tx.execute("DELETE FROM controller_receipt_history WHERE outbox_id IN (SELECT id FROM outbox WHERE sandbox_id=?1)", [id.as_str()])?;
     tx.execute("DELETE FROM outbox WHERE sandbox_id=?1", [id.as_str()])?;
     let mut logical = Vec::new();
@@ -336,6 +339,15 @@ impl ControllerJournal {
             .ok_or(JournalError::CorruptStore)?;
         let now_ms = now_ms.max(state.time_floor());
         let before = state.retained_count();
+        if super::super::capacity::config(&tx)?.is_some()
+            && (before == 0
+                || !state
+                    .retained_results()
+                    .iter()
+                    .any(|(_, result)| result.expires_at <= now_ms))
+        {
+            return Ok(0);
+        }
         let decision = storage::apply_maintenance(&tx, MaintenanceInput::ExpireResults { now_ms })?;
         let after = decision
             .next

@@ -49,9 +49,9 @@ struct HostPosition {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct NodeRetirement {
+struct NodeRetirement<M = RetirementManifest> {
     runtime: RuntimeConfig,
-    manifest: RetirementManifest,
+    manifest: M,
     files: Vec<(PathBuf, Option<FileStamp>)>,
 }
 
@@ -161,7 +161,10 @@ pub(super) fn position_uid(config: &BoundedHostConfig, position: HostSlotId) -> 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> NodeResult<T> {
     check_trusted_path(path)?;
     let metadata = fs::symlink_metadata(path)?;
-    if !metadata.is_file() || metadata.mode() & 0o077 != 0 || metadata.len() > 16 * 1024 * 1024 {
+    if !metadata.is_file()
+        || metadata.mode() & 0o077 != 0
+        || metadata.len() > node_staging::MAX_PAYLOAD as u64
+    {
         return Err("host position record is not private or exceeds its byte bound".into());
     }
     let value = serde_json::from_reader(File::open(path)?)?;
@@ -266,12 +269,198 @@ pub(super) fn stored_lease_identity(
     ))
 }
 
+pub(super) const BOUNDED_STATE_DIRECTORIES: [&str; 2] = ["host-slots", "helper-gates"];
+
+pub(super) fn host_position_path(config: &NodeConfig, position: HostSlotId) -> PathBuf {
+    config
+        .state_dir
+        .join(BOUNDED_STATE_DIRECTORIES[0])
+        .join(format!("{}.json", position.0))
+}
+
+pub(super) fn gate_path(config: &NodeConfig, position: HostSlotId) -> PathBuf {
+    config
+        .state_dir
+        .join(BOUNDED_STATE_DIRECTORIES[1])
+        .join(format!("{}.lock", position.0))
+}
+
+fn gate_bytes(config: &NodeConfig, position: HostSlotId) -> NodeResult<Vec<u8>> {
+    Ok(serde_json::to_vec(&(1_u32, config, position))?)
+}
+
+pub(super) fn retirement_paths(config: &NodeConfig, binding: HostBinding) -> Vec<PathBuf> {
+    let name = format!("vm-{}-{}", config.namespace, binding.vm.0);
+    vec![
+        config
+            .state_dir
+            .join("secrets")
+            .join(format!("sb-{}-{}", config.namespace, binding.sandbox.0)),
+        config.state_dir.join("fences").join(format!(
+            "sb-{}-{}.json",
+            config.namespace, binding.sandbox.0
+        )),
+        config.state_dir.join("slots").join(format!(
+            "slot-{}-{}.json",
+            config.namespace, binding.network.0
+        )),
+        config
+            .state_dir
+            .join("startup")
+            .join(format!("{name}.json")),
+        config
+            .state_dir
+            .join("startup")
+            .join(format!("{name}.request")),
+    ]
+}
+
+pub(super) fn maximum_binding() -> HostBinding {
+    HostBinding {
+        owner: core::TenantId(u64::MAX),
+        sandbox: core::SandboxId(u64::MAX),
+        generation: u64::MAX,
+        vm: core::VmId(u64::MAX),
+        network: core::NetSlotId(u64::MAX),
+    }
+}
+
+fn maximum_runtime_config(
+    config: &NodeConfig,
+    bounded: &BoundedHostConfig,
+    position: HostSlotId,
+    gate: &sandbox_runtime::RuntimeHelperGate,
+) -> RuntimeConfig {
+    RuntimeConfig {
+        console_policy: bounded.console_policy.map(|policy| match policy {
+            sandproof_controller_service::ConsolePolicy::Discard => {
+                sandbox_runtime::ConsolePolicy::Discard
+            }
+        }),
+        jailer: config.jailer.clone(),
+        firecracker: config.firecracker.clone(),
+        chroot_base: config.chroot_base.clone(),
+        kernel: config.kernel.clone(),
+        rootfs: config.rootfs.clone(),
+        vm_uid: u32::MAX,
+        vm_gid: u32::MAX,
+        vcpu_count: u8::MAX,
+        memory_mib: u32::MAX,
+        host_resources: config.host_resources.as_ref().map(|resources| {
+            sandbox_runtime::HostResources {
+                cgroup_parent: resources.cgroup_parent.clone(),
+                memory_max_bytes: u64::MAX,
+            }
+        }),
+        private_netns: Some(PathBuf::from(format!(
+            "/run/netns/vm-{}-{}",
+            config.namespace,
+            u64::MAX
+        ))),
+        access_token_hash: Some("f".repeat(128)),
+        host_slot: Some(sandbox_runtime::RuntimeHostSlot {
+            position: position.0,
+            uplink_index: u64::MAX,
+            vm: u64::MAX,
+            helper_gate: gate.clone(),
+        }),
+    }
+}
+
+/// Pure preflight against the same serialized types written below. All future
+/// incarnation identifiers/stamps use maximum-width integers. Template-derived
+/// runtime paths are covered by the actual `CreateOptions` encoding cap.
+pub(super) fn maximum_record_bytes(config: &NodeConfig) -> NodeResult<(u64, u64, u64)> {
+    let bounded = config.bounded_host.as_ref().ok_or("missing bounded host")?;
+    let position = HostSlotId(
+        bounded
+            .maintenance
+            .max_host_slots
+            .checked_sub(1)
+            .ok_or("no host slots")?,
+    );
+    let mapping = StoredMapping {
+        version: 1,
+        phase: MappingPhase::Initializing,
+        lease: super::host_lease::LeaseIdentity {
+            device: u64::MAX,
+            inode: u64::MAX,
+        },
+        config: config.clone(),
+    };
+    let gate = sandbox_runtime::RuntimeHelperGate {
+        path: gate_path(config, position),
+        device: u64::MAX,
+        inode: u64::MAX,
+        max_data_routes_per_slot: bounded.max_data_routes_per_slot,
+    };
+    let binding = maximum_binding();
+    let runtime = maximum_runtime_config(config, bounded, position, &gate);
+    runtime
+        .host_slot
+        .as_ref()
+        .ok_or("missing maximum host slot")?
+        .validate_marker_capacity()?;
+    let manifest_bytes = RetirementManifest::maximum_serialized_bytes(
+        &runtime,
+        &format!("vm-{}-{}", config.namespace, u64::MAX),
+    )?;
+    let files = retirement_paths(config, binding)
+        .into_iter()
+        .map(|path| {
+            (
+                path,
+                Some(FileStamp {
+                    device: u64::MAX,
+                    inode: u64::MAX,
+                    digest: "f".repeat(64),
+                }),
+            )
+        })
+        .collect();
+    // A null placeholder lets both enclosing types keep their actual serde
+    // schema. Substitute the independently measured manifest and retirement
+    // sizes, rather than duplicating their field names in an estimate.
+    let retired = NodeRetirement {
+        runtime,
+        manifest: (),
+        files,
+    };
+    let stored = StoredPosition {
+        position,
+        helper_gate: gate,
+        value: Some(HostPosition {
+            context: HostSlotContext {
+                position,
+                expected_previous: Some(core::VmId(u64::MAX)),
+                binding,
+            },
+            phase: HostSlotPhase::Releasing,
+            retirement: None,
+        }),
+    };
+    let retired_bytes = u64::try_from(serde_json::to_vec(&retired)?.len())?;
+    let stored_bytes = u64::try_from(serde_json::to_vec(&stored)?.len())?;
+    let null_bytes = u64::try_from(serde_json::to_vec(&())?.len())?;
+    let cell_bytes = stored_bytes
+        .checked_sub(null_bytes)
+        .and_then(|bytes| bytes.checked_add(retired_bytes))
+        .and_then(|bytes| bytes.checked_sub(null_bytes))
+        .and_then(|bytes| bytes.checked_add(manifest_bytes))
+        // RuntimeConfig is retained twice: directly and in the manifest. Each
+        // may replace the configured kernel/rootfs with admitted template paths.
+        .and_then(|bytes| bytes.checked_add(2 * super::CreateOptions::MAX_ENCODED_BYTES as u64))
+        .ok_or("future retirement record size overflow")?;
+    Ok((
+        u64::try_from(serde_json::to_vec(&mapping)?.len())?,
+        u64::try_from(gate_bytes(config, position)?.len())?,
+        cell_bytes,
+    ))
+}
+
 impl LinuxWorker {
     fn host_position_path(&self, position: HostSlotId) -> PathBuf {
-        self.config
-            .state_dir
-            .join("host-slots")
-            .join(format!("{}.json", position.0))
+        host_position_path(&self.config, position)
     }
 
     fn read_host_positions(&self) -> NodeResult<Vec<HostPosition>> {
@@ -361,14 +550,11 @@ impl LinuxWorker {
     }
 
     fn gate_path(&self, position: HostSlotId) -> PathBuf {
-        self.config
-            .state_dir
-            .join("helper-gates")
-            .join(format!("{}.lock", position.0))
+        gate_path(&self.config, position)
     }
 
     fn gate_bytes(&self, position: HostSlotId) -> NodeResult<Vec<u8>> {
-        Ok(serde_json::to_vec(&(1_u32, &self.config, position))?)
+        gate_bytes(&self.config, position)
     }
 
     fn validate_helper_gate(
@@ -615,10 +801,7 @@ impl LinuxWorker {
 
     pub(super) fn initialize_host_slots(&self) -> NodeResult<()> {
         let mapping = self.config.state_dir.join("host-slot-config.json");
-        let directories = [
-            self.config.state_dir.join("host-slots"),
-            self.config.state_dir.join("helper-gates"),
-        ];
+        let directories = BOUNDED_STATE_DIRECTORIES.map(|name| self.config.state_dir.join(name));
         let Some(config) = &self.config.bounded_host else {
             if mapping.try_exists()?
                 || node_staging::path(&mapping)?.try_exists()?
@@ -790,19 +973,7 @@ impl LinuxWorker {
     }
 
     fn retirement_paths(&self, binding: HostBinding) -> Vec<PathBuf> {
-        vec![
-            self.secret_path(binding.sandbox),
-            self.fence_path(binding.sandbox),
-            self.slot_path(binding.network),
-            self.config
-                .state_dir
-                .join("startup")
-                .join(format!("{}.json", self.vm_name(binding.vm))),
-            self.config
-                .state_dir
-                .join("startup")
-                .join(format!("{}.request", self.vm_name(binding.vm))),
-        ]
+        retirement_paths(&self.config, binding)
     }
 
     fn observe_position_free(&self, row: &HostPosition) -> NodeResult<()> {
@@ -977,6 +1148,16 @@ impl LinuxWorker {
                     .join(self.vm_name(binding.vm)),
             )?;
             RuntimeConfig {
+                console_policy: self
+                    .config
+                    .bounded_host
+                    .as_ref()
+                    .and_then(|config| config.console_policy)
+                    .map(|policy| match policy {
+                        sandproof_controller_service::ConsolePolicy::Discard => {
+                            sandbox_runtime::ConsolePolicy::Discard
+                        }
+                    }),
                 jailer: self.config.jailer.clone(),
                 firecracker: self.config.firecracker.clone(),
                 chroot_base: self.config.chroot_base.clone(),
@@ -1260,6 +1441,8 @@ mod tests {
 
     fn config() -> BoundedHostConfig {
         BoundedHostConfig {
+            physical_storage: None,
+            console_policy: None,
             uid_base: 10_000,
             uplink_base: 100,
             max_data_routes_per_slot: 4,

@@ -35,6 +35,11 @@ mod host_lease;
 mod host_slots;
 #[path = "node_staging.rs"]
 mod node_staging;
+#[path = "storage_envelope.rs"]
+mod storage_envelope;
+pub use storage_envelope::HostMetadataEnvelope;
+
+const NODE_STATE_DIRECTORIES: &[&str] = &["secrets", "fences", "slots", "startup"];
 
 const ENVD_URL: &str = "http://172.16.0.2:49983";
 
@@ -1037,7 +1042,7 @@ impl LinuxWorker {
         } else {
             None
         };
-        for subdir in ["secrets", "fences", "slots", "startup"] {
+        for subdir in NODE_STATE_DIRECTORIES {
             let path = config.state_dir.join(subdir);
             if !path.exists() {
                 DirBuilder::new().mode(0o700).create(&path)?;
@@ -1534,6 +1539,16 @@ impl LinuxWorker {
                 .memory_max_bytes = template.resources.host_memory_bytes;
         }
         Ok(RuntimeConfig {
+            console_policy: self
+                .config
+                .bounded_host
+                .as_ref()
+                .and_then(|config| config.console_policy)
+                .map(|policy| match policy {
+                    sandproof_controller_service::ConsolePolicy::Discard => {
+                        sandbox_runtime::ConsolePolicy::Discard
+                    }
+                }),
             jailer: self.config.jailer.clone(),
             firecracker: self.config.firecracker.clone(),
             chroot_base: self.config.chroot_base.clone(),

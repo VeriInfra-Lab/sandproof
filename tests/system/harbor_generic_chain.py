@@ -3,6 +3,8 @@
 Uses two independent controller pools and an exclusive namespace/UID range.
 Retains original failures and audit evidence. No manual task recipes/models.
 """
+from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
+
 import argparse
 import asyncio
 import contextlib
@@ -51,6 +53,8 @@ def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressu
 
 
 def exercise(args):
+    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None),
+        legacy_unbounded=getattr(args, "legacy_unbounded", False))
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise RuntimeError('exclusive root Linux/KVM required')
     checkout = Path(__file__).resolve().parents[2]
@@ -164,6 +168,16 @@ def exercise(args):
         'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in BUILD_TOOLS.items()},
         'dns_servers': ['1.1.1.1', '8.8.8.8'],
         'limits': deployment['limits']}
+    original_workspace = build['limits']['workspace_bytes']
+    build_mode = apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy)
+    for i, config in enumerate(settings):
+        (root / str(i) / 'config.json').write_text(json.dumps(config))
+    deployment['build_mode'] = build_mode
+    if bounded_policy is not None:
+        extra = build['limits']['workspace_bytes'] - original_workspace
+        deployment['host']['minimum_free_disk_bytes'] += extra
+        if shutil.disk_usage(root).free < deployment['host']['minimum_free_disk_bytes']:
+            raise ValueError('bounded build policy exceeds acceptance disk headroom')
     if args.docker_hub_mirror is not None:
         build['docker_hub_mirror'] = args.docker_hub_mirror
     (root / 'build.json').write_text(json.dumps(build))
@@ -340,7 +354,7 @@ def exercise(args):
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
                 oracle_mode=oracle_mode,
-                api_url=urls[0], build_url=urls[2], source_kind=args.source_kind,
+                api_url=urls[0], build_url=urls[2], build_mode=build_mode, source_kind=args.source_kind,
                 failure_diagnostics=args.failure_diagnostics,
                 artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
             old_key = os.environ.get('SANDPROOF_TEST_API_KEY')
@@ -472,6 +486,9 @@ if __name__ == '__main__':
                  'cgroup-parent', 'build-cgroup-parent', 'service-cgroup-parent', 'registry', 'source'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--uid-base', type=int, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
+    mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--task', action='append')
     selection.add_argument('--all', action='store_true')

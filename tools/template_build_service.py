@@ -25,17 +25,19 @@ import urllib.parse
 import urllib.request
 
 if __package__:
-    from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
-    from .template_stage import file_hash, private_directory, stage_downloaded as stage
+    from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write, bounded_configuration, fsync_directory
+    from .template_stage import file_hash, private_directory, stage_downloaded as stage, stage_inventory, stage_delete
     from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers
     from .template_fetch import mirror_registry
     from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
+    from .template_physical_storage import validate_configuration as validate_physical_configuration, PhysicalProfileLease
 else:
-    from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
-    from template_stage import file_hash, private_directory, stage_downloaded as stage
+    from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write, bounded_configuration, fsync_directory
+    from template_stage import file_hash, private_directory, stage_downloaded as stage, stage_inventory, stage_delete
     from template_inputs import MAX_INPUT_BYTES, platform_dns_servers
     from template_fetch import mirror_registry
     from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
+    from template_physical_storage import validate_configuration as validate_physical_configuration, PhysicalProfileLease
 
 
 def protected_json(path, maximum=65536):
@@ -89,8 +91,12 @@ def host_uid_range(settings):
     if bounded is None:
         count = maximum_vm + 1
     else:
-        if type(bounded) is not dict or set(bounded) != {"maintenance", "uid_base", "uplink_base"}:
+        if type(bounded) is not dict or set(bounded) - {"console_policy", "physical_storage"} != {"maintenance", "uid_base", "uplink_base"}:
             raise ValueError("invalid bounded host config")
+        if "console_policy" in bounded and bounded["console_policy"] != "discard":
+            raise ValueError("invalid bounded console policy")
+        if settings.get("maintenance", {}).get("capacity") and bounded.get("console_policy") != "discard":
+            raise ValueError("full bounded capacity requires explicit discarded console output")
         bounded_data_route_limits(settings)
         if integer(bounded["uid_base"], 2**32 - 2, "bounded UID base") != uid_base:
             raise ValueError("bounded host UID base differs from node UID base")
@@ -172,7 +178,7 @@ def retain_timeout_logs(sandbox, directory, limit):
 
 def configuration(path):
     config = protected_json(path)
-    if set(config) - {"docker_hub_mirror"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
+    if set(config) - {"docker_hub_mirror", "bounded_builds", "migrate_legacy_builds"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
         raise ValueError("invalid build service config")
     if "docker_hub_mirror" in config:
         mirror_registry(config["docker_hub_mirror"])
@@ -203,6 +209,19 @@ def configuration(path):
     # candidate copies are actually allocated; reject cross-filesystem setups.
     if len({p.stat().st_dev for p in (root, registry, Path(runtime["chroot_base"]), Path(builder["chroot_base"]))}) != 1:
         raise ValueError("shared budget filesystem required")
+    if "bounded_builds" in config:
+        bounded_configuration(config["bounded_builds"])
+        if config["bounded_builds"]["helper"]["owner_uid"] != os.geteuid():
+            raise ValueError("window helper owner must match trusted supervisor UID")
+        private_windows = builder.get("build_retry_windows")
+        if (type(private_windows) is not dict or set(private_windows) != {"window_duration_ms", "max_anchors"}
+                or not builder.get("bounded_host") or not builder.get("maintenance")
+                or any(type(v) is not int or v <= 0 for v in private_windows.values())
+                or private_windows["window_duration_ms"] > builder["bounded_host"]["maintenance"]["windows"]["max_duration_ms"]
+                or private_windows["max_anchors"] > 1048576):
+            raise ValueError("bounded builds require explicit bounded private retry windows")
+    if "migrate_legacy_builds" in config and type(config["migrate_legacy_builds"]) is not bool:
+        raise ValueError("invalid explicit build migration")
     limits = config["limits"]
     required = {"max_cpu", "max_memory_mib", "max_disk_mib", "timeout_seconds", "max_jobs", "max_jobs_per_tenant",
                 "max_pending", "max_pending_per_tenant", "workspace_bytes", "workspace_bytes_per_tenant",
@@ -249,8 +268,19 @@ def configuration(path):
         raise ValueError("builder base disk size differs from its immutable descriptor")
     limits["runtime_cleanup_reserve_bytes"] = runtime["cleanup_reserve_bytes"] + builder["cleanup_reserve_bytes"]
     limits["artifact_margin_bytes"] = Path(runtime["kernel"]).stat().st_size + limits["max_log_bytes"] + 64 * MIB
+    physical = validate_physical_configuration(runtime, builder, config)
+    if physical is not None:
+        profile, peak, inodes = physical
+        # Read-only here; startup order explicitly activates through a server.
+        lease = PhysicalProfileLease(profile)
+        lease.close()
+        config["physical_storage_profile"] = profile
+        limits["physical_storage_peak_bytes"] = peak
+        limits["physical_storage_inodes"] = inodes
     config["runtime"], config["builder"] = runtime, builder
-    config["binding"] = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+    # Migration authorization is a one-time operator flag, never a changing pool binding.
+    config["binding"] = hashlib.sha256(json.dumps({k: v for k, v in config.items()
+        if k not in {"migrate_legacy_builds", "bounded_builds"}}, sort_keys=True).encode()).hexdigest()
     return config
 
 
@@ -289,10 +319,18 @@ class Backend:
             timeout = min(request["timeoutSeconds"], row["deadline"] - time.time())
             if timeout <= 0:
                 raise BuildError(408, "BuildDeadlineExceeded")
-        return self.request("builder", "POST" if create else "GET", "/sandproof/internal-build-vms/" + row["id"], body,
-                            timeout=timeout)
+        path = "/sandproof/internal-build-vms/" + row["id"]
+        if row.get("private_window"):
+            window = json.loads(row["private_window"])
+            if create:
+                body["requestWindow"] = window
+            else:
+                path += "?" + urllib.parse.urlencode({"requestWindow": window})
+        return self.request("builder", "POST" if create else "GET", path, body, timeout=timeout)
 
-    def cleanup(self, row):
+    def cleanup(self, row, store=None):
+        if store is not None and store.bounded:
+            return self.cleanup_bounded(store, row)
         try:
             vm = self.vm(row)
         except BuildError as error:
@@ -309,10 +347,59 @@ class Backend:
             pass  # A kill timeout is not evidence of reclaim.
         return self.vm(row)["cleanupComplete"]
 
+    def cleanup_bounded(self, store, row):
+        row = store.get(row["id"])
+        if row["private_ack"]:
+            return True
+        if not row["private_window"]:
+            # Public durable ordering proves no VM POST was dispatched.
+            # Migrated rows have no such proof and stay pinned.
+            if not row["window_namespace"]:
+                return False
+            store.private_checkpoint(row["id"], builder_settled={"requestWindow": None, "sandboxID": None}, private_ack=1)
+            return True
+        window = json.loads(row["private_window"])
+        if row["builder_settled"]:
+            settled = json.loads(row["builder_settled"])
+        else:
+            fenced = self.request("builder", "POST", "/sandproof/internal-build-windows/" + urllib.parse.quote(window, safe="") + "/close", {})
+            if fenced != {"requestWindow": window, "closed": True}:
+                raise BuildError(502, "PrivateBuildFenceUnknown")
+            try:
+                vm = self.vm(row)
+            except BuildError as error:
+                if error.code != 404:
+                    raise
+                vm = None  # Only the preceding durable fence proves absence.
+            if vm is not None and not vm["cleanupComplete"]:
+                try:
+                    self.request("builder", "DELETE", "/sandboxes/" + vm["sandboxID"])
+                except BuildError:
+                    pass
+                vm = self.vm(row)
+                if not vm["cleanupComplete"]:
+                    return False
+            settled = {"requestWindow": window, "sandboxID": vm["sandboxID"] if vm else None}
+            # This commit must precede releasing the private retry anchor.
+            store.private_checkpoint(row["id"], builder_settled=settled)
+        acknowledged = self.request("builder", "POST", "/sandproof/internal-build-vms/" + row["id"] + "/settle", settled)
+        if acknowledged != {"requestWindow": window, "settled": True}:
+            raise BuildError(502, "PrivateBuildSettlementUnknown")
+        store.private_checkpoint(row["id"], private_ack=1)
+        return True
+
     def build(self, store, row):
         from e2b import Sandbox, CommandExitException, FileNotFoundException, TimeoutException
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
+        if store.bounded and not row.get("private_window"):
+            opened = self.request("builder", "POST", "/sandproof/internal-build-windows", {})
+            if (type(opened) is not dict or not isinstance(opened.get("requestWindow"), str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", opened["requestWindow"])
+                    or type(opened.get("expiresAtMs")) is not int):
+                raise BuildError(502, "PrivateBuildWindowUnknown")
+            store.private_checkpoint(row["id"], private_window=opened["requestWindow"])
+            row = store.get(row["id"])
         vm = self.vm(row, create=True)
         session = vm.get("session")
         if session is None:
@@ -460,6 +547,8 @@ class Backend:
         # A GET 404 is not an admission fence: that POST may still be queued.
         # Reload durable intent, including after a supervisor restart.
         row = store.get(row["id"])
+        if row["staging_cleanup"]:
+            raise BuildError(409, "StagingCleanupPending")
         try:
             return self.request("runtime", "GET", "/sandproof/template-publications/" + row["id"], owner=row["owner"])
         except BuildError as error:
@@ -476,7 +565,8 @@ class Backend:
         try:
             candidate = stage(Path(config["template_registry"]["root"]), Path(config["kernel"]),
                 store.directory(row["id"]) / "candidate.ext4", status, row["owner"],
-                resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + HOST_MEMORY_OVERHEAD_MIB, candidate_id=row["id"])
+                resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + HOST_MEMORY_OVERHEAD_MIB,
+                candidate_id=row["id"], **({"ownership": {"id": row["id"], "nonce": row["fs_nonce"]}} if store.bounded else {}))
         except ValueError:
             raise BuildError(400, "CandidateStagingRejected") from None
         remaining = row["deadline"] - store.clock()
@@ -512,11 +602,28 @@ class Backend:
             if error.code != 404:
                 return False
         inbox = Path(self.config["runtime"]["template_registry"]["root"]) / "inbox"
+        if store.bounded:
+            manifest = json.loads(row["staging_cleanup"]) if row["staging_cleanup"] else {}
+            if not row["staging_cleanup"]:
+                for name in (row["id"], ".stage-" + row["id"]):
+                    path = inbox / name
+                    if path.exists() or path.is_symlink():
+                        manifest[name] = stage_inventory(path, {"id": row["id"], "nonce": row["fs_nonce"]},
+                            initialize=name == ".stage-" + row["id"])
+                store.staging_cleanup_checkpoint(row["id"], manifest)
+            store.fault("after_staging_delete_intent")
+            for name, exact in manifest.items():
+                if name not in (row["id"], ".stage-" + row["id"]):
+                    raise BuildError(503, "UnknownStagingCleanup")
+                stage_delete(inbox / name, exact)
+                store.fault("after_staging_delete_fsync")
+            store.staging_cleanup_checkpoint(row["id"], None)
+            return True
         for name in (row["id"], ".stage-" + row["id"]):
             path = inbox / name
             if path.exists():
                 private_directory(path)
-                shutil.rmtree(path)  # exact supervisor-generated candidate identity
+                shutil.rmtree(path)  # exact supervisor-generated legacy candidate identity
         return True
 
 
@@ -528,7 +635,10 @@ class Supervisor:
     def recover(self):
         # Single process lease. Never rerun unknown user instructions, even
         # when a VM is still live. The same identity is observed and reclaimed.
+        self.store.recover_filesystem()
         for row in self.store.rows():
+            if row["fs_phase"] == "Deleting":
+                continue
             if row["state"] in TERMINAL:
                 self.remove_inputs(row["id"])
             if row["state"] == "Building":
@@ -538,7 +648,11 @@ class Supervisor:
     def finish(self, row):
         job = row["id"]
         try:
-            if not self.backend.cleanup(row):
+            if isinstance(self.backend, Backend) and self.store.bounded:
+                cleaned = self.backend.cleanup(row, self.store)
+            else:
+                cleaned = self.backend.cleanup(row)
+            if not cleaned:
                 self.store.change(job, "CleanupUnknown", failure=row["failure"])
                 return
         except Exception:
@@ -567,6 +681,8 @@ class Supervisor:
     def tick(self):
         if not self.recovered:
             self.recover()
+        self.store.resume_filesystem()
+        self.store.retire_results()
         for row in self.store.rows():
             job, state = row["id"], row["state"]
             if state in TERMINAL:
@@ -576,6 +692,8 @@ class Supervisor:
                     if job in self.store.uploads:
                         continue
                     self.remove_inputs(job)
+                    if self.store.bounded and row["window_namespace"]:
+                        self.store.private_checkpoint(job, builder_settled={"requestWindow": None, "sandboxID": None}, private_ack=1)
                     self.store.change(job, "Failed", failure="BuildDeadlineExceeded", release=True)
                 continue
             if state == "Queued":
@@ -668,7 +786,21 @@ class Handler(BaseHTTPRequestHandler):
             data = self.rfile.read(size)
             if len(data) != size:
                 raise BuildError(400, "IncompleteRequest")
-            return 202, store.submit(owner, json.loads(data), self.headers.get("Idempotency-Key"))
+            body = json.loads(data)
+            window = body.pop("requestWindow", None) if isinstance(body, dict) else None
+            return 202, store.submit(owner, body, self.headers.get("Idempotency-Key"), window=window)
+        if self.command == "POST" and parsed.path == "/sandproof/template-build-windows" and not parsed.query:
+            size = length(1024)
+            body = json.loads(self.rfile.read(size))
+            if type(body) is not dict or set(body) != {"durationMs"}:
+                raise BuildError(400, "InvalidRequestWindow")
+            return 201, store.open_window(owner, body["durationMs"])
+        if self.command == "POST" and parsed.path == "/sandproof/template-build-windows/close" and not parsed.query:
+            size = length(1024)
+            body = json.loads(self.rfile.read(size))
+            if type(body) is not dict or set(body) != {"requestWindow"}:
+                raise BuildError(400, "InvalidRequestWindow")
+            return 200, store.close_window(owner, body["requestWindow"])
         if len(parts) not in (4, 5) or parts[1:3] != ["sandproof", "template-builds"]:
             raise BuildError(404, "NotFound")
         job = parts[3]
@@ -727,7 +859,9 @@ def main():
         raise SystemExit("isolated root Linux host required")
     os.umask(0o077)
     config = configuration(args.config)
-    store = BuildStore(config["root"], config["limits"], binding=config["binding"])
+    store = BuildStore(config["root"], config["limits"], binding=config["binding"],
+        bounded=config.get("bounded_builds"), migrate_legacy=config.get("migrate_legacy_builds", False),
+        physical_profile=config.get("physical_storage_profile"))
     supervisor = Supervisor(store, Backend(config))
     supervisor.recover()
     host, port = config["bind"].split(":")

@@ -74,22 +74,35 @@ pub(super) fn maintain_locked<H: HostAdapter>(
     inner: &mut Inner<H>,
     now: u64,
 ) -> Result<MaintenanceReport, PortError> {
-    if inner
-        .journal
-        .maintenance_config()
-        .map_err(map_journal)?
-        .is_none()
-    {
+    let Some(policy) = inner.journal.maintenance_config().map_err(map_journal)? else {
         return Ok(MaintenanceReport::default());
-    }
-    // Delete only rows covered by a previously confirmed checkpoint. Publish
-    // the next checkpoint in a separate transaction before adding new inputs;
-    // its covered prefix is eligible for deletion only after commit confirms.
-    let pruned_inputs = prune_covered_inputs(&mut inner.journal)?;
-    inner
-        .journal
-        .publish_checkpoint(&mut NeverCrash)
-        .map_err(map_journal)?;
+    };
+    let automatic = policy.capacity.is_some();
+    let before = if automatic {
+        Some(
+            inner
+                .journal
+                .checkpoint_progress()
+                .map_err(map_journal)?
+                .ok_or(PortError::Busy)?
+                .deleted_through,
+        )
+    } else {
+        None
+    };
+    // Full capacity mode rotates before a write would consume accepted-work
+    // headroom. Do not burn checkpoint generations on every idle poll. The
+    // earlier explicit maintenance mode keeps its original publication order.
+    let pruned_inputs = if automatic {
+        0
+    } else {
+        let count = prune_covered_inputs(&mut inner.journal)?;
+        inner
+            .journal
+            .publish_checkpoint(&mut NeverCrash)
+            .map_err(map_journal)?;
+        count
+    };
     let expired_results = inner
         .journal
         .expire_retained(now, &mut NeverCrash)
@@ -141,14 +154,25 @@ pub(super) fn maintain_locked<H: HostAdapter>(
             Err(error) => return Err(map_journal(error)),
         }
     }
-    inner
-        .journal
-        .publish_checkpoint(&mut NeverCrash)
-        .map_err(map_journal)?;
-    report.pruned_inputs = report
-        .pruned_inputs
-        .checked_add(prune_covered_inputs(&mut inner.journal)?)
-        .ok_or(PortError::Busy)?;
+    if let Some(before) = before {
+        let after = inner
+            .journal
+            .checkpoint_progress()
+            .map_err(map_journal)?
+            .ok_or(PortError::Busy)?
+            .deleted_through;
+        report.pruned_inputs = usize::try_from(after.checked_sub(before).ok_or(PortError::Busy)?)
+            .map_err(|_| PortError::Busy)?;
+    } else {
+        inner
+            .journal
+            .publish_checkpoint(&mut NeverCrash)
+            .map_err(map_journal)?;
+        report.pruned_inputs = report
+            .pruned_inputs
+            .checked_add(prune_covered_inputs(&mut inner.journal)?)
+            .ok_or(PortError::Busy)?;
+    }
     report.tracked_data_sandboxes = inner
         .data_revocations
         .keys()

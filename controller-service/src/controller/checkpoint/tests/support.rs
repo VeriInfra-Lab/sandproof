@@ -10,6 +10,8 @@ use serde::Deserialize;
 pub(super) const NS: &str = "0123456789abcdef";
 pub(super) fn host_config(slots: u64) -> BoundedHostConfig {
     BoundedHostConfig {
+        physical_storage: None,
+        console_policy: None,
         uid_base: 1000,
         uplink_base: 8,
         max_data_routes_per_slot: 4,
@@ -155,6 +157,7 @@ pub(super) fn publication(id: char) -> crate::template_registry::Publication {
         state: PublicationState::Checking,
         checked: false,
         validation_sandbox: None,
+        validation_certificate: None,
         failure: None,
     }
 }

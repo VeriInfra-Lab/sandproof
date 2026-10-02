@@ -10,9 +10,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(super) const MAX_RECORD_BYTES: u64 = 1_048_576;
+pub const MAX_CLAIM_RECORD_BYTES: u64 = 1_048_576;
 const STAGING_PREFIX: &str = ".staging-";
-const JSON_RECORD_NAMES: &[&str] = &[
+pub const CLAIM_RECORD_NAMES: &[&str] = &[
     "record.json",
     "aborted.json",
     "failed-prepare.json",
@@ -25,12 +25,20 @@ const JSON_RECORD_NAMES: &[&str] = &[
     "uplink-aborted.json",
 ];
 
+pub(super) fn claim_file_names() -> impl Iterator<Item = String> {
+    std::iter::once("console.log".to_owned()).chain(
+        CLAIM_RECORD_NAMES
+            .iter()
+            .flat_map(|name| [(*name).to_owned(), format!("{STAGING_PREFIX}{name}")]),
+    )
+}
+
 pub(super) fn known_claim_file(name: &str) -> bool {
     name == "console.log"
-        || JSON_RECORD_NAMES.contains(&name)
+        || CLAIM_RECORD_NAMES.contains(&name)
         || name
             .strip_prefix(STAGING_PREFIX)
-            .is_some_and(|target| JSON_RECORD_NAMES.contains(&target))
+            .is_some_and(|target| CLAIM_RECORD_NAMES.contains(&target))
 }
 
 fn stage_path(path: &Path) -> Result<PathBuf, RuntimeError> {
@@ -38,7 +46,7 @@ fn stage_path(path: &Path) -> Result<PathBuf, RuntimeError> {
         .file_name()
         .and_then(std::ffi::OsStr::to_str)
         .ok_or(RuntimeError::InvalidId)?;
-    if !JSON_RECORD_NAMES.contains(&name) {
+    if !CLAIM_RECORD_NAMES.contains(&name) {
         return Err(RuntimeError::IdentityMismatch(
             "unknown staged claim record target",
         ));
@@ -74,7 +82,7 @@ fn write_staged_record<T: Serialize>(
         );
     }
     let bytes = serde_json::to_vec(value)?;
-    if bytes.len() as u64 > MAX_RECORD_BYTES {
+    if bytes.len() as u64 > MAX_CLAIM_RECORD_BYTES {
         return Err(RuntimeError::InvalidConfiguration(
             "claim record exceeds bounded staging limit",
         ));
@@ -117,7 +125,7 @@ fn write_staged_record<T: Serialize>(
     }
     let mut prefix = Vec::new();
     (&mut file)
-        .take(MAX_RECORD_BYTES + 1)
+        .take(MAX_CLAIM_RECORD_BYTES + 1)
         .read_to_end(&mut prefix)?;
     if !bytes.starts_with(&prefix) {
         return Err(RuntimeError::IdentityMismatch(
@@ -208,7 +216,7 @@ mod tests {
 
     #[test]
     fn retirement_staging_names_are_finite_and_cannot_escape_the_claim() {
-        for name in JSON_RECORD_NAMES {
+        for name in CLAIM_RECORD_NAMES {
             assert!(known_claim_file(name));
             assert!(known_claim_file(&format!("{STAGING_PREFIX}{name}")));
         }

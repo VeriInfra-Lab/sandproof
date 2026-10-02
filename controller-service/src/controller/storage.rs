@@ -93,16 +93,19 @@ pub(super) fn apply(
 ) -> Result<core::ControllerDecision, JournalError> {
     let world = transaction.world();
     let sandbox = identity::input_sandbox(&input)?;
-    let serialized = checkpoint::input_bytes(
-        transaction,
-        &StoredInput {
-            version: 1,
-            input: input.clone(),
-        },
-    )?;
+    let stored = StoredInput { version: 1, input };
+    let serialized = checkpoint::input_bytes(transaction, &stored)?;
+    let decision = core::handle_controller(&world, stored.input.clone())
+        .map_err(JournalError::ControllerRejected)?;
+    let full_capacity = super::capacity::config(transaction)?.is_some();
+    if full_capacity && decision.next == world {
+        return Ok(decision);
+    }
+    if let core::ControllerInput::Request(core::Request::Create(request)) = &stored.input {
+        super::capacity::admit(transaction, request)?;
+    }
+    let before = super::capacity::cursors(transaction)?;
     checkpoint::require_input_room(transaction, serialized.len())?;
-    let decision =
-        core::handle_controller(&world, input).map_err(JournalError::ControllerRejected)?;
     let record = decision
         .next
         .sandbox_record(sandbox)
@@ -153,6 +156,7 @@ pub(super) fn apply(
         "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
         params![sequence, serialized],
     )?;
+    super::capacity::spend(transaction, sandbox, before)?;
     transaction.advance(decision.next.clone());
     Ok(decision)
 }
@@ -167,6 +171,9 @@ pub(super) fn append_maintenance(
     let input = core::ControllerInput::Maintenance(input);
     let decision =
         core::handle_controller(world, input.clone()).map_err(JournalError::ControllerRejected)?;
+    if super::capacity::config(transaction)?.is_some() && decision.next == *world {
+        return Ok(decision);
+    }
     let serialized = checkpoint::input_bytes(transaction, &StoredInput { version: 1, input })?;
     checkpoint::require_input_room(transaction, serialized.len())?;
     let sequence = allocators::next_sql(transaction, SqlId::Input)?;
@@ -181,7 +188,21 @@ pub(super) fn apply_maintenance(
     transaction: &WorldTransaction<'_>,
     input: core::maintenance::MaintenanceInput,
 ) -> Result<core::ControllerDecision, JournalError> {
+    let sandbox = match &input {
+        core::maintenance::MaintenanceInput::Retire(request) => Some(request.sandbox),
+        core::maintenance::MaintenanceInput::Slot(
+            core::maintenance::slots::SlotInput::Bind { binding, .. }
+            | core::maintenance::slots::SlotInput::BeginRelease { binding, .. }
+            | core::maintenance::slots::SlotInput::ConfirmRelease { binding, .. }
+            | core::maintenance::slots::SlotInput::CheckOccupied { binding, .. },
+        ) => Some(binding.sandbox),
+        _ => None,
+    };
+    let before = super::capacity::cursors(transaction)?;
     let decision = append_maintenance(transaction, &transaction.world(), input)?;
+    if let Some(sandbox) = sandbox {
+        super::capacity::spend(transaction, sandbox, before)?;
+    }
     transaction.advance(decision.next.clone());
     Ok(decision)
 }

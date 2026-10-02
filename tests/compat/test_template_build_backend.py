@@ -168,7 +168,7 @@ class BuildSdkSession(unittest.TestCase):
                 "request": json.dumps({"kind": kind, "image": "docker.io/library/ubuntu:24.04",
                     "resources": {"diskMiB": 1, "minFreeMiB": 16}})}
             now = [0]
-            store = SimpleNamespace(directory=lambda _: directory, clock=lambda: now[0],
+            store = SimpleNamespace(bounded=None, directory=lambda _: directory, clock=lambda: now[0],
                 limits={"max_input_bytes": 65536, "max_expanded_bytes": 65536, "max_entries": 100, "max_log_bytes": 65536})
             if failure is not None or command_timeout is not None:
                 options = failure if failure is not None else command_timeout

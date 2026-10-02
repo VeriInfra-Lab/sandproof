@@ -3,10 +3,12 @@ use crate::{AdmissionError, BoundedHostConfig, CrashPoint, NeverCrash};
 use sandbox_controller_core as core;
 use tempfile::TempDir;
 mod support;
+mod validation_certificates;
 use support::*;
 
 fn maintenance_config() -> MaintenanceConfig {
     MaintenanceConfig {
+        capacity: None,
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,
         max_records: 10000,
@@ -388,7 +390,7 @@ fn current_sql_only_lifetime_and_registry_changes_survive_older_checkpoint() {
     clippy::too_many_lines,
     reason = "the three publication states share one complete real admission/cleanup/pin/reopen matrix"
 )]
-fn every_template_validation_state_pins_release_and_retirement() {
+fn only_unsettled_template_validation_pins_release_and_retirement() {
     use crate::{
         CreateAdmission, CreateOptions, template_registry::PublicationState,
         templates::ComputeLimits,
@@ -455,6 +457,34 @@ fn every_template_validation_state_pins_release_and_retirement() {
                 .state,
             state
         );
+        if state != PublicationState::Checking {
+            assert!(
+                !journal
+                    .host_slot_release_pinned(core::SandboxId(1))
+                    .unwrap()
+            );
+            release(&mut journal, 1);
+            retire(&mut journal, 1);
+            checkpoint_and_prune(&mut journal);
+            drop(journal);
+            let journal = open(&path);
+            assert!(
+                journal
+                    .world()
+                    .unwrap()
+                    .sandbox_record(core::SandboxId(1))
+                    .is_none()
+            );
+            assert_eq!(
+                journal
+                    .template_publication(1, &publication.candidate_id)
+                    .unwrap()
+                    .unwrap()
+                    .state,
+                state
+            );
+            continue;
+        }
         let context = journal
             .host_slot_context(core::SandboxId(1))
             .unwrap()
@@ -753,3 +783,9 @@ fn retirement_fault_after_sql_deletion_rolls_back_but_post_commit_fault_preserve
         );
     }
 }
+
+mod capacity;
+
+mod capacity_protocol;
+
+mod build_capacity;

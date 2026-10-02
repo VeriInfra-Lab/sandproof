@@ -13,10 +13,24 @@ use sandbox_controller_core::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Explicit opt-in: only VMM console output is discarded; guest command and
+/// self-service build logs have independent retention contracts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsolePolicy {
+    Discard,
+}
+
 /// Explicit deployment mapping. None of these limits has a production default.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BoundedHostConfig {
+    /// Immutable shared-filesystem profile; absent is outside physical boundedness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical_storage: Option<crate::physical_storage::PhysicalStorageProfile>,
+    /// Absence preserves legacy unbounded file logging, outside the bounded guarantee.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_policy: Option<ConsolePolicy>,
     pub maintenance: MaintenanceLimits,
     pub uid_base: u32,
     /// First deployment-allocated /30 index in the finite 100.64.0.0/10 pool.
@@ -31,6 +45,9 @@ impl BoundedHostConfig {
     /// # Errors
     /// Rejects invalid limits, reserved UIDs and exhausted physical IPv4 space.
     pub fn validate(&self) -> Result<(), JournalError> {
+        if let Some(profile) = &self.physical_storage {
+            profile.validate()?;
+        }
         let slots = self.maintenance.max_host_slots;
         if self.data_route_control_reserve == 0
             || self.max_data_routes_per_slot <= self.data_route_control_reserve
@@ -236,6 +253,11 @@ pub(super) fn reserve_host_slot(
 }
 
 impl ControllerJournal {
+    /// Immutable deployment identity used to select a shared physical pool.
+    #[must_use]
+    pub fn deployment_namespace(&self) -> &str {
+        &self.namespace
+    }
     /// Read-only startup preflight, before enabling a node's bounded marker.
     /// The eventual IMMEDIATE open repeats every check. This is not admission
     /// authority and cannot substitute for independently empty host inventory.
@@ -345,8 +367,15 @@ impl ControllerJournal {
             AdmissionError::Journal(error) => error,
             _ => JournalError::CorruptStore,
         })?;
-        Ok(options.metadata.contains_key("_sandproof_build_id")
-            || self.template_validation_sandboxes()?.contains(&sandbox.0))
+        Ok(super::private_build::pinned(
+            &self.journal.connection,
+            &self.world()?,
+            &self.namespace,
+            sandbox,
+            &options,
+        )? || self
+            .active_template_validation_sandboxes()?
+            .contains(&sandbox.0))
     }
 
     /// Commit the release intent before invoking the trusted exact-host release

@@ -27,11 +27,13 @@ mod retirement;
 #[path = "staging.rs"]
 mod staging;
 pub use cgroup::HostResources;
+pub use helper_gate::MAX_HELPER_MARKER_BYTES;
 pub use helper_gate::{
     RuntimeHelperGate, RuntimeHelperGuard, RuntimeProcessIdentity, RuntimeRouteSnapshot,
     RuntimeRouteState,
 };
 pub use retirement::RetirementManifest;
+pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
 #[cfg(test)]
 static PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -119,9 +121,34 @@ pub struct RuntimeHostSlot {
     pub helper_gate: RuntimeHelperGate,
 }
 
+fn console_output(
+    claim: &Path,
+    policy: Option<ConsolePolicy>,
+) -> Result<(Stdio, Stdio), RuntimeError> {
+    if policy == Some(ConsolePolicy::Discard) {
+        return Ok((Stdio::null(), Stdio::null()));
+    }
+    let output = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(claim.join("console.log"))?;
+    let stderr = output.try_clone()?;
+    Ok((Stdio::from(output), Stdio::from(stderr)))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsolePolicy {
+    Discard,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    /// Explicit discard is required by the full bounded deployment policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_policy: Option<ConsolePolicy>,
     /// Explicit bounded physical position; absent preserves legacy identity mapping.
     #[serde(default)]
     pub host_slot: Option<RuntimeHostSlot>,
@@ -358,12 +385,7 @@ impl Runtime {
     }
 
     fn spawn_jailer(&self, id: &str, claim: &Path) -> Result<ProcessRecord, RuntimeError> {
-        let output = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(claim.join("console.log"))?;
-        let stderr = output.try_clone()?;
+        let (output, stderr) = console_output(claim, self.config.console_policy)?;
         // The shell cannot exec jailer until the exact process identity has
         // been durably recorded. If this process dies before releasing stdin,
         // the gate sees EOF and exits without ever starting Firecracker.
@@ -397,8 +419,8 @@ impl Runtime {
             .arg("--api-sock")
             .arg(format!("/{API_SOCKET}"))
             .stdin(Stdio::piped())
-            .stdout(Stdio::from(output))
-            .stderr(Stdio::from(stderr))
+            .stdout(output)
+            .stderr(stderr)
             .spawn()?;
         let result = (|| {
             let pid = child.id();
@@ -1544,6 +1566,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
@@ -1602,6 +1625,7 @@ mod tests {
         fs::write(jail.join("rootfs.ext4"), b"private disk").unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
@@ -1672,6 +1696,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
@@ -1903,5 +1928,51 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
         let mut readonly = File::open(&path).unwrap();
         assert!(copy_sparse_range(&mut &b"write"[..], &mut readonly, 5).is_err());
+    }
+}
+
+#[cfg(test)]
+mod console_policy_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_discard_creates_no_console_file_and_drops_both_streams() {
+        let directory = tempfile::tempdir().unwrap();
+        let (stdout, stderr) =
+            console_output(directory.path(), Some(ConsolePolicy::Discard)).unwrap();
+        let status = Command::new("/bin/sh")
+            .args(["-c", "printf stdout; printf stderr >&2"])
+            .stdout(stdout)
+            .stderr(stderr)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn legacy_file_logging_is_preserved_without_an_explicit_policy() {
+        let directory = tempfile::tempdir().unwrap();
+        let (stdout, stderr) = console_output(directory.path(), None).unwrap();
+        let status = Command::new("/bin/sh")
+            .args(["-c", "printf stdout; printf stderr >&2"])
+            .stdout(stdout)
+            .stderr(stderr)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let path = directory.path().join("console.log");
+        assert_eq!(fs::read(&path).unwrap(), b"stdoutstderr");
+        assert_eq!(fs::metadata(path).unwrap().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn console_policy_has_no_implicit_retained_tail_or_unbounded_alias() {
+        assert_eq!(
+            serde_json::from_str::<ConsolePolicy>("\"discard\"").unwrap(),
+            ConsolePolicy::Discard
+        );
+        assert!(serde_json::from_str::<ConsolePolicy>("\"file\"").is_err());
+        assert!(serde_json::from_str::<ConsolePolicy>("\"bounded_tail\"").is_err());
     }
 }

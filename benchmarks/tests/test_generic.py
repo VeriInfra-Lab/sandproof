@@ -134,14 +134,63 @@ class GenericInputTests(unittest.TestCase):
             env.task_env_config = config()
             env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
             env.submission_key = 'a' * 32
-            env.client = SimpleNamespace(request=Mock(side_effect=OSError('lost response')))
+            env.client = SimpleNamespace(request=Mock(side_effect=[{'requestWindow': {'namespace': 17, 'sequence': 0}}, OSError('lost response')]))
             with self.assertRaises(OSError):
                 asyncio.run(env.prepare_template())
             self.assertTrue(env.build_dispatched)
-            env.client.request.assert_called_once()
+            self.assertEqual(env.client.request.call_count, 2)
             intent = json.loads((Path(tmp) / 'build-intent.json').read_text())
             self.assertEqual(intent['idempotency_key'], env.submission_key)
+            self.assertEqual(intent['requestWindow'], {'namespace': 17, 'sequence': 0})
             self.assertEqual(env.client.request.call_args.kwargs['token'], env.submission_key)
+
+    def test_dockerfile_retry_reuses_original_archive_window_and_key(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / 'sample/environment'
+            directory.mkdir(parents=True)
+            dockerfile = b'FROM ubuntu:24.04\n'
+            (directory / 'Dockerfile').write_bytes(dockerfile)
+            env = object.__new__(GenericEnvironment)
+            env.entry = entry() | {'files': [{'path': 'environment/Dockerfile', 'role': 'environment',
+                'mode': '100644', 'bytes': len(dockerfile), 'sha256': hashlib.sha256(dockerfile).hexdigest()}]}
+            env.source, env.source_kind = root, 'dockerfile'
+            env.task_env_config = config()
+            env.trial_paths = SimpleNamespace(trial_dir=root)
+            env.submission_key = 'a' * 32
+            env.client = SimpleNamespace(request=Mock(side_effect=[
+                {'requestWindow': {'namespace': 17, 'sequence': 9}}, OSError('lost first reply')]))
+            with self.assertRaises(OSError):
+                asyncio.run(env.prepare_template())
+            original = (root / 'context.tar').read_bytes()
+            intent = json.loads((root / 'build-intent.json').read_text())
+            env.submission_key = 'replacement-not-allowed'
+            env.client.request = Mock(side_effect=OSError('lost retry reply'))
+            with patch('benchmarks.generic_environment.archive_context', side_effect=AssertionError('must reuse saved archive')):
+                with self.assertRaises(OSError):
+                    asyncio.run(env.prepare_template())
+            env.client.request.assert_called_once()
+            call = env.client.request.call_args
+            self.assertEqual(call.args[1], '/sandproof/template-builds')
+            self.assertEqual(call.args[2]['requestWindow'], intent['requestWindow'])
+            self.assertEqual(call.kwargs['token'], intent['idempotency_key'])
+            self.assertEqual((root / 'context.tar').read_bytes(), original)
+
+    def test_explicit_legacy_mode_does_not_attempt_or_fallback_from_windows(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            env = object.__new__(GenericEnvironment)
+            env.entry, env.source_kind = entry(), 'oci'
+            env.task_env_config = config()
+            env.trial_paths = SimpleNamespace(trial_dir=Path(temporary))
+            env.submission_key, env.build_mode = 'a' * 32, 'legacy-unbounded'
+            env.client = SimpleNamespace(request=Mock(side_effect=OSError('lost legacy reply')))
+            with self.assertRaises(OSError):
+                asyncio.run(env.prepare_template())
+            env.client.request.assert_called_once()
+            self.assertNotIn('requestWindow', env.client.request.call_args.args[2])
+            saved = json.loads((Path(temporary) / 'build-intent.json').read_text())
+            self.assertEqual(saved['build_mode'], 'legacy-unbounded')
+            self.assertIsNone(saved['requestWindow'])
 
     def test_create_selects_immutable_template_defaults_not_dockerfile_guess(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -193,6 +242,7 @@ class GenericInputTests(unittest.TestCase):
                     log = OSError('must not retain credential-bearing exception text') if log_failure else {
                         'offset': 0, 'nextOffset': 16384, 'text': '\x00' * 16384}
                     env.client = SimpleNamespace(request=Mock(side_effect=[
+                        {'requestWindow': {'namespace': 17, 'sequence': 0}},
                         {'buildID': job, 'state': 'Queued'}, outcome, log]))
                     if state == 'Ready':
                         asyncio.run(env.prepare_template())
@@ -204,6 +254,7 @@ class GenericInputTests(unittest.TestCase):
                     self.assertEqual(env.build_id, job)
                     self.assertEqual(env.build_log_error, 'OSError' if log_failure else None)
                     self.assertEqual([call.args[:2] for call in env.client.request.call_args_list], [
+                        ('POST', '/sandproof/template-build-windows'),
                         ('POST', '/sandproof/template-builds'),
                         ('GET', '/sandproof/template-builds/' + job),
                         ('GET', '/sandproof/template-builds/' + job + '/logs?offset=0&limit=65536')])
