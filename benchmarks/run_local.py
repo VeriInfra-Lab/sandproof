@@ -249,7 +249,10 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
     # not the only channel carrying the original identity and failure to cleanup.
     row = result_row if result_row is not None else {}
     row.update(name=task.name, status='running', stage='initialization',
-               oracle_mode=oracle_mode, oracle='not_run', verifier='not_run')
+               oracle_mode=oracle_mode,
+               environment_source_kind=getattr(environment, 'source_kind', 'fixed-base'),
+               original_environment=getattr(environment, 'source_kind', None) in ('oci', 'dockerfile'),
+               oracle='not_run', verifier='not_run')
     start = time.monotonic()
     def event(stage):
         row['stage'] = stage
@@ -344,6 +347,7 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
         row['create_dispatched'] = environment.create_dispatched
         if hasattr(environment, 'build_id'):
             row.update(build_id=environment.build_id, build=environment.build_result,
+                       environment_repair=getattr(environment, 'environment_repair', None),
                        build_log_error=getattr(environment, 'build_log_error', None),
                        template=environment.template, exact_cleanup='not_audited',
                        build_dispatched=environment.build_dispatched,

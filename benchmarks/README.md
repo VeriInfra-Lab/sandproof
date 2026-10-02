@@ -73,6 +73,8 @@ python3 tools/benchmark_tasks.py audit \
 
 [通用入口](run_generic.py)只替换 Harbor 的模板准备：提交自有构建 API，等待不可变模板，再使用原 `AsyncSandbox`、`OracleAgent` 和 `Verifier`。不使用 `task-recipes.json` 或预制任务镜像替换，不调用 E2B 云模板服务。默认使用原解答；通用入口与实机监督均可显式传 `--oracle-mode repaired`，仅运行下述已注册修复，报告独立标记模式，不计为原解答通过。默认 `--source-kind oci` 与固定 Harbor 优先使用 `docker_image` 一致；显式 `dockerfile` 则打包原 `environment/`，原样交给标准 BuildKit。两条来源在报告中分开记录，不将 Dockerfile 重建声称为上游预构建标签的相同字节。客户端不调用固定 SDK 的 Dockerfile 解析器，因此多阶段不受其限制。
 
+另可显式选择 `--source-kind oci-pip-cache-pruned`，仅适用于[登记环境变体](environment_repairs.py)中的两道 MTEB 题，须匹配任务文件摘要与原镜像引用。它生成只有固定摘要 `FROM` 和一次缓存清理命令的 Dockerfile，通过同一自助构建 API 与隔离 BuildKit 执行；不重装依赖，不替换 Torch/CUDA、模型、解答或评分，也不增加原任务 CPU、内存、总盘和时限。[来宾清理器](guest_pip_cache.py)只移除 `/root/.cache/pip`，拒绝路径链接、异常文件和未知缓存入口，保留模型缓存及已安装文件。构建意图保存原镜像引用、固定基础摘要、helper/Dockerfile/context 摘要和清理路径；单题及整批报告明确 `original_environment=false`。即使选择原解答并评分通过，这也是环境变体结果，不能计为原 OCI 通过。原环境失败记录必须保留；未登记题或混合选题在派发前拒绝。组件测试不代表变体已通过整题实机验收。
+
 构建诊断按服务返回的原始字节偏移分页保存到 `build-log.json`，总上限 2 MiB、读取期限 30 秒，JSON 展开后的文件也计入逐试验产物预算。`complete` 仅表示已到达终态构建日志末尾，超限记录 `truncated`；读取失败保留已有页和错误类型，不改写原构建终态或重新提交构建。
 
 `filter-js-from-html` 的原评分器会吞掉部分浏览器错误并给出成功奖励。通用链只在评分阶段设置 `PYTEST_ADDOPTS=-s -v` 和 `PYTHONUNBUFFERED=1`，保存逐批浏览器日志，并额外检查批次数、连续批次编号、实际完成的无弹窗检查及被吞掉的超时/浏览器错误；缺日志或检查失败不能报告整题通过，原 reward 与 oracle/verifier 状态仍保留。这不修改原镜像、解答、评分源码、资源或时限，也不安装固定 base 的浏览器包装器。通用链的 `browser_lifecycle_audit=not_instrumented` 明确表示未观察每批浏览器进程回收，最终 VM 资源仍须外部审计；它不是浏览器超时的修复或实机通过证据。
@@ -99,7 +101,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 实机监督可用 `--build-input-max-bytes` 和 `--build-expanded-max-bytes` 显式配置构建下载/输入与展开层的预算，默认分别为 4 GiB 和 8 GiB，仍受构建服务 16 GiB 和 32 GiB 的硬上限约束。原公开 OCI 可能含大于默认下载额度的层；调整时必须同时提供已核对的更大构建盘。配置、构建池上传额度、工作区预留、宿主磁盘预检及 worker 空闲量检查使用同一组数值，并写入 `capacity.json` 和 `acceptance-budgets.json`；原任务运行盘、CPU/内存、评分和时限保持不变。例如原运行盘为 10 GiB，选择 8 GiB 输入与 32 GiB 展开额度时，构建盘须有至少 58 GiB + 64 MiB 实际空闲空间，原 32 GiB 构建盘会在派发前拒绝。提高上限不是构建或原题已通过的证据。
 
-构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。只上传锁定的环境文件；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
+构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。原 Dockerfile 来源只上传锁定的环境文件，登记环境变体只上传上述生成的 Dockerfile；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
 
 通用 KVM 监督入口使用[统一验收配置](template-service-budgets.json)及[配置生成/预检](../tools/template_acceptance.py)，运行池传输和寿命字段直接复用[已有任务配置](local-service-budgets.json)。同时计入构建池和运行池的完整 CPU/VMM 内存额度、额外存活私有盘、发布产物、构建工作区、证据和清理余量；预检使用当前 CPU affinity、可用内存和剩余磁盘。服务/relay 的份额由[显式服务 cgroup 入口](../tools/service_cgroup.py)落实；控制服务与构建监督服务及其子进程共用限额，VM 使用各自独立分组。仅生成配置仍标记为未观察到执行，监督入口在核对实际服务 PID 归属后才记录已施加上限；当前数值仍不是已实测的生产总预算。报告保存实际生成配置及来源摘要，旧提交的实跑仍只绑定旧配置。
 

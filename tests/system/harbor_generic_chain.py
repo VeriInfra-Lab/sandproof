@@ -37,6 +37,7 @@ from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected, validate_oracle_mode
+from benchmarks.environment_repairs import PRUNED_SOURCE, SOURCE_KINDS, validate_source_kind
 
 MIB = 1024**2
 
@@ -64,6 +65,7 @@ def exercise(args):
         raise RuntimeError('unknown original task')
     oracle_mode = validate_oracle_mode(args, selected)
     capacity_entries = [t for t in lock['tasks'] if t['name'] in selected]
+    validate_source_kind(args.source_kind, capacity_entries)
     if args.resource_pressure:
         if len(selected) != 2 or args.repetitions != 1:
             raise ValueError('resource pressure requires exactly two tasks and one repetition')
@@ -332,6 +334,7 @@ def exercise(args):
             output.mkdir(mode=0o700)
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
                 'oracle_mode': oracle_mode,
+                'original_environment': args.source_kind != PRUNED_SOURCE,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
                 'failure_diagnostics': args.failure_diagnostics,
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
@@ -416,6 +419,7 @@ def exercise(args):
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
+                'original_environment': args.source_kind != PRUNED_SOURCE,
                 'docker_hub_mirror': args.docker_hub_mirror,
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
@@ -473,7 +477,7 @@ if __name__ == '__main__':
     selection.add_argument('--all', action='store_true')
     parser.add_argument('--namespace')
     parser.add_argument('--build-namespace')
-    parser.add_argument('--source-kind', choices=('oci', 'dockerfile'), default='oci')
+    parser.add_argument('--source-kind', choices=SOURCE_KINDS, default='oci')
     parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
     parser.add_argument('--failure-diagnostics', action='store_true',
                         help='retain registered post-score guest probes without changing original scores')

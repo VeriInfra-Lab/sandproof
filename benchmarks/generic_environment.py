@@ -1,6 +1,6 @@
 """Original environment -> self-service template -> original E2B SDK.
 
-No recipe lookup, Dockerfile parsing, cloud API, oracle repair or host execution.
+Explicit reviewed environment variants are separately recorded; no host execution.
 Only template preparation is replaced; Harbor owns the oracle/verifier phases.
 """
 import asyncio
@@ -17,6 +17,7 @@ import time
 from e2b import AsyncSandbox
 
 from benchmarks.sdk_environment import SdkEnvironment
+from benchmarks.environment_repairs import PRUNED_SOURCE, archive_repaired_context, repair_profile
 from tools.benchmark_tasks import InvalidInput
 from tools.template_build_client import BuildClient
 
@@ -65,12 +66,17 @@ def build_request(entry, config, source_kind):
     if (config.os.value != 'linux' or config.gpus or config.tpu or config.mcp_servers
             or config.network_mode.value != 'public' or config.allowed_hosts):
         raise InvalidInput('unsupported OS/device/service/network requirements')
-    request = {'kind': source_kind, 'timeoutSeconds': int(timeout), 'allowInternetAccess': True,
+    request = {'kind': 'dockerfile' if source_kind == PRUNED_SOURCE else source_kind,
+               'timeoutSeconds': int(timeout), 'allowInternetAccess': True,
                'resources': dict(zip(('cpuCount', 'memoryMiB', 'diskMiB'), values), minFreeMiB=64)}
     if source_kind == 'oci':
         if not config.docker_image or config.docker_image != entry['upstream_image_reference']:
             raise InvalidInput('original public image reference required')
         request['image'] = config.docker_image
+    elif source_kind == PRUNED_SOURCE:
+        profile = repair_profile(entry)
+        if config.docker_image != profile['image']:
+            raise InvalidInput('registered original image required for environment repair')
     elif source_kind != 'dockerfile':
         raise InvalidInput('unknown environment source kind')
     return request
@@ -103,17 +109,24 @@ class GenericEnvironment(SdkEnvironment):
         self.runtime_intent = None
         self.runtime_attempt = None
         self.start_audit = start_audit
+        self.environment_repair = None
         super().__init__(sdk_options=sdk_options, **kwargs)
 
     async def prepare_template(self):
+        self.environment_repair = None
         request = build_request(self.entry, self.task_env_config, self.source_kind)
         context = self.trial_paths.trial_dir / 'context.tar'
         if self.source_kind == 'dockerfile':
             context_hash = archive_context(self.entry, self.source, context)
+        elif self.source_kind == PRUNED_SOURCE:
+            self.environment_repair = archive_repaired_context(self.entry, context)
+            context_hash = self.environment_repair['context_sha256']
         else:
             context_hash = None
         intent = {'idempotency_key': self.submission_key, 'request': request,
-                  'context_sha256': context_hash, 'task_files_sha256': self.entry['files_sha256']}
+                  'context_sha256': context_hash, 'task_files_sha256': self.entry['files_sha256'],
+                  'source_kind': self.source_kind, 'original_environment': self.source_kind != PRUNED_SOURCE,
+                  'environment_repair': self.environment_repair}
         # A local checkpoint precedes dispatch. On lost reply inspect/recover
         # this SAME key in the build journal; never submit a replacement job.
         self.checkpoint('build-intent.json', intent)
@@ -127,7 +140,7 @@ class GenericEnvironment(SdkEnvironment):
         self.checkpoint('build-status.json', result)
         path = '/sandproof/template-builds/' + self.build_id
         if result['state'] == 'AwaitingInput':
-            if self.source_kind != 'dockerfile':
+            if request['kind'] != 'dockerfile':
                 raise InvalidInput('image import unexpectedly requires context')
             def upload():
                 with context.open('rb') as incoming:
