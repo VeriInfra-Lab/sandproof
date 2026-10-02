@@ -337,6 +337,8 @@ Dockerfile 的 BuildKit 内容存储复用须核对真实 image exporter 的单�
 
 [宿主预检工具](../tools/check_kvm_host.py)是 C04 / #14 的独立基础模块，使用 Python 3.11+ 标准库，不依赖公共 API 或控制服务启动。它检查当前身份、Linux x86_64、KVM API、TUN、cgroup v2、宿主工具、可信路径、Firecracker/jailer 版本、四项产物 SHA-256，以及磁盘和内存余量；检查失败仍收集其余结果。
 
+构建阶段日志用[定向回归](../tools/tests/test_template_phase_logs.py)核对阶段开始可读、可控单调时钟耗时、失败不记完成、与守护进程共享日志总量，以及诊断失败不替换原异常；[获取链回归](../tools/tests/test_template_worker_acquisition.py)同时核对真实校验到解包失败边界的阶段顺序。实机日志只提供阶段定位，不能把某个 completed 标记当作整个模板或评测通过。
+
 从[配置示例](../tests/system/host.example.json)复制一份到被忽略的 `artifacts/`，按已复核的测试环境填写绝对路径、四个指纹和资源最低余量。示例中的指纹占位符会被拒绝，磁盘/内存数值只是例子，须按本轮 VM 数量、磁盘副本、日志及收尾需求确定。指纹应来自已确认的发布产物或镜像构建记录；不要在不匹配时直接覆盖基线。
 
 在**待测主机**的干净、精确提交上，用运行 jailer 的同一 root 身份执行（先确认该提交及配置适合在该主机运行）：

@@ -7,6 +7,7 @@ Never run this with tenant input on a host; no Docker socket is used.
 """
 
 import argparse
+from contextlib import contextmanager
 import ipaddress
 import json
 import os
@@ -92,6 +93,36 @@ class Commands:
     def __init__(self, deadline, log, max_log_bytes, *, budget=None):
         self.deadline, self.log = deadline, log
         self.budget = budget or LogBudget(max_log_bytes)
+        self.started = time.monotonic()
+
+    @contextmanager
+    def phase(self, name):
+        """Flush bounded diagnostics before work; preserve its original failure."""
+        started = time.monotonic()
+
+        def event(state):
+            data = ("\n[sandproof-phase] " + json.dumps({
+                "phase": name, "state": state,
+                "started_seconds": round(started - self.started, 6),
+                "elapsed_seconds": round(time.monotonic() - started, 6),
+            }, separators=(",", ":")) + "\n").encode()
+            accepted = self.budget.take(len(data))
+            self.log.write(data[:accepted])
+            self.log.flush()
+            if accepted < len(data):
+                raise InvalidTemplate("build log limit")
+
+        event("started")
+        try:
+            yield
+        except BaseException:
+            try:
+                event("failed")
+            except Exception:
+                pass  # Diagnostic I/O or exhausted budget must not hide the cause.
+            raise
+        else:
+            event("completed")
 
     def run(self, args, *, daemon=False):
         if time.monotonic() >= self.deadline:
@@ -468,63 +499,69 @@ def build(work, source, request, profile, *, guest_boot_id):
             limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
             layout = work / "oci"
             public_source = None
-            if request["kind"] == "oci-reference":
-                if __package__:
-                    from .template_fetch import fetch
-                else:
-                    from template_fetch import fetch
-                public_source, image = fetch(source, work, layout, request, tools["regctl"], commands)
-            elif request["kind"] == "dockerfile":
-                extract_context(source, work / "context", **limits)
-                address = "unix://" + str(work / "buildkit.sock")
-                daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
-                                       "--oci-worker=true",
-                                       "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "auto",
-                                       "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True)
-                # Daemon logging is intentionally a separate bounded file,
-                # drained while the build client runs (see daemon reader below).
-                daemon_error = []
-                def read_daemon():
+            with commands.phase("acquire"):
+                if request["kind"] == "oci-reference":
+                    if __package__:
+                        from .template_fetch import fetch
+                    else:
+                        from template_fetch import fetch
+                    public_source, image = fetch(source, work, layout, request, tools["regctl"], commands)
+                elif request["kind"] == "dockerfile":
+                    extract_context(source, work / "context", **limits)
+                    address = "unix://" + str(work / "buildkit.sock")
+                    daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
+                                           "--oci-worker=true",
+                                           "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "auto",
+                                           "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True)
+                    # Daemon logging is intentionally a separate bounded file,
+                    # drained while the build client runs (see daemon reader below).
+                    daemon_error = []
+                    def read_daemon():
+                        try:
+                            with (work / "daemon.log").open("xb") as daemon_log:
+                                Commands(commands.deadline, daemon_log, request["max_log_bytes"], budget=commands.budget).drain(daemon)
+                        except Exception as error:
+                            daemon_error.append(error)
+                            terminate(daemon)
+                        finally:
+                            daemon.stdout.close()
+                    reader = threading.Thread(target=read_daemon, daemon=True)
+                    reader.start()
                     try:
-                        with (work / "daemon.log").open("xb") as daemon_log:
-                            Commands(commands.deadline, daemon_log, request["max_log_bytes"], budget=commands.budget).drain(daemon)
-                    except Exception as error:
-                        daemon_error.append(error)
-                        terminate(daemon)
+                        commands.run([str(tools["buildctl"]), "--addr", address, "--wait", "build", "--progress", "plain",
+                                      "--frontend", "dockerfile.v0", "--local", "context=" + str(work / "context"),
+                                      "--local", "dockerfile=" + str(work / "context"), "--opt", "platform=linux/amd64",
+                                      "--metadata-file", str(work / "image-metadata.json"),
+                                      "--output", "type=image,oci-mediatypes=true,compression=gzip,push=false,store=false"])
                     finally:
-                        daemon.stdout.close()
-                reader = threading.Thread(target=read_daemon, daemon=True)
-                reader.start()
-                try:
-                    commands.run([str(tools["buildctl"]), "--addr", address, "--wait", "build", "--progress", "plain",
-                                  "--frontend", "dockerfile.v0", "--local", "context=" + str(work / "context"),
-                                  "--local", "dockerfile=" + str(work / "context"), "--opt", "platform=linux/amd64",
-                                  "--metadata-file", str(work / "image-metadata.json"),
-                                  "--output", "type=image,oci-mediatypes=true,compression=gzip,push=false,store=false"])
-                finally:
-                    terminate(daemon)
-                    reader.join(timeout=4)
-                if reader.is_alive() or daemon_error:
-                    raise RuntimeError("builder daemon did not finish cleanly")
-                buildkit_layout(work / "cache", work / "image-metadata.json", layout,
-                                max_bytes=request["max_expanded_bytes"])
-            else:
-                extract_archive(source, layout, **limits)
+                        terminate(daemon)
+                        reader.join(timeout=4)
+                    if reader.is_alive() or daemon_error:
+                        raise RuntimeError("builder daemon did not finish cleanly")
+                    buildkit_layout(work / "cache", work / "image-metadata.json", layout,
+                                    max_bytes=request["max_expanded_bytes"])
+                else:
+                    extract_archive(source, layout, **limits)
             if request["kind"] != "oci-reference":
-                image = inspect_oci(layout, **limits)
+                with commands.phase("oci_validate"):
+                    image = inspect_oci(layout, **limits)
             startup = startup_config(image["container_config"])
             index = bounded_json(layout / "index.json")
             index["manifests"][0].setdefault("annotations", {})["org.opencontainers.image.ref.name"] = "candidate"
             (layout / "index.json").write_text(json.dumps(index))
-            root = unpack_rootfs(commands, tools["umoci"], layout, work / "bundle")
-            install_platform(root, tools["envd"], tools["busybox"], request.get("dns_servers"))
-            defaults = runtime_defaults(root, startup)
+            with commands.phase("rootfs_unpack"):
+                root = unpack_rootfs(commands, tools["umoci"], layout, work / "bundle")
+            with commands.phase("platform_install"):
+                install_platform(root, tools["envd"], tools["busybox"], request.get("dns_servers"))
+                defaults = runtime_defaults(root, startup)
             disk = work / "candidate.ext4"
             with disk.open("xb") as output:
                 output.truncate(request["disk_mib"] * MIB)
-            commands.run(["/usr/sbin/mke2fs", "-t", "ext4", "-F", "-b", "4096", "-m", "0",
-                          "-E", "lazy_itable_init=0,lazy_journal_init=0", "-d", str(root), str(disk)])
-            commands.run(["/usr/sbin/e2fsck", "-fn", str(disk)])
+            with commands.phase("ext4_create"):
+                commands.run(["/usr/sbin/mke2fs", "-t", "ext4", "-F", "-b", "4096", "-m", "0",
+                              "-E", "lazy_itable_init=0,lazy_journal_init=0", "-d", str(root), str(disk)])
+            with commands.phase("ext4_check"):
+                commands.run(["/usr/sbin/e2fsck", "-fn", str(disk)])
             # Read structural accounting from the ext4 superblock. Do not use
             # builder filesystem free space as the candidate's free capacity.
             import struct
@@ -536,8 +573,10 @@ def build(work, source, request, profile, *, guest_boot_id):
                 raise InvalidTemplate("unexpected ext4 accounting")
             if free * 4096 < request["min_free_mib"] * MIB:
                 raise InvalidTemplate("candidate minimum free disk not met")
+            with commands.phase("disk_digest"):
+                rootfs_digest = sha256(disk)
             state = {"state": "candidate", "ready": False, **image, "startup": startup, "runtime_defaults": defaults,
-                     "startup_applied": False, "rootfs_sha256": sha256(disk), "disk_bytes": disk.stat().st_size,
+                     "startup_applied": False, "rootfs_sha256": rootfs_digest, "disk_bytes": disk.stat().st_size,
                      "free_bytes": free * 4096, "min_free_bytes": request["min_free_mib"] * MIB,
                      "input_sha256": input_digest, "tools": profile, "filesystem_tools": filesystem_tools,
                      "requires": ["external VM cleanup", "launch/envd/owner publish gate"]}

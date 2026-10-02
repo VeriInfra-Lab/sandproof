@@ -94,6 +94,12 @@ class WorkerAcquisitionTests(unittest.TestCase):
         self.assertEqual(len(self.converted), 1)
         self.assertEqual(len(self.unpacked), 1)
         self.assertEqual(decoder.call_count, 1)
+        events = [json.loads(line.removeprefix('[sandproof-phase] '))
+                  for line in (self.work / 'build.log').read_text().splitlines()
+                  if line.startswith('[sandproof-phase] ')]
+        self.assertEqual([(e['phase'], e['state']) for e in events],
+                         [('acquire', 'started'), ('acquire', 'completed'),
+                          ('rootfs_unpack', 'started'), ('rootfs_unpack', 'failed')])
         self.assertEqual(sum(call.args[0].name == digest for call in hashes.call_args_list), 2)
 
     def test_native_public_oci_checks_layers_once_before_unpack(self):
