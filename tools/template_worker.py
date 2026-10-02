@@ -367,7 +367,7 @@ def build(work, source, request, profile, *, guest_boot_id):
                 address = "unix://" + str(work / "buildkit.sock")
                 daemon = commands.run([str(tools["buildkitd"]), "--root", str(work / "cache"), "--addr", address,
                                        "--oci-worker=true",
-                                       "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "native",
+                                       "--oci-worker-binary", str(tools["buildkit-runc"]), "--oci-worker-snapshotter", "auto",
                                        "--oci-worker-net", "host", "--containerd-worker=false"], daemon=True)
                 # Daemon logging is intentionally a separate bounded file,
                 # drained while the build client runs (see daemon reader below).
