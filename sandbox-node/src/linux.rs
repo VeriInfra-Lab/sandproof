@@ -13,10 +13,11 @@ use sandproof_protocol::{
     WorkAction, WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::{self, DirBuilder, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -202,6 +203,20 @@ impl ArtifactStamp {
             sha256: artifact.sha256.clone(),
         })
     }
+}
+
+fn artifact_digest(mut input: impl Read) -> std::io::Result<String> {
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        match input.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => digest.update(&buffer[..count]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 impl LinuxWorker {
@@ -1043,13 +1058,7 @@ impl LinuxWorker {
         if cache.get(&artifact.path) == Some(&stamp) {
             return Ok(());
         }
-        check_trusted_path(Path::new("/usr/bin/sha256sum"))?;
-        let output = Process::new("/usr/bin/sha256sum")
-            .arg("--")
-            .arg(&artifact.path)
-            .output()?;
-        if !output.status.success()
-            || output.stdout.get(..64) != Some(artifact.sha256.as_bytes())
+        if artifact_digest(File::open(&artifact.path)?)? != artifact.sha256
             || ArtifactStamp::read(artifact)? != stamp
         {
             return Err("template artifact digest mismatch or changed during verification".into());
@@ -2151,7 +2160,74 @@ fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Fence, fence_can_advance, require_absent, write_new_json};
+    use super::{Fence, artifact_digest, fence_can_advance, require_absent, write_new_json};
+    use std::io::{Cursor, Error, ErrorKind, Read, Seek, SeekFrom, Write};
+
+    #[test]
+    fn artifact_digest_includes_sparse_holes_cross_buffer_data_and_trailing_bytes() {
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(b"prefix").unwrap();
+        file.seek(SeekFrom::Start(128 * 1024 - 1)).unwrap();
+        file.write_all(b"edge").unwrap();
+        file.set_len(192 * 1024 + 7).unwrap();
+        file.rewind().unwrap();
+        let expected = "f7c9f35110eefc8d8c8ded4d76ac5ffc1fbcf5849e0dc96549302f774f0a7b56";
+        assert_eq!(artifact_digest(&mut file).unwrap(), expected);
+        let mut dense = vec![0_u8; 192 * 1024 + 7];
+        dense[..6].copy_from_slice(b"prefix");
+        dense[128 * 1024 - 1..128 * 1024 + 3].copy_from_slice(b"edge");
+        assert_eq!(artifact_digest(Cursor::new(dense)).unwrap(), expected);
+        file.seek(SeekFrom::End(-1)).unwrap();
+        file.write_all(b"x").unwrap();
+        file.rewind().unwrap();
+        assert_ne!(artifact_digest(file).unwrap(), expected);
+    }
+
+    struct InterruptedReader {
+        bytes: Cursor<Vec<u8>>,
+        next_interrupt: bool,
+        fail_at_end: bool,
+    }
+
+    impl Read for InterruptedReader {
+        fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+            self.next_interrupt = !self.next_interrupt;
+            if self.next_interrupt {
+                return Err(ErrorKind::Interrupted.into());
+            }
+            if self.bytes.position() == self.bytes.get_ref().len() as u64 && self.fail_at_end {
+                return Err(Error::from(ErrorKind::PermissionDenied));
+            }
+            let limit = output.len().min(1);
+            self.bytes.read(&mut output[..limit])
+        }
+    }
+
+    #[test]
+    fn artifact_digest_retries_interrupted_short_reads_without_losing_bytes() {
+        let input = InterruptedReader {
+            bytes: Cursor::new(b"abc".to_vec()),
+            next_interrupt: false,
+            fail_at_end: false,
+        };
+        assert_eq!(
+            artifact_digest(input).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn artifact_digest_never_accepts_a_prefix_when_a_read_fails() {
+        let input = InterruptedReader {
+            bytes: Cursor::new(b"abc".to_vec()),
+            next_interrupt: false,
+            fail_at_end: true,
+        };
+        assert_eq!(
+            artifact_digest(input).unwrap_err().kind(),
+            ErrorKind::PermissionDenied
+        );
+    }
 
     #[test]
     fn fence_may_close_in_same_epoch_but_never_reopen_or_go_back() {
