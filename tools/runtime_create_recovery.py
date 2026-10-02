@@ -4,10 +4,61 @@ No database writes, guessed IDs, public-list inference, or create retries.
 Destroyed is only a durable witness; the caller must still audit host resources.
 """
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import time
+
+
+def load_runtime_intent(directory, *, task, runtime_attempt, build_id, template):
+    """Read only this live trial's checkpoint, never discover a previous attempt.
+
+    The expected correlation and template come from the supervisor's live
+    environment, not from the file. The controller match still checks its own
+    namespace, owner and immutable binding before any DELETE can be sent.
+    """
+    if (not isinstance(runtime_attempt, str)
+            or not re.fullmatch(r'[0-9a-f]{32}', runtime_attempt)
+            or not isinstance(build_id, str) or not re.fullmatch(r'[0-9a-f]{32}', build_id)
+            or not isinstance(template, dict) or template.get('templateId') != 'tpl-' + build_id
+            or not isinstance(task, str) or not task):
+        raise ValueError('missing live runtime correlation')
+    directory = Path(directory).absolute()
+    if directory.resolve(strict=True) != directory:
+        raise ValueError('runtime intent directory is not private')
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate runtime intent field')
+            result[key] = value
+        return result
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise ValueError('runtime intent directory is not private')
+        fd = os.open('runtime-intent.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     dir_fd=descriptor)
+        with os.fdopen(fd, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or info.st_nlink != 1 or info.st_mode & 0o022 or info.st_size > 256 * 1024):
+                raise ValueError('unsafe runtime intent file')
+            raw = source.read(256 * 1024 + 1)
+            if len(raw) > 256 * 1024:
+                raise ValueError('runtime intent too large')
+    finally:
+        os.close(descriptor)
+    intent = json.loads(raw, object_pairs_hook=unique_keys)
+    expected = {'metadata': {'benchmark': 'terminal-bench-2.0', 'task': task,
+        'build': build_id, 'revision': template.get('revision'), 'runtime_attempt': runtime_attempt},
+        'template': template}
+    if intent != expected:
+        raise ValueError('runtime intent differs from live trial')
+    return intent
 
 
 def matching_runtime(database, intent, *, owner, namespace, sandbox_id=None):
