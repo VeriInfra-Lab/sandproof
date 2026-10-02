@@ -558,6 +558,7 @@ dependencies = [
  "sandbox-controller-core",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

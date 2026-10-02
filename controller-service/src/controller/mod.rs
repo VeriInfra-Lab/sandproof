@@ -4,14 +4,19 @@
 #[cfg(test)]
 mod allocator_tests;
 #[cfg(test)]
+mod bounded_tests;
+#[cfg(test)]
 mod cache_tests;
 
 mod admission;
 mod allocators;
+mod bounded;
 mod identity;
 mod registry;
 mod storage;
 mod transaction;
+
+pub use bounded::{BoundedHostConfig, HostSlotContext};
 
 pub use admission::{
     AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
@@ -500,6 +505,29 @@ impl ControllerJournal {
     /// Rejects a second writer, namespace mismatch, legacy opaque state, or
     /// corrupt input history. No arbitrary serialized World is accepted.
     pub fn open(path: impl AsRef<Path>, namespace: &str) -> Result<Self, JournalError> {
+        Self::open_with_bounded(path, namespace, None, 0)
+    }
+
+    /// Open an explicitly configured bounded host store. Legacy nonempty stores
+    /// require a separate migration and are rejected.
+    /// # Errors
+    /// Rejects disabled/changed mapping, nonempty legacy state or corrupt context.
+    pub fn open_bounded(
+        path: impl AsRef<Path>,
+        namespace: &str,
+        config: BoundedHostConfig,
+        now_ms: u64,
+    ) -> Result<Self, JournalError> {
+        config.validate()?;
+        Self::open_with_bounded(path, namespace, Some(config), now_ms)
+    }
+
+    fn open_with_bounded(
+        path: impl AsRef<Path>,
+        namespace: &str,
+        bounded: Option<BoundedHostConfig>,
+        now_ms: u64,
+    ) -> Result<Self, JournalError> {
         if namespace.len() != 16
             || !namespace
                 .bytes()
@@ -526,7 +554,7 @@ impl ControllerJournal {
             .truncate(false)
             .open(lock_path)?;
         lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
-        let mut journal = Journal::open_controller(&path)?;
+        let mut journal = Journal::open_controller(&path, bounded.is_some())?;
         let transaction = journal
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -593,6 +621,7 @@ impl ControllerJournal {
         }
         let world = storage::load_world(&transaction)?;
         allocators::migrate(&transaction, &world)?;
+        let world = bounded::configure(&transaction, world, bounded, now_ms)?;
         let committed_world = transaction::CommittedWorld::new(&transaction, world)?;
         transaction
             .commit()

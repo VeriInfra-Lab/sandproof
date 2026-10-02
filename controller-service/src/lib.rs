@@ -15,9 +15,9 @@ pub mod templates;
 mod workflow;
 
 pub use controller::{
-    AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateNetwork,
-    CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS,
-    HostEvidence, Lifetime,
+    AdmissionError, AdmissionLimits, BoundedHostConfig, ControllerJournal, CreateAdmission,
+    CreateNetwork, CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS,
+    DEFAULT_TIMEOUT_SECS, HostEvidence, HostSlotContext, Lifetime,
 };
 
 pub use dispatch::{DispatchResult, WorkerTransportError};

@@ -125,9 +125,10 @@ fn reserve_startup_in_admission(
     else {
         return Err(AdmissionError::Journal(JournalError::CorruptStore));
     };
-    if vm.0 > max_vm_id || slot.0 > max_vm_id {
+    if super::bounded::config(tx)?.is_none() && (vm.0 > max_vm_id || slot.0 > max_vm_id) {
         return Err(AdmissionError::QuotaExceeded);
     }
+    super::bounded::reserve_host_slot(tx, key.sandbox)?;
     Ok(reserved)
 }
 

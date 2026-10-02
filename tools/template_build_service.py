@@ -48,6 +48,100 @@ def protected_json(path, maximum=65536):
     return json.loads(path.read_text())
 
 
+def bounded_data_route_limits(settings):
+    """Resolve the persisted route-cell limits from explicit gateway limits."""
+    transfer = settings.get("data_transfer")
+    budgets = {"file_upload_bytes", "file_download_bytes", "command_input_bytes",
+               "command_output_bytes", "rpc_request_bytes", "rpc_response_bytes"}
+    concurrency = {"max_transfers", "max_transfers_per_vm", "control_reserve"}
+    timeouts = {"request_idle_seconds", "file_idle_seconds", "write_idle_seconds"}
+    if type(transfer) is not dict or set(transfer) != budgets | concurrency | timeouts:
+        raise ValueError("bounded host requires explicit complete data_transfer limits")
+    if any(type(value) is not int or not 0 < value <= 2**64 - 1 for value in transfer.values()):
+        raise ValueError("invalid bounded data_transfer limits")
+    if (transfer["rpc_request_bytes"] > 8 * 1024 * 1024
+            or not transfer["control_reserve"] < transfer["max_transfers_per_vm"] <= transfer["max_transfers"]
+            or any(transfer[name] > 2**63 - 1 for name in timeouts)):
+        raise ValueError("invalid bounded data_transfer budgets or concurrency")
+    # The reserve is included in the cap; ordinary traffic still obeys the
+    # existing global/per-VM/control-reserve gateway admission checks.
+    return {'max_data_routes_per_slot': transfer['max_transfers_per_vm'],
+            'max_data_routes_global': transfer['max_transfers'],
+            'data_route_control_reserve': transfer['control_reserve']}
+
+
+def host_uid_range(settings):
+    """Check the configured UID span, without asserting network disjointness.
+
+    Legacy hosts reserve one UID per permanent VM identity. Bounded hosts
+    reserve one per physical position; max_vm_id is a legacy setting and must
+    never enlarge or truncate the physical span or permanent identity space.
+    """
+    def integer(value, maximum, name, minimum=1):
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError("invalid " + name)
+        return value
+
+    uid_base = integer(settings.get("uid_base"), 2**32 - 2, "UID base")
+    bounded = settings.get("bounded_host")
+    maximum_vm = integer(settings.get("max_vm_id"), 2**64 - 1, "legacy VM limit",
+                         minimum=0 if bounded is not None else 1)
+    if bounded is None:
+        count = maximum_vm + 1
+    else:
+        if type(bounded) is not dict or set(bounded) != {"maintenance", "uid_base", "uplink_base"}:
+            raise ValueError("invalid bounded host config")
+        bounded_data_route_limits(settings)
+        if integer(bounded["uid_base"], 2**32 - 2, "bounded UID base") != uid_base:
+            raise ValueError("bounded host UID base differs from node UID base")
+        maintenance = bounded["maintenance"]
+        if (type(maintenance) is not dict
+                or set(maintenance) != {"max_retained_results", "max_host_slots", "windows"}):
+            raise ValueError("invalid bounded maintenance limits")
+        integer(maintenance["max_retained_results"], 2**64 - 1, "retained result limit")
+        count = integer(maintenance["max_host_slots"], 1_048_576, "host slot limit")
+        uplink_base = bounded["uplink_base"]
+        if type(uplink_base) is not int or not 0 <= uplink_base < 1_048_576:
+            raise ValueError("invalid bounded uplink base")
+        if uplink_base + count > 1_048_576:
+            raise ValueError("bounded uplink range exceeds address pool")
+        windows = maintenance["windows"]
+        if type(windows) is not dict or set(windows) != {"max_open_windows", "max_duration_ms"}:
+            raise ValueError("invalid bounded window limits")
+        for name, value in windows.items():
+            integer(value, 2**64 - 1, "window " + name)
+    # Linux's all-ones UID is reserved, and a range must never wrap.
+    if uid_base + count > 2**32 - 1:
+        raise ValueError("host UID range exceeds usable UIDs")
+    return range(uid_base, uid_base + count)
+
+
+def validate_pool_resource_ranges(runtime, builder):
+    ranges = [host_uid_range(pool) for pool in (runtime, builder)]
+    if max(value.start for value in ranges) < min(value.stop for value in ranges):
+        raise ValueError("runtime/build UID pools overlap")
+    reserve_addresses = any(pool.get("bounded_host") is not None for pool in (runtime, builder))
+    if not reserve_addresses:
+        # Preserve wholly legacy deployments. Their per-VM address allocation
+        # is not evidence of cross-pool isolation; this check belongs to the
+        # explicitly enabled bounded-host mapping.
+        return
+    uplinks = []
+    for pool in (runtime, builder):
+        enabled = pool.get("public_ipv4_enabled", False)
+        if type(enabled) is not bool:
+            raise ValueError("invalid public IPv4 enable flag")
+        # Bounded deployments reserve their address ranges even while new
+        # IPv4 admission is disabled: that flag does not prove older accepted
+        # public sandboxes have drained.
+        bounded = pool.get("bounded_host")
+        start = bounded["uplink_base"] if bounded else 0
+        count = bounded["maintenance"]["max_host_slots"] if bounded else pool["max_vm_id"] + 1
+        uplinks.append(range(start, start + count))
+    if len(uplinks) == 2 and max(value.start for value in uplinks) < min(value.stop for value in uplinks):
+        raise ValueError("runtime/build public IPv4 uplink pools overlap")
+
+
 def retain_timeout_logs(sandbox, directory, limit):
     """Best-effort opaque diagnostics only; never resume or accept a candidate."""
     output = bytearray(b"[worker command wait timed out; partial logs]\n"[:limit])
@@ -93,10 +187,7 @@ def configuration(path):
             raise ValueError("runtime/build pools overlap: " + field)
     if builder["credentials"][0]["secret"] in {c["secret"] for c in runtime["credentials"]}:
         raise ValueError("private builder credential must not be a runtime user credential")
-    r_range = range(runtime["uid_base"], runtime["uid_base"] + runtime["max_vm_id"] + 1)
-    b_range = range(builder["uid_base"], builder["uid_base"] + builder["max_vm_id"] + 1)
-    if max(r_range.start, b_range.start) < min(r_range.stop, b_range.stop):
-        raise ValueError("runtime/build UID pools overlap")
+    validate_pool_resource_ranges(runtime, builder)
     r_cgroup = Path(runtime["host_resources"]["cgroup_parent"]).resolve(strict=True)
     b_cgroup = Path(builder["host_resources"]["cgroup_parent"]).resolve(strict=True)
     if r_cgroup == b_cgroup or r_cgroup in b_cgroup.parents or b_cgroup in r_cgroup.parents:

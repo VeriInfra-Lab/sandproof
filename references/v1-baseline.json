@@ -6,7 +6,7 @@
     "test_branch_at_contract_review": "9eba68821b8ad11f374a88f4a3450753e69c5ee1",
     "rust_toolchain": "1.97.0",
     "cargo_lock_sha256_at_contract_review": "04db1f9911a3009e40a0a3a5f0635aa596adca5c6341cd4b0c99354b11d9de26",
-    "cargo_lock_sha256": "857712093f112b67647ce6d83ca1fec91e1c9cdbbb6c61e4a09460b65a14d709",
+    "cargo_lock_sha256": "208a332a6cb372572569f8343fa07568513ea7170ba96f9260947d2938c642ca",
     "sdk_python": "e2b==2.51.0",
     "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
     "protocol_version": 1,
