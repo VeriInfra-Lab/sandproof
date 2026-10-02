@@ -7,6 +7,7 @@ archive unpack, mount or user command. Exposes Sandproof extension endpoints,
 not the native E2B template-build API. See docs/module-contracts.md.
 """
 import argparse
+import contextlib
 import hmac
 import hashlib
 import importlib.metadata
@@ -291,8 +292,33 @@ class Backend:
             stdout = (error.stdout or '')[:maximum].encode()[:maximum - len(stderr)]
             worker_error_log = stdout + stderr
         # Read only opaque bytes, never mount/unpack guest output on the host.
+        @contextlib.contextmanager
+        def read(name, max_wait=None):
+            def remaining():
+                left = row["deadline"] - store.clock()
+                if left <= 0:
+                    raise BuildError(408, "BuildDeadlineExceeded")
+                return left
+            def checked(incoming):
+                iterator = iter(incoming)
+                while True:
+                    remaining()
+                    try:
+                        block = next(iterator)
+                    except StopIteration:
+                        remaining()  # A late EOF must not commit the artifact.
+                        return
+                    remaining()
+                    yield block
+            # The pinned SDK already applies an explicit timeout to the whole
+            # transfer. Also enforce the original job deadline across phases,
+            # checking each read and EOF without giving expired jobs a new second.
+            left = remaining()
+            with sandbox.files.read("/output/job/" + name, format="stream", user="root",
+                                    request_timeout=left if max_wait is None else min(left, max_wait)) as incoming:
+                yield checked(incoming)
         def download(name, limit, exact=None, *, sparse=False):
-            with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=max(1, row["deadline"] - store.clock())) as incoming:
+            with read(name) as incoming:
                 return durable_write(directory / name, incoming, limit, exact=exact, sparse=sparse)
         try:
             download("status.json", 128 * 1024)
@@ -305,7 +331,7 @@ class Backend:
         total_log = bytearray()
         for name in ("build.log", "daemon.log"):
             try:
-                with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=30) as incoming:
+                with read(name, max_wait=30) as incoming:
                     for block in incoming:
                         if len(total_log) + len(block) > store.limits["max_log_bytes"]:
                             raise BuildError(502, "BuildLogLimit")

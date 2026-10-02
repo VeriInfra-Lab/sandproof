@@ -135,7 +135,19 @@ class BuildSdkSession(unittest.TestCase):
         with patch('tools.template_build_service.durable_write', side_effect=OSError('disk full')):
             self.exercise('oci', command_timeout={'write_failed': True})
 
-    def exercise(self, kind, early_failure=False, failure=None, bad_digest=False, command_timeout=None):
+    def test_expired_build_never_starts_status_download(self):
+        self.exercise('oci', download_deadline={'phase': 'before'})
+
+    def test_artifact_download_rejects_late_chunks_and_closes_stream(self):
+        for name in ('status.json', 'candidate.ext4', 'build.log', 'daemon.log'):
+            with self.subTest(name=name):
+                self.exercise('oci', download_deadline={'phase': 'block', 'name': name})
+
+    def test_artifact_download_rejects_eof_arriving_after_original_deadline(self):
+        self.exercise('dockerfile', download_deadline={'phase': 'eof', 'name': 'candidate.ext4'})
+
+    def exercise(self, kind, early_failure=False, failure=None, bad_digest=False, command_timeout=None,
+                 download_deadline=None):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "source.tar"
@@ -155,13 +167,32 @@ class BuildSdkSession(unittest.TestCase):
             row = {"id": "a" * 32, "input_hash": hashlib.sha256(source.read_bytes()).hexdigest(), "deadline": 1000,
                 "request": json.dumps({"kind": kind, "image": "docker.io/library/ubuntu:24.04",
                     "resources": {"diskMiB": 1, "minFreeMiB": 16}})}
-            store = SimpleNamespace(directory=lambda _: directory, clock=lambda: 0,
+            now = [0]
+            store = SimpleNamespace(directory=lambda _: directory, clock=lambda: now[0],
                 limits={"max_input_bytes": 65536, "max_expanded_bytes": 65536, "max_entries": 100, "max_log_bytes": 65536})
             if failure is not None or command_timeout is not None:
                 options = failure if failure is not None else command_timeout
                 store.limits['max_log_bytes'] = options.get('limit', 65536)
             session = {"sandboxID": "sb-test-1", "envdVersion": "0.9.0", "envdAccessToken": "private-token"}
             timeout_error = TimeoutException('host-connection-context:private-token:builder-key')
+            closed, extra_reads = [], []
+            if download_deadline is not None:
+                (directory / 'candidate.ext4').write_bytes(b'previous artifact')
+            @contextlib.contextmanager
+            def delayed(data):
+                def blocks():
+                    if download_deadline['phase'] == 'eof':
+                        yield data
+                        now[0] = 1000
+                        return
+                    yield data[:1]
+                    now[0] = 1000
+                    yield data[1:]
+                    extra_reads.append(True)
+                try:
+                    yield blocks()
+                finally:
+                    closed.append(True)
             def stream(path, **_opts):
                 if command_timeout is not None and 'read' in command_timeout:
                     return command_timeout['read'](path, **_opts)
@@ -171,6 +202,8 @@ class BuildSdkSession(unittest.TestCase):
                     raise FileNotFoundException('no tool log')
                 log = failure.get('logs', b'bounded log\n') if failure is not None else b'bounded log\n'
                 data = json.dumps(status).encode() if path.endswith("status.json") else candidate if path.endswith("candidate.ext4") else log
+                if download_deadline is not None and path.endswith(download_deadline.get('name', '/never')):
+                    return delayed(data)
                 return contextlib.nullcontext(iter([data]))
             def execute(command, **_opts):
                 if command_timeout is not None and command.startswith('python3 /input/template_worker.py'):
@@ -182,6 +215,8 @@ class BuildSdkSession(unittest.TestCase):
                     raise CommandExitException(stdout=failure.get('stdout', ''),
                         stderr=failure.get('stderr', 'InvalidTemplate: OCI expanded byte limit\n'), exit_code=1,
                         error='host-connection-context:private-token:builder-key')
+                if download_deadline is not None and command.startswith('python3 /input/template_worker.py'):
+                    now[0] = 1000 if download_deadline['phase'] == 'before' else 999.75
                 return SimpleNamespace(stdout='12345678-1234-1234-1234-123456789abc\n')
             # Keep Sandbox itself real: incorrect kwargs/version/configuration
             # must fail here, not hide behind a constructor test double.
@@ -190,6 +225,23 @@ class BuildSdkSession(unittest.TestCase):
                     patch("e2b.sandbox_sync.main.Commands") as commands:
                 files.return_value.read.side_effect = stream
                 commands.return_value.run.side_effect = execute
+                if download_deadline is not None:
+                    with self.assertRaisesRegex(BuildError, 'BuildDeadlineExceeded'):
+                        backend.build(store, row)
+                    identity.assert_called_once_with(row, create=True)
+                    self.assertEqual(row['deadline'], 1000)
+                    self.assertEqual((directory / 'candidate.ext4').read_bytes(), b'previous artifact')
+                    self.assertEqual(list(directory.glob('*.partial')), [])
+                    self.assertEqual(extra_reads, [])
+                    reads = files.return_value.read.call_args_list
+                    if download_deadline['phase'] == 'before':
+                        self.assertEqual(reads, [])
+                        self.assertEqual(closed, [])
+                    else:
+                        self.assertEqual(closed, [True])
+                        self.assertEqual(reads[-1].args[0], '/output/job/' + download_deadline['name'])
+                        self.assertTrue(all(call.kwargs['request_timeout'] == 0.25 for call in reads))
+                    return
                 if command_timeout is not None:
                     with self.assertRaises(TimeoutException) as caught:
                         backend.build(store, row)
