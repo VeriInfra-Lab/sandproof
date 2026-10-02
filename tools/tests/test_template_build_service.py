@@ -58,6 +58,12 @@ class FakeBackend:
 
 
 class BuildTests(unittest.TestCase):
+    def test_client_cannot_choose_a_deployment_mirror(self):
+        with self.assertRaises(BuildError):
+            self.store.submit(1, {'kind': 'oci', 'image': 'ubuntu:24.04',
+                                 'docker_hub_mirror': 'docker.1ms.run'}, 'mirror')
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0], 0)
+
     def test_private_create_uses_remaining_original_deadline_without_replacement(self):
         backend = object.__new__(Backend)
         backend.request = Mock()
