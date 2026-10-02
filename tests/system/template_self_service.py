@@ -5,7 +5,7 @@ Root-only disposable deployment, two disjoint pools. No E2B cloud/paid model.
 and restores its original value on exit. Failure retains exact evidence.
 """
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import bounded_acceptance_layout, acceptance_pool_disk_budget
+from tools.bounded_acceptance import bounded_acceptance_layout, acceptance_pool_disk_budget, require_bounded_host_tools
 
 import argparse
 import json
@@ -39,6 +39,8 @@ def exercise(args):
         legacy_unbounded=getattr(args, "legacy_unbounded", False))
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("isolated root Linux/KVM required")
+    if bounded_policy is not None:
+        require_bounded_host_tools()
     checkout = Path(__file__).resolve().parents[2]
     if subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
         raise RuntimeError("clean exact source commit required")

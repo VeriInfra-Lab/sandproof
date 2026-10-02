@@ -5,10 +5,24 @@ the root and both namespaces before preparing one immutable physical profile;
 Rust remains the only activator and the existing validators own all budgets.
 """
 from pathlib import Path
+import os
 import re
+import stat
 
 from .template_build_config import MIB, validate_acceptance_build_policy
 from .template_physical_storage import MAXIMUM, envelope
+
+
+def require_bounded_host_tools():
+    """Read-only prerequisite; do not reach host initialization without it."""
+    from .check_kvm_host import trusted_path
+    try:
+        path = trusted_path(Path('/usr/sbin/conntrack'))
+        if not stat.S_ISREG(path.stat().st_mode) or not os.access(path, os.X_OK):
+            raise ValueError('bounded host requires executable /usr/sbin/conntrack')
+    except OSError as error:
+        raise ValueError('bounded host requires trusted /usr/sbin/conntrack') from error
+    return str(path)
 
 
 def _acceptance_profile(policy):

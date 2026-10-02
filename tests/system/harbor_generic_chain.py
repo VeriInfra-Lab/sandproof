@@ -4,7 +4,7 @@ Uses two independent controller pools and an exclusive namespace/UID range.
 Retains original failures and audit evidence. No manual task recipes/models.
 """
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import bounded_acceptance_layout
+from tools.bounded_acceptance import bounded_acceptance_layout, require_bounded_host_tools
 
 import argparse
 import asyncio
@@ -115,6 +115,7 @@ def exercise(args):
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError('fixed tool mismatch: ' + name)
     if bounded_policy is not None:
+        require_bounded_host_tools()
         root, namespaces = bounded_acceptance_layout(bounded_policy,
             run_root=getattr(args, 'run_root', None), namespace=args.namespace,
             build_namespace=args.build_namespace)

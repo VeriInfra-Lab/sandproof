@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools.bounded_acceptance import acceptance_pool_disk_budget, bounded_acceptance_layout
+from tools.bounded_acceptance import acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools
 from tools.template_build_service import configuration
 from tools.template_build_store import BuildStore
 from tools.tests.test_template_build_config import GIB, MIB, inputs, transfer_settings
@@ -90,6 +90,23 @@ def service_fixture(root):
                          "workspace_bytes": limits["workspace_bytes"],
                          "workspace_bytes_per_tenant": limits["workspace_bytes_per_tenant"]}}
     return root / "service.json", policy, profile, namespaces
+
+
+class BoundedToolsTests(unittest.TestCase):
+    def test_missing_or_nonexecutable_dependency_refuses_before_launch(self):
+        with patch('tools.check_kvm_host.trusted_path', side_effect=FileNotFoundError):
+            with self.assertRaisesRegex(ValueError, 'conntrack'):
+                require_bounded_host_tools()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'conntrack'
+            path.write_bytes(b'test dependency')
+            with patch('tools.check_kvm_host.trusted_path', return_value=path), \
+                    patch('tools.bounded_acceptance.os.access', return_value=False):
+                with self.assertRaisesRegex(ValueError, 'executable'):
+                    require_bounded_host_tools()
+            with patch('tools.check_kvm_host.trusted_path', return_value=path), \
+                    patch('tools.bounded_acceptance.os.access', return_value=True):
+                self.assertEqual(require_bounded_host_tools(), str(path))
 
 
 class StaticConfigurationTests(unittest.TestCase):

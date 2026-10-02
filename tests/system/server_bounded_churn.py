@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
 
 from tools import check_kvm_host as host
 from tools.template_physical_storage import envelope
+from tools.bounded_acceptance import require_bounded_host_tools
 
 
 def digest(path):
@@ -296,6 +297,7 @@ def exercise(args):
 
     assert sys.platform == 'linux' and os.geteuid() == 0
     assert importlib.metadata.version('e2b') == '2.51.0'
+    require_bounded_host_tools()
     settings = private_json(args.config)
     host_config, host_digest = host.load_config(args.host_config)
     pool, peak, inodes = validate_configuration(settings, host_config, args.rounds, args.wait_seconds)
