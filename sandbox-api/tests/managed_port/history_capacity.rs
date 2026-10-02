@@ -612,7 +612,7 @@ fn history_capacity_profile() {
             "clock": "std::time::Instant; raw nanoseconds; nearest-rank quantiles",
             "fixed_active": LIVE,
             "setup": "real ManagedPort create/kill with real SQLite and existing core reducer; setup separately timed",
-            "warm": "one untimed call per path, then serial samples; OS/SQLite caches warm; no controller state cache",
+            "warm": "one untimed call per path, then serial samples; OS/SQLite caches and volatile committed-World cache warm",
             "reopen": "drop/reopen real journal and one startup recovery; same process and warm filesystem cache, not a machine reboot",
             "command_admission": "ManagedPort::data_permit(Exec), including revocation subscription; no envd command execution",
             "host": "existing protocol-conforming FakeHost; no KVM or physical resource evidence",

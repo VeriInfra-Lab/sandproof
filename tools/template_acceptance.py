@@ -19,8 +19,8 @@ PROFILE = ROOT / 'benchmarks/template-service-budgets.json'
 RUNTIME_PROFILE = ROOT / 'benchmarks/local-service-budgets.json'
 
 
-def load():
-    return json.loads(PROFILE.read_text())
+def load(path=PROFILE):
+    return json.loads(Path(path).read_text())
 
 
 def positive(values, name):
