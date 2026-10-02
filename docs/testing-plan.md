@@ -337,6 +337,8 @@ Dockerfile 的 BuildKit 内容存储复用须核对真实 image exporter 的单�
 
 候选 ext4 生成须运行[失败路径回归](../tools/tests/test_template_ext4.py)及[来宾内文件系统探针](../tests/system/ext4_population_guest.py)：比较内容、亚秒 mtime、权限、UID/GID、硬链接、符号链接、扩展属性和稀疏文件；在复制超时及挂载已成功但回执迟到时检查原错误、私有挂载和 loop 回收。正常卸载须覆盖超过 5 秒但仍在构建原期限内的成功；原期限耗尽仍失败，异常回收保留独立 5 秒上限且不改写原失败。实机探针用定时器在真实卸载前注入固定 6 秒延迟。卸载失败不能返回成功，不能以宿主挂载或纯替身测试代替实机探针。性能对照和正式题目仍分别记录，合成输入的改进不等于原题在时限内通过。
 
+[卸载边界宿主监督入口](../tests/system/ext4_population_host.py)将上述四个原来宾场景接入已部署的完整私有构建池，参数仅为 `--api-url`、`--config`、`--report`。只签发一次原窗口和一次 VM 创建，持久保存原编号、PID/start、UID、cgroup、netns 设备/inode后才执行探针；失败仍按原编号收尾，未知身份不得结算或解除锚点。最终独立观察位置 Free、原动作/锚点清零及进程、盘、网络空间和 FD 持有者消失，完整源码/配置/基盘摘要不变。[监督回归](../tools/tests/test_ext4_population_host.py)不计为 KVM；外层操作者须另外核验服务退出及服务叶组排空。单主机重跑不等于另一台合格主机复现，第二主机必须单独记录。
+
 ### #8 最终配置慢流与内存收尾
 
 [定向实机监督入口](../tests/system/server_slow_boundaries.py)只补两项已有证据缺口，直接使用[最终服务预算](../benchmarks/local-service-budgets.json)，不缩短原 30 秒文件空闲期限。第一项观察真实上传停顿及 FIFO 响应头的 504，再以持续进度、总时间超过 30 秒的上传核对内容和独立控制实例。第二项固定六条 64 MiB 下载和一条安静命令，暂停消费 60 秒，在服务及其 relay 的独占 1 GiB cgroup 中核对峰值及无 OOM、429、控制预留和恢复后的完整内容。
