@@ -75,8 +75,11 @@ class BullseyeSnapshotTests(unittest.TestCase):
                     (source / 'solution/solve.sh').write_text(script)
                     (source / 'tests/test.sh').write_text('original scorer\n')
                     (source / 'task.toml').write_text('[agent]\ntimeout_sec = 900.0\n')
+                    # Isolate the repository setup contract; console behavior
+                    # has its own shell and native Expect regression coverage.
                     with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
-                            name: hashlib.sha256(script.encode()).hexdigest()}):
+                            name: hashlib.sha256(script.encode()).hexdigest()}), \
+                         patch('benchmarks.oracle_repairs.sync_qemu_ssh', side_effect=lambda value: value):
                         repaired = prepare_repaired_task(name, source, root / 'repaired')
                     stub = bin_dir / 'bash'
                     stub.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'

@@ -40,6 +40,39 @@ POV_ARCHIVES = {
 }
 
 
+def sync_qemu_ssh(script):
+    """Wait for executed setup output, never echoed shell input."""
+    start = '# Wait for setup to complete\n'
+    end = '# You can add more commands here if needed, or exit\n'
+    if script.count(start) != 1 or script.count(end) != 1:
+        raise InvalidInput('QEMU SSH completion block changed')
+    before, rest = script.split(start)
+    _, after = rest.split(end)
+    script = before + r'''# This marker is assembled by printf, so terminal echo cannot satisfy it.
+expect -re {\r?\n__SP_QEMU_SETUP_DONE__:([0-9]+)\r?\n}
+if {$expect_out(1,string) != 0} { exit $expect_out(1,string) }
+expect -re {(^|\n)localhost:~# }
+
+''' + end + after
+    replacements = {
+        'spawn telnet $host $port': '''spawn telnet $host $port
+expect_before {
+    timeout { puts stderr "QEMU console timed out"; exit 124 }
+    eof { puts stderr "QEMU console closed"; exit 125 }
+}''',
+        r'send "#!/bin/sh\n"': r'''send "#!/bin/sh\n"
+send "set -eu\n"''',
+        r'send "./setup_ssh.sh\n"': r'''send "./setup_ssh.sh; code=\$?; printf '\\n__SP_QEMU_SETUP_%s__:%s\\n' DONE \"\$code\"\r"''',
+    }
+    for old, new in replacements.items():
+        if script.count(old) != 1:
+            raise InvalidInput('QEMU SSH console commands changed')
+        script = script.replace(old, new)
+    if script.count('expect "# "') != 3:
+        raise InvalidInput('QEMU SSH shell prompts changed')
+    return 'set -e\n' + script.replace('expect "# "', r'expect -re {(^|\n)localhost:~# }')
+
+
 def prepare_repaired_task(name, original, destination):
     """Give the unchanged Harbor agent a complete, independently rooted task.
 
@@ -144,7 +177,8 @@ if(!bpe)return 78;''')
     elif name == 'pytorch-model-recovery':
         new = 'python /solution/guest_wheel_sharing.py || exit $?\n' + old
     elif name in ('qemu-alpine-ssh', 'qemu-startup'):
-        new = 'bash /solution/guest_bullseye_snapshot.sh || exit $?\n' + old
+        new = ('bash /solution/guest_bullseye_snapshot.sh || exit $?\n'
+               + (sync_qemu_ssh(old) if name == 'qemu-alpine-ssh' else old))
     elif name == 'rstan-to-pystan':
         new = ('bash /solution/guest_pystan_dependencies.sh || exit $?\n'
                'export PIP_CONSTRAINT=/solution/pystan-constraints.txt\n' + old)
