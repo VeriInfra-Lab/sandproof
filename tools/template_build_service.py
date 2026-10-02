@@ -26,13 +26,13 @@ import urllib.request
 
 if __package__:
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
-    from .template_stage import file_hash, private_directory, stage
+    from .template_stage import file_hash, private_directory, stage_downloaded as stage
     from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers
     from .template_fetch import mirror_registry
     from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
-    from template_stage import file_hash, private_directory, stage
+    from template_stage import file_hash, private_directory, stage_downloaded as stage
     from template_inputs import MAX_INPUT_BYTES, platform_dns_servers
     from template_fetch import mirror_registry
     from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
@@ -420,10 +420,12 @@ class Backend:
         except BuildError as error:
             if error.code != 404:
                 return False
-        path = Path(self.config["runtime"]["template_registry"]["root"]) / "inbox" / row["id"]
-        if path.exists():
-            private_directory(path)
-            shutil.rmtree(path)  # exact supervisor-generated candidate identity
+        inbox = Path(self.config["runtime"]["template_registry"]["root"]) / "inbox"
+        for name in (row["id"], ".stage-" + row["id"]):
+            path = inbox / name
+            if path.exists():
+                private_directory(path)
+                shutil.rmtree(path)  # exact supervisor-generated candidate identity
         return True
 
 
