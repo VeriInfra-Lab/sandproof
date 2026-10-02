@@ -1212,7 +1212,7 @@ impl LinuxWorker {
     }
 
     /// Reuse completed registry hashes only for unchanged, trusted sealed files.
-    /// Missing/stale evidence leaves normal validation to compute the full hash.
+    /// Missing/stale evidence leaves the normal node cache/hash checks in place.
     pub fn cache_candidate_verification(
         &self,
         template: &TemplateBinding,
