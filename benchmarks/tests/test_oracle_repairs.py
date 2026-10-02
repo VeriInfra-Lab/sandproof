@@ -19,6 +19,7 @@ from harbor.models.task.task import Task
 
 from benchmarks.oracle_repairs import prepare_repaired_task, repair_solution
 from benchmarks.protein_sequences import expand_sequence, get_single_fasta, get_component
+from benchmarks.guest_mteb_results import select_model_paths
 from tools.benchmark_tasks import InvalidInput
 
 
@@ -310,7 +311,7 @@ class OracleRepairTests(unittest.TestCase):
                 self.assertEqual(evidence['original_files']['solve.sh'], hashlib.sha256(script.encode()).hexdigest())
                 self.assertEqual(evidence['repaired_files']['solve.sh'], hashlib.sha256(solve.read_bytes()).hexdigest())
 
-    def test_historical_fetch_preserves_full_tree_without_unrelated_history(self):
+    def test_historical_fetch_preserves_objects_and_all_candidate_model_files(self):
         # Execute only this synthetic fixture, never a benchmark solution.
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -325,7 +326,19 @@ class OracleRepairTests(unittest.TestCase):
             git('commit', '-qm', 'old fixture')
             old = git('rev-parse', 'HEAD')
             (repo / 'old-only.txt').unlink()
-            (repo / 'historical.txt').write_text('historical result\n')
+            model = repo / 'results/candidate/revision'
+            model.mkdir(parents=True)
+            (model / 'Foo.json').write_text('historical result\n')
+            (model / 'Unrelated.json').write_text('other task also retained\n')
+            (model / 'model_meta.json').write_text('{"name":"candidate","revision":"revision"}\n')
+            other = repo / 'results/noncandidate/revision'
+            other.mkdir(parents=True)
+            (other / 'Unrelated.json').write_text('noncandidate data\n')
+            (other / 'model_meta.json').write_text('{"name":"noncandidate","revision":"revision"}\n')
+            alias = repo / 'results/alias/revision'
+            alias.mkdir(parents=True)
+            (alias / 'model_meta.json').write_text('{"name":"candidate","revision":"revision"}\n')
+            (alias / 'DifferentFilename.json').write_text('aliased model data must remain\n')
             git('add', '.')
             git('commit', '-qm', 'historical fixture')
             historical = git('rev-parse', 'HEAD')
@@ -335,7 +348,7 @@ class OracleRepairTests(unittest.TestCase):
             current = git('rev-parse', 'HEAD')
             script = ('git clone https://github.com/embeddings-benchmark/results\n'
                       'test ! -e results/current-only.txt\n'
-                      'test ! -e results/historical.txt\n'
+                      'test ! -e results/results/candidate/revision/Foo.json\n'
                       'cd results\n'
                       f'git checkout {historical}\n'
                       "cat > leaderboard.py <<'PY'\n"
@@ -352,6 +365,11 @@ class OracleRepairTests(unittest.TestCase):
             env = {**os.environ, 'GIT_CONFIG_COUNT': '1',
                    'GIT_CONFIG_KEY_0': f'url.{repo.as_uri()}.insteadOf',
                    'GIT_CONFIG_VALUE_0': 'https://github.com/embeddings-benchmark/results'}
+            modules = root / 'modules'
+            modules.mkdir()
+            (modules / 'mteb.py').write_text('from types import SimpleNamespace as S\n'
+                'def get_benchmark(name): return S(tasks=[S(metadata=S(name="Foo"))])\n')
+            env['PYTHONPATH'] = str(modules)
             subprocess.run(['bash', str(solve)], cwd=root, env=env, check=True,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             clone = root / 'results'
@@ -363,15 +381,21 @@ class OracleRepairTests(unittest.TestCase):
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 self.assertNotEqual(result.returncode, 0)
             self.assertFalse((clone / 'current-only.txt').exists())
-            self.assertEqual((clone / 'historical.txt').read_text(), 'historical result\n')
-            self.assertEqual(git('diff', '--exit-code', historical, cwd=clone), '')
+            for path in (*model.iterdir(), *alias.iterdir()):
+                self.assertEqual((clone / path.relative_to(repo)).read_bytes(), path.read_bytes())
+            self.assertFalse((clone / 'results/noncandidate/revision/Unrelated.json').exists())
+            self.assertEqual((clone / 'results/noncandidate/revision/model_meta.json').read_bytes(),
+                             (other / 'model_meta.json').read_bytes())
+            self.assertEqual(git('show', 'HEAD:results/noncandidate/revision/Unrelated.json', cwd=clone),
+                             'noncandidate data')
+            self.assertEqual(git('diff', '--exit-code', historical, '--', 'results/candidate', cwd=clone), '')
 
     def test_historical_fetch_and_checkout_failures_stop_the_original_script(self):
         script = ('git clone https://github.com/embeddings-benchmark/results\n'
                   'cd results\n'
                   'git checkout c0fd3271442f8c0c839084a109fede85c8514dab\n'
                   'python leaderboard.py\n')
-        for failing in ('fetch', 'checkout'):
+        for failing in ('fetch', 'reset', 'guest_mteb_results.py'):
             with self.subTest(failing=failing), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 source, bin_dir = root / 'source', root / 'bin'
@@ -389,6 +413,7 @@ class OracleRepairTests(unittest.TestCase):
                     path = bin_dir / command
                     path.write_text(stub)
                     path.chmod(0o700)
+                (bin_dir / 'dirname').symlink_to('/usr/bin/dirname')
                 result = subprocess.run(['/bin/bash', str(solve)], cwd=root,
                     env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
                          'REPAIR_TEST_FAIL': failing})
@@ -396,6 +421,20 @@ class OracleRepairTests(unittest.TestCase):
                 self.assertNotIn('leaderboard.py', log.read_text())
                 self.assertIn(failing, log.read_text().splitlines()[-1])
                 self.assertEqual((source / 'solve.sh').read_text(), script)
+
+    def test_model_materialization_uses_original_presence_filter_without_scores(self):
+        paths = ['results/a/r1/Foo.json', 'results/a/r2/PrefixBARExtra.json',
+                 'results/a/r1/model_meta.json', 'results/a/r3/Unrelated.json',
+                 'results/b/r1/Foo.json', 'results/b/r1/NotBar.json',
+                 'results/missing/r1/Foo.json', 'results/missing/r1/model_meta.json',
+                 'README.md']
+        selected, models = select_model_paths(paths, ['Foo', 'BAR'])
+        self.assertEqual(models, {'a', 'b'})
+        self.assertEqual(selected, paths[:6])
+        with self.assertRaises(ValueError):
+            select_model_paths(paths, ['absent'])
+        with self.assertRaises(ValueError):
+            select_model_paths(paths, [])
 
     def test_real_harbor_agent_accepts_repaired_task_without_bypassing_containment(self):
         # Exercise pinned Harbor's actual input validation and upload path.
