@@ -387,3 +387,72 @@ class DnsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ExplicitAcceptanceModeTests(unittest.TestCase):
+    def test_mode_is_explicit_and_policy_shape_cannot_inject_pool_identity(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        from tools.template_build_config import acceptance_build_policy
+        with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+            acceptance_build_policy(None)
+        self.assertIsNone(acceptance_build_policy(None, legacy_unbounded=True))
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / 'policy.json'
+            path.write_text(json.dumps({'runtime': {'database': 'replace'}, 'builder': {}, 'public': {}}))
+            path.chmod(0o600)
+            with self.assertRaisesRegex(ValueError, 'explicit bounded pool policy'):
+                acceptance_build_policy(path)
+            with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+                acceptance_build_policy(path, legacy_unbounded=True)
+
+    def test_policy_passes_explicit_sections_and_never_changes_existing_identity(self):
+        import copy
+        from tools.template_build_config import apply_acceptance_build_policy
+        from unittest.mock import patch
+        runtime = {'namespace': 'runtime', 'database': '/runtime/db'}
+        builder = {'namespace': 'builder', 'database': '/builder/db'}
+        build = {'limits': {'workspace_bytes': 100, 'workspace_bytes_per_tenant': 50}}
+        policy = {'runtime': {'bounded_host': {'uid_base': 1000}, 'maintenance': {'capacity': {}}},
+                  'builder': {'bounded_host': {'uid_base': 2000}, 'maintenance': {'capacity': {}},
+                              'build_retry_windows': {'window_duration_ms': 1000, 'max_anchors': 2}},
+                  'public': {'bounded_builds': {'namespace': 17}, 'workspace_bytes': 200, 'workspace_bytes_per_tenant': 100}}
+        before = copy.deepcopy((runtime, builder, build))
+        self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, None), 'legacy-unbounded')
+        self.assertEqual((runtime, builder, build), before)
+        with patch('tools.template_build_service.validate_pool_resource_ranges') as ranges, \
+                patch('tools.template_build_store.bounded_configuration'), \
+                patch('tools.template_physical_storage.validate_configuration') as physical:
+            self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, policy), 'windowed')
+            ranges.assert_called_once_with(runtime, builder)
+            physical.assert_called_once_with(runtime, builder, build)
+        self.assertEqual(runtime['namespace'], 'runtime')
+        self.assertEqual(builder['database'], '/builder/db')
+        self.assertEqual(builder['build_retry_windows'], policy['builder']['build_retry_windows'])
+        self.assertEqual(build['limits']['workspace_bytes'], 200)
+        self.assertEqual(build['bounded_builds'], {'namespace': 17})
+
+    def test_generator_rejects_mismatched_physical_budget_without_activation(self):
+        import copy
+        from unittest.mock import patch
+        from tools.template_build_config import apply_acceptance_build_policy
+        from tools.tests.test_template_physical_storage import configuration as physical_fixture
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime, builder, build, profile = physical_fixture(root)
+            build['limits']['workspace_bytes_per_tenant'] = 1000
+            policy = {
+                'runtime': {key: copy.deepcopy(runtime[key]) for key in ('bounded_host', 'maintenance')},
+                'builder': {key: copy.deepcopy(builder[key]) for key in ('bounded_host', 'maintenance')},
+                'public': {'bounded_builds': copy.deepcopy(build['bounded_builds']),
+                           'workspace_bytes': 2000, 'workspace_bytes_per_tenant': 1000},
+            }
+            policy['builder']['build_retry_windows'] = {'window_duration_ms': 1000, 'max_anchors': 2}
+            runtime['max_disk_bytes_global'] += 1
+            with patch('tools.template_build_service.validate_pool_resource_ranges'), \
+                    patch('tools.template_build_store.bounded_configuration'):
+                with self.assertRaisesRegex(ValueError, 'pool budget'):
+                    apply_acceptance_build_policy(runtime, builder, build, policy)
+            self.assertEqual(Path(profile['coordination_file']).read_bytes(), b'')
+            self.assertEqual(list((root / 'public').iterdir()), [])

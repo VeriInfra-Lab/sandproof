@@ -233,6 +233,26 @@ fn write_checkpoint(
     config: &MaintenanceConfig,
 ) -> Result<CheckpointInfo, JournalError> {
     projections::validate(tx, world, &namespace(tx)?)?;
+    if config.capacity.is_some() {
+        let previous: Option<(u64, u64, u64)> = tx
+            .query_row(
+                "SELECT generation,input_cut,length(payload) FROM controller_checkpoint WHERE id=1",
+                [],
+                |row| Ok((read_u64(row, 0)?, read_u64(row, 1)?, read_u64(row, 2)?)),
+            )
+            .optional()?;
+        if let Some((generation, input_cut, payload_bytes)) = previous
+            && input_cut == allocators::input_high_water(tx)?
+        {
+            // SQL-only projections are recovered from authoritative current SQL.
+            // An identical core cut needs no new checkpoint generation.
+            return Ok(CheckpointInfo {
+                generation,
+                input_cut,
+                payload_bytes,
+            });
+        }
+    }
     let envelope = envelope(tx, world, config)?;
     let bytes = encode_limited(&envelope, config.max_checkpoint_bytes)?;
     let previous: Option<i64> = tx
@@ -353,3 +373,148 @@ fn read_optional_u64(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<
         })
         .transpose()
 }
+
+// Reserve the largest configured atomic transaction before starting it. Root
+// publication and covered-prefix deletion always use separate commits. A lost
+// answer invalidates the caller's cache on its normal transaction boundary;
+// these housekeeping transactions do not change the reducer World.
+pub(super) fn prepare_write(
+    connection: &mut Connection,
+    world: &core::World,
+    committed: &super::transaction::CommittedWorld,
+) -> Result<(), JournalError> {
+    let Some(policy) = config(connection)? else {
+        return Ok(());
+    };
+    let Some(cap) = &policy.capacity else {
+        return Ok(());
+    };
+    super::capacity::truncate_wal(connection)?;
+    drain_covered(connection, &policy, world, committed)?;
+    let cut: u64 = connection.query_row(
+        "SELECT input_cut FROM controller_checkpoint WHERE id=1",
+        [],
+        |row| read_u64(row, 0),
+    )?;
+    let (count,bytes):(u64,u64)=connection.query_row("SELECT count(*),coalesce(sum(length(input_json)),0) FROM controller_inputs WHERE sequence>?1",[sql(cut)?],|row|Ok((read_u64(row,0)?,read_u64(row,1)?)))?;
+    if count
+        .checked_add(cap.max_transaction_inputs)
+        .is_none_or(|n| n > policy.max_tail_inputs)
+        || bytes
+            .checked_add(cap.max_transaction_bytes)
+            .is_none_or(|n| n > policy.max_tail_bytes)
+    {
+        committed.invalidate(); // also covers an error/failed rollback before COMMIT
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        committed.check_identity(&tx)?;
+        if recovery::load(&tx)?.0 != *world {
+            committed.invalidate();
+            return Err(JournalError::CorruptStore);
+        }
+        write_checkpoint(&tx, world, &policy)?;
+        committed.invalidate();
+        commit_housekeeping(tx)?;
+        super::capacity::truncate_wal(connection)?;
+        drain_covered(connection, &policy, world, committed)?;
+    }
+    super::capacity::truncate_wal(connection)
+}
+
+fn drain_covered(
+    connection: &mut Connection,
+    policy: &MaintenanceConfig,
+    world: &core::World,
+    committed: &super::transaction::CommittedWorld,
+) -> Result<(), JournalError> {
+    loop {
+        let(cut,floor):(u64,u64)=connection.query_row("SELECT input_cut,deleted_through FROM controller_checkpoint,controller_checkpoint_gc WHERE controller_checkpoint.id=1 AND controller_checkpoint_gc.id=1",[],|row|Ok((read_u64(row,0)?,read_u64(row,1)?)))?;
+        if floor > cut {
+            return Err(JournalError::CorruptStore);
+        }
+        if floor == cut {
+            return Ok(());
+        }
+        super::capacity::truncate_wal(connection)?;
+        committed.invalidate(); // also covers an error/failed rollback before COMMIT
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        committed.check_identity(&tx)?;
+        if recovery::load(&tx)?.0 != *world {
+            committed.invalidate();
+            return Err(JournalError::CorruptStore);
+        }
+        let through = floor.saturating_add(policy.prune_batch_rows).min(cut);
+        let removed = tx.execute(
+            "DELETE FROM controller_inputs WHERE sequence>?1 AND sequence<=?2",
+            params![sql(floor)?, sql(through)?],
+        )?;
+        if removed as u64 != through - floor {
+            return Err(JournalError::CorruptStore);
+        }
+        tx.execute(
+            "UPDATE controller_checkpoint_gc SET deleted_through=?1 WHERE id=1",
+            [sql(through)?],
+        )?;
+        committed.invalidate();
+        commit_housekeeping(tx)?;
+    }
+}
+
+pub(super) fn validate_transaction(tx: &WorldTransaction<'_>) -> Result<(), JournalError> {
+    let Some(policy) = config(tx)? else {
+        return Ok(());
+    };
+    let Some(cap) = policy.capacity else {
+        return Ok(());
+    };
+    let(count,bytes):(u64,u64)=tx.query_row("SELECT count(*),coalesce(sum(length(input_json)),0) FROM controller_inputs WHERE sequence>?1",[sql(tx.input_start)?],|row|Ok((read_u64(row,0)?,read_u64(row,1)?)))?;
+    if count > cap.max_transaction_inputs || bytes > cap.max_transaction_bytes {
+        return Err(JournalError::MaintenanceCapacity);
+    }
+    Ok(())
+}
+
+/// Current durable input frontiers, read in one validated recovery snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CheckpointProgress {
+    pub input_cut: u64,
+    pub deleted_through: u64,
+    pub input_high_water: u64,
+}
+impl ControllerJournal {
+    /// # Errors
+    /// Refuses a changed writer or invalid root, projections or input range.
+    pub fn checkpoint_progress(&self) -> Result<Option<CheckpointProgress>, JournalError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
+        if config(&self.journal.connection)?.is_none() {
+            return Ok(None);
+        }
+        let tx = self.journal.connection.unchecked_transaction()?;
+        recovery::load(&tx)?;
+        let(input_cut,deleted_through)=tx.query_row("SELECT input_cut,deleted_through FROM controller_checkpoint,controller_checkpoint_gc WHERE controller_checkpoint.id=1 AND controller_checkpoint_gc.id=1",[],|row|Ok((read_u64(row,0)?,read_u64(row,1)?)))?;
+        let progress = CheckpointProgress {
+            input_cut,
+            deleted_through,
+            input_high_water: allocators::input_high_water(&tx)?,
+        };
+        tx.commit()?;
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
+        Ok(Some(progress))
+    }
+}
+
+fn commit_housekeeping(tx: Transaction<'_>) -> Result<(), JournalError> {
+    #[cfg(test)]
+    if let Some(durable) = HOUSEKEEPING_FAILURE.with(std::cell::Cell::take) {
+        if durable {
+            tx.commit()?;
+        } else {
+            tx.rollback()?;
+        }
+        return Err(JournalError::CommitUncertain(rusqlite::Error::InvalidQuery));
+    }
+    tx.commit().map_err(JournalError::CommitUncertain)
+}
+#[cfg(test)]
+thread_local! {static HOUSEKEEPING_FAILURE:std::cell::Cell<Option<bool>>=const{std::cell::Cell::new(None)};}

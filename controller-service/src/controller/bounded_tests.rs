@@ -10,6 +10,8 @@ use tempfile::TempDir;
 const NS: &str = "0123456789abcdef";
 fn config(slots: u64) -> BoundedHostConfig {
     BoundedHostConfig {
+        physical_storage: None,
+        console_policy: None,
         uid_base: 1000,
         uplink_base: 8,
         max_data_routes_per_slot: 4,
@@ -308,10 +310,14 @@ fn all_bounded_limits_and_nested_fields_are_explicit_and_checked() {
             ..config(1)
         },
         BoundedHostConfig {
+            physical_storage: None,
+            console_policy: None,
             uid_base: 0,
             ..config(1)
         },
         BoundedHostConfig {
+            physical_storage: None,
+            console_policy: None,
             uid_base: u32::MAX,
             ..config(1)
         },
@@ -324,4 +330,26 @@ fn all_bounded_limits_and_nested_fields_are_explicit_and_checked() {
     ] {
         assert!(invalid.validate().is_err());
     }
+}
+
+#[test]
+fn console_policy_is_explicit_and_cannot_change_an_existing_host_mapping() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let legacy = config(1);
+    let encoded = serde_json::to_vec(&legacy).unwrap();
+    assert!(
+        !String::from_utf8(encoded.clone())
+            .unwrap()
+            .contains("console_policy")
+    );
+    assert_eq!(
+        serde_json::from_slice::<BoundedHostConfig>(&encoded).unwrap(),
+        legacy
+    );
+    drop(ControllerJournal::open_bounded(&path, NS, legacy.clone(), 0).unwrap());
+    let mut discard = legacy.clone();
+    discard.console_policy = Some(ConsolePolicy::Discard);
+    assert!(ControllerJournal::open_bounded(&path, NS, discard, 0).is_err());
+    assert!(ControllerJournal::open_bounded(&path, NS, legacy, 0).is_ok());
 }

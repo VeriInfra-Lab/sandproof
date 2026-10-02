@@ -20,6 +20,7 @@ fn root(connection: &Connection, config: &MaintenanceConfig) -> Result<Envelope,
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
     if generation < 1
+        || (config.capacity.is_some() && generation > cut.saturating_add(1))
         || cut < 0
         || length < 1
         || u64::try_from(length).map_err(|_| JournalError::CorruptStore)?
@@ -55,6 +56,8 @@ pub(super) fn load(connection: &Connection) -> Result<(core::World, Bindings), J
         return Err(JournalError::CorruptStore);
     }
     let config = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    super::super::capacity::validate_sql_values(connection)
+        .map_err(|_| JournalError::CorruptStore)?;
     let root = root(connection, &config)?;
     let mut world = core::checkpoint::restore(root.core, config.core_limits())
         .map_err(|_| JournalError::CorruptStore)?;
@@ -130,6 +133,7 @@ pub(super) fn load(connection: &Connection) -> Result<(core::World, Bindings), J
     projections::validate(connection, &world, &root.namespace)?;
     // Every accepted format-4 commit has passed the same candidate bound.
     validate_candidate(connection, &world).map_err(|_| JournalError::CorruptStore)?;
+    super::super::capacity::validate(connection, &world).map_err(|_| JournalError::CorruptStore)?;
     Ok((world, bindings))
 }
 

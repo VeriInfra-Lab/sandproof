@@ -100,6 +100,10 @@ impl MaintenanceState {
         self.retained.get(&key)
     }
     #[must_use]
+    pub fn retained_results(&self) -> &[(OperationKey, RetainedOperation)] {
+        self.retained.entries()
+    }
+    #[must_use]
     pub fn retained_count(&self) -> usize {
         self.retained.entries().len()
     }

@@ -10,12 +10,14 @@
 mod controller;
 mod dispatch;
 mod journal;
+pub mod physical_storage;
 pub mod template_registry;
 pub mod templates;
 mod workflow;
 
 pub use controller::{
-    AdmissionError, AdmissionLimits, BoundedHostConfig, CheckpointInfo, ControllerJournal,
+    AdmissionError, AdmissionLimits, BoundedHostConfig, BuildAnchor, BuildRetryConfig, BuildWindow,
+    CapacityConfig, CheckpointInfo, CheckpointProgress, ConsolePolicy, ControllerJournal,
     CreateAdmission, CreateNetwork, CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS,
     DEFAULT_TIMEOUT_SECS, HostEvidence, HostReleaseWitness, HostSlotContext, Lifetime,
     MaintenanceConfig, RetirementCandidate,

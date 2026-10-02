@@ -1510,6 +1510,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: crate::RuntimeConfig {
+                console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/true"),

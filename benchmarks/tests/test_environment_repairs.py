@@ -104,6 +104,8 @@ class EnvironmentRepairTests(unittest.TestCase):
                         'imageDigest': 'sha256:' + 'c' * 64, 'kernelSha256': 'd' * 64,
                         'rootfsSha256': 'e' * 64}
             def request(method, path, data=None, **kwargs):
+                if path == '/sandproof/template-build-windows':
+                    return {'requestWindow': {'namespace': 17, 'sequence': 0}}
                 intent = json.loads((root / 'build-intent.json').read_text())
                 self.assertFalse(intent['original_environment'])
                 self.assertEqual(intent['source_kind'], PRUNED_SOURCE)
@@ -120,7 +122,7 @@ class EnvironmentRepairTests(unittest.TestCase):
                 return {'buildID': 'b' * 32, 'state': 'Ready', 'template': template}
             env.client = SimpleNamespace(request=Mock(side_effect=request))
             asyncio.run(env.prepare_template())
-            self.assertEqual([call.args[0] for call in env.client.request.call_args_list], ['POST', 'PUT', 'GET'])
+            self.assertEqual([call.args[0] for call in env.client.request.call_args_list], ['POST', 'POST', 'PUT', 'GET'])
             self.assertEqual(env.template, template)
             self.assertFalse(env.environment_repair['original_environment'])
 

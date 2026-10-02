@@ -451,6 +451,7 @@ mod tests {
         );
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
                 host_slot: None,
                 jailer: "/unused/jailer".into(),
                 firecracker: "/unused/firecracker".into(),
@@ -585,6 +586,7 @@ mod tests {
         }
         let disabled = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
                 host_resources: None,
                 ..runtime.config.clone()
             },

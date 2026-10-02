@@ -32,6 +32,7 @@ impl Drop for HostLease {
 
 impl HostLease {
     pub fn acquire(config: &NodeConfig, required: Option<&LeaseIdentity>) -> NodeResult<Self> {
+        super::storage_envelope::validate_configuration(config)?;
         let path = config.state_dir.join("bounded-host.lock");
         let marker = serde_json::to_vec(&(1_u32, config))?;
         let lease = acquire(&path, &marker, required, 0)?;

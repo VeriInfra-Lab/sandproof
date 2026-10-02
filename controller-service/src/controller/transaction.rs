@@ -26,7 +26,7 @@ impl CommittedWorld {
         })
     }
 
-    fn check_identity(&self, connection: &Connection) -> Result<(), JournalError> {
+    pub(super) fn check_identity(&self, connection: &Connection) -> Result<(), JournalError> {
         match data_version(connection) {
             Ok(version) if version == self.data_version => Ok(()),
             result => {
@@ -58,7 +58,7 @@ impl CommittedWorld {
             .ok_or(JournalError::CorruptStore)
     }
 
-    fn invalidate(&self) {
+    pub(super) fn invalidate(&self) {
         *self.value.borrow_mut() = None;
     }
 }
@@ -67,6 +67,7 @@ pub(super) struct WorldTransaction<'a> {
     transaction: Option<Transaction<'a>>,
     committed: &'a CommittedWorld,
     candidate: RefCell<Option<World>>,
+    pub(super) input_start: u64,
 }
 
 impl<'a> WorldTransaction<'a> {
@@ -75,8 +76,11 @@ impl<'a> WorldTransaction<'a> {
         committed: &'a CommittedWorld,
     ) -> Result<Self, JournalError> {
         let world = committed.world(connection)?;
+        super::checkpoint::prepare_write(connection, &world, committed)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let input_start = super::allocators::input_high_water(&transaction)?;
         let guard = Self {
+            input_start,
             transaction: Some(transaction),
             committed,
             candidate: RefCell::new(Some(world)),
@@ -102,6 +106,8 @@ impl<'a> WorldTransaction<'a> {
 
     pub(super) fn commit(self) -> Result<(), JournalError> {
         super::checkpoint::validate_candidate(&self, &self.world())?;
+        super::capacity::validate(&self, &self.world())?;
+        super::checkpoint::validate_transaction(&self)?;
         #[cfg(test)]
         if let Some(durable) = COMMIT_FAILURE.with(std::cell::Cell::take) {
             return self.commit_with(|transaction| {

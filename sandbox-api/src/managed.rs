@@ -31,6 +31,7 @@ use crate::{
 
 mod data_drain;
 mod maintenance;
+mod physical_storage;
 mod relay_child;
 pub use data_drain::DataLease;
 pub use maintenance::MaintenanceReport;
@@ -98,6 +99,18 @@ pub trait HostAdapter: Send + 'static {
     /// # Errors
     /// Rejects an unavailable physical disk observation.
     fn available_disk_bytes(&self) -> Result<u64, PortError>;
+
+    /// Validate the immutable deployment-wide activation lease and current
+    /// inode capacity. A local free-space observation alone is insufficient.
+    /// # Errors
+    /// Adapters without a validated shared profile must refuse full mode.
+    fn validate_physical_storage(
+        &self,
+        _profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        _pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
 
     /// Validate trusted template artifacts before accepting any create intent.
     /// # Errors
@@ -983,6 +996,11 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// # Errors
     /// Rejects a changed registry root, missing catalog, or overlapping static names.
     pub fn with_registry(mut self, store: CandidateStore) -> Result<Self, PortError> {
+        physical_storage::validate_registry_configuration(
+            &self.inner.get_mut().map_err(|_| PortError::Busy)?.journal,
+            self.internal_build_vms,
+            store.config(),
+        )?;
         let catalog = self.templates.as_ref().ok_or(PortError::Invalid)?;
         if store.config().validation_timeout_secs > self.config.limits.max_timeout_secs
             || catalog
@@ -1010,17 +1028,52 @@ impl<H: HostAdapter> ManagedPort<H> {
         self
     }
 
+    /// Enable finite retry anchors only after the bounded maintenance store is configured.
+    /// # Errors
+    /// Rejects public pools, missing maintenance, or changed persistent settings.
+    pub fn with_build_retry_windows(
+        mut self,
+        config: sandproof_controller_service::BuildRetryConfig,
+    ) -> Result<Self, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::Invalid);
+        }
+        physical_storage::validate_builder_configuration(
+            &self.inner.get_mut().map_err(|_| PortError::Busy)?.journal,
+        )?;
+        self.inner
+            .get_mut()
+            .map_err(|_| PortError::Busy)?
+            .journal
+            .enable_build_retry_windows(config)
+            .map_err(map_journal)?;
+        Ok(self)
+    }
+
     fn build_vm_locked(
         &self,
         inner: &Inner<H>,
         tenant: core::TenantId,
         id: &str,
+        window: Option<&str>,
         request: Option<&crate::BuildVmRequest>,
     ) -> Result<Option<crate::BuildVmView>, PortError> {
         let world = inner.journal.world().map_err(map_journal)?;
-        let reclaimed = reclaimed_sandboxes(&world);
+        let anchored = match window {
+            Some(window) => {
+                let Some(anchor) = inner
+                    .journal
+                    .build_anchor(tenant, window, id)
+                    .map_err(map_journal)?
+                else {
+                    return Ok(None);
+                };
+                Some(core::SandboxId(anchor.sandbox))
+            }
+            None => None,
+        };
         for (sandbox, record) in world.sandbox_records() {
-            if record.owner != tenant {
+            if record.owner != tenant || anchored.is_some_and(|anchor| anchor != *sandbox) {
                 continue;
             }
             let sandbox = *sandbox;
@@ -1028,6 +1081,14 @@ impl<H: HostAdapter> ManagedPort<H> {
                 .journal
                 .create_options(sandbox)
                 .map_err(map_admission)?;
+            if options
+                .metadata
+                .get("_sandproof_build_window")
+                .map(String::as_str)
+                != window
+            {
+                continue;
+            }
             if options
                 .metadata
                 .get("_sandproof_build_id")
@@ -1053,7 +1114,10 @@ impl<H: HostAdapter> ManagedPort<H> {
                     .as_str()
                     .into(),
                 state: format!("{:?}", record.phase),
-                cleanup_complete: reclaimed.contains(&sandbox),
+                cleanup_complete: core::maintenance::retirement::validate_terminal_cleanup(
+                    &world, sandbox,
+                )
+                .is_ok(),
                 session: if record.phase == core::Phase::Running {
                     self.session(inner, tenant, sandbox).ok()
                 } else {
@@ -1531,9 +1595,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         }
         release_reclaimed_slots(inner)?;
         let sandbox = next_sandbox(&inner.journal)?;
-        let physical_needed = disk_bytes
-            .checked_add(self.config.limits.cleanup_reserve_bytes)
-            .ok_or(PortError::QuotaExceeded)?;
+        let physical_needed = self.physical_admission_bytes(inner, options, disk_bytes)?;
         if inner.host.available_disk_bytes()? < physical_needed {
             return Err(PortError::QuotaExceeded);
         }
@@ -1621,6 +1683,106 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         id: &str,
         create: Option<crate::BuildVmRequest>,
     ) -> Result<crate::BuildVmView, PortError> {
+        let window = create
+            .as_ref()
+            .and_then(|request| request.request_window.clone());
+        self.build_vm_in_window(tenant, id, window.as_deref(), create)
+    }
+    fn issue_build_window(
+        &self,
+        tenant: &str,
+    ) -> Result<sandproof_controller_service::BuildWindow, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::NotFound);
+        }
+        self.inner
+            .lock()
+            .map_err(|_| PortError::Busy)?
+            .journal
+            .issue_build_window(
+                tenant_id(tenant)?,
+                u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
+                &mut NeverCrash,
+            )
+            .map_err(map_journal)
+    }
+    fn close_build_window(
+        &self,
+        tenant: &str,
+        window: &str,
+    ) -> Result<crate::BuildWindowClosed, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::NotFound);
+        }
+        self.inner
+            .lock()
+            .map_err(|_| PortError::Busy)?
+            .journal
+            .close_build_window(
+                tenant_id(tenant)?,
+                window,
+                u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
+                &mut NeverCrash,
+            )
+            .map_err(map_journal)?;
+        Ok(crate::BuildWindowClosed {
+            request_window: window.into(),
+            closed: true,
+        })
+    }
+    fn settle_build_vm(
+        &self,
+        tenant: &str,
+        id: &str,
+        request: crate::BuildSettlementRequest,
+    ) -> Result<crate::BuildSettlementView, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::NotFound);
+        }
+        if !valid_candidate_id(id) {
+            return Err(PortError::Invalid);
+        }
+        let owner = tenant_id(tenant)?;
+        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        let sandbox = request
+            .sandbox_id
+            .as_deref()
+            .map(|external| {
+                let raw = external.rsplit('-').next().ok_or(PortError::Invalid)?;
+                let number = raw.parse::<u64>().map_err(|_| PortError::Invalid)?;
+                let sandbox = core::SandboxId(number);
+                if number == 0
+                    || inner
+                        .journal
+                        .sandbox_id(sandbox)
+                        .map_err(map_journal)?
+                        .as_str()
+                        != external
+                {
+                    return Err(PortError::Invalid);
+                }
+                Ok(sandbox)
+            })
+            .transpose()?;
+        inner
+            .journal
+            .settle_build_anchor(owner, &request.request_window, id, sandbox, &mut NeverCrash)
+            .map_err(map_journal)?;
+        // Pin deletion is durable before trying physical release. A lost release
+        // acknowledgement keeps its own Releasing state and is retried normally.
+        release_reclaimed_slots(&mut inner)?;
+        Ok(crate::BuildSettlementView {
+            request_window: request.request_window,
+            settled: true,
+        })
+    }
+    fn build_vm_in_window(
+        &self,
+        tenant: &str,
+        id: &str,
+        window: Option<&str>,
+        create: Option<crate::BuildVmRequest>,
+    ) -> Result<crate::BuildVmView, PortError> {
         if !self.internal_build_vms || self.registry.is_some() {
             return Err(PortError::NotFound);
         }
@@ -1629,14 +1791,36 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         }
         let tenant = tenant_id(tenant)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        if let Some(value) = self.build_vm_locked(&inner, tenant, id, create.as_ref())? {
+        if let Some(value) = self.build_vm_locked(&inner, tenant, id, window, create.as_ref())? {
             return Ok(value);
         }
         let request = create.ok_or(PortError::NotFound)?;
+        if request.request_window.as_deref() != window {
+            return Err(PortError::Invalid);
+        }
+        if inner
+            .journal
+            .build_retry_config()
+            .map_err(map_journal)?
+            .is_some()
+        {
+            if window.is_none() {
+                return Err(PortError::Conflict);
+            }
+            inner
+                .journal
+                .advance_build_windows(
+                    u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
+                    &mut NeverCrash,
+                )
+                .map_err(map_journal)?;
+        } else if window.is_some() {
+            return Err(PortError::Conflict);
+        }
         if request.allow_internet_access && !self.config.public_ipv4_enabled {
             return Err(PortError::Invalid);
         }
-        let options = CreateOptions {
+        let mut options = CreateOptions {
             metadata: BTreeMap::from([
                 ("_sandproof_build_id".into(), id.into()),
                 (
@@ -1647,6 +1831,11 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             template: self.resolve_template(&inner, tenant, "base")?,
             ..CreateOptions::default()
         };
+        if let Some(window) = window {
+            options
+                .metadata
+                .insert("_sandproof_build_window".into(), window.into());
+        }
         let policy = if request.allow_internet_access {
             core::NetworkPolicy::Ipv4 {
                 internet_access: true,
@@ -1660,7 +1849,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             self.create_locked(&mut inner, tenant, &options, policy, request.timeout, None);
         // Even when the launch/response is lost, admission already contains the
         // anchor. Subsequent requests find that identity, including tombstones.
-        if let Some(value) = self.build_vm_locked(&inner, tenant, id, None)? {
+        if let Some(value) = self.build_vm_locked(&inner, tenant, id, window, None)? {
             return Ok(value);
         }
         result?;
@@ -1689,6 +1878,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                     .map_err(map_journal)?,
             ));
         }
+        self.validate_publication_admission(&inner)?;
         // Paths and ownership come from protected staging, never request JSON.
         let value = store
             .candidate(owner.0, candidate)

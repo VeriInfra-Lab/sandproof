@@ -359,9 +359,31 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 
 位置复用采用现有控制器维护转换；接口与配置只以[模块合同](module-contracts.md)为准。组件回归必须覆盖：单位置跨越旧 max_vm_id 的永久身份 churn、另一位置长期存活、准入事务回滚/不确定提交、绑定/释放确认丢失和重开、所有旧动作与围栏迟到、初始化后位置文件缺失、错误 owner/资源/inode、未知清理、数据 body/relay 未排空及控制器重启后的旧 namespace 持有者、root helper 丢弃继承 FD 后仍由 PID marker 阻塞、同 PID 启动门各中断点、route cell 并发/迟到旧清除/满额拒绝、取消的 blocking 派发与 pipe 错误仍完成 reaping、第二控制器启动租约互斥、Initializing/staging 合法中断恢复、配置关闭/变更/地址重叠拒绝。已有事务与合成宿主测试不能代替真实清理。
 
-本批未在 KVM、ning 或 root 网络执行。启用/晋级前仍须冻结精确提交与隔离宿主配置，实测 UID/地址连续复用、旧 conntrack/namespace FD 持有者、部分删除与服务/宿主进程中断、外来资源不动及精确残留观察。未知情况必须持续 Releasing；不得以测试跳过、名字缺席或杀死全部进程视为成功。格式 4 检查点恢复另有下述组件覆盖；完整持久字节/未来收尾预留和真实数据库文件长期 churn 仍属后续验收。
+本批未在 KVM、ning 或 root 网络执行。启用/晋级前仍须冻结精确提交与隔离宿主配置，实测 UID/地址连续复用、旧 conntrack/namespace FD 持有者、部分删除与服务/宿主进程中断、外来资源不动及精确残留观察。未知情况必须持续 Releasing；不得以测试跳过、名字缺席或杀死全部进程视为成功。格式 4 检查点恢复另有下述组件覆盖；控制器持久字节/未来收尾预留与连续 churn 的组件覆盖见下文；完整物理部署与实机长期运行仍须独立验收。
 
 #99 生产维护协调器的[组件回归](../sandbox-api/tests/managed_port/bounded_slots/maintenance.rs)使用真实 `ManagedPort`、SQLite 和同一纯核心，仅将精确宿主观察替换为按 incarnation 校验的测试宿主。覆盖老的运行实例或未知清理实例旁连续退休新终态、位置先复用再退休旧元数据、旧命令拒绝、宿主释放回执丢失/重开、body 与未知 relay 排空、进程内撤销登记释放、私有 buildID 重试锚点继续保留，以及未配置维护时完全保留旧历史。保留期内结果不为腾出额度提前删除；测试不使用随机等待或 KVM。服务端配置组件另覆盖全部显式字段的缺失、错误类型、零值、未知字段、依赖 `bounded_host`、持久参数变更/关闭拒绝，以及实际 `open_journal` 生产组装路径。
 
 
-#99 格式 4 的[真实 SQLite 服务回归](../controller-service/src/controller/checkpoint/tests.rs)与[JSON 编码回归](../controller-service/tests/checkpoint_wire.rs)覆盖：原子发布不删输入、后续逐批删除/重开、COMMIT 回答丢失且实际提交/回滚两种结果、删除中断、退休 SQL 闭包与保留结果一致、位置先复用再由完整历史迁移释放见证、缺确认时不得补造见证、升级失败回滚、根损坏/缺失和尾部中间/末尾缺行拒绝、无输入行时高水位保持、外部提交/第二写者拒绝、检查点后的 SQL-only 寿命与登记更新、单输入/尾日志限额的原子拒绝、所有状态的模板验证 pin，以及同一尝试最多首次未知＋最终回执而不因未知轮询增长。纯核心每一步 roundtrip 保留顺序、四类游标、未知工作、停止覆盖、Free 墓碑与窗口；已到期但尚未显式裁剪的结果可恢复且仍计额度。测试不覆盖宿主掉电、独立导出备份、恶意数据库修改防护、WAL/temp/reader 峰值或未来收尾预留，不因此声称完整 #99 或形式化验证完成。
+#99 格式 4 的[真实 SQLite 服务回归](../controller-service/src/controller/checkpoint/tests.rs)与[JSON 编码回归](../controller-service/tests/checkpoint_wire.rs)覆盖：原子发布不删输入、后续逐批删除/重开、COMMIT 回答丢失且实际提交/回滚两种结果、删除中断、退休 SQL 闭包与保留结果一致、位置先复用再由完整历史迁移释放见证、缺确认时不得补造见证、升级失败回滚、根损坏/缺失和尾部中间/末尾缺行拒绝、无输入行时高水位保持、外部提交/第二写者拒绝、检查点后的 SQL-only 寿命与登记更新、单输入/尾日志限额的原子拒绝、所有状态的模板验证 pin，以及同一尝试最多首次未知＋最终回执而不因未知轮询增长。纯核心每一步 roundtrip 保留顺序、四类游标、未知工作、停止覆盖、Free 墓碑与窗口；已到期但尚未显式裁剪的结果可恢复且仍计额度。这些检查点用例本身不覆盖宿主掉电、独立导出备份、恶意数据库修改防护或完整资源保证；新增容量组合测试见下文，不因此声称实机或形式化验证完成。
+
+
+### #99 公开构建窗口与有限结果组件
+
+[窗口桥接回归](../tools/tests/test_template_build_windows.py) 与 [BuildStore 回归](../tools/tests/test_template_build_retention.py) 均编译实际 `sandproof-window-reducer`，缺工具链失败而不 skip。桥接覆盖原核心 Issue/Close/Admit/AdvanceTime、时钟回退、ID/容量/租户边界、非法/重复字段、输入首个超额字节、完整有界输出；Python 使用明确 SHA/UID 的编译 ELF 故障夹具覆盖泛洪、截断、超时、阻塞输入、原 inode exec 和精确 reap。BuildStore 复用该 Rust 决策，真实 SQLite/HTTP 验证先找原 tuple、关闭/过期/重启仍重复、参数冲突、租户/namespace/旧域隔离、拒绝后时间下界提交、配置迁移与条数/整记录字节额度。
+
+永久 buildID 回归在强制随机字节重复、旧结果 GC 后真实 HTTP GET/PUT 仍返回原身份不存在，新 AwaitingInput 的输入不受影响；另测空账本重启不重置全局前沿、分配后/提交前回滚、提交后回复丢失、u64 最后一号与耗尽、缺失/倒退前沿拒绝、旧随机 ID 的 namespace 前缀冲突种子，以及旧随机退休格式拒绝迁移。
+
+确定性崩溃点覆盖 INSERT 前失败五次不产生孤儿目录，Preparing commit、mkdir、marker/staging/fsync/rename、Deleting commit/逐文件删除/父目录同步、未知目录/inode 保留；每个普通准备崩溃后恢复原身份、完成退休，行/目录不得累积。一个旧 CleanupUnknown 保持占额，其他完成作业可持续退休；保留承诺满额时拒绝新工作、不提前驱逐，Ready 模板不随公开结果删除。持久 SQLite reader 阻挡 checkpoint 时 WAL 不增长、清理预留不释放；连续 churn 检查 DB/WAL 文件额度，不将 DELETE 当作 shrink。私有握手用 barrier 控制迟到 POST，验证先 close 再解释缺席，以及 builder-settled 跨连接可见后才 settle，丢 ack 重启只用原证据重试。既有 publication_attempted 的不确定 POST/404 回归继续执行。
+
+通用任务/CLI 测试检查 window/key 与原输入先于 POST 同步保存，未知回复不换身份，不改普通 SDK create。[两个独立模式配置检查](../tools/tests/test_template_build_config.py)要求硬件生成器显式选择 `--bounded-policy` 或 `--legacy-unbounded`，不偷偷把旧硬件夹具纳入新保证。此批仅云端组件与合成传输；未在 KVM、ning、root 网络、付费服务执行，也不增加形式化证明结论。
+
+
+### #99 收尾额度与完整部署 profile 验收
+
+[容量回归](../controller-service/src/controller/checkpoint/tests/capacity.rs)、[提交/终止重试回归](../controller-service/src/controller/checkpoint/tests/capacity_protocol.rs)和[构建/验证容量组合](../controller-service/src/controller/checkpoint/tests/build_capacity.rs)核对：固定 V1 图的后续行/引用/字节/编号额度，包含 ApplyFilePolicy 与 AbortPrepare 的保守命令全集；紧配额拒绝新工作但不提前删结果；首次未知＋最终回执、合法终止重试/耗尽仍持有额度；错误后续包装长度、标量宽度变化、输入最后可表示编号、窗口/结果到期信用转移；外部读者、SQLite_FULL、自动发布与分批删除的两种未知提交结果、外部写者窗口、空闲不增长、实际页上限读回。持续创建/销毁与旧 Running/unknown 并存，记录核心/SQL 各族、输入前缀/尾、DB/WAL/SHM 文件峰值和重开观测，不把一次短成功称为无限运行证明。
+
+私有构建和验证在同一完整策略下补紧额度组合：同位置跨多轮 close/query/settle、保留结果饱和/到期、旧未知锚点保持原信用、输入边界仍完成最后结算，Ready/Failed/未进入验证的失败证据在 SQL 饱和时使用预留空间；退休原创建选项后重开仍能返回证据。普通 SDK create 合同保持原行为，受限维护没有公共 HTTP 断言入口。
+
+物理 profile 的组件验收须覆盖两池稀疏盘未来容量与 kernel/runtime 复制品、子预算/角色/namespace/路径不匹配、未配置/未激活拒绝且不消费身份、受保护协调文件的锁/设备/inode/链接/权限、Rust 初始化与 Python 加入的 Unicode 编码一致性、每个初始截断点与重开、同文件系统和未知根拒绝、字节/inode 不足、初始两倍峰值及后续一倍门槛、低余量仍允许原身份 kill/清理。宿主 payload/文件集合的界来自[推导器](../sandbox-node/src/storage_envelope.rs)，须测试最大身份/转义路径、配置和未来退休记录在任何租约写入前满足原格式上限；VMM console 的显式 discard 不创建文件，旧日志模式不冒称有界。不得为云端环境做真实全局 marker、挂载、配额或安全权限修改。
+
+实机补充固定完整 profile、同一源码提交和所有软件/文件系统版本：真实稀疏盘并发增长、两池满额、模板/日志保留峰值、helper/relay 故障、inode/文件系统开销与准确残留；观察配置余量真实覆盖部署峰值。云端的合成宿主/文件系统余量测试不计作该验收，外部写者或别的 profile 不受本次保证。数据、VM、证明产物和凭据不得从本机/ning 复制到云端。

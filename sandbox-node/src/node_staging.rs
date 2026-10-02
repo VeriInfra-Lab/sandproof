@@ -8,7 +8,8 @@ use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
-const MAX_PAYLOAD: usize = 16 * 1024 * 1024;
+pub(super) const MAX_PAYLOAD: usize = 16 * 1024 * 1024;
+pub(super) const STAGE_FILES: &[&str] = &["identity.json", "payload"];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Identity {
@@ -49,6 +50,12 @@ fn identity(config: &NodeConfig, target: &Path) -> NodeResult<Identity> {
     })
 }
 
+pub(super) fn identity_bytes(config: &NodeConfig, target: &Path) -> NodeResult<u64> {
+    Ok(u64::try_from(
+        serde_json::to_vec(&identity(config, target)?)?.len(),
+    )?)
+}
+
 fn owned_file(path: &Path, owner: u32) -> NodeResult<Option<OwnedFile>> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -87,10 +94,11 @@ fn inspect_stage(target: &Path, expected: &Identity, owner: u32) -> NodeResult<O
         return Err("untrusted deterministic stage directory".into());
     }
     for entry in fs::read_dir(&directory)? {
-        if !matches!(
-            entry?.file_name().to_str(),
-            Some("identity.json" | "payload")
-        ) {
+        if !entry?
+            .file_name()
+            .to_str()
+            .is_some_and(|name| STAGE_FILES.contains(&name))
+        {
             return Err("unknown deterministic stage entry".into());
         }
     }
@@ -180,14 +188,15 @@ fn write_owned(
     if bytes.len() > MAX_PAYLOAD {
         return Err("node record exceeds staged byte limit".into());
     }
+    let identity_bytes = serde_json::to_vec(expected)?;
+    if identity_bytes.len() > MAX_PAYLOAD {
+        return Err("node stage identity exceeds staged byte limit".into());
+    }
     clean_stage(target, expected, owner)?;
     let directory = path(target)?;
     fs::DirBuilder::new().mode(0o700).create(&directory)?;
     File::open(target.parent().ok_or("stage parent")?)?.sync_all()?;
-    create_file(
-        &directory.join("identity.json"),
-        &serde_json::to_vec(expected)?,
-    )?;
+    create_file(&directory.join("identity.json"), &identity_bytes)?;
     File::open(&directory)?.sync_all()?;
     create_file(&directory.join("payload"), bytes)?;
     File::open(&directory)?.sync_all()?;

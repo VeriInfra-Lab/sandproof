@@ -112,6 +112,7 @@ fn host_config() -> BoundedHostConfig {
 
 fn maintenance_config() -> MaintenanceConfig {
     MaintenanceConfig {
+        capacity: None,
         retention_ms: 60_000,
         max_checkpoint_bytes: 8_000_000,
         max_records: 10_000,
@@ -316,6 +317,7 @@ fn private_build_retry_anchor_remains_pinned_and_keeps_same_identity() {
     let port = open_maintained(&path, host).with_internal_build_vms(true);
     let key = "123456789abcdef0123456789abcdef0";
     let input = sandproof_api::BuildVmRequest {
+        request_window: None,
         timeout: 300,
         allow_internet_access: false,
     };
@@ -441,4 +443,69 @@ fn full_result_retention_never_evicts_promised_results_to_retire_another_object(
             })
             .is_some()
     );
+}
+
+#[test]
+fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers() {
+    use sandproof_controller_service::{CapacityConfig, ConsolePolicy};
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("controller.db");
+    let mut host = host_config();
+    host.console_policy = Some(ConsolePolicy::Discard);
+    // Explicit test-only envelope, matching the component workload rather than
+    // recommending deployment values.
+    let policy = MaintenanceConfig {
+        retention_ms: 100,
+        max_checkpoint_bytes: 4 * 1024 * 1024,
+        max_records: 10_000,
+        max_references: 1_000_000,
+        max_tail_inputs: 8,
+        max_tail_bytes: 64 * 1024,
+        max_input_bytes: 8192,
+        prune_batch_rows: 3,
+        capacity: Some(CapacityConfig {
+            max_live_sandboxes: 4,
+            max_sql_rows: 1024,
+            max_sql_bytes: 16 * 1024 * 1024,
+            max_sql_value_bytes: 256 * 1024,
+            max_receipt_bytes: 16 * 1024,
+            max_transaction_inputs: 4,
+            max_transaction_bytes: 32 * 1024,
+            max_database_bytes: 512 * 1024 * 1024,
+            max_wal_bytes: 520 * 1024 * 1024,
+            max_shm_bytes: 2 * 1024 * 1024,
+            checkpoint_scratch_bytes: 8 * 1024 * 1024,
+            max_online_storage_bytes: 1042 * 1024 * 1024,
+        }),
+    };
+    let initial =
+        ControllerJournal::open_maintained(&path, NAMESPACE, host.clone(), policy.clone(), 0)
+            .unwrap();
+    let before = initial.checkpoint_progress().unwrap().unwrap();
+    let mut managed = config();
+    managed.limits.cleanup_reserve_bytes =
+        policy.capacity.as_ref().unwrap().max_online_storage_bytes;
+    let port = ManagedPort::new(initial, FleetHost::new(dir.path()), managed);
+    let first = port.maintain().unwrap();
+    assert_eq!(
+        first.pruned_inputs as u64,
+        before.input_cut - before.deleted_through
+    );
+    for _ in 0..8 {
+        let report = port.maintain().unwrap();
+        assert_eq!(
+            (
+                report.retired_sandboxes,
+                report.expired_results,
+                report.pruned_inputs
+            ),
+            (0, 0, 0)
+        );
+    }
+    drop(port);
+    let reopened = ControllerJournal::open_maintained(&path, NAMESPACE, host, policy, 0).unwrap();
+    let after = reopened.checkpoint_progress().unwrap().unwrap();
+    assert_eq!(after.input_high_water, before.input_high_water);
+    assert_eq!(after.input_cut, before.input_cut);
+    assert_eq!(after.deleted_through, before.input_cut);
 }

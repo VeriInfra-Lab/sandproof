@@ -15,7 +15,7 @@ use std::{
     path::Path,
 };
 
-use super::staging::{MAX_RECORD_BYTES, known_claim_file};
+use super::staging::{MAX_CLAIM_RECORD_BYTES, claim_file_names, known_claim_file};
 
 /// A bounded exact-delete capability, durable outside the claim it retires.
 /// Fields are deliberately private; consumers may persist/round-trip it but
@@ -110,19 +110,72 @@ impl RetiredFile {
 
 fn record_digest(path: &Path) -> Result<[u8; 32], RuntimeError> {
     let file = File::open(path)?;
-    if file.metadata()?.len() > MAX_RECORD_BYTES {
+    if file.metadata()?.len() > MAX_CLAIM_RECORD_BYTES {
         return Err(RuntimeError::IdentityMismatch(
             "retirement record exceeds byte bound",
         ));
     }
     let mut bytes = Vec::new();
-    file.take(MAX_RECORD_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_RECORD_BYTES {
+    file.take(MAX_CLAIM_RECORD_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_CLAIM_RECORD_BYTES {
         return Err(RuntimeError::IdentityMismatch(
             "retirement record grew beyond byte bound",
         ));
     }
     Ok(Sha256::digest(bytes).into())
+}
+
+impl RetirementManifest {
+    /// Pure serialized upper bound for one future retirement manifest. The
+    /// supplied runtime configuration and resource ID must already bound the
+    /// caller's configured paths/identity. This returns only a byte count,
+    /// never an exact-delete capability. All canonical and staged claim names
+    /// are charged, including the legacy console entry's metadata (not its
+    /// contents). Numeric fields use their longest JSON representation.
+    /// # Errors
+    /// Rejects configurations that cannot be serialized or sized as u64.
+    pub fn maximum_serialized_bytes(
+        config: &RuntimeConfig,
+        resource_id: &str,
+    ) -> Result<u64, RuntimeError> {
+        let identity = FileIdentity {
+            device: u64::MAX,
+            inode: u64::MAX,
+            owner: u32::MAX,
+            mode: u32::MAX,
+        };
+        let file = RetiredFile {
+            identity: identity.clone(),
+            size: u64::MAX,
+            change_seconds: i64::MIN,
+            change_nanoseconds: i64::MIN,
+            digest: Some([u8::MAX; 32]),
+        };
+        let files = claim_file_names()
+            .map(|name| (name, file.clone()))
+            .collect();
+        let value = Self {
+            version: u32::MAX,
+            resource_id: resource_id.to_owned(),
+            config: config.clone(),
+            claim: Some(identity),
+            files,
+            process: Some(ProcessRecord {
+                resource_id: resource_id.to_owned(),
+                pid: u32::MAX,
+                start_time_ticks: u64::MAX,
+            }),
+            uplink_intent: false,
+            namespace: Some(NamespaceIdentity {
+                device: u64::MAX,
+                inode: u64::MAX,
+            }),
+            unlaunched_network_absence: false,
+        };
+        u64::try_from(serde_json::to_vec(&value)?.len())
+            .map_err(|_| RuntimeError::InvalidConfiguration("retirement size overflow"))
+    }
 }
 
 impl Runtime {
@@ -537,6 +590,7 @@ mod tests {
 
     fn config(base: &Path) -> RuntimeConfig {
         RuntimeConfig {
+            console_policy: None,
             host_slot: Some(RuntimeHostSlot {
                 position: 0,
                 helper_gate: crate::RuntimeHelperGate {
@@ -605,6 +659,43 @@ mod tests {
             unlaunched_network_absence: false,
         };
         (temp, manifest)
+    }
+
+    #[test]
+    fn manifest_storage_bound_covers_all_claim_names_and_numeric_extremes() {
+        let (_temp, mut manifest) = fixture();
+        let expected = RetirementManifest::maximum_serialized_bytes(&manifest.config, ID).unwrap();
+        let sample = manifest.files["record.json"].clone();
+        for name in claim_file_names() {
+            assert!(known_claim_file(&name));
+            let mut file = sample.clone();
+            file.identity.device = u64::MAX;
+            file.identity.inode = u64::MAX;
+            file.identity.owner = u32::MAX;
+            file.identity.mode = u32::MAX;
+            file.size = u64::MAX;
+            file.change_seconds = i64::MIN;
+            file.change_nanoseconds = i64::MIN;
+            file.digest = Some([u8::MAX; 32]);
+            manifest.files.insert(name, file);
+        }
+        manifest.process = Some(ProcessRecord {
+            resource_id: ID.into(),
+            pid: u32::MAX,
+            start_time_ticks: u64::MAX,
+        });
+        manifest.namespace = Some(NamespaceIdentity {
+            device: u64::MAX,
+            inode: u64::MAX,
+        });
+        assert!(serde_json::to_vec(&manifest).unwrap().len() as u64 <= expected);
+        let prior = expected;
+        manifest.config.jailer =
+            PathBuf::from(format!("{}suffix", manifest.config.jailer.display()));
+        assert_eq!(
+            RetirementManifest::maximum_serialized_bytes(&manifest.config, ID).unwrap() - prior,
+            6
+        );
     }
 
     #[test]
@@ -843,7 +934,7 @@ mod tests {
             .mode(0o600)
             .open(&record)
             .unwrap();
-        file.set_len(MAX_RECORD_BYTES + 1).unwrap();
+        file.set_len(MAX_CLAIM_RECORD_BYTES + 1).unwrap();
         assert!(RetiredFile::capture(&record, false).is_err());
         assert!(RetiredFile::capture(&record, true).is_ok());
     }

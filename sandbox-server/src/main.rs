@@ -55,6 +55,11 @@ mod linux {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct BoundedHostSettings {
+        #[serde(default)]
+        physical_storage:
+            Option<sandproof_controller_service::physical_storage::PhysicalStorageProfile>,
+        #[serde(default)]
+        console_policy: Option<sandproof_controller_service::ConsolePolicy>,
         maintenance: core::maintenance::MaintenanceLimits,
         uid_base: u32,
         uplink_base: u64,
@@ -80,6 +85,9 @@ mod linux {
         /// Explicit opt-in for retirement/checkpoints; no inferred limits.
         #[serde(default)]
         maintenance: Option<MaintenanceConfig>,
+        /// Explicit private-pool retry-window policy; cannot be disabled once persisted.
+        #[serde(default)]
+        build_retry_windows: Option<sandproof_controller_service::BuildRetryConfig>,
         vcpu_count: u8,
         memory_mib: u32,
         #[serde(default)]
@@ -124,7 +132,7 @@ mod linux {
         sandproof_controller_service::DEFAULT_STARTUP_TIMEOUT_SECS
     }
 
-    pub(crate) struct NodeHost(LinuxWorker);
+    pub(crate) struct NodeHost(LinuxWorker, Option<crate::storage::PhysicalProfileLease>);
 
     impl HostAdapter for NodeHost {
         type Evidence = HostObservation;
@@ -219,6 +227,18 @@ mod linux {
 
         fn available_disk_bytes(&self) -> Result<u64, PortError> {
             self.0.available_disk_bytes().map_err(|_| PortError::Busy)
+        }
+
+        fn validate_physical_storage(
+            &self,
+            profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+            pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+        ) -> Result<(), PortError> {
+            self.1
+                .as_ref()
+                .ok_or(PortError::Busy)?
+                .validate_admission(profile, pool)
+                .map_err(|_| PortError::Busy)
         }
 
         fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
@@ -455,6 +475,125 @@ mod linux {
         }
     }
 
+    fn validate_physical_storage(
+        config: &ConfigFile,
+        node: &NodeConfig,
+    ) -> Result<Option<crate::storage::PhysicalProfileLease>, Box<dyn Error>> {
+        use sandproof_controller_service::physical_storage::PoolRole;
+        let profile = node
+            .bounded_host
+            .as_ref()
+            .and_then(|value| value.physical_storage.as_ref());
+        let capacity = config
+            .maintenance
+            .as_ref()
+            .and_then(|value| value.capacity.as_ref());
+        if profile.is_none() && capacity.is_none() {
+            return Ok(None);
+        }
+        let profile =
+            profile.ok_or("full bounded capacity requires an explicit physical_storage profile")?;
+        let capacity = capacity.ok_or("physical_storage requires full controller capacity")?;
+        let pool = profile.pool(&config.namespace)?;
+        let expected_role = if config.internal_build_vms {
+            PoolRole::Builder
+        } else {
+            PoolRole::Runtime
+        };
+        let expected_kernel = config
+            .templates
+            .as_ref()
+            .map_or(0, |catalog| {
+                catalog
+                    .templates
+                    .iter()
+                    .map(|template| template.kernel.size_bytes)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .max(fs::metadata(&config.kernel)?.len())
+            .max(
+                config
+                    .template_registry
+                    .as_ref()
+                    .map_or(0, |registry| registry.max_artifact_bytes_per_tenant),
+            );
+        let envelope =
+            sandproof_node::HostMetadataEnvelope::derive(node, capacity.max_live_sandboxes)?;
+        if pool.role != expected_role
+            || pool.database != config.database
+            || pool.node_state_dir != config.node_state_dir
+            || pool.chroot_base != config.chroot_base
+            || node
+                .bounded_host
+                .as_ref()
+                .map(|host| host.maintenance.max_host_slots)
+                != Some(pool.max_host_slots)
+            || config
+                .max_disk_bytes_global
+                .checked_sub(config.cleanup_reserve_bytes)
+                != Some(pool.rootfs_budget_bytes)
+            || pool.cleanup_reserve_bytes != config.cleanup_reserve_bytes
+            || pool.kernel_copy_bytes < expected_kernel
+            || pool.runtime_copy_bytes < fs::metadata(&config.firecracker)?.len()
+            || pool.host_metadata_bytes < envelope.payload_bytes
+            || pool.host_metadata_inodes < envelope.inode_count
+            || pool
+                .host_metadata_bytes
+                .checked_add(capacity.max_online_storage_bytes)
+                .is_none_or(|bytes| bytes > pool.cleanup_reserve_bytes)
+        {
+            return Err("physical profile does not cover this exact pool configuration".into());
+        }
+        match (&config.template_registry, &profile.public_build) {
+            (Some(registry), Some(public)) if !config.internal_build_vms => {
+                profile.validate_registry(&config.namespace, registry)?;
+                if public.registry_root != registry.root {
+                    return Err("physical profile registry root mismatch".into());
+                }
+            }
+            (None, None) if !config.internal_build_vms => {}
+            (None, Some(_)) if config.internal_build_vms => {}
+            _ => return Err("unsupported physical profile registry/pool composition".into()),
+        }
+        let space = sandproof_node::disk_space(&profile.coordination_file)?;
+        if profile
+            .filesystem_overhead_inodes
+            .checked_mul(space.fragment_bytes)
+            .is_none_or(|bytes| bytes > profile.filesystem_overhead_bytes)
+        {
+            return Err("physical filesystem overhead must cover per-inode block rounding".into());
+        }
+        Ok(Some(crate::storage::PhysicalProfileLease::activate(
+            profile,
+            &config.namespace,
+            &config.firecracker,
+            &config.kernel,
+        )?))
+    }
+
+    fn node_configuration(
+        config: &ConfigFile,
+        bounded_host: Option<BoundedHostConfig>,
+    ) -> NodeConfig {
+        NodeConfig {
+            namespace: config.namespace.clone(),
+            state_dir: config.node_state_dir.clone(),
+            jailer: config.jailer.clone(),
+            firecracker: config.firecracker.clone(),
+            chroot_base: config.chroot_base.clone(),
+            kernel: config.kernel.clone(),
+            rootfs: config.rootfs.clone(),
+            uid_base: config.uid_base,
+            max_vm_id: config.max_vm_id,
+            bounded_host,
+            vcpu_count: config.vcpu_count,
+            memory_mib: config.memory_mib,
+            host_resources: config.host_resources.clone(),
+            file_policy_digest: core::PolicyDigest(config.file_policy_digest),
+        }
+    }
+
     fn private_root_path(path: &Path) -> Result<(), Box<dyn Error>> {
         sandbox_runtime::check_trusted_path(path)?;
         if !path.is_absolute() || path.is_symlink() {
@@ -468,6 +607,7 @@ mod linux {
     }
 
     fn validate_config(config: &ConfigFile) -> Result<u64, Box<dyn Error>> {
+        validate_controller_storage_reserve(config)?;
         resolve_bounded_host_config(
             config.uid_base,
             config.bounded_host.as_ref(),
@@ -553,6 +693,8 @@ mod linux {
             data_transfer.ok_or("bounded host requires explicit data_transfer limits")?;
         transfers.validate()?;
         let bounded = BoundedHostConfig {
+            physical_storage: settings.physical_storage.clone(),
+            console_policy: settings.console_policy,
             maintenance: settings.maintenance.clone(),
             uid_base: settings.uid_base,
             uplink_base: settings.uplink_base,
@@ -576,6 +718,56 @@ mod linux {
                 return Err("maintenance requires explicit bounded_host configuration".into());
             }
             maintenance.validate()?;
+            if maintenance.capacity.is_some()
+                && bounded.and_then(|config| config.console_policy)
+                    != Some(sandproof_controller_service::ConsolePolicy::Discard)
+            {
+                return Err(
+                    "full bounded capacity requires explicit bounded_host.console_policy=discard"
+                        .into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_controller_storage_reserve(config: &ConfigFile) -> Result<(), Box<dyn Error>> {
+        if let Some(capacity) = config
+            .maintenance
+            .as_ref()
+            .and_then(|policy| policy.capacity.as_ref())
+            && config.cleanup_reserve_bytes < capacity.max_online_storage_bytes
+        {
+            return Err("cleanup_reserve_bytes must cover the full controller DB/WAL/SHM/checkpoint envelope".into());
+        }
+        Ok(())
+    }
+
+    fn validate_build_retry_config(
+        config: &ConfigFile,
+        bounded: Option<&BoundedHostConfig>,
+    ) -> Result<(), Box<dyn Error>> {
+        if config.internal_build_vms
+            && config
+                .maintenance
+                .as_ref()
+                .is_some_and(|policy| policy.capacity.is_some())
+            && config.build_retry_windows.is_none()
+        {
+            return Err("full private capacity requires explicit build_retry_windows".into());
+        }
+        if let Some(retry) = config.build_retry_windows {
+            if !config.internal_build_vms
+                || config.maintenance.is_none()
+                || config.template_registry.is_some()
+            {
+                return Err(
+                    "build_retry_windows requires an explicitly maintained private build pool"
+                        .into(),
+                );
+            }
+            let bounded = bounded.ok_or("build_retry_windows requires bounded_host")?;
+            retry.validate(bounded.maintenance.windows.max_duration_ms())?;
         }
         Ok(())
     }
@@ -945,17 +1137,16 @@ mod linux {
         Ok(())
     }
 
-    pub async fn run() -> Result<(), Box<dyn Error>> {
-        let config = read_configuration()?;
-        let disk_bytes = validate_config(&config)?;
-        let managed = managed_config(&config, disk_bytes)?;
-        let bounded_host = resolve_bounded_host_config(
-            config.uid_base,
-            config.bounded_host.as_ref(),
-            config.data_transfer.as_ref(),
+    fn preflight_journal_configuration(
+        config: &ConfigFile,
+        bounded_host: Option<&BoundedHostConfig>,
+    ) -> Result<(), Box<dyn Error>> {
+        ControllerJournal::preflight_build_retry_windows(
+            &config.database,
+            &config.namespace,
+            config.build_retry_windows,
         )?;
-        validate_maintenance_config(bounded_host.as_ref(), config.maintenance.as_ref())?;
-        if let Some(bounded) = &bounded_host {
+        if let Some(bounded) = bounded_host {
             if let Some(maintenance) = &config.maintenance {
                 ControllerJournal::preflight_maintained(
                     &config.database,
@@ -967,42 +1158,58 @@ mod linux {
                 ControllerJournal::preflight_bounded(&config.database, &config.namespace, bounded)?;
             }
         }
-        let node = LinuxWorker::new(NodeConfig {
-            namespace: config.namespace.clone(),
-            state_dir: config.node_state_dir,
-            jailer: config.jailer,
-            firecracker: config.firecracker,
-            chroot_base: config.chroot_base,
-            kernel: config.kernel,
-            rootfs: config.rootfs,
-            uid_base: config.uid_base,
-            max_vm_id: config.max_vm_id,
-            bounded_host: bounded_host.clone(),
-            vcpu_count: config.vcpu_count,
-            memory_mib: config.memory_mib,
-            host_resources: config.host_resources.clone(),
-            file_policy_digest: core::PolicyDigest(config.file_policy_digest),
-        })?;
+        Ok(())
+    }
+
+    pub async fn run() -> Result<(), Box<dyn Error>> {
+        let config = read_configuration()?;
+        let disk_bytes = validate_config(&config)?;
+        let managed = managed_config(&config, disk_bytes)?;
+        let bounded_host = resolve_bounded_host_config(
+            config.uid_base,
+            config.bounded_host.as_ref(),
+            config.data_transfer.as_ref(),
+        )?;
+        validate_maintenance_config(bounded_host.as_ref(), config.maintenance.as_ref())?;
+        validate_build_retry_config(&config, bounded_host.as_ref())?;
+        preflight_journal_configuration(&config, bounded_host.as_ref())?;
+        let node_config = node_configuration(&config, bounded_host.clone());
+        let physical_storage = validate_physical_storage(&config, &node_config)?;
+        let node = LinuxWorker::new(node_config)?;
         let journal = open_journal(
             config.database,
             &config.namespace,
             bounded_host,
             config.maintenance,
         )?;
+        if journal
+            .build_retry_config()?
+            .is_some_and(|stored| Some(stored) != config.build_retry_windows)
+        {
+            return Err(
+                "durable private build retry configuration cannot be disabled or changed".into(),
+            );
+        }
         if journal.has_template_registry()? && config.template_registry.is_none() {
             return Err("durable template registry cannot be disabled for this journal".into());
         }
         audit_host_inventory(&node, &journal)?;
         let port = if let Some(catalog) = config.templates {
-            ManagedPort::with_templates(journal, NodeHost(node), managed, catalog)
+            ManagedPort::with_templates(journal, NodeHost(node, physical_storage), managed, catalog)
                 .map_err(|_| "invalid prebuilt template configuration")?
         } else {
-            ManagedPort::new(journal, NodeHost(node), managed)
+            ManagedPort::new(journal, NodeHost(node, physical_storage), managed)
         };
         if config.internal_build_vms && config.template_registry.is_some() {
             return Err("internal build pool cannot also publish templates".into());
         }
         let port = port.with_internal_build_vms(config.internal_build_vms);
+        let port = if let Some(retry) = config.build_retry_windows {
+            port.with_build_retry_windows(retry)
+                .map_err(|_| "invalid durable private build retry policy")?
+        } else {
+            port
+        };
         let port = Arc::new(if let Some(registry) = config.template_registry {
             port.with_registry(
                 sandproof_controller_service::template_registry::CandidateStore::new(registry, 0)?,
@@ -1087,6 +1294,8 @@ mod linux {
                 config.data_transfer.as_ref(),
             )?;
             validate_maintenance_config(bounded.as_ref(), config.maintenance.as_ref())?;
+            validate_build_retry_config(&config, bounded.as_ref())?;
+            validate_controller_storage_reserve(&config)?;
             Ok(())
         }
 
@@ -1110,6 +1319,108 @@ mod linux {
                 "max_input_bytes": 128_000, "prune_batch_rows": 3
             });
             value
+        }
+
+        fn full_capacity_settings() -> Value {
+            // Deliberately small fixture workload; these are not deployment defaults.
+            let mut value = maintained_settings();
+            value["maintenance"] = json!({
+                "retention_ms": 100, "max_checkpoint_bytes": 4 * 1024 * 1024,
+                "max_records": 10_000, "max_references": 1_000_000,
+                "max_tail_inputs": 8, "max_tail_bytes": 64 * 1024,
+                "max_input_bytes": 8192, "prune_batch_rows": 3,
+                "capacity": {
+                    "max_live_sandboxes": 4, "max_sql_rows": 1024,
+                    "max_sql_bytes": 16 * 1024 * 1024, "max_sql_value_bytes": 256 * 1024,
+                    "max_receipt_bytes": 16 * 1024, "max_transaction_inputs": 4,
+                    "max_transaction_bytes": 32 * 1024,
+                    "max_database_bytes": 512 * 1024 * 1024,
+                    "max_wal_bytes": 520 * 1024 * 1024, "max_shm_bytes": 2 * 1024 * 1024,
+                    "checkpoint_scratch_bytes": 8 * 1024 * 1024,
+                    "max_online_storage_bytes": 1042_u64 * 1024 * 1024
+                }
+            });
+            value["bounded_host"]["console_policy"] = json!("discard");
+            value["cleanup_reserve_bytes"] = json!(1042_u64 * 1024 * 1024);
+            value
+        }
+
+        #[test]
+        fn full_capacity_requires_explicit_console_and_linked_controller_reserve() {
+            let value = full_capacity_settings();
+            assert!(check(value.clone()).is_ok());
+            let mut missing = value.clone();
+            missing["bounded_host"]
+                .as_object_mut()
+                .unwrap()
+                .remove("console_policy");
+            assert!(check(missing).is_err());
+            let mut short = value.clone();
+            short["cleanup_reserve_bytes"] = json!(1042_u64 * 1024 * 1024 - 1);
+            assert!(check(short).is_err());
+            for field in [
+                "max_shm_bytes",
+                "max_receipt_bytes",
+                "max_transaction_inputs",
+            ] {
+                let mut missing = value.clone();
+                missing["maintenance"]["capacity"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(field);
+                assert!(check(missing).is_err());
+                let mut zero = value.clone();
+                zero["maintenance"]["capacity"][field] = json!(0);
+                assert!(check(zero).is_err());
+            }
+        }
+
+        #[test]
+        fn explicit_console_policy_is_strict_and_not_inferred() {
+            assert!(resolve(settings()).console_policy.is_none());
+            let mut value = settings();
+            value["bounded_host"]["console_policy"] = json!("discard");
+            assert_eq!(
+                resolve(value.clone()).console_policy,
+                Some(sandproof_controller_service::ConsolePolicy::Discard)
+            );
+            value["bounded_host"]["console_policy"] = json!("file");
+            assert!(check(value).is_err());
+        }
+
+        #[test]
+        fn full_private_capacity_never_falls_back_to_legacy_retry_anchors() {
+            let mut value = full_capacity_settings();
+            value["internal_build_vms"] = json!(true);
+            assert!(check(value.clone()).is_err());
+            value["build_retry_windows"] = json!({"window_duration_ms": 100, "max_anchors": 2});
+            assert!(check(value).is_ok());
+        }
+
+        #[test]
+        fn private_retry_policy_requires_explicit_maintained_private_pool() {
+            let mut value = maintained_settings();
+            value["internal_build_vms"] = json!(true);
+            value["build_retry_windows"] = json!({"window_duration_ms": 100, "max_anchors": 2});
+            assert!(check(value.clone()).is_ok());
+            for field in ["internal_build_vms", "maintenance", "bounded_host"] {
+                let mut invalid = value.clone();
+                invalid.as_object_mut().unwrap().remove(field);
+                assert!(check(invalid).is_err(), "missing {field}");
+            }
+            for field in ["window_duration_ms", "max_anchors"] {
+                let mut invalid = value.clone();
+                invalid["build_retry_windows"][field] = json!(0);
+                assert!(check(invalid).is_err());
+                invalid = value.clone();
+                invalid["build_retry_windows"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(field);
+                assert!(check(invalid).is_err());
+            }
+            value["build_retry_windows"]["unknown"] = json!(1);
+            assert!(check(value).is_err());
         }
 
         #[test]

@@ -11,6 +11,8 @@ use std::sync::Mutex;
 
 fn bounded() -> BoundedHostConfig {
     BoundedHostConfig {
+        physical_storage: None,
+        console_policy: None,
         uid_base: 2000,
         uplink_base: 12,
         max_data_routes_per_slot: 4,
@@ -26,6 +28,9 @@ fn bounded() -> BoundedHostConfig {
 
 #[derive(Default)]
 struct DurableHost {
+    physical_profile:
+        Option<sandproof_controller_service::physical_storage::PhysicalStorageProfile>,
+    physical_free: Option<u64>,
     row: Option<(HostSlotContext, HostSlotPhase)>,
     secrets: BTreeMap<u64, String>,
     actions: Vec<WorkAction<core::EffectId>>,
@@ -189,7 +194,18 @@ impl HostAdapter for BoundedHost {
     }
 
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
-        Ok(10_000)
+        Ok(self.0.lock().unwrap().physical_free.unwrap_or(10_000))
+    }
+    fn validate_physical_storage(
+        &self,
+        profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        _pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<(), PortError> {
+        if self.0.lock().unwrap().physical_profile.as_ref() == Some(profile) {
+            Ok(())
+        } else {
+            Err(PortError::Busy)
+        }
     }
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
@@ -420,6 +436,8 @@ fn bounded_format_and_configuration_cannot_be_disabled_changed_or_adopt_nonempty
     assert!(ControllerJournal::open(&path, NAMESPACE).is_err());
     for changed in [
         BoundedHostConfig {
+            physical_storage: None,
+            console_policy: None,
             uid_base: 2001,
             ..bounded()
         },
@@ -492,3 +510,9 @@ fn relay_spawn_rechecks_authority_after_the_initial_route_permit() {
 
 #[path = "bounded_slots/maintenance.rs"]
 mod maintenance;
+
+#[path = "bounded_slots/build_retry.rs"]
+mod build_retry;
+
+#[path = "bounded_slots/physical_storage.rs"]
+mod physical_storage;

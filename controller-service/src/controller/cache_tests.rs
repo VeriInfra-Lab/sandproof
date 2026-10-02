@@ -712,6 +712,7 @@ fn publication(id: char) -> crate::template_registry::Publication {
         state: PublicationState::Checking,
         checked: false,
         validation_sandbox: None,
+        validation_certificate: None,
         failure: None,
     }
 }

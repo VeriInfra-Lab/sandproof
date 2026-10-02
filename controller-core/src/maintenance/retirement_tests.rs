@@ -1084,3 +1084,56 @@ fn foreign_stop_coverage_and_any_unknown_attempt_prevent_deleting_dependencies()
         );
     }
 }
+
+#[test]
+fn logical_cleanup_precedes_free_without_weakening_exact_evidence() {
+    let world = finished();
+    let index = world.resource_index(SID);
+    let binding = HostBinding {
+        owner: OWNER,
+        sandbox: SID,
+        generation: 1,
+        vm: index.vms[0],
+        network: index.slots[0],
+    };
+    for phase in [
+        HostSlotPhase::Occupied,
+        HostSlotPhase::Releasing,
+        HostSlotPhase::Free,
+    ] {
+        let mut candidate = world.clone();
+        candidate
+            .maintenance
+            .as_mut()
+            .unwrap()
+            .slots
+            .put(HostSlotId(0), HostSlotRecord { binding, phase });
+        let before = candidate.clone();
+        validate_terminal_cleanup(&candidate, SID).unwrap();
+        assert_eq!(candidate, before);
+        if phase != HostSlotPhase::Free {
+            assert!(retire(&candidate, request(&candidate, SID)).is_err());
+        }
+    }
+    for status in [EffectStatus::Dispatched, EffectStatus::OutcomeUnknown] {
+        let mut unknown = world.clone();
+        let id = effect(&unknown, SID, |c| matches!(c, Command::CleanupVm { .. }));
+        unknown.effects.put(id, status);
+        assert!(validate_terminal_cleanup(&unknown, SID).is_err());
+    }
+    let failed = failed_with_unissued_startup();
+    validate_terminal_cleanup(&failed, SID).unwrap();
+    let mut foreign = create(&world, SandboxId(11));
+    let mut row = foreign.sandbox_record(SandboxId(11)).unwrap().clone();
+    row.current_vm = Some(index.vms[0]);
+    foreign.sandboxes.put(SandboxId(11), row);
+    assert_eq!(
+        validate_terminal_cleanup(&foreign, SID),
+        Err(RetirementReject::DependencyNotClosed)
+    );
+    let mut mismatch = world.clone();
+    let mut vm = *mismatch.vm_record(index.vms[0]).unwrap();
+    vm.owner = TenantId(99);
+    mismatch.vms.put(index.vms[0], vm);
+    assert!(validate_terminal_cleanup(&mismatch, SID).is_err());
+}

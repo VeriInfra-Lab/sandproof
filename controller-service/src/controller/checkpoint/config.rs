@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaintenanceConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<super::super::capacity::CapacityConfig>,
     pub retention_ms: u64,
     pub max_checkpoint_bytes: u64,
     pub max_records: u64,
@@ -40,6 +42,9 @@ impl MaintenanceConfig {
         }
         if self.max_input_bytes > self.max_tail_bytes {
             return Err(JournalError::UnsupportedStore);
+        }
+        if let Some(capacity) = &self.capacity {
+            capacity.validate(self)?;
         }
         Ok(())
     }
@@ -97,6 +102,7 @@ pub(super) fn configure(
         "INSERT INTO controller_maintenance_config VALUES(1,?1)",
         [serde_json::to_vec(&config)?],
     )?;
+    super::super::capacity::configure(tx, world, &config)?;
     for witness in bindings.released.values() {
         retirement::store_witness(tx, *witness)?;
     }
@@ -118,6 +124,7 @@ impl ControllerJournal {
     ) -> Result<Self, JournalError> {
         host.validate()?;
         maintenance.validate()?;
+        super::super::capacity::validate_host(&host, &maintenance)?;
         Self::open_with_bounded(path, namespace, Some(host), Some(maintenance), now_ms)
     }
 
@@ -132,6 +139,7 @@ impl ControllerJournal {
     ) -> Result<(), JournalError> {
         maintenance.validate()?;
         host.validate()?;
+        super::super::capacity::validate_host(host, maintenance)?;
         let path = path.as_ref();
         if !path.exists() {
             return Self::preflight_bounded(path, namespace, host);

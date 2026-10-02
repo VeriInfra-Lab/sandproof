@@ -24,6 +24,7 @@ pub(super) fn validate(
     options_and_lifetimes(connection, world, namespace)?;
     effects_and_outbox(connection, world, namespace)?;
     registry_state(connection, world)?;
+    super::super::private_build::validate(connection, world, namespace)?;
     Ok(())
 }
 
@@ -366,7 +367,10 @@ pub(super) fn publication_pins(
         |row| row.get(0),
     )?;
     let tables: i64 = connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('template_publications','template_aliases','template_registry_meta')", [], |row| row.get(0))?;
-    if version != 10 {
+    if tables == 0 && version == 11 {
+        return Ok(Vec::new());
+    }
+    if version != 10 && version != 11 {
         if !(1..=9).contains(&version) || tables != 0 {
             return Err(JournalError::CorruptStore);
         }
@@ -406,23 +410,42 @@ pub(super) fn publication_pins(
 
 fn registry_state(connection: &Connection, world: &core::World) -> Result<(), JournalError> {
     let pins = publication_pins(connection)?;
-    for sandbox in pins {
-        let record = world
-            .sandbox_record(sandbox)
-            .ok_or(JournalError::CorruptStore)?;
-        let id = identity::sandbox_id(&namespace(connection)?, sandbox)?;
-        let options: Vec<u8> = connection.query_row(
-            "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
-            [id.as_str()],
-            |row| row.get(0),
-        )?;
-        let options: CreateOptions = serde_json::from_slice(&options)?;
-        let mut query = connection.prepare("SELECT record_json FROM template_publications")?;
-        for bytes in query.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
-            let value = registry::decode(&bytes?)?;
-            if value.validation_sandbox == Some(sandbox.0)
-                && (value.binding.owner != Some(record.owner.0)
-                    || options.template.as_ref() != Some(&value.binding))
+    let has_registry: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='template_publications')", [], |row| row.get(0))?;
+    if !has_registry {
+        return Ok(());
+    }
+    let version: i64 = connection.query_row(
+        "SELECT version FROM controller_meta WHERE id=1",
+        [],
+        |row| row.get(0),
+    )?;
+    let mut query = connection.prepare("SELECT record_json FROM template_publications")?;
+    for bytes in query.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
+        let value = registry::decode(&bytes?)?;
+        if value.validation_certificate.is_some() {
+            if version != 11 {
+                return Err(JournalError::CorruptStore);
+            }
+            registry::validate_settled(world, &value)?;
+        }
+        if let Some(sandbox) = value.validation_sandbox {
+            let sandbox = core::SandboxId(sandbox);
+            if !pins.contains(&sandbox) {
+                return Err(JournalError::CorruptStore);
+            }
+            let record = world
+                .sandbox_record(sandbox)
+                .ok_or(JournalError::CorruptStore)?;
+            let id = identity::sandbox_id(&namespace(connection)?, sandbox)?;
+            let options: Vec<u8> = connection.query_row(
+                "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
+                [id.as_str()],
+                |row| row.get(0),
+            )?;
+            let options: CreateOptions = serde_json::from_slice(&options)?;
+            if value.binding.owner != Some(record.owner.0)
+                || options.template.as_ref() != Some(&value.binding)
             {
                 return Err(JournalError::CorruptStore);
             }

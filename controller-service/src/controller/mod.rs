@@ -8,17 +8,24 @@ mod bounded_tests;
 #[cfg(test)]
 mod cache_tests;
 
+mod capacity;
+pub use capacity::CapacityConfig;
 mod admission;
 mod allocators;
 mod bounded;
 mod checkpoint;
 mod identity;
+mod private_build;
 mod registry;
 mod storage;
 mod transaction;
 
-pub use bounded::{BoundedHostConfig, HostSlotContext};
-pub use checkpoint::{CheckpointInfo, HostReleaseWitness, MaintenanceConfig, RetirementCandidate};
+pub use private_build::{BuildAnchor, BuildRetryConfig, BuildWindow};
+
+pub use bounded::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
+pub use checkpoint::{
+    CheckpointInfo, CheckpointProgress, HostReleaseWitness, MaintenanceConfig, RetirementCandidate,
+};
 
 pub use admission::{
     AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
@@ -564,6 +571,9 @@ impl ControllerJournal {
         lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
         let mut journal =
             Journal::open_controller(&path, bounded.is_some(), maintenance.is_some())?;
+        if let Some(policy) = &maintenance {
+            capacity::prepare_connection(&journal.connection, policy)?;
+        }
         let transaction = journal
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -594,7 +604,7 @@ impl ControllerJournal {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=10).contains(&version) || stored != namespace {
+        if !(1..=11).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {
@@ -632,6 +642,7 @@ impl ControllerJournal {
         allocators::migrate(&transaction, &world)?;
         let world = bounded::configure(&transaction, world, bounded, now_ms)?;
         checkpoint::configure(&transaction, &world, maintenance)?;
+        capacity::validate(&transaction, &world)?;
         let committed_world = transaction::CommittedWorld::new(&transaction, world)?;
         transaction
             .commit()
@@ -678,6 +689,16 @@ impl ControllerJournal {
                         | core::EffectInput::Timeout(_)
                 )
         ) {
+            return Err(JournalError::UnsupportedInput);
+        }
+        if capacity::config(&self.journal.connection)?.is_some()
+            && matches!(
+                input,
+                core::ControllerInput::Request(core::Request::Create(_))
+            )
+        {
+            // Full mode requires its lease, options and physical binding in
+            // the same admission transaction before any accepted host work.
             return Err(JournalError::UnsupportedInput);
         }
         let sandbox = identity::input_sandbox(&input)?;
@@ -916,8 +937,12 @@ impl ControllerJournal {
                 return Err(JournalError::ConflictingReceipt);
             }
         }
+        let serialized = match capacity::config(&transaction)? {
+            Some(cap) => checkpoint::encode_limited(receipt, cap.max_receipt_bytes)?,
+            None => serde_json::to_vec(receipt)?,
+        };
         let next = apply_outcome(&transaction, &self.namespace, &action, receipt, id)?;
-        let serialized = serde_json::to_vec(receipt)?;
+        let before_receipt = capacity::cursors(&transaction)?;
         let receipt_sequence = allocators::next_sql(&transaction, allocators::SqlId::Receipt)?;
         transaction.execute(
             "INSERT INTO controller_receipt_history(sequence,outbox_id,receipt_json) VALUES (?1,?2,?3)",
@@ -926,6 +951,11 @@ impl ControllerJournal {
         transaction.execute(
             "UPDATE outbox SET dispatch_state='receipted',receipt_json=?1 WHERE id=?2",
             params![serialized, id],
+        )?;
+        capacity::spend(
+            &transaction,
+            action.command.command().sandbox(),
+            before_receipt,
         )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         transaction.commit()?;

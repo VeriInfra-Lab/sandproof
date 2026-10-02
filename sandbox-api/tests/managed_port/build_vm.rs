@@ -4,6 +4,7 @@ use sandproof_api::BuildVmRequest;
 const BUILD: &str = "123456789abcdef0123456789abcdef0";
 fn input() -> BuildVmRequest {
     BuildVmRequest {
+        request_window: None,
         timeout: 300,
         allow_internet_access: false,
     }
@@ -62,6 +63,7 @@ fn private_pool_opt_in_reserved_metadata_and_tombstone() {
             "1",
             BUILD,
             Some(BuildVmRequest {
+                request_window: None,
                 timeout: 301,
                 ..input()
             })

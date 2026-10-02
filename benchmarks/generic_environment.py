@@ -97,7 +97,10 @@ def validate_template(template, entry):
 
 
 class GenericEnvironment(SdkEnvironment):
-    def __init__(self, *, entry, source, source_kind, build_url, sdk_options, start_audit=None, **kwargs):
+    def __init__(self, *, entry, source, source_kind, build_url, sdk_options, start_audit=None, build_mode="windowed", **kwargs):
+        if build_mode not in ("windowed", "legacy-unbounded"):
+            raise InvalidInput("explicit supported build mode required")
+        self.build_mode = build_mode
         self.entry, self.source, self.source_kind = entry, source, source_kind
         self.client = BuildClient(build_url, sdk_options['api_key'])
         self.build_result = None
@@ -116,23 +119,57 @@ class GenericEnvironment(SdkEnvironment):
         self.environment_repair = None
         request = build_request(self.entry, self.task_env_config, self.source_kind)
         context = self.trial_paths.trial_dir / 'context.tar'
-        if self.source_kind == 'dockerfile':
+        saved_path = self.trial_paths.trial_dir / 'build-intent.json'
+        saved = None
+        if saved_path.exists() or saved_path.is_symlink():
+            if saved_path.is_symlink() or saved_path.stat().st_size > 65536:
+                raise InvalidInput('invalid original build intent')
+            saved = json.loads(saved_path.read_text())
+        if self.source_kind in ('dockerfile', PRUNED_SOURCE) and saved is not None:
+            if context.is_symlink() or not context.is_file():
+                raise InvalidInput('original build context is unavailable')
+            digest = hashlib.sha256()
+            with context.open('rb') as incoming:
+                while block := incoming.read(MIB):
+                    digest.update(block)
+            context_hash = digest.hexdigest()
+            if context_hash != saved.get('context_sha256'):
+                raise InvalidInput('original build context changed')
+            if self.source_kind == PRUNED_SOURCE:
+                self.environment_repair = saved.get('environment_repair')
+                if not isinstance(self.environment_repair, dict) or self.environment_repair.get('context_sha256') != context_hash:
+                    raise InvalidInput('original repaired context provenance changed')
+        elif self.source_kind == 'dockerfile':
             context_hash = archive_context(self.entry, self.source, context)
         elif self.source_kind == PRUNED_SOURCE:
             self.environment_repair = archive_repaired_context(self.entry, context)
             context_hash = self.environment_repair['context_sha256']
         else:
             context_hash = None
-        intent = {'idempotency_key': self.submission_key, 'request': request,
-                  'context_sha256': context_hash, 'task_files_sha256': self.entry['files_sha256'],
-                  'source_kind': self.source_kind, 'original_environment': self.source_kind != PRUNED_SOURCE,
+        mode = getattr(self, 'build_mode', 'windowed')
+        intent = {'build_mode': mode, 'request': request, 'context_sha256': context_hash,
+                  'task_files_sha256': self.entry['files_sha256'], 'source_kind': self.source_kind,
+                  'original_environment': self.source_kind != PRUNED_SOURCE,
                   'environment_repair': self.environment_repair}
-        # A local checkpoint precedes dispatch. On lost reply inspect/recover
-        # this SAME key in the build journal; never submit a replacement job.
-        self.checkpoint('build-intent.json', intent)
+        if saved is not None:
+            if any(saved.get(key) != value for key, value in intent.items()):
+                raise InvalidInput('original build intent conflicts; do not replace uncertain work')
+            window, self.submission_key = saved.get('requestWindow'), saved.get('idempotency_key')
+            if (mode == 'windowed' and not isinstance(window, dict)) or not isinstance(self.submission_key, str):
+                raise InvalidInput('original build intent lacks window/key; explicit legacy recovery required')
+        else:
+            window = None
+            if mode == 'windowed':
+                opened = await asyncio.to_thread(self.client.request, 'POST', '/sandproof/template-build-windows',
+                                                 {'durationMs': request['timeoutSeconds'] * 1000})
+                window = opened['requestWindow']
+            intent.update(idempotency_key=self.submission_key, requestWindow=window)
+            # This checkpoint is fsynced before POST. After an uncertain response,
+            # retry only this original namespace/window/key and canonical input.
+            self.checkpoint('build-intent.json', intent)
         self.build_dispatched = True
         result = await asyncio.to_thread(self.client.request, 'POST', '/sandproof/template-builds',
-                                         request, token=self.submission_key)
+                                         request | ({'requestWindow': window} if mode == 'windowed' else {}), token=self.submission_key)
         self.build_id = result['buildID']
         self.build_result = result
         if not re.fullmatch(r'[0-9a-f]{32}', self.build_id):
