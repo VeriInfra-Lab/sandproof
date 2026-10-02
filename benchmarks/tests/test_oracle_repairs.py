@@ -22,6 +22,52 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_missing_tmux_is_installed_before_configuration_without_hiding_failures(self):
+        # Synthetic shell only: package manager and tmux are local recording
+        # stubs. No original solution or real package installation runs here.
+        script = ('set -e\nprintf "configure\\n" >> "$REPAIR_TEST_LOG"\n'
+                  'tmux new -d -s dummy "tail -f /dev/null"\n')
+        for available, failure in ((False, ''), (True, ''), (False, 'update'),
+                                   (False, 'install'), (False, 'tmux')):
+            with self.subTest(available=available, failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                source.mkdir()
+                bin_dir.mkdir()
+                (source / 'solve.sh').write_text(script)
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'git-multibranch': hashlib.sha256(script.encode()).hexdigest()}):
+                    _, solve = repair_solution('git-multibranch', source, root / 'repaired')
+                tmux = root / 'tmux-fixture'
+                tmux.write_text('#!/bin/bash\nprintf "tmux %s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                'if [[ "$REPAIR_TEST_FAIL" == tmux ]]; then exit 42; fi\n')
+                tmux.chmod(0o700)
+                apt = bin_dir / 'apt-get'
+                apt.write_text('#!/bin/bash\nprintf "apt-get %s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                               'if [[ "$REPAIR_TEST_FAIL" == "$1" ]]; then exit 42; fi\n'
+                               'if [[ "$1" == install ]]; then\n'
+                               '  test "$DEBIAN_FRONTEND" = noninteractive || exit 43\n'
+                               '  /bin/cp "$REPAIR_TEST_TMUX" "$REPAIR_TEST_BIN/tmux"\nfi\n')
+                apt.chmod(0o700)
+                if available:
+                    (bin_dir / 'tmux').symlink_to(tmux)
+                log = root / 'commands'
+                env = {**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                       'REPAIR_TEST_FAIL': failure, 'REPAIR_TEST_TMUX': str(tmux),
+                       'REPAIR_TEST_BIN': str(bin_dir)}
+                result = subprocess.run(['/bin/bash', str(solve)], env=env)
+                self.assertEqual(result.returncode, 42 if failure else 0)
+                commands = [] if available else ['apt-get update']
+                if not available and failure != 'update':
+                    commands.append('apt-get install -y --no-install-recommends tmux')
+                if failure not in ('update', 'install'):
+                    commands.extend(['configure', 'tmux new -d -s dummy tail -f /dev/null'])
+                self.assertEqual(log.read_text().splitlines(), commands)
+                self.assertEqual((source / 'solve.sh').read_text(), script)
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['oracle_mode'], 'repaired')
+                self.assertEqual(evidence['original_files']['solve.sh'], hashlib.sha256(script.encode()).hexdigest())
+
     def test_dependency_repairs_execute_in_order_and_preserve_failure(self):
         # Only synthetic shell fixtures run here. Commands are recording stubs;
         # no package manager, R compiler or benchmark solution runs on the host.
