@@ -84,10 +84,10 @@ class ConversionTests(unittest.TestCase):
         original_digest = self.digest
         original_config = self.manifest['config']['digest']
         self.commands.run.side_effect = self.convert
-        result = self.run_fetch()
+        result, image = self.run_fetch()
         self.assertEqual(result['selected_digest'], original_digest)
         self.assertNotEqual(result['converted_digest'], original_digest)
-        image = inspect_oci(self.layout, max_bytes=100000, max_entries=20)
+        self.assertEqual(image, inspect_oci(self.layout, max_bytes=100000, max_entries=20))
         self.assertEqual(image['image_digest'], result['converted_digest'])
         self.assertEqual(image['config_digest'], original_config)
         self.assertEqual(image['container_config']['OnBuild'], ['RUN touch /must-not-execute'])

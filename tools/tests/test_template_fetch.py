@@ -155,15 +155,18 @@ class PublicFetchTests(unittest.TestCase):
         with patch('tools.template_fetch.sha256',side_effect=['fixed',digest[7:]]), \
              patch('tools.template_fetch.REGCTL_SHA256','fixed'), \
              patch('tools.template_fetch.capture',side_effect=fake_capture) as calls, \
-             patch('tools.template_fetch.extract_archive',side_effect=fake_extract):
-            request = {'max_input_bytes':1024, 'max_entries':100}
+             patch('tools.template_fetch.extract_archive',side_effect=fake_extract), \
+             patch('tools.template_fetch.inspect_oci',return_value={'image_digest':digest}) as inspect:
+            request = {'max_input_bytes':1024, 'max_expanded_bytes':10240, 'max_entries':100}
             if mirror is not None:
                 request['docker_hub_mirror'] = mirror
-            provenance=fetch(source,self.root,self.root/'oci',request,Path('/tool'),None)
+            provenance,image=fetch(source,self.root,self.root/'oci',request,Path('/tool'),None)
         self.assertEqual(calls.call_args_list[0].args[0][3], repository + ':24.04')
         self.assertEqual(calls.call_args_list[1].args[0][3], repository + '@' + digest)
         self.assertEqual(provenance['source_digest'], digest)
         self.assertEqual(provenance['selected_digest'], digest)
+        self.assertEqual(image, {'image_digest':digest})
+        inspect.assert_called_once_with(self.root/'oci', max_bytes=10240, max_entries=100)
         return provenance
 
 
