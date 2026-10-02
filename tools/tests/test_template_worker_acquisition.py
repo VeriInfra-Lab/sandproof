@@ -82,13 +82,16 @@ class WorkerAcquisitionTests(unittest.TestCase):
              patch.object(worker, 'extract_archive', side_effect=extract):
             return worker.build(self.work, self.source, self.request, {}, guest_boot_id='synthetic-boot')
 
-    def test_docker_checks_source_and_converted_layers_once_each_before_unpack(self):
-        with patch('gzip.GzipFile', wraps=gzip.GzipFile) as decoder:
+    def test_docker_rehashes_both_formats_without_repeating_decompression_before_unpack(self):
+        digest = self.fixture.manifest['layers'][0]['digest'][7:]
+        with patch('gzip.GzipFile', wraps=gzip.GzipFile) as decoder, \
+             patch('tools.template_inputs.sha256', wraps=sha256) as hashes:
             with self.assertRaises(ReachedUnpack):
                 self.acquire()
         self.assertEqual(len(self.converted), 1)
         self.assertEqual(len(self.unpacked), 1)
-        self.assertEqual(decoder.call_count, 2)
+        self.assertEqual(decoder.call_count, 1)
+        self.assertEqual(sum(call.args[0].name == digest for call in hashes.call_args_list), 2)
 
     def test_native_public_oci_checks_layers_once_before_unpack(self):
         self.native_oci()

@@ -12,9 +12,9 @@ import subprocess
 import time
 
 if __package__:
-    from .template_inputs import InvalidTemplate, bounded_json, extract_archive, inspect_oci, blob, sha256
+    from .template_inputs import InvalidTemplate, LayerChecks, bounded_json, extract_archive, inspect_oci, blob, sha256
 else:
-    from template_inputs import InvalidTemplate, bounded_json, extract_archive, inspect_oci, blob, sha256
+    from template_inputs import InvalidTemplate, LayerChecks, bounded_json, extract_archive, inspect_oci, blob, sha256
 
 REGCTL_VERSION = "v0.11.6"
 REGCTL_SHA256 = "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
@@ -167,6 +167,7 @@ def fetch(source, work, layout, request, tool, commands):
     original = None
     limits = {"max_bytes": request["max_expanded_bytes"], "max_entries": request["max_entries"]}
     if items[0]["mediaType"] == DOCKER_MANIFEST:
+        limits["layer_checks"] = LayerChecks(layout)
         # Validate the original bytes before the trusted converter sees them.
         # Conversion is local-only and must preserve config/layer bytes exactly.
         inspect_oci(layout, **limits, allow_docker=True)
@@ -187,8 +188,9 @@ def fetch(source, work, layout, request, tool, commands):
         if payload_identity(layout, request["max_input_bytes"]) != original:
             raise InvalidTemplate("OCI conversion changed image config or layers")
         converted = normalized["image_digest"]
-    # inspect_oci rehashes every manifest/config/layer and checks diff_ids,
-    # architecture, expanded bytes and entries before any umoci unpacking.
+    # Rehash every current manifest/config/layer. Only identical layer bytes,
+    # encoding and diff_id reuse the earlier full tar/gzip check; cumulative
+    # expanded bytes and entries are charged again before umoci unpacking.
     result = {"reference": document["image"], "source_digest": digest,
             "selected_digest": selected, "platform": "linux/amd64",
             "download_bytes": metadata_bytes + archive_bytes, "regctl_version": REGCTL_VERSION,

@@ -176,8 +176,31 @@ class LayerReader:
         return block
 
 
-def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False):
-    """Only one linux/amd64 manifest; no silently chosen multiarch/attestation."""
+class LayerChecks:
+    """In-memory checks for one private layout during a single acquisition.
+
+    Only inspect_oci populates these records, after complete layer validation.
+    Reuse always requires a fresh blob hash and the same compression/diff_id;
+    this is not a persisted cache or an input supplied by a build client.
+    """
+
+    def __init__(self, layout):
+        self.layout = layout.resolve(strict=True)
+        meta = layout.stat()
+        self.identity = meta.st_dev, meta.st_ino
+        self.layers = {}
+
+    def for_layout(self, layout):
+        meta = layout.stat()
+        if (layout.resolve(strict=True) != self.layout
+                or (meta.st_dev, meta.st_ino) != self.identity):
+            raise InvalidTemplate("layer checks belong to another layout")
+        return self.layers
+
+
+def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False, layer_checks=None):
+    """Validate one linux/amd64 image, optionally reusing hash-bound layer checks."""
+    checked = None if layer_checks is None else layer_checks.for_layout(layout)
     if bounded_json(layout / "oci-layout") != {"imageLayoutVersion": "1.0.0"}:
         raise InvalidTemplate("unsupported OCI layout")
     index = bounded_json(layout / "index.json")
@@ -209,7 +232,23 @@ def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False):
         media = layer.get("mediaType")
         if media not in layer_media or layer.get("urls"):
             raise InvalidTemplate("only tar/gzip OCI layers supported")
-        opener = gzip.open if media.endswith(("+gzip", ".gzip")) else open
+        if not isinstance(expected_diff, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", expected_diff):
+            raise InvalidTemplate("OCI diff_id mismatch")
+        compressed = media.endswith(("+gzip", ".gzip"))
+        key = layer["digest"], layer["size"], compressed, expected_diff
+        # blob() above rehashes the current file even on a cache hit. A Docker
+        # -> OCI media-type conversion may retain identical compressed bytes;
+        # only that same encoding and diff_id can reuse tar/gzip validation.
+        if checked is not None and key in checked:
+            expanded, entries = checked[key]
+            if expanded > remaining_bytes:
+                raise InvalidTemplate("OCI expanded byte limit")
+            if entries > remaining_entries:
+                raise InvalidTemplate("archive entry limit or sparse payload")
+            remaining_bytes -= expanded
+            remaining_entries -= entries
+            continue
+        opener = gzip.open if compressed else open
         # Parse headers and verify diff_id through the same forward-only
         # decompressor. Drain after tar EOF: padding and trailing gzip members
         # still count toward the byte limit, digest and gzip integrity checks.
@@ -222,6 +261,8 @@ def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False):
                 pass
         if expected_diff != "sha256:" + stream.digest.hexdigest():
             raise InvalidTemplate("OCI diff_id mismatch")
+        if checked is not None:
+            checked[key] = stream.expanded, len(entries)
         remaining_bytes -= stream.expanded
         remaining_entries -= len(entries)
     return {"image_digest": descriptor["digest"], "config_digest": manifest["config"]["digest"],
