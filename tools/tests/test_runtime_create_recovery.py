@@ -1,12 +1,13 @@
 import copy
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
 from unittest.mock import Mock
 
-from tools.runtime_create_recovery import matching_runtime, recover_runtime_create
+from tools.runtime_create_recovery import load_runtime_intent, matching_runtime, recover_runtime_create
 
 
 class RuntimeCreateRecoveryTests(unittest.TestCase):
@@ -135,6 +136,66 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         with self.assertRaises(sqlite3.OperationalError):
             matching_runtime(missing, self.intent, owner=1, namespace='test')
         self.assertFalse(missing.exists())
+
+    def load_checkpoint(self):
+        return load_runtime_intent(self.database.parent, task='sample', runtime_attempt='e' * 32,
+                                   build_id='a' * 32, template=self.template)
+
+    def test_checkpoint_requires_exact_live_task_attempt_build_and_template(self):
+        checkpoint = self.database.parent / 'runtime-intent.json'
+        checkpoint.write_text(json.dumps(self.intent))
+        self.assertEqual(self.load_checkpoint(), self.intent)
+        variants = []
+        for key, value in (('task', 'previous-task'), ('runtime_attempt', 'f' * 32),
+                           ('build', 'b' * 32), ('revision', 'r2')):
+            changed = copy.deepcopy(self.intent)
+            changed['metadata'][key] = value
+            variants.append(changed)
+        changed = copy.deepcopy(self.intent)
+        changed['template']['rootfsSha256'] = 'f' * 64
+        variants.append(changed)
+        for changed in variants:
+            with self.subTest(changed=changed):
+                checkpoint.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, 'differs from live trial'):
+                    self.load_checkpoint()
+        checkpoint.write_text(json.dumps(self.intent))
+        with self.assertRaisesRegex(ValueError, 'missing live runtime correlation'):
+            load_runtime_intent(self.database.parent, task='sample', runtime_attempt=None,
+                                build_id='a' * 32, template=self.template)
+
+    def test_checkpoint_rejects_partial_duplicate_and_oversized_json(self):
+        checkpoint = self.database.parent / 'runtime-intent.json'
+        for raw in ('{', '{"metadata":{},"metadata":{}}', ' ' * (256 * 1024 + 1)):
+            with self.subTest(size=len(raw)):
+                checkpoint.write_text(raw)
+                with self.assertRaises(ValueError):
+                    self.load_checkpoint()
+
+    def test_checkpoint_rejects_symlink_hardlink_fifo_and_nonprivate_directory(self):
+        directory = self.database.parent
+        checkpoint = directory / 'runtime-intent.json'
+        original = directory / 'original.json'
+        original.write_text(json.dumps(self.intent))
+        checkpoint.symlink_to(original)
+        with self.assertRaises(OSError):
+            self.load_checkpoint()
+        checkpoint.unlink()
+        os.link(original, checkpoint)
+        with self.assertRaises(ValueError):
+            self.load_checkpoint()
+        checkpoint.unlink()
+        os.mkfifo(checkpoint)
+        with self.assertRaises(ValueError):
+            self.load_checkpoint()
+        checkpoint.unlink()
+        checkpoint.write_text(json.dumps(self.intent))
+        directory.chmod(0o755)
+        try:
+            with self.assertRaises(ValueError):
+                self.load_checkpoint()
+        finally:
+            directory.chmod(0o700)
 
 
 if __name__ == '__main__':
