@@ -104,9 +104,12 @@ def repair_solution(name, original, destination):
         # The original verifier kills ChromeDriver before quit, leaving live
         # browser trees behind. The explicit repaired run installs the existing
         # driver-lifetime supervisor; run_task selects it only for the verifier.
+        # Also retain the legacy recipe's guest TCP connect policy so missing
+        # external resources can fail within the unchanged page-load budget.
         # Preserve the complete filter implementation and all browser options.
         new = ('install -D -m 755 /solution/guest_chromium.py '
-               + CHROMIUM_LIFECYCLE_PATH + ' || exit $?\n' + old)
+               + CHROMIUM_LIFECYCLE_PATH + ' || exit $?\n'
+               + 'python3 /solution/guest_tcp_connect.py || exit $?\n' + old)
     elif name == 'git-multibranch':
         # The original image omits tmux, but the solution's final command
         # requires it. Install the missing tool before configuring services;
@@ -282,6 +285,7 @@ if(!bpe)return 78;''')
             shutil.copyfile(Path(__file__).with_name(filename), destination / filename)
     if name == 'filter-js-from-html':
         shutil.copyfile(Path(__file__).with_name('guest_chromium.py'), destination / 'guest_chromium.py')
+        shutil.copyfile(Path(__file__).with_name('guest_tcp_connect.py'), destination / 'guest_tcp_connect.py')
     def digest(path):
         return hashlib.sha256(path.read_bytes()).hexdigest()
     evidence = {
