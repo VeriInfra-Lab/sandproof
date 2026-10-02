@@ -4,6 +4,14 @@ Root-only disposable deployment, two disjoint pools. No E2B cloud/paid model.
 --temporarily-forward enables IPv4 forwarding for the approved public probe
 and restores its original value on exit. Failure retains exact evidence.
 """
+
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
 
 import argparse

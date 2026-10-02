@@ -9,6 +9,14 @@ The server must include debug fault-injection hooks. For a CPU-limited service,
 use an optimized build with CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import gzip
 import importlib.metadata
@@ -289,7 +297,8 @@ def exercise(args):
                         for block in builder.files.read("/output/oci.tar.gz", format="stream", user="root"):
                             output.write(block)
                 evidence.append({"kind": kind, "status": status, "snapshotter": snapshotter})
-            assert Sandbox.kill(builder.sandbox_id, **owner)
+            _kill_confirmed = (Sandbox.kill(builder.sandbox_id, **owner))
+            assert _kill_confirmed
             active.remove(builder.sandbox_id)
             no_resources()
             if kind in ("dockerfile", "oci"):
@@ -360,7 +369,8 @@ def exercise(args):
                     code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-" + kind,key,
                                     {"templateID": published[kind]})
                     assert code == 200
-                assert Sandbox.kill(guest.sandbox_id, **owner)
+                _kill_confirmed = (Sandbox.kill(guest.sandbox_id, **owner))
+                assert _kill_confirmed
                 active.remove(guest.sandbox_id)
                 no_resources()
                 assert sha256_file(disk) == status["rootfs_sha256"]
@@ -487,7 +497,8 @@ def exercise(args):
             if window == "confirmed":
                 guest = Sandbox.connect(sandbox_id, **owner)
                 assert guest.files.read("/workspace/start-count") == "started\n"
-                assert Sandbox.kill(sandbox_id, **owner)
+                _kill_confirmed = (Sandbox.kill(sandbox_id, **owner))
+                assert _kill_confirmed
             else:
                 code, body = fetch(opener, url, "GET", "/sandboxes/" + sandbox_id, key)
                 # Existing detail contract exposes only live Running instances,

@@ -3,6 +3,14 @@
 Uses two independent controller pools and an exclusive namespace/UID range.
 Retains original failures and audit evidence. No manual task recipes/models.
 """
+
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
 
 import argparse

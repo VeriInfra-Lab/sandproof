@@ -4,6 +4,14 @@ Use an isolated host, two approved prebuilt images, an empty delegated cgroup
 parent and an exclusive UID range. Failure retains exact private artifacts.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import importlib.metadata
 import json
@@ -172,7 +180,8 @@ def exercise(args):
         before = durable_snapshot(database)
         assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "small-r1", "allow_internet_access": False})[0] == 429
         assert durable_snapshot(database) == before
-        assert Sandbox.kill(large.sandbox_id, **owner)
+        _kill_confirmed = (Sandbox.kill(large.sandbox_id, **owner))
+        assert _kill_confirmed
         # Changing an artifact after its first cached validation must invalidate
         # that cache and fail before admission, without affecting the live VM.
         with first_image.open("r+b") as image:
@@ -195,7 +204,8 @@ def exercise(args):
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         assert small.commands.run("printf old-binding-ok").stdout == "old-binding-ok"
-        assert Sandbox.kill(small.sandbox_id, **owner)
+        _kill_confirmed = (Sandbox.kill(small.sandbox_id, **owner))
+        assert _kill_confirmed
         # Same immutable ID with a different shape must fail without admitting
         # a third VM. Alias retargeting to a new ID is allowed.
         stop_server(process)
@@ -214,7 +224,8 @@ def exercise(args):
         replacement = Sandbox.create(template="chosen", timeout=300, allow_internet_access=False, **owner)
         assert_shape(root, firecracker, args.cgroup_parent, replacement, templates[1], opener, url, key)
         assert not replacement.files.exists("/tmp/template-marker")
-        assert Sandbox.kill(replacement.sandbox_id, **owner)
+        _kill_confirmed = (Sandbox.kill(replacement.sandbox_id, **owner))
+        assert _kill_confirmed
         check_no_resources(root, namespace, firecracker, args.uid_base)
         with sqlite3.connect(database) as connection:
             assert connection.execute("SELECT version FROM controller_meta").fetchone()[0] == 8

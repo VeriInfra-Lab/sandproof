@@ -5,6 +5,14 @@ public IPv4 forwarding already enabled for the entire run, and the locked
 Harbor/E2B Python environment. No cloud API key or paid model is used.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import hashlib
 import json
@@ -178,7 +186,8 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
                 "original_verifier_sha256": next(item["sha256"] for item in entry["files"] if item["path"] == "tests/test.sh")}
     finally:
         if sandbox is not None:
-            assert Sandbox.kill(sandbox.sandbox_id, **sdk_options), f"{name}: kill failed"
+            _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk_options))
+            assert _kill_confirmed, f"{name}: kill failed"
 
 
 def exercise(args: argparse.Namespace) -> None:

@@ -4,6 +4,14 @@ Run only as root on an isolated Linux/KVM host with the approved debug server.
 The outside destination is a test-only namespace, never the public Internet.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import hashlib
 import importlib.metadata

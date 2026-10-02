@@ -4,6 +4,14 @@ Requires the pinned SDK, envd supporting CloseStdin, root and ubuntu users.
 Only creates and destroys its own instances; no cloud calls or host writes.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import hashlib
@@ -90,7 +98,8 @@ async def exercise(args):
                 results.extend(cases)
             assert (await call(sandbox.commands.run, 'printf stdin-healthy')).stdout == 'stdin-healthy'
         finally:
-            assert await call(sandbox.kill)
+            _kill_confirmed = (await call(sandbox.kill))
+            assert _kill_confirmed
     print(json.dumps({'sdk_version': '2.51.0', 'cases': results,
                       'scope': 'real stdin defaults, empty EOF, text/binary content and known-PID reconnect; input budget and timeout matrices are separate'}, indent=2))
 

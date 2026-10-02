@@ -6,6 +6,12 @@ Every run retains a private directory; --export-run reads a safe summary only
 and never replays an interrupted profile or attempts host-direct cleanup.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+
 import argparse
 from contextlib import ExitStack
 import fcntl
@@ -33,9 +39,12 @@ from tools.system_acceptance import (
     Failure, PHASES, PROBES, digest, json_file, new_report, read_report,
     record_failure, require, safe_export, valid_sandbox_id, validate_probe, write_once,
 )
-from server_process_crash import (
-    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
-)
+# Read-only --export-run remains safe under -O. Execution helpers must not
+# import guarded resource modules until assertions are known to be enabled.
+if not sys.flags.optimize:
+    from server_process_crash import (
+        free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    )
 
 # Existing system supervisors import this public helper.
 sha256_file = digest
@@ -45,6 +54,7 @@ EXPECTED_SANDBOXES = 4
 CHECKOUT = Path(__file__).resolve().parents[2]
 SOURCE_FILES = {
     "runner": "tests/system/sdk_c02_acceptance.py",
+    "assertions_guard": "tests/system/_assertions_required.py",
     "report_helper": "tools/system_acceptance.py",
     "preflight_helper": "tools/check_kvm_host.py",
     "server_helper": "tests/system/server_process_crash.py",
@@ -55,6 +65,7 @@ SOURCE_FILES = {
 
 
 def processes_in_uid_range(first, last):
+    _require_assertions(Failure)
     found = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdecimal():
@@ -75,6 +86,7 @@ def processes_in_uid_range(first, last):
 
 def durable_rows(database, namespace):
     """Only the private persistent DB supplies sandbox IDs, never logs or VM IDs."""
+    _require_assertions(Failure)
     require(database.is_file() and not database.is_symlink(), "database_unknown")
     try:
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2) as connection:
@@ -106,6 +118,7 @@ def destroyed(rows):
 
 
 def wait_for_destroyed(database, namespace, identities, *, timeout=30):
+    _require_assertions(Failure)
     deadline = time.monotonic() + timeout
     while True:
         rows = durable_rows(database, namespace)
@@ -126,6 +139,7 @@ def entries(path):
 
 def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, expected=None):
     """Observe only; never stop a host PID or delete a claim/resource directly."""
+    _require_assertions(Failure)
     require(re.fullmatch(r"[0-9a-f]{16}", namespace) is not None, "identity_unknown")
     prefix = f"vm-{namespace}-"
     claims = entries(root / "jails/.claims")
@@ -178,6 +192,7 @@ def probe_environment(owner_key, foreign_key):
 
 
 def run_probe(root, name, base_url, environment, namespace, *, timeout=240):
+    _require_assertions(Failure)
     require(name in PROBES, "invalid_configuration")
     process = None
     primary = None
@@ -222,7 +237,7 @@ def run_probe(root, name, base_url, environment, namespace, *, timeout=240):
 
 
 def preflight(args, report):
-    require(__debug__, "optimized_python")
+    _require_assertions(Failure)
     require(re.fullmatch(r"[0-9a-f]{40}", args.expected_commit or "") is not None
             and re.fullmatch(r"[0-9a-f]{64}", args.server_sha256 or "") is not None,
             "invalid_configuration")
@@ -267,6 +282,7 @@ def preflight(args, report):
 
 
 def prepare(args, root, namespace, owner_key, foreign_key, port, report):
+    _require_assertions(Failure)
     firecracker = args.firecracker.name
     longest_socket = root / "jails" / firecracker / f"vm-{namespace}-{MAX_VM_ID}" / "root/api.socket"
     require(len(os.fsencode(longest_socket)) < 108, "invalid_configuration")
@@ -306,6 +322,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
 
 
 def kill_one(opener, base_url, owner_key, ident):
+    _require_assertions(Failure)
     request = urllib.request.Request(base_url + "/sandboxes/" + ident,
                                      headers={"X-API-Key": owner_key}, method="DELETE")
     try:
@@ -318,6 +335,7 @@ def kill_one(opener, base_url, owner_key, ident):
 
 
 def cleanup(root, namespace, args, opener, base_url, owner_key, process, report):
+    _require_assertions(Failure)
     """Attempt every observed exact persistent identity even after another fails."""
     report["cleanup"] = "unknown"
     require(report.get("probe_reaped", True), "identity_unknown")
@@ -361,6 +379,7 @@ def cleanup(root, namespace, args, opener, base_url, owner_key, process, report)
 
 
 def unchanged(args, root, report):
+    _require_assertions(Failure)
     for name in ("server", "kernel", "rootfs", "jailer", "firecracker"):
         require(digest(getattr(args, name)) == report["hashes"][name], "hash_mismatch")
     require(digest(root / "rootfs.ext4") == report["hashes"]["rootfs"], "hash_mismatch")
@@ -370,6 +389,7 @@ def unchanged(args, root, report):
 
 
 def remove_staged_copies(root, report):
+    _require_assertions(Failure)
     """After successful shutdown/audit, unlink only the three exact staged copies."""
     report["staged_copies"] = "unknown"
     directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -409,6 +429,7 @@ def remove_staged_copies(root, report):
 
 
 def run_profile(args, root, report):
+    _require_assertions(Failure)
     process = None
     started = False
     identities = None
@@ -502,6 +523,7 @@ def run_profile(args, root, report):
 
 
 def exercise(args):
+    _require_assertions(Failure)
     root = None
     lock = None
     report = new_report("unknown")

@@ -120,7 +120,9 @@ class EnvironmentRepairTests(unittest.TestCase):
                     self.assertEqual(hashlib.sha256(uploaded).hexdigest(), intent['context_sha256'])
                     return {'buildID': 'b' * 32, 'state': 'Building'}
                 return {'buildID': 'b' * 32, 'state': 'Ready', 'template': template}
-            env.client = SimpleNamespace(request=Mock(side_effect=request))
+            from tools.template_build_client import BuildClient
+            env.client = BuildClient('http://127.0.0.1:1', 'synthetic')
+            env.client.request = Mock(side_effect=request)
             asyncio.run(env.prepare_template())
             self.assertEqual([call.args[0] for call in env.client.request.call_args_list], ['POST', 'POST', 'PUT', 'GET'])
             self.assertEqual(env.template, template)

@@ -51,14 +51,48 @@ def identity(value):
     return value
 
 
-def durable_write(path, blocks, limit, *, exact=None, sparse=False):
+def owned_input(path, identity):
+    """Bind an upload path to its private single-link inode."""
+    try:
+        meta = path.lstat()
+    except FileNotFoundError:
+        return False
+    if (not stat.S_ISREG(meta.st_mode) or (meta.st_dev, meta.st_ino) != identity
+            or meta.st_nlink != 1 or meta.st_uid != os.geteuid()):
+        raise BuildError(503, "InputCleanupIdentityUnknown")
+    return True
+
+
+def remove_owned_input(path, identity):
+    """Never let upload cancellation adopt a replacement directory entry."""
+    if not owned_input(path, identity):
+        return
+    try:
+        path.unlink()
+        fsync_directory(path.parent)
+    except OSError:
+        raise BuildError(503, "InputCleanupUnknown") from None
+
+
+def durable_write(path, blocks, limit, *, exact=None, sparse=False, check_deadline=None, on_publish=None):
     """Private supervisor-owned destination. fsync before journal checkpoint."""
     temporary = path.with_suffix(".partial")
     count, digest = 0, hashlib.sha256()
+    owned, published = None, False
+    def check():
+        if check_deadline is not None:
+            check_deadline()
     try:
-        with temporary.open("wb") as output:
-            os.chmod(temporary, 0o600)
+        check()
+        if check_deadline is not None and (path.exists() or path.is_symlink()):
+            raise BuildError(503, "InputCleanupIdentityUnknown")
+        # Deadline-bound uploads never adopt another invocation's partial.
+        with temporary.open("xb" if check_deadline is not None else "wb") as output:
+            meta = os.fstat(output.fileno())
+            owned = meta.st_dev, meta.st_ino
+            os.fchmod(output.fileno(), 0o600)
             for block in blocks:
+                check()
                 count += len(block)
                 if count > limit:
                     raise BuildError(413, "InputOrArtifactTooLarge")
@@ -67,21 +101,41 @@ def durable_write(path, blocks, limit, *, exact=None, sparse=False):
                     write_sparse(output, block)
                 else:
                     output.write(block)
+            check()  # The last block or EOF may have arrived after expiry.
             if exact is not None and count != exact:
                 raise BuildError(400, "IncompleteInputOrArtifact")
             if sparse:
                 output.truncate(count)
             output.flush()
             os.fsync(output.fileno())
+            check()
+        if check_deadline is not None:
+            if not owned_input(temporary, owned) or path.exists() or path.is_symlink():
+                raise BuildError(503, "InputCleanupIdentityUnknown")
         os.replace(temporary, path)
+        published = True
+        if on_publish is not None:
+            on_publish(owned)
         descriptor = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+        check()
         return count, digest.hexdigest()
+    except FileExistsError:
+        if check_deadline is not None:
+            raise BuildError(503, "InputCleanupIdentityUnknown") from None
+        raise
+    except BaseException:
+        if check_deadline is not None and published:
+            remove_owned_input(path, owned)
+        raise
     finally:
-        temporary.unlink(missing_ok=True)
+        if check_deadline is None:
+            temporary.unlink(missing_ok=True)
+        elif owned is not None and not published:
+            remove_owned_input(temporary, owned)
 
 
 def fsync_directory(path):
@@ -321,7 +375,7 @@ class BuildStore:
         return self.root / identity(job)
 
     @contextlib.contextmanager
-    def transaction(self):
+    def transaction(self, *, check_before_commit=None):
         # No streaming readers on our sole connection. A foreign held reader
         # may prevent checkpointing; stop writes rather than growing its WAL.
         with self.lock:
@@ -335,6 +389,8 @@ class BuildStore:
             try:
                 yield
                 self.fault("before_commit")
+                if check_before_commit is not None:
+                    check_before_commit()
                 self.db.commit()
                 self.fault("after_commit")
             except BaseException:
@@ -785,12 +841,35 @@ class BuildStore:
                 raise BuildError(409, "BuildDeadlineExceeded")
             self.uploads.add(job)
         try:
-            _, digest = durable_write(self.directory(job) / "source.tar", blocks, size, exact=size)
-            with self.transaction():
-                self.db.execute("UPDATE jobs SET state='Queued',input_hash=? WHERE id=? AND state='AwaitingInput'", (digest, job))
+            check = lambda: self.remaining_deadline(row["deadline"])
+            path, published = self.directory(job) / "source.tar", []
+            try:
+                _, digest = durable_write(path, blocks, size, exact=size,
+                                          check_deadline=check, on_publish=published.append)
+                with self.transaction(check_before_commit=check):
+                    check()
+                    self.db.execute("UPDATE jobs SET state='Queued',input_hash=? WHERE id=? AND state='AwaitingInput'", (digest, job))
+            except BaseException:
+                # A lost COMMIT response may already have queued the original
+                # input. Observe that row before removing an uncommitted file.
+                with self.lock:
+                    if published and self._row(job)["state"] == "AwaitingInput":
+                        remove_owned_input(path, published[0])
+                raise
+        except BuildError as error:
+            if error.reason in ("InputCleanupIdentityUnknown", "InputCleanupUnknown"):
+                self.change(job, "CleanupUnknown", failure=error.reason)
+            raise
         finally:
             with self.lock:
                 self.uploads.discard(job)
+
+    def remaining_deadline(self, deadline):
+        """Keep the original job deadline across reads, durable I/O and admission."""
+        remaining = deadline - self.clock()
+        if remaining <= 0:
+            raise BuildError(408, "BuildDeadlineExceeded")
+        return remaining
 
     def rows(self):
         with self.lock:

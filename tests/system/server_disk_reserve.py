@@ -7,6 +7,14 @@ keeps the mount namespace alive for exact recovery; do not kill its supervisor
 until the reported resources have been inspected and reclaimed.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 from contextlib import closing
 import http.client
@@ -184,7 +192,8 @@ def exercise(args, mounted, template):
             healthy(sandbox, marker, payload)
         # Keep the filler in place through physical destruction.
         assert filler.stat().st_size == allocated
-        assert Sandbox.kill(victim.sandbox_id, **sdk)
+        _kill_confirmed = (Sandbox.kill(victim.sandbox_id, **sdk))
+        assert _kill_confirmed
         live.remove(victim)
         resources.sample()
         stopped = [name for name, sample in resources.samples.items()
@@ -202,7 +211,8 @@ def exercise(args, mounted, template):
         assert not fresh.files.exists(marker), "fresh VM inherited an earlier private disk"
         healthy(fresh, marker, payload)
         for sandbox in list(live):
-            assert Sandbox.kill(sandbox.sandbox_id, **sdk)
+            _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk))
+            assert _kill_confirmed
             live.remove(sandbox)
         assert Sandbox.list(**sdk).next_items() == []
         resources.audit()

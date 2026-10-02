@@ -5,6 +5,14 @@ The failure hook refuses one sandbox's compensating observation before host
 I/O. It neither fabricates a receipt nor relaunches the already started VM.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import json
 import os
