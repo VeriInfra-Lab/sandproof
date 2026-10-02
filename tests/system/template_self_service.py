@@ -149,7 +149,8 @@ def exercise(args):
             from tools.template_build_client import BuildClient, saved_intent
             client = BuildClient(urls[2], keys[0])
             intent_path = root / ("build-intent-" + secrets.token_hex(16) + ".json")
-            intent = saved_intent(intent_path, client, body | {"timeoutSeconds": body.get("timeoutSeconds", build["limits"]["timeout_seconds"])}, context=source)
+            intent = saved_intent(intent_path, client, body | {"timeoutSeconds": body.get("timeoutSeconds", build["limits"]["timeout_seconds"])},
+                                  build_mode=build_mode, context=source)
             result = client.request("POST", "/sandproof/template-builds", body | {"requestWindow": intent["requestWindow"]}, token=intent["idempotency_key"])
             code = 202
         else:

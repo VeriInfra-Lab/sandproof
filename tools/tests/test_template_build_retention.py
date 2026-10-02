@@ -498,10 +498,15 @@ class RetentionTests(unittest.TestCase):
 
     def handoff_publication(self):
         job = self.submit()
-        registry = self.root / 'registry'
+        # The production workspace is exclusively the bounded job inventory;
+        # kernel/registry are independent roots, not unexplained workspace files.
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name).resolve()
+        registry = base / 'registry'
         for path in (registry, registry / 'inbox', registry / 'artifacts'):
             path.mkdir(mode=0o700)
-        kernel = self.root / 'kernel'
+        kernel = base / 'kernel'
         kernel.write_bytes(b'kernel')
         disk = self.store.directory(job) / 'candidate.ext4'
         disk.write_bytes(b'opaque disk' + bytes(65536))
