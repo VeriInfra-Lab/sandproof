@@ -42,6 +42,28 @@ from benchmarks.environment_repairs import PRUNED_SOURCE, SOURCE_KINDS, validate
 MIB = 1024**2
 
 
+def select_cohort(args, tasks):
+    """Keep execution/source validation separate from the capacity basis."""
+    selected = {t['name'] for t in tasks} if args.all else set(args.task)
+    if not selected or selected - {t['name'] for t in tasks}:
+        raise RuntimeError('unknown original task')
+    oracle_mode = validate_oracle_mode(args, selected)
+    selected_entries = [t for t in tasks if t['name'] in selected]
+    validate_source_kind(args.source_kind, selected_entries)
+    if args.capacity_scope not in ('selected', 'all'):
+        raise ValueError('unknown capacity scope')
+    capacity_entries = list(tasks if args.capacity_scope == 'all' else selected_entries)
+    if args.resource_pressure:
+        if len(selected) != 2 or args.repetitions != 1:
+            raise ValueError('resource pressure requires exactly two tasks and one repetition')
+        if args.capacity_scope == 'selected':
+            capacity_entries.extend(dict(selected_entries[0], name='pressure-reserve-' + str(i), files=[])
+                                    for i in range(2))
+        elif len(capacity_entries) < 4:
+            raise ValueError('full capacity must cover the four pressure jobs')
+    return selected, oracle_mode, selected_entries, capacity_entries
+
+
 def exercise(args):
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise RuntimeError('exclusive root Linux/KVM required')
@@ -52,17 +74,10 @@ def exercise(args):
     lock = verify(json.loads((checkout / 'benchmarks/terminal-bench-2.0.lock.json').read_text()), args.registry, args.source)
     runtimes = check_runtime()
     check_tasks(lock, args.source)
-    selected = {t['name'] for t in lock['tasks']} if args.all else set(args.task)
-    if not selected or selected - {t['name'] for t in lock['tasks']}:
-        raise RuntimeError('unknown original task')
-    oracle_mode = validate_oracle_mode(args, selected)
-    capacity_entries = [t for t in lock['tasks'] if t['name'] in selected]
-    validate_source_kind(args.source_kind, capacity_entries)
-    if args.resource_pressure:
-        if len(selected) != 2 or args.repetitions != 1:
-            raise ValueError('resource pressure requires exactly two tasks and one repetition')
-        capacity_entries.extend(dict(capacity_entries[0], name='pressure-reserve-' + str(i), files=[])
-                                for i in range(2))
+    selected, oracle_mode, selected_entries, capacity_entries = select_cohort(args, lock['tasks'])
+    capacity_basis = {'scope': args.capacity_scope, 'selected_tasks': sorted(selected),
+                      'planning_tasks': [t['name'] for t in capacity_entries],
+                      'repetitions': args.repetitions}
     capacity = plan(capacity_entries, args.repetitions,
                     args.rootfs.stat().st_size, args.kernel.stat().st_size,
                     artifact_bytes=args.artifact_limits['max_bytes'],
@@ -70,7 +85,7 @@ def exercise(args):
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size)
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
-        validate_cohort([t['requirements'] for t in capacity_entries[:2]], deployment)
+        validate_cohort([t['requirements'] for t in selected_entries], deployment)
     # Trusted operator-provided ext4 base; read metadata without mounting it.
     superblock = subprocess.check_output(['/usr/sbin/dumpe2fs', '-h', str(args.rootfs)],
                                         text=True, env={**os.environ, 'LC_ALL': 'C'}, stderr=subprocess.DEVNULL)
@@ -116,6 +131,7 @@ def exercise(args):
            for i, n in enumerate(namespaces)):
         raise RuntimeError('test path too long for Firecracker socket')
     (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
+    (root / 'capacity-basis.json').write_text(json.dumps(capacity_basis, indent=2))
     (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
     ports = [free_loopback_port() for _ in range(3)]
     urls = [f'http://127.0.0.1:{p}' for p in ports]
@@ -323,6 +339,7 @@ def exercise(args):
             output = root / f'run-{repetition}'
             output.mkdir(mode=0o700)
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
+                'capacity_basis': capacity_basis,
                 'oracle_mode': oracle_mode,
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
@@ -359,7 +376,7 @@ def exercise(args):
                 try:
                     pressure_report = asyncio.run(pressure(root=root, urls=urls, key=key, builder_key=builder_key,
                         rows=current, deployment=deployment, supervisor=supervisor, restart=restart_builds,
-                        source_entry=capacity_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
+                        source_entry=selected_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
                         service_audit=lambda count: observe_services(require_builder=False, minimum_relays=count)))
                 except Exception:
                     # Retain the separate failed probe and original task scores.
@@ -403,10 +420,12 @@ def exercise(args):
             observe_services()
             report['exact_cleanup_audit'] = ('passed' if all(r.get('exact_cleanup') == 'passed' for r in current)
                                              else 'unknown')
+            report['capacity_basis'] = capacity_basis
             (output / 'full-set.json').write_text(json.dumps(report, indent=2) + '\n')
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': build_tools,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
+                'capacity_basis': capacity_basis,
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
@@ -464,6 +483,8 @@ if __name__ == '__main__':
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--task', action='append')
     selection.add_argument('--all', action='store_true')
+    parser.add_argument('--capacity-scope', choices=('selected', 'all'), default='selected',
+                        help='plan quotas for selected tasks or the full locked set, without changing execution selection')
     parser.add_argument('--namespace')
     parser.add_argument('--build-namespace')
     parser.add_argument('--source-kind', choices=SOURCE_KINDS, default='oci')

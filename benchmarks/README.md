@@ -105,6 +105,8 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 通用 KVM 监督入口使用[统一验收配置](template-service-budgets.json)及[配置生成/预检](../tools/template_acceptance.py)，运行池传输和寿命字段直接复用[已有任务配置](local-service-budgets.json)。同时计入构建池和运行池的完整 CPU/VMM 内存额度、额外存活私有盘、发布产物、构建工作区、证据和清理余量；预检使用当前 CPU affinity、可用内存和剩余磁盘。服务/relay 的份额由[显式服务 cgroup 入口](../tools/service_cgroup.py)落实；控制服务与构建监督服务及其子进程共用限额，VM 使用各自独立分组。仅生成配置仍标记为未观察到执行，监督入口在核对实际服务 PID 归属后才记录已施加上限；当前数值仍不是已实测的生产总预算。报告保存实际生成配置及来源摘要，旧提交的实跑仍只绑定旧配置。
 
+分批复跑可在实机监督入口显式加 `--capacity-scope all`：构建、模板、工作区、证据和 VM 编号配额统一按锁定的完整 89 题及重复次数计算，`--task` 仍只选择实际执行的题目。默认 `selected` 保持按选题派生容量。模式与环境来源先对实际选题校验，规划范围不会允许未登记的修复或混合环境变体；原题资源和阶段时限不变。`capacity-basis.json`、逐轮输入及报告记录选题和规划题集，可与 `capacity.json`、`acceptance-budgets.json` 一起逐批比较。完整容量模式下两题压力探针复用该容量，仍核对实际选中的两题资源；容量必须覆盖其四个构建名额。规划 89 题不会把未执行的题计为通过。
+
 在两个原题均通过后，可在同一监督命令加 `--resource-pressure`（必须恰好两个 `--task`、单轮，且两模板各两个实例能同时准入）。[组合探针](../tests/system/template_resource_pressure.py)用正式发布的模板另开四个实例，验证包数据库/系统文件隔离、运行与构建拒绝、占满数据通道时的控制调用与销毁、构建服务 SIGKILL 后原编号回收及替换实例干净。它使用来宾内的 Debian 包工具和 POSIX shell，不预装原题评分依赖；压力结果另存 `resource-pressure.json`，不改原题成绩。创建与构建意图先留存，清理失败不跳过其余实例，未知资源保留现场。当前只有配置/HTTP/SQLite/取消回归通过；新增组合 KVM 场景待独立运行，不能沿用两题旧实测作为通过证据。
 
 原题运行器与固定 base 诊断入口共用逐试验产物预算。可显式传 `--artifact-max-bytes`（默认 134217728，即 128 MiB）、`--artifact-max-file-bytes`（默认 100663296，即 96 MiB）、`--artifact-max-entries`（4096）和 `--artifact-max-depth`（16，最多 64）；数值须为正整数，单文件可调低但不得超过既有 96 MiB 硬上限或总字节。它们是可配置验收默认值，不是已实测的生产容量。命令事件、来宾下载与另存诊断共同计费，重复/失败不退额；原奖励与阶段单独保留，缺证据不能报告完整通过。边界和排除项见[模块合同](../docs/module-contracts.md)，用例见[验收清单](../docs/testing-plan.md)。监督入口按每试验字节上限 × 题数 × 次数计入磁盘预检（默认 89 题两轮仅此项为 22.25 GiB），另计锁定的原环境上下文、构建日志、报告副本、数据库及收尾余量；来宾实际可用块和运行时配额仍须独立检查。
