@@ -493,6 +493,10 @@ def populate_ext4(commands, root, disk):
         commands.run(["/usr/bin/cp", "--recursive", "--no-dereference",
                       "--preserve=mode,ownership,timestamps,links,xattr",
                       "--sparse=always", "--reflink=never", "--", str(root) + "/.", str(mount)])
+        # A successful copy can leave dirty filesystem data. Completing its
+        # unmount is build work and retains the original remaining deadline.
+        # The short grace below is only for reclamation after failure.
+        unmount_ext4(commands, mount)
     finally:
         failure = sys.exception()
         try:
