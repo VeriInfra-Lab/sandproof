@@ -1,6 +1,6 @@
 use super::*;
 use sandproof_controller_service::template_registry::{
-    CandidateManifest, CandidateStore, PublicationState, RegistryConfig,
+    CandidateManifest, CandidateStore, PublicationFailure, PublicationState, RegistryConfig,
 };
 use sandproof_controller_service::{CrashInjector, CrashPoint, CreateOptions, JournalError};
 use sha2::{Digest, Sha256};
@@ -403,6 +403,42 @@ fn publication_owned_alias_cas_pagination_restart_and_admitted_binding() {
             .unwrap()
             .template_id,
         second.template_id
+    );
+}
+
+#[test]
+fn candidate_hint_does_not_bypass_host_validation_or_retry_failed_publication() {
+    let directory = TempDir::new().unwrap();
+    let store = store(&directory);
+    stage(&store, ONE, 1);
+    let candidate_checks = Arc::new(AtomicUsize::new(0));
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let port = make_port(
+        &directory,
+        FakeHost {
+            candidate_checks: Some(Arc::clone(&candidate_checks)),
+            template_validation_error: Some(PortError::Invalid),
+            free_bytes: 1_000_000,
+            prepare_calls: Some(Arc::clone(&prepare_calls)),
+            ..FakeHost::default()
+        },
+        store,
+    );
+
+    let first = port.publish_template("1", ONE).unwrap();
+    assert_eq!(first.state, PublicationState::Failed);
+    assert_eq!(first.failure, Some(PublicationFailure::ValidationRejected));
+    assert!(first.template.is_none());
+    assert_eq!(candidate_checks.load(Ordering::SeqCst), 1);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 0);
+
+    assert_eq!(port.publish_template("1", ONE).unwrap(), first);
+    assert_eq!(port.publication("1", ONE).unwrap(), first);
+    assert_eq!(candidate_checks.load(Ordering::SeqCst), 1);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        port.template("1", &format!("tpl-{ONE}")),
+        Err(PortError::NotFound)
     );
 }
 

@@ -127,6 +127,7 @@ impl ActionGate {
 
 struct FakeHost {
     candidate_checks: Option<Arc<AtomicUsize>>,
+    template_validation_error: Option<PortError>,
     secrets: BTreeMap<u64, (String, BTreeMap<String, String>)>,
     templates: BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>,
     launch_error_once: Option<PortError>,
@@ -160,6 +161,7 @@ impl Default for FakeHost {
     fn default() -> Self {
         Self {
             candidate_checks: None,
+            template_validation_error: None,
             secrets: BTreeMap::new(),
             templates: BTreeMap::new(),
             launch_error_once: None,
@@ -240,6 +242,9 @@ impl HostAdapter for FakeHost {
         &self,
         template: &sandproof_controller_service::templates::TemplateBinding,
     ) -> Result<(), PortError> {
+        if let Some(error) = &self.template_validation_error {
+            return Err(error.clone());
+        }
         if template.is_valid() {
             Ok(())
         } else {

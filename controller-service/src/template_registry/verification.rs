@@ -7,6 +7,9 @@ use std::{fs, io::Read};
 
 /// A completed registry hash check. Private fields and no deserializer prevent
 /// manifests or persisted publication state from supplying this evidence.
+/// All writable handles must be closed before candidate handoff; the trusted
+/// operator must keep staged and sealed artifacts immutable thereafter. The
+/// observed file identity, including ctime, is not proof of immutability.
 pub struct CandidateVerification {
     artifacts: [VerifiedArtifact; 2],
 }
@@ -61,8 +64,9 @@ impl VerifiedArtifact {
         if before.size != artifact.size_bytes {
             return Err(JournalError::Conflict);
         }
-        // Check both the open file and the path again: replacement, in-place
-        // mutation, permission changes and additional hard links invalidate it.
+        // Check both the open file and the path again. Observable identity
+        // changes invalidate this check; metadata cannot detect every write or
+        // replace the trusted immutable-artifact deployment precondition.
         if hash(&mut file)? != artifact.sha256
             || ArtifactIdentity::read(&file.metadata()?) != before
             || ArtifactIdentity::read(
@@ -145,7 +149,7 @@ mod tests {
     };
 
     #[test]
-    fn mutation_or_replacement_after_hash_cannot_issue_verification() {
+    fn observable_identity_change_after_hash_cannot_issue_verification() {
         for replace in [false, true] {
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("artifact");

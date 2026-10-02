@@ -283,8 +283,10 @@ impl CandidateStore {
 
     /// Fully check a candidate and retain ephemeral evidence for its sealed paths.
     /// # Errors
-    /// Rejects the same invalid candidates as `candidate`, including files that
-    /// change during the digest check. Evidence cannot survive a service restart.
+    /// Rejects the same invalid candidates as `candidate`, including observable
+    /// file identity changes during the digest check. The operator must close
+    /// all writers before handoff and keep the artifacts immutable; file
+    /// identity is not proof of that precondition. Evidence is not persisted.
     pub fn verified_candidate(
         &self,
         owner: u64,
