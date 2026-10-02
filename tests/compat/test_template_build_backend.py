@@ -12,7 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.template_build_service import Backend
 from tools.template_build_store import BuildError
-from e2b import CommandExitException, FileNotFoundException
+from e2b import CommandExitException, FileNotFoundException, TimeoutException
 
 
 class BuildSdkSession(unittest.TestCase):
@@ -59,7 +59,83 @@ class BuildSdkSession(unittest.TestCase):
     def test_nonzero_worker_cannot_publish_even_if_it_wrote_candidate_status(self):
         self.exercise('oci', failure={'state': 'candidate', 'reason': 'WorkerFailed:CommandExit'})
 
-    def exercise(self, kind, early_failure=False, failure=None, bad_digest=False):
+    def test_command_timeout_retains_tool_logs_without_reading_candidate_or_status(self):
+        for kind in ('oci', 'dockerfile'):
+            with self.subTest(kind=kind):
+                output = self.exercise(kind, command_timeout={})
+                self.assertIn(b'[worker command wait timed out; partial logs]', output)
+                self.assertIn(b'[build.log]\nbounded log\n', output)
+                self.assertIn(b'[daemon.log]\nbounded log\n', output)
+
+    def test_timeout_log_cap_stops_reading_and_closes_the_stream(self):
+        closed = []
+        extra_reads = []
+        @contextlib.contextmanager
+        def read(_path, **_opts):
+            def blocks():
+                yield b'x' * 100000
+                extra_reads.append(True)
+                yield b'unexpected extra bytes'
+            try:
+                yield blocks()
+            finally:
+                closed.append(True)
+        output = self.exercise('oci', command_timeout={'read': read})
+        self.assertEqual(len(output), 65536)
+        self.assertEqual(closed, [True])
+        self.assertEqual(extra_reads, [])
+
+    def test_timeout_keeps_partial_logs_when_transport_fails_without_leaking_exception(self):
+        def read(path, **_opts):
+            if path.endswith('daemon.log'):
+                raise FileNotFoundException('builder-key:private-token')
+            def blocks():
+                yield b'last completed build step\n'
+                raise TimeoutException('builder-key:private-token')
+            return contextlib.nullcontext(blocks())
+        output = self.exercise('dockerfile', command_timeout={'read': read})
+        self.assertIn(b'last completed build step\n', output)
+        self.assertEqual(output.count(b'[log unavailable]'), 2)
+
+    def test_timeout_log_window_is_shared_and_never_starts_another_read_after_expiry(self):
+        now = [10.0]
+        reads = []
+        closed = []
+        late_reads = []
+        @contextlib.contextmanager
+        def read(path, **opts):
+            reads.append(path)
+            self.assertEqual(opts['request_timeout'], 1)
+            def blocks():
+                now[0] += 6
+                yield b'last bytes from in-flight read\n'
+                late_reads.append(True)
+                yield b'unexpected late bytes'
+            try:
+                yield blocks()
+            finally:
+                closed.append(True)
+        with patch('tools.template_build_service.time.monotonic', side_effect=lambda: now[0]):
+            output = self.exercise('oci', command_timeout={'read': read})
+        self.assertEqual(reads, ['/output/job/build.log'])
+        self.assertEqual(closed, [True])
+        self.assertEqual(late_reads, [])
+        self.assertIn(b'last bytes from in-flight read', output)
+
+    def test_tiny_timeout_log_budget_does_not_start_a_guest_read(self):
+        reads = []
+        def read(*_args, **_opts):
+            reads.append(True)
+            return contextlib.nullcontext(iter([b'unexpected bytes']))
+        output = self.exercise('oci', command_timeout={'read': read, 'limit': 1})
+        self.assertEqual(output, b'[')
+        self.assertEqual(reads, [])
+
+    def test_failed_timeout_log_write_preserves_the_original_timeout(self):
+        with patch('tools.template_build_service.durable_write', side_effect=OSError('disk full')):
+            self.exercise('oci', command_timeout={'write_failed': True})
+
+    def exercise(self, kind, early_failure=False, failure=None, bad_digest=False, command_timeout=None):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "source.tar"
@@ -81,10 +157,14 @@ class BuildSdkSession(unittest.TestCase):
                     "resources": {"diskMiB": 1, "minFreeMiB": 16}})}
             store = SimpleNamespace(directory=lambda _: directory, clock=lambda: 0,
                 limits={"max_input_bytes": 65536, "max_expanded_bytes": 65536, "max_entries": 100, "max_log_bytes": 65536})
-            if failure is not None:
-                store.limits['max_log_bytes'] = failure.get('limit', 65536)
+            if failure is not None or command_timeout is not None:
+                options = failure if failure is not None else command_timeout
+                store.limits['max_log_bytes'] = options.get('limit', 65536)
             session = {"sandboxID": "sb-test-1", "envdVersion": "0.9.0", "envdAccessToken": "private-token"}
+            timeout_error = TimeoutException('host-connection-context:private-token:builder-key')
             def stream(path, **_opts):
+                if command_timeout is not None and 'read' in command_timeout:
+                    return command_timeout['read'](path, **_opts)
                 if early_failure and path.endswith('status.json'):
                     raise FileNotFoundException('no early status')
                 if failure is not None and path.endswith('.log') and failure.get('missing_logs'):
@@ -93,6 +173,8 @@ class BuildSdkSession(unittest.TestCase):
                 data = json.dumps(status).encode() if path.endswith("status.json") else candidate if path.endswith("candidate.ext4") else log
                 return contextlib.nullcontext(iter([data]))
             def execute(command, **_opts):
+                if command_timeout is not None and command.startswith('python3 /input/template_worker.py'):
+                    raise timeout_error
                 if early_failure and command.startswith('python3 /input/template_worker.py'):
                     raise CommandExitException(stderr='x' * 100000 + '\nbuild disk budget unavailable\n',
                                                stdout='', exit_code=1, error=None)
@@ -108,6 +190,27 @@ class BuildSdkSession(unittest.TestCase):
                     patch("e2b.sandbox_sync.main.Commands") as commands:
                 files.return_value.read.side_effect = stream
                 commands.return_value.run.side_effect = execute
+                if command_timeout is not None:
+                    with self.assertRaises(TimeoutException) as caught:
+                        backend.build(store, row)
+                    self.assertIs(caught.exception, timeout_error)
+                    identity.assert_called_once_with(row, create=True)
+                    self.assertEqual(row['deadline'], 1000)
+                    self.assertFalse((directory / 'candidate.ext4').exists())
+                    self.assertFalse((directory / 'status.json').exists())
+                    self.assertEqual(sum(c.args[0].startswith('python3 /input/template_worker.py')
+                                         for c in commands.return_value.run.call_args_list), 1)
+                    self.assertTrue(all(c.args[0] in ('/output/job/build.log', '/output/job/daemon.log')
+                                        and c.kwargs['request_timeout'] == 1
+                                        for c in files.return_value.read.call_args_list))
+                    if command_timeout.get('write_failed'):
+                        self.assertFalse((directory / 'build.log').exists())
+                        return
+                    output = (directory / 'build.log').read_bytes()
+                    self.assertLessEqual(len(output), store.limits['max_log_bytes'])
+                    self.assertNotIn(b'private-token', output)
+                    self.assertNotIn(b'builder-key', output)
+                    return output
                 if failure is not None:
                     with self.assertRaises(BuildError) as caught:
                         backend.build(store, row)

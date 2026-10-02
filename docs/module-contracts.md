@@ -84,6 +84,8 @@ Ready 返回的模板形状使用 Rust `TemplateView` 的规范字段 `cpuCount`
 
 工作器非零退出时，即使已写出状态文件或工具日志为空，也保存有限的来宾命令输出，不序列化含宿主连接信息的 SDK 异常。优先保留 stderr 尾部的异常原因，其余空间保存 stdout 前缀；与工具日志合并时共用 `max_log_bytes`，必要时截去工具日志尾部。非零退出不能仅凭候选状态继续下载或发布。日志获取仍不是清理完成的证据。
 
+工作器命令等待发生 SDK 超时时，在进入原清理流程前尽力保存 `build.log` / `daemon.log` 的有限前缀，并明确标为不完整日志。两份日志共用 `max_log_bytes` 和 5 秒采集窗口，SDK 请求超时参数设为 1 秒；窗口到期不再发起下一次读取，已在途读取可能稍晚返回。此阶段只读取诊断字节，不读取候选或状态，不重启命令、不延长构建期限；日志缺失、传输失败或落盘失败均不替换原超时结果，SDK 异常文本也不写入用户日志。等待超时和保存日志均不代表来宾命令已终止，仍须独立确认原 VM 清理完成。
+
 Dockerfile 构建使用固定 BuildKit 的 `auto` snapshotter，在每项独占构建 VM 的私有工作目录中探测可用实现，避免强制复制完整父快照。固定版本的选择顺序为 OverlayFS、fuse-overlayfs、native，能力探测和回退由 [BuildKit 0.28.0](https://github.com/moby/buildkit/blob/v0.28.0/cmd/buildkitd/main_oci_worker.go#L368) 实现；实际选择保留在受限 `daemon.log`。仍保持 OCI 进程隔离、私有缓存目录与原构建资源/时限，输出照常经过 OCI 校验和独立候选盘转换。内核列出 OverlayFS 只证明驱动可用，不代表本次目录已通过探测或构建已成功。
 
 监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。私有构建 VM 的同步准备请求使用该工作剩余的原构建期限，避免固定短 RPC 等待将大盘准备提前变为未知；已过期时不发起创建，丢失响应仍只观察原编号。
