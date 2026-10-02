@@ -22,9 +22,9 @@ import threading
 import time
 
 if __package__:
-    from .template_inputs import MAX_INPUT_BYTES, InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
+    from .template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 else:
-    from template_inputs import MAX_INPUT_BYTES, InvalidTemplate, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
+    from template_inputs import MAX_INPUT_BYTES, InvalidTemplate, blob, bounded_json, extract_archive, extract_context, inspect_oci, sha256, startup_config, platform_dns_servers
 
 
 MIB = 1024 * 1024
@@ -358,6 +358,79 @@ def check_tools(profile, *, registry=False):
     return tools
 
 
+def buildkit_layout(cache, metadata, layout, *, max_bytes):
+    """Link one stopped, private BuildKit 0.28 OCI worker's image for validation.
+
+    The image exporter commits the exact manifest/config/layers to its content
+    store. Avoid copying those bytes through the OCI exporter back into the same
+    VM. This is not a validation cache: inspect_oci must still validate all blob
+    digests, diff_ids, tar members and cumulative limits before unpacking.
+    """
+    def directory(path):
+        if not stat.S_ISDIR(path.lstat().st_mode):
+            raise InvalidTemplate("BuildKit content directory must not be a link")
+    directory(cache)
+    stores = []
+    for name in ("runc-overlayfs", "runc-fuse-overlayfs", "runc-native"):
+        worker = cache / name
+        if not worker.exists() and not worker.is_symlink():
+            continue
+        path = worker
+        directory(path)
+        for component in ("content", "blobs", "sha256"):
+            path /= component
+            directory(path)
+        stores.append(path)
+    if len(stores) != 1:
+        raise InvalidTemplate("expected one private BuildKit content store")
+    exported = bounded_json(metadata)
+    if not isinstance(exported, dict):
+        raise InvalidTemplate("invalid BuildKit export metadata")
+    descriptor = exported.get("containerimage.descriptor", {})
+    media = "application/vnd.oci.image.manifest.v1+json"
+    if (not isinstance(descriptor, dict) or descriptor.get("mediaType") != media
+            or descriptor.get("digest") != exported.get("containerimage.digest")):
+        raise InvalidTemplate("expected one exported OCI manifest")
+    layout.mkdir(mode=0o700)
+    (layout / "blobs").mkdir(mode=0o700)
+    target_blobs = layout / "blobs/sha256"
+    target_blobs.mkdir(mode=0o700)
+    def link(entry):
+        if not isinstance(entry, dict):
+            raise InvalidTemplate("invalid BuildKit descriptor")
+        digest, size = entry.get("digest", ""), entry.get("size")
+        if (not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                or type(size) is not int or not 0 < size <= max_bytes or entry.get("urls")):
+            raise InvalidTemplate("invalid BuildKit descriptor")
+        source = stores[0] / digest[7:]
+        before = source.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_size != size:
+            raise InvalidTemplate("invalid BuildKit content file")
+        target = target_blobs / digest[7:]
+        if not target.exists() and not target.is_symlink():
+            os.link(source, target, follow_symlinks=False)
+        after = target.lstat()
+        if (not stat.S_ISREG(after.st_mode) or after.st_size != size
+                or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)):
+            raise InvalidTemplate("BuildKit content identity changed")
+        return target
+    link(descriptor)
+    manifest = bounded_json(blob(layout, descriptor, max_bytes))
+    if not isinstance(manifest, dict):
+        raise InvalidTemplate("invalid BuildKit image manifest")
+    config, layers = manifest.get("config", {}), manifest.get("layers", [])
+    if (manifest.get("schemaVersion") != 2 or not isinstance(config, dict)
+            or config.get("digest") != exported.get("containerimage.config.digest")
+            or config.get("mediaType") != "application/vnd.oci.image.config.v1+json"
+            or not isinstance(layers, list) or not 1 <= len(layers) <= 128):
+        raise InvalidTemplate("invalid BuildKit image manifest")
+    link(config)
+    for layer in layers:
+        link(layer)
+    (layout / "oci-layout").write_text(json.dumps({"imageLayoutVersion": "1.0.0"}))
+    (layout / "index.json").write_text(json.dumps({"schemaVersion": 2, "manifests": [descriptor]}))
+
+
 def build(work, source, request, profile, *, guest_boot_id):
     validate_request(request)
     # Accidental-host guard only, NOT remote attestation. The supervisor must
@@ -415,12 +488,15 @@ def build(work, source, request, profile, *, guest_boot_id):
                     commands.run([str(tools["buildctl"]), "--addr", address, "--wait", "build", "--progress", "plain",
                                   "--frontend", "dockerfile.v0", "--local", "context=" + str(work / "context"),
                                   "--local", "dockerfile=" + str(work / "context"), "--opt", "platform=linux/amd64",
-                                  "--output", "type=oci,tar=false,compression=gzip,dest=" + str(layout)])
+                                  "--metadata-file", str(work / "image-metadata.json"),
+                                  "--output", "type=image,oci-mediatypes=true,compression=gzip,push=false,store=false"])
                 finally:
                     terminate(daemon)
                     reader.join(timeout=4)
                 if reader.is_alive() or daemon_error:
                     raise RuntimeError("builder daemon did not finish cleanly")
+                buildkit_layout(work / "cache", work / "image-metadata.json", layout,
+                                max_bytes=request["max_expanded_bytes"])
             else:
                 extract_archive(source, layout, **limits)
             if request["kind"] != "oci-reference":
