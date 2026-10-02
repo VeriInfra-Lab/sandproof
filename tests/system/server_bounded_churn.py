@@ -8,6 +8,13 @@ Evidence remains private on both success and failure. This is a finite engineeri
 experiment, not a proof of unbounded service uptime or a two-pool build acceptance.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 import argparse
 from contextlib import closing
 import copy
@@ -407,7 +414,8 @@ def exercise(args):
                 survivor_ok(survivor, survivor_context, survivor_identity)
                 assert victim.commands.run('printf new-incarnation').stdout == 'new-incarnation'
                 sample('same-config-restart-and-late-actions')
-            assert Sandbox.kill(victim.sandbox_id, **owner)
+            victim_killed = Sandbox.kill(victim.sandbox_id, **owner)
+            assert victim_killed
             live.remove(victim)
             if index == 0:
                 extra = capture_actions(settings['database'], victim.sandbox_id)
@@ -422,7 +430,8 @@ def exercise(args):
             survivor_ok(survivor, survivor_context, survivor_identity)
         assert len(set(positions)) == 1, 'churn did not actually reuse the same physical position'
         assert context['binding']['vm'] > settings['max_vm_id'], 'permanent VM identity never crossed old host maximum'
-        assert Sandbox.kill(survivor.sandbox_id, **owner)
+        survivor_killed = Sandbox.kill(survivor.sandbox_id, **owner)
+        assert survivor_killed
         live.remove(survivor)
         wait_retired(survivor.sandbox_id)
         retired.append(survivor.sandbox_id)
