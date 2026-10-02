@@ -305,11 +305,19 @@ class Backend:
         return status
 
     def publish(self, store, row):
+        # A previous POST may have been accepted despite a lost response.
+        # A GET 404 is not an admission fence: that POST may still be queued.
+        # Reload durable intent, including after a supervisor restart.
+        row = store.get(row["id"])
         try:
             return self.request("runtime", "GET", "/sandproof/template-publications/" + row["id"], owner=row["owner"])
         except BuildError as error:
             if error.code != 404:
                 raise
+        if row["publication_attempted"]:
+            raise BuildError(503, "PublicationOutcomeUnknown")
+        if store.clock() >= row["deadline"]:
+            raise BuildError(408, "BuildDeadlineExceeded")
         config = self.config["runtime"]
         request = json.loads(row["request"])
         status = json.loads(row["candidate"])
@@ -320,11 +328,32 @@ class Backend:
                 resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + HOST_MEMORY_OVERHEAD_MIB, candidate_id=row["id"])
         except ValueError:
             raise BuildError(400, "CandidateStagingRejected") from None
-        return self.request("runtime", "POST", "/sandproof/template-publications", {"candidateID": candidate}, owner=row["owner"])
+        remaining = row["deadline"] - store.clock()
+        if remaining <= 0:
+            raise BuildError(408, "BuildDeadlineExceeded")
+        store.begin_publication(row["id"])
+        remaining = row["deadline"] - store.clock()
+        if remaining <= 0:
+            # This dispatch has not made the call; unlike a GET 404, that is
+            # conclusive evidence that no request can subsequently be admitted.
+            store.clear_publication_attempt(row["id"])
+            raise BuildError(408, "BuildDeadlineExceeded")
+        try:
+            return self.request("runtime", "POST", "/sandproof/template-publications", {"candidateID": candidate},
+                                owner=row["owner"], timeout=remaining)
+        except BuildError as error:
+            if error.code in (400, 409, 429):
+                # Only a refusal returned by this original POST, never an
+                # observation request, resolves its pre-admission uncertainty.
+                store.clear_publication_attempt(row["id"])
+            raise
 
-    def discard_unpublished(self, row):
-        # Call only after a definitive pre-admission refusal. A publication
-        # that exists belongs to the registry budget, never this cleanup.
+    def discard_unpublished(self, store, row):
+        # Reload: publish may have committed intent after tick read its row.
+        # No number of negative GETs permits deleting a pending POST's input.
+        row = store.get(row["id"])
+        if row["publication_attempted"]:
+            return False
         try:
             self.request("runtime", "GET", "/sandproof/template-publications/" + row["id"], owner=row["owner"])
             return False
@@ -362,12 +391,15 @@ class Supervisor:
         except Exception:
             self.store.change(job, "CleanupUnknown", failure=row["failure"])
             return
-        if row["candidate"] and not row["failure"]:
+        failure = row["failure"]
+        if row["candidate"] and not failure and self.store.clock() >= row["deadline"]:
+            failure = "BuildDeadlineExceeded"
+        if row["candidate"] and not failure:
             self.store.change(job, "Publishing")
         else:
             # Only exact, confirmed cleanup releases reservation and input.
             self.remove_inputs(job)
-            self.store.change(job, "Failed", failure=row["failure"] or "InterruptedBuild", release=True)
+            self.store.change(job, "Failed", failure=failure or "InterruptedBuild", release=True)
 
     def remove_inputs(self, job):
         directory = self.store.directory(job)
@@ -408,12 +440,15 @@ class Supervisor:
                 try:
                     publication = self.backend.publish(self.store, row)
                 except Exception as error:
-                    if isinstance(error, BuildError) and error.code in (400, 409, 429):
-                        # These rejections occur before admission; no running
-                        # validation VM is hidden behind a refused publication.
-                        if self.backend.discard_unpublished(row):
+                    expired = (isinstance(error, BuildError) and error.code == 408
+                               and error.reason == "BuildDeadlineExceeded")
+                    if isinstance(error, BuildError) and (error.code in (400, 409, 429) or expired):
+                        # Cleanup requires durable evidence that no original
+                        # POST is unresolved, in addition to the absence GET.
+                        if self.backend.discard_unpublished(self.store, row):
                             self.remove_inputs(job)
-                            self.store.change(job, "Failed", failure="PublicationRejected", release=True)
+                            self.store.change(job, "Failed", failure="BuildDeadlineExceeded" if expired
+                                              else "PublicationRejected", release=True)
                     # Publishing is idempotent on the immutable candidate ID.
                     # Unknown publication never rebuilds or allocates a new ID.
                     continue
