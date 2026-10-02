@@ -226,7 +226,7 @@ def record_artifact_status(environment, row):
             row['reason'] = 'artifact_evidence_incomplete'
 
 
-async def run_task(args, entry, recipe, *, environment_factory=None):
+async def run_task(args, entry, recipe, *, environment_factory=None, result_row=None):
     task = Task(args.source / entry['name'])
     paths = TrialPaths(args.output / entry['name'])
     paths.trial_dir.mkdir(mode=0o700)
@@ -244,11 +244,15 @@ async def run_task(args, entry, recipe, *, environment_factory=None):
         artifact_limits=getattr(args, 'artifact_limits', None),
     )
     oracle_mode = getattr(args, 'oracle_mode', 'original')
-    row = {'name': task.name, 'status': 'running', 'stage': 'initialization',
-           'oracle_mode': oracle_mode,
-           'environment_source_kind': getattr(environment, 'source_kind', 'fixed-base'),
-           'original_environment': getattr(environment, 'source_kind', None) in ('oci', 'dockerfile'),
-           'oracle': 'not_run', 'verifier': 'not_run'}
+    # The enclosing supervisor retains this same row even when cancellation
+    # propagates and result.json cannot be published. Disk reports are evidence,
+    # not the only channel carrying the original identity and failure to cleanup.
+    row = result_row if result_row is not None else {}
+    row.update(name=task.name, status='running', stage='initialization',
+               oracle_mode=oracle_mode,
+               environment_source_kind=getattr(environment, 'source_kind', 'fixed-base'),
+               original_environment=getattr(environment, 'source_kind', None) in ('oci', 'dockerfile'),
+               oracle='not_run', verifier='not_run')
     start = time.monotonic()
     def event(stage):
         row['stage'] = stage
