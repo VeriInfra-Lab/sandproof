@@ -110,6 +110,8 @@ Dockerfile 的固定 BuildKit 使用不推送、不登记的 image exporter，�
 
 独立 SQLite 采用进程锁与 WAL/FULL；材料/候选先同步再记录阶段。历史数量、未决数和保守工作盘预留分别限额；失败/未知清理继续占预留。构建实际 CPU/RAM/VM 私有盘上限由独立 Rust 池执行，不借用运行额度；同盘检查及预留保护运行清理余量。配置/预算指纹持久绑定，变更须显式迁移，重启不能隐式换池。总期限从提交起算，Rust 池另强制 VM 寿命，不因重启续期。
 
+上下文上传沿用提交时的原期限：每次有界 socket 读取、末块/EOF、文件与目录同步、事务提交前都重新核对，不用不断到来的小块延长期限。超时只删除本次持有的精确输入 inode；文件被替换或删除结果未知时进入 `CleanupUnknown` 并保留预留，虚拟机缺席不能授权删除陌生输入。输入已提交为 Queued 而回复丢失时保留原输入，不因 HTTP 失败撤销已接受工作。
+
 阶段为 `Preparing → AwaitingInput/Queued → Building → Cleaning → Publishing → Ready/Failed`；观察不了原 VM 时为 `CleanupUnknown`，不释放预留或再建新 VM。私有 `/sandproof/internal-build-vms/{buildID}` 在准入同一事务保存 buildID/请求，GET 能查未启动和已销毁身份；重复 POST 包括墓碑都不建替代。普通 create 拒绝 `_sandproof_` 保留 metadata。
 
 重启后的 Building 不重执行用户步骤，只观察/精确回收原 VM 并报告 InterruptedBuild；完整候选已同步的 Cleaning 可继续收尾和同编号登记；Publishing 只推进原发布，不重构建。Ready 必须通过既有发布门及临时 VM 的精确回收。只有确认构建 VM、网络槽和相关未决动作全部回收才删除本工作临时输入/候选并释放预留；Destroyed 状态或 DELETE 成功不能替代 cleanupComplete。有限日志/历史保留，正式产物由登记预算管理。窗口模式另执行下述公开结果/日志退休；正式 Ready 模板及产物仍由独立登记额度保留并可继续使用，不随公开构建结果过期删除。未增加模板产物垃圾回收、多构建节点或原 E2B 模板协议。
