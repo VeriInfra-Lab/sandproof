@@ -251,6 +251,9 @@ def exercise(args):
                 evidence.append({"kind": kind, "status": status, "snapshotter": snapshotter})
             else:
                 assert result.exit_code == 0, (result.stderr, result.stdout)
+                upload(builder, checkout / "tests/system/umoci_unpack_guest.py", "/input/unpack-check.py")
+                comparison = json.loads(checked(builder, "python3 /input/unpack-check.py", timeout=150))
+                evidence.append({"kind": kind + "-unpack-equivalence", **comparison})
                 if kind == "dockerfile":
                     assert snapshotter is not None, "retain actual automatic snapshotter selection"
                     upload(builder, checkout / "tests/system/buildkit_export_guest.py", "/input/export-check.py")
