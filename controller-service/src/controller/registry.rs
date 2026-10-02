@@ -8,7 +8,7 @@ use crate::{
 use rusqlite::{OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 
-fn decode(bytes: &[u8]) -> Result<Publication, JournalError> {
+pub(super) fn decode(bytes: &[u8]) -> Result<Publication, JournalError> {
     let value: Publication = serde_json::from_slice(bytes)?;
     if !crate::template_registry::valid_candidate_id(&value.candidate_id)
         || value.binding.template_id != format!("tpl-{}", value.candidate_id)

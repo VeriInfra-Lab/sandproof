@@ -1,6 +1,6 @@
 use super::{
     allocators::{self, SqlId},
-    identity,
+    checkpoint, identity,
     transaction::WorldTransaction,
 };
 use crate::{AcceptedWrite, JournalError, journal::write_accepted_with_ids};
@@ -10,14 +10,27 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredInput {
-    version: u16,
-    input: core::ControllerInput,
+pub(super) struct StoredInput {
+    pub(super) version: u16,
+    pub(super) input: core::ControllerInput,
 }
 
 pub(super) fn load_world(connection: &Connection) -> Result<core::World, JournalError> {
     #[cfg(test)]
     FULL_REPLAYS.with(|count| count.set(count.get() + 1));
+    if connection.is_autocommit() {
+        let tx = connection.unchecked_transaction()?;
+        let world = load_world_snapshot(&tx)?;
+        tx.commit()?;
+        return Ok(world);
+    }
+    load_world_snapshot(connection)
+}
+
+fn load_world_snapshot(connection: &Connection) -> Result<core::World, JournalError> {
+    if checkpoint::config(connection)?.is_some() {
+        return checkpoint::load_world(connection);
+    }
     let mut statement = connection
         .prepare("SELECT sequence, input_json FROM controller_inputs ORDER BY sequence")?;
     let rows = statement.query_map([], |row| {
@@ -44,6 +57,9 @@ pub(super) fn load_world(connection: &Connection) -> Result<core::World, Journal
 pub(super) fn replayed_host_contexts(
     connection: &Connection,
 ) -> Result<Vec<super::HostSlotContext>, JournalError> {
+    if checkpoint::config(connection)?.is_some() {
+        return checkpoint::replayed_contexts(connection);
+    }
     let mut statement =
         connection.prepare("SELECT input_json FROM controller_inputs ORDER BY sequence")?;
     let mut contexts = std::collections::BTreeMap::new();
@@ -77,10 +93,14 @@ pub(super) fn apply(
 ) -> Result<core::ControllerDecision, JournalError> {
     let world = transaction.world();
     let sandbox = identity::input_sandbox(&input)?;
-    let serialized = serde_json::to_vec(&StoredInput {
-        version: 1,
-        input: input.clone(),
-    })?;
+    let serialized = checkpoint::input_bytes(
+        transaction,
+        &StoredInput {
+            version: 1,
+            input: input.clone(),
+        },
+    )?;
+    checkpoint::require_input_room(transaction, serialized.len())?;
     let decision =
         core::handle_controller(&world, input).map_err(JournalError::ControllerRejected)?;
     let record = decision
@@ -147,8 +167,9 @@ pub(super) fn append_maintenance(
     let input = core::ControllerInput::Maintenance(input);
     let decision =
         core::handle_controller(world, input.clone()).map_err(JournalError::ControllerRejected)?;
+    let serialized = checkpoint::input_bytes(transaction, &StoredInput { version: 1, input })?;
+    checkpoint::require_input_room(transaction, serialized.len())?;
     let sequence = allocators::next_sql(transaction, SqlId::Input)?;
-    let serialized = serde_json::to_vec(&StoredInput { version: 1, input })?;
     transaction.execute(
         "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
         params![sequence, serialized],

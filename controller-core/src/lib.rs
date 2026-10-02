@@ -9,6 +9,7 @@
 //! `SandboxModel.State`; refinement proofs are maintained in Lean.
 
 pub mod auxiliary;
+pub mod checkpoint;
 pub mod controller;
 pub mod effect;
 pub mod ids;

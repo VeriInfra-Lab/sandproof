@@ -15,9 +15,10 @@ pub mod templates;
 mod workflow;
 
 pub use controller::{
-    AdmissionError, AdmissionLimits, BoundedHostConfig, ControllerJournal, CreateAdmission,
-    CreateNetwork, CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS,
-    DEFAULT_TIMEOUT_SECS, HostEvidence, HostSlotContext, Lifetime,
+    AdmissionError, AdmissionLimits, BoundedHostConfig, CheckpointInfo, ControllerJournal,
+    CreateAdmission, CreateNetwork, CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS,
+    DEFAULT_TIMEOUT_SECS, HostEvidence, HostReleaseWitness, HostSlotContext, Lifetime,
+    MaintenanceConfig, RetirementCandidate,
 };
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
@@ -42,6 +43,9 @@ pub enum CrashPoint {
     BeforeDispatchClaim,
     AfterDispatchClaim,
     AfterWorkerCall,
+    BeforeCheckpointDelete,
+    AfterCheckpointDelete,
+    AfterRetirementDelete,
 }
 
 /// Tests inject a process stop at a named boundary. Production uses `NeverCrash`.
@@ -68,6 +72,7 @@ pub enum JournalError {
     Contract(ContractError),
     Conflict,
     IdentifierExhausted,
+    MaintenanceCapacity,
     RevisionConflict,
     ReceiptBeforeDispatch,
     ConflictingReceipt,
@@ -107,6 +112,9 @@ impl JournalError {
 impl Display for JournalError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MaintenanceCapacity => {
+                formatter.write_str("configured maintenance capacity exhausted")
+            }
             Self::IdentifierExhausted => {
                 formatter.write_str("controller identifier space exhausted")
             }

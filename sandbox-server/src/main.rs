@@ -34,7 +34,7 @@ mod linux {
     };
     use sandproof_controller_service::{
         AdmissionLimits, BoundedHostConfig, ControllerJournal, CreateOptions, HostSlotContext,
-        WorkerTransportError,
+        MaintenanceConfig, WorkerTransportError,
         templates::{TemplateBinding, TemplateCatalog},
     };
     use sandproof_node::{HostObservation, LinuxWorker, NodeConfig, ObservedSlot};
@@ -77,6 +77,9 @@ mod linux {
         /// Explicit physical-position maintenance limits; no production defaults.
         #[serde(default)]
         bounded_host: Option<BoundedHostSettings>,
+        /// Explicit opt-in for retirement/checkpoints; no inferred limits.
+        #[serde(default)]
+        maintenance: Option<MaintenanceConfig>,
         vcpu_count: u8,
         memory_mib: u32,
         #[serde(default)]
@@ -564,6 +567,19 @@ mod linux {
         Ok(Some(bounded))
     }
 
+    fn validate_maintenance_config(
+        bounded: Option<&BoundedHostConfig>,
+        maintenance: Option<&MaintenanceConfig>,
+    ) -> Result<(), Box<dyn Error>> {
+        if let Some(maintenance) = maintenance {
+            if bounded.is_none() {
+                return Err("maintenance requires explicit bounded_host configuration".into());
+            }
+            maintenance.validate()?;
+        }
+        Ok(())
+    }
+
     fn has_current_uncertain_prepare(
         journal: &ControllerJournal,
         world: &core::World,
@@ -797,29 +813,37 @@ mod linux {
                 timer.tick().await;
                 let port = Arc::clone(&port);
                 match tokio::task::spawn_blocking(move || {
+                    // Free tail capacity before recovery/expiry append inputs.
+                    port.maintain()?;
                     let recovery = port.recover_on_startup()?;
                     let expiry = port.expire_due_report()?;
-                    Ok::<_, PortError>((recovery, expiry))
+                    let maintenance = port.maintain()?;
+                    Ok::<_, PortError>((recovery, expiry, maintenance))
                 })
                 .await
                 {
-                    Ok(Ok((recovery, expiry)))
-                        if recovery.unresolved_sandboxes > 0 || expiry.unresolved_sandboxes > 0 =>
+                    Ok(Ok((recovery, expiry, maintenance)))
+                        if recovery.unresolved_sandboxes > 0
+                            || expiry.unresolved_sandboxes > 0
+                            || maintenance.pending_sandboxes > 0 =>
                     {
                         if last_failure_log
                             .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
                         {
                             eprintln!(
-                                "reconciliation left {} sandboxes or physical-slot releases unresolved ({} after host or receipt errors); {} due expiries remain unresolved; manual inspection may be required",
+                                "reconciliation left {} sandboxes or physical-slot releases unresolved ({} after host or receipt errors); {} due expiries and {} metadata retirements remain unresolved; manual inspection may be required",
                                 recovery.unresolved_sandboxes,
                                 recovery.failed_sandboxes,
-                                expiry.unresolved_sandboxes
+                                expiry.unresolved_sandboxes,
+                                maintenance.pending_sandboxes
                             );
                             last_failure_log = Some(Instant::now());
                         }
                     }
                     Ok(Ok(_)) => last_failure_log = None,
-                    Ok(Err(_)) => eprintln!("reconciliation or expiry worker needs attention"),
+                    Ok(Err(_)) => {
+                        eprintln!("reconciliation, expiry or maintenance worker needs attention");
+                    }
                     Err(error) => eprintln!("reconciliation worker join failure: {error}"),
                 }
             }
@@ -857,6 +881,7 @@ mod linux {
         database: PathBuf,
         namespace: &str,
         bounded: Option<BoundedHostConfig>,
+        maintenance: Option<MaintenanceConfig>,
     ) -> Result<ControllerJournal, Box<dyn Error>> {
         // Node construction has already independently refused legacy metadata
         // or resources. The journal now rechecks its own empty state/config in
@@ -867,8 +892,21 @@ mod linux {
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_millis(),
             )?;
-            ControllerJournal::open_bounded(database, namespace, bounded, now_ms)?
+            if let Some(maintenance) = maintenance {
+                ControllerJournal::open_maintained(
+                    database,
+                    namespace,
+                    bounded,
+                    maintenance,
+                    now_ms,
+                )?
+            } else {
+                ControllerJournal::open_bounded(database, namespace, bounded, now_ms)?
+            }
         } else {
+            if maintenance.is_some() {
+                return Err("maintenance requires explicit bounded_host configuration".into());
+            }
             ControllerJournal::open(database, namespace)?
         })
     }
@@ -891,6 +929,22 @@ mod linux {
         Ok(serde_json::from_slice(&fs::read(path)?)?)
     }
 
+    fn recover_before_serving(port: &ManagedPort<NodeHost>) -> Result<(), Box<dyn Error>> {
+        port.maintain().map_err(|error| {
+            std::io::Error::other(format!("startup maintenance failed: {error:?}"))
+        })?;
+        let recovery = port.recover_on_startup().map_err(|error| {
+            std::io::Error::other(format!("startup recovery failed: {error:?}"))
+        })?;
+        if recovery.unresolved_sandboxes != 0 {
+            eprintln!(
+                "startup recovery left {} sandboxes unresolved ({} after host or receipt errors); no uncertain host action was repeated",
+                recovery.unresolved_sandboxes, recovery.failed_sandboxes
+            );
+        }
+        Ok(())
+    }
+
     pub async fn run() -> Result<(), Box<dyn Error>> {
         let config = read_configuration()?;
         let disk_bytes = validate_config(&config)?;
@@ -900,8 +954,18 @@ mod linux {
             config.bounded_host.as_ref(),
             config.data_transfer.as_ref(),
         )?;
+        validate_maintenance_config(bounded_host.as_ref(), config.maintenance.as_ref())?;
         if let Some(bounded) = &bounded_host {
-            ControllerJournal::preflight_bounded(&config.database, &config.namespace, bounded)?;
+            if let Some(maintenance) = &config.maintenance {
+                ControllerJournal::preflight_maintained(
+                    &config.database,
+                    &config.namespace,
+                    bounded,
+                    maintenance,
+                )?;
+            } else {
+                ControllerJournal::preflight_bounded(&config.database, &config.namespace, bounded)?;
+            }
         }
         let node = LinuxWorker::new(NodeConfig {
             namespace: config.namespace.clone(),
@@ -919,7 +983,12 @@ mod linux {
             host_resources: config.host_resources.clone(),
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
-        let journal = open_journal(config.database, &config.namespace, bounded_host)?;
+        let journal = open_journal(
+            config.database,
+            &config.namespace,
+            bounded_host,
+            config.maintenance,
+        )?;
         if journal.has_template_registry()? && config.template_registry.is_none() {
             return Err("durable template registry cannot be disabled for this journal".into());
         }
@@ -942,15 +1011,7 @@ mod linux {
         } else {
             port
         });
-        let recovery = port.recover_on_startup().map_err(|error| {
-            std::io::Error::other(format!("startup recovery failed: {error:?}"))
-        })?;
-        if recovery.unresolved_sandboxes != 0 {
-            eprintln!(
-                "startup recovery left {} sandboxes unresolved ({} after host or receipt errors); no uncertain host action was repeated",
-                recovery.unresolved_sandboxes, recovery.failed_sandboxes
-            );
-        }
+        recover_before_serving(&port)?;
         let credentials = config
             .credentials
             .into_iter()
@@ -1020,11 +1081,12 @@ mod linux {
 
         fn check(value: Value) -> Result<(), Box<dyn Error>> {
             let config: ConfigFile = serde_json::from_value(value)?;
-            resolve_bounded_host_config(
+            let bounded = resolve_bounded_host_config(
                 config.uid_base,
                 config.bounded_host.as_ref(),
                 config.data_transfer.as_ref(),
             )?;
+            validate_maintenance_config(bounded.as_ref(), config.maintenance.as_ref())?;
             Ok(())
         }
 
@@ -1037,6 +1099,144 @@ mod linux {
             )
             .unwrap()
             .unwrap()
+        }
+
+        fn maintained_settings() -> Value {
+            let mut value = settings();
+            value["maintenance"] = json!({
+                "retention_ms": 60_000, "max_checkpoint_bytes": 8_000_000,
+                "max_records": 10_000, "max_references": 100_000,
+                "max_tail_inputs": 10_000, "max_tail_bytes": 8_000_000,
+                "max_input_bytes": 128_000, "prune_batch_rows": 3
+            });
+            value
+        }
+
+        #[test]
+        fn maintenance_configuration_is_explicit_strict_and_requires_bounded_host() {
+            assert!(check(settings()).is_ok());
+            assert!(check(maintained_settings()).is_ok());
+            for field in [
+                "retention_ms",
+                "max_checkpoint_bytes",
+                "max_records",
+                "max_references",
+                "max_tail_inputs",
+                "max_tail_bytes",
+                "max_input_bytes",
+                "prune_batch_rows",
+            ] {
+                for invalid in [
+                    json!(0),
+                    json!(-1),
+                    json!(true),
+                    json!("3"),
+                    json!(1.5),
+                    Value::Null,
+                    json!(u64::MAX),
+                ] {
+                    let mut value = maintained_settings();
+                    value["maintenance"][field] = invalid;
+                    assert!(
+                        check(value).is_err(),
+                        "accepted invalid maintenance {field}"
+                    );
+                }
+                let mut value = maintained_settings();
+                value["maintenance"].as_object_mut().unwrap().remove(field);
+                assert!(
+                    check(value).is_err(),
+                    "accepted missing maintenance {field}"
+                );
+            }
+            let mut value = maintained_settings();
+            value["maintenance"]["unknown"] = json!(1);
+            assert!(check(value).is_err());
+            let mut value = maintained_settings();
+            value.as_object_mut().unwrap().remove("bounded_host");
+            assert!(check(value).is_err());
+            let mut value = maintained_settings();
+            value["maintenance"]["max_input_bytes"] = json!(8_000_001);
+            assert!(check(value).is_err());
+        }
+
+        #[test]
+        fn production_journal_wiring_rejects_policy_disable_and_change() {
+            struct Scratch(PathBuf);
+            impl Drop for Scratch {
+                fn drop(&mut self) {
+                    let _ = fs::remove_dir_all(&self.0);
+                }
+            }
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let directory = std::env::temp_dir().join(format!(
+                "sandproof-maintenance-config-{}-{nonce}",
+                std::process::id()
+            ));
+            fs::create_dir(&directory).unwrap();
+            let scratch = Scratch(directory);
+            let database = scratch.0.join("controller.db");
+            let config: ConfigFile = serde_json::from_value(maintained_settings()).unwrap();
+            let host = resolve(settings());
+            let policy = config.maintenance.unwrap();
+            drop(
+                open_journal(
+                    database.clone(),
+                    &config.namespace,
+                    Some(host.clone()),
+                    Some(policy.clone()),
+                )
+                .unwrap(),
+            );
+            assert!(
+                open_journal(
+                    database.clone(),
+                    &config.namespace,
+                    Some(host.clone()),
+                    None
+                )
+                .is_err()
+            );
+            let mut changed = policy.clone();
+            changed.retention_ms += 1;
+            assert!(
+                ControllerJournal::preflight_maintained(
+                    &database,
+                    &config.namespace,
+                    &host,
+                    &changed
+                )
+                .is_err()
+            );
+            assert!(
+                open_journal(
+                    database.clone(),
+                    &config.namespace,
+                    Some(host.clone()),
+                    Some(changed)
+                )
+                .is_err()
+            );
+            let reopened = open_journal(
+                database,
+                &config.namespace,
+                Some(host),
+                Some(policy.clone()),
+            )
+            .unwrap();
+            assert_eq!(reopened.maintenance_config().unwrap(), Some(policy.clone()));
+            assert!(
+                open_journal(
+                    scratch.0.join("invalid.db"),
+                    &config.namespace,
+                    None,
+                    Some(policy)
+                )
+                .is_err()
+            );
         }
 
         #[test]

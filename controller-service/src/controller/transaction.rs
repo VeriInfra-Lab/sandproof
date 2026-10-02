@@ -1,5 +1,5 @@
 //! Volatile replay memo under the controller's single-writer lease. Only a
-//! confirmed commit publishes a candidate; the durable log stays the oracle.
+//! confirmed commit publishes a candidate; the durable recovery image stays the oracle.
 use super::storage;
 use crate::JournalError;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
@@ -101,6 +101,7 @@ impl<'a> WorldTransaction<'a> {
     }
 
     pub(super) fn commit(self) -> Result<(), JournalError> {
+        super::checkpoint::validate_candidate(&self, &self.world())?;
         #[cfg(test)]
         if let Some(durable) = COMMIT_FAILURE.with(std::cell::Cell::take) {
             return self.commit_with(|transaction| {

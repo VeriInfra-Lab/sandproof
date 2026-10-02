@@ -12,6 +12,7 @@ const APPLICATION_ID: i64 = 0x5350_4631; // SPF1
 const FORMAT_VERSION: i64 = 1;
 pub(crate) const CONTROLLER_FORMAT_VERSION: i64 = 2;
 pub(crate) const BOUNDED_FORMAT_VERSION: i64 = 3;
+pub(crate) const MAINTAINED_FORMAT_VERSION: i64 = 4;
 type ExistingReceiptRow = (i64, String, Vec<u8>, Option<Vec<u8>>);
 
 /// Bytes are a projection supplied by the controller reducer's adapter.
@@ -233,20 +234,22 @@ impl Journal {
     /// # Errors
     /// Rejects unsupported/corrupt stores, unsuitable journal settings, and I/O errors.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
-        Self::open_inner(path, false, false)
+        Self::open_inner(path, false, false, false)
     }
 
     pub(crate) fn open_controller(
         path: impl AsRef<Path>,
         bounded: bool,
+        maintained: bool,
     ) -> Result<Self, JournalError> {
-        Self::open_inner(path, true, bounded)
+        Self::open_inner(path, true, bounded, maintained)
     }
 
     fn open_inner(
         path: impl AsRef<Path>,
         controller: bool,
         bounded: bool,
+        maintained: bool,
     ) -> Result<Self, JournalError> {
         let connection = Connection::open(path)?;
         if !controller {
@@ -308,7 +311,8 @@ impl Journal {
             || (format != FORMAT_VERSION
                 && !(controller
                     && (format == CONTROLLER_FORMAT_VERSION
-                        || (bounded && format == BOUNDED_FORMAT_VERSION))))
+                        || (bounded && format == BOUNDED_FORMAT_VERSION)
+                        || (bounded && maintained && format == MAINTAINED_FORMAT_VERSION))))
         {
             return Err(JournalError::UnsupportedStore);
         }
