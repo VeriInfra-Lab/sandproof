@@ -70,6 +70,8 @@ Docker schema2 转换使用[回归测试](../tools/tests/test_template_conversio
 
 Dockerfile 构建的自动 snapshotter 验收须保存固定 BuildKit 的实际选择；[隔离构建实机实验](../tests/system/template_build.py)在成功场景要求该记录，并继续核对多阶段 COPY、RUN、层删除、候选内容及独立实例启动。探测回退不表示 OverlayFS 已实测；基础检查和来宾内核能力列表也不能替代新提交的实机结果。性能比较保持原构建盘、CPU/内存、时限与输入，分别报告构建、导出、校验和发布阶段。
 
+工作器命令超时的[固定 SDK 后端回归](../tests/compat/test_template_build_backend.py)须覆盖两类构建的部分日志保存、总字节上限、缺失/中断日志、共用采集窗口、流关闭以及落盘失败仍抛出原超时；同时断言不读取候选/状态、不重启命令、不改原期限。该组合使用真实 SDK 构造器与合成传输，不代替 KVM 超时、实际资源回收或题目通过证据。
+
 公开 OCI 获取使用[单元测试](../tools/tests/test_template_fetch.py)检查引用语法、平台选择、摘要不符、二进制输出与日志各自超限、非零退出及输出关闭后的期限；[KVM 探针](../tests/system/server_public_oci.py)固定 Debian 13 单架构摘要和 Ubuntu 24.04 多架构索引摘要，以四个全新构建 VM 验证两次成功、摘要不存在和下载超限。成功候选须在构建 VM 回收后经正式发布门，再用原 SDK 创建禁网实例检查发行版、默认用户/目录、文件和命令，共八台 VM。运行前需固定 regctl v0.11.6 指纹、独占 namespace/UID/cgroup 和受限公网转发；探针在构建 VM 写入固定公共 DNS，不继承宿主解析配置；结束独立核对全部精确资源、共享网络规则恢复和基础镜像摘要。脚本存在不代表已实测；精确提交和结果记录在版本基线。该实验不经过用户构建 API，不代替私有仓库、完整恢复或 89 题验收。
 
 提交 `918aac683ead757eb89acdaf4b8fbf2e7843b358` 已通过公开 OCI 完整探针：Debian 13 直接摘要、Ubuntu 24.04 索引选择、正式发布和原 SDK 命令/文件，以及摘要不存在、下载超限拒绝；八台 VM 均精确回收。两次测试环境配置失败及另外五台 VM 的清理也如实保留；全部临时公网规则已恢复，凭据/候选盘/独占父组已删除。来源与工具摘要、332.18 秒实跑、范围及失败原因见[版本基线](../references/v1-baseline.json)的 `public_oci_acquisition_acceptance`；这不计作 #135 用户构建 API 全链验收。

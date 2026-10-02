@@ -45,6 +45,34 @@ def protected_json(path, maximum=65536):
     return json.loads(path.read_text())
 
 
+def retain_timeout_logs(sandbox, directory, limit):
+    """Best-effort opaque diagnostics only; never resume or accept a candidate."""
+    output = bytearray(b"[worker command wait timed out; partial logs]\n"[:limit])
+    deadline = time.monotonic() + 5
+    for name in ("build.log", "daemon.log"):
+        if len(output) >= limit or time.monotonic() >= deadline:
+            break
+        output.extend(("\n[" + name + "]\n").encode()[:limit - len(output)])
+        if len(output) >= limit:
+            break
+        try:
+            # A read already in flight may finish after the collection window.
+            # Keep each wait short and issue no further reads after expiry.
+            with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=1) as incoming:
+                iterator = iter(incoming)
+                while len(output) < limit and time.monotonic() < deadline:
+                    try:
+                        block = next(iterator)
+                    except StopIteration:
+                        break
+                    output.extend(block[:limit - len(output)])
+        except Exception:
+            # Neither SDK exception strings nor host connection details belong
+            # in user-visible logs. Keep any prefix received before the error.
+            output.extend(b"\n[log unavailable]\n"[:limit - len(output)])
+    durable_write(directory / "build.log", [output], limit)
+
+
 def configuration(path):
     config = protected_json(path)
     if set(config) != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
@@ -186,7 +214,7 @@ class Backend:
         return self.vm(row)["cleanupComplete"]
 
     def build(self, store, row):
-        from e2b import Sandbox, CommandExitException, FileNotFoundException
+        from e2b import Sandbox, CommandExitException, FileNotFoundException, TimeoutException
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
         vm = self.vm(row, create=True)
@@ -240,6 +268,12 @@ class Backend:
         worker_error_log = None
         try:
             command("python3 /input/template_worker.py --work /output/job --source /input/source --request /input/request.json --profile /input/profile.json --guest-boot-id " + boot, worker["timeout_seconds"])
+        except TimeoutException:
+            try:
+                retain_timeout_logs(sandbox, directory, store.limits["max_log_bytes"])
+            except Exception:
+                pass  # Diagnostic/storage failure must not replace the timeout.
+            raise
         except CommandExitException as error:
             # Guards and conversion checks may fail without writing tool logs,
             # even when status.json exists. Retain only bounded guest output;
