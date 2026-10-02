@@ -28,10 +28,11 @@ from server_templates import descriptor, record_for
 from server_template_isolation import audit_gone
 from server_vm_id_capacity import check_no_resources
 from template_self_service import BUILD_TOOLS
+from template_resource_pressure import ready_for_pressure
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.runtime_create_recovery import recover_runtime_create
-from tools.template_acceptance import budgets, check_headroom
+from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
@@ -39,6 +40,14 @@ from benchmarks.run_generic import run_selected, validate_oracle_mode
 from benchmarks.environment_repairs import PRUNED_SOURCE, SOURCE_KINDS, validate_source_kind
 
 MIB = 1024**2
+
+
+def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressure_report):
+    """A separate pressure pass never replaces task scores or oracle provenance."""
+    passed = (len(rows) == len(selected) and all(row['status'] == 'passed' for row in rows)
+              and (not resource_pressure or pressure_report['status'] == 'passed'))
+    return {'execution_passed': passed, 'oracle_mode': oracle_mode,
+            'original_verifier': True, 'original_oracle_verifier': oracle_mode == 'original'}
 
 
 def exercise(args):
@@ -66,7 +75,8 @@ def exercise(args):
                     args.rootfs.stat().st_size, args.kernel.stat().st_size,
                     artifact_bytes=args.artifact_limits['max_bytes'],
                     input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes)
-    deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size)
+    deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
+                         profile=load(args.budget_profile))
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
         validate_cohort([t['requirements'] for t in capacity_entries[:2]], deployment)
@@ -154,6 +164,8 @@ def exercise(args):
         'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in BUILD_TOOLS.items()},
         'dns_servers': ['1.1.1.1', '8.8.8.8'],
         'limits': deployment['limits']}
+    if args.docker_hub_mirror is not None:
+        build['docker_hub_mirror'] = args.docker_hub_mirror
     (root / 'build.json').write_text(json.dumps(build))
     (root / 'build.json').chmod(0o600)
     from tools.template_build_service import configuration
@@ -188,7 +200,7 @@ def exercise(args):
         return snapshot
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True
-    pressure_report = ({'status': 'not_run', 'reason': 'requires_two_passed_tasks'}
+    pressure_report = ({'status': 'not_run', 'reason': 'requires_two_published_audited_templates'}
                        if args.resource_pressure else None)
     def audit_shape(env):
         observe_services()
@@ -347,7 +359,7 @@ def exercise(args):
                         os.environ['SANDPROOF_TEST_API_KEY'] = old_key
             report = json.loads((output / 'full-set.json').read_text())
             current = [r for r in report['tasks'] if r['status'] != 'not_run']
-            if args.resource_pressure and len(current) == 2 and all(r['status'] == 'passed' for r in current):
+            if args.resource_pressure and ready_for_pressure(current):
                 from template_resource_pressure import exercise as pressure
                 def restart_builds():
                     nonlocal supervisor
@@ -402,18 +414,19 @@ def exercise(args):
             report['exact_cleanup_audit'] = ('passed' if all(r.get('exact_cleanup') == 'passed' for r in current)
                                              else 'unknown')
             (output / 'full-set.json').write_text(json.dumps(report, indent=2) + '\n')
+            outcome = repetition_outcome(current, selected, oracle_mode=oracle_mode,
+                resource_pressure=args.resource_pressure, pressure_report=pressure_report)
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': BUILD_TOOLS,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
                 'original_environment': args.source_kind != PRUNED_SOURCE,
+                'docker_hub_mirror': args.docker_hub_mirror,
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
                 'no_process_network_cgroup_jail_residue': True,
-                'oracle_mode': oracle_mode, 'original_verifier': True,
-                'original_oracle_verifier': oracle_mode == 'original', 'paid_model_used': False}, indent=2) + '\n')
-            passed = (len(current) == len(selected) and all(r['status'] == 'passed' for r in current)
-                      and (not args.resource_pressure or pressure_report['status'] == 'passed'))
+                **outcome, 'paid_model_used': False}, indent=2) + '\n')
+            passed = outcome['execution_passed']
             all_passed = all_passed and passed
             print(json.dumps({'repetition': repetition, 'execution_passed': passed,
                               'tasks': [{k: r.get(k) for k in ('name', 'status', 'stage', 'error_type', 'exact_cleanup')} for r in current]}), flush=True)
@@ -470,7 +483,11 @@ if __name__ == '__main__':
                         help='retain registered post-score guest probes without changing original scores')
     parser.add_argument('--repetitions', type=int, choices=(1, 2), default=1)
     parser.add_argument('--resource-pressure', action='store_true',
-                        help='after two original tasks pass, test their published templates together')
+                        help='test two Ready templates after exact task cleanup; original failed scores remain failed')
+    parser.add_argument('--budget-profile', type=Path, default=PROFILE,
+                        help='explicit operator acceptance profile; original larger profile remains the default')
+    parser.add_argument('--docker-hub-mirror',
+                        help='trusted HTTPS registry hostname for OCI transport only; original task references remain unchanged')
     parser.add_argument('--temporarily-forward', action='store_true')
     parser.add_argument('--build-input-max-bytes', type=int, default=INPUT_BYTES,
                         help='bounded build input/download bytes; default 4 GiB, service maximum 16 GiB')

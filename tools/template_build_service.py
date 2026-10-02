@@ -28,11 +28,13 @@ if __package__:
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from .template_stage import file_hash, private_directory, stage
     from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers
+    from .template_fetch import mirror_registry
     from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write
     from template_stage import file_hash, private_directory, stage
     from template_inputs import MAX_INPUT_BYTES, platform_dns_servers
+    from template_fetch import mirror_registry
     from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
 
 
@@ -58,7 +60,7 @@ def retain_timeout_logs(sandbox, directory, limit):
             break
         try:
             # A read already in flight may finish after the collection window.
-            # Keep each wait short and issue no further reads after expiry.
+            # Set a short SDK timeout and issue no further reads after expiry.
             with sandbox.files.read("/output/job/" + name, format="stream", user="root", request_timeout=1) as incoming:
                 iterator = iter(incoming)
                 while len(output) < limit and time.monotonic() < deadline:
@@ -76,8 +78,10 @@ def retain_timeout_logs(sandbox, directory, limit):
 
 def configuration(path):
     config = protected_json(path)
-    if set(config) != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
+    if set(config) - {"docker_hub_mirror"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
         raise ValueError("invalid build service config")
+    if "docker_hub_mirror" in config:
+        mirror_registry(config["docker_hub_mirror"])
     runtime, builder = protected_json(config["runtime_config"]), protected_json(config["builder_config"])
     if (not runtime.get("template_registry") or runtime.get("internal_build_vms")
             or not builder.get("internal_build_vms") or builder.get("template_registry")
@@ -262,6 +266,8 @@ class Backend:
             "max_entries": store.limits["max_entries"], "max_log_bytes": store.limits["max_log_bytes"],
             "timeout_seconds": max(1, int(row["deadline"] - store.clock()))}
         worker["dns_servers"] = self.config["dns_servers"]
+        if request["kind"] == "oci" and "docker_hub_mirror" in self.config:
+            worker["docker_hub_mirror"] = self.config["docker_hub_mirror"]
         sandbox.files.write("/input/request.json", json.dumps(worker), user="root")
         boot = command("cat /proc/sys/kernel/random/boot_id").stdout.strip()
         if not re.fullmatch(r"[0-9a-f-]{36}", boot):
@@ -304,9 +310,9 @@ class Backend:
                         return
                     remaining()
                     yield block
-            # SDK timeouts bound individual waits, not a continuously arriving
-            # stream. Check the original job deadline before and after each
-            # read, including EOF; do not give an expired job a new second.
+            # The pinned SDK already applies an explicit timeout to the whole
+            # transfer. Also enforce the original job deadline across phases,
+            # checking each read and EOF without giving expired jobs a new second.
             left = remaining()
             with sandbox.files.read("/output/job/" + name, format="stream", user="root",
                                     request_timeout=left if max_wait is None else min(left, max_wait)) as incoming:
@@ -360,13 +366,16 @@ class Backend:
 
     def publish(self, store, row):
         # A previous POST may have been accepted despite a lost response.
-        # Continue observing that identity even after the build deadline; only
-        # a definitive absence permits staging and a new publication request.
+        # A GET 404 is not an admission fence: that POST may still be queued.
+        # Reload durable intent, including after a supervisor restart.
+        row = store.get(row["id"])
         try:
             return self.request("runtime", "GET", "/sandproof/template-publications/" + row["id"], owner=row["owner"])
         except BuildError as error:
             if error.code != 404:
                 raise
+        if row["publication_attempted"]:
+            raise BuildError(503, "PublicationOutcomeUnknown")
         if store.clock() >= row["deadline"]:
             raise BuildError(408, "BuildDeadlineExceeded")
         config = self.config["runtime"]
@@ -382,12 +391,29 @@ class Backend:
         remaining = row["deadline"] - store.clock()
         if remaining <= 0:
             raise BuildError(408, "BuildDeadlineExceeded")
-        return self.request("runtime", "POST", "/sandproof/template-publications", {"candidateID": candidate},
-                            owner=row["owner"], timeout=remaining)
+        store.begin_publication(row["id"])
+        remaining = row["deadline"] - store.clock()
+        if remaining <= 0:
+            # This dispatch has not made the call; unlike a GET 404, that is
+            # conclusive evidence that no request can subsequently be admitted.
+            store.clear_publication_attempt(row["id"])
+            raise BuildError(408, "BuildDeadlineExceeded")
+        try:
+            return self.request("runtime", "POST", "/sandproof/template-publications", {"candidateID": candidate},
+                                owner=row["owner"], timeout=remaining)
+        except BuildError as error:
+            if error.code in (400, 409, 429):
+                # Only a refusal returned by this original POST, never an
+                # observation request, resolves its pre-admission uncertainty.
+                store.clear_publication_attempt(row["id"])
+            raise
 
-    def discard_unpublished(self, row):
-        # Call only after a definitive pre-admission refusal. A publication
-        # that exists belongs to the registry budget, never this cleanup.
+    def discard_unpublished(self, store, row):
+        # Reload: publish may have committed intent after tick read its row.
+        # No number of negative GETs permits deleting a pending POST's input.
+        row = store.get(row["id"])
+        if row["publication_attempted"]:
+            return False
         try:
             self.request("runtime", "GET", "/sandproof/template-publications/" + row["id"], owner=row["owner"])
             return False
@@ -477,9 +503,9 @@ class Supervisor:
                     expired = (isinstance(error, BuildError) and error.code == 408
                                and error.reason == "BuildDeadlineExceeded")
                     if isinstance(error, BuildError) and (error.code in (400, 409, 429) or expired):
-                        # These rejections occur before admission; no running
-                        # validation VM is hidden behind a refused publication.
-                        if self.backend.discard_unpublished(row):
+                        # Cleanup requires durable evidence that no original
+                        # POST is unresolved, in addition to the absence GET.
+                        if self.backend.discard_unpublished(self.store, row):
                             self.remove_inputs(job)
                             self.store.change(job, "Failed", failure="BuildDeadlineExceeded" if expired
                                               else "PublicationRejected", release=True)
