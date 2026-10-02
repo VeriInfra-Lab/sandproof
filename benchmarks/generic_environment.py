@@ -107,6 +107,7 @@ class GenericEnvironment(SdkEnvironment):
         self.submission_key = secrets.token_hex(16)
         self.template = None
         self.runtime_intent = None
+        self.runtime_attempt = None
         self.start_audit = start_audit
         self.environment_repair = None
         super().__init__(sdk_options=sdk_options, **kwargs)
@@ -226,9 +227,10 @@ class GenericEnvironment(SdkEnvironment):
         startup = self.template['startup']
         self._workdir = startup['workdir']
         self.default_user = startup['user']
+        self.runtime_attempt = secrets.token_hex(16)
         metadata = {'benchmark': 'terminal-bench-2.0', 'task': self.environment_name,
                     'build': self.build_id, 'revision': self.template['revision'],
-                    'runtime_attempt': secrets.token_hex(16)}
+                    'runtime_attempt': self.runtime_attempt}
         # This is a correlation identity, not an idempotency key. Never replay
         # create after a lost response. The local operator can find Starting
         # records in its private journal; the public list only shows Running.
