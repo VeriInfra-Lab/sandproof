@@ -26,7 +26,7 @@ use sandproof_api::{
     managed::{DataKind, ManagedPort},
 };
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf},
+    io::{AsyncRead, AsyncWrite, ReadBuf},
     process::{ChildStdin, ChildStdout, Command},
 };
 
@@ -36,6 +36,7 @@ mod admission;
 mod idle;
 mod limits;
 mod revocation;
+mod tunnel;
 mod upload;
 pub(crate) use admission::Gateway;
 use admission::{LeasedBody, control_request};
@@ -465,20 +466,8 @@ async fn forward_request(
 /// Fails when envd is unreachable or the caller disconnects.
 pub async fn relay() -> Result<(), Box<dyn Error>> {
     let stream = tokio::net::TcpStream::connect(ENVD_ADDRESS).await?;
-    let (mut reader, mut writer) = stream.into_split();
-    let mut input = tokio::io::stdin();
-    let mut output = tokio::io::stdout();
-    let upstream = async {
-        tokio::io::copy(&mut input, &mut writer).await?;
-        writer.shutdown().await?;
-        Ok::<(), io::Error>(())
-    };
-    let downstream = async {
-        tokio::io::copy(&mut reader, &mut output).await?;
-        output.flush().await?;
-        Ok::<(), io::Error>(())
-    };
-    tokio::try_join!(upstream, downstream)?;
+    let (reader, writer) = stream.into_split();
+    tunnel::relay(tokio::io::stdin(), tokio::io::stdout(), reader, writer).await?;
     Ok(())
 }
 

@@ -5,7 +5,7 @@ use super::*;
 use axum::Router;
 use std::{net::SocketAddr, path::Path, process::Stdio, sync::Mutex, time::Duration};
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
     sync::oneshot,
     time::timeout,

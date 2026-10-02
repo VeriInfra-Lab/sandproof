@@ -127,6 +127,7 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
 
 - [网关组件测试](../sandbox-server/src/gateway/tests.rs)：在 Linux 上执行 `cargo test -p sandproof-server --locked`。通过实际网关的请求处理、响应限流及 HTTP 编码，覆盖 8 MiB 文件请求、1 MiB 命令输入、32 MiB 响应边界；区分已知长度、分块传输和上游 HTTP/1.0 未声明长度，检查中途 EOF、逐块传输、不重发及失败后的新请求，以及非 HTTP/1.1 请求在读取 body 前被拒绝。使用内存传输替换 envd，不覆盖鉴权、进程执行或 VM 隔离。响应上限计算 HTTP body 字节，包含 Connect 编码，不能直接等同于原始 stdout 大小。
+- [namespace 中继组件测试](../sandbox-server/src/gateway/tunnel.rs)：用容量小于读缓冲的双向通道强制分段读写；在上传尚未 EOF 时接收响应，再验证写半关闭后完整下载跨缓冲边界的响应。下行失败时，上行即使仍未 EOF 也必须取消并返回错误。组件不启动 namespace 或 VM；更改中继后仍须以同一提交和服务二进制运行下述真实 VM 同步/异步流式边界、背压、半关闭和传输中断场景。
 - SDK 合同测试：`bash scripts/check-compat.sh` 另覆盖 Connect 帧被截断和文件长度不足。已取得命令 PID 后，缺少完整结束事件仍报错，不自动重发 Start；文件下载不返回成功的部分内容。测试使用固定 SDK、现有 `retries=0` 配置与合成服务。
 - SDK/网关组合测试：同一脚本在 Linux 上还启用 `sdk-contract-tests`，让[原 SDK 调用集](../tests/compat/gateway_sdk.py)经过[实际 Rust 网关的请求分类、请求体处理和 HTTP 转发代码](../sandbox-server/src/gateway/sdk_tests.rs)。除了复用 SDK 的命令、后台句柄、退出码、文件和目录用例，还验证上传 8 MiB 和下载 32 MiB 的前一字节/恰好/多一字节边界、大命令输出、管理 API key 不被转发、失败后继续使用。上游是合成 envd，下游是真实 SDK；不覆盖 `handle` 的鉴权、命名空间 relay 或 VM。夹具只编入测试二进制，正式服务没有旁路启动模式。非 Linux 会明确报告组合测试未运行，不能用 SDK 单层通过代替。
 - 显式流式配置另运行同一 SDK 调用集：使用仅供测试的 64 MiB 上传、96 MiB 下载预算，分别覆盖已知/未知长度的空文件、少一字节/恰好/多一字节；验证 415 压缩拒绝、identity 协商、并发 429 后仍可 health、输入 408 和下载中途空闲失败、失败后正常请求。使用明确的事件屏障保持在途请求，不靠随机 sleep。组件测试另用暂停时钟验证写阻塞超时与安静命令的区别，并以生产者等待上游收到第一块的屏障证明上传不整包缓冲。组合测试记录 Rust 网关进程 RSS 高水位（不包含 Python 合成 envd）；这是观测证据，不是整个部署的内存上界或实机磁盘证据。上传/响应体与上游连接均结束后才释放并发名额，夹具退出时等待连接任务收尾。
