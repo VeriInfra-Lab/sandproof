@@ -6,6 +6,7 @@ import os
 import stat
 import sys
 import time
+from unittest.mock import patch
 
 sys.path.insert(0, '/input')
 from template_inputs import sha256
@@ -55,13 +56,26 @@ def exercise():
         os.utime(source / name, ns=(946684800123456789, 946684800123456789), follow_symlinks=False)
     expected = snapshot(source, names)
     evidence = []
-    for failure in (None, 'cp', 'mount'):
+    for failure in (None, 'slow-unmount', 'cp', 'mount'):
         case = work / (failure or 'success')
         case.mkdir()
         disk = case / 'candidate.ext4'
         with disk.open('xb') as output:
             output.truncate(512 * 1024**2)
         original = TimeoutError('injected original deadline')
+        original_run = Commands.run
+
+        def run_with_delayed_unmount(runner, args, **kwargs):
+            if failure == 'slow-unmount' and Path(args[0]).name == 'umount':
+                # Deterministic injected latency at the actual unmount: a
+                # timer releases the real tool after the old five-second
+                # grace, while the original build deadline still has time.
+                release = ('import os,signal,sys; '
+                           'signal.signal(signal.SIGALRM, '
+                           'lambda *_: os.execv(sys.argv[1], sys.argv[1:])); '
+                           'signal.setitimer(signal.ITIMER_REAL, 6); signal.pause()')
+                args = [sys.executable, '-c', release, *args]
+            return original_run(runner, args, **kwargs)
 
         class InjectedCommands(Commands):
             def run(self, args, **kwargs):
@@ -75,14 +89,15 @@ def exercise():
         with (case / 'build.log').open('xb') as log:
             commands = InjectedCommands(time.monotonic() + 60, log, 1024**2)
             try:
-                populate_ext4(commands, source, disk)
+                with patch.object(Commands, 'run', run_with_delayed_unmount):
+                    populate_ext4(commands, source, disk)
             except TimeoutError as error:
-                assert failure is not None and error is original
+                assert failure in ('cp', 'mount') and error is original
             else:
-                assert failure is None
+                assert failure in (None, 'slow-unmount')
             mount = case / 'candidate-mount'
             assert not mount.exists() and not os.path.ismount(mount)
-            if failure is None:
+            if failure in (None, 'slow-unmount'):
                 commands.run(['/usr/sbin/e2fsck', '-fn', str(disk)])
                 mount.mkdir()
                 commands.run(['/usr/bin/mount', '-t', 'ext4', '-o',
