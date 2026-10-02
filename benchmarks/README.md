@@ -188,7 +188,7 @@ Windows 3.11 初始化下载仍使用原 archive.org URL，按 8 MiB 分段、�
 
 HTML 过滤题启用 pytest 的 `-s -v` 与非缓冲日志，保留每个浏览器批次的执行、异常与收尾信息。原测试先杀 ChromeDriver 再调用 quit，实际观察到浏览器及 crashpad 进程持续遗留；该题通过 Selenium 官方 `SE_CHROME_PATH` 设置选择[浏览器启动包装器](guest_chromium.py)。包装器不改变 Chromium 参数，使用 pidfd 观察驱动生命周期；驱动退出后回收独立进程组与自己收养的后代，并记录剩余数量。合成进程回归覆盖驱动死亡和脱离原 session 的后代，原浏览器实测另计。用例、断言和时间限制不变；原测试会吞掉部分浏览器异常，必须检查日志中的超时/浏览器失败，不能只用原 reward 声称所有浏览器场景实际通过。环境接口见 [Selenium Manager 官方说明](https://www.selenium.dev/documentation/selenium_manager/)。
 
-该题另外设置来宾 `net.ipv4.tcp_syn_retries=2`，让失联外部资源的 TCP 建连在原页面加载预算内返回失败；读取并保存实际值到 `tcp-connect-policy.json`，不修改宿主网络参数。相同页面的独立 VM 对照覆盖默认值与该设置，并保留真实弹窗阳性及干净页面阴性检查。此配置不改 HTML、浏览器参数、原评分或 20 秒页面时限，也不替换 HTTP 响应；外部子资源仍可能不可达，浏览器测试完成不表示这些远端内容也已被验证。参数含义见 [Linux 内核文档](https://docs.kernel.org/networking/ip-sysctl.html#tcp-syn-retries-integer)。
+旧 recipe 与通用链路显式 `--oracle-mode repaired` 的该题设置来宾 `net.ipv4.tcp_syn_retries=2`，让失联外部资源的 TCP 建连在原页面加载预算内返回失败；读取并保存实际值到 `tcp-connect-policy.json`，不修改宿主网络参数。通用修复入口通过随解答记录摘要的 `guest_tcp_connect.py` 执行设置；写入或读回失败立即中止解答，不能保留成功记录后继续。原始 oracle 模式不安装该设置。相同页面的独立 VM 对照覆盖默认值与该设置，并保留真实弹窗阳性及干净页面阴性检查。此配置不改 HTML、浏览器参数、原评分或 20 秒页面时限，也不替换 HTTP 响应；外部子资源仍可能不可达，浏览器测试完成不表示这些远端内容也已被验证。参数含义见 [Linux 内核文档](https://docs.kernel.org/networking/ip-sysctl.html#tcp-syn-retries-integer)。
 
 MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transformers 4.57.6，保留完整 PyTorch/CUDA 构建。原无上限依赖会选入更新且更大的 CUDA 13 依赖，使随后原 results 完整克隆写满 10 GiB 私有盘；旧兼容依赖是否足以留出空间必须以原解答复测为准。没有预填结果、改变 Git checkout 目标或缩减评分。 初始化另外补齐 Pillow 11.3.0；[上游问题记录](https://github.com/harbor-framework/terminal-bench-2/pull/53)确认旧 MTEB 丢失该间接依赖后重新构建会导入失败。原 MTEB 版本保持 1.38.41。
 
@@ -198,7 +198,7 @@ MTEB 排行榜题约束仍被原 MTEB 1.38.41 支持的 Torch 2.7.1 与 Transfor
 
 显式 `--oracle-mode repaired` 只对[注册修复](oracle_repairs.py)生效。它先核对原 solve.sh 的完整摘要，在独立输出目录复制完整任务，仅对其中 solution 应用有限修改，不修改固定题库；报告记录模式、原文件与新文件摘要及完整 diff。原 Harbor OracleAgent 按副本任务根目录执行原路径校验，评分仍从原任务读取。评分源码和所有资源/时限保持不变。修正版通过必须单独报告，不能计为原标准解答通过，也不能改写原失败记录。选择修正版时，整批选题须全部已注册；混入未注册题或选择包含未注册题的 `--all` 会在派发任何构建/VM 前拒绝，不能先跑部分题再失败。
 
-- `filter-js-from-html`：原评分器先终止 ChromeDriver，再调用 quit，会留下仍存活的 Chromium 进程树。修正版在 solution 副本中携带并安装已有浏览器监督器，仅对本题评分进程设置 `SE_CHROME_PATH`，使浏览器及其后代随原驱动退出而回收；完整原过滤实现、Chromium 程序/参数、评分源码与任务限额保留。报告记录 helper 摘要和 `verifier_repair_env`，除原 reward 外还要求所有浏览器批次执行成功及对应回收记录完整。安装失败、吞掉的浏览器错误、缺失/异常回收证据均不能算通过；默认原模式不启用。此修复不调整 TCP 或其他网络策略，也不代表当前提交已完成原题实机验收。
+- `filter-js-from-html`：原评分器先终止 ChromeDriver，再调用 quit，会留下仍存活的 Chromium 进程树。修正版在 solution 副本中携带并安装已有浏览器监督器，仅对本题评分进程设置 `SE_CHROME_PATH`，使浏览器及其后代随原驱动退出而回收；完整原过滤实现、Chromium 程序/参数、评分源码与任务限额保留。报告记录 helper 摘要和 `verifier_repair_env`，除原 reward 外还要求所有浏览器批次执行成功及对应回收记录完整。安装失败、吞掉的浏览器错误、缺失/异常回收证据均不能算通过；默认原模式不启用。修正版同时通过上述 helper 设置并记录来宾 TCP 建连重传策略，不调整宿主网络策略或原页面/任务期限，也不代表当前提交已完成原题实机验收。
 - `build-cython-ext`：在原 editable 安装中固定 `planarity==0.6`，保留 pyknotid 0.5.3 所需的 `pos/start/end` 节点属性。[上游记录](https://github.com/harbor-framework/terminal-bench-2/issues/75)与本地评分后诊断均定位为 1.0.0 属性改名导致 `KeyError: pos`；不改 NumPy 2.3.0、原 Cython 编译、仓库测试或外层评分。
 - `git-multibranch`：原镜像未安装原解答最后一步要求的 `tmux`；修正版仅在工具缺失时刷新包索引并安装，然后执行完整原 Git/SSH/nginx 配置及原 tmux 命令。安装失败立即停止，下载/安装计入原 agent 时限；已存在的 tmux 不重装。原题库、评分、资源和原失败记录保留，修正版成绩单独报告。
 - `mcmc-sampling-stan`：在原系统依赖安装中补齐 RcppParallel 源码构建所需的 `cmake`，并设置 `R_REMOTES_UPGRADE=never`，避免后续 RStan 安装自动升级原解答已固定的依赖；缺失依赖仍正常安装，原 R/RStan 版本选择、模型和采样流程保留。

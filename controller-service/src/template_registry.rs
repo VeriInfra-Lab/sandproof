@@ -3,12 +3,13 @@
 
 use crate::{JournalError, templates::TemplateBinding};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+mod verification;
 use std::{
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
+pub use verification::CandidateVerification;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -277,6 +278,20 @@ impl CandidateStore {
     /// # Errors
     /// Rejects mismatched ownership, paths, hashes, ext4 accounting, or platform metadata.
     pub fn candidate(&self, owner: u64, id: &str) -> Result<Publication, JournalError> {
+        self.verified_candidate(owner, id).map(|(value, _)| value)
+    }
+
+    /// Fully check a candidate and retain ephemeral evidence for its sealed paths.
+    /// # Errors
+    /// Rejects the same invalid candidates as `candidate`, including observable
+    /// file identity changes during the digest check. The operator must close
+    /// all writers before handoff and keep the artifacts immutable; file
+    /// identity is not proof of that precondition. Evidence is not persisted.
+    pub fn verified_candidate(
+        &self,
+        owner: u64,
+        id: &str,
+    ) -> Result<(Publication, CandidateVerification), JournalError> {
         if !valid_candidate_id(id) || owner == 0 {
             return Err(JournalError::Conflict);
         }
@@ -297,24 +312,7 @@ impl CandidateStore {
         {
             return Err(JournalError::Conflict);
         }
-        for artifact in [&binding.kernel, &binding.rootfs] {
-            let mut file = self.readonly_file(&artifact.path, artifact.size_bytes)?;
-            if file.metadata()?.len() != artifact.size_bytes {
-                return Err(JournalError::Conflict);
-            }
-            let mut digest = Sha256::new();
-            let mut buffer = vec![0_u8; 64 * 1024];
-            loop {
-                let count = file.read(&mut buffer)?;
-                if count == 0 {
-                    break;
-                }
-                digest.update(&buffer[..count]);
-            }
-            if format!("{:x}", digest.finalize()) != artifact.sha256 {
-                return Err(JournalError::Conflict);
-            }
-        }
+        let mut verification = CandidateVerification::check(self, &binding)?;
         let free_bytes = ext4_free_bytes(
             &mut File::open(&binding.rootfs.path)?,
             binding.resources.disk_bytes,
@@ -328,18 +326,22 @@ impl CandidateStore {
         }
         binding.kernel.path = destination.join("kernel");
         binding.rootfs.path = destination.join("rootfs.ext4");
-        Ok(Publication {
-            candidate_id: id.into(),
-            binding,
-            image_digest: manifest.image_digest,
-            free_bytes,
-            min_free_bytes: manifest.min_free_bytes,
-            state: PublicationState::Checking,
-            checked: false,
-            validation_sandbox: None,
-            validation_certificate: None,
-            failure: None,
-        })
+        verification.relocate(&binding);
+        Ok((
+            Publication {
+                candidate_id: id.into(),
+                binding,
+                image_digest: manifest.image_digest,
+                free_bytes,
+                min_free_bytes: manifest.min_free_bytes,
+                state: PublicationState::Checking,
+                checked: false,
+                validation_sandbox: None,
+                validation_certificate: None,
+                failure: None,
+            },
+            verification,
+        ))
     }
 
     /// Move the exact staged directory after its durable publication intent exists.
