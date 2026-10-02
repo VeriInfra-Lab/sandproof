@@ -23,6 +23,45 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
+    def test_mteb_constraints_install_failure_stops_before_unchanged_oracle(self):
+        script = 'printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'
+        constraints = Path(__file__).parents[1] / 'mteb-verifier-constraints.txt'
+        for code in (0, 42):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, bin_dir = root / 'source', root / 'bin'
+                (source / 'solution').mkdir(parents=True)
+                (source / 'tests').mkdir()
+                bin_dir.mkdir()
+                (source / 'solution/solve.sh').write_text(script)
+                (source / 'tests/test.sh').write_text('original verifier\n')
+                (source / 'task.toml').write_text('[agent]\ntimeout_sec = 1800.0\n')
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'mteb-retrieve': hashlib.sha256(script.encode()).hexdigest()}):
+                    repaired = prepare_repaired_task('mteb-retrieve', source, root / 'repaired')
+                stub = bin_dir / 'install'
+                stub.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                                f'exit {code}\n')
+                stub.chmod(0o700)
+                log = root / 'commands'
+                result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')],
+                    env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log)})
+                self.assertEqual(result.returncode, code)
+                expected = ['-D -m 644 /solution/mteb-verifier-constraints.txt '
+                            '/etc/sandproof-mteb-verifier-constraints.txt']
+                if not code:
+                    expected.append('original solution')
+                self.assertEqual(log.read_text().splitlines(), expected)
+                self.assertEqual((source / 'solution/solve.sh').read_text(), script)
+                for relative in ('tests/test.sh', 'task.toml'):
+                    self.assertEqual((source / relative).read_bytes(), (repaired / relative).read_bytes())
+                self.assertEqual((repaired / 'solution/mteb-verifier-constraints.txt').read_bytes(),
+                                 constraints.read_bytes())
+                evidence = json.loads((root / 'oracle-repair.json').read_text())
+                self.assertEqual(evidence['repaired_files']['mteb-verifier-constraints.txt'],
+                                 hashlib.sha256(constraints.read_bytes()).hexdigest())
+                self.assertNotIn('UV_CONSTRAINT', (repaired / 'solution/solve.sh').read_text())
+
     def test_torch_layout_failure_stops_before_unchanged_solution(self):
         script = 'printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'
         for code in (0, 42):
