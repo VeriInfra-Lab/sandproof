@@ -310,7 +310,7 @@ class OracleRepairTests(unittest.TestCase):
                 self.assertEqual(evidence['original_files']['solve.sh'], hashlib.sha256(script.encode()).hexdigest())
                 self.assertEqual(evidence['repaired_files']['solve.sh'], hashlib.sha256(solve.read_bytes()).hexdigest())
 
-    def test_historical_clone_skips_current_tree_but_keeps_full_history(self):
+    def test_historical_fetch_preserves_full_tree_without_unrelated_history(self):
         # Execute only this synthetic fixture, never a benchmark solution.
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -320,6 +320,11 @@ class OracleRepairTests(unittest.TestCase):
             git('init', '-q', str(repo), cwd=root)
             git('config', 'user.name', 'Synthetic Test')
             git('config', 'user.email', 'test@example.invalid')
+            (repo / 'old-only.txt').write_text('unrelated old data\n')
+            git('add', '.')
+            git('commit', '-qm', 'old fixture')
+            old = git('rev-parse', 'HEAD')
+            (repo / 'old-only.txt').unlink()
             (repo / 'historical.txt').write_text('historical result\n')
             git('add', '.')
             git('commit', '-qm', 'historical fixture')
@@ -328,8 +333,7 @@ class OracleRepairTests(unittest.TestCase):
             git('add', '.')
             git('commit', '-qm', 'current fixture')
             current = git('rev-parse', 'HEAD')
-            script = ('set -eu\n'
-                      'git clone https://github.com/embeddings-benchmark/results\n'
+            script = ('git clone https://github.com/embeddings-benchmark/results\n'
                       'test ! -e results/current-only.txt\n'
                       'test ! -e results/historical.txt\n'
                       'cd results\n'
@@ -342,7 +346,8 @@ class OracleRepairTests(unittest.TestCase):
             source.mkdir()
             (source / 'solve.sh').write_text(script)
             with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
-                    'mteb-leaderboard': hashlib.sha256(script.encode()).hexdigest()}):
+                    'mteb-leaderboard': hashlib.sha256(script.encode()).hexdigest()}), \
+                    patch('benchmarks.oracle_repairs.MTEB_RESULTS_COMMIT', historical):
                 _, solve = repair_solution('mteb-leaderboard', source, root / 'repaired')
             env = {**os.environ, 'GIT_CONFIG_COUNT': '1',
                    'GIT_CONFIG_KEY_0': f'url.{repo.as_uri()}.insteadOf',
@@ -351,10 +356,46 @@ class OracleRepairTests(unittest.TestCase):
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             clone = root / 'results'
             self.assertEqual(git('rev-parse', 'HEAD', cwd=clone), historical)
-            self.assertEqual(git('cat-file', '-t', current, cwd=clone), 'commit')
-            self.assertEqual(git('rev-parse', '--is-shallow-repository', cwd=clone), 'false')
+            self.assertEqual(git('rev-parse', 'HEAD^{tree}', cwd=clone), git('rev-parse', historical + '^{tree}'))
+            self.assertEqual(git('rev-parse', '--is-shallow-repository', cwd=clone), 'true')
+            for unrelated in (old, current):
+                result = subprocess.run(['git', 'cat-file', '-e', unrelated], cwd=clone,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.assertNotEqual(result.returncode, 0)
             self.assertFalse((clone / 'current-only.txt').exists())
             self.assertEqual((clone / 'historical.txt').read_text(), 'historical result\n')
+            self.assertEqual(git('diff', '--exit-code', historical, cwd=clone), '')
+
+    def test_historical_fetch_and_checkout_failures_stop_the_original_script(self):
+        script = ('git clone https://github.com/embeddings-benchmark/results\n'
+                  'cd results\n'
+                  'git checkout c0fd3271442f8c0c839084a109fede85c8514dab\n'
+                  'python leaderboard.py\n')
+        for failing in ('fetch', 'checkout'):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source, bin_dir = root / 'source', root / 'bin'
+                source.mkdir()
+                bin_dir.mkdir()
+                (source / 'solve.sh').write_text(script)
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'mteb-leaderboard': hashlib.sha256(script.encode()).hexdigest()}):
+                    _, solve = repair_solution('mteb-leaderboard', source, root / 'repaired')
+                log = root / 'commands'
+                stub = ('#!/bin/bash\nprintf "%s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
+                        'if [[ "$*" == *"$REPAIR_TEST_FAIL"* ]]; then exit 42; fi\n'
+                        'if [[ "$1" == init ]]; then /bin/mkdir results; fi\n')
+                for command in ('git', 'python'):
+                    path = bin_dir / command
+                    path.write_text(stub)
+                    path.chmod(0o700)
+                result = subprocess.run(['/bin/bash', str(solve)], cwd=root,
+                    env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                         'REPAIR_TEST_FAIL': failing})
+                self.assertEqual(result.returncode, 42)
+                self.assertNotIn('leaderboard.py', log.read_text())
+                self.assertIn(failing, log.read_text().splitlines()[-1])
+                self.assertEqual((source / 'solve.sh').read_text(), script)
 
     def test_real_harbor_agent_accepts_repaired_task_without_bypassing_containment(self):
         # Exercise pinned Harbor's actual input validation and upload path.

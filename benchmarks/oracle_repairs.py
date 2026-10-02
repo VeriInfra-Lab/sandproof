@@ -13,6 +13,7 @@ from tools.benchmark_tasks import InvalidInput
 
 CHROMIUM_LIFECYCLE_PATH = '/usr/local/lib/sandproof/guest_chromium.py'
 MTEB_VERIFIER_CONSTRAINTS = '/etc/sandproof-mteb-verifier-constraints.txt'
+MTEB_RESULTS_COMMIT = 'c0fd3271442f8c0c839084a109fede85c8514dab'
 
 REPAIRS = {
     'filter-js-from-html': '9686e12af48346d2df538c3b46710122ee8dc80dfd0eecacb7a1476bf892ec9f',
@@ -237,13 +238,17 @@ if(!bpe)return 78;''')
         new = ('install -D -m 644 /solution/mteb-verifier-constraints.txt '
                + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + new)
     elif name == 'mteb-leaderboard':
-        # The solution immediately checks out its pinned historical commit.
-        # Preserve the complete clone, but do not first materialize today's
-        # larger HEAD tree, which can fill the original 10 GiB task disk.
+        # Only this historical tree is used by the original computation.
+        # Fetch all of its files without unrelated history or today's tree;
+        # their combined size can fill the original 10 GiB task disk.
         marker = 'git clone https://github.com/embeddings-benchmark/results'
-        if old.count(marker) != 1:
+        checkout = 'git checkout ' + MTEB_RESULTS_COMMIT
+        if old.count(marker) != 1 or old.count(checkout) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
-        new = old.replace(marker, 'git clone --no-checkout https://github.com/embeddings-benchmark/results')
+        new = 'set -e\n' + old.replace(marker,
+            'git init results\n'
+            'git -C results remote add origin https://github.com/embeddings-benchmark/results\n'
+            'git -C results fetch --depth=1 --no-tags origin ' + MTEB_RESULTS_COMMIT)
         # In MTEB 1.38.41 results_repo is still a clone source, even for a
         # local path. Its documented cache root must point at the parent of
         # this complete checkout to avoid a second full working tree.
