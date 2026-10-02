@@ -36,6 +36,7 @@ fn test_config() -> NodeConfig {
         rootfs: PathBuf::from(required("SANDPROOF_TEST_ROOTFS")),
         uid_base: required("SANDPROOF_TEST_UID_BASE").parse().unwrap(),
         max_vm_id: 1000,
+        bounded_host: None,
         vcpu_count: 1,
         memory_mib: 256,
         host_resources: env::var("SANDPROOF_TEST_HOST_RESOURCES")

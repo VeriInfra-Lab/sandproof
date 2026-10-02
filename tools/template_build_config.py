@@ -67,3 +67,55 @@ def validate_capacity(runtime, builder, limits, base, *, kernel_bytes, largest_t
         if positive(registry, field) < target + kernel_bytes:
             raise ValueError("publication artifact budget cannot contain one maximum candidate")
     return disk
+
+
+def acceptance_build_policy(path, *, legacy_unbounded=False):
+    """Explicit acceptance mode; these values are never production defaults."""
+    if (path is None) == (not legacy_unbounded):
+        raise ValueError("choose an explicit bounded policy or --legacy-unbounded")
+    if path is None:
+        return None
+    from .template_build_service import protected_json
+    value = protected_json(path)
+    return validate_acceptance_build_policy(value)
+
+
+def validate_acceptance_build_policy(value):
+    if type(value) is not dict or set(value) != {"runtime", "builder", "public"}:
+        raise ValueError("invalid bounded acceptance policy")
+    for pool in ("runtime", "builder"):
+        fields = {"bounded_host", "maintenance"} | ({"build_retry_windows"} if pool == "builder" else set())
+        if type(value[pool]) is not dict or set(value[pool]) != fields:
+            raise ValueError("explicit bounded pool policy required: " + pool)
+    public = value["public"]
+    if type(public) is not dict or set(public) != {"bounded_builds", "workspace_bytes", "workspace_bytes_per_tenant"}:
+        raise ValueError("explicit public bounded policy required")
+    from .template_build_store import bounded_configuration
+    bounded_configuration(public["bounded_builds"])
+    for key in ("workspace_bytes", "workspace_bytes_per_tenant"):
+        positive(public, key)
+    if public["workspace_bytes_per_tenant"] > public["workspace_bytes"]:
+        raise ValueError("public tenant workspace exceeds global policy")
+    return value
+
+
+def apply_acceptance_build_policy(runtime, builder, build, policy):
+    """Pass through only authorized policy sections; keep pool identities fixed."""
+    if policy is None:
+        return "legacy-unbounded"
+    validate_acceptance_build_policy(policy)
+    import copy
+    from .template_build_service import validate_pool_resource_ranges
+    from .template_build_store import bounded_configuration
+    runtime.update(copy.deepcopy(policy["runtime"]))
+    builder.update(copy.deepcopy(policy["builder"]))
+    bounded_configuration(policy["public"]["bounded_builds"])
+    build["bounded_builds"] = copy.deepcopy(policy["public"]["bounded_builds"])
+    for key in ("workspace_bytes", "workspace_bytes_per_tenant"):
+        if policy["public"][key] < build["limits"][key]:
+            raise ValueError("bounded acceptance workspace cannot undercut original task budget")
+        build["limits"][key] = policy["public"][key]
+    validate_pool_resource_ranges(runtime, builder)
+    from .template_physical_storage import validate_configuration as validate_physical_configuration
+    validate_physical_configuration(runtime, builder, build)
+    return "windowed"

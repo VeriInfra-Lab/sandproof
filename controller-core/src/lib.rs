@@ -9,6 +9,7 @@
 //! `SandboxModel.State`; refinement proofs are maintained in Lean.
 
 pub mod auxiliary;
+pub mod checkpoint;
 pub mod controller;
 pub mod effect;
 pub mod ids;
@@ -22,6 +23,7 @@ pub mod scheduler;
 pub mod store;
 pub mod terminal;
 pub(crate) mod transition;
+pub use transition::DEFAULT_RETRY_LIMIT;
 pub mod worker;
 
 pub use auxiliary::*;

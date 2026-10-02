@@ -11,6 +11,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+sha2 = "=0.10.9"
 rustix = { version = "1.1.5", features = ["event", "fs", "process"] }
 tempfile = "3.23.0"
 

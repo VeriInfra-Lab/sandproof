@@ -18,7 +18,25 @@ use std::time::{Duration, Instant};
 
 #[path = "cgroup.rs"]
 mod cgroup;
+#[path = "child_process.rs"]
+mod child_process;
+#[path = "helper_gate.rs"]
+pub(crate) mod helper_gate;
+#[path = "retirement.rs"]
+mod retirement;
+#[path = "staging.rs"]
+mod staging;
 pub use cgroup::HostResources;
+pub use helper_gate::MAX_HELPER_MARKER_BYTES;
+pub use helper_gate::{
+    RuntimeHelperGate, RuntimeHelperGuard, RuntimeProcessIdentity, RuntimeRouteSnapshot,
+    RuntimeRouteState,
+};
+pub use retirement::RetirementManifest;
+pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
+
+#[cfg(test)]
+static PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const API_SOCKET: &str = "api.socket";
 const START_TIMEOUT: Duration = Duration::from_secs(10);
@@ -92,8 +110,48 @@ impl From<serde_json::Error> for RuntimeError {
     }
 }
 
-#[derive(Clone, Debug)]
+/// A reusable physical position bound to one never-reused VM identity.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeHostSlot {
+    pub position: u64,
+    /// Globally allocated IPv4 /30 index (deployment base plus position).
+    pub uplink_index: u64,
+    pub vm: u64,
+    pub helper_gate: RuntimeHelperGate,
+}
+
+fn console_output(
+    claim: &Path,
+    policy: Option<ConsolePolicy>,
+) -> Result<(Stdio, Stdio), RuntimeError> {
+    if policy == Some(ConsolePolicy::Discard) {
+        return Ok((Stdio::null(), Stdio::null()));
+    }
+    let output = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(claim.join("console.log"))?;
+    let stderr = output.try_clone()?;
+    Ok((Stdio::from(output), Stdio::from(stderr)))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsolePolicy {
+    Discard,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    /// Explicit discard is required by the full bounded deployment policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_policy: Option<ConsolePolicy>,
+    /// Explicit bounded physical position; absent preserves legacy identity mapping.
+    #[serde(default)]
+    pub host_slot: Option<RuntimeHostSlot>,
     pub jailer: PathBuf,
     pub firecracker: PathBuf,
     pub chroot_base: PathBuf,
@@ -134,7 +192,7 @@ pub struct Observation {
     pub state: VmState,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProcessRecord {
     resource_id: String,
@@ -147,6 +205,8 @@ struct ProcessRecord {
 struct NetworkRecord {
     resource_id: String,
     namespace_inode: u64,
+    #[serde(default)]
+    namespace_device: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -180,6 +240,15 @@ impl Runtime {
             ));
         }
         check_kvm(Path::new("/dev/kvm"))?;
+        if config
+            .host_slot
+            .as_ref()
+            .is_some_and(|slot| slot.position > 1_048_575 || slot.uplink_index > 1_048_575)
+        {
+            return Err(RuntimeError::InvalidConfiguration(
+                "physical host slot exceeds IPv4 pool",
+            ));
+        }
         if config.vm_uid == 0
             || config.vm_gid == 0
             || config.vcpu_count == 0
@@ -316,12 +385,7 @@ impl Runtime {
     }
 
     fn spawn_jailer(&self, id: &str, claim: &Path) -> Result<ProcessRecord, RuntimeError> {
-        let output = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(claim.join("console.log"))?;
-        let stderr = output.try_clone()?;
+        let (output, stderr) = console_output(claim, self.config.console_policy)?;
         // The shell cannot exec jailer until the exact process identity has
         // been durably recorded. If this process dies before releasing stdin,
         // the gate sees EOF and exits without ever starting Firecracker.
@@ -355,8 +419,8 @@ impl Runtime {
             .arg("--api-sock")
             .arg(format!("/{API_SOCKET}"))
             .stdin(Stdio::piped())
-            .stdout(Stdio::from(output))
-            .stderr(Stdio::from(stderr))
+            .stdout(output)
+            .stderr(stderr)
             .spawn()?;
         let result = (|| {
             let pid = child.id();
@@ -368,12 +432,7 @@ impl Runtime {
                 pid,
                 start_time_ticks,
             };
-            let mut file = tempfile::NamedTempFile::new_in(claim)?;
-            serde_json::to_writer(&mut file, &record)?;
-            file.as_file_mut().sync_all()?;
-            file.persist_noclobber(claim.join("record.json"))
-                .map_err(|error| RuntimeError::Io(error.error))?;
-            File::open(claim)?.sync_all()?;
+            self.write_new_record(&claim.join("record.json"), &record)?;
             child
                 .stdin
                 .take()
@@ -542,13 +601,13 @@ impl Runtime {
         // This durable intent precedes the first host-side network effect.
         // A crash after `netns add` can then be tied to this never-reused
         // claim, even if the inode record was not yet committed.
-        write_new_record(
+        self.write_new_record(
             &claim.join("network-intent.json"),
             &ResourceMarker {
                 resource_id: id.to_owned(),
             },
         )?;
-        run_ip("create namespace", &["netns", "add", id])?;
+        self.run_ip("create namespace", &["netns", "add", id])?;
         check_trusted_path(namespace)?;
         let metadata = fs::symlink_metadata(namespace)?;
         if !metadata.is_file() {
@@ -559,8 +618,9 @@ impl Runtime {
         let network = NetworkRecord {
             resource_id: id.to_owned(),
             namespace_inode: metadata.ino(),
+            namespace_device: Some(metadata.dev()),
         };
-        write_new_record(&claim.join("network.json"), &network)?;
+        self.write_new_record(&claim.join("network.json"), &network)?;
 
         // Install an atomic, default-deny guard before creating the TAP or
         // starting the VM. Host-initiated envd replies remain established;
@@ -568,11 +628,11 @@ impl Runtime {
         let guest_guard = crate::egress::EgressPolicy::DenyAll
             .guest_guard_script(&[])
             .expect("fixed deny policy must render");
-        run_nft_in_namespace(id, "install guest guard", &["-f", "-"], Some(&guest_guard))?;
+        self.run_nft_in_namespace(id, "install guest guard", &["-f", "-"], Some(&guest_guard))?;
 
         // The same private IPv4 range is safe because each VM has its own
         // network namespace. No default route or external bridge is added.
-        run_ip(
+        self.run_ip(
             "create TAP",
             &[
                 "netns",
@@ -587,7 +647,7 @@ impl Runtime {
                 "tap",
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "assign host address",
             &[
                 "netns",
@@ -601,7 +661,7 @@ impl Runtime {
                 "tap0",
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "raise TAP",
             &[
                 "netns",
@@ -642,18 +702,26 @@ impl Runtime {
             }
             Err(error) => return Err(error.into()),
         };
-        if !metadata.is_file() || metadata.uid() != 0 || metadata.ino() != network.namespace_inode {
+        if !metadata.is_file()
+            || metadata.uid() != 0
+            || metadata.ino() != network.namespace_inode
+            || network
+                .namespace_device
+                .is_some_and(|device| metadata.dev() != device)
+        {
             return Err(RuntimeError::IdentityMismatch("network namespace handle"));
         }
-        let pids = Command::new("/usr/bin/ip")
-            .args(["netns", "pids", id])
-            .output()?;
-        if !pids.status.success() || !pids.stdout.is_empty() {
+        let pids = self.read_host_helper(
+            "list namespace processes",
+            "/usr/bin/ip",
+            &["netns", "pids", id],
+        )?;
+        if !pids.is_empty() {
             return Err(RuntimeError::InvalidConfiguration(
                 "namespace still contains a process or cannot be checked",
             ));
         }
-        run_ip("delete namespace", &["netns", "delete", id])?;
+        self.run_ip("delete namespace", &["netns", "delete", id])?;
         self.cleanup_uplink_after_namespace(id)
     }
 
@@ -685,10 +753,13 @@ impl Runtime {
             || record.resource_id != id
             || record.namespace_inode == 0
             || record.namespace_inode != metadata.ino()
+            || record
+                .namespace_device
+                .is_some_and(|device| metadata.dev() != device)
         {
             return Err(RuntimeError::IdentityMismatch("private network record"));
         }
-        let output = run_nft_in_namespace(
+        let output = self.run_nft_in_namespace(
             id,
             "observe guest guard",
             &[
@@ -799,7 +870,7 @@ impl Runtime {
                 return Err(RuntimeError::IdentityMismatch("abort marker resource ID"));
             }
         } else {
-            write_new_record(
+            self.write_new_record(
                 &marker,
                 &ResourceMarker {
                     resource_id: id.to_owned(),
@@ -840,19 +911,37 @@ impl Runtime {
         let record_path = claim.join("network.json");
         if path_present(&record_path)? {
             let record: NetworkRecord = read_trusted_record(&record_path)?;
-            if record.resource_id != id || record.namespace_inode != metadata.ino() {
+            if record.resource_id != id
+                || record.namespace_inode != metadata.ino()
+                || record
+                    .namespace_device
+                    .is_some_and(|device| device != metadata.dev())
+            {
                 return Err(RuntimeError::IdentityMismatch("namespace inode record"));
             }
+        } else {
+            // Preserve the namespace identity before unlinking its only named
+            // handle, including the crash-before-original-inode-record case.
+            self.write_new_record(
+                &record_path,
+                &NetworkRecord {
+                    resource_id: id.to_owned(),
+                    namespace_inode: metadata.ino(),
+                    namespace_device: Some(metadata.dev()),
+                },
+            )?;
         }
-        let pids = Command::new("/usr/bin/ip")
-            .args(["netns", "pids", id])
-            .output()?;
-        if !pids.status.success() || !pids.stdout.is_empty() {
+        let pids = self.read_host_helper(
+            "list namespace processes",
+            "/usr/bin/ip",
+            &["netns", "pids", id],
+        )?;
+        if !pids.is_empty() {
             return Err(RuntimeError::InvalidConfiguration(
                 "namespace still contains a process or cannot be checked",
             ));
         }
-        run_ip("delete aborted namespace", &["netns", "delete", id])?;
+        self.run_ip("delete aborted namespace", &["netns", "delete", id])?;
         self.cleanup_uplink_after_namespace(id)
     }
 
@@ -926,7 +1015,7 @@ impl Runtime {
                 return Err(RuntimeError::IdentityMismatch("failed prepare identity"));
             }
         } else {
-            write_new_record(&marker, &record)?;
+            self.write_new_record(&marker, &record)?;
         }
         Ok(())
     }
@@ -973,6 +1062,10 @@ impl Runtime {
     }
 
     pub(crate) fn validate_network_id(&self, id: &str) -> Result<(), RuntimeError> {
+        validate_id(id)?;
+        if self.config.host_slot.is_some() {
+            self.uplink_plan(id)?;
+        }
         if let Some(namespace) = &self.config.private_netns {
             validate_namespace_id(namespace, id)?;
         }
@@ -1004,6 +1097,7 @@ impl Runtime {
     }
 
     fn read_record(&self, id: &str) -> Result<ProcessRecord, RuntimeError> {
+        self.validate_network_id(id)?;
         let path = self
             .config
             .chroot_base
@@ -1017,6 +1111,7 @@ impl Runtime {
                 RuntimeError::Io(error)
             }
         })?;
+        File::open(self.config.chroot_base.join(".claims").join(id))?.sync_all()?;
         let record: ProcessRecord = serde_json::from_reader(file)?;
         if record.resource_id != id || record.pid == 0 || record.start_time_ticks == 0 {
             return Err(RuntimeError::IdentityMismatch("record fields"));
@@ -1283,9 +1378,13 @@ pub(crate) fn read_trusted_record<T: DeserializeOwned>(path: &Path) -> Result<T,
     if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
         return Err(RuntimeError::IdentityMismatch("record type or permissions"));
     }
+    // Recovery may see a published target whose writer died before syncing
+    // the rename. Stabilize its directory before treating it as authority.
+    File::open(path.parent().ok_or(RuntimeError::InvalidId)?)?.sync_all()?;
     Ok(serde_json::from_reader(File::open(path)?)?)
 }
 
+#[cfg(test)]
 pub(crate) fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeError> {
     let output = Command::new("/usr/bin/ip")
         .args(arguments)
@@ -1302,6 +1401,7 @@ pub(crate) fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), 
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn run_nft_in_namespace(
     id: &str,
     operation: &'static str,
@@ -1466,6 +1566,8 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
+                host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
                 chroot_base: base.path().to_path_buf(),
@@ -1523,6 +1625,8 @@ mod tests {
         fs::write(jail.join("rootfs.ext4"), b"private disk").unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
+                host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
                 chroot_base: base.path().to_path_buf(),
@@ -1549,6 +1653,7 @@ mod tests {
         write_new_record(
             &claim.join("network.json"),
             &NetworkRecord {
+                namespace_device: None,
                 resource_id: id.clone(),
                 namespace_inode: network.ino(),
             },
@@ -1591,6 +1696,8 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
+                host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
                 chroot_base: base.path().to_path_buf(),
@@ -1610,6 +1717,7 @@ mod tests {
         write_new_record(
             &claim.join("network.json"),
             &NetworkRecord {
+                namespace_device: None,
                 resource_id: id.clone(),
                 namespace_inode: namespace.ino(),
             },
@@ -1654,6 +1762,7 @@ mod tests {
 
     #[test]
     fn launch_gate_requires_explicit_release_and_eof_cannot_start_child() {
+        let _serial = PROCESS_TEST_LOCK.lock().unwrap();
         let directory = tempfile::tempdir().unwrap();
         let marker = directory.path().join("started");
         let mut denied = Command::new("/bin/sh")
@@ -1819,5 +1928,51 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
         let mut readonly = File::open(&path).unwrap();
         assert!(copy_sparse_range(&mut &b"write"[..], &mut readonly, 5).is_err());
+    }
+}
+
+#[cfg(test)]
+mod console_policy_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_discard_creates_no_console_file_and_drops_both_streams() {
+        let directory = tempfile::tempdir().unwrap();
+        let (stdout, stderr) =
+            console_output(directory.path(), Some(ConsolePolicy::Discard)).unwrap();
+        let status = Command::new("/bin/sh")
+            .args(["-c", "printf stdout; printf stderr >&2"])
+            .stdout(stdout)
+            .stderr(stderr)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn legacy_file_logging_is_preserved_without_an_explicit_policy() {
+        let directory = tempfile::tempdir().unwrap();
+        let (stdout, stderr) = console_output(directory.path(), None).unwrap();
+        let status = Command::new("/bin/sh")
+            .args(["-c", "printf stdout; printf stderr >&2"])
+            .stdout(stdout)
+            .stderr(stderr)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let path = directory.path().join("console.log");
+        assert_eq!(fs::read(&path).unwrap(), b"stdoutstderr");
+        assert_eq!(fs::metadata(path).unwrap().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn console_policy_has_no_implicit_retained_tail_or_unbounded_alias() {
+        assert_eq!(
+            serde_json::from_str::<ConsolePolicy>("\"discard\"").unwrap(),
+            ConsolePolicy::Discard
+        );
+        assert!(serde_json::from_str::<ConsolePolicy>("\"file\"").is_err());
+        assert!(serde_json::from_str::<ConsolePolicy>("\"bounded_tail\"").is_err());
     }
 }

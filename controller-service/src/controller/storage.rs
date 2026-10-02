@@ -1,6 +1,6 @@
 use super::{
     allocators::{self, SqlId},
-    identity,
+    checkpoint, identity,
     transaction::WorldTransaction,
 };
 use crate::{AcceptedWrite, JournalError, journal::write_accepted_with_ids};
@@ -10,14 +10,27 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredInput {
-    version: u16,
-    input: core::ControllerInput,
+pub(super) struct StoredInput {
+    pub(super) version: u16,
+    pub(super) input: core::ControllerInput,
 }
 
 pub(super) fn load_world(connection: &Connection) -> Result<core::World, JournalError> {
     #[cfg(test)]
     FULL_REPLAYS.with(|count| count.set(count.get() + 1));
+    if connection.is_autocommit() {
+        let tx = connection.unchecked_transaction()?;
+        let world = load_world_snapshot(&tx)?;
+        tx.commit()?;
+        return Ok(world);
+    }
+    load_world_snapshot(connection)
+}
+
+fn load_world_snapshot(connection: &Connection) -> Result<core::World, JournalError> {
+    if checkpoint::config(connection)?.is_some() {
+        return checkpoint::load_world(connection);
+    }
     let mut statement = connection
         .prepare("SELECT sequence, input_json FROM controller_inputs ORDER BY sequence")?;
     let rows = statement.query_map([], |row| {
@@ -39,6 +52,40 @@ pub(super) fn load_world(connection: &Connection) -> Result<core::World, Journal
     Ok(world)
 }
 
+// Opening validation binds SQL-only predecessor context to the exact accepted
+// Bind inputs, rather than trusting a merely plausible smaller VM number.
+pub(super) fn replayed_host_contexts(
+    connection: &Connection,
+) -> Result<Vec<super::HostSlotContext>, JournalError> {
+    if checkpoint::config(connection)?.is_some() {
+        return checkpoint::replayed_contexts(connection);
+    }
+    let mut statement =
+        connection.prepare("SELECT input_json FROM controller_inputs ORDER BY sequence")?;
+    let mut contexts = std::collections::BTreeMap::new();
+    for bytes in statement.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
+        let entry: StoredInput = serde_json::from_slice(&bytes?)?;
+        if let core::ControllerInput::Maintenance(core::maintenance::MaintenanceInput::Slot(
+            core::maintenance::slots::SlotInput::Bind {
+                position,
+                expected_previous,
+                binding,
+            },
+        )) = entry.input
+        {
+            contexts.insert(
+                position.0,
+                super::HostSlotContext {
+                    position,
+                    expected_previous,
+                    binding,
+                },
+            );
+        }
+    }
+    Ok(contexts.into_values().collect())
+}
+
 pub(super) fn apply(
     transaction: &WorldTransaction<'_>,
     namespace: &str,
@@ -46,12 +93,19 @@ pub(super) fn apply(
 ) -> Result<core::ControllerDecision, JournalError> {
     let world = transaction.world();
     let sandbox = identity::input_sandbox(&input)?;
-    let serialized = serde_json::to_vec(&StoredInput {
-        version: 1,
-        input: input.clone(),
-    })?;
-    let decision =
-        core::handle_controller(&world, input).map_err(JournalError::ControllerRejected)?;
+    let stored = StoredInput { version: 1, input };
+    let serialized = checkpoint::input_bytes(transaction, &stored)?;
+    let decision = core::handle_controller(&world, stored.input.clone())
+        .map_err(JournalError::ControllerRejected)?;
+    let full_capacity = super::capacity::config(transaction)?.is_some();
+    if full_capacity && decision.next == world {
+        return Ok(decision);
+    }
+    if let core::ControllerInput::Request(core::Request::Create(request)) = &stored.input {
+        super::capacity::admit(transaction, request)?;
+    }
+    let before = super::capacity::cursors(transaction)?;
+    checkpoint::require_input_room(transaction, serialized.len())?;
     let record = decision
         .next
         .sandbox_record(sandbox)
@@ -102,6 +156,53 @@ pub(super) fn apply(
         "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
         params![sequence, serialized],
     )?;
+    super::capacity::spend(transaction, sandbox, before)?;
+    transaction.advance(decision.next.clone());
+    Ok(decision)
+}
+
+// This deliberately bypasses sandbox/outbox projection writers: maintenance
+// changes no lifecycle operation and can later remove its sandbox entirely.
+pub(super) fn append_maintenance(
+    transaction: &rusqlite::Transaction<'_>,
+    world: &core::World,
+    input: core::maintenance::MaintenanceInput,
+) -> Result<core::ControllerDecision, JournalError> {
+    let input = core::ControllerInput::Maintenance(input);
+    let decision =
+        core::handle_controller(world, input.clone()).map_err(JournalError::ControllerRejected)?;
+    if super::capacity::config(transaction)?.is_some() && decision.next == *world {
+        return Ok(decision);
+    }
+    let serialized = checkpoint::input_bytes(transaction, &StoredInput { version: 1, input })?;
+    checkpoint::require_input_room(transaction, serialized.len())?;
+    let sequence = allocators::next_sql(transaction, SqlId::Input)?;
+    transaction.execute(
+        "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
+        params![sequence, serialized],
+    )?;
+    Ok(decision)
+}
+
+pub(super) fn apply_maintenance(
+    transaction: &WorldTransaction<'_>,
+    input: core::maintenance::MaintenanceInput,
+) -> Result<core::ControllerDecision, JournalError> {
+    let sandbox = match &input {
+        core::maintenance::MaintenanceInput::Retire(request) => Some(request.sandbox),
+        core::maintenance::MaintenanceInput::Slot(
+            core::maintenance::slots::SlotInput::Bind { binding, .. }
+            | core::maintenance::slots::SlotInput::BeginRelease { binding, .. }
+            | core::maintenance::slots::SlotInput::ConfirmRelease { binding, .. }
+            | core::maintenance::slots::SlotInput::CheckOccupied { binding, .. },
+        ) => Some(binding.sandbox),
+        _ => None,
+    };
+    let before = super::capacity::cursors(transaction)?;
+    let decision = append_maintenance(transaction, &transaction.world(), input)?;
+    if let Some(sandbox) = sandbox {
+        super::capacity::spend(transaction, sandbox, before)?;
+    }
     transaction.advance(decision.next.clone());
     Ok(decision)
 }

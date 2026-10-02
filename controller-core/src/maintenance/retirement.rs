@@ -973,6 +973,58 @@ fn remove_details(world: &mut World, sandbox: SandboxId) {
         .retain(|id| id.command().sandbox() != sandbox);
 }
 
+/// Verify exact terminal controller cleanup without changing state. This is
+/// logical evidence only: it does not certify physical host/data quiescence,
+/// release external pins, require physical positions Free, or retire history.
+/// # Errors
+/// Unknown actions, incomplete ledgers/resources, authority or dependencies fail closed.
+pub fn validate_terminal_cleanup(
+    world: &World,
+    sandbox: SandboxId,
+) -> Result<(), RetirementReject> {
+    if !world.controller_up {
+        return Err(RetirementReject::ControllerDown);
+    }
+    let record = world
+        .sandboxes
+        .get(&sandbox)
+        .ok_or(RetirementReject::SandboxNotFound)?;
+    if record.phase != Phase::Destroyed
+        || !record.terminal
+        || record.desired != Authority::Closed
+        || record.effective != Authority::Closed
+        || record.current_vm.is_some()
+        || record.net_slot.is_some()
+    {
+        return Err(RetirementReject::NotTerminal);
+    }
+    check_ledgers(world, sandbox, record)?;
+    let ids = owned_ids(world, sandbox);
+    if !external_dependencies_closed(world, sandbox, record, &ids) {
+        return Err(RetirementReject::DependencyNotClosed);
+    }
+    check_resources(world, sandbox, record, &ids)?;
+    check_effects(world, sandbox, record)?;
+    if world.worker_fences.get(&sandbox)
+        != Some(&WorkerFence {
+            epoch: record.epoch,
+            terminal: true,
+        })
+        || !successful_command(
+            world,
+            &Command::InstallFence {
+                sandbox,
+                epoch: record.epoch,
+                terminal: true,
+            },
+        )
+    {
+        return Err(RetirementReject::NotTerminal);
+    }
+
+    Ok(())
+}
+
 /// Atomically retain exact terminal results and remove the closed sandbox's
 /// controller metadata. No physical deletion or receipt synthesis occurs.
 ///
@@ -1034,27 +1086,7 @@ pub fn retire(world: &World, request: RetireRequest) -> Result<World, Retirement
     }) {
         return Err(RetirementReject::ResourcesNotReclaimed);
     }
-    if !external_dependencies_closed(world, sandbox, record, &ids) {
-        return Err(RetirementReject::DependencyNotClosed);
-    }
-    check_resources(world, sandbox, record, &ids)?;
-    check_effects(world, sandbox, record)?;
-    if world.worker_fences.get(&sandbox)
-        != Some(&WorkerFence {
-            epoch: record.epoch,
-            terminal: true,
-        })
-        || !successful_command(
-            world,
-            &Command::InstallFence {
-                sandbox,
-                epoch: record.epoch,
-                terminal: true,
-            },
-        )
-    {
-        return Err(RetirementReject::NotTerminal);
-    }
+    validate_terminal_cleanup(world, sandbox)?;
 
     let mut next = world.clone();
     let retained = &mut next

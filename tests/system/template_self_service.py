@@ -4,6 +4,8 @@ Root-only disposable deployment, two disjoint pools. No E2B cloud/paid model.
 --temporarily-forward enables IPv4 forwarding for the approved public probe
 and restores its original value on exit. Failure retains exact evidence.
 """
+from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
+
 import argparse
 import json
 import os
@@ -30,6 +32,8 @@ BUILD_TOOLS = dict(BUILDKIT_HASHES, regctl=REGCTL_SHA256)
 
 
 def exercise(args):
+    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None),
+        legacy_unbounded=getattr(args, "legacy_unbounded", False))
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("isolated root Linux/KVM required")
     checkout = Path(__file__).resolve().parents[2]
@@ -112,9 +116,15 @@ def exercise(args):
     if not args.public:
         settings[1]["public_ipv4_enabled"] = True
         (root / "1/config.json").write_text(json.dumps(settings[1]))
+    build_mode = apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy)
+    for i, config in enumerate(settings):
+        (root / str(i) / "config.json").write_text(json.dumps(config))
+    (root / "build-mode.json").write_text(json.dumps({"build_mode": build_mode}))
     build_config = root / "build.json"
     build_config.write_text(json.dumps(build))
     build_config.chmod(0o600)
+    from tools.template_build_service import configuration
+    configuration(build_config)
     fixture_root = root / "fixture"
     fixture_root.mkdir(mode=0o700)
     (fixture_root / "tools").mkdir()
@@ -135,7 +145,16 @@ def exercise(args):
         code, data = fetch(opener, urls[2], method, path, key, body)
         return code, json.loads(data)
     def submit(body, source=None):
-        code, result = request("POST", "/sandproof/template-builds", body)
+        if build_mode == "windowed":
+            from tools.template_build_client import BuildClient, saved_intent
+            client = BuildClient(urls[2], keys[0])
+            intent_path = root / ("build-intent-" + secrets.token_hex(16) + ".json")
+            intent = saved_intent(intent_path, client, body | {"timeoutSeconds": body.get("timeoutSeconds", build["limits"]["timeout_seconds"])},
+                                  build_mode=build_mode, context=source)
+            result = client.request("POST", "/sandproof/template-builds", body | {"requestWindow": intent["requestWindow"]}, token=intent["idempotency_key"])
+            code = 202
+        else:
+            code, result = request("POST", "/sandproof/template-builds", body)
         assert code == 202, (code, result)
         job = result["buildID"]
         if source:
@@ -277,6 +296,9 @@ if __name__ == "__main__":
     for name in ("server", "firecracker", "jailer", "kernel", "rootfs", "tools", "scratch-parent", "cgroup-parent", "build-cgroup-parent"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
+    mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
     parser.add_argument("--public", action="store_true")
     parser.add_argument("--temporarily-forward", action="store_true", help="temporarily enable IPv4 forwarding for approved public test; restore on exit")
     parser.add_argument("--public-image", default="public.ecr.aws/docker/library/ubuntu:24.04")

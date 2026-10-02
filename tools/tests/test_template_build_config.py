@@ -6,11 +6,195 @@ import tempfile
 import unittest
 
 from tools.template_build_config import validate_capacity, MIB, UPLOAD_ENVELOPE_BYTES
-from tools.template_build_service import configuration
+from tools.template_build_service import (
+    bounded_data_route_limits, configuration, host_uid_range, validate_pool_resource_ranges,
+)
 from tools.template_inputs import InvalidTemplate, platform_dns_servers
 from tools.template_worker import install_platform, validate_request
 
 GIB = 1024 * MIB
+
+
+def transfer_settings():
+    # Explicit synthetic policy, not deployment defaults.
+    return {'file_upload_bytes': 1024, 'file_download_bytes': 1024,
+            'command_input_bytes': 1024, 'command_output_bytes': 1024,
+            'rpc_request_bytes': 1024, 'rpc_response_bytes': 1024,
+            'max_transfers': 8, 'max_transfers_per_vm': 4, 'control_reserve': 1,
+            'request_idle_seconds': 5, 'file_idle_seconds': 5, 'write_idle_seconds': 5}
+
+
+class HostUidRangeTests(unittest.TestCase):
+    def settings(self):
+        # Explicit synthetic limits, never deployment defaults.
+        return {'uid_base': 1000, 'max_vm_id': 2**64 - 1, 'data_transfer': transfer_settings(), 'bounded_host': {
+            'uid_base': 1000, 'uplink_base': 0, 'maintenance': {'max_retained_results': 10,
+                'max_host_slots': 2, 'windows': {'max_open_windows': 2, 'max_duration_ms': 100}}}}
+
+    def test_bounded_route_capacity_uses_explicit_per_vm_cap_including_control_reserve(self):
+        settings = self.settings()
+        self.assertEqual(bounded_data_route_limits(settings), {
+            'max_data_routes_per_slot': 4, 'max_data_routes_global': 8, 'data_route_control_reserve': 1})
+        settings['data_transfer']['max_transfers_per_vm'] = 5
+        self.assertEqual(bounded_data_route_limits(settings)['max_data_routes_per_slot'], 5)
+        settings['data_transfer']['max_transfers'] = 16
+        self.assertEqual(bounded_data_route_limits(settings), {
+            'max_data_routes_per_slot': 5, 'max_data_routes_global': 16, 'data_route_control_reserve': 1})
+        settings['data_transfer']['control_reserve'] = 2
+        self.assertEqual(bounded_data_route_limits(settings), {
+            'max_data_routes_per_slot': 5, 'max_data_routes_global': 16, 'data_route_control_reserve': 2})
+        for field in ('max_data_routes_per_slot', 'max_data_routes_global', 'data_route_control_reserve'):
+            duplicated = copy.deepcopy(settings)
+            duplicated['bounded_host'][field] = 5
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'bounded host config'):
+                host_uid_range(duplicated)
+
+    def test_bounded_route_capacity_rejects_missing_untyped_and_inconsistent_budgets(self):
+        for invalid in (None, {}, [], True):
+            settings = self.settings()
+            settings['data_transfer'] = invalid
+            with self.subTest(value=invalid), self.assertRaises(ValueError):
+                host_uid_range(settings)
+        settings = self.settings()
+        del settings['data_transfer']
+        with self.assertRaises(ValueError):
+            host_uid_range(settings)
+        settings['bounded_host'] = None
+        settings['max_vm_id'] = 99
+        self.assertEqual(host_uid_range(settings), range(1000, 1100))
+        for field in transfer_settings():
+            for invalid in (0, -1, True, None, '2', 1.5, 2**64):
+                settings = self.settings()
+                settings['data_transfer'][field] = invalid
+                with self.subTest(field=field, value=invalid), self.assertRaises(ValueError):
+                    host_uid_range(settings)
+            settings = self.settings()
+            del settings['data_transfer'][field]
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                host_uid_range(settings)
+        for field, value in (('control_reserve', 4), ('max_transfers', 3),
+                             ('max_transfers_per_vm', 9), ('rpc_request_bytes', 8 * MIB + 1),
+                             ('request_idle_seconds', 2**63)):
+            settings = self.settings()
+            settings['data_transfer'][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                host_uid_range(settings)
+
+    def test_bounded_span_is_physical_count_not_permanent_identity_limit(self):
+        settings = self.settings()
+        self.assertEqual(host_uid_range(settings), range(1000, 1002))
+        settings['max_vm_id'] = 0
+        settings['bounded_host']['maintenance']['max_host_slots'] = 3
+        self.assertEqual(host_uid_range(settings), range(1000, 1003))
+        self.assertEqual(host_uid_range({'uid_base': 1000, 'max_vm_id': 99}), range(1000, 1100))
+        self.assertEqual(host_uid_range({'uid_base': 1000, 'max_vm_id': 99, 'bounded_host': None}),
+                         range(1000, 1100))
+
+    def test_last_usable_uid_and_adjacent_pools_are_exact(self):
+        settings = self.settings()
+        settings['uid_base'] = settings['bounded_host']['uid_base'] = 2**32 - 3
+        self.assertEqual(host_uid_range(settings), range(2**32 - 3, 2**32 - 1))
+        settings['bounded_host']['maintenance']['max_host_slots'] = 3
+        with self.assertRaises(ValueError):
+            host_uid_range(settings)
+        runtime = self.settings()
+        builder = self.settings()
+        builder['uid_base'] = builder['bounded_host']['uid_base'] = 1002
+        r_range, b_range = host_uid_range(runtime), host_uid_range(builder)
+        self.assertEqual(r_range.stop, b_range.start)
+
+    def test_all_bounded_limits_are_explicit_and_strictly_typed(self):
+        valid = self.settings()
+        paths = [('uid_base',), ('bounded_host', 'uid_base'),
+                 ('bounded_host', 'maintenance', 'max_retained_results'),
+                 ('bounded_host', 'maintenance', 'max_host_slots'),
+                 ('bounded_host', 'maintenance', 'windows', 'max_open_windows'),
+                 ('bounded_host', 'maintenance', 'windows', 'max_duration_ms')]
+        for path in paths:
+            for value in (0, -1, True, False, '2', 1.5, None, 2**64):
+                settings = copy.deepcopy(valid)
+                target = settings
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                with self.subTest(path=path, value=value), self.assertRaises(ValueError):
+                    host_uid_range(settings)
+            settings = copy.deepcopy(valid)
+            target = settings
+            for key in path[:-1]:
+                target = target[key]
+            del target[path[-1]]
+            with self.subTest(missing=path), self.assertRaises(ValueError):
+                host_uid_range(settings)
+        for path in [('bounded_host',), ('bounded_host', 'maintenance'),
+                     ('bounded_host', 'maintenance', 'windows')]:
+            settings = copy.deepcopy(valid)
+            target = settings
+            for key in path:
+                target = target[key]
+            target['misspelled'] = 1
+            with self.subTest(unknown=path), self.assertRaises(ValueError):
+                host_uid_range(settings)
+        settings = self.settings()
+        settings['bounded_host']['uid_base'] += 1
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            host_uid_range(settings)
+        settings = self.settings()
+        settings['bounded_host']['maintenance']['max_host_slots'] = 1_048_577
+        with self.assertRaises(ValueError):
+            host_uid_range(settings)
+        for invalid in (-1, True, '0', 1.5, None, 1_048_575, 2**64):
+            settings = self.settings()
+            settings['bounded_host']['uplink_base'] = invalid
+            with self.subTest(uplink_base=invalid), self.assertRaises(ValueError):
+                host_uid_range(settings)
+        settings = self.settings()
+        del settings['bounded_host']['uplink_base']
+        with self.assertRaises(ValueError):
+            host_uid_range(settings)
+
+    def test_public_pools_need_disjoint_addresses_even_with_distinct_namespaces(self):
+        runtime, builder = self.settings(), self.settings()
+        runtime.update(namespace='runtime', public_ipv4_enabled=True)
+        builder.update(namespace='builder', public_ipv4_enabled=True, uid_base=1002)
+        builder['bounded_host']['uid_base'] = 1002
+        with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
+            validate_pool_resource_ranges(runtime, builder)
+        builder['bounded_host']['uplink_base'] = 2
+        validate_pool_resource_ranges(runtime, builder)
+        builder['bounded_host']['uplink_base'] = 1
+        with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
+            validate_pool_resource_ranges(runtime, builder)
+        runtime['public_ipv4_enabled'] = False
+        with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
+            validate_pool_resource_ranges(runtime, builder)
+        builder['public_ipv4_enabled'] = False
+        with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
+            validate_pool_resource_ranges(runtime, builder)
+        builder['bounded_host']['uplink_base'] = 2
+        validate_pool_resource_ranges(runtime, builder)
+        runtime['public_ipv4_enabled'] = 'false'
+        with self.assertRaisesRegex(ValueError, 'enable flag'):
+            validate_pool_resource_ranges(runtime, builder)
+
+    def test_legacy_behavior_is_preserved_and_mixed_mapping_is_checked(self):
+        runtime = {'uid_base': 1000, 'max_vm_id': 99, 'public_ipv4_enabled': True}
+        builder = {'uid_base': 1100, 'max_vm_id': 99, 'public_ipv4_enabled': True}
+        validate_pool_resource_ranges(runtime, builder)
+        builder['public_ipv4_enabled'] = False
+        validate_pool_resource_ranges(runtime, builder)
+        runtime['public_ipv4_enabled'] = False
+        validate_pool_resource_ranges(runtime, builder)
+        builder = self.settings()
+        builder.update(uid_base=1100, public_ipv4_enabled=True)
+        builder['bounded_host'].update(uid_base=1100, uplink_base=100)
+        validate_pool_resource_ranges(runtime, builder)
+        builder['bounded_host']['uplink_base'] = 99
+        with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
+            validate_pool_resource_ranges(runtime, builder)
+        builder['uid_base'] = builder['bounded_host']['uid_base'] = 1099
+        with self.assertRaisesRegex(ValueError, 'UID pools overlap'):
+            validate_pool_resource_ranges(runtime, builder)
 
 
 def inputs():
@@ -131,6 +315,22 @@ class CapacityTests(unittest.TestCase):
             path.write_text(json.dumps(cfg))
             path.chmod(0o600)
             self.assertEqual(configuration(path)['limits']['builder_disk_bytes'], 32 * GIB)
+            # The real config reader uses physical spans even with a much
+            # larger lifetime VM frontier. Test-only maintenance policy.
+            for index, pool in enumerate((runtime, builder)):
+                pool['max_vm_id'] = 2**64 - 1
+                pool['data_transfer'] = transfer_settings() | pool.get('data_transfer', {})
+                pool['bounded_host'] = {'uid_base': pool['uid_base'], 'uplink_base': index * 2,
+                    'maintenance': {'max_retained_results': 10, 'max_host_slots': 2,
+                        'windows': {'max_open_windows': 2, 'max_duration_ms': 100}}}
+                Path(files[index]).write_text(json.dumps(pool))
+            self.assertEqual(configuration(path)['limits']['builder_disk_bytes'], 32 * GIB)
+            builder['bounded_host']['uplink_base'] = 0
+            Path(files[1]).write_text(json.dumps(builder))
+            with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
+                configuration(path)
+            builder['bounded_host']['uplink_base'] = 2
+            Path(files[1]).write_text(json.dumps(builder))
             cfg['dns_servers'] = [134744072]
             path.write_text(json.dumps(cfg))
             with self.assertRaisesRegex(ValueError, 'strings'):
@@ -187,3 +387,72 @@ class DnsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ExplicitAcceptanceModeTests(unittest.TestCase):
+    def test_mode_is_explicit_and_policy_shape_cannot_inject_pool_identity(self):
+        import json
+        from pathlib import Path
+        import tempfile
+        from tools.template_build_config import acceptance_build_policy
+        with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+            acceptance_build_policy(None)
+        self.assertIsNone(acceptance_build_policy(None, legacy_unbounded=True))
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / 'policy.json'
+            path.write_text(json.dumps({'runtime': {'database': 'replace'}, 'builder': {}, 'public': {}}))
+            path.chmod(0o600)
+            with self.assertRaisesRegex(ValueError, 'explicit bounded pool policy'):
+                acceptance_build_policy(path)
+            with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+                acceptance_build_policy(path, legacy_unbounded=True)
+
+    def test_policy_passes_explicit_sections_and_never_changes_existing_identity(self):
+        import copy
+        from tools.template_build_config import apply_acceptance_build_policy
+        from unittest.mock import patch
+        runtime = {'namespace': 'runtime', 'database': '/runtime/db'}
+        builder = {'namespace': 'builder', 'database': '/builder/db'}
+        build = {'limits': {'workspace_bytes': 100, 'workspace_bytes_per_tenant': 50}}
+        policy = {'runtime': {'bounded_host': {'uid_base': 1000}, 'maintenance': {'capacity': {}}},
+                  'builder': {'bounded_host': {'uid_base': 2000}, 'maintenance': {'capacity': {}},
+                              'build_retry_windows': {'window_duration_ms': 1000, 'max_anchors': 2}},
+                  'public': {'bounded_builds': {'namespace': 17}, 'workspace_bytes': 200, 'workspace_bytes_per_tenant': 100}}
+        before = copy.deepcopy((runtime, builder, build))
+        self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, None), 'legacy-unbounded')
+        self.assertEqual((runtime, builder, build), before)
+        with patch('tools.template_build_service.validate_pool_resource_ranges') as ranges, \
+                patch('tools.template_build_store.bounded_configuration'), \
+                patch('tools.template_physical_storage.validate_configuration') as physical:
+            self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, policy), 'windowed')
+            ranges.assert_called_once_with(runtime, builder)
+            physical.assert_called_once_with(runtime, builder, build)
+        self.assertEqual(runtime['namespace'], 'runtime')
+        self.assertEqual(builder['database'], '/builder/db')
+        self.assertEqual(builder['build_retry_windows'], policy['builder']['build_retry_windows'])
+        self.assertEqual(build['limits']['workspace_bytes'], 200)
+        self.assertEqual(build['bounded_builds'], {'namespace': 17})
+
+    def test_generator_rejects_mismatched_physical_budget_without_activation(self):
+        import copy
+        from unittest.mock import patch
+        from tools.template_build_config import apply_acceptance_build_policy
+        from tools.tests.test_template_physical_storage import configuration as physical_fixture
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime, builder, build, profile = physical_fixture(root)
+            build['limits']['workspace_bytes_per_tenant'] = 1000
+            policy = {
+                'runtime': {key: copy.deepcopy(runtime[key]) for key in ('bounded_host', 'maintenance')},
+                'builder': {key: copy.deepcopy(builder[key]) for key in ('bounded_host', 'maintenance')},
+                'public': {'bounded_builds': copy.deepcopy(build['bounded_builds']),
+                           'workspace_bytes': 2000, 'workspace_bytes_per_tenant': 1000},
+            }
+            policy['builder']['build_retry_windows'] = {'window_duration_ms': 1000, 'max_anchors': 2}
+            runtime['max_disk_bytes_global'] += 1
+            with patch('tools.template_build_service.validate_pool_resource_ranges'), \
+                    patch('tools.template_build_store.bounded_configuration'):
+                with self.assertRaisesRegex(ValueError, 'pool budget'):
+                    apply_acceptance_build_policy(runtime, builder, build, policy)
+            self.assertEqual(Path(profile['coordination_file']).read_bytes(), b'')
+            self.assertEqual(list((root / 'public').iterdir()), [])

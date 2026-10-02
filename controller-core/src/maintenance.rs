@@ -15,6 +15,7 @@ use windows::{WindowInput, WindowLimits, WindowReject, WindowState};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub struct MaintenanceLimits {
     pub max_retained_results: u64,
     pub max_host_slots: u64,
@@ -81,9 +82,26 @@ impl World {
 }
 
 impl MaintenanceState {
+    /// Permanent identity barriers, including identities with expired results.
+    #[must_use]
+    pub const fn identity_frontiers(&self) -> (Option<u64>, Option<u64>) {
+        (self.sandbox_frontier, self.workspace_frontier)
+    }
+    #[must_use]
+    pub fn limits(&self) -> MaintenanceLimits {
+        MaintenanceLimits {
+            max_retained_results: self.max_retained_results,
+            max_host_slots: self.max_host_slots,
+            windows: self.windows.limits(),
+        }
+    }
     #[must_use]
     pub fn retained_result(&self, key: OperationKey) -> Option<&RetainedOperation> {
         self.retained.get(&key)
+    }
+    #[must_use]
+    pub fn retained_results(&self) -> &[(OperationKey, RetainedOperation)] {
+        self.retained.entries()
     }
     #[must_use]
     pub fn retained_count(&self) -> usize {
