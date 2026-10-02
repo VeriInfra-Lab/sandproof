@@ -67,6 +67,7 @@ pub enum JournalError {
     Json(serde_json::Error),
     Contract(ContractError),
     Conflict,
+    IdentifierExhausted,
     RevisionConflict,
     ReceiptBeforeDispatch,
     ConflictingReceipt,
@@ -106,6 +107,9 @@ impl JournalError {
 impl Display for JournalError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::IdentifierExhausted => {
+                formatter.write_str("controller identifier space exhausted")
+            }
             Self::Io(error) => write!(formatter, "controller filesystem error: {error}"),
             Self::Sqlite(error) => write!(formatter, "sqlite journal error: {error}"),
             Self::CommitUncertain(error) => {

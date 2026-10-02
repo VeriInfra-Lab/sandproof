@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tarfile
 import tempfile
+import threading
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -293,6 +294,46 @@ class BuildLogTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GenericSuiteTests(unittest.TestCase):
+    def test_cancel_during_external_audit_waits_for_same_audit_before_propagating(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                source_kind='oci', build_url='http://127.0.0.1:1')
+            lock = {'source': {}, 'tasks': [{'name': name} for name in ('a', 'b')]}
+            finished = threading.Event()
+            async def exercise():
+                entered = asyncio.Event()
+                release = threading.Event()
+                loop = asyncio.get_running_loop()
+                def audit(row):
+                    loop.call_soon_threadsafe(entered.set)
+                    if not release.wait(2):
+                        raise TimeoutError('test did not release audit')
+                    finished.set()
+                    return {'exact_cleanup': 'passed'}
+                args.completion_audit = Mock(side_effect=audit)
+                running = asyncio.create_task(run_selected(args, lock))
+                await asyncio.wait_for(entered.wait(), 1)
+                running.cancel()
+                await asyncio.sleep(0)
+                self.assertFalse(running.done())
+                running.cancel()
+                release.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await running
+                self.assertTrue(finished.is_set())
+            with patch('benchmarks.run_generic.run_task', AsyncMock(return_value={
+                    'name': 'a', 'status': 'failed', 'execution_status': 'timeout',
+                    'error_type': 'TimeoutError'})) as trial:
+                asyncio.run(exercise())
+            trial.assert_awaited_once()
+            args.completion_audit.assert_called_once()
+            rows = json.loads((Path(tmp) / 'full-set.json').read_text())['tasks']
+            self.assertEqual(rows[0]['execution_status'], 'timeout')
+            self.assertEqual(rows[0]['error_type'], 'TimeoutError')
+            self.assertTrue(rows[0]['interrupted'])
+            self.assertEqual(rows[0]['exact_cleanup'], 'passed')
+            self.assertEqual(rows[1]['status'], 'not_run')
+
     def test_recovered_create_failure_keeps_score_and_continues_only_after_physical_audit(self):
         for exact in ('passed', 'unknown'):
             with self.subTest(exact=exact), tempfile.TemporaryDirectory() as tmp:
@@ -321,8 +362,9 @@ class GenericSuiteTests(unittest.TestCase):
             async def interrupted(*args, **kwargs):
                 result = Path(tmp) / 'a/result.json'
                 result.parent.mkdir()
-                result.write_text(json.dumps({'name': 'a', 'status': 'create_unknown',
-                    'interrupted': True, 'runtime_intent': {'original': True}}))
+                kwargs['result_row'].update(name='a', status='create_unknown',
+                    interrupted=True, runtime_intent={'original': True})
+                result.write_text(json.dumps(kwargs['result_row']))
                 raise asyncio.CancelledError()
             with patch('benchmarks.run_generic.run_task', AsyncMock(side_effect=interrupted)) as trial:
                 with self.assertRaises(asyncio.CancelledError):

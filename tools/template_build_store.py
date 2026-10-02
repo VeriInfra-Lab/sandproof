@@ -108,17 +108,32 @@ class BuildStore:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute("CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, limits TEXT NOT NULL)")
-        encoded = json.dumps({"limits": self.limits, "binding": binding}, sort_keys=True)
+        settings = {"limits": self.limits, "binding": binding}
+        legacy_encoded = json.dumps(settings, sort_keys=True)
+        encoded = json.dumps(settings | {"schema_version": 2}, sort_keys=True)
         old = self.db.execute("SELECT limits FROM settings WHERE id=1").fetchone()
-        if old and old[0] != encoded:
+        if old and old[0] not in (legacy_encoded, encoded):
             self.close()
             raise ValueError("build budgets changed; explicit migration required")
-        self.db.execute("INSERT OR IGNORE INTO settings VALUES(1, ?)", (encoded,))
+        # Include schema and legacy-row migration in the same durable commit.
+        self.db.execute("BEGIN IMMEDIATE")
+        # Old supervisors reject this encoding instead of reopening a journal
+        # whose pending-publication semantics they cannot safely interpret.
+        self.db.execute("INSERT OR REPLACE INTO settings VALUES(1, ?)", (encoded,))
         self.db.execute("""CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, owner TEXT NOT NULL, token TEXT NOT NULL, request TEXT NOT NULL,
             state TEXT NOT NULL, created REAL NOT NULL, deadline REAL NOT NULL,
             reserved INTEGER NOT NULL, input_hash TEXT, candidate TEXT, failure TEXT, result TEXT,
+            publication_attempted INTEGER NOT NULL DEFAULT 0,
             UNIQUE(owner,token))""")
+        if "publication_attempted" not in {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}:
+            # Old Publishing records cannot distinguish staged-only work from
+            # a POST still queued at the runtime. Migrate atomically and fail
+            # closed; a later 404 cannot make either case safe to retry/delete.
+            self.db.execute("ALTER TABLE jobs ADD COLUMN publication_attempted INTEGER NOT NULL DEFAULT 0")
+            self.db.execute("UPDATE jobs SET publication_attempted=1 WHERE state='Publishing'")
+        elif old and old[0] == legacy_encoded:
+            self.db.execute("UPDATE jobs SET publication_attempted=1 WHERE state='Publishing'")
         self.db.commit()
 
     def close(self):
@@ -192,7 +207,7 @@ class BuildStore:
             job = secrets.token_hex(16)
             self.directory(job).mkdir(mode=0o700)
             now = self.clock()
-            self.db.execute("INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,NULL,NULL,NULL,NULL)",
+            self.db.execute("INSERT INTO jobs (id,owner,token,request,state,created,deadline,reserved) VALUES(?,?,?,?,?,?,?,?)",
                 (job, str(owner), token, encoded, "AwaitingInput" if request["kind"] == "dockerfile" else "Queued",
                  now, now + request["timeoutSeconds"], cost))
             return self.view(self._row(job, owner))
@@ -225,6 +240,22 @@ class BuildStore:
             self.db.execute("UPDATE jobs SET state=?, failure=?, candidate=COALESCE(?,candidate), result=?, reserved=? WHERE id=?",
                 (state, failure, json.dumps(candidate) if candidate else None,
                  json.dumps(result) if result else None, 0 if release else row["reserved"], job))
+
+    def begin_publication(self, job):
+        """Commit intent before POST; an unknown attempt is observation-only."""
+        with self.lock, self.db:
+            row = self._row(job)
+            if row["state"] != "Publishing" or row["publication_attempted"]:
+                raise BuildError(409, "PublicationOutcomeUnknown")
+            self.db.execute("UPDATE jobs SET publication_attempted=1 WHERE id=?", (job,))
+
+    def clear_publication_attempt(self, job):
+        """Only the original dispatch may prove it was not sent or was refused."""
+        with self.lock, self.db:
+            row = self._row(job)
+            if row["state"] != "Publishing":
+                raise BuildError(409, "TerminalBuild")
+            self.db.execute("UPDATE jobs SET publication_attempted=0 WHERE id=?", (job,))
 
     def upload(self, job, owner, blocks, size):
         with self.lock:
