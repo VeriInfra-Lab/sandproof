@@ -454,6 +454,39 @@ def unpack_rootfs(commands, umoci, layout, bundle):
     return root
 
 
+def populate_ext4(commands, root, disk):
+    """Populate a new filesystem inside the disposable build VM only."""
+    mount = disk.parent / "candidate-mount"
+    mount.mkdir(mode=0o700)
+    commands.run(["/usr/sbin/mke2fs", "-t", "ext4", "-F", "-b", "4096", "-m", "0",
+                  "-E", "lazy_itable_init=0,lazy_journal_init=0", str(disk)])
+    try:
+        commands.run(["/usr/bin/mount", "-t", "ext4", "-o", "loop,nosuid,nodev,noexec",
+                      str(disk), str(mount)])
+        if not os.path.ismount(mount):
+            raise RuntimeError("candidate filesystem was not mounted")
+        # Explicit xattr preservation makes failures fatal (preserve=all can
+        # ignore them). Never follow image symlinks or read special-file data.
+        commands.run(["/usr/bin/cp", "--recursive", "--no-dereference",
+                      "--preserve=mode,ownership,timestamps,links,xattr",
+                      "--sparse=always", "--reflink=never", "--", str(root) + "/.", str(mount)])
+    finally:
+        failure = sys.exception()
+        try:
+            if os.path.ismount(mount):
+                # Only reclamation gets a separate bounded grace period; it
+                # cannot extend the job deadline or allow a late candidate.
+                cleanup = Commands(time.monotonic() + 5, commands.log, 0, budget=commands.budget)
+                cleanup.run(["/usr/bin/umount", str(mount)])
+                if os.path.ismount(mount):
+                    raise RuntimeError("candidate filesystem remains mounted")
+            mount.rmdir()
+        except Exception:
+            if failure is None:
+                raise
+            failure.add_note("candidate mount cleanup failed; external VM cleanup required")
+
+
 def build(work, source, request, profile, *, guest_boot_id):
     validate_request(request)
     # Accidental-host guard only, NOT remote attestation. The supervisor must
@@ -472,7 +505,8 @@ def build(work, source, request, profile, *, guest_boot_id):
     daemon = None
     state = {"state": "building", "ready": False}
     input_digest = sha256(source)
-    filesystem_tools = {name: sha256(Path(name)) for name in ("/usr/sbin/mke2fs", "/usr/sbin/e2fsck")}
+    filesystem_tools = {name: sha256(Path(name)) for name in (
+        "/usr/sbin/mke2fs", "/usr/sbin/e2fsck", "/usr/bin/cp", "/usr/bin/mount", "/usr/bin/umount")}
     (work / "status.json").write_text(json.dumps(state))
     try:
         with (work / "build.log").open("xb") as log:
@@ -545,8 +579,7 @@ def build(work, source, request, profile, *, guest_boot_id):
             with disk.open("xb") as output:
                 output.truncate(request["disk_mib"] * MIB)
             with commands.phase("ext4_create"):
-                commands.run(["/usr/sbin/mke2fs", "-t", "ext4", "-F", "-b", "4096", "-m", "0",
-                              "-E", "lazy_itable_init=0,lazy_journal_init=0", "-d", str(root), str(disk)])
+                populate_ext4(commands, root, disk)
             with commands.phase("ext4_check"):
                 commands.run(["/usr/sbin/e2fsck", "-fn", str(disk)])
             # Read structural accounting from the ext4 superblock. Do not use
