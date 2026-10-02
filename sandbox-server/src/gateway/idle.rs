@@ -216,7 +216,7 @@ impl Listener for GatewayListener {
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
-    use tokio::io::AsyncReadExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test(start_paused = true)]
     async fn stalled_writer_times_out_but_quiet_reader_does_not() {
