@@ -5,6 +5,13 @@ service leaf are owned. No shared network/cgroup configuration, broad process
 killing, database deletion, production budget change or proof claim is made.
 Failure retains private evidence and any resource whose exact cleanup failed.
 """
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 import argparse
 from contextlib import closing
 import hashlib
