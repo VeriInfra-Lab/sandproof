@@ -23,11 +23,12 @@ from tools.benchmark_tasks import InvalidInput
 
 
 class OracleRepairTests(unittest.TestCase):
-    def test_mteb_constraints_install_failure_stops_before_unchanged_oracle(self):
-        script = 'printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'
+    def test_mteb_cache_scope_and_dependency_failure_preserve_oracle_status(self):
+        script = ('printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'
+                  'python retrieve.py\n')
         constraints = Path(__file__).parents[1] / 'mteb-verifier-constraints.txt'
-        for code in (0, 42):
-            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+        for install_code, oracle_code in ((0, 0), (0, 17), (42, 0)):
+            with self.subTest(install=install_code, oracle=oracle_code), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 source, bin_dir = root / 'source', root / 'bin'
                 (source / 'solution').mkdir(parents=True)
@@ -41,16 +42,22 @@ class OracleRepairTests(unittest.TestCase):
                     repaired = prepare_repaired_task('mteb-retrieve', source, root / 'repaired')
                 stub = bin_dir / 'install'
                 stub.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$REPAIR_TEST_LOG"\n'
-                                f'exit {code}\n')
+                                f'exit {install_code}\n')
                 stub.chmod(0o700)
+                python = bin_dir / 'python'
+                python.write_text('#!/bin/bash\nprintf "python %s cache=%s\\n" "$*" '
+                                  '"$HF_XET_CHUNK_CACHE_SIZE_BYTES" >> "$REPAIR_TEST_LOG"\n'
+                                  f'exit {oracle_code}\n')
+                python.chmod(0o700)
                 log = root / 'commands'
                 result = subprocess.run(['/bin/bash', str(repaired / 'solution/solve.sh')],
-                    env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log)})
-                self.assertEqual(result.returncode, code)
+                    env={**os.environ, 'PATH': str(bin_dir), 'REPAIR_TEST_LOG': str(log),
+                         'HF_XET_CHUNK_CACHE_SIZE_BYTES': '10000000000'})
+                self.assertEqual(result.returncode, install_code or oracle_code)
                 expected = ['-D -m 644 /solution/mteb-verifier-constraints.txt '
                             '/etc/sandproof-mteb-verifier-constraints.txt']
-                if not code:
-                    expected.append('original solution')
+                if not install_code:
+                    expected.extend(['original solution', 'python retrieve.py cache=0'])
                 self.assertEqual(log.read_text().splitlines(), expected)
                 self.assertEqual((source / 'solution/solve.sh').read_text(), script)
                 for relative in ('tests/test.sh', 'task.toml'):
@@ -61,6 +68,18 @@ class OracleRepairTests(unittest.TestCase):
                 self.assertEqual(evidence['repaired_files']['mteb-verifier-constraints.txt'],
                                  hashlib.sha256(constraints.read_bytes()).hexdigest())
                 self.assertNotIn('UV_CONSTRAINT', (repaired / 'solution/solve.sh').read_text())
+
+    def test_mteb_ambiguous_model_invocation_is_rejected(self):
+        for script in ('python another.py\n', 'python retrieve.py\npython retrieve.py\n'):
+            with self.subTest(script=script), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / 'source').mkdir()
+                (root / 'source/solve.sh').write_text(script)
+                with patch.dict('benchmarks.oracle_repairs.REPAIRS', {
+                        'mteb-retrieve': hashlib.sha256(script.encode()).hexdigest()}):
+                    with self.assertRaises(InvalidInput):
+                        repair_solution('mteb-retrieve', root / 'source', root / 'repaired')
+                self.assertFalse((root / 'repaired').exists())
 
     def test_torch_layout_failure_stops_before_unchanged_solution(self):
         script = 'printf "original solution\\n" >> "$REPAIR_TEST_LOG"\n'

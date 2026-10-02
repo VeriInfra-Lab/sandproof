@@ -227,8 +227,15 @@ if(!bpe)return 78;''')
         # Torch dependency now downloads CUDA libraries that fill the 10 GiB
         # CPU-only task disk. Select hashed official CPU wheels only there;
         # leave the oracle's existing Python, packages and algorithm untouched.
+        # The pinned image's Xet client also caches downloaded chunks separately
+        # from the complete model. Disable that disposable duplicate cache for
+        # this invocation, preserving the model cache and retrieval computation.
+        marker = 'python retrieve.py'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, 'HF_XET_CHUNK_CACHE_SIZE_BYTES=0 ' + marker)
         new = ('install -D -m 644 /solution/mteb-verifier-constraints.txt '
-               + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + old)
+               + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + new)
     elif name == 'mteb-leaderboard':
         # The solution immediately checks out its pinned historical commit.
         # Preserve the complete clone, but do not first materialize today's
