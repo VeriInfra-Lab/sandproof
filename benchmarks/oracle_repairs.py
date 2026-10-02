@@ -12,6 +12,7 @@ import shutil
 from tools.benchmark_tasks import InvalidInput
 
 CHROMIUM_LIFECYCLE_PATH = '/usr/local/lib/sandproof/guest_chromium.py'
+MTEB_VERIFIER_CONSTRAINTS = '/etc/sandproof-mteb-verifier-constraints.txt'
 
 REPAIRS = {
     'filter-js-from-html': '9686e12af48346d2df538c3b46710122ee8dc80dfd0eecacb7a1476bf892ec9f',
@@ -32,6 +33,7 @@ REPAIRS = {
     'install-windows-3.11': '68a9221b9a29331b66fd34fccd71db71d2b5a720e917f2ef95f4a8a542a71ee4',
     'torch-tensor-parallelism': 'd083b7cbf9dbb6cc2ff38c8f2acc150f0059c04aea42d6c2183aeaecc5a19385',
     'mteb-leaderboard': '4ed68831d4acf5d80d2d73eec1f21efd0896a6f51f23020f572cfc0af6da0410',
+    'mteb-retrieve': '97adb02c74de75d6d66829cf12d0a3d05b35b1b48b597ab67b90388517286553',
 }
 POV_ARCHIVES = {
     'POVDOC.TAR.Z': 'e70e44d1fe8835c4dff7c7a55bd6629b15e6a15b2ab7f2f49ee9e2dc016cc470',
@@ -217,6 +219,13 @@ if(!bpe)return 78;''')
     mv cifar-10-batches-bin/* .
     rmdir cifar-10-batches-bin
 ) || exit 1''')
+    elif name == 'mteb-retrieve':
+        # The verifier creates a separate Python 3.13 environment. Its floating
+        # Torch dependency now downloads CUDA libraries that fill the 10 GiB
+        # CPU-only task disk. Select hashed official CPU wheels only there;
+        # leave the oracle's existing Python, packages and algorithm untouched.
+        new = ('install -D -m 644 /solution/mteb-verifier-constraints.txt '
+               + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + old)
     elif name == 'mteb-leaderboard':
         # The solution immediately checks out its pinned historical commit.
         # Preserve the complete clone, but do not first materialize today's
@@ -263,6 +272,9 @@ if(!bpe)return 78;''')
         shutil.copyfile(Path(__file__).with_name('protein_sequences.py'), destination / 'protein_sequences.py')
     if name == 'pytorch-model-recovery':
         shutil.copyfile(Path(__file__).with_name('guest_wheel_sharing.py'), destination / 'guest_wheel_sharing.py')
+    if name == 'mteb-retrieve':
+        shutil.copyfile(Path(__file__).with_name('mteb-verifier-constraints.txt'),
+                        destination / 'mteb-verifier-constraints.txt')
     if name in ('qemu-alpine-ssh', 'qemu-startup'):
         shutil.copyfile(Path(__file__).with_name('guest_bullseye_snapshot.sh'), destination / 'guest_bullseye_snapshot.sh')
     if name == 'rstan-to-pystan':
