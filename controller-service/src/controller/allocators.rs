@@ -137,7 +137,9 @@ pub(super) fn migrate(tx: &Transaction<'_>, world: &core::World) -> Result<(), J
             insert(tx, family.name(), "", family.maximum(tx)?)?;
         }
         tx.pragma_update(None, "user_version", CONTROLLER_FORMAT_VERSION)?;
-    } else if version != CONTROLLER_FORMAT_VERSION {
+    } else if version != CONTROLLER_FORMAT_VERSION
+        && version != crate::journal::BOUNDED_FORMAT_VERSION
+    {
         return Err(JournalError::UnsupportedStore);
     }
     validate(tx, world)

@@ -6,7 +6,6 @@ use std::{
     collections::BTreeSet,
     fmt::Write,
     fs,
-    io::Write as _,
     net::Ipv4Addr,
     os::unix::fs::MetadataExt,
     process::{Command, Stdio},
@@ -19,9 +18,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    RuntimeError,
+    RuntimeError, RuntimeHostSlot,
     egress::EgressPolicy,
-    linux::{Runtime, read_trusted_record, run_ip, run_nft_in_namespace, write_new_record},
+    linux::{Runtime, read_trusted_record},
 };
 
 const POOL_START: u32 = 0x6440_0000;
@@ -41,7 +40,12 @@ impl UplinkPlan {
     /// Derive bounded names and addresses from one deployment-scoped VM ID.
     /// # Errors
     /// Rejects malformed or exhausted IDs before any host effect.
+    #[cfg(test)]
     pub fn new(id: &str) -> Result<Self, RuntimeError> {
+        Self::for_slot(id, None)
+    }
+
+    pub(crate) fn for_slot(id: &str, slot: Option<&RuntimeHostSlot>) -> Result<Self, RuntimeError> {
         let mut parts = id.split('-');
         let (Some("vm"), Some(namespace), Some(number), None) =
             (parts.next(), parts.next(), parts.next(), parts.next())
@@ -52,10 +56,25 @@ impl UplinkPlan {
             return Err(RuntimeError::InvalidId);
         }
         let parsed = number.parse::<u64>().map_err(|_| RuntimeError::InvalidId)?;
-        if parsed > MAX_VM_NUMBER || parsed.to_string() != number {
+        if parsed.to_string() != number {
             return Err(RuntimeError::InvalidId);
         }
-        let number = parsed;
+        let number = if let Some(slot) = slot {
+            if slot.vm != parsed {
+                return Err(RuntimeError::IdentityMismatch(
+                    "physical slot permanent VM identity",
+                ));
+            }
+            if slot.position > MAX_VM_NUMBER {
+                return Err(RuntimeError::InvalidId);
+            }
+            slot.uplink_index
+        } else {
+            parsed
+        };
+        if number > MAX_VM_NUMBER {
+            return Err(RuntimeError::InvalidId);
+        }
         let tag = format!("{}{:06x}", &namespace[..6], number);
         let network = POOL_START + u32::try_from(number * 4).unwrap();
         Ok(Self {
@@ -122,6 +141,8 @@ impl UplinkPlan {
 #[serde(deny_unknown_fields)]
 struct UplinkIntent {
     resource_id: String,
+    #[serde(default)]
+    host_slot: Option<RuntimeHostSlot>,
     plan: UplinkPlan,
     policy: NetworkPolicy,
 }
@@ -143,6 +164,8 @@ struct UplinkPrepared {
 #[serde(deny_unknown_fields)]
 struct UplinkAborted {
     resource_id: String,
+    #[serde(default)]
+    host_slot: Option<RuntimeHostSlot>,
     policy: NetworkPolicy,
     namespace_inode: u64,
 }
@@ -169,7 +192,9 @@ fn output(operation: &'static str, program: &str, args: &[&str]) -> Result<Vec<u
     Ok(result.stdout)
 }
 
+#[cfg(test)]
 fn root_nft_script(operation: &'static str, script: &str) -> Result<(), RuntimeError> {
+    use std::io::Write as _;
     let mut child = Command::new("/usr/sbin/nft")
         .args(["-f", "-"])
         .env_clear()
@@ -192,9 +217,14 @@ fn root_nft_script(operation: &'static str, script: &str) -> Result<(), RuntimeE
     Ok(())
 }
 
-fn nft_table(namespace: Option<&str>, family: &str, table: &str) -> Result<Value, RuntimeError> {
+fn nft_table(
+    runtime: &Runtime,
+    namespace: Option<&str>,
+    family: &str,
+    table: &str,
+) -> Result<Value, RuntimeError> {
     let bytes = match namespace {
-        Some(id) => run_nft_in_namespace(
+        Some(id) => runtime.run_nft_in_namespace(
             id,
             "observe namespace nft table",
             &["-j", "list", "table", family, table],
@@ -223,8 +253,8 @@ fn nft_table(namespace: Option<&str>, family: &str, table: &str) -> Result<Value
     Ok(value)
 }
 
-fn nft_chain(namespace: &str, chain: &str) -> Result<Value, RuntimeError> {
-    let bytes = run_nft_in_namespace(
+fn nft_chain(runtime: &Runtime, namespace: &str, chain: &str) -> Result<Value, RuntimeError> {
+    let bytes = runtime.run_nft_in_namespace(
         namespace,
         "observe guest gate",
         &["-j", "list", "chain", "inet", "sandproof_guard", chain],
@@ -258,12 +288,13 @@ fn root_ifindex(name: &str) -> Result<u64, RuntimeError> {
 }
 
 fn exact_interface_address(
+    runtime: &Runtime,
     namespace: Option<&str>,
     interface: &str,
     address: Ipv4Addr,
 ) -> Result<bool, RuntimeError> {
     let bytes = match namespace {
-        Some(id) => output(
+        Some(id) => runtime.read_host_helper(
             "observe namespace uplink address",
             "/usr/bin/ip",
             &[
@@ -279,7 +310,7 @@ fn exact_interface_address(
                 interface,
             ],
         )?,
-        None => output(
+        None => runtime.read_host_helper(
             "observe root uplink address",
             "/usr/bin/ip",
             &["-j", "-4", "addr", "show", "dev", interface],
@@ -305,8 +336,12 @@ fn exact_interface_address(
         && addresses[0]["prefixlen"] == 30)
 }
 
-fn exact_namespace_default(id: &str, gateway: Ipv4Addr) -> Result<bool, RuntimeError> {
-    let bytes = output(
+fn exact_namespace_default(
+    runtime: &Runtime,
+    id: &str,
+    gateway: Ipv4Addr,
+) -> Result<bool, RuntimeError> {
+    let bytes = runtime.read_host_helper(
         "observe namespace default route",
         "/usr/bin/ip",
         &[
@@ -355,8 +390,8 @@ fn root_table_exists(family: &str, table: &str) -> Result<bool, RuntimeError> {
         .any(|entry| entry["table"]["family"] == family && entry["table"]["name"] == table))
 }
 
-fn namespace_link_exists(id: &str, name: &str) -> Result<bool, RuntimeError> {
-    let bytes = output(
+fn namespace_link_exists(runtime: &Runtime, id: &str, name: &str) -> Result<bool, RuntimeError> {
+    let bytes = runtime.read_host_helper(
         "list namespace links",
         "/usr/bin/ip",
         &["netns", "exec", id, "/usr/bin/ip", "-j", "link", "show"],
@@ -370,13 +405,14 @@ fn namespace_link_exists(id: &str, name: &str) -> Result<bool, RuntimeError> {
 }
 
 fn namespace_nft_object_exists(
+    runtime: &Runtime,
     id: &str,
     object: &str,
     family: &str,
     table: &str,
     name: Option<&str>,
 ) -> Result<bool, RuntimeError> {
-    let bytes = run_nft_in_namespace(
+    let bytes = runtime.run_nft_in_namespace(
         id,
         "list namespace nft objects",
         &["-j", "list", object],
@@ -440,8 +476,8 @@ fn root_forwarding_enabled() -> Result<bool, RuntimeError> {
     Ok(fs::read_to_string("/proc/sys/net/ipv4/ip_forward")?.trim() == "1")
 }
 
-fn namespace_forwarding_enabled(id: &str) -> Result<bool, RuntimeError> {
-    Ok(String::from_utf8(output(
+fn namespace_forwarding_enabled(runtime: &Runtime, id: &str) -> Result<bool, RuntimeError> {
+    Ok(String::from_utf8(runtime.read_host_helper(
         "observe namespace forwarding",
         "/usr/bin/ip",
         &[
@@ -458,8 +494,8 @@ fn namespace_forwarding_enabled(id: &str) -> Result<bool, RuntimeError> {
         == "1")
 }
 
-fn gate_is_active(id: &str) -> Result<bool, RuntimeError> {
-    let value = nft_chain(id, "guest_out")?;
+fn gate_is_active(runtime: &Runtime, id: &str) -> Result<bool, RuntimeError> {
+    let value = nft_chain(runtime, id, "guest_out")?;
     let entries = value["nftables"]
         .as_array()
         .ok_or(RuntimeError::Protocol("guest gate JSON"))?;
@@ -488,7 +524,253 @@ fn gate_is_active(id: &str) -> Result<bool, RuntimeError> {
     Ok(true)
 }
 
+fn conntrack_filters(plan: &UplinkPlan) -> Vec<(&'static str, String)> {
+    [plan.root_address, plan.namespace_address]
+        .into_iter()
+        .flat_map(|address| {
+            ["--orig-src", "--orig-dst", "--reply-src", "--reply-dst"]
+                .into_iter()
+                .map(move |field| (field, address.to_string()))
+        })
+        .collect()
+}
+
+fn conntrack_matching(field: &str, address: &str) -> Result<Vec<u8>, RuntimeError> {
+    crate::linux::check_trusted_path(std::path::Path::new("/usr/sbin/conntrack"))?;
+    output(
+        "observe exact retired conntrack",
+        "/usr/sbin/conntrack",
+        &["--list", "--family", "ipv4", field, address],
+    )
+}
+
+fn require_empty_bounded_inventory(
+    namespace: &str,
+    links: &Value,
+    tables: &Value,
+) -> Result<(), RuntimeError> {
+    let prefix = format!("sp{}", &namespace[..6]);
+    for link in links
+        .as_array()
+        .ok_or(RuntimeError::Protocol("bounded root link inventory"))?
+    {
+        let name = link["ifname"]
+            .as_str()
+            .ok_or(RuntimeError::Protocol("bounded root interface name"))?;
+        if name.starts_with(&prefix) {
+            return Err(RuntimeError::IdentityMismatch(
+                "bounded deployment root link residue",
+            ));
+        }
+    }
+    let prefixes = [format!("spf{namespace}"), format!("spn{namespace}")];
+    for entry in tables["nftables"]
+        .as_array()
+        .ok_or(RuntimeError::Protocol("bounded root nft inventory"))?
+    {
+        if entry.get("metainfo").is_some() {
+            continue;
+        }
+        let name = entry["table"]["name"]
+            .as_str()
+            .ok_or(RuntimeError::Protocol("bounded root nft table name"))?;
+        if prefixes.iter().any(|prefix| name.starts_with(prefix)) {
+            return Err(RuntimeError::IdentityMismatch(
+                "bounded deployment root table residue",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn require_empty_address_pool(
+    addresses: &Value,
+    uplink_base: u64,
+    max_positions: u64,
+) -> Result<(), RuntimeError> {
+    let start = u64::from(POOL_START) + uplink_base * 4;
+    let end = start + max_positions * 4;
+    for interface in addresses
+        .as_array()
+        .ok_or(RuntimeError::Protocol("bounded root address inventory"))?
+    {
+        for address in interface["addr_info"]
+            .as_array()
+            .ok_or(RuntimeError::Protocol("bounded root addresses"))?
+        {
+            if address["family"] != "inet" {
+                return Err(RuntimeError::Protocol("unexpected root address family"));
+            }
+            let local = address["local"]
+                .as_str()
+                .ok_or(RuntimeError::Protocol("missing root IPv4 address"))?;
+            let local = local
+                .parse::<Ipv4Addr>()
+                .map_err(|_| RuntimeError::Protocol("invalid root IPv4 address"))?;
+            let prefix = address["prefixlen"]
+                .as_u64()
+                .filter(|prefix| *prefix <= 32)
+                .ok_or(RuntimeError::Protocol("invalid root IPv4 prefix"))?;
+            let mask = if prefix == 0 {
+                0
+            } else {
+                u32::MAX << (32 - prefix)
+            };
+            let network_start = u64::from(u32::from(local) & mask);
+            let network_end = network_start + (1_u64 << (32 - prefix));
+            if network_start < end && network_end > start {
+                return Err(RuntimeError::IdentityMismatch(
+                    "bounded address pool overlaps an existing root subnet",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn require_empty_conntrack_pool(
+    flows: &[u8],
+    uplink_base: u64,
+    max_positions: u64,
+) -> Result<(), RuntimeError> {
+    let text = std::str::from_utf8(flows)
+        .map_err(|_| RuntimeError::Protocol("conntrack inventory encoding"))?;
+    let start = u64::from(POOL_START) + uplink_base * 4;
+    let end = start + max_positions * 4;
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let mut addresses = 0;
+        for token in line.split_whitespace() {
+            if let Some(address) = token
+                .strip_prefix("src=")
+                .or_else(|| token.strip_prefix("dst="))
+            {
+                let address = address
+                    .parse::<Ipv4Addr>()
+                    .map_err(|_| RuntimeError::Protocol("conntrack IPv4 tuple"))?;
+                let number = u64::from(u32::from(address));
+                if number >= start && number < end {
+                    return Err(RuntimeError::IdentityMismatch(
+                        "bounded address pool has conntrack residue",
+                    ));
+                }
+                addresses += 1;
+            }
+        }
+        if addresses != 4 {
+            return Err(RuntimeError::Protocol(
+                "conntrack original/reply tuple missing",
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl Runtime {
+    /// Validate an explicitly enabled deployment before accepting any reusable
+    /// position. Inventories are read-only and unknown output fails closed.
+    /// # Errors
+    /// Refuses deployment uplink names or flows using its configured pool.
+    pub fn verify_bounded_host_empty(
+        namespace: &str,
+        uplink_base: u64,
+        max_positions: u64,
+    ) -> Result<(), RuntimeError> {
+        if namespace.len() != 16
+            || !namespace
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            || max_positions == 0
+            || uplink_base
+                .checked_add(max_positions)
+                .is_none_or(|end| end > MAX_VM_NUMBER + 1)
+        {
+            return Err(RuntimeError::InvalidConfiguration(
+                "bounded uplink namespace or position count",
+            ));
+        }
+        for binary in ["/usr/bin/ip", "/usr/sbin/nft", "/usr/sbin/conntrack"] {
+            crate::linux::check_trusted_path(std::path::Path::new(binary))?;
+        }
+        let links: Value = serde_json::from_slice(&output(
+            "bounded root link inventory",
+            "/usr/bin/ip",
+            &["-j", "link", "show"],
+        )?)?;
+        let tables: Value = serde_json::from_slice(&output(
+            "bounded root nft inventory",
+            "/usr/sbin/nft",
+            &["-j", "list", "tables"],
+        )?)?;
+        require_empty_bounded_inventory(namespace, &links, &tables)?;
+        let addresses: Value = serde_json::from_slice(&output(
+            "bounded root address inventory",
+            "/usr/bin/ip",
+            &["-j", "-4", "addr", "show"],
+        )?)?;
+        require_empty_address_pool(&addresses, uplink_base, max_positions)?;
+        let flows = output(
+            "bounded conntrack inventory",
+            "/usr/sbin/conntrack",
+            &["--list", "--family", "ipv4"],
+        )?;
+        require_empty_conntrack_pool(&flows, uplink_base, max_positions)
+    }
+
+    pub(crate) fn validate_retirement_uplink_intent(&self, id: &str) -> Result<bool, RuntimeError> {
+        if !self.uplink_intent_exists(id)? {
+            return Ok(false);
+        }
+        let intent: UplinkIntent =
+            read_trusted_record(&self.uplink_claim(id).join("uplink-intent.json"))?;
+        if intent.resource_id != id
+            || intent.host_slot != self.config.host_slot
+            || intent.plan != self.uplink_plan(id)?
+        {
+            return Err(RuntimeError::IdentityMismatch("retirement uplink intent"));
+        }
+        Ok(true)
+    }
+
+    pub(crate) fn require_retired_conntrack_absent(&self, id: &str) -> Result<(), RuntimeError> {
+        let plan = self.uplink_plan(id)?;
+        for (field, address) in conntrack_filters(&plan) {
+            if !conntrack_matching(field, &address)?.is_empty() {
+                return Err(RuntimeError::IdentityMismatch(
+                    "retired physical address still has conntrack state",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn purge_retired_conntrack(
+        &self,
+        id: &str,
+        gate: Option<&crate::RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
+        let plan = self.uplink_plan(id)?;
+        // Caller has already checked the exact stopped process, absent jail,
+        // namespace, cgroup, root link/tables, manifest and physical binding.
+        // Never flush the shared table or delete unrelated addresses.
+        for (field, address) in conntrack_filters(&plan) {
+            if !conntrack_matching(field, &address)?.is_empty() {
+                crate::linux::helper_gate::helper_output(
+                    gate,
+                    self.config.host_slot.as_ref(),
+                    "delete exact retired conntrack",
+                    "/usr/sbin/conntrack",
+                    &["--delete", "--family", "ipv4", field, &address],
+                    None,
+                )?;
+            }
+        }
+        self.require_retired_conntrack_absent(id)
+    }
+
+    pub(crate) fn uplink_plan(&self, id: &str) -> Result<UplinkPlan, RuntimeError> {
+        UplinkPlan::for_slot(id, self.config.host_slot.as_ref())
+    }
+
     fn uplink_claim(&self, id: &str) -> std::path::PathBuf {
         self.config.chroot_base.join(".claims").join(id)
     }
@@ -505,7 +787,10 @@ impl Runtime {
         if self.uplink_intent_exists(id)? {
             let intent: UplinkIntent =
                 read_trusted_record(&self.uplink_claim(id).join("uplink-intent.json"))?;
-            if intent.resource_id != id || intent.plan != UplinkPlan::new(id)? {
+            if intent.resource_id != id
+                || intent.host_slot != self.config.host_slot
+                || intent.plan != self.uplink_plan(id)?
+            {
                 return Err(RuntimeError::IdentityMismatch("recorded uplink intent"));
             }
             if record_exists(&self.uplink_claim(id).join("uplink-prepared.json"))? {
@@ -524,11 +809,11 @@ impl Runtime {
     /// # Errors
     /// A failed host inventory cannot be treated as absence.
     pub fn uplink_resources_absent(&self, id: &str) -> Result<bool, RuntimeError> {
-        let plan = match UplinkPlan::new(id) {
+        let plan = match self.uplink_plan(id) {
             Ok(plan) => plan,
             // A private-only resource may use an ID beyond the finite IPv4
             // /30 pool, but could never have acquired an uplink plan.
-            Err(RuntimeError::InvalidId) => return Ok(true),
+            Err(RuntimeError::InvalidId) if self.config.host_slot.is_none() => return Ok(true),
             Err(error) => return Err(error),
         };
         Ok(!root_link_exists(&plan.root_interface)?
@@ -549,8 +834,11 @@ impl Runtime {
         }
         let intent: UplinkIntent =
             read_trusted_record(&self.uplink_claim(id).join("uplink-intent.json"))?;
-        let plan = UplinkPlan::new(id)?;
-        if intent.resource_id != id || intent.plan != plan {
+        let plan = self.uplink_plan(id)?;
+        if intent.resource_id != id
+            || intent.host_slot != self.config.host_slot
+            || intent.plan != plan
+        {
             return Err(RuntimeError::IdentityMismatch("uplink intent identity"));
         }
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -562,17 +850,17 @@ impl Runtime {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        Self::delete_root_uplink_tables(&plan)?;
+        self.delete_root_uplink_tables(&plan)?;
         if !self.uplink_resources_absent(id)? {
             return Err(RuntimeError::IdentityMismatch("uplink cleanup incomplete"));
         }
         Ok(())
     }
 
-    fn delete_root_uplink_tables(plan: &UplinkPlan) -> Result<(), RuntimeError> {
+    fn delete_root_uplink_tables(&self, plan: &UplinkPlan) -> Result<(), RuntimeError> {
         for (family, table) in [("inet", &plan.filter_table), ("ip", &plan.nat_table)] {
             if root_table_exists(family, table)? {
-                root_nft_script(
+                self.root_nft_script(
                     "delete stopped uplink table",
                     &format!("delete table {family} {table}\n"),
                 )?;
@@ -602,16 +890,21 @@ impl Runtime {
             return Ok(());
         }
         let inode = self.observe_private_network(id)?;
-        let plan = UplinkPlan::new(id)?;
+        let plan = self.uplink_plan(id)?;
         if self.uplink_intent_exists(id)? {
             let intent: UplinkIntent = read_trusted_record(&claim.join("uplink-intent.json"))?;
-            if intent.resource_id != id || intent.plan != plan || &intent.policy != policy {
+            if intent.resource_id != id
+                || intent.host_slot != self.config.host_slot
+                || intent.plan != plan
+                || &intent.policy != policy
+            {
                 return Err(RuntimeError::IdentityMismatch("incomplete uplink intent"));
             }
         } else if !self.uplink_resources_absent(id)?
-            || namespace_link_exists(id, "uplink0")?
-            || namespace_nft_object_exists(id, "tables", "ip", "sandproof_uplink", None)?
+            || namespace_link_exists(self, id, "uplink0")?
+            || namespace_nft_object_exists(self, id, "tables", "ip", "sandproof_uplink", None)?
             || namespace_nft_object_exists(
+                self,
                 id,
                 "chains",
                 "inet",
@@ -623,8 +916,8 @@ impl Runtime {
                 "uplink exists without intent",
             ));
         }
-        if namespace_link_exists(id, "uplink0")? {
-            run_ip(
+        if namespace_link_exists(self, id, "uplink0")? {
+            self.run_ip(
                 "reclaim incomplete namespace uplink",
                 &[
                     "netns",
@@ -646,8 +939,8 @@ impl Runtime {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        if namespace_nft_object_exists(id, "tables", "ip", "sandproof_uplink", None)? {
-            run_nft_in_namespace(
+        if namespace_nft_object_exists(self, id, "tables", "ip", "sandproof_uplink", None)? {
+            self.run_nft_in_namespace(
                 id,
                 "reclaim namespace NAT",
                 &["-f", "-"],
@@ -655,13 +948,14 @@ impl Runtime {
             )?;
         }
         if namespace_nft_object_exists(
+            self,
             id,
             "chains",
             "inet",
             "sandproof_guard",
             Some("guest_policy"),
         )? {
-            run_nft_in_namespace(
+            self.run_nft_in_namespace(
                 id,
                 "reclaim staged policy",
                 &["-f", "-"],
@@ -670,11 +964,12 @@ impl Runtime {
                 ),
             )?;
         }
-        Self::delete_root_uplink_tables(&plan)?;
+        self.delete_root_uplink_tables(&plan)?;
         if !self.uplink_resources_absent(id)?
-            || namespace_link_exists(id, "uplink0")?
-            || namespace_nft_object_exists(id, "tables", "ip", "sandproof_uplink", None)?
+            || namespace_link_exists(self, id, "uplink0")?
+            || namespace_nft_object_exists(self, id, "tables", "ip", "sandproof_uplink", None)?
             || namespace_nft_object_exists(
+                self,
                 id,
                 "chains",
                 "inet",
@@ -689,19 +984,21 @@ impl Runtime {
         }
         let aborted = UplinkAborted {
             resource_id: id.to_owned(),
+            host_slot: self.config.host_slot.clone(),
             policy: policy.clone(),
             namespace_inode: inode,
         };
         if record_exists(&claim.join("uplink-aborted.json"))? {
             let stored: UplinkAborted = read_trusted_record(&claim.join("uplink-aborted.json"))?;
             if stored.resource_id != aborted.resource_id
+                || stored.host_slot != aborted.host_slot
                 || stored.policy != aborted.policy
                 || stored.namespace_inode != aborted.namespace_inode
             {
                 return Err(RuntimeError::IdentityMismatch("uplink abort marker"));
             }
         } else {
-            write_new_record(&claim.join("uplink-aborted.json"), &aborted)?;
+            self.write_new_record(&claim.join("uplink-aborted.json"), &aborted)?;
         }
         Ok(())
     }
@@ -720,13 +1017,15 @@ impl Runtime {
         }
         let record: UplinkAborted = read_trusted_record(&path)?;
         Ok(record.resource_id == id
+            && record.host_slot == self.config.host_slot
             && &record.policy == policy
             && record.namespace_inode != 0
             && self.observe_private_network(id)? == record.namespace_inode
             && self.uplink_resources_absent(id)?
-            && !namespace_link_exists(id, "uplink0")?
-            && !namespace_nft_object_exists(id, "tables", "ip", "sandproof_uplink", None)?
+            && !namespace_link_exists(self, id, "uplink0")?
+            && !namespace_nft_object_exists(self, id, "tables", "ip", "sandproof_uplink", None)?
             && !namespace_nft_object_exists(
+                self,
                 id,
                 "chains",
                 "inet",
@@ -758,7 +1057,7 @@ impl Runtime {
             return match self.observe_ipv4_uplink(id, policy)? {
                 UplinkState::Active(inode) => Ok(inode),
                 UplinkState::Staged => {
-                    run_nft_in_namespace(
+                    self.run_nft_in_namespace(
                         id,
                         "activate prepared guest IPv4 policy",
                         &["-f", "-"],
@@ -779,13 +1078,14 @@ impl Runtime {
                 "host IPv4 forwarding is disabled",
             ));
         }
-        let plan = UplinkPlan::new(id)?;
+        let plan = self.uplink_plan(id)?;
         if !self.uplink_resources_absent(id)? {
             return Err(RuntimeError::AlreadyClaimed);
         }
-        if namespace_link_exists(id, "uplink0")?
-            || namespace_nft_object_exists(id, "tables", "ip", "sandproof_uplink", None)?
+        if namespace_link_exists(self, id, "uplink0")?
+            || namespace_nft_object_exists(self, id, "tables", "ip", "sandproof_uplink", None)?
             || namespace_nft_object_exists(
+                self,
                 id,
                 "chains",
                 "inet",
@@ -798,12 +1098,13 @@ impl Runtime {
         let claim = self.uplink_claim(id);
         let intent = UplinkIntent {
             resource_id: id.to_owned(),
+            host_slot: self.config.host_slot.clone(),
             plan: plan.clone(),
             policy: policy.clone(),
         };
-        write_new_record(&claim.join("uplink-intent.json"), &intent)?;
-        root_nft_script("install root egress guard", &plan.root_firewall_script())?;
-        run_ip(
+        self.write_new_record(&claim.join("uplink-intent.json"), &intent)?;
+        self.root_nft_script("install root egress guard", &plan.root_firewall_script())?;
+        self.run_ip(
             "create VM uplink",
             &[
                 "link",
@@ -818,7 +1119,7 @@ impl Runtime {
                 id,
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "assign root uplink address",
             &[
                 "addr",
@@ -828,11 +1129,11 @@ impl Runtime {
                 &plan.root_interface,
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "raise root uplink",
             &["link", "set", &plan.root_interface, "up"],
         )?;
-        run_ip(
+        self.run_ip(
             "assign namespace uplink address",
             &[
                 "netns",
@@ -846,7 +1147,7 @@ impl Runtime {
                 "uplink0",
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "raise namespace uplink",
             &[
                 "netns",
@@ -859,7 +1160,7 @@ impl Runtime {
                 "up",
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "route namespace egress",
             &[
                 "netns",
@@ -875,7 +1176,7 @@ impl Runtime {
                 "uplink0",
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "enable namespace forwarding",
             &[
                 "netns",
@@ -886,14 +1187,14 @@ impl Runtime {
                 "net.ipv4.ip_forward=1",
             ],
         )?;
-        run_nft_in_namespace(
+        self.run_nft_in_namespace(
             id,
             "install namespace NAT",
             &["-f", "-"],
             Some(UplinkPlan::namespace_nat_script()),
         )?;
         let host_addresses = host_ipv4_addresses()?;
-        run_nft_in_namespace(
+        self.run_nft_in_namespace(
             id,
             "stage guest IPv4 policy",
             &["-f", "-"],
@@ -908,13 +1209,13 @@ impl Runtime {
             namespace_inode,
             root_ifindex: root_ifindex(&plan.root_interface)?,
             host_addresses,
-            root_filter: nft_table(None, "inet", &plan.filter_table)?,
-            root_nat: nft_table(None, "ip", &plan.nat_table)?,
-            namespace_nat: nft_table(Some(id), "ip", "sandproof_uplink")?,
-            staged_policy: nft_chain(id, "guest_policy")?,
+            root_filter: nft_table(self, None, "inet", &plan.filter_table)?,
+            root_nat: nft_table(self, None, "ip", &plan.nat_table)?,
+            namespace_nat: nft_table(self, Some(id), "ip", "sandproof_uplink")?,
+            staged_policy: nft_chain(self, id, "guest_policy")?,
         };
-        write_new_record(&claim.join("uplink-prepared.json"), &prepared)?;
-        run_nft_in_namespace(
+        self.write_new_record(&claim.join("uplink-prepared.json"), &prepared)?;
+        self.run_nft_in_namespace(
             id,
             "activate guest IPv4 policy",
             &["-f", "-"],
@@ -936,10 +1237,11 @@ impl Runtime {
         policy: &NetworkPolicy,
     ) -> Result<UplinkState, RuntimeError> {
         self.validate_network_id(id)?;
-        let plan = UplinkPlan::new(id)?;
+        let plan = self.uplink_plan(id)?;
         let claim = self.uplink_claim(id);
         let prepared: UplinkPrepared = read_trusted_record(&claim.join("uplink-prepared.json"))?;
         if prepared.intent.resource_id != id
+            || prepared.intent.host_slot != self.config.host_slot
             || prepared.intent.plan != plan
             || &prepared.intent.policy != policy
             || prepared.namespace_inode == 0
@@ -958,18 +1260,18 @@ impl Runtime {
         if fs::symlink_metadata(namespace)?.ino() != prepared.namespace_inode
             || root_ifindex(&plan.root_interface)? != prepared.root_ifindex
             || !root_forwarding_enabled()?
-            || !namespace_forwarding_enabled(id)?
-            || !exact_interface_address(None, &plan.root_interface, plan.root_address)?
-            || !exact_interface_address(Some(id), "uplink0", plan.namespace_address)?
-            || !exact_namespace_default(id, plan.root_address)?
-            || nft_table(None, "inet", &plan.filter_table)? != prepared.root_filter
-            || nft_table(None, "ip", &plan.nat_table)? != prepared.root_nat
-            || nft_table(Some(id), "ip", "sandproof_uplink")? != prepared.namespace_nat
-            || nft_chain(id, "guest_policy")? != prepared.staged_policy
+            || !namespace_forwarding_enabled(self, id)?
+            || !exact_interface_address(self, None, &plan.root_interface, plan.root_address)?
+            || !exact_interface_address(self, Some(id), "uplink0", plan.namespace_address)?
+            || !exact_namespace_default(self, id, plan.root_address)?
+            || nft_table(self, None, "inet", &plan.filter_table)? != prepared.root_filter
+            || nft_table(self, None, "ip", &plan.nat_table)? != prepared.root_nat
+            || nft_table(self, Some(id), "ip", "sandproof_uplink")? != prepared.namespace_nat
+            || nft_chain(self, id, "guest_policy")? != prepared.staged_policy
         {
             return Err(RuntimeError::IdentityMismatch("uplink state or rules"));
         }
-        if !gate_is_active(id)? {
+        if !gate_is_active(self, id)? {
             self.observe_private_network(id)?;
             return Ok(UplinkState::Staged);
         }
@@ -980,6 +1282,7 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::linux::{run_ip, run_nft_in_namespace, write_new_record};
     use std::{
         io::Write,
         os::unix::fs::{DirBuilderExt, MetadataExt},
@@ -1012,6 +1315,115 @@ mod tests {
             }
             let _ = self.runtime.cleanup_uplink_after_namespace(self.id);
         }
+    }
+
+    #[test]
+    fn bounded_position_reuses_addresses_but_never_permanent_identity() {
+        let slot = RuntimeHostSlot {
+            position: 0,
+            helper_gate: crate::RuntimeHelperGate {
+                path: "/unused-gate".into(),
+                device: 1,
+                inode: 1,
+                max_data_routes_per_slot: 2,
+            },
+            uplink_index: 100,
+            vm: u64::MAX,
+        };
+        let id = format!("vm-0123456789abcdef-{}", u64::MAX);
+        let plan = UplinkPlan::for_slot(&id, Some(&slot)).unwrap();
+        let next = RuntimeHostSlot {
+            vm: 4,
+            ..slot.clone()
+        };
+        assert_eq!(
+            plan,
+            UplinkPlan::for_slot("vm-0123456789abcdef-4", Some(&next)).unwrap()
+        );
+        assert_eq!(plan.root_address, Ipv4Addr::from(POOL_START + 401));
+        assert!(UplinkPlan::for_slot("vm-0123456789abcdef-4", Some(&slot)).is_err());
+        assert!(
+            UplinkPlan::for_slot(
+                &id,
+                Some(&RuntimeHostSlot {
+                    uplink_index: MAX_VM_NUMBER + 1,
+                    ..slot.clone()
+                })
+            )
+            .is_err()
+        );
+        assert!(
+            UplinkPlan::for_slot(
+                &id,
+                Some(&RuntimeHostSlot {
+                    position: MAX_VM_NUMBER + 1,
+                    ..slot
+                })
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn conntrack_retirement_filters_are_exact_for_both_tuple_directions() {
+        let plan = UplinkPlan::new("vm-0123456789abcdef-1").unwrap();
+        let filters = conntrack_filters(&plan);
+        assert_eq!(filters.len(), 8);
+        for field in ["--orig-src", "--orig-dst", "--reply-src", "--reply-dst"] {
+            assert!(filters.contains(&(field, "100.64.0.5".into())));
+            assert!(filters.contains(&(field, "100.64.0.6".into())));
+        }
+        assert!(filters.iter().all(|(_, address)| !address.contains('/')));
+    }
+
+    #[test]
+    fn initial_conntrack_inventory_rejects_old_pool_flows_and_unknown_output() {
+        let flow = b"tcp 6 10 ESTABLISHED src=100.64.0.6 dst=8.8.8.8 sport=1000 dport=443 src=8.8.8.8 dst=192.0.2.1 sport=443 dport=1000 [ASSURED] mark=0 use=1\n";
+        assert!(require_empty_conntrack_pool(flow, 1, 1).is_err());
+        assert!(require_empty_conntrack_pool(flow, 0, 1).is_ok());
+        assert!(require_empty_conntrack_pool(flow, 2, 1).is_ok());
+        assert!(require_empty_conntrack_pool(b"", 1, 1).is_ok());
+        assert!(require_empty_conntrack_pool(b"invalid inventory", 1, 1).is_err());
+        assert!(require_empty_conntrack_pool(b"src=bad dst=1.1.1.1", 1, 1).is_err());
+    }
+
+    #[test]
+    fn initial_address_inventory_rejects_other_deployment_and_wider_subnet() {
+        let addresses = serde_json::json!([{"ifname":"unrelated", "addr_info":[{"family":"inet","local":"100.64.0.5","prefixlen":30}]}]);
+        assert!(require_empty_address_pool(&addresses, 1, 1).is_err());
+        assert!(require_empty_address_pool(&addresses, 2, 1).is_ok());
+        let wider = serde_json::json!([{"addr_info":[{"family":"inet","local":"100.64.0.1","prefixlen":24}]}]);
+        assert!(require_empty_address_pool(&wider, 2, 1).is_err());
+        assert!(require_empty_address_pool(&serde_json::json!([{}]), 1, 1).is_err());
+    }
+
+    #[test]
+    fn initial_inventory_rejects_deployment_residue_and_malformed_json() {
+        let namespace = "0123456789abcdef";
+        let empty_links = serde_json::json!([]);
+        let empty_tables = serde_json::json!({"nftables":[]});
+        assert!(require_empty_bounded_inventory(namespace, &empty_links, &empty_tables).is_ok());
+        assert!(
+            require_empty_bounded_inventory(
+                namespace,
+                &serde_json::json!([{"ifname":"sp012345000010"}]),
+                &empty_tables
+            )
+            .is_err()
+        );
+        assert!(require_empty_bounded_inventory(namespace, &empty_links, &serde_json::json!({"nftables":[{"table":{"family":"ip","name":"spn0123456789abcdef000010"}}]})).is_err());
+        assert!(
+            require_empty_bounded_inventory(namespace, &serde_json::json!([{}]), &empty_tables)
+                .is_err()
+        );
+        assert!(
+            require_empty_bounded_inventory(
+                namespace,
+                &empty_links,
+                &serde_json::json!({"nftables":[{}]})
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1098,6 +1510,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: crate::RuntimeConfig {
+                host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/true"),
                 chroot_base: base.path().to_path_buf(),
@@ -1501,6 +1914,7 @@ mod tests {
         write_new_record(
             &partial_claim.join("uplink-intent.json"),
             &UplinkIntent {
+                host_slot: None,
                 resource_id: partial_id.clone(),
                 plan: plan.clone(),
                 policy: policy.clone(),

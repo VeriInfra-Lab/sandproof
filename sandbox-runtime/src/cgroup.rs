@@ -4,7 +4,6 @@
 
 use super::{
     Runtime, RuntimeError, check_trusted_path, path_present, read_trusted_record, validate_id,
-    write_new_record,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -157,7 +156,7 @@ impl Runtime {
             return Err(RuntimeError::AlreadyClaimed);
         }
         let intent = self.cgroup_intent(id, settings)?;
-        write_new_record(&self.cgroup_claim(id).join("cgroup-intent.json"), &intent)?;
+        self.write_new_record(&self.cgroup_claim(id).join("cgroup-intent.json"), &intent)?;
         fs::DirBuilder::new().mode(0o700).create(&path)?;
         let metadata = fs::symlink_metadata(&path)?;
         let record = Record {
@@ -165,7 +164,7 @@ impl Runtime {
             device: metadata.dev(),
             inode: metadata.ino(),
         };
-        write_new_record(&self.cgroup_claim(id).join("cgroup.json"), &record)?;
+        self.write_new_record(&self.cgroup_claim(id).join("cgroup.json"), &record)?;
         for (name, value) in limits(&record.intent) {
             fs::write(path.join(name), value)?;
         }
@@ -313,7 +312,7 @@ impl Runtime {
             // A repeated cleanup can then reject a replacement inode even if
             // the outer abort marker was not committed before a crash.
             let metadata = fs::symlink_metadata(&path)?;
-            write_new_record(
+            self.write_new_record(
                 &claim.join("cgroup.json"),
                 &Record {
                     intent: self.cgroup_intent(id, settings)?,
@@ -363,6 +362,7 @@ fn validate_intent_settings(
 
 #[cfg(test)]
 mod tests {
+    use super::super::write_new_record;
     use super::*;
     use crate::RuntimeConfig;
     use std::process::{Child, Command};
@@ -451,6 +451,7 @@ mod tests {
         );
         let runtime = Runtime {
             config: RuntimeConfig {
+                host_slot: None,
                 jailer: "/unused/jailer".into(),
                 firecracker: "/unused/firecracker".into(),
                 chroot_base: work.clone(),

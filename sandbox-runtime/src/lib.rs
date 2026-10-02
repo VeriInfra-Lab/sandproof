@@ -16,5 +16,7 @@ mod linux;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    HostResources, Observation, Runtime, RuntimeConfig, RuntimeError, VmState, check_trusted_path,
+    HostResources, Observation, RetirementManifest, Runtime, RuntimeConfig, RuntimeError,
+    RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeProcessIdentity,
+    RuntimeRouteSnapshot, RuntimeRouteState, VmState, check_trusted_path,
 };

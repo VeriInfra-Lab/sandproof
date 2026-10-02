@@ -13,4 +13,6 @@ mod startup;
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::{HostInventory, HostObservation, LinuxWorker, NodeConfig, ObservedSlot};
+pub use linux::{
+    HostInventory, HostObservation, LinuxWorker, NodeConfig, ObservedSlot, RouteCapacityExceeded,
+};

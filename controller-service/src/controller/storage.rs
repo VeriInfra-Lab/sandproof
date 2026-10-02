@@ -39,6 +39,37 @@ pub(super) fn load_world(connection: &Connection) -> Result<core::World, Journal
     Ok(world)
 }
 
+// Opening validation binds SQL-only predecessor context to the exact accepted
+// Bind inputs, rather than trusting a merely plausible smaller VM number.
+pub(super) fn replayed_host_contexts(
+    connection: &Connection,
+) -> Result<Vec<super::HostSlotContext>, JournalError> {
+    let mut statement =
+        connection.prepare("SELECT input_json FROM controller_inputs ORDER BY sequence")?;
+    let mut contexts = std::collections::BTreeMap::new();
+    for bytes in statement.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
+        let entry: StoredInput = serde_json::from_slice(&bytes?)?;
+        if let core::ControllerInput::Maintenance(core::maintenance::MaintenanceInput::Slot(
+            core::maintenance::slots::SlotInput::Bind {
+                position,
+                expected_previous,
+                binding,
+            },
+        )) = entry.input
+        {
+            contexts.insert(
+                position.0,
+                super::HostSlotContext {
+                    position,
+                    expected_previous,
+                    binding,
+                },
+            );
+        }
+    }
+    Ok(contexts.into_values().collect())
+}
+
 pub(super) fn apply(
     transaction: &WorldTransaction<'_>,
     namespace: &str,
@@ -102,6 +133,34 @@ pub(super) fn apply(
         "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
         params![sequence, serialized],
     )?;
+    transaction.advance(decision.next.clone());
+    Ok(decision)
+}
+
+// This deliberately bypasses sandbox/outbox projection writers: maintenance
+// changes no lifecycle operation and can later remove its sandbox entirely.
+pub(super) fn append_maintenance(
+    transaction: &rusqlite::Transaction<'_>,
+    world: &core::World,
+    input: core::maintenance::MaintenanceInput,
+) -> Result<core::ControllerDecision, JournalError> {
+    let input = core::ControllerInput::Maintenance(input);
+    let decision =
+        core::handle_controller(world, input.clone()).map_err(JournalError::ControllerRejected)?;
+    let sequence = allocators::next_sql(transaction, SqlId::Input)?;
+    let serialized = serde_json::to_vec(&StoredInput { version: 1, input })?;
+    transaction.execute(
+        "INSERT INTO controller_inputs(sequence,input_json) VALUES (?1,?2)",
+        params![sequence, serialized],
+    )?;
+    Ok(decision)
+}
+
+pub(super) fn apply_maintenance(
+    transaction: &WorldTransaction<'_>,
+    input: core::maintenance::MaintenanceInput,
+) -> Result<core::ControllerDecision, JournalError> {
+    let decision = append_maintenance(transaction, &transaction.world(), input)?;
     transaction.advance(decision.next.clone());
     Ok(decision)
 }

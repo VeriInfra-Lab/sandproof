@@ -25,6 +25,7 @@ mod linux {
         time::{Duration, Instant},
     };
 
+    use core::maintenance::slots::HostSlotPhase;
     use sandbox_controller_core as core;
     use sandproof_api::{
         ApiCredential, PortError,
@@ -32,7 +33,8 @@ mod linux {
         router,
     };
     use sandproof_controller_service::{
-        AdmissionLimits, ControllerJournal, CreateOptions, WorkerTransportError,
+        AdmissionLimits, BoundedHostConfig, ControllerJournal, CreateOptions, HostSlotContext,
+        WorkerTransportError,
         templates::{TemplateBinding, TemplateCatalog},
     };
     use sandproof_node::{HostObservation, LinuxWorker, NodeConfig, ObservedSlot};
@@ -48,6 +50,16 @@ mod linux {
         secret: String,
     }
 
+    /// User settings exclude derived durable limits to avoid two competing
+    /// sources of truth for the gateway's physical route-cell capacity.
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct BoundedHostSettings {
+        maintenance: core::maintenance::MaintenanceLimits,
+        uid_base: u32,
+        uplink_base: u64,
+    }
+
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct ConfigFile {
@@ -60,7 +72,11 @@ mod linux {
         kernel: PathBuf,
         rootfs: PathBuf,
         uid_base: u32,
+        /// Legacy VM-to-UID bound, ignored when `bounded_host` is enabled.
         max_vm_id: u64,
+        /// Explicit physical-position maintenance limits; no production defaults.
+        #[serde(default)]
+        bounded_host: Option<BoundedHostSettings>,
         vcpu_count: u8,
         memory_mib: u32,
         #[serde(default)]
@@ -109,6 +125,61 @@ mod linux {
 
     impl HostAdapter for NodeHost {
         type Evidence = HostObservation;
+
+        fn bind_host_slot(
+            &mut self,
+            context: &HostSlotContext,
+            allow_install: bool,
+        ) -> Result<(), PortError> {
+            self.0
+                .bind_host_slot(context, allow_install)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
+            self.0
+                .release_host_slot(context)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn acquire_data_gate(
+            &self,
+            sandbox: core::SandboxId,
+            vm: core::VmId,
+            generation: core::Generation,
+        ) -> Result<Option<std::fs::File>, PortError> {
+            self.0
+                .acquire_data_gate(sandbox, vm, generation)
+                .map_err(|_| PortError::Busy)
+        }
+
+        fn spawn_data_relay(
+            &mut self,
+            sandbox: core::SandboxId,
+            vm: core::VmId,
+            generation: core::Generation,
+            control: bool,
+        ) -> Result<Option<std::process::Child>, PortError> {
+            let executable = std::env::current_exe().map_err(|_| PortError::Busy)?;
+            self.0
+                .spawn_data_relay(sandbox, vm, generation, control, &executable)
+                .map_err(|error| {
+                    if error
+                        .downcast_ref::<sandproof_node::RouteCapacityExceeded>()
+                        .is_some()
+                    {
+                        PortError::QuotaExceeded
+                    } else {
+                        PortError::Busy
+                    }
+                })
+        }
+
+        fn data_gate_drained(&self, context: &HostSlotContext) -> Result<bool, PortError> {
+            self.0
+                .data_gate_drained(context)
+                .map_err(|_| PortError::Busy)
+        }
 
         fn validate_template(&self, template: &TemplateBinding) -> Result<(), PortError> {
             self.0
@@ -394,6 +465,11 @@ mod linux {
     }
 
     fn validate_config(config: &ConfigFile) -> Result<u64, Box<dyn Error>> {
+        resolve_bounded_host_config(
+            config.uid_base,
+            config.bounded_host.as_ref(),
+            config.data_transfer.as_ref(),
+        )?;
         if let Some(registry) = &config.template_registry {
             if !registry.is_valid() || config.templates.is_none() || config.host_resources.is_none()
             {
@@ -462,6 +538,32 @@ mod linux {
         Ok(disk_bytes)
     }
 
+    fn resolve_bounded_host_config(
+        uid_base: u32,
+        bounded: Option<&BoundedHostSettings>,
+        data_transfer: Option<&gateway::TransferLimits>,
+    ) -> Result<Option<BoundedHostConfig>, Box<dyn Error>> {
+        let Some(settings) = bounded else {
+            return Ok(None);
+        };
+        let transfers =
+            data_transfer.ok_or("bounded host requires explicit data_transfer limits")?;
+        transfers.validate()?;
+        let bounded = BoundedHostConfig {
+            maintenance: settings.maintenance.clone(),
+            uid_base: settings.uid_base,
+            uplink_base: settings.uplink_base,
+            max_data_routes_per_slot: u64::try_from(transfers.max_transfers_per_vm)?,
+            max_data_routes_global: u64::try_from(transfers.max_transfers)?,
+            data_route_control_reserve: u64::try_from(transfers.control_reserve)?,
+        };
+        bounded.validate()?;
+        if bounded.uid_base != uid_base {
+            return Err("bounded host UID base differs from node UID base".into());
+        }
+        Ok(Some(bounded))
+    }
+
     fn has_current_uncertain_prepare(
         journal: &ControllerJournal,
         world: &core::World,
@@ -492,6 +594,15 @@ mod linux {
         node: &LinuxWorker,
         journal: &ControllerJournal,
     ) -> Result<(), Box<dyn Error>> {
+        let host_slots = node.host_slot_inventory()?;
+        let durable_slots = journal.host_slot_inventory()?;
+        let world = journal.world()?;
+        audit_host_slot_contexts(&durable_slots, &host_slots, |context| {
+            world.effect_ids().iter().all(|effect| {
+                effect.command().sandbox() != context.binding.sandbox
+                    || world.effect_status(effect) == Some(core::EffectStatus::Committed)
+            })
+        })?;
         let inventory = node.inventory()?;
         if !inventory.unbound_cgroups.is_empty() {
             return Err(format!(
@@ -514,10 +625,74 @@ mod linux {
             )
             .into());
         }
-        let world = journal.world()?;
         let uncertain = journal.uncertain_actions()?;
         for slot in inventory.slots {
+            if world.maintenance_state().is_some()
+                && !host_slots.iter().any(|(context, phase)| {
+                    *phase == HostSlotPhase::Occupied
+                        && context.binding.sandbox == slot.sandbox
+                        && context.binding.generation == slot.generation
+                        && context.binding.vm == slot.vm
+                        && context.binding.network == slot.slot
+                        && slot.owner.as_str() == format!("tenant-{}", context.binding.owner.0)
+                })
+            {
+                return Err("host resource has no matching occupied physical position".into());
+            }
             audit_host_slot(node, journal, &world, &uncertain, &slot)?;
+        }
+        Ok(())
+    }
+
+    /// Compare durable identities before inspecting live resources. Only the
+    /// two transaction boundaries may lag: journal bind before node bind, and
+    /// journal `BeginRelease` before node release/`ConfirmRelease`. Free tombstones
+    /// remain mandatory, but never require a retired sandbox's old secret.
+    fn audit_host_slot_contexts(
+        durable: &[(HostSlotContext, HostSlotPhase)],
+        observed: &[(HostSlotContext, HostSlotPhase)],
+        can_install: impl Fn(&HostSlotContext) -> bool,
+    ) -> Result<(), Box<dyn Error>> {
+        for records in [durable, observed] {
+            let mut positions = std::collections::BTreeSet::new();
+            let mut identities = std::collections::BTreeSet::new();
+            if records.iter().any(|(context, _)| {
+                !positions.insert(context.position.0) || !identities.insert(context.binding.vm.0)
+            }) {
+                return Err("duplicate bounded host position or VM identity".into());
+            }
+        }
+        let observed_by_position: std::collections::BTreeMap<_, _> = observed
+            .iter()
+            .map(|record| (record.0.position.0, record))
+            .collect();
+        let durable_positions: std::collections::BTreeSet<_> =
+            durable.iter().map(|record| record.0.position.0).collect();
+        for (context, phase) in durable {
+            let host = observed_by_position.get(&context.position.0).copied();
+            let valid = match (phase, host) {
+                (HostSlotPhase::Occupied, None) => {
+                    context.expected_previous.is_none() && can_install(context)
+                }
+                (HostSlotPhase::Occupied, Some((prior, HostSlotPhase::Free))) => {
+                    context.expected_previous == Some(prior.binding.vm)
+                        && context.binding.vm.0 > prior.binding.vm.0
+                        && can_install(context)
+                }
+                (HostSlotPhase::Occupied, Some((current, HostSlotPhase::Occupied)))
+                | (HostSlotPhase::Releasing, Some((current, _)))
+                | (HostSlotPhase::Free, Some((current, HostSlotPhase::Free))) => context == current,
+                _ => false,
+            };
+            if !valid {
+                return Err("bounded host binding differs from durable controller position".into());
+            }
+        }
+        if observed
+            .iter()
+            .any(|(context, _)| !durable_positions.contains(&context.position.0))
+        {
+            return Err("bounded host position has no durable controller binding".into());
         }
         Ok(())
     }
@@ -548,6 +723,12 @@ mod linux {
         });
         if !planned {
             return Err("host slot has no matching durable resource plan".into());
+        }
+        if slot.helper_pending {
+            // The exact occupied incarnation has a known live helper. Keep
+            // its outcome unknown locally; other positions may recover and
+            // serve queries. Identity/config corruption already failed above.
+            return Ok(());
         }
         if (slot.aborted_unlaunched || slot.failed_prepare_reclaimed)
             && ((slot.aborted_unlaunched && slot.process.is_some())
@@ -623,14 +804,16 @@ mod linux {
                 .await
                 {
                     Ok(Ok((recovery, expiry)))
-                        if recovery.failed_sandboxes > 0 || expiry.unresolved_sandboxes > 0 =>
+                        if recovery.unresolved_sandboxes > 0 || expiry.unresolved_sandboxes > 0 =>
                     {
                         if last_failure_log
                             .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
                         {
                             eprintln!(
-                                "reconciliation parked {} sandboxes after host or receipt errors; {} due expiries remain unresolved; manual inspection may be required",
-                                recovery.failed_sandboxes, expiry.unresolved_sandboxes
+                                "reconciliation left {} sandboxes or physical-slot releases unresolved ({} after host or receipt errors); {} due expiries remain unresolved; manual inspection may be required",
+                                recovery.unresolved_sandboxes,
+                                recovery.failed_sandboxes,
+                                expiry.unresolved_sandboxes
                             );
                             last_failure_log = Some(Instant::now());
                         }
@@ -670,7 +853,27 @@ mod linux {
         })
     }
 
-    pub async fn run() -> Result<(), Box<dyn Error>> {
+    fn open_journal(
+        database: PathBuf,
+        namespace: &str,
+        bounded: Option<BoundedHostConfig>,
+    ) -> Result<ControllerJournal, Box<dyn Error>> {
+        // Node construction has already independently refused legacy metadata
+        // or resources. The journal now rechecks its own empty state/config in
+        // the enable transaction; neither check substitutes for the other.
+        Ok(if let Some(bounded) = bounded {
+            let now_ms = u64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_millis(),
+            )?;
+            ControllerJournal::open_bounded(database, namespace, bounded, now_ms)?
+        } else {
+            ControllerJournal::open(database, namespace)?
+        })
+    }
+
+    fn read_configuration() -> Result<ConfigFile, Box<dyn Error>> {
         private_root_path(&std::env::current_exe()?)?;
         let mut args = std::env::args_os();
         let _program = args.next();
@@ -685,9 +888,21 @@ mod linux {
         if !fs::metadata(&path)?.is_file() {
             return Err("configuration must be a regular file".into());
         }
-        let config: ConfigFile = serde_json::from_slice(&fs::read(path)?)?;
+        Ok(serde_json::from_slice(&fs::read(path)?)?)
+    }
+
+    pub async fn run() -> Result<(), Box<dyn Error>> {
+        let config = read_configuration()?;
         let disk_bytes = validate_config(&config)?;
         let managed = managed_config(&config, disk_bytes)?;
+        let bounded_host = resolve_bounded_host_config(
+            config.uid_base,
+            config.bounded_host.as_ref(),
+            config.data_transfer.as_ref(),
+        )?;
+        if let Some(bounded) = &bounded_host {
+            ControllerJournal::preflight_bounded(&config.database, &config.namespace, bounded)?;
+        }
         let node = LinuxWorker::new(NodeConfig {
             namespace: config.namespace.clone(),
             state_dir: config.node_state_dir,
@@ -698,12 +913,13 @@ mod linux {
             rootfs: config.rootfs,
             uid_base: config.uid_base,
             max_vm_id: config.max_vm_id,
+            bounded_host: bounded_host.clone(),
             vcpu_count: config.vcpu_count,
             memory_mib: config.memory_mib,
             host_resources: config.host_resources.clone(),
             file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         })?;
-        let journal = ControllerJournal::open(config.database, &config.namespace)?;
+        let journal = open_journal(config.database, &config.namespace, bounded_host)?;
         if journal.has_template_registry()? && config.template_registry.is_none() {
             return Err("durable template registry cannot be disabled for this journal".into());
         }
@@ -768,14 +984,388 @@ mod linux {
         axum::serve(gateway::GatewayListener::new(listener, write_idle), app).await?;
         Ok(())
     }
+
+    #[cfg(test)]
+    mod bounded_host_tests {
+        use super::*;
+        use sandbox_controller_core::maintenance::slots::{HostBinding, HostSlotId};
+        use serde_json::{Value, json};
+
+        fn settings() -> Value {
+            json!({
+                "namespace": "0123456789abcdef", "database": "/state/controller.db",
+                "node_state_dir": "/state/node", "jailer": "/bin/jailer",
+                "firecracker": "/bin/firecracker", "chroot_base": "/state/jails",
+                "kernel": "/images/kernel", "rootfs": "/images/rootfs",
+                "uid_base": 1000, "max_vm_id": u64::MAX, "vcpu_count": 1,
+                "memory_mib": 128, "file_policy_digest": 1, "bind": "127.0.0.1:3000",
+                "domain": "localhost", "credentials": [{"tenant": 1, "secret": "test-only"}],
+                "max_active_global": 2, "max_active_per_tenant": 2,
+                "max_disk_bytes_global": 4096, "max_disk_bytes_per_tenant": 4096,
+                "cleanup_reserve_bytes": 1024, "max_timeout_secs": 300,
+                "expiry_scan_seconds": 1,
+                "data_transfer": {
+                    "file_upload_bytes": 1024, "file_download_bytes": 1024,
+                    "command_input_bytes": 1024, "command_output_bytes": 1024,
+                    "rpc_request_bytes": 1024, "rpc_response_bytes": 1024,
+                    "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
+                    "request_idle_seconds": 5, "file_idle_seconds": 5, "write_idle_seconds": 5
+                },
+                "bounded_host": {"uid_base": 1000, "uplink_base": 0, "maintenance": {
+                    "max_retained_results": 10, "max_host_slots": 2,
+                    "windows": {"max_open_windows": 2, "max_duration_ms": 100}
+                }}
+            })
+        }
+
+        fn check(value: Value) -> Result<(), Box<dyn Error>> {
+            let config: ConfigFile = serde_json::from_value(value)?;
+            resolve_bounded_host_config(
+                config.uid_base,
+                config.bounded_host.as_ref(),
+                config.data_transfer.as_ref(),
+            )?;
+            Ok(())
+        }
+
+        fn resolve(value: Value) -> BoundedHostConfig {
+            let config: ConfigFile = serde_json::from_value(value).unwrap();
+            resolve_bounded_host_config(
+                config.uid_base,
+                config.bounded_host.as_ref(),
+                config.data_transfer.as_ref(),
+            )
+            .unwrap()
+            .unwrap()
+        }
+
+        #[test]
+        fn bounded_route_capacity_comes_only_from_explicit_transfer_limits() {
+            let original = resolve(settings());
+            // The control reserve is already included in the per-VM cap.
+            assert_eq!(original.max_data_routes_per_slot, 4);
+            assert_eq!(original.max_data_routes_global, 8);
+            assert_eq!(original.data_route_control_reserve, 1);
+            let mut changed = settings();
+            changed["data_transfer"]["max_transfers_per_vm"] = json!(5);
+            let changed = resolve(changed);
+            assert_eq!(changed.max_data_routes_per_slot, 5);
+            assert_ne!(changed, original);
+            let mut global_only = settings();
+            global_only["data_transfer"]["max_transfers"] = json!(16);
+            let global_only = resolve(global_only);
+            assert_eq!(global_only.max_data_routes_global, 16);
+            assert_eq!(
+                global_only.max_data_routes_per_slot,
+                original.max_data_routes_per_slot
+            );
+            assert_ne!(global_only, original);
+            let mut reserve_only = settings();
+            reserve_only["data_transfer"]["control_reserve"] = json!(2);
+            let reserve_only = resolve(reserve_only);
+            assert_eq!(reserve_only.data_route_control_reserve, 2);
+            assert_ne!(reserve_only, original);
+            for changed in [changed, global_only, reserve_only] {
+                assert_ne!(
+                    serde_json::to_vec(&changed).unwrap(),
+                    serde_json::to_vec(&original).unwrap()
+                );
+            }
+            for field in [
+                "max_data_routes_per_slot",
+                "max_data_routes_global",
+                "data_route_control_reserve",
+            ] {
+                let mut duplicated = settings();
+                duplicated["bounded_host"][field] = json!(4);
+                assert!(check(duplicated).is_err());
+            }
+        }
+
+        #[test]
+        fn persisted_route_limits_refuse_changed_config_without_changing_the_original() {
+            struct Scratch(PathBuf);
+            impl Drop for Scratch {
+                fn drop(&mut self) {
+                    let _ = fs::remove_dir_all(&self.0);
+                }
+            }
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "sandproof-route-config-{}-{nonce}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).unwrap();
+            let scratch = Scratch(path);
+            let database = scratch.0.join("controller.db");
+            let namespace = "0123456789abcdef";
+            let original = resolve(settings());
+            drop(
+                ControllerJournal::open_bounded(&database, namespace, original.clone(), 1).unwrap(),
+            );
+            for (field, value) in [
+                ("max_transfers_per_vm", 5),
+                ("max_transfers", 16),
+                ("control_reserve", 2),
+            ] {
+                let mut changed = settings();
+                changed["data_transfer"][field] = json!(value);
+                let changed = resolve(changed);
+                assert!(
+                    ControllerJournal::preflight_bounded(&database, namespace, &changed).is_err()
+                );
+                assert!(ControllerJournal::open_bounded(&database, namespace, changed, 2).is_err());
+                let reopened =
+                    ControllerJournal::open_bounded(&database, namespace, original.clone(), 2)
+                        .unwrap();
+                assert_eq!(
+                    reopened.bounded_host_config().unwrap(),
+                    Some(original.clone())
+                );
+            }
+        }
+
+        #[test]
+        fn bounded_mode_rejects_missing_or_invalid_transfer_budgets() {
+            let mut missing = settings();
+            missing.as_object_mut().unwrap().remove("data_transfer");
+            assert!(check(missing.clone()).is_err());
+            missing.as_object_mut().unwrap().remove("bounded_host");
+            assert!(check(missing).is_ok());
+            let mut absent = settings();
+            absent["data_transfer"] = Value::Null;
+            assert!(check(absent).is_err());
+            for (field, invalid) in [
+                ("max_transfers_per_vm", json!(0)),
+                ("max_transfers_per_vm", json!(true)),
+                ("max_transfers_per_vm", json!(9)),
+                ("max_transfers", json!(3)),
+                ("control_reserve", json!(0)),
+                ("control_reserve", json!(4)),
+                ("rpc_request_bytes", json!(8 * 1024 * 1024 + 1)),
+                ("file_upload_bytes", json!(0)),
+                ("request_idle_seconds", json!(0)),
+            ] {
+                let mut value = settings();
+                value["data_transfer"][field] = invalid;
+                assert!(check(value).is_err(), "accepted invalid {field}");
+            }
+        }
+
+        fn context(vm: u64, previous: Option<u64>) -> HostSlotContext {
+            HostSlotContext {
+                position: HostSlotId(0),
+                expected_previous: previous.map(core::VmId),
+                binding: HostBinding {
+                    owner: core::TenantId(1),
+                    sandbox: core::SandboxId(vm),
+                    generation: 1,
+                    vm: core::VmId(vm),
+                    network: core::NetSlotId(vm),
+                },
+            }
+        }
+
+        #[test]
+        fn bounded_configuration_is_explicit_and_permanent_ids_do_not_expand_uid_span() {
+            assert!(check(settings()).is_ok());
+            let mut bounded = settings();
+            bounded["max_vm_id"] = json!(0);
+            assert!(check(bounded).is_ok());
+            let mut legacy = settings();
+            legacy.as_object_mut().unwrap().remove("bounded_host");
+            assert!(
+                serde_json::from_value::<ConfigFile>(legacy)
+                    .unwrap()
+                    .bounded_host
+                    .is_none()
+            );
+            let mut value = settings();
+            value["bounded_host"] = Value::Null;
+            assert!(
+                serde_json::from_value::<ConfigFile>(value)
+                    .unwrap()
+                    .bounded_host
+                    .is_none()
+            );
+            let mut value = settings();
+            value["uid_base"] = json!(u32::MAX - 2);
+            value["bounded_host"]["uid_base"] = json!(u32::MAX - 2);
+            assert!(check(value.clone()).is_ok());
+            value["bounded_host"]["maintenance"]["max_host_slots"] = json!(3);
+            assert!(check(value).is_err());
+        }
+
+        #[test]
+        fn bounded_configuration_rejects_missing_unknown_untyped_and_invalid_limits() {
+            let paths = [
+                "/uid_base",
+                "/bounded_host/uid_base",
+                "/bounded_host/maintenance/max_retained_results",
+                "/bounded_host/maintenance/max_host_slots",
+                "/bounded_host/maintenance/windows/max_open_windows",
+                "/bounded_host/maintenance/windows/max_duration_ms",
+            ];
+            for path in paths {
+                for invalid in [
+                    json!(0),
+                    json!(-1),
+                    json!(true),
+                    json!("2"),
+                    json!(1.5),
+                    Value::Null,
+                ] {
+                    let mut value = settings();
+                    *value.pointer_mut(path).unwrap() = invalid;
+                    assert!(check(value).is_err(), "accepted invalid {path}");
+                }
+                let mut value = settings();
+                let (parent, field) = path.rsplit_once('/').unwrap();
+                value
+                    .pointer_mut(parent)
+                    .unwrap()
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(field);
+                assert!(check(value).is_err(), "accepted missing {path}");
+            }
+            for path in [
+                "/bounded_host",
+                "/bounded_host/maintenance",
+                "/bounded_host/maintenance/windows",
+            ] {
+                let mut value = settings();
+                value
+                    .pointer_mut(path)
+                    .unwrap()
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("misspelled".into(), json!(1));
+                assert!(check(value).is_err(), "accepted unknown field in {path}");
+            }
+            for invalid in [
+                json!(-1),
+                json!(true),
+                json!("0"),
+                json!(1.5),
+                json!(1_048_575),
+                Value::Null,
+            ] {
+                let mut value = settings();
+                value["bounded_host"]["uplink_base"] = invalid;
+                assert!(check(value).is_err());
+            }
+            let mut value = settings();
+            value["bounded_host"]
+                .as_object_mut()
+                .unwrap()
+                .remove("uplink_base");
+            assert!(check(value).is_err());
+            let mut value = settings();
+            value["bounded_host"]["uid_base"] = json!(1001);
+            assert!(check(value).is_err());
+            let mut value = settings();
+            value["bounded_host"]["maintenance"]["max_host_slots"] = json!(1_048_577);
+            assert!(check(value).is_err());
+        }
+
+        fn audit(
+            durable: &[(HostSlotContext, HostSlotPhase)],
+            observed: &[(HostSlotContext, HostSlotPhase)],
+        ) -> Result<(), Box<dyn Error>> {
+            audit_host_slot_contexts(durable, observed, |_| true)
+        }
+
+        #[test]
+        fn startup_never_reconstructs_a_binding_after_host_work_was_claimed() {
+            use HostSlotPhase::{Free, Occupied};
+            let first = context(0, None);
+            let second = context(1, Some(0));
+            assert!(audit_host_slot_contexts(&[(first, Occupied)], &[], |_| false).is_err());
+            assert!(
+                audit_host_slot_contexts(&[(second, Occupied)], &[(first, Free)], |_| false)
+                    .is_err()
+            );
+            assert!(
+                audit_host_slot_contexts(&[(second, Occupied)], &[(second, Occupied)], |_| false)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn startup_accepts_only_precise_bind_and_release_transaction_lag() {
+            use HostSlotPhase::{Free, Occupied, Releasing};
+            let first = context(0, None);
+            assert!(audit(&[(first, Occupied)], &[]).is_ok());
+            for phase in [Occupied, Releasing, Free] {
+                assert!(audit(&[(first, phase)], &[(first, phase)]).is_ok());
+            }
+            for phase in [Occupied, Releasing, Free] {
+                assert!(audit(&[(first, Releasing)], &[(first, phase)]).is_ok());
+            }
+            let second = context(1, Some(0));
+            assert!(audit(&[(second, Occupied)], &[(first, Free)]).is_ok());
+            assert!(audit(&[(second, Occupied)], &[]).is_err());
+            assert!(audit(&[(second, Occupied)], &[(first, Occupied)]).is_err());
+            assert!(audit(&[(second, Occupied)], &[(first, Releasing)]).is_err());
+            assert!(audit(&[(second, Free)], &[(second, Releasing)]).is_err());
+            assert!(audit(&[(second, Free)], &[]).is_err());
+            assert!(audit(&[(second, Releasing)], &[]).is_err());
+            assert!(audit(&[(second, Occupied)], &[(second, Releasing)]).is_err());
+            assert!(audit(&[], &[(first, Free)]).is_err());
+        }
+
+        #[test]
+        fn startup_rejects_context_corruption_duplicates_and_stale_rebinding() {
+            use HostSlotPhase::{Free, Occupied, Releasing};
+            let old = context(1, None);
+            let fresh = context(2, Some(1));
+            for altered in [
+                HostSlotContext {
+                    expected_previous: Some(core::VmId(99)),
+                    ..fresh
+                },
+                HostSlotContext {
+                    binding: HostBinding {
+                        owner: core::TenantId(2),
+                        ..fresh.binding
+                    },
+                    ..fresh
+                },
+                HostSlotContext {
+                    binding: HostBinding {
+                        network: core::NetSlotId(99),
+                        ..fresh.binding
+                    },
+                    ..fresh
+                },
+            ] {
+                for phase in [Occupied, Releasing, Free] {
+                    assert!(audit(&[(fresh, phase)], &[(altered, phase)]).is_err());
+                }
+            }
+            assert!(audit(&[(context(0, Some(1)), Occupied)], &[(old, Free)]).is_err());
+            assert!(audit(&[(context(1, Some(1)), Occupied)], &[(old, Free)]).is_err());
+            assert!(audit(&[(fresh, Occupied)], &[(fresh, Occupied); 2]).is_err());
+            assert!(audit(&[(fresh, Occupied); 2], &[(fresh, Occupied)]).is_err());
+            let same_vm = HostSlotContext {
+                position: HostSlotId(1),
+                ..fresh
+            };
+            assert!(audit(&[(fresh, Occupied), (same_vm, Occupied)], &[]).is_err());
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args_os().nth(1).is_some_and(|arg| arg == "relay") {
-        gateway::relay().await
-    } else {
-        linux::run().await
+    match std::env::args_os().nth(1) {
+        Some(arg) if arg == "relay" => gateway::relay(false).await,
+        Some(arg) if arg == "relay-bounded" => gateway::relay(true).await,
+        _ => linux::run().await,
     }
 }

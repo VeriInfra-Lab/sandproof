@@ -365,3 +365,9 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 启动等待和可用寿命现在使用两条独立期限：服务配置 `startup_timeout_secs` 默认 300 秒，用户 `timeout` 不再缩短启动等待；可用寿命与总寿命只在 Running 发布时起算。控制服务测试用可推进时钟检查短用户寿命、启动期限边界、迟到发布拒绝和 V5→V6 迁移保留旧 Starting 截止点。未就绪 VM 的[专用实机脚本](../tests/system/server_unready_abort.py)显式将启动上限设为 5 秒；不能再靠请求中的 `timeout=5` 触发启动中止。旧版实机结果没有覆盖独立启动上限，本次实机结果必须另绑定精确提交。
 
 启动中止与寿命起点的组合回归绑定提交 `fbdbfd2d7d233d99ea0809e1c9e1a1d431309900`（test `4df1602`＋#84 `f6f7167`＋#89 `2c150df`），属于独立集成候选。服务组件验证已持久中止的创建不能被迟到 Running 发布复活，且新运行期限不会被旧启动期限中止。固定 `3f96c961…` base 上的未就绪 VM 中止/丢回执恢复、两处宿主动作前后崩溃窗口、并发销毁与失败创建恢复、运行起点探针、同步/异步 72 项寿命参数和 2 组总上限，以及普通/流式各 4 组 root/ubuntu 数据调用均通过。未就绪、寿命和数据探针启用并观察宿主 cgroup；原有崩溃/竞争/起点探针为 256 MiB 来宾且未配置该限额，不混用其证据。指纹、资源观察和范围见[版本基线](../references/v1-baseline.json)的 `lifecycle_integration_candidate_acceptance`；随后两项依赖已合入 test `fe37305`，本回归分支已基于该提交整理；生产源码与全部实机探针逐文件核对与原实测提交一致，保留原证据版本，不声称重新运行实机或完成完整证明、#13 固定任务验收。
+
+### #99 显式物理位置复用组件与后续实机验收
+
+位置复用采用现有控制器维护转换；接口与配置只以[模块合同](module-contracts.md)为准。组件回归必须覆盖：单位置跨越旧 max_vm_id 的永久身份 churn、另一位置长期存活、准入事务回滚/不确定提交、绑定/释放确认丢失和重开、所有旧动作与围栏迟到、初始化后位置文件缺失、错误 owner/资源/inode、未知清理、数据 body/relay 未排空及控制器重启后的旧 namespace 持有者、root helper 丢弃继承 FD 后仍由 PID marker 阻塞、同 PID 启动门各中断点、route cell 并发/迟到旧清除/满额拒绝、取消的 blocking 派发与 pipe 错误仍完成 reaping、第二控制器启动租约互斥、Initializing/staging 合法中断恢复、配置关闭/变更/地址重叠拒绝。已有事务与合成宿主测试不能代替真实清理。
+
+本批未在 KVM、ning 或 root 网络执行。启用/晋级前仍须冻结精确提交与隔离宿主配置，实测 UID/地址连续复用、旧 conntrack/namespace FD 持有者、部分删除与服务/宿主进程中断、外来资源不动及精确残留观察。未知情况必须持续 Releasing；不得以测试跳过、名字缺席或杀死全部进程视为成功。检查点恢复、有界日志/字节预留与完整数据库长期 churn 属后续批次。

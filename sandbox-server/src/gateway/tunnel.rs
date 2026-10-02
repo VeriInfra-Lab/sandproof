@@ -7,6 +7,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 const BUFFER_BYTES: usize = 64 * 1024;
 
 pub(super) async fn relay<I, O, R, W>(
+    _bounded: bool,
     input: I,
     mut output: O,
     reader: R,
@@ -33,6 +34,10 @@ where
         output.flush().await?;
         Ok::<(), io::Error>(())
     };
+    // Both host modes have TCP half-close semantics. Upload EOF only closes
+    // the guest's write half; it is not a revocation or a cleanup certificate.
+    // The supervising gateway explicitly terminates/reaps a tracked child on
+    // revocation/disconnect. A copy error still cancels the opposite direction.
     tokio::try_join!(upstream, downstream)?;
     Ok(())
 }
@@ -47,6 +52,12 @@ mod tests {
 
     #[tokio::test]
     async fn forwards_before_upload_eof_and_keeps_response_after_half_close() {
+        for bounded in [false, true] {
+            half_close_response(bounded).await;
+        }
+    }
+
+    async fn half_close_response(bounded: bool) {
         // Tiny duplex queues force partial reads/writes in both directions.
         let (mut client_input, input) = tokio::io::duplex(17);
         let (output, mut client_output) = tokio::io::duplex(19);
@@ -79,7 +90,7 @@ mod tests {
         };
         tokio::time::timeout(Duration::from_secs(5), async {
             let (result, (), ()) =
-                tokio::join!(relay(input, output, reader, writer), client, server);
+                tokio::join!(relay(bounded, input, output, reader, writer), client, server);
             result.unwrap();
         })
         .await
@@ -88,6 +99,12 @@ mod tests {
 
     #[tokio::test]
     async fn downstream_error_cancels_an_upload_that_has_no_eof() {
+        for bounded in [false, true] {
+            downstream_error(bounded).await;
+        }
+    }
+
+    async fn downstream_error(bounded: bool) {
         let (_open_input, input) = tokio::io::duplex(17);
         let (output, closed_reader) = tokio::io::duplex(19);
         drop(closed_reader);
@@ -95,7 +112,7 @@ mod tests {
         let (reader, writer) = tokio::io::split(stream);
         guest.write_all(b"response").await.unwrap();
         let error =
-            tokio::time::timeout(Duration::from_secs(5), relay(input, output, reader, writer))
+            tokio::time::timeout(Duration::from_secs(5), relay(bounded, input, output, reader, writer))
                 .await
                 .expect("failed response waited for upload EOF")
                 .unwrap_err();

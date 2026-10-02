@@ -16,8 +16,8 @@ use sandproof_controller_service::template_registry::{
 use sandproof_controller_service::templates::{TemplateBinding, TemplateCatalog, TemplateError};
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
-    HostEvidence, JournalError, NeverCrash, WorkerTransportError, finish_accepted_kill_v1,
-    finish_admitted_create_v1_timed, finish_compensating_create_v1,
+    HostEvidence, HostSlotContext, JournalError, NeverCrash, WorkerTransportError,
+    finish_accepted_kill_v1, finish_admitted_create_v1_timed, finish_compensating_create_v1,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
@@ -29,8 +29,69 @@ use crate::{
     SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
 };
 
+mod data_drain;
+mod relay_child;
+pub use data_drain::DataLease;
+pub use relay_child::TrackedRelayChild;
+
 pub trait HostAdapter: Send + 'static {
     type Evidence: HostEvidence + Serialize + DeserializeOwned + PartialEq + Send;
+
+    /// Persist or validate the exact controller-committed physical position.
+    /// A missing/prior binding may be installed only before any host dispatch.
+    /// # Errors
+    /// Unsupported bounded mode or ambiguous identity must fail closed.
+    fn bind_host_slot(
+        &mut self,
+        _context: &HostSlotContext,
+        _allow_install: bool,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Complete the durable exact release and prove physical absence. Called
+    /// only after the controller committed Releasing and local routes drained.
+    /// # Errors
+    /// Unknown cleanup or stale identity keeps the physical position unavailable.
+    fn release_host_slot(&mut self, _context: &HostSlotContext) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Acquire a shared durable host-helper gate before a data relay can be
+    /// spawned. The descriptor must retain its lock across explicit child FD
+    /// inheritance; dropping it must never issue an explicit unlock.
+    /// # Errors
+    /// A changed binding or unavailable gate refuses the route.
+    fn acquire_data_gate(
+        &self,
+        _sandbox: core::SandboxId,
+        _vm: core::VmId,
+        _generation: core::Generation,
+    ) -> Result<Option<std::fs::File>, PortError> {
+        Ok(None)
+    }
+
+    /// Reserve a bounded durable route cell and record the exact child process
+    /// before releasing its start gate. The program is selected by the trusted
+    /// adapter, never by the HTTP caller.
+    /// # Errors
+    /// Capacity or uncertain child identity refuses the new relay.
+    fn spawn_data_relay(
+        &mut self,
+        _sandbox: core::SandboxId,
+        _vm: core::VmId,
+        _generation: core::Generation,
+        _control: bool,
+    ) -> Result<Option<std::process::Child>, PortError> {
+        Ok(None)
+    }
+
+    /// Resolve an earlier unknown relay exit after every local pin has dropped.
+    /// # Errors
+    /// Refuses changed identity; false leaves the position unavailable.
+    fn data_gate_drained(&self, _context: &HostSlotContext) -> Result<bool, PortError> {
+        Ok(false)
+    }
 
     /// # Errors
     /// Rejects an unavailable physical disk observation.
@@ -255,8 +316,14 @@ pub struct DataTarget {
 /// signal. The signal can withdraw an existing route; it never grants access.
 #[derive(Debug)]
 pub struct DataPermit {
+    sandbox: core::SandboxId,
+    kind: DataKind,
     pub target: DataTarget,
     pub revocation: watch::Receiver<bool>,
+    /// Held through the response body and exact relay-process exit.
+    pub drain: DataLease,
+    /// Already-locked host gate acquired under the same authority check.
+    pub helper_gate: Option<std::fs::File>,
 }
 
 fn same_secret(left: &[u8], right: &[u8]) -> bool {
@@ -286,13 +353,16 @@ pub struct ManagedConfig {
 struct Inner<H: HostAdapter> {
     journal: ControllerJournal,
     host: H,
-    data_revocations: BTreeMap<u64, watch::Sender<bool>>,
+    data_revocations: BTreeMap<u64, Vec<watch::Sender<bool>>>,
+    data_drains: BTreeMap<u64, DataLease>,
 }
 
 impl<H: HostAdapter> Inner<H> {
     fn revoke_data(&mut self, sandbox: core::SandboxId) {
-        if let Some(signal) = self.data_revocations.remove(&sandbox.0) {
-            signal.send_replace(true);
+        if let Some(signals) = self.data_revocations.get(&sandbox.0) {
+            for signal in signals {
+                signal.send_replace(true);
+            }
         }
     }
 }
@@ -603,10 +673,12 @@ fn blocked_launch_configs<H: HostAdapter>(
     host: &mut H,
     initial: &core::World,
     selected: Option<core::SandboxId>,
+    prior_blocked: &BTreeSet<core::SandboxId>,
 ) -> Result<BTreeSet<core::SandboxId>, PortError> {
     let mut blocked = BTreeSet::new();
     for (sandbox, record) in initial.sandbox_records() {
-        if selected.is_some_and(|id| id != *sandbox)
+        if prior_blocked.contains(sandbox)
+            || selected.is_some_and(|id| id != *sandbox)
             || record.phase != core::Phase::Starting
             || !matches!(record.current_operation, Some(operation)
                 if operation.kind == core::OperationKind::Create)
@@ -651,6 +723,112 @@ fn blocked_launch_configs<H: HostAdapter>(
     Ok(blocked)
 }
 
+fn bind_recovery_slots<H: HostAdapter>(
+    journal: &ControllerJournal,
+    host: &mut H,
+    world: &core::World,
+    selected: Option<core::SandboxId>,
+) -> Result<BTreeSet<core::SandboxId>, PortError> {
+    let mut blocked = BTreeSet::new();
+    for (context, phase) in journal.host_slot_inventory().map_err(map_journal)? {
+        if phase != core::maintenance::slots::HostSlotPhase::Occupied
+            || selected.is_some_and(|id| id != context.binding.sandbox)
+        {
+            continue;
+        }
+        let allow_install = world.effect_ids().iter().all(|effect| {
+            effect.command().sandbox() != context.binding.sandbox
+                || world.effect_status(effect) == Some(core::EffectStatus::Committed)
+        });
+        if host.bind_host_slot(&context, allow_install).is_err() {
+            blocked.insert(context.binding.sandbox);
+        }
+    }
+    Ok(blocked)
+}
+
+// ManagedPort's mutex keeps admission and host effects serialized throughout
+// durable release. Route pins drop without taking that mutex; never wait here.
+fn release_reclaimed_slots<H: HostAdapter>(inner: &mut Inner<H>) -> Result<usize, PortError> {
+    let mut pending = 0;
+    let world = inner.journal.world().map_err(map_journal)?;
+    let reclaimed = reclaimed_sandboxes(&world);
+    for (context, phase) in inner.journal.host_slot_inventory().map_err(map_journal)? {
+        let sandbox = context.binding.sandbox;
+        if phase == core::maintenance::slots::HostSlotPhase::Free {
+            continue;
+        }
+        if !reclaimed.contains(&sandbox) {
+            continue;
+        }
+        inner.revoke_data(sandbox);
+        let drained = inner
+            .data_revocations
+            .get(&sandbox.0)
+            .is_none_or(|signals| {
+                signals
+                    .iter()
+                    .all(|sender| *sender.borrow() && sender.receiver_count() == 0)
+            })
+            && inner
+                .data_drains
+                .get(&sandbox.0)
+                .is_none_or(DataLease::routes_dropped);
+        let known_exit = inner
+            .data_drains
+            .get(&sandbox.0)
+            .is_none_or(DataLease::drained)
+            || (drained && inner.host.data_gate_drained(&context).unwrap_or(false));
+        if !drained
+            || !known_exit
+            || inner
+                .journal
+                .host_slot_release_pinned(sandbox)
+                .map_err(map_journal)?
+        {
+            pending += 1;
+            continue;
+        }
+        let Inner { journal, host, .. } = inner;
+        match journal.release_host_slot(
+            context,
+            |context| {
+                host.release_host_slot(context)
+                    .map_err(|_| WorkerTransportError::ReplyLost)
+            },
+            &mut NeverCrash,
+        ) {
+            Ok(()) => {
+                inner.data_revocations.remove(&sandbox.0);
+                inner.data_drains.remove(&sandbox.0);
+            }
+            Err(error) if error.is_local_recovery_failure() => {
+                pending += 1;
+            }
+            Err(error) => return Err(map_journal(error)),
+        }
+    }
+    let drained: Vec<_> = inner
+        .data_revocations
+        .iter()
+        .filter_map(|(sandbox, signals)| {
+            (signals
+                .iter()
+                .all(|sender| *sender.borrow() && sender.receiver_count() == 0)
+                && inner
+                    .data_drains
+                    .get(sandbox)
+                    .is_none_or(DataLease::drained))
+            .then_some(*sandbox)
+        })
+        .collect();
+    for sandbox in drained {
+        inner.data_revocations.remove(&sandbox);
+        inner.data_drains.remove(&sandbox);
+    }
+    Ok(pending)
+}
+
 // Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
 // lets a repeated kill observe and finish its *existing* operation without
 // changing unrelated instances. It never accepts a second lifecycle input.
@@ -672,7 +850,9 @@ fn recover_locked<H: HostAdapter>(
     // reclaimed history must not repeatedly replay the entire journal through
     // each completed workflow while holding the management/data admission lock.
     let reclaimed = reclaimed_sandboxes(&initial);
-    let mut blocked = blocked_launch_configs(journal, host, &initial, selected)?;
+    let mut blocked = bind_recovery_slots(journal, host, &initial, selected)?;
+    let launch_blocked = blocked_launch_configs(journal, host, &initial, selected, &blocked)?;
+    blocked.extend(launch_blocked);
     reclaim_uncertain_actions(journal, host, &initial, &mut blocked, selected)?;
     let recovery_world = journal.world().map_err(map_journal)?;
     let mut receipts_recovered = 0;
@@ -772,6 +952,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 journal,
                 host,
                 data_revocations: BTreeMap::new(),
+                data_drains: BTreeMap::new(),
             }),
             config,
             templates: None,
@@ -923,11 +1104,12 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// Shared storage, replay, and commit failures abort startup recovery.
     pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        let report = recover_locked(&mut inner, None)?;
+        let mut report = recover_locked(&mut inner, None)?;
         inner
             .journal
             .reconcile_template_publications(true)
             .map_err(map_journal)?;
+        report.unresolved_sandboxes += release_reclaimed_slots(&mut inner)?;
         Ok(report)
     }
 
@@ -950,12 +1132,94 @@ impl<H: HostAdapter> ManagedPort<H> {
     pub fn data_permit(&self, supplied: &str, kind: DataKind) -> Result<DataPermit, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let (sandbox, target) = Self::data_target(&inner, supplied, kind)?;
-        let revocation = inner
-            .data_revocations
-            .entry(sandbox.0)
-            .or_insert_with(|| watch::channel(false).0)
-            .subscribe();
-        Ok(DataPermit { target, revocation })
+        let helper_gate = inner
+            .host
+            .acquire_data_gate(sandbox, target.vm, target.generation)?;
+        if inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .is_some()
+            && helper_gate.is_none()
+        {
+            return Err(PortError::Busy);
+        }
+        let signals = inner.data_revocations.entry(sandbox.0).or_default();
+        signals.retain(|sender| sender.receiver_count() != 0 || !*sender.borrow());
+        // An uncertain transaction may roll back authority. Fresh authorization
+        // gets a new gate; old revoked gates remain tracked until they drain.
+        if signals.last().is_none_or(|sender| *sender.borrow()) {
+            signals.push(watch::channel(false).0);
+        }
+        let revocation = signals.last().ok_or(PortError::Busy)?.subscribe();
+        let drain = inner.data_drains.entry(sandbox.0).or_default().clone();
+        Ok(DataPermit {
+            sandbox,
+            kind,
+            target,
+            revocation,
+            drain,
+            helper_gate,
+        })
+    }
+
+    /// Recheck authority at the exact durable relay-launch boundary. The
+    /// process remains gated until its host route-cell identity is committed.
+    /// # Errors
+    /// Revoked, expired or changed permits cannot spawn a relay.
+    pub fn spawn_data_relay(
+        &self,
+        permit: &DataPermit,
+        control: bool,
+    ) -> Result<Option<TrackedRelayChild>, PortError> {
+        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        if *permit.revocation.borrow() {
+            return Err(PortError::NotFound);
+        }
+        if inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let world = inner.journal.world().map_err(map_journal)?;
+        let record = world
+            .sandbox_record(permit.sandbox)
+            .ok_or(PortError::NotFound)?;
+        if record.current_vm != Some(permit.target.vm)
+            || record.generation != permit.target.generation
+        {
+            return Err(PortError::NotFound);
+        }
+        let actor = core::Actor::Tenant(record.owner);
+        inner
+            .journal
+            .live_lifetime(&actor, permit.sandbox, now_ms()?)
+            .map_err(map_admission)?;
+        let access = match permit.kind {
+            DataKind::Exec => core::AccessInput::Exec(actor, permit.sandbox, permit.target.vm),
+            DataKind::FileRead => {
+                core::AccessInput::FileRead(actor, permit.sandbox, permit.target.generation)
+            }
+            DataKind::FileWrite => {
+                core::AccessInput::FileWrite(actor, permit.sandbox, permit.target.generation)
+            }
+        };
+        core::handle_controller(&world, core::ControllerInput::Access(access))
+            .map_err(|_| PortError::NotFound)?;
+        let reaper = relay_child::RelayReaper::new()?;
+        inner
+            .host
+            .spawn_data_relay(
+                permit.sandbox,
+                permit.target.vm,
+                permit.target.generation,
+                control,
+            )?
+            .map(|child| Some(reaper.attach(child)))
+            .ok_or(PortError::Busy)
     }
 
     fn data_target(
@@ -1076,6 +1340,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             .journal
             .reconcile_template_publications(false)
             .map_err(map_journal)?;
+        release_reclaimed_slots(&mut inner)?;
         Ok(report)
     }
 
@@ -1237,6 +1502,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             host.execute(action)
         })
         .map_err(|_| PortError::OutcomeUnknown)?;
+        release_reclaimed_slots(inner)?;
         Ok(())
     }
 
@@ -1261,6 +1527,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         if policy != core::NetworkPolicy::DenyAll && !inner.host.public_ipv4_ready()? {
             return Err(PortError::Busy);
         }
+        release_reclaimed_slots(inner)?;
         let sandbox = next_sandbox(&inner.journal)?;
         let physical_needed = disk_bytes
             .checked_add(self.config.limits.cleanup_reserve_bytes)
@@ -1311,6 +1578,16 @@ impl<H: HostAdapter> ManagedPort<H> {
                 .admit_create_with_options(create_request, admission, &mut NeverCrash)
         }
         .map_err(map_admission)?;
+        if let Some(context) = inner
+            .journal
+            .host_slot_context(sandbox)
+            .map_err(|_| PortError::OutcomeUnknown)?
+        {
+            inner
+                .host
+                .bind_host_slot(&context, true)
+                .map_err(|_| PortError::OutcomeUnknown)?;
+        }
         // Admission is durable. A later failure cannot be reported as a
         // refused request (503), which the SDK treats as safe to retry.
         let secret = token().map_err(|_| PortError::OutcomeUnknown)?;
