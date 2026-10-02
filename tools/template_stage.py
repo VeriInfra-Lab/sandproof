@@ -96,7 +96,63 @@ def copy_sparse(source, target):
         output.truncate(size)
 
 
+def sync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def owned_candidate(path):
+    meta = path.lstat()
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid()
+            or meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) not in (0o600, 0o400, 0o444)):
+        raise ValueError("private single-link downloaded candidate required")
+
+
+def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id):
+    """Consume one supervisor-owned download after its builder was reclaimed.
+
+    Same-filesystem rename transfers the inode; it never shares a writable
+    inode with the guest or a second artifact name. Cross-device staging still
+    copies. An interrupted transfer can resume from this exact pending/final
+    identity, with the ordinary full fsynced readback and publication checks.
+    """
+    root, disk = Path(root), Path(disk)
+    if (not isinstance(candidate_id, str) or len(candidate_id) != 32
+            or any(c not in "0123456789abcdef" for c in candidate_id)
+            or disk.name != "candidate.ext4" or disk.parent.name != candidate_id):
+        raise ValueError("fixed supervisor candidate slot required")
+    for path in (root, root / "inbox", root / "artifacts", disk.parent):
+        private_directory(path)
+    final = root / "inbox" / candidate_id
+    pending = root / "inbox" / (".stage-" + candidate_id)
+    if not disk.exists() and not disk.is_symlink():
+        if final.exists():
+            private_directory(final)
+            owned_candidate(final / "rootfs.ext4")
+            # A completed handoff has no source name. The same immutable
+            # manifest/status/kernel must still match on every retry.
+            return stage(root, kernel, final / "rootfs.ext4", status, owner, cpu,
+                         memory_mib, host_memory_mib, candidate_id=candidate_id)
+        if pending.exists():
+            private_directory(pending)
+            owned_candidate(pending / "rootfs.ext4")
+            os.rename(pending / "rootfs.ext4", disk)
+            sync_directory(disk.parent)
+            sync_directory(pending)
+    owned_candidate(disk)
+    return _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib,
+                  candidate_id=candidate_id, move_disk=True)
+
+
 def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id=None):
+    return _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib,
+                  candidate_id=candidate_id, move_disk=False)
+
+
+def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id, move_disk):
     root, kernel, disk = map(Path, (root, kernel, disk))
     for path in (root, root / "inbox", root / "artifacts"):
         private_directory(path)
@@ -148,15 +204,28 @@ def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *
         pending.mkdir(mode=0o700)
     else:
         pending = Path(tempfile.mkdtemp(prefix=".stage-", dir=root / "inbox"))
+    moved = False
     try:
         artifacts = {}
         for name, source in (("kernel", kernel), ("rootfs.ext4", disk)):
             target = pending / name
-            copy_sparse(source, target)
+            if move_disk and name == "rootfs.ext4":
+                owned_candidate(source)
+                try:
+                    os.rename(source, target)
+                    moved = True
+                except OSError as error:
+                    if error.errno != errno.EXDEV:
+                        raise
+                    copy_sparse(source, target)
+            else:
+                copy_sparse(source, target)
             target.chmod(0o444)
             with target.open("rb") as saved:
                 os.fsync(saved.fileno())
             artifacts[name] = {"path": str(final / name), "size_bytes": target.stat().st_size, "sha256": file_hash(target)}
+        if moved:
+            sync_directory(disk.parent)
         # Validate the fsynced copy itself before exposing its manifest. A new
         # staging does not need another full source scan before this readback.
         if (artifacts["rootfs.ext4"]["size_bytes"] != status["disk_bytes"]
@@ -189,6 +258,15 @@ def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *
             os.close(descriptor)
         return candidate
     except BaseException:
+        if moved and pending.exists():
+            # A normal I/O/check failure restores the supervisor slot before
+            # discarding temporary metadata. SIGKILL leaves the exact pending
+            # inode for stage_downloaded to recover; no rebuild is required.
+            if disk.exists() or disk.is_symlink():
+                raise RuntimeError("download slot reappeared during handoff")
+            os.rename(pending / "rootfs.ext4", disk)
+            sync_directory(disk.parent)
+            sync_directory(pending)
         # Only this newly allocated staging directory; never a caller-selected target.
         if pending.exists():
             shutil.rmtree(pending)

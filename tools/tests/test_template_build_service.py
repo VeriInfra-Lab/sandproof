@@ -130,6 +130,34 @@ class BuildTests(unittest.TestCase):
         backend.request.assert_called_once_with('runtime', 'GET',
             '/sandproof/template-publications/' + job, owner=1)
 
+    def test_expired_unadmitted_handoff_removes_only_its_pending_identity(self):
+        job, backend, registry = self.publication()
+        pending = registry / 'inbox' / ('.stage-' + job)
+        pending.mkdir(mode=0o700)
+        (self.root / job / 'candidate.ext4').rename(pending / 'rootfs.ext4')
+        unrelated = registry / 'inbox' / ('.stage-' + 'f' * 32)
+        unrelated.mkdir(mode=0o700)
+        (unrelated / 'keep').write_bytes(b'other candidate')
+        self.now = self.store.get(job)['deadline']
+        with patch('tools.template_build_service.stage') as stage:
+            Supervisor(self.store, backend).tick()
+        stage.assert_not_called()
+        self.assertEqual(self.store.get(job)['state'], 'Failed')
+        self.assertEqual(self.store.get(job)['failure'], 'BuildDeadlineExceeded')
+        self.assertEqual(self.store.get(job)['reserved'], 0)
+        self.assertFalse(pending.exists())
+        self.assertEqual((unrelated / 'keep').read_bytes(), b'other candidate')
+
+    def test_unknown_publication_does_not_discard_pending_handoff(self):
+        job, backend, registry = self.publication()
+        pending = registry / 'inbox' / ('.stage-' + job)
+        pending.mkdir(mode=0o700)
+        (pending / 'rootfs.ext4').write_bytes(b'keep until admission is known')
+        backend.request.side_effect = TimeoutError('unknown publication')
+        with self.assertRaises(TimeoutError):
+            backend.discard_unpublished(self.store.get(job))
+        self.assertTrue(pending.exists())
+
     def test_staging_crossing_deadline_discards_only_unadmitted_candidate(self):
         job, backend, registry = self.publication()
         unrelated = registry / 'inbox' / ('f' * 32)
