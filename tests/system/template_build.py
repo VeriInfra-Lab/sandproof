@@ -251,6 +251,9 @@ def exercise(args):
                 assert result.exit_code == 0, (result.stderr, result.stdout)
                 if kind == "dockerfile":
                     assert snapshotter is not None, "retain actual automatic snapshotter selection"
+                    upload(builder, checkout / "tests/system/buildkit_export_guest.py", "/input/export-check.py")
+                    comparison = json.loads(checked(builder, "python3 /input/export-check.py", timeout=150))
+                    evidence.append({"kind": "buildkit-export-equivalence", **comparison})
                 assert status["state"] == "candidate" and not status["ready"] and not status["startup_applied"]
                 assert status["startup"]["WorkingDir"] == "/workspace"
                 assert "FIXTURE_VALUE=image-value" in status["startup"]["Env"]
