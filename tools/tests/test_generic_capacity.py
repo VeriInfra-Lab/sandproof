@@ -41,5 +41,24 @@ class GenericCapacityTests(unittest.TestCase):
             with self.subTest(field=field),self.assertRaises(ValueError):plan(tasks,1,32*GIB,44649272)
         with self.assertRaises(ValueError):plan(self.tasks(1)*2,1,32*GIB,44649272)
 
+    def test_larger_public_import_budgets_reserve_staging_without_changing_task(self):
+        original = plan(self.tasks(1), 1, 64 * GIB, 44649272)
+        large = plan(self.tasks(1), 1, 64 * GIB, 44649272,
+                     input_bytes=8 * GIB, expanded_bytes=32 * GIB)
+        self.assertEqual(large['input_bytes'], 8 * GIB)
+        self.assertEqual(large['expanded_bytes'], 32 * GIB)
+        self.assertEqual(large['worker_required_free_bytes'], 58 * GIB + 64 * MIB)
+        self.assertEqual(large['workspace_bytes'] - original['workspace_bytes'], 4 * GIB)
+        self.assertEqual(large['required_free_bytes'] - original['required_free_bytes'], 4 * GIB)
+        for key in ('registry_bytes', 'max_cpu', 'max_memory_mib', 'max_disk_mib', 'max_build_seconds'):
+            self.assertEqual(large[key], original[key])
+
+    def test_invalid_import_limits_are_not_clamped_to_protocol_bounds(self):
+        for field, values in (('input_bytes', (True, 511, 8 * GIB + 1, '8589934592')),
+                              ('expanded_bytes', (True, 10239, 32 * GIB + 1, float('inf')))):
+            for value in values:
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    plan(self.tasks(1), 1, 64 * GIB, 44649272, **{field: value})
+
 
 if __name__=='__main__':unittest.main()
