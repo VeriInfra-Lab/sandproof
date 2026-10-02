@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the normal workflow and the owner-approved dot-ning batch."""
+"""Validate task stacks, the normal workflow and the temporary dot-ning batch."""
 
 import argparse
 import json
@@ -14,6 +14,10 @@ TASK_BRANCH = re.compile(
 )
 
 
+def is_task_branch(branch):
+    return len(branch) <= 100 and TASK_BRANCH.fullmatch(branch) is not None
+
+
 def validate(event):
     """Return None on success, otherwise a user-facing error; no API calls."""
     try:
@@ -24,28 +28,33 @@ def validate(event):
         return "Missing pull-request head/base metadata."
     if not isinstance(head, str) or not isinstance(base, str):
         return "Branch names must be strings."
-    if base not in {"main", "test", "dot-ning"}:
-        return "Pull requests must target test, main, or the temporary dot-ning batch."
+    task_target = is_task_branch(base)
+    if base not in {"main", "test", "dot-ning"} and not task_target:
+        return (
+            "Pull requests must target test, main, a normally named task branch, "
+            "or the temporary dot-ning batch."
+        )
     if head == base:
         return "Source and target branches must differ."
 
-    # Temporary, exact-name exception for the owner's current integration batch.
-    # Handle it before main/test promotion so those branches cannot enter it.
-    if base == "dot-ning":
-        if len(head) > 100 or not TASK_BRANCH.fullmatch(head):
-            return "The dot-ning batch accepts only normally named task branches."
+    # Stacks and the exact-name batch exception are same-repository task flows.
+    # Handle them before promotion/sync so main/test cannot enter either flow.
+    if task_target or base == "dot-ning":
+        target_kind = "A task stack" if task_target else "The dot-ning batch"
+        if not is_task_branch(head):
+            return f"{target_kind} accepts only normally named task branches."
         try:
             head_repo = pr["head"]["repo"]["id"]
             base_repo = pr["base"]["repo"]["id"]
         except (KeyError, TypeError):
-            return "The dot-ning batch requires repository identity metadata."
+            return f"{target_kind} requires repository identity metadata."
         if (
             type(head_repo) is not int
             or type(base_repo) is not int
             or head_repo <= 0
             or head_repo != base_repo
         ):
-            return "The dot-ning batch accepts only this repository's task branches."
+            return f"{target_kind} accepts only this repository's task branches."
         return None
 
     if head in {"main", "test"}:
@@ -64,8 +73,8 @@ def validate(event):
         return None
 
     if base != "test":
-        return "Task branches must target test; only test may promote to main."
-    if len(head) > 100 or not TASK_BRANCH.fullmatch(head):
+        return "Only this repository's test branch may promote to main."
+    if not is_task_branch(head):
         return "Expected [codex/]<type>/<issue>-<lowercase-slug>, at most 100 characters."
     return None
 
