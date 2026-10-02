@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from tools import template_worker as worker
-from tools.template_inputs import InvalidTemplate, sha256
+from tools.template_inputs import InvalidTemplate, inspect_oci, sha256
 from tools.tests import test_template_conversion as fixtures
 
 
@@ -94,6 +94,12 @@ class WorkerAcquisitionTests(unittest.TestCase):
         self.assertEqual(len(self.converted), 1)
         self.assertEqual(len(self.unpacked), 1)
         self.assertEqual(decoder.call_count, 1)
+        events = [json.loads(line.removeprefix('[sandproof-phase] '))
+                  for line in (self.work / 'build.log').read_text().splitlines()
+                  if line.startswith('[sandproof-phase] ')]
+        self.assertEqual([(e['phase'], e['state']) for e in events],
+                         [('acquire', 'started'), ('acquire', 'completed'),
+                          ('rootfs_unpack', 'started'), ('rootfs_unpack', 'failed')])
         self.assertEqual(sum(call.args[0].name == digest for call in hashes.call_args_list), 2)
 
     def test_native_public_oci_checks_layers_once_before_unpack(self):
@@ -157,10 +163,16 @@ class WorkerAcquisitionTests(unittest.TestCase):
             if str(path) == '/proc/sys/kernel/random/boot_id':
                 return 'synthetic-boot'
             return real_read(path, *args, **kwargs)
-        for corrupt in (False, True):
-            with self.subTest(corrupt=corrupt):
-                self.work = self.root / ('dockerfile-bad' if corrupt else 'dockerfile-good')
+        for outcome in ('good', 'corrupt', 'cleanup-failed'):
+            with self.subTest(outcome=outcome):
+                self.work = self.root / ('dockerfile-' + outcome)
                 daemons = []
+                unpacked = []
+                real_remove = shutil.rmtree
+                def remove(path, *args, **kwargs):
+                    if path == self.work / 'cache' and outcome == 'cleanup-failed':
+                        raise OSError('synthetic cache release failure')
+                    return real_remove(path, *args, **kwargs)
                 def command(args, **kwargs):
                     if kwargs.get('daemon'):
                         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],
@@ -178,13 +190,17 @@ class WorkerAcquisitionTests(unittest.TestCase):
                             'containerimage.descriptor': descriptor,
                             'containerimage.digest': descriptor['digest'],
                             'containerimage.config.digest': self.fixture.manifest['config']['digest']}))
-                        if corrupt:
+                        if outcome == 'corrupt':
                             layer = self.fixture.manifest['layers'][0]
                             (store / layer['digest'][7:]).write_bytes(b'x' * layer['size'])
                         return
                     self.assertEqual(args[:3], [str(tools['umoci']), 'raw', 'unpack'])
                     self.assertEqual(args[-1], str(self.work / 'bundle/rootfs'))
                     self.assertIsNotNone(daemons[0].poll())
+                    self.assertFalse((self.work / 'cache').exists())
+                    image = inspect_oci(self.work / 'oci', max_bytes=100000, max_entries=20)
+                    self.assertEqual(image['image_digest'], self.fixture.digest)
+                    unpacked.append(args)
                     raise ReachedUnpack()
                 with patch.object(worker.os, 'geteuid', return_value=0), \
                      patch.object(worker.sys, 'platform', 'linux'), \
@@ -192,11 +208,22 @@ class WorkerAcquisitionTests(unittest.TestCase):
                      patch.object(Path, 'read_text', read_text), \
                      patch.object(worker, 'check_tools', return_value=tools), \
                      patch.object(worker, 'sha256', return_value='fixed'), \
+                     patch.object(worker.shutil, 'rmtree', side_effect=remove), \
                      patch.object(worker.Commands, 'run', side_effect=command):
-                    with self.assertRaises(InvalidTemplate if corrupt else ReachedUnpack):
+                    failure = {'corrupt': InvalidTemplate, 'cleanup-failed': OSError, 'good': ReachedUnpack}[outcome]
+                    with self.assertRaises(failure):
                         worker.build(self.work, self.source, self.request, {}, guest_boot_id='synthetic-boot')
                 self.assertEqual(len(daemons), 1)
                 self.assertIsNotNone(daemons[0].poll())
+                self.assertEqual(len(unpacked), int(outcome == 'good'))
+                self.assertEqual((self.work / 'cache').exists(), outcome != 'good')
+                self.assertFalse((self.work / 'candidate.ext4').exists())
+                events = [json.loads(line.removeprefix('[sandproof-phase] '))
+                          for line in (self.work / 'build.log').read_text().splitlines()
+                          if line.startswith('[sandproof-phase] ')]
+                completed = [e['phase'] for e in events if e['state'] == 'completed']
+                self.assertEqual(completed, ['acquire'] + ([] if outcome == 'corrupt' else ['oci_validate'])
+                                 + (['build_cache_cleanup'] if outcome == 'good' else []))
 
 
 if __name__ == '__main__':
