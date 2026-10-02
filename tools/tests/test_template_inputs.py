@@ -143,21 +143,24 @@ class TemplateInputTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.context(entries)
 
-    def make_oci(self, layer_entries=None):
+    def make_oci(self, layer_entries=None, *, layer_bytes=None, compressed=True, diff_id=None, copies=1):
         layout = self.root / "oci"
         (layout / "blobs/sha256").mkdir(parents=True)
         def add(data, media):
             digest = hashlib.sha256(data).hexdigest()
             (layout / "blobs/sha256" / digest).write_bytes(data)
             return {"digest": "sha256:" + digest, "size": len(data), "mediaType": media}
-        layer = archive_bytes(layer_entries or [("etc/value", b"hello", tarfile.REGTYPE, ""),
-                                               ("etc/.wh.old", b"", tarfile.REGTYPE, ""),
-                                               ("bin", b"", tarfile.SYMTYPE, "/usr/bin")])
-        layer_descriptor = add(gzip.compress(layer), "application/vnd.oci.image.layer.v1.tar+gzip")
+        layer = layer_bytes if layer_bytes is not None else archive_bytes(
+            layer_entries or [("etc/value", b"hello", tarfile.REGTYPE, ""),
+                              ("etc/.wh.old", b"", tarfile.REGTYPE, ""),
+                              ("bin", b"", tarfile.SYMTYPE, "/usr/bin")])
+        layer_descriptor = add(gzip.compress(layer) if compressed else layer,
+                               "application/vnd.oci.image.layer.v1.tar" + ("+gzip" if compressed else ""))
         config = {"os": "linux", "architecture": "amd64", "rootfs": {"type": "layers", "diff_ids": [
-            "sha256:" + hashlib.sha256(layer).hexdigest()]}, "config": {"Env": ["VALUE=hello"], "User": "1000"}}
+            diff_id or "sha256:" + hashlib.sha256(layer).hexdigest()] * copies},
+            "config": {"Env": ["VALUE=hello"], "User": "1000"}}
         config_descriptor = add(json.dumps(config).encode(), "application/vnd.oci.image.config.v1+json")
-        manifest = {"schemaVersion": 2, "config": config_descriptor, "layers": [layer_descriptor]}
+        manifest = {"schemaVersion": 2, "config": config_descriptor, "layers": [layer_descriptor] * copies}
         descriptor = add(json.dumps(manifest).encode(), "application/vnd.oci.image.manifest.v1+json")
         (layout / "index.json").write_text(json.dumps({"schemaVersion": 2, "manifests": [descriptor]}))
         (layout / "oci-layout").write_text('{"imageLayoutVersion":"1.0.0"}')
@@ -168,6 +171,58 @@ class TemplateInputTests(unittest.TestCase):
         result = inspect_oci(layout, max_bytes=100000, max_entries=20)
         self.assertEqual(result["container_config"]["User"], "1000")
         self.assertTrue(result["image_digest"].startswith("sha256:"))
+
+    def test_oci_layer_is_decompressed_once_for_hash_and_members(self):
+        layout, _ = self.make_oci()
+        # Both gzip.open and tarfile's gzip reader use this actual decoder.
+        # Reopening the layer for a second scan regresses large-image latency.
+        with patch('gzip.GzipFile', wraps=gzip.GzipFile) as decompressor:
+            inspect_oci(layout, max_bytes=100000, max_entries=20)
+        self.assertEqual(decompressor.call_count, 1)
+
+    def test_oci_tar_eof_does_not_skip_trailing_bytes_or_diff_id(self):
+        layer = archive_bytes([('payload', b'original', tarfile.REGTYPE, '')])
+        padded = layer + b'\0' * (2 * 1024 * 1024) + b'trailing bytes'
+        for compressed in (False, True):
+            for bad_diff in (False, True):
+                with self.subTest(compressed=compressed, bad_diff=bad_diff), tempfile.TemporaryDirectory() as tmp:
+                    self.root = Path(tmp)
+                    layout, _ = self.make_oci(layer_bytes=padded, compressed=compressed,
+                        diff_id='sha256:' + hashlib.sha256(layer).hexdigest() if bad_diff else None)
+                    if bad_diff:
+                        with self.assertRaisesRegex(InvalidTemplate, 'diff_id mismatch'):
+                            inspect_oci(layout, max_bytes=len(padded), max_entries=1)
+                    else:
+                        inspect_oci(layout, max_bytes=len(padded), max_entries=1)
+                    # An uncompressed blob exceeds the descriptor bound before
+                    # parsing; gzip must also charge bytes after the tar EOF.
+                    message = 'expanded byte limit' if compressed else 'invalid OCI descriptor'
+                    with self.assertRaisesRegex(InvalidTemplate, message):
+                        inspect_oci(layout, max_bytes=len(padded) - 1, max_entries=1)
+
+    def test_oci_gzip_footer_and_later_member_are_checked_after_tar_eof(self):
+        layer = archive_bytes([('payload', b'original', tarfile.REGTYPE, '')])
+        encoded = gzip.compress(layer)
+        later = gzip.compress(b'\0' * 32768)
+        with patch('gzip.compress', return_value=encoded + later):
+            layout, _ = self.make_oci(layer_bytes=layer + b'\0' * 32768)
+        inspect_oci(layout, max_bytes=len(layer) + 32768, max_entries=1)
+        for damaged in (encoded[:-4], encoded[:-8] + b'\0' * 8, encoded + later[:-4]):
+            with self.subTest(damaged_size=len(damaged)), tempfile.TemporaryDirectory() as tmp:
+                self.root = Path(tmp)
+                with patch('gzip.compress', return_value=damaged):
+                    layout, _ = self.make_oci(layer_bytes=layer)
+                with self.assertRaises((EOFError, gzip.BadGzipFile)):
+                    inspect_oci(layout, max_bytes=100000, max_entries=1)
+
+    def test_oci_streaming_keeps_cumulative_layer_byte_and_entry_limits(self):
+        layer = archive_bytes([('payload', b'original', tarfile.REGTYPE, '')])
+        layout, _ = self.make_oci(layer_bytes=layer, copies=2)
+        inspect_oci(layout, max_bytes=2 * len(layer), max_entries=2)
+        with self.assertRaisesRegex(InvalidTemplate, 'expanded byte limit'):
+            inspect_oci(layout, max_bytes=2 * len(layer) - 1, max_entries=2)
+        with self.assertRaisesRegex(InvalidTemplate, 'entry limit'):
+            inspect_oci(layout, max_bytes=2 * len(layer), max_entries=1)
 
     def test_oci_linux_backslashes_remain_literal_in_names_and_links(self):
         unit = r"usr/lib/systemd/system/system-systemd\x2dcryptsetup.slice"
