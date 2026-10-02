@@ -96,7 +96,7 @@ Ready 返回的模板形状使用 Rust `TemplateView` 的规范字段 `cpuCount`
 
 Dockerfile 构建使用固定 BuildKit 的 `auto` snapshotter，在每项独占构建 VM 的私有工作目录中探测可用实现，避免强制复制完整父快照。固定版本的选择顺序为 OverlayFS、fuse-overlayfs、native，能力探测和回退由 [BuildKit 0.28.0](https://github.com/moby/buildkit/blob/v0.28.0/cmd/buildkitd/main_oci_worker.go#L368) 实现；实际选择保留在受限 `daemon.log`。仍保持 OCI 进程隔离、私有缓存目录与原构建资源/时限，输出照常经过 OCI 校验和独立候选盘转换。内核列出 OverlayFS 只证明驱动可用，不代表本次目录已通过探测或构建已成功。
 
-Dockerfile 的固定 BuildKit 使用不推送、不登记的 image exporter，将 OCI 清单、配置和层留在本次私有内容存储。守护进程停止后，worker 仅按导出描述符将引用的普通文件硬链接到新的 OCI layout，避免在同一构建 VM 内重复复制大层。此路径限定 BuildKit 0.28.0 的单个 `runc-overlayfs`、`runc-fuse-overlayfs` 或 `runc-native` 内容目录；目录/文件符号链接、缺失或歧义的存储、大小/身份变化及不一致的清单/配置摘要均拒绝。硬链接不代表已校验：所有 blob 摘要、diff_ids、tar/gzip 完整性及累计展开/条目限额仍在 umoci 解包前检查，仍由 umoci 处理层删除和权限。固定版本的目录结构变化需要重新适配和实测，不能改用未验证的裸目录作为候选根文件系统。
+Dockerfile 的固定 BuildKit 使用不推送、不登记的 image exporter，将 OCI 清单、配置和层留在本次私有内容存储。守护进程停止后，worker 仅按导出描述符将引用的普通文件硬链接到新的 OCI layout，避免在同一构建 VM 内重复复制大层。此路径限定 BuildKit 0.28.0 的单个 `runc-overlayfs`、`runc-fuse-overlayfs` 或 `runc-native` 内容目录；目录/文件符号链接、缺失或歧义的存储、大小/身份变化及不一致的清单/配置摘要均拒绝。硬链接不代表已校验：所有 blob 摘要、diff_ids、tar/gzip 完整性及累计展开/条目限额仍在 umoci 解包前检查，仍由 umoci 处理层删除和权限。固定版本的目录结构变化需要重新适配和实测，不能改用未验证的裸目录作为候选根文件系统。 完整校验成功后，worker 在 `build_cache_cleanup` 阶段删除本项工作已停止的 BuildKit 私有缓存（快照、元数据和原内容链接），再解包并生成候选盘；OCI layout 自己的链接继续保留同一清单、配置和层字节。清理失败即终止转换，由监督器回收原构建 VM，不继续分配候选盘；此清理不操作其他工作或宿主缓存。
 
 候选盘转换使用固定 umoci 0.6.0 的 `raw unpack`，在新建的 0700 私有目录内提取 rootfs。它与普通 `unpack` 使用相同的层解包、ID 映射和 whiteout 处理，省去供 `repack` 使用的全目录 mtree 摘要扫描及未使用的 OCI runtime bundle 配置；不省略输入校验、候选磁盘完整摘要或启动验收。启动参数仍来自已校验的镜像配置，通过平台启动路径应用。此候选根目录不用于 umoci `repack`。
 

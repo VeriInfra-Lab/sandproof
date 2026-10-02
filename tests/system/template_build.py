@@ -256,6 +256,7 @@ def exercise(args):
                 evidence.append({"kind": kind + "-unpack-equivalence", **comparison})
                 if kind == "dockerfile":
                     assert snapshotter is not None, "retain actual automatic snapshotter selection"
+                    assert not builder.files.exists("/output/job/cache"), "release private build snapshots before candidate conversion"
                     upload(builder, checkout / "tests/system/buildkit_export_guest.py", "/input/export-check.py")
                     comparison = json.loads(checked(builder, "python3 /input/export-check.py", timeout=150))
                     evidence.append({"kind": "buildkit-export-equivalence", **comparison})

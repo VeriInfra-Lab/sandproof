@@ -545,6 +545,12 @@ def build(work, source, request, profile, *, guest_boot_id):
             if request["kind"] != "oci-reference":
                 with commands.phase("oci_validate"):
                     image = inspect_oci(layout, **limits)
+            if request["kind"] == "dockerfile":
+                # The daemon has stopped and the selected blobs have their own
+                # validated layout links. Drop only this job's unused snapshots
+                # before allocating another rootfs and the candidate disk.
+                with commands.phase("build_cache_cleanup"):
+                    shutil.rmtree(work / "cache")
             startup = startup_config(image["container_config"])
             index = bounded_json(layout / "index.json")
             index["manifests"][0].setdefault("annotations", {})["org.opencontainers.image.ref.name"] = "candidate"
