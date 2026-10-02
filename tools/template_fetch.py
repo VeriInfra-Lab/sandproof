@@ -3,6 +3,7 @@
 No registry protocol, credentials, Dockerfile evaluation, or host unpacking is
 implemented here. The caller owns the disposable VM and its public IPv4 policy.
 """
+import json
 import os
 import re
 import selectors
@@ -186,11 +187,14 @@ def fetch(source, work, layout, request, tool, commands):
         # Conversion is local-only and must preserve config/layer bytes exactly.
         inspect_oci(layout, **limits, allow_docker=True)
         original = payload_identity(layout, request["max_input_bytes"])
-        raw = work / "source-oci"
-        layout.rename(raw)
-        archive.unlink()  # two layout copies replace tar+layout in disk budget
-        commands.run([str(tool), "image", "mod", "ocidir://" + str(raw) + "@" + selected,
-                      "--to-oci", "--create", "ocidir://" + str(layout) + ":candidate"])
+        # This private index has exactly the selected, verified descriptor.
+        # A local tag lets regctl replace it without copying every payload blob
+        # into a second layout or leaving two manifests in the output index.
+        items[0]["annotations"] = {"org.opencontainers.image.ref.name": "candidate"}
+        (layout / "index.json").write_text(json.dumps(index))
+        archive.unlink()
+        commands.run([str(tool), "image", "mod", "ocidir://" + str(layout) + ":candidate",
+                      "--to-oci", "--replace"])
     # Every public input, including native OCI, is fully inspected here. The
     # worker consumes this result immediately instead of decompressing the same
     # unchanged layout again before unpacking.
