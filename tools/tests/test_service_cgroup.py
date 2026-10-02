@@ -19,7 +19,10 @@ class ServiceCgroupTests(unittest.TestCase):
         self.parent.mkdir(parents=True, mode=0o700)
         self.populate(self.parent, delegated=True)
         self.record = self.root / 'services.json'
+        boot = self.root / 'boot-id'
+        boot.write_text('fixture-boot')
         for context in (patch.object(cg, 'ROOT', self.mount), patch.object(cg, 'OWNER_UID', os.geteuid()),
+                        patch.object(cg, 'BOOT', boot),
                         patch.object(cg, 'require_mount'), patch.object(cg, 'create_leaf', side_effect=self.create)):
             context.start()
             self.addCleanup(context.stop)

@@ -25,6 +25,18 @@ from tools.template_build_client import BuildClient
 MIB = 1024**2
 
 
+def ready_for_pressure(rows):
+    """Independent resource probe, not a replacement for the original score.
+
+    Only known Ready templates after exact per-task reclaim are eligible.
+    Benchmark failure remains a failure in the enclosing report/exit status.
+    """
+    return len(rows) == 2 and all(
+        (row.get('build') or {}).get('state') == 'Ready'
+        and row.get('template') and row.get('exact_cleanup') == 'passed'
+        for row in rows)
+
+
 def validate_cohort(requirements, deployment):
     if len(requirements) != 2:
         raise ValueError('exactly two published template shapes required')
@@ -76,6 +88,29 @@ async def finish_input(item):
 async def verify_no_replay(tracked):
     for item in tracked:
         assert await item['sandbox'].files.read(item['marker'], user='root') == 'once\n'
+
+
+async def wait_builder_session(read_vm, read_build, deadline, supervisor):
+    """Observe the original admission; a slow read cannot authorize a new POST.
+
+    Private controller reads can wait behind a bounded disk preparation. Retry
+    only read timeouts, within the original build deadline; terminal builds,
+    other errors and cancellation still fail the interruption probe.
+    """
+    while True:
+        assert time.time() < deadline, 'original builder missed the interruption barrier'
+        assert supervisor.poll() is None, 'build supervisor exited before the barrier'
+        try:
+            vm = await read_vm()
+        except TimeoutError:
+            vm = None
+        if vm and vm.get('session'):
+            assert time.time() < deadline, 'builder observation exceeded original deadline'
+            return vm
+        assert time.time() < deadline, 'original builder missed the interruption barrier'
+        view = await read_build()
+        assert view['state'] not in ('Ready', 'Failed', 'CleanupUnknown'), view['state']
+        await asyncio.sleep(0.2)
 
 
 async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor,
@@ -179,15 +214,9 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
         assert (await build_get('/sandproof/template-builds/' + build_id))['buildID'] == build_id
         await build_get('/sandproof/template-builds/' + build_id + '/logs?offset=0&limit=1024')
         cases.append('full-build-still-serves-status-and-logs')
-        while True:
-            vm = await build_vm()
-            if vm and vm.get('session'):
-                report['original_builder_sandbox'] = vm['sandboxID']
-                break
-            assert time.time() < build_view['deadline'], 'original builder failed to reach the interruption barrier'
-            build_view = await build_get('/sandproof/template-builds/' + build_id)
-            assert build_view['state'] not in ('Ready', 'Failed', 'CleanupUnknown'), build_view['state']
-            await asyncio.sleep(0.2)
+        vm = await wait_builder_session(build_vm,
+            lambda: build_get('/sandproof/template-builds/' + build_id), build_view['deadline'], supervisor)
+        report['original_builder_sandbox'] = vm['sandboxID']
         supervisor.kill()
         await asyncio.to_thread(supervisor.wait, timeout=10)
         stopped = True
