@@ -64,10 +64,12 @@ PROBES = {
 }
 
 
-async def collect(environment, task_name, trial_dir):
+async def collect(environment, task_name, trial_dir, *, oracle_mode='original'):
     probe = PROBES.get(task_name)
     if probe is None:
         return {'status': 'not_applicable'}
+    if task_name == 'gpt2-codegolf' and oracle_mode != 'original':
+        return {'status': 'not_applicable', 'reason': 'probe_requires_original_oracle'}
     report = {k: v for k, v in probe.items() if k != 'command'}
     report.update(status='running', scope='post-score diagnostic; original reward unchanged',
                   command_sha256=hashlib.sha256(probe['command'].encode()).hexdigest())
