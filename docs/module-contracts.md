@@ -69,6 +69,8 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 登记的 imageDigest 是实际使用的 linux/amd64 OCI 清单摘要：Dockerfile 为 BuildKit 导出结果，公开 OCI 为固定的源清单或选定子清单；Docker schema2 为转换后的 OCI 清单摘要，原始来源保存在 `public_source`。可变 tag 不代表跨构建固定来源，需要固定来源时提交 `@sha256:`。服务独立复算内核和根盘摘要，不证明 OCI 软件与转换盘内容等价，也不提供构建供应链认证。明确拒绝私有仓库凭据、任意宿主挂载、特权/GPU、多服务及不兼容镜像，不声称支持任意 Dockerfile。
 
+工作器读取工具日志至 EOF 后，等待该工具退出仍受同一构建截止时间约束；输出已关闭不代表进程完成。超时或截止时间之后才观察到退出时按构建超时处理，并继续回收该工具的私有进程组，不能记为成功。
+
 ### 自助构建入口、部署与恢复
 
 本批实现的是显式启用的 Sandproof 扩展，不是原 E2B 模板构建 API。运行与构建使用两个 `sandproof-server`、不同数据库/命名空间/状态目录/jail/UID 范围/cgroup 父目录。构建控制器只有独占可信凭据，启用 `internal_build_vms=true`，不可同时启用模板登记。第三个[监督服务](../tools/template_build_service.py)监听回环，由可信 TLS 前端转发构建路径，复用运行服务的 API key/租户；用户不能拿到构建池凭据或 VM 会话。临时模板启动检查仍占运行额度。
