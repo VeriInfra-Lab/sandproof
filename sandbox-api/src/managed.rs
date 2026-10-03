@@ -41,7 +41,9 @@ pub trait HostAdapter: Send + 'static {
     type Evidence: HostEvidence + Serialize + DeserializeOwned + PartialEq + Send;
 
     /// Persist or validate the exact controller-committed physical position.
-    /// A missing/prior binding may be installed only before any host dispatch.
+    /// A missing/prior binding may be installed only before any host dispatch,
+    /// or for terminal pre-launch cleanup whose only dispatched action was a
+    /// terminal fence. No potentially launched VM may acquire a new binding.
     /// # Errors
     /// Unsupported bounded mode or ambiguous identity must fail closed.
     fn bind_host_slot(
@@ -760,9 +762,24 @@ fn bind_recovery_slots<H: HostAdapter>(
         {
             continue;
         }
+        let terminal_before_launch =
+            world
+                .sandbox_record(context.binding.sandbox)
+                .is_some_and(|record| {
+                    record.terminal
+                        && record.phase == core::Phase::Revoking
+                        && record.current_vm.is_none()
+                });
         let allow_install = world.effect_ids().iter().all(|effect| {
             effect.command().sandbox() != context.binding.sandbox
                 || world.effect_status(effect) == Some(core::EffectStatus::Committed)
+                // An older kill path could claim its terminal fence before
+                // the first binding existed. A fence alone cannot launch a
+                // VM, mint a credential, or create its disk/network. Recover
+                // only this exact pre-launch terminal identity; any claimed
+                // opening fence, prepare or other action still blocks install.
+                || (terminal_before_launch
+                    && matches!(effect.command(), core::Command::InstallFence { terminal: true, .. }))
         });
         if host.bind_host_slot(&context, allow_install).is_err() {
             blocked.insert(context.binding.sandbox);
@@ -1573,6 +1590,10 @@ impl<H: HostAdapter> ManagedPort<H> {
         }
         accepted.map_err(map_journal)?;
         let Inner { journal, host, .. } = &mut *inner;
+        let world = journal.world().map_err(|_| PortError::OutcomeUnknown)?;
+        if bind_recovery_slots(journal, host, &world, Some(sandbox))?.contains(&sandbox) {
+            return Err(PortError::OutcomeUnknown);
+        }
         finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
             host.execute(action)
         })
