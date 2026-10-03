@@ -709,6 +709,57 @@ class LocalFinalizationTests(unittest.TestCase):
                     self.assertEqual(rows[0]['exact_cleanup'], 'passed')
                 env.start.assert_awaited_once()
 
+    def test_cleanup_http_failure_retains_status_and_only_stop_elapsed_without_retry(self):
+        from e2b.exceptions import SandboxException
+        secret = 'private-response-body-and-credential'
+        error = SandboxException(secret, status_code=500)
+        with self.fixture(cleanup_error=error) as (args, env, oracle, verifier, trial, output):
+            ticks = iter((100.0, 200.0, 203.25, 204.0))
+            with patch.object(runner, 'time', SimpleNamespace(monotonic=lambda: next(ticks))):
+                row = asyncio.run(runner.run_task(args, {"name": "sample"}, {}))
+            retained = json.loads((trial / 'result.json').read_text())
+            self.assertEqual(retained, row)
+            self.assertEqual(row['status'], 'cleanup_unknown')
+            self.assertEqual(row['execution_status'], 'passed')
+            self.assertEqual(row['rewards'], {'reward': 1})
+            self.assertEqual(row['cleanup_error_type'], 'SandboxException')
+            self.assertEqual(row['cleanup_http_status'], 500)
+            self.assertEqual(row['cleanup_seconds'], 3.25)
+            self.assertEqual(row['seconds'], 104.0)
+            self.assertFalse(row['kill_confirmed'])
+            self.assertNotIn(secret, json.dumps(retained) + output.getvalue())
+            env.stop.assert_awaited_once()
+
+    def test_cleanup_http_metadata_rejects_invalid_status_without_leaking_text(self):
+        from e2b.exceptions import SandboxException
+        secret = 'private-status-or-response'
+        for status in (None, True, 99, 600, secret):
+            with self.subTest(status=status), self.fixture(
+                cleanup_error=SandboxException(secret, status_code=status),
+            ) as (args, env, oracle, verifier, trial, output):
+                row = asyncio.run(runner.run_task(args, {"name": "sample"}, {}))
+                self.assertEqual(row['status'], 'cleanup_unknown')
+                self.assertEqual(row['execution_status'], 'passed')
+                self.assertNotIn('cleanup_http_status', row)
+                self.assertNotIn(secret, json.dumps(row) + output.getvalue())
+                env.stop.assert_awaited_once()
+
+    def test_cleanup_metadata_failure_preserves_original_cleanup_error(self):
+        class BrokenStatus(Exception):
+            @property
+            def status_code(self):
+                raise ValueError('private-metadata-error')
+
+        with self.fixture(cleanup_error=BrokenStatus()) as (args, env, oracle, verifier, trial, output):
+            row = asyncio.run(runner.run_task(args, {"name": "sample"}, {}))
+            self.assertEqual(row['status'], 'cleanup_unknown')
+            self.assertEqual(row['cleanup_error_type'], 'BrokenStatus')
+            self.assertNotIn('cleanup_http_status', row)
+            self.assertFalse(row['kill_confirmed'])
+            self.assertEqual(json.loads((trial / 'result.json').read_text()), row)
+            self.assertNotIn('private-metadata-error', json.dumps(row) + output.getvalue())
+            env.stop.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
