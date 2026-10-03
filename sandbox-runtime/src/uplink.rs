@@ -540,7 +540,7 @@ fn conntrack_matching(field: &str, address: &str) -> Result<Vec<u8>, RuntimeErro
     output(
         "observe exact retired conntrack",
         "/usr/sbin/conntrack",
-        &["--list", "--family", "ipv4", field, address],
+        &["-L", "--family", "ipv4", field, address],
     )
 }
 
@@ -711,7 +711,7 @@ impl Runtime {
         let flows = output(
             "bounded conntrack inventory",
             "/usr/sbin/conntrack",
-            &["--list", "--family", "ipv4"],
+            &["-L", "--family", "ipv4"],
         )?;
         require_empty_conntrack_pool(&flows, uplink_base, max_positions)
     }
@@ -759,7 +759,7 @@ impl Runtime {
                     self.config.host_slot.as_ref(),
                     "delete exact retired conntrack",
                     "/usr/sbin/conntrack",
-                    &["--delete", "--family", "ipv4", field, &address],
+                    &["-D", "--family", "ipv4", field, &address],
                     None,
                 )?;
             }
