@@ -4,16 +4,26 @@ from contextlib import nullcontext
 import gzip
 import hashlib
 import json
+import queue
 from pathlib import Path, PurePosixPath
 import re
 import stat
 import tarfile
+import threading
 
 MAX_INPUT_BYTES = 16 * 1024**3
 
 
 class InvalidTemplate(ValueError):
     pass
+
+
+def validate_tool_names(profile, *, registry=False):
+    required = {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox"}
+    if registry:
+        required.add("regctl")
+    if set(profile) not in (required, required | {"igzip", "libisal.so.2"}):
+        raise InvalidTemplate("fixed tool profile required; igzip needs libisal.so.2")
 
 
 def platform_dns_servers(value):
@@ -205,6 +215,64 @@ class LayerReader:
         return block
 
 
+class PrefetchReader:
+    """Overlap decoding with layer validation using two queued 1 MiB blocks.
+
+    The byte cap includes the validator's one-byte limit witness. Exit joins
+    the producer before its source closes, including consumer failures.
+    """
+    def __init__(self, source, maximum):
+        self.source, self.maximum = source, maximum
+        self.queue = queue.Queue(maxsize=2)
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.produce, name="oci-decode-prefetch")
+        self.buffer = b""
+        self.eof = False
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def send(self, item):
+        while not self.stop.is_set():
+            try:
+                self.queue.put(item, timeout=0.1)
+                return
+            except queue.Full:
+                pass
+
+    def produce(self):
+        try:
+            remaining = self.maximum
+            while not self.stop.is_set() and remaining:
+                block = self.source.read(min(1024 * 1024, remaining))
+                self.send((block, None))
+                if not block:
+                    return
+                remaining -= len(block)
+            if not self.stop.is_set():
+                self.send((b"", None))
+        except BaseException as error:
+            self.send((None, error))
+
+    def read(self, size=-1):
+        if size == 0:
+            return b""
+        size = 1024 * 1024 if size < 0 else size
+        if not self.buffer and not self.eof:
+            block, error = self.queue.get()
+            if error is not None:
+                raise error
+            self.buffer = block
+            self.eof = not block
+        result, self.buffer = self.buffer[:size], self.buffer[size:]
+        return result
+
+    def __exit__(self, *unused):
+        self.stop.set()
+        self.thread.join()
+
+
 class LayerChecks:
     """In-memory checks for one private layout during a single acquisition.
 
@@ -284,12 +352,14 @@ def inspect_oci(layout, *, max_bytes, max_entries, allow_docker=False, layer_che
             encoded = BlobReader(raw, layer)
             decoded = gzip.GzipFile(fileobj=encoded, mode="rb") if compressed else nullcontext(encoded)
             with decoded as source:
-                stream = LayerReader(source, remaining_bytes)
-                with tarfile.open(fileobj=stream, mode="r|", bufsize=1024 * 1024) as archive:
-                    entries = check_members(archive, max_bytes=remaining_bytes,
-                                            max_entries=remaining_entries, context=False)
-                while stream.read(1024 * 1024):
-                    pass
+                prefetched = PrefetchReader(source, remaining_bytes + 1) if compressed else nullcontext(source)
+                with prefetched as decoded_stream:
+                    stream = LayerReader(decoded_stream, remaining_bytes)
+                    with tarfile.open(fileobj=stream, mode="r|", bufsize=1024 * 1024) as archive:
+                        entries = check_members(archive, max_bytes=remaining_bytes,
+                                                max_entries=remaining_entries, context=False)
+                    while stream.read(1024 * 1024):
+                        pass
             encoded.verify()
         if expected_diff != "sha256:" + stream.digest.hexdigest():
             raise InvalidTemplate("OCI diff_id mismatch")

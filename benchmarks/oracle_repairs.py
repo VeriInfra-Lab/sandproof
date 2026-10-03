@@ -13,6 +13,7 @@ from tools.benchmark_tasks import InvalidInput
 
 CHROMIUM_LIFECYCLE_PATH = '/usr/local/lib/sandproof/guest_chromium.py'
 MTEB_VERIFIER_CONSTRAINTS = '/etc/sandproof-mteb-verifier-constraints.txt'
+MTEB_RESULTS_COMMIT = 'c0fd3271442f8c0c839084a109fede85c8514dab'
 
 REPAIRS = {
     'filter-js-from-html': '9686e12af48346d2df538c3b46710122ee8dc80dfd0eecacb7a1476bf892ec9f',
@@ -196,6 +197,14 @@ if(!bpe)return 78;''')
                            + ' https://ftp.icm.edu.pl/packages/povray/Old-Versions/Official-2.2/' + archive
                            + "\nprintf '%s\\n' '" + digest + '  ' + archive + "' | sha256sum -c")
             new = new.replace(command, replacement)
+        # The original recipe changes void main to int under C89, but leaves
+        # its normal-exit hook empty. Define that existing platform hook so a
+        # completed render returns zero; all earlier error exits remain intact.
+        marker = 'echo "void unix_init_POVRAY();" >> config.h'
+        if new.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = new.replace(marker, marker + '\n'
+                          "printf '%s\\n' '#define FINISH_POVRAY return 0;' >> config.h")
     elif name == 'crack-7z-hash':
         # Try the unmodified bundled common-password list first. No expected
         # password, special mask or task-specific candidate list is supplied.
@@ -227,23 +236,37 @@ if(!bpe)return 78;''')
         # Torch dependency now downloads CUDA libraries that fill the 10 GiB
         # CPU-only task disk. Select hashed official CPU wheels only there;
         # leave the oracle's existing Python, packages and algorithm untouched.
-        new = ('install -D -m 644 /solution/mteb-verifier-constraints.txt '
-               + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + old)
-    elif name == 'mteb-leaderboard':
-        # The solution immediately checks out its pinned historical commit.
-        # Preserve the complete clone, but do not first materialize today's
-        # larger HEAD tree, which can fill the original 10 GiB task disk.
-        marker = 'git clone https://github.com/embeddings-benchmark/results'
+        # The pinned image's Xet client also caches downloaded chunks separately
+        # from the complete model. Disable that disposable duplicate cache for
+        # this invocation, preserving the model cache and retrieval computation.
+        marker = 'python retrieve.py'
         if old.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
-        new = old.replace(marker, 'git clone --no-checkout https://github.com/embeddings-benchmark/results')
+        new = old.replace(marker, 'HF_XET_CHUNK_CACHE_SIZE_BYTES=0 ' + marker)
+        new = ('install -D -m 644 /solution/mteb-verifier-constraints.txt '
+               + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + new)
+    elif name == 'mteb-leaderboard':
+        # Keep all objects for the fixed snapshot, but materialize only complete
+        # directories of models selected by the original filename-only filter.
+        # Even the historical full working tree cannot fit the original disk.
+        marker = 'git clone https://github.com/embeddings-benchmark/results'
+        checkout = 'git checkout ' + MTEB_RESULTS_COMMIT
+        if old.count(marker) != 1 or old.count(checkout) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = 'set -e\n' + old.replace(marker,
+            'git init results\n'
+            'git -C results remote add origin https://github.com/embeddings-benchmark/results\n'
+            'git -C results fetch --depth=1 --no-tags origin ' + MTEB_RESULTS_COMMIT)
+        new = new.replace(checkout, 'git reset --mixed ' + MTEB_RESULTS_COMMIT)
         # In MTEB 1.38.41 results_repo is still a clone source, even for a
         # local path. Its documented cache root must point at the parent of
-        # this complete checkout to avoid a second full working tree.
+        # this existing checkout to avoid a second full working tree.
         marker = 'python leaderboard.py'
         if new.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
-        new = new.replace(marker, 'MTEB_CACHE="$(dirname "$PWD")" python leaderboard.py')
+        new = new.replace(marker,
+            'python "$(dirname "$0")/guest_mteb_results.py"\n'
+            'MTEB_CACHE="$(dirname "$PWD")" python leaderboard.py')
     elif name == 'torch-tensor-parallelism':
         # In Torch 2.7.0, the direct Gloo Python holder releases the GIL on
         # destruction; its parent ProcessGroup's holder does not. Keep the
@@ -278,6 +301,8 @@ if(!bpe)return 78;''')
     if name == 'mteb-retrieve':
         shutil.copyfile(Path(__file__).with_name('mteb-verifier-constraints.txt'),
                         destination / 'mteb-verifier-constraints.txt')
+    if name == 'mteb-leaderboard':
+        shutil.copyfile(Path(__file__).with_name('guest_mteb_results.py'), destination / 'guest_mteb_results.py')
     if name in ('qemu-alpine-ssh', 'qemu-startup'):
         shutil.copyfile(Path(__file__).with_name('guest_bullseye_snapshot.sh'), destination / 'guest_bullseye_snapshot.sh')
     if name == 'rstan-to-pystan':

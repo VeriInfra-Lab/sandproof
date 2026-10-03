@@ -27,14 +27,14 @@ import urllib.request
 if __package__:
     from .template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write, bounded_configuration, fsync_directory
     from .template_stage import file_hash, private_directory, stage_downloaded as stage, stage_inventory, stage_delete
-    from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers
+    from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
     from .template_fetch import mirror_registry
     from .template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
     from .template_physical_storage import validate_configuration as validate_physical_configuration, PhysicalProfileLease
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write, bounded_configuration, fsync_directory
     from template_stage import file_hash, private_directory, stage_downloaded as stage, stage_inventory, stage_delete
-    from template_inputs import MAX_INPUT_BYTES, platform_dns_servers
+    from template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
     from template_fetch import mirror_registry
     from template_build_config import validate_capacity, HOST_MEMORY_OVERHEAD_MIB
     from template_physical_storage import validate_configuration as validate_physical_configuration, PhysicalProfileLease
@@ -176,7 +176,16 @@ def retain_timeout_logs(sandbox, directory, limit):
     durable_write(directory / "build.log", [output], limit)
 
 
-def configuration(path):
+def configuration(path, *, require_physical_lease=True):
+    """Validate a configuration, joining the activated profile by default.
+
+    A supervisor may explicitly perform static preflight before the Rust host
+    activates the fixed profile. That phase never opens or synchronizes the
+    coordination file and is not authorization to start the build service.
+    Production startup must retain the default and join the original lease.
+    """
+    if type(require_physical_lease) is not bool:
+        raise ValueError("explicit physical lease validation flag required")
     config = protected_json(path)
     if set(config) - {"docker_hub_mirror", "bounded_builds", "migrate_legacy_builds"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
         raise ValueError("invalid build service config")
@@ -241,8 +250,7 @@ def configuration(path):
         if limits[tenant] > limits[global_field]:
             raise ValueError("tenant budget exceeds global budget")
     tools = config["tools"]
-    if set(tools) != {"buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl"}:
-        raise ValueError("fixed tool profile required")
+    validate_tool_names(tools, registry=True)
     for spec in tools.values():
         path = Path(spec["path"])
         if path.resolve(strict=True) != path or not path.is_file() or file_hash(path) != spec["sha256"]:
@@ -271,9 +279,12 @@ def configuration(path):
     physical = validate_physical_configuration(runtime, builder, config)
     if physical is not None:
         profile, peak, inodes = physical
-        # Read-only here; startup order explicitly activates through a server.
-        lease = PhysicalProfileLease(profile)
-        lease.close()
+        # Only Rust may activate a fresh profile. Static acceptance preflight
+        # must not open/lock/fsync an unactivated coordination file; a later
+        # default validation and BuildStore startup still require its lease.
+        if require_physical_lease:
+            lease = PhysicalProfileLease(profile)
+            lease.close()
         config["physical_storage_profile"] = profile
         limits["physical_storage_peak_bytes"] = peak
         limits["physical_storage_inodes"] = inodes

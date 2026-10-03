@@ -535,12 +535,22 @@ fn conntrack_filters(plan: &UplinkPlan) -> Vec<(&'static str, String)> {
         .collect()
 }
 
+fn conntrack_dump_args<'a>(filter: Option<(&'a str, &'a str)>) -> Vec<&'a str> {
+    // conntrack-tools calls its listing command --dump (-L), not --list.
+    // Initial inventory and exact retirement reads share this argument builder.
+    let mut arguments = vec!["--dump", "--family", "ipv4"];
+    if let Some((field, address)) = filter {
+        arguments.extend([field, address]);
+    }
+    arguments
+}
+
 fn conntrack_matching(field: &str, address: &str) -> Result<Vec<u8>, RuntimeError> {
     crate::linux::check_trusted_path(std::path::Path::new("/usr/sbin/conntrack"))?;
     output(
         "observe exact retired conntrack",
         "/usr/sbin/conntrack",
-        &["--list", "--family", "ipv4", field, address],
+        &conntrack_dump_args(Some((field, address))),
     )
 }
 
@@ -711,7 +721,7 @@ impl Runtime {
         let flows = output(
             "bounded conntrack inventory",
             "/usr/sbin/conntrack",
-            &["--list", "--family", "ipv4"],
+            &conntrack_dump_args(None),
         )?;
         require_empty_conntrack_pool(&flows, uplink_base, max_positions)
     }
@@ -759,7 +769,7 @@ impl Runtime {
                     self.config.host_slot.as_ref(),
                     "delete exact retired conntrack",
                     "/usr/sbin/conntrack",
-                    &["--delete", "--family", "ipv4", field, &address],
+                    &["-D", "--family", "ipv4", field, &address],
                     None,
                 )?;
             }
@@ -1362,6 +1372,17 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn initial_and_exact_conntrack_reads_use_supported_dump_without_mutation() {
+        assert_eq!(conntrack_dump_args(None), ["--dump", "--family", "ipv4"]);
+        for field in ["--orig-src", "--orig-dst", "--reply-src", "--reply-dst"] {
+            assert_eq!(
+                conntrack_dump_args(Some((field, "100.64.0.5"))),
+                ["--dump", "--family", "ipv4", field, "100.64.0.5"]
+            );
+        }
     }
 
     #[test]
