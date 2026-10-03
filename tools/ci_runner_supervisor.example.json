@@ -1,0 +1,6 @@
+{
+  "client_id": "YOUR_APP_CLIENT_ID",
+  "installation_id": 1,
+  "workflow_id": 1,
+  "proxy": "http://127.0.0.1:7897"
+}
