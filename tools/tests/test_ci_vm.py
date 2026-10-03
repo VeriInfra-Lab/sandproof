@@ -29,7 +29,7 @@ class CiVmTests(unittest.TestCase):
         jit = base64.b64encode(b'opaque-test-jit-configuration').decode()
         config = ci_vm.cloud_config('sdk', jit)
         user = config['users'][0]
-        self.assertEqual(user['groups'], [])
+        self.assertEqual(user['groups'], 'runner')
         self.assertFalse(user['sudo'])
         files = {entry['path']: entry for entry in config['write_files']}
         self.assertEqual(files['/home/runner/.jitconfig']['permissions'], '0600')

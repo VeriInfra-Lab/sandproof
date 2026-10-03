@@ -54,10 +54,11 @@ def cloud_config(role, jit='', pins=None):
            'HTTP_PROXY=' + PROXY + '\nHTTPS_PROXY=' + PROXY + '\n'
            'no_proxy=localhost,127.0.0.1\nNO_PROXY=localhost,127.0.0.1\n'
            'CARGO_BUILD_JOBS=2\nRUST_TEST_THREADS=2\n'
-           'PATH=/home/runner/.cargo/bin:/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin\n')
+           'PATH=/home/runner/.cargo/bin:/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n')
     result = {'hostname': 'sandproof-ci-' + role, 'ssh_pwauth': False,
-              'disable_root': True, 'users': [{'name': 'runner', 'groups': [],
-              'sudo': False, 'lock_passwd': True, 'shell': '/bin/bash'}],
+              'disable_root': True, 'groups': ['runner'],
+              'users': [{'name': 'runner', 'groups': 'runner',
+              'sudo': None, 'lock_passwd': True, 'shell': '/bin/bash'}],
               'write_files': [file_entry('/etc/sandproof-ci.env', env)],
               'runcmd': []}
     if role == 'bootstrap':
@@ -125,6 +126,7 @@ def run(role, jit, pins, timeout):
     expected = pins['cloud_sha256'] if role == 'bootstrap' else pins['golden_sha256']
     if source.is_symlink() or digest(source) != expected:
         raise ValueError('base image identity mismatch')
+    launcher_sha256 = digest(Path(__file__))
     run_id = uuid.uuid4().hex
     # At most one VM per fixed role; the five ordinary jobs can run in parallel.
     lock = (ROOT / ('role-' + role + '.lock')).open('a')
@@ -183,7 +185,7 @@ def run(role, jit, pins, timeout):
         report = {'id': run_id, 'role': role, 'started': started, 'finished': time.time(),
                   'vm_exited': process is not None and process.poll() is not None,
                   'provisioning_completed': success, 'base_sha256': expected,
-                  'launcher_sha256': digest(Path(__file__)),
+                  'launcher_sha256': launcher_sha256,
                   'memory_mib': ROLES[role][0], 'cpus': ROLES[role][1]}
         (directory / 'report.json').write_text(json.dumps(report) + '\n')
         for name in ('user-data', 'meta-data', 'seed.img', 'work.qcow2'):
