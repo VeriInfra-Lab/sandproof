@@ -12,7 +12,10 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import acceptance_disk_budgets, bounded_acceptance_layout, require_bounded_host_tools
+from tools.bounded_acceptance import (
+    acceptance_disk_budgets, bounded_acceptance_layout, completion_build_observation,
+    provision_acceptance_coordination, require_bounded_host_tools, validate_acceptance_socket_paths,
+)
 
 import argparse
 import asyncio
@@ -159,7 +162,11 @@ def exercise(args):
             build_namespace=args.build_namespace)
         if root.parent != args.scratch_parent.resolve(strict=True):
             raise ValueError('bounded run root must be directly inside the approved scratch parent')
+        validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
+                                         max_vm_id=stride - 1, bounded=True)
         root.mkdir(mode=0o700)
+        provision_acceptance_coordination(bounded_policy, run_root=root,
+            namespace=namespaces[0], build_namespace=namespaces[1])
     else:
         if getattr(args, 'run_root', None) is not None:
             raise ValueError('--run-root requires --bounded-policy')
@@ -173,10 +180,8 @@ def exercise(args):
     if (any(not re.fullmatch('[0-9a-f]{16}', n) for n in namespaces)
             or namespaces[0][:6] == namespaces[1][:6]):
         raise ValueError('disjoint deployment namespaces required')
-    if any(len(os.fsencode(root / str(i) / 'jails' / args.firecracker.name /
-                           f'vm-{n}-{stride - 1}' / 'root/api.socket')) >= 108
-           for i, n in enumerate(namespaces)):
-        raise RuntimeError('test path too long for Firecracker socket')
+    validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
+                                     max_vm_id=stride - 1, bounded=bounded_policy is not None)
     (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
     (root / 'capacity-basis.json').write_text(json.dumps(capacity_basis, indent=2))
     (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
@@ -357,13 +362,11 @@ def exercise(args):
         if row.get('build_dispatched'):
             from tools.template_build_client import BuildClient
             client = BuildClient(urls[2], key)
-            # Reobserve the original idempotent request. A POST is forbidden.
-            if row.get('build_id'):
-                result['build'] = client.request('GET', '/sandproof/template-builds/' + row['build_id'])
-            else:
-                raise RuntimeError('unknown build submission requires identity reconciliation')
-            if result['build']['state'] not in ('Ready', 'Failed'):
-                raise RuntimeError('build state remains uncertain after physical audit')
+            # A long task may outlive a bounded build's retained query record.
+            # Preserve the terminal result already observed before running it;
+            # an uncertain result still requires GET, never a replacement POST.
+            result.update(completion_build_observation(row, build_mode=build_mode,
+                read_build=lambda job: client.request('GET', '/sandproof/template-builds/' + job)))
         template = row.get('template') or (result.get('build') or {}).get('template')
         if template:
             source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
@@ -437,6 +440,7 @@ def exercise(args):
                     pressure_report = asyncio.run(pressure(root=root, urls=urls, key=key, builder_key=builder_key,
                         rows=current, deployment=deployment, supervisor=supervisor, restart=restart_builds,
                         source_entry=selected_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
+                        build_mode=build_mode,
                         service_audit=lambda count: observe_services(require_builder=False, minimum_relays=count)))
                 except Exception:
                     # Retain the separate failed probe and original task scores.

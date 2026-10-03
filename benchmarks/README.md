@@ -115,7 +115,11 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 例如各批统一使用 `--capacity-scope all --capacity-jobs 4` 时，每批最多选四题，完整报告仍须覆盖锁定的全部 89 题，含最后不足四题的批次和所有失败。每批在前一批精确资源审计完成后启动独立部署；服务配置和预算相同，部署身份及根目录须独立绑定，不能原地改写完整 physical profile。此选项不实现模板垃圾回收、不删除历史报告，也不绕过有界模式的双倍磁盘/ inode 预检；这些分批结果不能作为单个持续运行部署完成 89 题或长期有界运行的证据。
 
-在两个原题均通过后，可在同一监督命令加 `--resource-pressure`（必须恰好两个 `--task`、单轮，且两模板各两个实例能同时准入）。[组合探针](../tests/system/template_resource_pressure.py)用正式发布的模板另开四个实例，验证包数据库/系统文件隔离、运行与构建拒绝、占满数据通道时的控制调用与销毁、构建服务 SIGKILL 后原编号回收及替换实例干净。它使用来宾内的 Debian 包工具和 POSIX shell，不预装原题评分依赖；压力结果另存 `resource-pressure.json`，不改原题成绩。创建与构建意图先留存，清理失败不跳过其余实例，未知资源保留现场。当前只有配置/HTTP/SQLite/取消回归通过；新增组合 KVM 场景待独立运行，不能沿用两题旧实测作为通过证据。
+两个模板均为 Ready 且原题精确回收审计通过后，可在同一监督命令加 `--resource-pressure`（必须恰好两个 `--task`、单轮，且两模板各两个实例能同时准入）。[组合探针](../tests/system/template_resource_pressure.py)用正式发布的模板另开四个实例，验证包数据库/系统文件隔离、运行与构建拒绝、占满数据通道时的控制调用与销毁、构建服务 SIGKILL 后原编号回收及替换实例干净。它使用来宾内的 Debian 包工具和 POSIX shell，不预装原题评分依赖；压力结果另存 `resource-pressure.json`，不改原题成绩。创建与构建意图先留存，清理失败不跳过其余实例，未知资源保留现场。当前只有配置/HTTP/SQLite/取消回归通过；新增组合 KVM 场景待独立运行，不能沿用两题旧实测作为通过证据。
+
+压力探针沿用通用监督显式选择的构建模式。有界模式通过普通客户端先持久保存请求窗口、幂等键和原参数，再提交一次构建；预期容量拒绝也使用独立的有效窗口。观察私有构建 VM 时只读取该构建已经提交的私有窗口；重启回收后核对持久化的原窗口、原实例和结算确认，并继续执行宿主资源审计。旧模式保持无窗口协议；窗口失败和丢失回复均不自动降级或重派。
+
+长题可能运行到构建结果的查询保留期之后。完成独立资源审计后，有界监督沿用运行器已观察到的同一 buildID 的 Ready／Failed 终态，并以 `build_observation=saved_terminal` 标明来源；仍核对已发布模板的摘要，不要求已经退休的构建查询记录继续存在。未观察到终态或身份不匹配时不能借退休认定成功，仍须查询原 buildID，缺失记录保持未知；旧模式保留原实时查询。此处理不延长窗口、保留期或原题时限，也不改变原题成绩。
 
 原题运行器与固定 base 诊断入口共用逐试验产物预算。可显式传 `--artifact-max-bytes`（默认 134217728，即 128 MiB）、`--artifact-max-file-bytes`（默认 100663296，即 96 MiB）、`--artifact-max-entries`（4096）和 `--artifact-max-depth`（16，最多 64）；数值须为正整数，单文件可调低但不得超过既有 96 MiB 硬上限或总字节。它们是可配置验收默认值，不是已实测的生产容量。命令事件、来宾下载与另存诊断共同计费，重复/失败不退额；原奖励与阶段单独保留，缺证据不能报告完整通过。边界和排除项见[模块合同](../docs/module-contracts.md)，用例见[验收清单](../docs/testing-plan.md)。监督入口按每试验字节上限 × 题数 × 次数计入磁盘预检（默认 89 题两轮仅此项为 22.25 GiB），另计锁定的原环境上下文、构建日志、报告副本、数据库及收尾余量；来宾实际可用块和运行时配额仍须独立检查。
 
@@ -123,7 +127,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 另有[预选两题](diagnostic-tasks.json)的手动诊断链路，由[实机脚本](../tests/system/harbor_diagnostic_chain.py)执行：要求锁定的 Harbor/E2B 联合环境、固定提交的原题源码、经核对的 Ubuntu 24.04 10 GiB base、隔离 KVM 宿主与预先批准且在整轮不变的公网 IPv4 策略。每题全新沙箱，先核对 CPU/内存/磁盘和空初态；来宾固定使用公网 DNS `1.1.1.1`，因为现有 base 的宿主本地 DNS 桩不可在 VM 内使用，此处是与原 Docker 环境的已知差异。`polyglot-c-py` 只在来宾内执行原 Dockerfile 的 `apt update && apt install -y gcc`；随后依次上传并运行原 `solution/solve.sh`。原评分器所需的 Python 3.13.9 固定运行时在解答结束后传入并核对哈希，避免原评分器访问其固定下载地址超时；运行时来源和哈希见预选清单，这是另一项明确的环境差异。接着上传并运行未改动的原 `tests/test.sh` 与 `test_outputs.py`，读取原 `reward.txt`。评分后销毁并检查数据库终态、精确进程/网络/磁盘与 base 指纹。失败保留本轮私有目录诊断，不将失败题从预选名单删除；不使用付费模型，不宣称原 Harbor 模板 API 或完整榜单兼容。 这条两题链路的运行时预填与报告独立于下方全题集入口；不能用两题通过代表其余 87 题，也不替代原 Harbor OracleAgent/Verifier 的全题集接入。
 
-完整容量模式还须同时提供 `--run-root <事前指定的新目录>`、`--namespace <16位小写十六进制>`、`--build-namespace <独立身份>`；两个身份的前六位也须不同。私有策略中的数据库、节点目录、jail、构建工作区和注册库必须逐项绑定这些原路径，不会为了测试搬迁或改写 profile。操作者另准备空的私有协调文件。入口先静态核对配置，两个 Rust 池启动并激活原 profile 后再让 Python 监督服务加入原租约；静态预检不是启动授权。自助模板探针可用 `--builder-rootfs` 指定独立构建基盘，磁盘字段取完整 profile 的原额度，而非沿用固定 24 GiB。首次启用需要空且静止的受管目录；已有部署、部分策略或身份不符直接拒绝，旧夹具须显式使用 `--legacy-unbounded`。
+完整容量模式还须同时提供 `--run-root <事前指定的新目录>`、`--namespace <16位小写十六进制>`、`--build-namespace <独立身份>`；两个身份的前六位也须不同。私有策略中的数据库、节点目录、jail、构建工作区和注册库必须逐项绑定这些原路径，不会为了测试搬迁或改写 profile。协调文件须在该新目录的直接子路径中；入口在独占创建空目录后，以排他方式持久化私有空文件，已有目录、文件或符号链接均不接管。创建目录前先按有界模式的完整 u64 VM 编号检查 socket 路径长度，不沿用 UID 槽位上限。入口先静态核对配置，两个 Rust 池启动并激活原 profile 后再让 Python 监督服务加入原租约；静态预检不是启动授权。自助模板探针可用 `--builder-rootfs` 指定独立构建基盘，磁盘字段取完整 profile 的原额度，而非沿用固定 24 GiB。首次启用需要空且静止的受管目录；已有部署、部分策略或身份不符直接拒绝，旧夹具须显式使用 `--legacy-unbounded`。
 
 最终服务预算的两项慢流/内存收尾使用[独立监督入口](../tests/system/server_slow_boundaries.py)，参数为 `--server`、`--server-sha256`、`--host-config`、`--scratch-parent`、`--cgroup-parent`、`--service-cgroup-parent` 和 `--uid-base`。它不运行题目或联网；范围、原时间边界与精确清理规则只以[验收清单](../docs/testing-plan.md)为准，不用旧的缩短空闲配置替代最终配置。
 

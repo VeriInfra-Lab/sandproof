@@ -2,9 +2,11 @@
 import asyncio
 import copy
 import json
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -19,6 +21,11 @@ finally:
 from benchmarks.run_generic import run_selected
 from tools.generic_capacity import GIB, MIB, plan
 from tools.template_acceptance import budgets
+from tools.template_build_client import BuildClient
+from tools.template_build_service import BuildHTTP
+from tools.template_build_store import BuildStore
+from tools.tests.test_template_build_service import limits as store_limits
+from tools.tests import test_template_build_retention as retention_fixtures
 
 
 def deployment():
@@ -30,6 +37,118 @@ def deployment():
 def templates():
     return [{'template': {'templateId': 'tpl-' + str(i) * 32, 'cpuCount': 1,
                           'memoryMib': 2048, 'diskBytes': 10 * GIB}} for i in (1, 2)]
+
+
+class PressureBuildWindowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Existing fixture compiles the real Rust authority with locked deps.
+        retention_fixtures.RetentionTests.setUpClass.__func__(cls)
+
+    def service(self, root, mode):
+        directory = root / 'builds'
+        directory.mkdir(mode=0o700)
+        config = {'namespace': 17, 'windows': {'max_open_windows': 4, 'max_duration_ms': 600000},
+                  'retention_ms': 1000, 'max_request_bytes': 2048, 'max_result_bytes': 8192,
+                  'max_record_bytes': 65536, 'database_bytes': 8 * MIB, 'wal_bytes': 17 * MIB,
+                  'recovery_reserve_bytes': 8 * MIB, 'helper': self.helper}
+        limits = store_limits() | {'max_jobs': 4, 'max_jobs_per_tenant': 4,
+                                   'max_pending': 1, 'max_pending_per_tenant': 1}
+        store = BuildStore(directory, limits, bounded=config if mode == 'windowed' else None,
+                           free_bytes=lambda: 1000000 * MIB)
+        server = BuildHTTP(('127.0.0.1', 0), store, [{'tenant': 1, 'secret': 'synthetic'}])
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        def cleanup():
+            server.shutdown()
+            server.server_close()
+            thread.join()
+            store.close()
+        self.addCleanup(cleanup)
+        return store, BuildClient('http://127.0.0.1:' + str(server.server_port), 'synthetic')
+
+    def temporary_root(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        return Path(temporary.name).resolve()
+
+    def test_windowed_real_http_reaches_budget_rejection_with_durable_distinct_intents(self):
+        root = self.temporary_root()
+        store, client = self.service(root, 'windowed')
+        request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 60}
+        checkpoints = []
+        def checkpoint(label, value):
+            saved = json.loads((root / ('pressure-' + label + '-intent.json')).read_text())
+            self.assertEqual(saved['requestWindow'], value['requestWindow'])
+            self.assertEqual(saved['idempotency_key'], value['token'])
+            self.assertEqual(saved['request'], request)
+            checkpoints.append((label, value, len(store.rows())))
+        result = asyncio.run(pressure.submit_build(root, client, request, 'windowed', 'first',
+            lambda value: checkpoint('first', value)))
+        self.assertEqual(result['state'], 'Queued')
+        with self.assertRaisesRegex(RuntimeError, '^BuildBudgetExceeded$'):
+            asyncio.run(pressure.submit_build(root, client, request, 'windowed', 'rejected',
+                lambda value: checkpoint('rejected', value)))
+        self.assertEqual([c[2] for c in checkpoints], [0, 1])
+        self.assertNotEqual(checkpoints[0][1]['requestWindow'], checkpoints[1][1]['requestWindow'])
+        self.assertEqual(len(store.rows()), 1)
+
+    def test_legacy_real_http_keeps_its_original_windowless_protocol(self):
+        root = self.temporary_root()
+        store, client = self.service(root, 'legacy-unbounded')
+        seen = []
+        result = asyncio.run(pressure.submit_build(root, client,
+            {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 60},
+            'legacy-unbounded', 'legacy', seen.append))
+        self.assertEqual(result['state'], 'Queued')
+        self.assertNotIn('requestWindow', seen[0])
+        self.assertEqual(store.rows()[0]['window_namespace'], '')
+
+    def test_lost_public_reply_keeps_original_intent_and_never_resubmits(self):
+        root = self.temporary_root()
+        store, client = self.service(root, 'windowed')
+        original = client.request
+        posts = []
+        def request(method, path, body=None, **kwargs):
+            result = original(method, path, body, **kwargs)
+            if path == '/sandproof/template-builds':
+                posts.append((body, kwargs))
+                raise TimeoutError('lost original response')
+            return result
+        client.request = request
+        with self.assertRaises(TimeoutError):
+            asyncio.run(pressure.submit_build(root, client,
+                {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 60},
+                'windowed', 'lost', lambda _intent: None))
+        saved = json.loads((root / 'pressure-lost-intent.json').read_text())
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(len(store.rows()), 1)
+        self.assertEqual(posts[0][0]['requestWindow'], saved['requestWindow'])
+        self.assertEqual(posts[0][1]['token'], saved['idempotency_key'])
+
+    def test_private_lookup_and_retired_anchor_settlement_stay_bound_to_original(self):
+        self.assertEqual(pressure.private_vm_path('job', None), '/sandproof/internal-build-vms/job')
+        self.assertEqual(pressure.private_vm_path('job', 'original-window'),
+                         '/sandproof/internal-build-vms/job?requestWindow=original-window')
+        database = self.temporary_root() / 'builds.db'
+        expected = {'requestWindow': 'original-window', 'sandboxID': 'original-sandbox'}
+        with sqlite3.connect(database) as connection:
+            connection.execute('CREATE TABLE jobs(id TEXT,state TEXT,private_window TEXT,builder_settled TEXT,private_ack INTEGER)')
+            connection.execute('INSERT INTO jobs VALUES(?,?,?,?,?)',
+                ('job', 'Failed', json.dumps('original-window'), json.dumps(expected), 1))
+        before = database.read_bytes()
+        self.assertEqual(pressure.private_settlement(database, 'job', 'original-window', 'original-sandbox'), expected)
+        self.assertEqual(database.read_bytes(), before)
+        for column, value in (('state', 'Building'), ('private_ack', 0), ('private_window', json.dumps('other')),
+                              ('builder_settled', None), ('builder_settled', json.dumps(expected | {'sandboxID': 'other'}))):
+            with self.subTest(column=column, value=value):
+                with sqlite3.connect(database) as connection:
+                    connection.execute('UPDATE jobs SET ' + column + '=?', (value,))
+                with self.assertRaises(ValueError):
+                    pressure.private_settlement(database, 'job', 'original-window', 'original-sandbox')
+                with sqlite3.connect(database) as connection:
+                    connection.execute('UPDATE jobs SET state=?,private_window=?,builder_settled=?,private_ack=?',
+                                       ('Failed', json.dumps('original-window'), json.dumps(expected), 1))
 
 
 class PressureReplayTests(unittest.TestCase):
@@ -160,6 +279,7 @@ class PressureFailureTests(unittest.TestCase):
                     await pressure.exercise(root=root, urls=['http://127.0.0.1:1'] * 3,
                         key='synthetic', builder_key='private-synthetic', rows=templates(), deployment=deployment(),
                         supervisor=Mock(), restart=Mock(), source_entry={},
+                        build_mode='legacy-unbounded',
                         audit_shape=lambda env: {'disk_inode': int(env.sandbox_id)},
                         completion_audit=audit or Mock(return_value={'exact_cleanup': 'passed'}))
                 finally:
