@@ -29,7 +29,7 @@ mod linux {
     use sandbox_controller_core as core;
     use sandproof_api::{
         ApiCredential, PortError,
-        managed::{HostAdapter, ManagedConfig, ManagedPort},
+        managed::{HostAdapter, ManagedConfig, ManagedPort, can_install_host_slot_binding},
         router,
     };
     use sandproof_controller_service::{
@@ -820,10 +820,7 @@ mod linux {
         let durable_slots = journal.host_slot_inventory()?;
         let world = journal.world()?;
         audit_host_slot_contexts(&durable_slots, &host_slots, |context| {
-            world.effect_ids().iter().all(|effect| {
-                effect.command().sandbox() != context.binding.sandbox
-                    || world.effect_status(effect) == Some(core::EffectStatus::Committed)
-            })
+            can_install_host_slot_binding(&world, context.binding.sandbox)
         })?;
         let inventory = node.inventory()?;
         if !inventory.unbound_cgroups.is_empty() {
@@ -1825,6 +1822,104 @@ mod linux {
             observed: &[(HostSlotContext, HostSlotPhase)],
         ) -> Result<(), Box<dyn Error>> {
             audit_host_slot_contexts(durable, observed, |_| true)
+        }
+
+        #[test]
+        fn startup_reopens_only_terminal_fence_without_any_launch_dispatch() {
+            use sandproof_controller_service::{NeverCrash, kill_v1};
+            struct Scratch(PathBuf);
+            impl Drop for Scratch {
+                fn drop(&mut self) {
+                    let _ = fs::remove_dir_all(&self.0);
+                }
+            }
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let directory = std::env::temp_dir().join(format!(
+                "sandproof-cancel-binding-{}-{nonce}",
+                std::process::id()
+            ));
+            fs::create_dir(&directory).unwrap();
+            let scratch = Scratch(directory);
+            let config: ConfigFile = serde_json::from_value(settings()).unwrap();
+            let bounded = resolve(settings());
+            for claimed_opening_fence in [false, true] {
+                let database = scratch.0.join(format!("{claimed_opening_fence}.db"));
+                let mut journal = ControllerJournal::open_bounded(
+                    &database,
+                    &config.namespace,
+                    bounded.clone(),
+                    0,
+                )
+                .unwrap();
+                journal
+                    .admit_create(
+                        core::CreateRequest {
+                            actor: core::Actor::Tenant(core::TenantId(1)),
+                            owner: core::TenantId(1),
+                            sandbox: core::SandboxId(1),
+                            workspace: core::FsId(1),
+                            file_policy: core::FilePolicyRef {
+                                digest: core::PolicyDigest(1),
+                            },
+                            policy: core::NetworkPolicy::DenyAll,
+                            operation: core::OperationId(1),
+                        },
+                        0,
+                        60,
+                        1024,
+                        managed_config(&config, 1024).unwrap().limits,
+                        &mut NeverCrash,
+                    )
+                    .unwrap();
+                if claimed_opening_fence {
+                    assert!(matches!(
+                        journal
+                            .dispatch_next::<HostObservation, _>(
+                                &mut |_| Err(WorkerTransportError::ConnectionLost),
+                                &mut NeverCrash
+                            )
+                            .unwrap(),
+                        sandproof_controller_service::DispatchResult::OutcomeUnknown { .. }
+                    ));
+                }
+                assert!(
+                    kill_v1::<HostObservation, _>(
+                        &mut journal,
+                        core::KillRequest {
+                            actor: core::Actor::Tenant(core::TenantId(1)),
+                            sandbox: core::SandboxId(1),
+                            operation: core::OperationId(2),
+                        },
+                        &mut |_| Err(WorkerTransportError::ConnectionLost)
+                    )
+                    .is_err()
+                );
+                drop(journal);
+                let journal = ControllerJournal::open_bounded(
+                    &database,
+                    &config.namespace,
+                    bounded.clone(),
+                    1,
+                )
+                .unwrap();
+                let world = journal.world().unwrap();
+                let durable = journal.host_slot_inventory().unwrap();
+                assert_eq!(durable.len(), 1);
+                let audit = audit_host_slot_contexts(&durable, &[], |context| {
+                    can_install_host_slot_binding(&world, context.binding.sandbox)
+                });
+                assert_eq!(audit.is_ok(), !claimed_opening_fence);
+                assert_eq!(journal.next_sandbox_id().unwrap().0, 2);
+                let record = world.sandbox_record(core::SandboxId(1)).unwrap();
+                assert!(record.current_vm.is_none());
+                if !claimed_opening_fence {
+                    assert!(record.terminal);
+                    assert_eq!(record.phase, core::Phase::Revoking);
+                }
+            }
         }
 
         #[test]
