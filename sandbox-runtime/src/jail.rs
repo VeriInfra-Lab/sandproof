@@ -428,12 +428,12 @@ impl Runtime {
             }
         }
         let root = directory_at(&directory, c"root")?;
-        if let Some(root) = &root {
-            if !record.root.matches(root)? {
-                return Err(RuntimeError::IdentityMismatch(
-                    "jail root changed before cleanup",
-                ));
-            }
+        if let Some(root) = &root
+            && !record.root.matches(root)?
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "jail root changed before cleanup",
+            ));
         }
         if unlaunched {
             if path_present(&self.jail_record_path(id).with_file_name("record.json"))? {
@@ -444,11 +444,9 @@ impl Runtime {
             if let Some(root) = &root {
                 let mut entries = rustix::fs::Dir::read_from(root).map_err(io::Error::from)?;
                 if entries.any(|entry| {
-                    entry
-                        .map(|entry| {
-                            ![b".".as_slice(), b".."].contains(&entry.file_name().to_bytes())
-                        })
-                        .unwrap_or(true)
+                    entry.map_or(true, |entry| {
+                        ![b".".as_slice(), b".."].contains(&entry.file_name().to_bytes())
+                    })
                 }) {
                     return Err(RuntimeError::IdentityMismatch(
                         "unlaunched jail root is not empty",
@@ -736,8 +734,8 @@ mod tests {
     #[test]
     #[ignore = "requires root and an isolated Linux host for read-only conntrack/retirement observations"]
     fn bounded_registration_uses_staging_and_survives_until_exact_retirement() {
-        assert_eq!(rustix::process::geteuid().as_raw(), 0);
         const BOUNDED_ID: &str = "vm-0123456789abcdef-9000000";
+        assert_eq!(rustix::process::geteuid().as_raw(), 0);
         let (temp, mut runtime, owner) = fixture_in(Some(Path::new("/var/lib")), BOUNDED_ID);
         let gate_path = temp.path().join("helper.lock");
         let gate_file = File::options()
