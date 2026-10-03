@@ -29,6 +29,13 @@ else:
 
 MIB = 1024 * 1024
 TERMINAL = {"Ready", "Failed"}
+FUTURE_RECORD_FIELDS = {"private_window": 1024, "builder_settled": 2048,
+                        "staging_cleanup": 2048, "delete_manifest": 2048,
+                        "fs_identity": 128, "failure": 1024, "input_hash": 128}
+
+
+def future_record_fields(bounded):
+    return {"result": 2 * bounded["max_result_bytes"], **FUTURE_RECORD_FIELDS}
 
 
 class BuildError(Exception):
@@ -159,7 +166,12 @@ def bounded_configuration(value):
         raise ValueError("invalid build window limits")
     if any(type(v) is not int or not 0 < v < 2**63 for v in windows.values()):
         raise ValueError("invalid build window limits")
-    if (value["max_record_bytes"] < value["max_request_bytes"] + value["max_result_bytes"] + 4096
+    # A result is JSON text inside a JSON record. Check the same future fields
+    # reserved by _check_record, not just the unescaped result payload. Requests
+    # are also already-encoded JSON text. Per-row checks remain authoritative.
+    minimum_record = (2 * value["max_request_bytes"]
+                      + sum(future_record_fields(value).values()) + 4096)
+    if (value["max_record_bytes"] < minimum_record
             or value["database_bytes"] < 65536
             or value["wal_bytes"] < 2 * value["database_bytes"] + 65536
             or value["recovery_reserve_bytes"] < value["database_bytes"]):
@@ -405,10 +417,7 @@ class BuildStore:
         # These fixed framing bounds cover all exact fixed-name manifests and
         # protocol identities; request/candidate themselves never grow later.
         projected = dict(row)
-        for name, maximum in {"result": 2 * self.bounded["max_result_bytes"],
-                              "private_window": 1024, "builder_settled": 2048,
-                              "staging_cleanup": 2048, "delete_manifest": 2048,
-                              "fs_identity": 128, "failure": 1024, "input_hash": 128}.items():
+        for name, maximum in future_record_fields(self.bounded).items():
             actual = row.get(name)
             if actual is not None and len(json.dumps(actual).encode()) > maximum:
                 raise BuildError(413, "BuildRecordTooLarge")

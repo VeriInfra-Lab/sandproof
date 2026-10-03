@@ -113,6 +113,8 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 另有[预选两题](diagnostic-tasks.json)的手动诊断链路，由[实机脚本](../tests/system/harbor_diagnostic_chain.py)执行：要求锁定的 Harbor/E2B 联合环境、固定提交的原题源码、经核对的 Ubuntu 24.04 10 GiB base、隔离 KVM 宿主与预先批准且在整轮不变的公网 IPv4 策略。每题全新沙箱，先核对 CPU/内存/磁盘和空初态；来宾固定使用公网 DNS `1.1.1.1`，因为现有 base 的宿主本地 DNS 桩不可在 VM 内使用，此处是与原 Docker 环境的已知差异。`polyglot-c-py` 只在来宾内执行原 Dockerfile 的 `apt update && apt install -y gcc`；随后依次上传并运行原 `solution/solve.sh`。原评分器所需的 Python 3.13.9 固定运行时在解答结束后传入并核对哈希，避免原评分器访问其固定下载地址超时；运行时来源和哈希见预选清单，这是另一项明确的环境差异。接着上传并运行未改动的原 `tests/test.sh` 与 `test_outputs.py`，读取原 `reward.txt`。评分后销毁并检查数据库终态、精确进程/网络/磁盘与 base 指纹。失败保留本轮私有目录诊断，不将失败题从预选名单删除；不使用付费模型，不宣称原 Harbor 模板 API 或完整榜单兼容。 这条两题链路的运行时预填与报告独立于下方全题集入口；不能用两题通过代表其余 87 题，也不替代原 Harbor OracleAgent/Verifier 的全题集接入。
 
+完整容量模式还须同时提供 `--run-root <事前指定的新目录>`、`--namespace <16位小写十六进制>`、`--build-namespace <独立身份>`；两个身份的前六位也须不同。私有策略中的数据库、节点目录、jail、构建工作区和注册库必须逐项绑定这些原路径，不会为了测试搬迁或改写 profile。操作者另准备空的私有协调文件。入口先静态核对配置，两个 Rust 池启动并激活原 profile 后再让 Python 监督服务加入原租约；静态预检不是启动授权。自助模板探针可用 `--builder-rootfs` 指定独立构建基盘，磁盘字段取完整 profile 的原额度，而非沿用固定 24 GiB。首次启用需要空且静止的受管目录；已有部署、部分策略或身份不符直接拒绝，旧夹具须显式使用 `--legacy-unbounded`。
+
 ## 本地标准解答探针
 
 本入口是固定镜像/逐题初始化的诊断工具，不是 [#123](https://github.com/ningZhang-cs/sandproof/issues/123) 的通用模板产品接口；历史实验不能作为该新能力交付。

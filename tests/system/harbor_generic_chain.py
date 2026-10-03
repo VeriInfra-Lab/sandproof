@@ -12,6 +12,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
+from tools.bounded_acceptance import bounded_acceptance_layout, require_bounded_host_tools
 
 import argparse
 import asyncio
@@ -121,13 +122,24 @@ def exercise(args):
     for name, digest in BUILD_TOOLS.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError('fixed tool mismatch: ' + name)
-    root = Path(tempfile.mkdtemp(prefix='hg-', dir=args.scratch_parent))
+    if bounded_policy is not None:
+        require_bounded_host_tools()
+        root, namespaces = bounded_acceptance_layout(bounded_policy,
+            run_root=getattr(args, 'run_root', None), namespace=args.namespace,
+            build_namespace=args.build_namespace)
+        if root.parent != args.scratch_parent.resolve(strict=True):
+            raise ValueError('bounded run root must be directly inside the approved scratch parent')
+        root.mkdir(mode=0o700)
+    else:
+        if getattr(args, 'run_root', None) is not None:
+            raise ValueError('--run-root requires --bounded-policy')
+        root = Path(tempfile.mkdtemp(prefix='hg-', dir=args.scratch_parent))
+        namespaces = [args.namespace or secrets.token_hex(8), args.build_namespace or secrets.token_hex(8)]
     print(f'root={root} commit={commit}', flush=True)
     binary = root / 'server'
     shutil.copyfile(args.server, binary)
     binary.chmod(0o700)
     original = [sha256_file(p) for p in (args.kernel, args.rootfs)]
-    namespaces = [args.namespace or secrets.token_hex(8), args.build_namespace or secrets.token_hex(8)]
     if (any(not re.fullmatch('[0-9a-f]{16}', n) for n in namespaces)
             or namespaces[0][:6] == namespaces[1][:6]):
         raise ValueError('disjoint deployment namespaces required')
@@ -191,7 +203,7 @@ def exercise(args):
     (root / 'build.json').write_text(json.dumps(build))
     (root / 'build.json').chmod(0o600)
     from tools.template_build_service import configuration
-    configuration(root / 'build.json')  # Validate the exact written cross-pool configuration.
+    configuration(root / 'build.json', require_physical_lease=False)
     controllers, supervisor, log = [], None, None
     service_record = root / 'service-cgroup.json'
     service_prefix = service_cgroup.prefix(service_record)
@@ -335,6 +347,7 @@ def exercise(args):
                              command_prefix=service_prefix)
             controllers.append(p)
             wait_ready(opener, urls[i], builder_key if i else key, p)
+        configuration(root / 'build.json')
         log = (root / 'build-service.log').open('ab')
         supervisor = subprocess.Popen([*service_prefix, sys.executable, str(checkout / 'tools/template_build_service.py'),
             '--config', str(root / 'build.json')], stdout=log, stderr=subprocess.STDOUT)
@@ -502,6 +515,8 @@ if __name__ == '__main__':
     selection.add_argument('--all', action='store_true')
     parser.add_argument('--namespace')
     parser.add_argument('--build-namespace')
+    parser.add_argument('--run-root', type=Path,
+                        help='exact fresh run root already declared in the full physical profile')
     parser.add_argument('--source-kind', choices=SOURCE_KINDS, default='oci')
     parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
     parser.add_argument('--failure-diagnostics', action='store_true',

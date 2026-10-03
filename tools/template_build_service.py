@@ -176,7 +176,16 @@ def retain_timeout_logs(sandbox, directory, limit):
     durable_write(directory / "build.log", [output], limit)
 
 
-def configuration(path):
+def configuration(path, *, require_physical_lease=True):
+    """Validate a configuration, joining the activated profile by default.
+
+    A supervisor may explicitly perform static preflight before the Rust host
+    activates the fixed profile. That phase never opens or synchronizes the
+    coordination file and is not authorization to start the build service.
+    Production startup must retain the default and join the original lease.
+    """
+    if type(require_physical_lease) is not bool:
+        raise ValueError("explicit physical lease validation flag required")
     config = protected_json(path)
     if set(config) - {"docker_hub_mirror", "bounded_builds", "migrate_legacy_builds"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
         raise ValueError("invalid build service config")
@@ -271,9 +280,12 @@ def configuration(path):
     physical = validate_physical_configuration(runtime, builder, config)
     if physical is not None:
         profile, peak, inodes = physical
-        # Read-only here; startup order explicitly activates through a server.
-        lease = PhysicalProfileLease(profile)
-        lease.close()
+        # Only Rust may activate a fresh profile. Static acceptance preflight
+        # must not open/lock/fsync an unactivated coordination file; a later
+        # default validation and BuildStore startup still require its lease.
+        if require_physical_lease:
+            lease = PhysicalProfileLease(profile)
+            lease.close()
         config["physical_storage_profile"] = profile
         limits["physical_storage_peak_bytes"] = peak
         limits["physical_storage_inodes"] = inodes
