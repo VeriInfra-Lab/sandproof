@@ -132,6 +132,8 @@ S10 还须让来宾 root 改写解析配置，探测未授权的 UDP/TCP 53、IP
 
 压力构建须遵循所选模式的请求窗口协议：提交及预期拒绝各自先持久保存普通客户端意图，查询私有 VM 携带原窗口，重启后核对原实例的持久结算与确认。真实 HTTP/SQLite 和 Rust 窗口组件回归检查窗口合法后才命中容量拒绝、丢失提交回复不重派、旧模式不携带窗口，以及错误或未确认结算不能报告通过；这些回归不代替 KVM 中断恢复与资源回收审计。
 
+[构建终态回归](../tools/tests/test_terminal_build_observation.py)推进真实 Rust 窗口／SQLite 的受控时间，让已完成的构建记录实际退休并在 HTTP 查询中返回缺失。已观察到的同 buildID 终态可以作为长题收尾的构建证据，报告标记来源；未知结果、错配身份和非终态不能因此变为成功，旧模式仍要求实时查询。它不证明 VM 已回收；通用监督仍先执行独立宿主资源审计，再核对终态与模板摘要，且不修改原题分数或时限。
+
 [任务预算全局并发探针](../tests/system/server_task_pressure.py)保持同一文件的全部 `data_transfer` 值，将 VM 准入显式改为全局 3 台、每租户 2 台。同步/异步各用三台真实 VM，按 7＋7＋1 个等待 stdin 的命令占满全局普通请求名额；第三台仍有本地余量，其文件与 Start 请求必须得到 429。检查其他租户在仅单 VM 满额时仍可调用，满额时 health/SendInput/CloseStdin/SendSignal 保持可用，EOF 与信号后名额可复用、拒绝无副作用、命令只启动一次。随后三台并发进行 8 MiB 和 64 MiB 有界流式上传/下载，逐个核对来宾与客户端 SHA-256。监督器在明确屏障及名义 100 ms 间隔采样服务/relay 进程树 RSS、VMM cgroup 内存和宿主内存/磁盘余量，并核验真实 CPU/内存/私有盘身份、六台最终回收和共享网络/基础产物不变。RSS 求和可能重复计算共享页，采样不保证捕获峰值，宿主余量含其他工作负载；本探针不施加整个服务的宿主内存上限，不把观测值或扩大后的 VM 准入说成正式部署预算，也不覆盖长空闲期限或重跑题集。运行需固定 Python SDK、含 Python 的批准 base、空的独占 cgroup、独占 UID 范围和 root 私有目录；失败保留原身份现场。 提交 `e62f32fa454ec75ac9d5411ed9f4be8521efa189` 已通过两套 SDK、12 次文件往返及六台实例的独立回收审计；两次满载屏障均观察到 1 个服务进程、15 个 relay 和 3 个 VMM cgroup。483 次采样及指纹见[版本基线](../references/v1-baseline.json)的 `task_global_pressure_acceptance`。
 
 网关超限与断流回归按以下证据边界记录，不能合并算作实机通过：
@@ -430,6 +432,8 @@ sudo python3 tools/check_kvm_host.py --config artifacts/host.json > artifacts/ho
 [容量回归](../controller-service/src/controller/checkpoint/tests/capacity.rs)、[提交/终止重试回归](../controller-service/src/controller/checkpoint/tests/capacity_protocol.rs)和[构建/验证容量组合](../controller-service/src/controller/checkpoint/tests/build_capacity.rs)核对：固定 V1 图的后续行/引用/字节/编号额度，包含 ApplyFilePolicy 与 AbortPrepare 的保守命令全集；紧配额拒绝新工作但不提前删结果；首次未知＋最终回执、合法终止重试/耗尽仍持有额度；错误后续包装长度、标量宽度变化、输入最后可表示编号、窗口/结果到期信用转移；外部读者、SQLite_FULL、自动发布与分批删除的两种未知提交结果、外部写者窗口、空闲不增长、实际页上限读回。持续创建/销毁与旧 Running/unknown 并存，记录核心/SQL 各族、输入前缀/尾、DB/WAL/SHM 文件峰值和重开观测，不把一次短成功称为无限运行证明。
 
 私有构建和验证在同一完整策略下补紧额度组合：同位置跨多轮 close/query/settle、保留结果饱和/到期、旧未知锚点保持原信用、输入边界仍完成最后结算，Ready/Failed/未进入验证的失败证据在 SQL 饱和时使用预留空间；退休原创建选项后重开仍能返回证据。普通 SDK create 合同保持原行为，受限维护没有公共 HTTP 断言入口。
+
+有界实机入口的启动回归须检查：全新私有根目录中仅排他创建原策略指定的空协调文件，文件和目录均完成同步；已有部署缺少协调文件、已有文件/符号链接、根目录权限不符及同步失败均拒绝。Python 不写激活标记，后续仍由 Rust 激活并由 Python 加入租约。创建根目录前按完整 u64 VM 编号及编码字节核对 Linux socket 长度，覆盖 107 字节可绑定、108 字节拒绝和旧 UID 槽位上限漏检的路径。启动级实机验收须实际启动两个池与构建服务、读取同一物理身份，再检查退出后的精确残留；不能用静态配置通过替代。
 
 物理 profile 的组件验收须覆盖两池稀疏盘未来容量与 kernel/runtime 复制品、子预算/角色/namespace/路径不匹配、未配置/未激活拒绝且不消费身份、受保护协调文件的锁/设备/inode/链接/权限、Rust 初始化与 Python 加入的 Unicode 编码一致性、每个初始截断点与重开、同文件系统和未知根拒绝、字节/inode 不足、初始两倍峰值及后续一倍门槛、低余量仍允许原身份 kill/清理。宿主 payload/文件集合的界来自[推导器](../sandbox-node/src/storage_envelope.rs)，须测试最大身份/转义路径、配置和未来退休记录在任何租约写入前满足原格式上限；VMM console 的显式 discard 不创建文件，旧日志模式不冒称有界。不得为云端环境做真实全局 marker、挂载、配额或安全权限修改。
 
