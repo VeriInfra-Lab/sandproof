@@ -578,8 +578,11 @@ impl Runtime {
         if verified_process(&record)?.is_some() {
             return Err(RuntimeError::InvalidConfiguration("cannot clean a live VM"));
         }
-        self.cleanup_jail(id, owner, false)?;
+        // A foreign jail must not authorize other cleanup, and the original
+        // group must be verified empty before deleting any backing disk.
+        self.observe_cleanup_jail(id, owner)?;
         self.cleanup_cgroup(id, false)?;
+        self.cleanup_jail(id, owner, false)?;
         if self.config.private_netns.is_some() {
             self.cleanup_private_network(id)?;
         }

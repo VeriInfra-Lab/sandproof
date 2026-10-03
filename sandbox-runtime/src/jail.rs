@@ -380,6 +380,19 @@ impl Runtime {
         self.cleanup_jail_with_probe(id, owner, unlaunched, || {})
     }
 
+    pub(super) fn observe_cleanup_jail(
+        &self,
+        id: &str,
+        owner: u32,
+    ) -> Result<JailObservation, RuntimeError> {
+        match self.observe_jail_for_owner(id, owner)? {
+            JailObservation::Unregistered => Err(RuntimeError::IdentityMismatch(
+                "unregistered jail directory",
+            )),
+            known => Ok(known),
+        }
+    }
+
     fn cleanup_jail_with_probe(
         &self,
         id: &str,
@@ -396,14 +409,8 @@ impl Runtime {
         )?;
         rustix::fs::flock(&claim, rustix::fs::FlockOperation::LockExclusive)
             .map_err(io::Error::from)?;
-        match self.observe_jail_for_owner(id, owner)? {
-            JailObservation::Absent => return Ok(()),
-            JailObservation::Unregistered => {
-                return Err(RuntimeError::IdentityMismatch(
-                    "unregistered jail directory",
-                ));
-            }
-            JailObservation::Registered { .. } => {}
+        if self.observe_cleanup_jail(id, owner)? == JailObservation::Absent {
+            return Ok(());
         }
         let jail = self.jail_path(id);
         let record = self
@@ -693,6 +700,40 @@ mod tests {
         assert_eq!(fs::read(jail.join("foreign-canary")).unwrap(), b"keep");
         assert_eq!(fs::read(runtime.jail_record_path(ID)).unwrap(), witness);
         drop(original);
+    }
+
+    #[test]
+    fn refused_cgroup_cleanup_preserves_the_registered_private_disk() {
+        let (temp, mut runtime, owner) = fixture();
+        runtime.reserve_jail(ID, owner).unwrap();
+        let disk = runtime.jail_path(ID).join("root/private-disk");
+        fs::write(&disk, b"keep until every host task is ruled out").unwrap();
+        super::super::write_new_record(
+            &runtime.jail_record_path(ID).with_file_name("record.json"),
+            &super::super::ProcessRecord {
+                resource_id: ID.into(),
+                pid: i32::MAX as u32,
+                start_time_ticks: 1,
+            },
+        )
+        .unwrap();
+        let parent = temp.path().join("groups");
+        fs::create_dir_all(parent.join(ID)).unwrap();
+        runtime.config.host_resources = Some(super::super::HostResources {
+            cgroup_parent: parent.clone(),
+            memory_max_bytes: 256 * 1024 * 1024,
+        });
+        // The unregistered group cannot be assumed empty just because the
+        // recorded VMM stopped. Preserve the disk until that check succeeds.
+        assert!(runtime.cleanup_for_owner(ID, owner).is_err());
+        assert!(parent.join(ID).exists());
+        assert_eq!(
+            fs::read(&disk).unwrap(),
+            b"keep until every host task is ruled out"
+        );
+        runtime.config.host_resources = None;
+        runtime.cleanup_for_owner(ID, owner).unwrap();
+        assert!(!runtime.jail_path(ID).exists());
     }
 
     #[test]
