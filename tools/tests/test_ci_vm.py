@@ -53,6 +53,15 @@ class CiVmTests(unittest.TestCase):
         config = ci_vm.cloud_config('bootstrap', pins={'test': True})
         self.assertEqual(config['runcmd'], [['bash', '/root/ci-bootstrap.sh']])
 
+    def test_overlay_cannot_truncate_base_partitions(self):
+        base_size = ci_vm.ROLES['bootstrap'][2] * 1024 ** 3
+        for role in ci_vm.ROLES:
+            ci_vm.validate_disk_capacity(role, base_size)
+            with self.assertRaises(ValueError):
+                ci_vm.validate_disk_capacity(role, ci_vm.ROLES[role][2] * 1024 ** 3 + 1)
+            with self.assertRaises(ValueError):
+                ci_vm.validate_disk_capacity(role, 0)
+
 
 if __name__ == '__main__':
     unittest.main()
