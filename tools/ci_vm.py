@@ -14,7 +14,9 @@ import os
 from pathlib import Path
 import pwd
 import re
+import selectors
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -34,9 +36,9 @@ def qemu_command(directory, role):
     network = ('user,id=ci,restrict=on,guestfwd=tcp:10.0.2.100:3128-'
                'cmd:/usr/bin/socat - TCP:127.0.0.1:3129')
     return ['/usr/bin/qemu-system-x86_64', '-enable-kvm', '-cpu', 'host,-vmx,-svm',
-            '-machine', 'q35', '-m', str(memory), '-smp', str(cpus),
+            '-machine', 'q35', '-m', str(memory), '-mem-prealloc', '-smp', str(cpus),
             '-nodefaults', '-no-reboot', '-display', 'none', '-monitor', 'none',
-            '-serial', 'file:' + str(directory / 'console.log'),
+            '-serial', 'stdio',
             '-drive', 'file=' + str(directory / 'work.qcow2') + ',if=virtio,format=qcow2',
             '-drive', 'file=' + str(directory / 'seed.img') + ',if=virtio,format=raw,readonly=on',
             '-netdev', network, '-device', 'virtio-net-pci,netdev=ci',
@@ -123,9 +125,57 @@ def stop_owned(process):
             process.wait(timeout=15)
 
 
-def run(role, jit, pins, timeout):
+def wait_with_bounded_logs(process, directory, timeout, limit=8 * 1024 ** 2):
+    """Drain both pipes, bounding log bytes without limiting writable disks."""
+    started = time.monotonic()
+    with selectors.DefaultSelector() as selector:
+        with (directory / 'console.log').open('wb') as console, (directory / 'qemu.log').open('wb') as errors:
+            counts = {console: 0, errors: 0}
+            selector.register(process.stdout, selectors.EVENT_READ, console)
+            selector.register(process.stderr, selectors.EVENT_READ, errors)
+            while selector.get_map():
+                if time.monotonic() - started > timeout:
+                    raise subprocess.TimeoutExpired('owned CI VM', timeout)
+                for key, _events in selector.select(timeout=1):
+                    data = os.read(key.fd, 65536)
+                    if not data:
+                        selector.unregister(key.fileobj)
+                        continue
+                    remaining = limit - counts[key.data]
+                    key.data.write(data[:remaining])
+                    key.data.flush()
+                    counts[key.data] += min(remaining, len(data))
+                    if len(data) > remaining:
+                        raise ValueError('owned VM diagnostic limit exceeded')
+            process.wait(timeout=max(1, timeout - (time.monotonic() - started)))
+
+
+def valid_run_id(value):
+    if not re.fullmatch(r'[0-9a-f]{32}', value):
+        raise ValueError('invalid owned run identity')
+    return value
+
+
+def cleanup_work(directory):
+    # The supervisor only calls this after systemd confirms the whole worker
+    # cgroup is gone. Refuse unfamiliar entries/symlinks, never recursive rm.
+    allowed = {'user-data', 'meta-data', 'seed.img', 'work.qcow2',
+               'console.log', 'qemu.log', 'report.json', 'host.log'}
+    if directory.is_symlink() or directory.stat().st_uid != 0:
+        raise ValueError('unsafe owned run directory')
+    for entry in directory.iterdir():
+        if entry.name not in allowed or not stat.S_ISREG(entry.lstat().st_mode):
+            raise ValueError('unexpected owned run entry')
+    for name in ('user-data', 'meta-data', 'seed.img', 'work.qcow2'):
+        path = directory / name
+        if path.exists():
+            path.unlink()
+
+
+def run(role, jit, pins, timeout, run_id=None):
     if os.geteuid() != 0:
         raise ValueError('host provisioning must run as root; guest jobs never do')
+    os.umask(0o077)
     account = pwd.getpwnam('sandproof-ci-vm')
     if ROOT.is_symlink() or ROOT.stat().st_uid != 0:
         raise ValueError('unsafe installation root')
@@ -137,15 +187,20 @@ def run(role, jit, pins, timeout):
                           check=True, capture_output=True, text=True)
     validate_disk_capacity(role, json.loads(info.stdout)['virtual-size'])
     launcher_sha256 = digest(Path(__file__))
-    run_id = uuid.uuid4().hex
+    managed = run_id is not None
+    run_id = valid_run_id(run_id or uuid.uuid4().hex)
     # At most one VM per fixed role; the five ordinary jobs can run in parallel.
     lock = (ROOT / ('role-' + role + '.lock')).open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     parent = ROOT / 'runs'
     parent.mkdir(mode=0o711, exist_ok=True)
     directory = parent / run_id
-    directory.mkdir(mode=0o700)
-    os.chown(directory, account.pw_uid, account.pw_gid)
+    directory.mkdir(mode=0o711, exist_ok=managed)
+    directory.chmod(0o711)
+    if directory.is_symlink() or directory.stat().st_uid != 0 or set(p.name for p in directory.iterdir()) - {'host.log'}:
+        raise ValueError('owned run directory must be new and root controlled')
+    # QEMU can access its disks, but cannot replace directory entries. The
+    # supervisor owns all metadata/logs and bounds pipe output before writing.
     process = None
     success = False
     started = time.time()
@@ -165,9 +220,9 @@ def run(role, jit, pins, timeout):
             (directory / name).chmod(0o600)
         command = ['/usr/sbin/runuser', '-u', 'sandproof-ci-vm', '--',
                    '/usr/bin/setpriv', '--no-new-privs'] + qemu_command(directory, role)
-        with (directory / 'qemu.log').open('wb') as log:
-            process = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)
-            process.wait(timeout=timeout)
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        wait_with_bounded_logs(process, directory, timeout)
         if process.returncode != 0:
             raise ValueError('QEMU failed; inspect private run ' + run_id)
         console = (directory / 'console.log').read_text(errors='replace')
@@ -193,6 +248,8 @@ def run(role, jit, pins, timeout):
     finally:
         if process is not None:
             stop_owned(process)
+            process.stdout.close()
+            process.stderr.close()
         # Preserve bounded diagnostics separately from executable work disks.
         report = {'id': run_id, 'role': role, 'started': started, 'finished': time.time(),
                   'vm_exited': process is not None and process.poll() is not None,
@@ -200,10 +257,7 @@ def run(role, jit, pins, timeout):
                   'launcher_sha256': launcher_sha256,
                   'memory_mib': ROLES[role][0], 'cpus': ROLES[role][1]}
         (directory / 'report.json').write_text(json.dumps(report) + '\n')
-        for name in ('user-data', 'meta-data', 'seed.img', 'work.qcow2'):
-            path = directory / name
-            if path.exists() and not path.is_symlink():
-                path.unlink()
+        cleanup_work(directory)
         print(json.dumps(report), flush=True)
         lock.close()
 
@@ -218,15 +272,23 @@ def main():
     parser.add_argument('--pins', type=Path, default=ROOT / 'pins.json')
     parser.add_argument('--timeout', type=int, default=3600)
     parser.add_argument('--jit-stdin', action='store_true')
+    parser.add_argument('--jit-file', type=Path)
+    parser.add_argument('--run-id', type=valid_run_id)
     args = parser.parse_args()
     if not 60 <= args.timeout <= 7200:
         parser.error('timeout must be between 60 and 7200 seconds')
-    if args.jit_stdin != (args.role != 'bootstrap'):
-        parser.error('only job VMs require --jit-stdin')
+    if (int(args.jit_stdin) + int(args.jit_file is not None)) != int(args.role != 'bootstrap'):
+        parser.error('job VMs require exactly one private JIT source')
     try:
         pins = json.loads(args.pins.read_text())
         jit = sys.stdin.read(131073).strip() if args.jit_stdin else ''
-        run(args.role, jit, pins, args.timeout)
+        if args.jit_file:
+            details = args.jit_file.lstat()
+            if not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o077:
+                raise ValueError('JIT file must be root-private')
+            with args.jit_file.open() as stream:
+                jit = stream.read(131073).strip()
+        run(args.role, jit, pins, args.timeout, args.run_id)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         print('CI VM provisioning failed: ' + str(error), file=sys.stderr)
         return 1
