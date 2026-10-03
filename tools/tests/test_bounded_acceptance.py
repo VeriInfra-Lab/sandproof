@@ -11,9 +11,10 @@ import unittest
 from unittest.mock import patch
 
 from tools.bounded_acceptance import (
-    acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools,
+    acceptance_disk_budgets, acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools,
     wait_private_build_window,
 )
+from tools.template_build_config import apply_acceptance_build_policy
 from tools.template_build_service import configuration
 from tools.template_build_store import BuildStore
 from tools.tests.test_template_build_config import GIB, MIB, inputs, transfer_settings
@@ -95,6 +96,81 @@ def service_fixture(root):
                          "workspace_bytes": limits["workspace_bytes"],
                          "workspace_bytes_per_tenant": limits["workspace_bytes_per_tenant"]}}
     return root / "service.json", policy, profile, namespaces
+
+
+class AcceptanceDiskBudgetTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.service, self.policy, profile, _ = service_fixture(Path(temporary.name).resolve())
+        self.deployment = {pool['role']: {
+            'max_disk_bytes_global': pool['rootfs_budget_bytes'] + pool['cleanup_reserve_bytes'],
+            'max_disk_bytes_per_tenant': pool['rootfs_budget_bytes'],
+            'cleanup_reserve_bytes': pool['cleanup_reserve_bytes'],
+            'max_active_global': 2, 'max_timeout_secs': 600,
+        } for pool in profile['pools']}
+        self.deployment['host'] = {'minimum_free_disk_bytes': 200 * GIB,
+                                  'runtime_disk_bytes': profile['pools'][0]['rootfs_budget_bytes']}
+
+    def grow_profile(self):
+        for role in ('runtime', 'builder'):
+            pools = self.policy[role]['bounded_host']['physical_storage']['pools']
+            pools[0]['cleanup_reserve_bytes'] += GIB
+            pools[0]['rootfs_budget_bytes'] += 4 * GIB
+            pools[1]['cleanup_reserve_bytes'] += 2 * GIB
+
+    def test_physical_reserves_reach_both_pools_and_host_without_mutating_inputs(self):
+        self.grow_profile()
+        original = copy.deepcopy(self.deployment)
+        original_policy = copy.deepcopy(self.policy)
+        updated = acceptance_disk_budgets(self.deployment, self.policy)
+        self.assertEqual(updated['runtime']['cleanup_reserve_bytes'], original['runtime']['cleanup_reserve_bytes'] + GIB)
+        self.assertEqual(updated['runtime']['max_disk_bytes_global'], original['runtime']['max_disk_bytes_global'] + 5 * GIB)
+        self.assertEqual(updated['builder']['cleanup_reserve_bytes'], original['builder']['cleanup_reserve_bytes'] + 2 * GIB)
+        self.assertEqual(updated['host']['minimum_free_disk_bytes'], 207 * GIB)
+        self.assertEqual(updated['host']['runtime_disk_bytes'], original['host']['runtime_disk_bytes'] + 4 * GIB)
+        for role in ('runtime', 'builder'):
+            for field in ('max_active_global', 'max_timeout_secs'):
+                self.assertEqual(updated[role][field], original[role][field])
+        self.assertEqual(self.deployment, original)
+        self.assertEqual(self.policy, original_policy)
+        self.assertEqual(acceptance_disk_budgets(original, None), original)
+
+    def test_larger_total_cannot_hide_a_smaller_tenant_or_cleanup_budget(self):
+        for field, other in (('rootfs_budget_bytes', 'cleanup_reserve_bytes'),
+                             ('cleanup_reserve_bytes', 'rootfs_budget_bytes')):
+            policy = copy.deepcopy(self.policy)
+            for role in ('runtime', 'builder'):
+                pool = policy[role]['bounded_host']['physical_storage']['pools'][0]
+                pool[field] -= 1
+                pool[other] += 10 * GIB
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'undercut'):
+                acceptance_disk_budgets(self.deployment, policy)
+        self.grow_profile()
+        self.deployment['host']['minimum_free_disk_bytes'] = 2**63 - 1
+        with self.assertRaisesRegex(ValueError, 'overflow'):
+            acceptance_disk_budgets(self.deployment, self.policy)
+
+    def test_larger_profile_passes_real_service_preflight_only_with_matching_quotas(self):
+        self.grow_profile()
+        service = json.loads(self.service.read_text())
+        runtime = json.loads(Path(service['runtime_config']).read_text())
+        builder = json.loads(Path(service['builder_config']).read_text())
+        # Generic acceptance assigns the usable pool quota to its one tenant.
+        for settings in (runtime, builder):
+            settings['max_disk_bytes_per_tenant'] = (
+                settings['max_disk_bytes_global'] - settings['cleanup_reserve_bytes'])
+        with self.assertRaisesRegex(ValueError, 'differs from a configured pool budget'):
+            apply_acceptance_build_policy(copy.deepcopy(runtime), copy.deepcopy(builder),
+                                          copy.deepcopy(service), self.policy)
+        deployment = acceptance_disk_budgets(
+            {'runtime': runtime, 'builder': builder, 'host': self.deployment['host']}, self.policy)
+        self.assertEqual(apply_acceptance_build_policy(
+            deployment['runtime'], deployment['builder'], service, self.policy), 'windowed')
+        for role in ('runtime', 'builder'):
+            Path(service[role + '_config']).write_text(json.dumps(deployment[role]))
+        self.service.write_text(json.dumps(service))
+        configuration(self.service, require_physical_lease=False)
 
 
 class PrivateBuildWindowObservationTests(unittest.TestCase):

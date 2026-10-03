@@ -6,6 +6,7 @@ Rust remains the only activator and the existing validators own all budgets.
 """
 from contextlib import closing
 from pathlib import Path
+import copy
 import json
 import math
 import os
@@ -109,6 +110,32 @@ def acceptance_pool_disk_budget(policy, role, base_bytes, *, max_active=2,
         raise ValueError("acceptance disk budget overflow")
     return {"max_disk_bytes_global": maximum, "max_disk_bytes_per_tenant": disk,
             "cleanup_reserve_bytes": cleanup}
+
+
+def acceptance_disk_budgets(deployment, policy):
+    """Apply explicit physical quotas without reducing the task-derived floor.
+
+    The shared profile may need a larger cleanup reserve for node metadata and
+    the controller journal. Charge each increase once in host free-space
+    preflight; task shapes and the physical activation checks remain unchanged.
+    """
+    if policy is None:
+        return deployment
+    result = copy.deepcopy(deployment)
+    extra = 0
+    for role in ("runtime", "builder"):
+        original = deployment[role]
+        requested = acceptance_pool_disk_budget(policy, role, original["max_disk_bytes_per_tenant"])
+        if any(requested[field] < original[field] for field in requested):
+            raise ValueError("physical pool cannot undercut the acceptance disk budget: " + role)
+        extra += requested["max_disk_bytes_global"] - original["max_disk_bytes_global"]
+        result[role].update(requested)
+    required = result["host"]["minimum_free_disk_bytes"] + extra
+    if required > MAXIMUM:
+        raise ValueError("acceptance disk headroom overflow")
+    result["host"]["minimum_free_disk_bytes"] = required
+    result["host"]["runtime_disk_bytes"] = result["runtime"]["max_disk_bytes_per_tenant"]
+    return result
 
 
 def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):

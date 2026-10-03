@@ -12,7 +12,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import bounded_acceptance_layout, require_bounded_host_tools
+from tools.bounded_acceptance import acceptance_disk_budgets, bounded_acceptance_layout, require_bounded_host_tools
 
 import argparse
 import asyncio
@@ -118,6 +118,7 @@ def exercise(args):
                     job_limit=job_limit)
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
                          profile=load(args.budget_profile))
+    deployment = acceptance_disk_budgets(deployment, bounded_policy)
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
         validate_cohort([t['requirements'] for t in selected_entries], deployment)
