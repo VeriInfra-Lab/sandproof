@@ -29,21 +29,26 @@ def main():
     proxy = urllib.request.ProxyHandler({'http': 'http://10.0.2.100:3128',
                                         'https': 'http://10.0.2.100:3128'})
     # This probe deliberately tests proxy rejection even for loopback names.
-    os.environ.pop('no_proxy', None)
-    os.environ.pop('NO_PROXY', None)
-    opener = urllib.request.build_opener(proxy)
-    for target in ('http://127.0.0.1/', 'http://169.254.169.254/', 'https://example.com/'):
-        try:
-            opener.open(target, timeout=10)
-        except urllib.error.HTTPError as error:
-            if error.code != 403:
-                raise RuntimeError('egress rejection returned an unexpected status') from error
-        except urllib.error.URLError as error:
-            # CONNECT errors are represented as a wrapped tunnel error.
-            if '403 Forbidden' not in str(error.reason):
-                raise RuntimeError('egress refusal was not established') from error
-        else:
-            raise RuntimeError('restricted egress target was allowed')
+    previous = {key: os.environ.pop(key, None) for key in ('no_proxy', 'NO_PROXY')}
+    try:
+        opener = urllib.request.build_opener(proxy)
+        for target in ('http://127.0.0.1/', 'http://169.254.169.254/', 'https://example.com/'):
+            try:
+                opener.open(target, timeout=10)
+            except urllib.error.HTTPError as error:
+                if error.code != 403:
+                    raise RuntimeError('egress rejection returned an unexpected status') from error
+            except urllib.error.URLError as error:
+                # CONNECT errors are represented as a wrapped tunnel error.
+                if '403 Forbidden' not in str(error.reason):
+                    raise RuntimeError('egress refusal was not established') from error
+            else:
+                raise RuntimeError('restricted egress target was allowed')
+    finally:
+        # Importing/testing the probe must not reroute later loopback tests.
+        for key, value in previous.items():
+            if value is not None:
+                os.environ[key] = value
     print('SANDPROOF_CI_ISOLATION_OK', flush=True)
 
 
