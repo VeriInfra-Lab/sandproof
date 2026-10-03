@@ -22,8 +22,8 @@ import uuid
 
 ROOT = Path('/var/lib/sandproof-ci')
 ROLES = {'rust': (4096, 4, 32), 'sdk': (3072, 4, 32),
-         'harbor': (2048, 2, 24), 'title': (768, 1, 12),
-         'policy': (768, 1, 12), 'bootstrap': (4096, 4, 32)}
+         'harbor': (2048, 2, 32), 'title': (768, 1, 32),
+         'policy': (768, 1, 32), 'bootstrap': (4096, 4, 32)}
 PROXY = 'http://10.0.2.100:3128'
 
 
@@ -107,6 +107,12 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def validate_disk_capacity(role, virtual_size):
+    # A sparse overlay must not truncate the trusted base's partition table.
+    if virtual_size <= 0 or virtual_size > ROLES[role][2] * 1024 ** 3:
+        raise ValueError('role disk budget is smaller than its base image')
+
+
 def stop_owned(process):
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGTERM)
@@ -127,6 +133,9 @@ def run(role, jit, pins, timeout):
     expected = pins['cloud_sha256'] if role == 'bootstrap' else pins['golden_sha256']
     if source.is_symlink() or digest(source) != expected:
         raise ValueError('base image identity mismatch')
+    info = subprocess.run(['/usr/bin/qemu-img', 'info', '--output=json', str(source)],
+                          check=True, capture_output=True, text=True)
+    validate_disk_capacity(role, json.loads(info.stdout)['virtual-size'])
     launcher_sha256 = digest(Path(__file__))
     run_id = uuid.uuid4().hex
     # At most one VM per fixed role; the five ordinary jobs can run in parallel.
