@@ -749,6 +749,29 @@ fn blocked_launch_configs<H: HostAdapter>(
     Ok(blocked)
 }
 
+/// Whether a committed physical position may acquire its missing host binding.
+///
+/// Startup inventory and managed recovery must use the same rule: no host work
+/// was claimed, except terminal fences for an already cancelled, unlaunched
+/// instance. The caller still validates the original position and predecessor;
+/// this predicate never authorizes creating a new sandbox or credential.
+#[must_use]
+pub fn can_install_host_slot_binding(world: &core::World, sandbox: core::SandboxId) -> bool {
+    let Some(record) = world.sandbox_record(sandbox) else {
+        return false;
+    };
+    let terminal_before_launch =
+        record.terminal && record.phase == core::Phase::Revoking && record.current_vm.is_none();
+    world.effect_ids().iter().all(|effect| {
+        effect.command().sandbox() != sandbox
+            || world.effect_status(effect) == Some(core::EffectStatus::Committed)
+            // A terminal fence alone cannot prepare or launch a VM. Any
+            // claimed opening fence, prepare or other action still blocks.
+            || (terminal_before_launch
+                && matches!(effect.command(), core::Command::InstallFence { terminal: true, .. }))
+    })
+}
+
 fn bind_recovery_slots<H: HostAdapter>(
     journal: &ControllerJournal,
     host: &mut H,
@@ -762,25 +785,7 @@ fn bind_recovery_slots<H: HostAdapter>(
         {
             continue;
         }
-        let terminal_before_launch =
-            world
-                .sandbox_record(context.binding.sandbox)
-                .is_some_and(|record| {
-                    record.terminal
-                        && record.phase == core::Phase::Revoking
-                        && record.current_vm.is_none()
-                });
-        let allow_install = world.effect_ids().iter().all(|effect| {
-            effect.command().sandbox() != context.binding.sandbox
-                || world.effect_status(effect) == Some(core::EffectStatus::Committed)
-                // An older kill path could claim its terminal fence before
-                // the first binding existed. A fence alone cannot launch a
-                // VM, mint a credential, or create its disk/network. Recover
-                // only this exact pre-launch terminal identity; any claimed
-                // opening fence, prepare or other action still blocks install.
-                || (terminal_before_launch
-                    && matches!(effect.command(), core::Command::InstallFence { terminal: true, .. }))
-        });
+        let allow_install = can_install_host_slot_binding(world, context.binding.sandbox);
         if host.bind_host_slot(&context, allow_install).is_err() {
             blocked.insert(context.binding.sandbox);
         }
