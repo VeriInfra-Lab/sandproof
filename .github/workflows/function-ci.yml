@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   rust:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, sandproof-ci-rust]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -28,7 +28,7 @@ jobs:
         run: bash scripts/check-function.sh
 
   sdk-contract:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, sandproof-ci-sdk]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -42,7 +42,7 @@ jobs:
           PATH="$RUNNER_TEMP/uv-bootstrap/bin:$PATH" bash scripts/check-compat.sh
 
   harbor-inputs:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, sandproof-ci-harbor]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -57,7 +57,7 @@ jobs:
 
   pr-title:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, sandproof-ci-title]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -69,7 +69,7 @@ jobs:
 
   pr-policy:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, sandproof-ci-policy]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

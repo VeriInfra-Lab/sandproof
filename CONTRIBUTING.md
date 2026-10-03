@@ -147,6 +147,26 @@ KVM 系统 CI 尚待 C04 实现。它必须使用固定、隔离、可回收的 
 
 ## 5. GitHub 配置
 
+### 普通 CI 自建执行环境
+
+普通 CI 的五项任务保持并行、独立检查名称和原检查命令，通过 `sandproof-ci-rust/sdk/harbor/title/policy` 标签分别调度。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器与 rustup 下载指纹由[构建输入](tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
+
+宿主侧[单任务入口](tools/ci_vm.py)必须由受控安装调用，不由 PR 调用；[基线准备](tools/ci_vm_bootstrap.sh)和[启动前隔离探针](tools/check_ci_isolation.py)在可信镜像中执行。宿主管理凭据不进入镜像、seed 或任务环境，只传单任务 JIT 配置。虚拟机中的 runner 用户无 sudo/docker/kvm 等管理权限，不挂宿主目录、不转发 SSH、不暴露宿主 KVM；限制网络仅能经过[出站网关](tools/ci_proxy.conf)访问当前 CI 所需公开依赖域名，拒绝私有地址、管理端口和其他目标。该网关接现有宿主代理，不更改产品沙箱网络策略。[服务模板](tools/ci_proxy.service)仅监听宿主回环。
+
+当前固定五个档位合计 10.5 GiB 来宾内存；启动前核对宿主实际余量，每个档位只允许一个执行实例。五项任务之间不设串行依赖，任务内部限制编译并行，防止同时编译占满测试机。不可用、启动失败、测试失败、取消和清理未知均按真实结果报告；宿主报告只说明虚拟机生命周期，不能代替 GitHub 上的测试结论。私有诊断日志和源码树/镜像/执行器摘要留在宿主，公开 PR 只贴脱敏结果。
+
+自动补充由宿主受控安装的[补充服务](tools/ci_runner_supervisor.py)和[服务单元](tools/ci_runner_supervisor.service)负责。专用 GitHub App 只安装到本仓库，权限限定为 Actions 只读、Administration 写入和默认 Metadata 只读；它不需要 webhook 或入站公网端口。Administration 是仓库管理权限，不是只允许操作执行器的细粒度权限，所以 App 密钥仍是高敏感宿主管理凭据，不能复制个人登录凭据或向 PR 发放它。
+
+部署前由管理员把 App 私钥放入 `/etc/sandproof-ci/app-key.pem`（目录 root/0700、文件 root/0600），以[鉴权工具](tools/ci_github_app.py)核对安装范围，取得安装编号；将[配置示例](tools/ci_runner_supervisor.example.json)填为本 App 的 Client ID、安装编号、普通工作流编号和宿主回环代理地址，安装到 `/etc/sandproof-ci/supervisor.json`（root/0600）。宿主 `/usr/bin/python3` 需要发行版提供的 PyJWT、cryptography；安装的工具、单元和配置均由 root 管理，不从 PR 下载执行。用 `systemd-analyze verify` 检查单元，再 `systemctl enable --now sandproof-ci-supervisor.service`。密钥通过 systemd 的独立凭据目录读取；工作执行单元只收到该任务的 JIT 配置，不继承 App 密钥或安装令牌。令牌限定本仓库和上述权限，并在到期前更新，不把管理凭据写入日志。
+
+服务只轮询固定 `function-ci.yml` 的排队任务，并检查名称与完整标签集合；标签是需求信号，GitHub 决定实际分配，不能声称某次注册绑定了某个 job。每个档位一份持久占用登记，先记身份再注册、先记启动意图再调用 systemd。管理服务重启不会停止独立工作单元，而是按精确单元身份接管；注册回执丢失时按精确名字查回，清理或观察结果未知时保留占用并退避，不重复启动。工作单元的整组进程停止后才删除工作盘和 JIT 文件、注销登记，再释放档位。宿主重启后清理上次遗留工作，不复用旧盘。缺失身份或不熟悉的执行器要求人工核对，不宽泛删除他人的资源。
+
+启动前将当前虚拟机尚未实际占用的内存预算计入预留，保留 2 GiB 宿主余量；磁盘按每台 32 GiB 逻辑上限和额外 8 GiB 余量准入。QEMU 预分配来宾内存，工作单元有独立内存上限；资源不足时排队，不造绿色检查。控制台与 QEMU 错误日志分别最多 8 MiB，超限终止自己的任务；只回收已经停止、登记可辨识的诊断目录，保留最多 40 份且合计不超过 128 MiB。不递归清空目录，未知文件、旧 VM 用户所有的有限批次证据及仍运行的目录不自动删除。systemd 管理日志也限速；宿主全局日志容量仍由管理员的 journald 策略管理。
+
+运维可在 root 私有 `/var/lib/sandproof-ci/supervisor/` 创建 `paused` 文件停止新准入（已有任务继续），删除它后恢复；后续高权限宿主验收使用 `exclusive-host` 标记之前，须先等待普通工作单元全部退出，不能仅靠标记便宣布独占。日常检查 `systemctl status sandproof-ci-supervisor.service` 与脱敏 journal；不要输出私钥、凭据目录或 `.jit` 文件。未配置并实测可信服务时，仍只能称为有限批次验收。版本变动重跑真实成功/失败与干净恢复，不以此前单任务入口的验收替代补充服务验收。
+
+这套普通执行环境不运行 KVM 系统验收、真实题目或 Lean 完整证明；高权限入口和 test→main 固定 89 题门槛仍归 #14 后续交付。自建普通 CI 不能绕过既有分支保护。成功、故意引入缺陷后的失败和下一轮干净恢复均应通过真实 Actions 执行核验，不用手工伪造检查状态。
+
 工作流对 PR 检查 `rust`、`pr-title`、`pr-policy`，对 main/test 的推送重跑功能检查；没有路径过滤。PR 更新、标题修改和目标分支变化后重新检查，不能沿用旧目标的通过结果。
 
 两个长期分支要求 PR、必需检查和未解决讨论清零，禁止强推/删除；审批人数为 0，管理员同样受约束。修改保护规则时，先确认检查真实出现，再同步必需检查名称。新规则不要求重命名已合并的历史分支，旧短期分支完成后由维护者清理。没有配置 CD。
