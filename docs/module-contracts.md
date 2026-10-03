@@ -42,7 +42,7 @@ V1 目标由[蓝图](project-blueprint.md)定义；完整服务链已实测固�
 
 第一次接受预制模板会原子升级数据库到 V8；第一次接受含 `startup` 的模板升至 V9，后续接受旧模板不能降级。旧二进制不可打开对应新库；同库此后拒绝旧式无计算额度准入，关闭配置不能绕过资源账本。启用前须精确清理仍占用资源的旧无绑定实例，不猜测其历史 CPU/内存；它们仍可查询和销毁。模板目录不是构建状态库，不接收用户上传，也不管理镜像回收。
 
-[#123 的候选构建工作器](../tools/template_worker.py)由[自助构建监督服务](../tools/template_build_service.py)在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。公开 OCI 由固定 regctl 直接导入；原 OCI tar 工具入口保留。首次层校验在同一读取流核对 blob 大小及 SHA-256、完整展开流 diff_id 与归档成员；仅全部通过后才记录可复用结果。复用已有层检查仍完整重读并校验当前 blob 摘要。检查摘要和展开预算后由 umoci 处理 whiteout；不兼容架构/操作系统、设备节点、容器卷及其他压缩格式明确拒绝。OCI 层的成员名和链接目标使用 Linux/POSIX 语义：反斜杠是普通字符（如 systemd 转义单元名），原样保留，不解码或转成分隔符；成员名和硬链接仍拒绝绝对路径、`..` 分量及 NUL。上下文仍拒绝反斜杠，只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
+[#123 的候选构建工作器](../tools/template_worker.py)由[自助构建监督服务](../tools/template_build_service.py)在新建、受限、独占且可回收的构建 VM 内运行，复用 BuildKit/umoci/mke2fs，宿主不得执行用户 Dockerfile 或解包用户镜像。boot_id/virtio 磁盘检查只防误操作，不是隔离或远程认证证明；隔离、外部总期限、独立构建额度和最终 VM 清理由监督器负责。每项工作有新目录/缓存、有界输入/展开量/日志，失败保留原身份且不生成成功状态。公开 OCI 由固定 regctl 直接导入；原 OCI tar 工具入口保留。首次层校验在同一读取流核对 blob 大小及 SHA-256、完整展开流 diff_id 与归档成员；仅全部通过后才记录可复用结果。 gzip 层以单个预取线程并行解码和主线程摘要/成员检查，队列至多保留两个 1 MiB 块；预取总量限制为该层剩余展开额度加用于拒绝超限的一字节，不预先解完整层或落盘。成功和异常退出均先停止并等待原线程，再关闭解码源；线程错误传回校验调用，不形成可复用记录。复用已有层检查仍完整重读并校验当前 blob 摘要。检查摘要和展开预算后由 umoci 处理 whiteout；不兼容架构/操作系统、设备节点、容器卷及其他压缩格式明确拒绝。OCI 层的成员名和链接目标使用 Linux/POSIX 语义：反斜杠是普通字符（如 systemd 转义单元名），原样保留，不解码或转成分隔符；成员名和硬链接仍拒绝绝对路径、`..` 分量及 NUL。上下文仍拒绝反斜杠，只接收普通文件、目录和不越界的相对链接，剥离宿主所有权和特殊权限，不跟随链接写出。
 
 转换产物始终为 `candidate`、`ready=false`，构建工作器不能自行登记。它加入静态 BusyBox 启动环境和固定 envd；宿主 cgroup 仍限制整个 VMM，来宾 envd 不启用其可选的进程 cgroup 管理。候选清单保留原始 ENV、WORKDIR、USER、CMD/ENTRYPOINT，并生成 `runtime_defaults`；构建时尚未启动实例，`startup_applied=false`。平台 resolver 来自可信构建配置；这不是对来宾 root 的防修改承诺，目的地址限制仍由宿主 IPv4 规则强制，不新增域名过滤/IPv6。
 
@@ -100,11 +100,13 @@ Ready 返回的模板形状使用 Rust `TemplateView` 的规范字段 `cpuCount`
 
 Dockerfile 构建使用固定 BuildKit 的 `auto` snapshotter，在每项独占构建 VM 的私有工作目录中探测可用实现，避免强制复制完整父快照。固定版本的选择顺序为 OverlayFS、fuse-overlayfs、native，能力探测和回退由 [BuildKit 0.28.0](https://github.com/moby/buildkit/blob/v0.28.0/cmd/buildkitd/main_oci_worker.go#L368) 实现；实际选择保留在受限 `daemon.log`。仍保持 OCI 进程隔离、私有缓存目录与原构建资源/时限，输出照常经过 OCI 校验和独立候选盘转换。内核列出 OverlayFS 只证明驱动可用，不代表本次目录已通过探测或构建已成功。
 
+Dockerfile 构建默认明确禁用外部 gzip 解压器。运维可在可信 `tools` 配置中同时添加 `igzip` 和 `libisal.so.2`，两项均须提供绝对普通文件路径及 SHA-256；缺一项或含其他工具名会被拒绝。监督服务上传这对产物，工作器重新核对指纹，在本项构建私有目录中建立标准名称的硬链接，仅向 BuildKit 守护进程提供该目录的 PATH / LD_LIBRARY_PATH，并禁用 unpigz 回退。固定 [containerd 2.2.1](https://github.com/containerd/containerd/blob/v2.2.1/pkg/archive/compression/compression.go#L270) 选择 igzip 后会传播启动及非零退出错误；后续完整 OCI 校验和原构建期限仍生效。运行库须兼容固定构建来宾；工具安装或组件提速不代表完整任务已通过。用户构建请求不能选择工具或修改这些环境变量。
+
 Dockerfile 的固定 BuildKit 使用不推送、不登记的 image exporter，将 OCI 清单、配置和层留在本次私有内容存储。守护进程停止后，worker 仅按导出描述符将引用的普通文件硬链接到新的 OCI layout，避免在同一构建 VM 内重复复制大层。此路径限定 BuildKit 0.28.0 的单个 `runc-overlayfs`、`runc-fuse-overlayfs` 或 `runc-native` 内容目录；目录/文件符号链接、缺失或歧义的存储、大小/身份变化及不一致的清单/配置摘要均拒绝。硬链接不代表已校验：所有 blob 摘要、diff_ids、tar/gzip 完整性及累计展开/条目限额仍在 umoci 解包前检查，仍由 umoci 处理层删除和权限。固定版本的目录结构变化需要重新适配和实测，不能改用未验证的裸目录作为候选根文件系统。 完整校验成功后，worker 在 `build_cache_cleanup` 阶段删除本项工作已停止的 BuildKit 私有缓存（快照、元数据和原内容链接），再解包并生成候选盘；OCI layout 自己的链接继续保留同一清单、配置和层字节。清理失败即终止转换，由监督器回收原构建 VM，不继续分配候选盘；此清理不操作其他工作或宿主缓存。
 
 候选盘转换使用固定 umoci 0.6.0 的 `raw unpack`，在新建的 0700 私有目录内提取 rootfs。它与普通 `unpack` 使用相同的层解包、ID 映射和 whiteout 处理，省去供 `repack` 使用的全目录 mtree 摘要扫描及未使用的 OCI runtime bundle 配置；不省略输入校验、候选磁盘完整摘要或启动验收。启动参数仍来自已校验的镜像配置，通过平台启动路径应用。此候选根目录不用于 umoci `repack`。
 
-监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项 `tools={名称:{path,sha256}}`（原六项加固定 regctl）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作只传原六项 profile，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。私有构建 VM 的同步准备请求使用该工作剩余的原构建期限，避免固定短 RPC 等待将大盘准备提前变为未知；已过期时不发起创建，丢失响应仍只观察原编号。
+监督服务 root 独占配置包括 `root`、`bind=127.0.0.1:端口`、`runtime_config`、`builder_config`、七项必需的 `tools={名称:{path,sha256}}`（原六项加固定 regctl，可另加完整的 igzip / libisal.so.2 对）、`dns_servers`（1～2 个公开 IPv4 resolver）及 `limits`。Dockerfile 工作传六项必需工具及已配置的可选解压器对，公开 OCI 工作另外传 regctl 与获取模块；不能仅更新工作器而漏传工具。limits 为 `max_cpu/max_memory_mib/max_disk_mib`、`timeout_seconds`、`max_jobs/max_jobs_per_tenant`、`max_pending/max_pending_per_tenant`、`workspace_bytes/workspace_bytes_per_tenant`、`max_input_bytes/max_expanded_bytes/max_entries/max_log_bytes`。字段及配置示例见[实机探针](../tests/system/template_self_service.py)的 build 配置；生产需按本机资源填写，不复制实验数值。旧六项自助服务配置须更新，既有构建库的配置绑定变更需显式迁移。私有构建 VM 的同步准备请求使用该工作剩余的原构建期限，避免固定短 RPC 等待将大盘准备提前变为未知；已过期时不发起创建，丢失响应仍只观察原编号。
 
 监督服务启动时还核对跨池必要条件：构建期限加 60 秒同时不超过构建池单次/总寿命；启动检查期限同时满足运行池两个寿命上限；构建池上传覆盖输入/工具及有界 HTTP 开销，下载覆盖完整候选；目标最大形状可被空运行池与发布产物额度接收。构建私有盘预算取私有 API 实际解析的已授权不可变 `base` 描述，不取可能不同的旧 `rootfs` 字段；声明长度须匹配真实文件。盘总量须至少容纳目标盘、展开上限和两份获取输入，实际来宾可用块仍由工作器检查。上述配置检查不是动态资源预留，不能替代运行时配额/真实余量或失败收尾。现有显式部署若不满足这些条件必须调整可信配置后再启用，不能静默缩短已接受请求。普通公网 DNS 仅接收 1–2 个公开单播 IPv4 字符串，拒绝数字、私网、组播、IPv6 与域名；构建与候选复用同一值，仍不承诺域名内容过滤。
 
@@ -224,6 +226,8 @@ SQLite 提交本身若报告结果不确定，调用方必须按操作编号重�
 允许 controller/worker 进程被终止后重启；宿主持续运行、可信存储按合同工作。宿主掉电、存储损坏及恶意宿主不在首版故障保证内。后续若扩大故障域，须新增合同和实验。
 
 ### #99 有界维护与物理位置复用（显式启用，未实机验收）
+
+宿主目录身份（#223）：启动闸门放行之前，运行层独占创建 jail/root，并将资源名、UID/GID、物理位置、parent/jail/root 的设备、inode 与 Linux `statx` 创建时间持久写入 `jail.json`；文件系统不提供创建时间时拒绝新启动，不退回仅凭名称删除。停止仍按原 PID/开始时间执行；清理只处理原登记目录，使用已打开目录描述符遍历、不跟随链接，并在最后删除目录项前重新核对身份。目录消失后保留原登记直到既有精确退休协议完成；同名替换、上下文改变、登记损坏及缺登记的旧目录保持未知，禁止在清理现场补认领。旧记录且目录已不存在可继续收尾。恢复观察须核对同一登记，不能将陌生目录里的磁盘视作原资源。`jail.json` 及固定 staging 都纳入宿主登记/退休清单和清理空间推导，旧额度不足则拒绝准入。目录修改在原宿主串行边界与 claim 锁内进行；额外的特权写者、任意并发挂载或伪造文件系统身份不属于部署边界。实现中的登记、比较、闸门和退休衔接仍是本项目待证明代码，不因依赖系统调用而整体排除。
 
 2026-10-02 owner 确认采用现有状态机内的维护操作，不另建清理控制器或更换 SQLite。目标是在活跃对象、未决工作、保留结果和模板的条数/字节都有显式额度时，反复创建销毁不使在线记录及宿主登记按累计次数增长；重启从有限当前状态和有限输入尾恢复。容量不足拒绝新工作，但不能侵占已接受工作的收尾预留。宿主永远不可观察时仍保留未知工作，不承诺无条件继续接单；有限整数身份耗尽仍明确拒绝，不能据此声称数学意义的无限新身份。
 

@@ -44,7 +44,7 @@ fn exact_closed_layout_caps_include_free_cells_stages_and_idle_routes() {
     let (identity, lease) = validate_configuration(&config).unwrap();
     let bounds = HostMetadataEnvelope::derive(&config, 1).unwrap();
     // Guard the audited layout. Additions must update the derived expectation.
-    assert_eq!(CLAIM_RECORD_NAMES.len(), 10);
+    assert_eq!(CLAIM_RECORD_NAMES.len(), 11);
     assert_eq!(
         host_slots::retirement_paths(&config, host_slots::maximum_binding()).len(),
         5
@@ -55,16 +55,16 @@ fn exact_closed_layout_caps_include_free_cells_stages_and_idle_routes() {
         bounds.payload_bytes,
         10 * (2 * node_staging::MAX_PAYLOAD as u64 + identity)
             + lease
-            + 20 * MAX_CLAIM_RECORD_BYTES
+            + 22 * MAX_CLAIM_RECORD_BYTES
             + 20 * MAX_HELPER_MARKER_BYTES
     );
-    assert_eq!(bounds.file_count, 71);
+    assert_eq!(bounds.file_count, 73);
     assert_eq!(bounds.directory_count, 19);
-    assert_eq!(bounds.inode_count, 90);
+    assert_eq!(bounds.inode_count, 92);
     let all_live = HostMetadataEnvelope::derive(&config, u64::MAX).unwrap();
-    assert_eq!(all_live.file_count, 106);
+    assert_eq!(all_live.file_count, 110);
     assert_eq!(all_live.directory_count, 25);
-    assert_eq!(all_live.inode_count, 131);
+    assert_eq!(all_live.inode_count, 135);
 }
 
 #[test]

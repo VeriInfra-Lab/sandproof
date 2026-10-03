@@ -331,6 +331,17 @@ class CapacityTests(unittest.TestCase):
                 configuration(path)
             builder['bounded_host']['uplink_base'] = 2
             Path(files[1]).write_text(json.dumps(builder))
+            original_tools = dict(cfg['tools'])
+            for names, accepted in ((('igzip', 'libisal.so.2'), True), (('igzip',), False),
+                                    (('libisal.so.2',), False), (('unpigz',), False)):
+                cfg['tools'] = original_tools | {name: original_tools['buildctl'] for name in names}
+                path.write_text(json.dumps(cfg))
+                if accepted:
+                    self.assertEqual(set(configuration(path)['tools']), set(cfg['tools']))
+                else:
+                    with self.assertRaisesRegex(ValueError, 'tool profile'):
+                        configuration(path)
+            cfg['tools'] = original_tools
             cfg['dns_servers'] = [134744072]
             path.write_text(json.dumps(cfg))
             with self.assertRaisesRegex(ValueError, 'strings'):

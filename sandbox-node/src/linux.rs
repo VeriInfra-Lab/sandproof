@@ -463,8 +463,22 @@ impl LinuxWorker {
                 )
                 .join(&vm_name)
                 .join("root/rootfs.ext4");
+            let jail_observation = if helper_pending {
+                None
+            } else {
+                let observation = self
+                    .runtime(binding.sandbox, binding.vm)?
+                    .observe_jail(&vm_name)?;
+                if matches!(observation, sandbox_runtime::JailObservation::Unregistered) {
+                    return Err("VM jail is present without directory authority".into());
+                }
+                Some(observation)
+            };
             let disk_inode = match fs::symlink_metadata(&disk) {
                 Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                    if jail_observation == Some(sandbox_runtime::JailObservation::Absent) {
+                        return Err("disk appeared after observing jail absence".into());
+                    }
                     Some(metadata.ino())
                 }
                 Ok(_) => return Err("untrusted VM disk".into()),

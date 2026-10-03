@@ -400,21 +400,18 @@ impl Runtime {
         {
             return Err(RuntimeError::IdentityMismatch("retirement process is live"));
         }
-        let jail = self
-            .config
-            .chroot_base
-            .join(self.firecracker_name())
-            .join(id);
+        if self.observe_jail(id)? != super::JailObservation::Absent {
+            return Err(RuntimeError::IdentityMismatch(
+                "retirement jail is not absent",
+            ));
+        }
         let namespace = self.config.private_netns.as_deref();
         let cgroup = self
             .config
             .host_resources
             .as_ref()
             .map(|settings| settings.cgroup_parent.join(id));
-        for path in [Some(jail.as_path()), namespace, cgroup.as_deref()]
-            .into_iter()
-            .flatten()
-        {
+        for path in [namespace, cgroup.as_deref()].into_iter().flatten() {
             if path_present(path)? {
                 return Err(RuntimeError::IdentityMismatch(
                     "retirement physical resource remains",

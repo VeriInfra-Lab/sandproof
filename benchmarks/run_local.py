@@ -386,15 +386,25 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
                          json.dumps(environment.events, indent=2), row)
         finally:
             # Even diagnostics/serialization errors must reach this path.
+            cleanup_started = time.monotonic()
             try:
                 await environment.stop()
             except (Exception, asyncio.CancelledError, KeyboardInterrupt) as error:
                 row['cleanup_error_type'] = type(error).__name__
                 row['status'] = 'cleanup_unknown'
+                # Retain the SDK's structured HTTP status, never exception
+                # text that may contain credentials or response bodies.
+                try:
+                    http_status = getattr(error, 'status_code', None)
+                except Exception:
+                    http_status = None  # Optional diagnostics cannot mask cleanup.
+                if type(http_status) is int and 100 <= http_status <= 599:
+                    row['cleanup_http_status'] = http_status
                 if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt)):
                     row['interrupted'] = True
                     raise
             finally:
+                row['cleanup_seconds'] = round(time.monotonic() - cleanup_started, 3)
                 record_artifact_status(environment, row)
                 row['kill_confirmed'] = environment.kill_confirmed
                 row['seconds'] = round(time.monotonic() - start, 3)
