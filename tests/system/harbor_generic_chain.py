@@ -437,6 +437,7 @@ def exercise(args):
                     pressure_report = asyncio.run(pressure(root=root, urls=urls, key=key, builder_key=builder_key,
                         rows=current, deployment=deployment, supervisor=supervisor, restart=restart_builds,
                         source_entry=selected_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
+                        build_mode=build_mode,
                         service_audit=lambda count: observe_services(require_builder=False, minimum_relays=count)))
                 except Exception:
                     # Retain the separate failed probe and original task scores.
