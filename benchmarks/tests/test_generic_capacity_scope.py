@@ -28,9 +28,9 @@ class CapacityScopeTests(unittest.TestCase):
             'oracle_mode': 'original', 'source_kind': 'oci', 'resource_pressure': False,
             'repetitions': 1} | overrides))
 
-    def configuration(self, tasks, repetitions=1):
+    def configuration(self, tasks, repetitions=1, job_limit=None):
         capacity = plan(tasks, repetitions, 64 * GIB, 64 * MIB,
-                        input_bytes=10 * GIB, expanded_bytes=32 * GIB)
+                        input_bytes=10 * GIB, expanded_bytes=32 * GIB, job_limit=job_limit)
         return capacity, budgets(capacity, 64 * GIB, 64 * MIB)
 
     def test_modes_and_task_shapes_share_the_full_configuration(self):
@@ -89,6 +89,47 @@ class CapacityScopeTests(unittest.TestCase):
         args.repetitions, args.capacity_scope = 1, 'all'
         with self.assertRaises(ValueError):
             select_cohort(args, entries)
+
+    def test_fixed_cohort_limit_covers_every_locked_task_without_reducing_shapes(self):
+        expected = self.configuration(self.tasks, job_limit=4)
+        visited = []
+        for offset in range(0, len(self.tasks), 4):
+            names = [task['name'] for task in self.tasks[offset:offset + 4]]
+            args = self.args(names, capacity_jobs=4)
+            selected, mode, entries, planning = select_cohort(args, self.tasks)
+            self.assertEqual(mode, 'original')
+            self.assertEqual(selected, set(names))
+            self.assertEqual(entries, self.tasks[offset:offset + 4])
+            self.assertEqual(self.configuration(planning, job_limit=4), expected)
+            visited.extend(task['name'] for task in entries)
+        self.assertEqual(visited, [task['name'] for task in self.tasks])
+        full = self.configuration(self.tasks)
+        for field in ('runtime', 'builder', 'runtime_compute', 'builder_compute', 'builder_shape'):
+            self.assertEqual(expected[1][field], full[1][field])
+        for field in ('max_cpu', 'max_memory_mib', 'max_disk_mib', 'timeout_seconds',
+                      'max_input_bytes', 'max_expanded_bytes'):
+            self.assertEqual(expected[1]['limits'][field], full[1]['limits'][field])
+        self.assertEqual(expected[1]['registry']['max_templates_global'], 4)
+        self.assertEqual(expected[1]['limits']['max_jobs'], 4)
+
+    def test_overflow_and_invalid_cohort_limits_fail_before_dispatch(self):
+        for args in (
+                self.args(['regex-log'], capacity_jobs=0),
+                self.args(['regex-log'], capacity_jobs=True),
+                self.args(['regex-log'], capacity_jobs=1.5),
+                self.args(['regex-log'], capacity_jobs=90),
+                self.args(['regex-log'], capacity_jobs=4, capacity_scope='selected'),
+                self.args(None, all=True, capacity_jobs=4),
+                self.args(['regex-log'], repetitions=2, capacity_jobs=1),
+                self.args(['regex-log', 'polyglot-c-py'], resource_pressure=True, capacity_jobs=3)):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                select_cohort(args, self.tasks)
+        selected, _, _, planning = select_cohort(
+            self.args(['regex-log'], repetitions=2, capacity_jobs=2), self.tasks)
+        self.assertEqual(selected, {'regex-log'})
+        self.assertEqual(self.configuration(planning, 2, job_limit=2)[0]['jobs'], 2)
+        args = self.args(['regex-log', 'polyglot-c-py'], resource_pressure=True, capacity_jobs=4)
+        self.assertEqual(len(select_cohort(args, self.tasks)[3]), 89)
 
 
 if __name__ == '__main__':
