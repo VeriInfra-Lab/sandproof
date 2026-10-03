@@ -241,7 +241,7 @@ impl Runtime {
             || record.host_slot != self.jail_slot()
             || [&record.parent, &record.jail, &record.root]
                 .iter()
-                .any(|value| value.inode == 0)
+                .any(|value| value.inode == 0 || value.birth_nanoseconds >= 1_000_000_000)
         {
             return Err(RuntimeError::IdentityMismatch("jail witness context"));
         }
@@ -473,12 +473,25 @@ impl Runtime {
 mod tests {
     use super::super::RuntimeConfig;
     use super::*;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
     const ID: &str = "review-jail";
 
     fn fixture() -> (tempfile::TempDir, Runtime, u32) {
-        let temp = tempfile::tempdir().unwrap();
-        let claim = temp.path().join(".claims").join(ID);
+        fixture_in(None, ID)
+    }
+
+    fn fixture_in(parent: Option<&Path>, id: &str) -> (tempfile::TempDir, Runtime, u32) {
+        // CI and developer hosts can have a group-writable umask. The fixture
+        // must satisfy the same private-parent contract as production.
+        let mut builder = tempfile::Builder::new();
+        builder.permissions(fs::Permissions::from_mode(0o700));
+        let temp = match parent {
+            Some(parent) => builder.tempdir_in(parent),
+            None => builder.tempdir(),
+        }
+        .unwrap();
+        let claim = temp.path().join(".claims").join(id);
         fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -718,5 +731,62 @@ mod tests {
         fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
         assert!(runtime.cleanup_jail(ID, owner, false).is_err());
         assert!(runtime.jail_path(ID).exists());
+    }
+
+    #[test]
+    #[ignore = "requires root and an isolated Linux host for read-only conntrack/retirement observations"]
+    fn bounded_registration_uses_staging_and_survives_until_exact_retirement() {
+        assert_eq!(rustix::process::geteuid().as_raw(), 0);
+        const BOUNDED_ID: &str = "vm-0123456789abcdef-9000000";
+        let (temp, mut runtime, owner) = fixture_in(Some(Path::new("/var/lib")), BOUNDED_ID);
+        let gate_path = temp.path().join("helper.lock");
+        let gate_file = File::options()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&gate_path)
+            .unwrap();
+        let gate = gate_file.metadata().unwrap();
+        runtime.config.host_slot = Some(super::super::RuntimeHostSlot {
+            position: 0,
+            vm: 9_000_000,
+            uplink_index: 900_001,
+            helper_gate: super::super::RuntimeHelperGate {
+                path: gate_path,
+                device: gate.dev(),
+                inode: gate.ino(),
+                max_data_routes_per_slot: 2,
+            },
+        });
+        runtime.reserve_jail(BOUNDED_ID, owner).unwrap();
+        let witness = runtime.jail_record_path(BOUNDED_ID);
+        assert!(!witness.with_file_name(".staging-jail.json").exists());
+        let record: JailRecord = serde_json::from_slice(&fs::read(&witness).unwrap()).unwrap();
+        assert_eq!(record.host_slot, Some([0, 9_000_000, 900_001]));
+        runtime
+            .write_new_record(
+                &witness.with_file_name("record.json"),
+                &super::super::ProcessRecord {
+                    resource_id: BOUNDED_ID.into(),
+                    pid: i32::MAX as u32,
+                    start_time_ticks: 1,
+                },
+            )
+            .unwrap();
+        runtime.cleanup(BOUNDED_ID).unwrap();
+        runtime.cleanup(BOUNDED_ID).unwrap();
+        assert!(witness.exists());
+        let manifest = runtime.retirement_manifest(BOUNDED_ID).unwrap();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        assert!(
+            String::from_utf8(bytes.clone())
+                .unwrap()
+                .contains("jail.json")
+        );
+        let restored = serde_json::from_slice(&bytes).unwrap();
+        runtime.retire(BOUNDED_ID, &restored).unwrap();
+        assert!(!witness.parent().unwrap().exists());
+        runtime.retire(BOUNDED_ID, &restored).unwrap();
+        runtime.observe_retired(BOUNDED_ID, &restored).unwrap();
     }
 }
