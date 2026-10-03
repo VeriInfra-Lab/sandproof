@@ -103,6 +103,8 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 构建意图及幂等键先落盘；构建、创建或清理未知时停止后续任务，不用新身份重跑。原 Dockerfile 来源只上传锁定的环境文件，登记环境变体只上传上述生成的 Dockerfile；solution/tests 由原 Harbor 在解答/评分阶段上传，启动时检查保留目录不存在。报告保留原失败及全部 89 题，`--all` 才选择全集；下载依赖未完全锁定会明确标注。工具退出 0 仅表示本次执行检查通过，`kill_confirmed` 是 SDK 回执，`exact_cleanup=not_audited` 不是宿主回收证据。
 
+停止请求耗时单独记录为 `cleanup_seconds`。SDK 停止异常继续记为 `cleanup_unknown`，并保留异常类型及可用的整数 HTTP 状态码 `cleanup_http_status`；不记录异常正文或凭据，不据此自动重试或把清理未知改成通过。字段缺失表示没有取得有效状态码，不能推断为网络超时；随后精确审计确认销毁也保留首次异常。
+
 通用 KVM 监督入口使用[统一验收配置](template-service-budgets.json)及[配置生成/预检](../tools/template_acceptance.py)，运行池传输和寿命字段直接复用[已有任务配置](local-service-budgets.json)。同时计入构建池和运行池的完整 CPU/VMM 内存额度、额外存活私有盘、发布产物、构建工作区、证据和清理余量；预检使用当前 CPU affinity、可用内存和剩余磁盘。服务/relay 的份额由[显式服务 cgroup 入口](../tools/service_cgroup.py)落实；控制服务与构建监督服务及其子进程共用限额，VM 使用各自独立分组。仅生成配置仍标记为未观察到执行，监督入口在核对实际服务 PID 归属后才记录已施加上限；当前数值仍不是已实测的生产总预算。报告保存实际生成配置及来源摘要，旧提交的实跑仍只绑定旧配置。
 
 分批复跑可在实机监督入口显式加 `--capacity-scope all`：构建、模板、工作区、证据和 VM 编号配额统一按锁定的完整 89 题及重复次数计算，`--task` 仍只选择实际执行的题目。默认 `selected` 保持按选题派生容量。模式与环境来源先对实际选题校验，规划范围不会允许未登记的修复或混合环境变体；原题资源和阶段时限不变。`capacity-basis.json`、逐轮输入及报告记录选题和规划题集，可与 `capacity.json`、`acceptance-budgets.json` 一起逐批比较。完整容量模式下两题压力探针复用该容量，仍核对实际选中的两题资源；容量必须覆盖其四个构建名额。规划 89 题不会把未执行的题计为通过。
