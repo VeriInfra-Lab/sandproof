@@ -20,6 +20,30 @@ from .template_build_store import TERMINAL
 from .template_physical_storage import MAXIMUM, envelope
 
 
+def completion_build_observation(row, *, build_mode, read_build):
+    """Keep an observed immutable terminal result after its query window expires.
+
+    This supplies build evidence only. The caller must separately establish
+    physical resource absence and verify the published template. Missing or
+    uncertain results still require a successful read of the original build;
+    a missing query anchor can never establish a terminal outcome.
+    """
+    if build_mode not in ("windowed", "legacy-unbounded"):
+        raise ValueError("explicit supported build mode required")
+    job = row.get("build_id")
+    if not job:
+        raise ValueError("original build identity required")
+    previous = row.get("build")
+    saved = (build_mode == "windowed" and isinstance(previous, dict)
+             and previous.get("state") in TERMINAL)
+    result = previous if saved else read_build(job)
+    if (not isinstance(result, dict) or result.get("buildID") != job
+            or result.get("state") not in TERMINAL):
+        raise ValueError("original build terminal observation is missing or mismatched")
+    return {"build": copy.deepcopy(result),
+            "build_observation": "saved_terminal" if saved else "live_query"}
+
+
 def wait_private_build_window(database, job, *, timeout=60, clock=time.monotonic, sleep=time.sleep):
     """Observe the original job's committed window; never create or retry work.
 

@@ -12,7 +12,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import acceptance_disk_budgets, bounded_acceptance_layout, require_bounded_host_tools
+from tools.bounded_acceptance import acceptance_disk_budgets, bounded_acceptance_layout, completion_build_observation, require_bounded_host_tools
 
 import argparse
 import asyncio
@@ -357,13 +357,11 @@ def exercise(args):
         if row.get('build_dispatched'):
             from tools.template_build_client import BuildClient
             client = BuildClient(urls[2], key)
-            # Reobserve the original idempotent request. A POST is forbidden.
-            if row.get('build_id'):
-                result['build'] = client.request('GET', '/sandproof/template-builds/' + row['build_id'])
-            else:
-                raise RuntimeError('unknown build submission requires identity reconciliation')
-            if result['build']['state'] not in ('Ready', 'Failed'):
-                raise RuntimeError('build state remains uncertain after physical audit')
+            # A long task may outlive a bounded build's retained query record.
+            # Preserve the terminal result already observed before running it;
+            # an uncertain result still requires GET, never a replacement POST.
+            result.update(completion_build_observation(row, build_mode=build_mode,
+                read_build=lambda job: client.request('GET', '/sandproof/template-builds/' + job)))
         template = row.get('template') or (result.get('build') or {}).get('template')
         if template:
             source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
