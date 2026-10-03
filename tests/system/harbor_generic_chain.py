@@ -81,6 +81,14 @@ def select_cohort(args, tasks):
                                     for i in range(2))
         elif len(capacity_entries) < 4:
             raise ValueError('full capacity must cover the four pressure jobs')
+    job_limit = getattr(args, 'capacity_jobs', None)
+    if job_limit is not None:
+        if (args.capacity_scope != 'all' or type(job_limit) is not int
+                or not 1 <= job_limit <= len(capacity_entries) * args.repetitions):
+            raise ValueError('explicit retained job capacity requires the full planning set')
+        required_jobs = len(selected) * args.repetitions + (2 if args.resource_pressure else 0)
+        if required_jobs > job_limit:
+            raise ValueError('selected cohort exceeds retained job capacity')
     return selected, oracle_mode, selected_entries, capacity_entries
 
 
@@ -100,10 +108,14 @@ def exercise(args):
     capacity_basis = {'scope': args.capacity_scope, 'selected_tasks': sorted(selected),
                       'planning_tasks': [t['name'] for t in capacity_entries],
                       'repetitions': args.repetitions}
+    job_limit = getattr(args, 'capacity_jobs', None)
+    if job_limit is not None:
+        capacity_basis['retained_job_limit'] = job_limit
     capacity = plan(capacity_entries, args.repetitions,
                     args.rootfs.stat().st_size, args.kernel.stat().st_size,
                     artifact_bytes=args.artifact_limits['max_bytes'],
-                    input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes)
+                    input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes,
+                    job_limit=job_limit)
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
                          profile=load(args.budget_profile))
     if args.resource_pressure:
@@ -536,6 +548,8 @@ if __name__ == '__main__':
     selection.add_argument('--all', action='store_true')
     parser.add_argument('--capacity-scope', choices=('selected', 'all'), default='selected',
                         help='plan quotas for selected tasks or the full locked set, without changing execution selection')
+    parser.add_argument('--capacity-jobs', type=int,
+                        help='explicit retained build jobs per cohort with --capacity-scope all; includes repetitions and pressure jobs')
     parser.add_argument('--namespace')
     parser.add_argument('--build-namespace')
     parser.add_argument('--run-root', type=Path,

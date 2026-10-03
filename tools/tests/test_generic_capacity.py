@@ -60,5 +60,35 @@ class GenericCapacityTests(unittest.TestCase):
                 with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                     plan(self.tasks(1), 1, 64 * GIB, 44649272, **{field: value})
 
+    def test_retained_job_bound_keeps_full_task_shapes_and_worst_case_storage(self):
+        tasks = self.tasks(89)
+        tasks[0]['requirements']['disk_mib'] = 32768
+        tasks[1]['requirements']['cpus'] = 8
+        tasks[2]['requirements']['memory_mib'] = 16384
+        tasks[3]['requirements']['build_timeout_sec'] = 900
+        tasks[4]['files'] = [{'role': 'environment', 'bytes': 123456, 'path': 'environment/data'},
+                             {'role': 'oracle', 'bytes': GIB, 'path': 'solution/private'}]
+        original = plan(tasks, 1, 64 * GIB, 44649272)
+        bounded = plan(tasks, 1, 64 * GIB, 44649272, job_limit=4)
+        self.assertEqual(bounded['jobs'], 4)
+        for field in ('max_cpu', 'max_memory_mib', 'max_disk_mib', 'max_build_seconds',
+                      'worker_required_free_bytes', 'input_bytes', 'expanded_bytes'):
+            self.assertEqual(bounded[field], original[field])
+        self.assertEqual(bounded['registry_bytes'], 4 * (32 * GIB + 44649272))
+        self.assertEqual(bounded['context_reserve_bytes'],
+                         4 * (10240 + 123456 + len('environment/data') + 4096))
+        self.assertEqual(bounded['trial_evidence_bytes'], 4 * 132 * MIB)
+        self.assertEqual(original['workspace_bytes'] - bounded['workspace_bytes'],
+                         85 * (2 * MIB + 256 * 1024))
+        self.assertGreater(bounded['uid_stride'], 2 * bounded['jobs'])
+
+    def test_retained_job_limit_counts_repetitions_and_rejects_invalid_values(self):
+        for value in (0, -1, True, False, 1.5, '4', 179):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                plan(self.tasks(89), 2, 64 * GIB, 44649272, job_limit=value)
+        once = plan(self.tasks(89), 1, 64 * GIB, 44649272, job_limit=4)
+        twice = plan(self.tasks(89), 2, 64 * GIB, 44649272, job_limit=4)
+        self.assertEqual(once, twice)
+
 
 if __name__=='__main__':unittest.main()
