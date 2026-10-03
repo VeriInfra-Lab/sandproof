@@ -95,7 +95,8 @@ def cloud_config(role, jit='', pins=None):
             file_entry('/home/runner/.jitconfig', jit, '0600', 'runner:runner'),
             file_entry('/opt/actions-runner/start-jit.sh', start, '0755'),
             file_entry('/etc/systemd/system/sandproof-ci-job.service', unit)]
-        result['runcmd'] = [['systemctl', 'daemon-reload'], ['bash', '-c',
+        result['runcmd'] = [['chown', '-R', 'runner:runner', '/opt/actions-runner'],
+            ['systemctl', 'daemon-reload'], ['bash', '-c',
             'if runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py; then '
             'systemctl start --no-block sandproof-ci-job.service; else poweroff; fi']]
     return result
@@ -177,6 +178,8 @@ def run(role, jit, pins, timeout):
             (ROOT / 'pins.json').chmod(0o600)
         elif 'SANDPROOF_CI_ISOLATION_OK' not in console:
             raise ValueError('pre-job isolation probe failed; inspect private run ' + run_id)
+        elif 'Listening for Jobs' not in console:
+            raise ValueError('runner never connected; inspect private run ' + run_id)
         success = True
     finally:
         if process is not None:
