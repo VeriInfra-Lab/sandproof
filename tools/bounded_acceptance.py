@@ -1,7 +1,7 @@
 """Static identity checks for the existing bounded KVM supervision layouts.
 
-No deployment identity is generated or rewritten here. The operator chooses
-the root and both namespaces before preparing one immutable physical profile;
+The operator chooses the root and both namespaces before preparing one
+immutable physical profile. Fresh-root provisioning supplies its empty file;
 Rust remains the only activator and the existing validators own all budgets.
 """
 from contextlib import closing
@@ -192,3 +192,45 @@ def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):
     if public["root"] != str(root / "builds") or public["registry_root"] != str(root / "registry"):
         raise ValueError("fixed public physical profile differs from explicit acceptance layout")
     return root, namespaces
+
+
+def validate_acceptance_socket_paths(root, namespaces, firecracker, *, max_vm_id, bounded):
+    """Reject an impossible layout before starting either native controller.
+
+    Bounded host IDs are monotonic u64 values, independent of the reusable UID
+    slots. Match LinuxWorker's longest-path check, including encoded bytes.
+    """
+    identifier = 2**64 - 1 if bounded else max_vm_id
+    for index, namespace in enumerate(namespaces):
+        path = (Path(root) / str(index) / "jails" / Path(firecracker).name
+                / f"vm-{namespace}-{identifier}" / "root/api.socket")
+        if len(os.fsencode(path)) >= 108:
+            raise ValueError("acceptance path too long for Firecracker socket")
+
+
+def provision_acceptance_coordination(policy, *, run_root, namespace, build_namespace):
+    """Supply the operator-selected empty file only in a fresh private root.
+
+    Call immediately after exclusive root creation, before configs or state.
+    Never adopt an existing file, recreate a lost identity in an old deployment,
+    or write an activation marker. Only Rust activates the physical profile.
+    """
+    root, _ = bounded_acceptance_layout(policy, run_root=run_root, namespace=namespace,
+                                        build_namespace=build_namespace)
+    path = Path(_acceptance_profile(policy)["coordination_file"])
+    if path.parent != root:
+        raise ValueError("acceptance coordination file must be directly inside the fresh root")
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(directory)
+        if info.st_uid != os.geteuid() or info.st_mode & 0o077 or os.listdir(directory):
+            raise ValueError("empty private acceptance root required for coordination provisioning")
+        fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=directory)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.fsync(directory)
+    finally:
+        os.close(directory)

@@ -6,13 +6,14 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import socket
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from tools.bounded_acceptance import (
     acceptance_disk_budgets, acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools,
-    wait_private_build_window,
+    wait_private_build_window, provision_acceptance_coordination, validate_acceptance_socket_paths,
 )
 from tools.template_build_config import apply_acceptance_build_policy
 from tools.template_build_service import configuration
@@ -387,6 +388,106 @@ class BoundedLayoutTests(unittest.TestCase):
         candidate["builder"]["bounded_host"]["physical_storage"]["filesystem_overhead_bytes"] += 1
         with self.assertRaisesRegex(ValueError, "identical immutable"):
             self.layout(candidate)
+
+
+class CoordinationProvisioningTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        parent = Path(temporary.name).resolve()
+        fixture = parent / "fixture"
+        fixture.mkdir(mode=0o700)
+        _, policy, _, self.namespaces = service_fixture(fixture)
+        self.root = parent / "fresh"
+        self.root.mkdir(mode=0o700)
+        self.policy = json.loads(json.dumps(policy).replace(str(fixture), str(self.root)))
+        self.path = self.root / "physical-profile"
+
+    def provision(self):
+        provision_acceptance_coordination(self.policy, run_root=self.root,
+            namespace=self.namespaces[0], build_namespace=self.namespaces[1])
+
+    def test_empty_file_is_private_durable_and_never_activated_or_replaced(self):
+        original = copy.deepcopy(self.policy)
+        fsync = os.fsync
+        with patch("tools.bounded_acceptance.os.fsync", wraps=fsync) as sync:
+            self.provision()
+        self.assertEqual(sync.call_count, 2)
+        self.assertEqual(self.path.read_bytes(), b"")
+        info = self.path.stat()
+        self.assertEqual(info.st_mode & 0o777, 0o600)
+        self.assertEqual(info.st_uid, os.geteuid())
+        self.assertEqual(info.st_nlink, 1)
+        self.assertEqual(self.policy, original)
+        self.path.write_bytes(b"existing activation identity")
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+        self.assertEqual(self.path.stat().st_ino, info.st_ino)
+        self.assertEqual(self.path.read_bytes(), b"existing activation identity")
+
+    def test_missing_identity_in_existing_deployment_is_not_recreated(self):
+        (self.root / "0").mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+        self.assertFalse(self.path.exists())
+
+    def test_symlink_and_outside_file_are_not_followed(self):
+        outside = self.root.parent / "canary"
+        outside.write_bytes(b"canary")
+        self.path.symlink_to(outside)
+        with self.assertRaises(ValueError):
+            self.provision()
+        self.path.unlink()
+        for role in ("runtime", "builder"):
+            self.policy[role]["bounded_host"]["physical_storage"]["coordination_file"] = str(outside)
+        with self.assertRaisesRegex(ValueError, "directly inside"):
+            self.provision()
+        self.assertEqual(outside.read_bytes(), b"canary")
+        self.assertFalse(self.path.exists())
+
+    def test_shared_root_and_failed_sync_do_not_allow_continuation(self):
+        self.root.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+        self.assertFalse(self.path.exists())
+        self.root.chmod(0o700)
+        with patch("tools.bounded_acceptance.os.fsync", side_effect=OSError("sync failed")):
+            with self.assertRaisesRegex(OSError, "sync failed"):
+                self.provision()
+        self.assertEqual(self.path.read_bytes(), b"")
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+
+
+class SocketLayoutTests(unittest.TestCase):
+    def test_uid_slot_bound_cannot_hide_lifetime_identifier_overflow(self):
+        root = Path("/var/lib/sp-01a0e1bd/bc9161f-00")
+        namespaces = ["0123456789abcdef", "123456789abcdef0"]
+        validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=False)
+        with self.assertRaisesRegex(ValueError, "Firecracker socket"):
+            validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=True)
+
+    def test_encoded_limit_matches_real_unix_socket_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            namespace = "0123456789abcdef"
+            tail = Path("0/jails/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
+            # Include multibyte characters: the kernel limit counts bytes.
+            prefix = Path(directory) / "é"
+            padding = 107 - len(os.fsencode(prefix / tail))
+            self.assertGreaterEqual(padding, 0)
+            root = Path(str(prefix) + "a" * padding)
+            validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+            path = root / tail
+            path.parent.mkdir(parents=True)
+            with socket.socket(socket.AF_UNIX) as listener:
+                listener.bind(str(path))
+            too_long = Path(str(root) + "b")
+            with self.assertRaisesRegex(ValueError, "Firecracker socket"):
+                validate_acceptance_socket_paths(too_long, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+            path = too_long / tail
+            path.parent.mkdir(parents=True)
+            with socket.socket(socket.AF_UNIX) as listener, self.assertRaises(OSError):
+                listener.bind(str(path))
 
 
 class FixtureDiskBudgetTests(unittest.TestCase):
