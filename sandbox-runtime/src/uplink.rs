@@ -769,7 +769,7 @@ impl Runtime {
                     self.config.host_slot.as_ref(),
                     "delete exact retired conntrack",
                     "/usr/sbin/conntrack",
-                    &["--delete", "--family", "ipv4", field, &address],
+                    &["-D", "--family", "ipv4", field, &address],
                     None,
                 )?;
             }
