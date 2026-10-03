@@ -1,0 +1,11 @@
+[Unit]
+Description=Restricted outbound proxy for isolated ordinary CI
+After=network-online.target sandproof-clash.service
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStart=/usr/sbin/squid -N -f /opt/sandproof-ci/ci_proxy.conf
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
