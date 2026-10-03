@@ -14,6 +14,7 @@ pub const MAX_CLAIM_RECORD_BYTES: u64 = 1_048_576;
 const STAGING_PREFIX: &str = ".staging-";
 pub const CLAIM_RECORD_NAMES: &[&str] = &[
     "record.json",
+    "jail.json",
     "aborted.json",
     "failed-prepare.json",
     "network-intent.json",

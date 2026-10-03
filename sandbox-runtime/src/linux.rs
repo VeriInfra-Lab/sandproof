@@ -22,6 +22,8 @@ mod cgroup;
 mod child_process;
 #[path = "helper_gate.rs"]
 pub(crate) mod helper_gate;
+#[path = "jail.rs"]
+mod jail;
 #[path = "retirement.rs"]
 mod retirement;
 #[path = "staging.rs"]
@@ -32,6 +34,7 @@ pub use helper_gate::{
     RuntimeHelperGate, RuntimeHelperGuard, RuntimeProcessIdentity, RuntimeRouteSnapshot,
     RuntimeRouteState,
 };
+pub use jail::JailObservation;
 pub use retirement::RetirementManifest;
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
@@ -335,6 +338,7 @@ impl Runtime {
         // otherwise leaves a live VM whose API cannot be observed or booted.
         validate_socket_path(&self.socket_path(id))?;
         let claim = self.claim_resource(id)?;
+        self.reserve_jail(id, 0)?;
         self.prepare_cgroup(id)?;
         if self.config.private_netns.is_some() {
             self.prepare_private_network(id, &claim)?;
@@ -433,6 +437,9 @@ impl Runtime {
                 start_time_ticks,
             };
             self.write_new_record(&claim.join("record.json"), &record)?;
+            // Directory authority must already be durable and still match
+            // before this same PID can exec the jailer/VMM.
+            self.require_launch_jail(id, 0)?;
             child
                 .stdin
                 .take()
@@ -455,6 +462,7 @@ impl Runtime {
     }
 
     fn stage_and_boot(&self, id: &str, pid: u32) -> Result<(), RuntimeError> {
+        self.require_launch_jail(id, 0)?;
         let socket = self.socket_path(id);
         let deadline = Instant::now() + START_TIMEOUT;
         while !socket.exists() {
@@ -505,6 +513,7 @@ impl Runtime {
         validate_id(id)?;
         let record = self.read_record(id)?;
         let state = if let Some(_pidfd) = verified_process(&record)? {
+            self.require_launch_jail(id, 0)?;
             self.verify_cgroup(id, Some(record.pid))?;
             match self.api(id, "GET", "/", None) {
                 Ok(body) => {
@@ -559,26 +568,18 @@ impl Runtime {
     /// # Errors
     /// Refuses to remove a live or unverified process's backing resources.
     pub fn cleanup(&self, id: &str) -> Result<(), RuntimeError> {
+        self.cleanup_for_owner(id, 0)
+    }
+
+    fn cleanup_for_owner(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
         validate_id(id)?;
         self.validate_network_id(id)?;
         let record = self.read_record(id)?;
         if verified_process(&record)?.is_some() {
             return Err(RuntimeError::InvalidConfiguration("cannot clean a live VM"));
         }
+        self.cleanup_jail(id, owner, false)?;
         self.cleanup_cgroup(id, false)?;
-        let jail = self
-            .config
-            .chroot_base
-            .join(self.firecracker_name())
-            .join(id);
-        match fs::symlink_metadata(&jail) {
-            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-                fs::remove_dir_all(&jail)?;
-            }
-            Ok(_) => return Err(RuntimeError::IdentityMismatch("jail directory type")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
         if self.config.private_netns.is_some() {
             self.cleanup_private_network(id)?;
         }
@@ -851,16 +852,7 @@ impl Runtime {
                 "launch has a process record; use exact process reconciliation",
             ));
         }
-        let jail = self
-            .config
-            .chroot_base
-            .join(self.firecracker_name())
-            .join(id);
-        if path_present(&jail)? {
-            return Err(RuntimeError::IdentityMismatch(
-                "unexpected jail without process record",
-            ));
-        }
+        self.cleanup_jail(id, 0, true)?;
         self.reclaim_unlaunched_network(id, &claim)?;
         self.cleanup_cgroup(id, true)?;
         let marker = claim.join("aborted.json");
@@ -1616,13 +1608,6 @@ mod tests {
             .mode(0o700)
             .create(&claim)
             .unwrap();
-        let jail = base.path().join("firecracker").join(&id);
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&jail)
-            .unwrap();
-        fs::write(jail.join("rootfs.ext4"), b"private disk").unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
                 console_policy: None,
@@ -1641,6 +1626,9 @@ mod tests {
                 access_token_hash: None,
             },
         };
+        runtime.reserve_jail(&id, 0).unwrap();
+        let jail = base.path().join("firecracker").join(&id);
+        fs::write(jail.join("root/rootfs.ext4"), b"private disk").unwrap();
         write_new_record(
             &claim.join("network-intent.json"),
             &ResourceMarker {
