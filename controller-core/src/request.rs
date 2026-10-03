@@ -28,6 +28,8 @@ pub enum Reject {
     LedgerMismatch,
     FailureUnjustified,
     CounterExhausted,
+    RetiredIdentity,
+    ResultExpired,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -152,6 +154,39 @@ impl From<CompensationRequest> for Request {
     }
 }
 
+fn retained_or_current_operation<'a>(
+    world: &'a World,
+    actor: &Actor,
+    sandbox: SandboxId,
+    operation: OperationId,
+) -> Result<&'a crate::OperationLedgerRecord, Reject> {
+    let key = operation_key(sandbox, operation);
+    if let Some(record) = world.sandboxes.get(&sandbox) {
+        if !authorized(actor, record.owner) {
+            return Err(Reject::Unauthorized);
+        }
+        return world
+            .operations
+            .get(&key)
+            .ok_or(Reject::OperationUnavailable);
+    }
+    if let Some(state) = world.maintenance_state() {
+        if let Some(retained) = state.retained_result(key) {
+            if !authorized(actor, retained.owner) {
+                return Err(Reject::Unauthorized);
+            }
+            if retained.expires_at <= state.time_floor() {
+                return Err(Reject::ResultExpired);
+            }
+            return Ok(&retained.ledger);
+        }
+        if state.sandbox_frontier.is_some_and(|last| sandbox.0 <= last) {
+            return Err(Reject::ResultExpired);
+        }
+    }
+    Err(Reject::SandboxNotFound)
+}
+
 /// Rust implementation of Lean's `Controller.handleCreate`.
 ///
 /// Check order is part of the observable contract: malformed requests receive
@@ -159,8 +194,9 @@ impl From<CompensationRequest> for Request {
 ///
 /// # Errors
 ///
-/// Returns the first `Reject` produced by the same ordered checks as the Lean
-/// reducer.  Rejection never mutates `world`.
+/// Preserves the historical ordered checks, then applies the explicitly enabled
+/// maintenance identity frontier. Rejection never mutates `world`; the new
+/// frontier is not covered by the historical Lean correspondence.
 pub fn handle_create(world: &World, input: CreateRequest) -> Result<Decision, Reject> {
     let CreateRequest {
         actor,
@@ -189,6 +225,10 @@ pub fn handle_create(world: &World, input: CreateRequest) -> Result<Decision, Re
     }
     if !authorized(&actor, owner) {
         return Err(Reject::Unauthorized);
+    }
+
+    if !crate::maintenance::fresh_identity(world, sandbox, workspace) {
+        return Err(Reject::RetiredIdentity);
     }
 
     Ok(Decision {
@@ -395,7 +435,8 @@ pub fn handle_kill(world: &World, input: KillRequest) -> Result<Decision, Reject
 ///
 /// # Errors
 ///
-/// Returns the first rejection from Lean's ordered replay checks.
+/// Preserves authorization and exact-input checks, including retained results
+/// after enabled retirement. Retention is outside the historical proof coverage.
 pub fn handle_replay(world: &World, input: ReplayRequest) -> Result<Decision, Reject> {
     let ReplayRequest {
         actor,
@@ -404,16 +445,7 @@ pub fn handle_replay(world: &World, input: ReplayRequest) -> Result<Decision, Re
         kind,
         input,
     } = input;
-    let Some(record) = world.sandboxes.get(&sandbox) else {
-        return Err(Reject::SandboxNotFound);
-    };
-    if !authorized(&actor, record.owner) {
-        return Err(Reject::Unauthorized);
-    }
-    let key = operation_key(sandbox, operation);
-    let Some(ledger) = world.operations.get(&key) else {
-        return Err(Reject::OperationUnavailable);
-    };
+    let ledger = retained_or_current_operation(world, &actor, sandbox, operation)?;
     if ledger.operation.kind != kind {
         return Err(Reject::LedgerMismatch);
     }
@@ -438,23 +470,15 @@ pub fn handle_replay(world: &World, input: ReplayRequest) -> Result<Decision, Re
 ///
 /// # Errors
 ///
-/// Returns the first rejection from Lean's ordered query checks.
+/// Preserves authorization for current and retained results; expired identities
+/// return an explicit refusal. Retention is outside historical proof coverage.
 pub fn handle_query(world: &World, input: QueryRequest) -> Result<Decision, Reject> {
     let QueryRequest {
         actor,
         sandbox,
         operation,
     } = input;
-    let Some(record) = world.sandboxes.get(&sandbox) else {
-        return Err(Reject::SandboxNotFound);
-    };
-    if !authorized(&actor, record.owner) {
-        return Err(Reject::Unauthorized);
-    }
-    let key = operation_key(sandbox, operation);
-    let Some(ledger) = world.operations.get(&key) else {
-        return Err(Reject::OperationUnavailable);
-    };
+    let ledger = retained_or_current_operation(world, &actor, sandbox, operation)?;
 
     Ok(Decision {
         event: Event::QueryOperation {

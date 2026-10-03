@@ -4,6 +4,14 @@ Uses the pinned SDK, creates/kills only its own sandbox, and never targets E2B
 cloud by default. Requires the same service setup as sdk_server_smoke.py.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import hashlib
 import importlib.metadata
@@ -222,7 +230,8 @@ def exercise(args):
         if args.file_upload_bytes is not None:
             report["upload_boundaries"] = upload_boundary(sandbox, directory, args.file_upload_bytes)
     finally:
-        assert Sandbox.kill(sandbox.sandbox_id, **owner), "test sandbox destruction was not confirmed"
+        _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **owner))
+        assert _kill_confirmed, "test sandbox destruction was not confirmed"
     report["scope"] = "real gateway/SDK stream checks; host residual audit and full S11/S12 remain separate"
     print(json.dumps(report, indent=2))
 

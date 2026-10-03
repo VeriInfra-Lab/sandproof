@@ -10,14 +10,14 @@ use std::{
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::template_registry::{
-    CandidateStore, PublicationFailure, PublicationView, TemplatePage, TemplateView, valid_alias,
-    valid_candidate_id,
+    CandidateStore, CandidateVerification, PublicationFailure, PublicationView, TemplatePage,
+    TemplateView, valid_alias, valid_candidate_id,
 };
 use sandproof_controller_service::templates::{TemplateBinding, TemplateCatalog, TemplateError};
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
-    HostEvidence, JournalError, NeverCrash, WorkerTransportError, finish_accepted_kill_v1,
-    finish_admitted_create_v1_timed, finish_compensating_create_v1,
+    HostEvidence, HostSlotContext, JournalError, NeverCrash, WorkerTransportError,
+    finish_accepted_kill_v1, finish_admitted_create_v1_timed, finish_compensating_create_v1,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
@@ -29,18 +29,103 @@ use crate::{
     SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
 };
 
+mod data_drain;
+mod maintenance;
+mod physical_storage;
+mod relay_child;
+pub use data_drain::DataLease;
+pub use maintenance::MaintenanceReport;
+pub use relay_child::TrackedRelayChild;
+
 pub trait HostAdapter: Send + 'static {
     type Evidence: HostEvidence + Serialize + DeserializeOwned + PartialEq + Send;
+
+    /// Persist or validate the exact controller-committed physical position.
+    /// A missing/prior binding may be installed only before any host dispatch.
+    /// # Errors
+    /// Unsupported bounded mode or ambiguous identity must fail closed.
+    fn bind_host_slot(
+        &mut self,
+        _context: &HostSlotContext,
+        _allow_install: bool,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Complete the durable exact release and prove physical absence. Called
+    /// only after the controller committed Releasing and local routes drained.
+    /// # Errors
+    /// Unknown cleanup or stale identity keeps the physical position unavailable.
+    fn release_host_slot(&mut self, _context: &HostSlotContext) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    /// Acquire a shared durable host-helper gate before a data relay can be
+    /// spawned. The descriptor must retain its lock across explicit child FD
+    /// inheritance; dropping it must never issue an explicit unlock.
+    /// # Errors
+    /// A changed binding or unavailable gate refuses the route.
+    fn acquire_data_gate(
+        &self,
+        _sandbox: core::SandboxId,
+        _vm: core::VmId,
+        _generation: core::Generation,
+    ) -> Result<Option<std::fs::File>, PortError> {
+        Ok(None)
+    }
+
+    /// Reserve a bounded durable route cell and record the exact child process
+    /// before releasing its start gate. The program is selected by the trusted
+    /// adapter, never by the HTTP caller.
+    /// # Errors
+    /// Capacity or uncertain child identity refuses the new relay.
+    fn spawn_data_relay(
+        &mut self,
+        _sandbox: core::SandboxId,
+        _vm: core::VmId,
+        _generation: core::Generation,
+        _control: bool,
+    ) -> Result<Option<std::process::Child>, PortError> {
+        Ok(None)
+    }
+
+    /// Resolve an earlier unknown relay exit after every local pin has dropped.
+    /// # Errors
+    /// Refuses changed identity; false leaves the position unavailable.
+    fn data_gate_drained(&self, _context: &HostSlotContext) -> Result<bool, PortError> {
+        Ok(false)
+    }
 
     /// # Errors
     /// Rejects an unavailable physical disk observation.
     fn available_disk_bytes(&self) -> Result<u64, PortError>;
+
+    /// Validate the immutable deployment-wide activation lease and current
+    /// inode capacity. A local free-space observation alone is insufficient.
+    /// # Errors
+    /// Adapters without a validated shared profile must refuse full mode.
+    fn validate_physical_storage(
+        &self,
+        _profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        _pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
 
     /// Validate trusted template artifacts before accepting any create intent.
     /// # Errors
     /// An adapter without multi-template support must reject, not use base.
     fn validate_template(&self, _template: &TemplateBinding) -> Result<(), PortError> {
         Err(PortError::Invalid)
+    }
+
+    /// Optionally reuse this process's registry hash checks after sealing.
+    /// This is only a cache hint; `validate_template` remains mandatory.
+    fn cache_candidate_verification(
+        &self,
+        _template: &TemplateBinding,
+        _verification: &CandidateVerification,
+    ) {
     }
 
     /// Persist the exact admitted template alongside the one-time launch credential.
@@ -255,8 +340,14 @@ pub struct DataTarget {
 /// signal. The signal can withdraw an existing route; it never grants access.
 #[derive(Debug)]
 pub struct DataPermit {
+    sandbox: core::SandboxId,
+    kind: DataKind,
     pub target: DataTarget,
     pub revocation: watch::Receiver<bool>,
+    /// Held through the response body and exact relay-process exit.
+    pub drain: DataLease,
+    /// Already-locked host gate acquired under the same authority check.
+    pub helper_gate: Option<std::fs::File>,
 }
 
 fn same_secret(left: &[u8], right: &[u8]) -> bool {
@@ -286,13 +377,16 @@ pub struct ManagedConfig {
 struct Inner<H: HostAdapter> {
     journal: ControllerJournal,
     host: H,
-    data_revocations: BTreeMap<u64, watch::Sender<bool>>,
+    data_revocations: BTreeMap<u64, Vec<watch::Sender<bool>>>,
+    data_drains: BTreeMap<u64, DataLease>,
 }
 
 impl<H: HostAdapter> Inner<H> {
     fn revoke_data(&mut self, sandbox: core::SandboxId) {
-        if let Some(signal) = self.data_revocations.remove(&sandbox.0) {
-            signal.send_replace(true);
+        if let Some(signals) = self.data_revocations.get(&sandbox.0) {
+            for signal in signals {
+                signal.send_replace(true);
+            }
         }
     }
 }
@@ -363,32 +457,19 @@ fn sandbox_id(journal: &ControllerJournal, external: &str) -> Result<core::Sandb
 }
 
 fn next_sandbox(journal: &ControllerJournal) -> Result<core::SandboxId, PortError> {
-    let world = journal.world().map_err(map_journal)?;
-    let largest = world
-        .sandbox_records()
-        .iter()
-        .map(|(id, _)| id.0)
-        .max()
-        .unwrap_or(0);
-    Ok(core::SandboxId(
-        largest.checked_add(1).ok_or(PortError::QuotaExceeded)?,
-    ))
+    journal.next_sandbox_id().map_err(map_journal)
 }
 
 fn next_operation(
-    world: &core::World,
+    journal: &ControllerJournal,
     sandbox: core::SandboxId,
 ) -> Result<core::OperationId, PortError> {
-    let largest = world
-        .operation_records()
-        .iter()
-        .filter(|(key, _)| key.sandbox == sandbox)
-        .map(|(key, _)| key.operation.0)
-        .max()
-        .unwrap_or(0);
-    Ok(core::OperationId(
-        largest.checked_add(1).ok_or(PortError::Conflict)?,
-    ))
+    journal
+        .next_operation_id(sandbox)
+        .map_err(|error| match error {
+            JournalError::IdentifierExhausted => PortError::Conflict,
+            other => map_journal(other),
+        })
 }
 
 fn map_journal(error: JournalError) -> PortError {
@@ -403,6 +484,7 @@ fn map_journal(error: JournalError) -> PortError {
             PortError::OutcomeUnknown
         }
         JournalError::OperationFailed => PortError::Failed,
+        JournalError::IdentifierExhausted => PortError::QuotaExceeded,
         _ => PortError::Busy,
     };
     drop(error);
@@ -615,10 +697,12 @@ fn blocked_launch_configs<H: HostAdapter>(
     host: &mut H,
     initial: &core::World,
     selected: Option<core::SandboxId>,
+    prior_blocked: &BTreeSet<core::SandboxId>,
 ) -> Result<BTreeSet<core::SandboxId>, PortError> {
     let mut blocked = BTreeSet::new();
     for (sandbox, record) in initial.sandbox_records() {
-        if selected.is_some_and(|id| id != *sandbox)
+        if prior_blocked.contains(sandbox)
+            || selected.is_some_and(|id| id != *sandbox)
             || record.phase != core::Phase::Starting
             || !matches!(record.current_operation, Some(operation)
                 if operation.kind == core::OperationKind::Create)
@@ -663,6 +747,112 @@ fn blocked_launch_configs<H: HostAdapter>(
     Ok(blocked)
 }
 
+fn bind_recovery_slots<H: HostAdapter>(
+    journal: &ControllerJournal,
+    host: &mut H,
+    world: &core::World,
+    selected: Option<core::SandboxId>,
+) -> Result<BTreeSet<core::SandboxId>, PortError> {
+    let mut blocked = BTreeSet::new();
+    for (context, phase) in journal.host_slot_inventory().map_err(map_journal)? {
+        if phase != core::maintenance::slots::HostSlotPhase::Occupied
+            || selected.is_some_and(|id| id != context.binding.sandbox)
+        {
+            continue;
+        }
+        let allow_install = world.effect_ids().iter().all(|effect| {
+            effect.command().sandbox() != context.binding.sandbox
+                || world.effect_status(effect) == Some(core::EffectStatus::Committed)
+        });
+        if host.bind_host_slot(&context, allow_install).is_err() {
+            blocked.insert(context.binding.sandbox);
+        }
+    }
+    Ok(blocked)
+}
+
+// ManagedPort's mutex keeps admission and host effects serialized throughout
+// durable release. Route pins drop without taking that mutex; never wait here.
+fn release_reclaimed_slots<H: HostAdapter>(inner: &mut Inner<H>) -> Result<usize, PortError> {
+    let mut pending = 0;
+    let world = inner.journal.world().map_err(map_journal)?;
+    let reclaimed = reclaimed_sandboxes(&world);
+    for (context, phase) in inner.journal.host_slot_inventory().map_err(map_journal)? {
+        let sandbox = context.binding.sandbox;
+        if phase == core::maintenance::slots::HostSlotPhase::Free {
+            continue;
+        }
+        if !reclaimed.contains(&sandbox) {
+            continue;
+        }
+        inner.revoke_data(sandbox);
+        let drained = inner
+            .data_revocations
+            .get(&sandbox.0)
+            .is_none_or(|signals| {
+                signals
+                    .iter()
+                    .all(|sender| *sender.borrow() && sender.receiver_count() == 0)
+            })
+            && inner
+                .data_drains
+                .get(&sandbox.0)
+                .is_none_or(DataLease::routes_dropped);
+        let known_exit = inner
+            .data_drains
+            .get(&sandbox.0)
+            .is_none_or(DataLease::drained)
+            || (drained && inner.host.data_gate_drained(&context).unwrap_or(false));
+        if !drained
+            || !known_exit
+            || inner
+                .journal
+                .host_slot_release_pinned(sandbox)
+                .map_err(map_journal)?
+        {
+            pending += 1;
+            continue;
+        }
+        let Inner { journal, host, .. } = inner;
+        match journal.release_host_slot(
+            context,
+            |context| {
+                host.release_host_slot(context)
+                    .map_err(|_| WorkerTransportError::ReplyLost)
+            },
+            &mut NeverCrash,
+        ) {
+            Ok(()) => {
+                inner.data_revocations.remove(&sandbox.0);
+                inner.data_drains.remove(&sandbox.0);
+            }
+            Err(error) if error.is_local_recovery_failure() => {
+                pending += 1;
+            }
+            Err(error) => return Err(map_journal(error)),
+        }
+    }
+    let drained: Vec<_> = inner
+        .data_revocations
+        .iter()
+        .filter_map(|(sandbox, signals)| {
+            (signals
+                .iter()
+                .all(|sender| *sender.borrow() && sender.receiver_count() == 0)
+                && inner
+                    .data_drains
+                    .get(sandbox)
+                    .is_none_or(DataLease::drained))
+            .then_some(*sandbox)
+        })
+        .collect();
+    for sandbox in drained {
+        inner.data_revocations.remove(&sandbox);
+        inner.data_drains.remove(&sandbox);
+    }
+    Ok(pending)
+}
+
 // Recovery is serialized by ManagedPort's mutex. The optional sandbox filter
 // lets a repeated kill observe and finish its *existing* operation without
 // changing unrelated instances. It never accepts a second lifecycle input.
@@ -684,7 +874,9 @@ fn recover_locked<H: HostAdapter>(
     // reclaimed history must not repeatedly replay the entire journal through
     // each completed workflow while holding the management/data admission lock.
     let reclaimed = reclaimed_sandboxes(&initial);
-    let mut blocked = blocked_launch_configs(journal, host, &initial, selected)?;
+    let mut blocked = bind_recovery_slots(journal, host, &initial, selected)?;
+    let launch_blocked = blocked_launch_configs(journal, host, &initial, selected, &blocked)?;
+    blocked.extend(launch_blocked);
     reclaim_uncertain_actions(journal, host, &initial, &mut blocked, selected)?;
     let recovery_world = journal.world().map_err(map_journal)?;
     let mut receipts_recovered = 0;
@@ -784,6 +976,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 journal,
                 host,
                 data_revocations: BTreeMap::new(),
+                data_drains: BTreeMap::new(),
             }),
             config,
             templates: None,
@@ -812,6 +1005,11 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// # Errors
     /// Rejects a changed registry root, missing catalog, or overlapping static names.
     pub fn with_registry(mut self, store: CandidateStore) -> Result<Self, PortError> {
+        physical_storage::validate_registry_configuration(
+            &self.inner.get_mut().map_err(|_| PortError::Busy)?.journal,
+            self.internal_build_vms,
+            store.config(),
+        )?;
         let catalog = self.templates.as_ref().ok_or(PortError::Invalid)?;
         if store.config().validation_timeout_secs > self.config.limits.max_timeout_secs
             || catalog
@@ -839,17 +1037,52 @@ impl<H: HostAdapter> ManagedPort<H> {
         self
     }
 
+    /// Enable finite retry anchors only after the bounded maintenance store is configured.
+    /// # Errors
+    /// Rejects public pools, missing maintenance, or changed persistent settings.
+    pub fn with_build_retry_windows(
+        mut self,
+        config: sandproof_controller_service::BuildRetryConfig,
+    ) -> Result<Self, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::Invalid);
+        }
+        physical_storage::validate_builder_configuration(
+            &self.inner.get_mut().map_err(|_| PortError::Busy)?.journal,
+        )?;
+        self.inner
+            .get_mut()
+            .map_err(|_| PortError::Busy)?
+            .journal
+            .enable_build_retry_windows(config)
+            .map_err(map_journal)?;
+        Ok(self)
+    }
+
     fn build_vm_locked(
         &self,
         inner: &Inner<H>,
         tenant: core::TenantId,
         id: &str,
+        window: Option<&str>,
         request: Option<&crate::BuildVmRequest>,
     ) -> Result<Option<crate::BuildVmView>, PortError> {
         let world = inner.journal.world().map_err(map_journal)?;
-        let reclaimed = reclaimed_sandboxes(&world);
+        let anchored = match window {
+            Some(window) => {
+                let Some(anchor) = inner
+                    .journal
+                    .build_anchor(tenant, window, id)
+                    .map_err(map_journal)?
+                else {
+                    return Ok(None);
+                };
+                Some(core::SandboxId(anchor.sandbox))
+            }
+            None => None,
+        };
         for (sandbox, record) in world.sandbox_records() {
-            if record.owner != tenant {
+            if record.owner != tenant || anchored.is_some_and(|anchor| anchor != *sandbox) {
                 continue;
             }
             let sandbox = *sandbox;
@@ -857,6 +1090,14 @@ impl<H: HostAdapter> ManagedPort<H> {
                 .journal
                 .create_options(sandbox)
                 .map_err(map_admission)?;
+            if options
+                .metadata
+                .get("_sandproof_build_window")
+                .map(String::as_str)
+                != window
+            {
+                continue;
+            }
             if options
                 .metadata
                 .get("_sandproof_build_id")
@@ -882,7 +1123,10 @@ impl<H: HostAdapter> ManagedPort<H> {
                     .as_str()
                     .into(),
                 state: format!("{:?}", record.phase),
-                cleanup_complete: reclaimed.contains(&sandbox),
+                cleanup_complete: core::maintenance::retirement::validate_terminal_cleanup(
+                    &world, sandbox,
+                )
+                .is_ok(),
                 session: if record.phase == core::Phase::Running {
                     self.session(inner, tenant, sandbox).ok()
                 } else {
@@ -935,11 +1179,12 @@ impl<H: HostAdapter> ManagedPort<H> {
     /// Shared storage, replay, and commit failures abort startup recovery.
     pub fn recover_on_startup(&self) -> Result<RecoveryReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        let report = recover_locked(&mut inner, None)?;
+        let mut report = recover_locked(&mut inner, None)?;
         inner
             .journal
             .reconcile_template_publications(true)
             .map_err(map_journal)?;
+        report.unresolved_sandboxes += release_reclaimed_slots(&mut inner)?;
         Ok(report)
     }
 
@@ -962,12 +1207,94 @@ impl<H: HostAdapter> ManagedPort<H> {
     pub fn data_permit(&self, supplied: &str, kind: DataKind) -> Result<DataPermit, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let (sandbox, target) = Self::data_target(&inner, supplied, kind)?;
-        let revocation = inner
-            .data_revocations
-            .entry(sandbox.0)
-            .or_insert_with(|| watch::channel(false).0)
-            .subscribe();
-        Ok(DataPermit { target, revocation })
+        let helper_gate = inner
+            .host
+            .acquire_data_gate(sandbox, target.vm, target.generation)?;
+        if inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .is_some()
+            && helper_gate.is_none()
+        {
+            return Err(PortError::Busy);
+        }
+        let signals = inner.data_revocations.entry(sandbox.0).or_default();
+        signals.retain(|sender| sender.receiver_count() != 0 || !*sender.borrow());
+        // An uncertain transaction may roll back authority. Fresh authorization
+        // gets a new gate; old revoked gates remain tracked until they drain.
+        if signals.last().is_none_or(|sender| *sender.borrow()) {
+            signals.push(watch::channel(false).0);
+        }
+        let revocation = signals.last().ok_or(PortError::Busy)?.subscribe();
+        let drain = inner.data_drains.entry(sandbox.0).or_default().clone();
+        Ok(DataPermit {
+            sandbox,
+            kind,
+            target,
+            revocation,
+            drain,
+            helper_gate,
+        })
+    }
+
+    /// Recheck authority at the exact durable relay-launch boundary. The
+    /// process remains gated until its host route-cell identity is committed.
+    /// # Errors
+    /// Revoked, expired or changed permits cannot spawn a relay.
+    pub fn spawn_data_relay(
+        &self,
+        permit: &DataPermit,
+        control: bool,
+    ) -> Result<Option<TrackedRelayChild>, PortError> {
+        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        if *permit.revocation.borrow() {
+            return Err(PortError::NotFound);
+        }
+        if inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let world = inner.journal.world().map_err(map_journal)?;
+        let record = world
+            .sandbox_record(permit.sandbox)
+            .ok_or(PortError::NotFound)?;
+        if record.current_vm != Some(permit.target.vm)
+            || record.generation != permit.target.generation
+        {
+            return Err(PortError::NotFound);
+        }
+        let actor = core::Actor::Tenant(record.owner);
+        inner
+            .journal
+            .live_lifetime(&actor, permit.sandbox, now_ms()?)
+            .map_err(map_admission)?;
+        let access = match permit.kind {
+            DataKind::Exec => core::AccessInput::Exec(actor, permit.sandbox, permit.target.vm),
+            DataKind::FileRead => {
+                core::AccessInput::FileRead(actor, permit.sandbox, permit.target.generation)
+            }
+            DataKind::FileWrite => {
+                core::AccessInput::FileWrite(actor, permit.sandbox, permit.target.generation)
+            }
+        };
+        core::handle_controller(&world, core::ControllerInput::Access(access))
+            .map_err(|_| PortError::NotFound)?;
+        let reaper = relay_child::RelayReaper::new()?;
+        inner
+            .host
+            .spawn_data_relay(
+                permit.sandbox,
+                permit.target.vm,
+                permit.target.generation,
+                control,
+            )?
+            .map(|child| Some(reaper.attach(child)))
+            .ok_or(PortError::Busy)
     }
 
     fn data_target(
@@ -1044,15 +1371,14 @@ impl<H: HostAdapter> ManagedPort<H> {
         let due = inner.journal.due_lifetimes(now).map_err(map_admission)?;
         let mut report = ExpiryReport::default();
         for sandbox in due {
-            let operation =
-                match next_operation(&inner.journal.world().map_err(map_journal)?, sandbox) {
-                    Ok(operation) => operation,
-                    Err(PortError::Conflict) => {
-                        report.unresolved_sandboxes += 1;
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                };
+            let operation = match next_operation(&inner.journal, sandbox) {
+                Ok(operation) => operation,
+                Err(PortError::Conflict) => {
+                    report.unresolved_sandboxes += 1;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             let accepted = inner
                 .journal
                 .accept_expiry(sandbox, operation, now, &mut NeverCrash);
@@ -1089,6 +1415,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             .journal
             .reconcile_template_publications(false)
             .map_err(map_journal)?;
+        release_reclaimed_slots(&mut inner)?;
         Ok(report)
     }
 
@@ -1229,7 +1556,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         if record.terminal {
             return Err(PortError::OutcomeUnknown);
         }
-        let operation = next_operation(&world, sandbox)?;
+        let operation = next_operation(&inner.journal, sandbox)?;
         let accepted = inner.journal.apply(
             core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
                 actor: core::Actor::Tenant(tenant),
@@ -1250,6 +1577,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             host.execute(action)
         })
         .map_err(|_| PortError::OutcomeUnknown)?;
+        release_reclaimed_slots(inner)?;
         Ok(())
     }
 
@@ -1274,10 +1602,9 @@ impl<H: HostAdapter> ManagedPort<H> {
         if policy != core::NetworkPolicy::DenyAll && !inner.host.public_ipv4_ready()? {
             return Err(PortError::Busy);
         }
+        release_reclaimed_slots(inner)?;
         let sandbox = next_sandbox(&inner.journal)?;
-        let physical_needed = disk_bytes
-            .checked_add(self.config.limits.cleanup_reserve_bytes)
-            .ok_or(PortError::QuotaExceeded)?;
+        let physical_needed = self.physical_admission_bytes(inner, options, disk_bytes)?;
         if inner.host.available_disk_bytes()? < physical_needed {
             return Err(PortError::QuotaExceeded);
         }
@@ -1324,6 +1651,16 @@ impl<H: HostAdapter> ManagedPort<H> {
                 .admit_create_with_options(create_request, admission, &mut NeverCrash)
         }
         .map_err(map_admission)?;
+        if let Some(context) = inner
+            .journal
+            .host_slot_context(sandbox)
+            .map_err(|_| PortError::OutcomeUnknown)?
+        {
+            inner
+                .host
+                .bind_host_slot(&context, true)
+                .map_err(|_| PortError::OutcomeUnknown)?;
+        }
         // Admission is durable. A later failure cannot be reported as a
         // refused request (503), which the SDK treats as safe to retry.
         let secret = token().map_err(|_| PortError::OutcomeUnknown)?;
@@ -1355,6 +1692,106 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         id: &str,
         create: Option<crate::BuildVmRequest>,
     ) -> Result<crate::BuildVmView, PortError> {
+        let window = create
+            .as_ref()
+            .and_then(|request| request.request_window.clone());
+        self.build_vm_in_window(tenant, id, window.as_deref(), create)
+    }
+    fn issue_build_window(
+        &self,
+        tenant: &str,
+    ) -> Result<sandproof_controller_service::BuildWindow, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::NotFound);
+        }
+        self.inner
+            .lock()
+            .map_err(|_| PortError::Busy)?
+            .journal
+            .issue_build_window(
+                tenant_id(tenant)?,
+                u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
+                &mut NeverCrash,
+            )
+            .map_err(map_journal)
+    }
+    fn close_build_window(
+        &self,
+        tenant: &str,
+        window: &str,
+    ) -> Result<crate::BuildWindowClosed, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::NotFound);
+        }
+        self.inner
+            .lock()
+            .map_err(|_| PortError::Busy)?
+            .journal
+            .close_build_window(
+                tenant_id(tenant)?,
+                window,
+                u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
+                &mut NeverCrash,
+            )
+            .map_err(map_journal)?;
+        Ok(crate::BuildWindowClosed {
+            request_window: window.into(),
+            closed: true,
+        })
+    }
+    fn settle_build_vm(
+        &self,
+        tenant: &str,
+        id: &str,
+        request: crate::BuildSettlementRequest,
+    ) -> Result<crate::BuildSettlementView, PortError> {
+        if !self.internal_build_vms || self.registry.is_some() {
+            return Err(PortError::NotFound);
+        }
+        if !valid_candidate_id(id) {
+            return Err(PortError::Invalid);
+        }
+        let owner = tenant_id(tenant)?;
+        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        let sandbox = request
+            .sandbox_id
+            .as_deref()
+            .map(|external| {
+                let raw = external.rsplit('-').next().ok_or(PortError::Invalid)?;
+                let number = raw.parse::<u64>().map_err(|_| PortError::Invalid)?;
+                let sandbox = core::SandboxId(number);
+                if number == 0
+                    || inner
+                        .journal
+                        .sandbox_id(sandbox)
+                        .map_err(map_journal)?
+                        .as_str()
+                        != external
+                {
+                    return Err(PortError::Invalid);
+                }
+                Ok(sandbox)
+            })
+            .transpose()?;
+        inner
+            .journal
+            .settle_build_anchor(owner, &request.request_window, id, sandbox, &mut NeverCrash)
+            .map_err(map_journal)?;
+        // Pin deletion is durable before trying physical release. A lost release
+        // acknowledgement keeps its own Releasing state and is retried normally.
+        release_reclaimed_slots(&mut inner)?;
+        Ok(crate::BuildSettlementView {
+            request_window: request.request_window,
+            settled: true,
+        })
+    }
+    fn build_vm_in_window(
+        &self,
+        tenant: &str,
+        id: &str,
+        window: Option<&str>,
+        create: Option<crate::BuildVmRequest>,
+    ) -> Result<crate::BuildVmView, PortError> {
         if !self.internal_build_vms || self.registry.is_some() {
             return Err(PortError::NotFound);
         }
@@ -1363,14 +1800,36 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         }
         let tenant = tenant_id(tenant)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        if let Some(value) = self.build_vm_locked(&inner, tenant, id, create.as_ref())? {
+        if let Some(value) = self.build_vm_locked(&inner, tenant, id, window, create.as_ref())? {
             return Ok(value);
         }
         let request = create.ok_or(PortError::NotFound)?;
+        if request.request_window.as_deref() != window {
+            return Err(PortError::Invalid);
+        }
+        if inner
+            .journal
+            .build_retry_config()
+            .map_err(map_journal)?
+            .is_some()
+        {
+            if window.is_none() {
+                return Err(PortError::Conflict);
+            }
+            inner
+                .journal
+                .advance_build_windows(
+                    u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
+                    &mut NeverCrash,
+                )
+                .map_err(map_journal)?;
+        } else if window.is_some() {
+            return Err(PortError::Conflict);
+        }
         if request.allow_internet_access && !self.config.public_ipv4_enabled {
             return Err(PortError::Invalid);
         }
-        let options = CreateOptions {
+        let mut options = CreateOptions {
             metadata: BTreeMap::from([
                 ("_sandproof_build_id".into(), id.into()),
                 (
@@ -1381,6 +1840,11 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             template: self.resolve_template(&inner, tenant, "base")?,
             ..CreateOptions::default()
         };
+        if let Some(window) = window {
+            options
+                .metadata
+                .insert("_sandproof_build_window".into(), window.into());
+        }
         let policy = if request.allow_internet_access {
             core::NetworkPolicy::Ipv4 {
                 internet_access: true,
@@ -1394,7 +1858,7 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             self.create_locked(&mut inner, tenant, &options, policy, request.timeout, None);
         // Even when the launch/response is lost, admission already contains the
         // anchor. Subsequent requests find that identity, including tombstones.
-        if let Some(value) = self.build_vm_locked(&inner, tenant, id, None)? {
+        if let Some(value) = self.build_vm_locked(&inner, tenant, id, window, None)? {
             return Ok(value);
         }
         result?;
@@ -1423,9 +1887,10 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                     .map_err(map_journal)?,
             ));
         }
+        self.validate_publication_admission(&inner)?;
         // Paths and ownership come from protected staging, never request JSON.
-        let value = store
-            .candidate(owner.0, candidate)
+        let (value, verification) = store
+            .verified_candidate(owner.0, candidate)
             .map_err(|_| PortError::NotFound)?;
         if !inner
             .journal
@@ -1440,6 +1905,9 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
                 .reject_template_publication(owner.0, candidate, PublicationFailure::ArtifactCheck)
                 .map_err(map_journal)?;
         } else {
+            inner
+                .host
+                .cache_candidate_verification(&value.binding, &verification);
             let result = self.create_locked(
                 &mut inner,
                 owner,

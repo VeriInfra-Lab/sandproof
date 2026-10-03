@@ -4,6 +4,14 @@ Use an isolated Linux/KVM service with two test tenants and at least three
 concurrent VMs. Host-side identity and residual auditing is required separately.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 from pathlib import Path
@@ -134,7 +142,8 @@ async def exercise_client(cls, args):
         # Delete the cursor anchor, then insert a newer VM. The continuation
         # remains strictly after the old key, so it neither repeats nor skips
         # the surviving older instance.
-        assert await call(second.kill)
+        _kill_confirmed = (await call(second.kill))
+        assert _kill_confirmed
         replacement = await create(owner, 'green')
         assert ids(await call(paginator.next_items)) == [first.sandbox_id]
         assert not paginator.has_next

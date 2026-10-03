@@ -6,6 +6,14 @@ durable startup deadline, restart the controller and interrupt its terminal
 stop/cleanup once more. No production pause/resume API is introduced.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import hashlib
 import json

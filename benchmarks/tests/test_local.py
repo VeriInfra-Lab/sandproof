@@ -1,5 +1,6 @@
 """Local-runner rejection and cleanup regressions; no task or VM execution."""
 import asyncio
+from benchmarks.artifact_budget import ArtifactBudget, DEFAULT_ARTIFACT_LIMITS
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -80,6 +81,7 @@ class LocalRunnerTests(unittest.TestCase):
 
     def test_failed_kill_keeps_sandbox_identity(self):
         env = object.__new__(LocalBaseEnvironment)
+        env.artifact_budget = ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
         env._sandbox = SimpleNamespace(kill=AsyncMock(side_effect=RuntimeError('unknown')))
         original = env._sandbox
         with self.assertRaises(RuntimeError):
@@ -89,6 +91,7 @@ class LocalRunnerTests(unittest.TestCase):
 
     def test_negative_kill_is_not_success(self):
         env = object.__new__(LocalBaseEnvironment)
+        env.artifact_budget = ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
         env._sandbox = SimpleNamespace(kill=AsyncMock(return_value=False))
         with self.assertRaises(RuntimeError):
             asyncio.run(env.stop())
@@ -98,6 +101,7 @@ class LocalRunnerTests(unittest.TestCase):
     def test_guest_download_cannot_escape_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = object.__new__(LocalBaseEnvironment)
+            env.artifact_budget = ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
             env.trial_paths = SimpleNamespace(trial_dir=Path(tmp) / 'trial')
             env.trial_paths.trial_dir.mkdir()
             env._sandbox = SimpleNamespace(files=SimpleNamespace(read=AsyncMock()))
@@ -107,13 +111,19 @@ class LocalRunnerTests(unittest.TestCase):
 
     def test_guest_listing_cannot_inject_host_path(self):
         from e2b import FileType
-        env = object.__new__(LocalBaseEnvironment)
-        env._sandbox = SimpleNamespace(files=SimpleNamespace(list=AsyncMock(
-            return_value=[SimpleNamespace(path='/logs/verifier/../../etc/passwd', type=FileType.FILE)])))
-        env.download_file = AsyncMock()
-        with self.assertRaises(InvalidInput):
-            asyncio.run(env.download_dir('/logs/verifier', '/tmp/output'))
-        env.download_file.assert_not_awaited()
+        with tempfile.TemporaryDirectory() as tmp:
+            env = object.__new__(LocalBaseEnvironment)
+            env.artifact_budget = ArtifactBudget(DEFAULT_ARTIFACT_LIMITS)
+            env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
+            env._sandbox = SimpleNamespace(files=SimpleNamespace(
+                get_info=AsyncMock(return_value=SimpleNamespace(type=FileType.DIR)),
+                list=AsyncMock(return_value=[SimpleNamespace(
+                    path='/logs/verifier/../../etc/passwd', type=FileType.FILE)])))
+            env.download_file = AsyncMock()
+            with self.assertRaises(InvalidInput):
+                asyncio.run(env.download_dir('/logs/verifier', tmp))
+            env._sandbox.files.list.assert_awaited_once()
+            env.download_file.assert_not_awaited()
 
 
 if __name__ == '__main__':

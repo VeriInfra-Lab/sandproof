@@ -4,6 +4,14 @@ Root-only isolated KVM probe. The operator supplies an exclusive namespace,
 UID range, delegated cgroup, fixed tools and public IPv4 forwarding. This is
 not the public build API. No image layers are unpacked on the host.
 """
+
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 import argparse
 import gzip
 import importlib.metadata
@@ -179,7 +187,8 @@ def exercise(args):
                     assert not incoming.read(1)
                 assert sha256_file(disk) == status["rootfs_sha256"]
                 disk.chmod(0o444)
-            assert Sandbox.kill(builder.sandbox_id, **owner)
+            _kill_confirmed = (Sandbox.kill(builder.sandbox_id, **owner))
+            assert _kill_confirmed
             active.remove(builder.sandbox_id)
             no_resources()
             if name not in ("missing-digest", "download-limit"):
@@ -199,7 +208,8 @@ def exercise(args):
                 sandbox.files.write("/tmp/public-import", name)
                 assert sandbox.files.read("/tmp/public-import") == name
                 assert checked(sandbox, "cat /tmp/public-import").strip() == name
-                assert Sandbox.kill(sandbox.sandbox_id, **owner)
+                _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **owner))
+                assert _kill_confirmed
                 active.remove(sandbox.sandbox_id)
                 no_resources()
                 record.update(publication="ready", sdk_file_command="passed", release=release)

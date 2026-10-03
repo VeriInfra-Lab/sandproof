@@ -50,6 +50,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     let config = RuntimeConfig {
+        console_policy: None,
+        host_slot: None,
         jailer: PathBuf::from(&args[3]),
         firecracker: PathBuf::from(&args[4]),
         chroot_base: PathBuf::from(&args[5]),

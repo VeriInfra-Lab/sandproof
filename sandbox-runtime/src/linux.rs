@@ -6,7 +6,7 @@ use serde_json::json;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -18,7 +18,28 @@ use std::time::{Duration, Instant};
 
 #[path = "cgroup.rs"]
 mod cgroup;
+#[path = "child_process.rs"]
+mod child_process;
+#[path = "helper_gate.rs"]
+pub(crate) mod helper_gate;
+#[path = "jail.rs"]
+mod jail;
+#[path = "retirement.rs"]
+mod retirement;
+#[path = "staging.rs"]
+mod staging;
 pub use cgroup::HostResources;
+pub use helper_gate::MAX_HELPER_MARKER_BYTES;
+pub use helper_gate::{
+    RuntimeHelperGate, RuntimeHelperGuard, RuntimeProcessIdentity, RuntimeRouteSnapshot,
+    RuntimeRouteState,
+};
+pub use jail::JailObservation;
+pub use retirement::RetirementManifest;
+pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
+
+#[cfg(test)]
+static PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const API_SOCKET: &str = "api.socket";
 const START_TIMEOUT: Duration = Duration::from_secs(10);
@@ -92,8 +113,48 @@ impl From<serde_json::Error> for RuntimeError {
     }
 }
 
-#[derive(Clone, Debug)]
+/// A reusable physical position bound to one never-reused VM identity.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeHostSlot {
+    pub position: u64,
+    /// Globally allocated IPv4 /30 index (deployment base plus position).
+    pub uplink_index: u64,
+    pub vm: u64,
+    pub helper_gate: RuntimeHelperGate,
+}
+
+fn console_output(
+    claim: &Path,
+    policy: Option<ConsolePolicy>,
+) -> Result<(Stdio, Stdio), RuntimeError> {
+    if policy == Some(ConsolePolicy::Discard) {
+        return Ok((Stdio::null(), Stdio::null()));
+    }
+    let output = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(claim.join("console.log"))?;
+    let stderr = output.try_clone()?;
+    Ok((Stdio::from(output), Stdio::from(stderr)))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsolePolicy {
+    Discard,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    /// Explicit discard is required by the full bounded deployment policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_policy: Option<ConsolePolicy>,
+    /// Explicit bounded physical position; absent preserves legacy identity mapping.
+    #[serde(default)]
+    pub host_slot: Option<RuntimeHostSlot>,
     pub jailer: PathBuf,
     pub firecracker: PathBuf,
     pub chroot_base: PathBuf,
@@ -134,7 +195,7 @@ pub struct Observation {
     pub state: VmState,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProcessRecord {
     resource_id: String,
@@ -147,6 +208,8 @@ struct ProcessRecord {
 struct NetworkRecord {
     resource_id: String,
     namespace_inode: u64,
+    #[serde(default)]
+    namespace_device: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -180,6 +243,15 @@ impl Runtime {
             ));
         }
         check_kvm(Path::new("/dev/kvm"))?;
+        if config
+            .host_slot
+            .as_ref()
+            .is_some_and(|slot| slot.position > 1_048_575 || slot.uplink_index > 1_048_575)
+        {
+            return Err(RuntimeError::InvalidConfiguration(
+                "physical host slot exceeds IPv4 pool",
+            ));
+        }
         if config.vm_uid == 0
             || config.vm_gid == 0
             || config.vcpu_count == 0
@@ -266,6 +338,7 @@ impl Runtime {
         // otherwise leaves a live VM whose API cannot be observed or booted.
         validate_socket_path(&self.socket_path(id))?;
         let claim = self.claim_resource(id)?;
+        self.reserve_jail(id, 0)?;
         self.prepare_cgroup(id)?;
         if self.config.private_netns.is_some() {
             self.prepare_private_network(id, &claim)?;
@@ -316,12 +389,7 @@ impl Runtime {
     }
 
     fn spawn_jailer(&self, id: &str, claim: &Path) -> Result<ProcessRecord, RuntimeError> {
-        let output = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(claim.join("console.log"))?;
-        let stderr = output.try_clone()?;
+        let (output, stderr) = console_output(claim, self.config.console_policy)?;
         // The shell cannot exec jailer until the exact process identity has
         // been durably recorded. If this process dies before releasing stdin,
         // the gate sees EOF and exits without ever starting Firecracker.
@@ -355,8 +423,8 @@ impl Runtime {
             .arg("--api-sock")
             .arg(format!("/{API_SOCKET}"))
             .stdin(Stdio::piped())
-            .stdout(Stdio::from(output))
-            .stderr(Stdio::from(stderr))
+            .stdout(output)
+            .stderr(stderr)
             .spawn()?;
         let result = (|| {
             let pid = child.id();
@@ -368,12 +436,10 @@ impl Runtime {
                 pid,
                 start_time_ticks,
             };
-            let mut file = tempfile::NamedTempFile::new_in(claim)?;
-            serde_json::to_writer(&mut file, &record)?;
-            file.as_file_mut().sync_all()?;
-            file.persist_noclobber(claim.join("record.json"))
-                .map_err(|error| RuntimeError::Io(error.error))?;
-            File::open(claim)?.sync_all()?;
+            self.write_new_record(&claim.join("record.json"), &record)?;
+            // Directory authority must already be durable and still match
+            // before this same PID can exec the jailer/VMM.
+            self.require_launch_jail(id, 0)?;
             child
                 .stdin
                 .take()
@@ -396,6 +462,7 @@ impl Runtime {
     }
 
     fn stage_and_boot(&self, id: &str, pid: u32) -> Result<(), RuntimeError> {
+        self.require_launch_jail(id, 0)?;
         let socket = self.socket_path(id);
         let deadline = Instant::now() + START_TIMEOUT;
         while !socket.exists() {
@@ -446,6 +513,7 @@ impl Runtime {
         validate_id(id)?;
         let record = self.read_record(id)?;
         let state = if let Some(_pidfd) = verified_process(&record)? {
+            self.require_launch_jail(id, 0)?;
             self.verify_cgroup(id, Some(record.pid))?;
             match self.api(id, "GET", "/", None) {
                 Ok(body) => {
@@ -500,26 +568,21 @@ impl Runtime {
     /// # Errors
     /// Refuses to remove a live or unverified process's backing resources.
     pub fn cleanup(&self, id: &str) -> Result<(), RuntimeError> {
+        self.cleanup_for_owner(id, 0)
+    }
+
+    fn cleanup_for_owner(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
         validate_id(id)?;
         self.validate_network_id(id)?;
         let record = self.read_record(id)?;
         if verified_process(&record)?.is_some() {
             return Err(RuntimeError::InvalidConfiguration("cannot clean a live VM"));
         }
+        // A foreign jail must not authorize other cleanup, and the original
+        // group must be verified empty before deleting any backing disk.
+        self.observe_cleanup_jail(id, owner)?;
         self.cleanup_cgroup(id, false)?;
-        let jail = self
-            .config
-            .chroot_base
-            .join(self.firecracker_name())
-            .join(id);
-        match fs::symlink_metadata(&jail) {
-            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
-                fs::remove_dir_all(&jail)?;
-            }
-            Ok(_) => return Err(RuntimeError::IdentityMismatch("jail directory type")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
+        self.cleanup_jail(id, owner, false)?;
         if self.config.private_netns.is_some() {
             self.cleanup_private_network(id)?;
         }
@@ -542,13 +605,13 @@ impl Runtime {
         // This durable intent precedes the first host-side network effect.
         // A crash after `netns add` can then be tied to this never-reused
         // claim, even if the inode record was not yet committed.
-        write_new_record(
+        self.write_new_record(
             &claim.join("network-intent.json"),
             &ResourceMarker {
                 resource_id: id.to_owned(),
             },
         )?;
-        run_ip("create namespace", &["netns", "add", id])?;
+        self.run_ip("create namespace", &["netns", "add", id])?;
         check_trusted_path(namespace)?;
         let metadata = fs::symlink_metadata(namespace)?;
         if !metadata.is_file() {
@@ -559,8 +622,9 @@ impl Runtime {
         let network = NetworkRecord {
             resource_id: id.to_owned(),
             namespace_inode: metadata.ino(),
+            namespace_device: Some(metadata.dev()),
         };
-        write_new_record(&claim.join("network.json"), &network)?;
+        self.write_new_record(&claim.join("network.json"), &network)?;
 
         // Install an atomic, default-deny guard before creating the TAP or
         // starting the VM. Host-initiated envd replies remain established;
@@ -568,11 +632,11 @@ impl Runtime {
         let guest_guard = crate::egress::EgressPolicy::DenyAll
             .guest_guard_script(&[])
             .expect("fixed deny policy must render");
-        run_nft_in_namespace(id, "install guest guard", &["-f", "-"], Some(&guest_guard))?;
+        self.run_nft_in_namespace(id, "install guest guard", &["-f", "-"], Some(&guest_guard))?;
 
         // The same private IPv4 range is safe because each VM has its own
         // network namespace. No default route or external bridge is added.
-        run_ip(
+        self.run_ip(
             "create TAP",
             &[
                 "netns",
@@ -587,7 +651,7 @@ impl Runtime {
                 "tap",
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "assign host address",
             &[
                 "netns",
@@ -601,7 +665,7 @@ impl Runtime {
                 "tap0",
             ],
         )?;
-        run_ip(
+        self.run_ip(
             "raise TAP",
             &[
                 "netns",
@@ -642,18 +706,26 @@ impl Runtime {
             }
             Err(error) => return Err(error.into()),
         };
-        if !metadata.is_file() || metadata.uid() != 0 || metadata.ino() != network.namespace_inode {
+        if !metadata.is_file()
+            || metadata.uid() != 0
+            || metadata.ino() != network.namespace_inode
+            || network
+                .namespace_device
+                .is_some_and(|device| metadata.dev() != device)
+        {
             return Err(RuntimeError::IdentityMismatch("network namespace handle"));
         }
-        let pids = Command::new("/usr/bin/ip")
-            .args(["netns", "pids", id])
-            .output()?;
-        if !pids.status.success() || !pids.stdout.is_empty() {
+        let pids = self.read_host_helper(
+            "list namespace processes",
+            "/usr/bin/ip",
+            &["netns", "pids", id],
+        )?;
+        if !pids.is_empty() {
             return Err(RuntimeError::InvalidConfiguration(
                 "namespace still contains a process or cannot be checked",
             ));
         }
-        run_ip("delete namespace", &["netns", "delete", id])?;
+        self.run_ip("delete namespace", &["netns", "delete", id])?;
         self.cleanup_uplink_after_namespace(id)
     }
 
@@ -685,10 +757,13 @@ impl Runtime {
             || record.resource_id != id
             || record.namespace_inode == 0
             || record.namespace_inode != metadata.ino()
+            || record
+                .namespace_device
+                .is_some_and(|device| metadata.dev() != device)
         {
             return Err(RuntimeError::IdentityMismatch("private network record"));
         }
-        let output = run_nft_in_namespace(
+        let output = self.run_nft_in_namespace(
             id,
             "observe guest guard",
             &[
@@ -780,16 +855,7 @@ impl Runtime {
                 "launch has a process record; use exact process reconciliation",
             ));
         }
-        let jail = self
-            .config
-            .chroot_base
-            .join(self.firecracker_name())
-            .join(id);
-        if path_present(&jail)? {
-            return Err(RuntimeError::IdentityMismatch(
-                "unexpected jail without process record",
-            ));
-        }
+        self.cleanup_jail(id, 0, true)?;
         self.reclaim_unlaunched_network(id, &claim)?;
         self.cleanup_cgroup(id, true)?;
         let marker = claim.join("aborted.json");
@@ -799,7 +865,7 @@ impl Runtime {
                 return Err(RuntimeError::IdentityMismatch("abort marker resource ID"));
             }
         } else {
-            write_new_record(
+            self.write_new_record(
                 &marker,
                 &ResourceMarker {
                     resource_id: id.to_owned(),
@@ -840,19 +906,37 @@ impl Runtime {
         let record_path = claim.join("network.json");
         if path_present(&record_path)? {
             let record: NetworkRecord = read_trusted_record(&record_path)?;
-            if record.resource_id != id || record.namespace_inode != metadata.ino() {
+            if record.resource_id != id
+                || record.namespace_inode != metadata.ino()
+                || record
+                    .namespace_device
+                    .is_some_and(|device| device != metadata.dev())
+            {
                 return Err(RuntimeError::IdentityMismatch("namespace inode record"));
             }
+        } else {
+            // Preserve the namespace identity before unlinking its only named
+            // handle, including the crash-before-original-inode-record case.
+            self.write_new_record(
+                &record_path,
+                &NetworkRecord {
+                    resource_id: id.to_owned(),
+                    namespace_inode: metadata.ino(),
+                    namespace_device: Some(metadata.dev()),
+                },
+            )?;
         }
-        let pids = Command::new("/usr/bin/ip")
-            .args(["netns", "pids", id])
-            .output()?;
-        if !pids.status.success() || !pids.stdout.is_empty() {
+        let pids = self.read_host_helper(
+            "list namespace processes",
+            "/usr/bin/ip",
+            &["netns", "pids", id],
+        )?;
+        if !pids.is_empty() {
             return Err(RuntimeError::InvalidConfiguration(
                 "namespace still contains a process or cannot be checked",
             ));
         }
-        run_ip("delete aborted namespace", &["netns", "delete", id])?;
+        self.run_ip("delete aborted namespace", &["netns", "delete", id])?;
         self.cleanup_uplink_after_namespace(id)
     }
 
@@ -926,7 +1010,7 @@ impl Runtime {
                 return Err(RuntimeError::IdentityMismatch("failed prepare identity"));
             }
         } else {
-            write_new_record(&marker, &record)?;
+            self.write_new_record(&marker, &record)?;
         }
         Ok(())
     }
@@ -973,6 +1057,10 @@ impl Runtime {
     }
 
     pub(crate) fn validate_network_id(&self, id: &str) -> Result<(), RuntimeError> {
+        validate_id(id)?;
+        if self.config.host_slot.is_some() {
+            self.uplink_plan(id)?;
+        }
         if let Some(namespace) = &self.config.private_netns {
             validate_namespace_id(namespace, id)?;
         }
@@ -1004,6 +1092,7 @@ impl Runtime {
     }
 
     fn read_record(&self, id: &str) -> Result<ProcessRecord, RuntimeError> {
+        self.validate_network_id(id)?;
         let path = self
             .config
             .chroot_base
@@ -1017,6 +1106,7 @@ impl Runtime {
                 RuntimeError::Io(error)
             }
         })?;
+        File::open(self.config.chroot_base.join(".claims").join(id))?.sync_all()?;
         let record: ProcessRecord = serde_json::from_reader(file)?;
         if record.resource_id != id || record.pid == 0 || record.start_time_ticks == 0 {
             return Err(RuntimeError::IdentityMismatch("record fields"));
@@ -1187,10 +1277,72 @@ fn check_kvm(path: &Path) -> Result<(), RuntimeError> {
 }
 
 fn copy_private_disk(source: &Path, destination: &Path) -> Result<(), RuntimeError> {
-    fs::copy(source, destination)?;
-    // A root-owned read-only template must still produce a writable private
-    // guest disk. fs::copy preserves the source mode, including 0444.
-    fs::set_permissions(destination, fs::Permissions::from_mode(0o600))?;
+    let mut input = File::open(source)?;
+    let metadata = input.metadata()?;
+    if !metadata.is_file() {
+        return Err(RuntimeError::InvalidConfiguration("template is not a file"));
+    }
+    // Each new jail owns a fresh disk. Never overwrite an existing file or
+    // follow a destination symlink after an interrupted preparation.
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(destination)?;
+    let length = metadata.len();
+    let mut position = 0;
+    while position < length {
+        // Skip source holes without reading tens of GiB of zeroes. Filesystems
+        // without extent queries fall back to bounded scanning below.
+        let data = match rustix::fs::seek(&input, rustix::fs::SeekFrom::Data(position)) {
+            Ok(data) => data,
+            Err(rustix::io::Errno::NXIO) => break,
+            Err(rustix::io::Errno::INVAL) => position,
+            Err(error) => return Err(errno_to_io(error).into()),
+        };
+        let end = match rustix::fs::seek(&input, rustix::fs::SeekFrom::Hole(data)) {
+            Ok(end) => end.min(length),
+            Err(rustix::io::Errno::INVAL) => length,
+            Err(error) => return Err(errno_to_io(error).into()),
+        };
+        if data < position || data >= length || end <= data {
+            return Err(RuntimeError::InvalidConfiguration(
+                "invalid template extent",
+            ));
+        }
+        input.seek(SeekFrom::Start(data))?;
+        output.seek(SeekFrom::Start(data))?;
+        copy_sparse_range(&mut input, &mut output, end - data)?;
+        position = end;
+    }
+    // Seeking over a trailing hole does not extend a file. Its logical size
+    // still determines the guest disk and all admission/accounting budgets.
+    output.set_len(length)?;
+    output.set_permissions(fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+fn copy_sparse_range(
+    input: &mut impl Read,
+    output: &mut (impl Write + Seek),
+    mut length: u64,
+) -> io::Result<()> {
+    let mut buffer = vec![0_u8; 64 * 1024];
+    while length > 0 {
+        let count = usize::try_from(length.min(buffer.len() as u64))
+            .expect("count is bounded by the buffer size");
+        let block = &mut buffer[..count];
+        input.read_exact(block)?;
+        // Also reclaim allocated zero blocks in dense imported templates.
+        if block.iter().all(|byte| *byte == 0) {
+            output.seek(SeekFrom::Current(
+                i64::try_from(count).expect("64 KiB fits i64"),
+            ))?;
+        } else {
+            output.write_all(block)?;
+        }
+        length -= count as u64;
+    }
     Ok(())
 }
 
@@ -1221,9 +1373,13 @@ pub(crate) fn read_trusted_record<T: DeserializeOwned>(path: &Path) -> Result<T,
     if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
         return Err(RuntimeError::IdentityMismatch("record type or permissions"));
     }
+    // Recovery may see a published target whose writer died before syncing
+    // the rename. Stabilize its directory before treating it as authority.
+    File::open(path.parent().ok_or(RuntimeError::InvalidId)?)?.sync_all()?;
     Ok(serde_json::from_reader(File::open(path)?)?)
 }
 
+#[cfg(test)]
 pub(crate) fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), RuntimeError> {
     let output = Command::new("/usr/bin/ip")
         .args(arguments)
@@ -1240,6 +1396,7 @@ pub(crate) fn run_ip(operation: &'static str, arguments: &[&str]) -> Result<(), 
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn run_nft_in_namespace(
     id: &str,
     operation: &'static str,
@@ -1404,6 +1561,8 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
+                host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
                 chroot_base: base.path().to_path_buf(),
@@ -1452,15 +1611,10 @@ mod tests {
             .mode(0o700)
             .create(&claim)
             .unwrap();
-        let jail = base.path().join("firecracker").join(&id);
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&jail)
-            .unwrap();
-        fs::write(jail.join("rootfs.ext4"), b"private disk").unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
+                host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
                 chroot_base: base.path().to_path_buf(),
@@ -1475,6 +1629,9 @@ mod tests {
                 access_token_hash: None,
             },
         };
+        runtime.reserve_jail(&id, 0).unwrap();
+        let jail = base.path().join("firecracker").join(&id);
+        fs::write(jail.join("root/rootfs.ext4"), b"private disk").unwrap();
         write_new_record(
             &claim.join("network-intent.json"),
             &ResourceMarker {
@@ -1487,6 +1644,7 @@ mod tests {
         write_new_record(
             &claim.join("network.json"),
             &NetworkRecord {
+                namespace_device: None,
                 resource_id: id.clone(),
                 namespace_inode: network.ino(),
             },
@@ -1529,6 +1687,8 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                console_policy: None,
+                host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
                 firecracker: PathBuf::from("/usr/bin/firecracker"),
                 chroot_base: base.path().to_path_buf(),
@@ -1548,6 +1708,7 @@ mod tests {
         write_new_record(
             &claim.join("network.json"),
             &NetworkRecord {
+                namespace_device: None,
                 resource_id: id.clone(),
                 namespace_inode: namespace.ino(),
             },
@@ -1592,6 +1753,7 @@ mod tests {
 
     #[test]
     fn launch_gate_requires_explicit_release_and_eof_cannot_start_child() {
+        let _serial = PROCESS_TEST_LOCK.lock().unwrap();
         let directory = tempfile::tempdir().unwrap();
         let marker = directory.path().join("started");
         let mut denied = Command::new("/bin/sh")
@@ -1652,5 +1814,156 @@ mod tests {
         fs::remove_file(destination).unwrap();
         fs::remove_file(source).unwrap();
         fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn private_disk_preserves_holes_bytes_and_logical_length() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("template");
+        let destination = directory.path().join("private");
+        let mut file = File::create(&source).unwrap();
+        file.seek(SeekFrom::Start(1024 * 1024 + 7)).unwrap();
+        file.write_all(b"first unaligned extent").unwrap();
+        file.seek(SeekFrom::Start(3 * 1024 * 1024 - 3)).unwrap();
+        file.write_all(b"cross a block boundary").unwrap();
+        file.set_len(8 * 1024 * 1024 + 13).unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
+
+        copy_private_disk(&source, &destination).unwrap();
+        let original = fs::metadata(&source).unwrap();
+        let copied = fs::metadata(&destination).unwrap();
+        assert_eq!(original.len(), copied.len());
+        assert_ne!(original.ino(), copied.ino());
+        assert_eq!(fs::read(&source).unwrap(), fs::read(&destination).unwrap());
+        assert!(copied.blocks() * 512 < copied.len() / 2);
+        let mut private = OpenOptions::new().write(true).open(&destination).unwrap();
+        private.seek(SeekFrom::Start(1024 * 1024 + 7)).unwrap();
+        private.write_all(b"guest overwrite").unwrap();
+        let mut original_file = File::open(&source).unwrap();
+        original_file
+            .seek(SeekFrom::Start(1024 * 1024 + 7))
+            .unwrap();
+        let mut bytes = [0; 5];
+        original_file.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"first");
+        assert_eq!(fs::metadata(&source).unwrap().mode() & 0o777, 0o444);
+        assert_eq!(copied.mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn private_disk_handles_empty_all_hole_and_dense_zero_templates() {
+        let directory = tempfile::tempdir().unwrap();
+        for (name, length, dense) in [
+            ("empty", 0, false),
+            ("hole", 1_048_593, false),
+            ("dense", 1_048_593, true),
+        ] {
+            let source = directory.path().join(name);
+            let destination = source.with_extension("private");
+            let mut file = File::create(&source).unwrap();
+            if dense {
+                file.write_all(&vec![0; length]).unwrap();
+            } else {
+                file.set_len(length as u64).unwrap();
+            }
+            copy_private_disk(&source, &destination).unwrap();
+            let copied = fs::metadata(&destination).unwrap();
+            assert_eq!(copied.len(), length as u64);
+            assert_eq!(fs::read(&source).unwrap(), fs::read(&destination).unwrap());
+            if length > 0 {
+                assert!(copied.blocks() * 512 < copied.len() / 2);
+            }
+        }
+    }
+
+    #[test]
+    fn private_disk_refuses_existing_files_and_symlinks() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("template");
+        let existing = directory.path().join("existing");
+        let link = directory.path().join("link");
+        fs::write(&source, b"template bytes").unwrap();
+        fs::write(&existing, b"do not overwrite").unwrap();
+        std::os::unix::fs::symlink(&existing, &link).unwrap();
+        for destination in [&existing, &link, &source] {
+            assert!(copy_private_disk(&source, destination).is_err());
+        }
+        assert_eq!(fs::read(existing).unwrap(), b"do not overwrite");
+        assert_eq!(fs::read(source).unwrap(), b"template bytes");
+    }
+
+    #[test]
+    fn sparse_range_fallback_handles_short_reads_and_rejects_truncation() {
+        struct ShortReads(std::io::Cursor<Vec<u8>>);
+        impl Read for ShortReads {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                let length = buffer.len().min(97);
+                self.0.read(&mut buffer[..length])
+            }
+        }
+        let mut bytes = vec![0; 3 * 64 * 1024 + 7];
+        bytes[65536..65541].copy_from_slice(b"data!");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("fallback");
+        let mut output = File::create(&path).unwrap();
+        copy_sparse_range(
+            &mut ShortReads(io::Cursor::new(bytes.clone())),
+            &mut output,
+            bytes.len() as u64,
+        )
+        .unwrap();
+        output.set_len(bytes.len() as u64).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(output.metadata().unwrap().blocks() * 512 < bytes.len() as u64 / 2);
+        let error = copy_sparse_range(&mut &b"short"[..], &mut output, 6).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        let mut readonly = File::open(&path).unwrap();
+        assert!(copy_sparse_range(&mut &b"write"[..], &mut readonly, 5).is_err());
+    }
+}
+
+#[cfg(test)]
+mod console_policy_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_discard_creates_no_console_file_and_drops_both_streams() {
+        let directory = tempfile::tempdir().unwrap();
+        let (stdout, stderr) =
+            console_output(directory.path(), Some(ConsolePolicy::Discard)).unwrap();
+        let status = Command::new("/bin/sh")
+            .args(["-c", "printf stdout; printf stderr >&2"])
+            .stdout(stdout)
+            .stderr(stderr)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn legacy_file_logging_is_preserved_without_an_explicit_policy() {
+        let directory = tempfile::tempdir().unwrap();
+        let (stdout, stderr) = console_output(directory.path(), None).unwrap();
+        let status = Command::new("/bin/sh")
+            .args(["-c", "printf stdout; printf stderr >&2"])
+            .stdout(stdout)
+            .stderr(stderr)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let path = directory.path().join("console.log");
+        assert_eq!(fs::read(&path).unwrap(), b"stdoutstderr");
+        assert_eq!(fs::metadata(path).unwrap().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn console_policy_has_no_implicit_retained_tail_or_unbounded_alias() {
+        assert_eq!(
+            serde_json::from_str::<ConsolePolicy>("\"discard\"").unwrap(),
+            ConsolePolicy::Discard
+        );
+        assert!(serde_json::from_str::<ConsolePolicy>("\"file\"").is_err());
+        assert!(serde_json::from_str::<ConsolePolicy>("\"bounded_tail\"").is_err());
     }
 }

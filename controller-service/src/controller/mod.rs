@@ -1,10 +1,31 @@
 //! Durable integration of the existing pure reducer. The database stores
 //! accepted inputs, not a second implementation of lifecycle decisions.
 
+#[cfg(test)]
+mod allocator_tests;
+#[cfg(test)]
+mod bounded_tests;
+#[cfg(test)]
+mod cache_tests;
+
+mod capacity;
+pub use capacity::CapacityConfig;
 mod admission;
+mod allocators;
+mod bounded;
+mod checkpoint;
 mod identity;
+mod private_build;
 mod registry;
 mod storage;
+mod transaction;
+
+pub use private_build::{BuildAnchor, BuildRetryConfig, BuildWindow};
+
+pub use bounded::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
+pub use checkpoint::{
+    CheckpointInfo, CheckpointProgress, HostReleaseWitness, MaintenanceConfig, RetirementCandidate,
+};
 
 pub use admission::{
     AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
@@ -62,7 +83,19 @@ pub trait HostEvidence: ResourceEvidence {
 pub struct ControllerJournal {
     journal: Journal,
     namespace: String,
+    committed_world: transaction::CommittedWorld,
     _lease: File,
+}
+
+fn validate_namespace(namespace: &str) -> Result<(), JournalError> {
+    if namespace.len() != 16
+        || !namespace
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(JournalError::UnsupportedStore);
+    }
+    Ok(())
 }
 
 impl ControllerJournal {
@@ -492,13 +525,31 @@ impl ControllerJournal {
     /// Rejects a second writer, namespace mismatch, legacy opaque state, or
     /// corrupt input history. No arbitrary serialized World is accepted.
     pub fn open(path: impl AsRef<Path>, namespace: &str) -> Result<Self, JournalError> {
-        if namespace.len() != 16
-            || !namespace
-                .bytes()
-                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-        {
-            return Err(JournalError::UnsupportedStore);
-        }
+        Self::open_with_bounded(path, namespace, None, None, 0)
+    }
+
+    /// Open an explicitly configured bounded host store. Legacy nonempty stores
+    /// require a separate migration and are rejected.
+    /// # Errors
+    /// Rejects disabled/changed mapping, nonempty legacy state or corrupt context.
+    pub fn open_bounded(
+        path: impl AsRef<Path>,
+        namespace: &str,
+        config: BoundedHostConfig,
+        now_ms: u64,
+    ) -> Result<Self, JournalError> {
+        config.validate()?;
+        Self::open_with_bounded(path, namespace, Some(config), None, now_ms)
+    }
+
+    fn open_with_bounded(
+        path: impl AsRef<Path>,
+        namespace: &str,
+        bounded: Option<BoundedHostConfig>,
+        maintenance: Option<MaintenanceConfig>,
+        now_ms: u64,
+    ) -> Result<Self, JournalError> {
+        validate_namespace(namespace)?;
         let path = path.as_ref();
         if path.is_symlink() {
             return Err(JournalError::UnsupportedStore);
@@ -518,7 +569,11 @@ impl ControllerJournal {
             .truncate(false)
             .open(lock_path)?;
         lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
-        let mut journal = Journal::open(&path)?;
+        let mut journal =
+            Journal::open_controller(&path, bounded.is_some(), maintenance.is_some())?;
+        if let Some(policy) = &maintenance {
+            capacity::prepare_connection(&journal.connection, policy)?;
+        }
         let transaction = journal
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -528,6 +583,7 @@ impl ControllerJournal {
             |row| row.get(0),
         )?;
         if existing == 0 {
+            allocators::require_legacy_base(&transaction)?;
             let rows: i64 =
                 transaction.query_row("SELECT count(*) FROM sandboxes", [], |row| row.get(0))?;
             if rows != 0 {
@@ -548,7 +604,7 @@ impl ControllerJournal {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !(1..=10).contains(&version) || stored != namespace {
+        if !(1..=11).contains(&version) || stored != namespace {
             return Err(JournalError::UnsupportedStore);
         }
         if version == 1 {
@@ -582,12 +638,18 @@ impl ControllerJournal {
         if version <= 6 {
             transaction.execute("UPDATE controller_meta SET version=7 WHERE id=1", [])?;
         }
-        storage::load_world(&transaction)?;
+        let world = storage::load_world(&transaction)?;
+        allocators::migrate(&transaction, &world)?;
+        let world = bounded::configure(&transaction, world, bounded, now_ms)?;
+        checkpoint::configure(&transaction, &world, maintenance)?;
+        capacity::validate(&transaction, &world)?;
+        let committed_world = transaction::CommittedWorld::new(&transaction, world)?;
         transaction
             .commit()
             .map_err(JournalError::CommitUncertain)?;
         Ok(Self {
             journal,
+            committed_world,
             namespace: namespace.to_owned(),
             _lease: lease,
         })
@@ -596,7 +658,7 @@ impl ControllerJournal {
     /// # Errors
     /// Rejects storage or replay errors.
     pub fn world(&self) -> Result<core::World, JournalError> {
-        storage::load_world(&self.journal.connection)
+        self.committed_world.world(&self.journal.connection)
     }
 
     /// Canonical external IDs are bijective within the persisted namespace.
@@ -629,12 +691,22 @@ impl ControllerJournal {
         ) {
             return Err(JournalError::UnsupportedInput);
         }
+        if capacity::config(&self.journal.connection)?.is_some()
+            && matches!(
+                input,
+                core::ControllerInput::Request(core::Request::Create(_))
+            )
+        {
+            // Full mode requires its lease, options and physical binding in
+            // the same admission transaction before any accepted host work.
+            return Err(JournalError::UnsupportedInput);
+        }
         let sandbox = identity::input_sandbox(&input)?;
-        let transaction = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&transaction)?;
+        let transaction = transaction::WorldTransaction::begin(
+            &mut self.journal.connection,
+            &self.committed_world,
+        )?;
+        let world = transaction.world();
         let terminal_prepare_abort =
             core::scheduler::only_uncertain_prepare_for_abort(&world, sandbox)
                 && matches!(
@@ -672,11 +744,9 @@ impl ControllerJournal {
         {
             return Err(JournalError::UnresolvedAction);
         }
-        let decision = storage::apply(&transaction, &self.namespace, &world, input)?;
+        let decision = storage::apply(&transaction, &self.namespace, input)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
-        transaction
-            .commit()
-            .map_err(JournalError::CommitUncertain)?;
+        transaction.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(decision)
     }
@@ -760,11 +830,11 @@ impl ControllerJournal {
         selected: Option<core::SandboxId>,
         crashes: &mut impl CrashInjector,
     ) -> Result<Option<WorkAction<core::EffectId>>, JournalError> {
-        let transaction = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&transaction)?;
+        let transaction = transaction::WorldTransaction::begin(
+            &mut self.journal.connection,
+            &self.committed_world,
+        )?;
+        let world = transaction.world();
         let rows = {
             let mut query = transaction.prepare(
                 "SELECT id, action_json FROM outbox WHERE dispatch_state='ready' ORDER BY id",
@@ -802,12 +872,10 @@ impl ControllerJournal {
                 continue;
             }
             crashes.hit(CrashPoint::BeforeDispatchClaim)?;
-            storage::apply(&transaction, &self.namespace, &world, input)?;
+            storage::apply(&transaction, &self.namespace, input)?;
             transaction.execute("UPDATE outbox SET dispatch_state='dispatched' WHERE id=?1 AND dispatch_state='ready'", [id])?;
             crashes.hit(CrashPoint::BeforeCommit)?;
-            transaction
-                .commit()
-                .map_err(JournalError::CommitUncertain)?;
+            transaction.commit()?;
             crashes.hit(CrashPoint::AfterDispatchClaim)?;
             return Ok(Some(action));
         }
@@ -829,10 +897,10 @@ impl ControllerJournal {
     where
         E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
     {
-        let transaction = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = transaction::WorldTransaction::begin(
+            &mut self.journal.connection,
+            &self.committed_world,
+        )?;
         let attempt =
             i64::try_from(receipt.identity.attempt).map_err(|_| JournalError::Conflict)?;
         let row: Option<ReceiptRow> = transaction.query_row(
@@ -843,7 +911,7 @@ impl ControllerJournal {
         let (id, json, state, previous) = row.ok_or(JournalError::Conflict)?;
         let action: WorkAction<core::EffectId> = serde_json::from_slice(&json)?;
         receipt.validate_for(&action)?;
-        let world = storage::load_world(&transaction)?;
+        let world = transaction.world();
         // An initialization result cannot reopen a terminal create, and a
         // stopped VM must not be misread as proof that initialization worked.
         if matches!(action.command.command(), core::Command::ActivateVm { .. })
@@ -863,26 +931,34 @@ impl ControllerJournal {
         if let Some(previous) = previous {
             let previous: WorkReceipt<E> = serde_json::from_slice(&previous)?;
             if previous == *receipt {
-                return storage::load_world(&transaction);
+                return Ok(transaction.world());
             }
             if !uncertain(&previous.outcome) || uncertain(&receipt.outcome) {
                 return Err(JournalError::ConflictingReceipt);
             }
         }
-        let next = apply_outcome(&transaction, &self.namespace, world, &action, receipt, id)?;
-        let serialized = serde_json::to_vec(receipt)?;
+        let serialized = match capacity::config(&transaction)? {
+            Some(cap) => checkpoint::encode_limited(receipt, cap.max_receipt_bytes)?,
+            None => serde_json::to_vec(receipt)?,
+        };
+        let next = apply_outcome(&transaction, &self.namespace, &action, receipt, id)?;
+        let before_receipt = capacity::cursors(&transaction)?;
+        let receipt_sequence = allocators::next_sql(&transaction, allocators::SqlId::Receipt)?;
         transaction.execute(
-            "INSERT INTO controller_receipt_history(outbox_id,receipt_json) VALUES (?1,?2)",
-            params![id, &serialized],
+            "INSERT INTO controller_receipt_history(sequence,outbox_id,receipt_json) VALUES (?1,?2,?3)",
+            params![receipt_sequence, id, &serialized],
         )?;
         transaction.execute(
             "UPDATE outbox SET dispatch_state='receipted',receipt_json=?1 WHERE id=?2",
             params![serialized, id],
         )?;
+        capacity::spend(
+            &transaction,
+            action.command.command().sandbox(),
+            before_receipt,
+        )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
-        transaction
-            .commit()
-            .map_err(JournalError::CommitUncertain)?;
+        transaction.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(next)
     }
@@ -967,9 +1043,8 @@ fn uncertain<E>(outcome: &WorkOutcome<E>) -> bool {
 }
 
 fn apply_outcome<E: HostEvidence>(
-    transaction: &rusqlite::Transaction<'_>,
+    transaction: &transaction::WorldTransaction<'_>,
     namespace: &str,
-    mut world: core::World,
     action: &WorkAction<core::EffectId>,
     receipt: &WorkReceipt<E>,
     row_id: i64,
@@ -979,14 +1054,13 @@ fn apply_outcome<E: HostEvidence>(
             if !evidence.validates(action.command.command()) {
                 return Err(JournalError::InvalidHostEvidence);
             }
-            if !core::effect::command_result_present(&world, action.command.command()) {
-                world = storage::apply(
+            if !core::effect::command_result_present(&transaction.world(), action.command.command())
+            {
+                storage::apply(
                     transaction,
                     namespace,
-                    &world,
                     core::ControllerInput::Worker(action.command.clone()),
-                )?
-                .next;
+                )?;
             }
             core::EffectOutcome::Succeeded(core::ResultDigest(
                 u64::try_from(row_id).map_err(|_| JournalError::CorruptStore)?,
@@ -1017,7 +1091,6 @@ fn apply_outcome<E: HostEvidence>(
             return Ok(storage::apply(
                 transaction,
                 namespace,
-                &world,
                 core::ControllerInput::Effect(core::EffectInput::Timeout(action.command.clone())),
             )?
             .next);
@@ -1026,7 +1099,6 @@ fn apply_outcome<E: HostEvidence>(
     Ok(storage::apply(
         transaction,
         namespace,
-        &world,
         core::ControllerInput::Effect(core::EffectInput::Receipt(action.command.clone(), outcome)),
     )?
     .next)

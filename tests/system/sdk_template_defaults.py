@@ -5,6 +5,14 @@ home; command cwd defaults instead use the template WORKDIR. A file user is
 not a guest DAC boundary. The host supervisor separately checks VM identity.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import json
 import shlex
 

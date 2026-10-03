@@ -6,6 +6,14 @@ package/file isolation, not any Harbor task's dependency initialization.
 The supervisor must separately audit the base hash and exact host resources.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata
@@ -141,7 +149,8 @@ async def exercise_client(cls, args):
             rows.append(dict(case='failed_initializer_retains_partial_state',
                              result=await failed_initializer(first)))
             assert not await call(second.files.exists, FAILED_INIT)
-        assert await call(first.kill)
+        _kill_confirmed = (await call(first.kill))
+        assert _kill_confirmed
         live.remove(first)
         await check(second, '2.0', second.sandbox_id)
         rows.append(dict(case='destroying_first_preserves_second'))
@@ -154,7 +163,8 @@ async def exercise_client(cls, args):
         return dict(sdk=cls.__name__, cases=rows, vm_count=3)
     finally:
         for sandbox in reversed(live):
-            assert await call(sandbox.kill), 'destruction not confirmed'
+            _kill_confirmed = (await call(sandbox.kill))
+            assert _kill_confirmed, 'destruction not confirmed'
 
 
 async def exercise(args):

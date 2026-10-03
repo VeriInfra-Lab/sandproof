@@ -5,6 +5,14 @@ then calls the original method unchanged. Responses and transport behavior are
 never mocked. This is separate from sandbox lifetime and command/RPC deadlines.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 from contextlib import contextmanager

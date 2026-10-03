@@ -5,7 +5,17 @@ Synthetic Debian-compatible fixture only: not public OCI acceptance. Each
 build job gets a new VM; candidate health probes are separate new VMs. This
 operator-only harness is NOT a public build API. --registry also exercises
 the production publication gate, immutable registry and owner-scoped aliases.
+The server must include debug fault-injection hooks. For a CPU-limited service,
+use an optimized build with CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true.
 """
+
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 
 import argparse
 import gzip
@@ -13,6 +23,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import sqlite3
@@ -44,6 +55,12 @@ BUILDKIT_HASHES = {
     "busybox": "dbac288c29ba568459550a2da9e7ae0ded6b1fc728ee9fad3044c44e62d6ac14",
     "envd": "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749",
 }
+# Optional Ubuntu 24.04 ISA-L 2.31.0 artifacts; validated inside the build VM.
+IGZIP_HASHES = {
+    "igzip": "1e0f85d554ae96ec35fe709c0be256bce1764e18b4e0a6ffa8db9f9cb3c0a51e",
+    "libisal.so.2": "40ccd5e5abaff0451feff750d2b011370a546ac4706d1b06b9285ac26eda2c3c",
+}
+
 FIXTURE = r"""import json, os, pathlib, shutil, subprocess, tarfile
 p=pathlib.Path('/input/context')
 (p/'rootfs/bin').mkdir(parents=True)
@@ -113,7 +130,8 @@ def exercise(args):
     if subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
         raise RuntimeError("clean exact source commit required")
     commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
-    for name, digest in BUILDKIT_HASHES.items():
+    build_tools = BUILDKIT_HASHES | (IGZIP_HASHES if args.igzip else {})
+    for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed official tool fingerprint mismatch: " + name)
     if args.scratch_parent.stat().st_uid != 0 or args.scratch_parent.stat().st_mode & 0o077:
@@ -197,7 +215,7 @@ def exercise(args):
             active.append(builder.sandbox_id)
             checked(builder, "mkdir -p /input/tools /output")
             profile = {}
-            for name, digest in BUILDKIT_HASHES.items():
+            for name, digest in build_tools.items():
                 upload(builder, args.tools / name, "/input/tools/" + name)
                 profile[name] = {"path": "/input/tools/" + name, "sha256": digest}
             checked(builder, "chmod 755 /input/tools/*")
@@ -233,6 +251,11 @@ def exercise(args):
             for name in ("build.log", "daemon.log"):
                 if builder.files.exists("/output/job/" + name):
                     (root / "inputs" / (kind + "-" + name)).write_text(builder.files.read("/output/job/" + name))
+            daemon_log = root / "inputs" / (kind + "-daemon.log")
+            selected = re.findall(r'msg="auto snapshotter: using (overlayfs|fuse-overlayfs|native)"',
+                                  daemon_log.read_text()) if daemon_log.exists() else []
+            assert len(selected) <= 1, "one private BuildKit worker per build"
+            snapshotter = selected[0] if selected else None
             if kind in ("failure", "timeout"):
                 assert result.exit_code != 0 and status["state"] == "failed" and not status["ready"]
                 if kind == "timeout":
@@ -240,9 +263,18 @@ def exercise(args):
                 else:
                     assert "exit code: 17" in (root / "inputs/failure-build.log").read_text()
                 assert not builder.files.exists("/output/job/candidate.ext4")
-                evidence.append({"kind": kind, "status": status})
+                evidence.append({"kind": kind, "status": status, "snapshotter": snapshotter})
             else:
                 assert result.exit_code == 0, (result.stderr, result.stdout)
+                upload(builder, checkout / "tests/system/umoci_unpack_guest.py", "/input/unpack-check.py")
+                comparison = json.loads(checked(builder, "python3 /input/unpack-check.py", timeout=150))
+                evidence.append({"kind": kind + "-unpack-equivalence", **comparison})
+                if kind == "dockerfile":
+                    assert snapshotter is not None, "retain actual automatic snapshotter selection"
+                    assert not builder.files.exists("/output/job/cache"), "release private build snapshots before candidate conversion"
+                    upload(builder, checkout / "tests/system/buildkit_export_guest.py", "/input/export-check.py")
+                    comparison = json.loads(checked(builder, "python3 /input/export-check.py", timeout=150))
+                    evidence.append({"kind": "buildkit-export-equivalence", **comparison})
                 assert status["state"] == "candidate" and not status["ready"] and not status["startup_applied"]
                 assert status["startup"]["WorkingDir"] == "/workspace"
                 assert "FIXTURE_VALUE=image-value" in status["startup"]["Env"]
@@ -271,8 +303,9 @@ def exercise(args):
                     with (root / "inputs/built-oci.tar.gz").open("xb") as output:
                         for block in builder.files.read("/output/oci.tar.gz", format="stream", user="root"):
                             output.write(block)
-                evidence.append({"kind": kind, "status": status})
-            assert Sandbox.kill(builder.sandbox_id, **owner)
+                evidence.append({"kind": kind, "status": status, "snapshotter": snapshotter})
+            _kill_confirmed = (Sandbox.kill(builder.sandbox_id, **owner))
+            assert _kill_confirmed
             active.remove(builder.sandbox_id)
             no_resources()
             if kind in ("dockerfile", "oci"):
@@ -343,7 +376,8 @@ def exercise(args):
                     code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-" + kind,key,
                                     {"templateID": published[kind]})
                     assert code == 200
-                assert Sandbox.kill(guest.sandbox_id, **owner)
+                _kill_confirmed = (Sandbox.kill(guest.sandbox_id, **owner))
+                assert _kill_confirmed
                 active.remove(guest.sandbox_id)
                 no_resources()
                 assert sha256_file(disk) == status["rootfs_sha256"]
@@ -399,6 +433,23 @@ def exercise(args):
                                      "-fs", "--max-time", "5", "-K", "-"], input=curl_config, text=True, capture_output=True)
             assert result.returncode == 0, "private guest observation failed"
             return result.stdout
+        def wait_started(name, sandbox_id):
+            # Start acknowledges process creation; the child may not yet have
+            # written its first file. Observe that witness before crashing or
+            # restarting again, without replaying Start or extending a VM lease.
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    count = startup_count(name, sandbox_id)
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                else:
+                    assert count in ("", "started\n"), "startup ran more than once"
+                    if count:
+                        return
+                    assert time.monotonic() < deadline, "startup witness missing"
+                time.sleep(0.05)
         if args.registry:
             # Activation succeeded physically, but the publisher never durably
             # confirmed validation. Recovery may NOT turn that into Ready.
@@ -416,7 +467,7 @@ def exercise(args):
                 json.loads(p.read_text()) for p in (root / "state/startup").glob("*.json")
                 if json.loads(p.read_text())["sandbox"] == saved["validation_sandbox"])
             name = f'vm-{namespace}-{record["vm"]}'
-            assert startup_count(name,sandbox_id) == "started\n"
+            wait_started(name, sandbox_id)
             process = start_server(binary,config,root / "server.log",None)
             wait_ready(opener,url,key,process)
             assert fetch(opener,url,"GET","/sandboxes/" + sandbox_id,key)[0] == 404
@@ -446,22 +497,15 @@ def exercise(args):
             sandbox_id, name = f'sb-{namespace}-{record["sandbox"]}', f'vm-{namespace}-{record["vm"]}'
             assert (record["guest_pid"] is not None) == (window == "confirmed")
             assert process_start_ticks(record["vmm_pid"]) == record["start_ticks"]
-            deadline = time.monotonic() + 5
-            while True:
-                try:
-                    assert startup_count(name, sandbox_id) == "started\n"
-                    break
-                except AssertionError:
-                    if time.monotonic() >= deadline:
-                        raise
-                    time.sleep(0.05)
+            wait_started(name, sandbox_id)
             process = start_server(binary, config, root / "server.log", None)
             wait_ready(opener, url, key, process)
             assert startup_count(name, sandbox_id) == "started\n", "startup was replayed"
             if window == "confirmed":
                 guest = Sandbox.connect(sandbox_id, **owner)
                 assert guest.files.read("/workspace/start-count") == "started\n"
-                assert Sandbox.kill(sandbox_id, **owner)
+                _kill_confirmed = (Sandbox.kill(sandbox_id, **owner))
+                assert _kill_confirmed
             else:
                 code, body = fetch(opener, url, "GET", "/sandboxes/" + sandbox_id, key)
                 # Existing detail contract exposes only live Running instances,
@@ -510,6 +554,12 @@ def exercise(args):
                 with sqlite3.connect("file:" + str(root / "db/controller.db") + "?mode=ro",uri=True) as database:
                     if database.execute("SELECT count(*) FROM sqlite_master WHERE name='sandboxes'").fetchone()[0]:
                         identities = [row[0] for row in database.execute("SELECT sandbox_id FROM sandboxes")]
+            if identities and (process is None or process.poll() is not None):
+                # A failed observation can happen after the intentional service
+                # crash. Resume its original journal without injection so exact
+                # cleanup can reconcile; never replace the pending sandbox.
+                process = start_server(binary, config, root / "server.log", None)
+                wait_ready(opener, url, key, process)
             for identity in identities:
                 assert identity.startswith("sb-" + namespace + "-")
                 try:
@@ -542,4 +592,5 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--registry", action="store_true")
+    parser.add_argument("--igzip", action="store_true", help="check and use the fixed optional ISA-L decoder pair")
     exercise(parser.parse_args())

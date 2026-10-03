@@ -8,6 +8,8 @@
 
 运行器要求调用者为 root，jailer、Firecracker、内核、基础 ext4 和 jailer 基目录的每级路径均由 root 拥有且不可由其他用户修改。基础盘在每次启动时复制到独立 jail 中；调用者必须为不同 VM 分配不同非 root UID/GID。当前 CLI 是开发诊断工具，不是常驻控制服务；从短命 SSH 会话单独执行 `launch` 不能保证 VM 在会话结束后继续存活。
 
+私有磁盘复制保留源文件的稀疏区域，并以 64 KiB 缓冲跳过分配过但全零的数据块；不支持 extent 查询的文件系统退回逐块读取。目标是新建的独立可写文件，遇到已有目标或符号链接拒绝覆盖。逻辑长度、镜像内容和原有磁盘准入预算保持不变，实际占用会随来宾写入增加；节省初始写入量不代表可以降低容量预留。该路径的 KVM 验收仍须绑定实际源码提交和二进制。
+
 Linux 实机可运行 `cargo test -p sandbox-runtime --locked` 和 `cargo clippy -p sandbox-runtime --all-targets --locked -- -D warnings`。准备固定镜像及 root 拥有的 jailer 目录后，使用唯一的全小写资源编号执行：
 
 ```sh
@@ -22,6 +24,18 @@ sudo ./target/debug/sandproof-vm smoke \
 若需复现实机私有链路，用同样参数调用 `smoke-net`，并在末尾追加 `/run/netns/<同一资源编号>`。此诊断模式使用代码中固定的**公开测试用**令牌摘要，只能验证 Firecracker 的网络和 MMDS 配置，不能作为正式服务凭据。运行器自行创建网络空间和 TAP，验证来宾可达后按编号清理网络空间和私有磁盘；基础镜像不被修改。实测过的网络模式仍依赖 CI 镜像预装的 `fcnet.service`，它不是可部署任务镜像。
 
 失败清理仍有边界：门控解决“VM 已运行但无精确进程记录”的窗口；网络空间创建前先同步写入资源意图，若在 inode 记录写入前崩溃，恢复时须用持久操作计划、槽位绑定和资源意图共同核对，确认没有进程记录、虚拟机 jail 或空间内进程后，才能精确删除该网络空间并留下不可复用的编号。有精确进程记录但进程已退出的准备动作，则先清理独立 jail/磁盘及网络空间，再落盘失败标记。进程仍存活、身份不符或资源状态无法判定时继续保持未知，不猜测停止。测试脚本的 `finally` 收尾不能替代服务崩溃恢复。
+
+## 显式有界宿主位置（#99）
+
+节点可在 `RuntimeConfig.host_slot` 中提供物理 `position`、永久 `vm`、部署分配的 `uplink_index` 和永久 helper gate 身份；缺省保留原有编号映射。jail、claim、网络空间与 cgroup 仍使用永久 VM 编号，只有出口 /30 与有限宿主链路名称由物理出口索引派生。出口意图和失败标记同时绑定完整位置上下文，不能把另一代 VM 的同名链路当作原记录。初次启用须只读检查部署链路/表、地址池重叠和 conntrack 残留；调用方必须在同一个节点串行边界核对持久位置绑定。
+
+每个位置由节点初始化一个永不替换的私有 gate 文件，保存其路径、设备/inode 和显式 `max_data_routes_per_slot`。所有有副作用的宿主 helper 及会进入网络空间的探针先以许可管道阻塞；运行层持久提交精确 PID、启动时刻、boot ID、完整位置和命令摘要后，才允许 shell 以**同一个 PID** exec 真正程序。固定单例记录和固定数量的数据 route cells 位于 claim 外；route 记录同时保存可信的 control/ordinary 类别，只读 census 将仍活跃、未提交或不可观察的 cell 计入预算，供节点维持全局/每位置额度和控制预留。每次独占准入、复用和退休均检查全部记录；共享数据准入允许当前实例的其他 route 存活，但仍检查单例与完整身份。即使控制器消失、helper 关闭所有继承 FD 或 flock 已空闲，精确进程记录仍阻止复用。匹配的僵尸进程也继续占用 cell，直到已 wait/reap 或证明原进程身份不存在；未知或身份不符不能当作完成。只支持同步、不会留下未登记子进程的可信 helper；数据 relay 必须使用同 PID 的跟踪入口。
+
+`retirement_manifest` 在物理资源回收后捕获有界清单；节点先持久保存清单与确切 `RuntimeConfig`，再调用 `retire`。清单包含进程身份、原网络空间设备/inode、claim 目录和文件设备/inode、记录摘要。确认命名资源不存在后，再按 FD→网络空间成员顺序检查 `/proc` 的所有线程，防止旧 FD/relay 留存；不可观察即拒绝。网络创建在原 inode 记录前失败时，只有已核对从未启动的 abort 标记、没有后续启动/出口证据、全部已登记 helper/route 确认消失及物理资源全无，才能保存“从未进入网络空间”的专门证据；不猜测 inode，也不接纳损坏的旧网络记录。共享根 conntrack 仅按该物理 /30 的两个精确地址及原向/回向字段清理，并再次确认不存在，绝不清空共享表。
+
+有界 claim 使用有限目标名对应的固定 staging 文件；只有与原规范化 JSON 完全相符的前缀可以续写，完成后以不覆盖 rename 发布并同步目录。helper/route 的未提交 staging 无法释放许可，恢复可以在精确 gate 下移除；已发布的权威记录损坏仍保持未知。退休只删除清单中 inode/摘要相符的文件及空 claim 目录，包含已登记的部分 staging；任意部分删除后都可用外部持久清单重试，已不存在的条目也同步父目录。`observe_retired` 提供重启后的只读物理空闲检查；helper 的终局记录与未提交 staging 恢复可能同步或整理固定 sidecar，不能以文件缺失自行补出清理成功。
+
+该新增路径只有无权限单元/组件测试证据，未运行 root、网络、真实 conntrack 或 KVM 复用验收；不可由普通 CI 的绿灯推断已具备生产隔离保证。旧无位置诊断模式不调用退休 API，仍保留不可复用 claim。生产启用与完整协议边界见[模块合同](../docs/module-contracts.md)。
 
 ## 宿主 CPU 与内存限制
 
@@ -39,6 +53,22 @@ sudo ./target/debug/sandproof-vm smoke \
 这是 512 MiB 来宾的测试配置示例：`memory_mib` 仍表示来宾 RAM，`memory_max_bytes` 表示整个 Firecracker 的宿主内存上限，包含 VMM 开销，必须大于来宾 RAM 且按 4096 字节对齐。示例不是最终任务预算。CPU 上限按 `vcpu_count × 100000 / 100000` 微秒配置到 `cpu.max`，包含 VMM 的处理开销；不表示独占物理核或调度时延保障。每组关闭额外 CPU burst 和宿主 swap，启用整组 OOM 处理。它不限制整个控制服务/relay 的内存，不提供宿主物理容量预留，磁盘和准入预算仍需各自验收。
 
 部署者预先建立一个独占、root 拥有且模式为 0700 的 cgroup v2 父目录，保证它为空的 domain，向子组委派 CPU/memory 控制器。根或共享祖先须由宿主配置事先提供这些控制器；运行器不会修改共享祖先。每个部署须保持父目录与配置稳定，不能在仍有记录的 VM 存活或待清理时更换父目录、取消配置或改预算。
+
+控制服务、构建监督服务和继承其分组的 relay 可显式使用[服务限额入口](../tools/service_cgroup.py)。它在执行程序前让启动器自身加入同一个已记录的叶组；不通过外部 PID 迁移运行中的服务。两个 VM 池必须使用与该服务父目录互不包含的独立父组，外部恢复程序留在限额组之外。共享服务组设置 `cpu.max`、`memory.max`、零 swap 和整组 OOM；这限制普通调度类的合计 CPU 带宽与内存，不预留物理核，不保证 OOM 后服务仍在线。行为依据 [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)。
+
+操作方先准备独占、root 0700 的父组和证据目录，再执行以下示例；CPU/内存值只是统一验收配置的当前值，尚非实测生产默认值：
+
+```sh
+sudo python3 tools/service_cgroup.py prepare \
+  --parent /sys/fs/cgroup/sandproof-services --name svc-control \
+  --record /var/lib/sandproof/service-budget.json \
+  --cpu-quota-us 100000 --memory-bytes 2147483648
+sudo python3 tools/service_cgroup.py exec \
+  --record /var/lib/sandproof/service-budget.json -- \
+  /usr/local/bin/sandproof-server /etc/sandproof/runtime.json
+```
+
+构建池服务与构建监督程序须经同一 `exec --record` 启动或重启，不能只有一个服务使用限额。`check --record` 核对 boot ID、父/子组 inode、实际限额、成员与计数；`remove --record` 只删除身份匹配且没有进程/子组的组，保留记录。限额篡改、同名替换、记录创建中断或仍有进程时均保留现场，不能按名称猜测回收。服务异常或 OOM 后由外部操作方按原配置和原 VM 身份恢复；不将杀服务等同于 VM 清理完成。独立内核验证入口与真实 VM 组合验收范围见[验收清单](../docs/testing-plan.md)。
 
 多模板包数据库与启动设置隔离由固定 SDK 的[实机脚本](../tests/system/server_template_isolation.py)检查。使用干净的精确提交、同提交服务二进制、两个经核对且容量不同的 Debian/Ubuntu 系统盘，均须具备 root/ubuntu 账户和可用 home；探针固定两种测试形状为 1 CPU/512 MiB 和 2 CPU/1024 MiB，整个 VMM 各增加 256 MiB 宿主额度。四台 VM 并存，模板默认用户分别为 ubuntu/root；双客户端检查命令/文件默认值与覆盖、别名变更及同库服务重启后的原启动进程不重派。总计使用八个不可复用身份（含两次启动失败与两次替换），预留连续八个 UID；宿主至少六个可用 CPU、8 GiB 可用内存和三倍输入磁盘总量加 1 GiB 收尾空间。以下入口不调用云端或外部软件仓库：
 

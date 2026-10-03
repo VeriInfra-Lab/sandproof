@@ -4,6 +4,14 @@ Run as root on the isolated KVM host. Uses three identities in a fresh private
 deployment; failed runs retain only their exact artifacts for diagnosis.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import importlib.metadata
 import json
@@ -123,7 +131,8 @@ def exercise(args):
         wait_ready(opener, url, key, process)
         for _ in range(2):
             sandbox = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
-            assert Sandbox.kill(sandbox.sandbox_id, **owner)
+            _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **owner))
+            assert _kill_confirmed
         if args.reproduce_legacy:
             status, _ = fetch(opener, url, "POST", "/v2/sandboxes", key,
                               {"templateID": "base", "allow_internet_access": False})
@@ -166,7 +175,8 @@ def exercise(args):
         assert survivor.get_info().state == "running"
         assert survivor.commands.run("printf restart-ok", user="ubuntu").stdout == "restart-ok"
         assert survivor.files.read("/tmp/capacity.txt") == "original-vm"
-        assert Sandbox.kill(survivor.sandbox_id, **owner)
+        _kill_confirmed = (Sandbox.kill(survivor.sandbox_id, **owner))
+        assert _kill_confirmed
         check_rejection(opener, url, key, database, root)
         with sqlite3.connect(database) as connection:
             phases = [json.loads(row[0])["phase"] for row in connection.execute("SELECT state_blob FROM sandboxes")]

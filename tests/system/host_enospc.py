@@ -5,6 +5,14 @@ after an unknown reply; an admitted inode-failed create recovers its original
 durable identity. The optional old-503 mode is bug reproduction, not acceptance.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 from contextlib import closing
 import errno
 import json
@@ -159,7 +167,8 @@ def block_case(config, mounted, resources, sdk, live, filler, marker, payload, v
     for sandbox in live:
         healthy(sandbox, marker, payload)
     try:
-        assert Sandbox.kill(victim.sandbox_id, **sdk)
+        _kill_confirmed = (Sandbox.kill(victim.sandbox_id, **sdk))
+        assert _kill_confirmed
         kill_status = 204
         resources.audit(vm_ids[victim.sandbox_id])
     except (SandboxException, ServiceBusyException) as error:
@@ -231,7 +240,8 @@ def exercise_enospc(args, mounted, template):
         else:
             report = block_case(config, mounted, resources, sdk, live, filler, marker, payload, vm_ids)
         for sandbox in list(live):
-            assert Sandbox.kill(sandbox.sandbox_id, **sdk)
+            _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk))
+            assert _kill_confirmed
             live.remove(sandbox)
         assert Sandbox.list(**sdk).next_items() == []
         resources.audit()
