@@ -56,8 +56,8 @@ def cloud_config(role, jit='', pins=None):
            'CARGO_BUILD_JOBS=2\nRUST_TEST_THREADS=2\n'
            'PATH=/home/runner/.cargo/bin:/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n')
     result = {'hostname': 'sandproof-ci-' + role, 'ssh_pwauth': False,
-              'disable_root': True, 'groups': ['runner'],
-              'users': [{'name': 'runner', 'groups': 'runner',
+              'disable_root': True,
+              'users': [{'name': 'runner', 'groups': 'users',
               'sudo': None, 'lock_passwd': True, 'shell': '/bin/bash'}],
               'write_files': [file_entry('/etc/sandproof-ci.env', env)],
               'runcmd': []}

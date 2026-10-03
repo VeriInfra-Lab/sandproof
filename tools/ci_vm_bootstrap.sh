@@ -5,6 +5,8 @@ trap '/usr/sbin/poweroff' EXIT
 set -a
 source /etc/sandproof-ci.env
 set +a
+# Fail before downloading dependencies if account/network isolation is wrong.
+/usr/sbin/runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   build-essential pkg-config libssl-dev git curl ca-certificates python3-venv \
