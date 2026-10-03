@@ -43,6 +43,15 @@ class IsolationProbeTests(unittest.TestCase):
             with self.subTest(response=response), self.assertRaises(RuntimeError):
                 self.invoke(response=response)
 
+    def test_proxy_bypass_environment_restored_on_success_and_failure(self):
+        original = {'no_proxy': 'localhost,127.0.0.1', 'NO_PROXY': 'localhost,127.0.0.1'}
+        with patch.dict(probe.os.environ, original):
+            self.invoke()
+            self.assertEqual({key: probe.os.environ[key] for key in original}, original)
+            with self.assertRaises(RuntimeError):
+                self.invoke(response=urllib.error.URLError('timeout'))
+            self.assertEqual({key: probe.os.environ[key] for key in original}, original)
+
 
 if __name__ == '__main__':
     unittest.main()
