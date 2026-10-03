@@ -24,7 +24,13 @@ class DecoderTests(unittest.TestCase):
                      'igzip', 'libisal.so.2'):
             path = self.root / ('versioned-' + name)
             if name == 'busybox':
-                value = ('#!' + sys.executable + '\nprint("sh init mount grep mkdir chmod ln ip touch reboot umount".replace(" ", "\\n"))\n').encode()
+                value = ('#!' + sys.executable + '\nimport sys\n'
+                         'if sys.argv[1:] == ["--list"]:\n'
+                         '    print("sh init mount grep mkdir chmod ln ip touch reboot umount rm stat".replace(" ", "\\n"))\n'
+                         'elif sys.argv[1:] == ["stat", "-f", "-c", "%t", "/"]:\n'
+                         '    print("ef53")\n'
+                         'else:\n'
+                         '    sys.exit(73)\n').encode()
             elif name == 'igzip':
                 value = ('#!' + sys.executable + '\nimport json,os,sys\n'
                          'print(json.dumps({k:os.environ.get(k) for k in '
