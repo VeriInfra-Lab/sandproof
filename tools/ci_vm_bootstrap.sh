@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs only while preparing the trusted base, never as a PR step.
 set -euo pipefail
-trap 'poweroff' EXIT
+trap '/usr/sbin/poweroff' EXIT
 set -a
 source /etc/sandproof-ci.env
 set +a
@@ -21,8 +21,8 @@ chown -R runner:runner /opt/actions-runner
 curl -fsSL --retry 3 https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init -o /tmp/rustup-init
 printf '%s  %s\n' "$rustup_sha" /tmp/rustup-init | sha256sum -c -
 chmod 0755 /tmp/rustup-init
-runuser -u runner -- /tmp/rustup-init -y --profile minimal --default-toolchain "$rust_toolchain" --component clippy,rustfmt
-runuser -u runner -- /home/runner/.cargo/bin/rustc --version
+/usr/sbin/runuser -u runner -- /tmp/rustup-init -y --profile minimal --default-toolchain "$rust_toolchain" --component clippy,rustfmt
+/usr/sbin/runuser -u runner -- /home/runner/.cargo/bin/rustc --version
 /opt/actions-runner/bin/Runner.Listener --version
 systemctl disable --now ssh.service ssh.socket || true
 apt-get clean

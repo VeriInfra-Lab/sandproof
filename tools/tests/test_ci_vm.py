@@ -17,6 +17,7 @@ class CiVmTests(unittest.TestCase):
         for forbidden in ('hostfwd', 'virtfs', 'fsdev', 'vhost', '/home/ning', '/dev/kvm,'):
             self.assertNotIn(forbidden, joined)
         self.assertIn('readonly=on', joined)
+        self.assertIn('host,-vmx,-svm', joined)
 
     def test_each_role_has_own_fixed_budget(self):
         for role, (memory, cpus, disk) in ci_vm.ROLES.items():

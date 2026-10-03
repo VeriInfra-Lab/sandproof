@@ -33,7 +33,7 @@ def qemu_command(directory, role):
     # fixed guestfwd can reach the host's domain/port restricted CI proxy.
     network = ('user,id=ci,restrict=on,guestfwd=tcp:10.0.2.100:3128-'
                'cmd:/usr/bin/socat - TCP:127.0.0.1:3129')
-    return ['/usr/bin/qemu-system-x86_64', '-enable-kvm', '-cpu', 'host',
+    return ['/usr/bin/qemu-system-x86_64', '-enable-kvm', '-cpu', 'host,-vmx,-svm',
             '-machine', 'q35', '-m', str(memory), '-smp', str(cpus),
             '-nodefaults', '-no-reboot', '-display', 'none', '-monitor', 'none',
             '-serial', 'file:' + str(directory / 'console.log'),
