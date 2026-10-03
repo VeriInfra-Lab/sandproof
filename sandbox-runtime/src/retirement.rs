@@ -325,6 +325,30 @@ impl Runtime {
         self.observe_retired_locked(id, manifest)
     }
 
+    /// Recheck a binding whose complete retirement was durably confirmed Free.
+    ///
+    /// The node must have persisted Free only after `retire` and
+    /// `observe_retired` succeeded under the original incarnation. At that
+    /// point no thread or descriptor held the old namespace. Its inode may
+    /// subsequently identify an unrelated namespace, so it is no longer a
+    /// live identity witness. Named resources, original PID/start, claims and
+    /// the exclusive physical address are still checked on every reuse.
+    /// # Errors
+    /// Rejects changed manifests, helpers, recreated resources or address state.
+    pub fn observe_released(
+        &self,
+        id: &str,
+        manifest: &RetirementManifest,
+    ) -> Result<(), RuntimeError> {
+        self.validate_retirement_manifest(id, manifest)?;
+        let _gate = self.acquire_helper_gate()?;
+        self.verify_retirement_locations(id, manifest)?;
+        if path_present(&self.config.chroot_base.join(".claims").join(id))? {
+            return Err(RuntimeError::IdentityMismatch("retired claim still exists"));
+        }
+        self.require_retired_conntrack_absent(id)
+    }
+
     fn observe_retired_locked(
         &self,
         id: &str,
@@ -395,6 +419,18 @@ impl Runtime {
         id: &str,
         manifest: &RetirementManifest,
     ) -> Result<(), RuntimeError> {
+        self.verify_retirement_locations(id, manifest)?;
+        if let Some(namespace) = &manifest.namespace {
+            require_namespace_unheld(Path::new("/proc"), namespace)?;
+        }
+        Ok(())
+    }
+
+    fn verify_retirement_locations(
+        &self,
+        id: &str,
+        manifest: &RetirementManifest,
+    ) -> Result<(), RuntimeError> {
         if let Some(process) = &manifest.process
             && verified_process(process)?.is_some()
         {
@@ -420,9 +456,6 @@ impl Runtime {
         }
         if !self.uplink_resources_absent(id)? {
             return Err(RuntimeError::IdentityMismatch("retirement uplink remains"));
-        }
-        if let Some(namespace) = &manifest.namespace {
-            require_namespace_unheld(Path::new("/proc"), namespace)?;
         }
         Ok(())
     }
@@ -722,6 +755,81 @@ mod tests {
             inode: 1,
         });
         assert!(!permits_unlaunched_namespace_absence(&manifest));
+    }
+
+    #[test]
+    #[ignore = "requires root on isolated Linux for real read-only namespace/conntrack observations"]
+    fn durable_free_allows_recycled_namespace_inode_but_not_recreated_resources() {
+        assert_eq!(rustix::process::geteuid().as_raw(), 0);
+        let temp = tempfile::tempdir_in("/var/lib").unwrap();
+        let mut config = config(temp.path());
+        config.private_netns = Some(temp.path().join(ID));
+        let slot = config.host_slot.as_mut().unwrap();
+        slot.uplink_index = 900_001;
+        let gate = File::options()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&slot.helper_gate.path)
+            .unwrap()
+            .metadata()
+            .unwrap();
+        slot.helper_gate.device = gate.dev();
+        slot.helper_gate.inode = gate.ino();
+        let runtime = Runtime { config };
+        let claim = temp.path().join(".claims").join(ID);
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&claim)
+            .unwrap();
+        runtime
+            .write_new_record(
+                &claim.join("record.json"),
+                &ProcessRecord {
+                    resource_id: ID.into(),
+                    pid: i32::MAX as u32,
+                    start_time_ticks: 1,
+                },
+            )
+            .unwrap();
+        // Synthetic stopped identity: no VM or namespace is created by this
+        // component fixture. Real host inventory must establish absence.
+        runtime
+            .write_new_record(
+                &claim.join("network.json"),
+                &NetworkRecord {
+                    resource_id: ID.into(),
+                    namespace_inode: u64::MAX,
+                    namespace_device: Some(u64::MAX),
+                },
+            )
+            .unwrap();
+        let mut manifest = runtime.retirement_manifest(ID).unwrap();
+        runtime.retire(ID, &manifest).unwrap();
+        runtime.observe_retired(ID, &manifest).unwrap();
+        let persisted = serde_json::to_vec(&manifest).unwrap();
+        manifest = serde_json::from_slice(&persisted).unwrap();
+        // Deterministic collision injection after complete retirement: model
+        // the old numeric ID now belonging to an unrelated live namespace.
+        // No production witness or kernel namespace is modified.
+        let current = fs::metadata("/proc/self/ns/net").unwrap();
+        manifest.namespace = Some(NamespaceIdentity {
+            device: current.dev(),
+            inode: current.ino(),
+        });
+        assert!(runtime.observe_retired(ID, &manifest).is_err());
+        runtime.observe_released(ID, &manifest).unwrap();
+        fs::create_dir(&claim).unwrap();
+        assert!(runtime.observe_released(ID, &manifest).is_err());
+        fs::remove_dir(&claim).unwrap();
+        let namespace = runtime.config.private_netns.as_ref().unwrap();
+        fs::write(namespace, b"foreign named resource").unwrap();
+        assert!(runtime.observe_released(ID, &manifest).is_err());
+        assert_eq!(fs::read(namespace).unwrap(), b"foreign named resource");
+        fs::remove_file(namespace).unwrap();
+        runtime.observe_released(ID, &manifest).unwrap();
+        assert!(!claim.exists());
     }
 
     #[test]
