@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sqlite3
 import socket
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -467,8 +468,20 @@ class SocketLayoutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Firecracker socket"):
             validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=True)
 
+    def test_encoded_limit_counts_multibyte_paths_on_all_platforms(self):
+        namespace = "0123456789abcdef"
+        tail = Path("0/jails/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
+        prefix = Path("/tmp/é")
+        root = Path(str(prefix) + "a" * (107 - len(os.fsencode(prefix / tail))))
+        self.assertEqual(len(os.fsencode(root / tail)), 107)
+        validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+        with self.assertRaisesRegex(ValueError, "Firecracker socket"):
+            validate_acceptance_socket_paths(Path(str(root) + "b"), [namespace], "/bin/firecracker",
+                                             max_vm_id=20, bounded=True)
+
+    @unittest.skipUnless(sys.platform == "linux", "real 107/108-byte socket boundary requires Linux")
     def test_encoded_limit_matches_real_unix_socket_boundary(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
             namespace = "0123456789abcdef"
             tail = Path("0/jails/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
             # Include multibyte characters: the kernel limit counts bytes.
