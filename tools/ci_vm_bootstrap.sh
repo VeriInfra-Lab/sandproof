@@ -25,7 +25,7 @@ printf '%s  %s\n' "$rustup_sha" /tmp/rustup-init | sha256sum -c -
 chmod 0755 /tmp/rustup-init
 /usr/sbin/runuser -u runner -- /tmp/rustup-init -y --profile minimal --default-toolchain "$rust_toolchain" --component clippy,rustfmt
 /usr/sbin/runuser -u runner -- /home/runner/.cargo/bin/rustc --version
-/opt/actions-runner/bin/Runner.Listener --version
+/usr/sbin/runuser -u runner -- /opt/actions-runner/bin/Runner.Listener --version
 systemctl disable --now ssh.service ssh.socket || true
 apt-get clean
 printf 'SANDPROOF_CI_IMAGE_READY\n'
