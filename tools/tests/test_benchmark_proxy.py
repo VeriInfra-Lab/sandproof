@@ -189,6 +189,35 @@ class BenchmarkProxyTests(unittest.TestCase):
         self.assertEqual(obj.state['phase'], 'retained_for_original_vm_recovery')
         self.assertTrue(obj.unit and obj.nft and obj.rules)
 
+    def test_shadowed_route_is_rejected_and_rolled_back_before_any_vm(self):
+        with tempfile.TemporaryDirectory() as directory, patch('tools.benchmark_proxy.trusted'), \
+                patch('tools.benchmark_proxy.os.geteuid', return_value=0), \
+                patch('tools.benchmark_proxy.Path.iterdir', return_value=iter(())):
+            obj = SimulatedProxy(Path(directory) / 'proxy')
+            query = obj.query
+            obj.query = lambda *args: ([{'dev': 'foreign-uplink'}] if args[:2] == ('route', 'get') else query(*args))
+            with self.assertRaisesRegex(RuntimeError, 'shadowed'):
+                obj.start()
+            self.assertEqual(obj.state['phase'], 'removed')
+            self.assertFalse(obj.nft or obj.unit or obj.rules or obj.routes or obj.links)
+
+    def test_lost_route_ack_is_recovered_from_durable_intent(self):
+        with tempfile.TemporaryDirectory() as directory, patch('tools.benchmark_proxy.trusted'), \
+                patch('tools.benchmark_proxy.os.geteuid', return_value=0), \
+                patch('tools.benchmark_proxy.Path.iterdir', return_value=iter(())):
+            obj = SimulatedProxy(Path(directory) / 'proxy')
+            run = obj.run
+            def lost_ack(args, *, data=None):
+                result = run(args, data=data)
+                if 'route' in args and 'add' in args and 'unreachable' in args:
+                    raise RuntimeError('route installed but acknowledgment lost')
+                return result
+            obj.run = lost_ack
+            with self.assertRaisesRegex(RuntimeError, 'acknowledgment lost'):
+                obj.start()
+            self.assertEqual(obj.state['phase'], 'removed')
+            self.assertFalse(obj.routes)
+
 
 if __name__ == '__main__':
     unittest.main()
