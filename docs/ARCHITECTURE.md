@@ -208,6 +208,8 @@ E2B 使用 Redis 保存运行态、路由和缓存，使用 PostgreSQL 保存持
 
 ## 6. 网络与权限边界
 
+隔离测试机可为通用 Harbor 链显式启用[本轮代理出口](../tools/benchmark_proxy.py)：构建池和运行池原防火墙先检查权限，已获准的公网 IPv4 再经独立 TUN 服务连接宿主回环 SOCKS 代理。它不改宿主默认路由、不向来宾暴露宿主端口、不复制 VPN 凭据，也不劫持 DNS 或修改题目。只有本轮两池的出口接口被选择；代理故障保留不可达后备路由，不自动退回直连。此项是可信测试部署的传输配置，不是新授权机制、普通 CI 网关或已验证的生产代理系统；第三方代理与外网仍在证明边界外。
+
 Firecracker 提供虚拟网卡及其宿主 TAP 接口，**不替我们做出站访问过滤**；过滤由宿主实现。这也是 [Firecracker 官方设计](https://github.com/firecracker-microvm/firecracker/blob/v1.16.1/docs/design.md#threat-containment)明确区分的职责。
 
 | 层次 | 负责什么 | 不应依赖什么 |
