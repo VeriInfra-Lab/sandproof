@@ -977,6 +977,9 @@ impl LinuxWorker {
     }
 
     fn observe_position_free(&self, row: &HostPosition) -> NodeResult<()> {
+        if row.phase != HostSlotPhase::Free {
+            return Err("released observation requires durable Free position".into());
+        }
         let retired = row
             .retirement
             .as_ref()
@@ -987,7 +990,7 @@ impl LinuxWorker {
             require_absent(&node_staging::path(path)?)?;
         }
         Runtime::for_existing(retired.runtime.clone())?
-            .observe_retired(&self.vm_name(row.context.binding.vm), &retired.manifest)?;
+            .observe_released(&self.vm_name(row.context.binding.vm), &retired.manifest)?;
         Ok(())
     }
 

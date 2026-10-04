@@ -66,6 +66,32 @@ def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressu
             'original_verifier': True, 'original_oracle_verifier': oracle_mode == 'original'}
 
 
+def observe_service_resources(binary, service_record, pids, samples, output, *, bounded, minimum_relays=0):
+    """Observe the configured relay protocol inside the original service budget."""
+    snapshot = service_cgroup.observe(service_record, pids=pids)
+    if snapshot['memory_events'].get('oom_kill', 0):
+        raise RuntimeError('service cgroup OOM; retain original identities for recovery')
+    relay_mode = b'relay-bounded' if bounded else b'relay'
+    relays = []
+    for pid in snapshot['pids']:
+        try:
+            start = process_start_ticks(pid)
+            argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+            if start is not None and argv[:2] == [os.fsencode(binary), relay_mode]:
+                service_cgroup.observe(service_record, pids=[pid])
+                if process_start_ticks(pid) == start:
+                    relays.append({'pid': pid, 'start_time_ticks': start})
+        except FileNotFoundError:
+            continue
+    snapshot['relay_mode'] = relay_mode.decode('ascii')
+    snapshot['relays'] = relays
+    samples.append(snapshot)
+    output.write_text(json.dumps(samples, indent=2))
+    if len(relays) < minimum_relays:
+        raise RuntimeError('blocked data relays were not observed inside the service budget')
+    return snapshot
+
+
 def select_cohort(args, tasks):
     """Keep execution/source validation separate from the capacity basis."""
     selected = {t['name'] for t in tasks} if args.all else set(args.task)
@@ -260,26 +286,9 @@ def exercise(args):
         processes = [p for p in [*controllers, *([supervisor] if require_builder else [])] if p is not None]
         if any(p.poll() is not None for p in processes):
             raise RuntimeError('service exited; retain original resources for recovery')
-        snapshot = service_cgroup.observe(service_record, pids=[p.pid for p in processes])
-        if snapshot['memory_events'].get('oom_kill', 0):
-            raise RuntimeError('service cgroup OOM; retain original identities for recovery')
-        relays = []
-        for pid in snapshot['pids']:
-            try:
-                start = process_start_ticks(pid)
-                argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
-                if start is not None and argv[:2] == [os.fsencode(binary), b'relay']:
-                    service_cgroup.observe(service_record, pids=[pid])
-                    if process_start_ticks(pid) == start:
-                        relays.append({'pid': pid, 'start_time_ticks': start})
-            except FileNotFoundError:
-                continue
-        if len(relays) < minimum_relays:
-            raise RuntimeError('blocked data relays were not observed inside the service budget')
-        snapshot['relays'] = relays
-        service_samples.append(snapshot)
-        (root / 'service-resources.json').write_text(json.dumps(service_samples, indent=2))
-        return snapshot
+        return observe_service_resources(binary, service_record, [p.pid for p in processes],
+            service_samples, root / 'service-resources.json', bounded=bounded_policy is not None,
+            minimum_relays=minimum_relays)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True
     pressure_report = ({'status': 'not_run', 'reason': 'requires_two_published_audited_templates'}
