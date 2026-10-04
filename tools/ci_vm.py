@@ -26,7 +26,27 @@ ROOT = Path('/var/lib/sandproof-ci')
 ROLES = {'rust': (4096, 4, 32), 'sdk': (3072, 4, 32),
          'harbor': (2048, 2, 32), 'title': (768, 1, 32),
          'policy': (768, 1, 32), 'bootstrap': (4096, 4, 32)}
+MAX_ROLE_WORKERS = 2
 PROXY = 'http://10.0.2.100:3128'
+
+
+def valid_slot(role, slot):
+    # Keep the original lock for slot one, including an already running worker
+    # during an upgrade. Bootstrap remains a separate, single-instance operation.
+    allowed = {role} | ({role + '-2'} if role in ROLES and role != 'bootstrap' else set())
+    if role not in ROLES or slot not in allowed:
+        raise ValueError('invalid role slot')
+    return slot
+
+
+def lock_slot(role, slot):
+    lock = (ROOT / ('role-' + valid_slot(role, slot) + '.lock')).open('a')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        lock.close()
+        raise
+    return lock
 
 
 def qemu_command(directory, role):
@@ -172,7 +192,8 @@ def cleanup_work(directory):
             path.unlink()
 
 
-def run(role, jit, pins, timeout, run_id=None):
+def run(role, jit, pins, timeout, run_id=None, slot=None):
+    slot = valid_slot(role, slot or role)
     if os.geteuid() != 0:
         raise ValueError('host provisioning must run as root; guest jobs never do')
     os.umask(0o077)
@@ -189,9 +210,9 @@ def run(role, jit, pins, timeout, run_id=None):
     launcher_sha256 = digest(Path(__file__))
     managed = run_id is not None
     run_id = valid_run_id(run_id or uuid.uuid4().hex)
-    # At most one VM per fixed role; the five ordinary jobs can run in parallel.
-    lock = (ROOT / ('role-' + role + '.lock')).open('a')
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    # The trusted supervisor budgets independent slots, not a global role lock.
+    # Duplicate launches of the same slot still fail without touching its VM.
+    lock = lock_slot(role, slot)
     parent = ROOT / 'runs'
     parent.mkdir(mode=0o711, exist_ok=True)
     directory = parent / run_id
@@ -251,7 +272,7 @@ def run(role, jit, pins, timeout, run_id=None):
             process.stdout.close()
             process.stderr.close()
         # Preserve bounded diagnostics separately from executable work disks.
-        report = {'id': run_id, 'role': role, 'started': started, 'finished': time.time(),
+        report = {'id': run_id, 'role': role, 'slot': slot, 'started': started, 'finished': time.time(),
                   'vm_exited': process is not None and process.poll() is not None,
                   'provisioning_completed': success, 'base_sha256': expected,
                   'launcher_sha256': launcher_sha256,
@@ -274,6 +295,7 @@ def main():
     parser.add_argument('--jit-stdin', action='store_true')
     parser.add_argument('--jit-file', type=Path)
     parser.add_argument('--run-id', type=valid_run_id)
+    parser.add_argument('--slot')
     args = parser.parse_args()
     if not 60 <= args.timeout <= 7200:
         parser.error('timeout must be between 60 and 7200 seconds')
@@ -288,7 +310,7 @@ def main():
                 raise ValueError('JIT file must be root-private')
             with args.jit_file.open() as stream:
                 jit = stream.read(131073).strip()
-        run(args.role, jit, pins, args.timeout, args.run_id)
+        run(args.role, jit, pins, args.timeout, args.run_id, args.slot)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         print('CI VM provisioning failed: ' + str(error), file=sys.stderr)
         return 1
