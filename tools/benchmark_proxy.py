@@ -22,7 +22,7 @@ def layout(namespaces):
         raise ValueError('two disjoint deployment namespaces required')
     tag = hashlib.sha256(':'.join(namespaces).encode()).hexdigest()[:8]
     return {'namespaces': list(namespaces), 'device': 'sbp' + tag,
-            'table': 20000 + int(tag[:4], 16), 'priority': 20000 + int(tag[:4], 16),
+            'table': 20000 + int(tag[:4], 16), 'priority': 10000 + int(tag[:4], 16) % 10000,
             'mark': int('53' + tag[:6], 16), 'nft_table': 'spbench_' + tag,
             'unit': 'sandproof-bench-proxy-' + tag}
 
@@ -35,7 +35,7 @@ def configuration(device, port):
             'dns': {'enable': False}, 'sniffer': {'enable': False},
             'tun': {'enable': True, 'device': device, 'stack': 'gvisor', 'mtu': 1500,
                     'auto-route': False, 'auto-redirect': False, 'auto-detect-interface': False,
-                    'dns-hijack': [], 'inet4-address': ['198.18.127.1/30']},
+                    'dns-hijack': []},
             'proxies': [{'name': 'host-proxy', 'type': 'socks5', 'server': '127.0.0.1',
                          'port': port, 'udp': True}], 'rules': ['MATCH,host-proxy']}
 
@@ -52,6 +52,33 @@ def guest_links(plan, links):
     # Product uplinks contain namespace prefix + a six-digit physical index.
     patterns = ['sp' + n[:6] + '[0-9a-f]{6}' for n in plan['namespaces']]
     return [x['ifname'] for x in links if any(re.fullmatch(p, x['ifname']) for p in patterns)]
+
+
+def own_table(route, plan):
+    # iproute2 serializes unnamed table IDs as strings on current Ubuntu.
+    return str(route.get('table')) == str(plan['table'])
+
+
+def selector_matches(body, plan):
+    chains = [x['chain'] for x in body if 'chain' in x]
+    rules = [x['rule'] for x in body if 'rule' in x]
+    if len(chains) != 1 or len(rules) != 1:
+        return False
+    expected_chain = {'family': 'inet', 'table': plan['nft_table'], 'name': 'select',
+                      'type': 'filter', 'hook': 'prerouting', 'prio': -140, 'policy': 'accept'}
+    if {k: v for k, v in chains[0].items() if k != 'handle'} != expected_chain:
+        return False
+    expected = [
+        {'match': {'op': '==', 'left': {'meta': {'key': 'nfproto'}}, 'right': 'ipv4'}},
+        {'match': {'op': '==', 'left': {'meta': {'key': 'iifname'}},
+                   'right': {'set': sorted('sp' + n[:6] + '*' for n in plan['namespaces'])}}},
+        {'mangle': {'key': {'meta': {'key': 'mark'}}, 'value': plan['mark']}}]
+    rule = rules[0]
+    expr = rule.get('expr', [])
+    return (rule.get('family') == 'inet' and rule.get('table') == plan['nft_table']
+            and rule.get('chain') == 'select' and len(expr) == 4
+            and expr[:3] == expected and set(expr[3]) == {'counter'}
+            and all(set(x) <= {'metainfo', 'table', 'chain', 'rule'} for x in body))
 
 
 def trusted(path, *, directory=False):
@@ -114,12 +141,14 @@ class BenchmarkProxy:
         if any(r.get('priority') == p['priority'] or str(r.get('fwmark', '')) in
                (str(p['mark']), hex(p['mark'])) for r in rules):
             raise ValueError('transport policy routing identity occupied')
-        if any(r.get('table') == p['table'] for r in self.query('route', 'show', 'table', 'all')):
+        if any(own_table(r, p) for r in self.query('route', 'show', 'table', 'all')):
             raise ValueError('transport route table occupied')
         links = self.query('link', 'show')
         if any(x['ifname'] == p['device'] for x in links) or guest_links(p, links):
             raise ValueError('transport must precede its VMs')
-        subnet = ipaddress.IPv4Network('198.18.127.0/30')
+        # v1.19.32 derives this address from its default fake-IP range even
+        # with DNS disabled; inet4-address is NOT a supported raw config field.
+        subnet = ipaddress.IPv4Network('198.18.0.0/30')
         addresses = self.query('address', 'show')
         if any(ipaddress.ip_address(a['local']) in subnet for x in addresses
                for a in x.get('addr_info', []) if a.get('family') == 'inet'):
@@ -168,6 +197,9 @@ class BenchmarkProxy:
             self.state['tun_route_intent'] = True
             self.persist('starting')
             self.run(['/usr/sbin/ip', 'route', 'add', 'default', 'dev', p['device'], 'metric', '10', 'table', str(p['table'])])
+            selected = self.query('route', 'get', '1.1.1.1', 'mark', hex(p['mark']))
+            if len(selected) != 1 or selected[0].get('dev') != p['device']:
+                raise RuntimeError('transport selector shadowed by earlier host routing')
             self.persist('active')
             return self.evidence()
         except BaseException:
@@ -196,21 +228,22 @@ class BenchmarkProxy:
             raise ValueError('transport recovery record changed')
         rules = [r for r in self.query('rule', 'show') if r.get('priority') == p['priority']]
         if rules and (len(rules) != 1 or str(rules[0].get('fwmark')) not in (str(p['mark']), hex(p['mark']))
-                      or rules[0].get('table') != p['table'] or rules[0].get('fwmask', '0xffffffff') != '0xffffffff'):
+                      or not own_table(rules[0], p) or str(rules[0].get('fwmask', '0xffffffff')) not in ('0xffffffff', '4294967295')):
             raise ValueError('transport routing rule replaced')
         routes = self.query('route', 'show', 'table', 'all')
-        owned = [r for r in routes if r.get('table') == p['table']]
-        if any(r.get('dst') != 'default' or (r.get('type') != 'unreachable' and r.get('dev') != p['device']) for r in owned):
+        owned = [r for r in routes if own_table(r, p)]
+        if any(r.get('dst') != 'default' or r.get('gateway')
+               or (r.get('type') == 'unreachable' and r.get('metric') != 32767)
+               or (r.get('type') != 'unreachable' and
+                   (r.get('type', 'unicast') != 'unicast' or r.get('dev') != p['device'] or r.get('metric') != 10))
+               for r in owned):
             raise ValueError('transport routing table replaced')
         if self.state.get('nft_intent'):
             listed = json.loads(self.run(['/usr/sbin/nft', '-j', 'list', 'tables']))['nftables']
             if any(t.get('table', {}).get('name') == p['nft_table'] for t in listed):
                 # This per-run table only ever contains the deterministic selector.
                 body = json.loads(self.run(['/usr/sbin/nft', '-j', 'list', 'table', 'inet', p['nft_table']]))['nftables']
-                chains = [t['chain'] for t in body if 'chain' in t]
-                entries = [t['rule'] for t in body if 'rule' in t]
-                if (len(chains) != 1 or chains[0]['name'] != 'select' or len(entries) != 1
-                        or entries[0]['chain'] != 'select' or str(p['mark']) not in json.dumps(entries[0]['expr'])):
+                if not selector_matches(body, p):
                     raise ValueError('transport selector replaced')
                 self.run(['/usr/sbin/nft', 'delete', 'table', 'inet', p['nft_table']])
         if rules:
@@ -220,7 +253,7 @@ class BenchmarkProxy:
             if load != b'not-found':
                 self.run(['/usr/bin/systemctl', 'stop', p['unit'] + '.service'])
         for route in self.query('route', 'show', 'table', 'all'):
-            if route.get('table') == p['table']:
+            if own_table(route, p):
                 if route.get('type') != 'unreachable':
                     raise ValueError('transport route survived service stop')
                 self.run(['/usr/sbin/ip', 'route', 'del', 'unreachable', 'default', 'metric', '32767', 'table', str(p['table'])])

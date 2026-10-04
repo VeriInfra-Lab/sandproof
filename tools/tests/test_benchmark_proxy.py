@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -6,10 +7,22 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from tools.benchmark_proxy import BenchmarkProxy, configuration, guest_links, layout, mark_script
+from tools.benchmark_proxy import BenchmarkProxy, configuration, guest_links, layout, mark_script, selector_matches
 
 
 NS = ['0123456789abcdef', 'fedcba9876543210']
+
+
+def nft_body(p):
+    return [{'chain': {'family': 'inet', 'table': p['nft_table'], 'name': 'select',
+                      'handle': 1, 'type': 'filter', 'hook': 'prerouting', 'prio': -140, 'policy': 'accept'}},
+            {'rule': {'family': 'inet', 'table': p['nft_table'], 'chain': 'select', 'handle': 3,
+                      'expr': [
+                          {'match': {'op': '==', 'left': {'meta': {'key': 'nfproto'}}, 'right': 'ipv4'}},
+                          {'match': {'op': '==', 'left': {'meta': {'key': 'iifname'}},
+                                     'right': {'set': sorted('sp' + n[:6] + '*' for n in p['namespaces'])}}},
+                          {'mangle': {'key': {'meta': {'key': 'mark'}}, 'value': p['mark']}},
+                          {'counter': {'packets': 42, 'bytes': 2048}}]}}]
 
 
 class SimulatedProxy(BenchmarkProxy):
@@ -24,6 +37,8 @@ class SimulatedProxy(BenchmarkProxy):
         self.nft, self.unit, self.fail_at, self.fail_once = False, False, None, True
 
     def query(self, *args):
+        if args[:2] == ('route', 'get'):
+            return [{'dev': self.plan['device']}]
         return {'rule': self.rules, 'route': self.routes, 'link': self.links, 'address': []}[args[0]]
 
     def run(self, args, *, data=None):
@@ -36,21 +51,21 @@ class SimulatedProxy(BenchmarkProxy):
             if 'tables' in args:
                 return json.dumps({'nftables': [{'table': {'name': p['nft_table']}}] if self.nft else []}).encode()
             if 'table' in args and 'list' in args:
-                return json.dumps({'nftables': [{'chain': {'name': 'select'}},
-                    {'rule': {'chain': 'select', 'expr': [{'mark': p['mark']}]}}]}).encode()
+                return json.dumps({'nftables': nft_body(p)}).encode()
             if 'delete' in args:
                 self.nft = False
             elif '-f' in args:
                 self.nft = True
         elif 'route' in args:
             if 'add' in args:
-                self.routes.append({'table': p['table'], 'dst': 'default',
-                                    **({'type': 'unreachable'} if 'unreachable' in args else {'dev': p['device']})})
+                self.routes.append({'table': str(p['table']), 'dst': 'default',
+                                    **({'type': 'unreachable', 'metric': 32767} if 'unreachable' in args
+                                       else {'dev': p['device'], 'metric': 10})})
             elif 'del' in args:
                 self.routes.clear()
         elif 'rule' in args:
             if 'add' in args:
-                self.rules.append({'priority': p['priority'], 'table': p['table'], 'fwmark': hex(p['mark'])})
+                self.rules.append({'priority': p['priority'], 'table': str(p['table']), 'fwmark': hex(p['mark'])})
             elif 'del' in args:
                 self.rules.clear()
         elif args[0].endswith('systemd-run'):
@@ -103,6 +118,28 @@ class BenchmarkProxyTests(unittest.TestCase):
         own = 'sp012345000001'
         self.assertEqual(guest_links(p, [{'ifname': own}, {'ifname': 'sp000000000001'},
                                        {'ifname': 'sp012345unknown'}, {'ifname': p['device']}]), [own])
+
+    def test_policy_rule_precedes_the_normal_main_table_for_every_tag(self):
+        for value in range(1000):
+            p = layout([f'{value:016x}', 'fedcba9876543210'])
+            self.assertGreater(p['priority'], 0)
+            self.assertLess(p['priority'], 32766)
+
+    def test_recovery_rejects_replaced_selector_not_just_same_mark(self):
+        p = layout(NS)
+        self.assertTrue(selector_matches(nft_body(p), p))
+        for field in ('source', 'hook', 'action', 'extra'):
+            body = copy.deepcopy(nft_body(p))
+            if field == 'source':
+                body[1]['rule']['expr'][1]['match']['right']['set'] = ['*']
+            elif field == 'hook':
+                body[0]['chain']['hook'] = 'output'
+            elif field == 'action':
+                body[1]['rule']['expr'][2] = {'accept': None}
+            else:
+                body.append({'set': {'name': 'foreign'}})
+            with self.subTest(field=field):
+                self.assertFalse(selector_matches(body, p))
 
     def exercise(self, *, failure=None, retained=False, live=False):
         with tempfile.TemporaryDirectory() as directory, patch('tools.benchmark_proxy.trusted'), \
