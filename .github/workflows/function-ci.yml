@@ -2,7 +2,9 @@ name: Function CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, ready_for_review]
+    # Becoming ready for review does not change code, title or target. Draft PRs
+    # already run the same checks; avoid cancelling/restarting them on readiness.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main, test]
   merge_group:
