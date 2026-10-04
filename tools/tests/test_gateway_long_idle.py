@@ -162,6 +162,33 @@ class TCPTests(unittest.TestCase):
             probe.received_bytes(SimpleNamespace(getsockopt=lambda *_args: b'\0' * 100))
 
 
+class SamplingTests(unittest.TestCase):
+    def test_all_coarse_poll_offsets_enter_window_before_expiry(self):
+        # Fake elapsed time includes observer/health work. Previously a coarse
+        # sample at e.g. 12980 slept 30s and missed the required final 5s entirely.
+        for offset in range(30):
+            for work in (0.1, 0.5, 1.5):
+                with self.subTest(offset=offset, work=work):
+                    now, last_owned, samples = 12950 + offset, None, []
+                    while now < 13000:
+                        samples.append(now)
+                        last_owned = now
+                        now += work
+                        delay = probe.polling_delay(now, 0, expired=False)
+                        self.assertGreater(delay, 0)
+                        self.assertLessEqual(delay, 30)
+                        now += delay
+                    self.assertGreaterEqual(last_owned, 12995)
+                    self.assertLessEqual(now - last_owned, 5)
+                    self.assertLess(len(samples), 20)
+
+    def test_uses_write_connection_origin_and_returns_to_normal_after_expiry(self):
+        self.assertEqual(probe.polling_delay(13050, 100, expired=False), 30)
+        self.assertEqual(probe.polling_delay(13085, 100, expired=False), 5)
+        self.assertEqual(probe.polling_delay(13090, 100, expired=False), 1)
+        self.assertEqual(probe.polling_delay(13101, 100, expired=True), 30)
+
+
 class CleanupTests(unittest.IsolatedAsyncioTestCase):
     async def test_partial_admission_failure_always_cleans_exact_handles(self):
         handles, cleaned = [], []

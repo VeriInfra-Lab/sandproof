@@ -227,6 +227,14 @@ async def backpressure(transfer, pid, samples):
         await asyncio.sleep(1)
 
 
+def polling_delay(now, write_started, *, expired):
+    """Wake at the narrow observation window instead of stepping over it."""
+    if expired:
+        return 30
+    until_window = write_started + IDLE_SECONDS - 10 - now
+    return min(30, until_window) if until_window > 0 else 1
+
+
 async def exercise(args, report, checkpoint=lambda _report: None):
     from e2b import Sandbox
     import gateway_pressure as helpers
@@ -359,7 +367,7 @@ async def exercise(args, report, checkpoint=lambda _report: None):
             checkpoint(report)
             # Near expiry preserve a <=5s observed closure interval; elsewhere
             # cadence is only resource sampling, never a race/admission barrier.
-            delay = 1 if now - started >= IDLE_SECONDS - 10 and expired_at is None else 30
+            delay = polling_delay(time.monotonic(), write_expiry.started, expired=expired_at is not None)
             await asyncio.sleep(min(delay, max(0, deadline - time.monotonic())))
         if not reset or expired_at is None or not readers[0].done():
             raise AssertionError('unchanged idle expiry was not observed')
