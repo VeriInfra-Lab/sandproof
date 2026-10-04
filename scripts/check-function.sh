@@ -5,6 +5,10 @@ set -euo pipefail
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Build the real reducer once outside the component-test timeout. Fresh CI
+# machines have no Rust cache; compilation is preparation, not a window step.
+# The enclosing CI job deadline remains unchanged and a build failure is fatal.
+cargo build --locked -p sandproof-controller-service --bin sandproof-window-reducer
 python3 -m unittest discover -s tools/tests -v
 python3 tools/check_docs.py
 cargo fmt --all -- --check
