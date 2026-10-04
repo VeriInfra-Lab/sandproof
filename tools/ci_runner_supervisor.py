@@ -231,16 +231,38 @@ class Supervisor:
         return runners
 
     def queued_counts(self):
+        # The owner moved full Rust checks off PRs into a separate push/manual
+        # workflow. Discover only that exact trusted filename; absent until its
+        # first deployment is normal, not a reason to block existing PR checks.
+        workflow_ids = [self.workflow_id]
+        try:
+            rust = self.api.request('GET', PREFIX + 'workflows/rust-ci.yml')
+        except APIError as error:
+            if error.status != 404:
+                raise
+        else:
+            if (type(rust.get('id')) is not int or rust['id'] <= 0
+                    or rust.get('path') != '.github/workflows/rust-ci.yml'
+                    or rust['id'] == self.workflow_id):
+                raise ValueError('Rust workflow identity mismatch')
+            workflow_ids.append(rust['id'])
         counts = Counter()
         seen = set()
+        for workflow_id in workflow_ids:
+            self.count_workflow(workflow_id, counts, seen)
+        return counts
+
+    def count_workflow(self, workflow_id, counts, seen):
         for status in ('queued', 'in_progress'):
             for page in range(1, 5):
-                result = self.api.request('GET', PREFIX + 'workflows/' + str(self.workflow_id)
+                result = self.api.request('GET', PREFIX + 'workflows/' + str(workflow_id)
                     + '/runs?status=' + status + '&per_page=100&page=' + str(page))
                 runs = result['workflow_runs']
                 for run in runs:
-                    if run['workflow_id'] != self.workflow_id:
+                    if run['workflow_id'] != workflow_id:
                         raise ValueError('workflow identity changed')
+                    if workflow_id != self.workflow_id and run['event'] not in ('push', 'workflow_dispatch'):
+                        continue
                     if run['event'] not in ('pull_request', 'push', 'merge_group', 'workflow_dispatch'):
                         continue
                     for job_page in range(1, 5):
@@ -264,7 +286,6 @@ class Supervisor:
                     break
             else:
                 raise ValueError('workflow inventory exceeds fixed limit')
-        return counts
 
     def tick(self):
         runners = {runner['name']: runner for runner in self.reconcile()}

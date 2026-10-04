@@ -1,0 +1,25 @@
+name: Rust CI
+
+# Owner decision: developers run the full local checks; do not run this on PRs.
+on:
+  push:
+    branches: [main, test]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: [self-hosted, Linux, X64, sandproof-ci-rust]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check pinned Rust workspace
+        run: bash scripts/check-function.sh

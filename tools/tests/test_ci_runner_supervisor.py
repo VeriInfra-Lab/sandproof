@@ -23,8 +23,13 @@ class FakeAPI:
         self.deletes = []
         self.fail_post = False
         self.fail_delete = False
+        self.rust_workflow = None
 
     def request(self, method, path, body=None):
+        if path.endswith('/workflows/rust-ci.yml'):
+            if self.rust_workflow is None:
+                raise auth.APIError(404)
+            return self.rust_workflow
         if method == 'POST':
             self.posts.append(body)
             runner = {'id': len(self.posts), 'name': body['name']}
@@ -94,6 +99,48 @@ class SupervisorTests(unittest.TestCase):
         self.assertNotIn('encoded_jit', self.state.path.read_text())
         for path in self.root.glob('*.jit'):
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_absent_rust_workflow_does_not_block_current_prs(self):
+        self.service.tick()
+        self.assertEqual(len(self.api.posts), 5)  # Includes existing legacy PR jobs.
+
+    def test_rust_push_workflow_can_run_but_its_pr_event_cannot_admit(self):
+        self.api.jobs = []
+        self.api.rust_workflow = {'id': 30, 'path': '.github/workflows/rust-ci.yml'}
+        original = self.api.request
+        event = ['push']
+        def request(method, path, body=None):
+            if '/workflows/30/runs?' in path:
+                return {'workflow_runs': [{'id': 60, 'workflow_id': 30,
+                    'run_attempt': 1, 'event': event[0]}] if 'status=queued' in path else []}
+            if '/runs/60/attempts/1/jobs?' in path:
+                return {'jobs': [{'id': 100, 'name': 'rust', 'status': 'queued',
+                    'labels': ['self-hosted', 'Linux', 'X64', 'sandproof-ci-rust']}]}
+            return original(method, path, body)
+        self.api.request = request
+        event[0] = 'pull_request'
+        self.service.tick()
+        self.assertFalse(self.api.posts)
+        event[0] = 'push'
+        self.service.tick()
+        self.assertEqual(set(self.state.leases), {'rust'})
+
+    def test_rust_workflow_wrong_identity_or_api_failure_stops_admission(self):
+        for metadata in ({'id': 20, 'path': '.github/workflows/rust-ci.yml'},
+                         {'id': 30, 'path': '.github/workflows/untrusted.yml'}):
+            self.api.rust_workflow = metadata
+            with self.assertRaises(ValueError):
+                self.service.tick()
+            self.assertFalse(self.api.posts)
+        original = self.api.request
+        def unavailable(method, path, body=None):
+            if path.endswith('/workflows/rust-ci.yml'):
+                raise auth.APIError(503)
+            return original(method, path, body)
+        self.api.request = unavailable
+        with self.assertRaises(auth.APIError):
+            self.service.tick()
+        self.assertFalse(self.api.posts)
 
     def test_two_pr_queues_fill_two_slots_per_role_without_duplicate_launches(self):
         self.api.jobs += [dict(job, id=job['id'] + 10) for job in self.api.jobs]
