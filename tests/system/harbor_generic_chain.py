@@ -156,6 +156,7 @@ def exercise(args):
     if proxy_binary is not None:
         # The optional transport has an independent enforced 256 MiB maximum.
         deployment['host']['minimum_available_memory_bytes'] += 256 * MIB
+        deployment['host']['minimum_cpus'] += 1
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
         validate_cohort([t['requirements'] for t in selected_entries], deployment)
