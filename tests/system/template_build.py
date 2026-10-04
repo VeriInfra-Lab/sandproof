@@ -62,6 +62,9 @@ IGZIP_HASHES = {
 }
 
 FIXTURE = r"""import json, os, pathlib, shutil, subprocess, tarfile
+# The caller may protect host evidence with umask 077. These synthetic image
+# inputs need ordinary guest-readable modes; the private parent stays private.
+os.umask(0o022)
 p=pathlib.Path('/input/context')
 (p/'rootfs/bin').mkdir(parents=True)
 (p/'rootfs/etc').mkdir()
