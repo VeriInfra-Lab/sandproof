@@ -1,10 +1,35 @@
 import base64
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 from tools import ci_vm
 
 
 class CiVmTests(unittest.TestCase):
+    def test_same_slot_lock_refuses_duplicates_but_same_role_second_slot_can_run(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(ci_vm, 'ROOT', Path(temp)):
+            with ci_vm.lock_slot('rust', 'rust'):
+                self.assertTrue((Path(temp) / 'role-rust.lock').exists())
+                with self.assertRaises(BlockingIOError):
+                    ci_vm.lock_slot('rust', 'rust')
+                with ci_vm.lock_slot('rust', 'rust-2'):
+                    with self.assertRaises(BlockingIOError):
+                        ci_vm.lock_slot('rust', 'rust-2')
+            with ci_vm.lock_slot('rust', 'rust'):
+                pass  # The original slot is reusable only after its lock closes.
+
+    def test_role_slots_preserve_original_lock_and_reject_cross_role_or_unbounded_names(self):
+        for role in ci_vm.ROLES:
+            self.assertEqual(ci_vm.valid_slot(role, role), role)
+            if role != 'bootstrap':
+                self.assertEqual(ci_vm.valid_slot(role, role + '-2'), role + '-2')
+            for slot in ('../outside', role + '-3', 'bootstrap-2', 'unknown'):
+                with self.assertRaises(ValueError):
+                    ci_vm.valid_slot(role, slot)
+        with self.assertRaises(ValueError):
+            ci_vm.valid_slot('rust', 'sdk-2')
+
     def test_roles_fit_current_host_with_reserve(self):
         self.assertEqual(len(ci_vm.ROLES) - 1, 5)
         self.assertLess(sum(v[0] for k, v in ci_vm.ROLES.items() if k != 'bootstrap'), 12 * 1024)
