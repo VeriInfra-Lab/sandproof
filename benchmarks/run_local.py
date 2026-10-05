@@ -15,7 +15,7 @@ import sys
 import time
 from urllib.parse import urlsplit
 
-from e2b import AsyncSandbox, FileType
+from e2b import AsyncSandbox
 from harbor.agents.oracle import OracleAgent
 from harbor.environments.capabilities import EnvironmentCapabilities
 from harbor.environments.e2b import E2BEnvironment
@@ -24,9 +24,14 @@ from harbor.models.task.task import Task
 from harbor.models.trial.paths import TrialPaths
 from harbor.verifier.verifier import Verifier
 
+from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
-from benchmarks.check_browser_evidence import audit_browser_evidence
-from benchmarks.oracle_repairs import REPAIRS, prepare_repaired_task
+from benchmarks.check_browser_evidence import audit_browser_evidence, audit_browser_execution
+from benchmarks.failure_diagnostics import collect as collect_failure_diagnostics
+from benchmarks.oracle_repairs import (
+    CHROMIUM_LIFECYCLE_PATH, MTEB_VERIFIER_CONSTRAINTS, REPAIRS, prepare_repaired_task,
+)
+from benchmarks.sdk_environment import SdkEnvironment
 from tools.benchmark_tasks import InvalidInput, verify
 
 BASE_FROM = {
@@ -45,6 +50,8 @@ TASK_BASES = {
         'custom-memory-heap-crash', 'alexgshaw/custom-memory-heap-crash:20251031'),
 }
 GUEST_HELPERS = {
+    'fix-git-source': (Path(__file__).with_name('guest_git_fixture.py'),
+                       '/usr/local/lib/sandproof/guest_git_fixture.py'),
     'range-fetch': (Path(__file__).with_name('guest_fetch.py'),
                     '/usr/local/lib/sandproof/guest_fetch.py'),
     'chromium-lifecycle': (Path(__file__).with_name('guest_chromium.py'),
@@ -109,16 +116,11 @@ def load_recipes(lock, source):
     return recipes
 
 
-class LocalBaseEnvironment(E2BEnvironment):
+class LocalBaseEnvironment(SdkEnvironment):
     def __init__(self, *, recipe, sdk_options, **kwargs):
         self.recipe = recipe
-        self.sdk_options = sdk_options
-        self.events = []
-        self.sandbox_id = None
-        self.kill_confirmed = False
-        self.create_dispatched = False
         self._startup_handles = []
-        super().__init__(**kwargs)
+        super().__init__(sdk_options=sdk_options, **kwargs)
         self._workdir = recipe['workdir']
 
     @property
@@ -201,79 +203,6 @@ class LocalBaseEnvironment(E2BEnvironment):
         if boundary.return_code:
             raise InvalidInput('initialization leaked a reserved phase directory')
 
-    async def stop(self, delete=True):
-        if self._sandbox is not None:
-            # Do not swallow an unknown cleanup result or repeat create.
-            self.kill_confirmed = await self._sandbox.kill()
-            if not self.kill_confirmed:
-                raise RuntimeError('sandbox deletion was not acknowledged')
-            self._sandbox = None
-
-    async def exec(self, command, **kwargs):
-        started = time.monotonic()
-        event = {'command': command, 'return_code': None}
-        self.events.append(event)
-        try:
-            result = await super().exec(command, **kwargs)
-            event.update(return_code=result.return_code,
-                         stdout=result.stdout, stderr=result.stderr)
-            return result
-        except BaseException as error:
-            event['error_type'] = type(error).__name__
-            raise
-        finally:
-            event['seconds'] = round(time.monotonic() - started, 3)
-
-    async def upload_file(self, source_path, target_path):
-        source = Path(source_path)
-        if source.is_symlink() or not source.is_file():
-            raise InvalidInput('only verified regular input files may be uploaded')
-        await self._sandbox.files.write(target_path, source.read_bytes())
-        mode = '755' if source.stat().st_mode & 0o111 else '644'
-        result = await self.exec('chmod ' + mode + ' -- ' + shlex.quote(target_path), cwd='/', timeout_sec=30)
-        if result.return_code:
-            raise RuntimeError('input mode restoration failed')
-
-    async def upload_dir(self, source_dir, target_dir):
-        source = Path(source_dir)
-        await self._sandbox.files.make_dir(target_dir)
-        for path in sorted(source.rglob('*')):
-            if path.is_symlink():
-                raise InvalidInput('input symlink is unsupported')
-            target = str(PurePosixPath(target_dir) / path.relative_to(source).as_posix())
-            if path.is_dir():
-                await self._sandbox.files.make_dir(target)
-            elif path.is_file():
-                await self.upload_file(path, target)
-
-    async def download_file(self, source_path, target_path):
-        target = Path(target_path)
-        root = self.trial_paths.trial_dir.resolve()
-        if target.is_symlink() or not target.resolve().is_relative_to(root):
-            raise InvalidInput('guest log destination escapes the trial directory')
-        data = await self._sandbox.files.read(source_path, format='bytes')
-        if len(data) > 96 * 1024**2:
-            raise InvalidInput('guest log exceeds download budget')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-
-    async def download_dir(self, source_dir, target_dir):
-        # Original E2B downloader trusts guest path fields. Bound each basename
-        # before joining a host path and never follow guest symlinks.
-        source = PurePosixPath(source_dir)
-        for entry in await self._sandbox.files.list(source_dir):
-            path = PurePosixPath(entry.path)
-            if path.parent != source or path.name in ('.', '..'):
-                raise InvalidInput('guest returned an unexpected log path')
-            target = Path(target_dir) / path.name
-            if entry.type == FileType.FILE:
-                await self.download_file(str(path), target)
-            elif entry.type == FileType.DIR:
-                await self.download_dir(str(path), target)
-            else:
-                raise InvalidInput('guest log symlinks are unsupported')
-
-
 def write_report(path, content, row):
     """Retain local reporting failures without preventing exact VM cleanup."""
     try:
@@ -289,24 +218,43 @@ def write_report(path, content, row):
             row['reason'] = 'local_report_write_failed'
 
 
-async def run_task(args, entry, recipe):
+def record_artifact_status(environment, row):
+    budget = getattr(environment, 'artifact_budget', None)
+    if budget is not None:
+        row['artifact_budget'] = budget.report()
+        row['evidence_complete'] = budget.failure is None
+        if budget.failure is not None and row['status'] == 'passed':
+            row['status'] = 'failed'
+            row['reason'] = 'artifact_evidence_incomplete'
+
+
+async def run_task(args, entry, recipe, *, environment_factory=None, result_row=None):
     task = Task(args.source / entry['name'])
     paths = TrialPaths(args.output / entry['name'])
     paths.trial_dir.mkdir(mode=0o700)
     for directory in (paths.agent_dir, paths.verifier_dir, paths.artifacts_dir):
         directory.mkdir(mode=0o700)
-    environment = LocalBaseEnvironment(
+    recipe = recipe or {}
+    factory = environment_factory or LocalBaseEnvironment
+    environment = factory(
         recipe=recipe, sdk_options=dict(api_key=os.environ['SANDPROOF_TEST_API_KEY'],
             api_url=args.api_url, sandbox_url=args.api_url, domain='example.invalid',
             retries=0, request_timeout=60),
         environment_dir=task.paths.environment_dir, environment_name=task.name,
         session_id=task.name, trial_paths=paths, task_env_config=task.config.environment,
         persistent_env=recipe.get('env', {}),
+        artifact_limits=getattr(args, 'artifact_limits', None),
     )
     oracle_mode = getattr(args, 'oracle_mode', 'original')
-    row = {'name': task.name, 'status': 'running', 'stage': 'initialization',
-           'oracle_mode': oracle_mode,
-           'oracle': 'not_run', 'verifier': 'not_run'}
+    # The enclosing supervisor retains this same row even when cancellation
+    # propagates and result.json cannot be published. Disk reports are evidence,
+    # not the only channel carrying the original identity and failure to cleanup.
+    row = result_row if result_row is not None else {}
+    row.update(name=task.name, status='running', stage='initialization',
+               oracle_mode=oracle_mode,
+               environment_source_kind=getattr(environment, 'source_kind', 'fixed-base'),
+               original_environment=getattr(environment, 'source_kind', None) in ('oci', 'dockerfile'),
+               oracle='not_run', verifier='not_run')
     start = time.monotonic()
     def event(stage):
         row['stage'] = stage
@@ -325,23 +273,51 @@ async def run_task(args, entry, recipe):
                              trial_paths=paths, agent_timeout_sec=task.config.agent.timeout_sec)
         await asyncio.wait_for(oracle.run(task.instruction, environment, AgentContext()), task.config.agent.timeout_sec)
         row['oracle'] = 'failed' if (paths.agent_dir / 'exit-code.txt').exists() else 'passed'
+        record_artifact_status(environment, row)
         event('verifier')
-        verifier = Verifier(task=task, trial_paths=paths, environment=environment)
+        verifier_options = {}
+        if task.name == 'filter-js-from-html':
+            # Pytest otherwise hides successful-test stdout, including browser
+            # errors that this original verifier catches and treats as success.
+            # Apply observation settings only to the verifier, never the oracle.
+            row['verifier_observation_env'] = {'PYTEST_ADDOPTS': '-s -v', 'PYTHONUNBUFFERED': '1'}
+            verifier_options['override_env'] = dict(row['verifier_observation_env'])
+            if oracle_mode == 'repaired':
+                # Installed by this task's copied solution, selected only for
+                # this verifier. No implicit modification of original runs.
+                row['verifier_repair_env'] = {'SE_CHROME_PATH': CHROMIUM_LIFECYCLE_PATH}
+                verifier_options['override_env'].update(row['verifier_repair_env'])
+        if task.name == 'pytorch-model-recovery' and oracle_mode == 'repaired':
+            row['verifier_repair_env'] = {'UV_LINK_MODE': 'hardlink'}
+            verifier_options['override_env'] = dict(row['verifier_repair_env'])
+        if task.name == 'mteb-retrieve' and oracle_mode == 'repaired':
+            row['verifier_repair_env'] = {
+                'UV_CONSTRAINT': MTEB_VERIFIER_CONSTRAINTS,
+                'UV_LINK_MODE': 'hardlink',
+            }
+            verifier_options['override_env'] = dict(row['verifier_repair_env'])
+        verifier = Verifier(task=task, trial_paths=paths, environment=environment, **verifier_options)
         result = await asyncio.wait_for(verifier.verify(), task.config.verifier.timeout_sec)
         row['rewards'] = result.rewards
         row['verifier'] = 'passed' if result.rewards == {'reward': 1} else 'failed'
         row['status'] = 'passed' if row['oracle'] == row['verifier'] == 'passed' else 'failed'
+        record_artifact_status(environment, row)
         if task.name == 'filter-js-from-html':
-            lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
-            row['verification_audit'] = audit_browser_evidence(
-                paths.test_stdout_path.read_text() if paths.test_stdout_path.exists() else '',
-                lifecycle.read_text() if lifecycle.exists() else '')
+            stdout = paths.test_stdout_path.read_text() if paths.test_stdout_path.exists() else ''
+            if environment_factory is None or oracle_mode == 'repaired':
+                lifecycle = paths.verifier_dir / 'browser-lifecycle.jsonl'
+                row['verification_audit'] = audit_browser_evidence(
+                    stdout, lifecycle.read_text() if lifecycle.exists() else '')
+            else:
+                # Generic OCI/Dockerfile runs do not install the fixed-base
+                # lifecycle wrapper. Do not claim its process cleanup evidence.
+                row['verification_audit'] = audit_browser_execution(stdout)
             if not row['verification_audit']['complete']:
                 row['status'] = 'failed'
                 row['reason'] = 'browser verification incomplete; original reward retained'
         event('package_inventory')
         packages = await environment.exec("dpkg-query -W -f='${Package}=${Version}\\n'", cwd='/', timeout_sec=30)
-        (paths.trial_dir / 'packages.txt').write_text(packages.stdout or '')
+        environment.retain_text(paths.trial_dir / 'packages.txt', packages.stdout or '')
         row['stage'] = 'verifier'
     except (asyncio.CancelledError, KeyboardInterrupt) as error:
         row['status'] = 'interrupted'
@@ -373,32 +349,63 @@ async def run_task(args, entry, recipe):
                 except Exception as log_error:
                     row.setdefault('diagnostic_errors', {})[remote] = type(log_error).__name__
     finally:
+        record_artifact_status(environment, row)
+        row['execution_status'] = row['status']
         row['sandbox_id'] = environment.sandbox_id
+        row['create_dispatched'] = environment.create_dispatched
+        if hasattr(environment, 'build_id'):
+            row.update(build_id=environment.build_id, build=environment.build_result,
+                       environment_repair=getattr(environment, 'environment_repair', None),
+                       build_log_error=getattr(environment, 'build_log_error', None),
+                       template=environment.template, exact_cleanup='not_audited',
+                       build_dispatched=environment.build_dispatched,
+                       submission_key=environment.submission_key)
+            row['runtime_intent'] = getattr(environment, 'runtime_intent', None)
         if environment.create_dispatched and environment.sandbox_id is None:
             row['status'] = 'create_unknown'
         try:
+            if (getattr(args, 'failure_diagnostics', False) and environment.sandbox_id is not None
+                    and row['status'] == 'failed' and row['verifier'] == 'failed'):
+                try:
+                    row['failure_diagnostic'] = await collect_failure_diagnostics(
+                        environment, task.name, paths.trial_dir, oracle_mode=oracle_mode)
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    row['failure_diagnostic'] = {'status': 'interrupted'}
+                    row['interrupted'] = True
+                    raise
             if environment.sandbox_id is not None and row['status'] in ('failed', 'timeout'):
                 try:
                     observation = await asyncio.wait_for(environment.exec(
                         'cat /proc/sys/vm/overcommit_memory /proc/meminfo\ndf -Pk /\ndf -Pi /',
                         cwd='/', timeout_sec=10), 10)
-                    (paths.trial_dir / 'environment-diagnostics.txt').write_text(
-                        (observation.stdout or '') + (observation.stderr or ''))
+                    environment.retain_text(paths.trial_dir / 'environment-diagnostics.txt',
+                                            (observation.stdout or '') + (observation.stderr or ''))
                 except Exception as diagnostic_error:
                     row.setdefault('diagnostic_errors', {})['environment'] = type(diagnostic_error).__name__
             write_report(paths.trial_dir / 'events.json',
                          json.dumps(environment.events, indent=2), row)
         finally:
             # Even diagnostics/serialization errors must reach this path.
+            cleanup_started = time.monotonic()
             try:
                 await environment.stop()
             except (Exception, asyncio.CancelledError, KeyboardInterrupt) as error:
                 row['cleanup_error_type'] = type(error).__name__
                 row['status'] = 'cleanup_unknown'
+                # Retain the SDK's structured HTTP status, never exception
+                # text that may contain credentials or response bodies.
+                try:
+                    http_status = getattr(error, 'status_code', None)
+                except Exception:
+                    http_status = None  # Optional diagnostics cannot mask cleanup.
+                if type(http_status) is int and 100 <= http_status <= 599:
+                    row['cleanup_http_status'] = http_status
                 if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt)):
                     row['interrupted'] = True
                     raise
             finally:
+                row['cleanup_seconds'] = round(time.monotonic() - cleanup_started, 3)
+                record_artifact_status(environment, row)
                 row['kill_confirmed'] = environment.kill_confirmed
                 row['seconds'] = round(time.monotonic() - start, 3)
                 write_report(paths.trial_dir / 'result.json',
@@ -416,8 +423,10 @@ def main():
     parser.add_argument('--task', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
+    add_artifact_arguments(parser)
     args = parser.parse_args()
     try:
+        args.artifact_limits = artifact_limits_from_args(args)
         local_url(args.api_url)
         runtimes = check_runtime()
         lock = verify(json.loads(args.lock.read_text()), args.registry, args.source)
@@ -431,7 +440,7 @@ def main():
         args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         (args.output / 'inputs.json').write_text(json.dumps({'source': lock['source'],
             'runtimes': runtimes, 'task': entry, 'recipe': recipes[args.task],
-            'oracle_mode': args.oracle_mode,
+            'oracle_mode': args.oracle_mode, 'artifact_limits': args.artifact_limits,
             'recipe_file_sha256': hashlib.sha256(RECIPES.read_bytes()).hexdigest()}, indent=2))
         rows = [{'name': t['name'], 'status': 'not_run',
                  'reason': 'recipe_available' if t['name'] in recipes else 'additional_base_or_initializer_required'}

@@ -746,7 +746,10 @@
         "target": "/app/resources"
       },
       {
-        "run": "bash /app/setup.sh",
+        "helper": "fix-git-source"
+      },
+      {
+        "run": "python3 /usr/local/lib/sandproof/guest_git_fixture.py",
         "cwd": "/app",
         "env": {}
       },

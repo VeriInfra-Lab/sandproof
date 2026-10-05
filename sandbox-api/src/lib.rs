@@ -4,10 +4,18 @@
 //! This crate does not make lifecycle decisions: the trusted `ControllerPort`
 //! must authorize every operation against the durable controller state.
 
+mod build_vm_api;
 mod list;
 pub mod managed;
 mod network;
+mod template_api;
+pub use build_vm_api::{
+    BuildSettlementRequest, BuildSettlementView, BuildVmRequest, BuildVmView, BuildWindowClosed,
+};
 pub use list::{ListOrder, ListQuery};
+pub use sandproof_controller_service::template_registry::{
+    PublicationView, TemplatePage, TemplateView,
+};
 
 use std::{sync::Arc, time::Duration};
 
@@ -182,6 +190,104 @@ pub enum SandboxOnTimeout {
 /// `create` must commit a unique admission before host I/O; an uncertain
 /// physical outcome must never be silently retried as another create.
 pub trait ControllerPort: Send + Sync + 'static {
+    /// Private build-pool identity API. Disabled on ordinary controllers.
+    /// # Errors
+    /// Missing identities return `NotFound`; an admitted identity is never replaced.
+    fn build_vm(
+        &self,
+        _tenant: &str,
+        _id: &str,
+        _create: Option<BuildVmRequest>,
+    ) -> Result<BuildVmView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// Exact private retry tuple lookup, including accepted closed windows.
+    /// # Errors
+    /// Unknown identities are not proof that delayed admission is impossible.
+    fn build_vm_in_window(
+        &self,
+        tenant: &str,
+        id: &str,
+        window: Option<&str>,
+        create: Option<BuildVmRequest>,
+    ) -> Result<BuildVmView, PortError> {
+        if window.is_some() {
+            return Err(PortError::NotFound);
+        }
+        self.build_vm(tenant, id, create)
+    }
+    /// # Errors
+    /// Requires explicitly configured private retry windows.
+    fn issue_build_window(
+        &self,
+        _tenant: &str,
+    ) -> Result<sandproof_controller_service::BuildWindow, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Unknown commits do not establish an admission fence.
+    fn close_build_window(
+        &self,
+        _tenant: &str,
+        _window: &str,
+    ) -> Result<BuildWindowClosed, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Exact closed admission and core cleanup are required before releasing anchors.
+    fn settle_build_vm(
+        &self,
+        _tenant: &str,
+        _id: &str,
+        _request: BuildSettlementRequest,
+    ) -> Result<BuildSettlementView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Disabled registries return `NotFound`; unknown work is not re-dispatched.
+    fn publish_template(
+        &self,
+        _tenant: &str,
+        _candidate: &str,
+    ) -> Result<PublicationView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Missing and foreign publications are indistinguishable.
+    fn publication(&self, _tenant: &str, _candidate: &str) -> Result<PublicationView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Returns only owned, Ready registered templates.
+    fn template(&self, _tenant: &str, _name: &str) -> Result<TemplateView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Refuses invalid limits/cursors or unavailable storage.
+    fn templates(
+        &self,
+        _tenant: &str,
+        _limit: usize,
+        _cursor: Option<&str>,
+    ) -> Result<TemplatePage, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Refuses foreign/unready targets or a stale expected target.
+    fn set_template_alias(
+        &self,
+        _tenant: &str,
+        _name: &str,
+        _target: &str,
+        _expected: Option<&str>,
+    ) -> Result<TemplateView, PortError> {
+        Err(PortError::NotFound)
+    }
+    /// # Errors
+    /// Deletes only the caller's alias, never artifacts or admitted bindings.
+    fn delete_template_alias(&self, _tenant: &str, _name: &str) -> Result<(), PortError> {
+        Err(PortError::NotFound)
+    }
     /// # Errors
     /// Returns a typed rejection; an uncertain physical result is `OutcomeUnknown`.
     fn create(&self, tenant: &str, request: CreateRequest) -> Result<SandboxSession, PortError>;
@@ -307,7 +413,12 @@ async fn create<P: ControllerPort>(
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
     // Parse the pinned SDK's address-only policy before any host effect. The
     // managed port separately checks host readiness before durable admission.
-    if request.template_id != "base"
+    if request.template_id.is_empty()
+        || request.template_id.len() > 64
+        || !request
+            .template_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
         || network::selected_policy(&request).is_err()
         || !valid_timeout(request.timeout)
         || (CreateOptions {
@@ -317,6 +428,7 @@ async fn create<P: ControllerPort>(
                 allow_internet_access: request.allow_internet_access,
                 network: request.network.clone(),
             }),
+            template: None,
         })
         .validate()
         .is_err()
@@ -449,6 +561,8 @@ pub fn router<P: ControllerPort>(
             get(get_sandbox::<P>).delete(kill::<P>),
         )
         .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
+        .merge(template_api::routes::<P>())
+        .merge(build_vm_api::routes::<P>())
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
         .with_state(state))
 }

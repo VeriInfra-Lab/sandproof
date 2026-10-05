@@ -5,6 +5,14 @@ above Connect's ten-digit millisecond header limit. Request/opening deadlines
 are checked separately from the command stream deadline and sandbox lifetime.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import importlib.metadata
@@ -243,7 +251,8 @@ async def exercise(args):
                 rows.append(await wait_deadline_case(sandbox, started_with_deadline))
             results.append(dict(sdk=cls.__name__, cases=rows))
         finally:
-            assert await call(sandbox.kill)
+            _kill_confirmed = (await call(sandbox.kill))
+            assert _kill_confirmed
     print(json.dumps(dict(sdk_version='2.51.0', results=results,
                           scope='run/connect stream and opening timeout values; wait uses '
                                 'the existing stream deadline, no separate timeout argument; '

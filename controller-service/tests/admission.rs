@@ -48,7 +48,279 @@ fn limits() -> AdmissionLimits {
     }
 }
 
+fn template_options() -> CreateOptions {
+    use sandproof_controller_service::templates::{
+        ResourceShape, TemplateArtifact, TemplateBinding,
+    };
+    CreateOptions {
+        template: Some(TemplateBinding {
+            startup: None,
+            template_id: "ubuntu-r1".into(),
+            revision: "r1".into(),
+            owner: None,
+            kernel: TemplateArtifact {
+                path: "/opt/images/vmlinux".into(),
+                sha256: "a".repeat(64),
+                size_bytes: 1024,
+            },
+            rootfs: TemplateArtifact {
+                path: "/opt/images/rootfs.ext4".into(),
+                sha256: "b".repeat(64),
+                size_bytes: 1_000,
+            },
+            resources: ResourceShape {
+                cpu_count: 2,
+                memory_mib: 128,
+                disk_bytes: 1_000,
+                host_memory_bytes: 256 * 1024 * 1024,
+            },
+            envd_version: "0.9.0".into(),
+        }),
+        ..CreateOptions::default()
+    }
+}
+
+fn template_admission(options: CreateOptions) -> CreateAdmission {
+    CreateAdmission {
+        now_ms: 1_000,
+        timeout_secs: 60,
+        disk_bytes: 1_000,
+        options,
+        limits: AdmissionLimits {
+            max_active_global: 10,
+            max_active_per_tenant: 10,
+            max_disk_bytes_global: 20_000,
+            max_disk_bytes_per_tenant: 20_000,
+            ..limits()
+        },
+    }
+}
+
+fn compute_limits() -> sandproof_controller_service::templates::ComputeLimits {
+    sandproof_controller_service::templates::ComputeLimits {
+        max_vcpus_global: 8,
+        max_vcpus_per_tenant: 8,
+        max_memory_bytes_global: 1024 * 1024 * 1024,
+        max_memory_bytes_per_tenant: 1024 * 1024 * 1024,
+    }
+}
+
+#[test]
+fn template_commit_freezes_identity_and_rejects_legacy_writers_after_reopen() {
+    let (directory, mut journal) = setup();
+    let options = template_options();
+    assert!(
+        journal
+            .admit_template_create(
+                request(10, 1),
+                template_admission(options.clone()),
+                compute_limits(),
+                &mut BeforeCommit
+            )
+            .is_err()
+    );
+    assert!(journal.world().unwrap().sandbox_records().is_empty());
+    // The failed transaction must not freeze its ID or upgrade the schema.
+    let connection = rusqlite::Connection::open(directory.path().join("controller.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT version FROM controller_meta", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        7
+    );
+    assert!(matches!(
+        journal.admit_template_create(
+            request(10, 1),
+            template_admission(options.clone()),
+            compute_limits(),
+            &mut AfterCommit,
+        ),
+        Err(AdmissionError::Journal(JournalError::InjectedCrash(
+            CrashPoint::AfterCommit
+        )))
+    ));
+    drop(journal);
+    let mut reopened =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(
+        reopened.create_options(core::SandboxId(10)).unwrap(),
+        options
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT version FROM controller_meta", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        8
+    );
+    let mut changed = options;
+    changed.template.as_mut().unwrap().rootfs.sha256 = "c".repeat(64);
+    assert!(matches!(
+        reopened.admit_template_create(
+            request(11, 1),
+            template_admission(changed),
+            compute_limits(),
+            &mut NeverCrash
+        ),
+        Err(AdmissionError::InvalidCreateOptions)
+    ));
+    assert!(matches!(
+        reopened.admit_create(request(11, 1), 1_000, 60, 1_000, limits(), &mut NeverCrash),
+        Err(AdmissionError::InvalidCreateOptions)
+    ));
+    assert_eq!(reopened.world().unwrap().sandbox_records().len(), 1);
+}
+
+#[test]
+fn startup_binding_is_frozen_and_schema_guard_never_downgrades() {
+    use sandproof_controller_service::templates::TemplateStartup;
+    let (directory, mut journal) = setup();
+    let mut options = template_options();
+    options.template.as_mut().unwrap().startup = Some(TemplateStartup {
+        env_vars: BTreeMap::new(),
+        user: "root".into(),
+        workdir: "/".into(),
+        argv: vec!["/bin/app".into(), "literal arg".into()],
+    });
+    journal
+        .admit_template_create(
+            request(10, 1),
+            template_admission(options.clone()),
+            compute_limits(),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    drop(journal);
+    let mut journal =
+        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(
+        journal.create_options(core::SandboxId(10)).unwrap(),
+        options
+    );
+    let mut changed = options;
+    changed
+        .template
+        .as_mut()
+        .unwrap()
+        .startup
+        .as_mut()
+        .unwrap()
+        .argv
+        .push("different".into());
+    assert!(matches!(
+        journal.admit_template_create(
+            request(11, 1),
+            template_admission(changed),
+            compute_limits(),
+            &mut NeverCrash
+        ),
+        Err(AdmissionError::InvalidCreateOptions)
+    ));
+    let mut legacy = template_options();
+    legacy.template.as_mut().unwrap().template_id = "legacy-other".into();
+    journal
+        .admit_template_create(
+            request(11, 1),
+            template_admission(legacy),
+            compute_limits(),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let connection = rusqlite::Connection::open(directory.path().join("controller.db")).unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT version FROM controller_meta", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        9
+    );
+}
+
+#[test]
+fn compute_budget_checks_global_and_tenant_exact_boundaries_before_commit() {
+    for case in 0..4 {
+        let (_directory, mut journal) = setup();
+        let mut compute = compute_limits();
+        match case {
+            0 => {
+                compute.max_vcpus_global = 2;
+                compute.max_vcpus_per_tenant = 2;
+            }
+            1 => compute.max_vcpus_per_tenant = 2,
+            2 => {
+                compute.max_memory_bytes_global = 256 * 1024 * 1024;
+                compute.max_memory_bytes_per_tenant = compute.max_memory_bytes_global;
+            }
+            _ => compute.max_memory_bytes_per_tenant = 256 * 1024 * 1024,
+        }
+        journal
+            .admit_template_create(
+                request(10, 1),
+                template_admission(template_options()),
+                compute,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        let world = journal.world().unwrap();
+        let second_owner = if case % 2 == 0 { 2 } else { 1 };
+        assert!(matches!(
+            journal.admit_template_create(
+                request(11, second_owner),
+                template_admission(template_options()),
+                compute,
+                &mut NeverCrash
+            ),
+            Err(AdmissionError::QuotaExceeded)
+        ));
+        assert_eq!(journal.world().unwrap(), world);
+    }
+}
+
+#[test]
+fn templates_refuse_unaccounted_legacy_resources_and_mismatched_owner_or_disk() {
+    let (_directory, mut journal) = setup();
+    journal
+        .admit_create(request(10, 1), 1_000, 60, 1_000, limits(), &mut NeverCrash)
+        .unwrap();
+    assert!(matches!(
+        journal.admit_template_create(
+            request(11, 2),
+            template_admission(template_options()),
+            compute_limits(),
+            &mut NeverCrash
+        ),
+        Err(AdmissionError::UnmanagedActive)
+    ));
+    let (_directory, mut journal) = setup();
+    let mut admission = template_admission(template_options());
+    admission.disk_bytes += 1;
+    assert!(matches!(
+        journal.admit_template_create(request(10, 1), admission, compute_limits(), &mut NeverCrash),
+        Err(AdmissionError::InvalidCreateOptions)
+    ));
+    let mut admission = template_admission(template_options());
+    admission.options.template.as_mut().unwrap().owner = Some(2);
+    assert!(matches!(
+        journal.admit_template_create(request(10, 1), admission, compute_limits(), &mut NeverCrash),
+        Err(AdmissionError::InvalidCreateOptions)
+    ));
+    assert!(journal.world().unwrap().sandbox_records().is_empty());
+}
+
 struct BeforeCommit;
+
+struct AfterCommit;
+
+impl CrashInjector for AfterCommit {
+    fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
+        if point == CrashPoint::AfterCommit {
+            Err(JournalError::InjectedCrash(point))
+        } else {
+            Ok(())
+        }
+    }
+}
 
 impl CrashInjector for BeforeCommit {
     fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
@@ -82,6 +354,7 @@ fn create_options_share_the_admission_commit_and_survive_reopen() {
             allow_internet_access: Some(false),
             network: None,
         }),
+        template: None,
     };
     assert!(matches!(
         journal.admit_create_with_options(

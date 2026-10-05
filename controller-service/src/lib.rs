@@ -10,12 +10,17 @@
 mod controller;
 mod dispatch;
 mod journal;
+pub mod physical_storage;
+pub mod template_registry;
+pub mod templates;
 mod workflow;
 
 pub use controller::{
-    AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateNetwork,
-    CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS,
-    HostEvidence, Lifetime,
+    AdmissionError, AdmissionLimits, BoundedHostConfig, BuildAnchor, BuildRetryConfig, BuildWindow,
+    CapacityConfig, CheckpointInfo, CheckpointProgress, ConsolePolicy, ControllerJournal,
+    CreateAdmission, CreateNetwork, CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS,
+    DEFAULT_TIMEOUT_SECS, HostEvidence, HostReleaseWitness, HostSlotContext, Lifetime,
+    MaintenanceConfig, RetirementCandidate,
 };
 
 pub use dispatch::{DispatchResult, WorkerTransportError};
@@ -40,6 +45,9 @@ pub enum CrashPoint {
     BeforeDispatchClaim,
     AfterDispatchClaim,
     AfterWorkerCall,
+    BeforeCheckpointDelete,
+    AfterCheckpointDelete,
+    AfterRetirementDelete,
 }
 
 /// Tests inject a process stop at a named boundary. Production uses `NeverCrash`.
@@ -65,6 +73,8 @@ pub enum JournalError {
     Json(serde_json::Error),
     Contract(ContractError),
     Conflict,
+    IdentifierExhausted,
+    MaintenanceCapacity,
     RevisionConflict,
     ReceiptBeforeDispatch,
     ConflictingReceipt,
@@ -104,6 +114,12 @@ impl JournalError {
 impl Display for JournalError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MaintenanceCapacity => {
+                formatter.write_str("configured maintenance capacity exhausted")
+            }
+            Self::IdentifierExhausted => {
+                formatter.write_str("controller identifier space exhausted")
+            }
             Self::Io(error) => write!(formatter, "controller filesystem error: {error}"),
             Self::Sqlite(error) => write!(formatter, "sqlite journal error: {error}"),
             Self::CommitUncertain(error) => {

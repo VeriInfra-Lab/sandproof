@@ -4,6 +4,14 @@ Run as root in an operator-selected isolated short directory. On failure this
 script preserves only its own test root for exact-resource inspection.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -116,7 +124,8 @@ def main(args):
         assert renewed.end_at > initial.end_at
         resumed.set_timeout(1200)
         assert resumed.get_info().end_at == initial.started_at + timedelta(seconds=600)
-        assert Sandbox.kill(sandbox.sandbox_id, **sdk)
+        _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk))
+        assert _kill_confirmed
         with sqlite3.connect(root / 'db/controller.db') as database:
             states = [json.loads(row[0]) for row in database.execute('SELECT state_blob FROM sandboxes')]
         assert len(states) == 1 and states[0]['phase'] == 'Destroyed'

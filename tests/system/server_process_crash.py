@@ -5,6 +5,14 @@ All test resources use a new namespace and private directory. A failed run
 keeps its exact artifacts for manual inspection instead of guessing cleanup.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import hashlib
 import http.client
@@ -93,6 +101,8 @@ def start_server(
     fail_reclaim_stop_sandbox: int | None = None,
     fail_reclaim_prepare_sandbox: int | None = None,
     exit_after_vm_claim: str | None = None,
+    template_start_target: str | None = None,
+    command_prefix: list[str] | None = None,
 ) -> subprocess.Popen[bytes]:
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
     if target is not None:
@@ -107,11 +117,13 @@ def start_server(
         environment["SANDPROOF_TEST_FAIL_RECLAIM_PREPARE_SANDBOX"] = str(fail_reclaim_prepare_sandbox)
     if exit_after_vm_claim is not None:
         environment["SANDPROOF_TEST_EXIT_AFTER_VM_CLAIM"] = exit_after_vm_claim
+    if template_start_target is not None:
+        environment["SANDPROOF_TEST_EXIT_AFTER_TEMPLATE_START"] = template_start_target
     if stop_gate is not None:
         environment["SANDPROOF_TEST_STOP_GATE"] = str(stop_gate)
     with log.open("ab") as output:
         return subprocess.Popen(
-            [str(binary), str(config)],
+            [*(command_prefix or []), str(binary), str(config)],
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=subprocess.STDOUT,

@@ -54,7 +54,75 @@ fn info() -> SandboxInfo {
 }
 
 impl ControllerPort for FakePort {
+    fn issue_build_window(
+        &self,
+        tenant: &str,
+    ) -> Result<sandproof_controller_service::BuildWindow, PortError> {
+        self.record(format!("issue-build:{tenant}"));
+        Ok(sandproof_controller_service::BuildWindow {
+            request_window: "bw-0123456789abcdef-1-0".into(),
+            expires_at_ms: 1234,
+        })
+    }
+    fn close_build_window(
+        &self,
+        tenant: &str,
+        window: &str,
+    ) -> Result<sandproof_api::BuildWindowClosed, PortError> {
+        self.record(format!("close-build:{tenant}:{window}"));
+        Ok(sandproof_api::BuildWindowClosed {
+            request_window: window.into(),
+            closed: true,
+        })
+    }
+    fn build_vm(
+        &self,
+        tenant: &str,
+        id: &str,
+        create: Option<sandproof_api::BuildVmRequest>,
+    ) -> Result<sandproof_api::BuildVmView, PortError> {
+        let window = create
+            .as_ref()
+            .and_then(|value| value.request_window.clone());
+        self.build_vm_in_window(tenant, id, window.as_deref(), create)
+    }
+    fn build_vm_in_window(
+        &self,
+        tenant: &str,
+        id: &str,
+        window: Option<&str>,
+        create: Option<sandproof_api::BuildVmRequest>,
+    ) -> Result<sandproof_api::BuildVmView, PortError> {
+        self.record(format!(
+            "build:{tenant}:{id}:{window:?}:{}",
+            create.is_some()
+        ));
+        Ok(sandproof_api::BuildVmView {
+            sandbox_id: "sb-0123456789abcdef-1".into(),
+            state: "Destroyed".into(),
+            cleanup_complete: true,
+            session: None,
+        })
+    }
+    fn settle_build_vm(
+        &self,
+        tenant: &str,
+        id: &str,
+        request: sandproof_api::BuildSettlementRequest,
+    ) -> Result<sandproof_api::BuildSettlementView, PortError> {
+        self.record(format!(
+            "settle-build:{tenant}:{id}:{}:{:?}",
+            request.request_window, request.sandbox_id
+        ));
+        Ok(sandproof_api::BuildSettlementView {
+            request_window: request.request_window,
+            settled: true,
+        })
+    }
     fn create(&self, tenant: &str, request: CreateRequest) -> Result<SandboxSession, PortError> {
+        if request.template_id != "base" {
+            return Err(PortError::Invalid);
+        }
         self.record(format!("create:{tenant}:{:?}", request.timeout));
         Ok(session())
     }
@@ -555,4 +623,97 @@ async fn set_timeout_preserves_signed_values_for_controller_clamping() {
         );
     }
     assert_eq!(port.calls.lock().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn private_build_retry_wire_authenticates_and_preserves_exact_window_tuple() {
+    let port = Arc::new(FakePort::default());
+    let app = app(port.clone());
+    let window = "bw-0123456789abcdef-1-0";
+    let id = "11111111111111111111111111111111";
+    let issue = "/sandproof/internal-build-windows";
+    let create = format!("/sandproof/internal-build-vms/{id}");
+    let query = format!("{create}?requestWindow={window}");
+    let close = format!("{issue}/{window}/close");
+    let settle = format!("{create}/settle");
+    for (method, path, body) in [
+        ("POST", issue, Some("{}")),
+        ("GET", query.as_str(), None),
+        ("POST", close.as_str(), Some("{}")),
+        ("POST", settle.as_str(), Some("{}")),
+    ] {
+        assert_eq!(
+            send(app.clone(), method, path, None, body).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert!(port.calls.lock().unwrap().is_empty());
+    let response = send(app.clone(), "POST", issue, Some(ALICE_KEY), Some("{}")).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["requestWindow"], window);
+    assert_eq!(value["expiresAtMs"], 1234);
+    let body =
+        format!("{{\"requestWindow\":\"{window}\",\"timeout\":60,\"allowInternetAccess\":false}}");
+    assert_eq!(
+        send(app.clone(), "POST", &create, Some(ALICE_KEY), Some(&body))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(app.clone(), "GET", &query, Some(ALICE_KEY), None)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(app.clone(), "POST", &close, Some(ALICE_KEY), Some("{}"))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    let body = format!("{{\"requestWindow\":\"{window}\",\"sandboxID\":null}}");
+    let response = send(app.clone(), "POST", &settle, Some(ALICE_KEY), Some(&body)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["settled"], true);
+    let calls = port.calls.lock().unwrap().clone();
+    assert_eq!(
+        calls,
+        vec![
+            "issue-build:alice".to_owned(),
+            format!("build:alice:{id}:Some(\"{window}\"):true"),
+            format!("build:alice:{id}:Some(\"{window}\"):false"),
+            format!("close-build:alice:{window}"),
+            format!("settle-build:alice:{id}:{window}:None")
+        ]
+    );
+    assert_eq!(
+        send(
+            app.clone(),
+            "GET",
+            &format!("{query}&unknown=true"),
+            Some(ALICE_KEY),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        send(
+            app,
+            "POST",
+            &settle,
+            Some(ALICE_KEY),
+            Some("{\"requestWindow\":\"x\",\"sandboxID\":null,\"checked\":true}")
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(port.calls.lock().unwrap().len(), 5);
 }

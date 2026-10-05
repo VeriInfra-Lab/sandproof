@@ -5,6 +5,14 @@ Unix stop gate makes the second DELETE overlap the first accepted kill without
 sleep-based race detection. On failure, retain only this run's exact resources.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import hashlib

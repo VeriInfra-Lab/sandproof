@@ -1,9 +1,10 @@
 //! Lease and admission accounting lives beside the reducer's accepted-input
 //! transaction. The core still owns lifecycle transitions and authorization.
 
-use super::{ControllerJournal, identity, storage};
+use super::{ControllerJournal, identity, storage, transaction::WorldTransaction};
+use crate::templates::{ComputeLimits, TemplateBinding};
 use crate::{CrashInjector, CrashPoint, JournalError};
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -20,6 +21,9 @@ pub struct CreateOptions {
     /// None for legacy records whose original request cannot be recovered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub networking: Option<CreateNetworking>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Trusted resolved descriptor, never copied from a client's host-path input.
+    pub template: Option<TemplateBinding>,
 }
 
 /// Original supported network fields, before canonicalizing the enforced policy.
@@ -42,6 +46,9 @@ pub struct CreateNetwork {
 }
 
 impl CreateOptions {
+    /// Maximum encoded create options, including resolved template paths.
+    pub const MAX_ENCODED_BYTES: usize = 64 * 1024;
+
     /// Check bounded, JSON-safe values before any durable or host effect.
     /// # Errors
     /// Rejects invalid environment names, NULs or oversized input.
@@ -50,6 +57,13 @@ impl CreateOptions {
     }
 
     fn encoded(&self) -> Result<Vec<u8>, AdmissionError> {
+        if self
+            .template
+            .as_ref()
+            .is_some_and(|template| !template.is_valid())
+        {
+            return Err(AdmissionError::InvalidCreateOptions);
+        }
         if self.env_vars.iter().any(|(key, value)| {
             key.is_empty() || key.contains('=') || key.contains('\0') || value.contains('\0')
         }) || self
@@ -60,7 +74,7 @@ impl CreateOptions {
             return Err(AdmissionError::InvalidCreateOptions);
         }
         let encoded = serde_json::to_vec(self).map_err(|_| AdmissionError::InvalidCreateOptions)?;
-        if encoded.len() > 64 * 1024 {
+        if encoded.len() > Self::MAX_ENCODED_BYTES {
             return Err(AdmissionError::InvalidCreateOptions);
         }
         Ok(encoded)
@@ -91,9 +105,8 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
 pub const DEFAULT_STARTUP_TIMEOUT_SECS: u64 = 300;
 
 fn reserve_startup_in_admission(
-    tx: &Transaction<'_>,
+    tx: &WorldTransaction<'_>,
     namespace: &str,
-    decision: &core::ControllerDecision,
     key: core::OperationKey,
     max_vm_id: u64,
 ) -> Result<core::ControllerDecision, AdmissionError> {
@@ -102,7 +115,6 @@ fn reserve_startup_in_admission(
     let reserved = storage::apply(
         tx,
         namespace,
-        &decision.next,
         core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
     )
     .map_err(|error| match error {
@@ -116,9 +128,10 @@ fn reserve_startup_in_admission(
     else {
         return Err(AdmissionError::Journal(JournalError::CorruptStore));
     };
-    if vm.0 > max_vm_id || slot.0 > max_vm_id {
+    if super::bounded::config(tx)?.is_none() && (vm.0 > max_vm_id || slot.0 > max_vm_id) {
         return Err(AdmissionError::QuotaExceeded);
     }
+    super::bounded::reserve_host_slot(tx, key.sandbox)?;
     Ok(reserved)
 }
 
@@ -280,7 +293,11 @@ fn active(record: &core::SandboxRecord) -> bool {
     record.phase != core::Phase::Destroyed
 }
 
-fn accounted(world: &core::World, sandbox: core::SandboxId, record: &core::SandboxRecord) -> bool {
+pub(super) fn accounted(
+    world: &core::World,
+    sandbox: core::SandboxId,
+    record: &core::SandboxRecord,
+) -> bool {
     if active(record) {
         return true;
     }
@@ -312,11 +329,8 @@ impl ControllerJournal {
         if started_at_ms < 0 {
             return Err(JournalError::UnsupportedInput);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         if storage::unresolved(&world, sandbox) {
             return Err(JournalError::UnresolvedAction);
         }
@@ -352,7 +366,6 @@ impl ControllerJournal {
         let decision = storage::apply(
             &tx,
             &self.namespace,
-            &world,
             core::ControllerInput::Publication(core::PublicationInput::Running(sandbox)),
         )?;
         let id = identity::sandbox_id(&self.namespace, sandbox)?;
@@ -361,7 +374,7 @@ impl ControllerJournal {
             params![started_at_ms, end, max_end, id.as_str()],
         )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(decision.next)
     }
@@ -404,6 +417,54 @@ impl ControllerJournal {
         admission: CreateAdmission,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
+        self.admit_with_compute(request, admission, None, None, crashes)
+    }
+
+    /// Atomically bind a prebuilt template and charge its actual resource shape.
+    /// # Errors
+    /// Rejects missing/mismatched descriptors, compute quotas and unmanaged legacy instances.
+    pub fn admit_template_create(
+        &mut self,
+        request: core::CreateRequest,
+        admission: CreateAdmission,
+        compute: ComputeLimits,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<core::ControllerDecision, AdmissionError> {
+        self.admit_with_compute(request, admission, Some(compute), None, crashes)
+    }
+
+    /// The validation VM identity and create intent commit together, before host work.
+    /// # Errors
+    /// Refuses an already attached, foreign, or changed publication.
+    pub fn admit_template_validation(
+        &mut self,
+        request: core::CreateRequest,
+        admission: CreateAdmission,
+        compute: ComputeLimits,
+        publication: &str,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<core::ControllerDecision, AdmissionError> {
+        self.admit_with_compute(
+            request,
+            admission,
+            Some(compute),
+            Some(publication),
+            crashes,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "all resource charges and the reducer intent must share one transaction"
+    )]
+    fn admit_with_compute(
+        &mut self,
+        request: core::CreateRequest,
+        admission: CreateAdmission,
+        compute: Option<ComputeLimits>,
+        publication: Option<&str>,
+        crashes: &mut impl CrashInjector,
+    ) -> Result<core::ControllerDecision, AdmissionError> {
         let CreateAdmission {
             now_ms,
             timeout_secs,
@@ -412,6 +473,21 @@ impl ControllerJournal {
             options,
         } = admission;
         let encoded_options = options.encoded()?;
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
+        if let Some(cap) = super::capacity::config(&self.journal.connection)?
+            && limits.cleanup_reserve_bytes < cap.max_online_storage_bytes
+        {
+            return Err(JournalError::MaintenanceCapacity.into());
+        }
+        match (&options.template, compute) {
+            (Some(template), Some(limits))
+                if limits.is_valid()
+                    && template.resources.disk_bytes == disk_bytes
+                    && template.owner.is_none_or(|owner| owner == request.owner.0) => {}
+            (None, None) => {}
+            _ => return Err(AdmissionError::InvalidCreateOptions),
+        }
         let end = deadline(now_ms, timeout_secs, limits)?;
         let startup_deadline_ms = checked_deadline(now_ms, limits.startup_timeout_secs)?;
         if timeout_secs > limits.max_lifetime_secs {
@@ -431,11 +507,28 @@ impl ControllerJournal {
         {
             return Err(AdmissionError::Unauthorized);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
+        // Persist expiration at the actual admission timestamp, not an earlier
+        // HTTP observation. A rejected Admit must never resurrect after clock rollback.
+        if options.metadata.contains_key("_sandproof_build_window") {
+            self.advance_build_windows(
+                u64::try_from(now_ms).map_err(|_| AdmissionError::InvalidClock)?,
+                crashes,
+            )?;
+        }
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let schema: i64 = tx.query_row(
+            "SELECT version FROM controller_meta WHERE id=1",
+            [],
+            |row| row.get(0),
+        )?;
+        // Configuration rollback cannot introduce uncharged legacy instances.
+        let private_without_templates = schema >= 11
+            && super::private_build::config(&tx)?.is_some()
+            && tx.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('admitted_templates','template_registry_meta')", [], |row| row.get::<_,i64>(0))? == 0;
+        if compute.is_none() && schema >= 8 && !private_without_templates {
+            return Err(AdmissionError::InvalidCreateOptions);
+        }
+        let world = tx.world();
         if storage::unresolved(&world, request.sandbox) {
             return Err(JournalError::UnresolvedAction.into());
         }
@@ -443,12 +536,48 @@ impl ControllerJournal {
         let mut tenant = 0_u64;
         let mut global_disk = 0_u64;
         let mut tenant_disk = 0_u64;
+        let mut global_cpu = 0_u64;
+        let mut tenant_cpu = 0_u64;
+        let mut global_memory = 0_u64;
+        let mut tenant_memory = 0_u64;
         for (id, record) in world.sandbox_records() {
             if !accounted(&world, *id, record) {
                 continue;
             }
             let lifetime = read_lifetime(&tx, &self.namespace, *id, record.owner)?
                 .ok_or(AdmissionError::UnmanagedActive)?;
+            if compute.is_some() {
+                let bytes: Vec<u8> = tx.query_row(
+                    "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
+                    [identity::sandbox_id(&self.namespace, *id)?.as_str()],
+                    |row| row.get(0),
+                )?;
+                let stored: CreateOptions = serde_json::from_slice(&bytes)
+                    .map_err(|_| AdmissionError::InvalidCreateOptions)?;
+                if stored.encoded()? != bytes {
+                    return Err(AdmissionError::InvalidCreateOptions);
+                }
+                let template = stored.template.ok_or(AdmissionError::UnmanagedActive)?;
+                if template.resources.disk_bytes != lifetime.disk_bytes
+                    || template.owner.is_some_and(|owner| owner != record.owner.0)
+                {
+                    return Err(AdmissionError::CorruptLifetime);
+                }
+                global_cpu = global_cpu
+                    .checked_add(u64::from(template.resources.cpu_count))
+                    .ok_or(AdmissionError::QuotaExceeded)?;
+                global_memory = global_memory
+                    .checked_add(template.resources.host_memory_bytes)
+                    .ok_or(AdmissionError::QuotaExceeded)?;
+                if record.owner == request.owner {
+                    tenant_cpu = tenant_cpu
+                        .checked_add(u64::from(template.resources.cpu_count))
+                        .ok_or(AdmissionError::QuotaExceeded)?;
+                    tenant_memory = tenant_memory
+                        .checked_add(template.resources.host_memory_bytes)
+                        .ok_or(AdmissionError::QuotaExceeded)?;
+                }
+            }
             global = global.checked_add(1).ok_or(AdmissionError::QuotaExceeded)?;
             global_disk = global_disk
                 .checked_add(lifetime.disk_bytes)
@@ -472,19 +601,58 @@ impl ControllerJournal {
         {
             return Err(AdmissionError::QuotaExceeded);
         }
+        if let (Some(template), Some(compute)) = (&options.template, compute) {
+            let shape = template.resources;
+            if global_cpu
+                .checked_add(u64::from(shape.cpu_count))
+                .is_none_or(|total| total > compute.max_vcpus_global)
+                || tenant_cpu
+                    .checked_add(u64::from(shape.cpu_count))
+                    .is_none_or(|total| total > compute.max_vcpus_per_tenant)
+                || global_memory
+                    .checked_add(shape.host_memory_bytes)
+                    .is_none_or(|total| total > compute.max_memory_bytes_global)
+                || tenant_memory
+                    .checked_add(shape.host_memory_bytes)
+                    .is_none_or(|total| total > compute.max_memory_bytes_per_tenant)
+            {
+                return Err(AdmissionError::QuotaExceeded);
+            }
+            // A legacy binary must not reinterpret these instances as global base.
+            // Template IDs are immutable after their first accepted use, even
+            // across catalog replacement. Aliases may point at another ID.
+            tx.execute("CREATE TABLE IF NOT EXISTS admitted_templates (template_id TEXT PRIMARY KEY, binding_json BLOB NOT NULL)", [])?;
+            let binding =
+                serde_json::to_vec(template).map_err(|_| AdmissionError::InvalidCreateOptions)?;
+            let previous: Option<Vec<u8>> = tx
+                .query_row(
+                    "SELECT binding_json FROM admitted_templates WHERE template_id=?1",
+                    [&template.template_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if previous.as_ref().is_some_and(|stored| *stored != binding) {
+                return Err(AdmissionError::InvalidCreateOptions);
+            }
+            tx.execute("INSERT OR IGNORE INTO admitted_templates (template_id, binding_json) VALUES (?1, ?2)", params![template.template_id, binding])?;
+            // Older binaries must refuse journals containing startup defaults;
+            // admitting another legacy template must never lower this guard.
+            tx.execute(
+                "UPDATE controller_meta SET version=MAX(version, ?1) WHERE id=1",
+                [if template.startup.is_some() { 9 } else { 8 }],
+            )?;
+        }
         let sandbox = request.sandbox;
         let operation = request.operation;
         let owner = request.owner;
-        let decision = storage::apply(
+        storage::apply(
             &tx,
             &self.namespace,
-            &world,
             core::ControllerInput::Request(core::Request::Create(request)),
         )?;
-        let reserved = reserve_startup_in_admission(
+        let mut reserved = reserve_startup_in_admission(
             &tx,
             &self.namespace,
-            &decision,
             core::OperationKey { sandbox, operation },
             limits.max_vm_id,
         )?;
@@ -500,8 +668,29 @@ impl ControllerJournal {
                 encoded_options
             ],
         )?;
+        super::private_build::attach(
+            &tx,
+            &self.namespace,
+            owner,
+            sandbox,
+            &options,
+            u64::try_from(now_ms).map_err(|_| AdmissionError::InvalidClock)?,
+        )?;
+        if let Some(publication) = publication {
+            super::registry::attach_validation(
+                &tx,
+                publication,
+                owner.0,
+                sandbox,
+                options
+                    .template
+                    .as_ref()
+                    .ok_or(AdmissionError::InvalidCreateOptions)?,
+            )?;
+        }
+        reserved.next = tx.world();
         crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(reserved)
     }
@@ -514,6 +703,8 @@ impl ControllerJournal {
         &self,
         sandbox: core::SandboxId,
     ) -> Result<CreateOptions, AdmissionError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
         let id = identity::sandbox_id(&self.namespace, sandbox)?;
         let encoded: Option<Vec<u8>> = self
             .journal
@@ -627,11 +818,8 @@ impl ControllerJournal {
         if now_ms < 0 {
             return Err(AdmissionError::InvalidClock);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         let record = world
             .sandbox_record(sandbox)
             .ok_or(AdmissionError::NotRunning)?;
@@ -667,7 +855,7 @@ impl ControllerJournal {
             )?;
             lifetime.deadline_ms = end;
         }
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         Ok(lifetime)
     }
 
@@ -708,11 +896,8 @@ impl ControllerJournal {
         if now_ms < 0 {
             return Err(AdmissionError::InvalidClock);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         let mut aborted = 0;
         let due: Vec<_> = world
             .sandbox_records()
@@ -726,16 +911,20 @@ impl ControllerJournal {
                 .then_some((*sandbox, record.owner))
             })
             .collect();
+        let maximum_batch =
+            super::capacity::config(&tx)?.map_or(u64::MAX, |cap| cap.max_transaction_inputs);
         for (sandbox, owner) in due {
+            if aborted as u64 >= maximum_batch {
+                break;
+            }
             let lifetime = read_lifetime(&tx, &self.namespace, sandbox, owner)?
                 .ok_or(AdmissionError::UnmanagedActive)?;
             if lifetime.startup_deadline_ms > now_ms {
                 continue;
             }
-            world = storage::apply(
+            storage::apply(
                 &tx,
                 &self.namespace,
-                &world,
                 core::ControllerInput::Request(core::Request::Compensate(
                     core::CompensationRequest {
                         sandbox,
@@ -743,13 +932,12 @@ impl ControllerJournal {
                         evidence: None,
                     },
                 )),
-            )?
-            .next;
+            )?;
             aborted += 1;
         }
         if aborted > 0 {
             crashes.hit(CrashPoint::BeforeCommit)?;
-            tx.commit().map_err(JournalError::CommitUncertain)?;
+            tx.commit()?;
             crashes.hit(CrashPoint::AfterCommit)?;
         }
         Ok(aborted)
@@ -770,11 +958,8 @@ impl ControllerJournal {
         if now_ms < 0 {
             return Err(AdmissionError::InvalidClock);
         }
-        let tx = self
-            .journal
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let world = storage::load_world(&tx)?;
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let world = tx.world();
         let record = world
             .sandbox_record(sandbox)
             .ok_or(AdmissionError::NotRunning)?;
@@ -792,7 +977,6 @@ impl ControllerJournal {
         let decision = storage::apply(
             &tx,
             &self.namespace,
-            &world,
             core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
                 actor: core::Actor::SystemController,
                 sandbox,
@@ -800,7 +984,7 @@ impl ControllerJournal {
             })),
         )?;
         crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit().map_err(JournalError::CommitUncertain)?;
+        tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(decision)
     }

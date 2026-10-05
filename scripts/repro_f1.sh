@@ -1,7 +1,7 @@
 #!/bin/bash
 # F-1 reproduction: kill x in-flight resume.
 #
-# Historical experiment, not a confirmed E2B bug; see docs/trace-tools.md.
+# Historical experiment, not a confirmed E2B bug; see verification/README.zh-CN.md.
 # Requires the old local harness:
 #   - Postgres + Redis containers
 #   - E2B api on :3000 (ENVIRONMENT=local, local orchestrator discovery)

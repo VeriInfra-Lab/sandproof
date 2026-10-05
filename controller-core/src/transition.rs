@@ -150,6 +150,7 @@ pub fn begin_create(
     operation_id: crate::OperationId,
 ) -> World {
     let mut next = world.clone();
+    crate::maintenance::record_identity(&mut next, sandbox, workspace);
     let operation = Operation {
         id: operation_id,
         epoch: 1,

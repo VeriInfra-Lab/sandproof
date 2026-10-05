@@ -11,20 +11,69 @@ import shutil
 
 from tools.benchmark_tasks import InvalidInput
 
+CHROMIUM_LIFECYCLE_PATH = '/usr/local/lib/sandproof/guest_chromium.py'
+MTEB_VERIFIER_CONSTRAINTS = '/etc/sandproof-mteb-verifier-constraints.txt'
+MTEB_RESULTS_COMMIT = 'c0fd3271442f8c0c839084a109fede85c8514dab'
+
 REPAIRS = {
+    'filter-js-from-html': '9686e12af48346d2df538c3b46710122ee8dc80dfd0eecacb7a1476bf892ec9f',
+    'git-multibranch': '300ca96b79db8d77f14742109aaf76048aafc4644ced750b1bc5c2761e8d0175',
+    'gpt2-codegolf': '8c288a53bdf566d7278a35eda08d6baaf50883b0e1917ceb638b823cf6456b70',
+    'build-cython-ext': '41bbdde88617070366a70e518eedca466a4ea1acd7e96899b2fb7da988e40abc',
+    'mcmc-sampling-stan': 'd084666cc006911c5c80959969fba5c5699cbac92ab172db5c67eca00b1d0a97',
+    'make-doom-for-mips': 'a9cd034a5e76fa2b22481717a9669869214f43fec5b4fedc957d83dd2ef6a84a',
+    'build-pmars': '105292ca0e8bc399831550fc54c451002bd300644eb9beef1760dbfa7f8b7543',
     'protein-assembly': '3502b801f1260857a68a2ecbdc4497f8f7034e6a472990cd5fb9cd0eebc7dec9',
+    'pytorch-model-recovery': '175a7802777b43e0fa4f629d71f7c68fb40706813c342aaddc72108d89bd5b2c',
+    'qemu-alpine-ssh': '1cd31186c427b91bb00499d22aa4f0214fc1ca93b40b6e4cfa969611b848db2a',
+    'qemu-startup': 'a6a644e03c4bbde4039f222d9509a884e62b4a3402990482688b67ed5dc7919d',
+    'rstan-to-pystan': '069ac635c9ceda6d5235995ce7f005d924b911e3499895fb3bbad2311be56518',
     'build-pov-ray': '67c962a8b114fa1d55d1230c7d87309aa2b5ad643d9a955a2d74755fa8842e25',
     'crack-7z-hash': '2640463e6e14658426f3ea629e0702688e00553eb8006cf31ec3b9cff75c4b19',
     'caffe-cifar-10': '771887de1ed557269c7f3160c777519aa9538e1e9b59771b2f6ef38c8952490c',
     'install-windows-3.11': '68a9221b9a29331b66fd34fccd71db71d2b5a720e917f2ef95f4a8a542a71ee4',
     'torch-tensor-parallelism': 'd083b7cbf9dbb6cc2ff38c8f2acc150f0059c04aea42d6c2183aeaecc5a19385',
     'mteb-leaderboard': '4ed68831d4acf5d80d2d73eec1f21efd0896a6f51f23020f572cfc0af6da0410',
+    'mteb-retrieve': '97adb02c74de75d6d66829cf12d0a3d05b35b1b48b597ab67b90388517286553',
 }
 POV_ARCHIVES = {
     'POVDOC.TAR.Z': 'e70e44d1fe8835c4dff7c7a55bd6629b15e6a15b2ab7f2f49ee9e2dc016cc470',
     'POVSCN.TAR.Z': '4272e2d4724d8dfd916d68827194577221d17b733d99e84e7040f3a9f7eb92a7',
     'POVSRC.TAR.Z': '4d8a7073fadaca82827f1354428393cd13e4d3f71a5a3149fd7d6fffd77293d4',
 }
+
+
+def sync_qemu_ssh(script):
+    """Wait for executed setup output, never echoed shell input."""
+    start = '# Wait for setup to complete\n'
+    end = '# You can add more commands here if needed, or exit\n'
+    if script.count(start) != 1 or script.count(end) != 1:
+        raise InvalidInput('QEMU SSH completion block changed')
+    before, rest = script.split(start)
+    _, after = rest.split(end)
+    script = before + r'''# This marker is assembled by printf, so terminal echo cannot satisfy it.
+expect -re {\r?\n__SP_QEMU_SETUP_DONE__:([0-9]+)\r?\n}
+if {$expect_out(1,string) != 0} { exit $expect_out(1,string) }
+expect -re {(^|\n)localhost:~# }
+
+''' + end + after
+    replacements = {
+        'spawn telnet $host $port': '''spawn telnet $host $port
+expect_before {
+    timeout { puts stderr "QEMU console timed out"; exit 124 }
+    eof { puts stderr "QEMU console closed"; exit 125 }
+}''',
+        r'send "#!/bin/sh\n"': r'''send "#!/bin/sh\n"
+send "set -eu\n"''',
+        r'send "./setup_ssh.sh\n"': r'''send "./setup_ssh.sh; code=\$?; printf '\\n__SP_QEMU_SETUP_%s__:%s\\n' DONE \"\$code\"\r"''',
+    }
+    for old, new in replacements.items():
+        if script.count(old) != 1:
+            raise InvalidInput('QEMU SSH console commands changed')
+        script = script.replace(old, new)
+    if script.count('expect "# "') != 3:
+        raise InvalidInput('QEMU SSH shell prompts changed')
+    return 'set -e\n' + script.replace('expect "# "', r'expect -re {(^|\n)localhost:~# }')
 
 
 def prepare_repaired_task(name, original, destination):
@@ -52,7 +101,78 @@ def repair_solution(name, original, destination):
     old = (original / 'solve.sh').read_text()
     if hashlib.sha256((original / 'solve.sh').read_bytes()).hexdigest() != REPAIRS[name]:
         raise InvalidInput('reference solution no longer matches the reviewed repair')
-    if name == 'protein-assembly':
+    if name == 'filter-js-from-html':
+        # The original verifier kills ChromeDriver before quit, leaving live
+        # browser trees behind. The explicit repaired run installs the existing
+        # driver-lifetime supervisor; run_task selects it only for the verifier.
+        # Also retain the legacy recipe's guest TCP connect policy so missing
+        # external resources can fail within the unchanged page-load budget.
+        # Preserve the complete filter implementation and all browser options.
+        new = ('install -D -m 755 /solution/guest_chromium.py '
+               + CHROMIUM_LIFECYCLE_PATH + ' || exit $?\n'
+               + 'python3 /solution/guest_tcp_connect.py || exit $?\n' + old)
+    elif name == 'git-multibranch':
+        # The original image omits tmux, but the solution's final command
+        # requires it. Install the missing tool before configuring services;
+        # retain the original tmux command and all Git/SSH/nginx behavior.
+        marker = 'set -e\n'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, marker + '''
+if ! command -v tmux >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tmux
+fi
+''')
+    elif name == 'gpt2-codegolf':
+        # The original arena reserves 6.75 GiB for the 124M model, while pages
+        # are touched only as the unchanged model uses them. Keep the same
+        # address range with Linux demand paging and check both allocations.
+        # Guest kernel policy, physical memory and address-space limits apply.
+        include = '#include<stdio.h>\n'
+        allocation = 'D=malloc(2LL*V*V*C*zz);\nbpe=malloc(1e9);'
+        if old.count(include) != 1 or old.count(allocation) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(include, include + '#include<sys/mman.h>\n')
+        new = new.replace(allocation, '''D=mmap(0,2LL*V*V*C*zz,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE,-1,0);
+if(D==MAP_FAILED)return 77;
+bpe=malloc(1e9);
+if(!bpe)return 78;''')
+    elif name == 'build-cython-ext':
+        # pyknotid 0.5.3 consumes planarity's pre-1.0 node attribute names.
+        # Pin the compatible dependency in the same editable installation;
+        # keep the task's NumPy, Cython extensions and repository tests intact.
+        marker = 'pip install -e .'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, 'pip install "planarity==0.6" -e .')
+    elif name == 'mcmc-sampling-stan':
+        # RcppParallel's current source requires cmake. Keep the original R,
+        # RStan pins, model, sampling procedure and budget. Non-interactive
+        # remotes otherwise upgrades already installed dependencies, replacing
+        # the pinned StanHeaders compiler with one rejecting the old model.
+        marker = 'sudo apt-get install -y \\\n'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, 'export R_REMOTES_UPGRADE=never\n' + marker + '    cmake \\\n')
+    elif name == 'make-doom-for-mips':
+        # The OCI image's apt indices reference packages removed by updates.
+        # Refresh them in the guest, inside the unchanged oracle deadline.
+        marker = 'apt install -y clang gcc-mips-linux-gnu g++-mips-linux-gnu llvm llvm-dev lld'
+        if old.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = old.replace(marker, 'apt-get update && ' + marker + ' || exit $?')
+    elif name == 'build-pmars':
+        # Keep the package set and original Debian source/build commands;
+        # use the refreshed configured repository's versions. The run records
+        # the actual installed package inventory, not the obsolete pins.
+        new = old
+        for package in ('build-essential=12.12', 'libncurses-dev=6.5+20250216-2',
+                        'ca-certificates=20250419', 'dpkg-dev=1.22.21', 'devscripts=2.25.15+deb13u1'):
+            if new.count(package) != 1:
+                raise InvalidInput('reference solution no longer matches the reviewed repair')
+            new = new.replace(package, package.split('=')[0])
+    elif name == 'protein-assembly':
         start = old.index('def get_single_fasta(pdb_id):')
         end = old.index('def get_pdb_title(pdb_id):', start)
         new = old[:start] + 'from protein_sequences import get_single_fasta\n\n\n' + old[end:]
@@ -60,6 +180,14 @@ def repair_solution(name, original, destination):
         if new.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
         new = new.replace(marker, 'cp /solution/protein_sequences.py /app/protein_sequences.py\n' + marker)
+    elif name == 'pytorch-model-recovery':
+        new = 'python /solution/guest_wheel_sharing.py || exit $?\n' + old
+    elif name in ('qemu-alpine-ssh', 'qemu-startup'):
+        new = ('bash /solution/guest_bullseye_snapshot.sh || exit $?\n'
+               + (sync_qemu_ssh(old) if name == 'qemu-alpine-ssh' else old))
+    elif name == 'rstan-to-pystan':
+        new = ('bash /solution/guest_pystan_dependencies.sh || exit $?\n'
+               'export PIP_CONSTRAINT=/solution/pystan-constraints.txt\n' + old)
     elif name == 'build-pov-ray':
         # Exact archive digests independently checked against upstream PR #77.
         new = old
@@ -69,6 +197,14 @@ def repair_solution(name, original, destination):
                            + ' https://ftp.icm.edu.pl/packages/povray/Old-Versions/Official-2.2/' + archive
                            + "\nprintf '%s\\n' '" + digest + '  ' + archive + "' | sha256sum -c")
             new = new.replace(command, replacement)
+        # The original recipe changes void main to int under C89, but leaves
+        # its normal-exit hook empty. Define that existing platform hook so a
+        # completed render returns zero; all earlier error exits remain intact.
+        marker = 'echo "void unix_init_POVRAY();" >> config.h'
+        if new.count(marker) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = new.replace(marker, marker + '\n'
+                          "printf '%s\\n' '#define FINISH_POVRAY return 0;' >> config.h")
     elif name == 'crack-7z-hash':
         # Try the unmodified bundled common-password list first. No expected
         # password, special mask or task-specific candidate list is supplied.
@@ -95,21 +231,42 @@ def repair_solution(name, original, destination):
     mv cifar-10-batches-bin/* .
     rmdir cifar-10-batches-bin
 ) || exit 1''')
-    elif name == 'mteb-leaderboard':
-        # The solution immediately checks out its pinned historical commit.
-        # Preserve the complete clone, but do not first materialize today's
-        # larger HEAD tree, which can fill the original 10 GiB task disk.
-        marker = 'git clone https://github.com/embeddings-benchmark/results'
+    elif name == 'mteb-retrieve':
+        # The verifier creates a separate Python 3.13 environment. Its floating
+        # Torch dependency now downloads CUDA libraries that fill the 10 GiB
+        # CPU-only task disk. Select hashed official CPU wheels only there;
+        # leave the oracle's existing Python, packages and algorithm untouched.
+        # The pinned image's Xet client also caches downloaded chunks separately
+        # from the complete model. Disable that disposable duplicate cache for
+        # this invocation, preserving the model cache and retrieval computation.
+        marker = 'python retrieve.py'
         if old.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
-        new = old.replace(marker, 'git clone --no-checkout https://github.com/embeddings-benchmark/results')
+        new = old.replace(marker, 'HF_XET_CHUNK_CACHE_SIZE_BYTES=0 ' + marker)
+        new = ('install -D -m 644 /solution/mteb-verifier-constraints.txt '
+               + MTEB_VERIFIER_CONSTRAINTS + ' || exit $?\n' + new)
+    elif name == 'mteb-leaderboard':
+        # Keep all objects for the fixed snapshot, but materialize only complete
+        # directories of models selected by the original filename-only filter.
+        # Even the historical full working tree cannot fit the original disk.
+        marker = 'git clone https://github.com/embeddings-benchmark/results'
+        checkout = 'git checkout ' + MTEB_RESULTS_COMMIT
+        if old.count(marker) != 1 or old.count(checkout) != 1:
+            raise InvalidInput('reference solution no longer matches the reviewed repair')
+        new = 'set -e\n' + old.replace(marker,
+            'git init results\n'
+            'git -C results remote add origin https://github.com/embeddings-benchmark/results\n'
+            'git -C results fetch --depth=1 --no-tags origin ' + MTEB_RESULTS_COMMIT)
+        new = new.replace(checkout, 'git reset --mixed ' + MTEB_RESULTS_COMMIT)
         # In MTEB 1.38.41 results_repo is still a clone source, even for a
         # local path. Its documented cache root must point at the parent of
-        # this complete checkout to avoid a second full working tree.
+        # this existing checkout to avoid a second full working tree.
         marker = 'python leaderboard.py'
         if new.count(marker) != 1:
             raise InvalidInput('reference solution no longer matches the reviewed repair')
-        new = new.replace(marker, 'MTEB_CACHE="$(dirname "$PWD")" python leaderboard.py')
+        new = new.replace(marker,
+            'python "$(dirname "$0")/guest_mteb_results.py"\n'
+            'MTEB_CACHE="$(dirname "$PWD")" python leaderboard.py')
     elif name == 'torch-tensor-parallelism':
         # In Torch 2.7.0, the direct Gloo Python holder releases the GIL on
         # destruction; its parent ProcessGroup's holder does not. Keep the
@@ -139,6 +296,21 @@ def repair_solution(name, original, destination):
     (destination / 'solve.sh').write_text(new)
     if name == 'protein-assembly':
         shutil.copyfile(Path(__file__).with_name('protein_sequences.py'), destination / 'protein_sequences.py')
+    if name == 'pytorch-model-recovery':
+        shutil.copyfile(Path(__file__).with_name('guest_wheel_sharing.py'), destination / 'guest_wheel_sharing.py')
+    if name == 'mteb-retrieve':
+        shutil.copyfile(Path(__file__).with_name('mteb-verifier-constraints.txt'),
+                        destination / 'mteb-verifier-constraints.txt')
+    if name == 'mteb-leaderboard':
+        shutil.copyfile(Path(__file__).with_name('guest_mteb_results.py'), destination / 'guest_mteb_results.py')
+    if name in ('qemu-alpine-ssh', 'qemu-startup'):
+        shutil.copyfile(Path(__file__).with_name('guest_bullseye_snapshot.sh'), destination / 'guest_bullseye_snapshot.sh')
+    if name == 'rstan-to-pystan':
+        for filename in ('guest_pystan_dependencies.sh', 'pystan-constraints.txt'):
+            shutil.copyfile(Path(__file__).with_name(filename), destination / filename)
+    if name == 'filter-js-from-html':
+        shutil.copyfile(Path(__file__).with_name('guest_chromium.py'), destination / 'guest_chromium.py')
+        shutil.copyfile(Path(__file__).with_name('guest_tcp_connect.py'), destination / 'guest_tcp_connect.py')
     def digest(path):
         return hashlib.sha256(path.read_bytes()).hexdigest()
     evidence = {

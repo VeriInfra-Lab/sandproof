@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the task-branch -> test -> main workflow from PR event data."""
+"""Validate integration, release promotion, sync and same-repository task stacks."""
 
 import argparse
 import json
@@ -12,6 +12,15 @@ TASK_BRANCH = re.compile(
     r"(?:codex/)?(?:feat|fix|refactor|test|docs|ci|chore|proof)/"
     r"[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*"
 )
+LONG_LIVED = {"integration", "test", "main"}
+RELEASE_FLOWS = {
+    ("integration", "test"), ("test", "main"),
+    ("main", "test"), ("test", "integration"),
+}
+
+
+def is_task_branch(branch):
+    return len(branch) <= 100 and TASK_BRANCH.fullmatch(branch) is not None
 
 
 def validate(event):
@@ -24,30 +33,32 @@ def validate(event):
         return "Missing pull-request head/base metadata."
     if not isinstance(head, str) or not isinstance(base, str):
         return "Branch names must be strings."
-    if base not in {"main", "test"}:
-        return "Pull requests must target test or main."
     if head == base:
         return "Source and target branches must differ."
+    task_target = is_task_branch(base)
+    if base not in LONG_LIVED and not task_target:
+        return "Target integration, test, main, or a normally named task branch."
 
-    if head in {"main", "test"}:
-        try:
-            head_repo = pr["head"]["repo"]["id"]
-            base_repo = pr["base"]["repo"]["id"]
-        except (KeyError, TypeError):
-            return "Promotion/sync requires repository identity metadata."
-        if (
-            type(head_repo) is not int
-            or type(base_repo) is not int
-            or head_repo <= 0
-            or head_repo != base_repo
-        ):
-            return "Promotion/sync must use this repository's main/test branches."
-        return None
-
-    if base != "test":
-        return "Task branches must target test; only test may promote to main."
-    if len(head) > 100 or not TASK_BRANCH.fullmatch(head):
+    if head in LONG_LIVED:
+        if (head, base) not in RELEASE_FLOWS:
+            return "Use integration -> test -> main; sync in the reverse direction."
+    elif not is_task_branch(head):
         return "Expected [codex/]<type>/<issue>-<lowercase-slug>, at most 100 characters."
+    elif base != "integration" and not task_target:
+        return "Task branches must enter integration before release promotion."
+
+    try:
+        head_repo = pr["head"]["repo"]["id"]
+        base_repo = pr["base"]["repo"]["id"]
+    except (KeyError, TypeError):
+        return "Pull requests require repository identity metadata."
+    if (
+        type(head_repo) is not int
+        or type(base_repo) is not int
+        or head_repo <= 0
+        or head_repo != base_repo
+    ):
+        return "Integration, promotion and task stacks require the same repository."
     return None
 
 

@@ -1,6 +1,6 @@
 """obs/evt mapping: concrete JSONL records -> abstract events and observations.
 
-The format is documented in `docs/trace-tools.md`. The mapping is deliberately
+The format is documented in `verification/README.zh-CN.md`. The mapping is deliberately
 small: the abstract event names are already written by the collector; the
 mapper validates and normalises them so that rules depend on a stable
 vocabulary rather than raw record shapes.

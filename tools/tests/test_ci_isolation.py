@@ -1,0 +1,85 @@
+import subprocess
+import unittest
+import urllib.error
+from unittest.mock import MagicMock, patch
+from tools import check_ci_isolation as probe
+
+
+class IsolationProbeTests(unittest.TestCase):
+    def invoke(self, *, uid=1000, sudo=1, groups=(), exists=False,
+               host_connect=False, response=None):
+        opener = MagicMock()
+        opener.open.side_effect = (response if response is not None else
+            urllib.error.HTTPError('http://test', 403, 'Forbidden', {}, None))
+        socket_result = MagicMock() if host_connect else OSError('blocked')
+        with patch.object(probe.os, 'geteuid', return_value=uid), \
+             patch.object(probe.os, 'getgroups', return_value=groups), \
+             patch.object(probe.grp, 'getgrgid', side_effect=lambda _: type('G', (), {'gr_name': 'sudo'})()), \
+             patch.object(probe.subprocess, 'run', return_value=subprocess.CompletedProcess([], sudo)), \
+             patch.object(probe.Path, 'exists', return_value=exists), \
+             patch.object(probe, 'check_guest_homes'), \
+             patch.object(probe.socket, 'create_connection', side_effect=socket_result), \
+             patch.object(probe.urllib.request, 'build_opener', return_value=opener):
+            probe.main()
+        return opener
+
+    def test_denials_are_established_not_inferred_from_timeout(self):
+        self.assertEqual(self.invoke().open.call_count, 3)
+        with self.assertRaisesRegex(RuntimeError, 'refusal was not established'):
+            self.invoke(response=urllib.error.URLError('timeout'))
+
+    def test_root_sudo_and_privileged_groups_refuse(self):
+        for values in ({'uid': 0}, {'sudo': 0}, {'groups': [27]}):
+            with self.subTest(values=values), self.assertRaises(RuntimeError):
+                self.invoke(**values)
+
+    def test_host_sharing_and_host_ssh_refuse(self):
+        for values in ({'exists': True}, {'host_connect': True}):
+            with self.subTest(values=values), self.assertRaises(RuntimeError):
+                self.invoke(**values)
+
+    def test_only_trusted_runner_home_is_allowed(self):
+        with patch.object(probe.Path, 'iterdir', return_value=[probe.Path('/home/runner')]):
+            probe.check_guest_homes()
+        for name in ('operator', 'ubuntu', 'other-user', '.hidden-home'):
+            with self.subTest(name=name), \
+                 patch.object(probe.Path, 'iterdir', return_value=[probe.Path('/home') / name]), \
+                 self.assertRaisesRegex(RuntimeError, 'extra user home'):
+                probe.check_guest_homes()
+
+    def test_missing_home_observation_does_not_pass(self):
+        with patch.object(probe.Path, 'iterdir', side_effect=OSError('unavailable')), \
+             self.assertRaises(OSError):
+            probe.check_guest_homes()
+
+    def test_job_invokes_generic_home_probe_before_network(self):
+        with patch.object(probe, 'check_guest_homes', wraps=probe.check_guest_homes) as check:
+            with patch.object(probe.os, 'geteuid', return_value=1000), \
+                 patch.object(probe.os, 'getgroups', return_value=[]), \
+                 patch.object(probe.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), \
+                 patch.object(probe.Path, 'exists', return_value=False), \
+                 patch.object(probe.Path, 'iterdir', return_value=[probe.Path('/home/operator')]), \
+                 patch.object(probe.socket, 'create_connection') as connect, \
+                 self.assertRaises(RuntimeError):
+                probe.main()
+            check.assert_called_once()
+            connect.assert_not_called()
+
+    def test_allowed_or_wrong_status_egress_refuses(self):
+        for response in (lambda *_args, **_kwargs: MagicMock(),
+                         urllib.error.HTTPError('http://test', 502, 'bad gateway', {}, None)):
+            with self.subTest(response=response), self.assertRaises(RuntimeError):
+                self.invoke(response=response)
+
+    def test_proxy_bypass_environment_restored_on_success_and_failure(self):
+        original = {'no_proxy': 'localhost,127.0.0.1', 'NO_PROXY': 'localhost,127.0.0.1'}
+        with patch.dict(probe.os.environ, original):
+            self.invoke()
+            self.assertEqual({key: probe.os.environ[key] for key in original}, original)
+            with self.assertRaises(RuntimeError):
+                self.invoke(response=urllib.error.URLError('timeout'))
+            self.assertEqual({key: probe.os.environ[key] for key in original}, original)
+
+
+if __name__ == '__main__':
+    unittest.main()

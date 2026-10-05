@@ -4,6 +4,14 @@ Requires explicit streaming budgets and envd supporting octet-stream uploads.
 The large HTTP timeout is a valid control above Connect's distinct header limit.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import asyncio
 import hashlib
@@ -153,7 +161,8 @@ async def exercise(args):
             assert (await call(sandbox.commands.run, 'printf healthy', timeout=15)).stdout == 'healthy'
             results.append(dict(sdk=cls.__name__, cases=rows))
         finally:
-            assert await call(sandbox.kill)
+            _kill_confirmed = (await call(sandbox.kill))
+            assert _kill_confirmed
     print(json.dumps(dict(sdk_version='2.51.0', payload_bytes=len(PAYLOAD), sha256=DIGEST,
                           results=results, scope='file HTTP request and stream idle timeout values; '
                           'explicit multipart/octet modes; not unary RPC or lifetime deadlines'), indent=2))

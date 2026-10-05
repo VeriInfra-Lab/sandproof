@@ -13,9 +13,9 @@
 - 私有可写系统盘、通用 Dockerfile/OCI 模板、鉴权、资源限额和受控网络。
 - 持久记录、提交后派发、未知结果处理、精确资源身份和重启恢复。
 
-暂停恢复在后续阶段实现；多节点、共享卷、完整云平台复制和自动部署不在 V1。兼容性与 Terminal-Bench 评测不能替代安全证明。
+暂停恢复在后续阶段实现；多节点、共享卷、完整云平台复制和自动部署不在 V1。后续评测目标为 Terminal-Bench 2.1，版本冻结与工具接入尚待完成；[评测说明](benchmarks/README.md)保留历史 2.0 结果与迁移边界。兼容性与评测不能替代安全证明。
 
-通用模板链为新增开发目标，当前尚未交付，见 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)。模板构建/转换及其自有编排、登记/发布整体以测试验收，不做形式化证明；核心控制流程的外部前提和准确证明范围见[覆盖记录](docs/proof-coverage.md)。
+通用模板链已接通显式部署的自助 Dockerfile/公开 OCI 构建、转换、发布和原 SDK 创建；[自助链实机证据](https://github.com/ningZhang-cs/sandproof/pull/135)与[Harbor 原题诊断](docs/testing-plan.md)分别绑定各自提交。完整题集与统一资源压力验收仍待完成，任务见 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)。模板构建/转换及其自有编排、登记/发布整体以测试验收，不做形式化证明；核心控制流程的外部前提和准确证明范围见[覆盖记录](docs/proof-coverage.md)。
 
 ## 现在有什么
 
@@ -24,7 +24,7 @@
 | Rust 控制核心 | 已有纯状态处理实现与单元测试，不包含真实存储、HTTP 服务或 VM 操作 |
 | Lean 规范与对应证明 | 已有旧版纯控制核心的协议安全和 Rust 对应证明，带明确容量前提；当前 Rust 新增输入尚未同步证明，适用版本见[覆盖记录](docs/proof-coverage.md) |
 | 最终完成性与长期容量 | 仍有未闭合义务，见[证明覆盖记录](docs/proof-coverage.md) |
-| E2B 兼容服务与运行层 | 固定 base 的选定 SDK 管理/数据、禁网及公网/静态 IPv4、恢复路径已有实机证据；各批范围分别记录，通用模板、完整评测和最终部署容量仍未交付，不能作为完整 V1 部署 |
+| E2B 兼容服务与运行层 | 选定 SDK 管理/数据、网络、恢复、多模板隔离、自助构建及通用原题链已有分批实机证据；完整评测、统一资源压力和最终部署容量仍未验收，不能作为完整 V1 部署，具体范围见[验收清单](docs/testing-plan.md) |
 | CI | 功能、文档和 PR 规则检查；实际门槛与运行方法统一见开发指南 |
 
 已移除的原型可从 [Git 历史](https://github.com/ningZhang-cs/sandproof/tree/0f1901a210e24da50d259e07df75e8c2cb9d181f/sandbox-runtime)查看。当前目录不再保留旧方案的副本，也不把删除旧模块计算为新功能完成。
