@@ -6,7 +6,7 @@
 
 最终全题集目标为 **Terminal-Bench 2.1 全部 89 题**，来源为[官方题库](https://github.com/harbor-framework/terminal-bench-2-1)与[Harbor Hub 数据集](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1)。官方使用的数据集名称为 `terminal-bench/terminal-bench-2-1`；正式执行须冻结具体发布摘要与源码提交，不直接跟随 `latest` 或 `main`。[官方发布说明](https://github.com/harbor-framework/terminal-bench-docs/blob/main/content/blog/terminal-bench-2-1.mdx)说明此次修订处理了外部依赖漂移、资源预算和题意/评分不一致等问题；不据修复数量推断本项目旧失败题已全部解决。
 
-2026-10-05 owner 将**当前阶段自动回归范围固定为 2.1 修改的 28 题中的 8 题**，不重跑同事已通过的 2.0 75 题。选择和覆盖理由以[八题清单](terminal-bench-2.1-subset.json)为准；题目失败后不替换清单。八题结果、历史 2.0 成绩与未来完整 2.1 验收分开，不拼成同版本 89/89。
+2026-10-05 owner 要求范围和批次大小通过参数/配置选择。[题集目录](terminal-bench-2.1-suites.json)提供原八题 `smoke`、扩展十六题 `regression` 和按完整锁生成的 `full`；也支持事前批准的自定义名单。十六题面向编译、Python/异步、文件、Git/HTTP/RPC、数据库、密码工具、OCR 与较大计算资源的工程回归，不是官方小数据集，也不是榜单成绩的统计替代。名单与配置在运行前冻结，失败后不换题；不同范围、版本和提交不拼成 89/89。
 
 [2.1 完整锁](terminal-bench-2.1.lock.json)固定官方发布期间的源码提交 `c5ee500c185224c97cd6caff7866a990a0057f41`、全部 89 题输入和原始资源/时限。[源码清单](terminal-bench-2.1.registry.json)由该 Git 树产生，不是已验证的 Harbor Hub 下载包或发布包摘要；两者不能混称。固定 Harbor/SDK 不升级，原 Harbor 可直接加载 1.1 配置。短任务 ID 仅用于本地目录与报告，原 `[task].name` 保存在锁内；不修改原任务文件。2.0 本地解答/环境修补不能用于 2.1。
 
@@ -22,7 +22,7 @@ uv run --locked --project benchmarks python -m benchmarks.check_harbor \
   --report artifacts/terminal-bench-21/inputs.json
 ```
 
-实机单批入口通过 `--lock benchmarks/terminal-bench-2.1.lock.json` 指定版本，保留既有 2.0 默认用于旧记录复现。自动监督入口见[CI 运行环境](../docs/ci.md)；每批四题、题内串行，每题仍使用原资源和时限。**输入检查、组件通过、KVM 通过与自动 CI 成功/失败实测必须分别记录。** 下文 2.0 资源分布、配方和修补仅为历史基线，不用其旧成绩背书 2.1。
+实机单批入口通过 `--lock benchmarks/terminal-bench-2.1.lock.json` 指定版本，保留既有 2.0 默认用于旧记录复现。自动监督入口、手动参数及私有批准配置见[CI 运行环境](../docs/ci.md)；按配置分批、题内串行，每题仍使用原资源和时限。**输入检查、组件通过、KVM 通过与自动 CI 成功/失败实测必须分别记录。** 下文 2.0 资源分布、配方和修补仅为历史基线，不用其旧成绩背书 2.1。
 
 
 后续迁移由 #13 完成，判据见[验收清单](../docs/testing-plan.md)：

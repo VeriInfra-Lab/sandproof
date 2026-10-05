@@ -35,6 +35,7 @@
   "proxy_sha256": "replace-with-approved-sha256",
   "source_kind": "dockerfile",
   "docker_hub_mirror": null,
-  "subset_sha256": "replace-with-canonical-subset-sha256",
+  "selection_sha256": "replace-with-canonical-selection-catalog-sha256",
+  "selection": {"profile": "regression", "batch_size": 4},
   "host_assets": {}
 }

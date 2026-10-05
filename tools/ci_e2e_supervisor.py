@@ -17,7 +17,7 @@ import time
 import uuid
 
 from tools.benchmark_ci import (CHECK_NAME, aggregate, authorize, batch_result,
-    instantiate_policy, private_path, remove_private_tree, run_identity, subset)
+    instantiate_policy, private_path, remove_private_tree, run_identity, selection)
 from tools.benchmark_tasks import canonical, digest, verify
 from tools.ci_github_app import APIError, CHECK_PERMISSIONS, GitHubApp, REPOSITORY, Transport
 from tools.ci_runner_supervisor import atomic_json
@@ -68,7 +68,7 @@ class Checks:
         if found['total_count'] > 100:
             raise ValueError('check inventory exceeds fixed limit')
         matches = [r for r in found['check_runs'] if r.get('external_id') == state['id']
-                   and r.get('name') == CHECK_NAME and r.get('head_sha') == state['candidate']
+                   and r.get('name') == state.get('check_name', CHECK_NAME) and r.get('head_sha') == state['candidate']
                    and r.get('app', {}).get('id') == self.api.app_id]
         if len(matches) > 1:
             raise ValueError('duplicate check identity')
@@ -80,10 +80,10 @@ class Checks:
             raise ValueError('check creation reply unknown; no blind repeat')
         state['check_post_pending'] = True
         save()  # Intent BEFORE the API mutation.
-        created = self.api.request('POST', PREFIX + 'check-runs', dict(name=CHECK_NAME,
+        created = self.api.request('POST', PREFIX + 'check-runs', dict(name=state.get('check_name', CHECK_NAME),
             head_sha=state['candidate'], external_id=state['id'], status='in_progress',
-            output=dict(title='固定 2.1 八题验收进行中',
-                summary='只验收预选八题；不代表全部 89 题通过。失败和清理未知均不会绿灯。')))
+            output=dict(title='Terminal-Bench 2.1 验收进行中',
+                summary='配置选定 ' + str(len(state['expected'])) + ' 题；范围和配置绑定本次提交。失败和清理未知均不会绿灯。')))
         if created.get('head_sha') != state['candidate'] or created.get('external_id') != state['id']:
             raise ValueError('created check identity mismatch')
         state['check_id'] = created['id']
@@ -92,13 +92,13 @@ class Checks:
 
     def finish(self, state, result):
         conclusion = 'success' if result['passed'] else 'failure'
-        rows = ['固定版本：Terminal-Bench 2.1；范围：8 道回归题，不是完整 89 题。',
-                '通过数量：' + str(sum(r['status'] == 'passed' for r in result['tasks'])) + '/8。',
+        rows = ['固定版本：Terminal-Bench 2.1；范围：' + result['scope'] + '。',
+                '通过数量：' + str(sum(r['status'] == 'passed' for r in result['tasks'])) + '/' + str(len(result['required_tasks'])) + '。',
                 '未运行、评分失败、超时及清理未知均按失败处理；没有使用付费模型。']
         rows.extend(r['name'] + ': ' + str(r['status']) for r in result['tasks'])
         self.api.request('PATCH', PREFIX + 'check-runs/' + str(state['check_id']), dict(
             status='completed', conclusion=conclusion, output=dict(
-                title='八题验收通过' if result['passed'] else '八题验收未通过', summary='\n\n'.join(rows))))
+                title='配置题集验收通过' if result['passed'] else '配置题集验收未通过', summary='\n\n'.join(rows))))
 
 
 @contextmanager
@@ -209,7 +209,8 @@ class Supervisor:
 
     def block(self, reason):
         result = aggregate(self.state['candidate'],
-            [b['result'] for b in self.state['batches'] if 'result' in b], self.state['expected'])
+            [b['result'] for b in self.state['batches'] if 'result' in b], self.state['expected'],
+            all_tasks=self.state.get('all_tasks'))
         result['passed'] = False
         self.terminal(result, phase='blocked', reason=reason)
 
@@ -224,10 +225,10 @@ class Supervisor:
         git('merge-base', '--is-ancestor', base, candidate, cwd=checkout)
         lock = verify(json_file(checkout / 'benchmarks/terminal-bench-2.1.lock.json', limit=8*1024*1024),
             checkout / 'benchmarks/terminal-bench-2.1.registry.json', Path(self.config['task_source']))
-        manifest = json_file(checkout / 'benchmarks/terminal-bench-2.1-subset.json')
-        if digest(canonical(manifest)) != self.config['subset_sha256']:
-            raise ValueError('selection changed; operator must review the new subset')
-        batches = subset(lock, manifest)
+        manifest = json_file(checkout / 'benchmarks/terminal-bench-2.1-suites.json')
+        if digest(canonical(manifest)) != self.config['selection_sha256']:
+            raise ValueError('selection catalog changed; operator review required')
+        batches = selection(lock, manifest, self.config['selection'])
         if self.config['source_kind'] != manifest['source_kind']:
             raise ValueError('environment preparation differs from the frozen subset policy')
         identity = run_identity(candidate, base, self.config, manifest, lock)
@@ -244,6 +245,8 @@ class Supervisor:
         self.state = dict(id=identity, candidate=candidate, base=base, phase='waiting', configuration=self.config,
             batches=[dict(names=names, phase='new') for names in batches],
             expected=[name for names in batches for name in names], check_id=None,
+            check_name=self.config.get('check_name', CHECK_NAME),
+            all_tasks=[row['name'] for row in lock['tasks']],
             task_inputs={t['name']: dict(files_sha256=t['files_sha256'], requirements=t['requirements'])
                          for t in lock['tasks'] if t['name'] in {n for b in batches for n in b}})
         self.save()
@@ -326,7 +329,7 @@ class Supervisor:
             if fields.get('ExecMainStatus') != '0':
                 subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
                 lease.release()  # Preparation never dispatched a sandbox.
-                result = aggregate(state['candidate'], [], state['expected'])
+                result = aggregate(state['candidate'], [], state['expected'], all_tasks=state['all_tasks'])
                 self.terminal(result, phase='done', reason='candidate_preparation_failed')
                 return
             subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
@@ -357,7 +360,7 @@ class Supervisor:
                 if batch['phase'] != 'reclaiming':
                     assets = self.config['host_assets'] | state.get('candidate_artifacts', {})
                     result = batch_result(root, candidate=state['candidate'], names=batch['names'],
-                        exit_code=int(fields['ExecMainStatus']), expected_hashes={
+                        exit_code=int(fields['ExecMainStatus']), full_task_count=len(state['all_tasks']), expected_hashes={
                             name: assets[self.config[key]] for name, key in
                             (('server_sha256', 'server'), ('kernel_sha256', 'kernel'),
                              ('builder_base_sha256', 'rootfs'))})
@@ -374,7 +377,8 @@ class Supervisor:
                 self.block('batch_cleanup_unknown')
                 return
             return
-        result = aggregate(state['candidate'], [b['result'] for b in state['batches']], state['expected'])
+        result = aggregate(state['candidate'], [b['result'] for b in state['batches']], state['expected'],
+                           all_tasks=state['all_tasks'])
         state['result'] = result
         self.save()
         lease.release()  # All batch units and original resources are gone.
@@ -403,10 +407,28 @@ def main():
     parser.add_argument('--base')
     parser.add_argument('--follow-test', action='store_true', help='trusted test ref only; not arbitrary PR heads')
     parser.add_argument('--local-only', action='store_true', help='no GitHub check write; not automatic CI acceptance')
+    selected = parser.add_mutually_exclusive_group()
+    selected.add_argument('--profile', help='reviewed task profile from the frozen catalog')
+    selected.add_argument('--task', action='append', help='exact task name; repeat to select a custom subset')
+    parser.add_argument('--batch-size', type=int, help='maximum retained tasks per serial batch')
     args = parser.parse_args()
     if os.geteuid() != 0:
         parser.error('trusted root host only; never run as a GitHub PR job')
     config = json_file(private_path(args.config))
+    if args.follow_test and (args.profile or args.task or args.batch_size is not None):
+        parser.error('automatic selection comes only from the protected host policy')
+    if args.profile or args.task or args.batch_size is not None:
+        config['selection'] = dict(config['selection'])
+        # A one-task diagnostic must never satisfy the default promotion gate.
+        config['check_name'] = CHECK_NAME + ' / diagnostic'
+        if args.profile:
+            config['selection'].pop('tasks', None)
+            config['selection']['profile'] = args.profile
+        if args.task:
+            config['selection'].pop('profile', None)
+            config['selection']['tasks'] = args.task
+        if args.batch_size is not None:
+            config['selection']['batch_size'] = args.batch_size
     if args.follow_test and (args.candidate or args.base or not config.get('auto_test')):
         parser.error('follow-test requires the reviewed auto_test policy and no manual candidate')
     if not args.follow_test and (not args.candidate or not args.base):

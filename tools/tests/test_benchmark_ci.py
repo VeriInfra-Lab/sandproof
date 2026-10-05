@@ -20,18 +20,34 @@ class BenchmarkCITests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.root.chmod(0o700)
         self.lock = json.loads((ROOT / 'benchmarks/terminal-bench-2.1.lock.json').read_text())
-        self.manifest = json.loads((ROOT / 'benchmarks/terminal-bench-2.1-subset.json').read_text())
-        self.names = [t['name'] for t in self.manifest['tasks']]
+        self.manifest = json.loads((ROOT / 'benchmarks/terminal-bench-2.1-suites.json').read_text())
+        self.names = [t['name'] for t in self.manifest['profiles']['smoke']['tasks']]
+        self.policy = {'profile':'smoke', 'batch_size':4}
 
-    def test_scope_complete_eight_of_twenty_eight_in_two_batches(self):
-        batches = bench.subset(self.lock, self.manifest)
+    def test_profile_scope_and_configurable_batches(self):
+        batches = bench.selection(self.lock, self.manifest, self.policy)
         self.assertEqual([len(b) for b in batches], [4, 4])
         self.assertEqual(sum(batches, []), self.names)
-        for field, value in (('dataset', 'terminal-bench@2.0'), ('batch_size', 8),
-                             ('tasks', self.manifest['tasks'][:-1]), ('changed_tasks', self.names)):
-            bad = dict(self.manifest, **{field: value})
+        self.assertEqual([len(b) for b in bench.selection(self.lock, self.manifest,
+            dict(self.policy, batch_size=3))], [3,3,2])
+        self.assertEqual(len(sum(bench.selection(self.lock, self.manifest,
+            dict(self.policy, profile='regression')), [])), 16)
+        full = bench.selection(self.lock, self.manifest, dict(self.policy, profile='full'))
+        self.assertEqual(sum(full, []), [t['name'] for t in self.lock['tasks']])
+        self.assertEqual(len(full[-1]), len(self.lock['tasks']) % 4)
+
+    def test_custom_selection_invalid_scopes_and_batch_boundaries(self):
+        self.assertEqual(bench.selection(self.lock, self.manifest,
+            {'tasks':self.names[:3], 'batch_size':2}), [self.names[:2], self.names[2:3]])
+        for policy in ({'tasks':[], 'batch_size':1}, {'tasks':['missing'], 'batch_size':1},
+                       {'tasks':self.names[:1]*2, 'batch_size':1},
+                       {'profile':'unknown', 'batch_size':1}, dict(self.policy, tasks=self.names),
+                       *[dict(self.policy, batch_size=n) for n in (0,-1,True,1.5,len(self.lock['tasks'])+1)]):
             with self.assertRaises(ValueError):
-                bench.subset(self.lock, bad)
+                bench.selection(self.lock, self.manifest, policy)
+        for key,value in (('dataset','terminal-bench@2.0'), ('source_commit','a'*40), ('schema_version',1)):
+            with self.assertRaises(ValueError):
+                bench.selection(self.lock, dict(self.manifest, **{key:value}), self.policy)
 
     def test_exact_authorization_and_base_config_identity(self):
         bench.authorize('a'*40, approved_commits=['a'*40])
@@ -58,24 +74,24 @@ class BenchmarkCITests(unittest.TestCase):
 
     def test_final_services_proxy_exit_score_and_commit_all_required(self):
         report = self.report()
-        result = bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
+        result = bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=len(self.lock['tasks']))
         self.assertTrue(result['passed'])
         self.assertNotIn('NEVER EXPORT', json.dumps(result))
-        self.assertFalse(bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=1)['passed'])
+        self.assertFalse(bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=1, full_task_count=len(self.lock['tasks']))['passed'])
         for file, value in (('service-cleanup.json', {'removed':False}), ('proxy-cleanup.json', {'phase':'active'})):
             self.report()
             (self.root / file).write_text(json.dumps(value))
             with self.assertRaises(ValueError):
-                bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
+                bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=len(self.lock['tasks']))
         for field, value in (('commit', 'b'*40), ('dataset', 'terminal-bench@2.0'), ('tasks', report['tasks'][:-1])):
             self.report()
             (self.root / 'report.json').write_text(json.dumps(dict(report, **{field:value})))
             with self.assertRaises(ValueError):
-                bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
+                bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=len(self.lock['tasks']))
 
     def test_subset_never_claims_full_suite_missing_and_duplicate_tasks_fail(self):
         self.report()
-        batch = bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
+        batch = bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=len(self.lock['tasks']))
         self.assertFalse(bench.aggregate('a'*40, [batch], self.names)['passed'])
         self.assertFalse(bench.aggregate('a'*40, [batch,batch], self.names)['passed'])
         other = dict(batch, tasks=[dict(r, name=n) for r,n in zip(batch['tasks'], self.names[4:])])
@@ -87,16 +103,25 @@ class BenchmarkCITests(unittest.TestCase):
         report = self.report()
         with self.assertRaises(ValueError):
             bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0,
-                               expected_hashes={'server_sha256':'f'*64})
+                               expected_hashes={'server_sha256':'f'*64}, full_task_count=len(self.lock['tasks']))
         report.pop('builder_base_sha256')
         (self.root / 'report.json').write_text(json.dumps(report))
         with self.assertRaises(ValueError):
-            bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
+            bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=len(self.lock['tasks']))
         report = self.report()
         report['tasks'][0].pop('template')
         (self.root / 'report.json').write_text(json.dumps(report))
         with self.assertRaises(ValueError):
-            bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
+            bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=len(self.lock['tasks']))
+
+    def test_only_complete_full_selection_can_claim_full_suite(self):
+        names = [t['name'] for t in self.lock['tasks']]
+        batch = dict(tasks=[{'name':n} for n in names], passed=True, cleanup='passed')
+        self.assertTrue(bench.aggregate('a'*40, [batch], names, all_tasks=names)['full_suite_passed'])
+        self.assertFalse(bench.aggregate('a'*40, [dict(batch, passed=False)], names,
+                                        all_tasks=names)['full_suite_passed'])
+        self.assertFalse(bench.aggregate('a'*40, [batch], names[:-1], all_tasks=names)['passed'])
+        self.assertFalse(bench.aggregate('a'*40, [batch], names)['full_suite_passed'])
 
     def test_reclamation_rejects_substitution_and_symlink_before_deleting_files(self):
         child = self.root / 'run'
@@ -115,7 +140,7 @@ class BenchmarkCITests(unittest.TestCase):
 
     def test_lost_check_post_adopts_only_own_app_and_never_repeats_post(self):
         api = Mock(app_id=5175756)
-        state = dict(candidate='a'*40, id='b'*64, check_id=None)
+        state = dict(candidate='a'*40, id='b'*64, check_id=None, expected=self.names)
         api.request.side_effect = [{'total_count':0,'check_runs':[]}, APIError('unavailable')]
         checks = ci.Checks(api)
         with self.assertRaises(APIError):

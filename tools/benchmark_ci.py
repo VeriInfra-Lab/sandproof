@@ -15,7 +15,7 @@ from tools.benchmark_tasks import PIN21, canonical, digest, InvalidInput
 from tools.bounded_acceptance import bounded_acceptance_layout
 from tools.system_acceptance import json_file
 
-CHECK_NAME = 'E2E / terminal-bench-2.1-subset'
+CHECK_NAME = 'E2E / terminal-bench-2.1'
 
 
 def private_path(path, *, directory=False):
@@ -29,18 +29,36 @@ def private_path(path, *, directory=False):
     return path
 
 
-def subset(lock, manifest):
-    names = [row['name'] for row in manifest['tasks']]
-    changed = manifest['changed_tasks']
+def selection(lock, manifest, policy):
+    """Resolve an operator-approved profile or exact list; never sample at run time.
+
+    Names, order and cohort size are configuration, not product logic. The
+    immutable full lock still supplies every original task's inputs/resources.
+    """
+    all_names = [row['name'] for row in lock['tasks']]
     if (lock['dataset'] != 'terminal-bench@2.1' or lock['source']['commit'] != PIN21.commit
-            or manifest['schema_version'] != 1 or manifest['dataset'] != lock['dataset']
-            or manifest['source_commit'] != PIN21.commit or manifest['batch_size'] != 4
+            or manifest.get('schema_version') != 2 or manifest.get('dataset') != lock['dataset']
+            or manifest.get('source_commit') != PIN21.commit
             or manifest.get('source_kind') != 'dockerfile'
-            or len(names) != 8 or len(set(names)) != 8
-            or len(changed) != 28 or len(set(changed)) != 28
-            or not set(names) <= set(changed) <= {row['name'] for row in lock['tasks']}):
-        raise InvalidInput('subset differs from the reviewed eight-task scope')
-    return [names[:4], names[4:]]
+            or len(set(all_names)) != len(all_names) or not all_names):
+        raise InvalidInput('selection catalog differs from the fixed dataset')
+    if set(policy) not in ({'profile', 'batch_size'}, {'tasks', 'batch_size'}):
+        raise InvalidInput('choose exactly one profile or explicit task list')
+    size = policy['batch_size']
+    if type(size) is not int or not 1 <= size <= len(all_names):
+        raise InvalidInput('batch size must fit the fixed dataset')
+    if 'profile' in policy:
+        name = policy['profile']
+        if not isinstance(name, str) or name not in manifest['profiles']:
+            raise InvalidInput('unknown task profile')
+        profile = manifest['profiles'][name]
+        names = list(all_names) if profile.get('all') is True else [row['name'] for row in profile['tasks']]
+    else:
+        names = policy['tasks']
+    if (not isinstance(names, list) or not names or any(not isinstance(n, str) for n in names)
+            or len(names) != len(set(names)) or not set(names) <= set(all_names)):
+        raise InvalidInput('empty, duplicate or unknown task selection')
+    return [names[i:i + size] for i in range(0, len(names), size)]
 
 
 def run_identity(candidate, base, configuration, manifest, lock):
@@ -78,14 +96,15 @@ def instantiate_policy(template, root, namespaces):
     return policy
 
 
-def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expected_hashes=None):
+def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expected_hashes=None,
+                 full_task_count):
     report = json_file(root / 'report.json', limit=4 * 1024 * 1024)
     service = json_file(root / 'service-cleanup.json')
     rows = report.get('tasks', [])
     observed = [r.get('name') for r in rows]
     if (report.get('commit') != candidate or report.get('dataset') != 'terminal-bench@2.1'
             or report.get('task_source') != {'repository': PIN21.repository, 'commit': PIN21.commit}
-            or report.get('fixed_task_count') != 89 or len(observed) != len(names)
+            or report.get('fixed_task_count') != full_task_count or len(observed) != len(names)
             or len(set(observed)) != len(names) or set(observed) != set(names)
             or report.get('source_kind') != 'dockerfile'
             or report.get('original_environment') is not True or report.get('paid_model_used') is not False
@@ -130,15 +149,17 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
                 report_sha256=hashlib.sha256((root / 'report.json').read_bytes()).hexdigest())
 
 
-def aggregate(candidate, batches, expected):
+def aggregate(candidate, batches, expected, *, all_tasks=None):
     rows = [row for batch in batches for row in batch['tasks']]
     names = [row['name'] for row in rows]
     complete = len(names) == len(expected) and len(set(names)) == len(expected) and set(names) == set(expected)
     passed = complete and all(batch['passed'] is True and batch['cleanup'] == 'passed' for batch in batches)
+    full = (all_tasks is not None and len(expected) == len(all_tasks)
+            and len(set(all_tasks)) == len(all_tasks) and set(expected) == set(all_tasks))
     return dict(schema_version=1, candidate=candidate, dataset='terminal-bench@2.1',
-        scope='eight-task regression subset; not full-suite acceptance',
+        scope='full fixed dataset' if full else 'configured regression subset; not full-suite acceptance',
         required_tasks=list(expected), tasks=rows, complete=complete, passed=passed,
-        executed_task_count=len(rows), full_suite_passed=False, paid_model_used=False)
+        executed_task_count=len(rows), full_suite_passed=bool(full and passed), paid_model_used=False)
 
 
 def remove_private_tree(root, expected_identity):

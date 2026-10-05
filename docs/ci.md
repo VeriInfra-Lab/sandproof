@@ -26,11 +26,15 @@
 
 ### 可信 KVM 端到端监督（待宿主部署验收）
 
-[监督器](../tools/ci_e2e_supervisor.py)、[准备工具](../tools/ci_e2e_prepare.py)、[服务单元](../tools/ci_e2e_supervisor.service)与[私有配置示例](../tools/ci_e2e_supervisor.example.json)已实现；实际安装和自动成功/失败回写尚未验收。这里只运行[固定八题](../benchmarks/terminal-bench-2.1-subset.json)，判据以[验收清单](testing-plan.md)为准，不描述为完整 89 题 CI。
+[监督器](../tools/ci_e2e_supervisor.py)、[准备工具](../tools/ci_e2e_prepare.py)、[服务单元](../tools/ci_e2e_supervisor.service)与[私有配置示例](../tools/ci_e2e_supervisor.example.json)已实现；宿主安装与真实结果回传须以对应 issue/PR 的实测证据为准。通过[题集配置](../benchmarks/terminal-bench-2.1-suites.json)选择范围，判据以[验收清单](testing-plan.md)为准；支持完整题集不等于它已通过。
 
 不新增 root GitHub runner，不执行外部 PR 宿主代码或 `pull_request_target`。监督程序、配置、任务来源和工具均由 root 受控安装；自动模式须显式启用且只观察同仓库受保护 test，其他候选只接受精确提交批准清单。候选必须包含所记录的 main 基线；最终合并仍依赖严格保护防止目标更新竞态。配置和编译产物绑定原运行，重启不能改用新配置或重跑未知工作。
 
-普通补充服务与 KVM 服务使用同一准入锁；KVM 先创建自己的暂停标记，等待全部普通任务及未知占用退出，再独占。准备/批次由独立 systemd 单元执行，管理服务重启不停止它们；准备完成后固定实际 server/窗口工具摘要。八题分两批串行，精确收尾确认和脱敏结果持久化后才按原目录设备/inode 回收临时盘，不能宽泛删除他人资源。清理或单元身份未知时保留占用，恢复按原资源核对，不盲目新建。
+普通补充服务与 KVM 服务使用同一准入锁；KVM 先创建自己的暂停标记，等待全部普通任务及未知占用退出，再独占。准备/批次由独立 systemd 单元执行，管理服务重启不停止它们；准备完成后固定实际 server/窗口工具摘要。按配置大小分批串行，精确收尾确认和脱敏结果持久化后才按原目录设备/inode 回收临时盘，不能宽泛删除他人资源。清理或单元身份未知时保留占用，恢复按原资源核对，不盲目新建。
+
+宿主私有配置的 `selection` 选择 `profile`（`smoke`、`regression` 或 `full`），或使用唯一的显式 `tasks` 名单，两者互斥；`batch_size` 控制每批保留的题目数量，题内仍串行。题集目录的规范摘要写入 `selection_sha256`，配置改变产生新的验收身份；正在执行的验收仍按原配置恢复。自动模式仅使用宿主批准配置，不能由 PR 改写；批次增大仍须满足宿主/策略额度，参数不授予额外资源。
+
+手动入口为同一监督器的 `--candidate <批准的完整提交> --base <main完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-test`，配置 `auto_test=true` 后观察同仓库受保护 test；检查名称统一为 `E2E / terminal-bench-2.1`，结果明确实际名单与是否完整题集。GitHub 页面手动工作流入口尚未接通，不能把普通 `Function CI` 的按钮称为真题入口。
 
 给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 权限。E2E 客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 
