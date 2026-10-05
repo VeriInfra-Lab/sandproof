@@ -297,10 +297,16 @@ class BenchmarkProxy:
             if not separator or key not in properties or key in fields:
                 raise ValueError('unrecognized transport service observation')
             fields[key] = value
+        if fields.get('LoadState') == 'not-found':
+            # systemctl omits empty properties unless --all is requested.
+            # Missing identity fields are valid only for an absent unit; a
+            # contradictory command/invocation or transient unit is unknown.
+            if (fields.get('ExecStart', '') or fields.get('InvocationID', '')
+                    or fields.get('Transient', 'no') != 'no'):
+                raise ValueError('contradictory absent transport service observation')
+            return None
         if set(fields) != set(properties):
             raise ValueError('incomplete transport service observation')
-        if fields['LoadState'] == 'not-found':
-            return None
         if not self.state.get('unit_intent'):
             raise ValueError('transport service has no original intent')
         command = self.state.get('unit_command')
@@ -360,6 +366,8 @@ class BenchmarkProxy:
             if (len(rules) != 1 or not selector
                     or not any(r.get('type') == 'unreachable' for r in routes)):
                 raise ValueError('transport fail-closed fallback incomplete')
+            if unit is None and self.state['phase'] not in ('probe_stopping', 'probe_stopped'):
+                raise ValueError('transport exited before controlled probe stop')
             self.persist('probe_stopping')
             if unit is not None:
                 self.run(['/usr/bin/systemctl', 'stop', self.plan['unit'] + '.service'])

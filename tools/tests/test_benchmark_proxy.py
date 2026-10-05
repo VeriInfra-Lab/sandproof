@@ -90,7 +90,8 @@ class SimulatedProxy(BenchmarkProxy):
                       'InvocationID': self.invocation if self.unit else '',
                       'Transient': 'yes' if self.unit else 'no'}
             fields.update(self.unit_overrides)
-            return ''.join(k + '=' + v + '\n' for k, v in fields.items()).encode()
+            # Actual systemctl show (without --all) omits empty properties.
+            return ''.join(k + '=' + v + '\n' for k, v in fields.items() if v).encode()
         elif 'LoadState' in args:
             return b'loaded\n' if self.unit else b'not-found\n'
         elif 'stop' in args:
@@ -142,6 +143,20 @@ class BenchmarkProxyTests(unittest.TestCase):
                 configuration(layout(NS)['device'], port)
         with self.assertRaises(ValueError):
             configuration('host-interface', 7897)
+
+    def test_absent_systemd_unit_accepts_omitted_empty_identity_fields_only(self):
+        obj = BenchmarkProxy(Path('/private/proxy'), NS, '/approved/mihomo', 'a' * 64)
+        for raw in (b'LoadState=not-found\nTransient=no\n', b'LoadState=not-found\n',
+                    b'ExecStart=\nInvocationID=\nLoadState=not-found\nTransient=no\n'):
+            with self.subTest(raw=raw), patch.object(obj, 'run', return_value=raw):
+                self.assertIsNone(obj.verify_unit())
+        for raw in (b'LoadState=loaded\nTransient=yes\n', b'LoadState=not-found\nTransient=yes\n',
+                    b'LoadState=not-found\nInvocationID=' + b'a' * 32 + b'\n',
+                    b'LoadState=not-found\nExecStart=/foreign\n',
+                    b'LoadState=not-found\nUnexpected=yes\n', b'Transient=no\n',
+                    b'LoadState=not-found\nLoadState=not-found\n'):
+            with self.subTest(raw=raw), patch.object(obj, 'run', return_value=raw), self.assertRaises(ValueError):
+                obj.verify_unit()
 
     def test_live_link_detection_is_exact_and_not_a_global_scan_target(self):
         p = layout(NS)
@@ -461,8 +476,26 @@ class BenchmarkProxyTests(unittest.TestCase):
                 obj.stop_for_probe()
             self.assertEqual(obj.state['phase'], 'probe_stopping')
             self.assertTrue(obj.nft and obj.rules and obj.routes)
+            # The persisted stop intent can finish after its receipt is lost.
+            obj.stop_for_probe()
+            self.assertEqual(obj.state['phase'], 'probe_stopped')
             obj.finish(quiescent=True)
             self.assertEqual(obj.state['phase'], 'removed')
+
+    def test_probe_stop_rejects_unexpected_exit_without_prior_stop_intent(self):
+        with tempfile.TemporaryDirectory() as directory, patch('tools.benchmark_proxy.named_namespaces', return_value=[]):
+            obj = SimulatedProxy(Path(directory) / 'proxy')
+            obj.start()
+            # Observe a prior crash/OOM, not the requested controlled failure.
+            obj.unit = False
+            obj.links = []
+            obj.routes = [r for r in obj.routes if r.get('type') == 'unreachable']
+            boundary = len(obj.commands)
+            with self.assertRaisesRegex(ValueError, 'exited before controlled'):
+                obj.stop_for_probe()
+            self.assertEqual(obj.state['phase'], 'active')
+            self.assertFalse(any('stop' in c or 'del' in c or 'delete' in c for c, _ in obj.commands[boundary:]))
+            self.assertTrue(obj.nft and obj.rules and obj.routes)
 
 
 if __name__ == '__main__':
