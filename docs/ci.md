@@ -34,8 +34,8 @@
 
 宿主私有配置的 `selection` 选择 `profile`（`smoke`、`regression` 或 `full`），或使用唯一的显式 `tasks` 名单，两者互斥；`batch_size` 控制每批保留的题目数量，题内仍串行。题集目录的规范摘要写入 `selection_sha256`，配置改变产生新的验收身份；正在执行的验收仍按原配置恢复。自动模式仅使用宿主批准配置，不能由 PR 改写；批次增大仍须满足宿主/策略额度，参数不授予额外资源。
 
-手动入口为同一监督器的 `--candidate <批准的完整提交> --base <main完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-test`，配置 `auto_test=true` 后观察同仓库受保护 test；检查名称统一为 `E2E / terminal-bench-2.1`，结果明确实际名单与是否完整题集。GitHub 页面手动工作流入口尚未接通，不能把普通 `Function CI` 的按钮称为真题入口。
+手动入口为同一监督器的 `--candidate <批准的完整提交> --base <main完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-test`，配置 `auto_test=true` 后观察同仓库受保护 test；正式检查名称为 `E2E / terminal-bench-2.1`，结果明确实际名单与是否完整题集。手动覆盖题集或批次使用带 `/ diagnostic` 后缀的独立检查，不能满足正式门槛。GitHub 页面手动工作流入口尚未接通，不能把普通 `Function CI` 的按钮称为真题入口。
 
-给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 权限。E2E 客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
+给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 
 安装前审查源码及批准配置、保留原 CI 文件恢复副本，验证单元；只重启管理服务，不停止在途工作。实测成功、真实失败及下一轮干净恢复后，才另行配置阶段门槛。单次安装不代表永久运行的缓存/历史保留已验收；未知资源由管理员核对，不自动忘掉。当前不修改既有保护或加入绿色占位工作流。

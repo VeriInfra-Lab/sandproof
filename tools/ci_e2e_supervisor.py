@@ -6,6 +6,7 @@ test ref; other candidates require a root-owned exact-SHA allowlist. Dedicated
 systemd batch units survive manager restarts. Unknown state is not a retry.
 """
 import argparse
+import base64
 from contextlib import contextmanager
 import fcntl
 import json
@@ -19,7 +20,8 @@ import uuid
 from tools.benchmark_ci import (CHECK_NAME, aggregate, authorize, batch_result,
     instantiate_policy, private_path, remove_private_tree, run_identity, selection)
 from tools.benchmark_tasks import canonical, digest, verify
-from tools.ci_github_app import APIError, CHECK_PERMISSIONS, GitHubApp, REPOSITORY, Transport
+from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, SOURCE_PERMISSIONS,
+                               GitHubApp, REPOSITORY, Transport)
 from tools.ci_runner_supervisor import atomic_json
 from tools.system_acceptance import json_file, write_once
 from tools.check_kvm_host import trusted_path
@@ -52,9 +54,20 @@ def validate_host_inputs(config):
         private_path(config[name], directory=True)
 
 
-def git(*args, cwd=None):
+def git(*args, cwd=None, source_client=None, proxy=None):
+    env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
+    if proxy:
+        env.update(HTTPS_PROXY=proxy, HTTP_PROXY=proxy, https_proxy=proxy, http_proxy=proxy)
+    if source_client is not None:
+        # Short-lived repository-only read token, never in argv, Git config,
+        # checkout, stdout or batch environment. No credential helper runs.
+        token = source_client.access_token()
+        header = 'Authorization: Basic ' + base64.b64encode(('x-access-token:' + token).encode()).decode()
+        env.update(GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='http.https://github.com/.extraheader',
+                   GIT_CONFIG_VALUE_0=header)
     return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null',
-        '-c', 'core.fsmonitor=false', *args], cwd=cwd, text=True, stderr=subprocess.PIPE, timeout=300).strip()
+        '-c', 'core.fsmonitor=false', '-c', 'credential.helper=', *args],
+        cwd=cwd, env=env, text=True, stderr=subprocess.PIPE, timeout=300).strip()
 
 
 class Checks:
@@ -385,13 +398,14 @@ class Supervisor:
         self.terminal(result, phase='done')
 
 
-def checkout_candidate(config, candidate):
+def checkout_candidate(config, candidate, source_client=None):
     repository = private_path(config['repository'], directory=True)
     if git('remote', 'get-url', 'origin', cwd=repository) != REPO:
         raise ValueError('candidate repository origin mismatch')
     root = private_path(config['checkout_parent'], directory=True) / candidate
     if not root.exists():
-        git('fetch', '--no-tags', 'origin', candidate, cwd=repository)
+        git('fetch', '--no-tags', 'origin', candidate, cwd=repository,
+            source_client=source_client, proxy=config.get('proxy'))
         git('worktree', 'add', '--detach', str(root), candidate, cwd=repository)
         root.chmod(0o700)
     if git('rev-parse', 'HEAD', cwd=root) != candidate or git('status', '--porcelain', cwd=root):
@@ -437,6 +451,11 @@ def main():
     lock = (root / 'supervisor.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     checks = None
+    source_client = None
+    if config.get('repository'):
+        source_client = GitHubApp(config['client_id'], Path(os.environ['CREDENTIALS_DIRECTORY']) / 'app-key',
+                                 Transport(config['proxy']), config['installation_id'], permissions=SOURCE_PERMISSIONS)
+        source_client.verify_installation()
     if not args.local_only:
         api = GitHubApp(config['client_id'], Path(os.environ['CREDENTIALS_DIRECTORY']) / 'app-key',
                         Transport(config['proxy']), config['installation_id'], permissions=CHECK_PERMISSIONS)
@@ -450,15 +469,16 @@ def main():
             if supervisor.state and supervisor.state['phase'] == 'blocked':
                 break
             if not supervisor.state or supervisor.state['phase'] == 'done':
-                refs = git('ls-remote', REPO, 'refs/heads/test', 'refs/heads/main')
+                refs = git('ls-remote', REPO, 'refs/heads/test', 'refs/heads/main',
+                           source_client=source_client, proxy=config.get('proxy')) if args.follow_test else ''
                 refs = {line.split()[1]: line.split()[0] for line in refs.splitlines()}
                 candidate = refs['refs/heads/test'] if args.follow_test else args.candidate
                 base = refs['refs/heads/main'] if args.follow_test else args.base
                 authorize(candidate, approved_commits=config['approved_commits'],
-                          observed_test=refs['refs/heads/test'] if config.get('auto_test') else None)
-                prepared = checkout_candidate(config, candidate) if config.get('repository') else config
+                          observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None)
+                prepared = checkout_candidate(config, candidate, source_client) if config.get('repository') else config
                 supervisor.config = prepared
-                supervisor.begin(candidate, base, observed_test=refs['refs/heads/test'] if config.get('auto_test') else None)
+                supervisor.begin(candidate, base, observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None)
             if supervisor.state['phase'] == 'blocked':
                 break
             supervisor.tick()

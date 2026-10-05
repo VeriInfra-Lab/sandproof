@@ -414,7 +414,7 @@ class AppTests(unittest.TestCase):
                 return {'id': 123}
             if '/app/installations?' in path:
                 return [{'id': 5, 'account': {'login': 'ningZhang-cs'}, 'repository_selection': 'selected',
-                         'permissions': dict(auth.PERMISSIONS, checks='write')}]
+                         'permissions': dict(auth.PERMISSIONS, checks='write', contents='read')}]
             if 'access_tokens' in path:
                 return {'token': 'fake-token', 'permissions': body['permissions'], 'expires_at': '1970-01-01T01:00:00Z'}
             return {'total_count': 1, 'repositories': [{'id': 6, 'full_name': auth.REPOSITORY}]}
@@ -430,6 +430,15 @@ class AppTests(unittest.TestCase):
         app.access_token()
         self.assertEqual(calls[-1][2]['permissions'], auth.CHECK_PERMISSIONS)
         self.assertNotIn('administration', calls[-1][2]['permissions'])
+        app = auth.GitHubApp('client', Path('/not-read'), transport, permissions=auth.SOURCE_PERMISSIONS)
+        app.jwt = lambda: 'fake-jwt'
+        app.verify_installation()
+        app.access_token()
+        self.assertEqual(calls[-1][2]['permissions'], auth.SOURCE_PERMISSIONS)
+        self.assertNotIn('checks', calls[-1][2]['permissions'])
+        self.assertNotIn('administration', calls[-1][2]['permissions'])
+        with self.assertRaises(ValueError):
+            app.request('POST', '/repos/' + auth.REPOSITORY + '/check-runs')
 
     def app(self, transport, clock=lambda: 1000):
         app = auth.GitHubApp('client', Path('/not-read'), transport, clock=clock)

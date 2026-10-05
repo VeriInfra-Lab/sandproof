@@ -14,6 +14,7 @@ import urllib.request
 REPOSITORY = 'ningZhang-cs/sandproof'
 PERMISSIONS = {'actions': 'read', 'administration': 'write', 'metadata': 'read'}
 CHECK_PERMISSIONS = {'actions': 'read', 'checks': 'write', 'metadata': 'read'}
+SOURCE_PERMISSIONS = {'contents': 'read', 'metadata': 'read'}
 
 
 class APIError(RuntimeError):
@@ -71,7 +72,7 @@ class GitHubApp:
     def __init__(self, client_id, key_path, transport, installation_id=None, clock=time.time,
                  permissions=None):
         self.permissions = dict(PERMISSIONS if permissions is None else permissions)
-        if self.permissions not in (PERMISSIONS, CHECK_PERMISSIONS):
+        if self.permissions not in (PERMISSIONS, CHECK_PERMISSIONS, SOURCE_PERMISSIONS):
             raise ValueError('unreviewed token permission profile')
         self.client_id = client_id
         self.key_path = key_path
@@ -104,9 +105,10 @@ class GitHubApp:
             raise ValueError('installation identity changed')
         if installation.get('suspended_at') or installation['repository_selection'] != 'selected':
             raise ValueError('App must be active and restricted to selected repositories')
-        allowed = dict(PERMISSIONS, checks='write')
+        allowed = [dict(PERMISSIONS, **extra) for extra in
+                   ({}, {'checks':'write'}, {'contents':'read'}, {'checks':'write', 'contents':'read'})]
         granted = installation['permissions']
-        if (granted not in (PERMISSIONS, allowed)
+        if (granted not in allowed
                 or any(granted.get(key) != value for key, value in self.permissions.items())):
             raise ValueError('App permissions differ from the reviewed CI profiles')
         self.installation_id = installation['id']

@@ -58,6 +58,20 @@ class BenchmarkCITests(unittest.TestCase):
         identity = bench.run_identity('a'*40, 'b'*40, {}, self.manifest, self.lock)
         self.assertNotEqual(identity, bench.run_identity('a'*40, 'c'*40, {}, self.manifest, self.lock))
 
+    def test_private_source_token_is_ephemeral_and_not_in_command_arguments(self):
+        client = Mock()
+        client.access_token.return_value = 'PRIVATE-SOURCE-TOKEN'
+        with patch.object(ci.subprocess, 'check_output', return_value='a'*40) as call:
+            ci.git('ls-remote', ci.REPO, source_client=client, proxy='http://127.0.0.1:7897')
+        argv = call.call_args.args[0]
+        self.assertNotIn('PRIVATE-SOURCE-TOKEN', str(argv))
+        env = call.call_args.kwargs['env']
+        self.assertEqual(env['GIT_CONFIG_KEY_0'], 'http.https://github.com/.extraheader')
+        self.assertEqual(env['GIT_TERMINAL_PROMPT'], '0')
+        with patch.object(ci.subprocess, 'check_output', return_value='') as call:
+            ci.git('status', '--porcelain')
+        self.assertNotIn('GIT_CONFIG_VALUE_0', call.call_args.kwargs['env'])
+
     def report(self):
         data = dict(commit='a'*40, dataset='terminal-bench@2.1', fixed_task_count=89,
             server_sha256='a'*64, kernel_sha256='b'*64, builder_base_sha256='c'*64,
