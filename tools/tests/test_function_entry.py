@@ -1,4 +1,8 @@
 from pathlib import Path
+import os
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -46,6 +50,44 @@ class FunctionEntryTests(unittest.TestCase):
                       'cargo test --workspace --all-targets --locked',
                       'cargo test --workspace --doc --locked'):
             self.assertIn(check, commands)
+
+
+    def test_cold_harbor_entry_prepares_reducer_and_build_failure_stops_tests(self):
+        root = Path(__file__).resolve().parents[2]
+        shim = """#!PYTHON
+from pathlib import Path
+import os, sys
+stage = Path(os.environ['ENTRY_STAGE'])
+name = Path(sys.argv[0]).name
+with (stage / 'trace').open('a') as output:
+    output.write(name + '\\n')
+if name == 'cargo':
+    if sys.argv[1:] != ['build', '--locked', '-p', 'sandproof-controller-service', '--bin', 'sandproof-window-reducer']:
+        raise SystemExit(91)
+    if os.environ.get('ENTRY_BUILD_FAILURE'):
+        raise SystemExit(17)
+    (stage / 'reducer').touch()
+elif 'unittest' in sys.argv and not (stage / 'reducer').exists():
+    # A cold test environment cannot execute window tests without the helper.
+    raise SystemExit(23)
+""".replace('PYTHON', sys.executable, 1)
+        for fail in (False, True):
+            with self.subTest(build_failure=fail), tempfile.TemporaryDirectory() as temporary:
+                stage = Path(temporary)
+                for name in ('cargo', 'uv'):
+                    tool = stage / name
+                    tool.write_text(shim)
+                    tool.chmod(0o700)
+                env = os.environ | {'ENTRY_STAGE': temporary,
+                                    'PATH': temporary + os.pathsep + os.environ['PATH']}
+                env.pop('ENTRY_BUILD_FAILURE', None)
+                if fail:
+                    env['ENTRY_BUILD_FAILURE'] = '1'
+                result = subprocess.run(['bash', str(root / 'scripts/check-bench.sh')],
+                    cwd=temporary, env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 17 if fail else 0, result.stderr)
+                trace = (stage / 'trace').read_text().splitlines()
+                self.assertEqual(trace, ['cargo'] if fail else ['cargo', 'uv', 'uv', 'uv'])
 
 
 if __name__ == '__main__':
