@@ -39,7 +39,7 @@ sudo ./target/debug/sandproof-vm smoke \
 
 ## 宿主 CPU 与内存限制
 
-服务私有配置可显式提供 `host_resources`；CLI 诊断使用同结构的 `SANDBOX_HOST_RESOURCES` JSON 环境变量。缺省仍保留历史诊断模式，**不能据此声称宿主资源已受限**。此接入已通过选定真实内核、VM/SDK 和回执恢复测试，提交、配置与边界记录在[版本基线](../references/v1-baseline.json)；不能由基础 CI 的忽略用例推断通过。
+服务私有配置可显式提供 `host_resources`；CLI 诊断使用同结构的 `SANDBOX_HOST_RESOURCES` JSON 环境变量。缺省仍保留历史诊断模式，**不能据此声称宿主资源已受限**。每次验收须在 PR 绑定提交、配置与摘要；不能由基础 CI 的忽略用例推断实机通过。
 
 ```json
 {
@@ -89,13 +89,11 @@ sudo <固定 SDK Python> tests/system/server_template_isolation.py \
 
 ## 固定 envd 与真实 SDK 测试
 
-### 隔离候选构建实验（#123，未接入用户 API）
+### 通用模板构建与发布
 
-[`tools/template_worker.py`](../tools/template_worker.py) 必须由外部监督器放到新建、限额、独占且可销毁的构建 VM 中执行；不能在宿主运行它处理用户输入，也不能只用 rootless 替代 VM 边界。调用需显式提供输入归档、全字段预算请求、受信任工具路径/SHA-256 清单和分配 VM 的 boot_id。工作器使用标准 [BuildKit](https://github.com/moby/buildkit/tree/v0.28.0) 与 [umoci](https://github.com/opencontainers/umoci/tree/v0.6.0)，不连接宿主 Docker；BuildKit 的 host 网络模式仅指这台禁网构建 VM 内部，不改变宿主网络权限。工具、输入及缓存都属于该项工作，不能跨租户复用。
+用户入口由独立构建服务管理，构建工作器在新建、限额、可销毁的 VM 内运行 BuildKit/umoci，不能在宿主处理用户输入，也不能用 rootless 代替 VM 隔离。候选只有经过启动检查、持久发布和检查 VM 精确收尾才成为 Ready；完整流程及工具版本见[架构](../docs/ARCHITECTURE.md)与[模块合同](../docs/module-contracts.md)。
 
-[`tests/system/template_build.py`](../tests/system/template_build.py) 是可信操作方的离线最小实验，所需 `--tools` 目录包含 `buildctl`、`buildkitd`、`buildkit-runc`、`umoci`、固定 `envd` 与静态 `busybox`。前三项来自官方 `buildkit-v0.28.0.linux-amd64.tar.gz`（SHA-256 `bc5a158c97c1f7ace1af81c375e8c28bd27e6afeb283fc5b3bfb10777f48fc83`）；umoci 来自官方 `umoci.linux.amd64` v0.6.0（SHA-256 `b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71`）。验证摘要后只提取构建所需三项二进制，不把其他架构模拟器放到宿主 PATH。envd/BusyBox 与宿主文件系统工具指纹另随实测清单记录。工作器预算与运行服务额度不是同一配置；最终独立构建准入服务尚未实现。
-
-实验运行还需要 `--server`、`--jailer`、`--firecracker`、`--kernel`、含 Python/文件系统工具的 10 GiB 测试 `--rootfs`、root 独占 `--scratch-parent`、空且已委派的 `--cgroup-parent` 和独占 `--uid-base`；无公共网络、模型费用或生产配置。输出候选磁盘不是 Ready 模板；可信验收器显式绑定规范化 `startup` 后测试 ENV/WORKDIR/USER 与 CMD/ENTRYPOINT 的真实执行，不自动发布。真正用户入口和发布检查仍待后续接入；合同、拒绝项及默认值差异见[模块合同](../docs/module-contracts.md)，实际测试提交见[版本基线](../references/v1-baseline.json)。
+[离线构建探针](../tests/system/template_build.py)用于受控输入与发布故障；[自助入口探针](../tests/system/template_self_service.py)验证用户构建、查询和 SDK 使用。预算、工具摘要、独占资源与参数以对应脚本和[验收清单](../docs/testing-plan.md)为准，不把局部实验算作全题集通过。
 
 ### 显式预制多模板
 
@@ -157,7 +155,7 @@ sudo tests/compat/.venv/bin/python tests/system/guest_smoke.py \
 
 禁网测试额外创建一个仅供本轮使用的外部网络空间和临时链路，先从 VM 的宿主网络空间确认该测试端点真实可达，再由来宾 root 设置静态路由尝试访问；即使转发路径存在，来宾流量仍须在 TAP 入站处被宿主规则拒绝。该实验只使用隔离的测试网络，不开放真实公网，也不改变宿主全局 IPv4 转发值。测试脚本会恢复 VM 网络空间原转发值并删除临时链路；异常留下的网络空间需要按本轮唯一名称检查，不得批量删除其他运行中的沙箱资源。
 
-`launch-net`、`observe-net`、`stop-net`、`cleanup-net` 为该测试提供诊断入口，参数与 `smoke-net` 相同，但要求环境变量 `SANDBOX_ENVD_TOKEN_SHA512`。`launch-net` 保留串口日志，整轮测试应留在同一个受监督的宿主会话中。该测试直接使用 SDK 构造器连接已创建的来宾，**没有测试公共 create/kill API 或 Harbor**。上述脚本也已使用 `base-inputs.json` 的新 base 执行，精确提交和指纹见[版本基线](../references/v1-baseline.json)；历史 CI 配方与新 base 的证据分别记录。它不包含 Dockerfile/OCI 构建、完整外网策略或最终任务资源验收。新增运行层、制备工具和 envd 不在现有 Lean 证明范围内。
+`launch-net`、`observe-net`、`stop-net`、`cleanup-net` 为该测试提供诊断入口，参数与 `smoke-net` 相同，但要求环境变量 `SANDBOX_ENVD_TOKEN_SHA512`。`launch-net` 保留串口日志，整轮测试应留在同一个受监督的宿主会话中。该测试直接使用 SDK 构造器连接已创建的来宾，**没有测试公共 create/kill API 或 Harbor**。镜像输入见 `base-inputs.json`；精确实测提交与配置见对应 PR，不能把不同配方的证据混用。它不包含 Dockerfile/OCI 构建、完整外网策略或最终任务资源验收。新增运行层、制备工具和 envd 不在现有 Lean 证明范围内。
 
 
 ## 独立复现 B01 节点验收

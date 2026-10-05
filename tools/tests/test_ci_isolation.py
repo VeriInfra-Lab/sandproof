@@ -17,6 +17,7 @@ class IsolationProbeTests(unittest.TestCase):
              patch.object(probe.grp, 'getgrgid', side_effect=lambda _: type('G', (), {'gr_name': 'sudo'})()), \
              patch.object(probe.subprocess, 'run', return_value=subprocess.CompletedProcess([], sudo)), \
              patch.object(probe.Path, 'exists', return_value=exists), \
+             patch.object(probe, 'check_guest_homes'), \
              patch.object(probe.socket, 'create_connection', side_effect=socket_result), \
              patch.object(probe.urllib.request, 'build_opener', return_value=opener):
             probe.main()
@@ -36,6 +37,33 @@ class IsolationProbeTests(unittest.TestCase):
         for values in ({'exists': True}, {'host_connect': True}):
             with self.subTest(values=values), self.assertRaises(RuntimeError):
                 self.invoke(**values)
+
+    def test_only_trusted_runner_home_is_allowed(self):
+        with patch.object(probe.Path, 'iterdir', return_value=[probe.Path('/home/runner')]):
+            probe.check_guest_homes()
+        for name in ('operator', 'ubuntu', 'other-user', '.hidden-home'):
+            with self.subTest(name=name), \
+                 patch.object(probe.Path, 'iterdir', return_value=[probe.Path('/home') / name]), \
+                 self.assertRaisesRegex(RuntimeError, 'extra user home'):
+                probe.check_guest_homes()
+
+    def test_missing_home_observation_does_not_pass(self):
+        with patch.object(probe.Path, 'iterdir', side_effect=OSError('unavailable')), \
+             self.assertRaises(OSError):
+            probe.check_guest_homes()
+
+    def test_job_invokes_generic_home_probe_before_network(self):
+        with patch.object(probe, 'check_guest_homes', wraps=probe.check_guest_homes) as check:
+            with patch.object(probe.os, 'geteuid', return_value=1000), \
+                 patch.object(probe.os, 'getgroups', return_value=[]), \
+                 patch.object(probe.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), \
+                 patch.object(probe.Path, 'exists', return_value=False), \
+                 patch.object(probe.Path, 'iterdir', return_value=[probe.Path('/home/operator')]), \
+                 patch.object(probe.socket, 'create_connection') as connect, \
+                 self.assertRaises(RuntimeError):
+                probe.main()
+            check.assert_called_once()
+            connect.assert_not_called()
 
     def test_allowed_or_wrong_status_egress_refuses(self):
         for response in (lambda *_args, **_kwargs: MagicMock(),
