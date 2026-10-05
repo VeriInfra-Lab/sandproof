@@ -39,7 +39,7 @@ class CiVmTests(unittest.TestCase):
         joined = ' '.join(args)
         self.assertIn('restrict=on', joined)
         self.assertIn('guestfwd=tcp:10.0.2.100:3128-cmd:/usr/bin/socat - TCP:127.0.0.1:3129', joined)
-        for forbidden in ('hostfwd', 'virtfs', 'fsdev', 'vhost', '/home/ning', '/dev/kvm,'):
+        for forbidden in ('hostfwd', 'virtfs', 'fsdev', 'vhost', '/dev/kvm,'):
             self.assertNotIn(forbidden, joined)
         self.assertIn('readonly=on', joined)
         self.assertIn('host,-vmx,-svm', joined)

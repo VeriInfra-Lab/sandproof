@@ -4,7 +4,7 @@
 
 本文解释系统由哪些部分组成、一次请求如何运行、数据存在哪里，以及它们与 E2B 的对应关系。章节按 E2B 的架构文档组织，但不是 E2B 的逐句翻译，也不把 E2B 的全部功能纳入我们的目标。
 
-阅读基线：2026-10-01（已接通预制模板、发布登记、显式启用的自助构建及 Harbor 通用原题链；原题诊断与统一资源压力验收的边界见[验收清单](testing-plan.md)）。下文“已实现”和“已实测”须结合所链接 issue/PR 的精确提交及[版本基线](../references/v1-baseline.json)判读，不表示所有故障场景通过。后续进度看 issue/PR，证明结论只看[证明覆盖记录](proof-coverage.md)。修改组件职责、存储或运行路径时，同一 PR 更新本页；产品范围仍只在蓝图定义，接口语义仍只在模块合同定义。
+阅读基线：2026-10-01（已接通预制模板、发布登记、显式启用的自助构建及 Harbor 通用原题链；原题诊断与统一资源压力验收的边界见[验收清单](testing-plan.md)）。下文“已实现”和“已实测”须结合所链接 issue/PR 的精确提交、配置与摘要判读，不表示所有故障场景通过。后续进度看 issue/PR，证明结论只看[证明覆盖记录](proof-coverage.md)。修改组件职责、存储或运行路径时，同一 PR 更新本页；产品范围仍只在蓝图定义，接口语义仍只在模块合同定义。
 
 E2B 对照来源是 [runtime 的 ARCHITECTURE.md](https://github.com/e2b-dev/runtime/blob/132dadd2ef55bbac301528500e8a4538caf4b163/docs/ARCHITECTURE.md)，固定在 `132dadd2ef55bbac301528500e8a4538caf4b163`。这只是架构阅读参考，**不升级我们的兼容基线**：SDK、envd、Harbor 和 Firecracker 的采用版本仍以[蓝图](project-blueprint.md)及测试锁定记录为准。
 
