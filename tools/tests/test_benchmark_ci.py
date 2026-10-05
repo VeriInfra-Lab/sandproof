@@ -44,11 +44,13 @@ class BenchmarkCITests(unittest.TestCase):
 
     def report(self):
         data = dict(commit='a'*40, dataset='terminal-bench@2.1', fixed_task_count=89,
+            server_sha256='a'*64, kernel_sha256='b'*64, builder_base_sha256='c'*64,
             task_source=dict(repository=bench.PIN21.repository, commit=bench.PIN21.commit),
             source_kind='dockerfile', original_environment=True, paid_model_used=False,
             no_process_network_cgroup_jail_residue=True,
             tasks=[dict(name=n, status='passed', oracle='passed', verifier='passed',
-                        exact_cleanup='passed', rewards={'reward':1}, private_key='NEVER EXPORT') for n in self.names[:4]])
+                        exact_cleanup='passed', rewards={'reward':1}, private_key='NEVER EXPORT',
+                        template={'kernelSha256':'b'*64, 'rootfsSha256':'d'*64}) for n in self.names[:4]])
         (self.root / 'report.json').write_text(json.dumps(data))
         (self.root / 'service-cleanup.json').write_text('{"removed":true}')
         (self.root / 'proxy-cleanup.json').write_text('{"phase":"removed"}')
@@ -80,6 +82,21 @@ class BenchmarkCITests(unittest.TestCase):
         result = bench.aggregate('a'*40, [batch,other], self.names)
         self.assertTrue(result['passed'])
         self.assertFalse(result['full_suite_passed'])
+
+    def test_missing_or_wrong_prepared_fingerprints_never_pass(self):
+        report = self.report()
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0,
+                               expected_hashes={'server_sha256':'f'*64})
+        report.pop('builder_base_sha256')
+        (self.root / 'report.json').write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
+        report = self.report()
+        report['tasks'][0].pop('template')
+        (self.root / 'report.json').write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0)
 
     def test_reclamation_rejects_substitution_and_symlink_before_deleting_files(self):
         child = self.root / 'run'

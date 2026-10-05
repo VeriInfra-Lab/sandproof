@@ -168,6 +168,18 @@ class LocalFinalizationTests(unittest.TestCase):
             ):
                 yield args, env, oracle, verifier, root / task_name, output
 
+    def test_namespaced_package_uses_original_task_inputs_and_short_local_identity(self):
+        with self.fixture(task_name='terminal-bench/sample') as (args, env, oracle, verifier, trial, output):
+            row = asyncio.run(runner.run_task(args, {'name':'sample', 'source_path':'tasks/sample',
+                'package_name':'terminal-bench/sample', 'dataset':'terminal-bench@2.1'}, {}))
+            self.assertEqual(row['name'], 'sample')
+            self.assertEqual(row['status'], 'passed')
+            oracle.run.assert_awaited_once()
+            verifier.verify.assert_awaited_once()
+            env.stop.assert_awaited_once()
+            self.assertEqual(runner.Task.call_args.args, (args.source / 'tasks/sample',))
+            self.assertEqual(runner.OracleAgent.call_args.kwargs['task_dir'], args.source / 'task')
+
     def test_environment_variant_pass_is_not_an_original_environment_result(self):
         from benchmarks.environment_repairs import PRUNED_SOURCE
         from benchmarks.run_generic import run_selected

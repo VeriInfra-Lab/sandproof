@@ -78,7 +78,7 @@ def instantiate_policy(template, root, namespaces):
     return policy
 
 
-def batch_result(root, *, candidate, names, exit_code, proxy_required=True):
+def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expected_hashes=None):
     report = json_file(root / 'report.json', limit=4 * 1024 * 1024)
     service = json_file(root / 'service-cleanup.json')
     rows = report.get('tasks', [])
@@ -96,6 +96,12 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True):
         raise ValueError('incomplete, mismatched or unknown batch cleanup evidence')
     if proxy_required and json_file(root / 'proxy-cleanup.json').get('phase') != 'removed':
         raise ValueError('proxy cleanup is unknown')
+    fingerprint_fields = ('server_sha256', 'kernel_sha256', 'builder_base_sha256')
+    if (any(not isinstance(report.get(key), str) or re.fullmatch('[0-9a-f]{64}', report[key]) is None
+            for key in fingerprint_fields)
+            or (expected_hashes is not None and any(report.get(key) != value
+                                                    for key, value in expected_hashes.items()))):
+        raise ValueError('batch artifacts differ from the prepared host inputs')
     # Construct an allowlist. Never copy config, paths, raw logs or exceptions.
     statuses = {'passed', 'failed', 'timeout', 'interrupted', 'cleanup_unknown', 'runner_error', 'not_run'}
     safe = []
@@ -112,6 +118,8 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True):
         item['template_hashes'] = {key: value for key, value in template.items()
             if key in ('rootfsSha256', 'kernelSha256') and isinstance(value, str)
             and re.fullmatch('[0-9a-f]{64}', value)}
+        if set(item['template_hashes']) != {'rootfsSha256', 'kernelSha256'}:
+            raise ValueError('immutable template fingerprints are missing')
         safe.append(item)
     passed = exit_code == 0 and all(r['status'] == r['oracle'] == r['verifier'] == 'passed'
         and r['rewards'] == {'reward': 1} for r in safe)

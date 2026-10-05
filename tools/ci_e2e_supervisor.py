@@ -355,8 +355,12 @@ class Supervisor:
             root = Path(batch['root'])
             try:
                 if batch['phase'] != 'reclaiming':
+                    assets = self.config['host_assets'] | state.get('candidate_artifacts', {})
                     result = batch_result(root, candidate=state['candidate'], names=batch['names'],
-                                          exit_code=int(fields['ExecMainStatus']))
+                        exit_code=int(fields['ExecMainStatus']), expected_hashes={
+                            name: assets[self.config[key]] for name, key in
+                            (('server_sha256', 'server'), ('kernel_sha256', 'kernel'),
+                             ('builder_base_sha256', 'rootfs'))})
                     batch['result'] = result
                     batch['root_identity'] = [root.stat().st_dev, root.stat().st_ino]
                     batch['phase'] = 'reclaiming'
