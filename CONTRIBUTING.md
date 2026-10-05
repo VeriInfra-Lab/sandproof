@@ -43,6 +43,7 @@ git push -u origin feat/4-transaction-store
 - 共享集成、晋升和堆叠均核对仓库身份；fork 不能冒充长期分支。外部贡献先由维护者审查并导入同仓库任务分支，再运行普通隔离 CI，不向贡献者发放宿主管理权限。
 - 任务分支只能进入 integration，不能绕过它直接进入 test/main；任务堆叠绿灯不代表最终组合通过，进入 integration 后重跑相关检查。
 - **任务 → integration 用 squash；integration → test、test → main 均用 merge commit**。反向同步只允许 main → test、test → integration，也用 merge commit。不要 squash 晋升，否则下次会重复出现旧改动和冲突。
+- 修复既有共享历史的同步 PR 也用 merge commit，并在 PR 给出源码树或补丁等价证据；不能借此绕过产品变更的相关验收。
 - 不强推共享分支；删除任务分支前核对仍在途的 PR、依赖和未集成提交。没有把握的提交先做可恢复备份。
 - 三个长期分支经过 PR 和必需检查，审批人数为 0；重要变更仍建议队友复核。分支保护不能代替本地基础和相关系统验收。
 - 正式验收后在 main 的确定提交上打版本标签；当前无自动发布或部署。分支名不是测试或证明证据。
