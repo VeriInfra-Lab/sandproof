@@ -349,6 +349,7 @@ def exercise(args):
             recovery = recover_runtime_create(
                 root / '0/db/controller.db', row['runtime_intent'],
                 owner=settings[0]['credentials'][0]['tenant'], namespace=namespaces[0],
+                benchmark=lock['dataset'] if lock['dataset'] == 'terminal-bench@2.1' else 'terminal-bench-2.0',
                 sandbox_id=row.get('sandbox_id'), deadline=deadline,
                 delete=lambda identity: fetch(opener, urls[0], 'DELETE', '/sandboxes/' + identity, key)[0])
             result.update(sandbox_id=recovery['sandbox_id'], runtime_recovery=recovery)

@@ -15,7 +15,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.database = Path(self.tmp.name) / 'controller.db'
+        self.database = Path(self.tmp.name).resolve() / 'controller.db'
         self.template = json.loads((Path(__file__).resolve().parents[2] /
                                     'tests/compat/template-view.json').read_text())
         self.intent = {'metadata': {'benchmark': 'terminal-bench-2.0', 'task': 'sample',
@@ -168,6 +168,35 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def load_checkpoint(self):
         return load_runtime_intent(self.database.parent, task='sample', runtime_attempt='e' * 32,
                                    build_id='a' * 32, template=self.template)
+
+    def test_two_point_one_checkpoint_requires_supervisor_version_binding(self):
+        checkpoint = self.database.parent / 'runtime-intent.json'
+        modern = copy.deepcopy(self.intent)
+        modern['metadata']['benchmark'] = 'terminal-bench@2.1'
+        checkpoint.write_text(json.dumps(modern))
+        with self.assertRaisesRegex(ValueError, 'differs from live trial'):
+            self.load_checkpoint()
+        self.assertEqual(load_runtime_intent(self.database.parent, task='sample',
+            runtime_attempt='e' * 32, build_id='a' * 32, template=self.template,
+            benchmark='terminal-bench@2.1'), modern)
+        checkpoint.write_text(json.dumps(self.intent))
+        with self.assertRaisesRegex(ValueError, 'differs from live trial'):
+            load_runtime_intent(self.database.parent, task='sample', runtime_attempt='e' * 32,
+                build_id='a' * 32, template=self.template, benchmark='terminal-bench@2.1')
+
+    def test_two_point_one_journal_recovery_never_accepts_other_dataset(self):
+        self.intent['metadata']['benchmark'] = 'terminal-bench@2.1'
+        self.options['metadata']['benchmark'] = 'terminal-bench@2.1'
+        self.insert(phase='Destroyed')
+        delete = Mock()
+        result = recover_runtime_create(self.database, self.intent, owner=1, namespace='test',
+            delete=delete, deadline=2, benchmark='terminal-bench@2.1',
+            monotonic=lambda: self.now, sleep=self.tick)
+        self.assertEqual(result['status'], 'destroyed')
+        delete.assert_not_called()
+        for benchmark in ('terminal-bench-2.0', 'arbitrary-other-dataset'):
+            with self.subTest(benchmark=benchmark), self.assertRaises(ValueError):
+                matching_runtime(self.database, self.intent, owner=1, namespace='test', benchmark=benchmark)
 
     def test_checkpoint_requires_exact_live_task_attempt_build_and_template(self):
         checkpoint = self.database.parent / 'runtime-intent.json'

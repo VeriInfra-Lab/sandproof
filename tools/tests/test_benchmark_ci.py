@@ -45,7 +45,7 @@ class BenchmarkCITests(unittest.TestCase):
     def report(self):
         data = dict(commit='a'*40, dataset='terminal-bench@2.1', fixed_task_count=89,
             task_source=dict(repository=bench.PIN21.repository, commit=bench.PIN21.commit),
-            source_kind='oci', original_environment=True, paid_model_used=False,
+            source_kind='dockerfile', original_environment=True, paid_model_used=False,
             no_process_network_cgroup_jail_residue=True,
             tasks=[dict(name=n, status='passed', oracle='passed', verifier='passed',
                         exact_cleanup='passed', rewards={'reward':1}, private_key='NEVER EXPORT') for n in self.names[:4]])
@@ -127,3 +127,77 @@ class BenchmarkCITests(unittest.TestCase):
         with self.assertRaises(ValueError):
             lease.release()
         self.assertTrue((self.root / 'paused').exists())
+
+    def supervisor(self, *, checks=None, phase='running', batch_phase='launching'):
+        supervisor = ci.Supervisor(dict(state_root=str(self.root), ci_state_root=str(self.root)), checks)
+        supervisor.state = dict(id='b'*64, candidate='a'*40, phase=phase,
+            configuration=supervisor.config, expected=self.names, check_id=3,
+            batches=[dict(names=self.names[:4], phase=batch_phase, root=str(self.root / 'batch'),
+                          unit='sandproof-e2e-batch-' + 'c'*32 + '.service')])
+        supervisor.save()
+        return supervisor
+
+    def test_manager_restart_adopts_running_launch_without_repeat(self):
+        original = self.supervisor()
+        restarted = ci.Supervisor(original.config)
+        with patch.object(ci, 'unit_state', return_value=dict(LoadState='loaded', ActiveState='active', ExecMainCode='0')):
+            with patch.object(ci, 'launch') as launch:
+                restarted.tick()
+                launch.assert_not_called()
+        self.assertEqual(restarted.state['batches'][0]['phase'], 'launching')
+
+    def test_absent_unit_after_lost_launch_receipt_blocks_and_keeps_host_lease(self):
+        supervisor = self.supervisor()
+        lease = ci.HostLease(self.root, supervisor.state['id'])
+        lease.pause()
+        (self.root / 'exclusive-host').write_text(json.dumps({'e2e': supervisor.state['id']}))
+        with patch.object(ci, 'unit_state', return_value=dict(LoadState='not-found', ActiveState='inactive', ExecMainCode='0')):
+            with patch.object(ci, 'launch') as launch:
+                supervisor.tick()
+                launch.assert_not_called()
+        self.assertEqual(supervisor.state['phase'], 'blocked')
+        self.assertFalse(supervisor.state['result']['passed'])
+        self.assertTrue((self.root / 'exclusive-host').exists())
+
+    def test_reclamation_restart_after_exact_root_removed_uses_durable_result(self):
+        supervisor = self.supervisor(batch_phase='reclaiming')
+        batch = supervisor.state['batches'][0]
+        batch.update(result={'passed':False}, root_identity=[123,456])
+        supervisor.save()
+        restarted = ci.Supervisor(supervisor.config)
+        with patch.object(ci, 'unit_state', return_value=dict(LoadState='loaded', ActiveState='active', ExecMainCode='1', ExecMainStatus='1')):
+            with patch.object(ci, 'batch_result') as reduce, patch.object(ci, 'remove_private_tree') as remove:
+                with patch.object(ci.subprocess, 'run') as stop:
+                    restarted.tick()
+        reduce.assert_not_called()
+        remove.assert_not_called()
+        stop.assert_called_once()
+        self.assertEqual(restarted.state['batches'][0]['phase'], 'done')
+        self.assertEqual(restarted.state['batches'][0]['result'], {'passed':False})
+
+    def test_lost_completion_patch_retries_exact_check_not_vm_or_results(self):
+        for phase in ('done', 'blocked'):
+            with self.subTest(phase=phase):
+                checks = Mock()
+                checks.finish.side_effect = APIError('completion receipt lost')
+                supervisor = self.supervisor(checks=checks)
+                result = bench.aggregate('a'*40, [], self.names)
+                with self.assertRaises(APIError):
+                    supervisor.terminal(result, phase=phase)
+                self.assertTrue(supervisor.state['check_publish_pending'])
+                restarted_checks = Mock()
+                restarted = ci.Supervisor(supervisor.config, restarted_checks)
+                with patch.object(ci, 'launch') as launch, patch.object(ci, 'batch_result') as reduce:
+                    restarted.tick()
+                launch.assert_not_called()
+                reduce.assert_not_called()
+                restarted_checks.finish.assert_called_once_with(restarted.state, result)
+                self.assertFalse(restarted.state['check_publish_pending'])
+                self.assertEqual(restarted.state['check_id'], 3)
+
+    def test_local_only_cannot_discard_a_pending_github_completion(self):
+        supervisor = self.supervisor(phase='done')
+        supervisor.state.update(check_publish_pending=True, result=bench.aggregate('a'*40, [], self.names))
+        with self.assertRaises(ValueError):
+            supervisor.tick()
+        self.assertTrue(supervisor.state['check_publish_pending'])

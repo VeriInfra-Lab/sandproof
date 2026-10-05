@@ -33,7 +33,7 @@
   "policy_template": "/etc/sandproof-ci/e2e-policy.json",
   "proxy_binary": "/usr/local/lib/sandproof-clash/mihomo",
   "proxy_sha256": "replace-with-approved-sha256",
-  "source_kind": "oci",
+  "source_kind": "dockerfile",
   "docker_hub_mirror": null,
   "subset_sha256": "replace-with-canonical-subset-sha256",
   "host_assets": {}

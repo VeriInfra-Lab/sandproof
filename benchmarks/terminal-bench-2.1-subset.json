@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "dataset": "terminal-bench@2.1",
+  "source_kind": "dockerfile",
   "source_commit": "c5ee500c185224c97cd6caff7866a990a0057f41",
   "scope": "owner-approved eight-task regression subset; not full 89-task acceptance",
   "selection_source": "https://github.com/harbor-framework/terminal-bench-docs/blob/main/components/terminal-bench-2-1-charts.tsx",

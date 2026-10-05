@@ -35,6 +35,7 @@ def subset(lock, manifest):
     if (lock['dataset'] != 'terminal-bench@2.1' or lock['source']['commit'] != PIN21.commit
             or manifest['schema_version'] != 1 or manifest['dataset'] != lock['dataset']
             or manifest['source_commit'] != PIN21.commit or manifest['batch_size'] != 4
+            or manifest.get('source_kind') != 'dockerfile'
             or len(names) != 8 or len(set(names)) != 8
             or len(changed) != 28 or len(set(changed)) != 28
             or not set(names) <= set(changed) <= {row['name'] for row in lock['tasks']}):
@@ -86,7 +87,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True):
             or report.get('task_source') != {'repository': PIN21.repository, 'commit': PIN21.commit}
             or report.get('fixed_task_count') != 89 or len(observed) != len(names)
             or len(set(observed)) != len(names) or set(observed) != set(names)
-            or report.get('source_kind') not in ('oci', 'dockerfile')
+            or report.get('source_kind') != 'dockerfile'
             or report.get('original_environment') is not True or report.get('paid_model_used') is not False
             or (root / 'service-cleanup-errors.json').exists()
             or service.get('removed') is not True

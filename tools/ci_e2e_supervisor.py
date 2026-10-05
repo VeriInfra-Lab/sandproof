@@ -169,6 +169,8 @@ def launch(batch):
         '--property=WorkingDirectory=' + batch['checkout'],
         '--property=StandardOutput=journal', '--property=StandardError=journal',
         '--property=LogRateLimitIntervalSec=60', '--property=LogRateLimitBurst=100',
+        '--property=RuntimeMaxSec=' + str(batch['deadline_seconds']),
+        '--property=TimeoutStopSec=900', '--property=KillSignal=SIGINT', '--property=KillMode=process',
         '--setenv=PYTHONPATH=' + batch['checkout'], *batch['command']], check=True, capture_output=True, timeout=30)
 
 
@@ -186,14 +188,30 @@ class Supervisor:
     def save(self):
         atomic_json(self.path, self.state)
 
-    def block(self, reason):
-        self.state.update(phase='blocked', reason=reason)
+    def publish_terminal(self):
+        if not self.state.get('check_publish_pending'):
+            return
+        if self.checks is None:
+            raise ValueError('original check publication needs its authorized client')
+        self.checks.ensure(self.state, self.save)
+        # PATCH of this exact check is idempotent. The durable result is never
+        # rerun when its completion receipt is lost.
+        self.checks.finish(self.state, self.state['result'])
+        self.state['check_publish_pending'] = False
         self.save()
-        if self.checks:
-            result = aggregate(self.state['candidate'],
-                [b['result'] for b in self.state['batches'] if 'result' in b], self.state['expected'])
-            result['passed'] = False
-            self.checks.finish(self.state, result)
+
+    def terminal(self, result, *, phase, reason=None):
+        self.state.update(result=result, phase=phase, check_publish_pending=self.checks is not None)
+        if reason:
+            self.state['reason'] = reason
+        self.save()  # Terminal evidence BEFORE API mutation, including failure.
+        self.publish_terminal()
+
+    def block(self, reason):
+        result = aggregate(self.state['candidate'],
+            [b['result'] for b in self.state['batches'] if 'result' in b], self.state['expected'])
+        result['passed'] = False
+        self.terminal(result, phase='blocked', reason=reason)
 
     def begin(self, candidate, base, observed_test=None):
         authorize(candidate, approved_commits=self.config['approved_commits'], observed_test=observed_test)
@@ -201,14 +219,21 @@ class Supervisor:
         checkout = private_path(self.config['checkout'], directory=True)
         if git('rev-parse', 'HEAD', cwd=checkout) != candidate or git('status', '--porcelain', cwd=checkout):
             raise ValueError('clean operator-prepared exact candidate checkout required')
+        # A changed target cannot be covered by a check of an unrelated tree.
+        # Strict branch protection is still required for the final merge race.
+        git('merge-base', '--is-ancestor', base, candidate, cwd=checkout)
         lock = verify(json_file(checkout / 'benchmarks/terminal-bench-2.1.lock.json', limit=8*1024*1024),
             checkout / 'benchmarks/terminal-bench-2.1.registry.json', Path(self.config['task_source']))
         manifest = json_file(checkout / 'benchmarks/terminal-bench-2.1-subset.json')
         if digest(canonical(manifest)) != self.config['subset_sha256']:
             raise ValueError('selection changed; operator must review the new subset')
         batches = subset(lock, manifest)
+        if self.config['source_kind'] != manifest['source_kind']:
+            raise ValueError('environment preparation differs from the frozen subset policy')
         identity = run_identity(candidate, base, self.config, manifest, lock)
         if self.state:
+            if self.state.get('check_publish_pending'):
+                raise ValueError('original check completion receipt remains unresolved')
             if self.state['id'] != identity and self.state['phase'] != 'done':
                 raise ValueError('unresolved original run; cannot admit a replacement')
             if self.state['id'] == identity:
@@ -218,7 +243,9 @@ class Supervisor:
                 write_once(archive, self.state)
         self.state = dict(id=identity, candidate=candidate, base=base, phase='waiting', configuration=self.config,
             batches=[dict(names=names, phase='new') for names in batches],
-            expected=[name for names in batches for name in names], check_id=None)
+            expected=[name for names in batches for name in names], check_id=None,
+            task_inputs={t['name']: dict(files_sha256=t['files_sha256'], requirements=t['requirements'])
+                         for t in lock['tasks'] if t['name'] in {n for b in batches for n in b}})
         self.save()
 
     def prepare(self, batch, index):
@@ -252,12 +279,18 @@ class Supervisor:
         for name in batch['names']:
             args.extend(['--task', name])
         batch.update(root=str(root), command=args, checkout=str(checkout),
+            deadline_seconds=int(sum(sum(self.state['task_inputs'][name]['requirements'][key]
+                for key in ('build_timeout_sec', 'agent_timeout_sec', 'verifier_timeout_sec'))
+                for name in batch['names'])) + 7200,
             unit=UNIT_PREFIX + uuid.uuid4().hex + '.service', phase='launching')
         self.save()  # Intent before launching; original identity survives crash.
 
     def tick(self):
         state = self.state
-        if not state or state['phase'] in ('done', 'blocked'):
+        if not state:
+            return
+        if state['phase'] in ('done', 'blocked'):
+            self.publish_terminal()
             return
         if self.checks:
             self.checks.ensure(state, self.save)
@@ -291,12 +324,10 @@ class Supervisor:
                 self.block('candidate_preparation_identity_unknown')
                 return
             if fields.get('ExecMainStatus') != '0':
+                subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
                 lease.release()  # Preparation never dispatched a sandbox.
                 result = aggregate(state['candidate'], [], state['expected'])
-                state.update(result=result, phase='done', reason='candidate_preparation_failed')
-                if self.checks:
-                    self.checks.finish(state, result)
-                self.save()
+                self.terminal(result, phase='done', reason='candidate_preparation_failed')
                 return
             subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
             from tools.system_acceptance import digest as file_digest
@@ -343,10 +374,7 @@ class Supervisor:
         state['result'] = result
         self.save()
         lease.release()  # All batch units and original resources are gone.
-        if self.checks:
-            self.checks.finish(state, result)
-        state['phase'] = 'done'
-        self.save()
+        self.terminal(result, phase='done')
 
 
 def checkout_candidate(config, candidate):
@@ -391,6 +419,10 @@ def main():
     supervisor = Supervisor(config, checks)
     while True:
         try:
+            if supervisor.state and supervisor.state.get('check_publish_pending'):
+                supervisor.publish_terminal()
+            if supervisor.state and supervisor.state['phase'] == 'blocked':
+                break
             if not supervisor.state or supervisor.state['phase'] == 'done':
                 refs = git('ls-remote', REPO, 'refs/heads/test', 'refs/heads/main')
                 refs = {line.split()[1]: line.split()[0] for line in refs.splitlines()}

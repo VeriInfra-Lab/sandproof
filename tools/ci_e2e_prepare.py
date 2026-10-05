@@ -14,7 +14,8 @@ def prepare(config):
     if git('rev-parse', 'HEAD', cwd=checkout) != config['candidate'] or git('status', '--porcelain', cwd=checkout):
         raise ValueError('candidate checkout changed')
     env = dict(os.environ, HTTPS_PROXY=config['proxy'], HTTP_PROXY=config['proxy'],
-               https_proxy=config['proxy'], http_proxy=config['proxy'], NO_PROXY='localhost,127.0.0.1',
+               https_proxy=config['proxy'], http_proxy=config['proxy'],
+               NO_PROXY='localhost,127.0.0.1,pypi.org,files.pythonhosted.org,index.crates.io,static.crates.io,static.rust-lang.org',
                CARGO_BUILD_JOBS='2', CARGO_TARGET_DIR=config['cargo_target'],
                PATH=config['toolchain_bin'] + ':/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')
     subprocess.run([config['uv'], 'sync', '--locked', '--project', str(checkout / 'benchmarks')],
