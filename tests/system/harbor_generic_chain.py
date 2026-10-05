@@ -47,6 +47,7 @@ from template_build import IGZIP_HASHES
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.runtime_create_recovery import recover_runtime_create
+from tools.benchmark_proxy import BenchmarkProxy
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
@@ -148,6 +149,14 @@ def exercise(args):
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
                          profile=load(args.budget_profile))
     deployment = acceptance_disk_budgets(deployment, bounded_policy)
+    proxy_binary = getattr(args, 'proxy_binary', None)
+    proxy_digest = getattr(args, 'proxy_sha256', None)
+    if (proxy_binary is None) != (proxy_digest is None):
+        raise ValueError('proxy binary and approved digest must be provided together')
+    if proxy_binary is not None:
+        # The optional transport has an independent enforced 256 MiB maximum.
+        deployment['host']['minimum_available_memory_bytes'] += 256 * MIB
+        deployment['host']['minimum_cpus'] += 1
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
         validate_cohort([t['requirements'] for t in selected_entries], deployment)
@@ -267,6 +276,9 @@ def exercise(args):
     from tools.template_build_service import configuration
     configuration(root / 'build.json', require_physical_lease=False)
     controllers, supervisor, log = [], None, None
+    transport = (BenchmarkProxy(root / 'proxy', namespaces, proxy_binary, proxy_digest,
+                               port=getattr(args, 'proxy_socks_port', 7897))
+                 if proxy_binary is not None else None)
     service_record = root / 'service-cgroup.json'
     service_prefix = service_cgroup.prefix(service_record)
     service_samples = []
@@ -383,6 +395,8 @@ def exercise(args):
         return result
 
     try:
+        if transport is not None:
+            transport.start()
         service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
                                **deployment['service_cgroup'])
         for i in range(2):
@@ -416,6 +430,7 @@ def exercise(args):
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
                 'failure_diagnostics': args.failure_diagnostics,
+                'network_transport': transport.evidence() if transport else {'mode': 'direct_public_ipv4'},
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
                 oracle_mode=oracle_mode,
@@ -503,6 +518,7 @@ def exercise(args):
                 'capacity_basis': capacity_basis,
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'docker_hub_mirror': args.docker_hub_mirror,
+                'network_transport': transport.evidence() if transport else {'mode': 'direct_public_ipv4'},
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
@@ -543,6 +559,14 @@ def exercise(args):
         # both pools, including failures; deleting them can prevent recovery.
         if not complete:
             print('failure evidence retained at ' + str(root), flush=True)
+        if transport is not None and transport.state['phase'] not in ('new', 'removed'):
+            try:
+                evidence = transport.finish(quiescent=complete)
+                (root / 'proxy-cleanup.json').write_text(json.dumps(evidence, indent=2))
+                if evidence['phase'] != 'removed':
+                    stop_errors.append('ProxyRetainedForOriginalVmRecovery')
+            except Exception as error:
+                stop_errors.append(type(error).__name__)
         if stop_errors:
             (root / 'service-cleanup-errors.json').write_text(json.dumps(stop_errors))
             raise RuntimeError('service cleanup incomplete; retain recorded resources')
@@ -581,6 +605,10 @@ if __name__ == '__main__':
     parser.add_argument('--docker-hub-mirror',
                         help='trusted HTTPS registry hostname for OCI transport only; original task references remain unchanged')
     parser.add_argument('--temporarily-forward', action='store_true')
+    parser.add_argument('--proxy-binary', type=Path,
+                        help='approved root-owned Mihomo; optional per-run TUN to existing loopback SOCKS proxy')
+    parser.add_argument('--proxy-sha256', help='required with --proxy-binary; no automatic download or version change')
+    parser.add_argument('--proxy-socks-port', type=int, default=7897, help='host loopback only; never exposed to guests')
     parser.add_argument('--build-input-max-bytes', type=int, default=INPUT_BYTES,
                         help='bounded build input/download bytes; default 4 GiB, service maximum 16 GiB')
     parser.add_argument('--build-expanded-max-bytes', type=int, default=EXPANDED_BYTES,
