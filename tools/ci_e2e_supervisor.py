@@ -17,7 +17,7 @@ import subprocess
 import time
 import uuid
 
-from tools.benchmark_ci import (CHECK_NAME, aggregate, authorize, batch_result,
+from tools.benchmark_ci import (CHECK_NAME, aggregate, authorize, batch_result, cohort_policy,
     instantiate_policy, private_path, remove_private_tree, run_identity, selection)
 from tools.benchmark_tasks import canonical, digest, verify
 from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, SOURCE_PERMISSIONS,
@@ -242,6 +242,9 @@ class Supervisor:
         if digest(canonical(manifest)) != self.config['selection_sha256']:
             raise ValueError('selection catalog changed; operator review required')
         batches = selection(lock, manifest, self.config['selection'])
+        template = json_file(Path(self.config['policy_template']))
+        for names in batches:
+            cohort_policy(template, len(names))  # Before state creation or host pause.
         if self.config['source_kind'] != manifest['source_kind']:
             raise ValueError('environment preparation differs from the frozen subset policy')
         identity = run_identity(candidate, base, self.config, manifest, lock)
@@ -270,7 +273,8 @@ class Supervisor:
         checkout = Path(config['checkout'])
         root = private_path(config['scratch_parent'], directory=True) / uuid.uuid4().hex[:8]
         namespaces = [uuid.uuid4().hex[:16], uuid.uuid4().hex[:16]]
-        policy = instantiate_policy(json_file(Path(config['policy_template'])), root, namespaces)
+        policy = instantiate_policy(json_file(Path(config['policy_template'])), root, namespaces,
+                                    job_count=len(batch['names']))
         if self.state.get('candidate_artifacts'):
             from tools.system_acceptance import digest as file_digest
             for path, expected in self.state['candidate_artifacts'].items():

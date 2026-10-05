@@ -76,13 +76,30 @@ def authorize(candidate, *, approved_commits, observed_test=None):
         raise ValueError('candidate is not an approved commit or trusted test head')
 
 
-def instantiate_policy(template, root, namespaces):
-    """Only layout changes; the reviewed resource/capacity values are unchanged."""
+def cohort_policy(template, job_count):
+    """Bind exact batch counters within approved operator ceilings.
+
+    Partial cohorts must match the harness's derived counts. Compute, byte and
+    cleanup ceilings are unchanged; no extra resource authority is added.
+    """
     policy = copy.deepcopy(template)
     profiles = [policy[role]['bounded_host']['physical_storage'] for role in ('runtime', 'builder')]
     if profiles[0] != profiles[1]:
         raise ValueError('template profiles must be identical')
     profile = profiles[0]
+    public = profile['public_build']
+    if type(job_count) is not int or not 1 <= job_count <= min(public['max_jobs'], public['max_templates']):
+        raise ValueError('batch exceeds the approved retained-job/template ceilings')
+    public.update(max_jobs=job_count, max_templates=job_count)
+    for role in ('runtime', 'builder'):
+        policy[role]['bounded_host']['physical_storage'] = copy.deepcopy(profile)
+    return policy
+
+
+def instantiate_policy(template, root, namespaces, *, job_count):
+    """Bind layout and exact counts; retain all approved byte ceilings."""
+    policy = cohort_policy(template, job_count)
+    profile = policy['runtime']['bounded_host']['physical_storage']
     root = Path(root)
     profile['coordination_file'] = str(root / 'coordination')
     for index, role in enumerate(('runtime', 'builder')):

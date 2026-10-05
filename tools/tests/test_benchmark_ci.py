@@ -49,6 +49,24 @@ class BenchmarkCITests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bench.selection(self.lock, dict(self.manifest, **{key:value}), self.policy)
 
+    def test_partial_counts_do_not_raise_resource_ceilings(self):
+        profile = {'public_build':{'max_jobs':4, 'max_templates':4, 'workspace_bytes':64000,
+                                   'registry_bytes':40000}}
+        template = {role:{'bounded_host':{'physical_storage':copy.deepcopy(profile)}}
+                    for role in ('runtime','builder')}
+        for count in (1,2,3,4):
+            policy = bench.cohort_policy(template, count)
+            for role in ('runtime','builder'):
+                public = policy[role]['bounded_host']['physical_storage']['public_build']
+                self.assertEqual(public['max_jobs'], count)
+                self.assertEqual(public['max_templates'], count)
+                self.assertEqual(public['workspace_bytes'], 64000)
+                self.assertEqual(public['registry_bytes'], 40000)
+        self.assertEqual(template['runtime']['bounded_host']['physical_storage'], profile)
+        for count in (0,True,5):
+            with self.assertRaises(ValueError):
+                bench.cohort_policy(template, count)
+
     def test_exact_authorization_and_base_config_identity(self):
         bench.authorize('a'*40, approved_commits=['a'*40])
         bench.authorize('a'*40, approved_commits=[], observed_test='a'*40)
