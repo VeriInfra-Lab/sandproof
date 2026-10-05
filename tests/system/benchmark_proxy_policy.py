@@ -148,7 +148,10 @@ def exercise(args):
         'max_disk_bytes_global': 2 * inputs['rootfs']['bytes'], 'max_disk_bytes_per_tenant': 2 * inputs['rootfs']['bytes'],
         'cleanup_reserve_bytes': inputs['rootfs']['bytes'], 'max_timeout_secs': 600,
         'default_timeout_secs': 300, 'expiry_scan_seconds': 1,
-        'templates': {'templates': [template], 'aliases': {'base': 'proxy-policy'}}}
+        'templates': {'templates': [template], 'aliases': {'base': 'proxy-policy'},
+            'compute_limits': {'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
+                'max_memory_bytes_global': (args.memory_mib + 256) * MIB,
+                'max_memory_bytes_per_tenant': (args.memory_mib + 256) * MIB}}}
     save(root / 'config.json', cfg)
     url = f'http://127.0.0.1:{port}'
     options = dict(api_url=url, sandbox_url=url, api_key=key, domain='example.invalid', retries=0, request_timeout=90)
@@ -236,7 +239,7 @@ def exercise(args):
             failure = error
         finally:
             try:
-                if process is not None:
+                if process is not None and intents:
                     settle(Path(cfg['database']), intents, namespaces[0], template, delete,
                            deadline=time.monotonic() + 90, dispatched=dispatched)
                 if intents and process is None:
