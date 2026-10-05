@@ -9,6 +9,13 @@ import urllib.error
 import urllib.request
 
 
+def check_guest_homes():
+    """The trusted image has exactly one task user's home, never operator homes."""
+    for entry in Path('/home').iterdir():
+        if entry.name != 'runner':
+            raise RuntimeError('unexpected host or extra user home directory')
+
+
 def main():
     if os.geteuid() == 0:
         raise RuntimeError('job must not run as root')
@@ -18,9 +25,10 @@ def main():
     if subprocess.run(['sudo', '-n', 'true'], stdout=subprocess.DEVNULL,
                       stderr=subprocess.DEVNULL, check=False).returncode == 0:
         raise RuntimeError('job can elevate to host/guest administrator')
-    for forbidden in ('/dev/kvm', '/home/ning', '/var/lib/sandproof-ci', '/var/lib/sandproof'):
+    for forbidden in ('/dev/kvm', '/var/lib/sandproof-ci', '/var/lib/sandproof'):
         if Path(forbidden).exists():
             raise RuntimeError('unexpected host device or shared directory')
+    check_guest_homes()
     try:
         with socket.create_connection(('10.0.2.2', 22), timeout=2):
             raise RuntimeError('host SSH is reachable')

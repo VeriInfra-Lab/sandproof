@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import re
 import unittest
 from pathlib import Path
 
@@ -27,22 +26,20 @@ class V1BaselineTests(unittest.TestCase):
         toolchain = (ROOT / "rust-toolchain.toml").read_text()
         self.assertIn(f'channel = "{code["rust_toolchain"]}"', toolchain)
 
-    def test_historical_evidence_is_tied_to_exact_commits_and_test_files(self):
-        records = self.baseline["historical_evidence"]
-        self.assertEqual(len({record["id"] for record in records}), len(records))
-        for record in records:
-            with self.subTest(id=record["id"]):
-                self.assertRegex(record["commit"], r"^[0-9a-f]{40}$")
-                self.assertTrue((ROOT / record["test"]).is_file())
-                self.assertRegex(record["pr"], r"^https://github.com/ningZhang-cs/sandproof/pull/\d+$")
-                self.assertTrue(record["scope"])
+    def test_external_source_inputs_are_fixed_revisions(self):
+        sources = self.baseline["source_revisions"]
+        for name in ("e2b_sdk", "e2b_runtime_behavior_reference", "harbor_adapter_reference"):
+            with self.subTest(name=name):
+                self.assertRegex(sources[name], r"^[0-9a-f]{40}$")
+        self.assertRegex(sources["firecracker_release"], r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
-    def test_current_host_observation_is_not_misreported_as_new_vm_run(self):
-        host = self.baseline["observed_linux_host"]
-        self.assertIn("未运行", host["limit"])
-        for artifact in host["artifacts"].values():
-            self.assertTrue(artifact["path"].startswith("/"))
-            self.assertTrue(re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"]))
+    def test_public_manifest_is_not_a_machine_inventory_or_test_verdict(self):
+        self.assertEqual(self.baseline["schema_version"], 2)
+        self.assertEqual(set(self.baseline), {
+            "schema_version", "purpose", "code_baseline", "source_revisions", "evidence_policy",
+        })
+        self.assertIn("不是部署机器台账", self.baseline["purpose"])
+        self.assertIn("不得把这些输入锁当作通过结果", self.baseline["evidence_policy"])
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-export PATH="/Users/Admin/.elan/bin:$PATH"
+SANDBOX_ELAN_ROOT="${ELAN_HOME:-$HOME/.elan}"
+export PATH="$SANDBOX_ELAN_ROOT/bin:$PATH"
 export LEAN_LOG_LEVEL=WARNING
 # Local proof work needs no external search service or server-managed builds.
 exec "$PROJECT_ROOT/.tools/lean-mcp/bin/lean-lsp-mcp" \

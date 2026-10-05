@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate task stacks, the normal workflow and the temporary dot-ning batch."""
+"""Validate integration, release promotion, sync and same-repository task stacks."""
 
 import argparse
 import json
@@ -12,6 +12,11 @@ TASK_BRANCH = re.compile(
     r"(?:codex/)?(?:feat|fix|refactor|test|docs|ci|chore|proof)/"
     r"[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*"
 )
+LONG_LIVED = {"integration", "test", "main"}
+RELEASE_FLOWS = {
+    ("integration", "test"), ("test", "main"),
+    ("main", "test"), ("test", "integration"),
+}
 
 
 def is_task_branch(branch):
@@ -28,54 +33,32 @@ def validate(event):
         return "Missing pull-request head/base metadata."
     if not isinstance(head, str) or not isinstance(base, str):
         return "Branch names must be strings."
-    task_target = is_task_branch(base)
-    if base not in {"main", "test", "dot-ning"} and not task_target:
-        return (
-            "Pull requests must target test, main, a normally named task branch, "
-            "or the temporary dot-ning batch."
-        )
     if head == base:
         return "Source and target branches must differ."
+    task_target = is_task_branch(base)
+    if base not in LONG_LIVED and not task_target:
+        return "Target integration, test, main, or a normally named task branch."
 
-    # Stacks and the exact-name batch exception are same-repository task flows.
-    # Handle them before promotion/sync so main/test cannot enter either flow.
-    if task_target or base == "dot-ning":
-        target_kind = "A task stack" if task_target else "The dot-ning batch"
-        if not is_task_branch(head):
-            return f"{target_kind} accepts only normally named task branches."
-        try:
-            head_repo = pr["head"]["repo"]["id"]
-            base_repo = pr["base"]["repo"]["id"]
-        except (KeyError, TypeError):
-            return f"{target_kind} requires repository identity metadata."
-        if (
-            type(head_repo) is not int
-            or type(base_repo) is not int
-            or head_repo <= 0
-            or head_repo != base_repo
-        ):
-            return f"{target_kind} accepts only this repository's task branches."
-        return None
-
-    if head in {"main", "test"}:
-        try:
-            head_repo = pr["head"]["repo"]["id"]
-            base_repo = pr["base"]["repo"]["id"]
-        except (KeyError, TypeError):
-            return "Promotion/sync requires repository identity metadata."
-        if (
-            type(head_repo) is not int
-            or type(base_repo) is not int
-            or head_repo <= 0
-            or head_repo != base_repo
-        ):
-            return "Promotion/sync must use this repository's main/test branches."
-        return None
-
-    if base != "test":
-        return "Only this repository's test branch may promote to main."
-    if not is_task_branch(head):
+    if head in LONG_LIVED:
+        if (head, base) not in RELEASE_FLOWS:
+            return "Use integration -> test -> main; sync in the reverse direction."
+    elif not is_task_branch(head):
         return "Expected [codex/]<type>/<issue>-<lowercase-slug>, at most 100 characters."
+    elif base != "integration" and not task_target:
+        return "Task branches must enter integration before release promotion."
+
+    try:
+        head_repo = pr["head"]["repo"]["id"]
+        base_repo = pr["base"]["repo"]["id"]
+    except (KeyError, TypeError):
+        return "Pull requests require repository identity metadata."
+    if (
+        type(head_repo) is not int
+        or type(base_repo) is not int
+        or head_repo <= 0
+        or head_repo != base_repo
+    ):
+        return "Integration, promotion and task stacks require the same repository."
     return None
 
 
