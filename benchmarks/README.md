@@ -6,7 +6,23 @@
 
 2026-10-05 owner 确认后续评测使用 **Terminal-Bench 2.1 全部 89 题**，来源为[官方题库](https://github.com/harbor-framework/terminal-bench-2-1)与[Harbor Hub 数据集](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1)。官方使用的数据集名称为 `terminal-bench/terminal-bench-2-1`；正式执行须冻结具体发布摘要与源码提交，不直接跟随 `latest` 或 `main`。[官方发布说明](https://github.com/harbor-framework/terminal-bench-docs/blob/main/content/blog/terminal-bench-2-1.mdx)说明此次修订处理了外部依赖漂移、资源预算和题意/评分不一致等问题；不据修复数量推断本项目旧失败题已全部解决。
 
-**本批仅更新文档目标，2.1 尚未锁定、接入或实跑。** 当前 `terminal-bench-2.0.lock.json`、固定 Harbor 联合依赖和运行工具仍对应 2.0；下文现有命令、资源统计、逐题修复和实验记录均属于该历史基线，不是可直接运行的 2.1 指南，也不能作为 2.1 验收结果。2.0 原始/修订成绩继续保留，不再为取得旧原题全通过反复重跑全集。
+2026-10-05 owner 将**当前阶段自动回归范围固定为 2.1 修改的 28 题中的 8 题**，不重跑同事已通过的 2.0 75 题。选择和覆盖理由以[八题清单](terminal-bench-2.1-subset.json)为准；题目失败后不替换清单。八题结果、历史 2.0 成绩与未来完整 2.1 验收分开，不拼成同版本 89/89。
+
+[2.1 完整锁](terminal-bench-2.1.lock.json)固定官方发布期间的源码提交 `c5ee500c185224c97cd6caff7866a990a0057f41`、全部 89 题输入和原始资源/时限。[源码清单](terminal-bench-2.1.registry.json)由该 Git 树产生，不是已验证的 Harbor Hub 下载包或发布包摘要；两者不能混称。固定 Harbor/SDK 不升级，原 Harbor 可直接加载 1.1 配置。短任务 ID 仅用于本地目录与报告，原 `[task].name` 保存在锁内；不修改原任务文件。2.0 本地解答/环境修补不能用于 2.1。
+
+```sh
+git init artifacts/terminal-bench-21/source
+git -C artifacts/terminal-bench-21/source remote add origin https://github.com/harbor-framework/terminal-bench-2-1.git
+git -C artifacts/terminal-bench-21/source fetch --depth=1 origin c5ee500c185224c97cd6caff7866a990a0057f41
+git -C artifacts/terminal-bench-21/source checkout --detach FETCH_HEAD
+uv run --locked --project benchmarks python -m benchmarks.check_harbor \
+  --registry benchmarks/terminal-bench-2.1.registry.json \
+  --source artifacts/terminal-bench-21/source \
+  --lock benchmarks/terminal-bench-2.1.lock.json \
+  --report artifacts/terminal-bench-21/inputs.json
+```
+
+实机单批入口通过 `--lock benchmarks/terminal-bench-2.1.lock.json` 指定版本，保留既有 2.0 默认用于旧记录复现。自动监督入口见[开发指南](../CONTRIBUTING.md)；每批四题、题内串行，每题仍使用原资源和时限。**输入检查、组件通过、KVM 通过与自动 CI 成功/失败实测必须分别记录。** 下文 2.0 资源分布、配方和修补仅为历史基线，不用其旧成绩背书 2.1。
 
 后续迁移由 #13 完成，判据见[验收清单](../docs/testing-plan.md)：
 

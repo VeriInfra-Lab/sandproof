@@ -21,11 +21,11 @@ V1 只围绕 E2B 的固定核心子集，不切换到其他隔离引擎，不承
 | E2B Python SDK 2.51.0 | `ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b` | 选定同步/异步调用、接口、错误及生命周期行为依据 |
 | E2B runtime | `f455fd58fa3f289e78ce1de690c35968d8d29322` | 运行方式、envd 和外部操作参考 |
 | Harbor | `31668af15560fb50a9d0584816d12726036656cf` | E2B 接入及评测需求依据 |
-| Terminal-Bench 2.1 | [官方题库](https://github.com/harbor-framework/terminal-bench-2-1)；精确提交及数据集摘要待冻结 | 后续评测目标为全部 89 题；[迁移状态、逐文件锁与本地审计](../benchmarks/README.md) |
+| Terminal-Bench 2.1 | [官方题库](https://github.com/harbor-framework/terminal-bench-2-1)，固定源码 `c5ee500c185224c97cd6caff7866a990a0057f41` | 完整锁含 89 题；当前回归只执行事前选定的 8 题；[锁与范围](../benchmarks/README.md) |
 | 本项目 Firecracker/jailer | `1.16.1` | 已用于局部 Linux/KVM 实验；仍须按测试提交和摘要判断覆盖 |
 | Rust / Lean | 仓库工具链文件 | 本轮不升级 |
 
-M0 由 C 记录客户端精确包版本、锁文件及 Harbor 源码版本；B 记录宿主、内核、rootfs、envd、Firecracker/jailer 和运行配置指纹；A 记录存储格式和协议版本。Harbor 联合依赖锁、任务 ID 与内容哈希归 #13 的评测准备，不阻塞 M0 合同冻结。版本只可通过有原因、有回归证据的 PR 升级，不能跟随上游 `main` 自动漂移。现有 Terminal-Bench 2.0 锁（`69671fbaac6d67a7ef0dfec016cc38a64ef7a77c`）及其原始/修订报告只保留为历史证据；本批仅改文档，尚未完成 2.1 的锁定、工具接入或实跑，不将旧结果迁记为 2.1 通过。
+M0 由 C 记录客户端精确包版本、锁文件及 Harbor 源码版本；B 记录宿主、内核、rootfs、envd、Firecracker/jailer 和运行配置指纹；A 记录存储格式和协议版本。Harbor 联合依赖锁、任务 ID 与内容哈希归 #13 的评测准备，不阻塞 M0 合同冻结。版本只可通过有原因、有回归证据的 PR 升级，不能跟随上游 `main` 自动漂移。现有 Terminal-Bench 2.0 锁（`69671fbaac6d67a7ef0dfec016cc38a64ef7a77c`）及其原始/修订报告只保留为历史证据，不迁记为 2.1 通过。2026-10-05 owner 同意当前阶段以固定八题完成回归与自动化，不重跑旧版 75 题；完整题集承诺和本批结果必须区分。
 
 ## 2. V1 功能边界
 

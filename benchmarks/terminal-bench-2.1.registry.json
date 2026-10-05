@@ -1,0 +1,542 @@
+[
+  {
+    "name": "terminal-bench",
+    "version": "2.1",
+    "tasks": [
+      {
+        "name": "adaptive-rejection-sampler",
+        "path": "tasks/adaptive-rejection-sampler",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "bn-fit-modify",
+        "path": "tasks/bn-fit-modify",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "break-filter-js-from-html",
+        "path": "tasks/break-filter-js-from-html",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "build-cython-ext",
+        "path": "tasks/build-cython-ext",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "build-pmars",
+        "path": "tasks/build-pmars",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "build-pov-ray",
+        "path": "tasks/build-pov-ray",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "caffe-cifar-10",
+        "path": "tasks/caffe-cifar-10",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "cancel-async-tasks",
+        "path": "tasks/cancel-async-tasks",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "chess-best-move",
+        "path": "tasks/chess-best-move",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "circuit-fibsqrt",
+        "path": "tasks/circuit-fibsqrt",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "cobol-modernization",
+        "path": "tasks/cobol-modernization",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "code-from-image",
+        "path": "tasks/code-from-image",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "compile-compcert",
+        "path": "tasks/compile-compcert",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "configure-git-webserver",
+        "path": "tasks/configure-git-webserver",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "constraints-scheduling",
+        "path": "tasks/constraints-scheduling",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "count-dataset-tokens",
+        "path": "tasks/count-dataset-tokens",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "crack-7z-hash",
+        "path": "tasks/crack-7z-hash",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "custom-memory-heap-crash",
+        "path": "tasks/custom-memory-heap-crash",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "db-wal-recovery",
+        "path": "tasks/db-wal-recovery",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "distribution-search",
+        "path": "tasks/distribution-search",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "dna-assembly",
+        "path": "tasks/dna-assembly",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "dna-insert",
+        "path": "tasks/dna-insert",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "extract-elf",
+        "path": "tasks/extract-elf",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "extract-moves-from-video",
+        "path": "tasks/extract-moves-from-video",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "feal-differential-cryptanalysis",
+        "path": "tasks/feal-differential-cryptanalysis",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "feal-linear-cryptanalysis",
+        "path": "tasks/feal-linear-cryptanalysis",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "filter-js-from-html",
+        "path": "tasks/filter-js-from-html",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "financial-document-processor",
+        "path": "tasks/financial-document-processor",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "fix-code-vulnerability",
+        "path": "tasks/fix-code-vulnerability",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "fix-git",
+        "path": "tasks/fix-git",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "fix-ocaml-gc",
+        "path": "tasks/fix-ocaml-gc",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "gcode-to-text",
+        "path": "tasks/gcode-to-text",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "git-leak-recovery",
+        "path": "tasks/git-leak-recovery",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "git-multibranch",
+        "path": "tasks/git-multibranch",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "gpt2-codegolf",
+        "path": "tasks/gpt2-codegolf",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "headless-terminal",
+        "path": "tasks/headless-terminal",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "hf-model-inference",
+        "path": "tasks/hf-model-inference",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "install-windows-3.11",
+        "path": "tasks/install-windows-3.11",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "kv-store-grpc",
+        "path": "tasks/kv-store-grpc",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "large-scale-text-editing",
+        "path": "tasks/large-scale-text-editing",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "largest-eigenval",
+        "path": "tasks/largest-eigenval",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "llm-inference-batching-scheduler",
+        "path": "tasks/llm-inference-batching-scheduler",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "log-summary-date-ranges",
+        "path": "tasks/log-summary-date-ranges",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "mailman",
+        "path": "tasks/mailman",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "make-doom-for-mips",
+        "path": "tasks/make-doom-for-mips",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "make-mips-interpreter",
+        "path": "tasks/make-mips-interpreter",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "mcmc-sampling-stan",
+        "path": "tasks/mcmc-sampling-stan",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "merge-diff-arc-agi-task",
+        "path": "tasks/merge-diff-arc-agi-task",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "model-extraction-relu-logits",
+        "path": "tasks/model-extraction-relu-logits",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "modernize-scientific-stack",
+        "path": "tasks/modernize-scientific-stack",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "mteb-leaderboard",
+        "path": "tasks/mteb-leaderboard",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "mteb-retrieve",
+        "path": "tasks/mteb-retrieve",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "multi-source-data-merger",
+        "path": "tasks/multi-source-data-merger",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "nginx-request-logging",
+        "path": "tasks/nginx-request-logging",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "openssl-selfsigned-cert",
+        "path": "tasks/openssl-selfsigned-cert",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "overfull-hbox",
+        "path": "tasks/overfull-hbox",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "password-recovery",
+        "path": "tasks/password-recovery",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "path-tracing",
+        "path": "tasks/path-tracing",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "path-tracing-reverse",
+        "path": "tasks/path-tracing-reverse",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "polyglot-c-py",
+        "path": "tasks/polyglot-c-py",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "polyglot-rust-c",
+        "path": "tasks/polyglot-rust-c",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "portfolio-optimization",
+        "path": "tasks/portfolio-optimization",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "protein-assembly",
+        "path": "tasks/protein-assembly",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "prove-plus-comm",
+        "path": "tasks/prove-plus-comm",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "pypi-server",
+        "path": "tasks/pypi-server",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "pytorch-model-cli",
+        "path": "tasks/pytorch-model-cli",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "pytorch-model-recovery",
+        "path": "tasks/pytorch-model-recovery",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "qemu-alpine-ssh",
+        "path": "tasks/qemu-alpine-ssh",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "qemu-startup",
+        "path": "tasks/qemu-startup",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "query-optimize",
+        "path": "tasks/query-optimize",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "raman-fitting",
+        "path": "tasks/raman-fitting",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "regex-chess",
+        "path": "tasks/regex-chess",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "regex-log",
+        "path": "tasks/regex-log",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "reshard-c4-data",
+        "path": "tasks/reshard-c4-data",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "rstan-to-pystan",
+        "path": "tasks/rstan-to-pystan",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "sam-cell-seg",
+        "path": "tasks/sam-cell-seg",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "sanitize-git-repo",
+        "path": "tasks/sanitize-git-repo",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "schemelike-metacircular-eval",
+        "path": "tasks/schemelike-metacircular-eval",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "sparql-university",
+        "path": "tasks/sparql-university",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "sqlite-db-truncate",
+        "path": "tasks/sqlite-db-truncate",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "sqlite-with-gcov",
+        "path": "tasks/sqlite-with-gcov",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "torch-pipeline-parallelism",
+        "path": "tasks/torch-pipeline-parallelism",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "torch-tensor-parallelism",
+        "path": "tasks/torch-tensor-parallelism",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "train-fasttext",
+        "path": "tasks/train-fasttext",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "tune-mjcf",
+        "path": "tasks/tune-mjcf",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "video-processing",
+        "path": "tasks/video-processing",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "vulnerable-secret",
+        "path": "tasks/vulnerable-secret",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "winning-avg-corewars",
+        "path": "tasks/winning-avg-corewars",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      },
+      {
+        "name": "write-compressor",
+        "path": "tasks/write-compressor",
+        "git_url": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "git_commit_id": "c5ee500c185224c97cd6caff7866a990a0057f41"
+      }
+    ]
+  }
+]

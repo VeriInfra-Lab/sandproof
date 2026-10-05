@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import time
 import urllib.error
@@ -12,6 +13,7 @@ import urllib.request
 
 REPOSITORY = 'ningZhang-cs/sandproof'
 PERMISSIONS = {'actions': 'read', 'administration': 'write', 'metadata': 'read'}
+CHECK_PERMISSIONS = {'actions': 'read', 'checks': 'write', 'metadata': 'read'}
 
 
 class APIError(RuntimeError):
@@ -66,7 +68,11 @@ def private_key(path):
 
 
 class GitHubApp:
-    def __init__(self, client_id, key_path, transport, installation_id=None, clock=time.time):
+    def __init__(self, client_id, key_path, transport, installation_id=None, clock=time.time,
+                 permissions=None):
+        self.permissions = dict(PERMISSIONS if permissions is None else permissions)
+        if self.permissions not in (PERMISSIONS, CHECK_PERMISSIONS):
+            raise ValueError('unreviewed token permission profile')
         self.client_id = client_id
         self.key_path = key_path
         self.transport = transport
@@ -85,6 +91,7 @@ class GitHubApp:
     def verify_installation(self):
         jwt_token = self.jwt()
         app = self.transport('GET', '/app', jwt_token)
+        self.app_id = app['id']
         installations = self.transport('GET', '/app/installations?per_page=100', jwt_token)
         if len(installations) >= 100:
             raise ValueError('installation inventory exceeds fixed host limit')
@@ -97,12 +104,15 @@ class GitHubApp:
             raise ValueError('installation identity changed')
         if installation.get('suspended_at') or installation['repository_selection'] != 'selected':
             raise ValueError('App must be active and restricted to selected repositories')
-        if installation['permissions'] != PERMISSIONS:
-            raise ValueError('App permissions must be actions read, administration write, metadata read')
+        allowed = dict(PERMISSIONS, checks='write')
+        granted = installation['permissions']
+        if (granted not in (PERMISSIONS, allowed)
+                or any(granted.get(key) != value for key, value in self.permissions.items())):
+            raise ValueError('App permissions differ from the reviewed CI profiles')
         self.installation_id = installation['id']
         # Read the installation inventory before accepting it for unattended work.
         result = self.transport('POST', '/app/installations/' + str(self.installation_id) + '/access_tokens',
-                                jwt_token, {'permissions': PERMISSIONS})
+                                jwt_token, {'permissions': self.permissions})
         repositories = self.transport('GET', '/installation/repositories?per_page=100', result['token'])
         if repositories['total_count'] != 1 or repositories['repositories'][0]['full_name'] != REPOSITORY:
             raise ValueError('App installation must select only ' + REPOSITORY)
@@ -119,8 +129,8 @@ class GitHubApp:
         if self.repository_id is None:
             raise ValueError('installation scope has not been verified')
         result = self.transport('POST', '/app/installations/' + str(self.installation_id) + '/access_tokens',
-            self.jwt(), {'repository_ids': [self.repository_id], 'permissions': PERMISSIONS})
-        if result['permissions'] != PERMISSIONS:
+            self.jwt(), {'repository_ids': [self.repository_id], 'permissions': self.permissions})
+        if result['permissions'] != self.permissions:
             raise ValueError('installation token permissions changed')
         self.token = result['token']
         self.token_expires = datetime.fromisoformat(result['expires_at'].replace('Z', '+00:00')).timestamp()
@@ -129,8 +139,14 @@ class GitHubApp:
     def request(self, method, path, body=None):
         # A failed mutation may have succeeded at GitHub. Caller reconciles;
         # this client NEVER blindly retries POST/DELETE after transport failure.
-        prefix = '/repos/' + REPOSITORY + '/actions/'
-        if not path.startswith(prefix):
+        prefix = '/repos/' + REPOSITORY + '/'
+        suffix = path[len(prefix):] if path.startswith(prefix) else ''
+        ordinary = suffix.startswith('actions/') and self.permissions == PERMISSIONS
+        checks = self.permissions == CHECK_PERMISSIONS and (
+            (method == 'GET' and re.fullmatch(r'commits/[0-9a-f]{40}/check-runs\?per_page=100&filter=all', suffix))
+            or (method == 'POST' and suffix == 'check-runs')
+            or (method == 'PATCH' and re.fullmatch(r'check-runs/[0-9]+', suffix)))
+        if not ordinary and not checks:
             raise ValueError('repository API outside CI scope')
         try:
             return self.transport(method, path, self.access_token(), body)

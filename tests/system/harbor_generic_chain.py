@@ -131,7 +131,10 @@ def exercise(args):
     if subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain']).strip():
         raise RuntimeError('clean exact source commit required')
     commit = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip()
-    lock = verify(json.loads((checkout / 'benchmarks/terminal-bench-2.0.lock.json').read_text()), args.registry, args.source)
+    lock_path = getattr(args, 'lock', None) or checkout / 'benchmarks/terminal-bench-2.0.lock.json'
+    lock = verify(json.loads(lock_path.read_text()), args.registry, args.source)
+    if lock['dataset'] == 'terminal-bench@2.1' and (args.oracle_mode != 'original' or args.source_kind == PRUNED_SOURCE):
+        raise ValueError('2.0 local repairs cannot be applied to 2.1')
     runtimes = check_runtime()
     check_tasks(lock, args.source)
     selected, oracle_mode, selected_entries, capacity_entries = select_cohort(args, lock['tasks'])
@@ -514,7 +517,8 @@ def exercise(args):
                 resource_pressure=args.resource_pressure, pressure_report=pressure_report)
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': build_tools,
-                'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': 89,
+                'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': lock['task_count'],
+                'dataset': lock['dataset'], 'task_source': lock['source'],
                 'capacity_basis': capacity_basis,
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'docker_hub_mirror': args.docker_hub_mirror,
@@ -578,6 +582,7 @@ if __name__ == '__main__':
                  'cgroup-parent', 'build-cgroup-parent', 'service-cgroup-parent', 'registry', 'source'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--uid-base', type=int, required=True)
+    parser.add_argument('--lock', type=Path, help='explicit independently frozen task version; legacy 2.0 default retained')
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
     mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
