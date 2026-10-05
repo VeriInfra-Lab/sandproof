@@ -1,8 +1,24 @@
-# 固定完整任务集
+# Terminal-Bench 评测
 
 [文档目录](../docs/README.md) · [项目蓝图](../docs/project-blueprint.md) · [验收清单](../docs/testing-plan.md)
 
-预检入口实现完整题集的源码锁定、资源审计、Harbor/SDK 联合依赖与原任务加载检查，不执行任务代码或启动沙箱。独立的本地执行入口见下文，必须连接已配置并由外部监督器审计的真实服务。范围为固定 Harbor registry 中 `terminal-bench@2.0` 的全部 **89 题**；不能在失败后删除任务或把未运行计为通过。
+## 当前目标：Terminal-Bench 2.1
+
+2026-10-05 owner 确认后续评测使用 **Terminal-Bench 2.1 全部 89 题**，来源为[官方题库](https://github.com/harbor-framework/terminal-bench-2-1)与[Harbor Hub 数据集](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1)。官方使用的数据集名称为 `terminal-bench/terminal-bench-2-1`；正式执行须冻结具体发布摘要与源码提交，不直接跟随 `latest` 或 `main`。[官方发布说明](https://github.com/harbor-framework/terminal-bench-docs/blob/main/content/blog/terminal-bench-2-1.mdx)说明此次修订处理了外部依赖漂移、资源预算和题意/评分不一致等问题；不据修复数量推断本项目旧失败题已全部解决。
+
+**本批仅更新文档目标，2.1 尚未锁定、接入或实跑。** 当前 `terminal-bench-2.0.lock.json`、固定 Harbor 联合依赖和运行工具仍对应 2.0；下文现有命令、资源统计、逐题修复和实验记录均属于该历史基线，不是可直接运行的 2.1 指南，也不能作为 2.1 验收结果。2.0 原始/修订成绩继续保留，不再为取得旧原题全通过反复重跑全集。
+
+后续迁移由 #13 完成，判据见[验收清单](../docs/testing-plan.md)：
+
+1. 冻结 2.1 的发布摘要、官方源码提交、完整任务 ID 及 environment/instruction/metadata/solution/tests 的逐文件摘要；保留独立的 2.0 锁和报告。
+2. 核对固定 Harbor 是否能加载该发布；确需改变 Harbor 获取接口或联合依赖时单独记录版本与回归，不在本批自动升级 SDK 或工具链。
+3. 逐题比较 2.0→2.1 的输入、原标准解答、原评分、CPU/内存/磁盘和阶段时限，重新审计模板与宿主预算；不得沿用下文 2.0 的资源分布推断 2.1 可运行。
+4. 默认运行 **2.1 自带的标准解答和评分**。现有本地 2.0 修复不自动叠加到 2.1；确需额外修订时重新核对输入并单列模式和差异，不因旧题名相同复用通过结论。
+5. 先用少量任务打通全新沙箱→初始化→标准解答→评分→销毁与精确残留检查，再执行固定 2.1 全集。2.0/2.1、原始/本地修订和环境变体结果分开，不将迁移计划、未运行或旧成绩写成 2.1 通过。
+
+## 已有工具：Terminal-Bench 2.0 历史基线
+
+预检入口实现 2.0 完整题集的源码锁定、资源审计、Harbor/SDK 联合依赖与原任务加载检查，不执行任务代码或启动沙箱。独立的本地执行入口见下文，必须连接已配置并由外部监督器审计的真实服务。历史范围为固定 Harbor registry 中 `terminal-bench@2.0` 的全部 **89 题**；不能在失败后删除任务或把未运行计为通过。
 
 [锁文件](terminal-bench-2.0.lock.json)固定 Harbor、E2B SDK、registry 内容摘要、任务仓库提交，以及每题所有输入文件的路径、模式、大小和 SHA-256。文件按 environment、instruction、metadata、oracle、verifier 分别标记；标准解答和私有测试仅记录摘要，不能提前上传到智能体沙箱。原 `docker_image` 标签和 Dockerfile FROM 行只是上游环境参考，不是镜像内容锁，也不能代替实际构建和可启动产物的证据。
 
