@@ -12,7 +12,10 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import bounded_acceptance_layout, require_bounded_host_tools
+from tools.bounded_acceptance import (
+    acceptance_disk_budgets, bounded_acceptance_layout, completion_build_observation,
+    provision_acceptance_coordination, require_bounded_host_tools, validate_acceptance_socket_paths,
+)
 
 import argparse
 import asyncio
@@ -44,6 +47,7 @@ from template_build import IGZIP_HASHES
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.runtime_create_recovery import recover_runtime_create
+from tools.benchmark_proxy import BenchmarkProxy
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
@@ -60,6 +64,32 @@ def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressu
               and (not resource_pressure or pressure_report['status'] == 'passed'))
     return {'execution_passed': passed, 'oracle_mode': oracle_mode,
             'original_verifier': True, 'original_oracle_verifier': oracle_mode == 'original'}
+
+
+def observe_service_resources(binary, service_record, pids, samples, output, *, bounded, minimum_relays=0):
+    """Observe the configured relay protocol inside the original service budget."""
+    snapshot = service_cgroup.observe(service_record, pids=pids)
+    if snapshot['memory_events'].get('oom_kill', 0):
+        raise RuntimeError('service cgroup OOM; retain original identities for recovery')
+    relay_mode = b'relay-bounded' if bounded else b'relay'
+    relays = []
+    for pid in snapshot['pids']:
+        try:
+            start = process_start_ticks(pid)
+            argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+            if start is not None and argv[:2] == [os.fsencode(binary), relay_mode]:
+                service_cgroup.observe(service_record, pids=[pid])
+                if process_start_ticks(pid) == start:
+                    relays.append({'pid': pid, 'start_time_ticks': start})
+        except FileNotFoundError:
+            continue
+    snapshot['relay_mode'] = relay_mode.decode('ascii')
+    snapshot['relays'] = relays
+    samples.append(snapshot)
+    output.write_text(json.dumps(samples, indent=2))
+    if len(relays) < minimum_relays:
+        raise RuntimeError('blocked data relays were not observed inside the service budget')
+    return snapshot
 
 
 def select_cohort(args, tasks):
@@ -81,6 +111,14 @@ def select_cohort(args, tasks):
                                     for i in range(2))
         elif len(capacity_entries) < 4:
             raise ValueError('full capacity must cover the four pressure jobs')
+    job_limit = getattr(args, 'capacity_jobs', None)
+    if job_limit is not None:
+        if (args.capacity_scope != 'all' or type(job_limit) is not int
+                or not 1 <= job_limit <= len(capacity_entries) * args.repetitions):
+            raise ValueError('explicit retained job capacity requires the full planning set')
+        required_jobs = len(selected) * args.repetitions + (2 if args.resource_pressure else 0)
+        if required_jobs > job_limit:
+            raise ValueError('selected cohort exceeds retained job capacity')
     return selected, oracle_mode, selected_entries, capacity_entries
 
 
@@ -100,12 +138,25 @@ def exercise(args):
     capacity_basis = {'scope': args.capacity_scope, 'selected_tasks': sorted(selected),
                       'planning_tasks': [t['name'] for t in capacity_entries],
                       'repetitions': args.repetitions}
+    job_limit = getattr(args, 'capacity_jobs', None)
+    if job_limit is not None:
+        capacity_basis['retained_job_limit'] = job_limit
     capacity = plan(capacity_entries, args.repetitions,
                     args.rootfs.stat().st_size, args.kernel.stat().st_size,
                     artifact_bytes=args.artifact_limits['max_bytes'],
-                    input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes)
+                    input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes,
+                    job_limit=job_limit)
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
                          profile=load(args.budget_profile))
+    deployment = acceptance_disk_budgets(deployment, bounded_policy)
+    proxy_binary = getattr(args, 'proxy_binary', None)
+    proxy_digest = getattr(args, 'proxy_sha256', None)
+    if (proxy_binary is None) != (proxy_digest is None):
+        raise ValueError('proxy binary and approved digest must be provided together')
+    if proxy_binary is not None:
+        # The optional transport has an independent enforced 256 MiB maximum.
+        deployment['host']['minimum_available_memory_bytes'] += 256 * MIB
+        deployment['host']['minimum_cpus'] += 1
     if args.resource_pressure:
         from template_resource_pressure import validate_cohort
         validate_cohort([t['requirements'] for t in selected_entries], deployment)
@@ -146,7 +197,11 @@ def exercise(args):
             build_namespace=args.build_namespace)
         if root.parent != args.scratch_parent.resolve(strict=True):
             raise ValueError('bounded run root must be directly inside the approved scratch parent')
+        validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
+                                         max_vm_id=stride - 1, bounded=True)
         root.mkdir(mode=0o700)
+        provision_acceptance_coordination(bounded_policy, run_root=root,
+            namespace=namespaces[0], build_namespace=namespaces[1])
     else:
         if getattr(args, 'run_root', None) is not None:
             raise ValueError('--run-root requires --bounded-policy')
@@ -160,10 +215,8 @@ def exercise(args):
     if (any(not re.fullmatch('[0-9a-f]{16}', n) for n in namespaces)
             or namespaces[0][:6] == namespaces[1][:6]):
         raise ValueError('disjoint deployment namespaces required')
-    if any(len(os.fsencode(root / str(i) / 'jails' / args.firecracker.name /
-                           f'vm-{n}-{stride - 1}' / 'root/api.socket')) >= 108
-           for i, n in enumerate(namespaces)):
-        raise RuntimeError('test path too long for Firecracker socket')
+    validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
+                                     max_vm_id=stride - 1, bounded=bounded_policy is not None)
     (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
     (root / 'capacity-basis.json').write_text(json.dumps(capacity_basis, indent=2))
     (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
@@ -223,6 +276,9 @@ def exercise(args):
     from tools.template_build_service import configuration
     configuration(root / 'build.json', require_physical_lease=False)
     controllers, supervisor, log = [], None, None
+    transport = (BenchmarkProxy(root / 'proxy', namespaces, proxy_binary, proxy_digest,
+                               port=getattr(args, 'proxy_socks_port', 7897))
+                 if proxy_binary is not None else None)
     service_record = root / 'service-cgroup.json'
     service_prefix = service_cgroup.prefix(service_record)
     service_samples = []
@@ -230,26 +286,9 @@ def exercise(args):
         processes = [p for p in [*controllers, *([supervisor] if require_builder else [])] if p is not None]
         if any(p.poll() is not None for p in processes):
             raise RuntimeError('service exited; retain original resources for recovery')
-        snapshot = service_cgroup.observe(service_record, pids=[p.pid for p in processes])
-        if snapshot['memory_events'].get('oom_kill', 0):
-            raise RuntimeError('service cgroup OOM; retain original identities for recovery')
-        relays = []
-        for pid in snapshot['pids']:
-            try:
-                start = process_start_ticks(pid)
-                argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
-                if start is not None and argv[:2] == [os.fsencode(binary), b'relay']:
-                    service_cgroup.observe(service_record, pids=[pid])
-                    if process_start_ticks(pid) == start:
-                        relays.append({'pid': pid, 'start_time_ticks': start})
-            except FileNotFoundError:
-                continue
-        if len(relays) < minimum_relays:
-            raise RuntimeError('blocked data relays were not observed inside the service budget')
-        snapshot['relays'] = relays
-        service_samples.append(snapshot)
-        (root / 'service-resources.json').write_text(json.dumps(service_samples, indent=2))
-        return snapshot
+        return observe_service_resources(binary, service_record, [p.pid for p in processes],
+            service_samples, root / 'service-resources.json', bounded=bounded_policy is not None,
+            minimum_relays=minimum_relays)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True
     pressure_report = ({'status': 'not_run', 'reason': 'requires_two_published_audited_templates'}
@@ -344,13 +383,11 @@ def exercise(args):
         if row.get('build_dispatched'):
             from tools.template_build_client import BuildClient
             client = BuildClient(urls[2], key)
-            # Reobserve the original idempotent request. A POST is forbidden.
-            if row.get('build_id'):
-                result['build'] = client.request('GET', '/sandproof/template-builds/' + row['build_id'])
-            else:
-                raise RuntimeError('unknown build submission requires identity reconciliation')
-            if result['build']['state'] not in ('Ready', 'Failed'):
-                raise RuntimeError('build state remains uncertain after physical audit')
+            # A long task may outlive a bounded build's retained query record.
+            # Preserve the terminal result already observed before running it;
+            # an uncertain result still requires GET, never a replacement POST.
+            result.update(completion_build_observation(row, build_mode=build_mode,
+                read_build=lambda job: client.request('GET', '/sandproof/template-builds/' + job)))
         template = row.get('template') or (result.get('build') or {}).get('template')
         if template:
             source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
@@ -358,6 +395,8 @@ def exercise(args):
         return result
 
     try:
+        if transport is not None:
+            transport.start()
         service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
                                **deployment['service_cgroup'])
         for i in range(2):
@@ -391,6 +430,7 @@ def exercise(args):
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
                 'failure_diagnostics': args.failure_diagnostics,
+                'network_transport': transport.evidence() if transport else {'mode': 'direct_public_ipv4'},
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
                 oracle_mode=oracle_mode,
@@ -424,6 +464,7 @@ def exercise(args):
                     pressure_report = asyncio.run(pressure(root=root, urls=urls, key=key, builder_key=builder_key,
                         rows=current, deployment=deployment, supervisor=supervisor, restart=restart_builds,
                         source_entry=selected_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
+                        build_mode=build_mode,
                         service_audit=lambda count: observe_services(require_builder=False, minimum_relays=count)))
                 except Exception:
                     # Retain the separate failed probe and original task scores.
@@ -477,6 +518,7 @@ def exercise(args):
                 'capacity_basis': capacity_basis,
                 'original_environment': args.source_kind != PRUNED_SOURCE,
                 'docker_hub_mirror': args.docker_hub_mirror,
+                'network_transport': transport.evidence() if transport else {'mode': 'direct_public_ipv4'},
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
@@ -517,6 +559,14 @@ def exercise(args):
         # both pools, including failures; deleting them can prevent recovery.
         if not complete:
             print('failure evidence retained at ' + str(root), flush=True)
+        if transport is not None and transport.state['phase'] not in ('new', 'removed'):
+            try:
+                evidence = transport.finish(quiescent=complete)
+                (root / 'proxy-cleanup.json').write_text(json.dumps(evidence, indent=2))
+                if evidence['phase'] != 'removed':
+                    stop_errors.append('ProxyRetainedForOriginalVmRecovery')
+            except Exception as error:
+                stop_errors.append(type(error).__name__)
         if stop_errors:
             (root / 'service-cleanup-errors.json').write_text(json.dumps(stop_errors))
             raise RuntimeError('service cleanup incomplete; retain recorded resources')
@@ -536,6 +586,8 @@ if __name__ == '__main__':
     selection.add_argument('--all', action='store_true')
     parser.add_argument('--capacity-scope', choices=('selected', 'all'), default='selected',
                         help='plan quotas for selected tasks or the full locked set, without changing execution selection')
+    parser.add_argument('--capacity-jobs', type=int,
+                        help='explicit retained build jobs per cohort with --capacity-scope all; includes repetitions and pressure jobs')
     parser.add_argument('--namespace')
     parser.add_argument('--build-namespace')
     parser.add_argument('--run-root', type=Path,
@@ -553,6 +605,10 @@ if __name__ == '__main__':
     parser.add_argument('--docker-hub-mirror',
                         help='trusted HTTPS registry hostname for OCI transport only; original task references remain unchanged')
     parser.add_argument('--temporarily-forward', action='store_true')
+    parser.add_argument('--proxy-binary', type=Path,
+                        help='approved root-owned Mihomo; optional per-run TUN to existing loopback SOCKS proxy')
+    parser.add_argument('--proxy-sha256', help='required with --proxy-binary; no automatic download or version change')
+    parser.add_argument('--proxy-socks-port', type=int, default=7897, help='host loopback only; never exposed to guests')
     parser.add_argument('--build-input-max-bytes', type=int, default=INPUT_BYTES,
                         help='bounded build input/download bytes; default 4 GiB, service maximum 16 GiB')
     parser.add_argument('--build-expanded-max-bytes', type=int, default=EXPANDED_BYTES,

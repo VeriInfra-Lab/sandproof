@@ -6,14 +6,17 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import socket
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from tools.bounded_acceptance import (
-    acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools,
-    wait_private_build_window,
+    acceptance_disk_budgets, acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools,
+    wait_private_build_window, provision_acceptance_coordination, validate_acceptance_socket_paths,
 )
+from tools.template_build_config import apply_acceptance_build_policy
 from tools.template_build_service import configuration
 from tools.template_build_store import BuildStore
 from tools.tests.test_template_build_config import GIB, MIB, inputs, transfer_settings
@@ -95,6 +98,81 @@ def service_fixture(root):
                          "workspace_bytes": limits["workspace_bytes"],
                          "workspace_bytes_per_tenant": limits["workspace_bytes_per_tenant"]}}
     return root / "service.json", policy, profile, namespaces
+
+
+class AcceptanceDiskBudgetTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.service, self.policy, profile, _ = service_fixture(Path(temporary.name).resolve())
+        self.deployment = {pool['role']: {
+            'max_disk_bytes_global': pool['rootfs_budget_bytes'] + pool['cleanup_reserve_bytes'],
+            'max_disk_bytes_per_tenant': pool['rootfs_budget_bytes'],
+            'cleanup_reserve_bytes': pool['cleanup_reserve_bytes'],
+            'max_active_global': 2, 'max_timeout_secs': 600,
+        } for pool in profile['pools']}
+        self.deployment['host'] = {'minimum_free_disk_bytes': 200 * GIB,
+                                  'runtime_disk_bytes': profile['pools'][0]['rootfs_budget_bytes']}
+
+    def grow_profile(self):
+        for role in ('runtime', 'builder'):
+            pools = self.policy[role]['bounded_host']['physical_storage']['pools']
+            pools[0]['cleanup_reserve_bytes'] += GIB
+            pools[0]['rootfs_budget_bytes'] += 4 * GIB
+            pools[1]['cleanup_reserve_bytes'] += 2 * GIB
+
+    def test_physical_reserves_reach_both_pools_and_host_without_mutating_inputs(self):
+        self.grow_profile()
+        original = copy.deepcopy(self.deployment)
+        original_policy = copy.deepcopy(self.policy)
+        updated = acceptance_disk_budgets(self.deployment, self.policy)
+        self.assertEqual(updated['runtime']['cleanup_reserve_bytes'], original['runtime']['cleanup_reserve_bytes'] + GIB)
+        self.assertEqual(updated['runtime']['max_disk_bytes_global'], original['runtime']['max_disk_bytes_global'] + 5 * GIB)
+        self.assertEqual(updated['builder']['cleanup_reserve_bytes'], original['builder']['cleanup_reserve_bytes'] + 2 * GIB)
+        self.assertEqual(updated['host']['minimum_free_disk_bytes'], 207 * GIB)
+        self.assertEqual(updated['host']['runtime_disk_bytes'], original['host']['runtime_disk_bytes'] + 4 * GIB)
+        for role in ('runtime', 'builder'):
+            for field in ('max_active_global', 'max_timeout_secs'):
+                self.assertEqual(updated[role][field], original[role][field])
+        self.assertEqual(self.deployment, original)
+        self.assertEqual(self.policy, original_policy)
+        self.assertEqual(acceptance_disk_budgets(original, None), original)
+
+    def test_larger_total_cannot_hide_a_smaller_tenant_or_cleanup_budget(self):
+        for field, other in (('rootfs_budget_bytes', 'cleanup_reserve_bytes'),
+                             ('cleanup_reserve_bytes', 'rootfs_budget_bytes')):
+            policy = copy.deepcopy(self.policy)
+            for role in ('runtime', 'builder'):
+                pool = policy[role]['bounded_host']['physical_storage']['pools'][0]
+                pool[field] -= 1
+                pool[other] += 10 * GIB
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'undercut'):
+                acceptance_disk_budgets(self.deployment, policy)
+        self.grow_profile()
+        self.deployment['host']['minimum_free_disk_bytes'] = 2**63 - 1
+        with self.assertRaisesRegex(ValueError, 'overflow'):
+            acceptance_disk_budgets(self.deployment, self.policy)
+
+    def test_larger_profile_passes_real_service_preflight_only_with_matching_quotas(self):
+        self.grow_profile()
+        service = json.loads(self.service.read_text())
+        runtime = json.loads(Path(service['runtime_config']).read_text())
+        builder = json.loads(Path(service['builder_config']).read_text())
+        # Generic acceptance assigns the usable pool quota to its one tenant.
+        for settings in (runtime, builder):
+            settings['max_disk_bytes_per_tenant'] = (
+                settings['max_disk_bytes_global'] - settings['cleanup_reserve_bytes'])
+        with self.assertRaisesRegex(ValueError, 'differs from a configured pool budget'):
+            apply_acceptance_build_policy(copy.deepcopy(runtime), copy.deepcopy(builder),
+                                          copy.deepcopy(service), self.policy)
+        deployment = acceptance_disk_budgets(
+            {'runtime': runtime, 'builder': builder, 'host': self.deployment['host']}, self.policy)
+        self.assertEqual(apply_acceptance_build_policy(
+            deployment['runtime'], deployment['builder'], service, self.policy), 'windowed')
+        for role in ('runtime', 'builder'):
+            Path(service[role + '_config']).write_text(json.dumps(deployment[role]))
+        self.service.write_text(json.dumps(service))
+        configuration(self.service, require_physical_lease=False)
 
 
 class PrivateBuildWindowObservationTests(unittest.TestCase):
@@ -311,6 +389,118 @@ class BoundedLayoutTests(unittest.TestCase):
         candidate["builder"]["bounded_host"]["physical_storage"]["filesystem_overhead_bytes"] += 1
         with self.assertRaisesRegex(ValueError, "identical immutable"):
             self.layout(candidate)
+
+
+class CoordinationProvisioningTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        parent = Path(temporary.name).resolve()
+        fixture = parent / "fixture"
+        fixture.mkdir(mode=0o700)
+        _, policy, _, self.namespaces = service_fixture(fixture)
+        self.root = parent / "fresh"
+        self.root.mkdir(mode=0o700)
+        self.policy = json.loads(json.dumps(policy).replace(str(fixture), str(self.root)))
+        self.path = self.root / "physical-profile"
+
+    def provision(self):
+        provision_acceptance_coordination(self.policy, run_root=self.root,
+            namespace=self.namespaces[0], build_namespace=self.namespaces[1])
+
+    def test_empty_file_is_private_durable_and_never_activated_or_replaced(self):
+        original = copy.deepcopy(self.policy)
+        fsync = os.fsync
+        with patch("tools.bounded_acceptance.os.fsync", wraps=fsync) as sync:
+            self.provision()
+        self.assertEqual(sync.call_count, 2)
+        self.assertEqual(self.path.read_bytes(), b"")
+        info = self.path.stat()
+        self.assertEqual(info.st_mode & 0o777, 0o600)
+        self.assertEqual(info.st_uid, os.geteuid())
+        self.assertEqual(info.st_nlink, 1)
+        self.assertEqual(self.policy, original)
+        self.path.write_bytes(b"existing activation identity")
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+        self.assertEqual(self.path.stat().st_ino, info.st_ino)
+        self.assertEqual(self.path.read_bytes(), b"existing activation identity")
+
+    def test_missing_identity_in_existing_deployment_is_not_recreated(self):
+        (self.root / "0").mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+        self.assertFalse(self.path.exists())
+
+    def test_symlink_and_outside_file_are_not_followed(self):
+        outside = self.root.parent / "canary"
+        outside.write_bytes(b"canary")
+        self.path.symlink_to(outside)
+        with self.assertRaises(ValueError):
+            self.provision()
+        self.path.unlink()
+        for role in ("runtime", "builder"):
+            self.policy[role]["bounded_host"]["physical_storage"]["coordination_file"] = str(outside)
+        with self.assertRaisesRegex(ValueError, "directly inside"):
+            self.provision()
+        self.assertEqual(outside.read_bytes(), b"canary")
+        self.assertFalse(self.path.exists())
+
+    def test_shared_root_and_failed_sync_do_not_allow_continuation(self):
+        self.root.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+        self.assertFalse(self.path.exists())
+        self.root.chmod(0o700)
+        with patch("tools.bounded_acceptance.os.fsync", side_effect=OSError("sync failed")):
+            with self.assertRaisesRegex(OSError, "sync failed"):
+                self.provision()
+        self.assertEqual(self.path.read_bytes(), b"")
+        with self.assertRaisesRegex(ValueError, "empty private"):
+            self.provision()
+
+
+class SocketLayoutTests(unittest.TestCase):
+    def test_uid_slot_bound_cannot_hide_lifetime_identifier_overflow(self):
+        root = Path("/var/lib/sp-01a0e1bd/bc9161f-00")
+        namespaces = ["0123456789abcdef", "123456789abcdef0"]
+        validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=False)
+        with self.assertRaisesRegex(ValueError, "Firecracker socket"):
+            validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=True)
+
+    def test_encoded_limit_counts_multibyte_paths_on_all_platforms(self):
+        namespace = "0123456789abcdef"
+        tail = Path("0/jails/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
+        prefix = Path("/tmp/é")
+        root = Path(str(prefix) + "a" * (107 - len(os.fsencode(prefix / tail))))
+        self.assertEqual(len(os.fsencode(root / tail)), 107)
+        validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+        with self.assertRaisesRegex(ValueError, "Firecracker socket"):
+            validate_acceptance_socket_paths(Path(str(root) + "b"), [namespace], "/bin/firecracker",
+                                             max_vm_id=20, bounded=True)
+
+    @unittest.skipUnless(sys.platform == "linux", "real 107/108-byte socket boundary requires Linux")
+    def test_encoded_limit_matches_real_unix_socket_boundary(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            namespace = "0123456789abcdef"
+            tail = Path("0/jails/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
+            # Include multibyte characters: the kernel limit counts bytes.
+            prefix = Path(directory) / "é"
+            padding = 107 - len(os.fsencode(prefix / tail))
+            self.assertGreaterEqual(padding, 0)
+            root = Path(str(prefix) + "a" * padding)
+            validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+            path = root / tail
+            path.parent.mkdir(parents=True)
+            with socket.socket(socket.AF_UNIX) as listener:
+                listener.bind(str(path))
+            too_long = Path(str(root) + "b")
+            with self.assertRaisesRegex(ValueError, "Firecracker socket"):
+                validate_acceptance_socket_paths(too_long, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+            path = too_long / tail
+            path.parent.mkdir(parents=True)
+            with socket.socket(socket.AF_UNIX) as listener, self.assertRaises(OSError):
+                listener.bind(str(path))
 
 
 class FixtureDiskBudgetTests(unittest.TestCase):

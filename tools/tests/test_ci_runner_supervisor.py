@@ -16,15 +16,20 @@ from tools import ci_vm
 class FakeAPI:
     def __init__(self):
         self.runners = []
-        self.jobs = [{'name': name, 'status': 'queued', 'labels':
+        self.jobs = [{'id': identity, 'name': name, 'status': 'queued', 'labels':
                      ['self-hosted', 'Linux', 'X64', 'sandproof-ci-' + role]}
-                     for name, role in ci.JOBS.items()]
+                     for identity, (name, role) in enumerate(ci.JOBS.items(), 1)]
         self.posts = []
         self.deletes = []
         self.fail_post = False
         self.fail_delete = False
+        self.rust_workflow = None
 
     def request(self, method, path, body=None):
+        if path.endswith('/workflows/rust-ci.yml'):
+            if self.rust_workflow is None:
+                raise auth.APIError(404)
+            return self.rust_workflow
         if method == 'POST':
             self.posts.append(body)
             runner = {'id': len(self.posts), 'name': body['name']}
@@ -94,6 +99,131 @@ class SupervisorTests(unittest.TestCase):
         self.assertNotIn('encoded_jit', self.state.path.read_text())
         for path in self.root.glob('*.jit'):
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_absent_rust_workflow_does_not_block_current_prs(self):
+        self.service.tick()
+        self.assertEqual(len(self.api.posts), 5)  # Includes existing legacy PR jobs.
+
+    def test_rust_push_workflow_can_run_but_its_pr_event_cannot_admit(self):
+        self.api.jobs = []
+        self.api.rust_workflow = {'id': 30, 'path': '.github/workflows/rust-ci.yml'}
+        original = self.api.request
+        event = ['push']
+        def request(method, path, body=None):
+            if '/workflows/30/runs?' in path:
+                return {'workflow_runs': [{'id': 60, 'workflow_id': 30,
+                    'run_attempt': 1, 'event': event[0]}] if 'status=queued' in path else []}
+            if '/runs/60/attempts/1/jobs?' in path:
+                return {'jobs': [{'id': 100, 'name': 'rust', 'status': 'queued',
+                    'labels': ['self-hosted', 'Linux', 'X64', 'sandproof-ci-rust']}]}
+            return original(method, path, body)
+        self.api.request = request
+        event[0] = 'pull_request'
+        self.service.tick()
+        self.assertFalse(self.api.posts)
+        event[0] = 'push'
+        self.service.tick()
+        self.assertEqual(set(self.state.leases), {'rust'})
+
+    def test_rust_workflow_wrong_identity_or_api_failure_stops_admission(self):
+        for metadata in ({'id': 20, 'path': '.github/workflows/rust-ci.yml'},
+                         {'id': 30, 'path': '.github/workflows/untrusted.yml'}):
+            self.api.rust_workflow = metadata
+            with self.assertRaises(ValueError):
+                self.service.tick()
+            self.assertFalse(self.api.posts)
+        original = self.api.request
+        def unavailable(method, path, body=None):
+            if path.endswith('/workflows/rust-ci.yml'):
+                raise auth.APIError(503)
+            return original(method, path, body)
+        self.api.request = unavailable
+        with self.assertRaises(auth.APIError):
+            self.service.tick()
+        self.assertFalse(self.api.posts)
+
+    def test_two_pr_queues_fill_two_slots_per_role_without_duplicate_launches(self):
+        self.api.jobs += [dict(job, id=job['id'] + 10) for job in self.api.jobs]
+        self.service.tick()
+        self.service.tick()
+        self.assertEqual(len(self.api.posts), 10)
+        self.assertEqual(len(set(self.runtime.starts)), 10)
+        self.assertEqual([lease['role'] for lease in self.state.leases.values()],
+                         list(ci.JOBS.values()) * 2)
+        self.assertEqual(ci.State(self.root).leases, self.state.leases)
+        # A restart observes all ten existing units, not just the legacy five.
+        ci.Supervisor(self.api, ci.State(self.root), self.runtime, 20).tick()
+        self.assertEqual(len(self.api.posts), 10)
+
+    def test_busy_worker_does_not_block_another_pr_of_same_role(self):
+        self.api.jobs = self.api.jobs[:1]
+        self.service.tick()
+        self.api.runners[0]['busy'] = True
+        self.service.tick()
+        self.assertEqual(set(self.state.leases), {'rust', 'rust-2'})
+        self.service.tick()
+        self.assertEqual(len(self.api.posts), 2)
+
+    def test_idle_or_booting_worker_already_covers_queued_demand(self):
+        self.api.jobs = self.api.jobs[:1]
+        self.service.tick()
+        for busy in (False, None):
+            self.api.runners[0]['busy'] = busy
+            self.service.tick()
+            self.assertEqual(len(self.api.posts), 1)
+
+    def test_duplicate_inventory_of_same_job_is_not_extra_demand(self):
+        self.api.jobs = [self.api.jobs[0]] * 3
+        self.service.tick()
+        self.assertEqual(len(self.api.posts), 1)
+
+    def test_missing_queued_identity_refuses_registration(self):
+        del self.api.jobs[0]['id']
+        with self.assertRaises(ValueError):
+            self.service.tick()
+        self.assertFalse(self.api.posts)
+
+    def test_resource_refusal_still_bounds_multiple_prs(self):
+        self.api.jobs += [dict(job, id=job['id'] + 10) for job in self.api.jobs]
+        self.runtime.admission = lambda role, leases: len(leases) < 6
+        self.service.tick()
+        self.service.tick()
+        self.assertEqual(len(self.api.posts), 6)
+        self.assertEqual(list(self.state.leases)[-1], 'rust-2')
+
+    def test_legacy_state_without_slot_survives_upgrade(self):
+        self.service.tick()
+        for lease in self.state.leases.values():
+            del lease['slot']
+        self.state.save()
+        ci.Supervisor(self.api, ci.State(self.root), self.runtime, 20).tick()
+        self.assertEqual(len(self.api.posts), 5)
+
+    def test_invalid_slot_duplicate_identity_and_wrong_role_refused(self):
+        self.service.tick()
+        original = dict(self.state.leases)
+        for slot, role, identity in (
+                ('rust-3', 'rust', 'b' * 32), ('sdk-2', 'rust', 'b' * 32),
+                ('rust-2', 'rust', original['rust']['id'])):
+            lease = dict(original['rust'], slot=slot, role=role, id=identity,
+                         name=ci.runner_name(role, identity))
+            ci.atomic_json(self.state.path, dict(original, **{slot: lease}))
+            with self.assertRaises(ValueError):
+                ci.State(self.root)
+
+    def test_second_slot_cleanup_unknown_prevents_any_replacement(self):
+        self.api.jobs = [self.api.jobs[0], dict(self.api.jobs[0], id=10)]
+        self.service.tick()
+        self.runtime.active.remove(self.state.leases['rust-2']['id'])
+        self.api.fail_delete = True
+        with self.assertRaises(auth.APIError):
+            self.service.tick()
+        self.assertEqual(len(self.state.leases), 2)
+        self.assertEqual(len(self.api.posts), 2)
+        self.api.fail_delete = False
+        self.api.jobs = []
+        self.service.tick()
+        self.assertEqual(set(self.state.leases), {'rust'})
 
     def test_restart_adopts_active_workers_without_registering(self):
         self.service.tick()
@@ -173,7 +303,7 @@ class SupervisorTests(unittest.TestCase):
     def test_state_round_trip_and_unknown_role_fail_closed(self):
         self.service.tick()
         self.assertEqual(ci.State(self.root).leases, self.state.leases)
-        ci.atomic_json(self.state.path, {'bootstrap': {}})
+        ci.atomic_json(self.state.path, {'bootstrap': {'role': 'bootstrap'}})
         with self.assertRaises(ValueError):
             ci.State(self.root)
 
@@ -240,6 +370,7 @@ class RuntimeTests(unittest.TestCase):
             self.assertIn('MemoryMax=1280M', joined)
             self.assertIn('RuntimeMaxSec=1900', joined)
             self.assertIn('LoadCredential=jit:', joined)
+            self.assertIn('--slot title', joined)
             for secret in ('app-key', 'Iv23', 'fake-token'):
                 self.assertNotIn(secret, joined)
 

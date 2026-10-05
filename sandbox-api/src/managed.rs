@@ -41,7 +41,9 @@ pub trait HostAdapter: Send + 'static {
     type Evidence: HostEvidence + Serialize + DeserializeOwned + PartialEq + Send;
 
     /// Persist or validate the exact controller-committed physical position.
-    /// A missing/prior binding may be installed only before any host dispatch.
+    /// A missing/prior binding may be installed only before any host dispatch,
+    /// or for terminal pre-launch cleanup whose only dispatched action was a
+    /// terminal fence. No potentially launched VM may acquire a new binding.
     /// # Errors
     /// Unsupported bounded mode or ambiguous identity must fail closed.
     fn bind_host_slot(
@@ -747,6 +749,29 @@ fn blocked_launch_configs<H: HostAdapter>(
     Ok(blocked)
 }
 
+/// Whether a committed physical position may acquire its missing host binding.
+///
+/// Startup inventory and managed recovery must use the same rule: no host work
+/// was claimed, except terminal fences for an already cancelled, unlaunched
+/// instance. The caller still validates the original position and predecessor;
+/// this predicate never authorizes creating a new sandbox or credential.
+#[must_use]
+pub fn can_install_host_slot_binding(world: &core::World, sandbox: core::SandboxId) -> bool {
+    let Some(record) = world.sandbox_record(sandbox) else {
+        return false;
+    };
+    let terminal_before_launch =
+        record.terminal && record.phase == core::Phase::Revoking && record.current_vm.is_none();
+    world.effect_ids().iter().all(|effect| {
+        effect.command().sandbox() != sandbox
+            || world.effect_status(effect) == Some(core::EffectStatus::Committed)
+            // A terminal fence alone cannot prepare or launch a VM. Any
+            // claimed opening fence, prepare or other action still blocks.
+            || (terminal_before_launch
+                && matches!(effect.command(), core::Command::InstallFence { terminal: true, .. }))
+    })
+}
+
 fn bind_recovery_slots<H: HostAdapter>(
     journal: &ControllerJournal,
     host: &mut H,
@@ -760,10 +785,7 @@ fn bind_recovery_slots<H: HostAdapter>(
         {
             continue;
         }
-        let allow_install = world.effect_ids().iter().all(|effect| {
-            effect.command().sandbox() != context.binding.sandbox
-                || world.effect_status(effect) == Some(core::EffectStatus::Committed)
-        });
+        let allow_install = can_install_host_slot_binding(world, context.binding.sandbox);
         if host.bind_host_slot(&context, allow_install).is_err() {
             blocked.insert(context.binding.sandbox);
         }
@@ -1573,6 +1595,10 @@ impl<H: HostAdapter> ManagedPort<H> {
         }
         accepted.map_err(map_journal)?;
         let Inner { journal, host, .. } = &mut *inner;
+        let world = journal.world().map_err(|_| PortError::OutcomeUnknown)?;
+        if bind_recovery_slots(journal, host, &world, Some(sandbox))?.contains(&sandbox) {
+            return Err(PortError::OutcomeUnknown);
+        }
         finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
             host.execute(action)
         })

@@ -13,14 +13,16 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import asyncio
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
-import secrets
+import sqlite3
 import shlex
 import time
 from types import SimpleNamespace
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from e2b import AsyncSandbox
@@ -28,7 +30,8 @@ from e2b.exceptions import RateLimitException
 from gateway_pressure import health, limited, wait_capacity
 from sdk_private_root import clean, install, installed, CONFIG
 from sdk_server_smoke import options
-from tools.template_build_client import BuildClient
+from tools.template_build_client import BuildClient, saved_intent
+from tools.bounded_acceptance import wait_private_build_window
 
 MIB = 1024**2
 
@@ -98,6 +101,40 @@ async def verify_no_replay(tracked):
         assert await item['sandbox'].files.read(item['marker'], user='root') == 'once\n'
 
 
+async def submit_build(root, client, request, build_mode, label, checkpoint):
+    """Persist the ordinary client's original window/key before the only POST."""
+    intent = await asyncio.to_thread(saved_intent, root / ('pressure-' + label + '-intent.json'),
+                                     client, request, build_mode=build_mode)
+    checkpoint({'token': intent['idempotency_key'], 'request': request, 'build_mode': build_mode,
+                **({'requestWindow': intent['requestWindow']} if build_mode == 'windowed' else {})})
+    body = request | ({'requestWindow': intent['requestWindow']} if build_mode == 'windowed' else {})
+    return await asyncio.to_thread(client.request, 'POST', '/sandproof/template-builds',
+                                   body, token=intent['idempotency_key'])
+
+
+def private_vm_path(job, window):
+    path = '/sandproof/internal-build-vms/' + job
+    return path + ('?' + urllib.parse.urlencode({'requestWindow': window}) if window else '')
+
+
+def private_settlement(database, job, window, sandbox):
+    """Read the committed acknowledgement after the private anchor is retired.
+
+    A successful bounded cleanup removes the private lookup anchor. Its 404 is
+    not a new failure; require the original window and sandbox in the durable
+    public settlement, plus the supervisor's acknowledgement, before reporting.
+    The enclosing probe still independently audits actual resources.
+    """
+    with closing(sqlite3.connect(Path(database).as_uri() + '?mode=ro', uri=True)) as connection:
+        row = connection.execute(
+            'SELECT state,private_window,builder_settled,private_ack FROM jobs WHERE id=?', (job,)).fetchone()
+    expected = {'requestWindow': window, 'sandboxID': sandbox}
+    if (row is None or row[0] != 'Failed' or row[3] != 1
+            or json.loads(row[1] or 'null') != window or json.loads(row[2] or 'null') != expected):
+        raise ValueError('original private build settlement is incomplete or mismatched')
+    return expected
+
+
 async def wait_builder_session(read_vm, read_build, deadline, supervisor):
     """Observe the original admission; a slow read cannot authorize a new POST.
 
@@ -122,7 +159,9 @@ async def wait_builder_session(read_vm, read_build, deadline, supervisor):
 
 
 async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor,
-                   restart, source_entry, audit_shape, completion_audit, service_audit=None):
+                   restart, source_entry, audit_shape, completion_audit, build_mode, service_audit=None):
+    if build_mode not in ('windowed', 'legacy-unbounded'):
+        raise ValueError('explicit supported build mode required')
     templates = [r['template'] for r in rows]
     assert len({t['templateId'] for t in templates}) == 2
     validate_cohort([{'cpus': t['cpuCount'], 'memory_mib': t['memoryMib'],
@@ -131,9 +170,10 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
     client = BuildClient(urls[2], key)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     live, tracked, identities, cases = [], [], [], []
-    build_id, build_view = None, None
+    build_id, build_view, private_window = None, None, None
     stopped = False
-    report = {'status': 'running', 'scope': 'published-template package isolation, shared admission and interrupted build',
+    report = {'status': 'running', 'build_mode': build_mode,
+              'scope': 'published-template package isolation, shared admission and interrupted build',
               'identities': identities, 'cases': cases, 'build_id': None, 'exact_cleanup': 'unknown',
               'host_budget': deployment['host']}
     def checkpoint():
@@ -157,7 +197,7 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
     async def build_get(path):
         return await asyncio.to_thread(client.request, 'GET', path)
     async def build_vm():
-        request = urllib.request.Request(urls[1] + '/sandproof/internal-build-vms/' + build_id,
+        request = urllib.request.Request(urls[1] + private_vm_path(build_id, private_window),
                                          headers={'X-API-Key': builder_key})
         def read():
             try:
@@ -195,24 +235,22 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
             cases.append('full-runtime-refuses-new-create')
         else:
             raise AssertionError('full runtime admitted a fifth instance')
-        token = secrets.token_hex(16)
         request = {'kind': 'oci', 'image': source_entry['upstream_image_reference'], 'allowInternetAccess': True,
                    'timeoutSeconds': int(source_entry['requirements']['build_timeout_sec']),
                    'resources': {'cpuCount': 1, 'memoryMiB': 256, 'diskMiB': 1024, 'minFreeMiB': 64}}
-        report['build_intent'] = {'token': token, 'request': request}
-        checkpoint()
-        build_view = await asyncio.to_thread(client.request, 'POST', '/sandproof/template-builds', request, token=token)
+        def save_intent(field, intent):
+            report[field] = intent
+            checkpoint()
+        build_view = await submit_build(root, client, request, build_mode, 'interruption',
+                                        lambda intent: save_intent('build_intent', intent))
         build_id = build_view['buildID']
         report['build_id'] = build_id
         checkpoint()
         # Pending capacity must be the active constraint, not exhausted history.
         assert deployment['limits']['max_jobs'] >= len(rows) + 2
-        rejected_token = secrets.token_hex(16)
-        report['expected_rejection_intent'] = {'token': rejected_token, 'request': request}
-        checkpoint()
         try:
-            unexpected = await asyncio.to_thread(client.request, 'POST', '/sandproof/template-builds', request,
-                                                 token=rejected_token)
+            unexpected = await submit_build(root, client, request, build_mode, 'expected-rejection',
+                                             lambda intent: save_intent('expected_rejection_intent', intent))
         except RuntimeError as error:
             assert 'BuildBudgetExceeded' in str(error)
         else:
@@ -222,6 +260,11 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
         assert (await build_get('/sandproof/template-builds/' + build_id))['buildID'] == build_id
         await build_get('/sandproof/template-builds/' + build_id + '/logs?offset=0&limit=1024')
         cases.append('full-build-still-serves-status-and-logs')
+        if build_mode == 'windowed':
+            remaining = build_view['deadline'] - time.time()
+            assert remaining > 0, 'original build deadline elapsed before window observation'
+            private_window = await asyncio.to_thread(wait_private_build_window,
+                root / 'builds/builds.db', build_id, timeout=remaining)
         vm = await wait_builder_session(build_vm,
             lambda: build_get('/sandproof/template-builds/' + build_id), build_view['deadline'], supervisor)
         report['original_builder_sandbox'] = vm['sandboxID']
@@ -271,8 +314,12 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
             assert time.monotonic() < deadline
             await asyncio.sleep(0.2)
         assert build_view['state'] == 'Failed' and build_view['failure'] == 'InterruptedBuild', build_view
-        vm = await build_vm()
-        assert vm['sandboxID'] == report['original_builder_sandbox'] and vm['cleanupComplete']
+        if build_mode == 'windowed':
+            report['private_settlement'] = await asyncio.to_thread(private_settlement,
+                root / 'builds/builds.db', build_id, private_window, report['original_builder_sandbox'])
+        else:
+            vm = await build_vm()
+            assert vm['sandboxID'] == report['original_builder_sandbox'] and vm['cleanupComplete']
         cases.append('restart-reclaims-original-builder-without-rebuild')
         replacement = await create(templates[1])
         await clean(replacement)

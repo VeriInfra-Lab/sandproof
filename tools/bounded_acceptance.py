@@ -1,11 +1,12 @@
 """Static identity checks for the existing bounded KVM supervision layouts.
 
-No deployment identity is generated or rewritten here. The operator chooses
-the root and both namespaces before preparing one immutable physical profile;
+The operator chooses the root and both namespaces before preparing one
+immutable physical profile. Fresh-root provisioning supplies its empty file;
 Rust remains the only activator and the existing validators own all budgets.
 """
 from contextlib import closing
 from pathlib import Path
+import copy
 import json
 import math
 import os
@@ -17,6 +18,30 @@ import time
 from .template_build_config import MIB, validate_acceptance_build_policy
 from .template_build_store import TERMINAL
 from .template_physical_storage import MAXIMUM, envelope
+
+
+def completion_build_observation(row, *, build_mode, read_build):
+    """Keep an observed immutable terminal result after its query window expires.
+
+    This supplies build evidence only. The caller must separately establish
+    physical resource absence and verify the published template. Missing or
+    uncertain results still require a successful read of the original build;
+    a missing query anchor can never establish a terminal outcome.
+    """
+    if build_mode not in ("windowed", "legacy-unbounded"):
+        raise ValueError("explicit supported build mode required")
+    job = row.get("build_id")
+    if not job:
+        raise ValueError("original build identity required")
+    previous = row.get("build")
+    saved = (build_mode == "windowed" and isinstance(previous, dict)
+             and previous.get("state") in TERMINAL)
+    result = previous if saved else read_build(job)
+    if (not isinstance(result, dict) or result.get("buildID") != job
+            or result.get("state") not in TERMINAL):
+        raise ValueError("original build terminal observation is missing or mismatched")
+    return {"build": copy.deepcopy(result),
+            "build_observation": "saved_terminal" if saved else "live_query"}
 
 
 def wait_private_build_window(database, job, *, timeout=60, clock=time.monotonic, sleep=time.sleep):
@@ -111,6 +136,32 @@ def acceptance_pool_disk_budget(policy, role, base_bytes, *, max_active=2,
             "cleanup_reserve_bytes": cleanup}
 
 
+def acceptance_disk_budgets(deployment, policy):
+    """Apply explicit physical quotas without reducing the task-derived floor.
+
+    The shared profile may need a larger cleanup reserve for node metadata and
+    the controller journal. Charge each increase once in host free-space
+    preflight; task shapes and the physical activation checks remain unchanged.
+    """
+    if policy is None:
+        return deployment
+    result = copy.deepcopy(deployment)
+    extra = 0
+    for role in ("runtime", "builder"):
+        original = deployment[role]
+        requested = acceptance_pool_disk_budget(policy, role, original["max_disk_bytes_per_tenant"])
+        if any(requested[field] < original[field] for field in requested):
+            raise ValueError("physical pool cannot undercut the acceptance disk budget: " + role)
+        extra += requested["max_disk_bytes_global"] - original["max_disk_bytes_global"]
+        result[role].update(requested)
+    required = result["host"]["minimum_free_disk_bytes"] + extra
+    if required > MAXIMUM:
+        raise ValueError("acceptance disk headroom overflow")
+    result["host"]["minimum_free_disk_bytes"] = required
+    result["host"]["runtime_disk_bytes"] = result["runtime"]["max_disk_bytes_per_tenant"]
+    return result
+
+
 def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):
     """Return the explicit layout only when the unchanged profile matches it.
 
@@ -141,3 +192,45 @@ def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):
     if public["root"] != str(root / "builds") or public["registry_root"] != str(root / "registry"):
         raise ValueError("fixed public physical profile differs from explicit acceptance layout")
     return root, namespaces
+
+
+def validate_acceptance_socket_paths(root, namespaces, firecracker, *, max_vm_id, bounded):
+    """Reject an impossible layout before starting either native controller.
+
+    Bounded host IDs are monotonic u64 values, independent of the reusable UID
+    slots. Match LinuxWorker's longest-path check, including encoded bytes.
+    """
+    identifier = 2**64 - 1 if bounded else max_vm_id
+    for index, namespace in enumerate(namespaces):
+        path = (Path(root) / str(index) / "jails" / Path(firecracker).name
+                / f"vm-{namespace}-{identifier}" / "root/api.socket")
+        if len(os.fsencode(path)) >= 108:
+            raise ValueError("acceptance path too long for Firecracker socket")
+
+
+def provision_acceptance_coordination(policy, *, run_root, namespace, build_namespace):
+    """Supply the operator-selected empty file only in a fresh private root.
+
+    Call immediately after exclusive root creation, before configs or state.
+    Never adopt an existing file, recreate a lost identity in an old deployment,
+    or write an activation marker. Only Rust activates the physical profile.
+    """
+    root, _ = bounded_acceptance_layout(policy, run_root=run_root, namespace=namespace,
+                                        build_namespace=build_namespace)
+    path = Path(_acceptance_profile(policy)["coordination_file"])
+    if path.parent != root:
+        raise ValueError("acceptance coordination file must be directly inside the fresh root")
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(directory)
+        if info.st_uid != os.geteuid() or info.st_mode & 0o077 or os.listdir(directory):
+            raise ValueError("empty private acceptance root required for coordination provisioning")
+        fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=directory)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.fsync(directory)
+    finally:
+        os.close(directory)

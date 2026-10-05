@@ -5,6 +5,7 @@ The queue is a demand signal, not a job-to-runner binding. GitHub assigns jobs
 by labels; only Actions owns check conclusions. This service never writes them.
 """
 import argparse
+from collections import Counter
 import fcntl
 import json
 import os
@@ -19,10 +20,10 @@ import uuid
 
 if __package__:
     from .ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
-    from .ci_vm import ROOT, ROLES, cleanup_work, valid_run_id
+    from .ci_vm import MAX_ROLE_WORKERS, ROOT, ROLES, cleanup_work, valid_run_id, valid_slot
 else:
     from ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
-    from ci_vm import ROOT, ROLES, cleanup_work, valid_run_id
+    from ci_vm import MAX_ROLE_WORKERS, ROOT, ROLES, cleanup_work, valid_run_id, valid_slot
 
 JOBS = {'rust': 'rust', 'sdk-contract': 'sdk', 'harbor-inputs': 'harbor',
         'pr-title': 'title', 'pr-policy': 'policy'}
@@ -62,12 +63,17 @@ class State:
         self.root = root
         self.path = root / 'state.json'
         self.leases = json.loads(self.path.read_text()) if self.path.exists() else {}
-        if not isinstance(self.leases, dict) or set(self.leases) - set(JOBS.values()):
+        if not isinstance(self.leases, dict):
             raise ValueError('unsafe supervisor state')
-        for role, lease in self.leases.items():
+        identities = set()
+        for slot, lease in self.leases.items():
+            role = lease['role']
+            if role not in JOBS.values() or valid_slot(role, slot) != lease.get('slot', role):
+                raise ValueError('lease slot mismatch')
             valid_run_id(lease['id'])
-            if lease['role'] != role or lease['name'] != runner_name(role, lease['id']):
+            if lease['id'] in identities or lease['name'] != runner_name(role, lease['id']):
                 raise ValueError('lease identity mismatch')
+            identities.add(lease['id'])
             if lease['phase'] not in ('registering', 'ready', 'launching', 'running', 'cleaning'):
                 raise ValueError('unknown lease phase')
 
@@ -132,6 +138,7 @@ class Runtime:
             '--property=StandardOutput=append:' + str(directory / 'host.log'),
             '--property=StandardError=append:' + str(directory / 'host.log'),
             '/usr/bin/python3', '/opt/sandproof-ci/ci_vm.py', '--role', lease['role'],
+            '--slot', valid_slot(lease['role'], lease.get('slot', lease['role'])),
             '--run-id', identity, '--timeout', '1800',
             '--jit-file', '/run/credentials/' + unit + '/jit']
         subprocess.run(command, check=True, capture_output=True, timeout=30)
@@ -194,7 +201,7 @@ class Supervisor:
         pattern = r'sandproof-ci-(?:rust|sdk|harbor|title|policy)-[0-9a-f]{32}'
         if any(re.fullmatch(pattern, runner['name']) and runner['name'] not in owned_names for runner in runners):
             raise ValueError('untracked CI runner; operator reconciliation required')
-        for role, lease in list(self.state.leases.items()):
+        for slot, lease in list(self.state.leases.items()):
             active, _memory = self.runtime.unit_state(lease['id'])
             if active:
                 lease['phase'] = 'running'
@@ -219,25 +226,58 @@ class Supervisor:
                 if jit_path.is_symlink():
                     raise ValueError('unsafe JIT credential entry')
                 jit_path.unlink()
-            del self.state.leases[role]
+            del self.state.leases[slot]
             self.state.save()
+        return runners
 
-    def queued_roles(self):
-        roles = set()
+    def queued_counts(self):
+        # The owner moved full Rust checks off PRs into a separate push/manual
+        # workflow. Discover only that exact trusted filename; absent until its
+        # first deployment is normal, not a reason to block existing PR checks.
+        workflow_ids = [self.workflow_id]
+        try:
+            rust = self.api.request('GET', PREFIX + 'workflows/rust-ci.yml')
+        except APIError as error:
+            if error.status != 404:
+                raise
+        else:
+            if (type(rust.get('id')) is not int or rust['id'] <= 0
+                    or rust.get('path') != '.github/workflows/rust-ci.yml'
+                    or rust['id'] == self.workflow_id):
+                raise ValueError('Rust workflow identity mismatch')
+            workflow_ids.append(rust['id'])
+        counts = Counter()
+        seen = set()
+        for workflow_id in workflow_ids:
+            self.count_workflow(workflow_id, counts, seen)
+        return counts
+
+    def count_workflow(self, workflow_id, counts, seen):
         for status in ('queued', 'in_progress'):
             for page in range(1, 5):
-                result = self.api.request('GET', PREFIX + 'workflows/' + str(self.workflow_id)
+                result = self.api.request('GET', PREFIX + 'workflows/' + str(workflow_id)
                     + '/runs?status=' + status + '&per_page=100&page=' + str(page))
                 runs = result['workflow_runs']
                 for run in runs:
-                    if run['workflow_id'] != self.workflow_id:
+                    if run['workflow_id'] != workflow_id:
                         raise ValueError('workflow identity changed')
+                    if workflow_id != self.workflow_id and run['event'] not in ('push', 'workflow_dispatch'):
+                        continue
                     if run['event'] not in ('pull_request', 'push', 'merge_group', 'workflow_dispatch'):
                         continue
                     for job_page in range(1, 5):
                         jobs = self.api.request('GET', PREFIX + 'runs/' + str(run['id'])
                             + '/attempts/' + str(run['run_attempt']) + '/jobs?per_page=100&page=' + str(job_page))['jobs']
-                        roles.update(role for job in jobs if (role := role_for_job(job)) is not None)
+                        for job in jobs:
+                            role = role_for_job(job)
+                            if role is None:
+                                continue
+                            if type(job.get('id')) is not int or job['id'] <= 0:
+                                raise ValueError('queued job identity missing')
+                            identity = (run['id'], run['run_attempt'], job['id'])
+                            if identity not in seen:
+                                counts[role] += 1
+                                seen.add(identity)
                         if len(jobs) < 100:
                             break
                     else:
@@ -246,40 +286,52 @@ class Supervisor:
                     break
             else:
                 raise ValueError('workflow inventory exceeds fixed limit')
-        return roles
 
     def tick(self):
-        self.reconcile()
-        roles = self.queued_roles()
-        for role in JOBS.values():
-            if role not in roles or role in self.state.leases or not self.runtime.admission(role, self.state.leases):
-                continue
-            identity = uuid.uuid4().hex
-            lease = {'id': identity, 'role': role, 'name': runner_name(role, identity),
-                     'created': self.clock(), 'phase': 'registering'}
-            self.state.leases[role] = lease
-            self.state.save()
-            result = self.api.request('POST', PREFIX + 'runners/generate-jitconfig',
-                {'name': lease['name'], 'runner_group_id': 1,
-                 'labels': ['self-hosted', 'Linux', 'X64', 'sandproof-ci-' + role], 'work_folder': '_work'})
-            if result['runner']['name'] != lease['name']:
-                raise ValueError('registered runner identity mismatch')
-            lease['runner_id'] = result['runner']['id']
-            jit_path = self.state.root / (identity + '.jit')
-            with open(jit_path, 'x', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as stream:
-                stream.write(result['encoded_jit_config'])
-                stream.flush()
-                os.fsync(stream.fileno())
-            lease['phase'] = 'ready'
-            self.state.save()
-            # Persist the identity BEFORE invoking systemd; if acknowledgement
-            # is lost, unit_state resolves it without launching a second VM.
-            lease['phase'] = 'launching'
-            self.state.save()
-            self.runtime.start(lease, jit_path)
-            lease['phase'] = 'running'
-            self.state.save()
-            print('CI worker started: ' + role + ' ' + identity, flush=True)
+        runners = {runner['name']: runner for runner in self.reconcile()}
+        counts = self.queued_counts()
+        # Booting/offline/idle owned workers already cover queued demand. Only a
+        # positively busy runner frees demand for another worker of that role.
+        unassigned = Counter(lease['role'] for lease in self.state.leases.values()
+            if runners.get(lease['name'], {}).get('busy') is not True)
+        # Offer every role its first slot before filling second slots. Count all
+        # durable leases in resource admission, including cleanup-unknown ones.
+        for index in range(1, MAX_ROLE_WORKERS + 1):
+            for role in JOBS.values():
+                slot = role if index == 1 else role + '-' + str(index)
+                if (slot in self.state.leases or counts[role] <= unassigned[role]
+                        or not self.runtime.admission(role, self.state.leases)):
+                    continue
+                self.start_worker(role, slot)
+                unassigned[role] += 1
+
+    def start_worker(self, role, slot):
+        identity = uuid.uuid4().hex
+        lease = {'id': identity, 'role': role, 'slot': valid_slot(role, slot),
+                 'name': runner_name(role, identity), 'created': self.clock(), 'phase': 'registering'}
+        self.state.leases[slot] = lease
+        self.state.save()
+        result = self.api.request('POST', PREFIX + 'runners/generate-jitconfig',
+            {'name': lease['name'], 'runner_group_id': 1,
+             'labels': ['self-hosted', 'Linux', 'X64', 'sandproof-ci-' + role], 'work_folder': '_work'})
+        if result['runner']['name'] != lease['name']:
+            raise ValueError('registered runner identity mismatch')
+        lease['runner_id'] = result['runner']['id']
+        jit_path = self.state.root / (identity + '.jit')
+        with open(jit_path, 'x', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as stream:
+            stream.write(result['encoded_jit_config'])
+            stream.flush()
+            os.fsync(stream.fileno())
+        lease['phase'] = 'ready'
+        self.state.save()
+        # Persist the identity BEFORE invoking systemd; if acknowledgement
+        # is lost, unit_state resolves it without launching a second VM.
+        lease['phase'] = 'launching'
+        self.state.save()
+        self.runtime.start(lease, jit_path)
+        lease['phase'] = 'running'
+        self.state.save()
+        print('CI worker started: ' + slot + ' ' + identity, flush=True)
 
 
 def main():

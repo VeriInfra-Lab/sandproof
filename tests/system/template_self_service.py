@@ -13,7 +13,10 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
-from tools.bounded_acceptance import bounded_acceptance_layout, acceptance_pool_disk_budget, require_bounded_host_tools, wait_private_build_window
+from tools.bounded_acceptance import (
+    bounded_acceptance_layout, acceptance_pool_disk_budget, provision_acceptance_coordination,
+    require_bounded_host_tools, validate_acceptance_socket_paths, wait_private_build_window,
+)
 
 import argparse
 from contextlib import closing
@@ -75,7 +78,11 @@ def exercise(args):
             build_namespace=getattr(args, "build_namespace", None))
         if root.parent != args.scratch_parent.resolve(strict=True):
             raise ValueError("bounded run root must be directly inside the approved scratch parent")
+        validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
+                                         max_vm_id=20, bounded=True)
         root.mkdir(mode=0o700)  # Existing deployments are never overwritten.
+        provision_acceptance_coordination(bounded_policy, run_root=root,
+            namespace=namespaces[0], build_namespace=namespaces[1])
     else:
         if getattr(args, "run_root", None) is not None:
             raise ValueError("--run-root requires --bounded-policy")
@@ -90,6 +97,8 @@ def exercise(args):
     binary.chmod(0o700)
     print(f"root={root} commit={commit}", flush=True)
     firecracker = args.firecracker.resolve(strict=True)
+    validate_acceptance_socket_paths(root, namespaces, firecracker,
+                                     max_vm_id=20, bounded=bounded_policy is not None)
     settings = []
     ports = [free_loopback_port() for _ in range(3)]
     urls = [f"http://127.0.0.1:{port}" for port in ports]

@@ -21,7 +21,7 @@ where
 {
     // copy_buf forwards each available slice without waiting to fill a buffer.
     // Fixed read buffers amortize stdio's blocking-pool work on large streams;
-    // they do not buffer a request/response or alter half-close/error handling.
+    // they never buffer an entire request or response.
     let mut input = BufReader::with_capacity(BUFFER_BYTES, input);
     let mut reader = BufReader::with_capacity(BUFFER_BYTES, reader);
     let upstream = async {
@@ -36,19 +36,104 @@ where
     };
     // Both host modes have TCP half-close semantics. Upload EOF only closes
     // the guest's write half; it is not a revocation or a cleanup certificate.
-    // The supervising gateway explicitly terminates/reaps a tracked child on
-    // revocation/disconnect. A copy error still cancels the opposite direction.
-    tokio::try_join!(upstream, downstream)?;
-    Ok(())
+    // A guest may stop accepting an upload before returning its rejection
+    // (for example, HTTP 507). Preserve that response even if the request
+    // copy failed. Response errors still cancel the upload immediately.
+    // Revocation/disconnect remains the supervising gateway's responsibility:
+    // it terminates/reaps the exact child rather than treating EOF as cleanup.
+    tokio::pin!(upstream, downstream);
+    tokio::select! {
+        result = &mut upstream => {
+            downstream.await?;
+            result
+        }
+        result = &mut downstream => {
+            result?;
+            upstream.await
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{io, time::Duration};
+    use std::{
+        io,
+        pin::Pin,
+        task::{Context, Poll},
+        time::Duration,
+    };
 
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
+        sync::oneshot,
+    };
 
     use super::relay;
+
+    struct RefusedUpload(Option<oneshot::Sender<()>>);
+
+    impl AsyncWrite for RefusedUpload {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            _: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            if let Some(refused) = self.0.take() {
+                refused.send(()).unwrap();
+            }
+            Poll::Ready(Err(io::Error::from(io::ErrorKind::BrokenPipe)))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn upload_write_failure_preserves_the_guests_rejection_response() {
+        for bounded in [false, true] {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let (mut client_input, input) = tokio::io::duplex(17);
+                let (output, mut client_output) = tokio::io::duplex(19);
+                let (mut guest, reader) = tokio::io::duplex(23);
+                let (refused, rejection_ready) = oneshot::channel();
+                let relay = relay(bounded, input, output, reader, RefusedUpload(Some(refused)));
+                let client = async {
+                    client_input.write_all(b"upload").await.unwrap();
+                    let mut response = Vec::new();
+                    client_output.read_to_end(&mut response).await.unwrap();
+                    response
+                };
+                let response = [
+                    b"HTTP/1.1 507 Insufficient Storage\r\n\r\n".as_slice(),
+                    &vec![b'X'; 256 * 1024 + 1],
+                ]
+                .concat();
+                let expected = response.clone();
+                let server = async move {
+                    rejection_ready.await.unwrap();
+                    // The write failure is observed first. The response must
+                    // still flow, with backpressure and no upload EOF needed.
+                    guest.write_all(&response).await
+                };
+                let (result, received, sent) = tokio::join!(relay, client, server);
+                assert!(
+                    received == expected,
+                    "upload error discarded the guest response ({} of {} bytes)",
+                    received.len(),
+                    expected.len()
+                );
+                sent.unwrap();
+                assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+            })
+            .await
+            .expect("rejected upload stalled");
+        }
+    }
 
     #[tokio::test]
     async fn forwards_before_upload_eof_and_keeps_response_after_half_close() {
