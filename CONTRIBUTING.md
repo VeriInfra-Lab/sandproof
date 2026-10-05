@@ -114,6 +114,8 @@ bash scripts/check-compat.sh  # 修改 E2B 客户端合同或接入时运行；�
 python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任务'
 ```
 
+完整基础检查使用 Linux 和 Python 3.11+；可用 `PYTHON=/绝对路径/python3 bash scripts/check-function.sh` 选择解释器。它会执行只接受受保护 ELF 的 Rust 桥接程序（依赖 `/proc/self/fd`），并检查稀疏文件的物理分配，不能在 macOS 上用本机二进制替代。源码/编译输出须位于无其他用户可写祖先的可信目录，不能直接用 `/tmp` 下的 helper；可显式设置可信的 `CARGO_TARGET_DIR`。入口以 `umask 077` 新建检查产物，不修改旧输出或共享目录的权限；旧 target 不符合保护要求时改用新的可信 target。入口先检查版本和平台，不满足则失败，不跳过用例或宣称通过。macOS 可用受支持的 Python 运行文档、规则和可移植组件测试，以及本机 Rust 检查；提交前仍须把同一版本放到独立 Linux 目录运行完整入口并记录证据。无需 KVM、root 权限或改动测试机网络。
+
 开发者仍须执行上面的本地基础检查并在 PR 记录结果。普通 PR 不再自动运行完整 Rust 检查；[独立工作流](.github/workflows/rust-ci.yml)在合入 main/test 后或手动触发时运行同一基础检查，不作为 PR 必需状态。普通 PR 保留 SDK 合同、Harbor 工具、标题与分支规则四项自动检查。测试脚本不启动产品 VM，不访问 E2B 云服务，不使用付费模型，也不执行完整 Lean 验收。独立的 SDK 合同任务从固定公开提交安装 E2B Python SDK，只向本机回环服务发送合成请求；在 Linux 上还运行 SDK 经实际 Rust 网关体处理/转发代码访问合成 envd 的组合测试，不涉及管理鉴权或宿主 relay，不能代替真实控制器或虚拟机验收。规则检查只验证 issue 编号的格式，任务是否真实存在及关联准确仍需核对。
 
 ### 测试编写和结果纪律

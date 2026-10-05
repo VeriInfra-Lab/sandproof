@@ -15,7 +15,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.database = Path(self.tmp.name) / 'controller.db'
+        self.database = Path(self.tmp.name).resolve() / 'controller.db'
         self.template = json.loads((Path(__file__).resolve().parents[2] /
                                     'tests/compat/template-view.json').read_text())
         self.intent = {'metadata': {'benchmark': 'terminal-bench-2.0', 'task': 'sample',

@@ -58,7 +58,7 @@ def activate_for_test(profile):
 class PhysicalProfileTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.runtime, self.builder, self.public, self.profile = configuration(self.root)
 
     def tearDown(self):

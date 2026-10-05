@@ -15,7 +15,7 @@ class SparseArtifactTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
         self.path = self.root / 'candidate.ext4'
 
     def test_stream_boundaries_middle_and_trailing_zeros_keep_bytes_length_and_digest(self):
