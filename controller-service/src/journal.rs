@@ -15,6 +15,14 @@ pub(crate) const BOUNDED_FORMAT_VERSION: i64 = 3;
 pub(crate) const MAINTAINED_FORMAT_VERSION: i64 = 4;
 type ExistingReceiptRow = (i64, String, Vec<u8>, Option<Vec<u8>>);
 
+/// Historical library callers are being retired separately; the formal
+/// service always selects `CurrentOnly`, never a configuration-dependent branch.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StoreVersionPolicy {
+    Historical,
+    CurrentOnly,
+}
+
 /// Bytes are a projection supplied by the controller reducer's adapter.
 /// This journal never interprets or independently changes business state.
 pub struct AcceptedWrite<C> {
@@ -276,16 +284,16 @@ impl Journal {
     /// # Errors
     /// Rejects unsupported/corrupt stores, unsuitable journal settings, and I/O errors.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
-        Self::open_inner(path, false, false, false, false)
+        Self::open_inner(path, false, false, false, StoreVersionPolicy::Historical)
     }
 
     pub(crate) fn open_controller(
         path: impl AsRef<Path>,
         bounded: bool,
         maintained: bool,
-        current_only: bool,
+        versions: StoreVersionPolicy,
     ) -> Result<Self, JournalError> {
-        Self::open_inner(path, true, bounded, maintained, current_only)
+        Self::open_inner(path, true, bounded, maintained, versions)
     }
 
     fn open_inner(
@@ -293,7 +301,7 @@ impl Journal {
         controller: bool,
         bounded: bool,
         maintained: bool,
-        current_only: bool,
+        versions: StoreVersionPolicy,
     ) -> Result<Self, JournalError> {
         let connection = Connection::open(path)?;
         if !controller {
@@ -304,7 +312,7 @@ impl Journal {
 
         let app_id: i64 = connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
         let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if current_only && (app_id != 0 || format != 0) {
+        if versions == StoreVersionPolicy::CurrentOnly && (app_id != 0 || format != 0) {
             require_current_controller_store(&connection)?;
         }
         if app_id == 0 && format == 0 {

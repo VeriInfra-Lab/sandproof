@@ -1,5 +1,5 @@
 use super::{bounded, recovery, retirement, write_checkpoint};
-use crate::journal::{BOUNDED_FORMAT_VERSION, MAINTAINED_FORMAT_VERSION};
+use crate::journal::{BOUNDED_FORMAT_VERSION, MAINTAINED_FORMAT_VERSION, StoreVersionPolicy};
 use crate::{ControllerJournal, JournalError};
 use rusqlite::{Connection, Transaction};
 use sandbox_controller_core as core;
@@ -131,7 +131,7 @@ impl ControllerJournal {
             Some(host),
             Some(maintenance),
             now_ms,
-            false,
+            StoreVersionPolicy::Historical,
         )
     }
 
@@ -147,7 +147,14 @@ impl ControllerJournal {
         now_ms: u64,
     ) -> Result<Self, JournalError> {
         validate_complete(&host, &maintenance)?;
-        Self::open_with_bounded(path, namespace, Some(host), Some(maintenance), now_ms, true)
+        Self::open_with_bounded(
+            path,
+            namespace,
+            Some(host),
+            Some(maintenance),
+            now_ms,
+            StoreVersionPolicy::CurrentOnly,
+        )
     }
 
     /// Read-only current-schema check, before any host activation. Opening repeats it.
