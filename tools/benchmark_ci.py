@@ -99,10 +99,15 @@ def run_identity(candidate, base, configuration, manifest, lock):
         config=configuration, subset=manifest, lock=digest(canonical(lock)))))
 
 
-def authorize(candidate, *, approved_commits, observed_test=None):
+def authorize(candidate, *, approved_commits, observed_test=None, observed_promotion=None):
     if re.fullmatch('[0-9a-f]{40}', candidate or '') is None:
         raise ValueError('invalid candidate identity')
-    if candidate not in approved_commits and candidate != observed_test:
+    if observed_promotion is not None:
+        if (not isinstance(observed_promotion, tuple) or len(observed_promotion) != 3
+                or observed_promotion[:2] not in (('integration', 'test'), ('test', 'main'))
+                or observed_promotion[2] != candidate):
+            raise ValueError('invalid protected promotion authority')
+    if candidate not in approved_commits and candidate != observed_test and observed_promotion is None:
         raise ValueError('candidate is not an approved commit or trusted test head')
 
 

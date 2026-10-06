@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Trusted host E2E queue. No privileged GitHub runner; no external PR trigger.
 
-Install this reviewed source on the host. Automatically observes the trusted
-test ref; other candidates require a root-owned exact-SHA allowlist. Dedicated
+Install this reviewed source on the host. Automatically observes only reviewed
+protected promotion refs; other candidates require an exact-SHA allowlist. Dedicated
 systemd batch units survive manager restarts. Unknown state is not a retry.
 """
 import argparse
@@ -84,6 +84,48 @@ def git(*args, cwd=None, source_client=None, proxy=None):
     return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null',
         '-c', 'core.fsmonitor=false', '-c', 'credential.helper=', *args],
         cwd=cwd, env=env, text=True, stderr=subprocess.PIPE, timeout=300).strip()
+
+
+def is_ancestor(base, candidate, *, cwd):
+    try:
+        git('merge-base', '--is-ancestor', base, candidate, cwd=cwd)
+        return True
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 1:
+            raise  # Missing objects or corrupt history are not a negative answer.
+        return False
+
+
+def promotion_heads(*, source_client, proxy):
+    expected = {'refs/heads/' + name for name in ('integration', 'test', 'main')}
+    output = git('ls-remote', REPO, *sorted(expected), source_client=source_client, proxy=proxy)
+    refs = {}
+    for line in output.splitlines():
+        fields = line.split()
+        if (len(fields) != 2 or fields[1] not in expected or fields[1] in refs
+                or re.fullmatch('[0-9a-f]{40}', fields[0]) is None):
+            raise ValueError('protected promotion ref identity unknown')
+        refs[fields[1]] = fields[0]
+    if set(refs) != expected:
+        raise ValueError('protected promotion refs incomplete')
+    return {name.removeprefix('refs/heads/'): sha for name, sha in refs.items()}
+
+
+def select_promotion(refs, floor, ancestor):
+    """Only two fixed same-repository directions, never task/fork PR heads."""
+    if (set(refs) != {'integration', 'test', 'main'}
+            or any(re.fullmatch('[0-9a-f]{40}', value or '') is None for value in (*refs.values(), floor))):
+        raise ValueError('invalid protected promotion policy')
+    for source, target in (('integration', 'test'), ('test', 'main')):
+        candidate, base = refs[source], refs[target]
+        if not ancestor(floor, candidate):
+            continue  # Versions older than the reviewed gate implementation.
+        if candidate == base or ancestor(candidate, base):
+            continue  # Already promoted; do not rerun a completed old version.
+        if not ancestor(base, candidate):
+            raise ValueError('promotion source needs target synchronization')
+        return source, target, candidate, base
+    return None
 
 
 class Checks:
@@ -244,8 +286,11 @@ class Supervisor:
         result['passed'] = False
         self.terminal(result, phase='blocked', reason=reason)
 
-    def begin(self, candidate, base, observed_test=None):
-        authorize(candidate, approved_commits=self.config['approved_commits'], observed_test=observed_test)
+    def begin(self, candidate, base, observed_test=None, observed_promotion=None):
+        if observed_promotion is not None and self.config.get('auto_promotions') is not True:
+            raise ValueError('automatic promotion policy is not enabled')
+        authorize(candidate, approved_commits=self.config['approved_commits'], observed_test=observed_test,
+                  observed_promotion=observed_promotion)
         validate_host_inputs(self.config)
         checkout = private_path(self.config['checkout'], directory=True)
         if git('rev-parse', 'HEAD', cwd=checkout) != candidate or git('status', '--porcelain', cwd=checkout):
@@ -448,7 +493,10 @@ def main():
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--candidate')
     parser.add_argument('--base')
-    parser.add_argument('--follow-test', action='store_true', help='trusted test ref only; not arbitrary PR heads')
+    automatic = parser.add_mutually_exclusive_group()
+    automatic.add_argument('--follow-test', action='store_true', help='legacy trusted test-only observer')
+    automatic.add_argument('--follow-promotions', action='store_true',
+                           help='protected integration→test and test→main heads only')
     parser.add_argument('--local-only', action='store_true', help='no GitHub check write; not automatic CI acceptance')
     selected = parser.add_mutually_exclusive_group()
     selected.add_argument('--profile', help='reviewed task profile from the frozen catalog')
@@ -458,7 +506,7 @@ def main():
     if os.geteuid() != 0:
         parser.error('trusted root host only; never run as a GitHub PR job')
     config = json_file(private_path(args.config))
-    if args.follow_test and (args.profile or args.task or args.batch_size is not None):
+    if (args.follow_test or args.follow_promotions) and (args.profile or args.task or args.batch_size is not None):
         parser.error('automatic selection comes only from the protected host policy')
     if args.profile or args.task or args.batch_size is not None:
         config['selection'] = dict(config['selection'])
@@ -474,7 +522,11 @@ def main():
             config['selection']['batch_size'] = args.batch_size
     if args.follow_test and (args.candidate or args.base or not config.get('auto_test')):
         parser.error('follow-test requires the reviewed auto_test policy and no manual candidate')
-    if not args.follow_test and (not args.candidate or not args.base):
+    if args.follow_promotions and (args.candidate or args.base or args.local_only
+            or config.get('auto_promotions') is not True or not config.get('repository')
+            or re.fullmatch('[0-9a-f]{40}', config.get('promotion_floor', '')) is None):
+        parser.error('follow-promotions requires an enabled private repository/floor policy and GitHub checks')
+    if not (args.follow_test or args.follow_promotions) and (not args.candidate or not args.base):
         parser.error('manual admission requires candidate and base')
     root = private_path(config['state_root'], directory=True)
     lock = (root / 'supervisor.lock').open('a')
@@ -491,6 +543,7 @@ def main():
         api.verify_installation()
         checks = Checks(api)
     supervisor = Supervisor(config, checks)
+    observed_refs = None
     while True:
         try:
             if supervisor.state and supervisor.state.get('check_publish_pending'):
@@ -498,20 +551,41 @@ def main():
             if supervisor.state and supervisor.state['phase'] == 'blocked':
                 break
             if not supervisor.state or supervisor.state['phase'] == 'done':
-                refs = git('ls-remote', REPO, 'refs/heads/test', 'refs/heads/main',
-                           source_client=source_client, proxy=config.get('proxy')) if args.follow_test else ''
-                refs = {line.split()[1]: line.split()[0] for line in refs.splitlines()}
-                candidate = refs['refs/heads/test'] if args.follow_test else args.candidate
-                base = refs['refs/heads/main'] if args.follow_test else args.base
+                observed_promotion = None
+                refs = {}
+                if args.follow_promotions:
+                    heads = promotion_heads(source_client=source_client, proxy=config.get('proxy'))
+                    repository = private_path(config['repository'], directory=True)
+                    if git('remote', 'get-url', 'origin', cwd=repository) != REPO:
+                        raise ValueError('promotion repository origin mismatch')
+                    if heads != observed_refs:
+                        git('fetch', '--no-tags', 'origin', 'refs/heads/integration', 'refs/heads/test',
+                            'refs/heads/main', cwd=repository, source_client=source_client, proxy=config.get('proxy'))
+                        observed_refs = heads
+                    proposal = select_promotion(heads, config['promotion_floor'],
+                        lambda parent, child: is_ancestor(parent, child, cwd=repository))
+                    if proposal is None:
+                        time.sleep(15)
+                        continue
+                    source, target, candidate, base = proposal
+                    observed_promotion = (source, target, candidate)
+                else:
+                    values = git('ls-remote', REPO, 'refs/heads/test', 'refs/heads/main',
+                        source_client=source_client, proxy=config.get('proxy')) if args.follow_test else ''
+                    refs = {line.split()[1]: line.split()[0] for line in values.splitlines()}
+                    candidate = refs['refs/heads/test'] if args.follow_test else args.candidate
+                    base = refs['refs/heads/main'] if args.follow_test else args.base
                 authorize(candidate, approved_commits=config['approved_commits'],
-                          observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None)
+                          observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None,
+                          observed_promotion=observed_promotion)
                 prepared = checkout_candidate(config, candidate, source_client) if config.get('repository') else config
                 supervisor.config = prepared
-                supervisor.begin(candidate, base, observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None)
+                supervisor.begin(candidate, base, observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None,
+                                 observed_promotion=observed_promotion)
             if supervisor.state['phase'] == 'blocked':
                 break
             supervisor.tick()
-            if not args.follow_test and supervisor.state['phase'] == 'done':
+            if not (args.follow_test or args.follow_promotions) and supervisor.state['phase'] == 'done':
                 break
         except (APIError, subprocess.SubprocessError, OSError, ValueError) as error:
             print('E2E observation pending: ' + type(error).__name__, flush=True)
