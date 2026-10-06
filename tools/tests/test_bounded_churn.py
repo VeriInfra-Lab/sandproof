@@ -23,7 +23,7 @@ def settings():
                   node_state_dir='/run/accept/node', chroot_base='/run/accept/jails',
                   kernel='/opt/accept/kernel', rootfs='/opt/accept/rootfs',
                   jailer='/opt/accept/jailer', firecracker='/opt/accept/firecracker',
-                  uid_base=10000, max_vm_id=2, vcpu_count=1, memory_mib=512,
+                  uid_base=10000, vcpu_count=1, memory_mib=512,
                   file_policy_digest=1, max_active_global=2, max_active_per_tenant=2,
                   max_disk_bytes_global=8 * 1024 * 1024, cleanup_reserve_bytes=5 * 1024 * 1024,
                   max_timeout_secs=600, expiry_scan_seconds=1,
@@ -93,6 +93,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(node['state_dir'], value['node_state_dir'])
         self.assertNotIn('node_state_dir', node)
         self.assertNotIn('credentials', node)
+        self.assertEqual(node['max_vm_id'], 2**64 - 1)
         self.assertEqual(node['bounded_host']['max_data_routes_per_slot'], 4)
         self.assertEqual(node['bounded_host']['max_data_routes_global'], 8)
         self.assertEqual(node['bounded_host']['data_route_control_reserve'], 1)

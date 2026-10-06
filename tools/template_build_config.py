@@ -69,12 +69,10 @@ def validate_capacity(runtime, builder, limits, base, *, kernel_bytes, largest_t
     return disk
 
 
-def acceptance_build_policy(path, *, legacy_unbounded=False):
-    """Explicit acceptance mode; these values are never production defaults."""
-    if (path is None) == (not legacy_unbounded):
-        raise ValueError("choose an explicit bounded policy or --legacy-unbounded")
+def acceptance_build_policy(path):
+    """The sole formal acceptance policy; fixture budgets are not defaults."""
     if path is None:
-        return None
+        raise ValueError("explicit complete bounded policy required")
     from .template_build_service import protected_json
     value = protected_json(path)
     return validate_acceptance_build_policy(value)
@@ -101,14 +99,16 @@ def validate_acceptance_build_policy(value):
 
 def apply_acceptance_build_policy(runtime, builder, build, policy):
     """Pass through only authorized policy sections; keep pool identities fixed."""
-    if policy is None:
-        return "legacy-unbounded"
     validate_acceptance_build_policy(policy)
     import copy
     from .template_build_service import validate_pool_resource_ranges
     from .template_build_store import bounded_configuration
     runtime.update(copy.deepcopy(policy["runtime"]))
     builder.update(copy.deepcopy(policy["builder"]))
+    # Physical positions, not permanent VM IDs, own the formal UID span.
+    # This is fixture generation, never conversion of a deployed database.
+    for settings in (runtime, builder):
+        settings.pop("max_vm_id", None)
     bounded_configuration(policy["public"]["bounded_builds"])
     build["bounded_builds"] = copy.deepcopy(policy["public"]["bounded_builds"])
     for key in ("workspace_bytes", "workspace_bytes_per_tenant"):

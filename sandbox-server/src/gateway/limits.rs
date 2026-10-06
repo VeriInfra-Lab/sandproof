@@ -1,5 +1,5 @@
-//! Operator-selected data budgets. The legacy profile remains available until
-//! a deployment explicitly selects and validates its streaming-file profile.
+//! Explicit operator-selected budgets for the sole formal streaming profile.
+//! Low-level transport tests may omit limits; the formal server cannot do so.
 
 use serde::Deserialize;
 

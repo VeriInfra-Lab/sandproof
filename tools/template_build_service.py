@@ -86,9 +86,8 @@ def host_uid_range(settings):
 
     uid_base = integer(settings.get("uid_base"), 2**32 - 2, "UID base")
     bounded = settings.get("bounded_host")
-    maximum_vm = integer(settings.get("max_vm_id"), 2**64 - 1, "legacy VM limit",
-                         minimum=0 if bounded is not None else 1)
     if bounded is None:
+        maximum_vm = integer(settings.get("max_vm_id"), 2**64 - 1, "legacy VM limit")
         count = maximum_vm + 1
     else:
         if type(bounded) is not dict or set(bounded) - {"console_policy", "physical_storage"} != {"maintenance", "uid_base", "uplink_base"}:

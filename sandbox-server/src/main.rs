@@ -78,12 +78,10 @@ mod linux {
         kernel: PathBuf,
         rootfs: PathBuf,
         uid_base: u32,
-        /// Legacy VM-to-UID bound, ignored when `bounded_host` is enabled.
-        max_vm_id: u64,
         /// Explicit physical-position maintenance limits; no production defaults.
         #[serde(default)]
         bounded_host: Option<BoundedHostSettings>,
-        /// Explicit opt-in for retirement/checkpoints; no inferred limits.
+        /// Complete formal deployment policy; absence is rejected before activation.
         #[serde(default)]
         maintenance: Option<MaintenanceConfig>,
         /// Explicit private-pool retry-window policy; cannot be disabled once persisted.
@@ -112,7 +110,7 @@ mod linux {
         #[serde(default)]
         public_ipv4_enabled: bool,
         expiry_scan_seconds: u64,
-        /// Explicit opt-in while deployment/large-file KVM acceptance is pending.
+        /// Explicit deployment budgets, never SDK request parameters or inferred defaults.
         #[serde(default)]
         data_transfer: Option<gateway::TransferLimits>,
         /// Explicit opt-in: trusted prebuilt descriptors, not a build service.
@@ -133,7 +131,82 @@ mod linux {
         sandproof_controller_service::DEFAULT_STARTUP_TIMEOUT_SECS
     }
 
-    pub(crate) struct NodeHost(LinuxWorker, Option<crate::storage::PhysicalProfileLease>);
+    /// Parsed settings are not a deployment capability. Only this constructor
+    /// can produce the complete configuration consumed by the formal startup.
+    /// Static validation does not acquire a physical lease or open a journal.
+    struct DeploymentContract {
+        bounded: BoundedHostConfig,
+        maintenance: MaintenanceConfig,
+        transfers: gateway::TransferLimits,
+    }
+
+    impl DeploymentContract {
+        fn validate(config: &ConfigFile) -> Result<Self, Box<dyn Error>> {
+            let bounded = resolve_bounded_host_config(
+                config.uid_base,
+                config.bounded_host.as_ref(),
+                config.data_transfer.as_ref(),
+            )?
+            .ok_or("formal service requires explicit bounded_host")?;
+            let maintenance = config
+                .maintenance
+                .clone()
+                .ok_or("formal service requires explicit maintenance")?;
+            let transfers = config
+                .data_transfer
+                .clone()
+                .ok_or("formal service requires explicit data_transfer")?;
+            if bounded.physical_storage.is_none() {
+                return Err("formal service requires explicit physical_storage".into());
+            }
+            validate_maintenance_config(Some(&bounded), Some(&maintenance))?;
+            validate_build_retry_config(config, Some(&bounded))?;
+            validate_controller_storage_reserve(config)?;
+            validate_lifetime_settings(config)?;
+            if [
+                config.max_active_global,
+                config.max_active_per_tenant,
+                config.max_disk_bytes_global,
+                config.max_disk_bytes_per_tenant,
+                config.cleanup_reserve_bytes,
+            ]
+            .contains(&0)
+                || config.cleanup_reserve_bytes >= config.max_disk_bytes_global
+            {
+                return Err("invalid deployment admission limits".into());
+            }
+            if config.internal_build_vms && config.template_registry.is_some() {
+                return Err("internal build pool cannot also publish templates".into());
+            }
+            Ok(Self {
+                bounded,
+                maintenance,
+                transfers,
+            })
+        }
+    }
+
+    struct ValidatedDeployment {
+        settings: ConfigFile,
+        contract: DeploymentContract,
+        managed: ManagedConfig,
+    }
+
+    impl ValidatedDeployment {
+        fn validate(settings: ConfigFile) -> Result<Self, Box<dyn Error>> {
+            // All static obligations precede filesystem inspection and activation.
+            let contract = DeploymentContract::validate(&settings)?;
+            let disk_bytes = validate_config(&settings)?;
+            let managed = managed_config(&settings, disk_bytes)?;
+            Ok(Self {
+                settings,
+                contract,
+                managed,
+            })
+        }
+    }
+
+    pub(crate) struct NodeHost(LinuxWorker, crate::storage::PhysicalProfileLease);
 
     impl HostAdapter for NodeHost {
         type Evidence = HostObservation;
@@ -244,8 +317,6 @@ mod linux {
             pool: &sandproof_controller_service::physical_storage::PhysicalPool,
         ) -> Result<(), PortError> {
             self.1
-                .as_ref()
-                .ok_or(PortError::Busy)?
                 .validate_admission(profile, pool)
                 .map_err(|_| PortError::Busy)
         }
@@ -487,7 +558,7 @@ mod linux {
     fn validate_physical_storage(
         config: &ConfigFile,
         node: &NodeConfig,
-    ) -> Result<Option<crate::storage::PhysicalProfileLease>, Box<dyn Error>> {
+    ) -> Result<crate::storage::PhysicalProfileLease, Box<dyn Error>> {
         use sandproof_controller_service::physical_storage::PoolRole;
         let profile = node
             .bounded_host
@@ -497,9 +568,6 @@ mod linux {
             .maintenance
             .as_ref()
             .and_then(|value| value.capacity.as_ref());
-        if profile.is_none() && capacity.is_none() {
-            return Ok(None);
-        }
         let profile =
             profile.ok_or("full bounded capacity requires an explicit physical_storage profile")?;
         let capacity = capacity.ok_or("physical_storage requires full controller capacity")?;
@@ -573,12 +641,12 @@ mod linux {
         {
             return Err("physical filesystem overhead must cover per-inode block rounding".into());
         }
-        Ok(Some(crate::storage::PhysicalProfileLease::activate(
+        crate::storage::PhysicalProfileLease::activate(
             profile,
             &config.namespace,
             &config.firecracker,
             &config.kernel,
-        )?))
+        )
     }
 
     fn node_configuration(
@@ -594,7 +662,8 @@ mod linux {
             kernel: config.kernel.clone(),
             rootfs: config.rootfs.clone(),
             uid_base: config.uid_base,
-            max_vm_id: config.max_vm_id,
+            // Permanent identity exhaustion is independent of reusable UID positions.
+            max_vm_id: u64::MAX,
             bounded_host,
             vcpu_count: config.vcpu_count,
             memory_mib: config.memory_mib,
@@ -616,12 +685,6 @@ mod linux {
     }
 
     fn validate_config(config: &ConfigFile) -> Result<u64, Box<dyn Error>> {
-        validate_controller_storage_reserve(config)?;
-        resolve_bounded_host_config(
-            config.uid_base,
-            config.bounded_host.as_ref(),
-            config.data_transfer.as_ref(),
-        )?;
         if let Some(registry) = &config.template_registry {
             if !registry.is_valid() || config.templates.is_none() || config.host_resources.is_none()
             {
@@ -653,9 +716,6 @@ mod linux {
                 return Err("templates require explicit host_resources".into());
             }
         }
-        if let Some(limits) = &config.data_transfer {
-            limits.validate()?;
-        }
         if !config.bind.ip().is_loopback() {
             return Err(
                 "HTTP management listener must bind loopback behind a trusted TLS front end".into(),
@@ -669,14 +729,6 @@ mod linux {
         {
             return Err("at least one nonzero tenant credential is required".into());
         }
-        if config.expiry_scan_seconds == 0
-            || config.startup_timeout_secs == 0
-            || config.default_timeout_secs != default_timeout_secs()
-            || config.default_timeout_secs > config.max_timeout_secs
-            || config.max_lifetime_secs == Some(0)
-        {
-            return Err("invalid lifetime scanner/limit; E2B default must be 300 seconds".into());
-        }
         private_root_path(config.database.parent().ok_or("database parent missing")?)?;
         crate::storage::validate_filesystems(
             &config.database,
@@ -688,6 +740,18 @@ mod linux {
             return Err("root disk exceeds per-tenant budget".into());
         }
         Ok(disk_bytes)
+    }
+
+    fn validate_lifetime_settings(config: &ConfigFile) -> Result<(), Box<dyn Error>> {
+        if config.expiry_scan_seconds == 0
+            || config.startup_timeout_secs == 0
+            || config.default_timeout_secs != default_timeout_secs()
+            || config.default_timeout_secs > config.max_timeout_secs
+            || config.max_lifetime_secs == Some(0)
+        {
+            return Err("invalid lifetime scanner/limit; E2B default must be 300 seconds".into());
+        }
+        Ok(())
     }
 
     fn resolve_bounded_host_config(
@@ -1060,7 +1124,7 @@ mod linux {
         Ok(ManagedConfig {
             public_ipv4_enabled: config.public_ipv4_enabled,
             limits: AdmissionLimits {
-                max_vm_id: config.max_vm_id,
+                max_vm_id: u64::MAX,
                 max_active_global: config.max_active_global,
                 max_active_per_tenant: config.max_active_per_tenant,
                 max_disk_bytes_global: config.max_disk_bytes_global,
@@ -1083,36 +1147,23 @@ mod linux {
     fn open_journal(
         database: PathBuf,
         namespace: &str,
-        bounded: Option<BoundedHostConfig>,
-        maintenance: Option<MaintenanceConfig>,
+        contract: &DeploymentContract,
     ) -> Result<ControllerJournal, Box<dyn Error>> {
-        validate_maintenance_config(bounded.as_ref(), maintenance.as_ref())?;
         // Node construction has already independently refused legacy metadata
         // or resources. The journal now rechecks its own empty state/config in
         // the enable transaction; neither check substitutes for the other.
-        Ok(if let Some(bounded) = bounded {
-            let now_ms = u64::try_from(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)?
-                    .as_millis(),
-            )?;
-            if let Some(maintenance) = maintenance {
-                ControllerJournal::open_maintained(
-                    database,
-                    namespace,
-                    bounded,
-                    maintenance,
-                    now_ms,
-                )?
-            } else {
-                ControllerJournal::open_bounded(database, namespace, bounded, now_ms)?
-            }
-        } else {
-            if maintenance.is_some() {
-                return Err("maintenance requires explicit bounded_host configuration".into());
-            }
-            ControllerJournal::open(database, namespace)?
-        })
+        let now_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_millis(),
+        )?;
+        Ok(ControllerJournal::open_complete(
+            database,
+            namespace,
+            contract.bounded.clone(),
+            contract.maintenance.clone(),
+            now_ms,
+        )?)
     }
 
     fn read_configuration() -> Result<ConfigFile, Box<dyn Error>> {
@@ -1151,49 +1202,33 @@ mod linux {
 
     fn preflight_journal_configuration(
         config: &ConfigFile,
-        bounded_host: Option<&BoundedHostConfig>,
+        contract: &DeploymentContract,
     ) -> Result<(), Box<dyn Error>> {
         ControllerJournal::preflight_build_retry_windows(
             &config.database,
             &config.namespace,
             config.build_retry_windows,
         )?;
-        if let Some(bounded) = bounded_host {
-            if let Some(maintenance) = &config.maintenance {
-                ControllerJournal::preflight_maintained(
-                    &config.database,
-                    &config.namespace,
-                    bounded,
-                    maintenance,
-                )?;
-            } else {
-                ControllerJournal::preflight_bounded(&config.database, &config.namespace, bounded)?;
-            }
-        }
+        ControllerJournal::preflight_complete(
+            &config.database,
+            &config.namespace,
+            &contract.bounded,
+            &contract.maintenance,
+        )?;
         Ok(())
     }
 
     pub async fn run() -> Result<(), Box<dyn Error>> {
-        let config = read_configuration()?;
-        let disk_bytes = validate_config(&config)?;
-        let managed = managed_config(&config, disk_bytes)?;
-        let bounded_host = resolve_bounded_host_config(
-            config.uid_base,
-            config.bounded_host.as_ref(),
-            config.data_transfer.as_ref(),
-        )?;
-        validate_maintenance_config(bounded_host.as_ref(), config.maintenance.as_ref())?;
-        validate_build_retry_config(&config, bounded_host.as_ref())?;
-        preflight_journal_configuration(&config, bounded_host.as_ref())?;
-        let node_config = node_configuration(&config, bounded_host.clone());
+        let ValidatedDeployment {
+            settings: config,
+            contract,
+            managed,
+        } = ValidatedDeployment::validate(read_configuration()?)?;
+        preflight_journal_configuration(&config, &contract)?;
+        let node_config = node_configuration(&config, Some(contract.bounded.clone()));
         let physical_storage = validate_physical_storage(&config, &node_config)?;
         let node = LinuxWorker::new(node_config)?;
-        let journal = open_journal(
-            config.database,
-            &config.namespace,
-            bounded_host,
-            config.maintenance,
-        )?;
+        let journal = open_journal(config.database, &config.namespace, &contract)?;
         if journal
             .build_retry_config()?
             .is_some_and(|stored| Some(stored) != config.build_retry_windows)
@@ -1212,9 +1247,6 @@ mod linux {
         } else {
             ManagedPort::new(journal, NodeHost(node, physical_storage), managed)
         };
-        if config.internal_build_vms && config.template_registry.is_some() {
-            return Err("internal build pool cannot also publish templates".into());
-        }
         let port = port.with_internal_build_vms(config.internal_build_vms);
         let port = if let Some(retry) = config.build_retry_windows {
             port.with_build_retry_windows(retry)
@@ -1241,21 +1273,17 @@ mod linux {
             .collect();
         let gateway_port = Arc::clone(&port);
         let gateway_namespace = config.namespace.clone();
-        let gateway_limits = config
-            .data_transfer
-            .map(gateway::Gateway::new)
-            .transpose()?
-            .map(Arc::new);
-        let write_idle = gateway_limits
-            .as_ref()
-            .map(|gateway| Duration::from_secs(gateway.limits.write_idle_seconds));
+        let gateway_limits = Arc::new(gateway::Gateway::new(contract.transfers)?);
+        let write_idle = Some(Duration::from_secs(
+            gateway_limits.limits.write_idle_seconds,
+        ));
         let app = router(Arc::clone(&port), credentials)
             .map_err(|_| "invalid API credentials")?
             .fallback(move |request| {
                 gateway::handle(
                     Arc::clone(&gateway_port),
                     gateway_namespace.clone(),
-                    gateway_limits.clone(),
+                    Some(Arc::clone(&gateway_limits)),
                     request,
                 )
             });
@@ -1271,13 +1299,13 @@ mod linux {
         use sandbox_controller_core::maintenance::slots::{HostBinding, HostSlotId};
         use serde_json::{Value, json};
 
-        fn settings() -> Value {
+        fn partial_settings() -> Value {
             json!({
                 "namespace": "0123456789abcdef", "database": "/state/controller.db",
                 "node_state_dir": "/state/node", "jailer": "/bin/jailer",
                 "firecracker": "/bin/firecracker", "chroot_base": "/state/jails",
                 "kernel": "/images/kernel", "rootfs": "/images/rootfs",
-                "uid_base": 1000, "max_vm_id": u64::MAX, "vcpu_count": 1,
+                "uid_base": 1000, "vcpu_count": 1,
                 "memory_mib": 128, "file_policy_digest": 1, "bind": "127.0.0.1:3000",
                 "domain": "localhost", "credentials": [{"tenant": 1, "secret": "test-only"}],
                 "max_active_global": 2, "max_active_per_tenant": 2,
@@ -1300,15 +1328,77 @@ mod linux {
 
         fn check(value: Value) -> Result<(), Box<dyn Error>> {
             let config: ConfigFile = serde_json::from_value(value)?;
-            let bounded = resolve_bounded_host_config(
-                config.uid_base,
-                config.bounded_host.as_ref(),
-                config.data_transfer.as_ref(),
-            )?;
-            validate_maintenance_config(bounded.as_ref(), config.maintenance.as_ref())?;
-            validate_build_retry_config(&config, bounded.as_ref())?;
-            validate_controller_storage_reserve(&config)?;
+            DeploymentContract::validate(&config)?;
             Ok(())
+        }
+
+        fn settings() -> Value {
+            full_capacity_settings()
+        }
+
+        #[test]
+        fn formal_contract_rejects_every_partial_mode_without_filesystem_effects() {
+            for path in [
+                "/bounded_host",
+                "/maintenance",
+                "/data_transfer",
+                "/bounded_host/physical_storage",
+                "/bounded_host/console_policy",
+                "/maintenance/capacity",
+            ] {
+                for null in [false, true] {
+                    let mut value = settings();
+                    if null {
+                        *value.pointer_mut(path).unwrap() = Value::Null;
+                    } else {
+                        let (parent, field) = path.rsplit_once('/').unwrap();
+                        value
+                            .pointer_mut(parent)
+                            .unwrap()
+                            .as_object_mut()
+                            .unwrap()
+                            .remove(field);
+                    }
+                    let config = serde_json::from_value(value).unwrap();
+                    assert!(
+                        ValidatedDeployment::validate(config).is_err(),
+                        "accepted {path}, null={null}"
+                    );
+                }
+            }
+            let mut misspelled = settings();
+            misspelled["data_tranfer"] = misspelled["data_transfer"].take();
+            assert!(check(misspelled).is_err());
+            assert!(check(partial_settings()).is_err());
+        }
+
+        #[test]
+        fn valid_omissions_keep_lifetime_defaults_and_prebuilt_only_capability() {
+            let config: ConfigFile = serde_json::from_value(settings()).unwrap();
+            assert!(!config.internal_build_vms);
+            assert!(config.build_retry_windows.is_none());
+            assert!(config.template_registry.is_none());
+            assert!(DeploymentContract::validate(&config).is_ok());
+            assert_eq!(config.default_timeout_secs, 300);
+            assert_eq!(config.startup_timeout_secs, 300);
+            assert_eq!(
+                managed_config(&config, 1024)
+                    .unwrap()
+                    .limits
+                    .max_lifetime_secs,
+                config.max_timeout_secs
+            );
+            // This is a capability floor, not an implicit change to an SDK request.
+            assert!(!config.public_ipv4_enabled);
+            for field in [
+                "default_timeout_secs",
+                "startup_timeout_secs",
+                "max_lifetime_secs",
+            ] {
+                let mut zero = settings();
+                zero[field] = json!(0);
+                assert!(check(zero).is_err(), "accepted zero {field}");
+            }
         }
 
         fn resolve(value: Value) -> BoundedHostConfig {
@@ -1323,7 +1413,7 @@ mod linux {
         }
 
         fn maintained_settings() -> Value {
-            let mut value = settings();
+            let mut value = partial_settings();
             value["maintenance"] = json!({
                 "retention_ms": 60_000, "max_checkpoint_bytes": 8_000_000,
                 "max_records": 10_000, "max_references": 100_000,
@@ -1354,6 +1444,18 @@ mod linux {
             });
             value["bounded_host"]["console_policy"] = json!("discard");
             value["cleanup_reserve_bytes"] = json!(1042_u64 * 1024 * 1024);
+            value["max_disk_bytes_global"] = json!(2048_u64 * 1024 * 1024);
+            value["bounded_host"]["physical_storage"] = json!({
+                "version": 1, "coordination_file": "/state/physical-profile",
+                "pools": [{"role": "runtime", "namespace": "0123456789abcdef",
+                    "database": "/state/controller.db", "node_state_dir": "/state/node",
+                    "chroot_base": "/state/jails", "rootfs_budget_bytes": 1006_u64 * 1024 * 1024,
+                    "max_host_slots": 2, "kernel_copy_bytes": 50, "runtime_copy_bytes": 50,
+                    "cleanup_reserve_bytes": 1042_u64 * 1024 * 1024,
+                    "host_metadata_bytes": 1, "host_metadata_inodes": 20, "jail_inodes_per_slot": 12}],
+                "public_build": null, "filesystem_overhead_bytes": 1024 * 1024,
+                "filesystem_overhead_inodes": 100
+            });
             value
         }
 
@@ -1391,27 +1493,23 @@ mod linux {
         fn production_maintenance_cannot_accept_work_without_cleanup_reservations() {
             let value = maintained_settings();
             assert!(check(value.clone()).is_err());
-            let config: ConfigFile = serde_json::from_value(value).unwrap();
             let database = std::env::temp_dir().join(format!(
                 "sandproof-unreserved-maintenance-{}.db",
                 std::process::id()
             ));
-            assert!(
-                open_journal(
-                    database.clone(),
-                    &config.namespace,
-                    Some(resolve(settings())),
-                    config.maintenance
-                )
-                .is_err()
-            );
+            assert!(DeploymentContract::validate(&serde_json::from_value(value).unwrap()).is_err());
             // Refusal must happen before any database/host initialization.
             assert!(!database.exists());
         }
 
         #[test]
         fn explicit_console_policy_is_strict_and_not_inferred() {
-            assert!(resolve(settings()).console_policy.is_none());
+            let mut missing = settings();
+            missing["bounded_host"]
+                .as_object_mut()
+                .unwrap()
+                .remove("console_policy");
+            assert!(check(missing).is_err());
             let mut value = settings();
             value["bounded_host"]["console_policy"] = json!("discard");
             assert_eq!(
@@ -1525,63 +1623,28 @@ mod linux {
             let scratch = Scratch(directory);
             let database = scratch.0.join("controller.db");
             let config: ConfigFile = serde_json::from_value(full_capacity_settings()).unwrap();
-            let host = resolve(full_capacity_settings());
-            let policy = config.maintenance.unwrap();
-            drop(
-                open_journal(
-                    database.clone(),
-                    &config.namespace,
-                    Some(host.clone()),
-                    Some(policy.clone()),
-                )
-                .unwrap(),
-            );
-            assert!(
-                open_journal(
-                    database.clone(),
-                    &config.namespace,
-                    Some(host.clone()),
-                    None
-                )
-                .is_err()
-            );
+            let mut contract = DeploymentContract::validate(&config).unwrap();
+            let policy = contract.maintenance.clone();
+            drop(open_journal(database.clone(), &config.namespace, &contract).unwrap());
+            let mut disabled = full_capacity_settings();
+            disabled.as_object_mut().unwrap().remove("maintenance");
+            assert!(check(disabled).is_err());
             let mut changed = policy.clone();
             changed.retention_ms += 1;
             assert!(
-                ControllerJournal::preflight_maintained(
+                ControllerJournal::preflight_complete(
                     &database,
                     &config.namespace,
-                    &host,
+                    &contract.bounded,
                     &changed
                 )
                 .is_err()
             );
-            assert!(
-                open_journal(
-                    database.clone(),
-                    &config.namespace,
-                    Some(host.clone()),
-                    Some(changed)
-                )
-                .is_err()
-            );
-            let reopened = open_journal(
-                database,
-                &config.namespace,
-                Some(host),
-                Some(policy.clone()),
-            )
-            .unwrap();
+            contract.maintenance = changed;
+            assert!(open_journal(database.clone(), &config.namespace, &contract,).is_err());
+            contract.maintenance = policy.clone();
+            let reopened = open_journal(database, &config.namespace, &contract).unwrap();
             assert_eq!(reopened.maintenance_config().unwrap(), Some(policy.clone()));
-            assert!(
-                open_journal(
-                    scratch.0.join("invalid.db"),
-                    &config.namespace,
-                    None,
-                    Some(policy)
-                )
-                .is_err()
-            );
         }
 
         #[test]
@@ -1679,7 +1742,7 @@ mod linux {
             missing.as_object_mut().unwrap().remove("data_transfer");
             assert!(check(missing.clone()).is_err());
             missing.as_object_mut().unwrap().remove("bounded_host");
-            assert!(check(missing).is_ok());
+            assert!(check(missing).is_err());
             let mut absent = settings();
             absent["data_transfer"] = Value::Null;
             assert!(check(absent).is_err());
@@ -1719,23 +1782,13 @@ mod linux {
             assert!(check(settings()).is_ok());
             let mut bounded = settings();
             bounded["max_vm_id"] = json!(0);
-            assert!(check(bounded).is_ok());
+            assert!(check(bounded).is_err());
             let mut legacy = settings();
             legacy.as_object_mut().unwrap().remove("bounded_host");
-            assert!(
-                serde_json::from_value::<ConfigFile>(legacy)
-                    .unwrap()
-                    .bounded_host
-                    .is_none()
-            );
+            assert!(check(legacy).is_err());
             let mut value = settings();
             value["bounded_host"] = Value::Null;
-            assert!(
-                serde_json::from_value::<ConfigFile>(value)
-                    .unwrap()
-                    .bounded_host
-                    .is_none()
-            );
+            assert!(check(value).is_err());
             let mut value = settings();
             value["uid_base"] = json!(u32::MAX - 2);
             value["bounded_host"]["uid_base"] = json!(u32::MAX - 2);

@@ -668,6 +668,30 @@ fn relay_spawn_rechecks_authority_after_the_initial_route_permit() {
     assert_eq!(host.0.lock().unwrap().relay_spawns, 1);
 }
 
+#[test]
+fn expired_permit_cannot_spawn_a_relay_before_the_expiry_worker_runs() {
+    let dir = TempDir::new().unwrap();
+    let host = BoundedHost::default();
+    let port = open(&dir.path().join("controller.db"), host.clone());
+    let session = port.create("1", request()).unwrap();
+    let permit = port
+        .data_permit(
+            &session.envd_access_token,
+            sandproof_api::managed::DataKind::Exec,
+        )
+        .unwrap();
+    // The SDK's nonpositive timeout expires the durable deadline immediately;
+    // no sleep, guessed scanner timing, or physical stop is needed here.
+    port.set_timeout("1", &session.sandbox_id, 0).unwrap();
+    assert!(*permit.revocation.borrow());
+    assert!(matches!(
+        port.spawn_data_relay(&permit, false),
+        Err(PortError::NotFound)
+    ));
+    assert_eq!(host.0.lock().unwrap().relay_spawns, 0);
+    assert_eq!(port.expire_due().unwrap(), 1);
+}
+
 #[path = "bounded_slots/maintenance.rs"]
 mod maintenance;
 

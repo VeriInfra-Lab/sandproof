@@ -56,7 +56,7 @@ class TerminalBuildObservationTests(unittest.TestCase):
                 row = {'build_id': job, 'build': observed, 'status': 'timeout', 'rewards': {'reward': 0}}
                 original = copy.deepcopy(row)
                 self.expire(job)
-                result = completion_build_observation(row, build_mode='windowed', read_build=self.read)
+                result = completion_build_observation(row, read_build=self.read)
                 self.assertEqual(result, {'build': observed, 'build_observation': 'saved_terminal'})
                 self.read.assert_not_called()
                 self.assertEqual(row, original)  # No changed score or physical-cleanup claim.
@@ -70,7 +70,7 @@ class TerminalBuildObservationTests(unittest.TestCase):
             with self.subTest(observed=observed):
                 with self.assertRaisesRegex(RuntimeError, '^NotFound$'):
                     completion_build_observation({'build_id': job, 'build': observed},
-                        build_mode='windowed', read_build=self.read)
+                        read_build=self.read)
         self.assertEqual(self.read.call_count, 2)
         self.assertEqual(self.store.rows(), [])  # No replacement build or window.
 
@@ -79,24 +79,20 @@ class TerminalBuildObservationTests(unittest.TestCase):
         self.read.reset_mock()
         with self.assertRaisesRegex(ValueError, 'mismatched'):
             completion_build_observation({'build_id': 'b' * 32, 'build': observed},
-                build_mode='windowed', read_build=self.read)
+                read_build=self.read)
         self.read.assert_not_called()
         self.assertEqual(self.store.rows()[0]['id'], job)
 
-    def test_legacy_and_unobserved_results_still_require_a_matching_live_terminal_read(self):
+    def test_unobserved_results_still_require_a_matching_live_terminal_read(self):
         job, initial, observed = self.terminal('Ready')
-        for mode, prior in (('legacy-unbounded', observed), ('windowed', initial)):
-            with self.subTest(mode=mode):
-                self.read.reset_mock()
-                result = completion_build_observation({'build_id': job, 'build': prior},
-                    build_mode=mode, read_build=self.read)
-                self.assertEqual(result, {'build': observed, 'build_observation': 'live_query'})
-                self.read.assert_called_once_with(job)
+        self.read.reset_mock()
+        result = completion_build_observation({'build_id': job, 'build': initial}, read_build=self.read)
+        self.assertEqual(result, {'build': observed, 'build_observation': 'live_query'})
+        self.read.assert_called_once_with(job)
         for bad in ({'buildID': 'other', 'state': 'Ready'}, initial):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
-                completion_build_observation({'build_id': job}, build_mode='windowed',
+                completion_build_observation({'build_id': job},
                     read_build=lambda _job: bad)
         self.expire(job)
         with self.assertRaisesRegex(RuntimeError, '^NotFound$'):
-            completion_build_observation({'build_id': job, 'build': observed},
-                build_mode='legacy-unbounded', read_build=self.read)
+            completion_build_observation({'build_id': job, 'build': initial}, read_build=self.read)

@@ -525,7 +525,7 @@ impl ControllerJournal {
     /// Rejects a second writer, namespace mismatch, legacy opaque state, or
     /// corrupt input history. No arbitrary serialized World is accepted.
     pub fn open(path: impl AsRef<Path>, namespace: &str) -> Result<Self, JournalError> {
-        Self::open_with_bounded(path, namespace, None, None, 0)
+        Self::open_with_bounded(path, namespace, None, None, 0, false)
     }
 
     /// Open an explicitly configured bounded host store. Legacy nonempty stores
@@ -539,7 +539,7 @@ impl ControllerJournal {
         now_ms: u64,
     ) -> Result<Self, JournalError> {
         config.validate()?;
-        Self::open_with_bounded(path, namespace, Some(config), None, now_ms)
+        Self::open_with_bounded(path, namespace, Some(config), None, now_ms, false)
     }
 
     fn open_with_bounded(
@@ -548,6 +548,7 @@ impl ControllerJournal {
         bounded: Option<BoundedHostConfig>,
         maintenance: Option<MaintenanceConfig>,
         now_ms: u64,
+        current_only: bool,
     ) -> Result<Self, JournalError> {
         validate_namespace(namespace)?;
         let path = path.as_ref();
@@ -569,8 +570,12 @@ impl ControllerJournal {
             .truncate(false)
             .open(lock_path)?;
         lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
-        let mut journal =
-            Journal::open_controller(&path, bounded.is_some(), maintenance.is_some())?;
+        let mut journal = Journal::open_controller(
+            &path,
+            bounded.is_some(),
+            maintenance.is_some(),
+            current_only,
+        )?;
         if let Some(policy) = &maintenance {
             capacity::prepare_connection(&journal.connection, policy)?;
         }
@@ -582,6 +587,9 @@ impl ControllerJournal {
             [],
             |row| row.get(0),
         )?;
+        if current_only && existing != 0 {
+            crate::journal::require_current_controller_store(&transaction)?;
+        }
         if existing == 0 {
             allocators::require_legacy_base(&transaction)?;
             let rows: i64 =

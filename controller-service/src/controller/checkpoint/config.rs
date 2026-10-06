@@ -125,7 +125,51 @@ impl ControllerJournal {
         host.validate()?;
         maintenance.validate()?;
         super::super::capacity::validate_host(&host, &maintenance)?;
-        Self::open_with_bounded(path, namespace, Some(host), Some(maintenance), now_ms)
+        Self::open_with_bounded(
+            path,
+            namespace,
+            Some(host),
+            Some(maintenance),
+            now_ms,
+            false,
+        )
+    }
+
+    /// The sole formal-server opener: complete limits and current schemas only.
+    /// New databases may be initialized; existing databases are never upgraded.
+    /// # Errors
+    /// Rejects partial capacity, old schemas, mismatched configuration or corrupt recovery.
+    pub fn open_complete(
+        path: impl AsRef<std::path::Path>,
+        namespace: &str,
+        host: super::super::BoundedHostConfig,
+        maintenance: MaintenanceConfig,
+        now_ms: u64,
+    ) -> Result<Self, JournalError> {
+        validate_complete(&host, &maintenance)?;
+        Self::open_with_bounded(path, namespace, Some(host), Some(maintenance), now_ms, true)
+    }
+
+    /// Read-only current-schema check, before any host activation. Opening repeats it.
+    /// # Errors
+    /// Rejects old/partial stores rather than enabling a migration path.
+    pub fn preflight_complete(
+        path: impl AsRef<std::path::Path>,
+        namespace: &str,
+        host: &super::super::BoundedHostConfig,
+        maintenance: &MaintenanceConfig,
+    ) -> Result<(), JournalError> {
+        validate_complete(host, maintenance)?;
+        let path = path.as_ref();
+        if path.exists() {
+            if path.is_symlink() {
+                return Err(JournalError::UnsupportedStore);
+            }
+            let connection =
+                Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            crate::journal::require_current_controller_store(&connection)?;
+        }
+        Self::preflight_maintained(path, namespace, host, maintenance)
     }
 
     /// Read-only preflight before node initialization; open repeats validation.
@@ -165,4 +209,19 @@ impl ControllerJournal {
         tx.commit()?;
         Ok(())
     }
+}
+
+fn validate_complete(
+    host: &super::super::BoundedHostConfig,
+    maintenance: &MaintenanceConfig,
+) -> Result<(), JournalError> {
+    if host.physical_storage.is_none()
+        || host.console_policy != Some(super::super::ConsolePolicy::Discard)
+        || maintenance.capacity.is_none()
+    {
+        return Err(JournalError::UnsupportedStore);
+    }
+    host.validate()?;
+    maintenance.validate()?;
+    super::super::capacity::validate_host(host, maintenance)
 }

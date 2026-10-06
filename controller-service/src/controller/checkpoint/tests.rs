@@ -2,6 +2,7 @@ use super::*;
 use crate::{AdmissionError, BoundedHostConfig, CrashPoint, NeverCrash};
 use sandbox_controller_core as core;
 use tempfile::TempDir;
+mod complete;
 mod support;
 mod validation_certificates;
 use support::*;
