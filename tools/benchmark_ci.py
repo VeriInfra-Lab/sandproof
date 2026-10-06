@@ -154,7 +154,16 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
         item['template_hashes'] = {key: value for key, value in template.items()
             if key in ('rootfsSha256', 'kernelSha256') and isinstance(value, str)
             and re.fullmatch('[0-9a-f]{64}', value)}
-        if set(item['template_hashes']) != {'rootfsSha256', 'kernelSha256'}:
+        # A terminal failed build has no published template to fingerprint.
+        # This is execution failure, not missing cleanup evidence. Only accept
+        # that absence when the report explicitly says no runtime was created;
+        # successful/publication/runtime paths still require both fingerprints.
+        unpublished_failure = (item['status'] == 'failed'
+            and item['oracle'] == item['verifier'] == 'not_run'
+            and row.get('create_dispatched') is False and row.get('sandbox_id') is None
+            and (row.get('build') or {}).get('state') == 'Failed'
+            and not template)
+        if set(item['template_hashes']) != {'rootfsSha256', 'kernelSha256'} and not unpublished_failure:
             raise ValueError('immutable template fingerprints are missing')
         safe.append(item)
     passed = exit_code == 0 and all(r['status'] == r['oracle'] == r['verifier'] == 'passed'
@@ -170,7 +179,8 @@ def aggregate(candidate, batches, expected, *, all_tasks=None):
     rows = [row for batch in batches for row in batch['tasks']]
     names = [row['name'] for row in rows]
     complete = len(names) == len(expected) and len(set(names)) == len(expected) and set(names) == set(expected)
-    passed = complete and all(batch['passed'] is True and batch['cleanup'] == 'passed' for batch in batches)
+    passed = bool(expected) and complete and all(
+        batch['passed'] is True and batch['cleanup'] == 'passed' for batch in batches)
     full = (all_tasks is not None and len(expected) == len(all_tasks)
             and len(set(all_tasks)) == len(all_tasks) and set(expected) == set(all_tasks))
     return dict(schema_version=1, candidate=candidate, dataset='terminal-bench@2.1',

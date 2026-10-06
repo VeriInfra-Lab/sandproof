@@ -155,6 +155,33 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertFalse(bench.aggregate('a'*40, [batch], names[:-1], all_tasks=names)['passed'])
         self.assertFalse(bench.aggregate('a'*40, [batch], names)['full_suite_passed'])
 
+    def test_failed_unpublished_build_is_failed_execution_not_unknown_cleanup(self):
+        report = self.report()
+        failed = report['tasks'][0]
+        failed.update(status='failed', oracle='not_run', verifier='not_run',
+                      template=None, build={'state':'Failed', 'template':None},
+                      create_dispatched=False, sandbox_id=None)
+        failed.pop('rewards')
+        (self.root / 'report.json').write_text(json.dumps(report))
+        result = bench.batch_result(self.root, candidate='a'*40, names=self.names[:4],
+                                   exit_code=1, full_task_count=len(self.lock['tasks']))
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['cleanup'], 'passed')
+        self.assertEqual(result['tasks'][0]['template_hashes'], {})
+        self.assertEqual(result['tasks'][0]['status'], 'failed')
+        for change in ({'status':'passed'}, {'oracle':'passed'}, {'verifier':'passed'},
+                       {'create_dispatched':True}, {'sandbox_id':'sb-previous'},
+                       {'build':{'state':'Ready'}}, {'build':{'state':'Building'}},
+                       {'template':{'rootfsSha256':'d'*64}}):
+            with self.subTest(change=change):
+                changed = copy.deepcopy(report)
+                changed['tasks'][0].update(change)
+                (self.root / 'report.json').write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    bench.batch_result(self.root, candidate='a'*40, names=self.names[:4],
+                                      exit_code=1, full_task_count=len(self.lock['tasks']))
+        self.assertFalse(bench.aggregate('a'*40, [], [])['passed'])
+
     def test_reclamation_rejects_substitution_and_symlink_before_deleting_files(self):
         child = self.root / 'run'
         child.mkdir(mode=0o700)
