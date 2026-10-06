@@ -17,9 +17,9 @@ import subprocess
 import time
 import uuid
 
-from tools.benchmark_ci import (CHECK_NAME, aggregate, authorize, batch_result, cohort_policy,
+from tools.benchmark_ci import (CHECK_NAME, aggregate, authorize, batch_result, check_name, cohort_policy, oracle_modes,
     instantiate_policy, private_path, remove_private_tree, run_identity, selection)
-from tools.benchmark_tasks import canonical, digest, verify
+from tools.benchmark_tasks import canonical, digest, verify, pin_for
 from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, SOURCE_PERMISSIONS,
                                GitHubApp, REPOSITORY, Transport)
 from tools.ci_runner_supervisor import atomic_json
@@ -29,6 +29,14 @@ from tools.check_kvm_host import trusted_path
 PREFIX = '/repos/' + REPOSITORY + '/'
 REPO = 'https://github.com/' + REPOSITORY + '.git'
 UNIT_PREFIX = 'sandproof-e2e-batch-'
+
+
+def dataset_files(config):
+    dataset = config.get('dataset', 'terminal-bench@2.1')  # Recover prior installed policies unchanged.
+    pin = pin_for({'dataset': dataset})
+    stem = Path(config['checkout']) / 'benchmarks' / ('terminal-bench-' + pin.version)
+    registry = Path(config.get('task_registry', str(stem) + '.registry.json'))
+    return dataset, Path(str(stem) + '.lock.json'), registry, Path(str(stem) + '-suites.json')
 
 
 def validate_host_inputs(config):
@@ -45,6 +53,14 @@ def validate_host_inputs(config):
         raise ValueError('host artifact fingerprints incomplete')
     if config.get('source_kind', 'oci') not in ('oci', 'dockerfile'):
         raise ValueError('original environment source required')
+    dataset = dataset_files(config)[0]
+    expected_check = check_name(dataset)
+    if config.get('check_name', expected_check) not in (expected_check, expected_check + ' / diagnostic'):
+        raise ValueError('check name differs from the dataset policy')
+    if config.get('task_registry'):
+        trusted_path(Path(config['task_registry']))
+        if config['task_registry'] not in config['host_assets']:
+            raise ValueError('external registry fingerprint missing')
     if config.get('prepare_candidate'):
         for name in ('uv', 'cargo'):
             if config[name] not in config['host_assets']:
@@ -95,7 +111,7 @@ class Checks:
         save()  # Intent BEFORE the API mutation.
         created = self.api.request('POST', PREFIX + 'check-runs', dict(name=state.get('check_name', CHECK_NAME),
             head_sha=state['candidate'], external_id=state['id'], status='in_progress',
-            output=dict(title='Terminal-Bench 2.1 验收进行中',
+            output=dict(title=state.get('dataset', 'terminal-bench@2.1') + ' 验收进行中',
                 summary='配置选定 ' + str(len(state['expected'])) + ' 题；范围和配置绑定本次提交。失败和清理未知均不会绿灯。')))
         if created.get('head_sha') != state['candidate'] or created.get('external_id') != state['id']:
             raise ValueError('created check identity mismatch')
@@ -105,10 +121,11 @@ class Checks:
 
     def finish(self, state, result):
         conclusion = 'success' if result['passed'] else 'failure'
-        rows = ['固定版本：Terminal-Bench 2.1；范围：' + result['scope'] + '。',
+        rows = ['固定版本：' + result['dataset'] + '；范围：' + result['scope'] + '。',
+                '基线：' + result.get('baseline', 'original tasks') + '；原解答与评分：' + str(result.get('original_oracle_verifier')) + '。',
                 '通过数量：' + str(sum(r['status'] == 'passed' for r in result['tasks'])) + '/' + str(len(result['required_tasks'])) + '。',
                 '未运行、评分失败、超时及清理未知均按失败处理；没有使用付费模型。']
-        rows.extend(r['name'] + ': ' + str(r['status']) for r in result['tasks'])
+        rows.extend(r['name'] + ': ' + str(r['status']) + ' (' + r.get('oracle_mode', 'original') + ')' for r in result['tasks'])
         self.api.request('PATCH', PREFIX + 'check-runs/' + str(state['check_id']), dict(
             status='completed', conclusion=conclusion, output=dict(
                 title='配置题集验收通过' if result['passed'] else '配置题集验收未通过', summary='\n\n'.join(rows))))
@@ -223,7 +240,7 @@ class Supervisor:
     def block(self, reason):
         result = aggregate(self.state['candidate'],
             [b['result'] for b in self.state['batches'] if 'result' in b], self.state['expected'],
-            all_tasks=self.state.get('all_tasks'))
+            all_tasks=self.state.get('all_tasks'), dataset=self.state.get('dataset', 'terminal-bench@2.1'))
         result['passed'] = False
         self.terminal(result, phase='blocked', reason=reason)
 
@@ -236,12 +253,15 @@ class Supervisor:
         # A changed target cannot be covered by a check of an unrelated tree.
         # Strict branch protection is still required for the final merge race.
         git('merge-base', '--is-ancestor', base, candidate, cwd=checkout)
-        lock = verify(json_file(checkout / 'benchmarks/terminal-bench-2.1.lock.json', limit=8*1024*1024),
-            checkout / 'benchmarks/terminal-bench-2.1.registry.json', Path(self.config['task_source']))
-        manifest = json_file(checkout / 'benchmarks/terminal-bench-2.1-suites.json')
+        dataset, lock_path, registry, catalog = dataset_files(self.config)
+        lock = verify(json_file(lock_path, limit=8*1024*1024), registry, Path(self.config['task_source']))
+        if lock['dataset'] != dataset:
+            raise ValueError('dataset configuration differs from the verified lock')
+        manifest = json_file(catalog)
         if digest(canonical(manifest)) != self.config['selection_sha256']:
             raise ValueError('selection catalog changed; operator review required')
         batches = selection(lock, manifest, self.config['selection'])
+        modes = oracle_modes(lock, manifest)
         template = json_file(Path(self.config['policy_template']))
         for names in batches:
             cohort_policy(template, len(names))  # Before state creation or host pause.
@@ -259,9 +279,10 @@ class Supervisor:
             if not archive.exists():
                 write_once(archive, self.state)
         self.state = dict(id=identity, candidate=candidate, base=base, phase='waiting', configuration=self.config,
-            batches=[dict(names=names, phase='new') for names in batches],
+            dataset=dataset,
+            batches=[dict(names=names, oracle_mode=modes[names[0]], phase='new') for names in batches],
             expected=[name for names in batches for name in names], check_id=None,
-            check_name=self.config.get('check_name', CHECK_NAME),
+            check_name=self.config.get('check_name', check_name(dataset)),
             all_tasks=[row['name'] for row in lock['tasks']],
             task_inputs={t['name']: dict(files_sha256=t['files_sha256'], requirements=t['requirements'])
                          for t in lock['tasks'] if t['name'] in {n for b in batches for n in b}})
@@ -289,11 +310,12 @@ class Supervisor:
                      'scratch_parent', 'cgroup_parent', 'build_cgroup_parent', 'service_cgroup_parent',
                      'uid_base', 'budget_profile', 'proxy_binary', 'proxy_sha256'):
             args.extend(['--' + flag.replace('_', '-'), str(config[flag])])
-        args.extend(['--registry', str(checkout / 'benchmarks/terminal-bench-2.1.registry.json'),
-            '--source', config['task_source'], '--lock', str(checkout / 'benchmarks/terminal-bench-2.1.lock.json'),
+        _, lock_path, registry, _ = dataset_files(config)
+        args.extend(['--registry', str(registry),
+            '--source', config['task_source'], '--lock', str(lock_path),
             '--bounded-policy', str(policy_file), '--run-root', str(root),
             '--namespace', namespaces[0], '--build-namespace', namespaces[1], '--temporarily-forward',
-            '--oracle-mode', 'original', '--source-kind', config.get('source_kind', 'oci')])
+            '--oracle-mode', batch.get('oracle_mode', 'original'), '--source-kind', config.get('source_kind', 'oci')])
         if config.get('docker_hub_mirror'):
             args.extend(['--docker-hub-mirror', config['docker_hub_mirror']])
         for name in batch['names']:
@@ -346,7 +368,8 @@ class Supervisor:
             if fields.get('ExecMainStatus') != '0':
                 subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
                 lease.release()  # Preparation never dispatched a sandbox.
-                result = aggregate(state['candidate'], [], state['expected'], all_tasks=state['all_tasks'])
+                result = aggregate(state['candidate'], [], state['expected'], all_tasks=state['all_tasks'],
+                                   dataset=state.get('dataset', 'terminal-bench@2.1'))
                 self.terminal(result, phase='done', reason='candidate_preparation_failed')
                 return
             subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
@@ -377,6 +400,8 @@ class Supervisor:
                 if batch['phase'] != 'reclaiming':
                     assets = self.config['host_assets'] | state.get('candidate_artifacts', {})
                     result = batch_result(root, candidate=state['candidate'], names=batch['names'],
+                        dataset=state.get('dataset', 'terminal-bench@2.1'), source_kind=self.config['source_kind'],
+                        oracle_mode=batch.get('oracle_mode', 'original'),
                         exit_code=int(fields['ExecMainStatus']), full_task_count=len(state['all_tasks']), expected_hashes={
                             name: assets[self.config[key]] for name, key in
                             (('server_sha256', 'server'), ('kernel_sha256', 'kernel'),
@@ -395,7 +420,7 @@ class Supervisor:
                 return
             return
         result = aggregate(state['candidate'], [b['result'] for b in state['batches']], state['expected'],
-                           all_tasks=state['all_tasks'])
+                           all_tasks=state['all_tasks'], dataset=state.get('dataset', 'terminal-bench@2.1'))
         state['result'] = result
         self.save()
         lease.release()  # All batch units and original resources are gone.
@@ -438,7 +463,7 @@ def main():
     if args.profile or args.task or args.batch_size is not None:
         config['selection'] = dict(config['selection'])
         # A one-task diagnostic must never satisfy the default promotion gate.
-        config['check_name'] = CHECK_NAME + ' / diagnostic'
+        config['check_name'] = check_name(config.get('dataset', 'terminal-bench@2.1')) + ' / diagnostic'
         if args.profile:
             config['selection'].pop('tasks', None)
             config['selection']['profile'] = args.profile

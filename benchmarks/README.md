@@ -2,7 +2,13 @@
 
 [文档目录](../docs/README.md) · [项目蓝图](../docs/project-blueprint.md) · [验收清单](../docs/testing-plan.md)
 
-## 当前目标：Terminal-Bench 2.1
+## 当前回归：冻结的 Terminal-Bench 2.0 兼容基线
+
+2026-10-06 owner 决定先稳定功能回归、推进核心证明，再做 2.1 发布验收。[2.0 题集配置](terminal-bench-2.0-suites.json)使用既有完整源码锁和通用 OCI 模板链，提供四题 `smoke`、十六题 `regression`、`full` 及自选名单；不调用旧固定 base 配方。显式 `oracle_modes` 只启用已有且原脚本摘要匹配的修补，批次遇到不同解答模式时拆分，原评分/资源/时限不变；报告逐题保留 original/repaired。配置与候选固定后不在该验收身份内删换失败题，兼容回归不是原题榜单成绩，也不是形式化证明。
+
+人工诊断遇到外部网络超时可结束该次运行并另选题，不排查代理、不新增网络修复任务；旧检查仍保留实际非成功状态，新名单产生独立身份。不能通过换题把原固定范围、完整 89 题或清理未知改成成功。本次少量实测也不核销全部兼容题的同版本验收。
+
+## 发布前待办：Terminal-Bench 2.1
 
 最终全题集目标为 **Terminal-Bench 2.1 全部 89 题**，来源为[官方题库](https://github.com/harbor-framework/terminal-bench-2-1)与[Harbor Hub 数据集](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1)。官方使用的数据集名称为 `terminal-bench/terminal-bench-2-1`；正式执行须冻结具体发布摘要与源码提交，不直接跟随 `latest` 或 `main`。[官方发布说明](https://github.com/harbor-framework/terminal-bench-docs/blob/main/content/blog/terminal-bench-2-1.mdx)说明此次修订处理了外部依赖漂移、资源预算和题意/评分不一致等问题；不据修复数量推断本项目旧失败题已全部解决。
 
@@ -22,7 +28,7 @@ uv run --locked --project benchmarks python -m benchmarks.check_harbor \
   --report artifacts/terminal-bench-21/inputs.json
 ```
 
-实机单批入口通过 `--lock benchmarks/terminal-bench-2.1.lock.json` 指定版本，保留既有 2.0 默认用于旧记录复现。自动监督入口、手动参数及私有批准配置见[CI 运行环境](../docs/ci.md)；按配置分批、题内串行，每题仍使用原资源和时限。**输入检查、组件通过、KVM 通过与自动 CI 成功/失败实测必须分别记录。** 下文 2.0 资源分布、配方和修补仅为历史基线，不用其旧成绩背书 2.1。
+实机单批入口通过 `--lock` 指定独立版本；自动监督的 `dataset` 选择 2.0 兼容或 2.1 原题，入口与私有配置见[CI 运行环境](../docs/ci.md)。当前默认示例为 2.0 兼容，2.1 保留但不阻塞本次功能交付；转入 2.1 后须逐项复核并移除不再需要的补丁，不自动叠加 2.0 修补。**输入检查、组件通过、KVM 通过与自动 CI 成功/失败实测必须分别记录。** 下文旧固定 base 配方只供诊断，不用旧成绩背书任何新候选或 2.1。
 
 
 后续迁移由 #13 完成，判据见[验收清单](../docs/testing-plan.md)：

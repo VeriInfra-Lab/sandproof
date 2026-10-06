@@ -92,17 +92,88 @@ class BenchmarkCITests(unittest.TestCase):
 
     def report(self):
         data = dict(commit='a'*40, dataset='terminal-bench@2.1', fixed_task_count=89,
+            oracle_mode='original', original_verifier=True, original_oracle_verifier=True,
             server_sha256='a'*64, kernel_sha256='b'*64, builder_base_sha256='c'*64,
             task_source=dict(repository=bench.PIN21.repository, commit=bench.PIN21.commit),
             source_kind='dockerfile', original_environment=True, paid_model_used=False,
             no_process_network_cgroup_jail_residue=True,
-            tasks=[dict(name=n, status='passed', oracle='passed', verifier='passed',
+            tasks=[dict(name=n, status='passed', oracle='passed', verifier='passed', oracle_mode='original',
                         exact_cleanup='passed', rewards={'reward':1}, private_key='NEVER EXPORT',
                         template={'kernelSha256':'b'*64, 'rootfsSha256':'d'*64}) for n in self.names[:4]])
         (self.root / 'report.json').write_text(json.dumps(data))
         (self.root / 'service-cleanup.json').write_text('{"removed":true}')
         (self.root / 'proxy-cleanup.json').write_text('{"phase":"removed"}')
         return data
+
+    def test_legacy_compatibility_catalog_splits_modes_and_binds_original_hashes(self):
+        lock = json.loads((ROOT / 'benchmarks/terminal-bench-2.0.lock.json').read_text())
+        catalog = json.loads((ROOT / 'benchmarks/terminal-bench-2.0-suites.json').read_text())
+        batches = bench.selection(lock, catalog, self.policy)
+        self.assertEqual(batches, [['polyglot-c-py', 'regex-log', 'db-wal-recovery'], ['build-pmars']])
+        modes = bench.oracle_modes(lock, catalog)
+        self.assertEqual(modes['build-pmars'], 'repaired')
+        self.assertEqual(modes['regex-log'], 'original')
+        self.assertEqual(bench.check_name(lock['dataset']), 'E2E / terminal-bench-2.0-compat')
+        damaged = copy.deepcopy(lock)
+        task = next(t for t in damaged['tasks'] if t['name'] == 'build-pmars')
+        next(f for f in task['files'] if f['path'] == 'solution/solve.sh')['sha256'] = 'f'*64
+        with self.assertRaises(ValueError):
+            bench.selection(damaged, catalog, self.policy)
+        with self.assertRaises(ValueError):
+            bench.selection(self.lock, dict(self.manifest, oracle_modes={'build-pmars':'repaired'}), self.policy)
+        for modes in ({'not-a-task':'repaired'}, {'regex-log':'repaired'}, {'build-pmars':'silent'}):
+            with self.assertRaises(ValueError):
+                bench.selection(lock, dict(catalog, oracle_modes=modes), self.policy)
+
+    def test_compatibility_results_never_claim_original_or_cross_version_success(self):
+        from tools.benchmark_tasks import PIN
+        report = self.report()
+        report.update(dataset='terminal-bench@2.0', source_kind='oci', oracle_mode='repaired',
+                      original_oracle_verifier=False, task_source=dict(repository=PIN.repository, commit=PIN.commit))
+        for row in report['tasks']:
+            row['oracle_mode'] = 'repaired'
+        (self.root / 'report.json').write_text(json.dumps(report))
+        args = dict(candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=89,
+                    dataset='terminal-bench@2.0', source_kind='oci', oracle_mode='repaired')
+        batch = bench.batch_result(self.root, **args)
+        result = bench.aggregate('a'*40, [batch], self.names[:4], dataset='terminal-bench@2.0')
+        self.assertTrue(result['passed'])
+        self.assertFalse(result['original_oracle_verifier'])
+        self.assertFalse(result['full_suite_passed'])
+        self.assertEqual(result['baseline'], 'compatibility regression')
+        with self.assertRaises(ValueError):
+            bench.aggregate('a'*40, [batch], self.names[:4])
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, **dict(args, oracle_mode='original'))
+        report['tasks'][0]['oracle_mode'] = 'original'
+        (self.root / 'report.json').write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, **args)
+
+    def test_dataset_file_configuration_and_legacy_check_names_are_independent(self):
+        config = dict(checkout='/candidate', dataset='terminal-bench@2.0', task_registry='/trusted/registry.json')
+        dataset, lock, registry, catalog = ci.dataset_files(config)
+        self.assertEqual(dataset, 'terminal-bench@2.0')
+        self.assertEqual(lock.name, 'terminal-bench-2.0.lock.json')
+        self.assertEqual(catalog.name, 'terminal-bench-2.0-suites.json')
+        self.assertEqual(str(registry), '/trusted/registry.json')
+        self.assertEqual(ci.dataset_files({'checkout':'/candidate'})[0], 'terminal-bench@2.1')
+        with self.assertRaises(ValueError):
+            ci.dataset_files(dict(config, dataset='unapproved'))
+
+    def test_restarted_run_keeps_original_dataset_and_oracle_mode(self):
+        original = self.supervisor()
+        original.config.update(dataset='terminal-bench@2.0', source_kind='oci')
+        original.state.update(dataset='terminal-bench@2.0', configuration=original.config)
+        original.state['batches'][0]['oracle_mode'] = 'repaired'
+        original.save()
+        restarted = ci.Supervisor(dict(original.config, dataset='terminal-bench@2.1'))
+        self.assertEqual(restarted.config['dataset'], 'terminal-bench@2.0')
+        self.assertEqual(restarted.state['batches'][0]['oracle_mode'], 'repaired')
+        with patch.object(ci, 'unit_state', return_value=dict(LoadState='loaded', ActiveState='active', ExecMainCode='0')):
+            with patch.object(ci, 'launch') as launch:
+                restarted.tick()
+                launch.assert_not_called()
 
     def test_final_services_proxy_exit_score_and_commit_all_required(self):
         report = self.report()

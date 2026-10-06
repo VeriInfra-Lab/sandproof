@@ -11,11 +11,32 @@ from pathlib import Path
 import re
 import stat
 
-from tools.benchmark_tasks import PIN21, canonical, digest, InvalidInput
+from tools.benchmark_tasks import PIN21, canonical, digest, InvalidInput, pin_for
 from tools.bounded_acceptance import bounded_acceptance_layout
 from tools.system_acceptance import json_file
 
 CHECK_NAME = 'E2E / terminal-bench-2.1'
+
+
+def check_name(dataset):
+    pin = pin_for({'dataset': dataset})
+    return 'E2E / terminal-bench-' + pin.version + ('-compat' if pin.version == '2.0' else '')
+
+
+def oracle_modes(lock, manifest):
+    """Only explicit, hash-matched legacy repairs; never alter product behavior."""
+    from benchmarks.oracle_repairs import REPAIRS
+    entries = {t['name']: t for t in lock['tasks']}
+    overrides = manifest.get('oracle_modes', {})
+    if (not isinstance(overrides, dict) or not set(overrides) <= entries.keys()
+            or any(v != 'repaired' for v in overrides.values())
+            or (lock['dataset'] != 'terminal-bench@2.0' and overrides)):
+        raise InvalidInput('unreviewed oracle policy')
+    for name in overrides:
+        original = next((f for f in entries[name]['files'] if f['path'] == 'solution/solve.sh'), {})
+        if name not in REPAIRS or original.get('sha256') != REPAIRS[name]:
+            raise InvalidInput('oracle repair differs from the fixed original solution')
+    return {n: overrides.get(n, 'original') for n in entries}
 
 
 def private_path(path, *, directory=False):
@@ -36,10 +57,11 @@ def selection(lock, manifest, policy):
     immutable full lock still supplies every original task's inputs/resources.
     """
     all_names = [row['name'] for row in lock['tasks']]
-    if (lock['dataset'] != 'terminal-bench@2.1' or lock['source']['commit'] != PIN21.commit
+    pin = pin_for(lock)
+    if (lock['source'] != {'repository': pin.repository, 'commit': pin.commit}
             or manifest.get('schema_version') != 2 or manifest.get('dataset') != lock['dataset']
-            or manifest.get('source_commit') != PIN21.commit
-            or manifest.get('source_kind') != 'dockerfile'
+            or manifest.get('source_commit') != pin.commit
+            or manifest.get('source_kind') not in ('oci', 'dockerfile')
             or len(set(all_names)) != len(all_names) or not all_names):
         raise InvalidInput('selection catalog differs from the fixed dataset')
     if set(policy) not in ({'profile', 'batch_size'}, {'tasks', 'batch_size'}):
@@ -58,7 +80,15 @@ def selection(lock, manifest, policy):
     if (not isinstance(names, list) or not names or any(not isinstance(n, str) for n in names)
             or len(names) != len(set(names)) or not set(names) <= set(all_names)):
         raise InvalidInput('empty, duplicate or unknown task selection')
-    return [names[i:i + size] for i in range(0, len(names), size)]
+    modes = oracle_modes(lock, manifest)
+    batches = []
+    for name in names:
+        # The existing harness accepts one mode per batch. Split rather than
+        # rewrite solutions silently or mix incompatible result identities.
+        if not batches or len(batches[-1]) == size or modes[batches[-1][0]] != modes[name]:
+            batches.append([])
+        batches[-1].append(name)
+    return batches
 
 
 def run_identity(candidate, base, configuration, manifest, lock):
@@ -114,20 +144,25 @@ def instantiate_policy(template, root, namespaces, *, job_count):
 
 
 def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expected_hashes=None,
-                 full_task_count):
+                 full_task_count, dataset='terminal-bench@2.1', source_kind='dockerfile', oracle_mode='original'):
+    pin = pin_for({'dataset': dataset})
+    if oracle_mode not in ('original', 'repaired') or (pin.version != '2.0' and oracle_mode != 'original'):
+        raise ValueError('unreviewed batch oracle mode')
     report = json_file(root / 'report.json', limit=4 * 1024 * 1024)
     service = json_file(root / 'service-cleanup.json')
     rows = report.get('tasks', [])
     observed = [r.get('name') for r in rows]
-    if (report.get('commit') != candidate or report.get('dataset') != 'terminal-bench@2.1'
-            or report.get('task_source') != {'repository': PIN21.repository, 'commit': PIN21.commit}
+    if (report.get('commit') != candidate or report.get('dataset') != dataset
+            or report.get('task_source') != {'repository': pin.repository, 'commit': pin.commit}
             or report.get('fixed_task_count') != full_task_count or len(observed) != len(names)
             or len(set(observed)) != len(names) or set(observed) != set(names)
-            or report.get('source_kind') != 'dockerfile'
+            or report.get('source_kind') != source_kind or source_kind not in ('oci', 'dockerfile')
+            or report.get('oracle_mode') != oracle_mode or report.get('original_verifier') is not True
+            or report.get('original_oracle_verifier') is not (oracle_mode == 'original')
             or report.get('original_environment') is not True or report.get('paid_model_used') is not False
             or (root / 'service-cleanup-errors.json').exists()
             or service.get('removed') is not True
-            or any(r.get('exact_cleanup') != 'passed' for r in rows)
+            or any(r.get('exact_cleanup') != 'passed' or r.get('oracle_mode') != oracle_mode for r in rows)
             or report.get('no_process_network_cgroup_jail_residue') is not True):
         raise ValueError('incomplete, mismatched or unknown batch cleanup evidence')
     if proxy_required and json_file(root / 'proxy-cleanup.json').get('phase') != 'removed':
@@ -143,6 +178,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     safe = []
     for row in rows:
         item = dict(name=row['name'], status=row.get('status') if row.get('status') in statuses else 'unknown',
+            oracle_mode=oracle_mode,
             oracle=row.get('oracle') if row.get('oracle') in statuses else 'not_run',
             verifier=row.get('verifier') if row.get('verifier') in statuses else 'not_run',
             exact_cleanup=row['exact_cleanup'],
@@ -171,11 +207,15 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     hashes = {key: value for key, value in report.items() if key in
               ('server_sha256', 'kernel_sha256', 'builder_base_sha256')
               and isinstance(value, str) and re.fullmatch('[0-9a-f]{64}', value)}
-    return dict(tasks=safe, passed=passed, cleanup='passed', exit_code=exit_code, artifact_hashes=hashes,
+    return dict(tasks=safe, dataset=dataset, source_kind=source_kind, oracle_mode=oracle_mode,
+                passed=passed, cleanup='passed', exit_code=exit_code, artifact_hashes=hashes,
                 report_sha256=hashlib.sha256((root / 'report.json').read_bytes()).hexdigest())
 
 
-def aggregate(candidate, batches, expected, *, all_tasks=None):
+def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal-bench@2.1'):
+    pin_for({'dataset': dataset})
+    if any(b.get('dataset', dataset) != dataset for b in batches):
+        raise ValueError('cannot combine different dataset versions')
     rows = [row for batch in batches for row in batch['tasks']]
     names = [row['name'] for row in rows]
     complete = len(names) == len(expected) and len(set(names)) == len(expected) and set(names) == set(expected)
@@ -183,7 +223,9 @@ def aggregate(candidate, batches, expected, *, all_tasks=None):
         batch['passed'] is True and batch['cleanup'] == 'passed' for batch in batches)
     full = (all_tasks is not None and len(expected) == len(all_tasks)
             and len(set(all_tasks)) == len(all_tasks) and set(expected) == set(all_tasks))
-    return dict(schema_version=1, candidate=candidate, dataset='terminal-bench@2.1',
+    return dict(schema_version=1, candidate=candidate, dataset=dataset,
+        baseline='compatibility regression' if dataset == 'terminal-bench@2.0' else 'original tasks',
+        original_oracle_verifier=bool(rows and all(r.get('oracle_mode', 'original') == 'original' for r in rows)),
         scope='full fixed dataset' if full else 'configured regression subset; not full-suite acceptance',
         required_tasks=list(expected), tasks=rows, complete=complete, passed=passed,
         executed_task_count=len(rows), full_suite_passed=bool(full and passed), paid_model_used=False)
