@@ -61,45 +61,13 @@ class FakeBackend:
 
 
 class BuildTests(unittest.TestCase):
-    def test_legacy_client_persists_identity_without_opening_a_window(self):
-        client = self.client()
-        request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 30}
-        path = self.root / 'client-intent.json'
-        with patch.object(client, 'request', wraps=client.request) as calls:
-            intent = saved_intent(path, client, request, build_mode='legacy-unbounded', token='original')
-            calls.assert_not_called()
-            self.assertNotIn('requestWindow', intent)
-            first = client.request('POST', '/sandproof/template-builds', request, token=intent['idempotency_key'])
-            # Treat the first reply as lost: reopen the real store and reuse the
-            # on-disk intent, rather than submitting a replacement identity.
-            self.store.close()
-            self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
-            self.server.store = self.store
-            restored = saved_intent(path, client, request, build_mode='legacy-unbounded')
-            again = client.request('POST', '/sandproof/template-builds', request, token=restored['idempotency_key'])
-        self.assertEqual(first['buildID'], again['buildID'])
-        self.assertEqual(intent, restored)
-        self.assertEqual(len(self.store.rows()), 1)
-
-    def test_client_never_downgrades_window_failure_or_changes_saved_retry_domain(self):
+    def test_client_never_downgrades_a_service_without_windows(self):
         client = self.client()
         request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 30}
         path = self.root / 'client-intent.json'
         with self.assertRaisesRegex(RuntimeError, 'BuildWindowsDisabled'):
-            saved_intent(path, client, request, build_mode='windowed')
+            saved_intent(path, client, request)
         self.assertFalse(path.exists())
-        self.assertEqual(self.store.rows(), [])
-        intent = saved_intent(path, client, request, build_mode='legacy-unbounded', token='original')
-        for other_client, other_request, mode, token in (
-            (client, request, 'windowed', None),
-            (self.client('other'), request, 'legacy-unbounded', None),
-            (BuildClient('http://127.0.0.1:1', 'owner'), request, 'legacy-unbounded', None),
-            (client, request | {'image': 'debian:12'}, 'legacy-unbounded', None),
-            (client, request, 'legacy-unbounded', 'replacement'),
-        ):
-            with self.subTest(mode=mode, token=token), self.assertRaisesRegex(ValueError, 'conflicts'):
-                saved_intent(path, other_client, other_request, build_mode=mode, token=token)
-        self.assertEqual(json.loads(path.read_text()), intent)
         self.assertEqual(self.store.rows(), [])
 
     def test_client_cannot_choose_a_deployment_mirror(self):
