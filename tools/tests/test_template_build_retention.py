@@ -19,6 +19,14 @@ from tools.tests.test_template_build_service import limits, PowerLoss, FakeBacke
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def bounded_config(helper):
+    """Shared explicit new-mode fixture; not production defaults."""
+    return {'namespace': 17, 'windows': {'max_open_windows': 4, 'max_duration_ms': 600000},
+            'retention_ms': 1000, 'max_request_bytes': 2048, 'max_result_bytes': 8192,
+            'max_record_bytes': 65536, 'database_bytes': 8 * MIB, 'wal_bytes': 17 * MIB,
+            'recovery_reserve_bytes': 8 * MIB, 'helper': dict(helper)}
+
+
 class RetentionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -37,10 +45,7 @@ class RetentionTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.now = 1000
-        self.config = {'namespace': 17, 'windows': {'max_open_windows': 4, 'max_duration_ms': 600000},
-                       'retention_ms': 1000, 'max_request_bytes': 2048, 'max_result_bytes': 8192,
-                       'max_record_bytes': 65536, 'database_bytes': 8 * MIB, 'wal_bytes': 17 * MIB,
-                       'recovery_reserve_bytes': 8 * MIB, 'helper': self.helper}
+        self.config = bounded_config(self.helper)
         self.limits = limits()
         self.store = self.open()
         self.addCleanup(lambda: self.store.close() if self.store else None)
@@ -700,15 +705,13 @@ class RetentionTests(unittest.TestCase):
             request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 30}
             path = self.root.parent / ('intent-' + self.root.name + '.json')
             self.addCleanup(lambda: path.unlink(missing_ok=True))
-            intent = saved_intent(path, client, request, build_mode='windowed', token='original')
+            intent = saved_intent(path, client, request, token='original')
             result = client.request('POST', '/sandproof/template-builds', request | {'requestWindow': intent['requestWindow']}, token='original')
             self.store.close_window(1, intent['requestWindow'])
-            recovered = saved_intent(path, client, request, build_mode='windowed')
+            recovered = saved_intent(path, client, request)
             duplicate = client.request('POST', '/sandproof/template-builds', request | {'requestWindow': recovered['requestWindow']}, token=recovered['idempotency_key'])
             self.assertEqual(result['buildID'], duplicate['buildID'])
             self.assertEqual(intent, recovered)
-            with self.assertRaisesRegex(ValueError, 'conflicts'):
-                saved_intent(path, client, request, build_mode='legacy-unbounded')
             with self.assertRaisesRegex(RuntimeError, 'LegacyBuildDomainClosed'):
                 client.request('POST', '/sandproof/template-builds', request, token='new-legacy')
             self.assertEqual(len(self.store.rows()), 1)

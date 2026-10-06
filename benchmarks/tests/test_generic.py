@@ -184,50 +184,43 @@ class GenericInputTests(unittest.TestCase):
             self.assertEqual(call.kwargs['token'], intent['idempotency_key'])
             self.assertEqual((root / 'context.tar').read_bytes(), original)
 
-    def test_explicit_legacy_mode_does_not_attempt_or_fallback_from_windows(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            env = object.__new__(GenericEnvironment)
-            env.entry, env.source_kind = entry(), 'oci'
-            env.task_env_config = config()
-            env.trial_paths = SimpleNamespace(trial_dir=Path(temporary))
-            env.submission_key, env.build_mode = 'a' * 32, 'legacy-unbounded'
-            env.client = build_client(OSError('lost legacy reply'))
-            with self.assertRaises(OSError):
-                asyncio.run(env.prepare_template())
-            env.client.request.assert_called_once()
-            self.assertNotIn('requestWindow', env.client.request.call_args.args[2])
-            saved = json.loads((Path(temporary) / 'build-intent.json').read_text())
-            self.assertEqual(saved['build_mode'], 'legacy-unbounded')
-            self.assertIsNone(saved['requestWindow'])
+    def test_removed_mode_argument_is_rejected_before_constructing_the_client(self):
+        with patch('benchmarks.generic_environment.BuildClient') as client:
+            with self.assertRaisesRegex(InvalidInput, 'mode selection'):
+                GenericEnvironment(entry=entry(), source=Path('/unused'), source_kind='oci',
+                    build_url='http://127.0.0.1:1', sdk_options={'api_key': 'synthetic'},
+                    build_mode='legacy-unbounded')
+            client.assert_not_called()
 
-    def test_unbound_original_intent_is_retained_without_any_request(self):
-        for mode in ('windowed', 'legacy-unbounded'):
-            for missing in (('origin',), ('credential_sha256',), ('origin', 'credential_sha256')):
-                with self.subTest(mode=mode, missing=missing), tempfile.TemporaryDirectory() as tmp:
-                    env = object.__new__(GenericEnvironment)
-                    env.entry, env.source_kind, env.build_mode = entry(), 'oci', mode
-                    env.task_env_config = config()
-                    env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
-                    env.submission_key = 'a' * 32
-                    replies = ([{'requestWindow': {'namespace': 17, 'sequence': 0}}]
-                               if mode == 'windowed' else []) + [OSError('lost reply')]
-                    env.client = build_client(replies)
-                    with self.assertRaises(OSError):
-                        asyncio.run(env.prepare_template())
-                    path = Path(tmp) / 'build-intent.json'
-                    saved = json.loads(path.read_text())
-                    for key in missing:
-                        del saved[key]
-                    path.write_text(json.dumps(saved))
-                    original = path.read_bytes()
-                    env.client.request = Mock(side_effect=AssertionError('must not dispatch'))
-                    with self.assertRaisesRegex(InvalidInput, 'original build intent conflicts'):
-                        asyncio.run(env.prepare_template())
-                    env.client.request.assert_not_called()
-                    self.assertEqual(path.read_bytes(), original)
-                    self.assertEqual(saved['idempotency_key'], 'a' * 32)
-                    self.assertEqual(saved['requestWindow'],
-                                     {'namespace': 17, 'sequence': 0} if mode == 'windowed' else None)
+    def test_invalid_original_intent_is_retained_without_any_request(self):
+        for change in ('origin', 'credential_sha256', 'legacy', 'window', 'key'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as tmp:
+                env = object.__new__(GenericEnvironment)
+                env.entry, env.source_kind = entry(), 'oci'
+                env.task_env_config = config()
+                env.trial_paths = SimpleNamespace(trial_dir=Path(tmp))
+                env.submission_key = 'a' * 32
+                replies = [{'requestWindow': {'namespace': 17, 'sequence': 0}}, OSError('lost reply')]
+                env.client = build_client(replies)
+                with self.assertRaises(OSError):
+                    asyncio.run(env.prepare_template())
+                path = Path(tmp) / 'build-intent.json'
+                saved = json.loads(path.read_text())
+                if change in ('origin', 'credential_sha256'):
+                    del saved[change]
+                elif change == 'legacy':
+                    saved['build_mode'] = 'legacy-unbounded'
+                elif change == 'window':
+                    saved['requestWindow'] = {'namespace': 17, 'sequence': True}
+                else:
+                    saved['idempotency_key'] = ''
+                path.write_text(json.dumps(saved))
+                original = path.read_bytes()
+                env.client.request = Mock(side_effect=AssertionError('must not dispatch'))
+                with self.assertRaises(InvalidInput):
+                    asyncio.run(env.prepare_template())
+                env.client.request.assert_not_called()
+                self.assertEqual(path.read_bytes(), original)
 
     def test_create_selects_immutable_template_defaults_not_dockerfile_guess(self):
         with tempfile.TemporaryDirectory() as tmp:
