@@ -24,18 +24,20 @@
 
 这套普通执行环境不运行 KVM 系统验收、真实题目或 Lean 完整证明；普通绿灯和旧 2.0 报告不能代替高权限验收或 2.1 通过。自建执行器不绕过分支保护。
 
-### 可信 KVM 端到端监督（待宿主部署验收）
+### 可信 KVM 端到端监督与晋升门槛
 
 [监督器](../tools/ci_e2e_supervisor.py)、[准备工具](../tools/ci_e2e_prepare.py)、[服务单元](../tools/ci_e2e_supervisor.service)与[私有配置示例](../tools/ci_e2e_supervisor.example.json)已实现；宿主安装与真实结果回传须以对应 issue/PR 的实测证据为准。当前通过[2.0 兼容题集](../benchmarks/terminal-bench-2.0-suites.json)回归，[2.1 原题配置](../benchmarks/terminal-bench-2.1-suites.json)保留为发布前待办；判据以[验收清单](testing-plan.md)为准，支持完整题集不等于已通过。
 
-不新增 root GitHub runner，不执行外部 PR 宿主代码或 `pull_request_target`。监督程序、配置、任务来源和工具均由 root 受控安装；自动模式须显式启用且只观察同仓库受保护 test，其他候选只接受精确提交批准清单。候选必须包含所记录的 main 基线；最终合并仍依赖严格保护防止目标更新竞态。配置和编译产物绑定原运行，重启不能改用新配置或重跑未知工作。
+不新增 root GitHub runner，不执行外部 PR 宿主代码或 `pull_request_target`。监督程序、配置、任务来源和工具均由 root 受控安装；自动晋升模式须显式启用，只从固定仓库读取受保护 integration/test/main 的精确引用，接受 integration→test、test→main 及既有 main→test 同步，不接受任务分支、fork 或 PR 自带命令。候选必须包含当前目标基线；已经进入目标的源版本不重复执行。目标独有变更需要先通过正常同步 PR 合入源分支，不能只测源版本而忽略最终组合。未满足历史／普通检查的方向保持阻塞，但不阻止另一个合法且已就绪的方向；服务不主动创建或合并同步 PR。最终合并依赖严格保护防止目标更新竞态。配置和编译产物绑定原运行，重启不能改用新配置或重跑未知工作。
 
-普通补充服务与 KVM 服务使用同一准入锁；KVM 先创建自己的暂停标记，等待全部普通任务及未知占用退出，再独占。准备/批次由独立 systemd 单元执行，管理服务重启不停止它们；准备完成后固定实际 server/窗口工具摘要。按配置大小分批串行，精确收尾确认和脱敏结果持久化后才按原目录设备/inode 回收临时盘，不能宽泛删除他人资源。清理或单元身份未知时保留占用，恢复按原资源核对，不盲目新建。
+普通补充服务与 KVM 服务使用同一准入锁；自动晋升先等待精确候选的四项普通检查完成，核对宿主配置 `ordinary_check_app_id` 对应的最新真实结果，不接受旧成功覆盖新排队／失败或其他 App 的同名检查。没有就绪候选时不占用验收身份、不暂停普通 CI，GitHub 必需 E2E 检查仍待返回。普通检查成功后才发布 E2E 检查并再次核对，KVM 创建自己的暂停标记，等待全部普通任务及未知占用退出，再独占。准备/批次由独立 systemd 单元执行，管理服务重启不停止它们；准备完成后固定实际 server/窗口工具摘要。按配置大小分批串行，精确收尾确认和脱敏结果持久化后才按原目录设备/inode 回收临时盘，不能宽泛删除他人资源。清理或单元身份未知时保留占用，恢复按原资源核对，不盲目新建。
 
 宿主私有配置 `dataset` 选择 `terminal-bench@2.0` 或 `terminal-bench@2.1`，锁/题集配置按版本加载，源码仍须匹配固定提交。2.0 的 `task_registry` 指向固定 Harbor registry 原始文件，须在 `host_assets` 登记摘要；2.1 默认使用仓库已有 registry。省略 dataset 仅为恢复原已安装 2.1 配置。`selection` 选择 `profile`（`smoke`、`regression` 或 `full`），或唯一显式 `tasks` 名单；`batch_size` 控制每批保留数量。2.0 题集的 `oracle_modes` 显式登记既有修补并核对原解答摘要，遇到不同模式拆批，不把修补用于 2.1。题集规范摘要写入 `selection_sha256`，配置改变产生新验收身份；在途运行按原配置恢复。自动模式只使用宿主批准配置，参数不授予额外资源。
 
-手动入口为同一监督器的 `--candidate <批准的完整提交> --base <main完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-test`，批准 `auto_test=true` 后观察同仓库受保护 test；检查独立为 `E2E / terminal-bench-2.0-compat` 或 `E2E / terminal-bench-2.1`，结果注明兼容/原题、逐题解答模式和实际范围。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口及自动晋升保护尚未启用。
+手动入口为同一监督器的 `--candidate <批准的完整提交> --base <目标完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-promotions`，私有配置明确批准 `auto_promotions=true`、固定仓库和 `promotion_floor=<已审查门槛实现的完整提交>`；只接收该最低版本之后的受保护分支，避免首次安装时执行旧 test。现有 `--follow-test`／`auto_test` 保留为旧部署入口，不与新模式同时启用。自动模式不接受命令行改题集、手动候选或 `--local-only`。
+
+检查独立为 `E2E / terminal-bench-2.0-compat` 或 `E2E / terminal-bench-2.1`，结果注明兼容/原题、逐题解答模式和实际范围。当前两级晋升使用 2.0 smoke 四题配置，普通任务 PR 不跑真题。保护在 test/main 保留已有检查并追加该 E2E 名称，绑定专用 GitHub App 的 ID；验证运行中确实阻塞、真实成功后才放行。integration 的保护不增加真题门槛。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口仍未接通，受控命令行入口保留。
 
 给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 
-安装前审查源码及批准配置、保留原 CI 文件恢复副本，验证单元；只重启管理服务，不停止在途工作。实测成功、真实失败及下一轮干净恢复后，才另行配置阶段门槛。单次安装不代表永久运行的缓存/历史保留已验收；未知资源由管理员核对，不自动忘掉。当前不修改既有保护或加入绿色占位工作流。
+安装前审查源码及批准配置、保留原 CI 文件恢复副本，验证单元；只重启管理服务，不停止在途工作。门槛按 owner 授权启用并通过正常晋升 PR 实测，安装和通过证据记录在 #14。单次安装不代表永久运行的缓存/历史保留已验收；未知资源由管理员核对，不自动忘掉。不加入绿色占位工作流，不通过移除必需检查合入失败版本。

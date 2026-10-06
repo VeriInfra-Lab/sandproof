@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -75,6 +76,120 @@ class BenchmarkCITests(unittest.TestCase):
                 bench.authorize(candidate, approved_commits=['a'*40])
         identity = bench.run_identity('a'*40, 'b'*40, {}, self.manifest, self.lock)
         self.assertNotEqual(identity, bench.run_identity('a'*40, 'c'*40, {}, self.manifest, self.lock))
+
+    def test_promotion_authority_is_exact_and_only_legal_protected_directions(self):
+        for source, target in (('integration', 'test'), ('test', 'main'), ('main', 'test')):
+            bench.authorize('a'*40, approved_commits=[], observed_promotion=(source, target, 'a'*40))
+        for authority in (('feature', 'test', 'a'*40), ('main', 'integration', 'a'*40),
+                          ('integration', 'main', 'a'*40), ('test', 'main', 'b'*40),
+                          ['test', 'main', 'a'*40], ('test', 'main')):
+            with self.subTest(authority=authority), self.assertRaises(ValueError):
+                bench.authorize('a'*40, approved_commits=[], observed_promotion=authority)
+        supervisor = self.supervisor()
+        with self.assertRaisesRegex(ValueError, 'not enabled'):
+            supervisor.begin('a'*40, 'b'*40, observed_promotion=('integration', 'test', 'a'*40))
+
+    def test_promotion_selector_advances_both_gates_without_repeating_old_heads(self):
+        floor, integration, test, main = ('a'*40, 'b'*40, 'c'*40, 'd'*40)
+        refs = dict(integration=integration, test=test, main=main)
+        relationships = {(floor, integration), (test, integration), (main, test), (main, integration)}
+        ancestor = lambda parent, child: parent == child or (parent, child) in relationships
+        self.assertEqual(ci.select_promotion(refs, floor, ancestor),
+                         ('integration', 'test', integration, test))
+        promoted = 'e'*40
+        relationships.update({(floor, promoted), (integration, promoted), (main, promoted)})
+        self.assertEqual(ci.select_promotion(dict(refs, test=promoted), floor, ancestor),
+                         ('test', 'main', promoted, main))
+        finished = 'f'*40
+        relationships.update({(floor, finished), (integration, finished), (promoted, finished)})
+        self.assertIsNone(ci.select_promotion(dict(refs, test=promoted, main=finished), floor, ancestor,
+                                              ready=lambda candidate: False))
+
+    def test_promotion_selector_rejects_unrelated_base_and_unknown_policy(self):
+        refs = dict(integration='b'*40, test='c'*40, main='d'*40)
+        self.assertIsNone(ci.select_promotion(refs, 'a'*40, lambda parent, child: parent == 'a'*40))
+        self.assertIsNone(ci.select_promotion(refs, 'a'*40, lambda parent, child: False))
+        for values, floor in ((dict(refs, feature='e'*40), 'a'*40),
+                              ({'test':'c'*40, 'main':'d'*40}, 'a'*40),
+                              (dict(refs, integration='integration'), 'a'*40), (refs, 'main')):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                ci.select_promotion(values, floor, lambda parent, child: True)
+
+    def test_reverse_sync_and_ready_queue_do_not_deadlock_promotions(self):
+        floor, integration, test, main = ('a'*40, 'b'*40, 'c'*40, 'd'*40)
+        refs = dict(integration=integration, test=test, main=main)
+        pairs = {(floor, integration), (floor, test), (floor, main),
+                 (test, main)}  # integration diverged and needs the legal sync.
+        ancestor = lambda parent, child: parent == child or (parent, child) in pairs
+        self.assertEqual(ci.select_promotion(refs, floor, ancestor, ready=lambda candidate: candidate == main),
+                         ('main', 'test', main, test))
+        self.assertIsNone(ci.select_promotion(refs, floor, ancestor, ready=lambda candidate: False))
+        pairs = {(floor, integration), (test, integration), (floor, test), (main, test)}
+        ancestor = lambda parent, child: parent == child or (parent, child) in pairs
+        self.assertEqual(ci.select_promotion(refs, floor, ancestor, ready=lambda candidate: candidate == test),
+                         ('test', 'main', test, main))
+
+    def test_promotion_ref_inventory_uses_fixed_repository_and_rejects_duplicates(self):
+        lines = '\n'.join(sha*40 + '\trefs/heads/' + name for name, sha in
+                          (('integration', 'a'), ('test', 'b'), ('main', 'c')))
+        client = Mock()
+        with patch.object(ci, 'git', return_value=lines) as query:
+            refs = ci.promotion_heads(source_client=client, proxy='http://127.0.0.1:7897')
+        self.assertEqual(refs, dict(integration='a'*40, test='b'*40, main='c'*40))
+        self.assertEqual(query.call_args.args, ('ls-remote', ci.REPO,
+                         'refs/heads/integration', 'refs/heads/main', 'refs/heads/test'))
+        for output in (lines + '\n' + lines.splitlines()[0], lines.splitlines()[0],
+                       lines.replace('refs/heads/integration', 'refs/heads/feature'),
+                       lines.replace('a'*40, 'not-a-sha')):
+            with patch.object(ci, 'git', return_value=output), self.assertRaises(ValueError):
+                ci.promotion_heads(source_client=client, proxy=None)
+
+    def test_unknown_git_ancestry_is_not_treated_as_already_promoted(self):
+        with patch.object(ci, 'git', return_value=''):
+            self.assertTrue(ci.is_ancestor('a'*40, 'b'*40, cwd=self.root))
+        with patch.object(ci, 'git', side_effect=subprocess.CalledProcessError(1, 'git')):
+            self.assertFalse(ci.is_ancestor('a'*40, 'b'*40, cwd=self.root))
+        with patch.object(ci, 'git', side_effect=subprocess.CalledProcessError(128, 'git')):
+            with self.assertRaises(subprocess.CalledProcessError):
+                ci.is_ancestor('a'*40, 'b'*40, cwd=self.root)
+
+    def test_promotion_waits_for_latest_ordinary_checks_from_approved_app(self):
+        api = Mock(app_id=5175756)
+        rows = [dict(id=index, name=name, head_sha='a'*40, app={'id':15368},
+                     status='completed', conclusion='success') for index, name in enumerate(
+                     ('sdk-contract', 'harbor-inputs', 'pr-title', 'pr-policy'), start=1)]
+        api.request.return_value = dict(total_count=4, check_runs=rows)
+        checks = ci.Checks(api)
+        self.assertTrue(checks.ordinary_ready('a'*40, 15368))
+        for change in ({'status':'in_progress', 'conclusion':None}, {'conclusion':'failure'},
+                       {'conclusion':'cancelled'}, {'app':{'id':99}}, {'head_sha':'b'*40}):
+            with self.subTest(change=change):
+                modified = copy.deepcopy(rows)
+                modified[0].update(change)
+                api.request.return_value = dict(total_count=4, check_runs=modified)
+                self.assertFalse(checks.ordinary_ready('a'*40, 15368))
+        newer = dict(rows[0], id=10, status='queued', conclusion=None)
+        api.request.return_value = dict(total_count=5, check_runs=rows+[newer])
+        self.assertFalse(checks.ordinary_ready('a'*40, 15368))
+        api.request.return_value = dict(total_count=101, check_runs=rows)
+        with self.assertRaises(ValueError):
+            checks.ordinary_ready('a'*40, 15368)
+        for app in (None, True, 0, '15368'):
+            with self.assertRaises(ValueError):
+                checks.ordinary_ready('a'*40, app)
+
+    def test_waiting_promotion_does_not_pause_or_cancel_ordinary_ci(self):
+        checks = Mock()
+        checks.ordinary_ready.return_value = False
+        supervisor = self.supervisor(checks=checks, phase='waiting', batch_phase='new')
+        supervisor.config['ordinary_check_app_id'] = 15368
+        supervisor.state['promotion'] = dict(source='integration', target='test')
+        with patch.object(ci.HostLease, 'pause') as pause, patch.object(ci, 'launch') as launch:
+            supervisor.tick()
+        checks.ordinary_ready.assert_called_once_with('a'*40, 15368)
+        pause.assert_not_called()
+        launch.assert_not_called()
+        self.assertEqual(supervisor.state['phase'], 'waiting')
 
     def test_private_source_token_is_ephemeral_and_not_in_command_arguments(self):
         client = Mock()

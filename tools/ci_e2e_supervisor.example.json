@@ -4,6 +4,9 @@
   "installation_id": 1,
   "proxy": "http://127.0.0.1:7897",
   "auto_test": false,
+  "auto_promotions": false,
+  "promotion_floor": "replace-with-reviewed-gate-commit-sha",
+  "ordinary_check_app_id": 15368,
   "approved_commits": [],
   "prepare_candidate": true,
   "control_checkout": "/opt/sandproof-e2e/control",
@@ -38,6 +41,6 @@
   "source_kind": "oci",
   "docker_hub_mirror": null,
   "selection_sha256": "replace-with-canonical-selection-catalog-sha256",
-  "selection": {"profile": "regression", "batch_size": 4},
+  "selection": {"profile": "smoke", "batch_size": 3},
   "host_assets": {}
 }

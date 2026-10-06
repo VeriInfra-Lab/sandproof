@@ -1,12 +1,12 @@
 [Unit]
-Description=Sandproof trusted configurable Terminal-Bench 2.1 E2E checks
+Description=Sandproof trusted configurable promotion E2E checks
 After=network-online.target sandproof-ci-supervisor.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/sandproof-e2e/control
-ExecStart=/usr/bin/python3 -m tools.ci_e2e_supervisor --config /etc/sandproof-ci/e2e.json --follow-test
+ExecStart=/usr/bin/python3 -m tools.ci_e2e_supervisor --config /etc/sandproof-ci/e2e.json --follow-promotions
 LoadCredential=app-key:/etc/sandproof-ci/app-key.pem
 Restart=on-failure
 RestartSec=60
