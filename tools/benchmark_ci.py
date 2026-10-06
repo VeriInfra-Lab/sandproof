@@ -158,7 +158,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
         # This is execution failure, not missing cleanup evidence. Only accept
         # that absence when the report explicitly says no runtime was created;
         # successful/publication/runtime paths still require both fingerprints.
-        unpublished_failure = (item['status'] == 'failed'
+        unpublished_failure = (item['status'] in ('failed', 'timeout')
             and item['oracle'] == item['verifier'] == 'not_run'
             and row.get('create_dispatched') is False and row.get('sandbox_id') is None
             and (row.get('build') or {}).get('state') == 'Failed'

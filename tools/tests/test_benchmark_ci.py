@@ -169,6 +169,15 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(result['cleanup'], 'passed')
         self.assertEqual(result['tasks'][0]['template_hashes'], {})
         self.assertEqual(result['tasks'][0]['status'], 'failed')
+        timed_out = copy.deepcopy(report)
+        timed_out['tasks'][0]['status'] = 'timeout'
+        (self.root / 'report.json').write_text(json.dumps(timed_out))
+        result = bench.batch_result(self.root, candidate='a'*40, names=self.names[:4],
+                                   exit_code=1, full_task_count=len(self.lock['tasks']))
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['cleanup'], 'passed')
+        self.assertEqual(result['tasks'][0]['status'], 'timeout')
+        self.assertEqual(result['tasks'][0]['template_hashes'], {})
         for change in ({'status':'passed'}, {'oracle':'passed'}, {'verifier':'passed'},
                        {'create_dispatched':True}, {'sandbox_id':'sb-previous'},
                        {'build':{'state':'Ready'}}, {'build':{'state':'Building'}},
@@ -180,6 +189,12 @@ class BenchmarkCITests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     bench.batch_result(self.root, candidate='a'*40, names=self.names[:4],
                                       exit_code=1, full_task_count=len(self.lock['tasks']))
+                changed['tasks'][0]['status'] = 'timeout'
+                if change != {'status':'passed'}:
+                    (self.root / 'report.json').write_text(json.dumps(changed))
+                    with self.assertRaises(ValueError):
+                        bench.batch_result(self.root, candidate='a'*40, names=self.names[:4],
+                                          exit_code=1, full_task_count=len(self.lock['tasks']))
         self.assertFalse(bench.aggregate('a'*40, [], [])['passed'])
 
     def test_reclamation_rejects_substitution_and_symlink_before_deleting_files(self):
