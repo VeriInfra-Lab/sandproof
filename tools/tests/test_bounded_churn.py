@@ -118,6 +118,24 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class ObservationTests(unittest.TestCase):
+    def test_empty_reopen_allows_only_monotonic_maintenance_input_progress(self):
+        before = {'effect:': 45, 'input:': 209, 'outbox:': 45, 'receipt:': 45, 'sandbox:': 5}
+        probe.assert_reopen_frontiers(before, before.copy())
+        probe.assert_reopen_frontiers(before, before | {'input:': 210})
+        for kind in before:
+            bad = before | {kind: before[kind] - 1}
+            with self.subTest(regressed=kind), self.assertRaises(AssertionError):
+                probe.assert_reopen_frontiers(before, bad)
+            if kind != 'input:':
+                with self.subTest(advanced=kind), self.assertRaises(AssertionError):
+                    probe.assert_reopen_frontiers(before, before | {kind: before[kind] + 1})
+            missing = before.copy()
+            del missing[kind]
+            with self.subTest(missing=kind), self.assertRaises(AssertionError):
+                probe.assert_reopen_frontiers(before, missing)
+        with self.assertRaises(AssertionError):
+            probe.assert_reopen_frontiers(before, before | {'operation:other': 1})
+
     def test_wal_aware_reader_sees_uncheckpointed_rows_and_closes_snapshot(self):
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / 'controller.db'

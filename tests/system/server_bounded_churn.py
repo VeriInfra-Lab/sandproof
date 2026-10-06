@@ -210,6 +210,18 @@ def assert_budget(snapshot, settings):
     assert actual_rows <= cap['max_sql_rows']
 
 
+def assert_reopen_frontiers(before, after):
+    # Empty startup can append the maintenance clock/expiry input before the
+    # first HTTP read. That is not a newly allocated sandbox/effect/receipt.
+    # Never allow an identity frontier to move, disappear, or be recreated.
+    assert set(before) == set(after) and 'input:' in before, 'reopen changed allocator domains'
+    for kind, value in before.items():
+        if kind == 'input:':
+            assert after[kind] >= value, 'reopen reset the input frontier'
+        else:
+            assert after[kind] == value, 'reopen changed permanent allocator frontier: ' + kind
+
+
 def context_for(snapshot, ident):
     sandbox = int(ident.rsplit('-', 1)[1])
     matches = [value for value in snapshot['contexts'] if value['binding']['sandbox'] == sandbox]
@@ -448,7 +460,7 @@ def exercise(args):
         wait_ready(opener, url, key, process)
         reopened = sample('all-retired-reopen')
         assert reopened['counts']['sandboxes'] == 0
-        assert reopened['highwaters'] == final['highwaters'], 'reopen reset permanent allocator frontiers'
+        assert_reopen_frontiers(final['highwaters'], reopened['highwaters'])
         stop_server(process)
         process = None
         assert tree_records((settings['node_state_dir'], Path(settings['chroot_base']) / '.claims')) == records_before
