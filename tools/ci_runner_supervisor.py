@@ -6,6 +6,7 @@ by labels; only Actions owns check conclusions. This service never writes them.
 """
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 import fcntl
 import json
 import os
@@ -86,6 +87,14 @@ def runner_name(role, identity):
 
 
 class Runtime:
+    @contextmanager
+    def admission_guard(self):
+        # Atomic with the trusted E2E service's pause/exclusive acquisition.
+        with open(STATE_ROOT / 'admission.lock', 'a',
+                  opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
     def unit(self, identity):
         return UNIT_PREFIX + valid_run_id(identity) + '.service'
 
@@ -302,8 +311,12 @@ class Supervisor:
                 if (slot in self.state.leases or counts[role] <= unassigned[role]
                         or not self.runtime.admission(role, self.state.leases)):
                     continue
-                self.start_worker(role, slot)
-                unassigned[role] += 1
+                # Unit registration can take time. The shared guard closes the
+                # pause-after-admission race without interrupting live workers.
+                with self.runtime.admission_guard():
+                    if self.runtime.admission(role, self.state.leases):
+                        self.start_worker(role, slot)
+                        unassigned[role] += 1
 
     def start_worker(self, role, slot):
         identity = uuid.uuid4().hex

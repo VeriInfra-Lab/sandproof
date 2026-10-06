@@ -31,6 +31,9 @@ def validate_oracle_mode(args, selected):
 
 
 async def run_selected(args, lock):
+    if lock.get('dataset') == 'terminal-bench@2.1' and (
+            getattr(args, 'oracle_mode', 'original') != 'original' or args.source_kind == PRUNED_SOURCE):
+        raise InvalidInput('2.0 oracle/environment repairs are not applicable to 2.1')
     selected = {t['name'] for t in lock['tasks']} if args.all else set(args.task)
     entries = {t['name']: t for t in lock['tasks']}
     if not selected or not selected <= entries.keys():
@@ -41,7 +44,7 @@ async def run_selected(args, lock):
              'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
     def report(current=None):
         text = json.dumps({
-            'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
+            'schema_version': 1, 'dataset': lock.get('dataset', 'terminal-bench@2.0'), 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
             'source_kind': args.source_kind, 'oracle_mode': mode,
             'original_environment': args.source_kind != PRUNED_SOURCE,
             'failure_diagnostics': getattr(args, 'failure_diagnostics', False),
@@ -100,7 +103,8 @@ async def run_selected(args, lock):
                     try:
                         row['runtime_intent'] = load_runtime_intent(
                             result.parent, task=name, runtime_attempt=environment.runtime_attempt,
-                            build_id=environment.build_id, template=environment.template)
+                            build_id=environment.build_id, template=environment.template,
+                            benchmark=entry.get('dataset', 'terminal-bench-2.0'))
                     except (OSError, ValueError, TypeError) as error:
                         row.setdefault('execution_status', row['status'])
                         row.update(status='cleanup_unknown', exact_cleanup='unknown',
