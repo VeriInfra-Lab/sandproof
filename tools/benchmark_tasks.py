@@ -34,6 +34,8 @@ class Pin:
     commit: str
     count: int
     names_sha256: str
+    version: str = '2.0'
+    prefix: str = ''
 
 
 PIN = Pin(
@@ -44,6 +46,27 @@ PIN = Pin(
     89,
     "733562cbea1dd6f0af4b13e6c1c54702ec3f822037f05b978e56f63a1c6a1a36",
 )
+PIN21 = Pin(PIN.harbor_commit,
+    '7d4d122312b5323907afb42ca92e912a3771ca1e98d042a386069231530add50',
+    'https://github.com/harbor-framework/terminal-bench-2-1.git',
+    'c5ee500c185224c97cd6caff7866a990a0057f41', 89, PIN.names_sha256, '2.1', 'tasks/')
+
+
+def pin_for(lock):
+    pins = {'terminal-bench@2.0': PIN, 'terminal-bench@2.1': PIN21}
+    try:
+        return pins[lock['dataset']]
+    except (KeyError, TypeError):
+        raise InvalidInput('unreviewed dataset version') from None
+
+
+def source_manifest(source, pin=PIN21):
+    """Local Git inventory, NOT a claim to have verified a Harbor Hub archive."""
+    names = git(source, 'ls-tree', '--name-only', pin.commit + ':tasks').decode().splitlines()
+    names = sorted(name for name in names if name not in ('README.md', 'dataset.toml'))
+    tasks = [dict(name=name, path=pin.prefix + name, git_url=pin.repository,
+                  git_commit_id=pin.commit) for name in names]
+    return (json.dumps([dict(name='terminal-bench', version=pin.version, tasks=tasks)], indent=2) + '\n').encode()
 REQUIRED = (
     "instruction.md", "task.toml", "environment/Dockerfile",
     "solution/solve.sh", "tests/test.sh",
@@ -79,9 +102,9 @@ def registry_tasks(raw, pin):
     if digest(raw) != pin.registry_sha256:
         raise InvalidInput("registry bytes differ from the pinned Harbor registry")
     datasets = [d for d in json.loads(raw)
-                if d.get("name") == "terminal-bench" and d.get("version") == "2.0"]
+                if d.get("name") == "terminal-bench" and d.get("version") == pin.version]
     if len(datasets) != 1:
-        raise InvalidInput("expected exactly one terminal-bench@2.0 dataset")
+        raise InvalidInput('expected exactly one terminal-bench@' + pin.version + ' dataset')
     tasks = datasets[0]["tasks"]
     names = [t["name"] for t in tasks]
     if (len(names) != pin.count or len(set(names)) != pin.count
@@ -89,7 +112,7 @@ def registry_tasks(raw, pin):
         raise InvalidInput("task set differs from the complete pinned task set")
     for task in tasks:
         if (not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", task["name"])
-                or task["path"] != task["name"]
+                or task["path"] != pin.prefix + task["name"]
                 or task["git_url"] != pin.repository
                 or task["git_commit_id"] != pin.commit):
             raise InvalidInput(f"unexpected source identity: {task['name']}")
@@ -130,11 +153,11 @@ def freeze(registry, source, pin=PIN):
         files = []
         contents = {}
         for path, (mode, kind, oid) in sorted(tracked.items()):
-            if not path.startswith(name + "/"):
+            if not path.startswith(task['path'] + "/"):
                 continue
             if mode not in ("100644", "100755") or kind != "blob":
                 raise InvalidInput(f"unsupported source file type: {path}")
-            relative = path[len(name) + 1:]
+            relative = path[len(task['path']) + 1:]
             parts = PurePosixPath(path).parts
             if any(part in (".", "..") for part in parts):
                 raise InvalidInput(f"unsafe source path: {path}")
@@ -160,28 +183,45 @@ def freeze(registry, source, pin=PIN):
             raise InvalidInput(f"{name}: missing task/initialization/oracle/verifier input")
         config = tomllib.loads(contents["task.toml"].decode())
         environment = config["environment"]
-        if config["version"] != "1.0" or set(environment) != {
+        modern = pin.version == '2.1'
+        if modern:
+            if (config.get('schema_version') != '1.1' or config.get('artifacts') != []
+                    or config.get('task', {}).get('name') != 'terminal-bench/' + name
+                    or set(environment) != {'build_timeout_sec', 'docker_image', 'cpus',
+                                           'memory_mb', 'storage_mb', 'gpus', 'allow_internet', 'mcp_servers', 'env'}
+                    or environment['gpus'] != 0 or environment['allow_internet'] is not True
+                    or environment['mcp_servers'] != [] or environment['env'] != {}
+                    or config['agent'].keys() != {'timeout_sec'}
+                    or config['verifier'].keys() != {'timeout_sec', 'env'}
+                    or config['verifier']['env'] != {} or config['solution'] != {'env': {}}):
+                raise InvalidInput(f'{name}: task environment schema requires explicit review')
+        elif config["version"] != "1.0" or set(environment) != {
             "build_timeout_sec", "docker_image", "cpus", "memory", "storage",
         }:
             raise InvalidInput(f"{name}: task environment schema requires explicit review")
         requirements = {
             "cpus": positive(environment["cpus"], name + ".cpus", integer=True),
-            "memory_mib": size_mib(environment["memory"], name + ".memory"),
-            "disk_mib": size_mib(environment["storage"], name + ".storage"),
+            "memory_mib": (positive(environment['memory_mb'], name + '.memory', integer=True) if modern
+                           else size_mib(environment["memory"], name + ".memory")),
+            "disk_mib": (positive(environment['storage_mb'], name + '.storage', integer=True) if modern
+                         else size_mib(environment["storage"], name + ".storage")),
             "build_timeout_sec": positive(environment["build_timeout_sec"], name + ".build"),
             "agent_timeout_sec": positive(config["agent"]["timeout_sec"], name + ".agent"),
             "verifier_timeout_sec": positive(config["verifier"]["timeout_sec"], name + ".verifier"),
         }
         dockerfile = contents["environment/Dockerfile"].decode()
-        rows.append({
+        row = {
             "name": name, "source_path": task["path"], "requirements": requirements,
             "upstream_image_reference": environment["docker_image"],
             "dockerfile_from_lines": re.findall(r"(?im)^FROM\s+([^\r\n]+)", dockerfile),
             "files_sha256": digest(canonical(files)), "files": files,
-        })
+        }
+        if modern:
+            row.update(package_name=config['task']['name'], dataset='terminal-bench@2.1')
+        rows.append(row)
     clean_source(source, pin)
     return {
-        "schema_version": 1, "dataset": "terminal-bench@2.0",
+        "schema_version": 1, "dataset": 'terminal-bench@' + pin.version,
         "harbor_commit": pin.harbor_commit, "e2b_sdk_version": "2.51.0",
         "registry_sha256": pin.registry_sha256,
         "source": {"repository": pin.repository, "commit": pin.commit},
@@ -189,7 +229,8 @@ def freeze(registry, source, pin=PIN):
     }
 
 
-def verify(lock, registry, source, pin=PIN):
+def verify(lock, registry, source, pin=None):
+    pin = pin_for(lock) if pin is None else pin
     actual = freeze(registry, source, pin)
     if lock != actual:
         raise InvalidInput("lock differs from the complete pinned source; regenerate and review")
@@ -241,7 +282,8 @@ def audit(verified_lock, capacity):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("freeze", "verify", "audit"))
+    parser.add_argument("command", choices=("freeze", "verify", "audit", "manifest"))
+    parser.add_argument('--dataset', choices=('2.0', '2.1'), default='2.0')
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
@@ -251,8 +293,15 @@ def main(argv=None):
     if args.command == "audit" and (args.capacity is None or args.report is None):
         parser.error("audit requires --capacity and --report")
     try:
+        if args.command == 'manifest':
+            if args.dataset != '2.1':
+                raise InvalidInput('legacy registry must be obtained from the pinned Harbor commit')
+            raw = source_manifest(args.source)
+            registry_tasks(raw, PIN21)
+            args.registry.write_bytes(raw)
+            return 0
         if args.command == "freeze":
-            lock = freeze(args.registry, args.source)
+            lock = freeze(args.registry, args.source, PIN21 if args.dataset == '2.1' else PIN)
             args.lock.write_text(json.dumps(lock, indent=2) + "\n")
             print(f"Locked all {lock['task_count']} tasks; no task code was executed.")
             return 0

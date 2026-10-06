@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from benchmarks.generic_environment import archive_context, build_request, GenericEnvironment, validate_template
 from benchmarks.run_generic import run_selected
 from benchmarks.artifact_budget import ArtifactBudget, DEFAULT_ARTIFACT_LIMITS
+from benchmarks.environment_repairs import PRUNED_SOURCE
 from tools.benchmark_tasks import InvalidInput
 from tools.template_build_client import BuildClient
 
@@ -375,6 +376,44 @@ class BuildLogTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GenericSuiteTests(unittest.TestCase):
+    def test_removed_build_mode_is_rejected_for_both_datasets_before_dispatch(self):
+        for dataset in ('terminal-bench@2.0', 'terminal-bench@2.1'):
+            with self.subTest(dataset=dataset), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(output=Path(tmp), build_mode='legacy-unbounded',
+                    oracle_mode='original', source_kind='oci')
+                with patch('benchmarks.run_generic.run_task', AsyncMock()) as trial:
+                    with self.assertRaisesRegex(InvalidInput, 'only windowed'):
+                        asyncio.run(run_selected(args, {'dataset': dataset}))
+                    trial.assert_not_awaited()
+                self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_two_one_rejects_old_repairs_with_windowed_builds_before_dispatch(self):
+        for oracle_mode, source_kind in (('repaired', 'oci'), ('original', PRUNED_SOURCE)):
+            with self.subTest(oracle_mode=oracle_mode, source_kind=source_kind), tempfile.TemporaryDirectory() as tmp:
+                args = SimpleNamespace(output=Path(tmp), build_mode='windowed',
+                    oracle_mode=oracle_mode, source_kind=source_kind)
+                with patch('benchmarks.run_generic.run_task', AsyncMock()) as trial:
+                    with self.assertRaisesRegex(InvalidInput, 'not applicable to 2.1'):
+                        asyncio.run(run_selected(args, {'dataset': 'terminal-bench@2.1'}))
+                    trial.assert_not_awaited()
+                self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_two_one_original_inputs_with_windowed_builds_still_dispatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,
+                build_mode='windowed', oracle_mode='original', source_kind='oci',
+                build_url='http://127.0.0.1:1')
+            lock = {'dataset': 'terminal-bench@2.1', 'source': {},
+                    'tasks': [{'name': 'sample', 'dataset': 'terminal-bench-2.1'}]}
+            with patch('benchmarks.run_generic.run_task', AsyncMock(return_value={
+                    'name': 'sample', 'status': 'passed'})) as trial:
+                rows = asyncio.run(run_selected(args, lock))
+                trial.assert_awaited_once()
+            self.assertEqual(rows[0]['status'], 'passed')
+            report = json.loads((Path(tmp) / 'full-set.json').read_text())
+            self.assertEqual(report['dataset'], 'terminal-bench@2.1')
+            self.assertEqual(report['oracle_mode'], 'original')
+
     def test_cancel_during_external_audit_waits_for_same_audit_before_propagating(self):
         with tempfile.TemporaryDirectory() as tmp:
             args = SimpleNamespace(source=Path(tmp), output=Path(tmp), all=True, task=None,

@@ -61,7 +61,7 @@ def check_tasks(lock, source):
             "agent_timeout_sec": config.agent.timeout_sec,
             "verifier_timeout_sec": config.verifier.timeout_sec,
         }
-        if task.name != entry["name"] or actual != entry["requirements"]:
+        if task.name != entry.get('package_name', entry['name']) or actual != entry["requirements"]:
             raise InvalidInput(f"{entry['name']}: original Harbor parser differs from the task lock")
         rows.append({"name": task.name, "harbor_inputs_valid": True,
                      "requirements": actual, "execution": "not_run"})

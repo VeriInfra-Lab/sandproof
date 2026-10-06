@@ -266,7 +266,7 @@ class GenericEnvironment(SdkEnvironment):
         self._workdir = startup['workdir']
         self.default_user = startup['user']
         self.runtime_attempt = secrets.token_hex(16)
-        metadata = {'benchmark': 'terminal-bench-2.0', 'task': self.environment_name,
+        metadata = {'benchmark': self.entry.get('dataset', 'terminal-bench-2.0'), 'task': self.environment_name,
                     'build': self.build_id, 'revision': self.template['revision'],
                     'runtime_attempt': self.runtime_attempt}
         # This is a correlation identity, not an idempotency key. Never replay

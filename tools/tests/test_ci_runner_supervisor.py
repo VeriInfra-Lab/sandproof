@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import subprocess
@@ -53,6 +54,9 @@ class FakeAPI:
 
 
 class FakeRuntime:
+    def admission_guard(self):
+        return nullcontext()
+
     def __init__(self):
         self.active = set()
         self.starts = []
@@ -402,6 +406,40 @@ class RuntimeTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_optional_checks_permission_does_not_expand_ordinary_tokens(self):
+        calls = []
+        def transport(method, path, token, body=None):
+            calls.append((method, path, body))
+            if path == '/app':
+                return {'id': 123}
+            if '/app/installations?' in path:
+                return [{'id': 5, 'account': {'login': 'ningZhang-cs'}, 'repository_selection': 'selected',
+                         'permissions': dict(auth.PERMISSIONS, checks='write', contents='read')}]
+            if 'access_tokens' in path:
+                return {'token': 'fake-token', 'permissions': body['permissions'], 'expires_at': '1970-01-01T01:00:00Z'}
+            return {'total_count': 1, 'repositories': [{'id': 6, 'full_name': auth.REPOSITORY}]}
+        app = self.app(transport)
+        app.verify_installation()
+        app.access_token()
+        self.assertEqual(calls[-1][2]['permissions'], auth.PERMISSIONS)
+        with self.assertRaises(ValueError):
+            app.request('POST', '/repos/' + auth.REPOSITORY + '/check-runs')
+        app = auth.GitHubApp('client', Path('/not-read'), transport, permissions=auth.CHECK_PERMISSIONS)
+        app.jwt = lambda: 'fake-jwt'
+        app.verify_installation()
+        app.access_token()
+        self.assertEqual(calls[-1][2]['permissions'], auth.CHECK_PERMISSIONS)
+        self.assertNotIn('administration', calls[-1][2]['permissions'])
+        app = auth.GitHubApp('client', Path('/not-read'), transport, permissions=auth.SOURCE_PERMISSIONS)
+        app.jwt = lambda: 'fake-jwt'
+        app.verify_installation()
+        app.access_token()
+        self.assertEqual(calls[-1][2]['permissions'], auth.SOURCE_PERMISSIONS)
+        self.assertNotIn('checks', calls[-1][2]['permissions'])
+        self.assertNotIn('administration', calls[-1][2]['permissions'])
+        with self.assertRaises(ValueError):
+            app.request('POST', '/repos/' + auth.REPOSITORY + '/check-runs')
+
     def app(self, transport, clock=lambda: 1000):
         app = auth.GitHubApp('client', Path('/not-read'), transport, clock=clock)
         app.jwt = lambda: 'fake-jwt'
