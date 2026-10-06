@@ -6,6 +6,7 @@
   "auto_test": false,
   "auto_promotions": false,
   "promotion_floor": "replace-with-reviewed-gate-commit-sha",
+  "ordinary_check_app_id": 15368,
   "approved_commits": [],
   "prepare_candidate": true,
   "control_checkout": "/opt/sandproof-e2e/control",

@@ -132,6 +132,23 @@ class Checks:
     def __init__(self, api):
         self.api = api
 
+    def ordinary_ready(self, candidate, app_id):
+        """Do not pause the shared host before the promotion's ordinary CI."""
+        if type(app_id) is not int or app_id <= 0:
+            raise ValueError('ordinary CI App identity is not approved')
+        found = self.api.request('GET', PREFIX + 'commits/' + candidate + '/check-runs?per_page=100&filter=all')
+        if found['total_count'] > 100:
+            raise ValueError('check inventory exceeds fixed limit')
+        for name in ('sdk-contract', 'harbor-inputs', 'pr-title', 'pr-policy'):
+            matches = [r for r in found['check_runs'] if r.get('name') == name
+                       and r.get('head_sha') == candidate and r.get('app', {}).get('id') == app_id]
+            if not matches:
+                return False
+            latest = max(matches, key=lambda r: r['id'])
+            if latest.get('status') != 'completed' or latest.get('conclusion') != 'success':
+                return False
+        return True
+
     def ensure(self, state, save):
         if state.get('check_id') is not None:
             return state['check_id']
@@ -325,6 +342,7 @@ class Supervisor:
                 write_once(archive, self.state)
         self.state = dict(id=identity, candidate=candidate, base=base, phase='waiting', configuration=self.config,
             dataset=dataset,
+            promotion=dict(source=observed_promotion[0], target=observed_promotion[1]) if observed_promotion else None,
             batches=[dict(names=names, oracle_mode=modes[names[0]], phase='new') for names in batches],
             expected=[name for names in batches for name in names], check_id=None,
             check_name=self.config.get('check_name', check_name(dataset)),
@@ -383,6 +401,11 @@ class Supervisor:
             self.checks.ensure(state, self.save)
         lease = HostLease(Path(self.config['ci_state_root']), state['id'])
         if state['phase'] == 'waiting':
+            if state.get('promotion'):
+                if self.checks is None:
+                    raise ValueError('promotion requires authorized GitHub check observation')
+                if not self.checks.ordinary_ready(state['candidate'], self.config.get('ordinary_check_app_id')):
+                    return
             lease.pause()
             if not lease.exclusive():
                 return
@@ -524,6 +547,7 @@ def main():
         parser.error('follow-test requires the reviewed auto_test policy and no manual candidate')
     if args.follow_promotions and (args.candidate or args.base or args.local_only
             or config.get('auto_promotions') is not True or not config.get('repository')
+            or type(config.get('ordinary_check_app_id')) is not int or config['ordinary_check_app_id'] <= 0
             or re.fullmatch('[0-9a-f]{40}', config.get('promotion_floor', '')) is None):
         parser.error('follow-promotions requires an enabled private repository/floor policy and GitHub checks')
     if not (args.follow_test or args.follow_promotions) and (not args.candidate or not args.base):

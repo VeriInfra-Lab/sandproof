@@ -139,6 +139,44 @@ class BenchmarkCITests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 ci.is_ancestor('a'*40, 'b'*40, cwd=self.root)
 
+    def test_promotion_waits_for_latest_ordinary_checks_from_approved_app(self):
+        api = Mock(app_id=5175756)
+        rows = [dict(id=index, name=name, head_sha='a'*40, app={'id':15368},
+                     status='completed', conclusion='success') for index, name in enumerate(
+                     ('sdk-contract', 'harbor-inputs', 'pr-title', 'pr-policy'), start=1)]
+        api.request.return_value = dict(total_count=4, check_runs=rows)
+        checks = ci.Checks(api)
+        self.assertTrue(checks.ordinary_ready('a'*40, 15368))
+        for change in ({'status':'in_progress', 'conclusion':None}, {'conclusion':'failure'},
+                       {'conclusion':'cancelled'}, {'app':{'id':99}}, {'head_sha':'b'*40}):
+            with self.subTest(change=change):
+                modified = copy.deepcopy(rows)
+                modified[0].update(change)
+                api.request.return_value = dict(total_count=4, check_runs=modified)
+                self.assertFalse(checks.ordinary_ready('a'*40, 15368))
+        newer = dict(rows[0], id=10, status='queued', conclusion=None)
+        api.request.return_value = dict(total_count=5, check_runs=rows+[newer])
+        self.assertFalse(checks.ordinary_ready('a'*40, 15368))
+        api.request.return_value = dict(total_count=101, check_runs=rows)
+        with self.assertRaises(ValueError):
+            checks.ordinary_ready('a'*40, 15368)
+        for app in (None, True, 0, '15368'):
+            with self.assertRaises(ValueError):
+                checks.ordinary_ready('a'*40, app)
+
+    def test_waiting_promotion_does_not_pause_or_cancel_ordinary_ci(self):
+        checks = Mock()
+        checks.ordinary_ready.return_value = False
+        supervisor = self.supervisor(checks=checks, phase='waiting', batch_phase='new')
+        supervisor.config['ordinary_check_app_id'] = 15368
+        supervisor.state['promotion'] = dict(source='integration', target='test')
+        with patch.object(ci.HostLease, 'pause') as pause, patch.object(ci, 'launch') as launch:
+            supervisor.tick()
+        checks.ordinary_ready.assert_called_once_with('a'*40, 15368)
+        pause.assert_not_called()
+        launch.assert_not_called()
+        self.assertEqual(supervisor.state['phase'], 'waiting')
+
     def test_private_source_token_is_ephemeral_and_not_in_command_arguments(self):
         client = Mock()
         client.access_token.return_value = 'PRIVATE-SOURCE-TOKEN'
