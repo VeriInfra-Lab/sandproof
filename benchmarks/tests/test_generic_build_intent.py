@@ -16,6 +16,7 @@ from benchmarks.generic_environment import GenericEnvironment
 from tools.benchmark_tasks import InvalidInput
 from tools.template_build_service import BuildHTTP, Handler
 from tools.template_build_store import BuildStore, MIB
+from tools.tests import test_template_build_retention as retention_fixtures
 
 
 class RecordedHandler(Handler):
@@ -48,6 +49,10 @@ class RecordedHandler(Handler):
 
 
 class GenericBuildIntentTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        retention_fixtures.RetentionTests.setUpClass.__func__(cls)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -75,7 +80,8 @@ class GenericBuildIntentTests(unittest.TestCase):
             'max_input_bytes': 65536, 'max_expanded_bytes': 128 * MIB, 'max_entries': 100,
             'max_log_bytes': 65536, 'builder_disk_bytes': 1024 * MIB,
             'runtime_cleanup_reserve_bytes': 256 * MIB, 'artifact_margin_bytes': 64 * MIB}
-        store = BuildStore(root, limits, free_bytes=lambda: 1000000 * MIB)
+        store = BuildStore(root, limits, bounded=retention_fixtures.bounded_config(self.helper),
+                           free_bytes=lambda: 1000000 * MIB)
         self.addCleanup(store.close)
         server = BuildHTTP(('127.0.0.1', 0), store,
             [{'tenant': 1, 'secret': 'synthetic-owner-1'}, {'tenant': 2, 'secret': 'synthetic-owner-2'}])
@@ -96,7 +102,7 @@ class GenericBuildIntentTests(unittest.TestCase):
         # Exercise the same constructor/start path as the normal runner, while
         # explicitly reusing its trial to invoke the adapter's recovery branch.
         return GenericEnvironment(entry=self.entry, source=self.root, source_kind='dockerfile',
-            build_url='http://127.0.0.1:' + str(server.server_port), build_mode='legacy-unbounded',
+            build_url='http://127.0.0.1:' + str(server.server_port),
             sdk_options={'api_key': key, 'retries': 0},
             environment_dir=self.root / 'sample/environment', environment_name='sample',
             session_id='sample', trial_paths=TrialPaths(self.root / 'trial'),
@@ -114,6 +120,9 @@ class GenericBuildIntentTests(unittest.TestCase):
         path = self.root / 'trial/build-intent.json'
         saved = path.read_bytes()
         intent = json.loads(saved)
+        self.assertEqual(intent['build_mode'], 'windowed')
+        self.assertEqual(intent['requestWindow']['namespace'], 17)
+        self.assertEqual(self.first.store.rows()[0]['window_namespace'], '17')
         self.assertEqual({key: intent[key] for key in original.client.intent_binding()},
                          original.client.intent_binding())
         self.assertNotIn('synthetic-owner-1', saved.decode())

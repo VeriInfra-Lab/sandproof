@@ -103,11 +103,13 @@ async def verify_no_replay(tracked):
 
 async def submit_build(root, client, request, build_mode, label, checkpoint):
     """Persist the ordinary client's original window/key before the only POST."""
+    if build_mode != 'windowed':
+        raise ValueError('only windowed builds are supported')
     intent = await asyncio.to_thread(saved_intent, root / ('pressure-' + label + '-intent.json'),
-                                     client, request, build_mode=build_mode)
+                                     client, request)
     checkpoint({'token': intent['idempotency_key'], 'request': request, 'build_mode': build_mode,
-                **({'requestWindow': intent['requestWindow']} if build_mode == 'windowed' else {})})
-    body = request | ({'requestWindow': intent['requestWindow']} if build_mode == 'windowed' else {})
+                'requestWindow': intent['requestWindow']})
+    body = request | {'requestWindow': intent['requestWindow']}
     return await asyncio.to_thread(client.request, 'POST', '/sandproof/template-builds',
                                    body, token=intent['idempotency_key'])
 
@@ -160,8 +162,8 @@ async def wait_builder_session(read_vm, read_build, deadline, supervisor):
 
 async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor,
                    restart, source_entry, audit_shape, completion_audit, build_mode, service_audit=None):
-    if build_mode not in ('windowed', 'legacy-unbounded'):
-        raise ValueError('explicit supported build mode required')
+    if build_mode != 'windowed':
+        raise ValueError('only windowed builds are supported')
     templates = [r['template'] for r in rows]
     assert len({t['templateId'] for t in templates}) == 2
     validate_cohort([{'cpus': t['cpuCount'], 'memory_mib': t['memoryMib'],
@@ -260,11 +262,10 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
         assert (await build_get('/sandproof/template-builds/' + build_id))['buildID'] == build_id
         await build_get('/sandproof/template-builds/' + build_id + '/logs?offset=0&limit=1024')
         cases.append('full-build-still-serves-status-and-logs')
-        if build_mode == 'windowed':
-            remaining = build_view['deadline'] - time.time()
-            assert remaining > 0, 'original build deadline elapsed before window observation'
-            private_window = await asyncio.to_thread(wait_private_build_window,
-                root / 'builds/builds.db', build_id, timeout=remaining)
+        remaining = build_view['deadline'] - time.time()
+        assert remaining > 0, 'original build deadline elapsed before window observation'
+        private_window = await asyncio.to_thread(wait_private_build_window,
+            root / 'builds/builds.db', build_id, timeout=remaining)
         vm = await wait_builder_session(build_vm,
             lambda: build_get('/sandproof/template-builds/' + build_id), build_view['deadline'], supervisor)
         report['original_builder_sandbox'] = vm['sandboxID']
@@ -314,12 +315,8 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
             assert time.monotonic() < deadline
             await asyncio.sleep(0.2)
         assert build_view['state'] == 'Failed' and build_view['failure'] == 'InterruptedBuild', build_view
-        if build_mode == 'windowed':
-            report['private_settlement'] = await asyncio.to_thread(private_settlement,
-                root / 'builds/builds.db', build_id, private_window, report['original_builder_sandbox'])
-        else:
-            vm = await build_vm()
-            assert vm['sandboxID'] == report['original_builder_sandbox'] and vm['cleanupComplete']
+        report['private_settlement'] = await asyncio.to_thread(private_settlement,
+            root / 'builds/builds.db', build_id, private_window, report['original_builder_sandbox'])
         cases.append('restart-reclaims-original-builder-without-rebuild')
         replacement = await create(templates[1])
         await clean(replacement)

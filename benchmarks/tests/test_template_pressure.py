@@ -45,16 +45,13 @@ class PressureBuildWindowTests(unittest.TestCase):
         # Existing fixture compiles the real Rust authority with locked deps.
         retention_fixtures.RetentionTests.setUpClass.__func__(cls)
 
-    def service(self, root, mode):
+    def service(self, root):
         directory = root / 'builds'
         directory.mkdir(mode=0o700)
-        config = {'namespace': 17, 'windows': {'max_open_windows': 4, 'max_duration_ms': 600000},
-                  'retention_ms': 1000, 'max_request_bytes': 2048, 'max_result_bytes': 8192,
-                  'max_record_bytes': 65536, 'database_bytes': 8 * MIB, 'wal_bytes': 17 * MIB,
-                  'recovery_reserve_bytes': 8 * MIB, 'helper': self.helper}
+        config = retention_fixtures.bounded_config(self.helper)
         limits = store_limits() | {'max_jobs': 4, 'max_jobs_per_tenant': 4,
                                    'max_pending': 1, 'max_pending_per_tenant': 1}
-        store = BuildStore(directory, limits, bounded=config if mode == 'windowed' else None,
+        store = BuildStore(directory, limits, bounded=config,
                            free_bytes=lambda: 1000000 * MIB)
         server = BuildHTTP(('127.0.0.1', 0), store, [{'tenant': 1, 'secret': 'synthetic'}])
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -74,7 +71,7 @@ class PressureBuildWindowTests(unittest.TestCase):
 
     def test_windowed_real_http_reaches_budget_rejection_with_durable_distinct_intents(self):
         root = self.temporary_root()
-        store, client = self.service(root, 'windowed')
+        store, client = self.service(root)
         request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 60}
         checkpoints = []
         def checkpoint(label, value):
@@ -93,20 +90,19 @@ class PressureBuildWindowTests(unittest.TestCase):
         self.assertNotEqual(checkpoints[0][1]['requestWindow'], checkpoints[1][1]['requestWindow'])
         self.assertEqual(len(store.rows()), 1)
 
-    def test_legacy_real_http_keeps_its_original_windowless_protocol(self):
+    def test_removed_mode_cannot_open_a_window_or_submit(self):
         root = self.temporary_root()
-        store, client = self.service(root, 'legacy-unbounded')
-        seen = []
-        result = asyncio.run(pressure.submit_build(root, client,
-            {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 60},
-            'legacy-unbounded', 'legacy', seen.append))
-        self.assertEqual(result['state'], 'Queued')
-        self.assertNotIn('requestWindow', seen[0])
-        self.assertEqual(store.rows()[0]['window_namespace'], '')
+        client = Mock()
+        with self.assertRaisesRegex(ValueError, 'only windowed'):
+            asyncio.run(pressure.submit_build(root, client,
+                {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 60},
+                'legacy-unbounded', 'legacy', Mock()))
+        client.request.assert_not_called()
+        self.assertEqual(list(root.iterdir()), [])
 
     def test_lost_public_reply_keeps_original_intent_and_never_resubmits(self):
         root = self.temporary_root()
-        store, client = self.service(root, 'windowed')
+        store, client = self.service(root)
         original = client.request
         posts = []
         def request(method, path, body=None, **kwargs):
@@ -279,7 +275,7 @@ class PressureFailureTests(unittest.TestCase):
                     await pressure.exercise(root=root, urls=['http://127.0.0.1:1'] * 3,
                         key='synthetic', builder_key='private-synthetic', rows=templates(), deployment=deployment(),
                         supervisor=Mock(), restart=Mock(), source_entry={},
-                        build_mode='legacy-unbounded',
+                        build_mode='windowed',
                         audit_shape=lambda env: {'disk_inode': int(env.sandbox_id)},
                         completion_audit=audit or Mock(return_value={'exact_cleanup': 'passed'}))
                 finally:
