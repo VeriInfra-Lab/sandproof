@@ -111,20 +111,21 @@ def promotion_heads(*, source_client, proxy):
     return {name.removeprefix('refs/heads/'): sha for name, sha in refs.items()}
 
 
-def select_promotion(refs, floor, ancestor):
-    """Only two fixed same-repository directions, never task/fork PR heads."""
+def select_promotion(refs, floor, ancestor, ready=lambda candidate: True):
+    """Forward promotions and legal main→test sync; never task/fork heads."""
     if (set(refs) != {'integration', 'test', 'main'}
             or any(re.fullmatch('[0-9a-f]{40}', value or '') is None for value in (*refs.values(), floor))):
         raise ValueError('invalid protected promotion policy')
-    for source, target in (('integration', 'test'), ('test', 'main')):
+    for source, target in (('integration', 'test'), ('test', 'main'), ('main', 'test')):
         candidate, base = refs[source], refs[target]
         if not ancestor(floor, candidate):
             continue  # Versions older than the reviewed gate implementation.
         if candidate == base or ancestor(candidate, base):
             continue  # Already promoted; do not rerun a completed old version.
         if not ancestor(base, candidate):
-            raise ValueError('promotion source needs target synchronization')
-        return source, target, candidate, base
+            continue  # Its gate stays absent; a legal reverse sync can run first.
+        if ready(candidate):
+            return source, target, candidate, base
     return None
 
 
@@ -519,7 +520,7 @@ def main():
     automatic = parser.add_mutually_exclusive_group()
     automatic.add_argument('--follow-test', action='store_true', help='legacy trusted test-only observer')
     automatic.add_argument('--follow-promotions', action='store_true',
-                           help='protected integration→test and test→main heads only')
+                           help='protected promotions and legal main→test sync only')
     parser.add_argument('--local-only', action='store_true', help='no GitHub check write; not automatic CI acceptance')
     selected = parser.add_mutually_exclusive_group()
     selected.add_argument('--profile', help='reviewed task profile from the frozen catalog')
@@ -587,7 +588,8 @@ def main():
                             'refs/heads/main', cwd=repository, source_client=source_client, proxy=config.get('proxy'))
                         observed_refs = heads
                     proposal = select_promotion(heads, config['promotion_floor'],
-                        lambda parent, child: is_ancestor(parent, child, cwd=repository))
+                        lambda parent, child: is_ancestor(parent, child, cwd=repository),
+                        lambda candidate: checks.ordinary_ready(candidate, config['ordinary_check_app_id']))
                     if proposal is None:
                         time.sleep(15)
                         continue

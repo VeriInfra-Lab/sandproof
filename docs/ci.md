@@ -28,9 +28,9 @@
 
 [监督器](../tools/ci_e2e_supervisor.py)、[准备工具](../tools/ci_e2e_prepare.py)、[服务单元](../tools/ci_e2e_supervisor.service)与[私有配置示例](../tools/ci_e2e_supervisor.example.json)已实现；宿主安装与真实结果回传须以对应 issue/PR 的实测证据为准。当前通过[2.0 兼容题集](../benchmarks/terminal-bench-2.0-suites.json)回归，[2.1 原题配置](../benchmarks/terminal-bench-2.1-suites.json)保留为发布前待办；判据以[验收清单](testing-plan.md)为准，支持完整题集不等于已通过。
 
-不新增 root GitHub runner，不执行外部 PR 宿主代码或 `pull_request_target`。监督程序、配置、任务来源和工具均由 root 受控安装；自动晋升模式须显式启用，只从固定仓库读取受保护 integration/test/main 的精确引用，接受 integration→test、test→main 两个方向，不接受任务分支、fork 或 PR 自带命令。候选必须包含当前目标基线；已经进入目标的源版本不重复执行。目标独有变更需要先通过正常同步 PR 合入源分支，不能只测源版本而忽略最终组合。最终合并依赖严格保护防止目标更新竞态。配置和编译产物绑定原运行，重启不能改用新配置或重跑未知工作。
+不新增 root GitHub runner，不执行外部 PR 宿主代码或 `pull_request_target`。监督程序、配置、任务来源和工具均由 root 受控安装；自动晋升模式须显式启用，只从固定仓库读取受保护 integration/test/main 的精确引用，接受 integration→test、test→main 及既有 main→test 同步，不接受任务分支、fork 或 PR 自带命令。候选必须包含当前目标基线；已经进入目标的源版本不重复执行。目标独有变更需要先通过正常同步 PR 合入源分支，不能只测源版本而忽略最终组合。未满足历史／普通检查的方向保持阻塞，但不阻止另一个合法且已就绪的方向；服务不主动创建或合并同步 PR。最终合并依赖严格保护防止目标更新竞态。配置和编译产物绑定原运行，重启不能改用新配置或重跑未知工作。
 
-普通补充服务与 KVM 服务使用同一准入锁；自动晋升先等待精确候选的四项普通检查完成，核对宿主配置 `ordinary_check_app_id` 对应的最新真实结果，不接受旧成功覆盖新排队／失败或其他 App 的同名检查。此时只发布等待中的 E2E 检查，不暂停普通 CI。普通检查成功后，KVM 创建自己的暂停标记，等待全部普通任务及未知占用退出，再独占。准备/批次由独立 systemd 单元执行，管理服务重启不停止它们；准备完成后固定实际 server/窗口工具摘要。按配置大小分批串行，精确收尾确认和脱敏结果持久化后才按原目录设备/inode 回收临时盘，不能宽泛删除他人资源。清理或单元身份未知时保留占用，恢复按原资源核对，不盲目新建。
+普通补充服务与 KVM 服务使用同一准入锁；自动晋升先等待精确候选的四项普通检查完成，核对宿主配置 `ordinary_check_app_id` 对应的最新真实结果，不接受旧成功覆盖新排队／失败或其他 App 的同名检查。没有就绪候选时不占用验收身份、不暂停普通 CI，GitHub 必需 E2E 检查仍待返回。普通检查成功后才发布 E2E 检查并再次核对，KVM 创建自己的暂停标记，等待全部普通任务及未知占用退出，再独占。准备/批次由独立 systemd 单元执行，管理服务重启不停止它们；准备完成后固定实际 server/窗口工具摘要。按配置大小分批串行，精确收尾确认和脱敏结果持久化后才按原目录设备/inode 回收临时盘，不能宽泛删除他人资源。清理或单元身份未知时保留占用，恢复按原资源核对，不盲目新建。
 
 宿主私有配置 `dataset` 选择 `terminal-bench@2.0` 或 `terminal-bench@2.1`，锁/题集配置按版本加载，源码仍须匹配固定提交。2.0 的 `task_registry` 指向固定 Harbor registry 原始文件，须在 `host_assets` 登记摘要；2.1 默认使用仓库已有 registry。省略 dataset 仅为恢复原已安装 2.1 配置。`selection` 选择 `profile`（`smoke`、`regression` 或 `full`），或唯一显式 `tasks` 名单；`batch_size` 控制每批保留数量。2.0 题集的 `oracle_modes` 显式登记既有修补并核对原解答摘要，遇到不同模式拆批，不把修补用于 2.1。题集规范摘要写入 `selection_sha256`，配置改变产生新验收身份；在途运行按原配置恢复。自动模式只使用宿主批准配置，参数不授予额外资源。
 

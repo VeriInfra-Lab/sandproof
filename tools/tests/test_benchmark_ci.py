@@ -77,10 +77,10 @@ class BenchmarkCITests(unittest.TestCase):
         identity = bench.run_identity('a'*40, 'b'*40, {}, self.manifest, self.lock)
         self.assertNotEqual(identity, bench.run_identity('a'*40, 'c'*40, {}, self.manifest, self.lock))
 
-    def test_promotion_authority_is_exact_and_only_two_directions(self):
-        for source, target in (('integration', 'test'), ('test', 'main')):
+    def test_promotion_authority_is_exact_and_only_legal_protected_directions(self):
+        for source, target in (('integration', 'test'), ('test', 'main'), ('main', 'test')):
             bench.authorize('a'*40, approved_commits=[], observed_promotion=(source, target, 'a'*40))
-        for authority in (('feature', 'test', 'a'*40), ('main', 'test', 'a'*40),
+        for authority in (('feature', 'test', 'a'*40), ('main', 'integration', 'a'*40),
                           ('integration', 'main', 'a'*40), ('test', 'main', 'b'*40),
                           ['test', 'main', 'a'*40], ('test', 'main')):
             with self.subTest(authority=authority), self.assertRaises(ValueError):
@@ -102,18 +102,32 @@ class BenchmarkCITests(unittest.TestCase):
                          ('test', 'main', promoted, main))
         finished = 'f'*40
         relationships.update({(floor, finished), (integration, finished), (promoted, finished)})
-        self.assertIsNone(ci.select_promotion(dict(refs, test=promoted, main=finished), floor, ancestor))
+        self.assertIsNone(ci.select_promotion(dict(refs, test=promoted, main=finished), floor, ancestor,
+                                              ready=lambda candidate: False))
 
     def test_promotion_selector_rejects_unrelated_base_and_unknown_policy(self):
         refs = dict(integration='b'*40, test='c'*40, main='d'*40)
-        with self.assertRaisesRegex(ValueError, 'synchronization'):
-            ci.select_promotion(refs, 'a'*40, lambda parent, child: parent == 'a'*40)
+        self.assertIsNone(ci.select_promotion(refs, 'a'*40, lambda parent, child: parent == 'a'*40))
         self.assertIsNone(ci.select_promotion(refs, 'a'*40, lambda parent, child: False))
         for values, floor in ((dict(refs, feature='e'*40), 'a'*40),
                               ({'test':'c'*40, 'main':'d'*40}, 'a'*40),
                               (dict(refs, integration='integration'), 'a'*40), (refs, 'main')):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 ci.select_promotion(values, floor, lambda parent, child: True)
+
+    def test_reverse_sync_and_ready_queue_do_not_deadlock_promotions(self):
+        floor, integration, test, main = ('a'*40, 'b'*40, 'c'*40, 'd'*40)
+        refs = dict(integration=integration, test=test, main=main)
+        pairs = {(floor, integration), (floor, test), (floor, main),
+                 (test, main)}  # integration diverged and needs the legal sync.
+        ancestor = lambda parent, child: parent == child or (parent, child) in pairs
+        self.assertEqual(ci.select_promotion(refs, floor, ancestor, ready=lambda candidate: candidate == main),
+                         ('main', 'test', main, test))
+        self.assertIsNone(ci.select_promotion(refs, floor, ancestor, ready=lambda candidate: False))
+        pairs = {(floor, integration), (test, integration), (floor, test), (main, test)}
+        ancestor = lambda parent, child: parent == child or (parent, child) in pairs
+        self.assertEqual(ci.select_promotion(refs, floor, ancestor, ready=lambda candidate: candidate == test),
+                         ('test', 'main', test, main))
 
     def test_promotion_ref_inventory_uses_fixed_repository_and_rejects_duplicates(self):
         lines = '\n'.join(sha*40 + '\trefs/heads/' + name for name, sha in

@@ -104,7 +104,7 @@ def authorize(candidate, *, approved_commits, observed_test=None, observed_promo
         raise ValueError('invalid candidate identity')
     if observed_promotion is not None:
         if (not isinstance(observed_promotion, tuple) or len(observed_promotion) != 3
-                or observed_promotion[:2] not in (('integration', 'test'), ('test', 'main'))
+                or observed_promotion[:2] not in (('integration', 'test'), ('test', 'main'), ('main', 'test'))
                 or observed_promotion[2] != candidate):
             raise ValueError('invalid protected promotion authority')
     if candidate not in approved_commits and candidate != observed_test and observed_promotion is None:
