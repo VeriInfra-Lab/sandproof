@@ -262,7 +262,8 @@ class Supervisor:
         return counts
 
     def count_workflow(self, workflow_id, counts, seen):
-        for status in ('queued', 'in_progress'):
+        # GitHub can mark a run pending while its individual jobs remain queued.
+        for status in ('queued', 'pending', 'in_progress'):
             for page in range(1, 5):
                 result = self.api.request('GET', PREFIX + 'workflows/' + str(workflow_id)
                     + '/runs?status=' + status + '&per_page=100&page=' + str(page))
