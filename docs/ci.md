@@ -4,6 +4,16 @@
 
 普通 CI 与产品沙箱的高权限系统验收分开。宿主为 Linux x86_64，需支持 QEMU、systemd 与 cgroup v2；可用内存和磁盘须满足实际任务预算及管理余量。普通 CI 来宾不暴露 KVM；产品实机验收另要求可访问的 `/dev/kvm`（API 12）及固定 Firecracker/jailer、来宾内核与镜像摘要。部署机器、SSH 配置、代理订阅及管理凭据由运维在仓库外配置，公共仓库只保留通用示例。
 
+### 预打包晋升回归
+
+受信运维一次性用[固定制备配方](../benchmarks/ci-fixture.Dockerfile)在原通用构建服务中准备两份干净模板：基础任务 OCI 使用明确摘要，额外预装固定评分 Python/依赖，不包含解答、测试文件或评分结果。镜像与私有清单保存在仓库外；清单绑定原任务文件、原 OCI、内核、磁盘、资源、启动设置及评分依赖摘要。[输入检查](../benchmarks/ci_fixtures.py)登记和使用前核对内容及文件身份，来宾启动后核对保留目录未泄漏。预装静态模板使用独立 `ci-` 编号，不冒充正式发布的 `tpl-` 模板；回执恢复显式选择该绑定，其他身份检查不变。原基础镜像不修改。
+
+一次性制备复用[隔离实机入口](../tests/system/harbor_generic_chain.py)：在原来完整批准参数之外，选择 `--task polyglot-c-py --task db-wal-recovery --source-kind dockerfile --prepare-ci-fixtures <新私有目录> --ci-build-inputs <两题原 OCI 摘要 JSON> --ci-uv <已批准 uv>`。只有两份 Ready 模板和原构建的精确清理全部完成，才发布最终 `manifest.json`；报告明确为制备而不是题目通过。此阶段可使用现有批准出口，日常预装模式不带这些制备参数。
+
+一次性制备使用独立的 `--ci-preparation-timeout` 构建预算，默认和上限均为 900 秒；它只调整制备构建期限、不增加资源容量，报告不声称原题构建期限通过，日常评分及原解答/评分时限不变，普通执行模式禁止指定此参数。
+
+监督配置显式选择 `source_kind=prepared-ci`、`selection.profile=ci`、`ci_fixtures=<root 私有清单>` 和 `check_name=E2E / terminal-bench-ci`，把清单摘要纳入 `host_assets`，同时更新选择目录的 `selection_sha256`。每轮仍跑候选代码的真实 SDK/控制器/宿主启停与精确清理；不启动下载代理、不启用全局转发、不改变宿主 VPN/DNS。评分只在独立派生目录替换启动脚本，不改冻结源文件和断言；缺少材料失败，不临时联网安装。模板可重复用，工作盘及成绩不可重复用。平台安装程序或模板内容变化须重新制备与批准清单。该模式跳过本轮模板构建，相关构建变更仍用原通用构建定向验收；判据和上线切换看[验收清单](testing-plan.md)。
+
 ### 普通 CI 自建执行环境
 
 普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器、rustup 与 uv 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。[uv 安装入口](../tools/ci_install_uv.sh)只从固定官方 PyPI 制品下载 uv 0.11.31，核对 SHA256 后以 root/0555 安装到 `/usr/local/bin/uv`；SDK/Harbor 工作流直接检查 `uv --version`，版本缺失或不符即失败。工具或执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。

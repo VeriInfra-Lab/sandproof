@@ -47,14 +47,24 @@ def validate_host_inputs(config):
         from tools.system_acceptance import digest as file_digest
         if file_digest(artifact) != expected:
             raise ValueError('approved host artifact changed')
-    required = {config[k] for k in ('kernel', 'rootfs', 'firecracker', 'jailer', 'proxy_binary',
+    prepared = config.get('source_kind') == 'prepared-ci'
+    required = {config[k] for k in ('kernel', 'rootfs', 'firecracker', 'jailer',
                                     'policy_template', 'budget_profile')}
+    if prepared:
+        if not config.get('ci_fixtures'):
+            raise ValueError('prepackaged CI fixture manifest required')
+        private_path(config['ci_fixtures'])
+        required.add(config['ci_fixtures'])
+    else:
+        if config.get('ci_fixtures') is not None:
+            raise ValueError('CI fixtures require the explicit prepared-ci mode')
+        required.add(config['proxy_binary'])
     if not required <= set(config['host_assets']):
         raise ValueError('host artifact fingerprints incomplete')
-    if config.get('source_kind', 'oci') not in ('oci', 'dockerfile'):
+    if config.get('source_kind', 'oci') not in ('oci', 'dockerfile', 'prepared-ci'):
         raise ValueError('original environment source required')
     dataset = dataset_files(config)[0]
-    expected_check = check_name(dataset)
+    expected_check = check_name(dataset, source_kind=config.get('source_kind'))
     if config.get('check_name', expected_check) not in (expected_check, expected_check + ' / diagnostic'):
         raise ValueError('check name differs from the dataset policy')
     if config.get('task_registry'):
@@ -300,9 +310,16 @@ class Supervisor:
     def block(self, reason):
         result = aggregate(self.state['candidate'],
             [b['result'] for b in self.state['batches'] if 'result' in b], self.state['expected'],
-            all_tasks=self.state.get('all_tasks'), dataset=self.state.get('dataset', 'terminal-bench@2.1'))
+            all_tasks=self.state.get('all_tasks'), dataset=self.state.get('dataset', 'terminal-bench@2.1'),
+            **self.result_policy())
         result['passed'] = False
         self.terminal(result, phase='blocked', reason=reason)
+
+    def result_policy(self):
+        if self.config.get('source_kind') == 'prepared-ci':
+            return dict(source_kind='prepared-ci',
+                expected_fixture_sha256=self.config['host_assets'][self.config['ci_fixtures']])
+        return {}
 
     def begin(self, candidate, base, observed_test=None, observed_promotion=None):
         if observed_promotion is not None and self.config.get('auto_promotions') is not True:
@@ -328,7 +345,10 @@ class Supervisor:
         template = json_file(Path(self.config['policy_template']))
         for names in batches:
             cohort_policy(template, len(names))  # Before state creation or host pause.
-        if self.config['source_kind'] != manifest['source_kind']:
+        if self.config['source_kind'] == 'prepared-ci':
+            if dataset != 'terminal-bench@2.0' or any(modes[n] != 'original' for b in batches for n in b):
+                raise ValueError('prepackaged CI requires the fixed original 2.0 solutions')
+        elif self.config['source_kind'] != manifest['source_kind']:
             raise ValueError('environment preparation differs from the frozen subset policy')
         identity = run_identity(candidate, base, self.config, manifest, lock)
         if self.state:
@@ -346,7 +366,7 @@ class Supervisor:
             promotion=dict(source=observed_promotion[0], target=observed_promotion[1]) if observed_promotion else None,
             batches=[dict(names=names, oracle_mode=modes[names[0]], phase='new') for names in batches],
             expected=[name for names in batches for name in names], check_id=None,
-            check_name=self.config.get('check_name', check_name(dataset)),
+            check_name=self.config.get('check_name', check_name(dataset, source_kind=self.config.get('source_kind'))),
             all_tasks=[row['name'] for row in lock['tasks']],
             task_inputs={t['name']: dict(files_sha256=t['files_sha256'], requirements=t['requirements'])
                          for t in lock['tasks'] if t['name'] in {n for b in batches for n in b}})
@@ -372,15 +392,22 @@ class Supervisor:
         args = [str(checkout / 'benchmarks/.venv/bin/python'), str(checkout / 'tests/system/harbor_generic_chain.py')]
         for flag in ('server', 'firecracker', 'jailer', 'kernel', 'rootfs', 'tools',
                      'scratch_parent', 'cgroup_parent', 'build_cgroup_parent', 'service_cgroup_parent',
-                     'uid_base', 'budget_profile', 'proxy_binary', 'proxy_sha256'):
+                     'uid_base', 'budget_profile'):
             args.extend(['--' + flag.replace('_', '-'), str(config[flag])])
+        if config.get('source_kind') == 'prepared-ci':
+            args.extend(['--ci-fixtures', config['ci_fixtures']])
+        else:
+            for flag in ('proxy_binary', 'proxy_sha256'):
+                args.extend(['--' + flag.replace('_', '-'), str(config[flag])])
         _, lock_path, registry, _ = dataset_files(config)
         args.extend(['--registry', str(registry),
             '--source', config['task_source'], '--lock', str(lock_path),
             '--bounded-policy', str(policy_file), '--run-root', str(root),
-            '--namespace', namespaces[0], '--build-namespace', namespaces[1], '--temporarily-forward',
+            '--namespace', namespaces[0], '--build-namespace', namespaces[1],
             '--oracle-mode', batch.get('oracle_mode', 'original'), '--source-kind', config.get('source_kind', 'oci')])
-        if config.get('docker_hub_mirror'):
+        if config.get('source_kind') != 'prepared-ci':
+            args.append('--temporarily-forward')
+        if config.get('docker_hub_mirror') and config.get('source_kind') != 'prepared-ci':
             args.extend(['--docker-hub-mirror', config['docker_hub_mirror']])
         for name in batch['names']:
             args.extend(['--task', name])
@@ -438,7 +465,7 @@ class Supervisor:
                 subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
                 lease.release()  # Preparation never dispatched a sandbox.
                 result = aggregate(state['candidate'], [], state['expected'], all_tasks=state['all_tasks'],
-                                   dataset=state.get('dataset', 'terminal-bench@2.1'))
+                                   dataset=state.get('dataset', 'terminal-bench@2.1'), **self.result_policy())
                 self.terminal(result, phase='done', reason='candidate_preparation_failed')
                 return
             subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
@@ -471,6 +498,8 @@ class Supervisor:
                     result = batch_result(root, candidate=state['candidate'], names=batch['names'],
                         dataset=state.get('dataset', 'terminal-bench@2.1'), source_kind=self.config['source_kind'],
                         oracle_mode=batch.get('oracle_mode', 'original'),
+                        proxy_required=self.config.get('source_kind') != 'prepared-ci',
+                        expected_fixture_sha256=self.result_policy().get('expected_fixture_sha256'),
                         exit_code=int(fields['ExecMainStatus']), full_task_count=len(state['all_tasks']), expected_hashes={
                             name: assets[self.config[key]] for name, key in
                             (('server_sha256', 'server'), ('kernel_sha256', 'kernel'),
@@ -489,7 +518,8 @@ class Supervisor:
                 return
             return
         result = aggregate(state['candidate'], [b['result'] for b in state['batches']], state['expected'],
-                           all_tasks=state['all_tasks'], dataset=state.get('dataset', 'terminal-bench@2.1'))
+                           all_tasks=state['all_tasks'], dataset=state.get('dataset', 'terminal-bench@2.1'),
+                           **self.result_policy())
         state['result'] = result
         self.save()
         lease.release()  # All batch units and original resources are gone.
@@ -535,7 +565,8 @@ def main():
     if args.profile or args.task or args.batch_size is not None:
         config['selection'] = dict(config['selection'])
         # A one-task diagnostic must never satisfy the default promotion gate.
-        config['check_name'] = check_name(config.get('dataset', 'terminal-bench@2.1')) + ' / diagnostic'
+        config['check_name'] = check_name(config.get('dataset', 'terminal-bench@2.1'),
+                                        source_kind=config.get('source_kind')) + ' / diagnostic'
         if args.profile:
             config['selection'].pop('tasks', None)
             config['selection']['profile'] = args.profile

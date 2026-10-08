@@ -41,9 +41,10 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def tick(self, seconds):
         self.now += seconds
 
-    def recover(self, delete, *, sleep=None):
+    def recover(self, delete, *, sleep=None, prepared_ci=False):
         return recover_runtime_create(self.database, self.intent, owner=1, namespace='test',
-            delete=delete, deadline=2, monotonic=lambda: self.now, sleep=sleep or self.tick)
+            delete=delete, deadline=2, prepared_ci=prepared_ci,
+            monotonic=lambda: self.now, sleep=sleep or self.tick)
 
     def test_late_starting_identity_deleted_once_then_observed_without_public_list(self):
         def advance(seconds):
@@ -165,9 +166,109 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             matching_runtime(missing, self.intent, owner=1, namespace='test')
         self.assertFalse(missing.exists())
 
-    def load_checkpoint(self):
+    def load_checkpoint(self, *, prepared_ci=False):
         return load_runtime_intent(self.database.parent, task='sample', runtime_attempt='e' * 32,
-                                   build_id='a' * 32, template=self.template)
+                                   build_id='a' * 32, template=self.template, prepared_ci=prepared_ci)
+
+    def use_prepared_template(self):
+        self.template['templateId'] = 'ci-' + self.intent['metadata']['build']
+        self.options['template']['template_id'] = self.template['templateId']
+
+    def test_prepared_checkpoint_requires_explicit_authority_and_exact_prefix(self):
+        checkpoint = self.database.parent / 'runtime-intent.json'
+        checkpoint.write_text(json.dumps(self.intent))
+        self.assertEqual(self.load_checkpoint(), self.intent)
+        with self.assertRaisesRegex(ValueError, 'missing live runtime correlation'):
+            self.load_checkpoint(prepared_ci=True)
+        self.use_prepared_template()
+        checkpoint.write_text(json.dumps(self.intent))
+        with self.assertRaisesRegex(ValueError, 'missing live runtime correlation'):
+            self.load_checkpoint()
+        self.assertEqual(self.load_checkpoint(prepared_ci=True), self.intent)
+        for identity in ('ci-' + 'b' * 32, 'tpl-' + 'a' * 32, 'static-' + 'a' * 32):
+            self.template['templateId'] = identity
+            checkpoint.write_text(json.dumps(self.intent))
+            with self.subTest(identity=identity), self.assertRaisesRegex(ValueError, 'missing live runtime correlation'):
+                self.load_checkpoint(prepared_ci=True)
+
+    def test_prepared_mode_rejects_other_dataset_and_nonboolean_authority(self):
+        self.use_prepared_template()
+        checkpoint = self.database.parent / 'runtime-intent.json'
+        checkpoint.write_text(json.dumps(self.intent))
+        for mode, benchmark in ((True, 'terminal-bench@2.1'), (True, 'terminal-bench@2.0'),
+                                (1, 'terminal-bench-2.0'), ('true', 'terminal-bench-2.0'),
+                                (None, 'terminal-bench-2.0')):
+            delete = Mock()
+            with self.subTest(mode=mode, benchmark=benchmark):
+                with self.assertRaisesRegex(ValueError, 'invalid explicit runtime recovery mode'):
+                    load_runtime_intent(self.database.parent, task='sample', runtime_attempt='e' * 32,
+                        build_id='a' * 32, template=self.template, benchmark=benchmark, prepared_ci=mode)
+                with self.assertRaisesRegex(ValueError, 'invalid explicit runtime recovery mode'):
+                    matching_runtime(self.database, self.intent, owner=1, namespace='test',
+                        benchmark=benchmark, prepared_ci=mode)
+                with self.assertRaisesRegex(ValueError, 'invalid explicit runtime recovery mode'):
+                    recover_runtime_create(self.database, self.intent, owner=1, namespace='test',
+                        delete=delete, deadline=0, benchmark=benchmark, prepared_ci=mode)
+                delete.assert_not_called()
+
+    def test_prepared_journal_is_never_inferred_and_keeps_lost_delete_observation(self):
+        self.use_prepared_template()
+        self.insert(phase='Running')
+        with self.assertRaisesRegex(ValueError, 'invalid runtime creation intent'):
+            matching_runtime(self.database, self.intent, owner=1, namespace='test')
+        def lost(identity):
+            self.insert(identity, phase='Destroyed')
+            raise OSError('private transport text')
+        delete = Mock(side_effect=lost)
+        result = self.recover(delete, prepared_ci=True)
+        delete.assert_called_once_with('sb-test-1')
+        self.assertEqual(result['status'], 'destroyed')
+        self.assertFalse(result['delete_acknowledged'])
+        self.assertNotIn('exact_cleanup', result)
+
+    def test_prepared_recovery_preserves_all_original_identity_checks(self):
+        self.use_prepared_template()
+        variants = []
+        for section, field, value in (('metadata', 'build', 'b' * 32), ('metadata', 'task', 'other'),
+                ('metadata', 'revision', 'r2'), ('template', 'owner', 2),
+                ('template', 'template_id', 'tpl-' + 'a' * 32), ('template', 'revision', 'r2')):
+            options = copy.deepcopy(self.options)
+            options[section][field] = value
+            variants.append((options, 1, 'test', None))
+        for section, field, value in (('rootfs', 'sha256', 'f' * 64), ('kernel', 'sha256', 'f' * 64),
+                ('resources', 'cpu_count', 3), ('resources', 'memory_mib', 8192),
+                ('resources', 'disk_bytes', 1), ('resources', 'host_memory_bytes', 1)):
+            options = copy.deepcopy(self.options)
+            options['template'][section][field] = value
+            variants.append((options, 1, 'test', None))
+        variants.extend(((self.options, 2, 'test', None), (self.options, 1, 'other', None),
+                         (self.options, 1, 'test', 'sb-test-2')))
+        for options, owner, namespace, sandbox_id in variants:
+            with self.subTest(owner=owner, namespace=namespace, sandbox_id=sandbox_id, options=options):
+                self.now = 0
+                self.insert(phase='Running', owner=owner, options=options)
+                delete = Mock()
+                with self.assertRaisesRegex(RuntimeError, 'identity mismatch'):
+                    recover_runtime_create(self.database, self.intent, owner=1, namespace=namespace,
+                        sandbox_id=sandbox_id, delete=delete, deadline=2, prepared_ci=True,
+                        monotonic=lambda: self.now, sleep=self.tick)
+                delete.assert_not_called()
+
+    def test_prepared_attempt_mismatch_stays_unknown_and_duplicate_matches_reject(self):
+        self.use_prepared_template()
+        different = copy.deepcopy(self.options)
+        different['metadata']['runtime_attempt'] = 'f' * 32
+        self.insert(phase='Running', options=different)
+        delete = Mock()
+        with self.assertRaises(TimeoutError):
+            self.recover(delete, prepared_ci=True)
+        delete.assert_not_called()
+        self.now = 0
+        self.insert(phase='Running')
+        self.insert('sb-test-2', phase='Running')
+        with self.assertRaisesRegex(RuntimeError, 'ambiguous'):
+            self.recover(delete, prepared_ci=True)
+        delete.assert_not_called()
 
     def test_two_point_one_checkpoint_requires_supervisor_version_binding(self):
         checkpoint = self.database.parent / 'runtime-intent.json'
