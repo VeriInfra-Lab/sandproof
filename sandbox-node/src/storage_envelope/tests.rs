@@ -156,6 +156,9 @@ fn old_logical_id_limits_and_uid_override_are_rejected() {
 #[test]
 fn partial_physical_deployment_is_rejected_without_host_io() {
     let mut config = config();
+    assert!(config.validate_deployment().is_ok());
+    config.bounded_host.physical_storage = None;
+    config.bounded_host.console_policy = None;
     assert!(config.validate_deployment().is_err());
     config.bounded_host.console_policy = Some(sandproof_controller_service::ConsolePolicy::Discard);
     assert!(config.validate_deployment().is_err());
