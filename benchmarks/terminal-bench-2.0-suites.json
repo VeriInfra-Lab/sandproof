@@ -26,6 +26,13 @@
     "mteb-retrieve": "repaired"
   },
   "profiles": {
+    "ci": {
+      "description": "Two stable CI checks; prepackaged environments and local verifier bootstrap are explicitly a CI variant",
+      "tasks": [
+        {"name": "polyglot-c-py", "coverage": "compiler, interpreter, command and file transport"},
+        {"name": "db-wal-recovery", "coverage": "guest database recovery and filesystem"}
+      ]
+    },
     "smoke": {
       "description": "Four capability checks, including one explicitly repaired solution",
       "tasks": [
