@@ -144,7 +144,8 @@ class CIFixtureTests(unittest.TestCase):
             template = fixture.template_descriptor()
             binding = dict(name=name, files_sha256=fixture.files_sha256,
                            rootfs_sha256=fixture.rootfs_sha256, startup=fixture.startup)
-            self.assertEqual(template['template_id'], 'tpl-' + sha(canonical(binding))[:32])
+            self.assertEqual(template['template_id'], 'ci-' + sha(canonical(binding))[:32])
+            self.assertFalse(template['template_id'].startswith('tpl-'))
             self.assertEqual(fixture.guest_preflight_command(), guest_preflight_command())
             self.assertEqual((template['revision'], template['owner'], template['envd_version']), ('r1', 1, '0.9.0'))
             self.assertEqual(template['startup'], expected['startup'])

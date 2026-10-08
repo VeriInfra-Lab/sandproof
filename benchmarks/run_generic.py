@@ -123,7 +123,8 @@ async def run_selected(args, lock):
                         row['runtime_intent'] = load_runtime_intent(
                             result.parent, task=name, runtime_attempt=environment.runtime_attempt,
                             build_id=environment.build_id, template=environment.template,
-                            benchmark=entry.get('dataset', 'terminal-bench-2.0'))
+                            benchmark=entry.get('dataset', 'terminal-bench-2.0'),
+                            prepared_ci=ci_fixtures is not None)
                     except (OSError, ValueError, TypeError) as error:
                         row.setdefault('execution_status', row['status'])
                         row.update(status='cleanup_unknown', exact_cleanup='unknown',

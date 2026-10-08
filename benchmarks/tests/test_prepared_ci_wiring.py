@@ -28,6 +28,35 @@ finally:
 
 
 class PreparedCiWiringTests(unittest.TestCase):
+    def test_lost_prepared_create_explicitly_selects_ci_recovery_binding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(all=False, task=['sample'], oracle_mode='original',
+                source_kind='prepared-ci', ci_fixtures={'sample': object()}, output=root,
+                source=root, build_url='http://127.0.0.1:1',
+                verifier_task_factory=lambda *args: None,
+                completion_audit=lambda row: {'exact_cleanup': 'passed'})
+            entry = {'name': 'sample', 'dataset': 'terminal-bench-2.0'}
+            lock = {'dataset': 'terminal-bench@2.0', 'tasks': [entry], 'source': {'commit': 'a' * 40}}
+            env = SimpleNamespace(create_dispatched=True, sandbox_id=None, kill_confirmed=False,
+                build_dispatched=False, build_id='b' * 32, build_result=None,
+                template={'templateId': 'ci-' + 'b' * 32}, runtime_attempt='e' * 32)
+            intent = {'metadata': {'build': 'b' * 32}, 'template': env.template}
+            async def unknown_create(args, entry, recipe, *, environment_factory, result_row):
+                self.assertIs(environment_factory(recipe={}), env)
+                result_row.update(status='failed', oracle='not_run', verifier='not_run')
+                return result_row
+            with (patch('benchmarks.prepared_ci_environment.PreparedCiEnvironment', return_value=env),
+                  patch.object(run_generic, 'run_task', side_effect=unknown_create),
+                  patch.object(run_generic, 'load_runtime_intent', return_value=intent) as recover,
+                  contextlib.redirect_stdout(io.StringIO())):
+                asyncio.run(run_generic.run_selected(args, lock))
+            recover.assert_called_once_with(root / 'sample', task='sample', runtime_attempt='e' * 32,
+                build_id='b' * 32, template=env.template, benchmark='terminal-bench-2.0', prepared_ci=True)
+            row = json.loads((root / 'full-set.json').read_text())['tasks'][0]
+            self.assertEqual(row['runtime_intent'], intent)
+            self.assertEqual(row['exact_cleanup'], 'passed')
+
     def test_prepared_build_service_is_neither_validated_nor_started(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

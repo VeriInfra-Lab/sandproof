@@ -6,7 +6,7 @@
 
 ### 预打包晋升回归
 
-受信运维一次性用[固定制备配方](../benchmarks/ci-fixture.Dockerfile)在原通用构建服务中准备两份干净模板：基础任务 OCI 使用明确摘要，额外预装固定评分 Python/依赖，不包含解答、测试文件或评分结果。镜像与私有清单保存在仓库外；清单绑定原任务文件、原 OCI、内核、磁盘、资源、启动设置及评分依赖摘要。[输入检查](../benchmarks/ci_fixtures.py)登记和使用前核对内容及文件身份，来宾启动后核对保留目录未泄漏。原基础镜像不修改。
+受信运维一次性用[固定制备配方](../benchmarks/ci-fixture.Dockerfile)在原通用构建服务中准备两份干净模板：基础任务 OCI 使用明确摘要，额外预装固定评分 Python/依赖，不包含解答、测试文件或评分结果。镜像与私有清单保存在仓库外；清单绑定原任务文件、原 OCI、内核、磁盘、资源、启动设置及评分依赖摘要。[输入检查](../benchmarks/ci_fixtures.py)登记和使用前核对内容及文件身份，来宾启动后核对保留目录未泄漏。预装静态模板使用独立 `ci-` 编号，不冒充正式发布的 `tpl-` 模板；回执恢复显式选择该绑定，其他身份检查不变。原基础镜像不修改。
 
 一次性制备复用[隔离实机入口](../tests/system/harbor_generic_chain.py)：在原来完整批准参数之外，选择 `--task polyglot-c-py --task db-wal-recovery --source-kind dockerfile --prepare-ci-fixtures <新私有目录> --ci-build-inputs <两题原 OCI 摘要 JSON> --ci-uv <已批准 uv>`。只有两份 Ready 模板和原构建的精确清理全部完成，才发布最终 `manifest.json`；报告明确为制备而不是题目通过。此阶段可使用现有批准出口，日常预装模式不带这些制备参数。
 

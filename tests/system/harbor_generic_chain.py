@@ -435,6 +435,7 @@ def exercise(args):
                 owner=settings[0]['credentials'][0]['tenant'], namespace=namespaces[0],
                 benchmark=lock['dataset'] if lock['dataset'] == 'terminal-bench@2.1' else 'terminal-bench-2.0',
                 sandbox_id=row.get('sandbox_id'), deadline=deadline,
+                prepared_ci=ci_fixtures is not None,
                 delete=lambda identity: fetch(opener, urls[0], 'DELETE', '/sandboxes/' + identity, key)[0])
             result.update(sandbox_id=recovery['sandbox_id'], runtime_recovery=recovery)
         while True:

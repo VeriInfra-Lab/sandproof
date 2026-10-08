@@ -210,7 +210,9 @@ class CIFixture:
         shape = self.resources
         binding = dict(name=self.name, files_sha256=self.files_sha256,
                        rootfs_sha256=self.rootfs_sha256, startup=self.startup)
-        identity = 'tpl-' + hashlib.sha256(canonical(binding)).hexdigest()[:32]
+        # tpl- is reserved for the durable publication registry. Prepared CI
+        # is a static operator binding and must not masquerade as a publication.
+        identity = 'ci-' + hashlib.sha256(canonical(binding)).hexdigest()[:32]
         return dict(template_id=identity, revision='r1', owner=1,
                     kernel=dict(path=str(self.kernel), sha256=self.kernel_sha256, size_bytes=self._kernel_identity[2]),
                     rootfs=dict(path=str(self.rootfs), sha256=self.rootfs_sha256, size_bytes=self._rootfs_identity[2]),

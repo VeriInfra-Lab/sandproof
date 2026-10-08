@@ -1,4 +1,6 @@
 """Prepared, network-disabled CI workloads; not original benchmark environments."""
+import re
+
 from benchmarks.generic_environment import GenericEnvironment
 
 
@@ -18,7 +20,9 @@ class PreparedCiEnvironment(GenericEnvironment):
         descriptor = self.fixture.template_descriptor()
         # This labels the immutable prepared binding for the existing private
         # create-reconciliation protocol. No public build is dispatched.
-        self.build_id = descriptor['template_id'].removeprefix('tpl-')
+        if re.fullmatch(r'ci-[0-9a-f]{32}', descriptor.get('template_id', '')) is None:
+            raise ValueError('prepared CI requires its explicit static template binding')
+        self.build_id = descriptor['template_id'].removeprefix('ci-')
         resources = descriptor['resources']
         self.template = {
             'templateId': descriptor['template_id'], 'revision': descriptor['revision'],

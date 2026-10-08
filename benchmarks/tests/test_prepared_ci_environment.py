@@ -15,7 +15,7 @@ def prepared_fixture():
         guest_preflight_command=Mock(return_value='test -x /opt/sandproof-ci-verifier/bin/python'),
         startup={'workdir': '/app', 'user': 'root', 'env_vars': {}, 'argv': []},
         template_descriptor=Mock(return_value={
-            'template_id': 'tpl-' + 'b' * 32, 'revision': 'r1',
+            'template_id': 'ci-' + 'b' * 32, 'revision': 'r1',
             'kernel': {'sha256': 'c' * 64}, 'rootfs': {'sha256': 'd' * 64},
             'resources': {'cpu_count': 1, 'memory_mib': 2048, 'disk_bytes': 10 * 1024**3,
                           'host_memory_bytes': 2304 * 1024**2}}))
@@ -30,8 +30,22 @@ class PreparedCiEnvironmentTests(unittest.TestCase):
         env.client.request.assert_not_called()
         self.assertFalse(env.build_dispatched)
         self.assertEqual(env.build_id, 'b' * 32)
-        self.assertEqual(env.template['templateId'], 'tpl-' + env.build_id)
+        self.assertEqual(env.template['templateId'], 'ci-' + env.build_id)
         env.fixture.verify_artifacts.assert_called_once()
+
+    def test_publication_or_unbound_static_prefix_is_rejected_before_create(self):
+        for identity in ('tpl-' + 'b' * 32, 'ci-' + 'b' * 31, 'other-' + 'b' * 32):
+            with self.subTest(identity=identity):
+                env = object.__new__(PreparedCiEnvironment)
+                env.fixture, env.checkpoint = prepared_fixture(), Mock()
+                env.fixture.template_descriptor.return_value['template_id'] = identity
+                env.build_dispatched = False
+                with (self.assertRaisesRegex(ValueError, 'explicit static template binding'),
+                      patch('benchmarks.generic_environment.AsyncSandbox.create') as create):
+                    asyncio.run(env.prepare_template())
+                create.assert_not_called()
+                self.assertFalse(env.build_dispatched)
+                env.checkpoint.assert_not_called()
 
     def test_changed_fixture_rejects_before_any_create(self):
         env = object.__new__(PreparedCiEnvironment)
