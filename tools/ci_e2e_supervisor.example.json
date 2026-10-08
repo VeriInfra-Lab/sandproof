@@ -36,11 +36,10 @@
   "tools": "/opt/sandproof-e2e/tools",
   "budget_profile": "/etc/sandproof-ci/e2e-budgets.json",
   "policy_template": "/etc/sandproof-ci/e2e-policy.json",
-  "proxy_binary": "/usr/local/lib/sandproof-clash/mihomo",
-  "proxy_sha256": "replace-with-approved-sha256",
-  "source_kind": "oci",
-  "docker_hub_mirror": null,
+  "source_kind": "prepared-ci",
+  "ci_fixtures": "/etc/sandproof-ci/ci-fixtures.json",
+  "check_name": "E2E / terminal-bench-ci",
   "selection_sha256": "replace-with-canonical-selection-catalog-sha256",
-  "selection": {"profile": "smoke", "batch_size": 3},
+  "selection": {"profile": "ci", "batch_size": 2},
   "host_assets": {}
 }

@@ -8,6 +8,8 @@ mod bounded_tests;
 #[cfg(test)]
 mod cache_tests;
 #[cfg(test)]
+mod lease_tests;
+#[cfg(test)]
 mod tests_support;
 
 mod capacity;
@@ -47,7 +49,22 @@ use std::path::{Path, PathBuf};
 
 type ReceiptRow = (i64, Vec<u8>, String, Option<Vec<u8>>);
 
-fn lease_controller_store(path: &Path) -> Result<(PathBuf, File), JournalError> {
+/// Only the controller owns this lease; a child never receives its authority.
+struct ControllerLease {
+    file: File,
+}
+
+impl Drop for ControllerLease {
+    fn drop(&mut self) {
+        // Closing just this descriptor can leave the lock held by a transient
+        // fork-before-exec copy of the same CLOEXEC open description. Release
+        // it explicitly on every exit, including failures while opening SQL.
+        // Per-resource child ownership guards must not use this policy.
+        let _ = self.file.unlock();
+    }
+}
+
+fn lease_controller_store(path: &Path) -> Result<(PathBuf, ControllerLease), JournalError> {
     if path.is_symlink() {
         return Err(JournalError::UnsupportedStore);
     }
@@ -66,7 +83,7 @@ fn lease_controller_store(path: &Path) -> Result<(PathBuf, File), JournalError> 
         .truncate(false)
         .open(lock_path)?;
     lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
-    Ok((path, lease))
+    Ok((path, ControllerLease { file: lease }))
 }
 
 /// Implemented by the trusted host adapter, never by a guest/API response.
@@ -83,7 +100,8 @@ pub struct ControllerJournal {
     journal: Journal,
     namespace: String,
     committed_world: transaction::CommittedWorld,
-    _lease: File,
+    // Keep this last: the SQLite journal closes before ownership is released.
+    _lease: ControllerLease,
 }
 
 fn validate_namespace(namespace: &str) -> Result<(), JournalError> {

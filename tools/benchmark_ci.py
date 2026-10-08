@@ -14,12 +14,29 @@ import stat
 from tools.benchmark_tasks import PIN21, canonical, digest, InvalidInput, pin_for
 from tools.bounded_acceptance import bounded_acceptance_layout
 from tools.system_acceptance import json_file
+from benchmarks.ci_verifier import (BOOTSTRAP_SHA256, LAUNCHER, MODE as CI_VERIFIER_MODE,
+                                    REQUIREMENTS_SHA256)
 
 CHECK_NAME = 'E2E / terminal-bench-2.1'
 
 
-def check_name(dataset):
+def ci_verifier_evidence(row):
+    """Require the reviewed local bootstrap, export no sidecar paths or inventories."""
+    expected = dict(mode=CI_VERIFIER_MODE, source_launcher_sha256=BOOTSTRAP_SHA256,
+        launcher_sha256=hashlib.sha256(LAUNCHER.encode()).hexdigest(), requirements_sha256=REQUIREMENTS_SHA256)
+    variant = row.get('verifier_variant')
+    if (row.get('guest_preflight') != 'passed' or row.get('verifier_mode') != CI_VERIFIER_MODE
+            or not isinstance(variant, dict) or any(variant.get(key) != value for key, value in expected.items())):
+        raise ValueError('prepackaged CI guest preflight or verifier provenance is incomplete or changed')
+    return dict(guest_preflight='passed', verifier_mode=CI_VERIFIER_MODE, verifier_variant=expected)
+
+
+def check_name(dataset, *, source_kind=None):
     pin = pin_for({'dataset': dataset})
+    if source_kind == 'prepared-ci':
+        if pin.version != '2.0':
+            raise ValueError('prepackaged CI is bound to the reviewed 2.0 dataset')
+        return 'E2E / terminal-bench-ci'
     return 'E2E / terminal-bench-' + pin.version + ('-compat' if pin.version == '2.0' else '')
 
 
@@ -149,28 +166,46 @@ def instantiate_policy(template, root, namespaces, *, job_count):
 
 
 def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expected_hashes=None,
-                 full_task_count, dataset='terminal-bench@2.1', source_kind='dockerfile', oracle_mode='original'):
+                 full_task_count, dataset='terminal-bench@2.1', source_kind='dockerfile', oracle_mode='original',
+                 expected_fixture_sha256=None):
     pin = pin_for({'dataset': dataset})
+    prepared = source_kind == 'prepared-ci'
+    if prepared:
+        if (pin.version != '2.0' or oracle_mode != 'original'
+                or not isinstance(expected_fixture_sha256, str)
+                or re.fullmatch('[0-9a-f]{64}', expected_fixture_sha256) is None):
+            raise ValueError('reviewed prepackaged CI fixture identity required')
+    elif expected_fixture_sha256 is not None:
+        raise ValueError('fixture identity is only valid for prepackaged CI')
     if oracle_mode not in ('original', 'repaired') or (pin.version != '2.0' and oracle_mode != 'original'):
         raise ValueError('unreviewed batch oracle mode')
     report = json_file(root / 'report.json', limit=4 * 1024 * 1024)
     service = json_file(root / 'service-cleanup.json')
     rows = report.get('tasks', [])
     observed = [r.get('name') for r in rows]
+    grading_matches = (report.get('original_verifier') is True
+        and report.get('original_oracle_verifier') is (oracle_mode == 'original')
+        and report.get('original_environment') is True)
+    if prepared:
+        grading_matches = (report.get('original_environment') is False
+            and report.get('original_verifier') is False
+            and report.get('original_oracle_verifier') is False
+            and report.get('original_test_assertions') is True
+            and report.get('original_oracle') is True
+            and report.get('fixture_sha256') == expected_fixture_sha256)
     if (report.get('commit') != candidate or report.get('dataset') != dataset
             or report.get('task_source') != {'repository': pin.repository, 'commit': pin.commit}
             or report.get('fixed_task_count') != full_task_count or len(observed) != len(names)
             or len(set(observed)) != len(names) or set(observed) != set(names)
-            or report.get('source_kind') != source_kind or source_kind not in ('oci', 'dockerfile')
-            or report.get('oracle_mode') != oracle_mode or report.get('original_verifier') is not True
-            or report.get('original_oracle_verifier') is not (oracle_mode == 'original')
-            or report.get('original_environment') is not True or report.get('paid_model_used') is not False
+            or report.get('source_kind') != source_kind or source_kind not in ('oci', 'dockerfile', 'prepared-ci')
+            or report.get('oracle_mode') != oracle_mode or not grading_matches
+            or report.get('paid_model_used') is not False
             or (root / 'service-cleanup-errors.json').exists()
             or service.get('removed') is not True
             or any(r.get('exact_cleanup') != 'passed' or r.get('oracle_mode') != oracle_mode for r in rows)
             or report.get('no_process_network_cgroup_jail_residue') is not True):
         raise ValueError('incomplete, mismatched or unknown batch cleanup evidence')
-    if proxy_required and json_file(root / 'proxy-cleanup.json').get('phase') != 'removed':
+    if proxy_required and not prepared and json_file(root / 'proxy-cleanup.json').get('phase') != 'removed':
         raise ValueError('proxy cleanup is unknown')
     fingerprint_fields = ('server_sha256', 'kernel_sha256', 'builder_base_sha256')
     if (any(not isinstance(report.get(key), str) or re.fullmatch('[0-9a-f]{64}', report[key]) is None
@@ -188,6 +223,8 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
             verifier=row.get('verifier') if row.get('verifier') in statuses else 'not_run',
             exact_cleanup=row['exact_cleanup'],
             rewards=row.get('rewards') if row.get('rewards') in ({'reward': 0}, {'reward': 1}) else None)
+        if prepared:
+            item.update(ci_verifier_evidence(row))
         build = row.get('build_id')
         if isinstance(build, str) and re.fullmatch('[0-9a-f]{32}', build):
             item['build_id'] = build
@@ -199,7 +236,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
         # This is execution failure, not missing cleanup evidence. Only accept
         # that absence when the report explicitly says no runtime was created;
         # successful/publication/runtime paths still require both fingerprints.
-        unpublished_failure = (item['status'] in ('failed', 'timeout')
+        unpublished_failure = (not prepared and item['status'] in ('failed', 'timeout')
             and item['oracle'] == item['verifier'] == 'not_run'
             and row.get('create_dispatched') is False and row.get('sandbox_id') is None
             and (row.get('build') or {}).get('state') == 'Failed'
@@ -212,28 +249,65 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     hashes = {key: value for key, value in report.items() if key in
               ('server_sha256', 'kernel_sha256', 'builder_base_sha256')
               and isinstance(value, str) and re.fullmatch('[0-9a-f]{64}', value)}
-    return dict(tasks=safe, dataset=dataset, source_kind=source_kind, oracle_mode=oracle_mode,
+    result = dict(tasks=safe, dataset=dataset, source_kind=source_kind, oracle_mode=oracle_mode,
                 passed=passed, cleanup='passed', exit_code=exit_code, artifact_hashes=hashes,
                 report_sha256=hashlib.sha256((root / 'report.json').read_bytes()).hexdigest())
+    if prepared:
+        result.update(fixture_sha256=expected_fixture_sha256, original_environment=False,
+                      original_verifier=False, original_oracle_verifier=False,
+                      original_test_assertions=True, original_oracle=True)
+    return result
 
 
-def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal-bench@2.1'):
+def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal-bench@2.1',
+              source_kind=None, expected_fixture_sha256=None):
     pin_for({'dataset': dataset})
     if any(b.get('dataset', dataset) != dataset for b in batches):
         raise ValueError('cannot combine different dataset versions')
+    prepared = source_kind == 'prepared-ci' or any(b.get('source_kind') == 'prepared-ci' for b in batches)
+    if prepared:
+        identities = [b.get('fixture_sha256') for b in batches]
+        if (dataset != 'terminal-bench@2.0' or source_kind not in (None, 'prepared-ci')
+                or any(b.get('source_kind') != 'prepared-ci' or b.get('oracle_mode') != 'original'
+                       or b.get('original_environment') is not False or b.get('original_verifier') is not False
+                       or b.get('original_oracle_verifier') is not False
+                       or b.get('original_test_assertions') is not True or b.get('original_oracle') is not True
+                       for b in batches)
+                or any(not isinstance(value, str)
+                    or re.fullmatch('[0-9a-f]{64}', value) is None for value in identities)
+                or len(set(identities)) > 1
+                or (expected_fixture_sha256 is not None and (not isinstance(expected_fixture_sha256, str)
+                    or re.fullmatch('[0-9a-f]{64}', expected_fixture_sha256) is None
+                    or any(value != expected_fixture_sha256 for value in identities)))):
+            raise ValueError('cannot combine different or unreviewed CI fixtures')
+        fixture_sha256 = expected_fixture_sha256 or next(iter(identities), None)
+        if fixture_sha256 is None:
+            raise ValueError('prepackaged CI aggregate requires its fixture identity')
+    elif expected_fixture_sha256 is not None:
+        raise ValueError('fixture identity is only valid for prepackaged CI')
     rows = [row for batch in batches for row in batch['tasks']]
+    if prepared:
+        for row in rows:
+            ci_verifier_evidence(row)  # Recheck durable batch evidence before terminal publication.
     names = [row['name'] for row in rows]
     complete = len(names) == len(expected) and len(set(names)) == len(expected) and set(names) == set(expected)
     passed = bool(expected) and complete and all(
         batch['passed'] is True and batch['cleanup'] == 'passed' for batch in batches)
     full = (all_tasks is not None and len(expected) == len(all_tasks)
             and len(set(all_tasks)) == len(all_tasks) and set(expected) == set(all_tasks))
-    return dict(schema_version=1, candidate=candidate, dataset=dataset,
+    result = dict(schema_version=1, candidate=candidate, dataset=dataset,
         baseline='compatibility regression' if dataset == 'terminal-bench@2.0' else 'original tasks',
         original_oracle_verifier=bool(rows and all(r.get('oracle_mode', 'original') == 'original' for r in rows)),
         scope='full fixed dataset' if full else 'configured regression subset; not full-suite acceptance',
         required_tasks=list(expected), tasks=rows, complete=complete, passed=passed,
         executed_task_count=len(rows), full_suite_passed=bool(full and passed), paid_model_used=False)
+    if prepared:
+        result.update(source_kind='prepared-ci', fixture_sha256=fixture_sha256,
+            baseline='prepackaged CI regression; original solution and test assertions',
+            original_environment=False, original_verifier=False, original_oracle_verifier=False,
+            original_test_assertions=True, original_oracle=True,
+            scope='prepackaged CI variant; not original or full-suite acceptance', full_suite_passed=False)
+    return result
 
 
 def remove_private_tree(root, expected_identity):

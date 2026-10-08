@@ -229,6 +229,12 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(modes['build-pmars'], 'repaired')
         self.assertEqual(modes['regex-log'], 'original')
         self.assertEqual(bench.check_name(lock['dataset']), 'E2E / terminal-bench-2.0-compat')
+        self.assertEqual(bench.selection(lock, catalog, {'profile':'ci', 'batch_size':1}),
+                         [['polyglot-c-py'], ['db-wal-recovery']])
+        self.assertEqual(bench.check_name(lock['dataset'], source_kind='prepared-ci'),
+                         'E2E / terminal-bench-ci')
+        with self.assertRaises(ValueError):
+            bench.check_name('terminal-bench@2.1', source_kind='prepared-ci')
         damaged = copy.deepcopy(lock)
         task = next(t for t in damaged['tasks'] if t['name'] == 'build-pmars')
         next(f for f in task['files'] if f['path'] == 'solution/solve.sh')['sha256'] = 'f'*64
@@ -264,6 +270,304 @@ class BenchmarkCITests(unittest.TestCase):
         (self.root / 'report.json').write_text(json.dumps(report))
         with self.assertRaises(ValueError):
             bench.batch_result(self.root, **args)
+
+    def prepared_report(self):
+        from tools.benchmark_tasks import PIN
+        report = self.report()
+        report.update(dataset='terminal-bench@2.0', source_kind='prepared-ci', fixture_sha256='e'*64,
+            task_source=dict(repository=PIN.repository, commit=PIN.commit),
+            original_environment=False, original_verifier=False, original_oracle_verifier=False,
+            original_test_assertions=True, original_oracle=True)
+        for row in report['tasks']:
+            row.update(guest_preflight='passed', verifier_mode=bench.CI_VERIFIER_MODE,
+                verifier_variant=dict(mode=bench.CI_VERIFIER_MODE, source_launcher_sha256=bench.BOOTSTRAP_SHA256,
+                    launcher_sha256=bench.hashlib.sha256(bench.LAUNCHER.encode()).hexdigest(),
+                    requirements_sha256=bench.REQUIREMENTS_SHA256))
+        (self.root / 'report.json').write_text(json.dumps(report))
+        (self.root / 'proxy-cleanup.json').unlink()
+        return report
+
+    def prepared_args(self):
+        return dict(candidate='a'*40, names=self.names[:4], exit_code=0, full_task_count=89,
+                    dataset='terminal-bench@2.0', source_kind='prepared-ci', expected_fixture_sha256='e'*64)
+
+    def test_prepared_ci_accepts_only_pinned_local_grading_and_exact_cleanup(self):
+        original = self.prepared_report()
+        args = self.prepared_args()
+        result = bench.batch_result(self.root, **args)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['fixture_sha256'], 'e'*64)
+        self.assertFalse(result['original_oracle_verifier'])
+        self.assertFalse(result['original_environment'])
+        for field, value in (('fixture_sha256','f'*64), ('original_environment',True),
+                             ('original_verifier',True), ('original_oracle_verifier',True),
+                             ('original_test_assertions',False), ('original_oracle',False),
+                             ('source_kind','oci'), ('paid_model_used',True),
+                             ('no_process_network_cgroup_jail_residue',False)):
+            with self.subTest(field=field):
+                changed = dict(original, **{field:value})
+                (self.root / 'report.json').write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    bench.batch_result(self.root, **args)
+        for field in ('fixture_sha256', 'original_test_assertions', 'original_oracle'):
+            changed = dict(original)
+            changed.pop(field)
+            (self.root / 'report.json').write_text(json.dumps(changed))
+            with self.assertRaises(ValueError):
+                bench.batch_result(self.root, **args)
+        (self.root / 'report.json').write_text(json.dumps(original))
+        for change in ({'expected_fixture_sha256':None}, {'expected_fixture_sha256':'invalid'},
+                       {'expected_fixture_sha256':True}, {'oracle_mode':'repaired'},
+                       {'dataset':'terminal-bench@2.1'}, {'source_kind':'oci'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                bench.batch_result(self.root, **dict(args, **change))
+        (self.root / 'service-cleanup.json').write_text('{"removed":false}')
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, **args)
+        (self.root / 'service-cleanup.json').write_text('{"removed":true}')
+        original['tasks'][0].pop('template')
+        (self.root / 'report.json').write_text(json.dumps(original))
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, **args)
+
+    def test_prepared_ci_failure_remains_failed_and_does_not_waive_template_identity(self):
+        report = self.prepared_report()
+        row = report['tasks'][0]
+        row.update(status='failed', oracle='passed', verifier='failed', rewards={'reward':0})
+        (self.root / 'report.json').write_text(json.dumps(report))
+        result = bench.batch_result(self.root, **dict(self.prepared_args(), exit_code=1))
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['cleanup'], 'passed')
+        self.assertEqual(result['tasks'][0]['verifier'], 'failed')
+        row.update(template=None, build={'state':'Failed'}, create_dispatched=False, sandbox_id=None)
+        (self.root / 'report.json').write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, **dict(self.prepared_args(), exit_code=1))
+
+    def test_prepared_ci_each_guest_preflight_and_verifier_identity_is_required(self):
+        original = self.prepared_report()
+        args = self.prepared_args()
+        for field, values in (('guest_preflight', [None, 'not_run', 'failed', True]),
+                              ('verifier_mode', [None, 'original', True]),
+                              ('verifier_variant', [None, [], 'unchecked'])):
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    changed = copy.deepcopy(original)
+                    if value is None:
+                        changed['tasks'][0].pop(field)
+                    else:
+                        changed['tasks'][0][field] = value
+                    (self.root / 'report.json').write_text(json.dumps(changed))
+                    with self.assertRaises(ValueError):
+                        bench.batch_result(self.root, **args)
+        for field in ('mode', 'source_launcher_sha256', 'launcher_sha256', 'requirements_sha256'):
+            for value in (None, 'f'*64, True):
+                with self.subTest(variant_field=field, value=value):
+                    changed = copy.deepcopy(original)
+                    if value is None:
+                        changed['tasks'][-1]['verifier_variant'].pop(field)
+                    else:
+                        changed['tasks'][-1]['verifier_variant'][field] = value
+                    (self.root / 'report.json').write_text(json.dumps(changed))
+                    with self.assertRaises(ValueError):
+                        bench.batch_result(self.root, **args)
+        # Paths, file inventories and unreviewed extra sidecar fields stay private.
+        original['tasks'][0]['verifier_variant'].update(private_path='NEVER EXPORT', original_files=['NEVER EXPORT'])
+        original['tasks'][0]['verifier_variant_manifest_sha256'] = 'd'*64
+        (self.root / 'report.json').write_text(json.dumps(original))
+        result = bench.batch_result(self.root, **args)
+        self.assertNotIn('NEVER EXPORT', json.dumps(result))
+        row = result['tasks'][0]
+        self.assertEqual(row['guest_preflight'], 'passed')
+        self.assertEqual(row['verifier_mode'], bench.CI_VERIFIER_MODE)
+        self.assertEqual(set(row['verifier_variant']),
+            {'mode', 'source_launcher_sha256', 'launcher_sha256', 'requirements_sha256'})
+        self.assertNotIn('verifier_variant_manifest_sha256', row)
+        self.assertTrue(result['passed'])
+        row['verifier_variant']['launcher_sha256'] = 'f'*64
+        with self.assertRaises(ValueError):
+            bench.aggregate('a'*40, [result], self.names[:4], dataset='terminal-bench@2.0')
+
+    def test_prepared_ci_aggregate_never_claims_original_or_full_suite_and_rejects_mixing(self):
+        self.prepared_report()
+        batch = bench.batch_result(self.root, **self.prepared_args())
+        names = self.names[:4]
+        result = bench.aggregate('a'*40, [batch], names, all_tasks=names, dataset='terminal-bench@2.0')
+        self.assertTrue(result['passed'])
+        self.assertFalse(result['original_oracle_verifier'])
+        self.assertFalse(result['full_suite_passed'])
+        self.assertEqual(result['source_kind'], 'prepared-ci')
+        self.assertIn('CI variant', result['scope'])
+        failed = bench.aggregate('a'*40, [], names, dataset='terminal-bench@2.0',
+            source_kind='prepared-ci', expected_fixture_sha256='e'*64)
+        self.assertFalse(failed['passed'])
+        self.assertFalse(failed['original_environment'])
+        for changed in (dict(batch, source_kind='oci'), dict(batch, fixture_sha256='f'*64),
+                        dict(batch, fixture_sha256=None), dict(batch, fixture_sha256={}),
+                        dict(batch, original_verifier=True), dict(batch, original_oracle_verifier=True),
+                        dict(batch, oracle_mode='repaired')):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                bench.aggregate('a'*40, [batch,changed], names, dataset='terminal-bench@2.0')
+        with self.assertRaises(ValueError):
+            bench.aggregate('a'*40, [batch], names, dataset='terminal-bench@2.0',
+                            source_kind='prepared-ci', expected_fixture_sha256='f'*64)
+
+    def host_config(self):
+        from tools.system_acceptance import digest as file_digest
+        config = dict(checkout=str(self.root), dataset='terminal-bench@2.0', source_kind='prepared-ci',
+            state_root=str(self.root), ci_state_root=str(self.root), scratch_parent=str(self.root),
+            host_assets={}, approved_commits=['a'*40], selection={'profile':'ci', 'batch_size':1},
+            task_source='/fixed-task-source', tools='/fixed-tools', uid_base=3100000,
+            cgroup_parent='/sys/fs/cgroup/runtime', build_cgroup_parent='/sys/fs/cgroup/builder',
+            service_cgroup_parent='/sys/fs/cgroup/control', server='/fixed-server')
+        for key in ('kernel','rootfs','firecracker','jailer','policy_template','budget_profile','ci_fixtures'):
+            path = self.root / (key + '.json')
+            path.write_text('{}')
+            path.chmod(0o600)
+            config[key] = str(path)
+            config['host_assets'][str(path)] = file_digest(path)
+        return config
+
+    def test_prepared_host_manifest_is_private_fingerprinted_and_mode_is_explicit(self):
+        config = self.host_config()
+        with patch.object(ci, 'trusted_path', side_effect=lambda path:path):
+            ci.validate_host_inputs(config)  # Prepared mode needs no proxy binary.
+            for changed in (dict(config, ci_fixtures=None), dict(config, source_kind='oci'),
+                            dict(config, dataset='terminal-bench@2.1'),
+                            dict(config, check_name='E2E / terminal-bench-2.0-compat'),
+                            dict(config, host_assets={k:v for k,v in config['host_assets'].items()
+                                                      if k != config['ci_fixtures']})):
+                with self.subTest(changed=changed), self.assertRaises(ValueError):
+                    ci.validate_host_inputs(changed)
+            fixture = Path(config['ci_fixtures'])
+            fixture.write_text('{"changed":true}')
+            with self.assertRaises(ValueError):
+                ci.validate_host_inputs(config)
+            fixture.write_text('{}')
+            fixture.chmod(0o644)
+            with self.assertRaises(ValueError):
+                ci.validate_host_inputs(config)
+        old = dict(config, source_kind='oci', proxy_binary=config['kernel'])
+        old.pop('ci_fixtures')
+        with patch.object(ci, 'trusted_path', side_effect=lambda path:path):
+            ci.validate_host_inputs(old)
+
+    def test_prepared_candidate_tools_remain_pinned_without_product_proxy_fields(self):
+        from tools import ci_e2e_prepare as preparation
+        from tools.system_acceptance import digest as file_digest
+        config = self.host_config()
+        config.update(prepare_candidate=True, candidate='a'*40, proxy='http://127.0.0.1:7897',
+                      toolchain_bin=str(self.root), cargo_target=str(self.root / 'target'))
+        for key in ('uv', 'cargo'):
+            path = self.root / key
+            path.write_text('fixed-host-tool')
+            path.chmod(0o600)
+            config[key] = str(path)
+            config['host_assets'][str(path)] = file_digest(path)
+        with patch.object(ci, 'trusted_path', side_effect=lambda path:path):
+            ci.validate_host_inputs(config)
+            changed = copy.deepcopy(config)
+            changed['host_assets'].pop(config['uv'])
+            with self.assertRaisesRegex(ValueError, 'prepared tool fingerprint'):
+                ci.validate_host_inputs(changed)
+        with patch.object(preparation, 'git', side_effect=['a'*40, '', '']), \
+                patch.object(preparation.subprocess, 'run') as run:
+            preparation.prepare(config)
+        calls = run.call_args_list
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[0].args[0][:3], [config['uv'], 'sync', '--locked'])
+        self.assertIn('sandproof-server', calls[1].args[0])
+        self.assertIn('sandproof-window-reducer', calls[2].args[0])
+        self.assertEqual(calls[0].kwargs['env']['HTTPS_PROXY'], config['proxy'])
+        self.assertNotIn('proxy_binary', config)
+        self.assertNotIn('proxy_sha256', config)
+
+    def test_prepared_command_uses_fixed_fixture_without_proxy_or_registry_mirror(self):
+        config = self.host_config()
+        config['docker_hub_mirror'] = 'https://unused-mirror.invalid'
+        supervisor = ci.Supervisor(config)
+        names = ['polyglot-c-py']
+        batch = dict(names=names, oracle_mode='original', phase='new')
+        supervisor.state = dict(id='b'*64, task_inputs={name:{'requirements':dict(
+            build_timeout_sec=600, agent_timeout_sec=900, verifier_timeout_sec=900)} for name in names},
+            batches=[batch])
+        with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'instantiate_policy', return_value={}):
+            supervisor.prepare(batch, 0)
+        args = batch['command']
+        self.assertEqual(args[args.index('--ci-fixtures') + 1], config['ci_fixtures'])
+        self.assertEqual(args[args.index('--source-kind') + 1], 'prepared-ci')
+        self.assertNotIn('--proxy-binary', args)
+        self.assertNotIn('--proxy-sha256', args)
+        self.assertNotIn('--docker-hub-mirror', args)
+        self.assertNotIn('--temporarily-forward', args)
+        self.assertIn('--bounded-policy', args)
+        self.assertIn('--build-namespace', args)
+        # The optional mode must not strip the original proxy/build interface.
+        old = dict(config, source_kind='oci', proxy_binary='/fixed-proxy', proxy_sha256='f'*64)
+        old.pop('ci_fixtures')
+        supervisor.config = old
+        supervisor.state['id'] = 'c'*64
+        old_batch = dict(names=names, oracle_mode='original', phase='new')
+        with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'instantiate_policy', return_value={}):
+            supervisor.prepare(old_batch, 0)
+        self.assertNotIn('--ci-fixtures', old_batch['command'])
+        self.assertIn('--proxy-binary', old_batch['command'])
+        self.assertIn('--proxy-sha256', old_batch['command'])
+        self.assertIn('--docker-hub-mirror', old_batch['command'])
+        self.assertIn('--temporarily-forward', old_batch['command'])
+
+    def test_prepared_admission_keeps_catalog_source_but_rejects_repaired_solution(self):
+        config = self.host_config()
+        lock = json.loads((ROOT / 'benchmarks/terminal-bench-2.0.lock.json').read_text())
+        catalog = json.loads((ROOT / 'benchmarks/terminal-bench-2.0-suites.json').read_text())
+        config['selection_sha256'] = bench.digest(bench.canonical(catalog))
+        folder = self.root / 'benchmarks'
+        folder.mkdir()
+        (folder / 'terminal-bench-2.0.lock.json').write_text(json.dumps(lock))
+        (folder / 'terminal-bench-2.0-suites.json').write_text(json.dumps(catalog))
+        def git(*args, **kwargs):
+            return 'a'*40 if args[:2] == ('rev-parse','HEAD') else ''
+        with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'git', side_effect=git), \
+                patch.object(ci, 'verify', return_value=lock), patch.object(ci, 'cohort_policy'):
+            supervisor = ci.Supervisor(config)
+            supervisor.begin('a'*40, 'b'*40)
+            self.assertEqual(supervisor.state['expected'], ['polyglot-c-py','db-wal-recovery'])
+            self.assertEqual(supervisor.state['check_name'], 'E2E / terminal-bench-ci')
+            original_identity = supervisor.state['id']
+            changed = copy.deepcopy(config)
+            changed['host_assets'][config['ci_fixtures']] = 'e'*64
+            self.assertNotEqual(original_identity, bench.run_identity('a'*40, 'b'*40, changed, catalog, lock))
+            supervisor.state = None
+            supervisor.config = dict(config, selection={'tasks':['build-pmars'], 'batch_size':1})
+            with self.assertRaisesRegex(ValueError, 'original 2.0'):
+                supervisor.begin('a'*40, 'b'*40)
+
+    def test_prepared_supervisor_reduces_with_original_fixture_pin_then_reclaims(self):
+        self.prepared_report()
+        result = bench.batch_result(self.root, **self.prepared_args())
+        supervisor = self.supervisor()
+        config = self.host_config()
+        config['host_assets'][config['ci_fixtures']] = 'e'*64
+        config['host_assets'][config['server']] = 'a'*64
+        supervisor.config = config
+        supervisor.state.update(dataset='terminal-bench@2.0', configuration=config,
+            expected=self.names[:4], all_tasks=self.names[:4])
+        batch = supervisor.state['batches'][0]
+        Path(batch['root']).mkdir(mode=0o700)
+        with patch.object(ci, 'unit_state', return_value=dict(ActiveState='active', ExecMainCode='1', ExecMainStatus='0')), \
+                patch.object(ci, 'batch_result', return_value=result) as reduce, \
+                patch.object(ci, 'remove_private_tree') as remove, patch.object(ci.subprocess, 'run'):
+            supervisor.tick()
+        self.assertEqual(reduce.call_args.kwargs['expected_fixture_sha256'], 'e'*64)
+        self.assertFalse(reduce.call_args.kwargs['proxy_required'])
+        self.assertEqual(reduce.call_args.kwargs['source_kind'], 'prepared-ci')
+        remove.assert_called_once()
+        self.assertEqual(batch['phase'], 'done')
+        supervisor.tick()
+        self.assertEqual(supervisor.state['phase'], 'done')
+        self.assertTrue(supervisor.state['result']['passed'])
+        self.assertFalse(supervisor.state['result']['full_suite_passed'])
+        self.assertFalse(supervisor.state['result']['original_oracle_verifier'])
 
     def test_dataset_file_configuration_and_legacy_check_names_are_independent(self):
         config = dict(checkout='/candidate', dataset='terminal-bench@2.0', task_registry='/trusted/registry.json')

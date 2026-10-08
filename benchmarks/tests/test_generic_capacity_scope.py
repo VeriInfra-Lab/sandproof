@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SYSTEM = ROOT / 'tests/system'
 sys.path.insert(0, str(SYSTEM))
 try:
-    from harbor_generic_chain import select_cohort
+    from harbor_generic_chain import ci_preparation_timeout, select_cohort
 finally:
     sys.path.remove(str(SYSTEM))
 
@@ -60,6 +60,44 @@ class CapacityScopeTests(unittest.TestCase):
         args.capacity_scope = 'all'
         planning = select_cohort(args, self.tasks)[3]
         self.assertEqual(self.configuration(planning, 2)[0]['jobs'], 178)
+
+    def test_preparation_budget_changes_only_copied_planning_deadlines(self):
+        original = copy.deepcopy(self.tasks)
+        names = ['polyglot-c-py', 'db-wal-recovery']
+        args = self.args(names, source_kind='dockerfile', prepare_ci_fixtures=Path('/private/fixtures'))
+        selected, mode, entries, planning = select_cohort(args, self.tasks)
+        self.assertEqual((selected, mode), (set(names), 'original'))
+        self.assertEqual(entries, [t for t in original if t['name'] in names])
+        self.assertEqual(planning, [entry | {'requirements': entry['requirements'] |
+                                {'build_timeout_sec': 900}} for entry in original])
+        self.assertEqual(self.tasks, original)
+        capacity, deployment = self.configuration(planning)
+        expected_capacity, expected = self.configuration(original)
+        self.assertEqual(capacity, expected_capacity | {'max_build_seconds': 900})
+        self.assertEqual(deployment['limits'], expected['limits'] | {'timeout_seconds': 900})
+        self.assertEqual(deployment['builder']['max_lifetime_secs'], 960)
+        self.assertEqual(deployment['builder']['max_timeout_secs'], 960)
+        for field in ('registry', 'runtime_compute', 'builder_compute', 'builder_shape', 'host'):
+            self.assertEqual(deployment[field], expected[field])
+        args.ci_preparation_timeout = 700
+        self.assertTrue(all(t['requirements']['build_timeout_sec'] == 700
+                            for t in select_cohort(args, self.tasks)[3]))
+        self.assertEqual(self.tasks, original)
+
+    def test_preparation_budget_type_range_and_ordinary_mode_rejection(self):
+        for value in (1, 900):
+            args = self.args(['polyglot-c-py'], prepare_ci_fixtures=Path('/private/fixtures'),
+                             ci_preparation_timeout=value)
+            self.assertEqual(ci_preparation_timeout(args), value)
+        for value in (False, True, 0, -1, 901, 900.0, '900'):
+            args = self.args(['polyglot-c-py'], source_kind='dockerfile',
+                            prepare_ci_fixtures=Path('/private/fixtures'), ci_preparation_timeout=value)
+            with self.subTest(value=value), self.assertRaises(InvalidInput):
+                select_cohort(args, self.tasks)
+        for value in (1, 900, False, '900'):
+            args = self.args(['polyglot-c-py'], ci_preparation_timeout=value)
+            with self.subTest(ordinary=value), self.assertRaisesRegex(ValueError, 'only for one-time'):
+                select_cohort(args, self.tasks)
 
     def test_full_capacity_does_not_relax_source_or_oracle_validation(self):
         for args in (

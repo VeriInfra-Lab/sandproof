@@ -301,7 +301,23 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
                 'UV_LINK_MODE': 'hardlink',
             }
             verifier_options['override_env'] = dict(row['verifier_repair_env'])
-        verifier = Verifier(task=task, trial_paths=paths, environment=environment, **verifier_options)
+        verifier_task = task
+        verifier_factory = getattr(args, 'verifier_task_factory', None)
+        if verifier_factory is not None:
+            if oracle_mode != 'original':
+                raise InvalidInput('CI verifier variant requires original oracle')
+            verifier_task = verifier_factory(task, entry, paths.trial_dir / 'ci-verifier-task')
+            from benchmarks.ci_verifier import manifest_path
+            variant_manifest = manifest_path(paths.trial_dir / 'ci-verifier-task')
+            variant_bytes = variant_manifest.read_bytes()
+            variant_evidence = json.loads(variant_bytes)
+            row.update(original_environment=False, original_verifier=False,
+                       original_oracle=True, original_test_assertions=True,
+                       verifier_mode='ci-preinstalled-v1',
+                       verifier_variant_manifest_sha256=hashlib.sha256(variant_bytes).hexdigest(),
+                       verifier_variant={key: variant_evidence[key] for key in (
+                           'mode', 'source_launcher_sha256', 'launcher_sha256', 'requirements_sha256')})
+        verifier = Verifier(task=verifier_task, trial_paths=paths, environment=environment, **verifier_options)
         result = await asyncio.wait_for(verifier.verify(), task.config.verifier.timeout_sec)
         row['rewards'] = result.rewards
         row['verifier'] = 'passed' if result.rewards == {'reward': 1} else 'failed'
@@ -358,6 +374,8 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
         row['execution_status'] = row['status']
         row['sandbox_id'] = environment.sandbox_id
         row['create_dispatched'] = environment.create_dispatched
+        if hasattr(environment, 'guest_preflight'):
+            row['guest_preflight'] = environment.guest_preflight
         if hasattr(environment, 'build_id'):
             row.update(build_id=environment.build_id, build=environment.build_result,
                        environment_repair=getattr(environment, 'environment_repair', None),

@@ -164,6 +164,7 @@ class GenericInputTests(unittest.TestCase):
             env.entry = entry() | {'files': [{'path': 'environment/Dockerfile', 'role': 'environment',
                 'mode': '100644', 'bytes': len(dockerfile), 'sha256': hashlib.sha256(dockerfile).hexdigest()}]}
             env.source, env.source_kind = root, 'dockerfile'
+            env.context_archiver = archive_context
             env.task_env_config = config()
             env.trial_paths = SimpleNamespace(trial_dir=root)
             env.submission_key = 'a' * 32

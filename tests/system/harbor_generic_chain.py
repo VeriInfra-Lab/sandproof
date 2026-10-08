@@ -57,6 +57,51 @@ from benchmarks.environment_repairs import PRUNED_SOURCE, SOURCE_KINDS, validate
 MIB = 1024**2
 
 
+def network_transport_evidence(transport, *, prepared=False):
+    if prepared:
+        if transport is not None:
+            raise ValueError('prepared CI cannot report a live outbound transport as disabled')
+        return {'mode': 'disabled', 'public_network': False}
+    return transport.evidence() if transport else {'mode': 'direct_public_ipv4'}
+
+
+def validate_build_service(path, *, prepared=False, require_physical_lease=True):
+    # Prepared fixtures are registered by the enclosing runtime harness. They
+    # never authorize a build, so do not validate an unused public builder.
+    if prepared:
+        return None
+    from tools.template_build_service import configuration
+    return configuration(path, require_physical_lease=require_physical_lease)
+
+
+def launch_build_service(checkout, root, service_prefix, *, prepared=False):
+    if prepared:
+        return None, None
+    validate_build_service(root / 'build.json')
+    log = (root / 'build-service.log').open('ab')
+    try:
+        process = subprocess.Popen([*service_prefix, sys.executable,
+            str(checkout / 'tools/template_build_service.py'), '--config', str(root / 'build.json')],
+            stdout=log, stderr=subprocess.STDOUT)
+    except BaseException:
+        log.close()
+        raise
+    return process, log
+
+
+def pending_build_reservations(directory, *, prepared=False, row=None):
+    if prepared:
+        if row is not None and row.get('build_dispatched'):
+            raise RuntimeError('prepared CI unexpectedly dispatched a template build')
+        for name in ('builds.db', 'builds.db-wal', 'builds.db-shm', 'builds.db-journal'):
+            path = directory / name
+            if path.exists() or path.is_symlink():
+                raise RuntimeError('prepared CI unexpectedly owns a build journal')
+        return 0  # No build service exists; do not create a database to audit it.
+    with contextlib.closing(sqlite3.connect(directory / 'builds.db')) as db:
+        return db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
+
+
 def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressure_report):
     """A separate pressure pass never replaces task scores or oracle provenance."""
     passed = (len(rows) == len(selected) and all(row['status'] == 'passed' for row in rows)
@@ -91,6 +136,16 @@ def observe_service_resources(binary, service_record, pids, samples, output, *, 
     return snapshot
 
 
+def ci_preparation_timeout(args):
+    value = getattr(args, 'ci_preparation_timeout', None)
+    if getattr(args, 'prepare_ci_fixtures', None) is None:
+        if value is not None:
+            raise ValueError('CI preparation timeout is only for one-time fixture preparation')
+        return None
+    from benchmarks.run_ci_prepare import validate_preparation_timeout
+    return validate_preparation_timeout(value)
+
+
 def select_cohort(args, tasks):
     """Keep execution/source validation separate from the capacity basis."""
     selected = {t['name'] for t in tasks} if args.all else set(args.task)
@@ -98,10 +153,20 @@ def select_cohort(args, tasks):
         raise RuntimeError('unknown original task')
     oracle_mode = validate_oracle_mode(args, selected)
     selected_entries = [t for t in tasks if t['name'] in selected]
-    validate_source_kind(args.source_kind, selected_entries)
+    if getattr(args, 'ci_fixtures', None) is not None:
+        if args.source_kind != 'prepared-ci' or oracle_mode != 'original':
+            raise ValueError('prepared CI requires original oracle and explicit source mode')
+    else:
+        validate_source_kind(args.source_kind, selected_entries)
     if args.capacity_scope not in ('selected', 'all'):
         raise ValueError('unknown capacity scope')
     capacity_entries = list(tasks if args.capacity_scope == 'all' else selected_entries)
+    preparation_timeout = ci_preparation_timeout(args)
+    if preparation_timeout is not None:
+        # Planning changes only the independent one-time builder deadline.
+        # Original selected entries, resource shapes and the frozen lock stay intact.
+        capacity_entries = [entry | {'requirements': entry['requirements'] |
+                            {'build_timeout_sec': preparation_timeout}} for entry in capacity_entries]
     if args.resource_pressure:
         if len(selected) != 2 or args.repetitions != 1:
             raise ValueError('resource pressure requires exactly two tasks and one repetition')
@@ -136,9 +201,35 @@ def exercise(args):
     runtimes = check_runtime()
     check_tasks(lock, args.source)
     selected, oracle_mode, selected_entries, capacity_entries = select_cohort(args, lock['tasks'])
+    preparing_ci = getattr(args, 'prepare_ci_fixtures', None) is not None
+    preparation_timeout = ci_preparation_timeout(args)
+    if preparing_ci:
+        from benchmarks.ci_fixtures import ci_task_names
+        if (selected != set(ci_task_names(lock)) or args.all
+                or args.source_kind != 'dockerfile' or args.oracle_mode != 'original'
+                or args.repetitions != 1 or args.resource_pressure
+                or args.ci_fixtures is not None or not args.ci_build_inputs or not args.ci_uv):
+            raise ValueError('explicit two-task one-time CI preparation inputs required')
+    elif getattr(args, 'ci_build_inputs', None) or getattr(args, 'ci_uv', None):
+        raise ValueError('CI build inputs are only for one-time fixture preparation')
+    ci_fixtures = None
+    fixture_sha256 = None
+    if getattr(args, 'ci_fixtures', None) is not None:
+        from benchmarks.ci_fixtures import load_ci_fixtures
+        fixture_sha256 = sha256_file(args.ci_fixtures)
+        ci_fixtures = load_ci_fixtures(args.ci_fixtures, fixture_sha256, lock, sorted(selected))
+        if lock['dataset'] != 'terminal-bench@2.0' or args.resource_pressure:
+            raise ValueError('prepared CI is separate from original full-suite or pressure acceptance')
+        if args.proxy_binary is not None or args.temporarily_forward:
+            raise ValueError('prepared CI neither enables an outbound proxy nor global forwarding')
+        for fixture in ci_fixtures.values():
+            if fixture.kernel_sha256 != sha256_file(args.kernel):
+                raise ValueError('prepared fixture kernel differs from the approved host kernel')
     capacity_basis = {'scope': args.capacity_scope, 'selected_tasks': sorted(selected),
                       'planning_tasks': [t['name'] for t in capacity_entries],
                       'repetitions': args.repetitions}
+    if preparing_ci:
+        capacity_basis['ci_preparation_timeout_secs'] = preparation_timeout
     job_limit = getattr(args, 'capacity_jobs', None)
     if job_limit is not None:
         capacity_basis['retained_job_limit'] = job_limit
@@ -172,7 +263,7 @@ def exercise(args):
         raise RuntimeError('invalid exclusive UID ranges')
     if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
         raise RuntimeError('exclusive UID pools occupied')
-    if Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
+    if ci_fixtures is None and Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
         raise RuntimeError('approved public forwarding required')
     group_parents = (args.cgroup_parent, args.build_cgroup_parent, args.service_cgroup_parent)
     if any(a.is_relative_to(b) for i, a in enumerate(group_parents) for j, b in enumerate(group_parents) if i != j):
@@ -236,12 +327,14 @@ def exercise(args):
             'host_resources': {'cgroup_parent': str(args.build_cgroup_parent if i else args.cgroup_parent), 'memory_max_bytes': (memory + 256) * MIB},
             'file_policy_digest': 1, 'bind': f'127.0.0.1:{ports[i]}', 'domain': 'example.invalid',
             'credentials': [{'tenant': 1, 'secret': builder_key if i else key}],
-            'public_ipv4_enabled': True, **deployment['builder' if i else 'runtime'],
+            'public_ipv4_enabled': ci_fixtures is None, **deployment['builder' if i else 'runtime'],
             'templates': {'templates': [base], 'aliases': {'base': base['template_id']},
                 'compute_limits': deployment['builder_compute' if i else 'runtime_compute']}}
         if i:
             cfg['internal_build_vms'] = True
         else:
+            if ci_fixtures is not None:
+                cfg['templates']['templates'].extend(f.template_descriptor() for f in ci_fixtures.values())
             for p in (root / 'registry', root / 'registry/inbox', root / 'registry/artifacts'):
                 p.mkdir(mode=0o700)
             cfg['template_registry'] = {'root': str(root / 'registry'), **deployment['registry']}
@@ -267,8 +360,8 @@ def exercise(args):
         build['docker_hub_mirror'] = args.docker_hub_mirror
     (root / 'build.json').write_text(json.dumps(build))
     (root / 'build.json').chmod(0o600)
-    from tools.template_build_service import configuration
-    configuration(root / 'build.json', require_physical_lease=False)
+    validate_build_service(root / 'build.json', prepared=ci_fixtures is not None,
+                           require_physical_lease=False)
     controllers, supervisor, log = [], None, None
     transport = (BenchmarkProxy(root / 'proxy', namespaces, proxy_binary, proxy_digest,
                                port=getattr(args, 'proxy_socks_port', 7897))
@@ -342,11 +435,11 @@ def exercise(args):
                 owner=settings[0]['credentials'][0]['tenant'], namespace=namespaces[0],
                 benchmark=lock['dataset'] if lock['dataset'] == 'terminal-bench@2.1' else 'terminal-bench-2.0',
                 sandbox_id=row.get('sandbox_id'), deadline=deadline,
+                prepared_ci=ci_fixtures is not None,
                 delete=lambda identity: fetch(opener, urls[0], 'DELETE', '/sandboxes/' + identity, key)[0])
             result.update(sandbox_id=recovery['sandbox_id'], runtime_recovery=recovery)
         while True:
-            with sqlite3.connect(root / 'builds/builds.db') as db:
-                pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
+            pending = pending_build_reservations(root / 'builds', prepared=ci_fixtures is not None, row=row)
             if not pending:
                 break
             if time.monotonic() >= deadline:
@@ -385,7 +478,8 @@ def exercise(args):
                 read_build=lambda job: client.request('GET', '/sandproof/template-builds/' + job)))
         template = row.get('template') or (result.get('build') or {}).get('template')
         if template:
-            source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
+            source = (ci_fixtures[row['name']].rootfs if ci_fixtures is not None else
+                      root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
             assert sha256_file(source) == template['rootfsSha256']
         return result
 
@@ -399,20 +493,19 @@ def exercise(args):
                              command_prefix=service_prefix)
             controllers.append(p)
             wait_ready(opener, urls[i], builder_key if i else key, p)
-        configuration(root / 'build.json')
-        log = (root / 'build-service.log').open('ab')
-        supervisor = subprocess.Popen([*service_prefix, sys.executable, str(checkout / 'tools/template_build_service.py'),
-            '--config', str(root / 'build.json')], stdout=log, stderr=subprocess.STDOUT)
-        for _ in range(60):
-            try:
-                if fetch(opener, urls[2], 'GET', '/missing', key)[0] == 404:
-                    break
-            except OSError:
-                if supervisor.poll() is not None:
-                    raise RuntimeError('build supervisor startup failed')
-                time.sleep(0.5)
-        else:
-            raise RuntimeError('build endpoint did not become ready')
+        supervisor, log = launch_build_service(checkout, root, service_prefix,
+                                               prepared=ci_fixtures is not None)
+        if supervisor is not None:
+            for _ in range(60):
+                try:
+                    if fetch(opener, urls[2], 'GET', '/missing', key)[0] == 404:
+                        break
+                except OSError:
+                    if supervisor.poll() is not None:
+                        raise RuntimeError('build supervisor startup failed')
+                    time.sleep(0.5)
+            else:
+                raise RuntimeError('build endpoint did not become ready')
         observe_services()
         deployment['host']['control_allowance_enforced_by_cgroup'] = True
         (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
@@ -422,16 +515,27 @@ def exercise(args):
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
                 'capacity_basis': capacity_basis,
                 'oracle_mode': oracle_mode,
-                'original_environment': args.source_kind != PRUNED_SOURCE,
+                'original_environment': args.source_kind != PRUNED_SOURCE and ci_fixtures is None and not preparing_ci,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
                 'failure_diagnostics': args.failure_diagnostics,
-                'network_transport': transport.evidence() if transport else {'mode': 'direct_public_ipv4'},
+                'network_transport': network_transport_evidence(transport, prepared=ci_fixtures is not None),
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
                 oracle_mode=oracle_mode,
                 api_url=urls[0], build_url=urls[2], build_mode=build_mode, source_kind=args.source_kind,
                 failure_diagnostics=args.failure_diagnostics,
                 artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
+            if preparing_ci:
+                run_args.prepare_ci_fixtures = args.prepare_ci_fixtures
+                run_args.preparation_timeout_secs = preparation_timeout
+                run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
+                run_args.ready_artifacts_root, run_args.kernel = root / 'registry/artifacts', args.kernel
+            if ci_fixtures is not None:
+                from benchmarks.ci_verifier import prepare_ci_verifier_task
+                from harbor.models.task.task import Task
+                run_args.ci_fixtures = ci_fixtures
+                run_args.verifier_task_factory = lambda task, entry, destination: Task(
+                    prepare_ci_verifier_task(task, entry, destination))
             old_key = os.environ.get('SANDPROOF_TEST_API_KEY')
             os.environ['SANDPROOF_TEST_API_KEY'] = key
             with (root / f'run-{repetition}.log').open('wb') as out:
@@ -439,7 +543,11 @@ def exercise(args):
                 text_out = io.TextIOWrapper(out, write_through=True)
                 try:
                     with contextlib.redirect_stdout(text_out), contextlib.redirect_stderr(text_out):
-                        asyncio.run(run_selected(run_args, lock))
+                        if preparing_ci:
+                            from benchmarks.run_ci_prepare import prepare_selected
+                            asyncio.run(prepare_selected(run_args, lock))
+                        else:
+                            asyncio.run(run_selected(run_args, lock))
                 finally:
                     text_out.detach()
                     if old_key is None:
@@ -471,8 +579,7 @@ def exercise(args):
             # Exact reclaim, not just the SDK's kill boolean.
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
-                with sqlite3.connect(root / 'builds/builds.db') as db:
-                    pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
+                pending = pending_build_reservations(root / 'builds', prepared=ci_fixtures is not None)
                 if pending == 0:
                     break
                 time.sleep(0.5)
@@ -497,7 +604,8 @@ def exercise(args):
                 row['repetition'] = repetition
                 template = row.get('template') or (row.get('build') or {}).get('template')
                 if template:
-                    source = root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4'
+                    source = (ci_fixtures[row['name']].rootfs if ci_fixtures is not None else
+                              root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
                     assert sha256_file(source) == template['rootfsSha256']
             rows.extend(current)
             observe_services()
@@ -507,22 +615,33 @@ def exercise(args):
             (output / 'full-set.json').write_text(json.dumps(report, indent=2) + '\n')
             outcome = repetition_outcome(current, selected, oracle_mode=oracle_mode,
                 resource_pressure=args.resource_pressure, pressure_report=pressure_report)
+            if ci_fixtures is not None:
+                outcome.update(original_verifier=False, original_oracle_verifier=False,
+                               original_oracle=True, original_test_assertions=True,
+                               fixture_sha256=fixture_sha256)
+            if preparing_ci:
+                outcome.update(execution_passed=False, original_verifier=False,
+                               original_oracle_verifier=False, preparation_only=True,
+                               fixture_preparation_passed=(len(current) == len(selected)
+                                   and all(r['status'] == 'prepared' and r.get('exact_cleanup') == 'passed'
+                                           for r in current)))
             (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': build_tools,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': lock['task_count'],
                 'dataset': lock['dataset'], 'task_source': lock['source'],
                 'capacity_basis': capacity_basis,
-                'original_environment': args.source_kind != PRUNED_SOURCE,
+                'original_environment': args.source_kind != PRUNED_SOURCE and ci_fixtures is None and not preparing_ci,
                 'docker_hub_mirror': args.docker_hub_mirror,
-                'network_transport': transport.evidence() if transport else {'mode': 'direct_public_ipv4'},
+                'network_transport': network_transport_evidence(transport, prepared=ci_fixtures is not None),
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'service_cgroup': service_samples[-1],
                 'no_process_network_cgroup_jail_residue': True,
                 **outcome, 'paid_model_used': False}, indent=2) + '\n')
-            passed = outcome['execution_passed']
+            passed = outcome.get('fixture_preparation_passed', outcome['execution_passed'])
             all_passed = all_passed and passed
-            print(json.dumps({'repetition': repetition, 'execution_passed': passed,
+            print(json.dumps({'repetition': repetition, 'execution_passed': outcome['execution_passed'],
+                              **({'fixture_preparation_passed': passed} if preparing_ci else {}),
                               'tasks': [{k: r.get(k) for k in ('name', 'status', 'stage', 'error_type', 'exact_cleanup')} for r in current]}), flush=True)
             if not passed:
                 print('task failures retained; no pass claim for this batch', flush=True)
@@ -588,7 +707,16 @@ if __name__ == '__main__':
     parser.add_argument('--build-namespace')
     parser.add_argument('--run-root', type=Path,
                         help='exact fresh run root already declared in the full physical profile')
-    parser.add_argument('--source-kind', choices=SOURCE_KINDS, default='oci')
+    parser.add_argument('--source-kind', choices=(*SOURCE_KINDS, 'prepared-ci'), default='oci')
+    parser.add_argument('--ci-fixtures', type=Path,
+                        help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
+    parser.add_argument('--prepare-ci-fixtures', type=Path,
+                        help='one-time fresh private destination; builds clean fixtures, never scores tasks')
+    parser.add_argument('--ci-preparation-timeout', type=int,
+                        help='one-time fixture build budget: 1..900 seconds, default 900; invalid in scoring mode')
+    parser.add_argument('--ci-build-inputs', type=Path,
+                        help='operator-reviewed map of the two original task names to immutable OCI digests')
+    parser.add_argument('--ci-uv', type=Path, help='approved host uv binary, copied only into the guest builder context')
     parser.add_argument('--oracle-mode', choices=('original', 'repaired'), default='original')
     parser.add_argument('--igzip', action='store_true', help='use the fixed optional ISA-L decoder pair in the build VM')
     parser.add_argument('--failure-diagnostics', action='store_true',
