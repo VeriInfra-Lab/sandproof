@@ -10,6 +10,8 @@
 
 一次性制备复用[隔离实机入口](../tests/system/harbor_generic_chain.py)：在原来完整批准参数之外，选择 `--task polyglot-c-py --task db-wal-recovery --source-kind dockerfile --prepare-ci-fixtures <新私有目录> --ci-build-inputs <两题原 OCI 摘要 JSON> --ci-uv <已批准 uv>`。只有两份 Ready 模板和原构建的精确清理全部完成，才发布最终 `manifest.json`；报告明确为制备而不是题目通过。此阶段可使用现有批准出口，日常预装模式不带这些制备参数。
 
+一次性制备使用独立的 `--ci-preparation-timeout` 构建预算，默认和上限均为 900 秒；它只调整制备构建期限、不增加资源容量，报告不声称原题构建期限通过，日常评分及原解答/评分时限不变，普通执行模式禁止指定此参数。
+
 监督配置显式选择 `source_kind=prepared-ci`、`selection.profile=ci`、`ci_fixtures=<root 私有清单>` 和 `check_name=E2E / terminal-bench-ci`，把清单摘要纳入 `host_assets`，同时更新选择目录的 `selection_sha256`。每轮仍跑候选代码的真实 SDK/控制器/宿主启停与精确清理；不启动下载代理、不启用全局转发、不改变宿主 VPN/DNS。评分只在独立派生目录替换启动脚本，不改冻结源文件和断言；缺少材料失败，不临时联网安装。模板可重复用，工作盘及成绩不可重复用。平台安装程序或模板内容变化须重新制备与批准清单。该模式跳过本轮模板构建，相关构建变更仍用原通用构建定向验收；判据和上线切换看[验收清单](testing-plan.md)。
 
 ### 普通 CI 自建执行环境

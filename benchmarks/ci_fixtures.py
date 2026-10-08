@@ -20,6 +20,37 @@ MIB = 1024 * 1024
 MAX_MANIFEST_BYTES = 128 * 1024
 FORBIDDEN_PATHS = ('/solution', '/tests', '/logs/verifier/reward.txt')
 SHA256 = re.compile(r'[0-9a-f]{64}')
+CI_CATALOG = Path(__file__).with_name('terminal-bench-2.0-suites.json')
+
+
+def ci_task_names(lock):
+    """Resolve the sole reviewed small-CI profile, without task-name branches."""
+    try:
+        catalog = json.loads(CI_CATALOG.read_text(), object_pairs_hook=_unique_json)
+        pin = pin_for(lock)
+        if (lock.get('dataset') != 'terminal-bench@2.0'
+                or lock.get('source') != dict(repository=pin.repository, commit=pin.commit)
+                or type(catalog.get('schema_version')) is not int or catalog['schema_version'] != 2
+                or catalog.get('dataset') != lock['dataset'] or catalog.get('source_commit') != pin.commit
+                or catalog.get('source_kind') not in ('oci', 'dockerfile')):
+            raise InvalidInput('CI selection catalog differs from the fixed 2.0 source')
+        tasks = catalog['profiles']['ci']['tasks']
+        frozen_names = [entry['name'] for entry in lock['tasks']]
+        if (not isinstance(tasks, list) or len(tasks) != 2
+                or not all(isinstance(row, dict) for row in tasks)):
+            raise InvalidInput('CI selection requires exactly two task entries')
+        names = tuple(row['name'] for row in tasks)
+        overrides = catalog.get('oracle_modes', {})
+        if (not isinstance(overrides, dict)
+                or any(not isinstance(n, str) or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,51}', n) is None
+                       for n in names)
+                or len(set(names)) != 2 or len(set(frozen_names)) != len(frozen_names)
+                or not set(names) <= set(frozen_names)
+                or any(n in overrides for n in names)):
+            raise InvalidInput('CI selection requires unique frozen tasks with original oracles')
+        return names
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as error:
+        raise InvalidInput('CI selection catalog is unavailable or malformed: ' + type(error).__name__) from error
 
 
 def _keys(value, expected, label):

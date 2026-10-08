@@ -99,6 +99,16 @@ def observe_service_resources(binary, service_record, pids, samples, output, *, 
     return snapshot
 
 
+def ci_preparation_timeout(args):
+    value = getattr(args, 'ci_preparation_timeout', None)
+    if getattr(args, 'prepare_ci_fixtures', None) is None:
+        if value is not None:
+            raise ValueError('CI preparation timeout is only for one-time fixture preparation')
+        return None
+    from benchmarks.run_ci_prepare import validate_preparation_timeout
+    return validate_preparation_timeout(value)
+
+
 def select_cohort(args, tasks):
     """Keep execution/source validation separate from the capacity basis."""
     selected = {t['name'] for t in tasks} if args.all else set(args.task)
@@ -114,6 +124,12 @@ def select_cohort(args, tasks):
     if args.capacity_scope not in ('selected', 'all'):
         raise ValueError('unknown capacity scope')
     capacity_entries = list(tasks if args.capacity_scope == 'all' else selected_entries)
+    preparation_timeout = ci_preparation_timeout(args)
+    if preparation_timeout is not None:
+        # Planning changes only the independent one-time builder deadline.
+        # Original selected entries, resource shapes and the frozen lock stay intact.
+        capacity_entries = [entry | {'requirements': entry['requirements'] |
+                            {'build_timeout_sec': preparation_timeout}} for entry in capacity_entries]
     if args.resource_pressure:
         if len(selected) != 2 or args.repetitions != 1:
             raise ValueError('resource pressure requires exactly two tasks and one repetition')
@@ -149,8 +165,10 @@ def exercise(args):
     check_tasks(lock, args.source)
     selected, oracle_mode, selected_entries, capacity_entries = select_cohort(args, lock['tasks'])
     preparing_ci = getattr(args, 'prepare_ci_fixtures', None) is not None
+    preparation_timeout = ci_preparation_timeout(args)
     if preparing_ci:
-        if (selected != {'polyglot-c-py', 'db-wal-recovery'} or args.all
+        from benchmarks.ci_fixtures import ci_task_names
+        if (selected != set(ci_task_names(lock)) or args.all
                 or args.source_kind != 'dockerfile' or args.oracle_mode != 'original'
                 or args.repetitions != 1 or args.resource_pressure
                 or args.ci_fixtures is not None or not args.ci_build_inputs or not args.ci_uv):
@@ -173,6 +191,8 @@ def exercise(args):
     capacity_basis = {'scope': args.capacity_scope, 'selected_tasks': sorted(selected),
                       'planning_tasks': [t['name'] for t in capacity_entries],
                       'repetitions': args.repetitions}
+    if preparing_ci:
+        capacity_basis['ci_preparation_timeout_secs'] = preparation_timeout
     job_limit = getattr(args, 'capacity_jobs', None)
     if job_limit is not None:
         capacity_basis['retained_job_limit'] = job_limit
@@ -471,6 +491,7 @@ def exercise(args):
                 artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
             if preparing_ci:
                 run_args.prepare_ci_fixtures = args.prepare_ci_fixtures
+                run_args.preparation_timeout_secs = preparation_timeout
                 run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
                 run_args.ready_artifacts_root, run_args.kernel = root / 'registry/artifacts', args.kernel
             if ci_fixtures is not None:
@@ -656,6 +677,8 @@ if __name__ == '__main__':
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepare-ci-fixtures', type=Path,
                         help='one-time fresh private destination; builds clean fixtures, never scores tasks')
+    parser.add_argument('--ci-preparation-timeout', type=int,
+                        help='one-time fixture build budget: 1..900 seconds, default 900; invalid in scoring mode')
     parser.add_argument('--ci-build-inputs', type=Path,
                         help='operator-reviewed map of the two original task names to immutable OCI digests')
     parser.add_argument('--ci-uv', type=Path, help='approved host uv binary, copied only into the guest builder context')

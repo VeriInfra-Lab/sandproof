@@ -12,6 +12,7 @@ from pathlib import Path
 from harbor.models.task.task import Task
 from harbor.models.trial.paths import TrialPaths
 
+from benchmarks.ci_fixtures import ci_task_names
 from benchmarks.generic_environment import GenericEnvironment
 from benchmarks.prepare_ci_fixtures import (
     archive_ci_context, make_ci_fixture_manifest, publish_ready_fixture,
@@ -19,12 +20,20 @@ from benchmarks.prepare_ci_fixtures import (
 from tools.benchmark_tasks import InvalidInput
 
 
+def validate_preparation_timeout(value=None):
+    value = 900 if value is None else value
+    if type(value) is not int or not 1 <= value <= 900:
+        raise InvalidInput('CI preparation timeout must be an integer from 1 to 900 seconds')
+    return value
+
+
 async def prepare_selected(args, lock):
     selected = set(args.task)
     if (lock['dataset'] != 'terminal-bench@2.0' or args.all
-            or selected != {'polyglot-c-py', 'db-wal-recovery'}
+            or selected != set(ci_task_names(lock))
             or args.source_kind != 'dockerfile' or args.oracle_mode != 'original'):
         raise InvalidInput('one-time CI preparation requires exactly its two original tasks')
+    timeout = validate_preparation_timeout(getattr(args, 'preparation_timeout_secs', None))
     inputs = json.loads(args.ci_build_inputs.read_text())
     if not isinstance(inputs, dict) or set(inputs) != selected:
         raise InvalidInput('explicit original OCI digest required for both CI fixtures')
@@ -41,8 +50,11 @@ async def prepare_selected(args, lock):
         row = dict(name=entry['name'], status='failed', stage='fixture_preparation',
                    oracle='not_run', verifier='not_run', original_environment=False,
                    environment_source_kind='ci-preparation', exact_cleanup='unknown',
-                   create_dispatched=False)
-        env = GenericEnvironment(entry=entry, source=args.source, source_kind='dockerfile',
+                   create_dispatched=False, preparation_timeout_secs=timeout,
+                   original_build_timeout_secs=entry['requirements']['build_timeout_sec'],
+                   original_build_deadline_applied=False)
+        preparation_entry = entry | {'requirements': entry['requirements'] | {'build_timeout_sec': timeout}}
+        env = GenericEnvironment(entry=preparation_entry, source=args.source, source_kind='dockerfile',
             build_url=args.build_url, sdk_options=dict(api_key=os.environ['SANDPROOF_TEST_API_KEY']),
             environment_dir=task.paths.environment_dir, environment_name=entry['name'],
             session_id=entry['name'], trial_paths=paths, task_env_config=task.config.environment,
@@ -79,6 +91,7 @@ async def prepare_selected(args, lock):
             (paths.trial_dir / 'result.json').write_text(json.dumps(row, indent=2) + '\n')
             (args.output / 'full-set.json').write_text(json.dumps({
                 'dataset': lock['dataset'], 'tasks': rows, 'scope': 'fixture preparation only',
+                'preparation_timeout_secs': timeout, 'original_build_deadline_applied': False,
                 'benchmark_passed': False, 'original_oracle': False, 'original_verifier': False,
                 'original_environment': False}, indent=2) + '\n')
             if cancelled:

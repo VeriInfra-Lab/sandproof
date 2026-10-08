@@ -40,6 +40,6 @@
   "ci_fixtures": "/etc/sandproof-ci/ci-fixtures.json",
   "check_name": "E2E / terminal-bench-ci",
   "selection_sha256": "replace-with-canonical-selection-catalog-sha256",
-  "selection": {"profile": "ci", "batch_size": 1},
+  "selection": {"profile": "ci", "batch_size": 2},
   "host_assets": {}
 }
