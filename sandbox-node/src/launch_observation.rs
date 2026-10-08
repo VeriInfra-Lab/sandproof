@@ -167,7 +167,7 @@ mod tests {
         GuestSecret {
             token: token.into(),
             sha512: hash_token(token).unwrap(),
-            env_vars: Default::default(),
+            env_vars: std::collections::BTreeMap::default(),
             template: None,
         }
     }
