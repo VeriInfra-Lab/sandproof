@@ -211,7 +211,7 @@ fn production_tick_waits_for_body_and_unknown_relay_then_removes_local_tracking(
         let permit = port
             .data_permit(
                 &old.envd_access_token,
-                sandproof_api::managed::DataKind::Exec,
+                sandproof_controller_service::application::DataKind::Exec,
             )
             .unwrap();
         if unknown {
@@ -237,7 +237,7 @@ fn production_tick_waits_for_body_and_unknown_relay_then_removes_local_tracking(
         assert!(matches!(
             port.authorize_data(
                 &old.envd_access_token,
-                sandproof_api::managed::DataKind::Exec
+                sandproof_controller_service::application::DataKind::Exec
             ),
             Err(PortError::NotFound)
         ));

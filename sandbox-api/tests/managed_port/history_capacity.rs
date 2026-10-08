@@ -2,7 +2,8 @@
 //! No latency thresholds: the ordinary tests check semantics, the ignored test
 //! records monotonic observations for an explicitly requested capacity profile.
 use super::*;
-use sandproof_api::{SandboxSession, managed::DataKind};
+use sandproof_api::SandboxSession;
+use sandproof_controller_service::application::DataKind;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
@@ -222,7 +223,7 @@ struct Fixture {
     directory: TempDir,
     port: Option<ManagedPort<FakeHost>>,
     live: Vec<SandboxSession>,
-    identities: Vec<sandproof_api::managed::DataTarget>,
+    identities: Vec<sandproof_controller_service::application::DataTarget>,
     calls: Calls,
     completed: usize,
     setup_ns: u64,

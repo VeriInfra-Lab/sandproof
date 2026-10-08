@@ -80,6 +80,8 @@ E2B 的 `runtime` 仓库包含整套后端，不只是控制 Firecracker 的中�
 
 [sandbox-api](../sandbox-api/src/lib.rs)负责 HTTP 请求、凭据解析、租户识别和 E2B 响应映射；其中 [ManagedPort](../sandbox-api/src/managed.rs)把管理请求接到持久控制服务。它不能绕过控制核心，直接把沙箱标成运行成功。
 
+宿主与数据连接合同由控制服务的 [application](../controller-service/src/application/mod.rs) 拥有，业务错误在 HTTP 边界转换。网关只依赖 `DataAccessPort`：接收原实例的访问许可，提交已准备好的请求，再取得已登记的中继进程；不依赖具体节点、不拼接网络空间名称，也没有自行执行 Linux 命令的后备路径。撤销通知、响应与中继的排空持有者，以及取消后的精确子进程回收仍保持原责任。生命周期和模板编排目前仍在 `ManagedPort`，其搬迁以及宿主大接口的继续拆分属于 #262 后续子批次，不把本接口整理说成应用层已经全部迁移。
+
 [sandbox-server](../sandbox-server/src/main.rs)把各模块组装成 Linux 常驻进程。`main.rs` 只选择平台入口或内部字节中继；正式服务的唯一启动顺序由 [linux/startup.rs](../sandbox-server/src/linux/startup.rs)组装，不在旧入口保留转发层。启动相关职责分成以下模块：
 
 | 模块 | 职责 |

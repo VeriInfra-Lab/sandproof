@@ -22,6 +22,8 @@
 
 SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密码学原语有明确外部合同；**自有检查次序、见证构造、互斥、恢复、事务连接和授权决定不是外部可信假设**。这些仍需分层对应证明与系统测试。
 
+#262 的接口整理将宿主与数据连接合同及排空/子进程持有者移入 `controller-service/src/application`，网关经 `DataAccessPort` 调用；实际授权和生命周期编排仍在 `sandbox-api/src/managed.rs`。此搬迁未改变纯核心或生成证明，不能用旧定理背书新模块。后续对应证明须连接端口调用与原管理锁内的派发重检，以及 `TrackedRelayChild` 的确切回收/未知退出责任；应用端口不是可以整体假定正确的授权器。
+
 ## 模板子系统排除边界
 
 按[蓝图](project-blueprint.md)与 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)，整个模板构建与转换子系统采用工程测试，不做形式化证明：第三方构建器、Dockerfile 执行、OCI 获取/解包、镜像制备，以及自有构建编排、查询/别名/登记和发布胶水均排除。

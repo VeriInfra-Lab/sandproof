@@ -1,6 +1,7 @@
 //! The actual managed controller and `SQLite` index, with only host I/O faulted.
 use super::*;
-use sandproof_api::{SandboxSession, managed::DataKind};
+use sandproof_api::SandboxSession;
+use sandproof_controller_service::application::DataKind;
 use sha2::{Digest, Sha256};
 
 fn live_pair() -> (TempDir, SandboxSession, SandboxSession) {

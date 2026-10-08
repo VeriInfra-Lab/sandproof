@@ -9,18 +9,21 @@ use std::{
 };
 
 use sandbox_controller_core as core;
+use sandproof_controller_service::application::{
+    DataAccessPort, DataAuthorization, DataKind, DataLease, DataTarget, HostAdapter, RelayReaper,
+    TrackedRelayChild,
+};
 use sandproof_controller_service::template_registry::{
-    CandidateStore, CandidateVerification, PublicationFailure, PublicationView, TemplatePage,
-    TemplateView, valid_alias, valid_candidate_id,
+    CandidateStore, PublicationFailure, PublicationView, TemplatePage, TemplateView, valid_alias,
+    valid_candidate_id,
 };
 use sandproof_controller_service::templates::{TemplateBinding, TemplateCatalog, TemplateError};
 use sandproof_controller_service::{
     AdmissionError, AdmissionLimits, ControllerJournal, CreateAdmission, CreateOptions,
-    HostEvidence, HostSlotContext, JournalError, NeverCrash, WorkerTransportError,
-    finish_accepted_kill_v1, finish_admitted_create_v1_timed, finish_compensating_create_v1,
+    JournalError, NeverCrash, WorkerTransportError, finish_accepted_kill_v1,
+    finish_admitted_create_v1_timed, finish_compensating_create_v1,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
-use serde::{Serialize, de::DeserializeOwned};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::watch;
 
@@ -30,284 +33,9 @@ use crate::{
 };
 
 mod data_credentials;
-mod data_drain;
 mod maintenance;
 mod physical_storage;
-mod relay_child;
-pub use data_drain::DataLease;
 pub use maintenance::MaintenanceReport;
-pub use relay_child::TrackedRelayChild;
-
-pub trait HostAdapter: Send + 'static {
-    type Evidence: HostEvidence + Serialize + DeserializeOwned + PartialEq + Send;
-
-    /// Persist or validate the exact controller-committed physical position.
-    /// A missing/prior binding may be installed only before any host dispatch,
-    /// or for terminal pre-launch cleanup whose only dispatched action was a
-    /// terminal fence. No potentially launched VM may acquire a new binding.
-    /// # Errors
-    /// Unsupported bounded mode or ambiguous identity must fail closed.
-    fn bind_host_slot(
-        &mut self,
-        _context: &HostSlotContext,
-        _allow_install: bool,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Complete the durable exact release and prove physical absence. Called
-    /// only after the controller committed Releasing and local routes drained.
-    /// # Errors
-    /// Unknown cleanup or stale identity keeps the physical position unavailable.
-    fn release_host_slot(&mut self, _context: &HostSlotContext) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Acquire a shared durable host-helper gate before a data relay can be
-    /// spawned. The descriptor must retain its lock across explicit child FD
-    /// inheritance; dropping it must never issue an explicit unlock.
-    /// # Errors
-    /// A changed binding or unavailable gate refuses the route.
-    fn acquire_data_gate(
-        &self,
-        _sandbox: core::SandboxId,
-        _vm: core::VmId,
-        _generation: core::Generation,
-    ) -> Result<Option<std::fs::File>, PortError> {
-        Ok(None)
-    }
-
-    /// Reserve a bounded durable route cell and record the exact child process
-    /// before releasing its start gate. The program is selected by the trusted
-    /// adapter, never by the HTTP caller.
-    /// # Errors
-    /// Capacity or uncertain child identity refuses the new relay.
-    fn spawn_data_relay(
-        &mut self,
-        _sandbox: core::SandboxId,
-        _vm: core::VmId,
-        _generation: core::Generation,
-        _control: bool,
-    ) -> Result<Option<std::process::Child>, PortError> {
-        Ok(None)
-    }
-
-    /// Resolve an earlier unknown relay exit after every local pin has dropped.
-    /// # Errors
-    /// Refuses changed identity; false leaves the position unavailable.
-    fn data_gate_drained(&self, _context: &HostSlotContext) -> Result<bool, PortError> {
-        Ok(false)
-    }
-
-    /// # Errors
-    /// Rejects an unavailable physical disk observation.
-    fn available_disk_bytes(&self) -> Result<u64, PortError>;
-
-    /// Validate the immutable deployment-wide activation lease and current
-    /// inode capacity. A local free-space observation alone is insufficient.
-    /// # Errors
-    /// Adapters without a validated shared profile must refuse full mode.
-    fn validate_physical_storage(
-        &self,
-        _profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
-        _pool: &sandproof_controller_service::physical_storage::PhysicalPool,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Validate trusted template artifacts before accepting any create intent.
-    /// # Errors
-    /// An adapter without multi-template support must reject, not use base.
-    fn validate_template(&self, _template: &TemplateBinding) -> Result<(), PortError> {
-        Err(PortError::Invalid)
-    }
-
-    /// Optionally reuse this process's registry hash checks after sealing.
-    /// This is only a cache hint; `validate_template` remains mandatory.
-    fn cache_candidate_verification(
-        &self,
-        _template: &TemplateBinding,
-        _verification: &CandidateVerification,
-    ) {
-    }
-
-    /// Persist the exact admitted template alongside the one-time launch credential.
-    /// # Errors
-    /// Unknown writes stay pending; no replacement template is permitted.
-    fn put_bound_launch_config(
-        &mut self,
-        sandbox: core::SandboxId,
-        token: &str,
-        options: &CreateOptions,
-    ) -> Result<(), PortError> {
-        if options.template.is_some() {
-            return Err(PortError::Invalid);
-        }
-        self.put_launch_config(sandbox, token, &options.env_vars)
-    }
-
-    /// # Errors
-    /// Recovery must match the full persisted descriptor, not resolve its alias again.
-    fn has_bound_launch_config(
-        &self,
-        sandbox: core::SandboxId,
-        options: &CreateOptions,
-    ) -> Result<bool, PortError> {
-        if options.template.is_some() {
-            return Err(PortError::Invalid);
-        }
-        self.has_launch_config(sandbox, &options.env_vars)
-    }
-
-    /// Read-only host readiness check before admitting a public IPv4 VM.
-    /// # Errors
-    /// Treat an unreadable forwarding state as unavailable, not permitted.
-    fn public_ipv4_ready(&self) -> Result<bool, PortError> {
-        Ok(false)
-    }
-
-    /// # Errors
-    /// A host credential creation failure leaves the admitted create pending.
-    fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError>;
-    /// Persist the exact guest initialization environment with its credential
-    /// before a VM can be reserved. Hosts without this capability reject
-    /// nonempty input instead of silently dropping it.
-    /// # Errors
-    /// Any uncertain credential write blocks launch until observation.
-    fn put_launch_config(
-        &mut self,
-        sandbox: core::SandboxId,
-        token: &str,
-        env_vars: &BTreeMap<String, String>,
-    ) -> Result<(), PortError> {
-        if !env_vars.is_empty() {
-            return Err(PortError::Invalid);
-        }
-        self.put_secret(sandbox, token)
-    }
-    /// Return false only when no credential was ever stored. A malformed or
-    /// unreadable credential must be an error, not permission to replace it.
-    /// # Errors
-    /// Refuses to classify an untrusted or corrupt host credential as absent.
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError>;
-    /// A present credential with different initialization data is not a
-    /// valid recovery candidate for the admitted create.
-    /// # Errors
-    /// Rejects an unreadable or mismatched launch configuration.
-    fn has_launch_config(
-        &self,
-        sandbox: core::SandboxId,
-        env_vars: &BTreeMap<String, String>,
-    ) -> Result<bool, PortError> {
-        if !env_vars.is_empty() {
-            return Err(PortError::Invalid);
-        }
-        self.has_secret(sandbox)
-    }
-    /// # Errors
-    /// Missing credentials cannot be replaced by a new token on connect.
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError>;
-    /// # Errors
-    /// Transport loss must remain unknown, never an implicit retry.
-    fn execute(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError>;
-
-    /// Observe an already dispatched action without performing it again.
-    /// `None` means the physical outcome is still unknown and must stay so.
-    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>>;
-
-    /// Reclaim an incomplete, already dispatched `PrepareVm` only after the
-    /// controller has matched it to the durable owner and resource plan.
-    /// A live or unobservable VM must remain untouched. The adapter records
-    /// exact physical evidence before `observe` may return a final failure.
-    /// # Errors
-    /// Ambiguous or foreign resources remain unresolved; no retry follows.
-    fn reclaim_incomplete_prepare(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError>;
-
-    /// Reconcile an exact current network action without assuming a lost
-    /// acknowledgement means no host effect occurred.
-    /// # Errors
-    /// Ambiguous or foreign network resources remain unresolved.
-    fn reclaim_incomplete_network(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Repeat only the identical, already-dispatched guest initialization
-    /// after the controller has matched its current create and sealed VM plan.
-    /// The host must use the persisted credential/configuration and verify
-    /// the same running VM before and after the request.
-    /// # Errors
-    /// An unreadable guest, changed VM or conflicting configuration stays unknown.
-    fn reclaim_incomplete_activation(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Complete only the current operation's terminal fence after a lost
-    /// acknowledgement; it may not reopen an older execution gate.
-    /// # Errors
-    /// Ambiguous or stale fence state remains unresolved.
-    fn reclaim_incomplete_terminal_fence(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Complete the original opening fence only while the controller's
-    /// matching create is current. The host must reject a terminal-to-open
-    /// transition even if its earlier receipt was lost.
-    /// # Errors
-    /// A stale or unobservable fence remains unresolved.
-    fn reclaim_incomplete_open_fence(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Finish an already-dispatched stop for the current terminal operation.
-    /// This may signal only the exact recorded process; it is not permission
-    /// to re-dispatch arbitrary uncertain host commands.
-    /// # Errors
-    /// An unverified process or incomplete stop remains unresolved.
-    fn reclaim_incomplete_stop(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Resume only a dispatched, plan-matched `AbortPrepare` under the
-    /// terminal fence. The host verifies the original process identity.
-    /// # Errors
-    /// An ambiguous or live resource remains unresolved.
-    fn reclaim_incomplete_abort_prepare(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-
-    /// Finish exact, already-dispatched cleanup after proving the recorded
-    /// VM is stopped. This may remove only resources owned by that VM.
-    /// # Errors
-    /// Ambiguous or live resources remain unresolved.
-    fn reclaim_incomplete_cleanup(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError>;
-}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RecoveryReport {
@@ -324,19 +52,6 @@ pub struct ExpiryReport {
     pub completed: usize,
     /// Already expired instances whose stop or cleanup is still unresolved.
     pub unresolved_sandboxes: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DataKind {
-    Exec,
-    FileRead,
-    FileWrite,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DataTarget {
-    pub vm: core::VmId,
-    pub generation: core::Generation,
 }
 
 /// A request authorized against the durable world, with a local cancellation
@@ -1312,7 +1027,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         &self,
         permit: &DataPermit,
         control: bool,
-    ) -> Result<Option<TrackedRelayChild>, PortError> {
+    ) -> Result<TrackedRelayChild, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         if *permit.revocation.borrow() {
             return Err(PortError::NotFound);
@@ -1351,7 +1066,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         };
         core::handle_controller(&world, core::ControllerInput::Access(access))
             .map_err(|_| PortError::NotFound)?;
-        let reaper = relay_child::RelayReaper::new()?;
+        let reaper = RelayReaper::new()?;
         inner
             .host
             .spawn_data_relay(
@@ -1359,9 +1074,8 @@ impl<H: HostAdapter> ManagedPort<H> {
                 permit.target.vm,
                 permit.target.generation,
                 control,
-            )?
-            .map(|child| Some(reaper.attach(child)))
-            .ok_or(PortError::Busy)
+            )
+            .map(|child| reaper.attach(child))
     }
 
     fn data_target(
@@ -2318,5 +2032,31 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         }
         updated.map_err(map_admission)?;
         Ok(())
+    }
+}
+
+impl DataAuthorization for DataPermit {
+    fn target(&self) -> DataTarget {
+        self.target
+    }
+    fn revocation(&mut self) -> &mut watch::Receiver<bool> {
+        &mut self.revocation
+    }
+    fn drain(&self) -> &DataLease {
+        &self.drain
+    }
+}
+
+impl<H: HostAdapter> DataAccessPort for ManagedPort<H> {
+    type Permit = DataPermit;
+    fn data_permit(&self, token: &str, kind: DataKind) -> Result<DataPermit, PortError> {
+        Self::data_permit(self, token, kind)
+    }
+    fn spawn_data_relay(
+        &self,
+        permit: &DataPermit,
+        control: bool,
+    ) -> Result<TrackedRelayChild, PortError> {
+        Self::spawn_data_relay(self, permit, control)
     }
 }
