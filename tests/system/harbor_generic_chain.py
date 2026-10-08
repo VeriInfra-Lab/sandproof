@@ -31,7 +31,6 @@ import socket
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.request
 from types import SimpleNamespace
@@ -123,8 +122,7 @@ def select_cohort(args, tasks):
 
 
 def exercise(args):
-    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None),
-        legacy_unbounded=getattr(args, "legacy_unbounded", False))
+    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None))
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise RuntimeError('exclusive root Linux/KVM required')
     checkout = Path(__file__).resolve().parents[2]
@@ -193,23 +191,17 @@ def exercise(args):
     for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError('fixed tool mismatch: ' + name)
-    if bounded_policy is not None:
-        require_bounded_host_tools()
-        root, namespaces = bounded_acceptance_layout(bounded_policy,
-            run_root=getattr(args, 'run_root', None), namespace=args.namespace,
-            build_namespace=args.build_namespace)
-        if root.parent != args.scratch_parent.resolve(strict=True):
-            raise ValueError('bounded run root must be directly inside the approved scratch parent')
-        validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-                                         max_vm_id=stride - 1, bounded=True)
-        root.mkdir(mode=0o700)
-        provision_acceptance_coordination(bounded_policy, run_root=root,
-            namespace=namespaces[0], build_namespace=namespaces[1])
-    else:
-        if getattr(args, 'run_root', None) is not None:
-            raise ValueError('--run-root requires --bounded-policy')
-        root = Path(tempfile.mkdtemp(prefix='hg-', dir=args.scratch_parent))
-        namespaces = [args.namespace or secrets.token_hex(8), args.build_namespace or secrets.token_hex(8)]
+    require_bounded_host_tools()
+    root, namespaces = bounded_acceptance_layout(bounded_policy,
+        run_root=getattr(args, 'run_root', None), namespace=args.namespace,
+        build_namespace=args.build_namespace)
+    if root.parent != args.scratch_parent.resolve(strict=True):
+        raise ValueError('bounded run root must be directly inside the approved scratch parent')
+    validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
+                                     max_vm_id=stride - 1, bounded=True)
+    root.mkdir(mode=0o700)
+    provision_acceptance_coordination(bounded_policy, run_root=root,
+        namespace=namespaces[0], build_namespace=namespaces[1])
     print(f'root={root} commit={commit}', flush=True)
     binary = root / 'server'
     shutil.copyfile(args.server, binary)
@@ -219,7 +211,7 @@ def exercise(args):
             or namespaces[0][:6] == namespaces[1][:6]):
         raise ValueError('disjoint deployment namespaces required')
     validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-                                     max_vm_id=stride - 1, bounded=bounded_policy is not None)
+                                     max_vm_id=stride - 1, bounded=True)
     (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
     (root / 'capacity-basis.json').write_text(json.dumps(capacity_basis, indent=2))
     (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
@@ -240,7 +232,7 @@ def exercise(args):
             'node_state_dir': str(pool / 'state'), 'chroot_base': str(pool / 'jails'),
             'jailer': str(args.jailer), 'firecracker': str(firecracker),
             'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base + stride * i,
-            'max_vm_id': stride - 1, 'vcpu_count': cpu, 'memory_mib': memory,
+            'vcpu_count': cpu, 'memory_mib': memory,
             'host_resources': {'cgroup_parent': str(args.build_cgroup_parent if i else args.cgroup_parent), 'memory_max_bytes': (memory + 256) * MIB},
             'file_policy_digest': 1, 'bind': f'127.0.0.1:{ports[i]}', 'domain': 'example.invalid',
             'credentials': [{'tenant': 1, 'secret': builder_key if i else key}],
@@ -267,11 +259,10 @@ def exercise(args):
     for i, config in enumerate(settings):
         (root / str(i) / 'config.json').write_text(json.dumps(config))
     deployment['build_mode'] = build_mode
-    if bounded_policy is not None:
-        extra = build['limits']['workspace_bytes'] - original_workspace
-        deployment['host']['minimum_free_disk_bytes'] += extra
-        if shutil.disk_usage(root).free < deployment['host']['minimum_free_disk_bytes']:
-            raise ValueError('bounded build policy exceeds acceptance disk headroom')
+    extra = build['limits']['workspace_bytes'] - original_workspace
+    deployment['host']['minimum_free_disk_bytes'] += extra
+    if shutil.disk_usage(root).free < deployment['host']['minimum_free_disk_bytes']:
+        raise ValueError('bounded build policy exceeds acceptance disk headroom')
     if args.docker_hub_mirror is not None:
         build['docker_hub_mirror'] = args.docker_hub_mirror
     (root / 'build.json').write_text(json.dumps(build))
@@ -290,7 +281,7 @@ def exercise(args):
         if any(p.poll() is not None for p in processes):
             raise RuntimeError('service exited; retain original resources for recovery')
         return observe_service_resources(binary, service_record, [p.pid for p in processes],
-            service_samples, root / 'service-resources.json', bounded=bounded_policy is not None,
+            service_samples, root / 'service-resources.json', bounded=True,
             minimum_relays=minimum_relays)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True
@@ -390,7 +381,7 @@ def exercise(args):
             # A long task may outlive a bounded build's retained query record.
             # Preserve the terminal result already observed before running it;
             # an uncertain result still requires GET, never a replacement POST.
-            result.update(completion_build_observation(row, build_mode=build_mode,
+            result.update(completion_build_observation(row,
                 read_build=lambda job: client.request('GET', '/sandproof/template-builds/' + job)))
         template = row.get('template') or (result.get('build') or {}).get('template')
         if template:
@@ -584,9 +575,8 @@ if __name__ == '__main__':
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--uid-base', type=int, required=True)
     parser.add_argument('--lock', type=Path, help='explicit independently frozen task version; legacy 2.0 default retained')
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
-    mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
+    parser.add_argument("--bounded-policy", type=Path, required=True,
+                        help="explicit complete policies for both pools and public build storage")
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--task', action='append')
     selection.add_argument('--all', action='store_true')

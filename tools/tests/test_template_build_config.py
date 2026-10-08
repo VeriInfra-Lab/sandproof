@@ -406,16 +406,15 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
         from pathlib import Path
         import tempfile
         from tools.template_build_config import acceptance_build_policy
-        with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+        with self.assertRaisesRegex(ValueError, 'complete bounded policy'):
             acceptance_build_policy(None)
-        self.assertIsNone(acceptance_build_policy(None, legacy_unbounded=True))
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / 'policy.json'
             path.write_text(json.dumps({'runtime': {'database': 'replace'}, 'builder': {}, 'public': {}}))
             path.chmod(0o600)
             with self.assertRaisesRegex(ValueError, 'explicit bounded pool policy'):
                 acceptance_build_policy(path)
-            with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+            with self.assertRaises(TypeError):
                 acceptance_build_policy(path, legacy_unbounded=True)
 
     def test_policy_passes_explicit_sections_and_never_changes_existing_identity(self):
@@ -430,7 +429,8 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
                               'build_retry_windows': {'window_duration_ms': 1000, 'max_anchors': 2}},
                   'public': {'bounded_builds': {'namespace': 17}, 'workspace_bytes': 200, 'workspace_bytes_per_tenant': 100}}
         before = copy.deepcopy((runtime, builder, build))
-        self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, None), 'legacy-unbounded')
+        with self.assertRaisesRegex(ValueError, 'invalid bounded acceptance policy'):
+            apply_acceptance_build_policy(runtime, builder, build, None)
         self.assertEqual((runtime, builder, build), before)
         with patch('tools.template_build_service.validate_pool_resource_ranges') as ranges, \
                 patch('tools.template_build_store.bounded_configuration'), \

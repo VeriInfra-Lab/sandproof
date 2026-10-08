@@ -32,6 +32,7 @@ pub use admission::{
     CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS, Lifetime,
 };
 
+use crate::journal::StoreVersionPolicy;
 use crate::{
     CrashInjector, CrashPoint, DispatchResult, Journal, JournalError, WorkerTransportError,
 };
@@ -40,9 +41,31 @@ use sandbox_controller_core as core;
 use sandproof_protocol::{FailureCode, ResourceEvidence, WorkAction, WorkOutcome, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
 use std::fs::{File, OpenOptions};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 type ReceiptRow = (i64, Vec<u8>, String, Option<Vec<u8>>);
+
+fn lease_controller_store(path: &Path) -> Result<(PathBuf, File), JournalError> {
+    if path.is_symlink() {
+        return Err(JournalError::UnsupportedStore);
+    }
+    let parent = std::fs::canonicalize(
+        path.parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or(Path::new(".")),
+    )?;
+    let path = parent.join(path.file_name().ok_or(JournalError::UnsupportedStore)?);
+    let mut lock_path = path.as_os_str().to_os_string();
+    lock_path.push(".controller.lock");
+    let lease = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_path)?;
+    lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
+    Ok((path, lease))
+}
 
 fn migrate_lifetime_schema(
     transaction: &rusqlite::Transaction<'_>,
@@ -525,7 +548,14 @@ impl ControllerJournal {
     /// Rejects a second writer, namespace mismatch, legacy opaque state, or
     /// corrupt input history. No arbitrary serialized World is accepted.
     pub fn open(path: impl AsRef<Path>, namespace: &str) -> Result<Self, JournalError> {
-        Self::open_with_bounded(path, namespace, None, None, 0)
+        Self::open_with_bounded(
+            path,
+            namespace,
+            None,
+            None,
+            0,
+            StoreVersionPolicy::Historical,
+        )
     }
 
     /// Open an explicitly configured bounded host store. Legacy nonempty stores
@@ -539,7 +569,14 @@ impl ControllerJournal {
         now_ms: u64,
     ) -> Result<Self, JournalError> {
         config.validate()?;
-        Self::open_with_bounded(path, namespace, Some(config), None, now_ms)
+        Self::open_with_bounded(
+            path,
+            namespace,
+            Some(config),
+            None,
+            now_ms,
+            StoreVersionPolicy::Historical,
+        )
     }
 
     fn open_with_bounded(
@@ -548,29 +585,12 @@ impl ControllerJournal {
         bounded: Option<BoundedHostConfig>,
         maintenance: Option<MaintenanceConfig>,
         now_ms: u64,
+        versions: StoreVersionPolicy,
     ) -> Result<Self, JournalError> {
         validate_namespace(namespace)?;
-        let path = path.as_ref();
-        if path.is_symlink() {
-            return Err(JournalError::UnsupportedStore);
-        }
-        let parent = std::fs::canonicalize(
-            path.parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .unwrap_or(Path::new(".")),
-        )?;
-        let path = parent.join(path.file_name().ok_or(JournalError::UnsupportedStore)?);
-        let mut lock_path = path.as_os_str().to_os_string();
-        lock_path.push(".controller.lock");
-        let lease = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(lock_path)?;
-        lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
+        let (path, lease) = lease_controller_store(path.as_ref())?;
         let mut journal =
-            Journal::open_controller(&path, bounded.is_some(), maintenance.is_some())?;
+            Journal::open_controller(&path, bounded.is_some(), maintenance.is_some(), versions)?;
         if let Some(policy) = &maintenance {
             capacity::prepare_connection(&journal.connection, policy)?;
         }
@@ -582,6 +602,9 @@ impl ControllerJournal {
             [],
             |row| row.get(0),
         )?;
+        if versions == StoreVersionPolicy::CurrentOnly && existing != 0 {
+            crate::journal::require_current_controller_store(&transaction)?;
+        }
         if existing == 0 {
             allocators::require_legacy_base(&transaction)?;
             let rows: i64 =
