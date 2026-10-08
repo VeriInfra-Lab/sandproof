@@ -65,6 +65,43 @@ def network_transport_evidence(transport, *, prepared=False):
     return transport.evidence() if transport else {'mode': 'direct_public_ipv4'}
 
 
+def validate_build_service(path, *, prepared=False, require_physical_lease=True):
+    # Prepared fixtures are registered by the enclosing runtime harness. They
+    # never authorize a build, so do not validate an unused public builder.
+    if prepared:
+        return None
+    from tools.template_build_service import configuration
+    return configuration(path, require_physical_lease=require_physical_lease)
+
+
+def launch_build_service(checkout, root, service_prefix, *, prepared=False):
+    if prepared:
+        return None, None
+    validate_build_service(root / 'build.json')
+    log = (root / 'build-service.log').open('ab')
+    try:
+        process = subprocess.Popen([*service_prefix, sys.executable,
+            str(checkout / 'tools/template_build_service.py'), '--config', str(root / 'build.json')],
+            stdout=log, stderr=subprocess.STDOUT)
+    except BaseException:
+        log.close()
+        raise
+    return process, log
+
+
+def pending_build_reservations(directory, *, prepared=False, row=None):
+    if prepared:
+        if row is not None and row.get('build_dispatched'):
+            raise RuntimeError('prepared CI unexpectedly dispatched a template build')
+        for name in ('builds.db', 'builds.db-wal', 'builds.db-shm', 'builds.db-journal'):
+            path = directory / name
+            if path.exists() or path.is_symlink():
+                raise RuntimeError('prepared CI unexpectedly owns a build journal')
+        return 0  # No build service exists; do not create a database to audit it.
+    with contextlib.closing(sqlite3.connect(directory / 'builds.db')) as db:
+        return db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
+
+
 def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressure_report):
     """A separate pressure pass never replaces task scores or oracle provenance."""
     passed = (len(rows) == len(selected) and all(row['status'] == 'passed' for row in rows)
@@ -323,8 +360,8 @@ def exercise(args):
         build['docker_hub_mirror'] = args.docker_hub_mirror
     (root / 'build.json').write_text(json.dumps(build))
     (root / 'build.json').chmod(0o600)
-    from tools.template_build_service import configuration
-    configuration(root / 'build.json', require_physical_lease=False)
+    validate_build_service(root / 'build.json', prepared=ci_fixtures is not None,
+                           require_physical_lease=False)
     controllers, supervisor, log = [], None, None
     transport = (BenchmarkProxy(root / 'proxy', namespaces, proxy_binary, proxy_digest,
                                port=getattr(args, 'proxy_socks_port', 7897))
@@ -401,8 +438,7 @@ def exercise(args):
                 delete=lambda identity: fetch(opener, urls[0], 'DELETE', '/sandboxes/' + identity, key)[0])
             result.update(sandbox_id=recovery['sandbox_id'], runtime_recovery=recovery)
         while True:
-            with sqlite3.connect(root / 'builds/builds.db') as db:
-                pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
+            pending = pending_build_reservations(root / 'builds', prepared=ci_fixtures is not None, row=row)
             if not pending:
                 break
             if time.monotonic() >= deadline:
@@ -456,20 +492,19 @@ def exercise(args):
                              command_prefix=service_prefix)
             controllers.append(p)
             wait_ready(opener, urls[i], builder_key if i else key, p)
-        configuration(root / 'build.json')
-        log = (root / 'build-service.log').open('ab')
-        supervisor = subprocess.Popen([*service_prefix, sys.executable, str(checkout / 'tools/template_build_service.py'),
-            '--config', str(root / 'build.json')], stdout=log, stderr=subprocess.STDOUT)
-        for _ in range(60):
-            try:
-                if fetch(opener, urls[2], 'GET', '/missing', key)[0] == 404:
-                    break
-            except OSError:
-                if supervisor.poll() is not None:
-                    raise RuntimeError('build supervisor startup failed')
-                time.sleep(0.5)
-        else:
-            raise RuntimeError('build endpoint did not become ready')
+        supervisor, log = launch_build_service(checkout, root, service_prefix,
+                                               prepared=ci_fixtures is not None)
+        if supervisor is not None:
+            for _ in range(60):
+                try:
+                    if fetch(opener, urls[2], 'GET', '/missing', key)[0] == 404:
+                        break
+                except OSError:
+                    if supervisor.poll() is not None:
+                        raise RuntimeError('build supervisor startup failed')
+                    time.sleep(0.5)
+            else:
+                raise RuntimeError('build endpoint did not become ready')
         observe_services()
         deployment['host']['control_allowance_enforced_by_cgroup'] = True
         (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
@@ -543,8 +578,7 @@ def exercise(args):
             # Exact reclaim, not just the SDK's kill boolean.
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
-                with sqlite3.connect(root / 'builds/builds.db') as db:
-                    pending = db.execute('SELECT COUNT(*) FROM jobs WHERE reserved>0').fetchone()[0]
+                pending = pending_build_reservations(root / 'builds', prepared=ci_fixtures is not None)
                 if pending == 0:
                     break
                 time.sleep(0.5)

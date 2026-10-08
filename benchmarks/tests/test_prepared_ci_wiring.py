@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -20,12 +21,97 @@ from tools.benchmark_tasks import InvalidInput
 SYSTEM = Path(__file__).resolve().parents[2] / 'tests/system'
 sys.path.insert(0, str(SYSTEM))
 try:
+    import harbor_generic_chain as chain
     from harbor_generic_chain import network_transport_evidence
 finally:
     sys.path.remove(str(SYSTEM))
 
 
 class PreparedCiWiringTests(unittest.TestCase):
+    def test_prepared_build_service_is_neither_validated_nor_started(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (patch('tools.template_build_service.configuration') as configuration,
+                  patch.object(chain.subprocess, 'Popen') as process):
+                self.assertIsNone(chain.validate_build_service(root / 'unused.json', prepared=True,
+                    require_physical_lease=False))
+                self.assertEqual(chain.launch_build_service(root / 'source', root, ['fixed-prefix'],
+                    prepared=True), (None, None))
+            configuration.assert_not_called()
+            process.assert_not_called()
+            self.assertFalse((root / 'build-service.log').exists())
+
+    def test_original_build_validation_preserves_static_and_physical_lease_contracts(self):
+        path = Path('/private/controlled/build.json')
+        with patch('tools.template_build_service.configuration', return_value={'validated': True}) as configure:
+            self.assertEqual(chain.validate_build_service(path, require_physical_lease=False), {'validated': True})
+            chain.validate_build_service(path)
+        self.assertEqual([call.kwargs for call in configure.call_args_list],
+                         [{'require_physical_lease': False}, {'require_physical_lease': True}])
+
+    def test_original_build_service_is_validated_before_launch_in_service_cgroup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            process = Mock()
+            def launch(argv, **kwargs):
+                configure.assert_called_once_with(root / 'build.json')
+                self.assertEqual(argv, ['fixed-prefix', chain.sys.executable,
+                    str(root / 'source/tools/template_build_service.py'), '--config', str(root / 'build.json')])
+                self.assertIs(kwargs['stderr'], chain.subprocess.STDOUT)
+                return process
+            with (patch.object(chain, 'validate_build_service') as configure,
+                  patch.object(chain.subprocess, 'Popen', side_effect=launch)):
+                actual, log = chain.launch_build_service(root / 'source', root, ['fixed-prefix'])
+            self.assertIs(actual, process)
+            self.assertFalse(log.closed)
+            log.close()
+
+    def test_original_build_launch_failure_closes_its_log(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (patch.object(chain, 'validate_build_service'),
+                  patch.object(chain.subprocess, 'Popen', side_effect=OSError('cannot launch')) as launch):
+                with self.assertRaises(OSError):
+                    chain.launch_build_service(root / 'source', root, [])
+            self.assertTrue(launch.call_args.kwargs['stdout'].closed)
+
+    def test_prepared_recovery_does_not_create_or_query_a_build_database(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(chain.sqlite3, 'connect') as connect:
+                self.assertEqual(chain.pending_build_reservations(root, prepared=True,
+                    row={'build_dispatched': False, 'build_id': 'a' * 32}), 0)
+                self.assertEqual(chain.pending_build_reservations(root, prepared=True), 0)
+            connect.assert_not_called()
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_prepared_unexpected_build_identity_or_journal_is_not_skipped(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(chain.sqlite3, 'connect') as connect:
+                with self.assertRaisesRegex(RuntimeError, 'dispatched'):
+                    chain.pending_build_reservations(root, prepared=True, row={'build_dispatched': True})
+                for name in ('builds.db', 'builds.db-wal', 'builds.db-shm', 'builds.db-journal'):
+                    path = root / name
+                    path.write_bytes(b'unexpected journal')
+                    with self.subTest(name=name), self.assertRaisesRegex(RuntimeError, 'build journal'):
+                        chain.pending_build_reservations(root, prepared=True)
+                    path.unlink()
+                path = root / 'builds.db'
+                path.symlink_to(root / 'missing')
+                with self.assertRaisesRegex(RuntimeError, 'build journal'):
+                    chain.pending_build_reservations(root, prepared=True)
+            connect.assert_not_called()
+
+    def test_original_cleanup_counts_actual_retained_build_reservations(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with contextlib.closing(sqlite3.connect(root / 'builds.db')) as db:
+                with db:
+                    db.execute('CREATE TABLE jobs(reserved INTEGER NOT NULL)')
+                    db.executemany('INSERT INTO jobs(reserved) VALUES(?)', [(0,), (10,), (20,)])
+            self.assertEqual(chain.pending_build_reservations(root), 2)
+
     def test_missing_or_noncallable_verifier_rejects_before_dispatch_and_report(self):
         for factory in (None, 'not-a-function', False, {}):
             with self.subTest(factory=factory), tempfile.TemporaryDirectory() as temporary:
