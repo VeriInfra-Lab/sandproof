@@ -8,7 +8,7 @@ pub(super) fn physical_profile(
     jails: &Path,
     slots: u64,
 ) -> PhysicalStorageProfile {
-    let profile: PhysicalStorageProfile = serde_json::from_value(serde_json::json!({
+    let mut profile: PhysicalStorageProfile = serde_json::from_value(serde_json::json!({
         "version": 1,
         "coordination_file": "/fixture/coordination",
         "pools": [{
@@ -25,6 +25,9 @@ pub(super) fn physical_profile(
         "filesystem_overhead_inodes": 64
     }))
     .unwrap();
+    // The synthetic filesystem must cover all explicitly reserved helper and
+    // per-slot inodes; this is not a production deployment default.
+    profile.filesystem_overhead_inodes = profile.required_inodes().unwrap();
     profile.validate().unwrap();
     profile
 }
