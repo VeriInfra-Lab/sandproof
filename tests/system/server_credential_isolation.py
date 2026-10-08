@@ -207,7 +207,8 @@ def exercise(args):
         for old in (first, second):
             assert data_status(opener, base, old._envd_access_token) == 401
         assert reused.commands.run("printf new-incarnation").stdout == "new-incarnation"
-        assert Sandbox.kill(reused.sandbox_id, **options(keys[0], base, base))
+        killed = Sandbox.kill(reused.sandbox_id, **options(keys[0], base, base))
+        assert killed
         assert terminal_cleanup_confirmed(root / "db/controller.db", reused.sandbox_id)
         assert data_status(opener, base, reused._envd_access_token) == 401
         live.clear()
