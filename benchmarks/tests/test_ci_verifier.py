@@ -147,6 +147,7 @@ class CiVerifierTests(unittest.TestCase):
     def test_destination_parent_must_be_private(self):
         public = self.root / 'public'
         public.mkdir(mode=0o755)
+        public.chmod(0o755)  # Deliberately public even under the supervisor's 0077 umask.
         self.destination = public / 'variant'
         with self.assertRaisesRegex(InvalidInput, 'private trial directory'):
             self.prepare()
