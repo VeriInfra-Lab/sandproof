@@ -38,7 +38,7 @@ cleanup_uv() {
   rmdir -- "$uv_stage"
 }
 trap cleanup_uv EXIT
-curl --proto '=https' --tlsv1.2 -fsSL --retry 3 "$uv_url" -o "$uv_stage/uv.whl"
+curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 20 --max-time 300 --retry 3 "$uv_url" -o "$uv_stage/uv.whl"
 printf '%s  %s\n' "$uv_sha" "$uv_stage/uv.whl" | sha256sum -c -
 python3 - "$uv_stage/uv.whl" "$uv_stage/uv" <<'PY'
 from pathlib import Path

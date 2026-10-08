@@ -249,7 +249,7 @@ def prepare_input(checkout, approved_commit, output):
     if len(encoded) > MAX_INPUT_BYTES:
         raise ValueError('dependency input exceeds encoded limit')
     # Exclusive creation never replaces an approved bundle or follows a link.
-    with output.open('xb') as destination:
+    with open(output, 'xb', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as destination:
         destination.write(encoded)
     return bundle
 
