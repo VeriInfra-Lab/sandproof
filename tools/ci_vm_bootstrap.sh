@@ -11,6 +11,7 @@ apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   build-essential pkg-config libssl-dev git curl ca-certificates python3-venv \
   jq unzip libicu74 libkrb5-3 liblttng-ust1t64 libunwind8
+bash /opt/sandproof-ci/install-uv.sh /root/ci-pins.json
 install -d -o runner -g runner /opt/actions-runner
 runner_url="$(python3 -c 'import json; print(json.load(open("/root/ci-pins.json"))["runner_url"])')"
 runner_sha="$(python3 -c 'import json; print(json.load(open("/root/ci-pins.json"))["runner_sha256"])')"

@@ -4,5 +4,8 @@
   "runner_url": "https://github.com/actions/runner/releases/download/v2.337.0/actions-runner-linux-x64-2.337.0.tar.gz",
   "runner_sha256": "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613",
   "rustup_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
-  "rust_toolchain": "1.97.0"
+  "rust_toolchain": "1.97.0",
+  "uv_version": "0.11.31",
+  "uv_url": "https://files.pythonhosted.org/packages/c4/c3/019ecbf3564d909c55fcf065592aff90b8b386d679e379caf356de4473f9/uv-0.11.31-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+  "uv_sha256": "44ac79fca5807122676701279a1f36d7917a922f25a0ab5c5cf58a252f666e7e"
 }
