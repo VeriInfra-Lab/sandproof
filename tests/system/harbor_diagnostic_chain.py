@@ -2,7 +2,8 @@
 
 Requires root on an isolated Linux/KVM host, a 10 GiB Ubuntu 24.04 base,
 public IPv4 forwarding already enabled for the entire run, and the locked
-Harbor/E2B Python environment. No cloud API key or paid model is used.
+Harbor/E2B Python environment. The single physical slot needs an empty delegated
+cgroup parent and one exclusive UID. No cloud API key or paid model is used.
 """
 
 import runpy as _runpy
@@ -20,7 +21,6 @@ import os
 from pathlib import Path
 import secrets
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -32,11 +32,14 @@ from e2b import Sandbox
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
 from server_process_crash import (
-    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
+    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
 )
+from server_template_isolation import audit_gone
+from server_templates import record_for
 
 
-MAX_VM_ID = 1000
+MIB = 1024 ** 2
 GIB = 1024 ** 3
 VERIFIER_PYTHON_SHA256 = "0c5450b5ba835b0f653809712c2e012e795dd602105383581476da118a981572"
 
@@ -95,30 +98,51 @@ def selected_inputs(checkout: Path, source: Path, names: list[str]) -> list[tupl
     return result
 
 
-def no_exact_residual(root: Path, namespace: str, first_uid: int, count: int, firecracker_name: str) -> None:
+def save_identity(root: Path, sandbox: Sandbox, identities: list[dict]) -> dict:
+    # Observe the original live claim before any SDK assertion or DELETE. These
+    # private test observations survive retirement; they are not worker receipts.
+    _, name, record = record_for(root, sandbox)
+    network = json.loads((root / "jails/.claims" / name / "network.json").read_text())
+    identity = {**record, "network_inode": network["namespace_inode"],
+                "sandbox_id": sandbox.sandbox_id}
+    path = root / f"{name}.identity.json"
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as output:
+        json.dump(identity, output)
+        output.flush()
+        os.fsync(output.fileno())
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    identities.append(identity)
+    assert identity["resource_id"] == name
+    assert network["resource_id"] == name
+    return identity
+
+
+def no_exact_residual(root: Path, namespace: str, first_uid: int,
+                      identities: list[dict], firecracker: Path, cgroup_parent: Path) -> None:
+    assert identities, "original live VM identities were not saved"
     prefix = f"vm-{namespace}-"
-    claims = sorted((root / "jails/.claims").glob(f"{prefix}*"))
-    assert len(claims) == count, f"expected {count} VM claim tombstones, got {len(claims)}"
-    for claim in claims:
-        record = json.loads((claim / "record.json").read_text())
-        assert record["resource_id"] == claim.name
-        assert process_start_ticks(record["pid"]) != record["start_time_ticks"]
-    for parent in (root / "jails" / firecracker_name, Path("/run/netns")):
+    for identity in identities:
+        name = identity["resource_id"]
+        assert name.startswith(prefix), "saved claim belongs to another namespace"
+        audit_gone(root, firecracker, cgroup_parent, name, identity=identity)
+    for parent in (root / "jails" / firecracker.name, Path("/run/netns")):
         assert not list(parent.glob(f"{prefix}*")), f"VM residue under {parent}"
     assert not list(Path("/sys/fs/cgroup").rglob(f"{prefix}*")), "VM cgroup residue"
-    assert not processes_in_uid_range(first_uid, first_uid + MAX_VM_ID), "VM UID process residue"
+    assert not processes_in_uid_range(first_uid, first_uid), "physical-slot UID process residue"
 
 
-def wait_destroyed(database: Path, count: int) -> None:
+def wait_destroyed(database: Path, sandbox_id: str) -> None:
     deadline = time.monotonic() + 40
-    phases = []
     while time.monotonic() < deadline:
-        with sqlite3.connect(database) as connection:
-            phases = [json.loads(row[0])["phase"] for row in connection.execute("SELECT state_blob FROM sandboxes")]
-        if len(phases) == count and all(phase == "Destroyed" for phase in phases):
+        if terminal_cleanup_confirmed(database, sandbox_id):
             return
         time.sleep(0.2)
-    raise AssertionError(f"durable VM states are not all Destroyed: {phases}")
+    raise AssertionError(f"exact sandbox lacks durable terminal cleanup: {sandbox_id}")
 
 
 def stage_verifier_python(sandbox: Sandbox, archive: Path) -> None:
@@ -141,13 +165,16 @@ def stage_verifier_python(sandbox: Sandbox, archive: Path) -> None:
 
 
 def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_key: str,
-                      root: Path, verifier_python: Path) -> dict:
+                      root: Path, verifier_python: Path, identities: list[dict]) -> dict:
     name = entry["name"]
     directory = source / entry["source_path"]
     sdk_options = options(api_key, base_url, base_url)
     sandbox = None
+    identity = None
     try:
         sandbox = Sandbox.create(template="base", timeout=86400, allow_internet_access=True, **sdk_options)
+        identity = save_identity(root, sandbox, identities)
+        assert process_start_ticks(identity["pid"]) == identity["start_time_ticks"]
         assert Sandbox.connect(sandbox.sandbox_id, **sdk_options).sandbox_id == sandbox.sandbox_id
         assert sandbox.get_info().state == "running"
         assert any(item.sandbox_id == sandbox.sandbox_id for item in Sandbox.list(**sdk_options).next_items())
@@ -185,16 +212,18 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
                 "guest_versions": version, "guest_profile": profile, "sandbox_id": sandbox.sandbox_id,
                 "original_verifier_sha256": next(item["sha256"] for item in entry["files"] if item["path"] == "tests/test.sh")}
     finally:
-        if sandbox is not None:
+        if sandbox is not None and identity is not None:
             _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk_options))
             assert _kill_confirmed, f"{name}: kill failed"
+        elif sandbox is not None:
+            print(f"{name}: original identity not saved; exact live sandbox retained: {sandbox.sandbox_id}", file=sys.stderr)
 
 
 def exercise(args: argparse.Namespace) -> None:
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("requires root on isolated Linux/KVM host")
-    if args.uid_base < 1000 or args.uid_base + MAX_VM_ID >= 2**32:
-        raise RuntimeError("invalid dedicated test UID range")
+    if not 1000 <= args.uid_base < 2**32 - 1:
+        raise RuntimeError("invalid dedicated physical-slot UID")
     if Path("/proc/sys/net/ipv4/ip_forward").read_text().strip() != "1":
         raise RuntimeError("public verifier needs pre-authorized IPv4 forwarding enabled for the whole run")
     checkout = Path(__file__).resolve().parents[2]
@@ -205,8 +234,11 @@ def exercise(args: argparse.Namespace) -> None:
     parent = args.scratch_parent.resolve(strict=True)
     if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o077:
         raise RuntimeError("scratch parent must be root-owned and private")
-    if processes_in_uid_range(args.uid_base, args.uid_base + MAX_VM_ID):
-        raise RuntimeError("dedicated VM UID range already occupied")
+    if processes_in_uid_range(args.uid_base, args.uid_base):
+        raise RuntimeError("dedicated physical-slot UID already occupied")
+    cgroup_parent = args.cgroup_parent.resolve(strict=True)
+    if (cgroup_parent / "cgroup.procs").read_text().strip() or any(path.is_dir() for path in cgroup_parent.iterdir()):
+        raise RuntimeError("delegated cgroup parent must be empty")
     if args.rootfs.stat().st_size != 10 * GIB:
         raise RuntimeError("selected tasks require a full 10 GiB rootfs")
     if shutil.disk_usage(parent).free < args.rootfs.stat().st_size * (len(selection) + 2) + GIB:
@@ -218,7 +250,7 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="sp13-", dir=parent))
     namespace = secrets.token_hex(8)
     firecracker = args.firecracker.resolve(strict=True)
-    if len(os.fsencode(root / "jails" / firecracker.name / f"vm-{namespace}-{MAX_VM_ID}" / "root/api.socket")) >= 108:
+    if len(os.fsencode(root / "jails" / firecracker.name / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("Firecracker socket path too long")
     for name in ("db", "state", "jails"):
@@ -233,32 +265,38 @@ def exercise(args: argparse.Namespace) -> None:
     key = secrets.token_hex(32)
     port = free_loopback_port()
     config = root / "config.json"
-    config.write_text(json.dumps({
+    settings = complete_runtime({
         "namespace": namespace, "database": str(root / "db/controller.db"),
         "node_state_dir": str(root / "state"), "jailer": str(args.jailer.resolve(strict=True)),
         "firecracker": str(firecracker), "chroot_base": str(root / "jails"),
         "kernel": str(kernel), "rootfs": str(rootfs), "uid_base": args.uid_base,
-        "max_vm_id": MAX_VM_ID, "vcpu_count": 1, "memory_mib": 2048,
+        "vcpu_count": 1, "memory_mib": 2048,
+        "host_resources": {"cgroup_parent": str(cgroup_parent), "memory_max_bytes": 2304 * MIB},
         "file_policy_digest": 1, "bind": f"127.0.0.1:{port}",
         "domain": "example.invalid", "credentials": [{"tenant": 1, "secret": key}],
         "max_active_global": 1, "max_active_per_tenant": 1,
-        "max_disk_bytes_global": 30 * GIB, "max_disk_bytes_per_tenant": 30 * GIB,
-        "cleanup_reserve_bytes": 10 * GIB, "max_timeout_secs": 86400,
+        "max_disk_bytes_global": 2 * rootfs.stat().st_size,
+        "max_disk_bytes_per_tenant": rootfs.stat().st_size,
+        "cleanup_reserve_bytes": rootfs.stat().st_size, "max_timeout_secs": 86400,
         "max_lifetime_secs": 86400, "default_timeout_secs": 300,
         "expiry_scan_seconds": 1, "public_ipv4_enabled": True,
-    }))
+    }, slots=1)
+    provision_runtime(settings)
+    config.write_text(json.dumps(settings))
     config.chmod(0o600)
     process = None
     completed = False
     results = []
+    identities = []
     try:
         process = start_server(binary, config, root / "server.log", None)
         base_url = f"http://127.0.0.1:{port}"
         wait_ready(urllib.request.build_opener(urllib.request.ProxyHandler({})), base_url, key, process)
         for entry, pin in selection:
-            results.append(run_original_task(entry, pin, args.source, base_url, key, root, verifier_python))
-            wait_destroyed(root / "db/controller.db", len(results))
-            no_exact_residual(root, namespace, args.uid_base, len(results), firecracker.name)
+            result = run_original_task(entry, pin, args.source, base_url, key, root, verifier_python, identities)
+            results.append(result)
+            wait_destroyed(root / "db/controller.db", result["sandbox_id"])
+            no_exact_residual(root, namespace, args.uid_base, identities, firecracker, cgroup_parent)
             assert sha256_file(rootfs) == source_base_sha, "private base changed"
         assert sha256_file(args.rootfs) == source_base_sha, "source base changed"
         completed = True
@@ -268,7 +306,7 @@ def exercise(args: argparse.Namespace) -> None:
                           "memory_mib": 2048, "disk_mib": 10240, "vcpu_count": 1,
                           "verifier_python_sha256": VERIFIER_PYTHON_SHA256,
                           "network": "public IPv4 fixed for whole trial; guest DNS 1.1.1.1", "tasks": results,
-                          "residual": "each VM durable Destroyed; no exact process, jail, netns, cgroup, test UID; base unchanged",
+                          "residual": "each exact VM terminal cleanup confirmed; saved PID/start/netns inode gone; no jail, netns, cgroup, physical-slot UID; base unchanged",
                           "scope": "selected original oracle/verifier chain, not full E2B equivalence or 89-task score"}))
     finally:
         stop_server(process)
@@ -280,7 +318,7 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for field in ("server", "jailer", "firecracker", "kernel", "rootfs", "source", "scratch-parent", "verifier-python"):
+    for field in ("server", "jailer", "firecracker", "kernel", "rootfs", "source", "scratch-parent", "verifier-python", "cgroup-parent"):
         parser.add_argument("--" + field, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--task", action="append", choices=("regex-log", "polyglot-c-py"), required=True)

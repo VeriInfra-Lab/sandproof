@@ -11,6 +11,7 @@ mod cache_tests;
 mod tests_support;
 
 mod capacity;
+mod data_credentials;
 pub use capacity::CapacityConfig;
 mod admission;
 mod allocators;
@@ -559,9 +560,10 @@ impl ControllerJournal {
                 CREATE TABLE controller_receipt_history(sequence INTEGER PRIMARY KEY,outbox_id INTEGER NOT NULL REFERENCES outbox(id),receipt_json BLOB NOT NULL);
                 CREATE TABLE sandbox_lifetimes(sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id),owner_id TEXT NOT NULL,deadline_ms INTEGER NOT NULL,disk_bytes INTEGER NOT NULL CHECK(disk_bytes>0),started_at_ms INTEGER CHECK(started_at_ms>=0),max_deadline_ms INTEGER CHECK(max_deadline_ms>=0),startup_deadline_ms INTEGER CHECK(startup_deadline_ms>=0));
                 CREATE TABLE sandbox_create_options(sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id),options_json BLOB NOT NULL);
-                PRAGMA application_id=0x53504631; PRAGMA user_version=4;")?;
+                PRAGMA application_id=0x53504631; PRAGMA user_version=5;")?;
             transaction.execute("INSERT INTO controller_meta VALUES(1,7,?1)", [namespace])?;
             allocators::initialize(&transaction)?;
+            data_credentials::initialize(&transaction)?;
             let world =
                 bounded::initialize(&transaction, bounded, now_ms, maintenance.max_input_bytes)?;
             checkpoint::initialize(&transaction, &world, maintenance)?;

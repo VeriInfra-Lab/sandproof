@@ -28,15 +28,13 @@ fn private_pool_opt_in_reserved_metadata_and_tombstone() {
     ));
     let directory = TempDir::new().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
-    let port = Arc::new(
-        complete_fixture::builder_port(
-            &directory.path().join("pool.db"),
-            FakeHost {
-                prepare_calls: Some(Arc::clone(&calls)),
-                ..FakeHost::default()
-            },
-        ),
-    );
+    let port = Arc::new(complete_fixture::builder_port(
+        &directory.path().join("pool.db"),
+        FakeHost {
+            prepare_calls: Some(Arc::clone(&calls)),
+            ..FakeHost::default()
+        },
+    ));
     let window = port.issue_build_window("1").unwrap().request_window;
     let barrier = Arc::new(Barrier::new(3));
     let handles: Vec<_> = (0..2)
@@ -46,7 +44,9 @@ fn private_pool_opt_in_reserved_metadata_and_tombstone() {
             let window = window.clone();
             std::thread::spawn(move || {
                 barrier.wait();
-                port.build_vm("1", BUILD, Some(input(&window))).unwrap().sandbox_id
+                port.build_vm("1", BUILD, Some(input(&window)))
+                    .unwrap()
+                    .sandbox_id
             })
         })
         .collect();
@@ -124,16 +124,17 @@ fn destroyed_publication_does_not_release_build_budget_before_vm_reclaim() {
         port.kill("1", &created.sandbox_id),
         Err(PortError::OutcomeUnknown)
     ));
-    let pending = port.build_vm_in_window("1", BUILD, Some(&window), None).unwrap();
+    let pending = port
+        .build_vm_in_window("1", BUILD, Some(&window), None)
+        .unwrap();
     assert_eq!(pending.state, "Destroyed");
     assert!(!pending.cleanup_complete);
     drop(port);
-    let restarted = complete_fixture::builder_port(
-        &path,
-        FakeHost::default(),
-    );
+    let restarted = complete_fixture::builder_port(&path, FakeHost::default());
     restarted.recover_on_startup().unwrap();
-    let final_view = restarted.build_vm_in_window("1", BUILD, Some(&window), None).unwrap();
+    let final_view = restarted
+        .build_vm_in_window("1", BUILD, Some(&window), None)
+        .unwrap();
     assert!(final_view.cleanup_complete);
     assert_eq!(final_view.sandbox_id, created.sandbox_id);
 }

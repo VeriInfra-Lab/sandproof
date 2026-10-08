@@ -24,19 +24,22 @@ use sandproof_protocol::{
     FailureCode, ResourceEvidence, ResourceRef, UnknownReason, WorkAction, WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
 #[path = "managed_port/allocators.rs"]
 mod allocators;
-#[path = "managed_port/complete_fixture.rs"]
-mod complete_fixture;
 #[path = "managed_port/bounded_slots.rs"]
 mod bounded_slots;
 #[path = "managed_port/build_vm.rs"]
 mod build_vm;
 #[path = "managed_port/committed_world.rs"]
 mod committed_world;
+#[path = "managed_port/complete_fixture.rs"]
+mod complete_fixture;
+#[path = "managed_port/credential_isolation.rs"]
+mod credential_isolation;
 #[path = "managed_port/history_capacity.rs"]
 mod history_capacity;
 #[cfg(unix)]
@@ -134,6 +137,8 @@ struct FakeHost {
     templates: BTreeMap<u64, sandproof_controller_service::templates::TemplateBinding>,
     launch_error_once: Option<PortError>,
     token_error_once: AtomicBool,
+    token_error_for: Option<core::SandboxId>,
+    relay_calls: Option<Arc<AtomicUsize>>,
     free_bytes: u64,
     public_ipv4_ready: bool,
     incomplete_open_fence: bool,
@@ -168,6 +173,8 @@ impl Default for FakeHost {
             templates: BTreeMap::new(),
             launch_error_once: None,
             token_error_once: AtomicBool::new(false),
+            token_error_for: None,
+            relay_calls: None,
             free_bytes: 16 * 1024 * 1024 * 1024,
             public_ipv4_ready: false,
             incomplete_open_fence: false,
@@ -243,24 +250,46 @@ impl HostAdapter for FakeHost {
     // These tests replace successful physical observations. Incarnation,
     // missing binding and lost release faults use the durable BoundedHost
     // fixture below, rather than pretending this stateless host proves them.
-    fn bind_host_slot(&mut self, _: &sandproof_controller_service::HostSlotContext, _: bool)
-        -> Result<(), PortError> { Ok(()) }
-    fn release_host_slot(&mut self, _: &sandproof_controller_service::HostSlotContext)
-        -> Result<(), PortError> { Ok(()) }
-    fn data_gate_drained(&self, _: &sandproof_controller_service::HostSlotContext)
-        -> Result<bool, PortError> { Ok(true) }
-    fn acquire_data_gate(&self, _: core::SandboxId, _: core::VmId, _: core::Generation)
-        -> Result<Option<std::fs::File>, PortError> {
+    fn bind_host_slot(
+        &mut self,
+        _: &sandproof_controller_service::HostSlotContext,
+        _: bool,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
+    fn release_host_slot(
+        &mut self,
+        _: &sandproof_controller_service::HostSlotContext,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
+    fn data_gate_drained(
+        &self,
+        _: &sandproof_controller_service::HostSlotContext,
+    ) -> Result<bool, PortError> {
+        Ok(true)
+    }
+    fn acquire_data_gate(
+        &self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+    ) -> Result<Option<std::fs::File>, PortError> {
         let file = tempfile::tempfile().map_err(|_| PortError::Busy)?;
         file.try_lock_shared().map_err(|_| PortError::Busy)?;
         Ok(Some(file))
     }
-    fn validate_physical_storage(&self,
+    fn validate_physical_storage(
+        &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
-        pool: &sandproof_controller_service::physical_storage::PhysicalPool)
-        -> Result<(), PortError> {
+        pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<(), PortError> {
         profile.validate().map_err(|_| PortError::Busy)?;
-        if profile.pools.contains(pool) { Ok(()) } else { Err(PortError::Busy) }
+        if profile.pools.contains(pool) {
+            Ok(())
+        } else {
+            Err(PortError::Busy)
+        }
     }
 
     fn validate_template(
@@ -361,13 +390,28 @@ impl HostAdapter for FakeHost {
     }
 
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
-        if self.token_error_once.swap(false, Ordering::SeqCst) {
+        if self.token_error_for == Some(sandbox)
+            || self.token_error_once.swap(false, Ordering::SeqCst)
+        {
             return Err(PortError::Busy);
         }
         self.secrets
             .get(&sandbox.0)
             .map(|(token, _)| token.clone())
             .ok_or(PortError::Busy)
+    }
+
+    fn spawn_data_relay(
+        &mut self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+        _: bool,
+    ) -> Result<Option<std::process::Child>, PortError> {
+        if let Some(calls) = &self.relay_calls {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }
+        Ok(None)
     }
 
     fn execute(
@@ -714,6 +758,29 @@ fn admit_public_create(journal: &mut ControllerJournal) {
         .unwrap();
 }
 
+// Manual worker-fault fixtures must honor the same launch ordering as the
+// production API: admit, register the original credential digest, then claim work.
+fn register_test_credential(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    token: &str,
+) {
+    let generation = journal
+        .world()
+        .unwrap()
+        .sandbox_record(sandbox)
+        .unwrap()
+        .generation;
+    journal
+        .register_data_credential(
+            sandbox,
+            generation,
+            Sha256::digest(token.as_bytes()).into(),
+            &mut NeverCrash,
+        )
+        .unwrap();
+}
+
 fn due_unknown_prepare_fixture(
     lose_abort_receipt_once: bool,
 ) -> (
@@ -763,6 +830,7 @@ fn due_unknown_prepare_fixture(
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
@@ -943,6 +1011,7 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let sandbox = core::SandboxId(1);
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             FakeHost {
@@ -1012,6 +1081,7 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let sandbox = core::SandboxId(1);
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             if matches!(
@@ -1088,36 +1158,7 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
 }
 
-#[test]
-fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
-    let directory = TempDir::new().unwrap();
-    let path = directory.path().join("controller.db");
-    let sandbox = core::SandboxId(1);
-    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
-    admit_public_create(&mut journal);
-    let calls = Arc::new(AtomicUsize::new(0));
-    let mut host = FakeHost {
-        activation: ActivationObservation::Incomplete,
-        activation_calls: Some(Arc::clone(&calls)),
-        public_ipv4_ready: true,
-        ..FakeHost::default()
-    };
-    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
-    let pending =
-        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
-            host.execute(action)
-        });
-    assert!(matches!(
-        pending,
-        Err(sandproof_controller_service::JournalError::UnresolvedAction)
-    ));
-    let uncertain = journal.uncertain_actions().unwrap();
-    assert_eq!(uncertain.len(), 1);
-    let action = &uncertain[0];
-    assert!(matches!(
-        action.command.command(),
-        core::Command::ActivateVm { .. }
-    ));
+fn assert_activation_identity(journal: &ControllerJournal, action: &WorkAction<core::EffectId>) {
     let world = journal.world().unwrap();
     assert!(journal.matches_current_activation(&world, action).unwrap());
     let mut wrong_epoch = action.clone();
@@ -1136,6 +1177,41 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
             .matches_current_activation(&world, &wrong_vm)
             .unwrap()
     );
+}
+
+#[test]
+fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let sandbox = core::SandboxId(1);
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
+    admit_public_create(&mut journal);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut host = FakeHost {
+        activation: ActivationObservation::Incomplete,
+        activation_calls: Some(Arc::clone(&calls)),
+        public_ipv4_ready: true,
+        ..FakeHost::default()
+    };
+    host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
+    let pending =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            host.execute(action)
+        });
+    assert!(matches!(
+        pending,
+        Err(sandproof_controller_service::JournalError::UnresolvedAction)
+    ));
+    let uncertain = journal.uncertain_actions().unwrap();
+    assert_eq!(uncertain.len(), 1);
+    let action = &uncertain[0];
+    assert!(matches!(
+        action.command.command(),
+        core::Command::ActivateVm { .. }
+    ));
+    assert_activation_identity(&journal, action);
+    let world = journal.world().unwrap();
     let original_vm = world.sandbox_record(sandbox).unwrap().current_vm;
     drop(journal);
 
@@ -1229,6 +1305,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
@@ -1295,6 +1372,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             host.execute(action)
@@ -1336,6 +1414,7 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let sandbox = core::SandboxId(1);
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             let outcome = match action.command.command() {
@@ -1493,8 +1572,9 @@ fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
             &mut NeverCrash,
         )
         .unwrap();
-    // Reservation itself is now atomic with admission. A missing credential
-    // becomes unsafe to replace only after a host action has been claimed.
+    // Register the original token before the first claim. The restarted host
+    // loses its descriptor; recovery must not replace the recorded identity.
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     assert!(matches!(
         finish_admitted_create_v1::<Evidence, _>(
             &mut journal,
@@ -1552,6 +1632,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
             &mut NeverCrash,
         )
         .unwrap();
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let attempted =
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
@@ -1628,6 +1709,7 @@ fn two_unknown_prepares() -> (TempDir, ControllerJournal) {
                 &mut NeverCrash,
             )
             .unwrap();
+        register_test_credential(&mut journal, sandbox, &format!("{id:064x}"));
         let attempted =
             finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
                 if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
@@ -1661,7 +1743,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
         ..FakeHost::default()
     };
     for id in [1, 2] {
-        host.put_secret(core::SandboxId(id), &"a".repeat(64))
+        host.put_secret(core::SandboxId(id), &format!("{id:064x}"))
             .unwrap();
     }
     let port = ManagedPort::new(
@@ -1695,7 +1777,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
     };
-    host.put_secret(core::SandboxId(1), &"a".repeat(64))
+    host.put_secret(core::SandboxId(1), &format!("{:064x}", 1))
         .unwrap();
     let port = ManagedPort::new(journal, host, config());
     let resumed = port.recover_on_startup().unwrap();
@@ -1744,6 +1826,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
             &mut NeverCrash,
         )
         .unwrap();
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
     let pending =
         finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
@@ -2059,27 +2142,28 @@ fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     admit_public_create(&mut journal);
-    let result = finish_admitted_create_v1(
-        &mut journal, sandbox, core::OperationId(1),
-        &mut |action| match action.command.command() {
-            core::Command::ConfigureNetwork { .. } => Ok(WorkReceipt::<Evidence> {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::DefinitiveFailure {
-                    code: FailureCode::PolicyRejected,
-                    retryable: false,
-                    partial: None,
-                },
-            }),
-            core::Command::CleanupVm { .. } => Ok(WorkReceipt::<Evidence> {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                },
-            }),
-            _ => FakeHost::default().execute(action),
-        },
-    );
+    register_test_credential(&mut journal, sandbox, &"a".repeat(64));
+    let result =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            match action.command.command() {
+                core::Command::ConfigureNetwork { .. } => Ok(WorkReceipt::<Evidence> {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::DefinitiveFailure {
+                        code: FailureCode::PolicyRejected,
+                        retryable: false,
+                        partial: None,
+                    },
+                }),
+                core::Command::CleanupVm { .. } => Ok(WorkReceipt::<Evidence> {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                }),
+                _ => FakeHost::default().execute(action),
+            }
+        });
     assert!(result.is_err());
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
@@ -2285,7 +2369,8 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
         },
     )
     .unwrap();
-    let mut journal = complete_fixture::open_with_config(&path, NAMESPACE, &template_config()).unwrap();
+    let mut journal =
+        complete_fixture::open_with_config(&path, NAMESPACE, &template_config()).unwrap();
     journal
         .admit_template_create(
             core::CreateRequest {
@@ -2318,6 +2403,7 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
             &mut NeverCrash,
         )
         .unwrap();
+    register_test_credential(&mut journal, core::SandboxId(1), &token);
     finish_admitted_create_v1(
         &mut journal,
         core::SandboxId(1),
@@ -3062,6 +3148,32 @@ fn physical_disk_shortage_rejects_before_any_admission() {
     );
 }
 
+fn seed_checked_vm_frontier(path: &std::path::Path, next_vm_id: u64) {
+    // Seed a checked current checkpoint near the real permanent-ID boundary.
+    // No host resource/UID range is made into a logical identity limit.
+    let database = rusqlite::Connection::open(path).unwrap();
+    let payload: Vec<u8> = database
+        .query_row(
+            "SELECT payload FROM controller_checkpoint WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    // Preserve the checkpoint's canonical field order: re-encoding a
+    // generic JSON map would correctly be rejected as noncanonical.
+    let payload = String::from_utf8(payload).unwrap();
+    assert_eq!(payload.matches("\"next_vm_id\":0").count(), 1);
+    let payload = payload
+        .replace("\"next_vm_id\":0", &format!("\"next_vm_id\":{next_vm_id}"))
+        .into_bytes();
+    database
+        .execute(
+            "UPDATE controller_checkpoint SET payload=?1,sha256=?2 WHERE id=1",
+            rusqlite::params![payload, Sha256::digest(&payload).to_vec()],
+        )
+        .unwrap();
+}
+
 #[test]
 fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     use sandproof_api::managed::DataKind;
@@ -3070,22 +3182,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     let path = directory.path().join("controller.db");
     let prepare_calls = Arc::new(AtomicUsize::new(0));
     drop(complete_fixture::open(&path, NAMESPACE).unwrap());
-    // Seed a checked current checkpoint near the real permanent-ID boundary.
-    // No host resource/UID range is made into a logical identity limit.
-    {
-        use sha2::{Digest, Sha256};
-        let database = rusqlite::Connection::open(&path).unwrap();
-        let payload: Vec<u8> = database.query_row(
-            "SELECT payload FROM controller_checkpoint WHERE id=1", [], |row| row.get(0)
-        ).unwrap();
-        // Preserve the checkpoint's canonical field order: re-encoding a
-        // generic JSON map would correctly be rejected as noncanonical.
-        let payload = String::from_utf8(payload).unwrap();
-        assert_eq!(payload.matches("\"next_vm_id\":0").count(), 1);
-        let payload = payload.replace("\"next_vm_id\":0", &format!("\"next_vm_id\":{}", u64::MAX - 2)).into_bytes();
-        database.execute("UPDATE controller_checkpoint SET payload=?1,sha256=?2 WHERE id=1",
-            rusqlite::params![payload, Sha256::digest(&payload).to_vec()]).unwrap();
-    }
+    seed_checked_vm_frontier(&path, u64::MAX - 2);
     let host = FakeHost {
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
@@ -3743,12 +3840,15 @@ fn rejected_worker_receipt_parks_only_its_create() {
 fn corrupt_shared_journal_still_aborts_recovery() {
     let (directory, journal) = two_unknown_stops();
     let connection = rusqlite::Connection::open(directory.path().join("controller.db")).unwrap();
-    assert_eq!(connection
-        .execute(
-            "UPDATE controller_checkpoint SET payload=X'00' WHERE id=1",
-            [],
-        )
-        .unwrap(), 1);
+    assert_eq!(
+        connection
+            .execute(
+                "UPDATE controller_checkpoint SET payload=X'00' WHERE id=1",
+                [],
+            )
+            .unwrap(),
+        1
+    );
     let port = ManagedPort::new(
         journal,
         FakeHost {

@@ -74,7 +74,7 @@ def exercise(args):
     if root.parent != args.scratch_parent.resolve(strict=True):
         raise ValueError("bounded run root must be directly inside the approved scratch parent")
     validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-                                     max_vm_id=20, bounded=True)
+)
     root.mkdir(mode=0o700)  # Existing deployments are never overwritten.
     provision_acceptance_coordination(bounded_policy, run_root=root,
         namespace=namespaces[0], build_namespace=namespaces[1])
@@ -84,7 +84,7 @@ def exercise(args):
     print(f"root={root} commit={commit}", flush=True)
     firecracker = args.firecracker.resolve(strict=True)
     validate_acceptance_socket_paths(root, namespaces, firecracker,
-                                     max_vm_id=20, bounded=True)
+)
     settings = []
     ports = [free_loopback_port() for _ in range(3)]
     urls = [f"http://127.0.0.1:{port}" for port in ports]

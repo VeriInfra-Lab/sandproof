@@ -20,7 +20,7 @@ use std::error::Error;
 use std::fs::{self, DirBuilder, File};
 use std::io::{Read, Seek, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command as Process, Stdio};
 use std::sync::Mutex;

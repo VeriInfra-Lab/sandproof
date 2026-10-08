@@ -121,7 +121,8 @@ fn open_history(path: &Path) -> ControllerJournal {
     // The opt-in observation has at most 64 completed cycles and two live
     // sandboxes. Promised terminal results are explicit and never evicted.
     host.maintenance.max_retained_results = 256;
-    ControllerJournal::open_complete(path, NAMESPACE, host, complete_fixture::maintenance(), 0).unwrap()
+    ControllerJournal::open_complete(path, NAMESPACE, host, complete_fixture::maintenance(), 0)
+        .unwrap()
 }
 
 fn long_request() -> CreateRequest {
@@ -426,14 +427,12 @@ fn other_probe(
         "get" => port
             .get("2", &session.sandbox_id)
             .map(|got| assert_eq!(got.info.sandbox_id, session.sandbox_id)),
-        "idle_recovery" => port
-            .recover_on_startup()
-            .map(|report| {
-                // The coordinator deliberately retains the killed sandbox's
-                // permit, so its physical release may still wait for drain.
-                assert!(report.unresolved_sandboxes <= 1);
-                assert_eq!(report.failed_sandboxes, 0);
-            }),
+        "idle_recovery" => port.recover_on_startup().map(|report| {
+            // The coordinator deliberately retains the killed sandbox's
+            // permit, so its physical release may still wait for drain.
+            assert!(report.unresolved_sandboxes <= 1);
+            assert_eq!(report.failed_sandboxes, 0);
+        }),
         // Concurrent recovery may already have destroyed the due sandbox;
         // final-state assertions below require exactly one host stop overall.
         "due_expiry" => port.expire_due().map(|count| assert!(count <= 1)),
@@ -600,7 +599,10 @@ fn history_capacity_profile() {
         !points.is_empty() && points[0] == 0 && points.windows(2).all(|pair| pair[0] < pair[1])
     );
     assert!(u64::try_from(*points.last().unwrap() + LIVE).is_ok());
-    assert!(*points.last().unwrap() <= 64, "fixture reserves results for at most 64 cycles");
+    assert!(
+        *points.last().unwrap() <= 64,
+        "fixture reserves results for at most 64 cycles"
+    );
     let samples: usize = std::env::var("SANDPROOF_HISTORY_SAMPLES")
         .unwrap_or_else(|_| "7".into())
         .parse()

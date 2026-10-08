@@ -185,13 +185,13 @@ def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):
     return root, namespaces
 
 
-def validate_acceptance_socket_paths(root, namespaces, firecracker, *, max_vm_id, bounded):
+def validate_acceptance_socket_paths(root, namespaces, firecracker):
     """Reject an impossible layout before starting either native controller.
 
     Bounded host IDs are monotonic u64 values, independent of the reusable UID
     slots. Match LinuxWorker's longest-path check, including encoded bytes.
     """
-    identifier = 2**64 - 1 if bounded else max_vm_id
+    identifier = 2**64 - 1
     for index, namespace in enumerate(namespaces):
         path = (Path(root) / str(index) / "jails" / Path(firecracker).name
                 / f"vm-{namespace}-{identifier}" / "root/api.socket")

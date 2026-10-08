@@ -37,10 +37,10 @@ pub(super) fn validate_registry_configuration(
 
 pub(super) fn validate_builder_configuration(journal: &ControllerJournal) -> Result<(), PortError> {
     if full_profile(journal)?
-            .pool(journal.deployment_namespace())
-            .map_err(map_journal)?
-            .role
-            != PoolRole::Builder
+        .pool(journal.deployment_namespace())
+        .map_err(map_journal)?
+        .role
+        != PoolRole::Builder
     {
         return Err(PortError::Invalid);
     }

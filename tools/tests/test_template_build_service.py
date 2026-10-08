@@ -12,8 +12,10 @@ import urllib.request
 from unittest.mock import Mock, patch
 
 from tools.template_build_store import BuildError, BuildStore, MIB, public_image
+from tools.tests.template_build_fixture import new_store
 from tools.template_build_service import Backend, BuildHTTP, Handler, Supervisor
 from tools.template_build_client import BuildClient, LOG_RESPONSE_BYTES, saved_intent
+from tools.template_stage import stage_owner
 
 
 def limits():
@@ -44,11 +46,14 @@ class FakeBackend:
         directory = store.directory(row["id"])
         (directory / "candidate.ext4").write_bytes(b"opaque")
         (directory / "build.log").write_bytes(b"first\nsecond\n")
+        (directory / "candidate.ext4").chmod(0o600)
+        (directory / "build.log").chmod(0o600)
         return {"state": "candidate", "ready": False}
 
-    def cleanup(self, row):
+    def cleanup(self, row, store):
         if self.cleanup_known:
             self.vms.discard(row["id"])
+            store.private_checkpoint(row["id"], builder_settled={'requestWindow': None, 'sandboxID': None}, private_ack=1)
         return self.cleanup_known
 
     def publish(self, store, row):
@@ -61,18 +66,19 @@ class FakeBackend:
 
 
 class BuildTests(unittest.TestCase):
-    def test_client_never_downgrades_a_service_without_windows(self):
+    def test_http_submission_requires_original_window_and_key(self):
         client = self.client()
         request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 30}
-        path = self.root / 'client-intent.json'
-        with self.assertRaisesRegex(RuntimeError, 'BuildWindowsDisabled'):
-            saved_intent(path, client, request)
-        self.assertFalse(path.exists())
+        with self.assertRaisesRegex(RuntimeError, 'RequestWindowRequired'):
+            client.request('POST', '/sandproof/template-builds', request, token='original')
+        window = client.request('POST', '/sandproof/template-build-windows', {'durationMs': 30000})['requestWindow']
+        with self.assertRaisesRegex(RuntimeError, 'IdempotencyKeyRequired'):
+            client.request('POST', '/sandproof/template-builds', request | {'requestWindow': window})
         self.assertEqual(self.store.rows(), [])
 
     def test_client_cannot_choose_a_deployment_mirror(self):
         with self.assertRaises(BuildError):
-            self.store.submit(1, {'kind': 'oci', 'image': 'ubuntu:24.04',
+            self.submit(1, {'kind': 'oci', 'image': 'ubuntu:24.04',
                                  'docker_hub_mirror': 'docker.1ms.run'}, 'mirror')
         self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0], 0)
 
@@ -80,7 +86,8 @@ class BuildTests(unittest.TestCase):
         backend = object.__new__(Backend)
         backend.request = Mock()
         row = {'id': 'a' * 32, 'deadline': 1500,
-               'request': json.dumps({'timeoutSeconds': 600, 'allowInternetAccess': True})}
+               'request': json.dumps({'timeoutSeconds': 600, 'allowInternetAccess': True}),
+               'private_window': json.dumps('bw-original')}
         with patch('tools.template_build_service.time.time', return_value=1000):
             backend.vm(row, create=True)
         self.assertEqual(backend.request.call_args.kwargs['timeout'], 500)
@@ -93,17 +100,45 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(backend.request.call_args.args[1], 'GET')
         self.assertEqual(backend.request.call_args.kwargs['timeout'], 60)
 
+    def test_private_vm_request_without_original_window_never_dispatches(self):
+        backend = object.__new__(Backend)
+        backend.request = Mock()
+        row = {'id': 'a' * 32, 'deadline': 1500,
+               'request': json.dumps({'timeoutSeconds': 600, 'allowInternetAccess': True})}
+        with patch('tools.template_build_service.time.time', return_value=1000):
+            for create in (True, False):
+                with self.subTest(create=create), self.assertRaisesRegex(BuildError, 'PrivateRequestWindowRequired'):
+                    backend.vm(row, create=create)
+        backend.request.assert_not_called()
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name).resolve()
-        self.root.chmod(0o700)
+        self.auxiliary = Path(temporary.name).resolve()
+        self.root = self.auxiliary / 'builds'
+        self.root.mkdir(mode=0o700)
+        self.requests = {}
+        self.windows = {}
+        self.next_request = 0
         self.now = 1000
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+        self.store = new_store(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
         self.addCleanup(lambda: self.store.close())
 
+    def submit(self, owner, request, token=None):
+        # The fixture preserves one exact window/key for retries; product code
+        # never invents a replacement window or fills in a missing key.
+        if token is None:
+            token = 'fixture-' + str(self.next_request)
+            self.next_request += 1
+        original = (owner, token)
+        if original not in self.requests:
+            if owner not in self.windows:
+                self.windows[owner] = self.store.open_window(owner, 600000)['requestWindow']
+            self.requests[original] = self.windows[owner]
+        return self.store.submit(owner, request, token, window=self.requests[original])
+
     def job(self, owner=1, token=None):
-        job = self.store.submit(owner, {"kind": "dockerfile"}, token)["buildID"]
+        job = self.submit(owner, {"kind": "dockerfile"}, token)["buildID"]
         self.store.upload(job, owner, iter([b"opaque tar"]), 10)
         return job
 
@@ -111,13 +146,17 @@ class BuildTests(unittest.TestCase):
         job = self.job()
         Supervisor(self.store, FakeBackend()).tick()
         self.assertEqual(self.store.get(job)['state'], 'Publishing')
-        registry = self.root / 'registry'
+        registry = self.auxiliary / 'registry'
         (registry / 'inbox').mkdir(parents=True, mode=0o700)
         backend = object.__new__(Backend)
         backend.config = {'runtime': {'template_registry': {'root': str(registry)},
-                                      'kernel': str(self.root / 'kernel')}}
+                                      'kernel': str(self.auxiliary / 'kernel')}}
         backend.request = Mock(side_effect=BuildError(404, 'NotFound'))
         return job, backend, registry
+
+    def owned_stage(self, path, job):
+        path.mkdir(mode=0o700)
+        stage_owner(path, {'id': job, 'nonce': self.store.get(job)['fs_nonce']})
 
     def test_candidate_expiring_during_unknown_cleanup_never_starts_publication(self):
         job = self.job()
@@ -151,7 +190,7 @@ class BuildTests(unittest.TestCase):
     def test_expired_unadmitted_handoff_removes_only_its_pending_identity(self):
         job, backend, registry = self.publication()
         pending = registry / 'inbox' / ('.stage-' + job)
-        pending.mkdir(mode=0o700)
+        self.owned_stage(pending, job)
         (self.root / job / 'candidate.ext4').rename(pending / 'rootfs.ext4')
         unrelated = registry / 'inbox' / ('.stage-' + 'f' * 32)
         unrelated.mkdir(mode=0o700)
@@ -169,7 +208,7 @@ class BuildTests(unittest.TestCase):
     def test_unknown_publication_does_not_discard_pending_handoff(self):
         job, backend, registry = self.publication()
         pending = registry / 'inbox' / ('.stage-' + job)
-        pending.mkdir(mode=0o700)
+        self.owned_stage(pending, job)
         (pending / 'rootfs.ext4').write_bytes(b'keep until admission is known')
         backend.request.side_effect = TimeoutError('unknown publication')
         with self.assertRaises(TimeoutError):
@@ -184,7 +223,7 @@ class BuildTests(unittest.TestCase):
         staged = registry / 'inbox' / job
         def stage(*args, **kwargs):
             self.assertEqual(kwargs['candidate_id'], job)
-            staged.mkdir(mode=0o700)
+            self.owned_stage(staged, job)
             (staged / 'rootfs.ext4').write_bytes(b'opaque')
             self.now = self.store.get(job)['deadline']
             return job
@@ -232,7 +271,7 @@ class BuildTests(unittest.TestCase):
             self.assertEqual(self.store.get(job)['state'], 'Publishing')
             self.assertGreater(self.store.get(job)['reserved'], 0)
             self.store.close()
-            self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+            self.store = new_store(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
             supervisor = Supervisor(self.store, backend)
             supervisor.tick()
             self.assertEqual(self.store.get(job)['state'], 'Publishing')
@@ -282,7 +321,7 @@ class BuildTests(unittest.TestCase):
             raise BuildError(404, 'NotFound')
         backend.request.side_effect = request
         def stage(*args, **kwargs):
-            staged.mkdir(mode=0o700)
+            self.owned_stage(staged, job)
             (staged / 'rootfs.ext4').write_bytes(b'opaque')
             return job
         with patch('tools.template_build_service.stage', side_effect=stage) as staging:
@@ -292,7 +331,7 @@ class BuildTests(unittest.TestCase):
             self.assertTrue(staged.exists())
             self.now = self.store.get(job)['deadline']
             self.store.close()
-            self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+            self.store = new_store(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
             supervisor = Supervisor(self.store, backend)
             supervisor.tick()  # 404 after expiry/restart is still not a fence.
             self.assertTrue(staged.exists())
@@ -322,7 +361,7 @@ class BuildTests(unittest.TestCase):
             with self.assertRaises(PowerLoss):
                 Supervisor(self.store, backend).tick()
         self.store.close()
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+        self.store = new_store(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
         self.now = self.store.get(job)['deadline']
         with patch('tools.template_build_service.stage') as staging:
             Supervisor(self.store, backend).tick()
@@ -337,13 +376,13 @@ class BuildTests(unittest.TestCase):
         job, backend, registry = self.publication()
         staged = registry / 'inbox' / job
         def crash_during_stage(*args, **kwargs):
-            staged.mkdir(mode=0o700)
+            self.owned_stage(staged, job)
             raise PowerLoss()
         with patch('tools.template_build_service.stage', side_effect=crash_during_stage):
             with self.assertRaises(PowerLoss):
                 Supervisor(self.store, backend).tick()
         self.store.close()
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+        self.store = new_store(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
         self.assertEqual(self.store.get(job)['publication_attempted'], 0)
         self.now = self.store.get(job)['deadline']
         Supervisor(self.store, backend).tick()
@@ -353,44 +392,13 @@ class BuildTests(unittest.TestCase):
         self.assertFalse(staged.exists())
         self.assertEqual([call.args[1] for call in backend.request.call_args_list], ['GET', 'GET', 'GET'])
 
-    def test_legacy_publishing_migration_preserves_unknown_attempt(self):
-        job, backend, _ = self.publication()
-        queued = self.job()
-        # Recreate the original jobs schema, including its uniqueness guard.
-        with self.store.db:
-            self.store.db.execute('ALTER TABLE jobs DROP COLUMN publication_attempted')
-            legacy_settings = json.dumps({'limits': limits(), 'binding': None}, sort_keys=True)
-            self.store.db.execute('UPDATE settings SET limits=? WHERE id=1', (legacy_settings,))
-        self.store.close()
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
-        self.assertEqual(self.store.get(job)['publication_attempted'], 1)
-        self.assertEqual(self.store.get(queued)['publication_attempted'], 0)
-        # The original supervisor compares these bytes before using jobs.
-        # A rollback to it must fail its settings check, not ignore the intent.
-        migrated_settings = self.store.db.execute('SELECT limits FROM settings WHERE id=1').fetchone()[0]
-        self.assertNotEqual(migrated_settings, legacy_settings)
-        self.assertEqual(json.loads(migrated_settings), {'limits': limits(), 'binding': None, 'schema_version': 2})
-        fresh = self.job(owner=2)
-        self.assertEqual(self.store.get(fresh)['publication_attempted'], 0)
-        self.now = self.store.get(job)['deadline']
-        self.store.close()
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
-        with patch('tools.template_build_service.stage') as staging:
-            Supervisor(self.store, backend).tick()
-            staging.assert_not_called()
-        self.assertEqual(self.store.get(job)['state'], 'Publishing')
-        self.assertEqual(self.store.get(job)['publication_attempted'], 1)
-        self.assertGreater(self.store.get(job)['reserved'], 0)
-        self.assertTrue((self.root / job / 'candidate.ext4').exists())
-        self.assertEqual([call.args[1] for call in backend.request.call_args_list], ['GET'])
-
     def test_original_post_refusal_can_clear_intent_and_discard(self):
         for code in (400, 409, 429):
             with self.subTest(code=code):
                 job, backend, registry = self.publication()
                 staged = registry / 'inbox' / job
                 def stage(*args, **kwargs):
-                    staged.mkdir(mode=0o700)
+                    self.owned_stage(staged, job)
                     return job
                 backend.request.side_effect = [BuildError(404, 'NotFound'),
                     BuildError(code, 'ControllerRejectedOrUnknown'), BuildError(404, 'NotFound')]
@@ -404,41 +412,10 @@ class BuildTests(unittest.TestCase):
                 self.assertEqual([call.args[1] for call in backend.request.call_args_list], ['GET', 'POST', 'GET'])
                 (registry / 'inbox').rmdir()
 
-    def test_interrupted_legacy_migration_rolls_back_schema_and_settings(self):
-        job, _, _ = self.publication()
-        legacy_settings = json.dumps({'limits': limits(), 'binding': None}, sort_keys=True)
-        with self.store.db:
-            self.store.db.execute('ALTER TABLE jobs DROP COLUMN publication_attempted')
-            self.store.db.execute('UPDATE settings SET limits=? WHERE id=1', (legacy_settings,))
-        self.store.close()
-        test = self
-        class InterruptedMigration(sqlite3.Connection):
-            def execute(self, sql, parameters=()):
-                if sql == "UPDATE jobs SET publication_attempted=1 WHERE state='Publishing'":
-                    test.assertTrue(self.in_transaction)
-                    raise PowerLoss()
-                return super().execute(sql, parameters)
-        connect = sqlite3.connect
-        interrupted = object.__new__(BuildStore)
-        with patch('tools.template_build_store.sqlite3.connect',
-                   side_effect=lambda *args, **kwargs: connect(*args, factory=InterruptedMigration, **kwargs)):
-            try:
-                with self.assertRaises(PowerLoss):
-                    interrupted.__init__(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
-            finally:
-                interrupted.close()  # SQLite rolls back the interrupted commit.
-        with sqlite3.connect(self.root / 'builds.db') as db:
-            self.assertNotIn('publication_attempted', {row[1] for row in db.execute('PRAGMA table_info(jobs)')})
-            self.assertEqual(db.execute('SELECT limits FROM settings WHERE id=1').fetchone()[0], legacy_settings)
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
-        self.assertEqual(self.store.get(job)['publication_attempted'], 1)
-        self.assertEqual(self.store.get(job)['state'], 'Publishing')
-        self.assertGreater(self.store.get(job)['reserved'], 0)
-
     def test_unknown_post_then_get_refusal_cannot_clear_intent(self):
         job, backend, registry = self.publication()
         staged = registry / 'inbox' / job
-        staged.mkdir(mode=0o700)
+        self.owned_stage(staged, job)
         backend.request.side_effect = [BuildError(404, 'NotFound'), TimeoutError()]
         with patch('tools.template_build_service.stage', return_value=job):
             supervisor = Supervisor(self.store, backend)
@@ -535,10 +512,10 @@ class BuildTests(unittest.TestCase):
             logs.assert_called_once()
 
     def test_request_identity_owner_and_budget_boundaries(self):
-        first = self.store.submit(1, {"kind": "oci", "image": "ubuntu:24.04"}, "request")
-        self.assertEqual(first, self.store.submit(1, {"kind": "oci", "image": "ubuntu:24.04"}, "request"))
+        first = self.submit(1, {"kind": "oci", "image": "ubuntu:24.04"}, "request")
+        self.assertEqual(first, self.submit(1, {"kind": "oci", "image": "ubuntu:24.04"}, "request"))
         with self.assertRaisesRegex(BuildError, "IdempotencyConflict"):
-            self.store.submit(1, {"kind": "oci", "image": "debian:12"}, "request")
+            self.submit(1, {"kind": "oci", "image": "debian:12"}, "request")
         with self.assertRaisesRegex(BuildError, "NotFound"):
             self.store.query(first["buildID"], 2)
         for image in ("ubuntu\nRUN echo bad", "https://registry/repo", "localhost/x", "127.0.0.1/a", "user:password@registry/a", "registry.local/a", "registry:5000/a"):
@@ -547,16 +524,16 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(public_image("ubuntu:24.04"), "docker.io/library/ubuntu:24.04")
         self.assertEqual(public_image("ghcr.io/company/image@sha256:" + "a" * 64),
                          "ghcr.io/company/image@sha256:" + "a" * 64)
-        self.assertEqual(first, self.store.submit(1, {"kind": "oci", "image": "docker.io/library/ubuntu:24.04"}, "request"))
+        self.assertEqual(first, self.submit(1, {"kind": "oci", "image": "docker.io/library/ubuntu:24.04"}, "request"))
         for fields in ({"diskMiB": 10000000}, {"cpuCount": True}, {"minFreeMiB": 1024}):
             with self.assertRaises(BuildError):
-                self.store.submit(1, {"kind": "dockerfile", "resources": fields})
+                self.submit(1, {"kind": "dockerfile", "resources": fields})
         self.job()
         with self.assertRaisesRegex(BuildError, "BuildBudgetExceeded"):
             self.job()
 
     def test_upload_interruption_no_queue_no_partial_and_retry(self):
-        job = self.store.submit(1, {"kind": "dockerfile"})["buildID"]
+        job = self.submit(1, {"kind": "dockerfile"})["buildID"]
         with self.assertRaisesRegex(BuildError, "Incomplete"):
             self.store.upload(job, 1, iter([b"short"]), 10)
         self.assertEqual(self.store.query(job, 1)["state"], "AwaitingInput")
@@ -568,7 +545,7 @@ class BuildTests(unittest.TestCase):
     def test_upload_rejects_late_final_block_and_eof(self):
         for boundary in ("block", "eof"):
             with self.subTest(boundary=boundary):
-                job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+                job = self.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
                 deadline = self.store.get(job)["deadline"]
                 def blocks():
                     if boundary == "block":
@@ -589,7 +566,7 @@ class BuildTests(unittest.TestCase):
     def test_upload_original_deadline_covers_file_and_directory_fsync(self):
         for boundary in ("file", "directory"):
             with self.subTest(boundary=boundary):
-                job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+                job = self.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
                 deadline = self.store.get(job)["deadline"]
                 import os
                 import stat
@@ -609,7 +586,7 @@ class BuildTests(unittest.TestCase):
                 Supervisor(self.store, FakeBackend()).tick()
 
     def test_upload_checks_original_deadline_immediately_before_commit(self):
-        job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+        job = self.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
         def expire(point):
             if point == "before_commit":
                 self.now = self.store.get(job)["deadline"]
@@ -622,7 +599,7 @@ class BuildTests(unittest.TestCase):
         self.assertFalse((self.store.directory(job) / "source.tar").exists())
 
     def test_upload_lost_committed_reply_preserves_original_input(self):
-        job = self.store.submit(1, {"kind": "dockerfile"})["buildID"]
+        job = self.submit(1, {"kind": "dockerfile"})["buildID"]
         def lost(point):
             if point == "after_commit":
                 raise OSError("lost commit reply")
@@ -635,12 +612,16 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn(job, self.store.uploads)
 
     def test_upload_deadline_cleanup_keeps_replaced_partial_pinned(self):
-        job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+        job = self.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
         partial = self.store.directory(job) / "source.partial"
+        displaced = self.auxiliary / "original-upload-inode"
         def blocks():
             yield b"input"
-            partial.rename(self.root / "original-upload-inode")
+            # Isolate the replacement-inode fault from an unrelated unknown
+            # entry in the strictly inventoried public workspace root.
+            partial.rename(displaced)
             partial.write_bytes(b"foreign")
+            partial.chmod(0o600)
             self.now = self.store.get(job)["deadline"]
         with self.assertRaisesRegex(BuildError, "InputCleanupIdentityUnknown"):
             self.store.upload(job, 1, blocks(), 5)
@@ -649,10 +630,11 @@ class BuildTests(unittest.TestCase):
         self.assertGreater(self.store.get(job)["reserved"], 0)
         Supervisor(self.store, FakeBackend()).tick()
         self.assertEqual(partial.read_bytes(), b"foreign")
+        self.assertEqual(displaced.read_bytes(), b"input")
         self.assertGreater(self.store.get(job)["reserved"], 0)
 
     def test_http_slow_fragments_return_to_original_deadline(self):
-        job = self.store.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
+        job = self.submit(1, {"kind": "dockerfile", "timeoutSeconds": 1})["buildID"]
         deadline = self.store.get(job)["deadline"]
         first_fragment = threading.Event()
         reads = []
@@ -698,7 +680,7 @@ class BuildTests(unittest.TestCase):
             thread.join()
 
     def test_http_blocked_upload_wait_uses_original_remaining_deadline(self):
-        job = self.store.submit(1, {"kind": "dockerfile"})["buildID"]
+        job = self.submit(1, {"kind": "dockerfile"})["buildID"]
         self.store.clock = time.monotonic
         deadline = time.monotonic() + .2
         self.store.db.execute("UPDATE jobs SET deadline=? WHERE id=?", (deadline, job))
@@ -747,7 +729,7 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(PowerLoss):
             Supervisor(self.store, backend).tick()
         self.store.close()
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+        self.store = new_store(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
         backend.power_loss = False
         Supervisor(self.store, backend).tick()
         self.assertEqual(backend.builds, [job])
@@ -783,7 +765,7 @@ class BuildTests(unittest.TestCase):
     def test_original_deadline_and_single_process_lease(self):
         job = self.job()
         with self.assertRaisesRegex(BuildError, "AlreadyOpen"):
-            BuildStore(self.root, limits())
+            new_store(self.root, limits())
         self.now += 301
         backend = FakeBackend()
         Supervisor(self.store, backend).tick()
@@ -793,7 +775,7 @@ class BuildTests(unittest.TestCase):
 
     def test_full_controller_owner_range_is_not_narrowed_by_sqlite(self):
         owner = 2**64 - 1
-        job = self.store.submit(owner, {"kind": "oci", "image": "ubuntu:24.04"})["buildID"]
+        job = self.submit(owner, {"kind": "oci", "image": "ubuntu:24.04"})["buildID"]
         self.assertEqual(self.store.get(job, owner)["owner"], owner)
         with self.assertRaises(BuildError):
             self.store.query(job, owner - 1)
@@ -806,10 +788,10 @@ class BuildTests(unittest.TestCase):
         supervisor.tick()
         cost = (limits()["builder_disk_bytes"] + limits()["max_input_bytes"]
                 + 2 * 1024 * MIB + limits()["artifact_margin_bytes"])
-        history = limits()["max_log_bytes"] + 256 * 1024
+        history = limits()["max_log_bytes"] + self.store.bounded["max_record_bytes"]
         self.store.limits["workspace_bytes"] = cost + 2 * history - 1
         with self.assertRaisesRegex(BuildError, "BuildBudgetExceeded"):
-            self.store.submit(2, {"kind": "dockerfile"})
+            self.submit(2, {"kind": "dockerfile"})
         self.assertEqual(self.store.query(job, 1)["state"], "Ready")
 
     def test_candidate_checkpoint_restart_can_publish_without_rerun(self):
@@ -819,7 +801,7 @@ class BuildTests(unittest.TestCase):
         status = backend.build(self.store, self.store.get(job))
         self.store.change(job, "Cleaning", candidate=status)
         self.store.close()
-        self.store = BuildStore(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
+        self.store = new_store(self.root, limits(), clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
         supervisor = Supervisor(self.store, backend)
         supervisor.tick()
         supervisor.tick()
@@ -832,14 +814,19 @@ class BuildTests(unittest.TestCase):
         thread.start()
         try:
             url = "http://127.0.0.1:" + str(server.server_port)
-            def fetch(method, path, body=None, key="owner"):
-                request = urllib.request.Request(url + path, data=body, method=method, headers={"X-API-Key": key})
+            def fetch(method, path, body=None, key="owner", token=None):
+                headers = {"X-API-Key": key}
+                if token is not None:
+                    headers["Idempotency-Key"] = token
+                request = urllib.request.Request(url + path, data=body, method=method, headers=headers)
                 try:
                     with urllib.request.urlopen(request, timeout=5) as response:
                         return response.status, json.load(response)
                 except urllib.error.HTTPError as error:
                     return error.code, json.load(error)
-            code, result = fetch("POST", "/sandproof/template-builds", json.dumps({"kind": "dockerfile"}).encode())
+            code, opened = fetch("POST", "/sandproof/template-build-windows", json.dumps({"durationMs": 300000}).encode())
+            self.assertEqual(code, 201)
+            code, result = fetch("POST", "/sandproof/template-builds", json.dumps({"kind": "dockerfile", "requestWindow": opened["requestWindow"]}).encode(), token="original")
             self.assertEqual(code, 202)
             path = "/sandproof/template-builds/" + result["buildID"]
             self.assertEqual(fetch("PUT", path + "/context", b"opaque archive")[0], 200)

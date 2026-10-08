@@ -29,6 +29,7 @@ use crate::{
     SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
 };
 
+mod data_credentials;
 mod data_drain;
 mod maintenance;
 mod physical_storage;
@@ -695,7 +696,7 @@ fn observe_recovery_action<H: HostAdapter>(
 }
 
 fn blocked_launch_configs<H: HostAdapter>(
-    journal: &ControllerJournal,
+    journal: &mut ControllerJournal,
     host: &mut H,
     initial: &core::World,
     selected: Option<core::SandboxId>,
@@ -718,17 +719,35 @@ fn blocked_launch_configs<H: HostAdapter>(
         };
         initial.operation_plan(key).ok_or(PortError::Busy)?;
         let options = journal.create_options(*sandbox).map_err(map_admission)?;
+        let registered = match journal.data_credential(*sandbox) {
+            Ok(value) => value,
+            Err(JournalError::CredentialIndexPoisoned) => {
+                blocked.insert(*sandbox);
+                continue;
+            }
+            Err(error) => return Err(map_journal(error)),
+        };
+        let unclaimed = initial.effect_ids().iter().all(|effect| {
+            effect.command().sandbox() != *sandbox
+                || matches!(
+                    initial.effect_status(effect),
+                    Some(core::EffectStatus::Committed)
+                )
+        });
+        if registered.is_none() && !unclaimed {
+            // The sole launch path commits the index before its first claim.
+            // A missing index after dispatch cannot be an unfinished register.
+            blocked.insert(*sandbox);
+            continue;
+        }
         match host.has_bound_launch_config(*sandbox, &options) {
             Ok(true) => {}
-            Ok(false)
-                if initial.effect_ids().iter().all(|effect| {
-                    effect.command().sandbox() != *sandbox
-                        || matches!(
-                            initial.effect_status(effect),
-                            Some(core::EffectStatus::Committed)
-                        )
-                }) =>
-            {
+            Ok(false) if registered.is_some() => {
+                // A durable index means the original host credential was
+                // written. Its loss cannot authorize rotating a live token.
+                blocked.insert(*sandbox);
+            }
+            Ok(false) if unclaimed => {
                 // The VM/slot identity is now reserved with the create intent.
                 // A missing credential may be created only if no host action
                 // was ever claimed. Once any action was claimed, losing the
@@ -739,11 +758,41 @@ fn blocked_launch_configs<H: HostAdapter>(
                     .is_err()
                 {
                     blocked.insert(*sandbox);
+                    continue;
                 }
             }
             Ok(false) | Err(_) => {
                 blocked.insert(*sandbox);
+                continue;
             }
+        }
+        if blocked.contains(sandbox) {
+            continue;
+        }
+        let credential = host
+            .token_for(*sandbox)
+            .and_then(|value| data_credentials::digest(&value));
+        let Ok(digest) = credential else {
+            blocked.insert(*sandbox);
+            continue;
+        };
+        if let Some((original_generation, original_digest)) = registered {
+            if original_generation != record.generation || !same_secret(&original_digest, &digest) {
+                // A bad target descriptor is local. Do not turn a file read
+                // into a request to replace the shared, immutable identity.
+                blocked.insert(*sandbox);
+            }
+            continue;
+        }
+        match journal.register_data_credential(*sandbox, record.generation, digest, &mut NeverCrash)
+        {
+            Ok(()) => {}
+            Err(JournalError::CredentialIndexPoisoned) => {
+                // Management and exact cleanup remain available; no new
+                // data authorization can pass the poisoned shared index.
+                blocked.insert(*sandbox);
+            }
+            Err(error) => return Err(map_journal(error)),
         }
     }
     Ok(blocked)
@@ -1285,6 +1334,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         {
             return Err(PortError::NotFound);
         }
+        data_credentials::verify_target(&inner, permit.sandbox, permit.target.generation)?;
         let actor = core::Actor::Tenant(record.owner);
         inner
             .journal
@@ -1323,19 +1373,20 @@ impl<H: HostAdapter> ManagedPort<H> {
             return Err(PortError::NotFound);
         }
         let world = inner.journal.world().map_err(map_journal)?;
-        let mut matched = None;
-        for (sandbox, record) in world.sandbox_records() {
-            if record.phase != core::Phase::Running {
-                continue;
-            }
-            let token = inner.host.token_for(*sandbox)?;
-            if same_secret(supplied.as_bytes(), token.as_bytes())
-                && matched.replace((*sandbox, record)).is_some()
-            {
-                return Err(PortError::Busy);
-            }
+        let digest = data_credentials::digest(supplied)?;
+        let (sandbox, generation) = inner
+            .journal
+            .lookup_data_credential(&digest)
+            .map_err(map_journal)?
+            .ok_or(PortError::NotFound)?;
+        let record = world.sandbox_record(sandbox).ok_or(PortError::Busy)?;
+        if record.phase != core::Phase::Running || record.generation != generation {
+            return Err(PortError::NotFound);
         }
-        let (sandbox, record) = matched.ok_or(PortError::NotFound)?;
+        let token = data_credentials::verify_target(inner, sandbox, generation)?;
+        if !same_secret(supplied.as_bytes(), token.as_bytes()) {
+            return Err(PortError::NotFound);
+        }
         let options = inner
             .journal
             .create_options(sandbox)
@@ -1448,10 +1499,8 @@ impl<H: HostAdapter> ManagedPort<H> {
             .live_lifetime(&actor, sandbox, now_ms()?)
             .map_err(map_admission)?;
         let world = inner.journal.world().map_err(map_journal)?;
-        let vm = world
-            .sandbox_record(sandbox)
-            .and_then(|record| record.current_vm)
-            .ok_or(PortError::Busy)?;
+        let record = world.sandbox_record(sandbox).ok_or(PortError::Busy)?;
+        let vm = record.current_vm.ok_or(PortError::Busy)?;
         inner
             .journal
             .check(core::ControllerInput::Access(core::AccessInput::Exec(
@@ -1481,7 +1530,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 || self.config.envd_version.clone(),
                 |template| template.envd_version,
             ),
-            envd_access_token: inner.host.token_for(sandbox)?,
+            envd_access_token: data_credentials::verify_target(inner, sandbox, record.generation)?,
             domain: self.config.domain.clone(),
         })
     }
@@ -1689,6 +1738,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             .host
             .put_bound_launch_config(sandbox, &secret, options)
             .map_err(|_| PortError::OutcomeUnknown)?;
+        data_credentials::register_original(&mut inner.journal, sandbox, &secret)?;
         let Inner { journal, host, .. } = &mut *inner;
         finish_admitted_create_v1_timed(
             journal,
@@ -1824,7 +1874,12 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let window = window.ok_or(PortError::Conflict)?;
         let tenant = tenant_id(tenant)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        if inner.journal.build_retry_config().map_err(map_journal)?.is_none() {
+        if inner
+            .journal
+            .build_retry_config()
+            .map_err(map_journal)?
+            .is_none()
+        {
             return Err(PortError::Conflict);
         }
         if let Some(value) = self.build_vm_locked(&inner, tenant, id, window, create.as_ref())? {
@@ -2182,7 +2237,17 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         let networking = options.networking;
         Ok(SandboxDetail {
             info,
-            envd_access_token: inner.host.token_for(sandbox)?,
+            envd_access_token: data_credentials::verify_target(
+                &inner,
+                sandbox,
+                inner
+                    .journal
+                    .world()
+                    .map_err(map_journal)?
+                    .sandbox_record(sandbox)
+                    .ok_or(PortError::Busy)?
+                    .generation,
+            )?,
             domain: self.config.domain.clone(),
             allow_internet_access: networking.as_ref().map(|input| input.allow_internet_access),
             network: networking.and_then(|input| input.network),

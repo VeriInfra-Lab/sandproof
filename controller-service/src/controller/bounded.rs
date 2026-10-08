@@ -250,10 +250,8 @@ impl ControllerJournal {
     /// Rejects disagreement with the durable reducer state.
     pub fn host_slot_contexts(&self) -> Result<Vec<HostSlotContext>, JournalError> {
         let world = self.world()?;
-        match config(&self.journal.connection)? {
-            Some(config) => validate_contexts(&self.journal.connection, &world, &config),
-            None => Ok(Vec::new()),
-        }
+        let config = config(&self.journal.connection)?.ok_or(JournalError::UnsupportedStore)?;
+        validate_contexts(&self.journal.connection, &world, &config)
     }
 
     /// # Errors

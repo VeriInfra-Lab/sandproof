@@ -67,8 +67,7 @@ def node_configuration(settings):
     """Same NodeConfig projection as sandbox-server's production assembly."""
     result = {key: copy.deepcopy(settings[key]) for key in (
         'namespace', 'jailer', 'firecracker', 'chroot_base', 'kernel', 'rootfs',
-        'uid_base', 'vcpu_count', 'memory_mib', 'file_policy_digest')}
-    result['max_vm_id'] = 2**64 - 1  # Node's internal DTO; not a formal server setting.
+        'vcpu_count', 'memory_mib', 'file_policy_digest')}
     result['state_dir'] = settings['node_state_dir']
     result['host_resources'] = copy.deepcopy(settings.get('host_resources'))
     bounded = copy.deepcopy(settings['bounded_host'])

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 const APPLICATION_ID: i64 = 0x5350_4631; // SPF1
 const FORMAT_VERSION: i64 = 1;
-pub(crate) const MAINTAINED_FORMAT_VERSION: i64 = 4;
+pub(crate) const MAINTAINED_FORMAT_VERSION: i64 = 5;
 type ExistingReceiptRow = (i64, String, Vec<u8>, Option<Vec<u8>>);
 
 /// Bytes are a projection supplied by the controller reducer's adapter.

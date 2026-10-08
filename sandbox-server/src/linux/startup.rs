@@ -20,9 +20,9 @@ fn open_journal(
     namespace: &str,
     contract: &DeploymentContract,
 ) -> Result<ControllerJournal, Box<dyn Error>> {
-    // Node construction has already independently refused legacy metadata
-    // or resources. The journal now rechecks its own empty state/config in
-    // the enable transaction; neither check substitutes for the other.
+    // Node construction has independently validated the complete host layout.
+    // Recheck the journal's current format, configuration and recovery image
+    // in its open transaction; the earlier read-only preflight is not a lease.
     let now_ms = u64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?

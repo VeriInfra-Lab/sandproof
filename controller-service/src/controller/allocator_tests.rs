@@ -93,7 +93,7 @@ fn missing_metadata_or_frontiers_is_never_reinitialized() {
                 .unwrap()
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            4
+            crate::journal::MAINTAINED_FORMAT_VERSION
         );
     }
 }

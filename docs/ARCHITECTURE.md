@@ -4,7 +4,7 @@
 
 本文解释系统由哪些部分组成、一次请求如何运行、数据存在哪里，以及它们与 E2B 的对应关系。章节按 E2B 的架构文档组织，但不是 E2B 的逐句翻译，也不把 E2B 的全部功能纳入我们的目标。
 
-阅读基线：2026-10-01（已接通预制模板、发布登记、显式启用的自助构建及 Harbor 通用原题链；原题诊断与统一资源压力验收的边界见[验收清单](testing-plan.md)）。下文“已实现”和“已实测”须结合所链接 issue/PR 的精确提交、配置与摘要判读，不表示所有故障场景通过。后续进度看 issue/PR，证明结论只看[证明覆盖记录](proof-coverage.md)。修改组件职责、存储或运行路径时，同一 PR 更新本页；产品范围仍只在蓝图定义，接口语义仍只在模块合同定义。
+结构阅读基线：2026-10-08（正式服务只保留完整配置入口，启动职责已按下文拆分；原题诊断与统一资源压力验收的边界见[验收清单](testing-plan.md)）。下文“已实现”和“已实测”须结合所链接 issue/PR 的精确提交、配置与摘要判读，不表示所有故障场景通过，也不将这次结构重构视为新的 KVM 或证明验收。后续进度看 issue/PR，证明结论只看[证明覆盖记录](proof-coverage.md)。修改组件职责、存储或运行路径时，同一 PR 更新本页；产品范围仍只在蓝图定义，接口语义仍只在模块合同定义。
 
 E2B 对照来源是 [runtime 的 ARCHITECTURE.md](https://github.com/e2b-dev/runtime/blob/132dadd2ef55bbac301528500e8a4538caf4b163/docs/ARCHITECTURE.md)，固定在 `132dadd2ef55bbac301528500e8a4538caf4b163`。这只是架构阅读参考，**不升级我们的兼容基线**：SDK、envd、Harbor 和 Firecracker 的采用版本仍以[蓝图](project-blueprint.md)及测试锁定记录为准。
 
@@ -80,7 +80,19 @@ E2B 的 `runtime` 仓库包含整套后端，不只是控制 Firecracker 的中�
 
 [sandbox-api](../sandbox-api/src/lib.rs)负责 HTTP 请求、凭据解析、租户识别和 E2B 响应映射；其中 [ManagedPort](../sandbox-api/src/managed.rs)把管理请求接到持久控制服务。它不能绕过控制核心，直接把沙箱标成运行成功。
 
-[sandbox-server](../sandbox-server/src/main.rs)把各模块组装成 Linux 常驻进程：读取受保护配置、打开数据库、盘点宿主资源、恢复未完成流程、运行 HTTP 服务和到期扫描。当前入口要求绑定回环地址；对外部署需要可信的 TLS 前置入口，不应直接把高权限内部监听暴露到公网。
+[sandbox-server](../sandbox-server/src/main.rs)把各模块组装成 Linux 常驻进程。`main.rs` 只选择平台入口或内部字节中继；正式服务的唯一启动顺序由 [linux/startup.rs](../sandbox-server/src/linux/startup.rs)组装，不在旧入口保留转发层。启动相关职责分成以下模块：
+
+| 模块 | 职责 |
+|---|---|
+| [linux/config.rs](../sandbox-server/src/linux/config.rs) | 解析部署配置，校验完整容量、寿命和接口预算，构造节点与管理配置；不启动宿主动作 |
+| [linux/preflight.rs](../sandbox-server/src/linux/preflight.rs) | 检查受保护路径、当前数据库格式与配置、物理存储覆盖；显式取得物理配置租约 |
+| [linux/host.rs](../sandbox-server/src/linux/host.rs) | 将管理端口要求的宿主接口接到节点执行器；集中调试构建中的受控故障点 |
+| [linux/reconcile.rs](../sandbox-server/src/linux/reconcile.rs) | 核对控制库与宿主身份，启动前恢复，并运行恢复、到期与维护扫描 |
+| [linux/startup.rs](../sandbox-server/src/linux/startup.rs) | 按顺序连接上述职责，构造管理 API 和数据网关，最后监听 |
+
+先静态校验和只读数据库预检，再取得物理配置租约、初始化节点、开库事务重检、核对宿主库存和恢复，最后监听并启动周期扫描。拆分没有把恢复提前或延后，也没有增加第二套生命周期判断。当前入口要求绑定回环地址；对外部署需要可信的 TLS 前置入口，不应直接把高权限内部监听暴露到公网。
+
+正式部署必须提供完整的 `bounded_host`、`maintenance.capacity`、`data_transfer` 和物理存储配置，不允许缺项时回退到旧模式。它们是部署预算，不是 E2B 客户端创建参数；SDK 的默认寿命和可选请求字段保持原合同。模板登记、预制目录及私有构建池等未启用能力仍可省略，不能把“功能未启用”误解为另一种控制器模式；精确配置规则见[模块合同](module-contracts.md)。
 
 这部分对应 E2B 的 API，以及单机下简化的服务组装。我们没有团队管理后台、计费、OIDC 平台或跨节点放置算法。
 
@@ -143,7 +155,7 @@ Harbor 是客户端和评测执行框架，不是控制器内部的调度器。�
 
 SQLite 和宿主登记不是两个各自决定业务状态的控制器。前者记录控制决定，后者记录真实执行身份和证据；两者不一致时要进入核对流程，不能任选一边当成功。
 
-正式服务采用完整容量配置和格式 4 检查点＋连续输入尾恢复，永久逻辑身份不会回绕，物理位置在精确释放后才能复用。完整配置先校验、只读预检，随后取得宿主租约、开库重检、恢复，最后监听；不自动升级旧库或降级到无维护路径，配置细节见[模块合同](module-contracts.md)。这些机制与有限实机测试不等于已经证明无限期运行；证明范围仍单独记录。
+正式控制服务采用完整容量配置和格式 5 检查点＋连续输入尾恢复；公开模板构建的 Python `BuildStore` 则使用独立的格式 4 状态库，两者不是同一种数据库格式。永久逻辑身份不会回绕，物理位置在精确释放后才能复用。当前格式、相同持久配置的非空数据库支持正常重启；旧格式、不完整配置或损坏记录明确拒绝，不自动升级、补造或降级到无维护、无请求窗口路径。完整配置先校验、只读预检，随后取得宿主租约、开库重检、恢复，最后监听；格式与配置细节见[模块合同](module-contracts.md)。这些机制与有限实机测试不等于已经证明无限期运行；证明范围仍单独记录。
 
 ### 4.2 “资源观察”不等于“可观测性平台”
 
@@ -272,7 +284,7 @@ owner 明确排除的模板子系统是例外：构建器、Dockerfile/OCI 处�
 | `controller-service/` | SQLite、事务、动作派发、寿命准入、恢复和流程协调 |
 | `sandbox-protocol/` | 跨模块请求、动作身份和回执类型 |
 | `sandbox-api/` | E2B HTTP 合同、凭据识别及管理接入 |
-| `sandbox-server/` | 常驻服务组装、启动盘点、定时扫描和数据网关 |
+| `sandbox-server/` | `main.rs` 入口；`linux/{config,preflight,host,reconcile,startup}.rs` 分担配置、宿主适配和启动恢复；`gateway/` 处理数据转发 |
 | `sandbox-node/` | 核心动作到宿主操作的适配和可核对观察 |
 | `sandbox-runtime/` | Firecracker/jailer、磁盘、网络空间、进程身份与清理 |
 | `tests/compat/`、`tests/system/` | 固定 SDK 合同与真实系统探针 |

@@ -198,7 +198,7 @@ def exercise(args):
     if root.parent != args.scratch_parent.resolve(strict=True):
         raise ValueError('bounded run root must be directly inside the approved scratch parent')
     validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-                                     max_vm_id=stride - 1, bounded=True)
+)
     root.mkdir(mode=0o700)
     provision_acceptance_coordination(bounded_policy, run_root=root,
         namespace=namespaces[0], build_namespace=namespaces[1])
@@ -211,7 +211,7 @@ def exercise(args):
             or namespaces[0][:6] == namespaces[1][:6]):
         raise ValueError('disjoint deployment namespaces required')
     validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-                                     max_vm_id=stride - 1, bounded=True)
+)
     (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
     (root / 'capacity-basis.json').write_text(json.dumps(capacity_basis, indent=2))
     (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))

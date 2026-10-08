@@ -27,8 +27,9 @@ import urllib.request
 
 from server_activation_abort import database_snapshot, digest
 from server_process_crash import (
-    fetch, free_loopback_port, interrupted_request, process_start_ticks,
-    start_server, stop_server, wait_ready,
+    assert_idle_reopen, complete_runtime, fetch, free_loopback_port, idle_snapshot,
+    interrupted_request, process_start_ticks, provision_runtime, start_server,
+    stop_server, terminal_cleanup_confirmed, wait_ready,
 )
 from server_unready_abort import wait_for
 from sdk_c02_acceptance import processes_in_uid_range
@@ -40,9 +41,9 @@ def exercise(args: argparse.Namespace) -> None:
     parent = args.scratch_parent.resolve(strict=True)
     if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o077:
         raise RuntimeError("scratch parent must be root-owned and private")
-    if args.uid_base < 1000 or args.uid_base + 1000 >= 2**32:
+    if args.uid_base < 1000 or args.uid_base + 1 >= 2**32 - 1:
         raise RuntimeError("invalid exclusive test UID range")
-    if processes_in_uid_range(args.uid_base, args.uid_base + 1000):
+    if processes_in_uid_range(args.uid_base, args.uid_base + 1):
         raise RuntimeError("test UID range already occupied")
     checkout = Path(__file__).resolve().parents[2]
     if subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
@@ -74,7 +75,7 @@ def exercise(args: argparse.Namespace) -> None:
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(args.firecracker.resolve(strict=True)),
         "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
-        "uid_base": args.uid_base, "max_vm_id": 1000, "vcpu_count": 1, "memory_mib": 512,
+        "uid_base": args.uid_base, "vcpu_count": 1, "memory_mib": 512,
         "file_policy_digest": 1, "bind": f"127.0.0.1:{port}", "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": key}],
         "max_active_global": 2, "max_active_per_tenant": 2,
@@ -87,6 +88,8 @@ def exercise(args: argparse.Namespace) -> None:
             "cgroup_parent": str(args.cgroup_parent.resolve(strict=True)),
             "memory_max_bytes": 768 * 1024 * 1024,
         }
+    values = complete_runtime(values, slots=2)
+    provision_runtime(values)
     config.write_text(json.dumps(values))
     config.chmod(0o600)
     log = root / "server.log"
@@ -159,8 +162,7 @@ def exercise(args: argparse.Namespace) -> None:
             assert fetch(opener, base_url, "GET", f"/sandboxes/{second_id}", key)[0] == 200
             assert fetch(opener, base_url, "DELETE", f"/sandboxes/{second_id}", key)[0] == 204
         else:
-            wait_for(lambda: all(state["phase"] == "Destroyed"
-                                 for state in database_snapshot(database)["states"]),
+            wait_for(lambda: terminal_cleanup_confirmed(database, f"sb-{namespace}-2"),
                      20, "unlaunched PrepareVm compensation")
             assert not second_record.exists()
         for name, saved in zip(names, (first_claim, second_claim)):
@@ -170,9 +172,9 @@ def exercise(args: argparse.Namespace) -> None:
             assert not Path("/run/netns", name).exists()
             if args.cgroup_parent is not None:
                 assert not (args.cgroup_parent / name).exists()
-        assert not processes_in_uid_range(args.uid_base, args.uid_base + 1000)
+        assert not processes_in_uid_range(args.uid_base, args.uid_base + 1)
         assert digest(args.rootfs) == digest(rootfs) == base_digest
-        final = database_snapshot(database)
+        final = idle_snapshot(database)
         stop_server(process)
         # A similarly named but unbound claim is not eligible for the local
         # exception. Startup must fail closed rather than borrowing an
@@ -186,7 +188,7 @@ def exercise(args: argparse.Namespace) -> None:
         unbound.rmdir()
         process = start_server(binary, config, log, None)
         wait_ready(opener, base_url, key, process)
-        assert database_snapshot(database) == final, "idle restart changed terminal history"
+        assert_idle_reopen(final, idle_snapshot(database))
         completed = True
         print(json.dumps({"source_commit": commit, "server_sha256": digest(binary),
                           "base_sha256": base_digest, "vm_names": names,

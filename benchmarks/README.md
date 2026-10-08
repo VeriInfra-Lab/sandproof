@@ -172,3 +172,5 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 
 固定镜像的 `benchmarks.run_local` 与 `tests/system/harbor_diagnostic_chain.py` 仅供显式诊断，不作为通用模板产品或 2.1 验收入口。任务修订、逐轮成绩与失败归因查对应 PR/私有报告，不在长期文档维护第二份题目修复台账。
+
+手动诊断脚本也使用完整的物理位置配置，必须通过 `--cgroup-parent` 指定本轮空且已委派的父组。原题的 1 CPU、2048 MiB 来宾内存、10 GiB 磁盘和原时限不变；不能用缺省宿主管理或旧编号映射运行探针。参数以脚本 `--help` 为准。

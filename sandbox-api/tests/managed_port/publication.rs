@@ -75,7 +75,12 @@ fn settings() -> ManagedConfig {
 
 fn make_port(directory: &TempDir, host: FakeHost, store: CandidateStore) -> ManagedPort<FakeHost> {
     ManagedPort::with_templates(
-        complete_fixture::open_registry(&directory.path().join("controller.db"), &settings(), store.config()).unwrap(),
+        complete_fixture::open_registry(
+            &directory.path().join("controller.db"),
+            &settings(),
+            store.config(),
+        )
+        .unwrap(),
         host,
         settings(),
         template_catalog(),
@@ -110,7 +115,10 @@ fn artifact_byte_budget_boundary_and_partial_schema_cannot_be_silently_reset() {
         .unwrap();
     drop(connection);
     let before = fs::read(&path).unwrap();
-    assert!(matches!(complete_fixture::open(&path, NAMESPACE), Err(JournalError::CorruptStore)));
+    assert!(matches!(
+        complete_fixture::open(&path, NAMESPACE),
+        Err(JournalError::CorruptStore)
+    ));
     assert_eq!(fs::read(&path).unwrap(), before);
 }
 

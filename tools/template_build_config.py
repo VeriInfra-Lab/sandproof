@@ -99,16 +99,15 @@ def validate_acceptance_build_policy(value):
 
 def apply_acceptance_build_policy(runtime, builder, build, policy):
     """Pass through only authorized policy sections; keep pool identities fixed."""
+    for name, settings in (("runtime", runtime), ("builder", builder)):
+        if "max_vm_id" in settings:
+            raise ValueError("retired max_vm_id configuration is not supported: " + name)
     validate_acceptance_build_policy(policy)
     import copy
     from .template_build_service import validate_pool_resource_ranges
     from .template_build_store import bounded_configuration
     runtime.update(copy.deepcopy(policy["runtime"]))
     builder.update(copy.deepcopy(policy["builder"]))
-    # Physical positions, not permanent VM IDs, own the formal UID span.
-    # This is fixture generation, never conversion of a deployed database.
-    for settings in (runtime, builder):
-        settings.pop("max_vm_id", None)
     bounded_configuration(policy["public"]["bounded_builds"])
     build["bounded_builds"] = copy.deepcopy(policy["public"]["bounded_builds"])
     for key in ("workspace_bytes", "workspace_bytes_per_tenant"):

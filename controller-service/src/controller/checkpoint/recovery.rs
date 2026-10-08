@@ -131,7 +131,7 @@ pub(super) fn load(connection: &Connection) -> Result<(core::World, Bindings), J
     allocators::validate(connection, &world)?;
     validate_current_cursors(connection, &root.allocators, &world)?;
     projections::validate(connection, &world, &root.namespace)?;
-    // Every accepted format-4 commit has passed the same candidate bound.
+    // Every accepted current-format commit has passed the same candidate bound.
     validate_candidate(connection, &world).map_err(|_| JournalError::CorruptStore)?;
     super::super::capacity::validate(connection, &world).map_err(|_| JournalError::CorruptStore)?;
     Ok((world, bindings))

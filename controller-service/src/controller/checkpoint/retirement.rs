@@ -25,7 +25,7 @@ pub struct RetirementCandidate {
     pub release: Option<HostReleaseWitness>,
 }
 
-pub(super) fn original_binding(
+pub(in crate::controller) fn original_binding(
     world: &core::World,
     sandbox: core::SandboxId,
 ) -> Result<Option<HostBinding>, JournalError> {
@@ -242,7 +242,12 @@ fn delete_details(
         }
         logical.push(effect.logical.clone());
     }
-    for table in ["operations", "sandbox_lifetimes", "sandbox_create_options"] {
+    for table in [
+        "operations",
+        "sandbox_lifetimes",
+        "sandbox_create_options",
+        "controller_data_credentials",
+    ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE sandbox_id=?1"),
             [id.as_str()],

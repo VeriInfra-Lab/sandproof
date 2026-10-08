@@ -81,6 +81,7 @@ pub enum JournalError {
     ConflictingReceipt,
     UnsupportedStore,
     CorruptStore,
+    CredentialIndexPoisoned,
     InjectedCrash(CrashPoint),
     ControllerRejected(sandbox_controller_core::controller::ControllerReject),
     ControllerBusy,
@@ -137,6 +138,9 @@ impl Display for JournalError {
             Self::ConflictingReceipt => formatter.write_str("conflicting receipt for one attempt"),
             Self::UnsupportedStore => formatter.write_str("unsupported sqlite journal format"),
             Self::CorruptStore => formatter.write_str("corrupt sqlite journal record"),
+            Self::CredentialIndexPoisoned => {
+                formatter.write_str("data credential index is poisoned")
+            }
             Self::InjectedCrash(point) => write!(formatter, "injected crash at {point:?}"),
             Self::ControllerRejected(reason) => {
                 write!(formatter, "controller rejected: {reason:?}")

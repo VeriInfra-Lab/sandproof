@@ -46,6 +46,7 @@ def exercise(args: argparse.Namespace) -> None:
             template="base", timeout=180, allow_internet_access=False, **owner
         )
         ident = sandbox.sandbox_id
+        _runpy.run_path(str(_GuardPath(__file__).with_name("_resource_evidence.py")))["record_resource_identity"](ident)
         assert Sandbox.connect(ident, **owner).sandbox_id == ident
         assert sandbox.get_info().state == "running"
         assert [item.sandbox_id for item in Sandbox.list(**owner).next_items()] == [ident]
@@ -110,6 +111,7 @@ def exercise(args: argparse.Namespace) -> None:
     expiring = Sandbox.create(
         template="base", timeout=5, allow_internet_access=False, **owner
     )
+    _runpy.run_path(str(_GuardPath(__file__).with_name("_resource_evidence.py")))["record_resource_identity"](expiring.sandbox_id)
     for _ in range(12):
         time.sleep(1)
         if expiring.sandbox_id not in [item.sandbox_id for item in Sandbox.list(**owner).next_items()]:

@@ -274,7 +274,6 @@ def exercise(args: argparse.Namespace) -> None:
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
-        "max_vm_id": 1000,
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
@@ -292,6 +291,9 @@ def exercise(args: argparse.Namespace) -> None:
         "public_ipv4_enabled": True,
     }
     config = root / "config.json"
+    from server_process_crash import complete_runtime, provision_runtime
+    settings = complete_runtime(settings, slots=2)
+    provision_runtime(settings)
     config.write_text(json.dumps(settings))
     config.chmod(0o600)
     api_url = f"http://127.0.0.1:{port}"

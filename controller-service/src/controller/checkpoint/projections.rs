@@ -24,6 +24,7 @@ pub(super) fn validate(
     options_and_lifetimes(connection, world, namespace)?;
     effects_and_outbox(connection, world, namespace)?;
     registry_state(connection, world)?;
+    super::super::data_credentials::validate(connection, world, namespace)?;
     super::super::private_build::validate(connection, world, namespace)?;
     Ok(())
 }
