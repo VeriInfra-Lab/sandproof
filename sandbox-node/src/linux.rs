@@ -466,7 +466,7 @@ impl LinuxWorker {
                 && runtime.was_reclaimed_stopped_prepare(&vm_name)?;
             let process = if claim_present && !helper_pending {
                 match runtime.observe(&vm_name) {
-                    Ok(observed) => Some(observed),
+                    Ok(physical_record) => Some(physical_record),
                     Err(RuntimeError::MissingRecord) => None,
                     Err(error) => return Err(error.into()),
                 }
