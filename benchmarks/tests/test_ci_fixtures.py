@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from benchmarks import ci_fixtures
 from benchmarks.ci_fixtures import (
     FORBIDDEN_PATHS, MAX_MANIFEST_BYTES, MIB, guest_preflight_command, load_ci_fixtures,
 )
@@ -20,6 +21,73 @@ from tools.benchmark_tasks import InvalidInput, PIN, canonical
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
+
+
+class CIProfileTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.path = Path(temporary.name) / 'catalog.json'
+        self.names = ('alternative-one', 'alternative-two')
+        self.lock = dict(dataset='terminal-bench@2.0',
+            source=dict(repository=PIN.repository, commit=PIN.commit),
+            tasks=[dict(name=name) for name in self.names])
+        self.catalog = dict(schema_version=2, dataset=self.lock['dataset'], source_commit=PIN.commit,
+            source_kind='oci', oracle_modes={},
+            profiles=dict(ci=dict(tasks=[dict(name=name) for name in self.names])))
+        manager = patch.object(ci_fixtures, 'CI_CATALOG', self.path)
+        manager.start()
+        self.addCleanup(manager.stop)
+
+    def resolve(self, catalog=None, lock=None):
+        self.path.write_text(json.dumps(self.catalog if catalog is None else catalog))
+        return ci_fixtures.ci_task_names(self.lock if lock is None else lock)
+
+    def test_catalog_is_the_single_ci_name_and_order_source(self):
+        self.assertEqual(self.resolve(), self.names)
+        self.catalog['profiles']['ci']['tasks'].reverse()
+        self.assertEqual(self.resolve(), tuple(reversed(self.names)))
+
+    def test_unpinned_source_or_catalog_is_rejected(self):
+        for field, value in (('schema_version', True), ('schema_version', 1),
+                             ('dataset', 'terminal-bench@2.1'), ('source_commit', '0' * 40),
+                             ('source_kind', 'prepared-ci')):
+            altered = copy.deepcopy(self.catalog)
+            altered[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(InvalidInput):
+                self.resolve(catalog=altered)
+        for field, value in (('dataset', 'terminal-bench@2.1'), ('source', {})):
+            altered = copy.deepcopy(self.lock)
+            altered[field] = value
+            with self.subTest(lock_field=field), self.assertRaises(InvalidInput):
+                self.resolve(lock=altered)
+
+    def test_exact_two_unique_frozen_original_oracles_are_required(self):
+        for rows in ([], [dict(name=self.names[0])],
+                     [dict(name=n) for n in (*self.names, 'third-task')],
+                     [dict(name=self.names[0])] * 2,
+                     [dict(name=self.names[0]), dict(name='unknown')],
+                     [dict(name=self.names[0]), None]):
+            catalog = copy.deepcopy(self.catalog)
+            catalog['profiles']['ci']['tasks'] = rows
+            with self.subTest(rows=rows), self.assertRaises(InvalidInput):
+                self.resolve(catalog=catalog)
+        catalog = copy.deepcopy(self.catalog)
+        catalog['oracle_modes'][self.names[0]] = 'repaired'
+        with self.assertRaises(InvalidInput):
+            self.resolve(catalog=catalog)
+        lock = copy.deepcopy(self.lock)
+        lock['tasks'].append(lock['tasks'][0])
+        with self.assertRaises(InvalidInput):
+            self.resolve(lock=lock)
+
+    def test_unavailable_malformed_and_duplicate_catalog_reject(self):
+        with self.assertRaises(InvalidInput):
+            ci_fixtures.ci_task_names(self.lock)
+        for raw in ('not json', '{"profiles": {}, "profiles": {}}', '{}', '[]'):
+            self.path.write_text(raw)
+            with self.subTest(raw=raw), self.assertRaises(InvalidInput):
+                ci_fixtures.ci_task_names(self.lock)
 
 
 class CIFixtureTests(unittest.TestCase):
