@@ -7,6 +7,9 @@
 //! The lower-level `Journal` remains an opaque persistence primitive, not a
 //! second production writer. Physical host claims require a trusted adapter.
 
+#[cfg(test)]
+extern crate self as sandproof_controller_service;
+
 mod controller;
 mod dispatch;
 mod journal;
@@ -29,7 +32,7 @@ pub use journal::{
     StoredSandbox,
 };
 pub use workflow::{
-    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
+    finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
     finish_compensating_create_v1, kill_v1,
 };
 
@@ -45,8 +48,6 @@ pub enum CrashPoint {
     BeforeDispatchClaim,
     AfterDispatchClaim,
     AfterWorkerCall,
-    BeforeCheckpointDelete,
-    AfterCheckpointDelete,
     AfterRetirementDelete,
 }
 

@@ -9,9 +9,6 @@ mod disk_space;
 pub use disk_space::{DiskSpace, disk_space};
 
 #[cfg(any(target_os = "linux", test))]
-mod identity;
-
-#[cfg(any(target_os = "linux", test))]
 mod startup;
 
 #[cfg(target_os = "linux")]

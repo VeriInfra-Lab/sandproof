@@ -11,13 +11,12 @@ use tempfile::TempDir;
 
 fn setup() -> (TempDir, ControllerJournal) {
     let directory = TempDir::new().unwrap();
-    let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     (directory, journal)
 }
 
 #[test]
-fn legacy_create_options_do_not_invent_original_network_parameters() {
+fn omitted_create_options_do_not_invent_original_network_parameters() {
     let options: CreateOptions = serde_json::from_str(r#"{"env_vars":{},"metadata":{}}"#).unwrap();
     assert_eq!(options.networking, None);
     assert!(
@@ -36,12 +35,11 @@ fn legacy_create_options_do_not_invent_original_network_parameters() {
 
 fn limits() -> AdmissionLimits {
     AdmissionLimits {
-        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 3_000,
+        max_disk_bytes_global: CLEANUP_BYTES + 2_000,
         max_disk_bytes_per_tenant: 1_000,
-        cleanup_reserve_bytes: 1_000,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
         max_timeout_secs: 86_400,
         max_lifetime_secs: 86_400,
         startup_timeout_secs: 300,
@@ -89,7 +87,7 @@ fn template_admission(options: CreateOptions) -> CreateAdmission {
         limits: AdmissionLimits {
             max_active_global: 10,
             max_active_per_tenant: 10,
-            max_disk_bytes_global: 20_000,
+            max_disk_bytes_global: CLEANUP_BYTES + 19_000,
             max_disk_bytes_per_tenant: 20_000,
             ..limits()
         },
@@ -141,8 +139,7 @@ fn template_commit_freezes_identity_and_rejects_legacy_writers_after_reopen() {
         )))
     ));
     drop(journal);
-    let mut reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut reopened = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(
         reopened.create_options(core::SandboxId(10)).unwrap(),
         options
@@ -192,8 +189,7 @@ fn startup_binding_is_frozen_and_schema_guard_never_downgrades() {
         )
         .unwrap();
     drop(journal);
-    let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(
         journal.create_options(core::SandboxId(10)).unwrap(),
         options
@@ -397,8 +393,7 @@ fn create_options_share_the_admission_commit_and_survive_reopen() {
         )
         .unwrap();
     drop(journal);
-    let reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let reopened = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(
         reopened.create_options(core::SandboxId(10)).unwrap(),
         options
@@ -435,13 +430,14 @@ fn running(
 }
 
 #[test]
-fn vm_id_capacity_is_checked_before_admission_and_survives_restart() {
-    let (directory, mut journal) = setup();
+fn physical_slot_capacity_is_checked_before_admission_and_survives_restart() {
+    let directory = TempDir::new().unwrap();
+    let mut journal =
+        open_complete_with_slots(directory.path().join("controller.db"), NAMESPACE, 2).unwrap();
     let mut policy = limits();
-    policy.max_vm_id = 1;
     policy.max_active_global = 3;
     policy.max_active_per_tenant = 3;
-    policy.max_disk_bytes_global = 10_000;
+    policy.max_disk_bytes_global = CLEANUP_BYTES + 9_000;
     policy.max_disk_bytes_per_tenant = 10_000;
 
     for sandbox in [10, 11] {
@@ -479,7 +475,7 @@ fn vm_id_capacity_is_checked_before_admission_and_survives_restart() {
 
     drop(journal);
     let mut reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        open_complete_with_slots(directory.path().join("controller.db"), NAMESPACE, 2).unwrap();
     assert!(matches!(
         reopened.admit_create(request(12, 1), 1_000, 60, 1_000, policy, &mut NeverCrash),
         Err(AdmissionError::QuotaExceeded)
@@ -614,8 +610,7 @@ fn default_connect_and_repeated_renewals_keep_the_original_total_limit_across_re
         20_000
     );
     drop(journal);
-    let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     policy.max_timeout_secs = 3_600;
     policy.max_lifetime_secs = 3_600;
     for now in [6_000, 300_000, 600_999] {
@@ -737,10 +732,9 @@ fn create_rejects_total_limit_overflow_without_shortening_the_request() {
 }
 
 #[test]
-fn legacy_migration_preserves_granted_time_without_inventing_a_new_total_limit() {
+fn old_lifetime_schema_is_rejected_without_changing_granted_time() {
     let (directory, mut journal) = setup();
     let sandbox = core::SandboxId(10);
-    let owner = core::Actor::Tenant(core::TenantId(1));
     journal
         .admit_create(request(10, 1), 1_000, 30, 1_000, limits(), &mut NeverCrash)
         .unwrap();
@@ -750,31 +744,17 @@ fn legacy_migration_preserves_granted_time_without_inventing_a_new_total_limit()
     let connection = rusqlite::Connection::open(&path).unwrap();
     connection.execute_batch("ALTER TABLE sandbox_lifetimes DROP COLUMN startup_deadline_ms; ALTER TABLE sandbox_lifetimes DROP COLUMN max_deadline_ms; UPDATE controller_meta SET version=4 WHERE id=1;").unwrap();
     drop(connection);
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
-    let original = journal.live_lifetime(&owner, sandbox, 2_000).unwrap();
-    assert_eq!(
-        (original.deadline_ms, original.max_deadline_ms),
-        (31_000, 31_000)
-    );
-    assert_eq!(
-        journal
-            .connect_lifetime(&owner, sandbox, 2_000, None, limits())
-            .unwrap(),
-        original
-    );
-    journal.set_lifetime(&owner, sandbox, 3_000, 1).unwrap();
-    assert_eq!(
-        journal
-            .set_lifetime(&owner, sandbox, 3_100, i64::MAX)
-            .unwrap(),
-        original
-    );
+    let before = std::fs::read(&path).unwrap();
+    assert!(matches!(
+        open_complete(&path, NAMESPACE),
+        Err(JournalError::UnsupportedStore)
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 
 #[test]
-fn version_five_startup_keeps_its_original_deadline_on_upgrade() {
+fn old_startup_schema_is_rejected_without_resetting_the_deadline() {
     let (directory, mut journal) = setup();
-    let sandbox = core::SandboxId(10);
     journal
         .admit_create(request(10, 1), 1_000, 5, 1_000, limits(), &mut NeverCrash)
         .unwrap();
@@ -788,24 +768,12 @@ fn version_five_startup_keeps_its_original_deadline_on_upgrade() {
         )
         .unwrap();
     drop(connection);
-    let mut reopened = ControllerJournal::open(&path, NAMESPACE).unwrap();
-    assert_eq!(
-        reopened.abort_due_startups(5_999, &mut NeverCrash).unwrap(),
-        0
-    );
-    assert_eq!(
-        reopened.abort_due_startups(6_000, &mut NeverCrash).unwrap(),
-        1
-    );
-    assert_eq!(
-        reopened
-            .world()
-            .unwrap()
-            .sandbox_record(sandbox)
-            .unwrap()
-            .phase,
-        core::Phase::Revoking
-    );
+    let before = std::fs::read(&path).unwrap();
+    assert!(matches!(
+        open_complete(&path, NAMESPACE),
+        Err(JournalError::UnsupportedStore)
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 
 #[test]
@@ -852,17 +820,22 @@ fn invalid_timeout_and_crash_before_commit_never_consume_quota() {
 }
 
 #[test]
-fn unmanaged_old_active_state_fails_closed() {
-    let (_directory, mut journal) = setup();
+fn missing_accepted_lifetime_fails_closed() {
+    let (directory, mut journal) = setup();
     apply(&mut journal, create());
+    // Corrupt the accepted lease rather than using a removed raw-create opener.
+    rusqlite::Connection::open(directory.path().join("controller.db"))
+        .unwrap()
+        .execute("DELETE FROM sandbox_lifetimes", [])
+        .unwrap();
     assert!(matches!(
         journal.admit_create(request(20, 2), 1_000, 60, 1_000, limits(), &mut NeverCrash),
-        Err(AdmissionError::UnmanagedActive)
+        Err(AdmissionError::Journal(JournalError::CorruptStore))
     ));
 }
 
 #[test]
-fn version_one_store_migrates_without_inventing_leases() {
+fn old_store_is_rejected_without_inventing_leases() {
     let (directory, journal) = setup();
     drop(journal);
     let path = directory.path().join("controller.db");
@@ -873,19 +846,12 @@ fn version_one_store_migrates_without_inventing_leases() {
         )
         .unwrap();
     drop(connection);
-    let mut migrated = ControllerJournal::open(&path, NAMESPACE).unwrap();
-    migrated
-        .admit_create(request(10, 1), 1_000, 60, 1_000, limits(), &mut NeverCrash)
-        .unwrap();
-    drop(migrated);
-    let reopened = ControllerJournal::open(&path, NAMESPACE).unwrap();
-    assert!(
-        reopened
-            .world()
-            .unwrap()
-            .sandbox_record(core::SandboxId(10))
-            .is_some()
-    );
+    let before = std::fs::read(&path).unwrap();
+    assert!(matches!(
+        open_complete(&path, NAMESPACE),
+        Err(JournalError::UnsupportedStore)
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 
 #[test]

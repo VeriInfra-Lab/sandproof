@@ -8,21 +8,10 @@ mod validation_certificates;
 use support::*;
 
 fn maintenance_config() -> MaintenanceConfig {
-    MaintenanceConfig {
-        capacity: None,
-        retention_ms: 100,
-        max_checkpoint_bytes: 4 * 1024 * 1024,
-        max_records: 10000,
-        max_references: 100_000,
-        max_tail_inputs: 1000,
-        max_tail_bytes: 4 * 1024 * 1024,
-        max_input_bytes: 128 * 1024,
-        prune_batch_rows: 7,
-    }
+    crate::controller::tests_support::fixture::maintenance()
 }
 fn open(path: &std::path::Path) -> ControllerJournal {
-    ControllerJournal::open_maintained(path, NS, host_config(4), maintenance_config(), 1000)
-        .unwrap()
+    ControllerJournal::open_complete(path, NS, host_config(4), maintenance_config(), 1000).unwrap()
 }
 fn count(journal: &ControllerJournal, table: &str) -> i64 {
     journal
@@ -35,7 +24,10 @@ fn count(journal: &ControllerJournal, table: &str) -> i64 {
 }
 fn checkpoint_and_prune(journal: &mut ControllerJournal) {
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
-    while journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap() != 0 {}
+    // The next trusted transaction drains only an already committed cut.
+    journal.publish_checkpoint(&mut NeverCrash).unwrap();
+    let progress = journal.checkpoint_progress().unwrap().unwrap();
+    assert_eq!(progress.deleted_through, progress.input_cut);
 }
 fn release(journal: &mut ControllerJournal, sandbox: u64) {
     let context = journal
@@ -50,36 +42,6 @@ fn retire(journal: &mut ControllerJournal, sandbox: u64) {
     journal
         .retire_reclaimed(core::SandboxId(sandbox), 1001, |_| Ok(()), &mut NeverCrash)
         .unwrap();
-}
-
-#[test]
-fn checkpoint_commit_keeps_prefix_until_separate_bounded_deletion_and_empty_tail_reopens() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("db");
-    let mut journal = open(&path);
-    create(&mut journal, 1);
-    let world = journal.world().unwrap();
-    let before = count(&journal, "controller_inputs");
-    let info = journal.publish_checkpoint(&mut NeverCrash).unwrap();
-    assert_eq!(info.input_cut, u64::try_from(before).unwrap());
-    assert_eq!(count(&journal, "controller_inputs"), before);
-    let removed = journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap();
-    assert_eq!(removed, 7);
-    assert_eq!(count(&journal, "controller_inputs"), before - 7);
-    while journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap() != 0 {}
-    assert_eq!(count(&journal, "controller_inputs"), 0);
-    assert_eq!(
-        allocators::input_high_water(&journal.journal.connection).unwrap(),
-        info.input_cut
-    );
-    drop(journal);
-    let mut journal = open(&path);
-    assert_eq!(journal.world().unwrap(), world);
-    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(2));
-    create(&mut journal, 2);
-    let next = journal.world().unwrap();
-    drop(journal);
-    assert_eq!(open(&path).world().unwrap(), next);
 }
 
 #[test]
@@ -126,10 +88,17 @@ fn retirement_closes_exact_sql_rows_keeps_query_then_expiry_and_never_reuses_sco
 }
 
 #[test]
-fn legacy_format_three_witness_survives_rebind_and_migration_without_prefix_dependency() {
+fn current_release_witness_survives_rebind_and_restart_without_prefix_dependency() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db");
-    let mut journal = ControllerJournal::open_bounded(&path, NS, host_config(4), 1000).unwrap();
+    let mut journal = ControllerJournal::open_complete(
+        &path,
+        NS,
+        host_config(4),
+        crate::controller::tests_support::fixture::maintenance(),
+        1000,
+    )
+    .unwrap();
     create(&mut journal, 1);
     destroy(&mut journal, 1);
     release(&mut journal, 1);
@@ -200,48 +169,6 @@ fn checkpoint_lost_commit_reply_recovers_both_durable_outcomes_without_deleting_
 }
 
 #[test]
-fn bounded_delete_failure_and_unknown_commit_resume_idempotently() {
-    for point in [
-        CrashPoint::BeforeCheckpointDelete,
-        CrashPoint::AfterCheckpointDelete,
-    ] {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("db");
-        let mut journal = open(&path);
-        create(&mut journal, 1);
-        journal.publish_checkpoint(&mut NeverCrash).unwrap();
-        let inputs = count(&journal, "controller_inputs");
-        assert!(journal.prune_checkpoint_inputs(&mut FailAt(point)).is_err());
-        assert_eq!(count(&journal, "controller_inputs"), inputs);
-        drop(journal);
-        let mut journal = open(&path);
-        checkpoint_and_prune(&mut journal);
-    }
-    for durable in [false, true] {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("db");
-        let mut journal = open(&path);
-        create(&mut journal, 1);
-        journal.publish_checkpoint(&mut NeverCrash).unwrap();
-        let before = count(&journal, "controller_inputs");
-        crate::controller::transaction::fail_next_commit(durable);
-        assert!(matches!(
-            journal.prune_checkpoint_inputs(&mut NeverCrash),
-            Err(JournalError::CommitUncertain(_))
-        ));
-        assert_eq!(
-            count(&journal, "controller_inputs"),
-            before - if durable { 7 } else { 0 }
-        );
-        journal.world().unwrap();
-        drop(journal);
-        let mut journal = open(&path);
-        while journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap() != 0 {}
-        assert_eq!(journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap(), 0);
-    }
-}
-
-#[test]
 fn retirement_rollback_and_unknown_commit_never_mix_retained_and_deleted_state() {
     for durable in [false, true] {
         let dir = TempDir::new().unwrap();
@@ -296,49 +223,10 @@ fn damaged_root_or_missing_tail_fails_closed_even_with_valid_remaining_maximum()
         }
         drop(raw);
         assert!(
-            ControllerJournal::open_maintained(
-                &path,
-                NS,
-                host_config(4),
-                maintenance_config(),
-                1000
-            )
-            .is_err()
+            ControllerJournal::open_complete(&path, NS, host_config(4), maintenance_config(), 1000)
+                .is_err()
         );
     }
-}
-
-#[test]
-fn input_byte_and_tail_limits_roll_back_identity_allocation_and_recover_after_checkpoint() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("db");
-    let mut config = maintenance_config();
-    config.max_tail_inputs = 1;
-    let mut journal =
-        ControllerJournal::open_maintained(&path, NS, host_config(4), config, 1000).unwrap();
-    assert!(matches!(
-        admit(&mut journal, 1, &mut NeverCrash),
-        Err(AdmissionError::Journal(JournalError::MaintenanceCapacity))
-    ));
-    assert_eq!(count(&journal, "sandboxes"), 0);
-    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
-    journal.expire_retained(1001, &mut NeverCrash).unwrap();
-    assert!(matches!(
-        journal.expire_retained(1002, &mut NeverCrash),
-        Err(JournalError::MaintenanceCapacity)
-    ));
-    checkpoint_and_prune(&mut journal);
-    journal.expire_retained(1002, &mut NeverCrash).unwrap();
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("db");
-    let mut config = maintenance_config();
-    config.max_input_bytes = 16;
-    let mut journal =
-        ControllerJournal::open_maintained(&path, NS, host_config(4), config, 1000).unwrap();
-    assert!(matches!(
-        journal.expire_retained(1001, &mut NeverCrash),
-        Err(JournalError::MaintenanceCapacity)
-    ));
 }
 
 #[test]
@@ -577,35 +465,25 @@ fn receipt_history_is_initial_unknown_then_final_without_unknown_poll_growth() {
 }
 
 #[test]
-fn failed_migration_rolls_back_format_tables_and_preserves_legacy_world() {
+fn incomplete_or_changed_configuration_never_rewrites_current_store() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db");
-    let mut journal = ControllerJournal::open_bounded(&path, NS, host_config(4), 1000).unwrap();
+    let mut journal = open(&path);
     create(&mut journal, 1);
-    let expected = journal.world().unwrap();
+    let world = journal.world().unwrap();
     drop(journal);
-    let mut config = maintenance_config();
-    config.max_checkpoint_bytes = 16;
-    assert!(matches!(
-        ControllerJournal::open_maintained(&path, NS, host_config(4), config, 1000),
-        Err(JournalError::MaintenanceCapacity)
-    ));
-    let raw = Connection::open(&path).unwrap();
-    let version: i64 = raw
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 3);
-    let tables: i64 = raw
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE name='controller_checkpoint'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(tables, 0);
-    drop(raw);
-    let journal = ControllerJournal::open_bounded(&path, NS, host_config(4), 1000).unwrap();
-    assert_eq!(journal.world().unwrap(), expected);
+    let before = std::fs::read(&path).unwrap();
+    for capacity in [false, true] {
+        let mut policy = maintenance_config();
+        if capacity {
+            policy.max_checkpoint_bytes = 16;
+        } else {
+            policy.capacity = None;
+        }
+        assert!(ControllerJournal::open_complete(&path, NS, host_config(4), policy, 1000).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+    assert_eq!(open(&path).world().unwrap(), world);
 }
 
 #[test]
@@ -627,43 +505,34 @@ fn release_witness_and_global_frontiers_cannot_disappear_when_rows_are_pruned() 
         raw.execute(sql, []).unwrap();
         drop(raw);
         assert!(
-            ControllerJournal::open_maintained(
-                &path,
-                NS,
-                host_config(4),
-                maintenance_config(),
-                1000
-            )
-            .is_err(),
+            ControllerJournal::open_complete(&path, NS, host_config(4), maintenance_config(), 1000)
+                .is_err(),
             "{sql}"
         );
     }
 }
 
 #[test]
-fn no_release_witness_is_invented_from_incomplete_legacy_release() {
+fn no_release_witness_is_invented_from_incomplete_current_release() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db");
-    let mut journal = ControllerJournal::open_bounded(&path, NS, host_config(4), 1000).unwrap();
+    let mut journal = open(&path);
     create(&mut journal, 1);
     destroy(&mut journal, 1);
-    release(&mut journal, 1);
-    drop(journal);
-    // Model the durable state before the last ConfirmRelease commit, after the
-    // trusted host may already have returned. The earlier BeginRelease stays.
-    let raw = Connection::open(&path).unwrap();
-    raw.execute("DELETE FROM controller_inputs WHERE sequence=(SELECT MAX(sequence) FROM controller_inputs)",[]).unwrap();
-    let high: i64 = raw
-        .query_row("SELECT MAX(sequence) FROM controller_inputs", [], |row| {
-            row.get(0)
-        })
+    let context = journal
+        .host_slot_context(core::SandboxId(1))
+        .unwrap()
         .unwrap();
-    raw.execute(
-        "UPDATE controller_id_highwaters SET high_water=?1 WHERE kind='input'",
-        [high.to_string()],
-    )
-    .unwrap();
-    drop(raw);
+    assert!(
+        journal
+            .release_host_slot(
+                context,
+                |_| Err(crate::WorkerTransportError::ConnectionLost),
+                &mut NeverCrash
+            )
+            .is_err()
+    );
+    drop(journal);
     let journal = open(&path);
     assert_eq!(count(&journal, "controller_release_witnesses"), 0);
     assert!(journal.retirement_candidates().unwrap().is_empty());
@@ -677,7 +546,7 @@ fn unchanged_foreign_write_and_single_writer_rules_apply_to_checkpoint_mode() {
     create(&mut journal, 1);
     checkpoint_and_prune(&mut journal);
     assert!(matches!(
-        ControllerJournal::open_maintained(&path, NS, host_config(4), maintenance_config(), 1000),
+        ControllerJournal::open_complete(&path, NS, host_config(4), maintenance_config(), 1000),
         Err(JournalError::ControllerBusy)
     ));
     assert!(matches!(
@@ -690,57 +559,6 @@ fn unchanged_foreign_write_and_single_writer_rules_apply_to_checkpoint_mode() {
         .unwrap();
     assert!(matches!(journal.world(), Err(JournalError::CorruptStore)));
     assert!(journal.publish_checkpoint(&mut NeverCrash).is_err());
-}
-
-#[test]
-fn tail_byte_budget_and_candidate_encoding_limit_reject_without_partial_commit() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("db");
-    let mut config = maintenance_config();
-    config.max_input_bytes = 128;
-    config.max_tail_bytes = 128;
-    let mut journal =
-        ControllerJournal::open_maintained(&path, NS, host_config(4), config, 1000).unwrap();
-    journal.expire_retained(1001, &mut NeverCrash).unwrap();
-    let before = journal.world().unwrap();
-    assert!(matches!(
-        journal.expire_retained(1002, &mut NeverCrash),
-        Err(JournalError::MaintenanceCapacity)
-    ));
-    assert_eq!(journal.world().unwrap(), before);
-    checkpoint_and_prune(&mut journal);
-    journal.expire_retained(1002, &mut NeverCrash).unwrap();
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("db");
-    let journal = open(&path);
-    let size: i64 = journal
-        .journal
-        .connection
-        .query_row(
-            "SELECT length(payload) FROM controller_checkpoint",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    drop(journal);
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("db");
-    let mut config = maintenance_config();
-    config.max_checkpoint_bytes = u64::try_from(size).unwrap() + 64;
-    let mut journal =
-        ControllerJournal::open_maintained(&path, NS, host_config(4), config, 1000).unwrap();
-    let before = journal.world().unwrap();
-    let input = allocators::input_high_water(&journal.journal.connection).unwrap();
-    assert!(matches!(
-        admit(&mut journal, 1, &mut NeverCrash),
-        Err(AdmissionError::Journal(JournalError::MaintenanceCapacity))
-    ));
-    assert_eq!(journal.world().unwrap(), before);
-    assert_eq!(count(&journal, "sandboxes"), 0);
-    assert_eq!(
-        allocators::input_high_water(&journal.journal.connection).unwrap(),
-        input
-    );
 }
 
 #[test]

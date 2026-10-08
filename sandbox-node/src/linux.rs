@@ -55,16 +55,29 @@ pub struct NodeConfig {
     pub chroot_base: PathBuf,
     pub kernel: PathBuf,
     pub rootfs: PathBuf,
-    pub uid_base: u32,
-    pub max_vm_id: u64,
-    /// Explicit bounded physical mapping; permanent VM identities remain monotonic.
-    pub bounded_host: Option<BoundedHostConfig>,
+    /// Required physical mapping; permanent VM identities remain monotonic.
+    pub bounded_host: BoundedHostConfig,
     pub vcpu_count: u8,
     pub memory_mib: u32,
     pub host_resources: Option<sandbox_runtime::HostResources>,
     /// V1 has one deployment-controlled managed-disk policy, not arbitrary
     /// user-supplied host paths or a directory ACL implementation.
     pub file_policy_digest: core::PolicyDigest,
+}
+
+impl NodeConfig {
+    fn validate_deployment(&self) -> NodeResult<()> {
+        host_slots::validate_limits(&self.bounded_host)?;
+        if self.bounded_host.physical_storage.is_none()
+            || self.bounded_host.console_policy
+                != Some(sandproof_controller_service::ConsolePolicy::Discard)
+        {
+            return Err(
+                "node requires complete physical storage and discard console policy".into(),
+            );
+        }
+        Ok(())
+    }
 }
 
 /// Read-only host inventory. A claim without a process record is explicitly
@@ -208,7 +221,7 @@ impl Error for RouteCapacityExceeded {}
 
 pub struct LinuxWorker {
     config: NodeConfig,
-    host_lease: Option<host_lease::HostLease>,
+    host_lease: host_lease::HostLease,
     last_error: Option<String>,
     validated_artifacts: Mutex<BTreeMap<PathBuf, ArtifactStamp>>,
 }
@@ -371,9 +384,7 @@ impl LinuxWorker {
                 return Err("untrusted slot record".into());
             }
             let binding: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
-            if binding.slot.0 != number
-                || (self.config.bounded_host.is_none() && binding.vm.0 > self.config.max_vm_id)
-            {
+            if binding.slot.0 != number {
                 return Err("slot filename or VM identity mismatch".into());
             }
             let vm_name = self.vm_name(binding.vm);
@@ -389,14 +400,11 @@ impl LinuxWorker {
             if !bound.insert(vm_name.clone()) {
                 return Err("one VM is bound to multiple network slots".into());
             }
-            let helper_pending = if let Some(position) = self.physical_slot_for_vm(binding.vm)? {
-                let context = self.runtime_host_slot(position, binding.vm)?;
-                helper_observation_pending(
-                    context.helper_gate.try_acquire(Some(&context)).map(drop),
-                )?
-            } else {
-                false
-            };
+            let position = self.physical_slot_for_vm(binding.vm)?;
+            let context = self.runtime_host_slot(position, binding.vm)?;
+            let helper_pending = helper_observation_pending(
+                context.helper_gate.try_acquire(Some(&context)).map(drop),
+            )?;
             let claim = self.config.chroot_base.join(".claims").join(&vm_name);
             let claim_present = match fs::symlink_metadata(&claim) {
                 Ok(metadata)
@@ -518,13 +526,11 @@ impl LinuxWorker {
                     if !name.starts_with(&vm_prefix) {
                         continue;
                     }
-                    let number = name
-                        .strip_prefix(&vm_prefix)
+                    name.strip_prefix(&vm_prefix)
                         .and_then(|number| number.parse::<u64>().ok())
                         .ok_or("invalid VM claim number")?;
                     let metadata = fs::symlink_metadata(entry.path())?;
-                    if (self.config.bounded_host.is_none() && number > self.config.max_vm_id)
-                        || !entry.file_type()?.is_dir()
+                    if !entry.file_type()?.is_dir()
                         || metadata.uid() != 0
                         || metadata.mode().trailing_zeros() < 6
                     {
@@ -564,7 +570,6 @@ impl LinuxWorker {
                         .ok_or("invalid network namespace number")?;
                     let metadata = fs::symlink_metadata(entry.path())?;
                     if name != format!("{vm_prefix}{number}")
-                        || (self.config.bounded_host.is_none() && number > self.config.max_vm_id)
                         || !metadata.is_file()
                         || metadata.uid() != 0
                     {
@@ -651,10 +656,7 @@ impl LinuxWorker {
                     .strip_prefix(&prefix)
                     .and_then(|value| value.parse::<u64>().ok())
                     .ok_or("invalid cgroup VM number")?;
-                if (self.config.bounded_host.is_none() && number > self.config.max_vm_id)
-                    || name != format!("{prefix}{number}")
-                    || !entry.file_type()?.is_dir()
-                {
+                if name != format!("{prefix}{number}") || !entry.file_type()?.is_dir() {
                     return Err("invalid VM cgroup identity or type".into());
                 }
                 check_trusted_path(&entry.path())?;
@@ -1019,11 +1021,7 @@ impl LinuxWorker {
         if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
             return Err("node state directory must be root-only".into());
         }
-        if let Some(bounded) = &config.bounded_host {
-            host_slots::validate_limits(bounded)?;
-        } else {
-            crate::identity::validate_vm_id_range(config.uid_base, config.max_vm_id)?;
-        }
+        config.validate_deployment()?;
         if config.vcpu_count == 0 || config.memory_mib < 128 {
             return Err("invalid node resource limits".into());
         }
@@ -1038,25 +1036,13 @@ impl LinuxWorker {
                     .file_name()
                     .ok_or("invalid firecracker name")?,
             )
-            .join(format!(
-                "vm-{}-{}",
-                config.namespace,
-                if config.bounded_host.is_some() {
-                    u64::MAX
-                } else {
-                    config.max_vm_id
-                }
-            ))
+            .join(format!("vm-{}-{}", config.namespace, u64::MAX))
             .join("root/api.socket");
         if longest_socket.as_os_str().as_bytes().len() >= 108 {
             return Err("Firecracker API socket path exceeds Linux limit".into());
         }
-        let host_lease = if config.bounded_host.is_some() {
-            let expected = host_slots::stored_lease_identity(&config)?;
-            Some(host_lease::HostLease::acquire(&config, expected.as_ref())?)
-        } else {
-            None
-        };
+        let expected = host_slots::stored_lease_identity(&config)?;
+        let host_lease = host_lease::HostLease::acquire(&config, expected.as_ref())?;
         for subdir in NODE_STATE_DIRECTORIES {
             let path = config.state_dir.join(subdir);
             if !path.exists() {
@@ -1482,27 +1468,17 @@ impl LinuxWorker {
     }
 
     fn sync_node_record(&self, path: &Path) -> NodeResult<()> {
-        if self.config.bounded_host.is_some() {
-            node_staging::cleanup(&self.config, path)?;
-        }
+        node_staging::cleanup(&self.config, path)?;
         File::open(path.parent().ok_or("node record parent")?)?.sync_all()?;
         Ok(())
     }
 
     fn write_node_json<T: Serialize>(&self, path: &Path, value: &T) -> NodeResult<()> {
-        if self.config.bounded_host.is_some() {
-            node_staging::write(&self.config, path, &serde_json::to_vec(value)?, false)
-        } else {
-            write_new_json(path, value)
-        }
+        node_staging::write(&self.config, path, &serde_json::to_vec(value)?, false)
     }
 
     fn replace_node_json<T: Serialize>(&self, path: &Path, value: &T) -> NodeResult<()> {
-        if self.config.bounded_host.is_some() {
-            node_staging::write(&self.config, path, &serde_json::to_vec(value)?, true)
-        } else {
-            replace_json(path, value)
-        }
+        node_staging::write(&self.config, path, &serde_json::to_vec(value)?, true)
     }
 
     fn secret_path(&self, sandbox: core::SandboxId) -> PathBuf {
@@ -1579,8 +1555,7 @@ impl LinuxWorker {
             console_policy: self
                 .config
                 .bounded_host
-                .as_ref()
-                .and_then(|config| config.console_policy)
+                .console_policy
                 .map(|policy| match policy {
                     sandproof_controller_service::ConsolePolicy::Discard => {
                         sandbox_runtime::ConsolePolicy::Discard
@@ -1598,25 +1573,12 @@ impl LinuxWorker {
             host_resources,
             private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
             access_token_hash: Some(secret.sha512),
-            host_slot: self
-                .physical_slot_for_vm(vm)?
-                .map(|position| self.runtime_host_slot(position, vm))
-                .transpose()?,
+            host_slot: Some(self.runtime_host_slot(self.physical_slot_for_vm(vm)?, vm)?),
         })
     }
 
     fn vm_uid(&self, vm: core::VmId) -> NodeResult<u32> {
-        if let Some(config) = &self.config.bounded_host {
-            let position = self
-                .physical_slot_for_vm(vm)?
-                .ok_or("unbound physical host slot")?;
-            return host_slots::position_uid(config, position);
-        }
-        Ok(crate::identity::vm_uid(
-            self.config.uid_base,
-            self.config.max_vm_id,
-            vm.0,
-        )?)
+        host_slots::position_uid(&self.config.bounded_host, self.physical_slot_for_vm(vm)?)
     }
 
     fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
@@ -1775,9 +1737,6 @@ impl LinuxWorker {
                     self.validate_template(template)?;
                 }
                 self.vm_uid(*vm)?;
-                if self.config.bounded_host.is_none() && slot.0 > self.config.max_vm_id {
-                    return Err("node network slot exceeds allocated range".into());
-                }
                 self.require_fence(*sandbox, *epoch, false)?;
                 let binding = SlotBinding {
                     owner: action.identity.owner.clone(),
@@ -1949,9 +1908,9 @@ impl LinuxWorker {
             "default",
         ]);
         let output = self
-            .spawn_namespace_command(&name, gate.as_ref(), &mut command)?
+            .spawn_namespace_command(&name, &gate, &mut command)?
             .wait_output()?;
-        Self::finish_namespace_command(gate.as_ref())?;
+        gate.finish_tracked()?;
         if !output.status.success()
             || (matches!(policy, core::NetworkPolicy::DenyAll) && !output.stdout.is_empty())
             || (matches!(policy, core::NetworkPolicy::Ipv4 { .. }) && output.stdout.is_empty())
@@ -2216,28 +2175,14 @@ impl LinuxWorker {
         startup: &sandproof_controller_service::templates::TemplateStartup,
     ) -> NodeResult<u32> {
         // Neither the credential nor tenant argv enters host process argv.
-        // Bounded bodies are retired by the exact per-incarnation manifest;
-        // legacy request bodies retain their original RAII lifetime.
+        // Bodies are retired by the exact per-incarnation manifest.
         let payload = crate::startup::start_request(startup)?;
         let durable_path = self
             .config
             .state_dir
             .join("startup")
             .join(format!("{name}.request"));
-        let temporary = if self.config.bounded_host.is_some() {
-            node_staging::write(&self.config, &durable_path, &payload, false)?;
-            None
-        } else {
-            let mut body = tempfile::NamedTempFile::new_in(self.config.state_dir.join("startup"))?;
-            body.as_file()
-                .set_permissions(fs::Permissions::from_mode(0o600))?;
-            body.write_all(&payload)?;
-            body.flush()?;
-            Some(body)
-        };
-        let body_path = temporary
-            .as_ref()
-            .map_or(durable_path.as_path(), |body| body.path());
+        node_staging::write(&self.config, &durable_path, &payload, false)?;
         let (gate, mut command) = self.namespace_command(name)?;
         command
             .args([
@@ -2259,11 +2204,11 @@ impl LinuxWorker {
                 "Connect-Protocol-Version: 1",
                 "--data-binary",
             ])
-            .arg(format!("@{}", body_path.display()))
+            .arg(format!("@{}", durable_path.display()))
             .arg(format!("{ENVD_URL}/process.Process/Start"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
-        let mut child = self.spawn_namespace_command(name, gate.as_ref(), &mut command)?;
+        let mut child = self.spawn_namespace_command(name, &gate, &mut command)?;
         let result = (|| {
             child
                 .stdin
@@ -2278,31 +2223,24 @@ impl LinuxWorker {
         // exact child cannot orphan a supervisor's separate descendant.
         let _ = child.kill();
         child.wait()?;
-        Self::finish_namespace_command(gate.as_ref())?;
+        gate.finish_tracked()?;
         result
     }
 
     fn namespace_command(
         &self,
         name: &str,
-    ) -> NodeResult<(Option<sandbox_runtime::RuntimeHelperGuard>, Process)> {
-        let guard = if self.config.bounded_host.is_some() {
-            let number = name
-                .strip_prefix(&format!("vm-{}-", self.config.namespace))
-                .ok_or("namespace helper identity")?
-                .parse::<u64>()?;
-            let vm = core::VmId(number);
-            if self.vm_name(vm) != name {
-                return Err("namespace helper identity not canonical".into());
-            }
-            let position = self
-                .physical_slot_for_vm(vm)?
-                .ok_or("namespace helper lacks physical binding")?;
-            let context = self.runtime_host_slot(position, vm)?;
-            Some(context.helper_gate.try_acquire_shared(Some(&context))?)
-        } else {
-            None
-        };
+    ) -> NodeResult<(sandbox_runtime::RuntimeHelperGuard, Process)> {
+        let number = name
+            .strip_prefix(&format!("vm-{}-", self.config.namespace))
+            .ok_or("namespace helper identity")?
+            .parse::<u64>()?;
+        let vm = core::VmId(number);
+        if self.vm_name(vm) != name {
+            return Err("namespace helper identity not canonical".into());
+        }
+        let context = self.runtime_host_slot(self.physical_slot_for_vm(vm)?, vm)?;
+        let guard = context.helper_gate.try_acquire_shared(Some(&context))?;
         let mut command = Process::new("/usr/bin/ip");
         command
             .stdin(Stdio::piped())
@@ -2314,40 +2252,24 @@ impl LinuxWorker {
     fn spawn_namespace_command(
         &self,
         name: &str,
-        guard: Option<&sandbox_runtime::RuntimeHelperGuard>,
+        guard: &sandbox_runtime::RuntimeHelperGuard,
         command: &mut Process,
     ) -> NodeResult<child_process::OwnedChild> {
-        if let Some(guard) = guard {
-            let vm = core::VmId(
-                name.strip_prefix(&format!("vm-{}-", self.config.namespace))
-                    .ok_or("namespace helper identity")?
-                    .parse::<u64>()?,
-            );
-            let position = self
-                .physical_slot_for_vm(vm)?
-                .ok_or("namespace helper binding missing")?;
-            let context = self.runtime_host_slot(position, vm)?;
-            let args = command
-                .get_args()
-                .map(|arg| arg.to_str().ok_or("non-UTF8 namespace helper argument"))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(child_process::OwnedChild(guard.spawn_tracked(
-                &context,
-                "/usr/bin/ip",
-                &args,
-            )?))
-        } else {
-            Ok(child_process::OwnedChild(command.spawn()?))
-        }
-    }
-
-    fn finish_namespace_command(
-        guard: Option<&sandbox_runtime::RuntimeHelperGuard>,
-    ) -> NodeResult<()> {
-        if let Some(guard) = guard {
-            guard.finish_tracked()?;
-        }
-        Ok(())
+        let vm = core::VmId(
+            name.strip_prefix(&format!("vm-{}-", self.config.namespace))
+                .ok_or("namespace helper identity")?
+                .parse::<u64>()?,
+        );
+        let context = self.runtime_host_slot(self.physical_slot_for_vm(vm)?, vm)?;
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_str().ok_or("non-UTF8 namespace helper argument"))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(child_process::OwnedChild(guard.spawn_tracked(
+            &context,
+            "/usr/bin/ip",
+            &args,
+        )?))
     }
 
     fn guest_status(
@@ -2386,7 +2308,7 @@ impl LinuxWorker {
         }
         command.arg(format!("{ENVD_URL}{path}"));
         command.stdin(Stdio::piped()).stdout(Stdio::piped());
-        let mut child = self.spawn_namespace_command(name, gate.as_ref(), &mut command)?;
+        let mut child = self.spawn_namespace_command(name, &gate, &mut command)?;
         if let Some(input) = input {
             child
                 .stdin
@@ -2395,7 +2317,7 @@ impl LinuxWorker {
                 .write_all(input)?;
         }
         let output = child.wait_output()?;
-        Self::finish_namespace_command(gate.as_ref())?;
+        gate.finish_tracked()?;
         if !output.status.success() {
             return Ok(String::new());
         }
@@ -2425,7 +2347,7 @@ impl LinuxWorker {
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
-        let mut child = self.spawn_namespace_command(name, gate.as_ref(), &mut command)?;
+        let mut child = self.spawn_namespace_command(name, &gate, &mut command)?;
         let config = format!(
             "url = \"{ENVD_URL}/files?path=%2Fetc%2Fpasswd\"\nheader = \"X-Access-Token: {token}\"\n"
         );
@@ -2435,7 +2357,7 @@ impl LinuxWorker {
             .ok_or("curl stdin unavailable")?
             .write_all(config.as_bytes())?;
         let output = child.wait_output()?;
-        Self::finish_namespace_command(gate.as_ref())?;
+        gate.finish_tracked()?;
         if !output.status.success() {
             return Err("envd file observation failed".into());
         }
@@ -2486,38 +2408,11 @@ fn hash_token(token: &str) -> NodeResult<String> {
     Ok(digest.to_owned())
 }
 
-fn write_new_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
-    let parent = path.parent().ok_or("missing state parent")?;
-    let mut file = tempfile::NamedTempFile::new_in(parent)?;
-    file.as_file()
-        .set_permissions(fs::Permissions::from_mode(0o600))?;
-    serde_json::to_writer(&mut file, value)?;
-    file.flush()?;
-    file.as_file().sync_all()?;
-    file.persist_noclobber(path)?;
-    File::open(parent)?.sync_all()?;
-    Ok(())
-}
-
-fn replace_json<T: Serialize>(path: &Path, value: &T) -> NodeResult<()> {
-    let parent = path.parent().ok_or("missing state parent")?;
-    let mut file = tempfile::NamedTempFile::new_in(parent)?;
-    file.as_file()
-        .set_permissions(fs::Permissions::from_mode(0o600))?;
-    serde_json::to_writer(&mut file, value)?;
-    file.flush()?;
-    file.as_file().sync_all()?;
-    file.persist(path)?;
-    File::open(parent)?.sync_all()?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         Fence, NodeResult, RuntimeError, artifact_digest, artifact_file_digest,
         artifact_file_digest_with, fence_can_advance, helper_observation_pending, require_absent,
-        write_new_json,
     };
     use std::io::{Cursor, Error, ErrorKind, Read, Seek, SeekFrom, Write};
 
@@ -2703,22 +2598,6 @@ mod tests {
         assert!(require_absent(&directory.path().join("missing")).is_ok());
     }
 
-    #[test]
-    fn new_host_record_is_published_atomically_without_overwrite() {
-        let directory = tempfile::TempDir::new().unwrap();
-        let path = directory.path().join("secret.json");
-        let first = serde_json::json!({"token": "first"});
-        write_new_json(&path, &first).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(),
-            first
-        );
-        assert!(write_new_json(&path, &serde_json::json!({"token": "second"})).is_err());
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(),
-            first
-        );
-    }
     #[test]
     fn known_live_helper_parks_only_its_slot_but_corruption_rejects_inventory() {
         let observations = [

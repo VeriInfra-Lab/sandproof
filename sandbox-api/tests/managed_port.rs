@@ -29,6 +29,8 @@ use tower::ServiceExt;
 
 #[path = "managed_port/allocators.rs"]
 mod allocators;
+#[path = "managed_port/complete_fixture.rs"]
+mod complete_fixture;
 #[path = "managed_port/bounded_slots.rs"]
 mod bounded_slots;
 #[path = "managed_port/build_vm.rs"]
@@ -166,7 +168,7 @@ impl Default for FakeHost {
             templates: BTreeMap::new(),
             launch_error_once: None,
             token_error_once: AtomicBool::new(false),
-            free_bytes: 10_000,
+            free_bytes: 16 * 1024 * 1024 * 1024,
             public_ipv4_ready: false,
             incomplete_open_fence: false,
             prepare: PrepareObservation::Missing,
@@ -237,6 +239,29 @@ fn unknown_receipt(action: &WorkAction<core::EffectId>) -> WorkReceipt<Evidence>
 
 impl HostAdapter for FakeHost {
     type Evidence = Evidence;
+
+    // These tests replace successful physical observations. Incarnation,
+    // missing binding and lost release faults use the durable BoundedHost
+    // fixture below, rather than pretending this stateless host proves them.
+    fn bind_host_slot(&mut self, _: &sandproof_controller_service::HostSlotContext, _: bool)
+        -> Result<(), PortError> { Ok(()) }
+    fn release_host_slot(&mut self, _: &sandproof_controller_service::HostSlotContext)
+        -> Result<(), PortError> { Ok(()) }
+    fn data_gate_drained(&self, _: &sandproof_controller_service::HostSlotContext)
+        -> Result<bool, PortError> { Ok(true) }
+    fn acquire_data_gate(&self, _: core::SandboxId, _: core::VmId, _: core::Generation)
+        -> Result<Option<std::fs::File>, PortError> {
+        let file = tempfile::tempfile().map_err(|_| PortError::Busy)?;
+        file.try_lock_shared().map_err(|_| PortError::Busy)?;
+        Ok(Some(file))
+    }
+    fn validate_physical_storage(&self,
+        profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        pool: &sandproof_controller_service::physical_storage::PhysicalPool)
+        -> Result<(), PortError> {
+        profile.validate().map_err(|_| PortError::Busy)?;
+        if profile.pools.contains(pool) { Ok(()) } else { Err(PortError::Busy) }
+    }
 
     fn validate_template(
         &self,
@@ -627,12 +652,11 @@ fn config() -> ManagedConfig {
     ManagedConfig {
         public_ipv4_enabled: false,
         limits: AdmissionLimits {
-            max_vm_id: 10_000,
             max_active_global: 2,
             max_active_per_tenant: 1,
-            max_disk_bytes_global: 4_000,
+            max_disk_bytes_global: complete_fixture::CLEANUP + 3_000,
             max_disk_bytes_per_tenant: 1_000,
-            cleanup_reserve_bytes: 1_000,
+            cleanup_reserve_bytes: complete_fixture::CLEANUP,
             max_timeout_secs: 86_400,
             max_lifetime_secs: 86_400,
             startup_timeout_secs: 300,
@@ -650,7 +674,7 @@ fn config() -> ManagedConfig {
 fn setup_with_host(host: FakeHost) -> (TempDir, Arc<ManagedPort<FakeHost>>) {
     let directory = TempDir::new().unwrap();
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     (
         directory,
         Arc::new(ManagedPort::new(journal, host, config())),
@@ -701,7 +725,7 @@ fn due_unknown_prepare_fixture(
 ) {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     let mut limits = config().limits;
     limits.startup_timeout_secs = 1;
@@ -755,7 +779,7 @@ fn expired_unready_prepare_is_fenced_exactly_aborted_and_never_relaunched() {
     let (directory, journal, host, prepare_calls, abort_calls) = due_unknown_prepare_fixture(false);
     drop(journal);
     let port = ManagedPort::new(
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -775,7 +799,7 @@ fn expired_unready_prepare_is_fenced_exactly_aborted_and_never_relaunched() {
     assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert!(journal.uncertain_actions().unwrap().is_empty());
     let world = journal.world().unwrap();
     let record = world.sandbox_record(core::SandboxId(1)).unwrap();
@@ -841,7 +865,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
     let (directory, journal, host, prepare_calls, abort_calls) = due_unknown_prepare_fixture(true);
     drop(journal);
     let port = ManagedPort::new(
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -855,7 +879,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
     );
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let abort_action = journal
         .uncertain_actions()
         .unwrap()
@@ -888,7 +912,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
         .put_secret(core::SandboxId(1), &"a".repeat(64))
         .unwrap();
     let restarted = ManagedPort::new(
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         restarted_host,
         config(),
     );
@@ -899,7 +923,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
     assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
     drop(restarted);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert!(journal.uncertain_actions().unwrap().is_empty());
     assert_eq!(
         journal
@@ -916,7 +940,7 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
 fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_create() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let sandbox = core::SandboxId(1);
     let pending =
@@ -963,7 +987,7 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
     let mut settings = config();
     settings.public_ipv4_enabled = true;
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         settings,
     );
@@ -985,7 +1009,7 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
 fn lost_public_network_receipt_is_reconciled_before_running() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let sandbox = core::SandboxId(1);
     let pending =
@@ -1046,7 +1070,7 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
     let mut settings = config();
     settings.public_ipv4_enabled = true;
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         settings,
     );
@@ -1069,7 +1093,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let sandbox = core::SandboxId(1);
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let calls = Arc::new(AtomicUsize::new(0));
     let mut host = FakeHost {
@@ -1128,7 +1152,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
         )
         .unwrap();
     let blocked = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         wrong_host,
         config(),
     );
@@ -1142,7 +1166,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     let mut settings = config();
     settings.public_ipv4_enabled = true;
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         settings,
     );
@@ -1161,7 +1185,7 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     drop(port);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world.sandbox_record(sandbox).unwrap().current_vm,
@@ -1175,7 +1199,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let sandbox = core::SandboxId(1);
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let mut limits = config().limits;
     limits.startup_timeout_secs = 1;
     journal
@@ -1213,7 +1237,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
     ));
     drop(journal);
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -1226,7 +1250,7 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
         Err(PortError::NotFound)
     );
     drop(port);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world.sandbox_record(sandbox).unwrap().phase,
@@ -1243,7 +1267,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let sandbox = core::SandboxId(1);
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let mut limits = config().limits;
     limits.startup_timeout_secs = 1;
     journal
@@ -1279,7 +1303,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
     ));
     drop(journal);
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -1292,7 +1316,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
     assert_eq!(report.unresolved_sandboxes, 0);
     assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 0);
     drop(port);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert!(journal.uncertain_actions().unwrap().is_empty());
     assert_eq!(
         journal
@@ -1309,7 +1333,7 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
 fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     admit_public_create(&mut journal);
     let sandbox = core::SandboxId(1);
     let pending =
@@ -1367,7 +1391,7 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
     let mut host = FakeHost::default();
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -1386,7 +1410,7 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
 fn startup_recovers_admitted_create_before_credential_write() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     journal
         .admit_create(
@@ -1416,7 +1440,7 @@ fn startup_recovers_admitted_create_before_credential_write() {
         .unwrap();
     drop(journal); // crash after admission, before the first credential file exists
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
@@ -1441,7 +1465,7 @@ fn startup_recovers_admitted_create_before_credential_write() {
 fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     journal
         .admit_create(
@@ -1483,7 +1507,7 @@ fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
     drop(journal);
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
@@ -1500,7 +1524,7 @@ fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
 fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     journal
         .admit_create(
@@ -1550,7 +1574,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -1574,7 +1598,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
 fn two_unknown_prepares() -> (TempDir, ControllerJournal) {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let now_ms = i64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1641,7 +1665,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
             .unwrap();
     }
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -1664,7 +1688,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
         Err(PortError::NotFound)
     ));
     drop(port);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
     let mut host = FakeHost {
         prepare: PrepareObservation::Successful,
@@ -1692,7 +1716,7 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
 fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     journal
         .admit_create(
@@ -1745,7 +1769,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -1754,7 +1778,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
     assert_eq!(recovered.unresolved_sandboxes, 0);
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
     drop(port);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert!(journal.uncertain_actions().unwrap().is_empty());
     assert_ne!(
         journal
@@ -1772,14 +1796,14 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
     let sandbox_id = port.create("1", request()).unwrap().sandbox_id;
     drop(port);
 
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     let lost = kill_v1(
         &mut journal,
@@ -1825,7 +1849,7 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
     drop(journal);
 
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
             ..FakeHost::default()
@@ -1840,7 +1864,7 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
     drop(port);
 
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let destroyed = journal.world().unwrap();
     assert_eq!(
         destroyed.sandbox_record(sandbox).unwrap().phase,
@@ -1858,14 +1882,14 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
     let sandbox_id = port.create("1", request()).unwrap().sandbox_id;
     drop(port);
 
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     let pending = kill_v1(
         &mut journal,
@@ -1904,7 +1928,7 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
     drop(journal);
 
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             stop: StopObservation::Incomplete,
             ..FakeHost::default()
@@ -1919,7 +1943,7 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
     assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
     drop(port);
 
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert_eq!(
         journal
             .world()
@@ -1948,14 +1972,14 @@ fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
     let sandbox_id = port.create("1", request()).unwrap().sandbox_id;
     drop(port);
 
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
     let result = kill_v1(
         &mut journal,
@@ -2004,7 +2028,7 @@ fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
     drop(journal);
 
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
@@ -2019,7 +2043,7 @@ fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
     assert_eq!(idle.unresolved_sandboxes, 0);
     drop(port);
 
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let destroyed = journal.world().unwrap();
     assert_eq!(
         destroyed.sandbox_record(sandbox).unwrap().phase,
@@ -2032,21 +2056,11 @@ fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
 fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let sandbox = core::SandboxId(1);
-    let result = sandproof_controller_service::create_v1(
-        &mut journal,
-        core::CreateRequest {
-            actor: core::Actor::Tenant(core::TenantId(1)),
-            owner: core::TenantId(1),
-            sandbox,
-            workspace: core::FsId(1),
-            file_policy: core::FilePolicyRef {
-                digest: core::PolicyDigest(1),
-            },
-            policy: core::NetworkPolicy::DenyAll,
-            operation: core::OperationId(1),
-        },
+    admit_public_create(&mut journal);
+    let result = finish_admitted_create_v1(
+        &mut journal, sandbox, core::OperationId(1),
         &mut |action| match action.command.command() {
             core::Command::ConfigureNetwork { .. } => Ok(WorkReceipt::<Evidence> {
                 identity: action.identity.clone(),
@@ -2082,7 +2096,7 @@ fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
     let mut host = FakeHost::default();
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -2161,7 +2175,7 @@ fn template_config() -> ManagedConfig {
     settings.limits.max_active_per_tenant = 2;
     settings.limits.max_active_global = 10;
     settings.limits.max_disk_bytes_per_tenant = 10_000;
-    settings.limits.max_disk_bytes_global = 20_000;
+    settings.limits.max_disk_bytes_global = complete_fixture::CLEANUP + 19_000;
     settings
 }
 
@@ -2178,7 +2192,7 @@ async fn template_http_selection_projection_and_compute_quota_release() {
     let path = directory.path().join("controller.db");
     let port = Arc::new(
         ManagedPort::with_templates(
-            ControllerJournal::open(&path, NAMESPACE).unwrap(),
+            complete_fixture::open_with_config(&path, NAMESPACE, &template_config()).unwrap(),
             FakeHost::default(),
             template_config(),
             template_catalog(),
@@ -2271,7 +2285,7 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
         },
     )
     .unwrap();
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open_with_config(&path, NAMESPACE, &template_config()).unwrap();
     journal
         .admit_template_create(
             core::CreateRequest {
@@ -2315,7 +2329,7 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
     let mut changed = old;
     changed.aliases.insert("ubuntu".into(), "ubuntu-r2".into());
     let port = ManagedPort::with_templates(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open_with_config(&path, NAMESPACE, &template_config()).unwrap(),
         host,
         template_config(),
         changed,
@@ -2485,7 +2499,7 @@ fn create_environment_and_metadata_follow_one_durable_identity() {
     );
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let options = journal.create_options(core::SandboxId(1)).unwrap();
     assert_eq!(options.env_vars.get("TASK_ID"), Some(&"job-7".to_owned()));
     assert_eq!(options.metadata.get("job"), Some(&"job-7".to_owned()));
@@ -2508,7 +2522,7 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
         });
         let expected_network = input.network.clone();
         let port = ManagedPort::new(
-            ControllerJournal::open(&path, NAMESPACE).unwrap(),
+            complete_fixture::open(&path, NAMESPACE).unwrap(),
             FakeHost {
                 public_ipv4_ready: true,
                 ..FakeHost::default()
@@ -2527,7 +2541,7 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
             ..FakeHost::default()
         };
         let port = ManagedPort::new(
-            ControllerJournal::open(&path, NAMESPACE).unwrap(),
+            complete_fixture::open(&path, NAMESPACE).unwrap(),
             host,
             configured,
         );
@@ -2553,7 +2567,7 @@ fn foreign_detail_and_list_do_not_read_the_host_token() {
         ..FakeHost::default()
     };
     let port = ManagedPort::new(
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         host,
         config(),
     );
@@ -2568,7 +2582,7 @@ fn foreign_detail_and_list_do_not_read_the_host_token() {
 fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let options = sandproof_controller_service::CreateOptions {
         env_vars: BTreeMap::from([("TASK_ID".into(), "persisted".into())]),
         metadata: BTreeMap::from([("job".into(), "persisted".into())]),
@@ -2610,7 +2624,7 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
         .put_secret(core::SandboxId(1), &"a".repeat(64))
         .unwrap();
     let wrong = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         wrong_host,
         config(),
     );
@@ -2622,7 +2636,7 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
     drop(wrong);
 
     let good = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
@@ -2714,7 +2728,7 @@ fn nonpositive_timeout_revokes_existing_transfers_before_the_expiry_worker_runs(
         port.kill("2", &other.sandbox_id).unwrap();
         drop(port);
         let journal =
-            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+            complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
         assert!(
             journal
                 .world()
@@ -2788,7 +2802,7 @@ fn renewal_contending_with_expiry_cleanup_cannot_resurrect_the_instance() {
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         drop(port);
         let journal =
-            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+            complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
         let world = journal.world().unwrap();
         assert_eq!(
             world.sandbox_record(core::SandboxId(1)).unwrap().phase,
@@ -2856,7 +2870,7 @@ fn repeated_kill_observes_one_persisted_stop_without_a_new_operation() {
     );
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world.sandbox_record(core::SandboxId(1)).unwrap().phase,
@@ -2927,7 +2941,7 @@ async fn accepted_kill_recovery_error_is_unknown_and_reuses_the_original_stop() 
     );
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert!(journal.uncertain_actions().unwrap().is_empty());
     assert_eq!(
         journal
@@ -2969,7 +2983,7 @@ fn simultaneous_kills_serialize_without_a_second_stop_or_operation() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world
@@ -3024,7 +3038,7 @@ fn create_and_kill_race_has_one_prepare_one_stop_and_no_live_access() {
     );
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world.sandbox_record(core::SandboxId(1)).unwrap().phase,
@@ -3055,32 +3069,46 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let prepare_calls = Arc::new(AtomicUsize::new(0));
+    drop(complete_fixture::open(&path, NAMESPACE).unwrap());
+    // Seed a checked current checkpoint near the real permanent-ID boundary.
+    // No host resource/UID range is made into a logical identity limit.
+    {
+        use sha2::{Digest, Sha256};
+        let database = rusqlite::Connection::open(&path).unwrap();
+        let payload: Vec<u8> = database.query_row(
+            "SELECT payload FROM controller_checkpoint WHERE id=1", [], |row| row.get(0)
+        ).unwrap();
+        // Preserve the checkpoint's canonical field order: re-encoding a
+        // generic JSON map would correctly be rejected as noncanonical.
+        let payload = String::from_utf8(payload).unwrap();
+        assert_eq!(payload.matches("\"next_vm_id\":0").count(), 1);
+        let payload = payload.replace("\"next_vm_id\":0", &format!("\"next_vm_id\":{}", u64::MAX - 2)).into_bytes();
+        database.execute("UPDATE controller_checkpoint SET payload=?1,sha256=?2 WHERE id=1",
+            rusqlite::params![payload, Sha256::digest(&payload).to_vec()]).unwrap();
+    }
     let host = FakeHost {
         prepare_calls: Some(Arc::clone(&prepare_calls)),
         ..FakeHost::default()
     };
     let mut policy = config();
-    policy.limits.max_vm_id = 2;
     policy.limits.max_active_per_tenant = 2;
     policy.limits.max_disk_bytes_per_tenant = 4_000;
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         policy.clone(),
     );
 
-    for _ in 0..2 {
-        let created = port.create("1", request()).unwrap();
-        port.kill("1", &created.sandbox_id).unwrap();
-    }
+    let created = port.create("1", request()).unwrap();
+    port.kill("1", &created.sandbox_id).unwrap();
     let survivor = port.create("1", request()).unwrap();
     let before = port.get("1", &survivor.sandbox_id).unwrap();
     let permit = port
         .data_permit(&survivor.envd_access_token, DataKind::Exec)
         .unwrap();
-    assert_eq!(permit.target.vm, core::VmId(2));
+    assert_eq!(permit.target.vm, core::VmId(u64::MAX - 1));
     assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
-    assert_eq!(prepare_calls.load(Ordering::SeqCst), 3);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
     assert!(!*permit.revocation.borrow());
     assert_eq!(port.get("1", &survivor.sandbox_id).unwrap(), before);
     for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
@@ -3093,10 +3121,10 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     drop(port);
 
     let reopened = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
-            secrets: BTreeMap::from([(3, (survivor.envd_access_token.clone(), BTreeMap::new()))]),
+            secrets: BTreeMap::from([(2, (survivor.envd_access_token.clone(), BTreeMap::new()))]),
             ..FakeHost::default()
         },
         policy,
@@ -3106,7 +3134,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         reopened.create("1", request()),
         Err(PortError::QuotaExceeded)
     );
-    assert_eq!(prepare_calls.load(Ordering::SeqCst), 3);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
     assert_eq!(reopened.get("1", &survivor.sandbox_id).unwrap(), before);
     for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
         assert_eq!(
@@ -3121,11 +3149,11 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         reopened.create("1", request()),
         Err(PortError::QuotaExceeded)
     );
-    assert_eq!(prepare_calls.load(Ordering::SeqCst), 3);
+    assert_eq!(prepare_calls.load(Ordering::SeqCst), 2);
     drop(reopened);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let world = journal.world().unwrap();
-    assert_eq!(world.sandbox_records().len(), 3);
+    assert_eq!(world.sandbox_records().len(), 2);
     assert!(
         world
             .sandbox_records()
@@ -3165,7 +3193,7 @@ async fn credential_write_failure_after_admission_is_unknown_and_recovers_withou
         .unwrap();
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
     assert_eq!(
         journal
@@ -3199,7 +3227,7 @@ async fn credential_write_failure_after_admission_is_unknown_and_recovers_withou
     port.kill("1", &items[0].sandbox_id).unwrap();
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
 }
 
@@ -3241,7 +3269,7 @@ fn create_reply_failure_is_unknown_after_the_vm_has_started() {
     port.kill("1", &recovered.sandbox_id).unwrap();
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
     assert_eq!(
         journal
@@ -3263,7 +3291,7 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
     let mut create = request();
     create.allow_internet_access = Some(true);
     let blocked = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open_with_config(&path, NAMESPACE, &settings).unwrap(),
         FakeHost::default(),
         settings.clone(),
     );
@@ -3277,7 +3305,7 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
     );
     drop(blocked);
     let ready = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             public_ipv4_ready: true,
             ..FakeHost::default()
@@ -3295,7 +3323,7 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
 fn two_active_sandboxes_page_without_duplicate_or_cross_tenant_leak() {
     let directory = TempDir::new().unwrap();
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let mut settings = config();
     settings.limits.max_active_per_tenant = 2;
     settings.limits.max_disk_bytes_per_tenant = 2_000;
@@ -3405,10 +3433,10 @@ fn filtered_listing_survives_restart_and_never_counts_or_returns_foreign_instanc
     let mut settings = config();
     settings.limits.max_active_global = 4;
     settings.limits.max_active_per_tenant = 3;
-    settings.limits.max_disk_bytes_global = 8_000;
+    settings.limits.max_disk_bytes_global = complete_fixture::CLEANUP + 7_000;
     settings.limits.max_disk_bytes_per_tenant = 3_000;
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open_with_config(&path, NAMESPACE, &settings).unwrap(),
         FakeHost::default(),
         settings.clone(),
     );
@@ -3422,7 +3450,7 @@ fn filtered_listing_survives_restart_and_never_counts_or_returns_foreign_instanc
     let blue = port.create("1", blue).unwrap();
     drop(port);
     let port = ManagedPort::new(
-        ControllerJournal::open(&path, NAMESPACE).unwrap(),
+        complete_fixture::open_with_config(&path, NAMESPACE, &settings).unwrap(),
         FakeHost::default(),
         settings,
     );
@@ -3479,7 +3507,7 @@ fn two_unknown_stops() -> (TempDir, ControllerJournal) {
     assert_ne!(first.sandbox_id, second.sandbox_id);
     drop(port);
     let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     for (sandbox, tenant) in [(1, 1), (2, 2)] {
         let result = kill_v1(
             &mut journal,
@@ -3533,7 +3561,7 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     port.create("2", request()).unwrap();
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world.sandbox_record(core::SandboxId(1)).unwrap().phase,
@@ -3582,7 +3610,7 @@ fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
     assert_eq!(report.failed_sandboxes, 1);
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
     assert_eq!(
         journal
@@ -3614,7 +3642,7 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
     drop(port);
 
     let port = ManagedPort::new(
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         FakeHost {
             unknown_stop_for: Some(core::SandboxId(1)),
             ..FakeHost::default()
@@ -3627,7 +3655,7 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
     drop(port);
 
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world.sandbox_record(core::SandboxId(1)).unwrap().phase,
@@ -3654,7 +3682,7 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
 fn rejected_worker_receipt_parks_only_its_create() {
     let directory = TempDir::new().unwrap();
     let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let now = i64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -3698,7 +3726,7 @@ fn rejected_worker_receipt_parks_only_its_create() {
     assert_eq!(report.failed_sandboxes, 1);
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     assert_eq!(
         world.sandbox_record(core::SandboxId(1)).unwrap().phase,
@@ -3715,12 +3743,12 @@ fn rejected_worker_receipt_parks_only_its_create() {
 fn corrupt_shared_journal_still_aborts_recovery() {
     let (directory, journal) = two_unknown_stops();
     let connection = rusqlite::Connection::open(directory.path().join("controller.db")).unwrap();
-    connection
+    assert_eq!(connection
         .execute(
-            "UPDATE controller_inputs SET input_json=X'00' WHERE sequence=1",
+            "UPDATE controller_checkpoint SET payload=X'00' WHERE id=1",
             [],
         )
-        .unwrap();
+        .unwrap(), 1);
     let port = ManagedPort::new(
         journal,
         FakeHost {

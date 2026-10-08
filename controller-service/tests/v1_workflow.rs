@@ -4,7 +4,7 @@ use support::*;
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, JournalError, NeverCrash,
-    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
+    finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
     finish_compensating_create_v1, kill_v1,
 };
 use sandproof_protocol::{FailureCode, UnknownReason, WorkAction, WorkOutcome, WorkReceipt};
@@ -12,8 +12,7 @@ use tempfile::TempDir;
 
 fn setup() -> (TempDir, ControllerJournal) {
     let directory = TempDir::new().unwrap();
-    let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     (directory, journal)
 }
 
@@ -34,7 +33,7 @@ fn kill_request() -> core::KillRequest {
 #[test]
 fn create_publishes_after_all_results_and_kill_publishes_after_stop() {
     let (directory, mut journal) = setup();
-    let running = create_v1(&mut journal, create_request(), &mut worker).unwrap();
+    let running = admit_and_finish(&mut journal, create_request(), &mut worker).unwrap();
     assert_eq!(
         running.sandbox_record(SANDBOX).unwrap().phase,
         core::Phase::Running
@@ -47,8 +46,7 @@ fn create_publishes_after_all_results_and_kill_publishes_after_stop() {
     );
     assert!(journal.uncertain_actions().unwrap().is_empty());
     drop(journal);
-    let reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let reopened = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(reopened.world().unwrap(), destroyed);
 }
 
@@ -56,12 +54,11 @@ fn create_publishes_after_all_results_and_kill_publishes_after_stop() {
 fn quota_admission_and_expiry_reuse_the_same_physical_workflow() {
     let (_directory, mut journal) = setup();
     let limits = AdmissionLimits {
-        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 10_000,
+        max_disk_bytes_global: CLEANUP_BYTES + 9_000,
         max_disk_bytes_per_tenant: 5_000,
-        cleanup_reserve_bytes: 1_000,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
         max_timeout_secs: 86_400,
         max_lifetime_secs: 86_400,
         startup_timeout_secs: 300,
@@ -119,12 +116,11 @@ fn running_publication_resets_usable_lifetime_atomically_across_restart() {
     let (directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
-        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 10_000,
+        max_disk_bytes_global: CLEANUP_BYTES + 9_000,
         max_disk_bytes_per_tenant: 5_000,
-        cleanup_reserve_bytes: 1_000,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
         max_timeout_secs: 300,
         max_lifetime_secs: 600,
         startup_timeout_secs: 300,
@@ -156,8 +152,7 @@ fn running_publication_resets_usable_lifetime_atomically_across_restart() {
         Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit))
     ));
     drop(journal);
-    let mut reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut reopened = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(
         reopened
             .world()
@@ -211,12 +206,11 @@ fn short_usable_lifetime_does_not_cut_off_a_healthy_startup() {
     let (_directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
-        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 10_000,
+        max_disk_bytes_global: CLEANUP_BYTES + 9_000,
         max_disk_bytes_per_tenant: 5_000,
-        cleanup_reserve_bytes: 1_000,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
         max_timeout_secs: 300,
         max_lifetime_secs: 600,
         startup_timeout_secs: 20,
@@ -270,12 +264,11 @@ fn late_running_publication_cannot_win_before_startup_scanner() {
     let (directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
-        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 10_000,
+        max_disk_bytes_global: CLEANUP_BYTES + 9_000,
         max_disk_bytes_per_tenant: 5_000,
-        cleanup_reserve_bytes: 1_000,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
         max_timeout_secs: 300,
         max_lifetime_secs: 600,
         startup_timeout_secs: 20,
@@ -294,8 +287,7 @@ fn late_running_publication_cannot_win_before_startup_scanner() {
         Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit))
     ));
     drop(journal);
-    let mut reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut reopened = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert!(matches!(
         reopened.publish_running_at(SANDBOX, 21_000, &mut NeverCrash),
         Err(JournalError::UnsupportedInput)
@@ -328,12 +320,11 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
     let (directory, mut journal) = setup();
     let request = create_request();
     let limits = AdmissionLimits {
-        max_vm_id: 10_000,
         max_active_global: 2,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 10_000,
+        max_disk_bytes_global: CLEANUP_BYTES + 9_000,
         max_disk_bytes_per_tenant: 5_000,
-        cleanup_reserve_bytes: 1_000,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
         max_timeout_secs: 300,
         max_lifetime_secs: 600,
         startup_timeout_secs: 60,
@@ -387,7 +378,7 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
             .unwrap()
     };
     let original_lease = lease();
-    let mut reopened = ControllerJournal::open(&database, NAMESPACE).unwrap();
+    let mut reopened = open_complete(&database, NAMESPACE).unwrap();
     assert_eq!(reopened.world().unwrap(), revoked);
     assert!(
         reopened
@@ -420,7 +411,7 @@ fn durable_startup_abort_cannot_be_undone_by_running_lifetime_publication() {
 #[test]
 fn unknown_host_result_prevents_running_publication() {
     let (_directory, mut journal) = setup();
-    let result = create_v1(
+    let result = admit_and_finish(
         &mut journal,
         create_request(),
         &mut |action: &WorkAction<core::EffectId>| {
@@ -454,7 +445,7 @@ fn unknown_host_result_prevents_running_publication() {
 fn definitive_create_failure_revokes_stops_and_publishes_failed() {
     let (_directory, mut journal) = setup();
     let mut stopped = false;
-    let result = create_v1(&mut journal, create_request(), &mut |action| {
+    let result = admit_and_finish(&mut journal, create_request(), &mut |action| {
         let outcome = if matches!(
             action.command.command(),
             core::Command::ConfigureNetwork { .. }
@@ -493,7 +484,7 @@ fn definitive_create_failure_revokes_stops_and_publishes_failed() {
 fn clean_retryable_create_failure_uses_next_attempt_once() {
     let (_directory, mut journal) = setup();
     let mut network_attempts = Vec::new();
-    let result = create_v1(&mut journal, create_request(), &mut |action| {
+    let result = admit_and_finish(&mut journal, create_request(), &mut |action| {
         if matches!(
             action.command.command(),
             core::Command::ConfigureNetwork { .. }
@@ -523,7 +514,7 @@ fn clean_retryable_create_failure_uses_next_attempt_once() {
 #[test]
 fn compensation_stop_reply_lost_requires_observation_before_failed_publication() {
     let (directory, mut journal) = setup();
-    let lost = create_v1(&mut journal, create_request(), &mut |action| {
+    let lost = admit_and_finish(&mut journal, create_request(), &mut |action| {
         if matches!(
             action.command.command(),
             core::Command::ConfigureNetwork { .. }
@@ -560,8 +551,7 @@ fn compensation_stop_reply_lost_requires_observation_before_failed_publication()
     );
     drop(journal);
 
-    let mut reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut reopened = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let uncertain = reopened.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
     assert!(matches!(
@@ -594,6 +584,10 @@ fn compensation_stop_reply_lost_requires_observation_before_failed_publication()
 #[test]
 fn one_sandbox_workflow_does_not_dispatch_another_tenants_actions() {
     let (_directory, mut journal) = setup();
+    apply(
+        &mut journal,
+        core::ControllerInput::Request(core::Request::Create(create_request())),
+    );
     let mut other = create_request();
     other.actor = core::Actor::Tenant(core::TenantId(2));
     other.owner = core::TenantId(2);
@@ -605,9 +599,10 @@ fn one_sandbox_workflow_does_not_dispatch_another_tenants_actions() {
         core::ControllerInput::Request(core::Request::Create(other)),
     );
     let mut seen = Vec::new();
-    create_v1(
+    finish_admitted_create_v1(
         &mut journal,
-        create_request(),
+        SANDBOX,
+        CREATE_OP,
         &mut |action: &WorkAction<core::EffectId>| {
             seen.push(action.command.command().sandbox());
             worker(action)

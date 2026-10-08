@@ -371,7 +371,7 @@ fn maximum_runtime_config(
 /// incarnation identifiers/stamps use maximum-width integers. Template-derived
 /// runtime paths are covered by the actual `CreateOptions` encoding cap.
 pub(super) fn maximum_record_bytes(config: &NodeConfig) -> NodeResult<(u64, u64, u64)> {
-    let bounded = config.bounded_host.as_ref().ok_or("missing bounded host")?;
+    let bounded = &config.bounded_host;
     let position = HostSlotId(
         bounded
             .maintenance
@@ -464,13 +464,8 @@ impl LinuxWorker {
     }
 
     fn read_host_positions(&self) -> NodeResult<Vec<HostPosition>> {
-        let Some(config) = &self.config.bounded_host else {
-            return Ok(Vec::new());
-        };
-        let lease = self
-            .host_lease
-            .as_ref()
-            .ok_or("bounded host lease missing")?;
+        let config = &self.config.bounded_host;
+        let lease = &self.host_lease;
         lease.validate()?;
         let mapping: StoredMapping =
             read_json(&self.config.state_dir.join("host-slot-config.json"))?;
@@ -563,13 +558,7 @@ impl LinuxWorker {
         gate: &sandbox_runtime::RuntimeHelperGate,
     ) -> NodeResult<()> {
         if gate.path != self.gate_path(position)
-            || gate.max_data_routes_per_slot
-                != self
-                    .config
-                    .bounded_host
-                    .as_ref()
-                    .ok_or("missing bounded mapping")?
-                    .max_data_routes_per_slot
+            || gate.max_data_routes_per_slot != self.config.bounded_host.max_data_routes_per_slot
         {
             return Err("helper gate path changed".into());
         }
@@ -630,12 +619,7 @@ impl LinuxWorker {
                 let position = number.parse::<u64>()?;
                 let route = route.strip_suffix(".json").ok_or("route marker name")?;
                 let index = route.parse::<u64>()?;
-                let limit = self
-                    .config
-                    .bounded_host
-                    .as_ref()
-                    .ok_or("missing bounded mapping")?
-                    .max_data_routes_per_slot;
+                let limit = self.config.bounded_host.max_data_routes_per_slot;
                 if position >= maximum
                     || position.to_string() != number
                     || index >= limit
@@ -771,12 +755,7 @@ impl LinuxWorker {
             path: gate_path,
             device: metadata.dev(),
             inode: metadata.ino(),
-            max_data_routes_per_slot: self
-                .config
-                .bounded_host
-                .as_ref()
-                .ok_or("missing bounded mapping")?
-                .max_data_routes_per_slot,
+            max_data_routes_per_slot: self.config.bounded_host.max_data_routes_per_slot,
         };
         self.validate_helper_gate(position, &gate)?;
         self.write_node_json(
@@ -802,20 +781,7 @@ impl LinuxWorker {
     pub(super) fn initialize_host_slots(&self) -> NodeResult<()> {
         let mapping = self.config.state_dir.join("host-slot-config.json");
         let directories = BOUNDED_STATE_DIRECTORIES.map(|name| self.config.state_dir.join(name));
-        let Some(config) = &self.config.bounded_host else {
-            if mapping.try_exists()?
-                || node_staging::path(&mapping)?.try_exists()?
-                || directories.iter().any(|path| path.exists())
-                || self
-                    .config
-                    .state_dir
-                    .join("bounded-host.lock")
-                    .try_exists()?
-            {
-                return Err("bounded host mapping disabled".into());
-            }
-            return Ok(());
-        };
+        let config = &self.config.bounded_host;
         validate_limits(config)?;
         node_staging::cleanup(&self.config, &mapping)?;
         let initial = if mapping.try_exists()? {
@@ -844,12 +810,7 @@ impl LinuxWorker {
                 &StoredMapping {
                     version: 1,
                     phase: MappingPhase::Initializing,
-                    lease: self
-                        .host_lease
-                        .as_ref()
-                        .ok_or("missing bounded host lease")?
-                        .identity
-                        .clone(),
+                    lease: self.host_lease.identity.clone(),
                     config: self.config.clone(),
                 },
             )?;
@@ -883,12 +844,7 @@ impl LinuxWorker {
             &StoredMapping {
                 version: 1,
                 phase: MappingPhase::Ready,
-                lease: self
-                    .host_lease
-                    .as_ref()
-                    .ok_or("missing bounded host lease")?
-                    .identity
-                    .clone(),
+                lease: self.host_lease.identity.clone(),
                 config: self.config.clone(),
             },
         )?;
@@ -901,11 +857,7 @@ impl LinuxWorker {
     /// # Errors
     /// Refuses missing mapping, changed predecessors, stale IDs and busy slots.
     pub fn bind_host_slot(&self, context: &HostSlotContext, allow_install: bool) -> NodeResult<()> {
-        let config = self
-            .config
-            .bounded_host
-            .as_ref()
-            .ok_or("bounded host mapping is disabled")?;
+        let config = &self.config.bounded_host;
         position_uid(config, context.position)?;
         self.sync_node_record(&self.host_position_path(context.position))?;
         let rows = self.read_host_positions()?;
@@ -1005,13 +957,7 @@ impl LinuxWorker {
             || retired.runtime.host_slot
                 != Some(self.runtime_host_slot(row.context.position, binding.vm)?)
             || retired.runtime.vm_uid
-                != position_uid(
-                    self.config
-                        .bounded_host
-                        .as_ref()
-                        .ok_or("missing bounded mapping")?,
-                    row.context.position,
-                )?
+                != position_uid(&self.config.bounded_host, row.context.position)?
             || retired.runtime.chroot_base != self.config.chroot_base
             || retired.runtime.firecracker != self.config.firecracker
             || retired.runtime.jailer != self.config.jailer
@@ -1151,16 +1097,13 @@ impl LinuxWorker {
                     .join(self.vm_name(binding.vm)),
             )?;
             RuntimeConfig {
-                console_policy: self
-                    .config
-                    .bounded_host
-                    .as_ref()
-                    .and_then(|config| config.console_policy)
-                    .map(|policy| match policy {
+                console_policy: self.config.bounded_host.console_policy.map(
+                    |policy| match policy {
                         sandproof_controller_service::ConsolePolicy::Discard => {
                             sandbox_runtime::ConsolePolicy::Discard
                         }
-                    }),
+                    },
+                ),
                 jailer: self.config.jailer.clone(),
                 firecracker: self.config.firecracker.clone(),
                 chroot_base: self.config.chroot_base.clone(),
@@ -1197,9 +1140,6 @@ impl LinuxWorker {
     }
 
     pub(super) fn require_occupied_sandbox(&self, sandbox: core::SandboxId) -> NodeResult<()> {
-        if self.config.bounded_host.is_none() {
-            return Ok(());
-        }
         let rows = self.read_host_positions()?;
         let row = rows
             .iter()
@@ -1217,10 +1157,7 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         vm: core::VmId,
         generation: core::Generation,
-    ) -> NodeResult<Option<File>> {
-        if self.config.bounded_host.is_none() {
-            return Ok(None);
-        }
+    ) -> NodeResult<File> {
         let rows = self.read_host_positions()?;
         let row = rows
             .iter()
@@ -1232,7 +1169,7 @@ impl LinuxWorker {
         row.require_occupied(row.context.binding)?;
         let context = self.runtime_host_slot(row.context.position, vm)?;
         let guard = context.helper_gate.try_acquire_shared(Some(&context))?;
-        Ok(Some(guard.into_file()))
+        Ok(guard.into_file())
     }
 
     fn durable_route_counts(
@@ -1271,10 +1208,7 @@ impl LinuxWorker {
         generation: core::Generation,
         control: bool,
         executable: &Path,
-    ) -> NodeResult<Option<std::process::Child>> {
-        if self.config.bounded_host.is_none() {
-            return Ok(None);
-        }
+    ) -> NodeResult<std::process::Child> {
         check_trusted_path(executable)?;
         if !executable.is_file() {
             return Err("data relay executable is not a trusted file".into());
@@ -1289,11 +1223,7 @@ impl LinuxWorker {
         }
         row.require_occupied(row.context.binding)?;
         let (global, own) = self.durable_route_counts(&rows, row.context.position)?;
-        let bounded = self
-            .config
-            .bounded_host
-            .as_ref()
-            .ok_or("missing bounded mapping")?;
+        let bounded = &self.config.bounded_host;
         if !data_route_has_capacity(bounded, global, own, control) {
             return Err(super::RouteCapacityExceeded.into());
         }
@@ -1312,7 +1242,7 @@ impl LinuxWorker {
         // The durable route cell survives even if the child closes inherited
         // descriptors. Only exact observation under the management lock may
         // retire it; a late asynchronous waiter cannot erase a successor.
-        Ok(Some(child))
+        Ok(child)
     }
 
     /// Observe the durable gate only after local routes have drained. This
@@ -1341,11 +1271,7 @@ impl LinuxWorker {
         position: HostSlotId,
         vm: core::VmId,
     ) -> NodeResult<sandbox_runtime::RuntimeHostSlot> {
-        let bounded = self
-            .config
-            .bounded_host
-            .as_ref()
-            .ok_or("missing bounded mapping")?;
+        let bounded = &self.config.bounded_host;
         position_uid(bounded, position)?;
         Ok(sandbox_runtime::RuntimeHostSlot {
             position: position.0,
@@ -1358,23 +1284,17 @@ impl LinuxWorker {
         })
     }
 
-    pub(super) fn physical_slot_for_vm(&self, vm: core::VmId) -> NodeResult<Option<HostSlotId>> {
-        if self.config.bounded_host.is_none() {
-            return Ok(None);
-        }
+    pub(super) fn physical_slot_for_vm(&self, vm: core::VmId) -> NodeResult<HostSlotId> {
         let row = self
             .read_host_positions()?
             .into_iter()
             .find(|row| row.context.binding.vm == vm)
             .ok_or("VM has no occupied host position")?;
         row.require_occupied(row.context.binding)?;
-        Ok(Some(row.context.position))
+        Ok(row.context.position)
     }
 
     pub(super) fn require_occupied_binding(&self, binding: &SlotBinding) -> NodeResult<()> {
-        if self.config.bounded_host.is_none() {
-            return Ok(());
-        }
         let row = self
             .read_host_positions()?
             .into_iter()
@@ -1389,9 +1309,6 @@ impl LinuxWorker {
         &self,
         action: &WorkAction<core::EffectId>,
     ) -> NodeResult<()> {
-        if self.config.bounded_host.is_none() {
-            return Ok(());
-        }
         check_occupied_action(&self.read_host_positions()?, action)
     }
 }
@@ -1568,6 +1485,31 @@ mod tests {
         }
         assert!(position_uid(&config, HostSlotId(1)).is_err());
         assert!(HostPosition::bind(prior.as_ref(), &context(0, Some(u64::MAX)), true).is_err());
+    }
+
+    #[test]
+    fn physical_uid_range_excludes_root_reserved_uid_and_overflow() {
+        let original = config();
+        for (base, slots) in [
+            (0, 1),
+            (1, 0),
+            (u32::MAX, 1),
+            (u32::MAX - 1, 2),
+            (1, u64::MAX),
+        ] {
+            let mut invalid = original.clone();
+            invalid.uid_base = base;
+            invalid.maintenance.max_host_slots = slots;
+            assert!(validate_limits(&invalid).is_err());
+            assert!(position_uid(&invalid, HostSlotId(0)).is_err());
+        }
+        let mut edge = original;
+        edge.uid_base = u32::MAX - 2;
+        edge.maintenance.max_host_slots = 2;
+        assert_eq!(position_uid(&edge, HostSlotId(0)).unwrap(), u32::MAX - 2);
+        assert_eq!(position_uid(&edge, HostSlotId(1)).unwrap(), u32::MAX - 1);
+        assert!(position_uid(&edge, HostSlotId(2)).is_err());
+        assert!(position_uid(&edge, HostSlotId(u64::MAX)).is_err());
     }
 
     #[test]

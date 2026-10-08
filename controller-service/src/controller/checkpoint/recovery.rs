@@ -20,7 +20,7 @@ fn root(connection: &Connection, config: &MaintenanceConfig) -> Result<Envelope,
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
     if generation < 1
-        || (config.capacity.is_some() && generation > cut.saturating_add(1))
+        || generation > cut.saturating_add(1)
         || cut < 0
         || length < 1
         || u64::try_from(length).map_err(|_| JournalError::CorruptStore)?
@@ -227,28 +227,6 @@ pub(super) fn update_bindings(
         _ => {}
     }
     Ok(())
-}
-
-pub(super) fn legacy_bindings(
-    connection: &Connection,
-    world: &core::World,
-) -> Result<Bindings, JournalError> {
-    let mut bindings = Bindings::default();
-    let mut statement = connection
-        .prepare("SELECT sequence,input_json FROM controller_inputs ORDER BY sequence")?;
-    for row in statement.query_map([], |row| Ok((read_u64(row, 0)?, row.get::<_, Vec<u8>>(1)?)))? {
-        let (sequence, bytes) = row?;
-        let entry: storage::StoredInput = serde_json::from_slice(&bytes)?;
-        if entry.version != 1 {
-            return Err(JournalError::CorruptStore);
-        }
-        update_bindings(&mut bindings, &entry.input, sequence)?;
-    }
-    bindings
-        .released
-        .retain(|sandbox, _| world.sandbox_record(core::SandboxId(*sandbox)).is_some());
-    validate_bindings(&bindings, world, allocators::input_high_water(connection)?)?;
-    Ok(bindings)
 }
 
 pub(super) fn validate_bindings(

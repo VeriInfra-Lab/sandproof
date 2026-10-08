@@ -10,18 +10,8 @@ use std::time::Duration;
 
 const APPLICATION_ID: i64 = 0x5350_4631; // SPF1
 const FORMAT_VERSION: i64 = 1;
-pub(crate) const CONTROLLER_FORMAT_VERSION: i64 = 2;
-pub(crate) const BOUNDED_FORMAT_VERSION: i64 = 3;
 pub(crate) const MAINTAINED_FORMAT_VERSION: i64 = 4;
 type ExistingReceiptRow = (i64, String, Vec<u8>, Option<Vec<u8>>);
-
-/// Historical library callers are being retired separately; the formal
-/// service always selects `CurrentOnly`, never a configuration-dependent branch.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StoreVersionPolicy {
-    Historical,
-    CurrentOnly,
-}
 
 /// Bytes are a projection supplied by the controller reducer's adapter.
 /// This journal never interprets or independently changes business state.
@@ -284,25 +274,14 @@ impl Journal {
     /// # Errors
     /// Rejects unsupported/corrupt stores, unsuitable journal settings, and I/O errors.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
-        Self::open_inner(path, false, false, false, StoreVersionPolicy::Historical)
+        Self::open_inner(path, false)
     }
 
-    pub(crate) fn open_controller(
-        path: impl AsRef<Path>,
-        bounded: bool,
-        maintained: bool,
-        versions: StoreVersionPolicy,
-    ) -> Result<Self, JournalError> {
-        Self::open_inner(path, true, bounded, maintained, versions)
+    pub(crate) fn open_controller(path: impl AsRef<Path>) -> Result<Self, JournalError> {
+        Self::open_inner(path, true)
     }
 
-    fn open_inner(
-        path: impl AsRef<Path>,
-        controller: bool,
-        bounded: bool,
-        maintained: bool,
-        versions: StoreVersionPolicy,
-    ) -> Result<Self, JournalError> {
+    fn open_inner(path: impl AsRef<Path>, controller: bool) -> Result<Self, JournalError> {
         let connection = Connection::open(path)?;
         if !controller {
             require_generic_store(&connection)?;
@@ -312,7 +291,7 @@ impl Journal {
 
         let app_id: i64 = connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
         let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if versions == StoreVersionPolicy::CurrentOnly && (app_id != 0 || format != 0) {
+        if controller && (app_id != 0 || format != 0) {
             require_current_controller_store(&connection)?;
         }
         if app_id == 0 && format == 0 {
@@ -324,8 +303,9 @@ impl Journal {
             if user_objects != 0 {
                 return Err(JournalError::UnsupportedStore);
             }
-            connection.execute_batch(
-                "BEGIN IMMEDIATE;
+            if !controller {
+                connection.execute_batch(
+                    "BEGIN IMMEDIATE;
                  CREATE TABLE sandboxes (
                    sandbox_id TEXT PRIMARY KEY,
                    owner_id TEXT NOT NULL,
@@ -361,13 +341,10 @@ impl Journal {
                  PRAGMA application_id=0x53504631;
                  PRAGMA user_version=1;
                  COMMIT;",
-            )?;
+                )?;
+            }
         } else if app_id != APPLICATION_ID
-            || (format != FORMAT_VERSION
-                && !(controller
-                    && (format == CONTROLLER_FORMAT_VERSION
-                        || (bounded && format == BOUNDED_FORMAT_VERSION)
-                        || (bounded && maintained && format == MAINTAINED_FORMAT_VERSION))))
+            || (format != FORMAT_VERSION && !(controller && format == MAINTAINED_FORMAT_VERSION))
         {
             return Err(JournalError::UnsupportedStore);
         }

@@ -1,7 +1,7 @@
 //! Durable high-water marks for service-generated identities. These are not
 //! lifecycle tombstones and do not authorize deleting any replay history.
 use super::ControllerJournal;
-use crate::{JournalError, journal::CONTROLLER_FORMAT_VERSION};
+use crate::JournalError;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 
@@ -105,45 +105,19 @@ fn advance(tx: &Transaction<'_>, kind: &str, scope: &str, value: u64) -> Result<
     Ok(())
 }
 
-pub(super) fn require_legacy_base(connection: &Connection) -> Result<(), JournalError> {
-    let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if format != 1 {
-        return Err(JournalError::CorruptStore);
-    }
-    Ok(())
-}
-
-/// Called inside the same opening transaction as replay and schema migration.
-/// Base format 2 is controller-only; `controller_meta.version` still records the
-/// existing feature gates (templates/startup/registry), without enabling them.
-pub(super) fn migrate(tx: &Transaction<'_>, world: &core::World) -> Result<(), JournalError> {
-    let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version == 1 {
-        tx.execute_batch(
-            "CREATE TABLE controller_id_highwaters (
+/// Initialize only a fresh controller, in its complete opening transaction.
+pub(super) fn initialize(tx: &Transaction<'_>) -> Result<(), JournalError> {
+    tx.execute_batch(
+        "CREATE TABLE controller_id_highwaters (
                kind TEXT NOT NULL, scope TEXT NOT NULL, high_water TEXT NOT NULL,
                PRIMARY KEY(kind,scope)
              );",
-        )?;
-        insert(tx, SANDBOX, "", 0)?;
-        for (sandbox, _) in world.sandbox_records() {
-            advance(tx, SANDBOX, "", sandbox.0)?;
-            insert(tx, OPERATION, &sandbox.0.to_string(), 0)?;
-        }
-        for (key, _) in world.operation_records() {
-            advance(tx, OPERATION, &key.sandbox.0.to_string(), key.operation.0)?;
-        }
-        for family in SqlId::ALL {
-            insert(tx, family.name(), "", family.maximum(tx)?)?;
-        }
-        tx.pragma_update(None, "user_version", CONTROLLER_FORMAT_VERSION)?;
-    } else if version != CONTROLLER_FORMAT_VERSION
-        && version != crate::journal::BOUNDED_FORMAT_VERSION
-        && version != crate::journal::MAINTAINED_FORMAT_VERSION
-    {
-        return Err(JournalError::UnsupportedStore);
+    )?;
+    insert(tx, SANDBOX, "", 0)?;
+    for family in SqlId::ALL {
+        insert(tx, family.name(), "", 0)?;
     }
-    validate(tx, world)
+    Ok(())
 }
 
 /// Never reseed an existing frontier from the currently retained rows.
@@ -184,15 +158,9 @@ pub(super) fn validate(connection: &Connection, world: &core::World) -> Result<(
     for family in SqlId::ALL {
         let frontier = read(connection, family.name(), "")?;
         let maximum = family.maximum(connection)?;
-        // Legacy replay requires every input row. The format-4 recovery loader
-        // instead checks the checkpoint cut plus the exact contiguous tail;
-        // a missing suffix still cannot lower the durable input frontier.
-        if frontier > family.limit()
-            || frontier < maximum
-            || (matches!(family, SqlId::Input)
-                && frontier != maximum
-                && super::checkpoint::config(connection)?.is_none())
-        {
+        // Recovery checks the checkpoint cut plus the exact contiguous tail;
+        // a missing suffix cannot lower the durable input frontier.
+        if frontier > family.limit() || frontier < maximum {
             return Err(JournalError::CorruptStore);
         }
     }

@@ -173,13 +173,13 @@ pub(super) fn fail_next_commit(durable: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ControllerJournal;
 
     #[test]
     fn foreign_commit_between_sql_commit_and_publication_cannot_be_absorbed() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("controller.db");
-        let mut journal = ControllerJournal::open(&path, "0123456789abcdef").unwrap();
+        let mut journal =
+            crate::controller::tests_support::open(&path, "0123456789abcdef").unwrap();
         let external = Connection::open(&path).unwrap();
         let tx = WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world)
             .unwrap();

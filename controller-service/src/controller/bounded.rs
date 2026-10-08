@@ -1,5 +1,5 @@
-//! Opt-in physical positions, durably paired with the existing core reducer.
-//! This module owns binding/release; the separately enabled checkpoint adapter
+//! Required physical positions, durably paired with the existing core reducer.
+//! This module owns binding/release; the checkpoint adapter
 //! owns historical retirement. There is no public raw maintenance input API.
 use super::{ControllerJournal, storage, transaction::WorldTransaction};
 use crate::{AdmissionError, CrashInjector, CrashPoint, JournalError, WorkerTransportError};
@@ -13,7 +13,7 @@ use sandbox_controller_core::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Explicit opt-in: only VMM console output is discarded; guest command and
+/// Only VMM console output is discarded; guest command and
 /// self-service build logs have independent retention contracts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,10 +25,10 @@ pub enum ConsolePolicy {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BoundedHostConfig {
-    /// Immutable shared-filesystem profile; absent is outside physical boundedness.
+    /// Required immutable shared-filesystem profile; absence is rejected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physical_storage: Option<crate::physical_storage::PhysicalStorageProfile>,
-    /// Absence preserves legacy unbounded file logging, outside the bounded guarantee.
+    /// Required VMM console policy; absence is rejected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_policy: Option<ConsolePolicy>,
     pub maintenance: MaintenanceLimits,
@@ -45,8 +45,12 @@ impl BoundedHostConfig {
     /// # Errors
     /// Rejects invalid limits, reserved UIDs and exhausted physical IPv4 space.
     pub fn validate(&self) -> Result<(), JournalError> {
-        if let Some(profile) = &self.physical_storage {
-            profile.validate()?;
+        self.physical_storage
+            .as_ref()
+            .ok_or(JournalError::UnsupportedStore)?
+            .validate()?;
+        if self.console_policy != Some(ConsolePolicy::Discard) {
+            return Err(JournalError::UnsupportedStore);
         }
         let slots = self.maintenance.max_host_slots;
         if self.data_route_control_reserve == 0
@@ -86,11 +90,8 @@ pub struct HostSlotContext {
 
 pub(super) fn config(connection: &Connection) -> Result<Option<BoundedHostConfig>, JournalError> {
     let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if !matches!(
-        format,
-        crate::journal::BOUNDED_FORMAT_VERSION | crate::journal::MAINTAINED_FORMAT_VERSION
-    ) {
-        return Ok(None);
+    if !matches!(format, crate::journal::MAINTAINED_FORMAT_VERSION) {
+        return Err(JournalError::UnsupportedStore);
     }
     let bytes: Vec<u8> = connection.query_row(
         "SELECT config_json FROM controller_bounded_config WHERE id=1",
@@ -102,55 +103,35 @@ pub(super) fn config(connection: &Connection) -> Result<Option<BoundedHostConfig
     Ok(Some(config))
 }
 
-pub(super) fn configure(
+pub(super) fn initialize(
     tx: &Transaction<'_>,
-    world: core::World,
-    requested: Option<BoundedHostConfig>,
+    requested: BoundedHostConfig,
     now_ms: u64,
+    max_input_bytes: u64,
 ) -> Result<core::World, JournalError> {
-    if let Some(stored) = config(tx)? {
-        if requested.as_ref() != Some(&stored) || world.maintenance_state().is_none() {
-            return Err(JournalError::UnsupportedStore);
-        }
-        let contexts = validate_contexts(tx, &world, &stored)?;
-        if contexts != storage::replayed_host_contexts(tx)?
-            || world
-                .maintenance_state()
-                .map(core::maintenance::MaintenanceState::limits)
-                != Some(stored.maintenance)
-        {
-            return Err(JournalError::CorruptStore);
-        }
-        return Ok(world);
-    }
-    let Some(requested) = requested else {
-        if world.maintenance_state().is_some() {
-            return Err(JournalError::CorruptStore);
-        }
-        return Ok(world);
-    };
     requested.validate()?;
-    let count: i64 = tx.query_row("SELECT count(*) FROM controller_inputs", [], |row| {
-        row.get(0)
-    })?;
-    if count != 0 || !world.sandbox_records().is_empty() {
-        return Err(JournalError::UnsupportedStore);
-    }
-    tx.execute_batch("CREATE TABLE controller_bounded_config (id INTEGER PRIMARY KEY CHECK(id=1), config_json BLOB NOT NULL); CREATE TABLE controller_host_slots (position INTEGER PRIMARY KEY CHECK(position>=0), context_json BLOB NOT NULL);")?;
+    tx.execute_batch("CREATE TABLE controller_bounded_config(id INTEGER PRIMARY KEY CHECK(id=1),config_json BLOB NOT NULL); CREATE TABLE controller_host_slots(position INTEGER PRIMARY KEY CHECK(position>=0),context_json BLOB NOT NULL);")?;
     tx.execute(
         "INSERT INTO controller_bounded_config VALUES(1,?1)",
         [serde_json::to_vec(&requested)?],
     )?;
-    let decision = storage::append_maintenance(
-        tx,
-        &world,
-        MaintenanceInput::Enable {
-            limits: requested.maintenance,
-            now_ms,
-        },
+    let input = core::ControllerInput::Maintenance(MaintenanceInput::Enable {
+        limits: requested.maintenance,
+        now_ms,
+    });
+    let world = core::handle_controller(&core::initial_world(), input.clone())
+        .map_err(JournalError::ControllerRejected)?
+        .next;
+    let bytes = super::checkpoint::encode_limited(
+        &super::storage::StoredInput { version: 1, input },
+        max_input_bytes,
     )?;
-    tx.pragma_update(None, "user_version", crate::journal::BOUNDED_FORMAT_VERSION)?;
-    Ok(decision.next)
+    let sequence = super::allocators::next_sql(tx, super::allocators::SqlId::Input)?;
+    tx.execute(
+        "INSERT INTO controller_inputs(sequence,input_json) VALUES(?1,?2)",
+        params![sequence, bytes],
+    )?;
+    Ok(world)
 }
 
 fn contexts(connection: &Connection) -> Result<Vec<HostSlotContext>, JournalError> {
@@ -203,9 +184,7 @@ pub(super) fn reserve_host_slot(
     tx: &WorldTransaction<'_>,
     sandbox: core::SandboxId,
 ) -> Result<(), AdmissionError> {
-    let Some(config) = config(tx)? else {
-        return Ok(());
-    };
+    let config = config(tx)?.ok_or(JournalError::UnsupportedStore)?;
     let world = tx.world();
     validate_contexts(tx, &world, &config)?;
     let state = world
@@ -258,56 +237,6 @@ impl ControllerJournal {
     pub fn deployment_namespace(&self) -> &str {
         &self.namespace
     }
-    /// Read-only startup preflight, before enabling a node's bounded marker.
-    /// The eventual IMMEDIATE open repeats every check. This is not admission
-    /// authority and cannot substitute for independently empty host inventory.
-    /// # Errors
-    /// Rejects nonempty legacy state, changed configuration or unknown formats.
-    pub fn preflight_bounded(
-        path: impl AsRef<std::path::Path>,
-        namespace: &str,
-        requested: &BoundedHostConfig,
-    ) -> Result<(), JournalError> {
-        requested.validate()?;
-        let path = path.as_ref();
-        match std::fs::symlink_metadata(path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error.into()),
-            Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => {
-                return Err(JournalError::UnsupportedStore);
-            }
-            Ok(_) => {}
-        }
-        let connection =
-            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        connection.execute_batch("PRAGMA trusted_schema=OFF;")?;
-        let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if format == crate::journal::BOUNDED_FORMAT_VERSION {
-            if config(&connection)?.as_ref() != Some(requested) {
-                return Err(JournalError::UnsupportedStore);
-            }
-        } else if matches!(format, 1 | 2) {
-            let count: i64 =
-                connection.query_row("SELECT count(*) FROM controller_inputs", [], |row| {
-                    row.get(0)
-                })?;
-            if count != 0 {
-                return Err(JournalError::UnsupportedStore);
-            }
-        } else {
-            return Err(JournalError::UnsupportedStore);
-        }
-        let stored: String = connection.query_row(
-            "SELECT namespace FROM controller_meta WHERE id=1",
-            [],
-            |row| row.get(0),
-        )?;
-        if stored != namespace {
-            return Err(JournalError::UnsupportedStore);
-        }
-        Ok(())
-    }
-
     /// # Errors
     /// Rejects changed writers or malformed persisted configuration.
     pub fn bounded_host_config(&self) -> Result<Option<BoundedHostConfig>, JournalError> {
@@ -358,8 +287,8 @@ impl ControllerJournal {
             .find(|context| context.binding.sandbox == sandbox))
     }
 
-    /// Build retry anchors and publication references remain conservative pins
-    /// until their explicit migration. This is not a caller-supplied certificate.
+    /// Unsettled build retry anchors and publication references are conservative
+    /// pins. This is not a caller-supplied certificate.
     /// # Errors
     /// Rejects unreadable durable references.
     pub fn host_slot_release_pinned(&self, sandbox: core::SandboxId) -> Result<bool, JournalError> {
@@ -431,7 +360,7 @@ impl ControllerJournal {
                 }),
             )?;
         }
-        if confirmed && super::checkpoint::config(&tx)?.is_some() {
+        if confirmed {
             super::checkpoint::record_release_witness(
                 &tx,
                 context,

@@ -1,4 +1,4 @@
-//! Differential checks keep full log replay independent of the memo path.
+//! Differential checks compare checkpoint/tail recovery with the committed memo.
 use super::*;
 use crate::{AdmissionError, AdmissionLimits, NeverCrash, finish_admitted_create_v1_timed};
 use rusqlite::types::Value;
@@ -10,7 +10,8 @@ const NS: &str = "0123456789abcdef";
 
 fn setup() -> (TempDir, ControllerJournal) {
     let dir = TempDir::new().unwrap();
-    let journal = ControllerJournal::open(dir.path().join("controller.db"), NS).unwrap();
+    let journal =
+        crate::controller::tests_support::open(dir.path().join("controller.db"), NS).unwrap();
     (dir, journal)
 }
 
@@ -34,12 +35,11 @@ fn create(id: u64) -> core::ControllerInput {
 
 fn limits() -> AdmissionLimits {
     AdmissionLimits {
-        max_vm_id: 100,
         max_active_global: 10,
         max_active_per_tenant: 10,
-        max_disk_bytes_global: 100_000,
+        max_disk_bytes_global: crate::controller::tests_support::fixture::CLEANUP_BYTES + 100_000,
         max_disk_bytes_per_tenant: 100_000,
-        cleanup_reserve_bytes: 1000,
+        cleanup_reserve_bytes: crate::controller::tests_support::fixture::CLEANUP_BYTES,
         max_timeout_secs: 600,
         max_lifetime_secs: 600,
         startup_timeout_secs: 60,
@@ -148,42 +148,23 @@ fn running(j: &mut ControllerJournal) {
 }
 
 #[test]
-fn apply_admission_and_hooks_publish_exact_committed_tip_on_same_object() {
-    for admission in [false, true] {
-        let (dir, mut j) = setup();
-        let before = snapshot(&j);
-        let fail = if admission {
-            admit(&mut j, 1, &mut FailAt(CrashPoint::BeforeCommit))
-                .map(|_| ())
-                .map_err(|_| ())
-        } else {
-            j.apply(create(1), &mut FailAt(CrashPoint::BeforeCommit))
-                .map(|_| ())
-                .map_err(|_| ())
-        };
-        assert!(fail.is_err());
-        assert_eq!(snapshot(&j), before);
-        assert_eq!(parity(&j), core::initial_world());
-        let fail = if admission {
-            admit(&mut j, 1, &mut FailAt(CrashPoint::AfterCommit))
-                .map(|_| ())
-                .map_err(|_| ())
-        } else {
-            j.apply(create(1), &mut FailAt(CrashPoint::AfterCommit))
-                .map(|_| ())
-                .map_err(|_| ())
-        };
-        assert!(fail.is_err());
-        assert_eq!(count(&j), if admission { 2 } else { 1 });
-        let world = parity(&j);
-        let after = snapshot(&j);
-        assert!(j.apply(create(1), &mut NeverCrash).is_err());
-        assert_eq!(snapshot(&j), after);
-        assert_eq!(parity(&j), world);
-        drop(j);
-        let reopened = ControllerJournal::open(dir.path().join("controller.db"), NS).unwrap();
-        assert_eq!(parity(&reopened), world);
-    }
+fn admission_hooks_publish_exact_committed_tip_on_same_object() {
+    let (dir, mut j) = setup();
+    let initial = parity(&j);
+    let before = snapshot(&j);
+    assert!(admit(&mut j, 1, &mut FailAt(CrashPoint::BeforeCommit)).is_err());
+    assert_eq!(snapshot(&j), before);
+    assert_eq!(parity(&j), initial);
+    assert!(admit(&mut j, 1, &mut FailAt(CrashPoint::AfterCommit)).is_err());
+    assert_eq!(count(&j), 3); // create, reserve startup, bind position.
+    let world = parity(&j);
+    let after = snapshot(&j);
+    assert!(admit(&mut j, 1, &mut NeverCrash).is_err());
+    assert_eq!(snapshot(&j), after);
+    drop(j);
+    let reopened =
+        crate::controller::tests_support::open(dir.path().join("controller.db"), NS).unwrap();
+    assert_eq!(parity(&reopened), world);
 }
 
 #[test]
@@ -210,7 +191,7 @@ fn claim_publishes_dispatch_never_worker_preview_and_receipts_are_incremental() 
         &claimed,
         action.command.command()
     ));
-    assert_eq!(count(&j), 3);
+    assert_eq!(count(&j), 4);
     let before = snapshot(&j);
     assert!(
         j.complete(&success(&action), &mut FailAt(CrashPoint::BeforeCommit))
@@ -222,7 +203,7 @@ fn claim_publishes_dispatch_never_worker_preview_and_receipts_are_incremental() 
         j.complete(&success(&action), &mut FailAt(CrashPoint::AfterCommit))
             .is_err()
     );
-    assert_eq!(count(&j), 5); // Worker then Receipt, not one cached prefix.
+    assert_eq!(count(&j), 6); // Worker then Receipt, not one cached prefix.
     parity(&j);
     let completed = snapshot(&j);
     j.complete(&success(&action), &mut NeverCrash).unwrap();
@@ -243,7 +224,7 @@ fn unknown_then_success_and_rejected_evidence_keep_replay_parity() {
         },
     };
     j.complete(&unknown, &mut NeverCrash).unwrap();
-    assert_eq!(count(&j), 4);
+    assert_eq!(count(&j), 5);
     parity(&j);
     let before = snapshot(&j);
     let mut bad = success(&a);
@@ -252,7 +233,7 @@ fn unknown_then_success_and_rejected_evidence_keep_replay_parity() {
     assert_eq!(snapshot(&j), before);
     parity(&j);
     j.complete(&success(&a), &mut NeverCrash).unwrap();
-    assert_eq!(count(&j), 6);
+    assert_eq!(count(&j), 7);
     parity(&j);
 }
 
@@ -277,11 +258,12 @@ fn sql_failure_after_worker_input_rolls_back_every_projection_and_candidate() {
 #[test]
 fn admission_auxiliary_failure_does_not_publish_create_or_reserved_ids() {
     let (_dir, mut j) = setup();
+    let initial = parity(&j);
     let before = snapshot(&j);
     j.journal.connection.execute_batch("CREATE TEMP TRIGGER fail_options BEFORE INSERT ON sandbox_create_options BEGIN SELECT RAISE(ABORT, 'test options failure'); END;").unwrap();
     assert!(admit(&mut j, 1, &mut NeverCrash).is_err());
     assert_eq!(snapshot(&j), before);
-    assert_eq!(parity(&j), core::initial_world());
+    assert_eq!(parity(&j), initial);
     j.journal
         .connection
         .execute_batch("DROP TRIGGER fail_options")
@@ -307,7 +289,7 @@ fn multi_startup_batch_rolls_back_prefix_and_publishes_only_complete_commit() {
     admit(&mut j, 1, &mut NeverCrash).unwrap();
     admit(&mut j, 2, &mut NeverCrash).unwrap();
     let before = snapshot(&j);
-    j.journal.connection.execute_batch("CREATE TEMP TRIGGER fail_second BEFORE INSERT ON controller_inputs WHEN (SELECT count(*) FROM controller_inputs)=5 BEGIN SELECT RAISE(ABORT, 'test second input'); END;").unwrap();
+    j.journal.connection.execute_batch("CREATE TEMP TRIGGER fail_second BEFORE INSERT ON controller_inputs WHEN (SELECT count(*) FROM controller_inputs)=7 BEGIN SELECT RAISE(ABORT, 'test second input'); END;").unwrap();
     assert!(j.abort_due_startups(61_000, &mut NeverCrash).is_err());
     assert_eq!(snapshot(&j), before);
     parity(&j);
@@ -319,7 +301,7 @@ fn multi_startup_batch_rolls_back_prefix_and_publishes_only_complete_commit() {
         j.abort_due_startups(61_000, &mut FailAt(CrashPoint::AfterCommit))
             .is_err()
     );
-    assert_eq!(count(&j), 6);
+    assert_eq!(count(&j), 8);
     assert!(
         parity(&j)
             .sandbox_records()
@@ -458,8 +440,7 @@ fn prepare_uncertain_family(
     action
 }
 
-const UNCERTAIN_FAMILIES: [&str; 9] = [
-    "apply",
+const UNCERTAIN_FAMILIES: [&str; 8] = [
     "admission",
     "claim",
     "receipt",
@@ -482,7 +463,6 @@ fn uncertain_commit_reconciles_both_durable_outcomes_for_every_write_family() {
             let mut host_calls = 0;
             transaction::fail_next_commit(durable);
             let result = match family {
-                "apply" => j.apply(create(1), &mut NeverCrash).map(|_| ()),
                 "admission" => admit(&mut j, 1, &mut NeverCrash)
                     .map(|_| ())
                     .map_err(journal_error),
@@ -561,7 +541,9 @@ fn uncertain_commit_reconciles_both_durable_outcomes_for_every_write_family() {
             }
             let after = snapshot(&j);
             drop(j);
-            let reopened = ControllerJournal::open(dir.path().join("controller.db"), NS).unwrap();
+            let reopened =
+                crate::controller::tests_support::open(dir.path().join("controller.db"), NS)
+                    .unwrap();
             assert_eq!(parity(&reopened), world);
             assert_eq!(snapshot(&reopened), after);
         }
@@ -571,6 +553,7 @@ fn uncertain_commit_reconciles_both_durable_outcomes_for_every_write_family() {
 #[test]
 fn failed_rollback_and_active_connection_never_serve_uncommitted_candidate() {
     let (_dir, mut j) = setup();
+    let initial = parity(&j);
     {
         let tx =
             transaction::WorldTransaction::begin(&mut j.journal.connection, &j.committed_world)
@@ -580,7 +563,7 @@ fn failed_rollback_and_active_connection_never_serve_uncommitted_candidate() {
         // wrapper's later ROLLBACK then fails; it must invalidate its memo.
         tx.execute_batch("ROLLBACK").unwrap();
     }
-    assert_eq!(parity(&j), core::initial_world());
+    assert_eq!(parity(&j), initial);
     j.journal
         .connection
         .execute_batch("BEGIN IMMEDIATE")
@@ -593,15 +576,15 @@ fn failed_rollback_and_active_connection_never_serve_uncommitted_candidate() {
     assert!(j.create_options(core::SandboxId(1)).is_err());
     assert!(j.apply(create(1), &mut NeverCrash).is_err());
     j.journal.connection.execute_batch("ROLLBACK").unwrap();
-    assert_eq!(parity(&j), core::initial_world());
-    j.apply(create(1), &mut NeverCrash).unwrap();
+    assert_eq!(parity(&j), initial);
+    admit(&mut j, 1, &mut NeverCrash).unwrap();
     parity(&j);
 }
 
 #[test]
 fn foreign_historical_and_sql_only_commits_are_not_silently_reblessed() {
     for sql in [
-        "UPDATE controller_inputs SET input_json=X'00' WHERE sequence=1",
+        "UPDATE controller_inputs SET input_json=X'00' WHERE sequence=(SELECT MAX(sequence) FROM controller_inputs)",
         "UPDATE sandboxes SET state_blob=X'00'",
         "UPDATE sandbox_lifetimes SET deadline_ms=0",
     ] {
@@ -624,8 +607,10 @@ fn foreign_historical_and_sql_only_commits_are_not_silently_reblessed() {
 fn old_and_new_generic_handles_cannot_write_controller_state() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("controller.db");
-    let mut old = Journal::open(&path).unwrap();
-    let mut j = ControllerJournal::open(&path, NS).unwrap();
+    let mut old = Journal {
+        connection: rusqlite::Connection::open(&path).unwrap(),
+    };
+    let mut j = crate::controller::tests_support::open(&path, NS).unwrap();
     admit(&mut j, 1, &mut NeverCrash).unwrap();
     assert!(matches!(
         Journal::open(&path),
@@ -670,7 +655,7 @@ fn old_and_new_generic_handles_cannot_write_controller_state() {
         old.record_receipt(&success(&a)),
         Err(JournalError::UnsupportedStore)
     ));
-    assert_eq!(count(&j), 3);
+    assert_eq!(count(&j), 4);
     assert_ne!(snapshot(&j), before); // Only the authorized controller claim.
     parity(&j);
 }
@@ -867,6 +852,7 @@ fn panic_before_commit_rolls_back_candidate_and_same_object_remains_usable() {
         }
     }
     let (_dir, mut j) = setup();
+    let initial = parity(&j);
     let before = snapshot(&j);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| admit(
@@ -877,7 +863,7 @@ fn panic_before_commit_rolls_back_candidate_and_same_object_remains_usable() {
         .is_err()
     );
     assert_eq!(snapshot(&j), before);
-    assert_eq!(parity(&j), core::initial_world());
+    assert_eq!(parity(&j), initial);
     admit(&mut j, 1, &mut NeverCrash).unwrap();
     parity(&j);
 }
@@ -885,7 +871,7 @@ fn panic_before_commit_rolls_back_candidate_and_same_object_remains_usable() {
 #[test]
 fn pure_maintenance_is_not_a_production_pruning_entry() {
     let (_dir, mut journal) = setup();
-    journal.apply(create(1), &mut NeverCrash).unwrap();
+    admit(&mut journal, 1, &mut NeverCrash).unwrap();
     let before = journal.world().unwrap();
     let input_count: i64 = journal
         .journal

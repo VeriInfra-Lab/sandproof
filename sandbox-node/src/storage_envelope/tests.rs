@@ -15,9 +15,7 @@ fn config() -> NodeConfig {
         chroot_base: "/host/jail".into(),
         kernel: "/images/kernel".into(),
         rootfs: "/images/rootfs".into(),
-        uid_base: 10_000,
-        max_vm_id: 10,
-        bounded_host: Some(BoundedHostConfig {
+        bounded_host: BoundedHostConfig {
             physical_storage: None,
             console_policy: None,
             maintenance: MaintenanceLimits {
@@ -30,7 +28,7 @@ fn config() -> NodeConfig {
             max_data_routes_per_slot: 4,
             max_data_routes_global: 5,
             data_route_control_reserve: 1,
-        }),
+        },
         vcpu_count: 1,
         memory_mib: 128,
         host_resources: None,
@@ -120,15 +118,36 @@ fn future_retirement_is_preflighted_before_any_lease_or_gate_write() {
 }
 
 #[test]
-fn unknown_mode_zero_capacity_and_arithmetic_overflow_fail_closed() {
+fn missing_mapping_zero_capacity_and_arithmetic_overflow_fail_closed() {
     let mut config = config();
     assert!(HostMetadataEnvelope::derive(&config, 0).is_err());
-    let bounded = config.bounded_host.as_mut().unwrap();
+    let bounded = &mut config.bounded_host;
     bounded.max_data_routes_per_slot = u64::MAX;
     bounded.max_data_routes_global = u64::MAX;
     assert!(HostMetadataEnvelope::derive(&config, 1).is_err());
-    config.bounded_host = None;
-    assert!(HostMetadataEnvelope::derive(&config, 1).is_err());
+    let mut encoded = serde_json::to_value(&config).unwrap();
+    encoded.as_object_mut().unwrap().remove("bounded_host");
+    assert!(serde_json::from_value::<NodeConfig>(encoded.clone()).is_err());
+    encoded["bounded_host"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<NodeConfig>(encoded).is_err());
+}
+
+#[test]
+fn old_logical_id_limits_and_uid_override_are_rejected() {
+    let encoded = serde_json::to_value(config()).unwrap();
+    for (field, value) in [("max_vm_id", 10), ("uid_base", 10_000)] {
+        let mut old = encoded.clone();
+        old[field] = serde_json::json!(value);
+        assert!(serde_json::from_value::<NodeConfig>(old).is_err());
+    }
+}
+
+#[test]
+fn partial_physical_deployment_is_rejected_without_host_io() {
+    let mut config = config();
+    assert!(config.validate_deployment().is_err());
+    config.bounded_host.console_policy = Some(sandproof_controller_service::ConsolePolicy::Discard);
+    assert!(config.validate_deployment().is_err());
 }
 
 #[test]

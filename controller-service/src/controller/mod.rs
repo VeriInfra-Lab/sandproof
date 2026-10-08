@@ -7,6 +7,8 @@ mod allocator_tests;
 mod bounded_tests;
 #[cfg(test)]
 mod cache_tests;
+#[cfg(test)]
+mod tests_support;
 
 mod capacity;
 pub use capacity::CapacityConfig;
@@ -32,7 +34,6 @@ pub use admission::{
     CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS, Lifetime,
 };
 
-use crate::journal::StoreVersionPolicy;
 use crate::{
     CrashInjector, CrashPoint, DispatchResult, Journal, JournalError, WorkerTransportError,
 };
@@ -65,32 +66,6 @@ fn lease_controller_store(path: &Path) -> Result<(PathBuf, File), JournalError> 
         .open(lock_path)?;
     lease.try_lock().map_err(|_| JournalError::ControllerBusy)?;
     Ok((path, lease))
-}
-
-fn migrate_lifetime_schema(
-    transaction: &rusqlite::Transaction<'_>,
-    version: i64,
-) -> Result<(), JournalError> {
-    if version <= 4 {
-        // The original total limit was not recorded. Preserve only the
-        // already granted deadline; never reset the age during migration.
-        transaction.execute_batch(
-            "ALTER TABLE sandbox_lifetimes ADD COLUMN max_deadline_ms INTEGER CHECK(max_deadline_ms >= 0);
-             UPDATE sandbox_lifetimes SET max_deadline_ms=deadline_ms;
-             UPDATE controller_meta SET version=5 WHERE id=1;",
-        )?;
-    }
-    if version <= 5 {
-        // Existing Starting creates retain the original admitted cutoff;
-        // migration must not silently extend a possibly live startup.
-        // Running records no longer consult this watchdog.
-        transaction.execute_batch(
-            "ALTER TABLE sandbox_lifetimes ADD COLUMN startup_deadline_ms INTEGER CHECK(startup_deadline_ms >= 0);
-             UPDATE sandbox_lifetimes SET startup_deadline_ms=deadline_ms;
-             UPDATE controller_meta SET version=6 WHERE id=1;",
-        )?;
-    }
-    Ok(())
 }
 
 /// Implemented by the trusted host adapter, never by a guest/API response.
@@ -540,131 +515,59 @@ impl ControllerJournal {
         )
     }
 
-    /// `namespace` is a deployment-allocated, unique 16-digit lowercase hex ID.
-    /// It is persisted and forms part of every external resource identifier.
-    /// The database directory must be private to the trusted controller.
-    ///
-    /// # Errors
-    /// Rejects a second writer, namespace mismatch, legacy opaque state, or
-    /// corrupt input history. No arbitrary serialized World is accepted.
-    pub fn open(path: impl AsRef<Path>, namespace: &str) -> Result<Self, JournalError> {
-        Self::open_with_bounded(
-            path,
-            namespace,
-            None,
-            None,
-            0,
-            StoreVersionPolicy::Historical,
-        )
-    }
-
-    /// Open an explicitly configured bounded host store. Legacy nonempty stores
-    /// require a separate migration and are rejected.
-    /// # Errors
-    /// Rejects disabled/changed mapping, nonempty legacy state or corrupt context.
-    pub fn open_bounded(
+    /// Initialize a fresh complete store, or recover its current checkpoint and tail.
+    pub(super) fn open_current(
         path: impl AsRef<Path>,
         namespace: &str,
-        config: BoundedHostConfig,
+        bounded: BoundedHostConfig,
+        maintenance: &MaintenanceConfig,
         now_ms: u64,
-    ) -> Result<Self, JournalError> {
-        config.validate()?;
-        Self::open_with_bounded(
-            path,
-            namespace,
-            Some(config),
-            None,
-            now_ms,
-            StoreVersionPolicy::Historical,
-        )
-    }
-
-    fn open_with_bounded(
-        path: impl AsRef<Path>,
-        namespace: &str,
-        bounded: Option<BoundedHostConfig>,
-        maintenance: Option<MaintenanceConfig>,
-        now_ms: u64,
-        versions: StoreVersionPolicy,
     ) -> Result<Self, JournalError> {
         validate_namespace(namespace)?;
         let (path, lease) = lease_controller_store(path.as_ref())?;
-        let mut journal =
-            Journal::open_controller(&path, bounded.is_some(), maintenance.is_some(), versions)?;
-        if let Some(policy) = &maintenance {
-            capacity::prepare_connection(&journal.connection, policy)?;
-        }
+        let mut journal = Journal::open_controller(&path)?;
+        capacity::prepare_connection(&journal.connection, maintenance)?;
         let transaction = journal
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let existing: i64 = transaction.query_row(
-            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='controller_meta'",
-            [],
-            |row| row.get(0),
-        )?;
-        if versions == StoreVersionPolicy::CurrentOnly && existing != 0 {
+        let existing: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_meta')", [], |row| row.get(0))?;
+        let world = if existing {
             crate::journal::require_current_controller_store(&transaction)?;
-        }
-        if existing == 0 {
-            allocators::require_legacy_base(&transaction)?;
-            let rows: i64 =
-                transaction.query_row("SELECT count(*) FROM sandboxes", [], |row| row.get(0))?;
-            if rows != 0 {
+            if checkpoint::config(&transaction)?.as_ref() != Some(maintenance)
+                || bounded::config(&transaction)?.as_ref() != Some(&bounded)
+                || checkpoint::namespace(&transaction)? != namespace
+            {
                 return Err(JournalError::UnsupportedStore);
             }
-            transaction.execute_batch(
-                "CREATE TABLE controller_meta (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, namespace TEXT NOT NULL);
-                 CREATE TABLE controller_inputs (sequence INTEGER PRIMARY KEY, input_json BLOB NOT NULL);
-                 CREATE TABLE controller_effect_keys (id INTEGER PRIMARY KEY, logical_json BLOB NOT NULL UNIQUE);
-                 CREATE TABLE controller_receipt_history (sequence INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL REFERENCES outbox(id), receipt_json BLOB NOT NULL);
-                 CREATE TABLE sandbox_lifetimes (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), owner_id TEXT NOT NULL, deadline_ms INTEGER NOT NULL, disk_bytes INTEGER NOT NULL CHECK(disk_bytes > 0), started_at_ms INTEGER CHECK(started_at_ms >= 0));
-                 CREATE TABLE sandbox_create_options (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), options_json BLOB NOT NULL);"
+            storage::load_world(&transaction)?
+        } else {
+            let count: i64 = transaction.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'",
+                [],
+                |row| row.get(0),
             )?;
-            transaction.execute("INSERT INTO controller_meta VALUES (1, 4, ?1)", [namespace])?;
-        }
-        let (version, stored): (i64, String) = transaction.query_row(
-            "SELECT version, namespace FROM controller_meta WHERE id=1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )?;
-        if !(1..=11).contains(&version) || stored != namespace {
-            return Err(JournalError::UnsupportedStore);
-        }
-        if version == 1 {
-            transaction.execute_batch(
-                "CREATE TABLE sandbox_lifetimes (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), owner_id TEXT NOT NULL, deadline_ms INTEGER NOT NULL, disk_bytes INTEGER NOT NULL CHECK(disk_bytes > 0));
-                 UPDATE controller_meta SET version=2 WHERE id=1;"
-            )?;
-        }
-        if version <= 2 {
-            // V1/V2 records did not persist creation time. Leave it unknown
-            // rather than fabricate a timestamp in an E2B detail response.
-            transaction.execute_batch(
-                "ALTER TABLE sandbox_lifetimes ADD COLUMN started_at_ms INTEGER CHECK(started_at_ms >= 0);
-                 UPDATE controller_meta SET version=3 WHERE id=1;",
-            )?;
-        }
-        if version <= 3 {
-            transaction.execute_batch(
-                "CREATE TABLE IF NOT EXISTS sandbox_create_options (sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id), options_json BLOB NOT NULL);
-                 UPDATE controller_meta SET version=4 WHERE id=1;",
-            )?;
-            transaction.execute(
-                "INSERT OR IGNORE INTO sandbox_create_options (sandbox_id, options_json) SELECT sandbox_id, ?1 FROM sandboxes",
-                [b"{\"env_vars\":{},\"metadata\":{}}".as_slice()],
-            )?;
-        }
-        migrate_lifetime_schema(&transaction, version)?;
-        // V7 adds a core retirement input, not a fabricated host receipt.
-        // Existing inputs remain replayable; old binaries must reject the
-        // upgraded journal before interpreting the new terminal semantics.
-        if version <= 6 {
-            transaction.execute("UPDATE controller_meta SET version=7 WHERE id=1", [])?;
-        }
-        let world = storage::load_world(&transaction)?;
-        allocators::migrate(&transaction, &world)?;
-        let world = bounded::configure(&transaction, world, bounded, now_ms)?;
-        checkpoint::configure(&transaction, &world, maintenance)?;
+            if count != 0 {
+                return Err(JournalError::UnsupportedStore);
+            }
+            transaction.execute_batch("CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>=1),state_blob BLOB NOT NULL,UNIQUE(sandbox_id,owner_id));
+                CREATE TABLE operations(operation_id TEXT PRIMARY KEY,sandbox_id TEXT NOT NULL,owner_id TEXT NOT NULL,state_blob BLOB NOT NULL,UNIQUE(sandbox_id,owner_id,operation_id),FOREIGN KEY(sandbox_id,owner_id) REFERENCES sandboxes(sandbox_id,owner_id));
+                CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT NOT NULL,owner_id TEXT NOT NULL,operation_id TEXT NOT NULL,logical_action_id TEXT NOT NULL,attempt INTEGER NOT NULL CHECK(attempt>=0),action_json BLOB NOT NULL,dispatch_state TEXT NOT NULL CHECK(dispatch_state IN ('ready','dispatched','receipted')),receipt_json BLOB,UNIQUE(sandbox_id,logical_action_id,attempt),CHECK((dispatch_state='receipted')=(receipt_json IS NOT NULL)),FOREIGN KEY(sandbox_id,owner_id,operation_id) REFERENCES operations(sandbox_id,owner_id,operation_id));
+                CREATE TABLE controller_meta(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL,namespace TEXT NOT NULL);
+                CREATE TABLE controller_inputs(sequence INTEGER PRIMARY KEY,input_json BLOB NOT NULL);
+                CREATE TABLE controller_effect_keys(id INTEGER PRIMARY KEY,logical_json BLOB NOT NULL UNIQUE);
+                CREATE TABLE controller_receipt_history(sequence INTEGER PRIMARY KEY,outbox_id INTEGER NOT NULL REFERENCES outbox(id),receipt_json BLOB NOT NULL);
+                CREATE TABLE sandbox_lifetimes(sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id),owner_id TEXT NOT NULL,deadline_ms INTEGER NOT NULL,disk_bytes INTEGER NOT NULL CHECK(disk_bytes>0),started_at_ms INTEGER CHECK(started_at_ms>=0),max_deadline_ms INTEGER CHECK(max_deadline_ms>=0),startup_deadline_ms INTEGER CHECK(startup_deadline_ms>=0));
+                CREATE TABLE sandbox_create_options(sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id),options_json BLOB NOT NULL);
+                PRAGMA application_id=0x53504631; PRAGMA user_version=4;")?;
+            transaction.execute("INSERT INTO controller_meta VALUES(1,7,?1)", [namespace])?;
+            allocators::initialize(&transaction)?;
+            let world =
+                bounded::initialize(&transaction, bounded, now_ms, maintenance.max_input_bytes)?;
+            checkpoint::initialize(&transaction, &world, maintenance)?;
+            world
+        };
+        allocators::validate(&transaction, &world)?;
         capacity::validate(&transaction, &world)?;
         let committed_world = transaction::CommittedWorld::new(&transaction, world)?;
         transaction
@@ -714,12 +617,10 @@ impl ControllerJournal {
         ) {
             return Err(JournalError::UnsupportedInput);
         }
-        if capacity::config(&self.journal.connection)?.is_some()
-            && matches!(
-                input,
-                core::ControllerInput::Request(core::Request::Create(_))
-            )
-        {
+        if matches!(
+            input,
+            core::ControllerInput::Request(core::Request::Create(_))
+        ) {
             // Full mode requires its lease, options and physical binding in
             // the same admission transaction before any accepted host work.
             return Err(JournalError::UnsupportedInput);
@@ -960,10 +861,8 @@ impl ControllerJournal {
                 return Err(JournalError::ConflictingReceipt);
             }
         }
-        let serialized = match capacity::config(&transaction)? {
-            Some(cap) => checkpoint::encode_limited(receipt, cap.max_receipt_bytes)?,
-            None => serde_json::to_vec(receipt)?,
-        };
+        let capacity = capacity::config(&transaction)?.ok_or(JournalError::UnsupportedStore)?;
+        let serialized = checkpoint::encode_limited(receipt, capacity.max_receipt_bytes)?;
         let next = apply_outcome(&transaction, &self.namespace, &action, receipt, id)?;
         let before_receipt = capacity::cursors(&transaction)?;
         let receipt_sequence = allocators::next_sql(&transaction, allocators::SqlId::Receipt)?;

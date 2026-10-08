@@ -6,7 +6,7 @@ use sandproof_protocol::{FailureCode, UnknownReason, WorkOutcome, WorkReceipt};
 const SID: core::SandboxId = core::SandboxId(1);
 
 fn open_full(path: &std::path::Path) -> ControllerJournal {
-    ControllerJournal::open_maintained(path, NS, host(), full_config(), 1000).unwrap()
+    ControllerJournal::open_complete(path, NS, host(), full_config(), 1000).unwrap()
 }
 fn admit_full(journal: &mut ControllerJournal) {
     let mut limits = limits();

@@ -1086,25 +1086,20 @@ impl<H: HostAdapter> ManagedPort<H> {
         inner: &Inner<H>,
         tenant: core::TenantId,
         id: &str,
-        window: Option<&str>,
+        window: &str,
         request: Option<&crate::BuildVmRequest>,
     ) -> Result<Option<crate::BuildVmView>, PortError> {
         let world = inner.journal.world().map_err(map_journal)?;
-        let anchored = match window {
-            Some(window) => {
-                let Some(anchor) = inner
-                    .journal
-                    .build_anchor(tenant, window, id)
-                    .map_err(map_journal)?
-                else {
-                    return Ok(None);
-                };
-                Some(core::SandboxId(anchor.sandbox))
-            }
-            None => None,
+        let Some(anchor) = inner
+            .journal
+            .build_anchor(tenant, window, id)
+            .map_err(map_journal)?
+        else {
+            return Ok(None);
         };
+        let anchored = core::SandboxId(anchor.sandbox);
         for (sandbox, record) in world.sandbox_records() {
-            if record.owner != tenant || anchored.is_some_and(|anchor| anchor != *sandbox) {
+            if record.owner != tenant || anchored != *sandbox {
                 continue;
             }
             let sandbox = *sandbox;
@@ -1116,7 +1111,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 .metadata
                 .get("_sandproof_build_window")
                 .map(String::as_str)
-                != window
+                != Some(window)
             {
                 continue;
             }
@@ -1279,7 +1274,7 @@ impl<H: HostAdapter> ManagedPort<H> {
             .map_err(map_journal)?
             .is_none()
         {
-            return Ok(None);
+            return Err(PortError::Busy);
         }
         let world = inner.journal.world().map_err(map_journal)?;
         let record = world
@@ -1824,34 +1819,28 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
         if !valid_candidate_id(id) {
             return Err(PortError::Invalid);
         }
+        // A request without its server-issued window has no stable retry
+        // identity. Never fall back to searching by the user-supplied build ID.
+        let window = window.ok_or(PortError::Conflict)?;
         let tenant = tenant_id(tenant)?;
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
+        if inner.journal.build_retry_config().map_err(map_journal)?.is_none() {
+            return Err(PortError::Conflict);
+        }
         if let Some(value) = self.build_vm_locked(&inner, tenant, id, window, create.as_ref())? {
             return Ok(value);
         }
         let request = create.ok_or(PortError::NotFound)?;
-        if request.request_window.as_deref() != window {
+        if request.request_window.as_deref() != Some(window) {
             return Err(PortError::Invalid);
         }
-        if inner
+        inner
             .journal
-            .build_retry_config()
-            .map_err(map_journal)?
-            .is_some()
-        {
-            if window.is_none() {
-                return Err(PortError::Conflict);
-            }
-            inner
-                .journal
-                .advance_build_windows(
-                    u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
-                    &mut NeverCrash,
-                )
-                .map_err(map_journal)?;
-        } else if window.is_some() {
-            return Err(PortError::Conflict);
-        }
+            .advance_build_windows(
+                u64::try_from(now_ms()?).map_err(|_| PortError::Invalid)?,
+                &mut NeverCrash,
+            )
+            .map_err(map_journal)?;
         if request.allow_internet_access && !self.config.public_ipv4_enabled {
             return Err(PortError::Invalid);
         }
@@ -1866,11 +1855,9 @@ impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
             template: self.resolve_template(&inner, tenant, "base")?,
             ..CreateOptions::default()
         };
-        if let Some(window) = window {
-            options
-                .metadata
-                .insert("_sandproof_build_window".into(), window.into());
-        }
+        options
+            .metadata
+            .insert("_sandproof_build_window".into(), window.into());
         let policy = if request.allow_internet_access {
             core::NetworkPolicy::Ipv4 {
                 internet_access: true,

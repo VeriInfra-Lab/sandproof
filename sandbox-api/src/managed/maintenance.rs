@@ -6,9 +6,7 @@ use super::{
 };
 use crate::PortError;
 use sandbox_controller_core as core;
-use sandproof_controller_service::{
-    ControllerJournal, NeverCrash, RetirementCandidate, WorkerTransportError,
-};
+use sandproof_controller_service::{NeverCrash, RetirementCandidate, WorkerTransportError};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -55,54 +53,26 @@ fn verify_local_quiescence<H: HostAdapter>(
     Ok(())
 }
 
-fn prune_covered_inputs(journal: &mut ControllerJournal) -> Result<usize, PortError> {
-    let mut total = 0_usize;
-    loop {
-        // Each transaction is independently capped by prune_batch_rows. The
-        // fixed covered prefix shrinks strictly; no input is appended here.
-        let removed = journal
-            .prune_checkpoint_inputs(&mut NeverCrash)
-            .map_err(map_journal)?;
-        total = total.checked_add(removed).ok_or(PortError::Busy)?;
-        if removed == 0 {
-            return Ok(total);
-        }
-    }
-}
-
 pub(super) fn maintain_locked<H: HostAdapter>(
     inner: &mut Inner<H>,
     now: u64,
 ) -> Result<MaintenanceReport, PortError> {
-    let Some(policy) = inner.journal.maintenance_config().map_err(map_journal)? else {
-        return Ok(MaintenanceReport::default());
-    };
-    let automatic = policy.capacity.is_some();
-    let before = if automatic {
-        Some(
-            inner
-                .journal
-                .checkpoint_progress()
-                .map_err(map_journal)?
-                .ok_or(PortError::Busy)?
-                .deleted_through,
-        )
-    } else {
-        None
-    };
+    let policy = inner
+        .journal
+        .maintenance_config()
+        .map_err(map_journal)?
+        .ok_or(PortError::Busy)?;
+    if policy.capacity.is_none() {
+        return Err(PortError::Busy);
+    }
+    let before = inner
+        .journal
+        .checkpoint_progress()
+        .map_err(map_journal)?
+        .ok_or(PortError::Busy)?
+        .deleted_through;
     // Full capacity mode rotates before a write would consume accepted-work
-    // headroom. Do not burn checkpoint generations on every idle poll. The
-    // earlier explicit maintenance mode keeps its original publication order.
-    let pruned_inputs = if automatic {
-        0
-    } else {
-        let count = prune_covered_inputs(&mut inner.journal)?;
-        inner
-            .journal
-            .publish_checkpoint(&mut NeverCrash)
-            .map_err(map_journal)?;
-        count
-    };
+    // headroom. Do not burn checkpoint generations on every idle poll.
     let expired_results = inner
         .journal
         .expire_retained(now, &mut NeverCrash)
@@ -112,7 +82,6 @@ pub(super) fn maintain_locked<H: HostAdapter>(
     let candidates = inner.journal.retirement_candidates().map_err(map_journal)?;
     let mut report = MaintenanceReport {
         expired_results,
-        pruned_inputs,
         pending_sandboxes: reclaimed.len(),
         ..MaintenanceReport::default()
     };
@@ -154,25 +123,14 @@ pub(super) fn maintain_locked<H: HostAdapter>(
             Err(error) => return Err(map_journal(error)),
         }
     }
-    if let Some(before) = before {
-        let after = inner
-            .journal
-            .checkpoint_progress()
-            .map_err(map_journal)?
-            .ok_or(PortError::Busy)?
-            .deleted_through;
-        report.pruned_inputs = usize::try_from(after.checked_sub(before).ok_or(PortError::Busy)?)
-            .map_err(|_| PortError::Busy)?;
-    } else {
-        inner
-            .journal
-            .publish_checkpoint(&mut NeverCrash)
-            .map_err(map_journal)?;
-        report.pruned_inputs = report
-            .pruned_inputs
-            .checked_add(prune_covered_inputs(&mut inner.journal)?)
-            .ok_or(PortError::Busy)?;
-    }
+    let after = inner
+        .journal
+        .checkpoint_progress()
+        .map_err(map_journal)?
+        .ok_or(PortError::Busy)?
+        .deleted_through;
+    report.pruned_inputs = usize::try_from(after.checked_sub(before).ok_or(PortError::Busy)?)
+        .map_err(|_| PortError::Busy)?;
     report.tracked_data_sandboxes = inner
         .data_revocations
         .keys()
@@ -186,9 +144,9 @@ pub(super) fn maintain_locked<H: HostAdapter>(
 impl<H: HostAdapter> ManagedPort<H> {
     /// Run one bounded maintenance pass using the trusted service clock and
     /// host evidence. Ordinary SDK create and raw public input are unchanged.
-    /// No-op when this journal has no explicitly configured maintenance policy.
     /// # Errors
-    /// Shared storage, invalid checkpoints or uncertain commits abort the pass.
+    /// Missing complete policy, shared storage, invalid checkpoints or uncertain
+    /// commits abort the pass.
     pub fn maintain(&self) -> Result<MaintenanceReport, PortError> {
         let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
         let now = u64::try_from(now_ms()?).map_err(|_| PortError::Busy)?;
