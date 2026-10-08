@@ -6,8 +6,8 @@
 use rustix::process::{Signal, getpid, kill_process};
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    ControllerJournal, CrashInjector, CrashPoint, DispatchResult, JournalError, NeverCrash,
-    create_v1, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
+    AdmissionLimits, ControllerJournal, CrashInjector, CrashPoint, DispatchResult, JournalError,
+    NeverCrash, finish_accepted_kill_v1, finish_admitted_create_v1, kill_v1,
 };
 use sandproof_node::{LinuxWorker, NodeConfig};
 use sandproof_protocol::{TenantId, UnknownReason, WorkOutcome, WorkReceipt};
@@ -20,6 +20,13 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::{Command as Process, Stdio};
+
+#[path = "../../controller-service/tests/support/complete_fixture.rs"]
+#[allow(
+    dead_code,
+    reason = "shared component fixture also supplies host shapes for other callers"
+)]
+mod complete_fixture;
 
 fn required(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("missing operator setting {name}"))
@@ -34,9 +41,8 @@ fn test_config() -> NodeConfig {
         chroot_base: PathBuf::from(required("SANDPROOF_TEST_CHROOT")),
         kernel: PathBuf::from(required("SANDPROOF_TEST_KERNEL")),
         rootfs: PathBuf::from(required("SANDPROOF_TEST_ROOTFS")),
-        uid_base: required("SANDPROOF_TEST_UID_BASE").parse().unwrap(),
-        max_vm_id: 1000,
-        bounded_host: None,
+        bounded_host: serde_json::from_str(&required("SANDPROOF_TEST_BOUNDED_HOST"))
+            .expect("explicit complete physical host configuration"),
         vcpu_count: 1,
         memory_mib: 256,
         host_resources: env::var("SANDPROOF_TEST_HOST_RESOURCES")
@@ -44,6 +50,60 @@ fn test_config() -> NodeConfig {
             .map(|value| serde_json::from_str(&value).expect("valid host resource configuration")),
         file_policy_digest: core::PolicyDigest(1),
     }
+}
+
+fn test_journal(config: &NodeConfig) -> ControllerJournal {
+    ControllerJournal::open_complete(
+        config.state_dir.join("controller.db"),
+        &config.namespace,
+        config.bounded_host.clone(),
+        complete_fixture::maintenance(),
+        0,
+    )
+    .unwrap()
+}
+
+fn admit_for_test(
+    config: &NodeConfig,
+    journal: &mut ControllerJournal,
+    worker: &LinuxWorker,
+    request: core::CreateRequest,
+) {
+    let pool = config
+        .bounded_host
+        .physical_storage
+        .as_ref()
+        .expect("explicit physical storage profile")
+        .pools
+        .iter()
+        .find(|pool| pool.namespace == config.namespace)
+        .expect("fixture profile contains this pool");
+    let limits = AdmissionLimits {
+        max_active_global: config.bounded_host.maintenance.max_host_slots,
+        max_active_per_tenant: config.bounded_host.maintenance.max_host_slots,
+        max_disk_bytes_global: pool
+            .rootfs_budget_bytes
+            .checked_add(pool.cleanup_reserve_bytes)
+            .expect("explicit fixture disk budget is representable"),
+        max_disk_bytes_per_tenant: pool.rootfs_budget_bytes,
+        cleanup_reserve_bytes: pool.cleanup_reserve_bytes,
+        max_timeout_secs: 300,
+        max_lifetime_secs: 300,
+        startup_timeout_secs: 300,
+    };
+    let sandbox = request.sandbox;
+    journal
+        .admit_create(
+            request,
+            0,
+            300,
+            fs::metadata(&config.rootfs).unwrap().len(),
+            limits,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let context = journal.host_slot_context(sandbox).unwrap().unwrap();
+    worker.bind_host_slot(&context, true).unwrap();
 }
 
 fn test_token() -> String {
@@ -95,23 +155,28 @@ fn uncertain_prepare_without_launch(
     ControllerJournal,
     sandproof_protocol::WorkAction<core::EffectId>,
 ) {
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let mut journal = test_journal(config);
+    admit_for_test(config, &mut journal, worker, test_create_request(config));
     worker
         .put_secret(core::SandboxId(1), &test_token())
         .unwrap();
-    let result = create_v1(&mut journal, test_create_request(config), &mut |action| {
-        if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
-            return Ok(WorkReceipt {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                },
-            });
-        }
-        worker.execute(action)
-    });
+    let result = finish_admitted_create_v1(
+        &mut journal,
+        core::SandboxId(1),
+        core::OperationId(1),
+        &mut |action| {
+            if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+                return Ok(WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                });
+            }
+            worker.execute(action)
+        },
+    );
     assert!(matches!(result, Err(JournalError::UnresolvedAction)));
     let actions = journal.uncertain_actions().unwrap();
     assert_eq!(actions.len(), 1);
@@ -243,36 +308,37 @@ fn partial_prepare_network_intent_is_reclaimed_by_exact_identity() {
 fn create_and_kill_use_real_host_receipts() {
     let config = test_config();
     let namespace = config.namespace.clone();
-    let state_dir = config.state_dir.clone();
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal = ControllerJournal::open(state_dir.join("controller.db"), &namespace).unwrap();
+    let mut journal = test_journal(&config);
     let token = test_token();
     let sandbox = core::SandboxId(1);
-    worker.put_secret(sandbox, &token).unwrap();
     let request = test_create_request(&config);
-    let lost = create_v1(&mut journal, request, &mut |action| {
-        let receipt = worker.execute(action)?;
-        if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
-            assert_eq!(worker.observe_action(action).unwrap(), receipt);
-        }
-        if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
-            return Ok(WorkReceipt {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                },
-            });
-        }
-        Ok(receipt)
-    });
+    admit_for_test(&config, &mut journal, &worker, request);
+    worker.put_secret(sandbox, &token).unwrap();
+    let lost =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            let receipt = worker.execute(action)?;
+            if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
+                assert_eq!(worker.observe_action(action).unwrap(), receipt);
+            }
+            if matches!(action.command.command(), core::Command::PrepareVm { .. }) {
+                return Ok(WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                });
+            }
+            Ok(receipt)
+        });
     assert!(
         matches!(lost, Err(JournalError::UnresolvedAction)),
         "{lost:?}; host: {:?}",
         worker.last_error()
     );
     drop(journal); // simulated controller process restart after the VM launched
-    let mut journal = ControllerJournal::open(state_dir.join("controller.db"), &namespace).unwrap();
+    let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
     assert!(matches!(
@@ -422,7 +488,7 @@ fn create_and_kill_use_real_host_receipts() {
         worker.last_error()
     );
     drop(journal);
-    let mut journal = ControllerJournal::open(state_dir.join("controller.db"), &namespace).unwrap();
+    let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
     assert!(matches!(
@@ -515,8 +581,7 @@ fn create_and_kill_use_real_host_receipts() {
 fn repeated_stop_and_cleanup_preserve_another_live_vm() {
     let config = test_config();
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let mut journal = test_journal(&config);
     let survivor = core::SandboxId(2);
     let mut survivor_activation = None;
     for number in 1..=2 {
@@ -524,14 +589,22 @@ fn repeated_stop_and_cleanup_preserve_another_live_vm() {
         request.sandbox = core::SandboxId(number);
         request.workspace = core::FsId(number);
         request.operation = core::OperationId(number);
+        admit_for_test(&config, &mut journal, &worker, request.clone());
         worker.put_secret(request.sandbox, &test_token()).unwrap();
-        let running = create_v1(&mut journal, request, &mut |action| {
-            let receipt = worker.execute(action)?;
-            if number == 2 && matches!(action.command.command(), core::Command::ActivateVm { .. }) {
-                survivor_activation = Some((action.clone(), receipt.clone()));
-            }
-            Ok(receipt)
-        })
+        let running = finish_admitted_create_v1(
+            &mut journal,
+            request.sandbox,
+            request.operation,
+            &mut |action| {
+                let receipt = worker.execute(action)?;
+                if number == 2
+                    && matches!(action.command.command(), core::Command::ActivateVm { .. })
+                {
+                    survivor_activation = Some((action.clone(), receipt.clone()));
+                }
+                Ok(receipt)
+            },
+        )
         .unwrap();
         assert_eq!(
             running
@@ -650,8 +723,7 @@ impl CrashInjector for TerminateAfterWorker {
 fn exit_child(stage: &str, sigkill: bool) {
     let config = test_config();
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let mut journal = test_journal(&config);
     journal
         .dispatch_next(
             &mut |action| {
@@ -713,25 +785,13 @@ fn worker_termination_reconciles_prepare_and_stop(
     let config = test_config();
     let sandbox = core::SandboxId(1);
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal = test_journal(&config);
+    admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
     worker.put_secret(sandbox, &test_token()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
-    journal
-        .apply(
-            core::ControllerInput::Request(core::Request::Create(test_create_request(&config))),
-            &mut NeverCrash,
-        )
-        .unwrap();
     let create_key = core::OperationKey {
         sandbox,
         operation: core::OperationId(1),
     };
-    journal
-        .apply(
-            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(create_key)),
-            &mut NeverCrash,
-        )
-        .unwrap();
     assert!(matches!(
         journal
             .dispatch_next(&mut |action| worker.execute(action), &mut NeverCrash)
@@ -759,8 +819,7 @@ fn worker_termination_reconciles_prepare_and_stop(
     spawn_exit_child("prepare", test_name, sigkill);
 
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
     assert!(matches!(
@@ -855,8 +914,7 @@ fn worker_termination_reconciles_prepare_and_stop(
     );
 
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
     assert!(matches!(
@@ -962,33 +1020,15 @@ fn real_worker_sigkill_before_opening_fence_resumes_one_create() {
     let config = test_config();
     let sandbox = core::SandboxId(1);
     let worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal = test_journal(&config);
+    admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
     worker.put_secret(sandbox, &test_token()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
-    journal
-        .apply(
-            core::ControllerInput::Request(core::Request::Create(test_create_request(&config))),
-            &mut NeverCrash,
-        )
-        .unwrap();
-    journal
-        .apply(
-            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(
-                core::OperationKey {
-                    sandbox,
-                    operation: core::OperationId(1),
-                },
-            )),
-            &mut NeverCrash,
-        )
-        .unwrap();
     drop(journal);
     drop(worker);
     spawn_exit_child("open_fence_before_host", TEST_NAME, true);
 
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
     assert!(matches!(
@@ -1060,13 +1100,14 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
     let config = test_config();
     let sandbox = core::SandboxId(1);
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
+    let mut journal = test_journal(&config);
+    admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
     worker.put_secret(sandbox, &test_token()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
-    let running = create_v1(&mut journal, test_create_request(&config), &mut |action| {
-        worker.execute(action)
-    })
-    .unwrap_or_else(|error| panic!("create: {error}; host: {:?}", worker.last_error()));
+    let running =
+        finish_admitted_create_v1(&mut journal, sandbox, core::OperationId(1), &mut |action| {
+            worker.execute(action)
+        })
+        .unwrap_or_else(|error| panic!("create: {error}; host: {:?}", worker.last_error()));
     assert_eq!(
         running.sandbox_record(sandbox).unwrap().phase,
         core::Phase::Running
@@ -1145,8 +1186,7 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
     spawn_exit_child("cleanup", TEST_NAME, true);
 
     let mut worker = LinuxWorker::new(config.clone()).unwrap();
-    let mut journal =
-        ControllerJournal::open(config.state_dir.join("controller.db"), &config.namespace).unwrap();
+    let mut journal = test_journal(&config);
     let uncertain = journal.uncertain_actions().unwrap();
     assert_eq!(uncertain.len(), 1);
     assert!(

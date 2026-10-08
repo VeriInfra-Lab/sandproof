@@ -4,26 +4,44 @@ use sandproof_controller_service::{
     template_registry::{CandidateManifest, CandidateStore, RegistryConfig},
     templates::ResourceShape,
 };
+use std::os::unix::fs::PermissionsExt;
 
 fn worker(path: &Path) -> LinuxWorker {
-    LinuxWorker {
-        config: NodeConfig {
-            namespace: "0123456789abcdef".into(),
-            state_dir: path.into(),
-            jailer: path.into(),
-            firecracker: path.into(),
-            chroot_base: path.into(),
-            kernel: path.into(),
-            rootfs: path.into(),
+    // Artifact-cache tests use a distinct private node lease for each worker;
+    // they do not assemble or launch a runtime deployment.
+    let state = tempfile::tempdir_in(path).unwrap().keep();
+    fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
+    let config = NodeConfig {
+        namespace: "0123456789abcdef".into(),
+        state_dir: state,
+        jailer: path.into(),
+        firecracker: path.into(),
+        chroot_base: path.into(),
+        kernel: path.into(),
+        rootfs: path.into(),
+        vcpu_count: 1,
+        memory_mib: 128,
+        host_resources: None,
+        file_policy_digest: core::PolicyDigest(1),
+        bounded_host: BoundedHostConfig {
+            physical_storage: None,
+            console_policy: Some(sandproof_controller_service::ConsolePolicy::Discard),
             uid_base: 1,
-            max_vm_id: 1,
-            vcpu_count: 1,
-            memory_mib: 128,
-            host_resources: None,
-            file_policy_digest: core::PolicyDigest(1),
-            bounded_host: None,
+            uplink_base: 0,
+            max_data_routes_per_slot: 2,
+            max_data_routes_global: 2,
+            data_route_control_reserve: 1,
+            maintenance: core::maintenance::MaintenanceLimits {
+                max_host_slots: 1,
+                max_retained_results: 1,
+                windows: core::maintenance::windows::WindowLimits::new(1, 1000).unwrap(),
+            },
         },
-        host_lease: None,
+    };
+    let lease = host_lease::HostLease::acquire(&config, None).unwrap();
+    LinuxWorker {
+        config,
+        host_lease: lease,
         last_error: None,
         validated_artifacts: Mutex::default(),
     }

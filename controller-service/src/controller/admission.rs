@@ -18,7 +18,7 @@ use std::fmt::{self, Display};
 pub struct CreateOptions {
     pub env_vars: BTreeMap<String, String>,
     pub metadata: BTreeMap<String, String>,
-    /// None for legacy records whose original request cannot be recovered.
+    /// Original network options, when supplied by the create caller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub networking: Option<CreateNetworking>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -83,9 +83,6 @@ impl CreateOptions {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AdmissionLimits {
-    /// Highest VM ID that the configured host can represent and run.
-    /// This is a cumulative ID bound, not a concurrent VM quota.
-    pub max_vm_id: u64,
     pub max_active_global: u64,
     pub max_active_per_tenant: u64,
     pub max_disk_bytes_global: u64,
@@ -108,7 +105,6 @@ fn reserve_startup_in_admission(
     tx: &WorldTransaction<'_>,
     namespace: &str,
     key: core::OperationKey,
-    max_vm_id: u64,
 ) -> Result<core::ControllerDecision, AdmissionError> {
     // Both reducer transitions must commit with the lease and launch options.
     // Otherwise a crash before reservation can strand an accepted create.
@@ -123,14 +119,11 @@ fn reserve_startup_in_admission(
         )) => AdmissionError::QuotaExceeded,
         other => AdmissionError::Journal(other),
     })?;
-    let core::ControllerEvent::Protocol(core::Event::ReserveStartupResources { vm, slot, .. }) =
+    let core::ControllerEvent::Protocol(core::Event::ReserveStartupResources { .. }) =
         reserved.event
     else {
         return Err(AdmissionError::Journal(JournalError::CorruptStore));
     };
-    if super::bounded::config(tx)?.is_none() && (vm.0 > max_vm_id || slot.0 > max_vm_id) {
-        return Err(AdmissionError::QuotaExceeded);
-    }
     super::bounded::reserve_host_slot(tx, key.sandbox)?;
     Ok(reserved)
 }
@@ -147,7 +140,7 @@ pub struct CreateAdmission {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Lifetime {
-    /// `None` only for records migrated from an older schema.
+    /// `None` before successful startup is published.
     pub started_at_ms: Option<i64>,
     pub deadline_ms: i64,
     pub max_deadline_ms: i64,
@@ -381,7 +374,7 @@ impl ControllerJournal {
 
     /// Accept a create and its lease/physical-disk budget in the same `SQLite`
     /// transaction as the reducer input and outbox. An existing active sandbox
-    /// without a reservation fails admission closed during v1 migration.
+    /// without a reservation is corrupt and fails admission closed.
     /// # Errors
     /// Rejects invalid time, quotas, unmanaged state and core/store failures.
     pub fn admit_create(
@@ -422,7 +415,7 @@ impl ControllerJournal {
 
     /// Atomically bind a prebuilt template and charge its actual resource shape.
     /// # Errors
-    /// Rejects missing/mismatched descriptors, compute quotas and unmanaged legacy instances.
+    /// Rejects missing/mismatched descriptors, compute quotas and unmanaged instances.
     pub fn admit_template_create(
         &mut self,
         request: core::CreateRequest,
@@ -475,9 +468,9 @@ impl ControllerJournal {
         let encoded_options = options.encoded()?;
         self.committed_world
             .ensure_ready(&self.journal.connection)?;
-        if let Some(cap) = super::capacity::config(&self.journal.connection)?
-            && limits.cleanup_reserve_bytes < cap.max_online_storage_bytes
-        {
+        let cap = super::capacity::config(&self.journal.connection)?
+            .ok_or(JournalError::UnsupportedStore)?;
+        if limits.cleanup_reserve_bytes < cap.max_online_storage_bytes {
             return Err(JournalError::MaintenanceCapacity.into());
         }
         match (&options.template, compute) {
@@ -521,7 +514,7 @@ impl ControllerJournal {
             [],
             |row| row.get(0),
         )?;
-        // Configuration rollback cannot introduce uncharged legacy instances.
+        // Configuration rollback cannot introduce uncharged instances.
         let private_without_templates = schema >= 11
             && super::private_build::config(&tx)?.is_some()
             && tx.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('admitted_templates','template_registry_meta')", [], |row| row.get::<_,i64>(0))? == 0;
@@ -618,7 +611,7 @@ impl ControllerJournal {
             {
                 return Err(AdmissionError::QuotaExceeded);
             }
-            // A legacy binary must not reinterpret these instances as global base.
+            // A binary without this feature must not reinterpret these as global base.
             // Template IDs are immutable after their first accepted use, even
             // across catalog replacement. Aliases may point at another ID.
             tx.execute("CREATE TABLE IF NOT EXISTS admitted_templates (template_id TEXT PRIMARY KEY, binding_json BLOB NOT NULL)", [])?;
@@ -636,7 +629,7 @@ impl ControllerJournal {
             }
             tx.execute("INSERT OR IGNORE INTO admitted_templates (template_id, binding_json) VALUES (?1, ?2)", params![template.template_id, binding])?;
             // Older binaries must refuse journals containing startup defaults;
-            // admitting another legacy template must never lower this guard.
+            // Admitting another base template must never lower this guard.
             tx.execute(
                 "UPDATE controller_meta SET version=MAX(version, ?1) WHERE id=1",
                 [if template.startup.is_some() { 9 } else { 8 }],
@@ -654,7 +647,6 @@ impl ControllerJournal {
             &tx,
             &self.namespace,
             core::OperationKey { sandbox, operation },
-            limits.max_vm_id,
         )?;
         tx.execute(
             "INSERT INTO sandbox_lifetimes (sandbox_id, owner_id, deadline_ms, disk_bytes, started_at_ms, max_deadline_ms, startup_deadline_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",

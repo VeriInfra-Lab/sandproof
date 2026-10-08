@@ -66,7 +66,11 @@ class JournalAndSettlementTests(unittest.TestCase):
                 CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,state_blob BLOB);
                 CREATE TABLE sandbox_create_options(sandbox_id TEXT PRIMARY KEY,options_json BLOB);
                 CREATE TABLE outbox(id INTEGER PRIMARY KEY,dispatch_state TEXT);
+                CREATE TABLE controller_checkpoint(id INTEGER,input_cut INTEGER,payload BLOB);
+                CREATE TABLE controller_inputs(sequence INTEGER,input_json BLOB);
             ''')
+            db.execute('INSERT INTO controller_checkpoint VALUES(1,0,?)', (
+                json.dumps({'namespace': self.namespace, 'core': {'maintenance': {'retained': []}}}),))
 
     def insert(self, identity=None, *, phase='Starting', owner=1, options=None):
         identity = identity or self.identity
@@ -252,6 +256,25 @@ class JournalAndSettlementTests(unittest.TestCase):
         with self.assertRaises(sqlite3.OperationalError):
             probe.journal(missing, self.intents, self.namespace, self.template)
         self.assertFalse(missing.exists())
+
+    def test_retirement_uses_exact_saved_create_correlation_not_sql_absence(self):
+        known = {self.attempt: self.identity}
+        self.assertEqual(probe.journal(self.database, self.intents, self.namespace,
+                                      self.template, known=known), ({}, 0))
+        retained = [[{'sandbox': 1}, {'owner': 1, 'ledger': {'sandbox': 1, 'result': 'Destroyed'}}]]
+        with closing(sqlite3.connect(self.database)) as db, db:
+            db.execute('UPDATE controller_checkpoint SET payload=?', (
+                json.dumps({'namespace': self.namespace, 'core': {'maintenance': {'retained': retained}}}),))
+        found, pending = probe.journal(self.database, self.intents, self.namespace,
+                                       self.template, known=known)
+        self.assertEqual(found, {self.attempt: {'id': self.identity, 'phase': 'Retired'}})
+        self.assertEqual(pending, 0)
+        # A terminal certificate cannot invent a request correlation.
+        self.assertEqual(probe.journal(self.database, self.intents, self.namespace,
+                                      self.template, known={}), ({}, 0))
+        self.insert('sb-' + self.namespace + '-2', phase='Running')
+        with self.assertRaisesRegex(RuntimeError, 'original identity replaced'):
+            probe.journal(self.database, self.intents, self.namespace, self.template, known=known)
 
 
 class OptimizedInterpreterTests(unittest.TestCase):

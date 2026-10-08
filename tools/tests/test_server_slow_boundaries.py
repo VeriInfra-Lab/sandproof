@@ -19,10 +19,10 @@ class ConfigurationTests(unittest.TestCase):
         budgets = json.loads((probe.ROOT / 'benchmarks/local-service-budgets.json').read_bytes())
         original = copy.deepcopy(budgets)
         artifacts = {key: {'path': '/trusted/' + key, 'sha256': 'a' * 64} for key in probe.host.ARTIFACTS}
-        base = {'template_id': 'base-id', 'owner': None}
+        base = {'template_id': 'base-id', 'owner': None, 'kernel': {'path': '/trusted/kernel'}}
         config = probe.configuration(budgets, Path('/root/run'), '0123456789abcdef', artifacts,
                                      uid=10000, port=3000, cgroup=Path('/sys/fs/cgroup/runtime'),
-                                     keys=['one', 'two'], base=base)
+                                     keys=['one', 'two'], base=base, file_size=lambda path: 100)
         self.assertEqual(budgets, original)
         self.assertEqual(config['data_transfer'], budgets['data_transfer'])
         self.assertEqual(config['max_active_global'], 2)
@@ -35,7 +35,8 @@ class ConfigurationTests(unittest.TestCase):
         artifacts['firecracker']['path'] = '/trusted/' + 'long' * 32
         with self.assertRaises(ValueError):
             probe.configuration(budgets, Path('/root/run'), '0123456789abcdef', artifacts,
-                                uid=10000, port=3000, cgroup=Path('/sys/fs/cgroup/runtime'), keys=['one', 'two'], base=base)
+                                uid=10000, port=3000, cgroup=Path('/sys/fs/cgroup/runtime'), keys=['one', 'two'], base=base,
+                                file_size=lambda path: 100)
 
     def test_service_oom_hard_ceiling_and_identity_cannot_be_ignored(self):
         baseline = {'identity': {'device': 1, 'inode': 2}, 'limits': {'memory.max': '1024'},

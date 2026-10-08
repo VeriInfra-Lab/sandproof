@@ -38,7 +38,8 @@ from sdk_command_input import call
 from sdk_server_smoke import options
 from sdk_task_global_pressure import exercise as pressure
 from server_process_crash import (
-    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
+    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
 )
 from server_templates import record_for
 
@@ -229,12 +230,14 @@ async def exercise(args):
                 'node_state_dir': str(root / 'state'), 'jailer': str(args.jailer),
                 'firecracker': str(args.firecracker), 'chroot_base': str(root / 'jails'),
                 'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base,
-                'max_vm_id': VM_COUNT - 1, 'vcpu_count': 1, 'memory_mib': 512,
+                'vcpu_count': 1, 'memory_mib': 512,
                 'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': 1024 * MIB},
                 'file_policy_digest': 1, 'bind': url.removeprefix('http://'), 'domain': 'example.invalid',
                 'credentials': [{'tenant': index + 1, 'secret': key} for index, key in enumerate(keys)],
                 'max_active_global': 3, 'max_active_per_tenant': 2, 'startup_timeout_secs': 120}
     config = root / 'config.json'
+    settings = complete_runtime(settings, slots=3)
+    provision_runtime(settings)
     config.write_text(json.dumps(settings))
     config.chmod(0o600)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -273,12 +276,10 @@ async def exercise(args):
             await observe('cohort-destroyed')
         monitor.stopped.set()
         await sampler
-        with sqlite3.connect(f'file:{database}?mode=ro', uri=True) as connection:
-            phases = [json.loads(blob)['phase'] for (blob,) in connection.execute('SELECT state_blob FROM sandboxes')]
-            assert phases == ['Destroyed'] * VM_COUNT
+        assert len(evidence) == VM_COUNT
+        assert all(terminal_cleanup_confirmed(database, row['sandbox_id']) for row in evidence)
         audit_gone(root, args, evidence)
-        assert len(list((root / 'jails/.claims').iterdir())) == VM_COUNT
-        assert not processes_in_uid_range(args.uid_base, args.uid_base + VM_COUNT - 1)
+        assert not processes_in_uid_range(args.uid_base, args.uid_base + 2)
         assert not any(path.is_dir() for path in args.cgroup_parent.iterdir())
         assert network_state() == before_network
         assert inputs == {name: {'sha256': sha256_file(getattr(args, name)), 'bytes': getattr(args, name).stat().st_size}

@@ -69,13 +69,18 @@ fn stage(store: &CandidateStore, id: &str, owner: u64) {
 fn settings() -> ManagedConfig {
     let mut value = template_config();
     value.limits.max_disk_bytes_per_tenant = 100_000;
-    value.limits.max_disk_bytes_global = 200_000;
+    value.limits.max_disk_bytes_global = complete_fixture::CLEANUP + 199_000;
     value
 }
 
 fn make_port(directory: &TempDir, host: FakeHost, store: CandidateStore) -> ManagedPort<FakeHost> {
     ManagedPort::with_templates(
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        complete_fixture::open_registry(
+            &directory.path().join("controller.db"),
+            &settings(),
+            store.config(),
+        )
+        .unwrap(),
         host,
         settings(),
         template_catalog(),
@@ -98,7 +103,7 @@ fn artifact_byte_budget_boundary_and_partial_schema_cannot_be_silently_reset() {
     let mut limits = store.config().clone();
     limits.max_artifact_bytes_per_tenant = size - 1;
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     journal.enable_template_registry(&limits).unwrap();
     assert!(!journal.begin_template_publication(&value, &limits).unwrap());
     limits.max_artifact_bytes_per_tenant = size;
@@ -109,15 +114,12 @@ fn artifact_byte_budget_boundary_and_partial_schema_cannot_be_silently_reset() {
         .execute("DROP TABLE template_aliases", [])
         .unwrap();
     drop(connection);
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let before = fs::read(&path).unwrap();
     assert!(matches!(
-        journal.has_template_registry(),
+        complete_fixture::open(&path, NAMESPACE),
         Err(JournalError::CorruptStore)
     ));
-    assert!(matches!(
-        journal.enable_template_registry(&limits),
-        Err(JournalError::CorruptStore)
-    ));
+    assert_eq!(fs::read(&path).unwrap(), before);
 }
 
 #[tokio::test]
@@ -132,7 +134,7 @@ async fn publication_http_auth_input_and_nonleaking_projection() {
     let port = Arc::new(make_port(
         &directory,
         FakeHost {
-            free_bytes: 1_000_000,
+            free_bytes: 16 * 1024 * 1024 * 1024,
             ..FakeHost::default()
         },
         store,
@@ -276,7 +278,7 @@ fn quota_and_interrupted_prelaunch_are_durable_without_retry_or_ready() {
     registry.max_templates_global = 1;
     registry.max_templates_per_tenant = 1;
     let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     journal.enable_template_registry(&registry).unwrap();
     let value = store.candidate(1, ONE).unwrap();
     assert!(
@@ -297,7 +299,7 @@ fn quota_and_interrupted_prelaunch_are_durable_without_retry_or_ready() {
     );
     drop(journal);
     let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     journal.reconcile_template_publications(true).unwrap();
     assert_eq!(
         journal.template_publication(1, ONE).unwrap().unwrap().state,
@@ -323,7 +325,7 @@ fn publication_owned_alias_cas_pagination_restart_and_admitted_binding() {
     let port = make_port(
         &directory,
         FakeHost {
-            free_bytes: 1_000_000,
+            free_bytes: 16 * 1024 * 1024 * 1024,
             prepare_calls: Some(calls.clone()),
             ..FakeHost::default()
         },
@@ -418,7 +420,7 @@ fn candidate_hint_does_not_bypass_host_validation_or_retry_failed_publication() 
         FakeHost {
             candidate_checks: Some(Arc::clone(&candidate_checks)),
             template_validation_error: Some(PortError::Invalid),
-            free_bytes: 1_000_000,
+            free_bytes: 16 * 1024 * 1024 * 1024,
             prepare_calls: Some(Arc::clone(&prepare_calls)),
             ..FakeHost::default()
         },
@@ -452,7 +454,7 @@ fn missing_stop_receipt_is_not_ready_or_a_second_probe() {
     let port = make_port(
         &directory,
         FakeHost {
-            free_bytes: 1_000_000,
+            free_bytes: 16 * 1024 * 1024 * 1024,
             stop: StopObservation::LoseReceipt,
             prepare_calls: Some(calls.clone()),
             ..FakeHost::default()
@@ -562,7 +564,7 @@ fn publication_validation_identity_commits_with_create_and_not_before() {
         stage(&store, ONE, 1);
         let value = store.candidate(1, ONE).unwrap();
         let path = directory.path().join("controller.db");
-        let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+        let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
         journal.enable_template_registry(store.config()).unwrap();
         assert!(
             journal
@@ -597,7 +599,7 @@ fn publication_validation_identity_commits_with_create_and_not_before() {
         );
         assert!(result.is_err());
         drop(journal);
-        let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+        let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
         let expected = (point == CrashPoint::AfterCommit).then_some(1);
         assert_eq!(
             journal
@@ -722,7 +724,7 @@ fn publication_offers_sealed_evidence_once_and_still_requires_validation_and_cle
         &directory,
         FakeHost {
             candidate_checks: Some(Arc::clone(&calls)),
-            free_bytes: 1_000_000,
+            free_bytes: 16 * 1024 * 1024 * 1024,
             stop: StopObservation::LoseReceipt,
             ..FakeHost::default()
         },

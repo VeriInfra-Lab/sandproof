@@ -1,8 +1,9 @@
 """Public OCI acquisition in disposable build VMs, then publication and SDK use.
 
-Root-only isolated KVM probe. The operator supplies an exclusive namespace,
-UID range, delegated cgroup, fixed tools and public IPv4 forwarding. This is
-not the public build API. No image layers are unpacked on the host.
+Root-only isolated KVM probe with a fixed complete two-pool physical profile.
+The operator supplies exclusive namespaces, UID ranges, delegated cgroups,
+fixed tools and public IPv4 forwarding. Private builders use original request
+windows. This is not the public build API; no layers are unpacked on the host.
 """
 
 import runpy as _runpy
@@ -19,23 +20,22 @@ import json
 import os
 from pathlib import Path
 import re
-import secrets
 import shutil
-import sqlite3
 import subprocess
 import sys
-import tempfile
 import urllib.request
 
 from e2b import Sandbox, CommandExitException
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
 from server_process_crash import free_loopback_port, start_server, stop_server, wait_ready
-from server_templates import descriptor
 from server_vm_id_capacity import check_no_resources
 from template_build import BUILDKIT_HASHES, MIB, checked, upload
 from template_stage import stage
 from template_fetch import REGCTL_SHA256
+from _complete_registry_runtime import (
+    add_registry_arguments, prepare_registry_runtime, sandbox_highwater, assert_terminal_rows,
+)
 
 
 IMAGES = (
@@ -51,10 +51,11 @@ def exercise(args):
         raise RuntimeError("isolated root Linux/KVM with pinned SDK required")
     if not re.fullmatch("[0-9a-f]{16}", args.namespace):
         raise ValueError("exclusive 16-hex namespace required")
-    if processes_in_uid_range(args.uid_base, args.uid_base + 10):
+    if processes_in_uid_range(args.uid_base, args.uid_base + 164):
         raise RuntimeError("exclusive UID range occupied")
-    if (args.cgroup_parent / "cgroup.procs").read_text().strip() or any(p.is_dir() for p in args.cgroup_parent.iterdir()):
-        raise RuntimeError("empty delegated cgroup required")
+    for parent in (args.cgroup_parent, args.build_cgroup_parent):
+        if (parent / "cgroup.procs").read_text().strip() or any(p.is_dir() for p in parent.iterdir()):
+            raise RuntimeError("empty delegated cgroup pools required")
     checkout = Path(__file__).resolve().parents[2]
     git = ["git", "-C", str(checkout)]
     if subprocess.check_output(git + ["status", "--porcelain"]).strip():
@@ -68,51 +69,37 @@ def exercise(args):
         raise RuntimeError("private root scratch required")
     if shutil.disk_usage(args.scratch_parent).free < 40 * 1024 * MIB:
         raise RuntimeError("40 GiB test disk including cleanup reserve required")
-    root = Path(tempfile.mkdtemp(prefix="po-", dir=args.scratch_parent))
+    deployment = prepare_registry_runtime(args, tool_hashes=hashes,
+        registry_limits={"max_templates_global": 4, "max_templates_per_tenant": 4,
+            "max_artifact_bytes_global": 8 * 1024 * MIB, "max_artifact_bytes_per_tenant": 8 * 1024 * MIB,
+            "validation_timeout_secs": 20},
+        build_limits={"max_cpu": 2, "max_memory_mib": 1024, "max_disk_mib": 2048,
+            "timeout_seconds": 600, "max_jobs": 20, "max_jobs_per_tenant": 10,
+            "max_pending": 3, "max_pending_per_tenant": 2,
+            "workspace_bytes": 80 * 1024 * MIB, "workspace_bytes_per_tenant": 60 * 1024 * MIB,
+            "max_input_bytes": 256 * MIB, "max_expanded_bytes": 1024 * MIB,
+            "max_entries": 50000, "max_log_bytes": 2 * MIB},
+        ports=[free_loopback_port() for _ in range(3)])
+    root = deployment.root
     print(f"test root={root} namespace={args.namespace} commit={commit}", flush=True)
-    for name in ("db", "state", "jails", "images", "inputs", "registry", "registry/inbox", "registry/artifacts"):
-        (root / name).mkdir(mode=0o700)
-    binary = root / "server"
-    shutil.copyfile(args.server, binary); binary.chmod(0o700)
-    original = [sha256_file(path) for path in (args.kernel, args.rootfs)]
-    base = descriptor("builder-base", args.kernel, args.rootfs, 2, 2048)
-    url = f"http://127.0.0.1:{free_loopback_port()}"
-    key = secrets.token_hex(32)
-    settings = {
-        "namespace": args.namespace, "database": str(root / "db/controller.db"), "node_state_dir": str(root / "state"),
-        "jailer": str(args.jailer), "firecracker": str(args.firecracker), "chroot_base": str(root / "jails"),
-        "kernel": str(args.kernel), "rootfs": str(args.rootfs), "uid_base": args.uid_base, "max_vm_id": 10,
-        "vcpu_count": 2, "memory_mib": 2048,
-        "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 2304 * MIB},
-        "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 1, "max_active_per_tenant": 1,
-        "max_disk_bytes_global": 24 * 1024 * MIB, "max_disk_bytes_per_tenant": 24 * 1024 * MIB,
-        "cleanup_reserve_bytes": 256 * MIB, "max_timeout_secs": 1200,
-        "startup_timeout_secs": 40, "expiry_scan_seconds": 2, "public_ipv4_enabled": True,
-        "templates": {"templates": [base], "aliases": {"base": "builder-base"},
-                      "compute_limits": {"max_vcpus_global": 2, "max_vcpus_per_tenant": 2,
-                                         "max_memory_bytes_global": 2304 * MIB, "max_memory_bytes_per_tenant": 2304 * MIB}},
-        "template_registry": {"root": str(root / "registry"), "max_templates_global": 4,
-            "max_templates_per_tenant": 4, "max_artifact_bytes_global": 8 * 1024 * MIB,
-            "max_artifact_bytes_per_tenant": 8 * 1024 * MIB, "validation_timeout_secs": 20},
-        "data_transfer": {"file_upload_bytes": 512 * MIB, "file_download_bytes": 512 * MIB,
-                          "command_input_bytes": MIB, "command_output_bytes": 4 * MIB,
-                          "rpc_request_bytes": MIB, "rpc_response_bytes": MIB,
-                          "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
-                          "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60},
-    }
-    config = root / "config.json"
-    config.write_text(json.dumps(settings)); config.chmod(0o600)
+    binary = deployment.binary
+    original_paths = (args.kernel, args.rootfs, args.builder_rootfs or args.rootfs)
+    original = [sha256_file(path) for path in original_paths]
+    url, key = deployment.urls[0], deployment.keys[0]
+    config = root / "0/config.json"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     owner = dict(options(key, url, url), request_timeout=180)
-    process, active, evidence = None, [], []
+    process, builder_process, active, evidence = None, None, [], []
 
     def no_resources():
-        if (root / "jails/.claims").is_dir():
-            check_no_resources(root, args.namespace, args.firecracker, args.uid_base)
-        for parent in (root / "jails" / args.firecracker.name, Path("/run/netns"), args.cgroup_parent):
-            assert not list(parent.glob(f"vm-{args.namespace}-*")), "test resource remains"
-        assert not processes_in_uid_range(args.uid_base, args.uid_base + 10)
+        for index, namespace in enumerate(deployment.namespaces):
+            pool = root / str(index)
+            if (pool / "jails/.claims").is_dir():
+                check_no_resources(pool, namespace, args.firecracker, args.uid_base + index * 100)
+            assert_terminal_rows(pool / "db/controller.db")
+            for parent in (pool / "jails" / args.firecracker.name, Path("/run/netns"), args.build_cgroup_parent if index else args.cgroup_parent):
+                assert not list(parent.glob(f"vm-{namespace}-*")), "test resource remains"
+        assert not processes_in_uid_range(args.uid_base, args.uid_base + 164)
 
     request = {"kind": "oci-reference", "disk_mib": 1024, "min_free_mib": 64,
                "max_input_bytes": 256 * MIB, "max_expanded_bytes": 1024 * MIB, "max_entries": 50000,
@@ -120,13 +107,14 @@ def exercise(args):
     try:
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
+        builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
+        wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
         jobs = list(IMAGES) + [dict(IMAGES[0], name="missing-digest", reference="docker.io/library/debian@sha256:" + "0" * 64),
                               dict(IMAGES[0], name="download-limit")]
         for item in jobs:
             name = item["name"]
             print("building " + name, flush=True)
-            builder = Sandbox.create(timeout=600, allow_internet_access=True, **owner)
-            active.append(builder.sandbox_id)
+            builder, builder_identity = deployment.open_builder(timeout=600, internet=True)
             checked(builder, "mkdir -p /input/tools /output")
             # Trusted public DNS for this test builder; never inherit host DNS.
             builder.files.write("/etc/resolv.conf", "nameserver 1.1.1.1\nnameserver 8.8.8.8\n", user="root")
@@ -187,9 +175,7 @@ def exercise(args):
                     assert not incoming.read(1)
                 assert sha256_file(disk) == status["rootfs_sha256"]
                 disk.chmod(0o444)
-            _kill_confirmed = (Sandbox.kill(builder.sandbox_id, **owner))
-            assert _kill_confirmed
-            active.remove(builder.sandbox_id)
+            deployment.close_builder(builder_identity)
             no_resources()
             if name not in ("missing-digest", "download-limit"):
                 candidate = stage(root / "registry", args.kernel, disk, status, 1, 1, 512, 768)
@@ -215,24 +201,30 @@ def exercise(args):
                 record.update(publication="ready", sdk_file_command="passed", release=release)
             evidence.append(record)
             print(name + " passed", flush=True)
-        with sqlite3.connect(root / "db/controller.db") as database:
-            phases = [json.loads(blob)["phase"] for (blob,) in database.execute("SELECT state_blob FROM sandboxes")]
-        assert phases == ["Destroyed"] * 8, phases
-        assert [sha256_file(path) for path in (args.kernel, args.rootfs)] == original
+        allocated = sum(sandbox_highwater(root / str(index) / "db/controller.db") for index in range(2))
+        assert allocated == 8, "unexpected replacement or validation VM"
+        assert [sha256_file(path) for path in original_paths] == original
         no_resources()
         report = {"commit": commit, "namespace": args.namespace, "server_sha256": sha256_file(binary),
                   "base_sha256": original, "tools": hashes, "sdk": "2.51.0", "evidence": evidence,
-                  "destroyed_vms": len(phases), "cleanup": "passed", "scope": "guest public acquisition, publication and SDK; not public build API or recovery"}
+                  "destroyed_vms": allocated, "cleanup": "passed", "scope": "complete two-pool guest public acquisition, publication and SDK; not public build API or recovery"}
         (root / "report.json").write_text(json.dumps(report, indent=2))
         print("passed: " + str(root / "report.json"), flush=True)
     finally:
-        for sandbox_id in active:
-            try:
-                Sandbox.kill(sandbox_id, **owner)
-            except Exception as error:
-                print("cleanup unresolved: " + sandbox_id + " " + type(error).__name__, file=sys.stderr)
-        if process is not None:
+        try:
+            if list(root.glob("builder-intent-*.json")):
+                if builder_process is None or builder_process.poll() is not None:
+                    builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
+                    wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
+                deployment.close_builders()
+            for sandbox_id in active:
+                try:
+                    Sandbox.kill(sandbox_id, **owner)
+                except Exception as error:
+                    print("cleanup unresolved: " + sandbox_id + " " + type(error).__name__, file=sys.stderr)
+        finally:
             stop_server(process)
+            stop_server(builder_process)
         print("retained private evidence: " + str(root), flush=True)
 
 
@@ -241,5 +233,5 @@ if __name__ == "__main__":
     for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "cgroup-parent", "tools"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
-    parser.add_argument("--namespace", required=True)
+    add_registry_arguments(parser)
     exercise(parser.parse_args())

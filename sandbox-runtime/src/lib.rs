@@ -18,6 +18,7 @@ mod linux;
 pub use linux::{
     CLAIM_RECORD_NAMES, ConsolePolicy, HostResources, JailObservation, MAX_CLAIM_RECORD_BYTES,
     MAX_HELPER_MARKER_BYTES, Observation, RetirementManifest, Runtime, RuntimeConfig, RuntimeError,
-    RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeProcessIdentity,
-    RuntimeRouteSnapshot, RuntimeRouteState, VmState, check_trusted_path,
+    RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig,
+    RuntimePhysicalObserver, RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState,
+    VmState, check_trusted_path,
 };

@@ -67,7 +67,14 @@ impl HostAdapter for FleetHost {
             .data_gate_drained(context)
     }
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
-        Ok(10_000)
+        Ok(16 * 1024 * 1024 * 1024)
+    }
+    fn validate_physical_storage(
+        &self,
+        profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        _: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<(), PortError> {
+        profile.validate().map_err(|_| PortError::Busy)
     }
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         self.sandbox(sandbox)?.put_secret(sandbox, token)
@@ -103,25 +110,20 @@ impl HostAdapter for FleetHost {
     }
 }
 
-fn host_config() -> BoundedHostConfig {
-    let mut config = bounded();
+fn host_config(path: &Path) -> BoundedHostConfig {
+    let mut config = bounded(path);
     config.maintenance.max_host_slots = 2;
     config.maintenance.max_retained_results = 64;
+    config.physical_storage.as_mut().unwrap().pools[0].max_host_slots = 2;
     config
 }
 
 fn maintenance_config() -> MaintenanceConfig {
-    MaintenanceConfig {
-        capacity: None,
-        retention_ms: 60_000,
-        max_checkpoint_bytes: 8_000_000,
-        max_records: 10_000,
-        max_references: 100_000,
-        max_tail_inputs: 10_000,
-        max_tail_bytes: 8_000_000,
-        max_input_bytes: 128_000,
-        prune_batch_rows: 3,
-    }
+    let mut policy = complete_fixture::maintenance();
+    policy.max_tail_inputs = 8;
+    policy.max_tail_bytes = 64 * 1024;
+    policy.prune_batch_rows = 3;
+    policy
 }
 
 fn open_maintained(path: &Path, host: FleetHost) -> ManagedPort<FleetHost> {
@@ -129,15 +131,21 @@ fn open_maintained(path: &Path, host: FleetHost) -> ManagedPort<FleetHost> {
     limits.limits.max_active_per_tenant = 2;
     limits.limits.max_disk_bytes_per_tenant = 2_000;
     ManagedPort::new(
-        ControllerJournal::open_maintained(path, NAMESPACE, host_config(), maintenance_config(), 0)
-            .unwrap(),
+        ControllerJournal::open_complete(
+            path,
+            NAMESPACE,
+            host_config(path),
+            maintenance_config(),
+            0,
+        )
+        .unwrap(),
         host,
         limits,
     )
 }
 
 fn journal(path: &Path) -> ControllerJournal {
-    ControllerJournal::open_maintained(path, NAMESPACE, host_config(), maintenance_config(), 0)
+    ControllerJournal::open_complete(path, NAMESPACE, host_config(path), maintenance_config(), 0)
         .unwrap()
 }
 
@@ -166,7 +174,6 @@ fn production_tick_retires_newer_objects_while_old_live_or_unknown_object_stays_
             port.kill("1", &new.sandbox_id).unwrap();
             let report = port.maintain().unwrap();
             assert_eq!(report.retired_sandboxes, 1);
-            assert!(report.pruned_inputs > 3);
             assert_eq!(report.tracked_data_sandboxes, 0);
             if !unknown {
                 assert_eq!(
@@ -177,6 +184,14 @@ fn production_tick_retires_newer_objects_while_old_live_or_unknown_object_stays_
         }
         drop(port);
         let journal = journal(&path);
+        let checkpoint = journal.checkpoint_progress().unwrap().unwrap();
+        // Full mode rotates/prunes throughout admitted writes, not only in
+        // this explicit tick. The persistent prefix must actually shrink.
+        assert!(checkpoint.deleted_through > 3);
+        assert!(
+            checkpoint.input_high_water - checkpoint.input_cut
+                <= maintenance_config().max_tail_inputs
+        );
         let world = journal.world().unwrap();
         assert_eq!(world.sandbox_records().len(), 1);
         assert!(world.sandbox_record(core::SandboxId(1)).is_some());
@@ -309,50 +324,6 @@ fn lost_host_release_ack_cannot_authorize_retirement_before_recovery() {
     assert!(journal(&path).world().unwrap().sandbox_records().is_empty());
 }
 
-#[test]
-fn private_build_retry_anchor_remains_pinned_and_keeps_same_identity() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("controller.db");
-    let host = FleetHost::new(dir.path());
-    let port = open_maintained(&path, host).with_internal_build_vms(true);
-    let key = "123456789abcdef0123456789abcdef0";
-    let input = sandproof_api::BuildVmRequest {
-        request_window: None,
-        timeout: 300,
-        allow_internet_access: false,
-    };
-    let build = port.build_vm("1", key, Some(input.clone())).unwrap();
-    port.kill("1", &build.sandbox_id).unwrap();
-    assert_eq!(port.maintain().unwrap().retired_sandboxes, 0);
-    assert_eq!(
-        port.build_vm("1", key, Some(input)).unwrap().sandbox_id,
-        build.sandbox_id
-    );
-    drop(port);
-    let db = journal(&path);
-    assert_eq!(db.world().unwrap().sandbox_records().len(), 1);
-    assert_eq!(
-        db.host_slot_inventory().unwrap()[0].1,
-        HostSlotPhase::Occupied
-    );
-}
-
-#[test]
-fn unconfigured_production_tick_preserves_legacy_history() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("controller.db");
-    let port = open(&path, BoundedHost::default());
-    let session = port.create("1", request()).unwrap();
-    port.kill("1", &session.sandbox_id).unwrap();
-    assert_eq!(
-        port.maintain().unwrap(),
-        sandproof_api::managed::MaintenanceReport::default()
-    );
-    drop(port);
-    let db = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
-    assert_eq!(db.world().unwrap().sandbox_records().len(), 1);
-}
-
 #[tokio::test]
 async fn ordinary_sdk_create_stays_unchanged_and_http_cannot_supply_retirement_attestations() {
     let dir = TempDir::new().unwrap();
@@ -398,14 +369,14 @@ async fn ordinary_sdk_create_stays_unchanged_and_http_cannot_supply_retirement_a
 }
 
 #[test]
-fn full_result_retention_never_evicts_promised_results_to_retire_another_object() {
+fn full_result_retention_refuses_new_admission_without_evicting_promised_results() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("controller.db");
     let host = FleetHost::new(dir.path());
-    let mut bounded = host_config();
+    let mut bounded = host_config(&path);
     bounded.maintenance.max_retained_results = 2;
     let port = ManagedPort::new(
-        ControllerJournal::open_maintained(
+        ControllerJournal::open_complete(
             &path,
             NAMESPACE,
             bounded.clone(),
@@ -413,26 +384,31 @@ fn full_result_retention_never_evicts_promised_results_to_retire_another_object(
             0,
         )
         .unwrap(),
-        host,
+        host.clone(),
         config(),
     );
     let first = port.create("1", request()).unwrap();
     port.kill("1", &first.sandbox_id).unwrap();
     assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
-    let second = port.create("1", request()).unwrap();
-    port.kill("1", &second.sandbox_id).unwrap();
+    let physical = host.sandbox(core::SandboxId(1)).unwrap();
+    let actions_before = physical.0.lock().unwrap().actions.len();
+    // Full mode reserves eventual create/kill outcomes before admitting work,
+    // so this request is refused before another identity or command exists.
+    assert!(matches!(port.create("1", request()), Err(PortError::Busy)));
+    assert_eq!(physical.0.lock().unwrap().actions.len(), actions_before);
     let report = port.maintain().unwrap();
     assert_eq!(report.retired_sandboxes, 0);
-    assert_eq!(report.pending_sandboxes, 1);
+    assert_eq!(report.pending_sandboxes, 0);
     assert_eq!(report.expired_results, 0);
     drop(port);
     let journal =
-        ControllerJournal::open_maintained(&path, NAMESPACE, bounded, maintenance_config(), 0)
+        ControllerJournal::open_complete(&path, NAMESPACE, bounded, maintenance_config(), 0)
             .unwrap();
     let world = journal.world().unwrap();
     assert_eq!(world.maintenance_state().unwrap().retained_count(), 2);
     assert!(world.sandbox_record(core::SandboxId(1)).is_none());
-    assert!(world.sandbox_record(core::SandboxId(2)).is_some());
+    assert!(world.sandbox_record(core::SandboxId(2)).is_none());
+    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(2));
     assert!(
         world
             .maintenance_state()
@@ -450,7 +426,7 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
     use sandproof_controller_service::{CapacityConfig, ConsolePolicy};
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("controller.db");
-    let mut host = host_config();
+    let mut host = host_config(&path);
     host.console_policy = Some(ConsolePolicy::Discard);
     // Explicit test-only envelope, matching the component workload rather than
     // recommending deployment values.
@@ -479,13 +455,10 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
         }),
     };
     let initial =
-        ControllerJournal::open_maintained(&path, NAMESPACE, host.clone(), policy.clone(), 0)
+        ControllerJournal::open_complete(&path, NAMESPACE, host.clone(), policy.clone(), 0)
             .unwrap();
     let before = initial.checkpoint_progress().unwrap().unwrap();
-    let mut managed = config();
-    managed.limits.cleanup_reserve_bytes =
-        policy.capacity.as_ref().unwrap().max_online_storage_bytes;
-    let port = ManagedPort::new(initial, FleetHost::new(dir.path()), managed);
+    let port = ManagedPort::new(initial, FleetHost::new(dir.path()), config());
     let first = port.maintain().unwrap();
     assert_eq!(
         first.pruned_inputs as u64,
@@ -503,7 +476,7 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
         );
     }
     drop(port);
-    let reopened = ControllerJournal::open_maintained(&path, NAMESPACE, host, policy, 0).unwrap();
+    let reopened = ControllerJournal::open_complete(&path, NAMESPACE, host, policy, 0).unwrap();
     let after = reopened.checkpoint_progress().unwrap().unwrap();
     assert_eq!(after.input_high_water, before.input_high_water);
     assert_eq!(after.input_cut, before.input_cut);

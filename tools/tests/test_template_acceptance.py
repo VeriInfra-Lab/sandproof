@@ -11,6 +11,7 @@ from tools.template_acceptance import budgets, check_headroom, load, PROFILE, RU
 from tools.template_build_client import BuildClient
 from tools.template_build_service import BuildHTTP, Supervisor, configuration
 from tools.template_build_store import BuildStore
+from tools.tests.template_build_fixture import compiled_helper, complete_pool_policy
 from tools.template_worker import validate_request
 from tools.template_inputs import InvalidTemplate
 from tools.tests.test_template_build_service import FakeBackend, PowerLoss
@@ -30,17 +31,20 @@ def configured(root, deployment, *, builder_bytes=32 * GIB, **extra_config):
     with disk.open('wb') as output:
         output.truncate(builder_bytes)
     pool_files = []
+    pools = []
     for i, kind in enumerate(('runtime', 'builder')):
         directory = root / str(i)
         directory.mkdir(mode=0o700)
+        for name in ('db', 'state', 'jails', 'cgroup'):
+            (directory / name).mkdir(mode=0o700)
         pool = copy.deepcopy(deployment[kind])
         shape = deployment['builder_shape'] if i else {'cpu_count': 1, 'memory_mib': 2048, 'host_memory_bytes': 2304 * MIB}
         base = {'template_id': 'base', 'owner': None, 'rootfs': {'path': str(disk), 'size_bytes': builder_bytes},
                 'resources': shape | {'disk_bytes': builder_bytes}}
-        pool.update(namespace=str(i), database=str(directory / 'db'), node_state_dir=str(directory),
-                    chroot_base=str(directory), bind=f'127.0.0.1:{3100 + i}', uid_base=1000 + 100 * i,
-                    max_vm_id=99, credentials=[{'tenant': 1, 'secret': f'pool-{i}'}], kernel=str(kernel),
-                    rootfs=str(disk), host_resources={'cgroup_parent': str(directory)},
+        pool.update(namespace=str(i), database=str(directory / 'db/controller.db'), node_state_dir=str(directory / 'state'),
+                    chroot_base=str(directory / 'jails'), bind=f'127.0.0.1:{3100 + i}', uid_base=1000 + 100 * i,
+                    credentials=[{'tenant': 1, 'secret': f'pool-{i}'}], kernel=str(kernel),
+                    rootfs=str(disk), host_resources={'cgroup_parent': str(directory / 'cgroup')},
                     public_ipv4_enabled=True, templates={'templates': [base], 'aliases': {'base': 'base'},
                         'compute_limits': deployment[kind + '_compute']})
         if i:
@@ -54,12 +58,16 @@ def configured(root, deployment, *, builder_bytes=32 * GIB, **extra_config):
         path.write_text(json.dumps(pool))
         path.chmod(0o600)
         pool_files.append(path)
+        pools.append(pool)
     (root / 'builds').mkdir(mode=0o700)
     tools = ('buildctl', 'buildkitd', 'buildkit-runc', 'umoci', 'envd', 'busybox', 'regctl')
     config = {'root': str(root / 'builds'), 'bind': '127.0.0.1:3102',
               'runtime_config': str(pool_files[0]), 'builder_config': str(pool_files[1]),
               'tools': {name: {'path': str(kernel), 'sha256': hashlib.sha256(b'kernel').hexdigest()} for name in tools},
               'limits': deployment['limits'], 'dns_servers': ['1.1.1.1']}
+    complete_pool_policy(root, pools[0], pools[1], config)
+    for path, pool in zip(pool_files, pools):
+        path.write_text(json.dumps(pool))
     config.update(extra_config)
     path = root / 'build.json'
     path.write_text(json.dumps(config))
@@ -109,7 +117,8 @@ class AcceptanceConfigTests(unittest.TestCase):
                              docker_hub_mirror='docker.1ms.run')
             self.assertEqual(cfg['docker_hub_mirror'], 'docker.1ms.run')
             original = cfg.pop('binding')
-            self.assertEqual(original, hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest())
+            self.assertEqual(original, hashlib.sha256(json.dumps({key: value for key, value in cfg.items()
+                if key != 'bounded_builds'}, sort_keys=True).encode()).hexdigest())
             del cfg['docker_hub_mirror']
             self.assertNotEqual(original, hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest())
 
@@ -223,12 +232,12 @@ class AcceptancePressureTests(unittest.TestCase):
             backend = FakeBackend()
             backend.fail = True
             backend.cleanup_known = False
-            store = BuildStore(root / 'builds', limits, clock=lambda: 1000, free_bytes=lambda: 1000 * GIB)
+            store = BuildStore(root / 'builds', limits, bounded=cfg['bounded_builds'] | {'helper': compiled_helper()}, physical_profile=cfg['physical_storage_profile'], clock=lambda: 1000, free_bytes=lambda: 1000 * GIB)
             server = BuildHTTP(('127.0.0.1', 0), store, [{'tenant': 1, 'secret': 'owner'}])
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             client = BuildClient('http://127.0.0.1:' + str(server.server_port), 'owner')
-            request = {'kind': 'oci', 'image': 'ubuntu:24.04'}
+            request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'requestWindow': store.open_window(1, 600000)['requestWindow']}
             try:
                 first = client.request('POST', '/sandproof/template-builds', request, token='original')
                 job = first['buildID']
@@ -246,7 +255,7 @@ class AcceptancePressureTests(unittest.TestCase):
                 server.server_close()
                 thread.join()
                 store.close()
-            store = BuildStore(root / 'builds', limits, clock=lambda: 1001, free_bytes=lambda: 1000 * GIB)
+            store = BuildStore(root / 'builds', limits, bounded=cfg['bounded_builds'] | {'helper': compiled_helper()}, physical_profile=cfg['physical_storage_profile'], clock=lambda: 1001, free_bytes=lambda: 1000 * GIB)
             try:
                 supervisor = Supervisor(store, backend)
                 supervisor.tick()
@@ -257,7 +266,7 @@ class AcceptancePressureTests(unittest.TestCase):
                 self.assertEqual(store.get(job)['reserved'], 0)
                 self.assertEqual(backend.builds, [job])
                 self.assertEqual(store.db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0], 1)
-                self.assertNotEqual(store.submit(1, request, 'next')['buildID'], job)
+                self.assertNotEqual(store.submit(1, {key: value for key, value in request.items() if key != 'requestWindow'}, 'next', window=request['requestWindow'])['buildID'], job)
                 self.assertEqual(store.query(job, 1)['deadline'], first['deadline'])
             finally:
                 store.close()
@@ -268,15 +277,15 @@ class AcceptancePressureTests(unittest.TestCase):
             cfg = configured(root, budgets(inputs(), 32 * GIB, 64 * MIB))
             backend = FakeBackend()
             backend.power_loss = True
-            store = BuildStore(root / 'builds', cfg['limits'], clock=lambda: 1000, free_bytes=lambda: 1000 * GIB)
+            store = BuildStore(root / 'builds', cfg['limits'], bounded=cfg['bounded_builds'] | {'helper': compiled_helper()}, physical_profile=cfg['physical_storage_profile'], clock=lambda: 1000, free_bytes=lambda: 1000 * GIB)
             try:
-                job = store.submit(1, {'kind': 'oci', 'image': 'ubuntu:24.04'}, 'original')['buildID']
+                job = store.submit(1, {'kind': 'oci', 'image': 'ubuntu:24.04'}, 'original', window=store.open_window(1, 600000)['requestWindow'])['buildID']
                 with self.assertRaises(PowerLoss):
                     Supervisor(store, backend).tick()
             finally:
                 store.close()
             backend.power_loss = False
-            store = BuildStore(root / 'builds', cfg['limits'], clock=lambda: 1001, free_bytes=lambda: 1000 * GIB)
+            store = BuildStore(root / 'builds', cfg['limits'], bounded=cfg['bounded_builds'] | {'helper': compiled_helper()}, physical_profile=cfg['physical_storage_profile'], clock=lambda: 1001, free_bytes=lambda: 1000 * GIB)
             try:
                 Supervisor(store, backend).tick()
                 self.assertEqual(store.query(job, 1)['failure'], 'InterruptedBuild')

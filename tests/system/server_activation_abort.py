@@ -30,8 +30,9 @@ import time
 import urllib.request
 
 from server_process_crash import (
-    fetch, free_loopback_port, interrupted_request, process_start_ticks,
-    start_server, stop_server, wait_ready,
+    assert_idle_reopen, complete_runtime, fetch, free_loopback_port, idle_snapshot,
+    interrupted_request, process_start_ticks, provision_runtime, start_server,
+    stop_server, terminal_cleanup_confirmed, wait_ready,
 )
 from server_unready_abort import wait_for
 from sdk_c02_acceptance import processes_in_uid_range
@@ -61,9 +62,9 @@ def exercise(args: argparse.Namespace) -> None:
     parent = args.scratch_parent.resolve(strict=True)
     if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o077:
         raise RuntimeError("scratch parent must be root-owned and private")
-    if args.uid_base < 1000 or args.uid_base + 1000 >= 2**32:
+    if args.uid_base < 1000 or args.uid_base >= 2**32 - 1:
         raise RuntimeError("invalid exclusive test UID range")
-    if processes_in_uid_range(args.uid_base, args.uid_base + 1000):
+    if processes_in_uid_range(args.uid_base, args.uid_base):
         raise RuntimeError("test UID range already occupied")
     checkout = Path(__file__).resolve().parents[2]
     if subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
@@ -95,17 +96,21 @@ def exercise(args: argparse.Namespace) -> None:
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(args.firecracker.resolve(strict=True)),
         "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
-        "uid_base": args.uid_base, "max_vm_id": 1000, "vcpu_count": 1, "memory_mib": 512,
+        "uid_base": args.uid_base, "vcpu_count": 1, "memory_mib": 512,
         "file_policy_digest": 1, "bind": f"127.0.0.1:{port}", "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": key}],
         "max_active_global": 1, "max_active_per_tenant": 1,
         "max_disk_bytes_global": disk_bytes * 3, "max_disk_bytes_per_tenant": disk_bytes * 3,
         "cleanup_reserve_bytes": disk_bytes, "max_timeout_secs": 600, "default_timeout_secs": 300,
-        "startup_timeout_secs": 10, "expiry_scan_seconds": 1,
+        # This probe advances the startup deadline before an explicit restart;
+        # that recovery pass, not a racing periodic scan, owns its fault window.
+        "startup_timeout_secs": 10, "expiry_scan_seconds": 3600,
     }
     if args.cgroup_parent is not None:
         values["host_resources"] = {"cgroup_parent": str(args.cgroup_parent.resolve(strict=True)),
                                    "memory_max_bytes": 768 * 1024 * 1024}
+    values = complete_runtime(values, slots=1)
+    provision_runtime(values)
     config.write_text(json.dumps(values))
     config.chmod(0o600)
     log = root / "server.log"
@@ -151,7 +156,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert (process_start_ticks(pid) == ticks) == (args.window == "before-stop")
         process = start_server(binary, config, log, None)
         wait_ready(opener, base_url, key, process)
-        wait_for(lambda: database_snapshot(database)["states"][0]["phase"] == "Destroyed", 15, "failed terminal state")
+        wait_for(lambda: terminal_cleanup_confirmed(database, f"sb-{namespace}-1"), 15, "failed terminal state")
         final = database_snapshot(database)
         retirements = [item["Effect"]["RetireActivation"] for item in final["inputs"]
                        if isinstance(item.get("Effect"), dict) and "RetireActivation" in item["Effect"]]
@@ -169,10 +174,12 @@ def exercise(args: argparse.Namespace) -> None:
         assert not Path("/run/netns", vm_name).exists()
         if args.cgroup_parent is not None:
             assert not (args.cgroup_parent / vm_name).exists()
+        reopened = idle_snapshot(database)
         stop_server(process)
         process = start_server(binary, config, log, None)
         wait_ready(opener, base_url, key, process)
-        assert database_snapshot(database) == final, "idle restart changed the retired operation"
+        assert_idle_reopen(reopened, idle_snapshot(database))
+        assert terminal_cleanup_confirmed(database, f"sb-{namespace}-1")
         # With max_active=1, a new successful create proves the aborted VM no
         # longer occupies quota. Never resubmit the original unknown create.
         status, body = fetch(opener, base_url, "POST", "/v2/sandboxes", key,
@@ -181,7 +188,7 @@ def exercise(args: argparse.Namespace) -> None:
         sandbox_id = json.loads(body)["sandboxID"]
         status, body = fetch(opener, base_url, "DELETE", f"/sandboxes/{sandbox_id}", key)
         assert status == 204, (status, body)
-        wait_for(lambda: not processes_in_uid_range(args.uid_base, args.uid_base + 1000), 15, "all test VM exits")
+        wait_for(lambda: not processes_in_uid_range(args.uid_base, args.uid_base), 15, "all test VM exits")
         for path in (root / "jails/.claims").iterdir():
             saved = json.loads((path / "record.json").read_text())
             assert process_start_ticks(saved["pid"]) != saved["start_time_ticks"]

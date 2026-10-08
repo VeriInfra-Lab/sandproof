@@ -3,42 +3,20 @@ use crate::{
     AdmissionLimits, BoundedHostConfig, CreateAdmission, MaintenanceConfig, NeverCrash,
     finish_admitted_create_v1, kill_v1,
 };
-use sandbox_controller_core::maintenance::{MaintenanceLimits, windows::WindowLimits};
 use tempfile::TempDir;
 
 const NS: &str = "0123456789abcdef";
 const BUILD: &str = "11111111111111111111111111111111";
 fn host() -> BoundedHostConfig {
-    BoundedHostConfig {
-        physical_storage: None,
-        console_policy: None,
-        uid_base: 1000,
-        uplink_base: 8,
-        max_data_routes_per_slot: 4,
-        max_data_routes_global: 8,
-        data_route_control_reserve: 1,
-        maintenance: MaintenanceLimits {
-            max_host_slots: 1,
-            max_retained_results: 32,
-            windows: WindowLimits::new(2, 1000).unwrap(),
-        },
-    }
+    let mut host = crate::controller::tests_support::host(1);
+    host.maintenance.max_retained_results = 32;
+    host
 }
 fn maintenance() -> MaintenanceConfig {
-    MaintenanceConfig {
-        capacity: None,
-        retention_ms: 100,
-        max_checkpoint_bytes: 4 * 1024 * 1024,
-        max_records: 10000,
-        max_references: 100_000,
-        max_tail_inputs: 1000,
-        max_tail_bytes: 4 * 1024 * 1024,
-        max_input_bytes: 128 * 1024,
-        prune_batch_rows: 7,
-    }
+    crate::controller::tests_support::fixture::maintenance()
 }
 fn open(path: &std::path::Path) -> ControllerJournal {
-    ControllerJournal::open_maintained(path, NS, host(), maintenance(), 1000).unwrap()
+    ControllerJournal::open_complete(path, NS, host(), maintenance(), 1000).unwrap()
 }
 fn setup(path: &std::path::Path) -> ControllerJournal {
     let mut journal = open(path);
@@ -94,12 +72,12 @@ fn admit_at(
             timeout_secs: 60,
             disk_bytes: 1000,
             limits: AdmissionLimits {
-                max_vm_id: 1,
                 max_active_global: 1,
                 max_active_per_tenant: 1,
-                max_disk_bytes_global: 100_000,
+                max_disk_bytes_global: crate::controller::tests_support::fixture::CLEANUP_BYTES
+                    + 100_000,
                 max_disk_bytes_per_tenant: 10_000,
-                cleanup_reserve_bytes: 1000,
+                cleanup_reserve_bytes: crate::controller::tests_support::fixture::CLEANUP_BYTES,
                 max_timeout_secs: 600,
                 max_lifetime_secs: 600,
                 startup_timeout_secs: 60,
@@ -255,7 +233,9 @@ fn accepted_tuple_survives_close_until_exact_settlement_and_can_retire() {
         .retire_reclaimed(core::SandboxId(1), 1010, |_| Ok(()), &mut NeverCrash)
         .unwrap();
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
-    while journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap() > 0 {}
+    journal.publish_checkpoint(&mut NeverCrash).unwrap();
+    let progress = journal.checkpoint_progress().unwrap().unwrap();
+    assert_eq!(progress.deleted_through, progress.input_cut);
     drop(journal);
     let mut journal = open(&path);
     settle(&mut journal, &window, Some(1)).unwrap();
@@ -363,24 +343,24 @@ fn expiry_persists_and_repeated_closed_operations_do_not_grow_tail() {
 }
 
 #[test]
-fn unknown_cleanup_and_legacy_domain_remain_pinned() {
+fn windowless_private_admission_is_rejected_before_and_after_service_enablement() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db");
     let mut journal = open(&path);
-    admit(&mut journal, None, 1, &mut NeverCrash).unwrap();
-    destroy(&mut journal, 1);
+    let before = journal.world().unwrap();
+    assert!(admit(&mut journal, None, 1, &mut NeverCrash).is_err());
+    assert_eq!(journal.world().unwrap(), before);
+    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
     journal
         .enable_build_retry_windows(BuildRetryConfig {
             window_duration_ms: 100,
             max_anchors: 1,
         })
         .unwrap();
-    assert!(
-        journal
-            .host_slot_release_pinned(core::SandboxId(1))
-            .unwrap()
-    );
-    assert!(admit(&mut journal, None, 2, &mut NeverCrash).is_err());
+    assert!(admit(&mut journal, None, 1, &mut NeverCrash).is_err());
+    assert!(journal.world().unwrap().sandbox_records().is_empty());
+    assert_eq!(rows(&journal, "private_build_anchors"), 0);
+    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
 }
 
 #[test]
@@ -449,23 +429,24 @@ fn sql_anchor_binding_and_unsettled_absence_are_validated_on_reopen() {
             .unwrap();
         }
         drop(sql);
-        assert!(
-            ControllerJournal::open_maintained(&path, NS, host(), maintenance(), 1000).is_err()
-        );
+        assert!(ControllerJournal::open_complete(&path, NS, host(), maintenance(), 1000).is_err());
     }
 }
 
 #[test]
 fn private_config_is_explicit_immutable_and_requires_maintenance() {
     let dir = TempDir::new().unwrap();
-    let mut legacy = ControllerJournal::open(dir.path().join("legacy"), NS).unwrap();
+    let mut incomplete = maintenance();
+    incomplete.capacity = None;
     assert!(
-        legacy
-            .enable_build_retry_windows(BuildRetryConfig {
-                window_duration_ms: 100,
-                max_anchors: 1
-            })
-            .is_err()
+        ControllerJournal::open_complete(
+            dir.path().join("incomplete"),
+            NS,
+            host(),
+            incomplete,
+            1000
+        )
+        .is_err()
     );
     let mut journal = setup(&dir.path().join("db"));
     for config in [

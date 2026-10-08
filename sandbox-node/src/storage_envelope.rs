@@ -40,10 +40,7 @@ fn count(length: usize) -> NodeResult<u64> {
 /// and mapping, and cleanup can later need a full retirement cell even if the
 /// slot was never able to launch. No files are touched during this preflight.
 pub(super) fn validate_configuration(config: &NodeConfig) -> NodeResult<(u64, u64)> {
-    let bounded = config
-        .bounded_host
-        .as_ref()
-        .ok_or("host metadata requires bounded_host")?;
+    let bounded = &config.bounded_host;
     bounded.validate()?;
     let position = HostSlotId(bounded.maintenance.max_host_slots - 1);
     let mut targets = vec![
@@ -102,7 +99,7 @@ impl HostMetadataEnvelope {
             return Err("host metadata requires a nonzero live incarnation cap".into());
         }
         let (identity_bytes, lease_bytes) = validate_configuration(config)?;
-        let bounded = config.bounded_host.as_ref().ok_or("missing bounded_host")?;
+        let bounded = &config.bounded_host;
         let positions = bounded.maintenance.max_host_slots;
         let live = positions.min(max_live_sandboxes);
         let incarnation_targets =

@@ -56,6 +56,10 @@ def database(path, values):
     path.parent.mkdir(exist_ok=True)
     with sqlite3.connect(path) as connection:
         connection.execute("CREATE TABLE sandboxes(sandbox_id TEXT, owner_id TEXT, state_blob BLOB)")
+        connection.execute("CREATE TABLE controller_checkpoint(id INTEGER,input_cut INTEGER,payload BLOB)")
+        connection.execute("CREATE TABLE controller_inputs(sequence INTEGER,input_json BLOB)")
+        connection.execute("INSERT INTO controller_checkpoint VALUES(1,0,?)", (
+            json.dumps({"namespace": NS, "core": {"maintenance": {"retained": []}}}).encode(),))
         connection.executemany("INSERT INTO sandboxes VALUES(?,?,?)", values)
 
 
@@ -211,6 +215,29 @@ class ReportTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_exact_retirement_survives_sql_pruning_but_absence_is_not_confirmation(self):
+        ident = f'sb-{NS}-1'
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'controller.db'
+            database(path, [])
+            self.assertEqual(runner.durable_rows(path, NS), {})
+            with self.assertRaises(reports.Failure):
+                runner.wait_for_destroyed(path, NS, {ident}, timeout=0)
+            retained = [[{'sandbox': 1}, {'owner': 1, 'ledger': {'sandbox': 1, 'result': 'Destroyed'}}]]
+            with sqlite3.connect(path) as connection:
+                connection.execute('UPDATE controller_checkpoint SET payload=?', (
+                    json.dumps({'namespace': NS, 'core': {'maintenance': {'retained': retained}}}).encode(),))
+            observed = runner.durable_rows(path, NS)
+            self.assertEqual(set(observed), {ident})
+            self.assertEqual(observed[ident]['phase'], 'Retired')
+            self.assertTrue(runner.destroyed(observed))
+            self.assertEqual(runner.wait_for_destroyed(path, NS, {ident}), observed)
+            retained[0][1]['owner'] = 2
+            with sqlite3.connect(path) as connection:
+                connection.execute('UPDATE controller_checkpoint SET payload=?', (
+                    json.dumps({'namespace': NS, 'core': {'maintenance': {'retained': retained}}}).encode(),))
+            self.assertEqual(runner.durable_rows(path, NS), {})
+
     def test_real_sqlite_exact_identity_and_partial_destroyed_count(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "controller.db"
@@ -345,6 +372,35 @@ class ProbeProcessTests(unittest.TestCase):
 
 
 class ResourceAuditTests(unittest.TestCase):
+    def test_saved_original_identity_audits_after_claim_retirement_without_fabricating_count(self):
+        ident = f'sb-{NS}-1'
+        record = {'resource_id': f'vm-{NS}-0', 'pid': 123, 'start_time_ticks': 456}
+        value = {'sandbox': ident, 'context': {'position': 0, 'binding': {'owner': 1, 'sandbox': 1, 'vm': 0}},
+                 'record': record, 'network': {'resource_id': record['resource_id'], 'namespace_inode': 789}}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'resource-evidence'
+            evidence.mkdir()
+            (evidence / (ident + '.json')).write_text(json.dumps(value))
+            real_entries, real_iterdir = runner.entries, Path.iterdir
+            def controlled_entries(path):
+                return [] if path == Path('/run/netns') else real_entries(path)
+            def controlled_iterdir(path):
+                return iter([]) if path == Path('/proc') else real_iterdir(path)
+            with patch.object(runner, 'entries', side_effect=controlled_entries), \
+                    patch.object(Path, 'iterdir', controlled_iterdir), \
+                    patch.object(runner, 'process_start_ticks', return_value=None), \
+                    patch.object(runner, 'processes_in_uid_range', return_value=[]), \
+                    patch.object(runner.os, 'walk', return_value=iter([])), \
+                    patch.object(Path, 'is_dir', return_value=True):
+                self.assertEqual(runner.assert_no_exact_resources(root, NS, 1000, 'firecracker', expected=1), 1)
+                with self.assertRaises(reports.Failure):
+                    runner.assert_no_exact_resources(root, NS, 1000, 'firecracker', expected=4)
+                with patch.object(runner, 'process_start_ticks', return_value=456):
+                    with self.assertRaises(reports.Failure) as failure:
+                        runner.assert_no_exact_resources(root, NS, 1000, 'firecracker', expected=1)
+                    self.assertEqual(failure.exception.code, 'resource_residual')
+
     def audit(self, root, record, ticks, *, expected=None):
         claims = root / "jails/.claims"
         claim = claims / f"vm-{NS}-0"

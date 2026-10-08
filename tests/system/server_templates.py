@@ -30,12 +30,19 @@ from e2b import Sandbox, SandboxQuery
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
 from server_process_crash import (
-    fetch, free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    assert_idle_reopen, complete_runtime, fetch, free_loopback_port, idle_snapshot, process_start_ticks,
+    provision_runtime, start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
 )
-from server_vm_id_capacity import check_no_resources, durable_snapshot
+from server_vm_id_capacity import check_no_resources
 
 
 MIB = 1024 * 1024
+
+
+def assert_refusal_unchanged(before, after):
+    assert_idle_reopen(before, after)
+    assert after['states'] == before['states'] and after['actions'] == before['actions'], (
+        'pre-admission refusal changed durable sandbox state or work')
 
 
 def descriptor(ident, kernel, rootfs, cpu, memory):
@@ -86,9 +93,10 @@ def exercise(args):
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("requires root on an isolated Linux/KVM host")
     assert importlib.metadata.version("e2b") == "2.51.0"
-    if processes_in_uid_range(args.uid_base, args.uid_base + 2):
+    slots = 5  # Keep the original active quota; compute admission limits concurrency to two.
+    if processes_in_uid_range(args.uid_base, args.uid_base + slots - 1):
         raise RuntimeError("exclusive test UID range occupied")
-    if args.uid_base < 1000 or args.uid_base + 2 >= 2**32 - 1:
+    if args.uid_base < 1000 or args.uid_base + slots - 1 >= 2**32 - 1:
         raise RuntimeError("invalid exclusive test UID range")
     parent = args.scratch_parent.resolve(strict=True)
     if parent.stat().st_uid != 0 or parent.stat().st_mode & 0o077:
@@ -126,7 +134,7 @@ def exercise(args):
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(firecracker),
         "chroot_base": str(root / "jails"), "kernel": str(args.kernel.resolve(strict=True)),
-        "rootfs": str(args.rootfs.resolve(strict=True)), "uid_base": args.uid_base, "max_vm_id": 2,
+        "rootfs": str(args.rootfs.resolve(strict=True)), "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 256,
         "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 512 * MIB},
         "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
@@ -138,6 +146,8 @@ def exercise(args):
                       "compute_limits": {"max_vcpus_global": 3, "max_vcpus_per_tenant": 3,
                                          "max_memory_bytes_global": 1280 * MIB, "max_memory_bytes_per_tenant": 1280 * MIB}},
     }
+    settings = complete_runtime(settings, slots=slots)
+    provision_runtime(settings)
     config = root / "config.json"
     def save_config():
         config.write_text(json.dumps(settings))
@@ -151,9 +161,9 @@ def exercise(args):
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         for token, name, expected in ((foreign_key, "chosen", 404), (key, "missing", 404)):
-            before = durable_snapshot(database)
+            before = idle_snapshot(database)
             assert fetch(opener, url, "POST", "/v2/sandboxes", token, {"templateID": name, "allow_internet_access": False})[0] == expected
-            assert durable_snapshot(database) == before
+            assert_refusal_unchanged(before, idle_snapshot(database))
         small = Sandbox.create(template="chosen", timeout=300, allow_internet_access=False, **owner)
         large = Sandbox.create(template="large-r1", timeout=300, allow_internet_access=False, **owner)
         original_claims = [assert_shape(root, firecracker, args.cgroup_parent, sandbox, template, opener, url, key) for sandbox, template in zip((small, large), templates)]
@@ -163,9 +173,9 @@ def exercise(args):
         assert large.files.read("/tmp/template-marker") == "large-private"
         listing = Sandbox.list(query=SandboxQuery(template="large-r1"), **owner).next_items()
         assert [item.sandbox_id for item in listing] == [large.sandbox_id]
-        before = durable_snapshot(database)
+        before = idle_snapshot(database)
         assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "chosen", "allow_internet_access": False})[0] == 429
-        assert durable_snapshot(database) == before
+        assert_refusal_unchanged(before, idle_snapshot(database))
         stop_server(process)
         settings["templates"]["aliases"]["chosen"] = "large-r1"
         save_config()
@@ -177,9 +187,9 @@ def exercise(args):
         # Validate the original artifact in this new service process, then
         # refuse on its persisted compute charge. This also warms the cache
         # whose invalidation is checked by the following mutation.
-        before = durable_snapshot(database)
+        before = idle_snapshot(database)
         assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "small-r1", "allow_internet_access": False})[0] == 429
-        assert durable_snapshot(database) == before
+        assert_refusal_unchanged(before, idle_snapshot(database))
         _kill_confirmed = (Sandbox.kill(large.sandbox_id, **owner))
         assert _kill_confirmed
         # Changing an artifact after its first cached validation must invalidate
@@ -190,9 +200,9 @@ def exercise(args):
             image.write(bytes([original_byte[0] ^ 1]))
             image.flush()
             os.fsync(image.fileno())
-        before = durable_snapshot(database)
+        before = idle_snapshot(database)
         assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "small-r1", "allow_internet_access": False})[0] == 503
-        assert durable_snapshot(database) == before
+        assert_refusal_unchanged(before, idle_snapshot(database))
         with first_image.open("r+b") as image:
             image.write(original_byte)
             image.flush()
@@ -213,23 +223,27 @@ def exercise(args):
         save_config()
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
-        before = durable_snapshot(database)
+        before = idle_snapshot(database)
         assert fetch(opener, url, "POST", "/v2/sandboxes", key, {"templateID": "chosen", "allow_internet_access": False})[0] == 400
-        assert durable_snapshot(database) == before
+        assert_refusal_unchanged(before, idle_snapshot(database))
         stop_server(process)
         settings["templates"]["templates"][1]["resources"]["cpu_count"] = 2
         save_config()
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
         replacement = Sandbox.create(template="chosen", timeout=300, allow_internet_access=False, **owner)
-        assert_shape(root, firecracker, args.cgroup_parent, replacement, templates[1], opener, url, key)
+        original_claims.append(assert_shape(root, firecracker, args.cgroup_parent,
+                                           replacement, templates[1], opener, url, key))
         assert not replacement.files.exists("/tmp/template-marker")
         _kill_confirmed = (Sandbox.kill(replacement.sandbox_id, **owner))
         assert _kill_confirmed
-        check_no_resources(root, namespace, firecracker, args.uid_base)
-        with sqlite3.connect(database) as connection:
-            assert connection.execute("SELECT version FROM controller_meta").fetchone()[0] == 8
-            assert len(connection.execute("SELECT * FROM sandbox_create_options").fetchall()) == 3
+        check_no_resources(root, namespace, firecracker, args.uid_base, original_claims)
+        assert all(terminal_cleanup_confirmed(database, sandbox.sandbox_id)
+                   for sandbox in (small, large, replacement))
+        # Complete maintenance may retire SQL/options rows. Permanent identity
+        # frontiers, not legacy schema versions or tombstone counts, show that
+        # the three original creates allocated no replacement identities.
+        assert idle_snapshot(database)["frontiers"][("sandbox", "")] == 3
         assert original_digests == [sha256_file(path) for path in (args.kernel, args.rootfs, args.second_rootfs)]
         assert sha256_file(first_image.with_suffix(".unavailable")) == templates[0]["rootfs"]["sha256"]
         assert sha256_file(second_image) == templates[1]["rootfs"]["sha256"]

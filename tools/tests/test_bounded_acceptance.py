@@ -465,9 +465,8 @@ class SocketLayoutTests(unittest.TestCase):
     def test_uid_slot_bound_cannot_hide_lifetime_identifier_overflow(self):
         root = Path("/var/lib/sp-01a0e1bd/bc9161f-00")
         namespaces = ["0123456789abcdef", "123456789abcdef0"]
-        validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=False)
         with self.assertRaisesRegex(ValueError, "Firecracker socket"):
-            validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=True)
+            validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker")
 
     def test_encoded_limit_counts_multibyte_paths_on_all_platforms(self):
         namespace = "0123456789abcdef"
@@ -475,10 +474,10 @@ class SocketLayoutTests(unittest.TestCase):
         prefix = Path("/tmp/é")
         root = Path(str(prefix) + "a" * (107 - len(os.fsencode(prefix / tail))))
         self.assertEqual(len(os.fsencode(root / tail)), 107)
-        validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+        validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker")
         with self.assertRaisesRegex(ValueError, "Firecracker socket"):
             validate_acceptance_socket_paths(Path(str(root) + "b"), [namespace], "/bin/firecracker",
-                                             max_vm_id=20, bounded=True)
+)
 
     @unittest.skipUnless(sys.platform == "linux", "real 107/108-byte socket boundary requires Linux")
     def test_encoded_limit_matches_real_unix_socket_boundary(self):
@@ -490,14 +489,14 @@ class SocketLayoutTests(unittest.TestCase):
             padding = 107 - len(os.fsencode(prefix / tail))
             self.assertGreaterEqual(padding, 0)
             root = Path(str(prefix) + "a" * padding)
-            validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+            validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker")
             path = root / tail
             path.parent.mkdir(parents=True)
             with socket.socket(socket.AF_UNIX) as listener:
                 listener.bind(str(path))
             too_long = Path(str(root) + "b")
             with self.assertRaisesRegex(ValueError, "Firecracker socket"):
-                validate_acceptance_socket_paths(too_long, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+                validate_acceptance_socket_paths(too_long, [namespace], "/bin/firecracker")
             path = too_long / tail
             path.parent.mkdir(parents=True)
             with socket.socket(socket.AF_UNIX) as listener, self.assertRaises(OSError):

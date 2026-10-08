@@ -169,9 +169,6 @@ mod probe {
         }
         let config: NodeConfig = private_json(Path::new(&config_path))?;
         let input: Input = private_json(Path::new(&actions_path))?;
-        if config.bounded_host.is_none() {
-            return Err("bounded host configuration is required");
-        }
         input.validate(&config.namespace)?;
         // Initialization failure is failure, never evidence of stale rejection.
         let mut worker = LinuxWorker::new(config).map_err(|_| "worker initialization failed")?;

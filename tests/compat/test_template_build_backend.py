@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.template_build_service import Backend
@@ -168,7 +168,19 @@ class BuildSdkSession(unittest.TestCase):
                 "request": json.dumps({"kind": kind, "image": "docker.io/library/ubuntu:24.04",
                     "resources": {"diskMiB": 1, "minFreeMiB": 16}})}
             now = [0]
-            store = SimpleNamespace(bounded=None, directory=lambda _: directory, clock=lambda: now[0],
+            opened = {"requestWindow": "private-original-window", "expiresAtMs": 1000000}
+            def checkpoint(job, *, private_window):
+                self.assertEqual(job, row['id'])
+                self.assertEqual(private_window, opened['requestWindow'])
+                # The current journal persists this field as JSON, then the
+                # backend rereads that exact row before requesting the VM.
+                row['private_window'] = json.dumps(private_window)
+            def current_row(job):
+                self.assertEqual(job, row['id'])
+                self.assertEqual(row['private_window'], json.dumps(opened['requestWindow']))
+                return row
+            store = SimpleNamespace(directory=lambda _: directory, clock=lambda: now[0],
+                private_checkpoint=Mock(side_effect=checkpoint), get=Mock(side_effect=current_row),
                 limits={"max_input_bytes": 65536, "max_expanded_bytes": 65536, "max_entries": 100, "max_log_bytes": 65536})
             if failure is not None or command_timeout is not None:
                 options = failure if failure is not None else command_timeout
@@ -220,7 +232,15 @@ class BuildSdkSession(unittest.TestCase):
                 return SimpleNamespace(stdout='12345678-1234-1234-1234-123456789abc\n')
             # Keep Sandbox itself real: incorrect kwargs/version/configuration
             # must fail here, not hide behind a constructor test double.
-            with patch.object(backend, "vm", return_value={"session": session}) as identity, \
+            def existing_session(selected, *, create):
+                self.assertIs(selected, row)
+                self.assertTrue(create)
+                window_http.assert_called_once_with('builder', 'POST', '/sandproof/internal-build-windows', {})
+                store.private_checkpoint.assert_called_once_with(row['id'], private_window=opened['requestWindow'])
+                store.get.assert_called_once_with(row['id'])
+                return {"session": session}
+            with patch.object(backend, "request", return_value=opened) as window_http, \
+                    patch.object(backend, "vm", side_effect=existing_session) as identity, \
                     patch("e2b.sandbox_sync.main.Filesystem") as files, \
                     patch("e2b.sandbox_sync.main.Commands") as commands:
                 files.return_value.read.side_effect = stream

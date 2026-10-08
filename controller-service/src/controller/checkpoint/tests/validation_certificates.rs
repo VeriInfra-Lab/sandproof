@@ -81,7 +81,7 @@ fn certificate_survives_create_history_retirement_and_one_slot_sequential_valida
     let path = dir.path().join("db");
     let config = registry_config(&dir);
     let mut journal =
-        ControllerJournal::open_maintained(&path, NS, host_config(1), maintenance_config(), 1000)
+        ControllerJournal::open_complete(&path, NS, host_config(1), maintenance_config(), 1000)
             .unwrap();
     journal.enable_template_registry(&config).unwrap();
     for (id, candidate) in [(1, 'a'), (2, 'b'), (3, 'c')] {
@@ -122,14 +122,9 @@ fn certificate_survives_create_history_retirement_and_one_slot_sequential_valida
         journal.reconcile_template_publications(true).unwrap();
         checkpoint_and_prune(&mut journal);
         drop(journal);
-        journal = ControllerJournal::open_maintained(
-            &path,
-            NS,
-            host_config(1),
-            maintenance_config(),
-            1001,
-        )
-        .unwrap();
+        journal =
+            ControllerJournal::open_complete(&path, NS, host_config(1), maintenance_config(), 1001)
+                .unwrap();
         journal.reconcile_template_publications(true).unwrap();
         assert!(
             journal
@@ -162,7 +157,7 @@ fn certificate_survives_create_history_retirement_and_one_slot_sequential_valida
 }
 
 #[test]
-fn legacy_terminal_certificate_migration_checks_options_and_activation_before_detach() {
+fn ready_without_certificate_is_rejected_without_migration_or_detaching_validation() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db");
     let mut journal = open(&path);
@@ -173,21 +168,37 @@ fn legacy_terminal_certificate_migration_checks_options_and_activation_before_de
         .mark_template_checked(1, &value.candidate_id)
         .unwrap();
     kill(&mut journal, 1);
-    let mut legacy = journal
+    let active = journal
         .template_publication(1, &value.candidate_id)
         .unwrap()
         .unwrap();
-    legacy.state = PublicationState::Ready;
-    replace_publication(&journal, &legacy);
-    let mut corrupt = legacy.clone();
-    corrupt.binding.rootfs.sha256 = "c".repeat(64);
-    replace_publication(&journal, &corrupt);
+    let mut unsupported = active.clone();
+    unsupported.state = PublicationState::Ready;
+    replace_publication(&journal, &unsupported);
+    let before = journal
+        .journal
+        .connection
+        .query_row(
+            "SELECT record_json FROM template_publications WHERE candidate_id=?1",
+            [&value.candidate_id],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .unwrap();
     assert!(journal.reconcile_template_publications(false).is_err());
     assert_eq!(
-        journal.active_template_validation_sandboxes().unwrap(),
-        vec![1]
+        journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT record_json FROM template_publications WHERE candidate_id=?1",
+                [&value.candidate_id],
+                |row| row.get::<_, Vec<u8>>(0)
+            )
+            .unwrap(),
+        before
     );
-    replace_publication(&journal, &legacy);
+    assert!(journal.active_template_validation_sandboxes().is_err());
+    replace_publication(&journal, &active);
     journal.reconcile_template_publications(false).unwrap();
     let stored = journal
         .template_publication(1, &value.candidate_id)
@@ -334,11 +345,12 @@ fn unknown_cleanup_is_never_settled_and_forged_checked_input_is_rejected() {
             .is_err()
     );
     assert!(!called);
-    // Even old claimed Ready state cannot bypass unknown core cleanup.
-    let mut legacy = stored;
-    legacy.state = PublicationState::Ready;
-    replace_publication(&journal, &legacy);
-    journal.reconcile_template_publications(false).unwrap();
+    // A claimed Ready state with no certificate is corrupt, not an upgrade.
+    let mut unsupported = stored.clone();
+    unsupported.state = PublicationState::Ready;
+    replace_publication(&journal, &unsupported);
+    assert!(journal.reconcile_template_publications(false).is_err());
+    replace_publication(&journal, &stored);
     assert_eq!(
         journal.active_template_validation_sandboxes().unwrap(),
         vec![1]

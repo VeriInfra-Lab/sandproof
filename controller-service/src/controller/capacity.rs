@@ -32,8 +32,9 @@ const INPUTS: u64 = 4 * ATTEMPTS
     + 2 // one RpcTimeout per operation
     + 2; // transferable expiry input credit for each possible retained result
 // One sandbox, two operations, attempts, receipts, logical keys, lifetime,
-// options, release witness, operation cursor, reservation and private anchor.
-const SQL_ROWS: u64 = 1 + 2 + ATTEMPTS + RECEIPTS + LOGICAL + 6;
+// options, release witness, operation cursor, reservation, private anchor and
+// data credential digest. Each accepted object reserves its future digest row.
+const SQL_ROWS: u64 = 1 + 2 + ATTEMPTS + RECEIPTS + LOGICAL + 7;
 // Scalar schema envelope: no V1 row/reference has more than 64 scalar fields,
 // a field name longer than 32 bytes, or an integer wider than 20 digits. Allow
 // 6 punctuation bytes per field: 64*(32+20+6) < 4096. Policies are counted apart.
@@ -124,7 +125,8 @@ impl CapacityConfig {
 }
 
 pub(super) fn config(connection: &Connection) -> Result<Option<CapacityConfig>, JournalError> {
-    Ok(checkpoint::config(connection)?.and_then(|value| value.capacity))
+    let policy = checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    Ok(Some(policy.capacity.ok_or(JournalError::UnsupportedStore)?))
 }
 
 pub(super) fn configure(
@@ -132,9 +134,10 @@ pub(super) fn configure(
     world: &core::World,
     policy: &checkpoint::MaintenanceConfig,
 ) -> Result<(), JournalError> {
-    let Some(cap) = &policy.capacity else {
-        return Ok(());
-    };
+    let cap = policy
+        .capacity
+        .as_ref()
+        .ok_or(JournalError::UnsupportedStore)?;
     cap.validate(policy)?;
     validate_host(
         &bounded::config(tx)?.ok_or(JournalError::UnsupportedStore)?,
@@ -157,17 +160,19 @@ pub(super) fn validate_host(
     host: &super::BoundedHostConfig,
     policy: &checkpoint::MaintenanceConfig,
 ) -> Result<(), JournalError> {
-    let Some(cap) = &policy.capacity else {
-        return Ok(());
-    };
+    let cap = policy
+        .capacity
+        .as_ref()
+        .ok_or(JournalError::UnsupportedStore)?;
     let base = add(
         add(1, host.maintenance.max_host_slots)?,
         host.maintenance.windows.max_open_windows(),
     )?;
     // Fresh SQL: five full-width global cursors (31 kind bytes + 100 decimal
-    // bytes), controller meta (32), two config row IDs (16), GC row (16).
+    // bytes), controller meta (32), two config row IDs (16), GC row (16), and
+    // the singleton data-credential fence (16).
     let fixed_sql = add(
-        add(195, serde_json::to_vec(host)?.len() as u64)?,
+        add(211, serde_json::to_vec(host)?.len() as u64)?,
         add(
             serde_json::to_vec(policy)?.len() as u64,
             mul(host.maintenance.max_host_slots, SCALAR_BYTES)?,
@@ -179,7 +184,7 @@ pub(super) fn validate_host(
         || policy.max_references < REFERENCES
         || policy.max_checkpoint_bytes
             < mul(base + 6 + RECORDS + REFERENCES + 2, SCALAR_BYTES)? + POLICY_COPIES * 9
-        || cap.max_sql_rows < add(SQL_ROWS + 9, host.maintenance.max_host_slots)?
+        || cap.max_sql_rows < add(SQL_ROWS + 10, host.maintenance.max_host_slots)?
         || cap.max_sql_bytes < add(fixed_sql, sql_lease(policy, cap)?)?
     {
         return Err(JournalError::UnsupportedStore);
@@ -194,9 +199,10 @@ pub(super) fn prepare_connection(
     connection: &Connection,
     policy: &checkpoint::MaintenanceConfig,
 ) -> Result<(), JournalError> {
-    let Some(cap) = &policy.capacity else {
-        return Ok(());
-    };
+    let cap = policy
+        .capacity
+        .as_ref()
+        .ok_or(JournalError::UnsupportedStore)?;
     let size: u64 = connection.query_row("PRAGMA page_size", [], |row| read(row, 0))?;
     let pages = cap.max_database_bytes / size;
     let current: u64 = connection.query_row("PRAGMA page_count", [], |row| read(row, 0))?;
@@ -274,9 +280,7 @@ pub(super) fn admit(
     tx: &Transaction<'_>,
     request: &core::CreateRequest,
 ) -> Result<(), JournalError> {
-    let Some(cap) = config(tx)? else {
-        return Ok(());
-    };
+    let cap = config(tx)?.ok_or(JournalError::UnsupportedStore)?;
     if request.operation.0 == u64::MAX {
         return Err(JournalError::IdentifierExhausted);
     }
@@ -327,9 +331,7 @@ pub(super) fn spend(
     sandbox: core::SandboxId,
     before: [u64; 4],
 ) -> Result<(), JournalError> {
-    if config(tx)?.is_none() {
-        return Ok(());
-    }
+    config(tx)?.ok_or(JournalError::UnsupportedStore)?;
     let now = cursors(tx)?;
     let namespace: String = tx.query_row(
         "SELECT namespace FROM controller_meta WHERE id=1",
@@ -353,11 +355,11 @@ pub(super) fn retire(
     namespace: &str,
     sandbox: core::SandboxId,
 ) -> Result<(), JournalError> {
-    if config(tx)?.is_some()
-        && tx.execute(
-            "DELETE FROM controller_capacity_reservations WHERE sandbox_id=?1",
-            [identity::sandbox_id(namespace, sandbox)?.as_str()],
-        )? != 1
+    config(tx)?.ok_or(JournalError::UnsupportedStore)?;
+    if tx.execute(
+        "DELETE FROM controller_capacity_reservations WHERE sandbox_id=?1",
+        [identity::sandbox_id(namespace, sandbox)?.as_str()],
+    )? != 1
     {
         return Err(JournalError::CorruptStore);
     }
@@ -550,12 +552,11 @@ fn sql_lease(
 }
 
 pub(super) fn validate(connection: &Connection, world: &core::World) -> Result<(), JournalError> {
-    let Some(policy) = checkpoint::config(connection)? else {
-        return Ok(());
-    };
-    let Some(cap) = &policy.capacity else {
-        return Ok(());
-    };
+    let policy = checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    let cap = policy
+        .capacity
+        .as_ref()
+        .ok_or(JournalError::UnsupportedStore)?;
     let host = bounded::config(connection)?.ok_or(JournalError::CorruptStore)?;
     let (mut sql, owned) = sql_usage(connection, cap, &policy)?;
     let sql_bytes = sql_lease(&policy, cap)?;
@@ -691,9 +692,7 @@ fn validate_ids(
 
 // Recovery calls this before allocating/parsing any SQL-only payloads.
 pub(super) fn validate_sql_values(connection: &Connection) -> Result<(), JournalError> {
-    let Some(cap) = config(connection)? else {
-        return Ok(());
-    };
+    let cap = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
     let mut query=connection.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('controller_inputs','controller_checkpoint')")?;
     let names = query
         .query_map([], |row| row.get::<_, String>(0))?

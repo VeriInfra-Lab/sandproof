@@ -3,8 +3,8 @@ use support::*;
 
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    ControllerJournal, CrashInjector, CrashPoint, JournalError, NeverCrash, create_v1,
-    finish_accepted_kill_v1, finish_admitted_create_v1,
+    CrashInjector, CrashPoint, JournalError, NeverCrash, finish_accepted_kill_v1,
+    finish_admitted_create_v1,
 };
 use tempfile::TempDir;
 
@@ -30,18 +30,9 @@ impl CrashInjector for ExitAt {
 )]
 fn crash_child(stage: &str) {
     let path = std::env::var_os("SANDPROOF_REDUCER_CRASH_DB").unwrap();
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = open_complete(&path, NAMESPACE).unwrap();
     if stage == "after_prepare_worker" {
         apply(&mut journal, create());
-        apply(
-            &mut journal,
-            core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(
-                core::OperationKey {
-                    sandbox: SANDBOX,
-                    operation: CREATE_OP,
-                },
-            )),
-        );
         assert_eq!(dispatch_all(&mut journal), 1); // install fence
         let plan = journal
             .world()
@@ -83,7 +74,7 @@ fn crash_child(stage: &str) {
         let core::ControllerInput::Request(core::Request::Create(request)) = create() else {
             unreachable!()
         };
-        create_v1(&mut journal, request, &mut worker).unwrap();
+        admit_and_finish(&mut journal, request, &mut worker).unwrap();
         apply(&mut journal, kill(1));
         assert_eq!(dispatch_all(&mut journal), 1); // terminal fence
         let world = journal.world().unwrap();
@@ -130,7 +121,10 @@ fn crash_child(stage: &str) {
         _ => panic!("unknown child scenario"),
     };
     if matches!(point, CrashPoint::BeforeCommit | CrashPoint::AfterCommit) {
-        journal.apply(create(), &mut ExitAt(point)).unwrap();
+        let core::ControllerInput::Request(core::Request::Create(request)) = create() else {
+            unreachable!()
+        };
+        admit(&mut journal, request, &mut ExitAt(point)).unwrap();
     } else {
         apply(&mut journal, create());
         journal
@@ -167,6 +161,7 @@ fn process_exit_recovers_commits_and_never_repeats_an_uncertain_host_action() {
     ] {
         let directory = TempDir::new().unwrap();
         let path = directory.path().join("controller.db");
+        let initial = open_complete(&path, NAMESPACE).unwrap().world().unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -178,9 +173,9 @@ fn process_exit_recovers_commits_and_never_repeats_an_uncertain_host_action() {
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(91), "{stage}: {output:?}");
-        let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+        let mut journal = open_complete(&path, NAMESPACE).unwrap();
         if stage == "before_commit" {
-            assert_eq!(journal.world().unwrap(), core::initial_world());
+            assert_eq!(journal.world().unwrap(), initial);
             assert_eq!(dispatch_all(&mut journal), 0);
         } else if stage == "after_commit" {
             assert!(journal.world().unwrap().sandbox_record(SANDBOX).is_some());

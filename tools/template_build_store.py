@@ -187,19 +187,19 @@ def bounded_configuration(value):
 
 
 class BuildStore:
-    def __init__(self, root, limits, *, clock=time.time, free_bytes=None, binding=None,
-                 bounded=None, reducer=None, migrate_legacy=False, fault=None, physical_profile=None):
+    def __init__(self, root, limits, *, bounded, clock=time.time, free_bytes=None, binding=None,
+                 reducer=None, fault=None, physical_profile=None):
         self.root, self.limits, self.clock = Path(root), dict(limits), clock
-        self.bounded = bounded_configuration(bounded) if bounded is not None else None
-        self.reducer = (reducer or WindowReducer(WindowHelper(**bounded["helper"]))) if bounded else None
+        self.bounded = bounded_configuration(bounded)
+        self.reducer = reducer or WindowReducer(WindowHelper(**bounded["helper"]))
         self.fault = fault or (lambda _point: None)
         self.physical_lease = None
         if physical_profile is not None:
-            if self.bounded is not None and self.limits["workspace_bytes"] < sum(
+            if self.limits["workspace_bytes"] < sum(
                     self.bounded[field] for field in ("database_bytes", "wal_bytes", "recovery_reserve_bytes")):
                 raise ValueError("physical workspace must contain the complete public journal reserve")
             public = physical_profile.get("public_build")
-            if (self.bounded is None or not public or public["root"] != str(self.root)
+            if (not public or public["root"] != str(self.root)
                     or public["workspace_bytes"] != self.limits["workspace_bytes"]
                     or public["max_jobs"] != self.limits["max_jobs"]):
                 raise ValueError("physical profile requires its exact bounded build root and budgets")
@@ -217,7 +217,7 @@ class BuildStore:
                 meta = path.lstat()
                 if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or meta.st_uid != os.geteuid() or meta.st_mode & 0o077:
                     raise ValueError("unsafe build journal file")
-                if self.bounded and name in ("builds.db", "builds.db-wal"):
+                if name in ("builds.db", "builds.db-wal"):
                     quota = self.bounded["database_bytes" if name == "builds.db" else "wal_bytes"]
                     if meta.st_size > quota:
                         raise ValueError("existing build journal exceeds bounded file quota")
@@ -238,83 +238,55 @@ class BuildStore:
             self.db = sqlite3.connect(self.root / "builds.db", check_same_thread=False)
             os.chmod(self.root / "builds.db", 0o600)
             self.db.row_factory = sqlite3.Row
+            settings = {"limits": self.limits, "binding": binding, "schema_version": 4,
+                        "bounded_builds": self.bounded}
+            encoded = json.dumps(settings, sort_keys=True)
+            existing = self._validate_existing_schema(encoded)
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=FULL")
             self.db.execute("PRAGMA temp_store=MEMORY")
             self.db.execute("PRAGMA wal_autocheckpoint=1")
             self.db.execute("PRAGMA journal_size_limit=0")
-            if self.bounded:
-                page = self.db.execute("PRAGMA page_size").fetchone()[0]
-                minimum = (self.limits["max_jobs"] * (4 * self.bounded["max_record_bytes"] + 4096)
-                           + self.bounded["windows"]["max_open_windows"] * 512 + 65536)
-                if self.bounded["database_bytes"] < minimum:
-                    raise ValueError("database quota cannot reserve all accepted future records")
-                pages = self.bounded["database_bytes"] // page
-                if self.db.execute("PRAGMA page_count").fetchone()[0] > pages:
-                    raise ValueError("existing build database exceeds bounded quota")
-                self.db.execute("PRAGMA max_page_count=" + str(pages))
-                checkpoint = self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-                if checkpoint[0] or checkpoint[1] != checkpoint[2]:
-                    raise BuildError(503, "BuildCheckpointBlocked")
-                if self.free_bytes() < self.bounded["wal_bytes"] + self.bounded["recovery_reserve_bytes"]:
-                    raise BuildError(503, "BuildJournalReserveUnavailable")
-            self.db.execute("CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, limits TEXT NOT NULL)")
-            settings = {"limits": self.limits, "binding": binding}
-            legacy_encoded = json.dumps(settings, sort_keys=True)
-            previous_encoded = json.dumps(settings | {"schema_version": 2}, sort_keys=True)
-            encoded = json.dumps(settings | ({"schema_version": 4, "bounded_builds": self.bounded}
-                                             if bounded else {"schema_version": 2}), sort_keys=True)
-            old = self.db.execute("SELECT limits FROM settings WHERE id=1").fetchone()
-            if self.bounded:
-                unsafe_random_format = json.dumps(settings | {"schema_version": 3, "bounded_builds": self.bounded}, sort_keys=True)
-                if old and old[0] == unsafe_random_format:
-                    # Format 3 could delete random IDs. Surviving rows cannot
-                    # reconstruct all identities ever exposed to clients.
-                    raise ValueError("bounded random-ID journal lacks a permanent build frontier")
-                if old is None and self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone():
-                    raise ValueError("existing build journal is missing its identity configuration")
-            if old and old[0] != encoded:
-                if old[0] not in (legacy_encoded, previous_encoded) or (bounded and not migrate_legacy):
-                    raise ValueError("build budgets changed; explicit migration required")
+            page = self.db.execute("PRAGMA page_size").fetchone()[0]
+            minimum = (self.limits["max_jobs"] * (4 * self.bounded["max_record_bytes"] + 4096)
+                       + self.bounded["windows"]["max_open_windows"] * 512 + 65536)
+            if self.bounded["database_bytes"] < minimum:
+                raise ValueError("database quota cannot reserve all accepted future records")
+            pages = self.bounded["database_bytes"] // page
+            if self.db.execute("PRAGMA page_count").fetchone()[0] > pages:
+                raise ValueError("existing build database exceeds bounded quota")
+            self.db.execute("PRAGMA max_page_count=" + str(pages))
+            checkpoint = self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if checkpoint[0] or checkpoint[1] != checkpoint[2]:
+                raise BuildError(503, "BuildCheckpointBlocked")
+            if self.free_bytes() < self.bounded["wal_bytes"] + self.bounded["recovery_reserve_bytes"]:
+                raise BuildError(503, "BuildJournalReserveUnavailable")
             self.db.execute("BEGIN IMMEDIATE")
-            self.db.execute("INSERT OR REPLACE INTO settings VALUES(1, ?)", (encoded,))
-            self.db.execute("""CREATE TABLE IF NOT EXISTS jobs (
-                id TEXT PRIMARY KEY, owner TEXT NOT NULL, token TEXT NOT NULL, request TEXT NOT NULL,
-                state TEXT NOT NULL, created REAL NOT NULL, deadline REAL NOT NULL,
-                reserved INTEGER NOT NULL, input_hash TEXT, candidate TEXT, failure TEXT, result TEXT,
-                publication_attempted INTEGER NOT NULL DEFAULT 0, UNIQUE(owner,token))""")
-            columns = {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}
-            if "publication_attempted" not in columns:
-                self.db.execute("ALTER TABLE jobs ADD COLUMN publication_attempted INTEGER NOT NULL DEFAULT 0")
-                self.db.execute("UPDATE jobs SET publication_attempted=1 WHERE state='Publishing'")
-            elif old and old[0] == legacy_encoded:
-                self.db.execute("UPDATE jobs SET publication_attempted=1 WHERE state='Publishing'")
-            extras = {"window_namespace": "TEXT NOT NULL DEFAULT ''", "window_sequence": "TEXT NOT NULL DEFAULT ''",
-                      "fs_phase": "TEXT NOT NULL DEFAULT 'Legacy'", "fs_nonce": "TEXT", "fs_identity": "TEXT",
-                      "delete_manifest": "TEXT", "retained_until_ms": "INTEGER", "private_window": "TEXT",
-                      "builder_settled": "TEXT", "private_ack": "INTEGER NOT NULL DEFAULT 0",
-                      "staging_cleanup": "TEXT"}
-            for name, kind in extras.items():
-                if name not in columns:
-                    self.db.execute("ALTER TABLE jobs ADD COLUMN " + name + " " + kind)
-            if bounded:
-                # Rebuild only to remove legacy owner/key uniqueness. The legacy
-                # empty namespace remains disjoint and is never remapped.
-                sql = self.db.execute("SELECT sql FROM sqlite_master WHERE name='jobs'").fetchone()[0]
-                if "UNIQUE(owner,token)" in sql:
-                    self.db.execute(sql.replace("CREATE TABLE jobs", "CREATE TABLE jobs_new", 1)
-                                    .replace("UNIQUE(owner,token)", "UNIQUE(owner,window_namespace,window_sequence,token)"))
-                    self.db.execute("INSERT INTO jobs_new SELECT * FROM jobs")
-                    self.db.execute("DROP TABLE jobs")
-                    self.db.execute("ALTER TABLE jobs_new RENAME TO jobs")
-                self.db.execute("CREATE TABLE IF NOT EXISTS request_windows (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL)")
+            if not existing:
+                self.db.execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, limits TEXT NOT NULL)")
+                self.db.execute("INSERT INTO settings VALUES(1, ?)", (encoded,))
+                self.db.execute("""CREATE TABLE jobs (
+                    id TEXT PRIMARY KEY, owner TEXT NOT NULL, token TEXT NOT NULL, request TEXT NOT NULL,
+                    state TEXT NOT NULL, created REAL NOT NULL, deadline REAL NOT NULL,
+                    reserved INTEGER NOT NULL, input_hash TEXT, candidate TEXT, failure TEXT, result TEXT,
+                    publication_attempted INTEGER NOT NULL DEFAULT 0,
+                    window_namespace TEXT NOT NULL, window_sequence TEXT NOT NULL,
+                    fs_phase TEXT NOT NULL, fs_nonce TEXT, fs_identity TEXT,
+                    delete_manifest TEXT, retained_until_ms INTEGER, private_window TEXT,
+                    builder_settled TEXT, private_ack INTEGER NOT NULL DEFAULT 0, staging_cleanup TEXT,
+                    UNIQUE(owner,window_namespace,window_sequence,token))""")
+                self.db.execute("CREATE TABLE request_windows (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL)")
                 initial = {"limits": bounded["windows"], "issued_through": None, "time_floor_ms": 0, "open": []}
-                self.db.execute("INSERT OR IGNORE INTO request_windows VALUES(1,?)", (json.dumps(initial),))
-                if self.db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] > limits["max_jobs"]:
-                    raise ValueError("legacy jobs exceed bounded migration quota")
-                self._initialize_job_allocator(current_format=bool(old and old[0] == encoded))
-                for row in self.db.execute("SELECT * FROM jobs"):
-                    self._check_record(dict(row))
+                self.db.execute("INSERT INTO request_windows VALUES(1,?)", (json.dumps(initial),))
+                self.db.execute("""CREATE TABLE job_allocator (
+                    id INTEGER PRIMARY KEY CHECK(id=1), namespace TEXT NOT NULL,
+                    issued_through TEXT CHECK(issued_through IS NULL OR length(issued_through)=16))""")
+                self.db.execute("INSERT INTO job_allocator VALUES(1,?,NULL)", (f"{bounded['namespace']:016x}",))
+            if self.db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] > limits["max_jobs"]:
+                raise ValueError("existing jobs exceed bounded quota")
+            self._validate_job_allocator()
+            for row in self.db.execute("SELECT * FROM jobs"):
+                self._check_record(dict(row))
             self.db.commit()
             self.recover_filesystem()
         except BaseException:
@@ -331,35 +303,47 @@ class BuildStore:
             raise ValueError("invalid permanent build frontier")
         return None if value is None else int(value, 16)
 
-    def _initialize_job_allocator(self, *, current_format):
+    def _validate_existing_schema(self, encoded):
+        """Reject old/partial journals before changing their SQLite format."""
+        tables = {row[0] for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not tables:
+            return False
+        if "settings" not in tables:
+            raise ValueError("existing build journal is missing its identity configuration")
+        old = self.db.execute("SELECT limits FROM settings WHERE id=1").fetchone()
+        if old is None or self.db.execute("SELECT COUNT(*) FROM settings").fetchone()[0] != 1:
+            raise ValueError("existing build journal is missing its identity configuration")
+        if old[0] != encoded:
+            raise ValueError("unsupported build journal format or changed budgets; no automatic migration")
+        if "job_allocator" not in tables:
+            raise ValueError("permanent build frontier is missing")
+        if tables != {"settings", "jobs", "request_windows", "job_allocator"}:
+            raise ValueError("incomplete or unknown current build journal schema")
+        required = {"id", "owner", "token", "request", "state", "created", "deadline", "reserved",
+                    "input_hash", "candidate", "failure", "result", "publication_attempted",
+                    "window_namespace", "window_sequence", "fs_phase", "fs_nonce", "fs_identity",
+                    "delete_manifest", "retained_until_ms", "private_window", "builder_settled",
+                    "private_ack", "staging_cleanup"}
+        if {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")} != required:
+            raise ValueError("incomplete or unknown current build journal columns")
+        unique = {tuple(column[2] for column in self.db.execute("PRAGMA index_info('" + index[1].replace("'", "''") + "')"))
+                  for index in self.db.execute("PRAGMA index_list(jobs)") if index[2]}
+        if unique != {("id",), ("owner", "window_namespace", "window_sequence", "token")}:
+            raise ValueError("current build request identity constraint is missing")
+        state = self.db.execute("SELECT state FROM request_windows WHERE id=1").fetchone()
+        if state is None or self.db.execute("SELECT COUNT(*) FROM request_windows").fetchone()[0] != 1:
+            raise ValueError("current build request-window state is missing")
+        if json.loads(state[0]).get("limits") != self.bounded["windows"]:
+            raise ValueError("current build request-window limits differ from deployment")
+        return True
+
+    def _validate_job_allocator(self):
         prefix = f"{self.bounded['namespace']:016x}"
-        exists = self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='job_allocator'").fetchone()
-        if current_format:
-            # Never reconstruct a lost frontier from surviving post-GC rows.
-            if not exists:
-                raise ValueError("permanent build frontier is missing")
-            frontier = self._job_frontier()
-        else:
-            if exists:
-                raise ValueError("unexpected permanent build allocator in legacy journal")
-            # The only permitted source formats never retire legacy IDs. Seed
-            # above every retained random ID in this namespace's 64-bit suffix
-            # range; different prefixes are permanently disjoint.
-            frontier = None
-            for row in self.db.execute("SELECT id FROM jobs"):
-                job = identity(row["id"])
-                if job.startswith(prefix):
-                    suffix = int(job[16:], 16)
-                    frontier = suffix if frontier is None else max(frontier, suffix)
-            self.db.execute("""CREATE TABLE job_allocator (
-                id INTEGER PRIMARY KEY CHECK(id=1), namespace TEXT NOT NULL,
-                issued_through TEXT CHECK(issued_through IS NULL OR length(issued_through)=16))""")
-            self.db.execute("INSERT INTO job_allocator VALUES(1,?,?)",
-                            (prefix, None if frontier is None else f"{frontier:016x}"))
+        # A lost frontier is never reconstructed from surviving post-GC rows.
+        frontier = self._job_frontier()
         for row in self.db.execute("SELECT id,window_namespace FROM jobs"):
             job = identity(row["id"])
-            if row["window_namespace"] and (row["window_namespace"] != str(self.bounded["namespace"])
-                                           or not job.startswith(prefix)):
+            if row["window_namespace"] != str(self.bounded["namespace"]) or not job.startswith(prefix):
                 raise ValueError("job identity disagrees with permanent namespace")
             if job.startswith(prefix) and (frontier is None or int(job[16:], 16) > frontier):
                 raise ValueError("job identity exceeds permanent build frontier")
@@ -391,12 +375,11 @@ class BuildStore:
         # No streaming readers on our sole connection. A foreign held reader
         # may prevent checkpointing; stop writes rather than growing its WAL.
         with self.lock:
-            if self.bounded:
-                result = self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-                if result[0] or result[1] != result[2]:
-                    raise BuildError(503, "BuildCheckpointBlocked")
-                if self.free_bytes() < self.bounded["wal_bytes"] + self.bounded["recovery_reserve_bytes"]:
-                    raise BuildError(503, "BuildJournalReserveUnavailable")
+            result = self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if result[0] or result[1] != result[2]:
+                raise BuildError(503, "BuildCheckpointBlocked")
+            if self.free_bytes() < self.bounded["wal_bytes"] + self.bounded["recovery_reserve_bytes"]:
+                raise BuildError(503, "BuildJournalReserveUnavailable")
             self.db.execute("BEGIN IMMEDIATE")
             try:
                 yield
@@ -410,8 +393,6 @@ class BuildStore:
                 raise
 
     def _check_record(self, row):
-        if not self.bounded:
-            return
         # Reserve the *future whole encoded record*, not just today's sparse
         # row. JSON text columns are escaped again by this outer encoding.
         # These fixed framing bounds cover all exact fixed-name manifests and
@@ -457,8 +438,6 @@ class BuildStore:
         return str(window["namespace"]), str(window["sequence"])
 
     def open_window(self, owner, duration_ms):
-        if not self.bounded:
-            raise BuildError(409, "BuildWindowsDisabled")
         if type(owner) is not int or not 0 < owner < 2**64 or type(duration_ms) is not int or not 0 < duration_ms < 2**64:
             raise BuildError(400, "InvalidRequestWindow")
         rejected = None
@@ -475,8 +454,6 @@ class BuildStore:
                 "expiresAtMs": record["expires_at_ms"]}
 
     def close_window(self, owner, window):
-        if not self.bounded:
-            raise BuildError(409, "BuildWindowsDisabled")
         if type(owner) is not int or not 0 < owner < 2**64:
             raise BuildError(400, "InvalidOwner")
         self._window(window)
@@ -592,20 +569,21 @@ class BuildStore:
 
     def recover_filesystem(self):
         with self.lock:
-            if self.bounded:
-                known = {row[0] for row in self.db.execute("SELECT id FROM jobs")}
-                allowed = known | {".prepare-" + row["id"] for row in self.rows() if row["fs_phase"] == "Preparing"} | {"lease", "builds.db", "builds.db-wal", "builds.db-shm"}
-                with os.scandir(self.root) as entries:
-                    for count, entry in enumerate(entries):
-                        if count >= 2 * self.limits["max_jobs"] + 4 or entry.name not in allowed:
-                            raise BuildError(503, "UnknownBuildWorkspaceEntry")
+            known = {row[0] for row in self.db.execute("SELECT id FROM jobs")}
+            allowed = known | {".prepare-" + row["id"] for row in self.rows() if row["fs_phase"] == "Preparing"} | {"lease", "builds.db", "builds.db-wal", "builds.db-shm"}
+            with os.scandir(self.root) as entries:
+                for count, entry in enumerate(entries):
+                    if count >= 2 * self.limits["max_jobs"] + 4 or entry.name not in allowed:
+                        raise BuildError(503, "UnknownBuildWorkspaceEntry")
             for row in self.rows():
                 if row["fs_phase"] == "Preparing":
                     self._prepare(row["id"])
                 elif row["fs_phase"] == "Deleting":
                     self._delete(row)
-                elif self.bounded and row["fs_phase"] == "Ready":
+                elif row["fs_phase"] == "Ready":
                     self._owned_files(row)
+                else:
+                    raise BuildError(503, "BuildWorkspaceIdentityUnknown")
 
     def validate(self, request):
         if not isinstance(request, dict) or set(request) - {"kind", "image", "resources", "timeoutSeconds", "allowInternetAccess"}:
@@ -639,15 +617,16 @@ class BuildStore:
         if type(owner) is not int or not 0 < owner < 2**64:
             raise BuildError(400, "InvalidOwner")
         request = self.validate(request)
-        if self.bounded and not token:
+        if not token:
             raise BuildError(400, "IdempotencyKeyRequired")
-        token = token or secrets.token_hex(16)
         if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", token):
             raise BuildError(400, "InvalidIdempotencyKey")
         encoded = json.dumps(request, sort_keys=True)
-        if self.bounded and len(encoded.encode()) > self.bounded["max_request_bytes"]:
+        if len(encoded.encode()) > self.bounded["max_request_bytes"]:
             raise BuildError(413, "BuildRequestTooLarge")
-        domain = self._window(window) if self.bounded and window is not None else ("", "")
+        if window is None:
+            raise BuildError(409, "RequestWindowRequired")
+        domain = self._window(window)
         refused = None
         with self.lock:
             # Duplicate lookup is read-only and precedes WAL/free-space gates,
@@ -660,15 +639,11 @@ class BuildStore:
                     raise BuildError(409, "IdempotencyConflict")
                 return self.view(old)
             with self.transaction():
-                if self.bounded:
-                    now_ms = self._advance()
-                    if window is None:
-                        refused = BuildError(409, "LegacyBuildDomainClosed")
-                    else:
-                        try:
-                            self._reduce({"Admit": {"tenant": owner, "window": window["sequence"], "now_ms": now_ms}})
-                        except WindowRejected as error:
-                            refused = BuildError(409, "RequestWindow" + error.reason)
+                now_ms = self._advance()
+                try:
+                    self._reduce({"Admit": {"tenant": owner, "window": window["sequence"], "now_ms": now_ms}})
+                except WindowRejected as error:
+                    refused = BuildError(409, "RequestWindow" + error.reason)
                 if refused is None:
                     counts = self.db.execute("SELECT COUNT(*), COALESCE(SUM(reserved),0) FROM jobs").fetchone()
                     own = self.db.execute("SELECT COUNT(*), COALESCE(SUM(reserved),0) FROM jobs WHERE owner=?", (str(owner),)).fetchone()
@@ -676,8 +651,8 @@ class BuildStore:
                     own_active = self.db.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND reserved>0", (str(owner),)).fetchone()[0]
                     cost = (self.limits["builder_disk_bytes"] + self.limits["max_input_bytes"]
                             + 2 * request["resources"]["diskMiB"] * MIB + self.limits["artifact_margin_bytes"])
-                    history = self.limits["max_log_bytes"] + (self.bounded["max_record_bytes"] if self.bounded else 256 * 1024)
-                    journal = sum(self.bounded[k] for k in ("database_bytes", "wal_bytes", "recovery_reserve_bytes")) if self.bounded else 0
+                    history = self.limits["max_log_bytes"] + self.bounded["max_record_bytes"]
+                    journal = sum(self.bounded[k] for k in ("database_bytes", "wal_bytes", "recovery_reserve_bytes"))
                     if self.physical_lease is not None:
                         try:
                             physical_ready = self.physical_lease.admit(self.free_bytes())
@@ -692,11 +667,11 @@ class BuildStore:
                             or self.free_bytes() < counts[1] + cost + (counts[0] + 1) * history + journal + self.limits["runtime_cleanup_reserve_bytes"]):
                         refused = BuildError(429, "BuildBudgetExceeded")
                     else:
-                        job = self._allocate_job() if self.bounded else secrets.token_hex(16)
+                        job = self._allocate_job()
                         if job is None:
                             refused = BuildError(429, "BuildIdentityExhausted")
                         else:
-                            now = now_ms / 1000 if self.bounded else self.clock()
+                            now = now_ms / 1000
                             self.db.execute("""INSERT INTO jobs (id,owner,token,request,state,created,deadline,reserved,
                                 window_namespace,window_sequence,fs_phase,fs_nonce) VALUES(?,?,?,?,?,?,?,?,?,?,'Preparing',?)""",
                                 (job, str(owner), token, encoded, "Preparing", now, now + request["timeoutSeconds"], cost,
@@ -736,10 +711,10 @@ class BuildStore:
             if row["state"] in TERMINAL:
                 raise BuildError(409, "TerminalBuild")
             result_json = json.dumps(result) if result else None
-            if self.bounded and result_json and len(result_json.encode()) > self.bounded["max_result_bytes"]:
+            if result_json and len(result_json.encode()) > self.bounded["max_result_bytes"]:
                 raise BuildError(413, "BuildResultTooLarge")
             until = row["retained_until_ms"]
-            if self.bounded and state in TERMINAL:
+            if state in TERMINAL:
                 now = self._advance()
                 until = now + self.bounded["retention_ms"]
                 if until >= 2**63:
@@ -776,14 +751,12 @@ class BuildStore:
             self.db.execute("UPDATE jobs SET staging_cleanup=? WHERE id=?", (encoded, job))
 
     def retire_results(self):
-        if not self.bounded:
-            return
         with self.transaction():
             now = self._advance()
             opened = {str(record["id"]) for record in self._window_state()["open"]}
             for row in self.rows():
-                # Legacy rows and unresolved work remain charged indefinitely.
-                if (row["state"] not in TERMINAL or row["reserved"] or not row["window_namespace"]
+                # Unresolved work remains charged until exact settlement.
+                if (row["state"] not in TERMINAL or row["reserved"]
                         or row["window_sequence"] in opened or row["retained_until_ms"] is None
                         or now < row["retained_until_ms"] or not row["private_ack"]
                         or not row["builder_settled"] or row["staging_cleanup"] or row["fs_phase"] != "Ready"):

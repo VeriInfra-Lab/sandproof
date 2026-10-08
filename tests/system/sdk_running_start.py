@@ -30,7 +30,8 @@ from e2b import Sandbox
 
 from sdk_server_smoke import options
 from server_process_crash import (
-    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
+    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
 )
 
 
@@ -51,7 +52,7 @@ def main(args):
     namespace = secrets.token_hex(8)
     vm_name = f'vm-{namespace}-0'
     firecracker_name = args.firecracker.resolve(strict=True).name
-    socket = root / 'jails' / firecracker_name / f'vm-{namespace}-1000' / 'root/api.socket'
+    socket = root / 'jails' / firecracker_name / f'vm-{namespace}-{2**64 - 1}' / 'root/api.socket'
     if len(os.fsencode(socket)) >= 108:
         root.rmdir()
         raise RuntimeError('private Firecracker socket path is too long')
@@ -69,7 +70,7 @@ def main(args):
     rootfs.chmod(0o644)
     base_digest = digest(rootfs)
     config = root / 'config.json'
-    config.write_text(json.dumps({
+    settings = {
         'namespace': namespace,
         'database': str(root / 'db/controller.db'),
         'node_state_dir': str(root / 'state'),
@@ -79,7 +80,6 @@ def main(args):
         'kernel': str(kernel),
         'rootfs': str(rootfs),
         'uid_base': args.uid_base,
-        'max_vm_id': 1000,
         'vcpu_count': 1,
         'memory_mib': 256,
         'file_policy_digest': 1,
@@ -95,7 +95,10 @@ def main(args):
         'max_lifetime_secs': 600,
         'default_timeout_secs': 300,
         'expiry_scan_seconds': 1,
-    }))
+    }
+    settings = complete_runtime(settings, slots=2)
+    provision_runtime(settings)
+    config.write_text(json.dumps(settings))
     config.chmod(0o600)
     base_url = f'http://127.0.0.1:{port}'
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -126,9 +129,7 @@ def main(args):
         assert resumed.get_info().end_at == initial.started_at + timedelta(seconds=600)
         _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk))
         assert _kill_confirmed
-        with sqlite3.connect(root / 'db/controller.db') as database:
-            states = [json.loads(row[0]) for row in database.execute('SELECT state_blob FROM sandboxes')]
-        assert len(states) == 1 and states[0]['phase'] == 'Destroyed'
+        assert terminal_cleanup_confirmed(root / 'db/controller.db', sandbox.sandbox_id)
         assert process_start_ticks(record['pid']) != record['start_time_ticks']
         assert not Path('/run/netns', vm_name).exists()
         assert not (root / 'jails' / firecracker_name / vm_name).exists()

@@ -103,7 +103,7 @@ fn assert_uncertain_revocation(failure: CommitFailure) {
     let path = directory.path().join("controller.db");
     install_commit_failure(&path, failure);
     let stops = Arc::new(AtomicUsize::new(0));
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let committed = journal.world().unwrap();
     let port = ManagedPort::new(
         journal,
@@ -153,7 +153,7 @@ fn assert_uncertain_revocation(failure: CommitFailure) {
     assert_eq!(stops.load(Ordering::SeqCst), 0);
     assert_eq!(input_tail(&connection), tail);
     drop(port);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert_eq!(journal.world().unwrap(), committed);
     assert!(journal.uncertain_actions().unwrap().is_empty());
 }
@@ -169,7 +169,7 @@ fn uncertain_expiry_retains_sql_denial_and_never_dispatches_an_uncommitted_stop(
     let path = directory.path().join("controller.db");
     install_commit_failure(&path, CommitFailure::Kill);
     let stops = Arc::new(AtomicUsize::new(0));
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let committed = journal.world().unwrap();
     let port = ManagedPort::new(
         journal,
@@ -204,7 +204,7 @@ fn uncertain_expiry_retains_sql_denial_and_never_dispatches_an_uncommitted_stop(
         assert!(port.get("2", &sessions[1].sandbox_id).is_ok());
     }
     drop(port);
-    let journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert_eq!(journal.world().unwrap(), committed);
     assert_eq!(
         journal.due_lifetimes(due).unwrap(),
@@ -270,7 +270,7 @@ fn sql_only_connect_extension_preserves_routes_and_rechecks_old_expiry_hint() {
     }
     drop(port);
     let path = directory.path().join("controller.db");
-    let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+    let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let world = journal.world().unwrap();
     // Use the old deadline as the exact timer hint, without waiting for time
     // to pass. SQL lifetime authority must defeat a still-Running warm cache.
@@ -316,7 +316,7 @@ fn injected_kill_error_preserves_the_same_journals_committed_authority() {
         let first = port.create("1", request()).unwrap();
         drop(port);
         let path = directory.path().join("controller.db");
-        let mut journal = ControllerJournal::open(&path, NAMESPACE).unwrap();
+        let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
         assert_eq!(
             journal
                 .world()

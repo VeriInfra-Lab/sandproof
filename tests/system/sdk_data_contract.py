@@ -168,6 +168,7 @@ async def async_case(sandbox, directory, user):
 async def async_service_cases(args, owner):
     sandbox = await AsyncSandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
     try:
+        _runpy.run_path(str(_GuardPath(__file__).with_name("_resource_evidence.py")))["record_resource_identity"](sandbox.sandbox_id)
         connected = await AsyncSandbox.connect(sandbox.sandbox_id, **owner)
         assert connected.sandbox_id == sandbox.sandbox_id
         cases = []
@@ -189,6 +190,7 @@ def exercise(args):
     sandbox = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
     report = {"sdk_version": "2.51.0"}
     try:
+        _runpy.run_path(str(_GuardPath(__file__).with_name("_resource_evidence.py")))["record_resource_identity"](sandbox.sandbox_id)
         connected = Sandbox.connect(sandbox.sandbox_id, **owner)
         assert connected.sandbox_id == sandbox.sandbox_id
         cases = []

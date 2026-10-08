@@ -95,11 +95,13 @@ sudo <固定 SDK Python> tests/system/server_template_isolation.py \
 
 [离线构建探针](../tests/system/template_build.py)用于受控输入与发布故障；[自助入口探针](../tests/system/template_self_service.py)验证用户构建、查询和 SDK 使用。预算、工具摘要、独占资源与参数以对应脚本和[验收清单](../docs/testing-plan.md)为准，不把局部实验算作全题集通过。
 
+离线发布探针及[公开 OCI 探针](../tests/system/server_public_oci.py)均使用正式的运行池＋私有构建池配置，不再用单池服务模拟两个角色。操作员须提供 `--bounded-policy`、`--run-root`、`--namespace`、`--build-namespace`、`--build-cgroup-parent`，与本轮空受管根、原物理 profile 和已委派父组匹配；参数详情以各自 `--help` 为准。构建 VM 使用原请求窗口、关闭、回收和结算协议，不以普通沙箱 POST 代替私有构建准入。
+
 ### 显式预制多模板
 
-常驻服务配置可选 `templates` 目录，结构与检查以[模块合同](../docs/module-contracts.md#模板服务--创建准入1236)及[描述类型](../controller-service/src/templates.rs)为准。这是受保护的内核/ext4 输入，不是 Dockerfile/OCI 构建入口。必须同时配置 `host_resources`；每张模板的 `host_memory_bytes` 覆盖全局默认内存上限，CPU 上限由该模板 vCPU 数推导，父目录仍固定。建议把 `base` 别名指向一张明确共享的预装模板，保留原 SDK 的便利默认值。未配置目录时沿用旧 `base` 参数。
+常驻服务配置可选 `templates` 目录，结构与检查以[模块合同](../docs/module-contracts.md#模板服务--创建准入1236)及[描述类型](../controller-service/src/templates.rs)为准。这是受保护的内核/ext4 输入，不是 Dockerfile/OCI 构建入口。必须同时配置 `host_resources`；每张模板的 `host_memory_bytes` 覆盖全局默认内存上限，CPU 上限由该模板 vCPU 数推导，父目录仍固定。建议把 `base` 别名指向一张明确共享的预装模板，保留原 SDK 的便利默认值。未配置目录时仍可使用预置 `base`；这不是另一种存储或宿主模式。
 
-部署者先批准每张镜像的摘要和长度、验证其可启动，再填完整的 `TemplateBinding`，不得把未知名称统统映射为 base。描述例子和双模板运行入口见[实机探针](../tests/system/server_templates.py)；脚本只复制已批准镜像，不能替代镜像构建或认证。旧实例清理、V8 数据迁移、编号不可改写及别名筛选规则见模块合同。源镜像丢失不妨碍已有私有 VM 的观察/停止/清理，但将拒绝新启动；不得把磁盘复制等价为共享卷或快照。
+部署者先批准每张镜像的摘要和长度、验证其可启动，再填完整的 `TemplateBinding`，不得把未知名称统统映射为 base。描述例子和双模板运行入口见[实机探针](../tests/system/server_templates.py)；脚本只复制已批准镜像，不能替代镜像构建或认证。实例清理、当前格式拒绝、编号不可改写及别名筛选规则见模块合同，不提供旧库迁移。源镜像丢失不妨碍已有私有 VM 的观察/停止/清理，但将拒绝新启动；不得把磁盘复制等价为共享卷或快照。
 
 [`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；本工具不跟随 latest，仍不接收用户 Dockerfile/OCI。通用构建/转换由计划中的 [#123](https://github.com/ningZhang-cs/sandproof/issues/123) 单独交付，整体在证明范围外，见[覆盖记录](../docs/proof-coverage.md)。本配置用于可复现联调，其历史证据不能视为通用模板或生产默认值验收。
 
@@ -168,7 +170,7 @@ cargo test -p sandproof-node --test host_smoke --locked --no-run --message-forma
 python3 -c 'import json; print("\n".join(x["executable"] for x in map(json.loads, open("artifacts/host-test-build.json")) if x.get("executable")))'
 ```
 
-将输出的 `host_smoke-*` 可执行文件复制到已复核的 root 独占目录，核对复制前后的 SHA-256，并记录源码提交。以下路径和 UID 是需由测试机操作员填写的占位值；UID 基数及后续 1000 个编号必须独占，不能与其他测试并行复用。每条用例单独建立空的 root 私有 state/jails 目录及新的 16 位小写十六进制 namespace；不能把多个用例共用同一数据库。
+将输出的 `host_smoke-*` 可执行文件复制到已复核的 root 独占目录，核对复制前后的 SHA-256，并记录源码提交。以下路径及完整配置是需由测试机操作员填写的占位值。`SANDPROOF_TEST_BOUNDED_HOST` 必须给出与本轮 namespace、state/jails、数据库及固定资产匹配的完整 `BoundedHostConfig` JSON（含物理存储 profile 与丢弃控制台选择）；不能用旧 UID 基数和永久 VM 编号上限替代。UID 基数起、长度为物理位置数的范围必须独占。每条用例单独建立空的 root 私有 state/jails 目录及新的 16 位小写十六进制 namespace；不能把多个用例共用同一数据库。配置字段与协调文件要求见[模块合同](../docs/module-contracts.md)。
 
 ```sh
 sudo env \
@@ -179,7 +181,7 @@ sudo env \
   SANDPROOF_TEST_FIRECRACKER=/root-owned/firecracker \
   SANDPROOF_TEST_KERNEL=/root-owned/vmlinux \
   SANDPROOF_TEST_ROOTFS=/root-owned/base.ext4 \
-  SANDPROOF_TEST_UID_BASE=<独占UID基数> \
+  SANDPROOF_TEST_BOUNDED_HOST='<操作员提供的完整物理位置配置JSON>' \
   SANDPROOF_TEST_HOST_RESOURCES='{"cgroup_parent":"/sys/fs/cgroup/sandproof-node","memory_max_bytes":536870912}' \
   /root-owned/host-smoke --exact repeated_stop_and_cleanup_preserve_another_live_vm \
   --ignored --nocapture

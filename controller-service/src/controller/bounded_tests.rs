@@ -1,28 +1,15 @@
 use super::*;
 use crate::{AdmissionLimits, NeverCrash, finish_admitted_create_v1, kill_v1};
-use sandbox_controller_core::maintenance::{
-    MaintenanceLimits, slots::HostSlotPhase, windows::WindowLimits,
-};
+use sandbox_controller_core::maintenance::slots::HostSlotPhase;
 use sandproof_protocol::ResourceRef;
 use serde::Deserialize;
 use tempfile::TempDir;
 
 const NS: &str = "0123456789abcdef";
 fn config(slots: u64) -> BoundedHostConfig {
-    BoundedHostConfig {
-        physical_storage: None,
-        console_policy: None,
-        uid_base: 1000,
-        uplink_base: 8,
-        max_data_routes_per_slot: 4,
-        max_data_routes_global: 8,
-        data_route_control_reserve: 1,
-        maintenance: MaintenanceLimits {
-            max_host_slots: slots,
-            max_retained_results: 16,
-            windows: WindowLimits::new(2, 1000).unwrap(),
-        },
-    }
+    let mut host = crate::controller::tests_support::host(slots);
+    host.maintenance.max_retained_results = 16;
+    host
 }
 fn request(id: u64) -> core::CreateRequest {
     core::CreateRequest {
@@ -39,12 +26,11 @@ fn request(id: u64) -> core::CreateRequest {
 }
 fn limits() -> AdmissionLimits {
     AdmissionLimits {
-        max_vm_id: 1,
         max_active_global: 4,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 100_000,
+        max_disk_bytes_global: crate::controller::tests_support::fixture::CLEANUP_BYTES + 100_000,
         max_disk_bytes_per_tenant: 10_000,
-        cleanup_reserve_bytes: 1000,
+        cleanup_reserve_bytes: crate::controller::tests_support::fixture::CLEANUP_BYTES,
         max_timeout_secs: 600,
         max_lifetime_secs: 600,
         startup_timeout_secs: 60,
@@ -123,7 +109,14 @@ fn destroy(journal: &mut ControllerJournal, id: u64) {
 #[test]
 fn bounded_admission_reservation_rolls_back_with_every_projection_and_identity() {
     let dir = TempDir::new().unwrap();
-    let mut j = ControllerJournal::open_bounded(dir.path().join("db"), NS, config(1), 0).unwrap();
+    let mut j = ControllerJournal::open_complete(
+        dir.path().join("db"),
+        NS,
+        config(1),
+        crate::controller::tests_support::fixture::maintenance(),
+        0,
+    )
+    .unwrap();
     assert!(admit(&mut j, 1, &mut FailAt(CrashPoint::BeforeCommit)).is_err());
     assert!(j.host_slot_contexts().unwrap().is_empty());
     assert!(j.world().unwrap().sandbox_records().is_empty());
@@ -149,7 +142,14 @@ fn bounded_admission_reservation_rolls_back_with_every_projection_and_identity()
 #[test]
 fn one_older_live_instance_survives_repeated_other_position_reuse() {
     let dir = TempDir::new().unwrap();
-    let mut j = ControllerJournal::open_bounded(dir.path().join("db"), NS, config(2), 0).unwrap();
+    let mut j = ControllerJournal::open_complete(
+        dir.path().join("db"),
+        NS,
+        config(2),
+        crate::controller::tests_support::fixture::maintenance(),
+        0,
+    )
+    .unwrap();
     create(&mut j, 1);
     let older = j.host_slot_context(core::SandboxId(1)).unwrap().unwrap();
     for id in 2..=18 {
@@ -166,6 +166,11 @@ fn one_older_live_instance_survives_repeated_other_position_reuse() {
         destroy(&mut j, id);
         let context = j.host_slot_context(core::SandboxId(id)).unwrap().unwrap();
         j.release_host_slot(context, |_| Ok(()), &mut NeverCrash)
+            .unwrap();
+        let retired_at = 1000 + id * 101;
+        j.retire_reclaimed(core::SandboxId(id), retired_at, |_| Ok(()), &mut NeverCrash)
+            .unwrap();
+        j.expire_retained(retired_at + 101, &mut NeverCrash)
             .unwrap();
         assert_eq!(
             j.host_slot_context(core::SandboxId(1)).unwrap(),
@@ -187,7 +192,14 @@ fn one_older_live_instance_survives_repeated_other_position_reuse() {
 fn host_release_never_runs_before_committed_intent_and_lost_ack_is_replayable() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db");
-    let mut j = ControllerJournal::open_bounded(&path, NS, config(1), 0).unwrap();
+    let mut j = ControllerJournal::open_complete(
+        &path,
+        NS,
+        config(1),
+        crate::controller::tests_support::fixture::maintenance(),
+        0,
+    )
+    .unwrap();
     create(&mut j, 1);
     let context = j.host_slot_context(core::SandboxId(1)).unwrap().unwrap();
     assert!(
@@ -224,7 +236,14 @@ fn host_release_never_runs_before_committed_intent_and_lost_ack_is_replayable() 
         HostSlotPhase::Releasing
     );
     drop(j);
-    let mut j = ControllerJournal::open_bounded(&path, NS, config(1), 0).unwrap();
+    let mut j = ControllerJournal::open_complete(
+        &path,
+        NS,
+        config(1),
+        crate::controller::tests_support::fixture::maintenance(),
+        0,
+    )
+    .unwrap();
     assert_eq!(
         j.host_slot_inventory().unwrap()[0].1,
         HostSlotPhase::Releasing
@@ -242,7 +261,14 @@ fn predecessor_context_corruption_and_missing_used_row_fail_closed_on_reopen() {
     ] {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("db");
-        let mut j = ControllerJournal::open_bounded(&path, NS, config(1), 0).unwrap();
+        let mut j = ControllerJournal::open_complete(
+            &path,
+            NS,
+            config(1),
+            crate::controller::tests_support::fixture::maintenance(),
+            0,
+        )
+        .unwrap();
         for id in 1..=3 {
             create(&mut j, id);
             destroy(&mut j, id);
@@ -255,7 +281,16 @@ fn predecessor_context_corruption_and_missing_used_row_fail_closed_on_reopen() {
             .unwrap()
             .execute_batch(mutation)
             .unwrap();
-        assert!(ControllerJournal::open_bounded(&path, NS, config(1), 0).is_err());
+        assert!(
+            ControllerJournal::open_complete(
+                &path,
+                NS,
+                config(1),
+                crate::controller::tests_support::fixture::maintenance(),
+                0
+            )
+            .is_err()
+        );
     }
 }
 
@@ -264,7 +299,14 @@ fn commit_uncertainty_reloads_exact_candidate_not_the_assumed_release_result() {
     for durable in [false, true] {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("db");
-        let mut j = ControllerJournal::open_bounded(&path, NS, config(1), 0).unwrap();
+        let mut j = ControllerJournal::open_complete(
+            &path,
+            NS,
+            config(1),
+            crate::controller::tests_support::fixture::maintenance(),
+            0,
+        )
+        .unwrap();
         create(&mut j, 1);
         destroy(&mut j, 1);
         let context = j.host_slot_context(core::SandboxId(1)).unwrap().unwrap();
@@ -334,22 +376,39 @@ fn all_bounded_limits_and_nested_fields_are_explicit_and_checked() {
 
 #[test]
 fn console_policy_is_explicit_and_cannot_change_an_existing_host_mapping() {
-    let directory = TempDir::new().unwrap();
-    let path = directory.path().join("controller.db");
-    let legacy = config(1);
-    let encoded = serde_json::to_vec(&legacy).unwrap();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("db");
+    let complete = config(1);
+    drop(
+        ControllerJournal::open_complete(
+            &path,
+            NS,
+            complete.clone(),
+            crate::controller::tests_support::fixture::maintenance(),
+            0,
+        )
+        .unwrap(),
+    );
+    let mut partial = complete.clone();
+    partial.console_policy = None;
     assert!(
-        !String::from_utf8(encoded.clone())
-            .unwrap()
-            .contains("console_policy")
+        ControllerJournal::open_complete(
+            &path,
+            NS,
+            partial,
+            crate::controller::tests_support::fixture::maintenance(),
+            0
+        )
+        .is_err()
     );
-    assert_eq!(
-        serde_json::from_slice::<BoundedHostConfig>(&encoded).unwrap(),
-        legacy
+    assert!(
+        ControllerJournal::open_complete(
+            &path,
+            NS,
+            complete,
+            crate::controller::tests_support::fixture::maintenance(),
+            0
+        )
+        .is_ok()
     );
-    drop(ControllerJournal::open_bounded(&path, NS, legacy.clone(), 0).unwrap());
-    let mut discard = legacy.clone();
-    discard.console_policy = Some(ConsolePolicy::Discard);
-    assert!(ControllerJournal::open_bounded(&path, NS, discard, 0).is_err());
-    assert!(ControllerJournal::open_bounded(&path, NS, legacy, 0).is_ok());
 }

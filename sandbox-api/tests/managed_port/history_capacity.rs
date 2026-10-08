@@ -116,6 +116,15 @@ fn policy() -> ManagedConfig {
     policy
 }
 
+fn open_history(path: &Path) -> ControllerJournal {
+    let mut host = complete_fixture::host(path, NAMESPACE, &policy());
+    // The opt-in observation has at most 64 completed cycles and two live
+    // sandboxes. Promised terminal results are explicit and never evicted.
+    host.maintenance.max_retained_results = 256;
+    ControllerJournal::open_complete(path, NAMESPACE, host, complete_fixture::maintenance(), 0)
+        .unwrap()
+}
+
 fn long_request() -> CreateRequest {
     CreateRequest {
         timeout: Some(86_400),
@@ -225,7 +234,7 @@ impl Fixture {
         let calls = Calls::default();
         let (port, setup_ns) = measured(|| {
             ManagedPort::new(
-                ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+                open_history(&directory.path().join("controller.db")),
                 calls.host(&[]),
                 policy(),
             )
@@ -270,6 +279,7 @@ impl Fixture {
                     port.authorize_data(&retired.envd_access_token, DataKind::Exec),
                     Err(PortError::NotFound)
                 );
+                assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
             }
         });
         self.completed = cycles;
@@ -278,12 +288,12 @@ impl Fixture {
         let before = rows(&path);
         let setup_database_bytes = file_bytes(&path);
         let setup_wal_bytes = file_bytes(&path.with_file_name("controller.db-wal"));
-        assert_eq!(before.sandboxes, u64::try_from(LIVE + cycles).unwrap());
+        assert_eq!(before.sandboxes, u64::try_from(LIVE).unwrap());
         assert_eq!(self.calls.snapshot(), [LIVE + cycles, cycles]);
         // Close/reopen the real journal, retaining only the two live host
         // bindings. This is a cold controller connection, not a cold OS cache.
         drop(self.port.take());
-        let (journal, reopen_ns) = measured(|| ControllerJournal::open(&path, NAMESPACE).unwrap());
+        let (journal, reopen_ns) = measured(|| open_history(&path));
         let port = ManagedPort::new(journal, self.calls.host(&self.live), policy());
         let ((), first_recovery_after_reopen_ns) =
             measured(|| probe(&port, &self.live, "idle_recovery"));
@@ -341,7 +351,7 @@ impl Fixture {
             port.kill("1", &session.sandbox_id).unwrap();
         }
         drop(port);
-        let journal = ControllerJournal::open(self.path(), NAMESPACE).unwrap();
+        let journal = open_history(&self.path());
         let world = journal.world().unwrap();
         assert!(
             world
@@ -362,9 +372,10 @@ fn real_history_smoke_preserves_fixed_live_authority() {
     let mut fixture = Fixture::new();
     let zero = fixture.checkpoint(0, 1);
     let grown = fixture.checkpoint(3, 1);
-    assert!(grown.journal.inputs > zero.journal.inputs);
-    assert!(grown.journal.operations > zero.journal.operations);
-    assert!(grown.journal.receipts > zero.journal.receipts);
+    assert_eq!(grown.completed_create_kill_cycles, 3);
+    assert_eq!(grown.journal.sandboxes, zero.journal.sandboxes);
+    assert_eq!(grown.journal.operations, zero.journal.operations);
+    assert!(grown.journal.inputs <= complete_fixture::maintenance().max_tail_inputs);
     fixture.finish();
 }
 
@@ -416,10 +427,15 @@ fn other_probe(
         "get" => port
             .get("2", &session.sandbox_id)
             .map(|got| assert_eq!(got.info.sandbox_id, session.sandbox_id)),
-        "idle_recovery" => port
-            .recover_on_startup()
-            .map(|report| assert_eq!(report.unresolved_sandboxes, 0)),
-        "due_expiry" => port.expire_due().map(|count| assert_eq!(count, 1)),
+        "idle_recovery" => port.recover_on_startup().map(|report| {
+            // The coordinator deliberately retains the killed sandbox's
+            // permit, so its physical release may still wait for drain.
+            assert!(report.unresolved_sandboxes <= 1);
+            assert_eq!(report.failed_sandboxes, 0);
+        }),
+        // Concurrent recovery may already have destroyed the due sandbox;
+        // final-state assertions below require exactly one host stop overall.
+        "due_expiry" => port.expire_due().map(|count| assert!(count <= 1)),
         _ => unreachable!(),
     }
 }
@@ -459,7 +475,7 @@ fn slow_stop_interference(window: Duration) -> Interference {
     let calls = Calls::default();
     let directory = TempDir::new().unwrap();
     let port = Arc::new(ManagedPort::new(
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         FakeHost {
             history_stop_gate: Some((core::SandboxId(1), gate)),
             ..calls.host(&[])
@@ -582,7 +598,11 @@ fn history_capacity_profile() {
     assert!(
         !points.is_empty() && points[0] == 0 && points.windows(2).all(|pair| pair[0] < pair[1])
     );
-    assert!(*points.last().unwrap() + LIVE <= usize::try_from(policy().limits.max_vm_id).unwrap());
+    assert!(u64::try_from(*points.last().unwrap() + LIVE).is_ok());
+    assert!(
+        *points.last().unwrap() <= 64,
+        "fixture reserves results for at most 64 cycles"
+    );
     let samples: usize = std::env::var("SANDPROOF_HISTORY_SAMPLES")
         .unwrap_or_else(|_| "7".into())
         .parse()

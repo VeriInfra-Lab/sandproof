@@ -30,8 +30,16 @@ import tempfile
 import time
 import urllib.request
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from tools.benchmark_proxy import BenchmarkProxy, save, trusted
 from tools import service_cgroup
+
+_retired_sandboxes = _runpy.run_path(
+    str(Path(__file__).with_name('_complete_runtime.py'))
+)['retired_sandboxes']
 
 
 def probe_result(result):
@@ -40,7 +48,7 @@ def probe_result(result):
     return result.stdout.strip() == 'allowed'
 
 
-def journal(database, intents, namespace, template):
+def journal(database, intents, namespace, template, *, known=None):
     """All requests to this fresh private deployment have durable correlations."""
     with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
         db.execute('BEGIN')
@@ -50,6 +58,7 @@ def journal(database, intents, namespace, template):
             raise RuntimeError('private probe journal rows incomplete')
         rows = [(key, blob, options_by_id[key]) for key, blob in states.items()]
         pending = db.execute("SELECT count(*) FROM outbox WHERE dispatch_state!='receipted'").fetchone()[0]
+        retired = _retired_sandboxes(db, namespace) if known is not None else set()
     found = {}
     for identity, blob, raw in rows:
         state, options = json.loads(blob), json.loads(raw)
@@ -60,18 +69,28 @@ def journal(database, intents, namespace, template):
                 or not re.fullmatch('sb-' + namespace + '-[1-9][0-9]*', identity)):
             raise RuntimeError('private probe journal identity changed')
         found[attempt] = {'id': identity, 'phase': state['phase']}
+        if known is not None:
+            if attempt in known and known[attempt] != identity:
+                raise RuntimeError('private probe original identity replaced')
+            known[attempt] = identity
+    if known is not None:
+        for attempt, identity in known.items():
+            if attempt not in intents or not re.fullmatch('sb-' + namespace + '-[1-9][0-9]*', identity):
+                raise RuntimeError('private probe saved identity invalid')
+            if attempt not in found and identity in retired:
+                found[attempt] = {'id': identity, 'phase': 'Retired'}
     return found, pending
 
 
-def settle(database, intents, namespace, template, delete, *, deadline, dispatched=None):
+def settle(database, intents, namespace, template, delete, *, deadline, dispatched=None, known=None):
     if dispatched is None:
         dispatched = set()
     while time.monotonic() < deadline:
-        found, pending = journal(database, intents, namespace, template)
-        if set(found) == set(intents) and not pending and all(x['phase'] == 'Destroyed' for x in found.values()):
+        found, pending = journal(database, intents, namespace, template, known=known)
+        if set(found) == set(intents) and not pending and all(x['phase'] in ('Destroyed', 'Retired') for x in found.values()):
             return found
         for item in found.values():
-            if item['phase'] not in ('Starting', 'Destroyed') and item['id'] not in dispatched:
+            if item['phase'] not in ('Starting', 'Destroyed', 'Retired') and item['id'] not in dispatched:
                 dispatched.add(item['id'])
                 try:
                     delete(item['id'])  # A lost receipt is observed, never replayed.
@@ -84,9 +103,10 @@ def settle(database, intents, namespace, template, delete, *, deadline, dispatch
 def exercise(args):
     from e2b import Sandbox
     from sdk_c02_acceptance import processes_in_uid_range, sha256_file
-    from server_process_crash import fetch, free_loopback_port, start_server, stop_server, wait_ready
+    from server_process_crash import (complete_runtime, fetch, free_loopback_port,
+                                      provision_runtime, start_server, stop_server, wait_ready)
     from server_template_isolation import audit_gone
-    from server_templates import descriptor, MIB
+    from server_templates import descriptor, MIB, record_for
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise RuntimeError('trusted Linux root operator required')
     if importlib.metadata.version('e2b') != '2.51.0':
@@ -103,7 +123,7 @@ def exercise(args):
               for name in ('server', 'kernel', 'rootfs', 'firecracker', 'jailer', 'probe', 'proxy_binary')}
     if inputs['probe']['sha256'] != args.probe_sha256:
         raise ValueError('approved static probe digest required')
-    if not 1000 <= args.uid_base <= 2**32 - 100 or processes_in_uid_range(args.uid_base, args.uid_base + 31):
+    if not 1000 <= args.uid_base < 2**32 - 1 or processes_in_uid_range(args.uid_base, args.uid_base):
         raise RuntimeError('exclusive UID range required')
     available = int(next(x.split()[1] for x in Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:'))) * 1024
     if available < (args.memory_mib + 256 + 1024 + 256 + 2048) * MIB or len(os.sched_getaffinity(0)) < 4:
@@ -140,7 +160,7 @@ def exercise(args):
         'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'jails'),
         'jailer': str(args.jailer), 'firecracker': str(args.firecracker),
         'kernel': template['kernel']['path'], 'rootfs': template['rootfs']['path'],
-        'uid_base': args.uid_base, 'max_vm_id': 31, 'vcpu_count': 1, 'memory_mib': args.memory_mib,
+        'uid_base': args.uid_base, 'vcpu_count': 1, 'memory_mib': args.memory_mib,
         'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': (args.memory_mib + 256) * MIB},
         'file_policy_digest': 1, 'bind': f'127.0.0.1:{port}', 'domain': 'example.invalid',
         'credentials': [{'tenant': 1, 'secret': key}], 'public_ipv4_enabled': True,
@@ -152,6 +172,8 @@ def exercise(args):
             'compute_limits': {'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
                 'max_memory_bytes_global': (args.memory_mib + 256) * MIB,
                 'max_memory_bytes_per_tenant': (args.memory_mib + 256) * MIB}}}
+    cfg = complete_runtime(cfg, slots=1)
+    provision_runtime(cfg)
     save(root / 'config.json', cfg)
     url = f'http://127.0.0.1:{port}'
     options = dict(api_url=url, sandbox_url=url, api_key=key, domain='example.invalid', retries=0, request_timeout=90)
@@ -159,6 +181,7 @@ def exercise(args):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     process, failure, quiescent = None, None, False
     intents, rows, cleanup_errors, dispatched = {}, [], [], set()
+    known, identities = {}, {}
     service_record = root / 'service.json'
     helper = args.probe.read_bytes()
 
@@ -176,6 +199,12 @@ def exercise(args):
         intents[attempt] = {'proxy_policy_probe': namespaces[0], 'attempt': attempt, 'case': label}
         save(root / 'intents.json', intents)
         sb = Sandbox.create(template='base', timeout=600, metadata=intents[attempt], **policy, **options)
+        known[attempt] = sb.sandbox_id
+        save(root / 'original-identities.json', known)
+        _, name, record = record_for(root, sb)
+        record['network_inode'] = json.loads((root / 'jails/.claims' / name / 'network.json').read_text())['namespace_inode']
+        identities[name] = record
+        save(root / 'resource-evidence.json', identities)
         sb.files.write('/tmp/network-probe', BytesIO(helper), user='root')
         if command(sb, 'chmod 700 /tmp/network-probe').exit_code != 0:
             raise RuntimeError('static probe installation failed')
@@ -189,7 +218,7 @@ def exercise(args):
 
     def finish_vm(sb):
         settle(Path(cfg['database']), intents, namespaces[0], template, delete,
-               deadline=time.monotonic() + 60, dispatched=dispatched)
+               deadline=time.monotonic() + 60, dispatched=dispatched, known=known)
 
     with socket.socket() as sentinel:
         sentinel.bind((host, 0))
@@ -241,13 +270,12 @@ def exercise(args):
             try:
                 if process is not None and intents:
                     settle(Path(cfg['database']), intents, namespaces[0], template, delete,
-                           deadline=time.monotonic() + 90, dispatched=dispatched)
+                           deadline=time.monotonic() + 90, dispatched=dispatched, known=known)
                 if intents and process is None:
                     raise RuntimeError('creation exists without controller')
-                claims = root / 'jails/.claims'
-                audits = [audit_gone(root, args.firecracker, args.cgroup_parent, p.name)
-                          for p in claims.iterdir()] if claims.exists() else []
-                if len(audits) != len(intents) or processes_in_uid_range(args.uid_base, args.uid_base + 31):
+                audits = [audit_gone(root, args.firecracker, args.cgroup_parent, name, record)
+                          for name, record in identities.items()]
+                if len(audits) != len(intents) or processes_in_uid_range(args.uid_base, args.uid_base):
                     raise RuntimeError('claim count or UID cleanup unknown')
                 links = proxy.query('link', 'show')
                 if any(x['ifname'].startswith('sp' + namespaces[0][:6]) for x in links):

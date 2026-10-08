@@ -30,7 +30,7 @@ use tokio::{
     process::{ChildStdin, ChildStdout, Command},
 };
 
-use crate::linux::NodeHost;
+use crate::linux::host::NodeHost;
 
 mod admission;
 mod drain;

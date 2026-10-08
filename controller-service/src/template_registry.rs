@@ -107,7 +107,7 @@ pub struct Publication {
     pub state: PublicationState,
     pub checked: bool,
     pub validation_sandbox: Option<u64>,
-    /// Absent for legacy records and active validations. Only the journal may
+    /// Absent before validation settles. Only the journal may
     /// construct this value after exact terminal cleanup has been verified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub validation_certificate: Option<ValidationCertificate>,
