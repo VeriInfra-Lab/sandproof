@@ -6,7 +6,13 @@
 
 ### 普通 CI 自建执行环境
 
-普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器与 rustup 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
+普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器、rustup 与 uv 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。[uv 安装入口](../tools/ci_install_uv.sh)只从固定官方 PyPI 制品下载 uv 0.11.31，核对 SHA256 后以 root/0555 安装到 `/usr/local/bin/uv`；SDK/Harbor 工作流直接检查 `uv --version`，版本缺失或不符即失败。工具或执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
+
+固定普通 CI 依赖由[可信预热入口](../tools/ci_dependencies.py)从管理员已审查的精确提交准备输入；输入只含 SDK/Harbor 项目的锁与清单、Cargo 锁与清单及必要的固定工具配方，不由 PR 提供任意预热命令。先运行 `python3 tools/ci_dependencies.py prepare-input --checkout <审核检出目录> --approved-commit <40位提交> --output <新私有输入JSON>`，它核对输入文件与该提交的 Git blob 一致。旧运行 pins 缺少 uv 三个字段时，创建独立 root 私有制备 pins，保留当前 `cloud_sha256`、`golden_sha256` 及既有 `golden_image` 等基线身份，只从已核验的[构建输入](../tools/ci_image_pins.json)加入 `uv_version`、`uv_url`、`uv_sha256`，不提前覆盖运行 pins；通过受控宿主入口 `python3 tools/ci_vm.py --role preheat --pins <独立私有制备pins> --dependency-input <该输入JSON> --timeout <秒>` 从当前黄金盘派生独立来宾，安装同一固定 uv，并以 runner 身份按原锁预热 uv 和 Cargo。预热须在不同临时目录完成离线重建及 Git 安装来源核对，真实退出成功后才发布按磁盘摘要命名的新候选黄金盘及 `prepared-pins.json`，不会自动替换运行 pins。候选 pins 位于受下文 40 份／128 MiB 限制回收的诊断目录，开始验证前须保存 root 私有副本。入口实现不表示已安装或已验收；同固定材料的两次全新虚拟机离线验证、镜像与输入摘要和真实结果须记录在对应 issue/PR。
+
+预热入口只在普通执行位置自然空闲、登记已清且没有已有维护标记时，自动认领本轮暂停与独占身份；他人的维护标记、未清普通占用或仍在运行的工作单元均使启动拒绝。管理员先等待普通任务自然完成再调用，不提前创建 `paused` 或 `exclusive-host`，也不停止在途任务。收尾确认本轮来宾与工作盘已停止、回收后，只按精确身份移除自己的标记并恢复准入；未知结果保留身份供核对。
+
+候选盘验证通过后，更换黄金盘另行认领本次 `paused` 停止新准入，等待全部普通工作单元及未知占用排空，再核对候选盘、保存的 pins 与输入摘要并切换受控配置；保留旧基线用于恢复，完成后只移除本次认领的暂停标记。候选 pins 的 `golden_image` 为新的按摘要命名文件，切换前须先受控安装支持该身份的新 `ci_vm.py` 并完成静态核验，不能让旧入口忽略新文件名。旧黄金盘没有固定 uv 时，应先验证并切换含固定 uv 的候选盘，再启用直接调用预装 uv 的工作流；迁移中的旧工作流仍按原入口完成。每轮工作盘从只读黄金盘获得固定材料，uv/Cargo 的可写缓存仅存在当轮工作盘，任务结束后随盘回收，不回写黄金盘或与后续任务共享。新锁缺失材料时仍可经既有受限依赖网络下载，或者重新审核固定提交、受控制备并验证新基线；不把缓存命中等同于来源检查，也不取消原 `--locked` 安装与测试门槛。
 
 宿主侧[单任务入口](../tools/ci_vm.py)必须由受控安装调用，不由 PR 调用；[基线准备](../tools/ci_vm_bootstrap.sh)和[启动前隔离探针](../tools/check_ci_isolation.py)在可信镜像中执行。宿主管理凭据不进入镜像、seed 或任务环境，只传单任务 JIT 配置。虚拟机中的 runner 用户无 sudo/docker/kvm 等管理权限，不挂宿主目录、不转发 SSH、不暴露宿主 KVM；限制网络仅能经过[出站网关](../tools/ci_proxy.conf)访问当前 CI 所需公开依赖域名，拒绝私有地址、管理端口和其他目标。owner 已同意仅将 Python/Rust 的既有公共依赖域名直连，GitHub/Actions 继续经现有宿主代理；两条路线仍使用相同白名单、端口及私有地址拒绝，不修改产品沙箱网络策略。[服务模板](../tools/ci_proxy.service)仅监听宿主回环。SDK/Harbor 任务使用[CI Git 入口](../tools/ci_git.py)只拉取各自 `uv.lock` 的已锁定提交，不重复下载父提交历史；保留原来源、提交与安装来源检查，普通 Git 操作和开发者本地入口不变，不共享前一任务的可写缓存。
 
@@ -22,4 +28,22 @@
 
 运维可在 root 私有 `/var/lib/sandproof-ci/supervisor/` 创建 `paused` 文件停止新准入（已有任务继续），删除它后恢复；后续高权限宿主验收使用 `exclusive-host` 标记之前，须先等待普通工作单元全部退出，不能仅靠标记便宣布独占。标记写明本次维护身份；验收结束、启动前被拒绝或调查转回本机时，确认本次宿主工作已停止后及时移除自己的标记并核对准入恢复，不能为尚未运行的验收长期阻塞日常 CI。更新调度服务须核对旧文件身份、保留恢复副本并兼容在途登记；只重启管理服务，不停止独立工作单元。日常检查 `systemctl status sandproof-ci-supervisor.service` 与脱敏 journal；不要输出私钥、凭据目录或 `.jit` 文件。未配置并实测可信服务时，仍只能称为有限批次验收。版本变动重跑真实成功/失败与干净恢复，不以此前单任务入口的验收替代补充服务验收。
 
-这套普通执行环境不运行 KVM 系统验收、真实题目或 Lean 完整证明；高权限入口和 test→main 的固定 Terminal-Bench 2.1 全题集门槛仍归 #14 后续交付，须先完成 #13 的版本冻结与工具迁移。现有 2.0 检查或旧报告不表示 2.1 门槛已配置或通过。自建普通 CI 不能绕过既有分支保护。成功、故意引入缺陷后的失败和下一轮干净恢复均应通过真实 Actions 执行核验，不用手工伪造检查状态。
+这套普通执行环境不运行 KVM 系统验收、真实题目或 Lean 完整证明；普通绿灯和旧 2.0 报告不能代替高权限验收或 2.1 通过。自建执行器不绕过分支保护。
+
+### 可信 KVM 端到端监督与晋升门槛
+
+[监督器](../tools/ci_e2e_supervisor.py)、[准备工具](../tools/ci_e2e_prepare.py)、[服务单元](../tools/ci_e2e_supervisor.service)与[私有配置示例](../tools/ci_e2e_supervisor.example.json)已实现；宿主安装与真实结果回传须以对应 issue/PR 的实测证据为准。当前通过[2.0 兼容题集](../benchmarks/terminal-bench-2.0-suites.json)回归，[2.1 原题配置](../benchmarks/terminal-bench-2.1-suites.json)保留为发布前待办；判据以[验收清单](testing-plan.md)为准，支持完整题集不等于已通过。
+
+不新增 root GitHub runner，不执行外部 PR 宿主代码或 `pull_request_target`。监督程序、配置、任务来源和工具均由 root 受控安装；自动晋升模式须显式启用，只从固定仓库读取受保护 integration/test/main 的精确引用，接受 integration→test、test→main 及既有 main→test 同步，不接受任务分支、fork 或 PR 自带命令。候选必须包含当前目标基线；已经进入目标的源版本不重复执行。目标独有变更需要先通过正常同步 PR 合入源分支，不能只测源版本而忽略最终组合。未满足历史／普通检查的方向保持阻塞，但不阻止另一个合法且已就绪的方向；服务不主动创建或合并同步 PR。最终合并依赖严格保护防止目标更新竞态。配置和编译产物绑定原运行，重启不能改用新配置或重跑未知工作。
+
+普通补充服务与 KVM 服务使用同一准入锁；自动晋升先等待精确候选的四项普通检查完成，核对宿主配置 `ordinary_check_app_id` 对应的最新真实结果，不接受旧成功覆盖新排队／失败或其他 App 的同名检查。没有就绪候选时不占用验收身份、不暂停普通 CI，GitHub 必需 E2E 检查仍待返回。普通检查成功后才发布 E2E 检查并再次核对，KVM 创建自己的暂停标记，等待全部普通任务及未知占用退出，再独占。准备/批次由独立 systemd 单元执行，管理服务重启不停止它们；准备完成后固定实际 server/窗口工具摘要。按配置大小分批串行，精确收尾确认和脱敏结果持久化后才按原目录设备/inode 回收临时盘，不能宽泛删除他人资源。清理或单元身份未知时保留占用，恢复按原资源核对，不盲目新建。
+
+宿主私有配置 `dataset` 选择 `terminal-bench@2.0` 或 `terminal-bench@2.1`，锁/题集配置按版本加载，源码仍须匹配固定提交。2.0 的 `task_registry` 指向固定 Harbor registry 原始文件，须在 `host_assets` 登记摘要；2.1 默认使用仓库已有 registry。省略 dataset 仅为恢复原已安装 2.1 配置。`selection` 选择 `profile`（`smoke`、`regression` 或 `full`），或唯一显式 `tasks` 名单；`batch_size` 控制每批保留数量。2.0 题集的 `oracle_modes` 显式登记既有修补并核对原解答摘要，遇到不同模式拆批，不把修补用于 2.1。题集规范摘要写入 `selection_sha256`，配置改变产生新验收身份；在途运行按原配置恢复。自动模式只使用宿主批准配置，参数不授予额外资源。
+
+手动入口为同一监督器的 `--candidate <批准的完整提交> --base <目标完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-promotions`，私有配置明确批准 `auto_promotions=true`、固定仓库和 `promotion_floor=<已审查门槛实现的完整提交>`；只接收该最低版本之后的受保护分支，避免首次安装时执行旧 test。现有 `--follow-test`／`auto_test` 保留为旧部署入口，不与新模式同时启用。自动模式不接受命令行改题集、手动候选或 `--local-only`。
+
+检查独立为 `E2E / terminal-bench-2.0-compat` 或 `E2E / terminal-bench-2.1`，结果注明兼容/原题、逐题解答模式和实际范围。当前两级晋升使用 2.0 smoke 四题配置，普通任务 PR 不跑真题。保护在 test/main 保留已有检查并追加该 E2E 名称，绑定专用 GitHub App 的 ID；验证运行中确实阻塞、真实成功后才放行。integration 的保护不增加真题门槛。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口仍未接通，受控命令行入口保留。
+
+给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
+
+安装前审查源码及批准配置、保留原 CI 文件恢复副本，验证单元；只重启管理服务，不停止在途工作。门槛按 owner 授权启用并通过正常晋升 PR 实测，安装和通过证据记录在 #14。单次安装不代表永久运行的缓存/历史保留已验收；未知资源由管理员核对，不自动忘掉。不加入绿色占位工作流，不通过移除必需检查合入失败版本。

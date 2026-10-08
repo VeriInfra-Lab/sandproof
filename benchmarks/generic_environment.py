@@ -19,7 +19,7 @@ from e2b import AsyncSandbox
 from benchmarks.sdk_environment import SdkEnvironment
 from benchmarks.environment_repairs import PRUNED_SOURCE, archive_repaired_context, repair_profile
 from tools.benchmark_tasks import InvalidInput
-from tools.template_build_client import BuildClient
+from tools.template_build_client import BuildClient, request_window
 
 MIB = 1024 * 1024
 BUILD_LOG_BYTES = 2 * MIB
@@ -97,10 +97,9 @@ def validate_template(template, entry):
 
 
 class GenericEnvironment(SdkEnvironment):
-    def __init__(self, *, entry, source, source_kind, build_url, sdk_options, start_audit=None, build_mode="windowed", **kwargs):
-        if build_mode not in ("windowed", "legacy-unbounded"):
-            raise InvalidInput("explicit supported build mode required")
-        self.build_mode = build_mode
+    def __init__(self, *, entry, source, source_kind, build_url, sdk_options, start_audit=None, **kwargs):
+        if 'build_mode' in kwargs:
+            raise InvalidInput("build mode selection is no longer supported")
         self.entry, self.source, self.source_kind = entry, source, source_kind
         self.client = BuildClient(build_url, sdk_options['api_key'])
         self.build_result = None
@@ -146,8 +145,7 @@ class GenericEnvironment(SdkEnvironment):
             context_hash = self.environment_repair['context_sha256']
         else:
             context_hash = None
-        mode = getattr(self, 'build_mode', 'windowed')
-        intent = self.client.intent_binding() | {'build_mode': mode, 'request': request, 'context_sha256': context_hash,
+        intent = self.client.intent_binding() | {'build_mode': 'windowed', 'request': request, 'context_sha256': context_hash,
                   'task_files_sha256': self.entry['files_sha256'], 'source_kind': self.source_kind,
                   'original_environment': self.source_kind != PRUNED_SOURCE,
                   'environment_repair': self.environment_repair}
@@ -155,21 +153,24 @@ class GenericEnvironment(SdkEnvironment):
             if any(saved.get(key) != value for key, value in intent.items()):
                 raise InvalidInput('original build intent conflicts; do not replace uncertain work')
             window, self.submission_key = saved.get('requestWindow'), saved.get('idempotency_key')
-            if (mode == 'windowed' and not isinstance(window, dict)) or not isinstance(self.submission_key, str):
-                raise InvalidInput('original build intent lacks window/key; explicit legacy recovery required')
+            if not isinstance(self.submission_key, str) or not self.submission_key:
+                raise InvalidInput('original build intent lacks window/key')
         else:
-            window = None
-            if mode == 'windowed':
-                opened = await asyncio.to_thread(self.client.request, 'POST', '/sandproof/template-build-windows',
-                                                 {'durationMs': request['timeoutSeconds'] * 1000})
-                window = opened['requestWindow']
+            opened = await asyncio.to_thread(self.client.request, 'POST', '/sandproof/template-build-windows',
+                                             {'durationMs': request['timeoutSeconds'] * 1000})
+            window = opened.get('requestWindow')
+        try:
+            window = request_window(window)
+        except ValueError as error:
+            raise InvalidInput(str(error)) from error
+        if saved is None:
             intent.update(idempotency_key=self.submission_key, requestWindow=window)
             # This checkpoint is fsynced before POST. After an uncertain response,
             # retry only this original namespace/window/key and canonical input.
             self.checkpoint('build-intent.json', intent)
         self.build_dispatched = True
         result = await asyncio.to_thread(self.client.request, 'POST', '/sandproof/template-builds',
-                                         request | ({'requestWindow': window} if mode == 'windowed' else {}), token=self.submission_key)
+                                         request | {'requestWindow': window}, token=self.submission_key)
         self.build_id = result['buildID']
         self.build_result = result
         if not re.fullmatch(r'[0-9a-f]{32}', self.build_id):
@@ -265,7 +266,7 @@ class GenericEnvironment(SdkEnvironment):
         self._workdir = startup['workdir']
         self.default_user = startup['user']
         self.runtime_attempt = secrets.token_hex(16)
-        metadata = {'benchmark': 'terminal-bench-2.0', 'task': self.environment_name,
+        metadata = {'benchmark': self.entry.get('dataset', 'terminal-bench-2.0'), 'task': self.environment_name,
                     'build': self.build_id, 'revision': self.template['revision'],
                     'runtime_attempt': self.runtime_attempt}
         # This is a correlation identity, not an idempotency key. Never replay

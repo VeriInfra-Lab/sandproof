@@ -22,13 +22,11 @@ import argparse
 from contextlib import closing
 import json
 import os
-import re
 from pathlib import Path
 import secrets
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -47,12 +45,10 @@ BUILD_TOOLS = dict(BUILDKIT_HASHES, regctl=REGCTL_SHA256)
 
 
 def exercise(args):
-    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None),
-        legacy_unbounded=getattr(args, "legacy_unbounded", False))
+    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None))
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("isolated root Linux/KVM required")
-    if bounded_policy is not None:
-        require_bounded_host_tools()
+    require_bounded_host_tools()
     checkout = Path(__file__).resolve().parents[2]
     if subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
         raise RuntimeError("clean exact source commit required")
@@ -72,33 +68,23 @@ def exercise(args):
     for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed tool fingerprint mismatch: " + name)
-    if bounded_policy is not None:
-        root, namespaces = bounded_acceptance_layout(bounded_policy,
-            run_root=getattr(args, "run_root", None), namespace=getattr(args, "namespace", None),
-            build_namespace=getattr(args, "build_namespace", None))
-        if root.parent != args.scratch_parent.resolve(strict=True):
-            raise ValueError("bounded run root must be directly inside the approved scratch parent")
-        validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-                                         max_vm_id=20, bounded=True)
-        root.mkdir(mode=0o700)  # Existing deployments are never overwritten.
-        provision_acceptance_coordination(bounded_policy, run_root=root,
-            namespace=namespaces[0], build_namespace=namespaces[1])
-    else:
-        if getattr(args, "run_root", None) is not None:
-            raise ValueError("--run-root requires --bounded-policy")
-        root = Path(tempfile.mkdtemp(prefix="ts-", dir=args.scratch_parent))
-        namespaces = [getattr(args, "namespace", None) or secrets.token_hex(8),
-                      getattr(args, "build_namespace", None) or secrets.token_hex(8)]
-        if (any(not re.fullmatch(r"[0-9a-f]{16}", value) for value in namespaces)
-                or namespaces[0][:6] == namespaces[1][:6]):
-            raise ValueError("disjoint deployment namespaces required")
+    root, namespaces = bounded_acceptance_layout(bounded_policy,
+        run_root=getattr(args, "run_root", None), namespace=getattr(args, "namespace", None),
+        build_namespace=getattr(args, "build_namespace", None))
+    if root.parent != args.scratch_parent.resolve(strict=True):
+        raise ValueError("bounded run root must be directly inside the approved scratch parent")
+    validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
+                                     max_vm_id=20, bounded=True)
+    root.mkdir(mode=0o700)  # Existing deployments are never overwritten.
+    provision_acceptance_coordination(bounded_policy, run_root=root,
+        namespace=namespaces[0], build_namespace=namespaces[1])
     binary = root / "server"
     shutil.copyfile(args.server, binary)
     binary.chmod(0o700)
     print(f"root={root} commit={commit}", flush=True)
     firecracker = args.firecracker.resolve(strict=True)
     validate_acceptance_socket_paths(root, namespaces, firecracker,
-                                     max_vm_id=20, bounded=bounded_policy is not None)
+                                     max_vm_id=20, bounded=True)
     settings = []
     ports = [free_loopback_port() for _ in range(3)]
     urls = [f"http://127.0.0.1:{port}" for port in ports]
@@ -119,7 +105,7 @@ def exercise(args):
         config = {"namespace": namespaces[i], "database": str(pool / "db/controller.db"),
             "node_state_dir": str(pool / "state"), "jailer": str(args.jailer), "firecracker": str(firecracker),
             "chroot_base": str(pool / "jails"), "kernel": str(args.kernel), "rootfs": str(rootfs),
-            "uid_base": args.uid_base + i * 100, "max_vm_id": 20, "vcpu_count": cpu, "memory_mib": memory,
+            "uid_base": args.uid_base + i * 100, "vcpu_count": cpu, "memory_mib": memory,
             "host_resources": {"cgroup_parent": str(args.build_cgroup_parent if i else args.cgroup_parent), "memory_max_bytes": (memory + 256) * MIB},
             "file_policy_digest": 1, "bind": f"127.0.0.1:{ports[i]}", "domain": "example.invalid",
             "credentials": [{"tenant": 1, "secret": keys[i]}], "max_active_global": 2,
@@ -198,17 +184,12 @@ def exercise(args):
             time.sleep(0.5)
         raise AssertionError("build endpoint did not become ready")
     def submit(body, source=None):
-        if build_mode == "windowed":
-            from tools.template_build_client import BuildClient, saved_intent
-            client = BuildClient(urls[2], keys[0])
-            intent_path = root / ("build-intent-" + secrets.token_hex(16) + ".json")
-            intent = saved_intent(intent_path, client, body | {"timeoutSeconds": body.get("timeoutSeconds", build["limits"]["timeout_seconds"])},
-                                  build_mode=build_mode, context=source)
-            result = client.request("POST", "/sandproof/template-builds", body | {"requestWindow": intent["requestWindow"]}, token=intent["idempotency_key"])
-            code = 202
-        else:
-            code, result = request("POST", "/sandproof/template-builds", body)
-        assert code == 202, (code, result)
+        from tools.template_build_client import BuildClient, saved_intent
+        client = BuildClient(urls[2], keys[0])
+        intent_path = root / ("build-intent-" + secrets.token_hex(16) + ".json")
+        intent = saved_intent(intent_path, client, body | {"timeoutSeconds": body.get("timeoutSeconds", build["limits"]["timeout_seconds"])},
+                              context=source)
+        result = client.request("POST", "/sandproof/template-builds", body | {"requestWindow": intent["requestWindow"]}, token=intent["idempotency_key"])
         job = result["buildID"]
         if source:
             with source.open("rb") as incoming:
@@ -288,12 +269,10 @@ def exercise(args):
         subprocess.run(["tar", "-C", str(fixture_root / "context"), "-cf", str(interrupted), "."], check=True)
         job = submit(basic, interrupted)
         wait_job(job, terminal=False)
-        private_window = None
-        if build_mode == "windowed":
-            # Building is published before the backend persists its private
-            # window. Observe the original row only, then query its real VM.
-            private_window = wait_private_build_window(root / "builds/builds.db", job)
-        query = "?" + urllib.parse.urlencode({"requestWindow": private_window}) if private_window else ""
+        # Building is published before the backend persists its private
+        # window. Observe the original row only, then query its real VM.
+        private_window = wait_private_build_window(root / "builds/builds.db", job)
+        query = "?" + urllib.parse.urlencode({"requestWindow": private_window})
         for _ in range(120):
             code, data = fetch(opener, urls[1], "GET", "/sandproof/internal-build-vms/" + job + query, keys[1])
             if code == 200 and json.loads(data).get("session"):
@@ -309,9 +288,7 @@ def exercise(args):
         wait_builds()
         result = wait_job(job)
         assert result["state"] == "Failed" and result["failure"] == "InterruptedBuild", result
-        retry = {"timeout": 660, "allowInternetAccess": False}
-        if private_window:
-            retry["requestWindow"] = private_window
+        retry = {"timeout": 660, "allowInternetAccess": False, "requestWindow": private_window}
         code, body = fetch(opener, urls[1], "POST", "/sandproof/internal-build-vms/" + job, keys[1], retry)
         if private_window:
             # The supervisor has closed and settled this exact old window.
@@ -354,7 +331,7 @@ def exercise(args):
         (root / "report.json").write_text(json.dumps({"commit": commit, "scenarios": evidence,
             "server_sha256": sha256_file(binary),
             "kernel_sha256": original[0], "base_sha256": original[1], "builder_base_sha256": original[2],
-            "build_mode": build_mode, "physical_profile": bounded_policy is not None, "tools": build_tools,
+            "build_mode": build_mode, "physical_profile": True, "tools": build_tools,
             "no_process_network_cgroup_jail_residue": True, "public": args.public}, indent=2))
         print("self-service acceptance passed; report=" + str(root / "report.json"), flush=True)
     finally:
@@ -377,9 +354,8 @@ if __name__ == "__main__":
     parser.add_argument("--run-root", type=Path, help="fresh exact root named by the immutable bounded profile")
     parser.add_argument("--namespace", help="explicit runtime namespace required for bounded acceptance")
     parser.add_argument("--build-namespace", help="explicit builder namespace required for bounded acceptance")
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--bounded-policy", type=Path, help="explicit policies for both pools and public build storage")
-    mode.add_argument("--legacy-unbounded", action="store_true", help="legacy fixture only; not bounded-retention acceptance")
+    parser.add_argument("--bounded-policy", type=Path, required=True,
+                        help="explicit complete policies for both pools and public build storage")
     parser.add_argument("--public", action="store_true")
     parser.add_argument("--publication-unknown", action="store_true", help="delay the original publication POST across expiry and SQLite restart (#189)")
     parser.add_argument("--igzip", action="store_true", help="check and use the fixed optional ISA-L decoder pair")

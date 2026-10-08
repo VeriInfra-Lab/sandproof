@@ -31,6 +31,11 @@ def validate_oracle_mode(args, selected):
 
 
 async def run_selected(args, lock):
+    if getattr(args, 'build_mode', 'windowed') != 'windowed':
+        raise InvalidInput('only windowed builds are supported')
+    if lock.get('dataset') == 'terminal-bench@2.1' and (
+            getattr(args, 'oracle_mode', 'original') != 'original' or args.source_kind == PRUNED_SOURCE):
+        raise InvalidInput('2.0 oracle/environment repairs are not applicable to 2.1')
     selected = {t['name'] for t in lock['tasks']} if args.all else set(args.task)
     entries = {t['name']: t for t in lock['tasks']}
     if not selected or not selected <= entries.keys():
@@ -41,7 +46,7 @@ async def run_selected(args, lock):
              'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
     def report(current=None):
         text = json.dumps({
-            'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
+            'schema_version': 1, 'dataset': lock.get('dataset', 'terminal-bench@2.0'), 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
             'source_kind': args.source_kind, 'oracle_mode': mode,
             'original_environment': args.source_kind != PRUNED_SOURCE,
             'failure_diagnostics': getattr(args, 'failure_diagnostics', False),
@@ -61,8 +66,7 @@ async def run_selected(args, lock):
         def factory(*, recipe, **kwargs):
             nonlocal environment
             environment = GenericEnvironment(entry=entry, source=args.source, source_kind=args.source_kind,
-                build_url=args.build_url, start_audit=getattr(args, 'start_audit', None),
-                build_mode=getattr(args, 'build_mode', 'windowed'), **kwargs)
+                build_url=args.build_url, start_audit=getattr(args, 'start_audit', None), **kwargs)
             return environment
         row = {'name': name, 'status': 'runner_error', 'oracle': 'not_run', 'verifier': 'not_run',
                'oracle_mode': mode, 'environment_source_kind': args.source_kind,
@@ -100,7 +104,8 @@ async def run_selected(args, lock):
                     try:
                         row['runtime_intent'] = load_runtime_intent(
                             result.parent, task=name, runtime_attempt=environment.runtime_attempt,
-                            build_id=environment.build_id, template=environment.template)
+                            build_id=environment.build_id, template=environment.template,
+                            benchmark=entry.get('dataset', 'terminal-bench-2.0'))
                     except (OSError, ValueError, TypeError) as error:
                         row.setdefault('execution_status', row['status'])
                         row.update(status='cleanup_unknown', exact_cleanup='unknown',
@@ -165,8 +170,6 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--build-url', required=True)
-    parser.add_argument('--build-mode', choices=('windowed', 'legacy-unbounded'), default='windowed',
-                        help='legacy-unbounded is explicit compatibility and does not satisfy bounded retention acceptance')
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--task', action='append')
     selection.add_argument('--all', action='store_true')

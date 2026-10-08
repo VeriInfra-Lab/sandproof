@@ -229,7 +229,12 @@ def record_artifact_status(environment, row):
 
 
 async def run_task(args, entry, recipe, *, environment_factory=None, result_row=None):
-    task = Task(args.source / entry['name'])
+    task = Task(args.source / entry.get('source_path', entry['name']))
+    # Keep the original package identity for evidence, a short stable task ID
+    # for local paths and SDK metadata. No original task file is rewritten.
+    if task.name != entry.get('package_name', entry['name']):
+        raise InvalidInput('task package identity differs from the source lock')
+    task.name = entry['name']
     paths = TrialPaths(args.output / entry['name'])
     paths.trial_dir.mkdir(mode=0o700)
     for directory in (paths.agent_dir, paths.verifier_dir, paths.artifacts_dir):

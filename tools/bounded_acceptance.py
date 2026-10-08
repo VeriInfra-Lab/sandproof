@@ -15,12 +15,12 @@ import sqlite3
 import stat
 import time
 
-from .template_build_config import MIB, validate_acceptance_build_policy
+from .template_build_config import validate_acceptance_build_policy
 from .template_build_store import TERMINAL
 from .template_physical_storage import MAXIMUM, envelope
 
 
-def completion_build_observation(row, *, build_mode, read_build):
+def completion_build_observation(row, *, read_build):
     """Keep an observed immutable terminal result after its query window expires.
 
     This supplies build evidence only. The caller must separately establish
@@ -28,13 +28,11 @@ def completion_build_observation(row, *, build_mode, read_build):
     uncertain results still require a successful read of the original build;
     a missing query anchor can never establish a terminal outcome.
     """
-    if build_mode not in ("windowed", "legacy-unbounded"):
-        raise ValueError("explicit supported build mode required")
     job = row.get("build_id")
     if not job:
         raise ValueError("original build identity required")
     previous = row.get("build")
-    saved = (build_mode == "windowed" and isinstance(previous, dict)
+    saved = (isinstance(previous, dict)
              and previous.get("state") in TERMINAL)
     result = previous if saved else read_build(job)
     if (not isinstance(result, dict) or result.get("buildID") != job
@@ -109,27 +107,21 @@ def _acceptance_profile(policy):
     return profile
 
 
-def acceptance_pool_disk_budget(policy, role, base_bytes, *, max_active=2,
-                                legacy_bytes=24 * 1024 * MIB, legacy_cleanup_bytes=256 * MIB):
-    """Generate fixture fields from explicit profile values or a legacy floor.
+def acceptance_pool_disk_budget(policy, role, base_bytes, *, max_active=2):
+    """Generate fixture fields only from the explicit complete physical profile.
 
     This does not admit work or re-derive bounded capacity. Static feasibility
     and actual admission remain with validate_capacity and the controllers.
     """
     if role not in ("runtime", "builder"):
         raise ValueError("explicit acceptance pool role required")
-    for value in (base_bytes, max_active, legacy_bytes, legacy_cleanup_bytes):
+    for value in (base_bytes, max_active):
         if type(value) is not int or not 0 < value <= MAXIMUM:
             raise ValueError("positive representable acceptance size and count required")
-    if policy is None:
-        maximum = max(legacy_bytes, max_active * base_bytes + legacy_cleanup_bytes)
-        cleanup = legacy_cleanup_bytes
-        disk = maximum - cleanup
-    else:
-        profile = _acceptance_profile(policy)
-        pool = next(pool for pool in profile["pools"] if pool["role"] == role)
-        disk, cleanup = pool["rootfs_budget_bytes"], pool["cleanup_reserve_bytes"]
-        maximum = disk + cleanup
+    profile = _acceptance_profile(policy)
+    pool = next(pool for pool in profile["pools"] if pool["role"] == role)
+    disk, cleanup = pool["rootfs_budget_bytes"], pool["cleanup_reserve_bytes"]
+    maximum = disk + cleanup
     if not 0 < disk <= MAXIMUM or maximum > MAXIMUM:
         raise ValueError("acceptance disk budget overflow")
     return {"max_disk_bytes_global": maximum, "max_disk_bytes_per_tenant": disk,
@@ -143,8 +135,7 @@ def acceptance_disk_budgets(deployment, policy):
     the controller journal. Charge each increase once in host free-space
     preflight; task shapes and the physical activation checks remain unchanged.
     """
-    if policy is None:
-        return deployment
+    _acceptance_profile(policy)
     result = copy.deepcopy(deployment)
     extra = 0
     for role in ("runtime", "builder"):

@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "dataset": "terminal-bench@2.1",
+  "source_kind": "dockerfile",
+  "source_commit": "c5ee500c185224c97cd6caff7866a990a0057f41",
+  "selection_note": "Project regression profiles, not an official mini benchmark or leaderboard sample. Selected before execution; never replace failures.",
+  "profiles": {
+    "smoke": {
+      "description": "Previous eight-task regression, retained for quick checks",
+      "tasks": [
+        {"name": "adaptive-rejection-sampler", "coverage": "Python numerical code"},
+        {"name": "build-pmars", "coverage": "native compilation"},
+        {"name": "caffe-cifar-10", "coverage": "four CPUs, eight GiB and CPU training"},
+        {"name": "configure-git-webserver", "coverage": "Git HTTP service and authentication"},
+        {"name": "financial-document-processor", "coverage": "OCR, PDF and filesystem outputs"},
+        {"name": "fix-git", "coverage": "Git state and content hashes"},
+        {"name": "polyglot-c-py", "coverage": "compiler and interpreter"},
+        {"name": "query-optimize", "coverage": "database process and SQL"}
+      ]
+    },
+    "regression": {
+      "description": "Sixteen tasks covering runtime capabilities; not a statistical proxy for all task scores",
+      "tasks": [
+        {"name": "polyglot-c-py", "coverage": "compiler and interpreter"},
+        {"name": "build-pmars", "coverage": "native compilation"},
+        {"name": "fix-git", "coverage": "Git state and content hashes"},
+        {"name": "adaptive-rejection-sampler", "coverage": "Python numerical code"},
+        {"name": "build-cython-ext", "coverage": "Python and native extension toolchain"},
+        {"name": "cancel-async-tasks", "coverage": "async execution and cancellation"},
+        {"name": "db-wal-recovery", "coverage": "database files and recovery"},
+        {"name": "kv-store-grpc", "coverage": "RPC server and persistent files"},
+        {"name": "configure-git-webserver", "coverage": "Git HTTP service and authentication"},
+        {"name": "nginx-request-logging", "coverage": "HTTP service and logs"},
+        {"name": "openssl-selfsigned-cert", "coverage": "crypto tools and file permissions"},
+        {"name": "large-scale-text-editing", "coverage": "large text and filesystem processing"},
+        {"name": "financial-document-processor", "coverage": "OCR, PDF and filesystem outputs"},
+        {"name": "query-optimize", "coverage": "database process and SQL"},
+        {"name": "sqlite-with-gcov", "coverage": "native database compilation and coverage"},
+        {"name": "caffe-cifar-10", "coverage": "four CPUs, eight GiB and CPU training"}
+      ]
+    },
+    "full": {
+      "description": "Every task from the immutable full lock; no duplicated hardcoded task count",
+      "all": true
+    }
+  }
+}
