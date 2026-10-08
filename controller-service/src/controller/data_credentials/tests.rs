@@ -147,6 +147,70 @@ fn exact_registration_is_immutable_idempotent_and_survives_current_restart() {
 }
 
 #[test]
+fn physical_identity_read_preserves_poison_without_authorizing_data() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = open(&path);
+    for id in 1..=2 {
+        admit(&mut journal, id);
+        register(&mut journal, id, [u8::try_from(id).unwrap(); 32]);
+        start(&mut journal, id);
+    }
+    assert!(matches!(
+        journal.register_data_credential(core::SandboxId(1), 1, [3; 32], &mut NeverCrash),
+        Err(JournalError::CredentialIndexPoisoned)
+    ));
+    let world = journal.world().unwrap();
+    for restart in [false, true] {
+        if restart {
+            drop(journal);
+            journal = open(&path);
+        }
+        for id in 1..=2 {
+            assert_eq!(
+                journal
+                    .original_data_credential(core::SandboxId(id))
+                    .unwrap(),
+                Some((1, [u8::try_from(id).unwrap(); 32]))
+            );
+            assert!(matches!(
+                journal.data_credential(core::SandboxId(id)),
+                Err(JournalError::CredentialIndexPoisoned)
+            ));
+        }
+        assert!(matches!(
+            journal.lookup_data_credential(&[1; 32]),
+            Err(JournalError::CredentialIndexPoisoned)
+        ));
+        assert_eq!(journal.world().unwrap(), world);
+    }
+}
+
+#[test]
+fn physical_identity_read_rejects_an_unrelated_corrupt_binding() {
+    let dir = TempDir::new().unwrap();
+    let mut journal = open(&dir.path().join("db"));
+    for id in 1..=2 {
+        admit(&mut journal, id);
+        register(&mut journal, id, [u8::try_from(id).unwrap(); 32]);
+    }
+    // Fault the shared index directly, not a target host descriptor. Even a
+    // read-only inventory of object 1 must reject noncanonical object 2.
+    journal
+        .journal
+        .connection
+        .execute(
+            "UPDATE controller_data_credentials SET generation='01' WHERE sandbox_id=?1",
+            [format!("sb-{NS}-2")],
+        )
+        .unwrap();
+    assert!(matches!(
+        journal.original_data_credential(core::SandboxId(1)),
+        Err(JournalError::CorruptStore)
+    ));
+}
+
+#[test]
 fn missing_running_registration_rejects_data_auth_without_blocking_management() {
     let dir = TempDir::new().unwrap();
     let mut journal = open(&dir.path().join("db"));

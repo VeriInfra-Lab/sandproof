@@ -8,7 +8,7 @@ use sandproof_api::{
     managed::{ManagedPort, can_install_host_slot_binding},
 };
 use sandproof_controller_service::{ControllerJournal, HostSlotContext};
-use sandproof_node::{LinuxWorker, ObservedSlot};
+use sandproof_node::{CredentialFault, LaunchCredentialStatus, LinuxWorker, ObservedSlot};
 use sandproof_protocol::WorkAction;
 use std::{
     error::Error,
@@ -52,7 +52,17 @@ pub(super) fn audit_host_inventory(
     audit_host_slot_contexts(&durable_slots, &host_slots, |context| {
         can_install_host_slot_binding(&world, context.binding.sandbox)
     })?;
-    let inventory = node.inventory()?;
+    let launches = durable_slots
+        .iter()
+        .filter(|(_, phase)| *phase == HostSlotPhase::Occupied)
+        .map(|(context, _)| {
+            Ok((
+                context.binding.sandbox,
+                (*context, journal.create_options(context.binding.sandbox)?),
+            ))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>, Box<dyn Error>>>()?;
+    let inventory = node.inventory_with_launch_options(&launches)?;
     if !inventory.unbound_cgroups.is_empty() {
         return Err(format!(
             "unbound VM cgroups require operator reconciliation: {:?}",
@@ -75,7 +85,7 @@ pub(super) fn audit_host_inventory(
         .into());
     }
     let uncertain = journal.uncertain_actions()?;
-    for slot in inventory.slots {
+    for slot in &inventory.slots {
         if world.maintenance_state().is_some()
             && !host_slots.iter().any(|(context, phase)| {
                 *phase == HostSlotPhase::Occupied
@@ -88,7 +98,25 @@ pub(super) fn audit_host_inventory(
         {
             return Err("host resource has no matching occupied physical position".into());
         }
-        audit_host_slot(node, journal, &world, &uncertain, &slot)?;
+        audit_host_slot(journal, &world, &uncertain, slot)?;
+    }
+    // No credential exception skips a physical slot or an orphan census. Only
+    // after the complete audit may a trusted original binding isolate a leaf
+    // credential failure; all original occupancy and unknown actions remain.
+    for slot in &inventory.slots {
+        let options = journal.create_options(slot.sandbox)?;
+        let fault = audit_launch_credential_binding(
+            journal.original_data_credential(slot.sandbox)?,
+            slot.generation,
+            || node.has_bound_launch_secret(slot.sandbox, &options),
+            |digest| node.audit_launch_credential(slot.sandbox, &options, digest),
+        )?;
+        if fault.is_some() {
+            eprintln!(
+                "sandbox {} retains its original resources with an unavailable launch credential",
+                slot.sandbox.0
+            );
+        }
     }
     Ok(())
 }
@@ -147,15 +175,11 @@ fn audit_host_slot_contexts(
 }
 
 fn audit_host_slot(
-    node: &LinuxWorker,
     journal: &ControllerJournal,
     world: &core::World,
     uncertain: &[WorkAction<core::EffectId>],
     slot: &ObservedSlot,
 ) -> Result<(), Box<dyn Error>> {
-    if !node.has_bound_launch_secret(slot.sandbox, &journal.create_options(slot.sandbox)?)? {
-        return Err("host slot has no matching durable launch configuration".into());
-    }
     let record = world
         .sandbox_record(slot.sandbox)
         .ok_or("host slot has no durable sandbox")?;
@@ -236,6 +260,30 @@ fn audit_host_slot(
         return Err("terminal sandbox still has a live or unobservable VM".into());
     }
     Ok(())
+}
+
+fn audit_launch_credential_binding(
+    original: Option<(core::Generation, [u8; 32])>,
+    generation: core::Generation,
+    has_bound_secret: impl FnOnce() -> Result<bool, Box<dyn Error>>,
+    inspect: impl FnOnce(&[u8; 32]) -> Result<LaunchCredentialStatus, Box<dyn Error>>,
+) -> Result<Option<CredentialFault>, Box<dyn Error>> {
+    let Some((registered_generation, digest)) = original else {
+        // Preserve the existing absence behavior for an intact descriptor, but
+        // never grant a local exception without an original digest binding.
+        return if has_bound_secret()? {
+            Ok(None)
+        } else {
+            Err("host slot has no matching durable launch configuration".into())
+        };
+    };
+    if registered_generation != generation {
+        return Err("host credential binding has a different original generation".into());
+    }
+    match inspect(&digest)? {
+        LaunchCredentialStatus::Intact => Ok(None),
+        LaunchCredentialStatus::Unavailable(fault) => Ok(Some(fault)),
+    }
 }
 
 pub(super) fn spawn_reconciliation_scanner(port: Arc<ManagedPort<NodeHost>>, seconds: u64) {

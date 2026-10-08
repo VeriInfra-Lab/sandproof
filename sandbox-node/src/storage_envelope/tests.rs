@@ -16,8 +16,13 @@ fn config() -> NodeConfig {
         kernel: "/images/kernel".into(),
         rootfs: "/images/rootfs".into(),
         bounded_host: BoundedHostConfig {
-            physical_storage: None,
-            console_policy: None,
+            physical_storage: Some(super::super::test_support::physical_profile(
+                "0123456789abcdef",
+                std::path::Path::new("/host/node"),
+                std::path::Path::new("/host/jail"),
+                2,
+            )),
+            console_policy: Some(sandproof_controller_service::ConsolePolicy::Discard),
             maintenance: MaintenanceLimits {
                 max_host_slots: 2,
                 max_retained_results: 16,
@@ -69,6 +74,12 @@ fn exact_closed_layout_caps_include_free_cells_stages_and_idle_routes() {
 fn configured_path_escaping_and_maximum_incarnation_are_serialized_exactly() {
     let mut config = config();
     config.state_dir = PathBuf::from("/host/quotes-\"-backslash-\\-newline-\n");
+    config.bounded_host.physical_storage = Some(super::super::test_support::physical_profile(
+        &config.namespace,
+        &config.state_dir,
+        &config.chroot_base,
+        config.bounded_host.maintenance.max_host_slots,
+    ));
     let (actual_identity, actual_lease) = validate_configuration(&config).unwrap();
     let mut targets = host_slots::retirement_paths(&config, host_slots::maximum_binding());
     targets.extend([

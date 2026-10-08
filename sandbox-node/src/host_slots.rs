@@ -1361,8 +1361,13 @@ mod tests {
 
     fn config() -> BoundedHostConfig {
         BoundedHostConfig {
-            physical_storage: None,
-            console_policy: None,
+            physical_storage: Some(super::super::test_support::physical_profile(
+                "0123456789abcdef",
+                Path::new("/host/node"),
+                Path::new("/host/jail"),
+                1,
+            )),
+            console_policy: Some(sandproof_controller_service::ConsolePolicy::Discard),
             uid_base: 10_000,
             uplink_base: 100,
             max_data_routes_per_slot: 4,

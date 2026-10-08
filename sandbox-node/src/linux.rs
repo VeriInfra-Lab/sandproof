@@ -1,7 +1,8 @@
 use rustix::process::geteuid;
 use sandbox_controller_core as core;
 use sandbox_runtime::{
-    Observation, Runtime, RuntimeConfig, RuntimeError, VmState, check_trusted_path,
+    Observation, Runtime, RuntimeConfig, RuntimeError, RuntimeObservationConfig,
+    RuntimePhysicalObserver, VmState, check_trusted_path,
 };
 use sandproof_controller_service::{
     BoundedHostConfig, CreateOptions, HostSlotContext,
@@ -34,6 +35,9 @@ mod child_process;
 mod host_lease;
 #[path = "host_slots.rs"]
 mod host_slots;
+#[path = "launch_observation.rs"]
+mod launch_observation;
+pub use launch_observation::{CredentialFault, LaunchCredentialStatus};
 #[path = "node_staging.rs"]
 mod node_staging;
 #[path = "storage_envelope.rs"]
@@ -349,11 +353,47 @@ impl LinuxWorker {
     /// Unexpected/corrupt entries fail closed.
     /// # Errors
     /// Rejects unsafe paths, malformed bindings or mismatched host identities.
+    pub fn inventory(&self) -> NodeResult<HostInventory> {
+        self.inventory_with(|binding| {
+            let config = self.runtime_config(binding.sandbox, binding.vm)?;
+            Ok(RuntimePhysicalObserver::for_existing(config.into())?)
+        })
+    }
+
+    /// Inspect every physical resource using the controller's original launch
+    /// inputs, never an unreadable credential or a current template alias.
+    /// This grants no worker, initialization, stopping or cleanup capability.
+    /// # Errors
+    /// Rejects missing/mismatched original bindings and all physical corruption.
+    pub fn inventory_with_launch_options(
+        &self,
+        launches: &BTreeMap<core::SandboxId, (HostSlotContext, CreateOptions)>,
+    ) -> NodeResult<HostInventory> {
+        let host_slots = self.host_slot_inventory()?;
+        self.inventory_with(|binding| {
+            let (context, options) = launches
+                .get(&binding.sandbox)
+                .ok_or("host slot has no original controller launch inputs")?;
+            host_slots::require_slot_binding(binding, context.binding)?;
+            if !host_slots.iter().any(|(stored, phase)| {
+                stored == context && *phase == core::maintenance::slots::HostSlotPhase::Occupied
+            }) {
+                return Err("original launch has a different physical host context".into());
+            }
+            options.validate()?;
+            let config = self.observation_config(binding.vm, options.template.as_ref())?;
+            Ok(RuntimePhysicalObserver::for_existing(config)?)
+        })
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "closed inventory checks each recorded host resource and orphan claim without silently skipping malformed entries"
     )]
-    pub fn inventory(&self) -> NodeResult<HostInventory> {
+    fn inventory_with(
+        &self,
+        observer: impl Fn(&SlotBinding) -> NodeResult<RuntimePhysicalObserver>,
+    ) -> NodeResult<HostInventory> {
         let prefix = format!("slot-{}-", self.config.namespace);
         let mut slots = Vec::new();
         let host_slots = self.host_slot_inventory()?;
@@ -418,18 +458,14 @@ impl LinuxWorker {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
                 Err(error) => return Err(error.into()),
             };
-            let aborted_unlaunched = claim_present
-                && !helper_pending
-                && self
-                    .runtime(binding.sandbox, binding.vm)?
-                    .was_reclaimed_unlaunched(&vm_name)?;
+            let runtime = observer(&binding)?;
+            let aborted_unlaunched =
+                claim_present && !helper_pending && runtime.was_reclaimed_unlaunched(&vm_name)?;
             let failed_prepare_reclaimed = claim_present
                 && !helper_pending
-                && self
-                    .runtime(binding.sandbox, binding.vm)?
-                    .was_reclaimed_stopped_prepare(&vm_name)?;
+                && runtime.was_reclaimed_stopped_prepare(&vm_name)?;
             let process = if claim_present && !helper_pending {
-                match self.runtime(binding.sandbox, binding.vm)?.observe(&vm_name) {
+                match runtime.observe(&vm_name) {
                     Ok(observed) => Some(observed),
                     Err(RuntimeError::MissingRecord) => None,
                     Err(error) => return Err(error.into()),
@@ -453,9 +489,7 @@ impl LinuxWorker {
                 .as_ref()
                 .is_some_and(|observed| observed.state != VmState::Stopped)
             {
-                let observed_inode = self
-                    .runtime(binding.sandbox, binding.vm)?
-                    .observe_recorded_network(&vm_name)?;
+                let observed_inode = runtime.observe_recorded_network(&vm_name)?;
                 if network_inode != Some(observed_inode) {
                     return Err("live VM network guard or namespace identity changed".into());
                 }
@@ -474,9 +508,7 @@ impl LinuxWorker {
             let jail_observation = if helper_pending {
                 None
             } else {
-                let observation = self
-                    .runtime(binding.sandbox, binding.vm)?
-                    .observe_jail(&vm_name)?;
+                let observation = runtime.observe_jail(&vm_name)?;
                 if matches!(observation, sandbox_runtime::JailObservation::Unregistered) {
                     return Err("VM jail is present without directory authority".into());
                 }
@@ -506,9 +538,7 @@ impl LinuxWorker {
                 process,
                 network_inode,
                 disk_inode,
-                cgroup_inode: self
-                    .runtime(binding.sandbox, binding.vm)?
-                    .cgroup_inode(&vm_name)?,
+                cgroup_inode: runtime.cgroup_inode(&vm_name)?,
             });
         }
         slots.sort_by_key(|slot| slot.slot.0);
@@ -1192,6 +1222,20 @@ impl LinuxWorker {
         Ok(true)
     }
 
+    /// Classify only a target credential fault after its original index binding
+    /// and physical resources have been checked by the caller. This is not
+    /// authentication, permission to replace a secret, or cleanup evidence.
+    /// # Errors
+    /// Untrusted paths and changed launch configuration remain global errors.
+    pub fn audit_launch_credential(
+        &self,
+        sandbox: core::SandboxId,
+        options: &CreateOptions,
+        original_digest: &[u8; 32],
+    ) -> NodeResult<LaunchCredentialStatus> {
+        launch_observation::credential_status(&self.secret_path(sandbox), options, original_digest)
+    }
+
     /// Check protected inputs and cgroup limits before controller admission.
     /// # Errors
     /// Rejects missing, modified or untrusted artifacts and unavailable host limits.
@@ -1534,47 +1578,56 @@ impl LinuxWorker {
         vm: core::VmId,
     ) -> NodeResult<RuntimeConfig> {
         let secret = self.secret(sandbox)?;
+        let observed = self.observation_config(vm, secret.template.as_ref())?;
+        Ok(RuntimeConfig {
+            console_policy: observed.console_policy,
+            jailer: observed.jailer,
+            firecracker: observed.firecracker,
+            chroot_base: observed.chroot_base,
+            kernel: observed.kernel,
+            rootfs: observed.rootfs,
+            vm_uid: observed.vm_uid,
+            vm_gid: observed.vm_gid,
+            vcpu_count: observed.vcpu_count,
+            memory_mib: observed.memory_mib,
+            host_resources: observed.host_resources,
+            private_netns: observed.private_netns,
+            access_token_hash: Some(secret.sha512),
+            host_slot: observed.host_slot,
+        })
+    }
+
+    fn observation_config(
+        &self,
+        vm: core::VmId,
+        template: Option<&TemplateBinding>,
+    ) -> NodeResult<RuntimeObservationConfig> {
         let id = self.vm_uid(vm)?;
         let vm_name = self.vm_name(vm);
-        let mut kernel = self.config.kernel.clone();
-        let mut rootfs = self.config.rootfs.clone();
-        let mut vcpu_count = self.config.vcpu_count;
-        let mut memory_mib = self.config.memory_mib;
-        let mut host_resources = self.config.host_resources.clone();
-        if let Some(template) = &secret.template {
-            kernel.clone_from(&template.kernel.path);
-            rootfs.clone_from(&template.rootfs.path);
-            vcpu_count = template.resources.cpu_count;
-            memory_mib = template.resources.memory_mib;
-            host_resources
-                .as_mut()
-                .ok_or("templates require host limits")?
-                .memory_max_bytes = template.resources.host_memory_bytes;
-        }
-        Ok(RuntimeConfig {
-            console_policy: self
-                .config
-                .bounded_host
-                .console_policy
-                .map(|policy| match policy {
-                    sandproof_controller_service::ConsolePolicy::Discard => {
-                        sandbox_runtime::ConsolePolicy::Discard
-                    }
-                }),
-            jailer: self.config.jailer.clone(),
-            firecracker: self.config.firecracker.clone(),
-            chroot_base: self.config.chroot_base.clone(),
-            kernel,
-            rootfs,
-            vm_uid: id,
-            vm_gid: id,
-            vcpu_count,
-            memory_mib,
-            host_resources,
-            private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
-            access_token_hash: Some(secret.sha512),
-            host_slot: Some(self.runtime_host_slot(self.physical_slot_for_vm(vm)?, vm)?),
-        })
+        launch_observation::bind_template(
+            RuntimeObservationConfig {
+                console_policy: self.config.bounded_host.console_policy.map(
+                    |policy| match policy {
+                        sandproof_controller_service::ConsolePolicy::Discard => {
+                            sandbox_runtime::ConsolePolicy::Discard
+                        }
+                    },
+                ),
+                jailer: self.config.jailer.clone(),
+                firecracker: self.config.firecracker.clone(),
+                chroot_base: self.config.chroot_base.clone(),
+                kernel: self.config.kernel.clone(),
+                rootfs: self.config.rootfs.clone(),
+                vm_uid: id,
+                vm_gid: id,
+                vcpu_count: self.config.vcpu_count,
+                memory_mib: self.config.memory_mib,
+                host_resources: self.config.host_resources.clone(),
+                private_netns: Some(PathBuf::from(format!("/run/netns/{vm_name}"))),
+                host_slot: Some(self.runtime_host_slot(self.physical_slot_for_vm(vm)?, vm)?),
+            },
+            template,
+        )
     }
 
     fn vm_uid(&self, vm: core::VmId) -> NodeResult<u32> {
@@ -2627,6 +2680,9 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod test_support;
 
 #[cfg(test)]
 mod publication_tests;

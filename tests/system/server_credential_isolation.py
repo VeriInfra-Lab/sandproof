@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -48,6 +49,20 @@ def data_status(opener, base, token):
             return response.status
     except urllib.error.HTTPError as error:
         return error.code
+
+
+def original_bindings(database, sandboxes):
+    with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as connection:
+        connection.execute("BEGIN")
+        credentials = [connection.execute(
+            "SELECT sandbox_id,generation,digest FROM controller_data_credentials WHERE sandbox_id=?",
+            (sandbox.sandbox_id,),
+        ).fetchone() for sandbox in sandboxes]
+        contexts = connection.execute(
+            "SELECT position,context_json FROM controller_host_slots ORDER BY position"
+        ).fetchall()
+    assert all(row is not None for row in credentials)
+    return credentials, contexts
 
 
 def exercise(args):
@@ -114,6 +129,8 @@ def exercise(args):
         process = start_server(binary, configuration, root / "server.log", None)
         wait_ready(opener, base, keys[0], process)
         assert first.commands.run("printf before-fault").stdout == "before-fault"
+        bindings = original_bindings(root / "db/controller.db", live)
+        network_inodes = [Path("/run/netns", name).stat().st_ino for name, _ in claims]
         credential = root / "state/secrets" / first.sandbox_id
         original = credential.read_bytes()
         original_identity = (credential.stat().st_dev, credential.stat().st_ino)
@@ -136,6 +153,19 @@ def exercise(args):
                         output.flush()
                         os.fsync(output.fileno())
                     os.replace(replacement, credential)
+                # The same faulty leaf must remain locally unavailable across
+                # the real service's physical inventory and recovery sequence.
+                stop_server(process)
+                process = start_server(binary, configuration, root / "server.log", None)
+                wait_ready(opener, base, keys[1], process)
+                assert original_bindings(root / "db/controller.db", live) == bindings
+                for (name, claim), inode in zip(claims, network_inodes, strict=True):
+                    assert process_start_ticks(claim["pid"]) == claim["start_time_ticks"]
+                    assert Path("/run/netns", name).stat().st_ino == inode
+                if fault == "missing":
+                    assert not credential.exists(), "recovery invented a replacement credential"
+                else:
+                    assert credential.read_bytes() == payload, "recovery rewrote the faulted credential"
                 assert data_status(opener, base, first._envd_access_token) == 503
                 assert fetch(opener, base, "GET", "/sandboxes/" + first.sandbox_id, keys[0])[0] == 503
                 if fault == "changed":
@@ -156,6 +186,31 @@ def exercise(args):
             assert terminal_cleanup_confirmed(root / "db/controller.db", sandbox.sandbox_id)
             assert data_status(opener, base, sandbox._envd_access_token) == 401
         live.clear()
+        # Reuse a retired physical position with a new permanent VM identity.
+        # Neither old digest may authorize the new VM occupying that position.
+        reused = Sandbox.create(template="base", timeout=300, allow_internet_access=False,
+                                **options(keys[0], base, base))
+        live.append(reused)
+        number = int(reused.sandbox_id.rsplit("-", 1)[1])
+        _, contexts = original_bindings(root / "db/controller.db", live)
+        matched = [(position, json.loads(encoded)) for position, encoded in contexts
+                   if json.loads(encoded)["binding"]["sandbox"] == number]
+        assert len(matched) == 1 and matched[0][0] == 0
+        vm = matched[0][1]["binding"]["vm"]
+        assert vm not in (0, 1)
+        name = f"vm-{namespace}-{vm}"
+        claim = json.loads((root / "jails/.claims" / name / "record.json").read_text())
+        assert process_start_ticks(claim["pid"]) == claim["start_time_ticks"]
+        claims.append((name, claim))
+        status = Path(f"/proc/{claim['pid']}/status").read_text().splitlines()
+        assert int(next(line for line in status if line.startswith("Uid:")).split()[1]) == args.uid_base
+        for old in (first, second):
+            assert data_status(opener, base, old._envd_access_token) == 401
+        assert reused.commands.run("printf new-incarnation").stdout == "new-incarnation"
+        assert Sandbox.kill(reused.sandbox_id, **options(keys[0], base, base))
+        assert terminal_cleanup_confirmed(root / "db/controller.db", reused.sandbox_id)
+        assert data_status(opener, base, reused._envd_access_token) == 401
+        live.clear()
         for name, claim in claims:
             assert process_start_ticks(claim["pid"]) != claim["start_time_ticks"]
             assert not Path("/run/netns", name).exists()
@@ -165,11 +220,19 @@ def exercise(args):
         print(json.dumps({"source_commit": commit, "server_sha256": artifact_hash(binary),
                           "base_sha256": artifact_hash(image),
                           "faults": ["missing", "malformed", "valid-but-changed"],
+                          "restart": "each fault preserved across the full service startup; original bindings/processes/networks unchanged",
+                          "reuse": "retired physical UID reused by a new VM; old tokens remain unauthorized",
                           "result": "healthy peer commands/files/owner checks pass; damaged target denied",
                           "residual": "both exact VMs stopped; no test namespace/jail/UID process"}))
     finally:
         if credential is not None and backup.exists():
             os.replace(backup, credential)
+        if live and (process is None or process.poll() is not None):
+            try:
+                process = start_server(binary, configuration, root / "server.log", None)
+                wait_ready(opener, base, keys[0], process)
+            except Exception:
+                pass  # Original resources remain private and unknown, not released.
         # Even an assertion failure attempts only these two exact SDK kills.
         if process is not None and process.poll() is None:
             for key, sandbox in zip(keys, live, strict=False):

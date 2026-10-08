@@ -235,10 +235,33 @@ impl ControllerJournal {
         &self,
         sandbox: core::SandboxId,
     ) -> Result<Option<(core::Generation, [u8; 32])>, JournalError> {
+        self.read_data_credential(sandbox, true)
+    }
+
+    /// Read the immutable original identity for physical inventory only.
+    /// A well-formed poison still permits lifecycle observation and reclamation;
+    /// this result must never be used to authorize a guest connection or launch.
+    /// # Errors
+    /// Malformed shared structure, bindings or a changed snapshot are rejected.
+    pub fn original_data_credential(
+        &self,
+        sandbox: core::SandboxId,
+    ) -> Result<Option<(core::Generation, [u8; 32])>, JournalError> {
+        self.read_data_credential(sandbox, false)
+    }
+
+    fn read_data_credential(
+        &self,
+        sandbox: core::SandboxId,
+        require_authorizable: bool,
+    ) -> Result<Option<(core::Generation, [u8; 32])>, JournalError> {
         let world = self.world()?;
         let public = identity::sandbox_id(&self.namespace, sandbox)?;
         let tx = self.journal.connection.unchecked_transaction()?;
-        require_healthy(&tx)?;
+        if require_authorizable {
+            require_healthy(&tx)?;
+        }
+        validate(&tx, &world, &self.namespace)?;
         let stored: Option<(String, Vec<u8>)> = tx
             .query_row(
                 "SELECT generation,digest FROM controller_data_credentials WHERE sandbox_id=?1",

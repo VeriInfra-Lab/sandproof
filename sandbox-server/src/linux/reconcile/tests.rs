@@ -8,6 +8,27 @@ use sandproof_controller_service::WorkerTransportError;
 use sandproof_node::HostObservation;
 use std::{fs, path::PathBuf};
 
+struct CredentialScratch(PathBuf);
+
+impl Drop for CredentialScratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn credential_scratch() -> CredentialScratch {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "sandproof-credential-restart-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir(&directory).unwrap();
+    CredentialScratch(directory)
+}
+
 fn context(vm: u64, previous: Option<u64>) -> HostSlotContext {
     HostSlotContext {
         position: HostSlotId(0),
@@ -202,4 +223,194 @@ fn startup_rejects_context_corruption_duplicates_and_stale_rebinding() {
         ..fresh
     };
     assert!(audit(&[(fresh, Occupied), (same_vm, Occupied)], &[]).is_err());
+}
+
+#[test]
+fn startup_only_isolates_typed_leaf_faults_with_the_original_generation() {
+    for fault in [
+        CredentialFault::Missing,
+        CredentialFault::Unreadable,
+        CredentialFault::Malformed,
+        CredentialFault::TokenHashMismatch,
+        CredentialFault::OriginalDigestMismatch,
+    ] {
+        assert_eq!(
+            audit_launch_credential_binding(
+                Some((7, [3; 32])),
+                7,
+                || panic!("original registration must not fall back to launch permission"),
+                |digest| {
+                    assert_eq!(digest, &[3; 32]);
+                    Ok(LaunchCredentialStatus::Unavailable(fault))
+                },
+            )
+            .unwrap(),
+            Some(fault)
+        );
+    }
+    assert!(
+        audit_launch_credential_binding(
+            Some((7, [3; 32])),
+            8,
+            || panic!("generation corruption must not fall back"),
+            |_| panic!("generation corruption must be rejected before credential inspection"),
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn startup_credential_exceptions_never_swallow_authority_errors_or_missing_bindings() {
+    assert!(
+        audit_launch_credential_binding(
+            Some((7, [3; 32])),
+            7,
+            || panic!("has original registration"),
+            |_| Err("untrusted parent or changed launch configuration".into()),
+        )
+        .is_err()
+    );
+    for readable in [
+        Ok(false),
+        Err("malformed credential without original index".into()),
+    ] {
+        assert!(
+            audit_launch_credential_binding(
+                None,
+                7,
+                || readable,
+                |_| panic!("missing original index cannot permit a local exception"),
+            )
+            .is_err()
+        );
+    }
+    assert_eq!(
+        audit_launch_credential_binding(
+            None,
+            7,
+            || Ok(true),
+            |_| panic!("no original digest exists"),
+        )
+        .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn a_bad_target_does_not_turn_an_intact_peer_into_a_startup_failure() {
+    let statuses = [
+        LaunchCredentialStatus::Unavailable(CredentialFault::Malformed),
+        LaunchCredentialStatus::Intact,
+    ];
+    let faults = statuses
+        .into_iter()
+        .map(|status| {
+            audit_launch_credential_binding(
+                Some((1, [9; 32])),
+                1,
+                || panic!("original registration already available"),
+                |_| Ok(status),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(faults, [Some(CredentialFault::Malformed), None]);
+}
+
+#[test]
+fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupancy() {
+    use sandproof_controller_service::NeverCrash;
+    let directory = credential_scratch();
+    let database = directory.0.join("controller.db");
+    let config: ConfigFile = serde_json::from_value(settings()).unwrap();
+    let bounded = resolve(settings());
+    let mut journal = ControllerJournal::open_complete(
+        &database,
+        &config.namespace,
+        bounded.clone(),
+        config.maintenance.clone().unwrap(),
+        0,
+    )
+    .unwrap();
+    for id in 1..=2 {
+        journal
+            .admit_create(
+                core::CreateRequest {
+                    actor: core::Actor::Tenant(core::TenantId(1)),
+                    owner: core::TenantId(1),
+                    sandbox: core::SandboxId(id),
+                    workspace: core::FsId(id),
+                    file_policy: core::FilePolicyRef {
+                        digest: core::PolicyDigest(1),
+                    },
+                    policy: core::NetworkPolicy::DenyAll,
+                    operation: core::OperationId(id),
+                },
+                0,
+                60,
+                1024,
+                managed_config(&config, 1024).unwrap().limits,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        journal
+            .register_data_credential(
+                core::SandboxId(id),
+                1,
+                [u8::try_from(id).unwrap(); 32],
+                &mut NeverCrash,
+            )
+            .unwrap();
+    }
+    assert!(matches!(
+        journal
+            .dispatch_next::<HostObservation, _>(
+                &mut |_| Err(WorkerTransportError::ConnectionLost),
+                &mut NeverCrash,
+            )
+            .unwrap(),
+        sandproof_controller_service::DispatchResult::OutcomeUnknown { .. }
+    ));
+    let before = journal.world().unwrap();
+    let slots = journal.host_slot_inventory().unwrap();
+    let unknown = journal.uncertain_actions().unwrap();
+    drop(journal);
+    let journal = ControllerJournal::open_complete(
+        &database,
+        &config.namespace,
+        bounded,
+        config.maintenance.clone().unwrap(),
+        1,
+    )
+    .unwrap();
+    for (id, status, fault) in [
+        (
+            1,
+            LaunchCredentialStatus::Unavailable(CredentialFault::Missing),
+            Some(CredentialFault::Missing),
+        ),
+        (2, LaunchCredentialStatus::Intact, None),
+    ] {
+        assert_eq!(
+            audit_launch_credential_binding(
+                journal
+                    .original_data_credential(core::SandboxId(id))
+                    .unwrap(),
+                1,
+                || panic!("original credential remains registered after restart"),
+                |_| Ok(status),
+            )
+            .unwrap(),
+            fault
+        );
+        assert_eq!(
+            journal
+                .original_data_credential(core::SandboxId(id))
+                .unwrap(),
+            Some((1, [u8::try_from(id).unwrap(); 32]))
+        );
+    }
+    assert_eq!(journal.world().unwrap(), before);
+    assert_eq!(journal.host_slot_inventory().unwrap(), slots);
+    assert_eq!(journal.uncertain_actions().unwrap(), unknown);
 }
