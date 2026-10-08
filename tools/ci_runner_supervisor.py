@@ -170,7 +170,7 @@ def prune_diagnostics(root, active_ids, limit_count=40, limit_bytes=128 * 1024 *
         if not stat.S_ISDIR(details.st_mode) or details.st_uid != 0:
             continue
         entries = list(directory.iterdir())
-        if not entries or any(p.name not in {'console.log', 'qemu.log', 'report.json', 'host.log'}
+        if not entries or any(p.name not in {'console.log', 'qemu.log', 'report.json', 'host.log', 'prepared-pins.json'}
                               or not stat.S_ISREG(p.lstat().st_mode) for p in entries):
             continue
         complete.append((details.st_mtime, directory, entries, sum(p.stat().st_size for p in entries)))

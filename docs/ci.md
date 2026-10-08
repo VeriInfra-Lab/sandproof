@@ -6,7 +6,13 @@
 
 ### 普通 CI 自建执行环境
 
-普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器与 rustup 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
+普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器、rustup 与 uv 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。[uv 安装入口](../tools/ci_install_uv.sh)只从固定官方 PyPI 制品下载 uv 0.11.31，核对 SHA256 后以 root/0555 安装到 `/usr/local/bin/uv`；SDK/Harbor 工作流直接检查 `uv --version`，版本缺失或不符即失败。工具或执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
+
+固定普通 CI 依赖由[可信预热入口](../tools/ci_dependencies.py)从管理员已审查的精确提交准备输入；输入只含 SDK/Harbor 项目的锁与清单、Cargo 锁与清单及必要的固定工具配方，不由 PR 提供任意预热命令。先运行 `python3 tools/ci_dependencies.py prepare-input --checkout <审核检出目录> --approved-commit <40位提交> --output <新私有输入JSON>`，它核对输入文件与该提交的 Git blob 一致。旧运行 pins 缺少 uv 三个字段时，创建独立 root 私有制备 pins，保留当前 `cloud_sha256`、`golden_sha256` 及既有 `golden_image` 等基线身份，只从已核验的[构建输入](../tools/ci_image_pins.json)加入 `uv_version`、`uv_url`、`uv_sha256`，不提前覆盖运行 pins；通过受控宿主入口 `python3 tools/ci_vm.py --role preheat --pins <独立私有制备pins> --dependency-input <该输入JSON> --timeout <秒>` 从当前黄金盘派生独立来宾，安装同一固定 uv，并以 runner 身份按原锁预热 uv 和 Cargo。预热须在不同临时目录完成离线重建及 Git 安装来源核对，真实退出成功后才发布按磁盘摘要命名的新候选黄金盘及 `prepared-pins.json`，不会自动替换运行 pins。候选 pins 位于受下文 40 份／128 MiB 限制回收的诊断目录，开始验证前须保存 root 私有副本。入口实现不表示已安装或已验收；同固定材料的两次全新虚拟机离线验证、镜像与输入摘要和真实结果须记录在对应 issue/PR。
+
+预热入口只在普通执行位置自然空闲、登记已清且没有已有维护标记时，自动认领本轮暂停与独占身份；他人的维护标记、未清普通占用或仍在运行的工作单元均使启动拒绝。管理员先等待普通任务自然完成再调用，不提前创建 `paused` 或 `exclusive-host`，也不停止在途任务。收尾确认本轮来宾与工作盘已停止、回收后，只按精确身份移除自己的标记并恢复准入；未知结果保留身份供核对。
+
+候选盘验证通过后，更换黄金盘另行认领本次 `paused` 停止新准入，等待全部普通工作单元及未知占用排空，再核对候选盘、保存的 pins 与输入摘要并切换受控配置；保留旧基线用于恢复，完成后只移除本次认领的暂停标记。候选 pins 的 `golden_image` 为新的按摘要命名文件，切换前须先受控安装支持该身份的新 `ci_vm.py` 并完成静态核验，不能让旧入口忽略新文件名。旧黄金盘没有固定 uv 时，应先验证并切换含固定 uv 的候选盘，再启用直接调用预装 uv 的工作流；迁移中的旧工作流仍按原入口完成。每轮工作盘从只读黄金盘获得固定材料，uv/Cargo 的可写缓存仅存在当轮工作盘，任务结束后随盘回收，不回写黄金盘或与后续任务共享。新锁缺失材料时仍可经既有受限依赖网络下载，或者重新审核固定提交、受控制备并验证新基线；不把缓存命中等同于来源检查，也不取消原 `--locked` 安装与测试门槛。
 
 宿主侧[单任务入口](../tools/ci_vm.py)必须由受控安装调用，不由 PR 调用；[基线准备](../tools/ci_vm_bootstrap.sh)和[启动前隔离探针](../tools/check_ci_isolation.py)在可信镜像中执行。宿主管理凭据不进入镜像、seed 或任务环境，只传单任务 JIT 配置。虚拟机中的 runner 用户无 sudo/docker/kvm 等管理权限，不挂宿主目录、不转发 SSH、不暴露宿主 KVM；限制网络仅能经过[出站网关](../tools/ci_proxy.conf)访问当前 CI 所需公开依赖域名，拒绝私有地址、管理端口和其他目标。owner 已同意仅将 Python/Rust 的既有公共依赖域名直连，GitHub/Actions 继续经现有宿主代理；两条路线仍使用相同白名单、端口及私有地址拒绝，不修改产品沙箱网络策略。[服务模板](../tools/ci_proxy.service)仅监听宿主回环。SDK/Harbor 任务使用[CI Git 入口](../tools/ci_git.py)只拉取各自 `uv.lock` 的已锁定提交，不重复下载父提交历史；保留原来源、提交与安装来源检查，普通 Git 操作和开发者本地入口不变，不共享前一任务的可写缓存。
 
