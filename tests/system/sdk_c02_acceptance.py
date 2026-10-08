@@ -13,7 +13,7 @@ _require_assertions = _runpy.run_path(
 )["require_assertions"]
 
 import argparse
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 import fcntl
 import hashlib
 import importlib.metadata
@@ -43,13 +43,14 @@ from tools.system_acceptance import (
 # import guarded resource modules until assertions are known to be enabled.
 if not sys.flags.optimize:
     from server_process_crash import (
-        free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+        complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
+        retired_sandboxes, start_server, stop_server, wait_ready,
     )
 
 # Existing system supervisors import this public helper.
 sha256_file = digest
 
-MAX_VM_ID = 1000
+PHYSICAL_SLOTS = 2
 EXPECTED_SANDBOXES = 4
 CHECKOUT = Path(__file__).resolve().parents[2]
 SOURCE_FILES = {
@@ -58,6 +59,9 @@ SOURCE_FILES = {
     "report_helper": "tools/system_acceptance.py",
     "preflight_helper": "tools/check_kvm_host.py",
     "server_helper": "tests/system/server_process_crash.py",
+    "complete_runtime_helper": "tests/system/_complete_runtime.py",
+    "resource_evidence_helper": "tests/system/_resource_evidence.py",
+    "physical_profile_helper": "tools/template_physical_storage.py",
     "sdk_server_smoke.py": "tests/system/sdk_server_smoke.py",
     "sdk_data_contract.py": "tests/system/sdk_data_contract.py",
     "sdk_data_samples.py": "tests/compat/sdk_data_samples.py",
@@ -85,14 +89,16 @@ def processes_in_uid_range(first, last):
 
 
 def durable_rows(database, namespace):
-    """Only the private persistent DB supplies sandbox IDs, never logs or VM IDs."""
+    """Observe current SQL or exact quiescent retirement; never infer IDs from logs."""
     _require_assertions(Failure)
     require(database.is_file() and not database.is_symlink(), "database_unknown")
     try:
-        with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2) as connection:
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)) as connection:
+            connection.execute("BEGIN")
             rows = connection.execute(
                 "SELECT sandbox_id, owner_id, state_blob FROM sandboxes ORDER BY sandbox_id"
             ).fetchall()
+            retired = retired_sandboxes(connection, namespace)
         observed = {}
         for ident, owner, raw in rows:
             require(valid_sandbox_id(ident, namespace) and owner == "tenant-1", "identity_unknown")
@@ -105,6 +111,12 @@ def durable_rows(database, namespace):
                 number = value[field]
                 require(number is None or (type(number) is int and 0 <= number < 2**64), "database_unknown")
             observed[ident] = value
+        for ident in retired:
+            require(valid_sandbox_id(ident, namespace) and ident not in observed, "identity_unknown")
+            # This is an observation tag, not a fabricated SandboxRecord or
+            # worker receipt. The exact terminal reducer already retired it.
+            observed[ident] = {"phase": "Retired", "terminal": True,
+                               "current_vm": None, "net_slot": None, "owner": 1}
         require(len(observed) <= EXPECTED_SANDBOXES, "identity_unknown")
         return observed
     except (sqlite3.Error, ValueError, TypeError, KeyError) as error:
@@ -112,7 +124,7 @@ def durable_rows(database, namespace):
 
 
 def destroyed(rows):
-    return all(value["phase"] == "Destroyed" and value["terminal"]
+    return all(value["phase"] in ("Destroyed", "Retired") and value["terminal"]
                and value["current_vm"] is None and value["net_slot"] is None
                for value in rows.values())
 
@@ -145,10 +157,28 @@ def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, e
     claims = entries(root / "jails/.claims")
     require(all(re.fullmatch(re.escape(prefix) + r"(0|[1-9][0-9]*)", p.name)
                 and not p.is_symlink() and p.is_dir() for p in claims), "resource_unknown")
-    if expected is not None:
-        require(len(claims) == expected, "resource_unknown")
     require(len(claims) <= EXPECTED_SANDBOXES, "resource_unknown")
     network_inodes = set()
+    identities = {}
+    for evidence in entries(root / "resource-evidence"):
+        require(not evidence.is_symlink() and evidence.is_file(), "resource_unknown")
+        value = json_file(evidence)
+        ident = value["sandbox"]
+        require(valid_sandbox_id(ident, namespace) and evidence.name == ident + ".json", "identity_unknown")
+        context, record, network = value["context"], value["record"], value["network"]
+        require(context["binding"]["sandbox"] == int(ident.rsplit("-", 1)[1])
+                and context["binding"]["owner"] == 1 and type(context["position"]) is int
+                and 0 <= context["position"] < PHYSICAL_SLOTS
+                and record["resource_id"] == prefix + str(context["binding"]["vm"]), "identity_unknown")
+        require(type(record["pid"]) is int and 0 < record["pid"] < 2**32
+                and type(record["start_time_ticks"]) is int and 0 < record["start_time_ticks"] < 2**64,
+                "resource_unknown")
+        require(process_start_ticks(record["pid"]) != record["start_time_ticks"], "resource_residual")
+        require(network["resource_id"] == record["resource_id"] and type(network["namespace_inode"]) is int
+                and network["namespace_inode"] > 0, "resource_unknown")
+        require(record["resource_id"] not in identities, "identity_unknown")
+        identities[record["resource_id"]] = record
+        network_inodes.add(f"net:[{network['namespace_inode']}]")
     for claim in claims:
         try:
             record = json_file(claim / "record.json")
@@ -158,6 +188,8 @@ def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, e
                     and type(record["start_time_ticks"]) is int and 0 < record["start_time_ticks"] < 2**64,
                     "resource_unknown")
             require(process_start_ticks(record["pid"]) != record["start_time_ticks"], "resource_residual")
+            require(claim.name not in identities or identities[claim.name] == record, "identity_unknown")
+            identities[claim.name] = record
             if (claim / "network.json").exists():
                 network = json_file(claim / "network.json")
                 require(isinstance(network, dict) and set(network) == {"resource_id", "namespace_inode"}
@@ -174,7 +206,7 @@ def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, e
     require(Path("/sys/fs/cgroup").is_dir(), "resource_unknown")
     for _directory, dirs, files in os.walk("/sys/fs/cgroup", onerror=unavailable):
         require(not any(name.startswith(prefix) for name in dirs + files), "resource_residual")
-    require(not processes_in_uid_range(first_uid, first_uid + MAX_VM_ID), "resource_residual")
+    require(not processes_in_uid_range(first_uid, first_uid + PHYSICAL_SLOTS - 1), "resource_residual")
     if network_inodes:
         for process in Path("/proc").iterdir():
             if process.name.isdecimal():
@@ -182,13 +214,19 @@ def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, e
                     require(os.readlink(process / "ns/net") not in network_inodes, "resource_residual")
                 except (FileNotFoundError, ProcessLookupError):
                     pass
-    return len(claims)
+    require(len(identities) <= EXPECTED_SANDBOXES, "resource_unknown")
+    if expected is not None:
+        require(len(identities) == expected, "resource_unknown")
+    return len(identities)
 
 
-def probe_environment(owner_key, foreign_key):
+def probe_environment(owner_key, foreign_key, evidence_root=None):
     # No inherited proxies, PYTHONOPTIMIZE, PYTHONPATH, user startup hooks or secrets.
-    return {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8",
-            "SANDPROOF_TEST_API_KEY": owner_key, "SANDPROOF_TEST_FOREIGN_API_KEY": foreign_key}
+    result = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8",
+              "SANDPROOF_TEST_API_KEY": owner_key, "SANDPROOF_TEST_FOREIGN_API_KEY": foreign_key}
+    if evidence_root is not None:
+        result["SANDPROOF_TEST_EVIDENCE_ROOT"] = str(evidence_root)
+    return result
 
 
 def run_probe(root, name, base_url, environment, namespace, *, timeout=240):
@@ -242,7 +280,7 @@ def preflight(args, report):
             and re.fullmatch(r"[0-9a-f]{64}", args.server_sha256 or "") is not None,
             "invalid_configuration")
     require(sys.platform == "linux" and os.geteuid() == 0, "preflight_failed")
-    require(1000 <= args.uid_base and args.uid_base + MAX_VM_ID < 2**32, "invalid_configuration")
+    require(1000 <= args.uid_base and args.uid_base + PHYSICAL_SLOTS - 1 < 2**32 - 1, "invalid_configuration")
     require(importlib.metadata.version("e2b") == "2.51.0", "sdk_mismatch")
     source = host.source_revision()
     require(source["revision"] == args.expected_commit and not source["dirty"], "source_mismatch")
@@ -276,7 +314,7 @@ def preflight(args, report):
     report["preflight"] = {item["name"]: item["status"] for item in result["checks"]}
     require(result["prerequisites_passed"] and
             all(value == "pass" for value in report["preflight"].values()), "preflight_failed")
-    require(not processes_in_uid_range(args.uid_base, args.uid_base + MAX_VM_ID), "preflight_failed")
+    require(not processes_in_uid_range(args.uid_base, args.uid_base + PHYSICAL_SLOTS - 1), "preflight_failed")
     require(shutil.disk_usage(args.scratch_parent).free >= args.rootfs.stat().st_size * 3 + 256 * 1024 * 1024,
             "preflight_failed")
 
@@ -284,10 +322,11 @@ def preflight(args, report):
 def prepare(args, root, namespace, owner_key, foreign_key, port, report):
     _require_assertions(Failure)
     firecracker = args.firecracker.name
-    longest_socket = root / "jails" / firecracker / f"vm-{namespace}-{MAX_VM_ID}" / "root/api.socket"
+    longest_socket = root / "jails" / firecracker / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
     require(len(os.fsencode(longest_socket)) < 108, "invalid_configuration")
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
+    (root / "resource-evidence").mkdir(mode=0o700)
     report["private_staged"] = {}
     report["staged_copies"] = "retained"
     for name, source, destination in (("server", args.server, root / "sandproof-server"),
@@ -308,7 +347,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         "node_state_dir": str(root / "state"), "jailer": str(args.jailer),
         "firecracker": str(args.firecracker), "chroot_base": str(root / "jails"),
         "kernel": str(root / "vmlinux"), "rootfs": str(root / "rootfs.ext4"),
-        "uid_base": args.uid_base, "max_vm_id": MAX_VM_ID, "vcpu_count": 1,
+        "uid_base": args.uid_base, "vcpu_count": 1,
         "memory_mib": 512, "file_policy_digest": 1, "bind": f"127.0.0.1:{port}",
         "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": owner_key}, {"tenant": 2, "secret": foreign_key}],
@@ -317,6 +356,11 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         "cleanup_reserve_bytes": disk_bytes, "max_timeout_secs": 600,
         "max_lifetime_secs": 600, "default_timeout_secs": 300, "expiry_scan_seconds": 1,
     }
+    config = complete_runtime(config, slots=PHYSICAL_SLOTS)
+    # The fixed smoke's 8 MiB+1 refusal and data-contract corpus share this
+    # explicit fixture upload budget; it is not an SDK or product default.
+    config["data_transfer"]["file_upload_bytes"] = 8 * 1024 * 1024
+    provision_runtime(config)
     write_once(root / "config.json", config)
     report["hashes"]["service_config"] = digest(root / "config.json")
 
@@ -458,7 +502,7 @@ def run_profile(args, root, report):
         for name in PROBES:
             stage = name
             report["probes"][name] = run_probe(
-                root, name, base_url, probe_environment(owner_key, foreign_key), namespace)
+                root, name, base_url, probe_environment(owner_key, foreign_key, root), namespace)
             report["kvm"] = "executed"
             require(process.poll() is None, "server_exited")
             report["phases"][stage] = "pass"
@@ -545,7 +589,7 @@ def exercise(args):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         report = new_report(root.name)
         report["private_identity"] = {"namespace": secrets.token_hex(8),
-                                      "uid_first": args.uid_base, "uid_last": args.uid_base + MAX_VM_ID}
+                                      "uid_first": args.uid_base, "uid_last": args.uid_base + PHYSICAL_SLOTS - 1}
         write_once(root / "intent.json", report)
         run_profile(args, root, report)
     except BaseException as error:

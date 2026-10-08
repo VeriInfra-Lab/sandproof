@@ -112,31 +112,6 @@ fn scheduled(world: &core::World, command: &core::Command) -> bool {
         .any(|effect| effect.command() == command)
 }
 
-/// Accept a V1 create, install its fence, reserve a VM, and publish only after
-/// all physical command receipts satisfy the core's Running preconditions.
-/// The caller must authenticate the actor and allocate unique IDs first.
-///
-/// # Errors
-/// Any rejected transition, uncertain host action, or failed publication is
-/// left durably visible. This function never treats a VM launch as readiness.
-pub fn create_v1<E, W>(
-    journal: &mut ControllerJournal,
-    request: core::CreateRequest,
-    worker: &mut W,
-) -> Result<core::World, JournalError>
-where
-    E: HostEvidence + Serialize + DeserializeOwned + PartialEq,
-    W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
-{
-    let sandbox = request.sandbox;
-    let operation = request.operation;
-    journal.apply(
-        core::ControllerInput::Request(core::Request::Create(request)),
-        &mut NeverCrash,
-    )?;
-    finish_admitted_create_v1(journal, sandbox, operation, worker)
-}
-
 /// Continue only an already durably admitted V1 create. This is the bridge
 /// from atomic lease/quota admission to the unchanged reducer workflow.
 /// A fresh call must not be used as automatic recovery after an uncertain

@@ -9,21 +9,29 @@ use sandbox_controller_core::maintenance::{
 use sandproof_controller_service::{BoundedHostConfig, HostSlotContext};
 use std::sync::Mutex;
 
-fn bounded() -> BoundedHostConfig {
-    BoundedHostConfig {
-        physical_storage: None,
-        console_policy: None,
-        uid_base: 2000,
-        uplink_base: 12,
-        max_data_routes_per_slot: 4,
-        max_data_routes_global: 8,
-        data_route_control_reserve: 1,
-        maintenance: MaintenanceLimits {
-            max_host_slots: 1,
-            max_retained_results: 16,
-            windows: WindowLimits::new(2, 1000).unwrap(),
-        },
-    }
+fn bounded(path: &std::path::Path) -> BoundedHostConfig {
+    // The exact fixture pool is present before the production complete opener.
+    let mut config = complete_fixture::host(path, NAMESPACE, &config());
+    config.uid_base = 2000;
+    config.uplink_base = 12;
+    config.maintenance = MaintenanceLimits {
+        max_host_slots: 1,
+        max_retained_results: 128,
+        windows: WindowLimits::new(2, 1000).unwrap(),
+    };
+    config.physical_storage.as_mut().unwrap().pools[0].max_host_slots = 1;
+    config
+}
+
+fn open_journal(path: &std::path::Path) -> ControllerJournal {
+    ControllerJournal::open_complete(
+        path,
+        NAMESPACE,
+        bounded(path),
+        complete_fixture::maintenance(),
+        0,
+    )
+    .unwrap()
 }
 
 #[derive(Default, PartialEq)]
@@ -36,6 +44,7 @@ enum BindingFault {
 
 #[derive(Default)]
 struct DurableHost {
+    physical_error: bool,
     physical_profile:
         Option<sandproof_controller_service::physical_storage::PhysicalStorageProfile>,
     physical_free: Option<u64>,
@@ -205,14 +214,26 @@ impl HostAdapter for BoundedHost {
     }
 
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
-        Ok(self.0.lock().unwrap().physical_free.unwrap_or(10_000))
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .physical_free
+            .unwrap_or(16 * 1024 * 1024 * 1024))
     }
     fn validate_physical_storage(
         &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
         _pool: &sandproof_controller_service::physical_storage::PhysicalPool,
     ) -> Result<(), PortError> {
-        if self.0.lock().unwrap().physical_profile.as_ref() == Some(profile) {
+        profile.validate().map_err(|_| PortError::Busy)?;
+        let state = self.0.lock().unwrap();
+        if !state.physical_error
+            && state
+                .physical_profile
+                .as_ref()
+                .is_none_or(|expected| expected == profile)
+        {
             Ok(())
         } else {
             Err(PortError::Busy)
@@ -321,13 +342,8 @@ fn open(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
             state.gate_path = Some(gate_path);
         }
     }
-    let mut config = config();
-    config.limits.max_vm_id = 1; // Legacy physical ceiling must not cap permanent IDs.
-    ManagedPort::new(
-        ControllerJournal::open_bounded(path, NAMESPACE, bounded(), 0).unwrap(),
-        host,
-        config,
-    )
+    let config = config();
+    ManagedPort::new(open_journal(path), host, config)
 }
 
 #[test]
@@ -338,7 +354,9 @@ fn one_position_serves_many_permanent_ids_and_delayed_old_commands_never_touch_s
     let port = open(&path, host.clone());
     let mut old = Vec::new();
     for number in 1..=32 {
-        let session = port.create("1", request()).unwrap();
+        let session = port
+            .create("1", request())
+            .unwrap_or_else(|error| panic!("create incarnation {number}: {error:?}"));
         assert_eq!(session.sandbox_id, format!("sb-{NAMESPACE}-{number}"));
         let row = host.0.lock().unwrap().row.unwrap();
         assert_eq!(row.0.position.0, 0);
@@ -351,13 +369,16 @@ fn one_position_serves_many_permanent_ids_and_delayed_old_commands_never_touch_s
             assert!(host.clone().execute(stale).is_err());
         }
         port.kill("1", &session.sandbox_id).unwrap();
+        // The service's ordinary coordinator retires completed metadata;
+        // physical-slot reuse is exercised without an unmaintained journal.
+        assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
         let state = host.0.lock().unwrap();
         assert_eq!(state.row.unwrap().1, HostSlotPhase::Free);
         assert!(state.secrets.is_empty());
         old.clone_from(&state.actions);
     }
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     assert_eq!(journal.host_slot_contexts().unwrap().len(), 1);
     assert_eq!(journal.next_sandbox_id().unwrap().0, 33);
     assert_eq!(
@@ -386,7 +407,7 @@ fn cancelled_unbound_create_waits_without_claiming_actions_and_recovers_without_
     ));
     assert_eq!(host.0.lock().unwrap().row, previous);
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     let world = journal.world().unwrap();
     assert!(
         world
@@ -415,7 +436,7 @@ fn cancelled_unbound_create_waits_without_claiming_actions_and_recovers_without_
 }
 
 #[test]
-fn legacy_unknown_terminal_fence_before_binding_recovers_only_the_original_cancel() {
+fn unknown_terminal_fence_before_binding_recovers_only_the_original_cancel() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("controller.db");
     let host = BoundedHost::default();
@@ -426,8 +447,8 @@ fn legacy_unknown_terminal_fence_before_binding_recovers_only_the_original_cance
         Err(PortError::OutcomeUnknown)
     ));
     drop(port);
-    let mut journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
-    // Reproduce the old persisted failure: cancellation claimed its fence even
+    let mut journal = open_journal(&path);
+    // Inject cancellation's claim/host-loss boundary: it claimed its fence even
     // though physical binding had never succeeded. It never dispatched prepare.
     let failure = kill_v1::<Evidence, _>(
         &mut journal,
@@ -456,7 +477,7 @@ fn legacy_unknown_terminal_fence_before_binding_recovers_only_the_original_cance
     ));
     drop(state);
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     assert_eq!(journal.next_sandbox_id().unwrap().0, 2);
     assert_eq!(
         journal
@@ -525,7 +546,7 @@ fn lost_release_ack_keeps_durable_releasing_until_exact_host_recovery() {
     host.0.lock().unwrap().lose_release = true;
     port.kill("1", &session.sandbox_id).unwrap();
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     assert_eq!(
         journal.host_slot_inventory().unwrap()[0].1,
         HostSlotPhase::Releasing
@@ -589,35 +610,50 @@ fn unknown_relay_exit_stays_blocked_after_every_pin_drops() {
 }
 
 #[test]
-fn bounded_format_and_configuration_cannot_be_disabled_changed_or_adopt_nonempty_legacy() {
+fn current_configuration_cannot_be_changed_and_legacy_stores_are_rejected() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("bounded.db");
     drop(open(&path, BoundedHost::default()));
-    assert!(ControllerJournal::open(&path, NAMESPACE).is_err());
+    // A different complete profile is refused, not treated as a mode change.
+    assert!(complete_fixture::open(&path, NAMESPACE).is_err());
     for changed in [
         BoundedHostConfig {
-            physical_storage: None,
-            console_policy: None,
             uid_base: 2001,
-            ..bounded()
+            ..bounded(&path)
         },
         BoundedHostConfig {
             uplink_base: 13,
-            ..bounded()
+            ..bounded(&path)
         },
     ] {
-        assert!(ControllerJournal::open_bounded(&path, NAMESPACE, changed, 0).is_err());
+        assert!(
+            ControllerJournal::open_complete(
+                &path,
+                NAMESPACE,
+                changed,
+                complete_fixture::maintenance(),
+                0
+            )
+            .is_err()
+        );
     }
     let legacy_path = dir.path().join("legacy.db");
-    let legacy = ManagedPort::new(
-        ControllerJournal::open(&legacy_path, NAMESPACE).unwrap(),
-        FakeHost::default(),
-        config(),
+    rusqlite::Connection::open(&legacy_path).unwrap().execute_batch(
+        "CREATE TABLE controller_meta(id INTEGER PRIMARY KEY,version INTEGER,namespace TEXT); PRAGMA application_id=0x53504631; PRAGMA user_version=1;"
+    ).unwrap();
+    let before = std::fs::read(&legacy_path).unwrap();
+    assert!(
+        ControllerJournal::open_complete(
+            &legacy_path,
+            NAMESPACE,
+            bounded(&legacy_path),
+            complete_fixture::maintenance(),
+            0
+        )
+        .is_err()
     );
-    legacy.create("1", request()).unwrap();
-    drop(legacy);
-    assert!(ControllerJournal::open_bounded(&legacy_path, NAMESPACE, bounded(), 0).is_err());
-    assert!(ControllerJournal::open(&legacy_path, NAMESPACE).is_ok());
+    assert!(complete_fixture::open(&legacy_path, NAMESPACE).is_err());
+    assert_eq!(std::fs::read(&legacy_path).unwrap(), before);
 }
 
 #[test]

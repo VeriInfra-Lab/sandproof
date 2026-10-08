@@ -22,12 +22,11 @@ impl CrashInjector for CrashAt {
 
 fn limits() -> AdmissionLimits {
     AdmissionLimits {
-        max_vm_id: 10_000,
         max_active_global: 1,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 10_000,
+        max_disk_bytes_global: CLEANUP_BYTES + 9_000,
         max_disk_bytes_per_tenant: 5_000,
-        cleanup_reserve_bytes: 1_000,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
         max_timeout_secs: 300,
         max_lifetime_secs: 600,
         startup_timeout_secs: 1,
@@ -46,8 +45,7 @@ fn unknown(action: &WorkAction<core::EffectId>) -> WorkReceipt<FakeHostEvidence>
 
 fn setup() -> (TempDir, ControllerJournal, WorkAction<core::EffectId>) {
     let directory = TempDir::new().unwrap();
-    let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     let core::ControllerInput::Request(core::Request::Create(request)) = create() else {
         unreachable!()
     };
@@ -240,7 +238,7 @@ fn retirement_transaction_is_atomic_replayable_and_preserves_missing_receipt() {
         ));
         drop(journal);
         let mut reopened =
-            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+            open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
         let retired = matches!(
             reopened.world().unwrap().effect_status(&activation.command),
             Some(core::EffectStatus::RetiredByStop(_))
@@ -300,7 +298,7 @@ fn restart_recovers_terminal_fence_stop_and_cleanup_windows_without_second_activ
         ));
         drop(journal);
         let mut reopened =
-            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+            open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
         reopened
             .complete(&success(&lost.unwrap()), &mut NeverCrash)
             .unwrap();
@@ -317,9 +315,8 @@ fn restart_recovers_terminal_fence_stop_and_cleanup_windows_without_second_activ
 }
 
 #[test]
-fn version_six_unknown_activation_survives_upgrade_without_rewriting_history() {
-    let (directory, journal, activation) = setup();
-    let before = journal.world().unwrap();
+fn old_unknown_activation_schema_is_rejected_without_rewriting_history() {
+    let (directory, journal, _activation) = setup();
     drop(journal);
     let path = directory.path().join("controller.db");
     let connection = rusqlite::Connection::open(&path).unwrap();
@@ -327,23 +324,19 @@ fn version_six_unknown_activation_survives_upgrade_without_rewriting_history() {
         .execute("UPDATE controller_meta SET version=6", [])
         .unwrap();
     drop(connection);
-    let mut reopened = ControllerJournal::open(&path, NAMESPACE).unwrap();
-    assert_eq!(reopened.world().unwrap(), before);
-    assert_eq!(
-        reopened.uncertain_actions().unwrap(),
-        vec![activation.clone()]
-    );
-    reopened.abort_due_startups(1_000, &mut NeverCrash).unwrap();
-    finish_compensating_create_v1(&mut reopened, SANDBOX, CREATE_OP, &mut worker).unwrap();
-    assert_reclaimed(&reopened, &activation.command);
-    drop(reopened);
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(matches!(
+        open_complete(&path, NAMESPACE),
+        Err(JournalError::UnsupportedStore)
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
     let connection = rusqlite::Connection::open(&path).unwrap();
     assert_eq!(
         connection
             .query_row("SELECT version FROM controller_meta", [], |r| r
                 .get::<_, i64>(0))
             .unwrap(),
-        7
+        6
     );
 }
 
@@ -358,7 +351,7 @@ fn terminal_intent_is_atomic_and_late_activation_cannot_complete_it() {
         );
         drop(journal);
         let mut reopened =
-            ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+            open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
         assert_eq!(
             reopened
                 .world()

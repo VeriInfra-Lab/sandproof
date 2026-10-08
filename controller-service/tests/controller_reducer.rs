@@ -10,8 +10,7 @@ use tempfile::TempDir;
 
 fn setup() -> (TempDir, ControllerJournal) {
     let directory = TempDir::new().unwrap();
-    let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     (directory, journal)
 }
 
@@ -21,10 +20,7 @@ fn prepare_ready(journal: &mut ControllerJournal) -> core::OperationPlan {
         sandbox: SANDBOX,
         operation: CREATE_OP,
     };
-    let world = apply(
-        journal,
-        core::ControllerInput::Scheduler(core::SchedulerInput::ReserveStartup(key)),
-    );
+    let world = journal.world().unwrap();
     let plan = world.operation_plan(key).unwrap().clone();
     assert_eq!(dispatch_all(journal), 1); // installation fence
     apply(
@@ -130,8 +126,7 @@ fn real_reducer_drives_create_kill_and_replays_the_same_world() {
     assert_eq!(dispatch_all(&mut journal), 2);
     let cleaned = journal.world().unwrap();
     drop(journal);
-    let reopened =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let reopened = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(reopened.world().unwrap(), cleaned);
     assert!(reopened.uncertain_actions().unwrap().is_empty());
 }
@@ -189,11 +184,17 @@ fn explicit_failure_retry_keeps_logical_identity_and_allocates_new_attempt() {
 #[test]
 fn before_commit_failure_leaves_no_core_state_or_worker_action() {
     let (_directory, mut journal) = setup();
+    let before = journal.world().unwrap();
+    let core::ControllerInput::Request(core::Request::Create(request)) = create() else {
+        unreachable!()
+    };
     assert!(matches!(
-        journal.apply(create(), &mut FailAt(CrashPoint::BeforeCommit)),
-        Err(JournalError::InjectedCrash(_))
+        admit(&mut journal, request, &mut FailAt(CrashPoint::BeforeCommit)),
+        Err(sandproof_controller_service::AdmissionError::Journal(
+            JournalError::InjectedCrash(_)
+        ))
     ));
-    assert_eq!(journal.world().unwrap(), core::initial_world());
+    assert_eq!(journal.world().unwrap(), before);
     assert_eq!(dispatch_all(&mut journal), 0);
     apply(&mut journal, create());
     assert_eq!(dispatch_all(&mut journal), 1);
@@ -296,15 +297,15 @@ fn exclusive_process_lease_and_namespace_are_enforced() {
     let (directory, journal) = setup();
     let path = directory.path().join("controller.db");
     assert!(matches!(
-        ControllerJournal::open(&path, NAMESPACE),
+        open_complete(&path, NAMESPACE),
         Err(JournalError::ControllerBusy)
     ));
     drop(journal);
     assert!(matches!(
-        ControllerJournal::open(&path, "1111111111111111"),
+        open_complete(&path, "1111111111111111"),
         Err(JournalError::UnsupportedStore)
     ));
-    assert!(ControllerJournal::open(&path, NAMESPACE).is_ok());
+    assert!(open_complete(&path, NAMESPACE).is_ok());
 }
 
 #[test]
@@ -322,8 +323,7 @@ fn crash_after_claim_requires_observation_before_lifecycle_can_advance() {
     assert!(matches!(result, Err(JournalError::InjectedCrash(_))));
     assert!(!called);
     drop(journal);
-    let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(dispatch_all(&mut journal), 0);
     assert!(matches!(
         journal.apply(kill(1), &mut NeverCrash),
@@ -414,8 +414,7 @@ fn lost_prepare_reply_never_creates_followup_actions_until_reconciled() {
     );
     assert!(matches!(result, Err(JournalError::InjectedCrash(_))));
     drop(journal);
-    let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let mut journal = open_complete(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert_eq!(dispatch_all(&mut journal), 0);
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
     assert!(

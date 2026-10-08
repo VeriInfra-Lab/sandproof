@@ -25,7 +25,7 @@ fn policy(slots: u64) -> MaintenanceConfig {
     policy
 }
 fn open(path: &std::path::Path, slots: u64, policy: &MaintenanceConfig) -> ControllerJournal {
-    ControllerJournal::open_maintained(path, NS, host(slots), policy.clone(), 1000).unwrap()
+    ControllerJournal::open_complete(path, NS, host(slots), policy.clone(), 1000).unwrap()
 }
 fn limits(journal: &ControllerJournal) -> AdmissionLimits {
     let mut limits = super::support::limits();

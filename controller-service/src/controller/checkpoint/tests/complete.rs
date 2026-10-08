@@ -67,29 +67,18 @@ fn complete_opener_rejects_old_or_partial_stores_without_upgrading_bytes() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("db");
         let (host, policy) = configuration(dir.path());
+        let raw = Connection::open(&path).unwrap();
+        raw.execute_batch("PRAGMA application_id=0x53504631;")
+            .unwrap();
         match kind {
-            0 => {
-                drop(crate::Journal::open(&path).unwrap());
-            }
-            1 => {
-                drop(ControllerJournal::open(&path, NS).unwrap());
-            }
-            2 => {
-                drop(ControllerJournal::open_bounded(&path, NS, host.clone(), 1000).unwrap());
+            0..=2 => {
+                raw.pragma_update(None, "user_version", kind + 1).unwrap();
             }
             _ => {
-                drop(
-                    ControllerJournal::open_maintained(
-                        &path,
-                        NS,
-                        host.clone(),
-                        maintenance_config(),
-                        1000,
-                    )
-                    .unwrap(),
-                );
+                raw.execute_batch("PRAGMA user_version=4; CREATE TABLE controller_meta(id INTEGER PRIMARY KEY,version INTEGER,namespace TEXT); INSERT INTO controller_meta VALUES(1,7,'0123456789abcdef');").unwrap();
             }
         }
+        drop(raw);
         let before = std::fs::read(&path).unwrap();
         assert!(ControllerJournal::preflight_complete(&path, NS, &host, &policy).is_err());
         assert!(ControllerJournal::open_complete(&path, NS, host, policy, 2000).is_err());
@@ -109,7 +98,10 @@ fn complete_open_rechecks_store_created_after_successful_preflight() {
     let path = dir.path().join("db");
     let (host, policy) = configuration(dir.path());
     ControllerJournal::preflight_complete(&path, NS, &host, &policy).unwrap();
-    drop(ControllerJournal::open_bounded(&path, NS, host.clone(), 1000).unwrap());
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch("PRAGMA application_id=0x53504631; PRAGMA user_version=3;")
+        .unwrap();
     let before = std::fs::read(&path).unwrap();
     assert!(ControllerJournal::open_complete(&path, NS, host, policy, 2000).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), before);

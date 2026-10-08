@@ -47,6 +47,8 @@
 
 组件入口包括[缓存差分](../controller-service/src/controller/cache_tests.rs)、[身份分配](../controller-service/src/controller/allocator_tests.rs)、[API 耗尽](../sandbox-api/tests/managed_port/allocators.rs)、[有界位置与维护](../sandbox-api/tests/managed_port/bounded_slots.rs)及[模板发布](../sandbox-api/tests/managed_port/publication.rs)。实际宿主观察不能仅由这些测试替身代替。
 
+凭据隔离另以[同库索引故障](../controller-service/src/controller/data_credentials/tests.rs)、[管理层恢复与授权](../sandbox-api/tests/managed_port/credential_isolation.rs)及[两台真实虚拟机](../tests/system/server_credential_isolation.py)分层验收：单个宿主凭据缺失、损坏或有效内容改变只拒绝该对象；健康对象仍可执行命令、读写文件。共享索引缺失、损坏或重复绑定须拒绝数据授权，不自动补造登记；原管理清理仍按生命周期合同进行。实机入口保留原凭据 inode，故障后恢复它并逐台核对精确资源，不代表恶意宿主存储已验证。
+
 ## 3. Linux/KVM 验收
 
 使用隔离 Linux x86_64 主机，KVM API 12、cgroup v2、固定工具及镜像摘要；通用配置见[示例](../tests/system/host.example.json)，真实地址、SSH 名称和凭据在仓库外提供。使用 root 私有目录、独占 UID/网络范围、空且已委派的 cgroup 父组；不能修改共享祖先或全局网络来让测试通过。确需全局变更须先获批准并恢复原值。
@@ -84,7 +86,9 @@ owner 2026-10-06 决定当前使用[冻结的 2.0 兼容回归](../benchmarks/te
 
 本阶段先验收少量 2.0 兼容题与真实自动检查，全部兼容题和 2.1 原题全量未运行不计完成。人工诊断可按 owner 要求跳过外部网络阻塞并在独立身份中换题，不分析或修复网络；原非成功状态、实际范围和精确清理仍由自动报告保留。固定自动回归不动态换题，不能靠跳过得到正式绿灯。特殊单次晋升豁免只记录于对应 PR。
 
-当前 integration→test 和 test→main 的固定门槛为 2.0 `smoke` 配置四题：polyglot-c-py、regex-log、db-wal-recovery 使用原解答，build-pmars 使用已登记的兼容修补解答；均使用原评分。批次上限为 3，遇到解答模式不同自动拆批；题库／题集／批次仍为受控配置，不在生产控制器按题名分支。这四题回归不等于全量或 2.1 发布验收。
+owner 2026-10-08 选择稳定晋升方案：2.0 `ci` 配置两题 polyglot-c-py、db-wal-recovery；原解答和原测试断言保留，只在独立派生任务中用预装 Python/pytest 替换联网评分启动。使用不可变干净模板、全新沙箱和私有工作盘，禁用公网；不复用解答后的磁盘或旧成绩。结果为 `prepared-ci` 环境及 `ci-preinstalled-v1` 评分启动变体，不是原环境、原评分启动或通用模板构建的验收。鉴权、故障恢复、流式边界仍由相关定向测试检查；构建/镜像/平台安装工具改变时补通用构建实机测试并刷新受影响模板。完整 2.1 原入口 89 题在网络合格主机上作发布前验收，不阻塞每次晋升。
+
+新检查为 `E2E / terminal-bench-ci`。启用前须同一精确提交上实测两题成功、真实评分失败及随后干净成功，绑定模板/评分依赖清单摘要、候选二进制和基线，独立核对清理；缺包不回源、不跳题、不伪造通过。核对新检查由专用 App 发布后，才在两级晋升替换旧必需检查。部署状态和证据留 #14；未启用时旧 `E2E / terminal-bench-2.0-compat` smoke 四题仍生效。四题、十六题和原全量入口保留供显式扩展验收，不混用两种报告。
 
 ### 配置题集自动验收判据
 

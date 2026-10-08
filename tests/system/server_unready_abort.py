@@ -27,8 +27,8 @@ import time
 import urllib.request
 
 from server_process_crash import (
-    fetch, free_loopback_port, process_start_ticks, start_server, stop_server,
-    wait_ready,
+    complete_runtime, fetch, free_loopback_port, process_start_ticks, provision_runtime,
+    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
 )
 
 
@@ -81,7 +81,7 @@ def exercise(args: argparse.Namespace) -> None:
         image.flush()
         os.fsync(image.fileno())
     config = root / "config.json"
-    config.write_text(json.dumps({
+    settings = {
         "namespace": namespace,
         "database": str(root / "db/controller.db"),
         "node_state_dir": str(root / "state"),
@@ -91,7 +91,6 @@ def exercise(args: argparse.Namespace) -> None:
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
-        "max_vm_id": 1000,
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
@@ -107,7 +106,10 @@ def exercise(args: argparse.Namespace) -> None:
         "default_timeout_secs": 300,
         "startup_timeout_secs": 5,
         "expiry_scan_seconds": 1,
-    }))
+    }
+    settings = complete_runtime(settings, slots=2)
+    provision_runtime(settings)
+    config.write_text(json.dumps(settings))
     config.chmod(0o600)
     if args.cgroup_parent is not None:
         configured = json.loads(config.read_text())
@@ -170,17 +172,9 @@ def exercise(args: argparse.Namespace) -> None:
         process = start_server(binary, config, log, None)
         wait_ready(opener, base_url, key, process)
 
-        def terminal() -> bool:
-            with sqlite3.connect(root / "db/controller.db") as database:
-                states = [json.loads(row[0]) for row in database.execute(
-                    "SELECT state_blob FROM sandboxes"
-                )]
-                unresolved = database.execute(
-                    "SELECT count(*) FROM outbox WHERE dispatch_state='dispatched'"
-                ).fetchone()[0]
-            return len(states) == 1 and states[0]["phase"] == "Destroyed" and unresolved == 0
-
-        wait_for(terminal, 20, "failed terminal publication and receipt reconciliation")
+        sandbox_id = f"sb-{namespace}-1"
+        wait_for(lambda: terminal_cleanup_confirmed(root / "db/controller.db", sandbox_id),
+                 20, "failed terminal publication or exact quiescent retirement")
         status, body = fetch(opener, base_url, "GET", "/v2/sandboxes", key)
         assert status == 200 and json.loads(body) == [], (status, body)
         assert process_start_ticks(pid) != ticks
@@ -208,7 +202,7 @@ def exercise(args: argparse.Namespace) -> None:
             "namespace_holders": [],
             "prepare_count": 1,
             "abort_receipt": "lost then observed on restart",
-            "terminal": "Destroyed with no dispatched outbox actions",
+            "terminal": "Destroyed or exact quiescent retirement; no dispatched outbox actions",
             "residual": "no exact process, jail or network namespace; base disk unchanged",
         }))
     finally:

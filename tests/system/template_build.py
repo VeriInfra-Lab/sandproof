@@ -3,8 +3,9 @@
 No public registry, host Docker, paid model or production server is used.
 Synthetic Debian-compatible fixture only: not public OCI acceptance. Each
 build job gets a new VM; candidate health probes are separate new VMs. This
-operator-only harness is NOT a public build API. --registry also exercises
-the production publication gate, immutable registry and owner-scoped aliases.
+operator-only harness is NOT a public build API. Both pools use an explicit
+complete physical profile; builders use private request windows. --registry
+also exercises the publication gate, immutable registry and owner-scoped aliases.
 The server must include debug fault-injection hooks. For a CPU-limited service,
 use an optimized build with CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true.
 """
@@ -24,12 +25,10 @@ import json
 import os
 from pathlib import Path
 import re
-import secrets
 import shutil
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.request
 
@@ -44,6 +43,10 @@ from sdk_server_smoke import options
 from server_process_crash import fetch, free_loopback_port, interrupted_request, process_start_ticks, start_server, stop_server, wait_ready
 from server_templates import descriptor
 from server_vm_id_capacity import check_no_resources
+from _complete_registry_runtime import (
+    add_registry_arguments, prepare_registry_runtime, sandbox_highwater, assert_terminal_rows,
+)
+from template_fetch import REGCTL_SHA256
 
 
 MIB = 1024 * 1024
@@ -124,16 +127,16 @@ def exercise(args):
         raise RuntimeError("isolated root Linux/KVM required")
     if importlib.metadata.version("e2b") != "2.51.0":
         raise RuntimeError("pinned SDK required")
-    identity_count = 20 if args.registry else 12
-    if processes_in_uid_range(args.uid_base, args.uid_base + identity_count):
+    if processes_in_uid_range(args.uid_base, args.uid_base + 164):
         raise RuntimeError("exclusive UID range occupied")
-    if (args.cgroup_parent / "cgroup.procs").read_text().strip() or any(p.is_dir() for p in args.cgroup_parent.iterdir()):
-        raise RuntimeError("empty delegated cgroup required")
+    for parent in (args.cgroup_parent, args.build_cgroup_parent):
+        if (parent / "cgroup.procs").read_text().strip() or any(p.is_dir() for p in parent.iterdir()):
+            raise RuntimeError("empty delegated cgroup pools required")
     checkout = Path(__file__).resolve().parents[2]
     if subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"]).strip():
         raise RuntimeError("clean exact source commit required")
     commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
-    build_tools = BUILDKIT_HASHES | (IGZIP_HASHES if args.igzip else {})
+    build_tools = BUILDKIT_HASHES | {"regctl": REGCTL_SHA256} | (IGZIP_HASHES if args.igzip else {})
     for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed official tool fingerprint mismatch: " + name)
@@ -141,65 +144,43 @@ def exercise(args):
         raise RuntimeError("private root scratch required")
     if shutil.disk_usage(args.scratch_parent).free < 40 * 1024 * MIB:
         raise RuntimeError("40 GiB test disk including cleanup reserve required")
-    root = Path(tempfile.mkdtemp(prefix="tb-", dir=args.scratch_parent))
-    namespace, key = secrets.token_hex(8), secrets.token_hex(32)
+    deployment = prepare_registry_runtime(args, tool_hashes=build_tools,
+        registry_limits={"max_templates_global": 8, "max_templates_per_tenant": 8,
+            "max_artifact_bytes_global": 12 * 1024 * MIB, "max_artifact_bytes_per_tenant": 12 * 1024 * MIB,
+            "validation_timeout_secs": 20},
+        build_limits={"max_cpu": 2, "max_memory_mib": 1024, "max_disk_mib": 2048,
+            "timeout_seconds": 600, "max_jobs": 20, "max_jobs_per_tenant": 10,
+            "max_pending": 3, "max_pending_per_tenant": 2,
+            "workspace_bytes": 80 * 1024 * MIB, "workspace_bytes_per_tenant": 60 * 1024 * MIB,
+            "max_input_bytes": 256 * MIB, "max_expanded_bytes": 512 * MIB,
+            "max_entries": 10000, "max_log_bytes": 2 * MIB},
+        ports=[free_loopback_port() for _ in range(3)])
+    root, namespace, key = deployment.root, deployment.namespaces[0], deployment.keys[0]
     print(f"test root={root} namespace={namespace} commit={commit}", flush=True)
-    for name in ("db", "state", "jails", "images", "inputs"):
-        (root / name).mkdir(mode=0o700)
-    binary = root / "server"
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
+    binary = deployment.binary
     firecracker = args.firecracker.resolve(strict=True)
-    if len(os.fsencode(root / "jails" / firecracker.name / f"vm-{namespace}-12/root/api.socket")) >= 108:
-        raise RuntimeError("socket path too long")
-    original = [sha256_file(path) for path in (args.kernel, args.rootfs)]
-    base = descriptor("builder-base", args.kernel, args.rootfs, 2, 2048)
-    url = f"http://127.0.0.1:{free_loopback_port()}"
-    settings = {
-        "namespace": namespace, "database": str(root / "db/controller.db"), "node_state_dir": str(root / "state"),
-        "jailer": str(args.jailer), "firecracker": str(firecracker), "chroot_base": str(root / "jails"),
-        "kernel": str(args.kernel), "rootfs": str(args.rootfs), "uid_base": args.uid_base, "max_vm_id": 12,
-        "vcpu_count": 2, "memory_mib": 2048,
-        "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 2304 * MIB},
-        "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 2, "max_active_per_tenant": 2,
-        "max_disk_bytes_global": 24 * 1024 * MIB, "max_disk_bytes_per_tenant": 24 * 1024 * MIB,
-        "cleanup_reserve_bytes": 256 * MIB, "max_timeout_secs": 1200,
-        "startup_timeout_secs": 40, "expiry_scan_seconds": 2,
-        "templates": {"templates": [base], "aliases": {"base": "builder-base"},
-                      "compute_limits": {"max_vcpus_global": 4, "max_vcpus_per_tenant": 4,
-                                         "max_memory_bytes_global": 4608 * MIB, "max_memory_bytes_per_tenant": 4608 * MIB}},
-        "data_transfer": {"file_upload_bytes": 512 * MIB, "file_download_bytes": 512 * MIB,
-                          "command_input_bytes": MIB, "command_output_bytes": 4 * MIB,
-                          "rpc_request_bytes": MIB, "rpc_response_bytes": MIB,
-                          "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
-                          "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60},
-    }
-    if args.registry:
-        for path in (root / "registry", root / "registry/inbox", root / "registry/artifacts"):
-            path.mkdir(mode=0o700)
-        settings["template_registry"] = {"root": str(root / "registry"), "max_templates_global": 8,
-            "max_templates_per_tenant": 8, "max_artifact_bytes_global": 12 * 1024 * MIB,
-            "max_artifact_bytes_per_tenant": 12 * 1024 * MIB, "validation_timeout_secs": 20}
-        settings["max_vm_id"] = 20
-        foreign_key = secrets.token_hex(32)
-        settings["credentials"].append({"tenant": 2, "secret": foreign_key})
-    config = root / "config.json"
+    original_paths = (args.kernel, args.rootfs, args.builder_rootfs or args.rootfs)
+    original = [sha256_file(path) for path in original_paths]
+    url, settings, foreign_key = deployment.urls[0], deployment.settings[0], deployment.keys[2]
+    config = root / "0/config.json"
     def save():
         config.write_text(json.dumps(settings))
         config.chmod(0o600)
     save()
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     owner = options(key, url, url)
-    process, active, complete, evidence = None, [], False, []
+    process, builder_process, active, complete, evidence = None, None, [], False, []
     def no_resources():
-        if (root / "jails/.claims").is_dir():
-            check_no_resources(root, namespace, firecracker, args.uid_base)
+        for index, pool_namespace in enumerate(deployment.namespaces):
+            pool = root / str(index)
+            if (pool / "jails/.claims").is_dir():
+                check_no_resources(pool, pool_namespace, firecracker, args.uid_base + index * 100)
+            assert_terminal_rows(pool / "db/controller.db")
         # .claims intentionally retains stopped identity tombstones; inspect
         # their PID/start time above, not their directory names as live VMs.
-        for parent in (root / "jails" / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
-            assert not list(parent.rglob(f"vm-{namespace}-*")), "test resource remains"
-        assert not processes_in_uid_range(args.uid_base, args.uid_base + identity_count)
+            for parent in (pool / "jails" / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
+                assert not list(parent.rglob(f"vm-{pool_namespace}-*")), "test resource remains"
+        assert not processes_in_uid_range(args.uid_base, args.uid_base + 164)
     request = {"kind": "dockerfile", "disk_mib": 1024, "min_free_mib": 64,
                "max_input_bytes": 256 * MIB, "max_expanded_bytes": 512 * MIB, "max_entries": 10000,
                "timeout_seconds": 120, "max_log_bytes": 2 * MIB}
@@ -213,9 +194,10 @@ def exercise(args):
     try:
         process = start_server(binary, config, root / "server.log", None)
         wait_ready(opener, url, key, process)
+        builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
+        wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
         for kind in ("dockerfile", "oci", "failure", "timeout"):
-            builder = Sandbox.create(timeout=600, allow_internet_access=False, **owner)
-            active.append(builder.sandbox_id)
+            builder, builder_identity = deployment.open_builder(timeout=600, internet=False)
             checked(builder, "mkdir -p /input/tools /output")
             profile = {}
             for name, digest in build_tools.items():
@@ -307,9 +289,7 @@ def exercise(args):
                         for block in builder.files.read("/output/oci.tar.gz", format="stream", user="root"):
                             output.write(block)
                 evidence.append({"kind": kind, "status": status, "snapshotter": snapshotter})
-            _kill_confirmed = (Sandbox.kill(builder.sandbox_id, **owner))
-            assert _kill_confirmed
-            active.remove(builder.sandbox_id)
+            deployment.close_builder(builder_identity)
             no_resources()
             if kind in ("dockerfile", "oci"):
                 if args.registry:
@@ -319,11 +299,9 @@ def exercise(args):
                     assert result["template"]["diskBytes"] == status["disk_bytes"]
                     assert result["template"]["minFreeBytes"] == status["min_free_bytes"]
                     published[kind] = result["template"]["templateId"]
-                    with sqlite3.connect(root / "db/controller.db") as database:
-                        count = database.execute("SELECT count(*) FROM sandboxes").fetchone()[0]
+                    count = sandbox_highwater(root / "0/db/controller.db")
                     assert publication(candidate_id) == result
-                    with sqlite3.connect(root / "db/controller.db") as database:
-                        assert database.execute("SELECT count(*) FROM sandboxes").fetchone()[0] == count
+                    assert sandbox_highwater(root / "0/db/controller.db") == count
                     assert fetch(opener,url,"GET","/sandproof/template-publications/" + candidate_id,foreign_key)[0] == 404
                     assert fetch(opener,url,"GET","/sandproof/templates/" + published[kind],foreign_key)[0] == 404
                     code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-" + kind,key,
@@ -409,9 +387,9 @@ def exercise(args):
             process = start_server(binary, config, root / "server.log", "cleanup_vm")
             wait_ready(opener,url,key,process)
             interrupted_request(lambda: publication(pending),process)
-            with sqlite3.connect(root / "db/controller.db") as database:
+            with sqlite3.connect(root / "0/db/controller.db") as database:
                 saved = json.loads(database.execute("SELECT record_json FROM template_publications WHERE candidate_id=?",(pending,)).fetchone()[0])
-                identities = database.execute("SELECT count(*) FROM sandboxes").fetchone()[0]
+            identities = sandbox_highwater(root / "0/db/controller.db")
             assert saved["state"] == "checking" and saved["checked"] is True
             process = start_server(binary,config,root / "server.log",None)
             wait_ready(opener,url,key,process)
@@ -420,8 +398,7 @@ def exercise(args):
                 assert time.monotonic() < deadline
                 time.sleep(0.2)
             assert publication(pending)["state"] == "ready"
-            with sqlite3.connect(root / "db/controller.db") as database:
-                assert database.execute("SELECT count(*) FROM sandboxes").fetchone()[0] == identities
+            assert sandbox_highwater(root / "0/db/controller.db") == identities
             no_resources()
             evidence.append({"kind": "publication-restart", "cleanup_receipt_lost": True,
                              "no_reprobe": True, "failed_kernel_not_ready": True, "alias_binding_persisted": True})
@@ -429,7 +406,7 @@ def exercise(args):
         # controller receipt, and Start accepted but host confirmation lost.
         # This is not arbitrary application readiness or crash-site coverage.
         def startup_count(name, sandbox_id):
-            secret = json.loads((root / "state/secrets" / sandbox_id).read_text())
+            secret = json.loads((root / "0/state/secrets" / sandbox_id).read_text())
             curl_config = (f'url = "http://172.16.0.2:49983/files?path=%2Fworkspace%2Fstart-count"\n'
                            f'header = "X-Access-Token: {secret["token"]}"\n')
             result = subprocess.run(["/usr/bin/ip", "netns", "exec", name, "/usr/bin/curl", "-q", "--noproxy", "*",
@@ -461,13 +438,13 @@ def exercise(args):
             process = start_server(binary,config,root / "server.log","activate_vm")
             wait_ready(opener,url,key,process)
             interrupted_request(lambda: publication(pending),process)
-            with sqlite3.connect(root / "db/controller.db") as database:
+            with sqlite3.connect(root / "0/db/controller.db") as database:
                 saved = json.loads(database.execute("SELECT record_json FROM template_publications WHERE candidate_id=?",(pending,)).fetchone()[0])
-                identities = database.execute("SELECT count(*) FROM sandboxes").fetchone()[0]
+            identities = sandbox_highwater(root / "0/db/controller.db")
             assert saved["state"] == "checking" and saved["checked"] is False
             sandbox_id = f'sb-{namespace}-{saved["validation_sandbox"]}'
             record = next(
-                json.loads(p.read_text()) for p in (root / "state/startup").glob("*.json")
+                json.loads(p.read_text()) for p in (root / "0/state/startup").glob("*.json")
                 if json.loads(p.read_text())["sandbox"] == saved["validation_sandbox"])
             name = f'vm-{namespace}-{record["vm"]}'
             wait_started(name, sandbox_id)
@@ -482,8 +459,7 @@ def exercise(args):
                 time.sleep(0.2)
                 state = publication(pending)["state"]
             assert state == "failed", "unconfirmed validation became Ready"
-            with sqlite3.connect(root / "db/controller.db") as database:
-                assert database.execute("SELECT count(*) FROM sandboxes").fetchone()[0] == identities
+            assert sandbox_highwater(root / "0/db/controller.db") == identities
             no_resources()
             evidence.append({"kind": "publication-unconfirmed", "never_ready": True,
                              "internal_session_hidden": True, "no_reprobe": True, "exact_cleanup": True})
@@ -495,7 +471,7 @@ def exercise(args):
             interrupted_request(lambda: fetch(opener, url, "POST", "/v2/sandboxes", key,
                 {"templateID": "candidate-oci", "timeout": 120, "allow_internet_access": False}),
                 process, 86 if window == "confirmed" else 88)
-            records = [json.loads(path.read_text()) for path in (root / "state/startup").glob("*.json")]
+            records = [json.loads(path.read_text()) for path in (root / "0/state/startup").glob("*.json")]
             record = max(records, key=lambda value: value["vm"])
             sandbox_id, name = f'sb-{namespace}-{record["sandbox"]}', f'vm-{namespace}-{record["vm"]}'
             assert (record["guest_pid"] is not None) == (window == "confirmed")
@@ -514,7 +490,7 @@ def exercise(args):
                 # Existing detail contract exposes only live Running instances,
                 # not a Starting response containing a usable guest credential.
                 assert code == 404, (code, body)
-                with sqlite3.connect(root / "db/controller.db") as database:
+                with sqlite3.connect(root / "0/db/controller.db") as database:
                     saved = json.loads(database.execute("SELECT state_blob FROM sandboxes WHERE sandbox_id=?",
                                                         (sandbox_id,)).fetchone()[0])
                 assert saved["phase"] == "Starting", saved["phase"]
@@ -539,10 +515,12 @@ def exercise(args):
                     assert time.monotonic() < deadline
                     time.sleep(0.1)
             evidence.append({"kind": "activation-" + window, "no_startup_replay": True, "exact_cleanup": True})
-        assert original == [sha256_file(path) for path in (args.kernel, args.rootfs)]
+        assert original == [sha256_file(path) for path in original_paths]
+        allocated = sum(sandbox_highwater(root / str(index) / "db/controller.db") for index in range(2))
+        assert allocated == (13 if args.registry else 8), "unexpected replacement or validation VM"
         complete = True
         print(json.dumps({"source_commit": commit, "server_sha256": sha256_file(binary), "namespace": namespace,
-                          "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": 13 if args.registry else 8, "evidence": evidence,
+                          "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": allocated, "evidence": evidence,
                           "scope": "formal publication/registry with offline synthetic builder fixture" if args.registry else
                           "offline synthetic fixture with defaults and argv dispatch; no public OCI, user API or production Ready gate"}))
     finally:
@@ -552,9 +530,14 @@ def exercise(args):
         # Recover only identities in this fresh private journal, not global VM
         # names or a Running-only list. Never allocate a replacement create.
         try:
+            if list(root.glob("builder-intent-*.json")):
+                if builder_process is None or builder_process.poll() is not None:
+                    builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
+                    wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
+                deployment.close_builders()
             identities = []
-            if (root / "db/controller.db").is_file():
-                with sqlite3.connect("file:" + str(root / "db/controller.db") + "?mode=ro",uri=True) as database:
+            if (root / "0/db/controller.db").is_file():
+                with sqlite3.connect("file:" + str(root / "0/db/controller.db") + "?mode=ro",uri=True) as database:
                     if database.execute("SELECT count(*) FROM sqlite_master WHERE name='sandboxes'").fetchone()[0]:
                         identities = [row[0] for row in database.execute("SELECT sandbox_id FROM sandboxes")]
             if identities and (process is None or process.poll() is not None):
@@ -585,6 +568,7 @@ def exercise(args):
                     time.sleep(0.2)
         finally:
             stop_server(process)
+            stop_server(builder_process)
         if complete:
             shutil.rmtree(root)
 
@@ -596,4 +580,5 @@ if __name__ == "__main__":
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--registry", action="store_true")
     parser.add_argument("--igzip", action="store_true", help="check and use the fixed optional ISA-L decoder pair")
+    add_registry_arguments(parser)
     exercise(parser.parse_args())

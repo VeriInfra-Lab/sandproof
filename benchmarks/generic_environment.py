@@ -97,10 +97,14 @@ def validate_template(template, entry):
 
 
 class GenericEnvironment(SdkEnvironment):
-    def __init__(self, *, entry, source, source_kind, build_url, sdk_options, start_audit=None, **kwargs):
+    internet_access = True
+
+    def __init__(self, *, entry, source, source_kind, build_url, sdk_options, start_audit=None,
+                 context_archiver=archive_context, **kwargs):
         if 'build_mode' in kwargs:
             raise InvalidInput("build mode selection is no longer supported")
         self.entry, self.source, self.source_kind = entry, source, source_kind
+        self.context_archiver = context_archiver
         self.client = BuildClient(build_url, sdk_options['api_key'])
         self.build_result = None
         self.build_log_error = None
@@ -139,7 +143,7 @@ class GenericEnvironment(SdkEnvironment):
                 if not isinstance(self.environment_repair, dict) or self.environment_repair.get('context_sha256') != context_hash:
                     raise InvalidInput('original repaired context provenance changed')
         elif self.source_kind == 'dockerfile':
-            context_hash = archive_context(self.entry, self.source, context)
+            context_hash = self.context_archiver(self.entry, self.source, context)
         elif self.source_kind == PRUNED_SOURCE:
             self.environment_repair = archive_repaired_context(self.entry, context)
             context_hash = self.environment_repair['context_sha256']
@@ -276,7 +280,7 @@ class GenericEnvironment(SdkEnvironment):
         self.checkpoint('runtime-intent.json', self.runtime_intent)
         self.create_dispatched = True
         self._sandbox = await AsyncSandbox.create(
-            template=self.template['templateId'], timeout=86400, allow_internet_access=True,
+            template=self.template['templateId'], timeout=86400, allow_internet_access=self.internet_access,
             metadata=metadata,
             envs=self._startup_env(), **(self.sdk_options | {'request_timeout': remaining}))
         self.sandbox_id = self._sandbox.sandbox_id

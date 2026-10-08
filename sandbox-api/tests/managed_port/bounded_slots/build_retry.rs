@@ -1,7 +1,7 @@
 //! Private admission/closure races use the same production mutex and reducer.
 use super::*;
 use sandproof_api::{BuildSettlementRequest, BuildVmRequest};
-use sandproof_controller_service::{BuildRetryConfig, MaintenanceConfig};
+use sandproof_controller_service::BuildRetryConfig;
 const BUILD: &str = "123456789abcdef0123456789abcdef0";
 fn input(window: &str) -> BuildVmRequest {
     BuildVmRequest {
@@ -11,23 +11,22 @@ fn input(window: &str) -> BuildVmRequest {
     }
 }
 fn port(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
-    let mut host_config = bounded();
-    host_config.maintenance.windows = WindowLimits::new(2, 3_600_000).unwrap();
-    let journal = ControllerJournal::open_maintained(
+    let mut host_config = complete_fixture::builder_host(path);
+    host_config.maintenance.max_host_slots = 1;
+    let pool = host_config
+        .physical_storage
+        .as_mut()
+        .unwrap()
+        .pools
+        .iter_mut()
+        .find(|pool| pool.namespace == NAMESPACE)
+        .unwrap();
+    pool.max_host_slots = 1;
+    let journal = ControllerJournal::open_complete(
         path,
         NAMESPACE,
         host_config,
-        MaintenanceConfig {
-            capacity: None,
-            retention_ms: 60_000,
-            max_checkpoint_bytes: 8_000_000,
-            max_records: 10_000,
-            max_references: 100_000,
-            max_tail_inputs: 10_000,
-            max_tail_bytes: 8_000_000,
-            max_input_bytes: 128_000,
-            prune_batch_rows: 100,
-        },
+        complete_fixture::maintenance(),
         0,
     )
     .unwrap();
@@ -108,6 +107,18 @@ fn accepted_before_close_has_same_identity_and_releases_one_slot_only_after_ack(
         );
         assert!(settle(&port, &window, Some(&created.sandbox_id)).is_err());
         port.kill("1", &created.sandbox_id).unwrap();
+        // The unsettled issued-window anchor pins history and its physical
+        // position even after VM cleanup; retirement cannot consume it.
+        let retired = port.maintain().unwrap().retired_sandboxes;
+        if iteration == 0 {
+            assert_eq!(retired, 0);
+        }
+        assert_eq!(
+            port.build_vm("1", BUILD, Some(input(&window)))
+                .unwrap()
+                .sandbox_id,
+            created.sandbox_id
+        );
         assert!(
             port.build_vm_in_window("1", BUILD, Some(&window), None)
                 .unwrap()

@@ -25,7 +25,7 @@ pub struct RetirementCandidate {
     pub release: Option<HostReleaseWitness>,
 }
 
-pub(super) fn original_binding(
+pub(in crate::controller) fn original_binding(
     world: &core::World,
     sandbox: core::SandboxId,
 ) -> Result<Option<HostBinding>, JournalError> {
@@ -242,7 +242,12 @@ fn delete_details(
         }
         logical.push(effect.logical.clone());
     }
-    for table in ["operations", "sandbox_lifetimes", "sandbox_create_options"] {
+    for table in [
+        "operations",
+        "sandbox_lifetimes",
+        "sandbox_create_options",
+        "controller_data_credentials",
+    ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE sandbox_id=?1"),
             [id.as_str()],
@@ -267,9 +272,7 @@ impl ControllerJournal {
     pub fn retirement_candidates(&self) -> Result<Vec<RetirementCandidate>, JournalError> {
         self.committed_world
             .ensure_ready(&self.journal.connection)?;
-        if config(&self.journal.connection)?.is_none() {
-            return Ok(Vec::new());
-        }
+        config(&self.journal.connection)?.ok_or(JournalError::UnsupportedStore)?;
         let tx = self.journal.connection.unchecked_transaction()?;
         let world = load_world(&tx)?;
         let mut values = Vec::new();
@@ -339,12 +342,11 @@ impl ControllerJournal {
             .ok_or(JournalError::CorruptStore)?;
         let now_ms = now_ms.max(state.time_floor());
         let before = state.retained_count();
-        if super::super::capacity::config(&tx)?.is_some()
-            && (before == 0
-                || !state
-                    .retained_results()
-                    .iter()
-                    .any(|(_, result)| result.expires_at <= now_ms))
+        if before == 0
+            || !state
+                .retained_results()
+                .iter()
+                .any(|(_, result)| result.expires_at <= now_ms)
         {
             return Ok(0);
         }

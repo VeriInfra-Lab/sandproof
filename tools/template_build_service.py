@@ -15,7 +15,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import sys
 import threading
 import time
@@ -75,9 +74,8 @@ def bounded_data_route_limits(settings):
 def host_uid_range(settings):
     """Check the configured UID span, without asserting network disjointness.
 
-    Legacy hosts reserve one UID per permanent VM identity. Bounded hosts
-    reserve one per physical position; max_vm_id is a legacy setting and must
-    never enlarge or truncate the physical span or permanent identity space.
+    The sole host mapping reserves one UID per reusable physical position.
+    The retired max_vm_id configuration is not a valid deployment input.
     """
     def integer(value, maximum, name, minimum=1):
         if type(value) is not int or not minimum <= value <= maximum:
@@ -85,36 +83,34 @@ def host_uid_range(settings):
         return value
 
     uid_base = integer(settings.get("uid_base"), 2**32 - 2, "UID base")
+    if "max_vm_id" in settings:
+        raise ValueError("retired max_vm_id configuration is unsupported")
     bounded = settings.get("bounded_host")
-    if bounded is None:
-        maximum_vm = integer(settings.get("max_vm_id"), 2**64 - 1, "legacy VM limit")
-        count = maximum_vm + 1
-    else:
-        if type(bounded) is not dict or set(bounded) - {"console_policy", "physical_storage"} != {"maintenance", "uid_base", "uplink_base"}:
-            raise ValueError("invalid bounded host config")
-        if "console_policy" in bounded and bounded["console_policy"] != "discard":
-            raise ValueError("invalid bounded console policy")
-        if settings.get("maintenance", {}).get("capacity") and bounded.get("console_policy") != "discard":
-            raise ValueError("full bounded capacity requires explicit discarded console output")
-        bounded_data_route_limits(settings)
-        if integer(bounded["uid_base"], 2**32 - 2, "bounded UID base") != uid_base:
-            raise ValueError("bounded host UID base differs from node UID base")
-        maintenance = bounded["maintenance"]
-        if (type(maintenance) is not dict
-                or set(maintenance) != {"max_retained_results", "max_host_slots", "windows"}):
-            raise ValueError("invalid bounded maintenance limits")
-        integer(maintenance["max_retained_results"], 2**64 - 1, "retained result limit")
-        count = integer(maintenance["max_host_slots"], 1_048_576, "host slot limit")
-        uplink_base = bounded["uplink_base"]
-        if type(uplink_base) is not int or not 0 <= uplink_base < 1_048_576:
-            raise ValueError("invalid bounded uplink base")
-        if uplink_base + count > 1_048_576:
-            raise ValueError("bounded uplink range exceeds address pool")
-        windows = maintenance["windows"]
-        if type(windows) is not dict or set(windows) != {"max_open_windows", "max_duration_ms"}:
-            raise ValueError("invalid bounded window limits")
-        for name, value in windows.items():
-            integer(value, 2**64 - 1, "window " + name)
+    if type(bounded) is not dict or set(bounded) - {"console_policy", "physical_storage"} != {"maintenance", "uid_base", "uplink_base"}:
+        raise ValueError("invalid bounded host config")
+    if "console_policy" in bounded and bounded["console_policy"] != "discard":
+        raise ValueError("invalid bounded console policy")
+    if settings.get("maintenance", {}).get("capacity") and bounded.get("console_policy") != "discard":
+        raise ValueError("full bounded capacity requires explicit discarded console output")
+    bounded_data_route_limits(settings)
+    if integer(bounded["uid_base"], 2**32 - 2, "bounded UID base") != uid_base:
+        raise ValueError("bounded host UID base differs from node UID base")
+    maintenance = bounded["maintenance"]
+    if (type(maintenance) is not dict
+            or set(maintenance) != {"max_retained_results", "max_host_slots", "windows"}):
+        raise ValueError("invalid bounded maintenance limits")
+    integer(maintenance["max_retained_results"], 2**64 - 1, "retained result limit")
+    count = integer(maintenance["max_host_slots"], 1_048_576, "host slot limit")
+    uplink_base = bounded["uplink_base"]
+    if type(uplink_base) is not int or not 0 <= uplink_base < 1_048_576:
+        raise ValueError("invalid bounded uplink base")
+    if uplink_base + count > 1_048_576:
+        raise ValueError("bounded uplink range exceeds address pool")
+    windows = maintenance["windows"]
+    if type(windows) is not dict or set(windows) != {"max_open_windows", "max_duration_ms"}:
+        raise ValueError("invalid bounded window limits")
+    for name, value in windows.items():
+        integer(value, 2**64 - 1, "window " + name)
     # Linux's all-ones UID is reserved, and a range must never wrap.
     if uid_base + count > 2**32 - 1:
         raise ValueError("host UID range exceeds usable UIDs")
@@ -125,12 +121,6 @@ def validate_pool_resource_ranges(runtime, builder):
     ranges = [host_uid_range(pool) for pool in (runtime, builder)]
     if max(value.start for value in ranges) < min(value.stop for value in ranges):
         raise ValueError("runtime/build UID pools overlap")
-    reserve_addresses = any(pool.get("bounded_host") is not None for pool in (runtime, builder))
-    if not reserve_addresses:
-        # Preserve wholly legacy deployments. Their per-VM address allocation
-        # is not evidence of cross-pool isolation; this check belongs to the
-        # explicitly enabled bounded-host mapping.
-        return
     uplinks = []
     for pool in (runtime, builder):
         enabled = pool.get("public_ipv4_enabled", False)
@@ -140,8 +130,8 @@ def validate_pool_resource_ranges(runtime, builder):
         # IPv4 admission is disabled: that flag does not prove older accepted
         # public sandboxes have drained.
         bounded = pool.get("bounded_host")
-        start = bounded["uplink_base"] if bounded else 0
-        count = bounded["maintenance"]["max_host_slots"] if bounded else pool["max_vm_id"] + 1
+        start = bounded["uplink_base"]
+        count = bounded["maintenance"]["max_host_slots"]
         uplinks.append(range(start, start + count))
     if len(uplinks) == 2 and max(value.start for value in uplinks) < min(value.stop for value in uplinks):
         raise ValueError("runtime/build public IPv4 uplink pools overlap")
@@ -186,7 +176,7 @@ def configuration(path, *, require_physical_lease=True):
     if type(require_physical_lease) is not bool:
         raise ValueError("explicit physical lease validation flag required")
     config = protected_json(path)
-    if set(config) - {"docker_hub_mirror", "bounded_builds", "migrate_legacy_builds"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers"}:
+    if set(config) - {"docker_hub_mirror"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers", "bounded_builds"}:
         raise ValueError("invalid build service config")
     if "docker_hub_mirror" in config:
         mirror_registry(config["docker_hub_mirror"])
@@ -217,19 +207,16 @@ def configuration(path, *, require_physical_lease=True):
     # candidate copies are actually allocated; reject cross-filesystem setups.
     if len({p.stat().st_dev for p in (root, registry, Path(runtime["chroot_base"]), Path(builder["chroot_base"]))}) != 1:
         raise ValueError("shared budget filesystem required")
-    if "bounded_builds" in config:
-        bounded_configuration(config["bounded_builds"])
-        if config["bounded_builds"]["helper"]["owner_uid"] != os.geteuid():
-            raise ValueError("window helper owner must match trusted supervisor UID")
-        private_windows = builder.get("build_retry_windows")
-        if (type(private_windows) is not dict or set(private_windows) != {"window_duration_ms", "max_anchors"}
-                or not builder.get("bounded_host") or not builder.get("maintenance")
-                or any(type(v) is not int or v <= 0 for v in private_windows.values())
-                or private_windows["window_duration_ms"] > builder["bounded_host"]["maintenance"]["windows"]["max_duration_ms"]
-                or private_windows["max_anchors"] > 1048576):
-            raise ValueError("bounded builds require explicit bounded private retry windows")
-    if "migrate_legacy_builds" in config and type(config["migrate_legacy_builds"]) is not bool:
-        raise ValueError("invalid explicit build migration")
+    bounded_configuration(config["bounded_builds"])
+    if config["bounded_builds"]["helper"]["owner_uid"] != os.geteuid():
+        raise ValueError("window helper owner must match trusted supervisor UID")
+    private_windows = builder.get("build_retry_windows")
+    if (type(private_windows) is not dict or set(private_windows) != {"window_duration_ms", "max_anchors"}
+            or not builder.get("maintenance")
+            or any(type(v) is not int or v <= 0 for v in private_windows.values())
+            or private_windows["window_duration_ms"] > builder["bounded_host"]["maintenance"]["windows"]["max_duration_ms"]
+            or private_windows["max_anchors"] > 1048576):
+        raise ValueError("bounded builds require explicit bounded private retry windows")
     limits = config["limits"]
     required = {"max_cpu", "max_memory_mib", "max_disk_mib", "timeout_seconds", "max_jobs", "max_jobs_per_tenant",
                 "max_pending", "max_pending_per_tenant", "workspace_bytes", "workspace_bytes_per_tenant",
@@ -276,21 +263,21 @@ def configuration(path, *, require_physical_lease=True):
     limits["runtime_cleanup_reserve_bytes"] = runtime["cleanup_reserve_bytes"] + builder["cleanup_reserve_bytes"]
     limits["artifact_margin_bytes"] = Path(runtime["kernel"]).stat().st_size + limits["max_log_bytes"] + 64 * MIB
     physical = validate_physical_configuration(runtime, builder, config)
-    if physical is not None:
-        profile, peak, inodes = physical
-        # Only Rust may activate a fresh profile. Static acceptance preflight
-        # must not open/lock/fsync an unactivated coordination file; a later
-        # default validation and BuildStore startup still require its lease.
-        if require_physical_lease:
-            lease = PhysicalProfileLease(profile)
-            lease.close()
-        config["physical_storage_profile"] = profile
-        limits["physical_storage_peak_bytes"] = peak
-        limits["physical_storage_inodes"] = inodes
+    if physical is None:
+        raise ValueError("complete bounded capacity and physical profile required")
+    profile, peak, inodes = physical
+    # Only Rust may activate a fresh profile. Static acceptance preflight
+    # must not open/lock/fsync an unactivated coordination file; a later
+    # default validation and BuildStore startup still require its lease.
+    if require_physical_lease:
+        lease = PhysicalProfileLease(profile)
+        lease.close()
+    config["physical_storage_profile"] = profile
+    limits["physical_storage_peak_bytes"] = peak
+    limits["physical_storage_inodes"] = inodes
     config["runtime"], config["builder"] = runtime, builder
-    # Migration authorization is a one-time operator flag, never a changing pool binding.
     config["binding"] = hashlib.sha256(json.dumps({k: v for k, v in config.items()
-        if k not in {"migrate_legacy_builds", "bounded_builds"}}, sort_keys=True).encode()).hexdigest()
+        if k != "bounded_builds"}, sort_keys=True).encode()).hexdigest()
     return config
 
 
@@ -330,42 +317,21 @@ class Backend:
             if timeout <= 0:
                 raise BuildError(408, "BuildDeadlineExceeded")
         path = "/sandproof/internal-build-vms/" + row["id"]
-        if row.get("private_window"):
-            window = json.loads(row["private_window"])
-            if create:
-                body["requestWindow"] = window
-            else:
-                path += "?" + urllib.parse.urlencode({"requestWindow": window})
+        if not row.get("private_window"):
+            raise BuildError(409, "PrivateRequestWindowRequired")
+        window = json.loads(row["private_window"])
+        if create:
+            body["requestWindow"] = window
+        else:
+            path += "?" + urllib.parse.urlencode({"requestWindow": window})
         return self.request("builder", "POST" if create else "GET", path, body, timeout=timeout)
 
-    def cleanup(self, row, store=None):
-        if store is not None and store.bounded:
-            return self.cleanup_bounded(store, row)
-        try:
-            vm = self.vm(row)
-        except BuildError as error:
-            # No durable admission is conclusive only because the private
-            # API commits its build anchor before any host I/O.
-            if error.code == 404:
-                return True
-            raise
-        if vm["cleanupComplete"]:
-            return True
-        try:
-            self.request("builder", "DELETE", "/sandboxes/" + vm["sandboxID"])
-        except BuildError:
-            pass  # A kill timeout is not evidence of reclaim.
-        return self.vm(row)["cleanupComplete"]
-
-    def cleanup_bounded(self, store, row):
+    def cleanup(self, row, store):
         row = store.get(row["id"])
         if row["private_ack"]:
             return True
         if not row["private_window"]:
             # Public durable ordering proves no VM POST was dispatched.
-            # Migrated rows have no such proof and stay pinned.
-            if not row["window_namespace"]:
-                return False
             store.private_checkpoint(row["id"], builder_settled={"requestWindow": None, "sandboxID": None}, private_ack=1)
             return True
         window = json.loads(row["private_window"])
@@ -402,7 +368,7 @@ class Backend:
         from e2b import Sandbox, CommandExitException, FileNotFoundException, TimeoutException
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
-        if store.bounded and not row.get("private_window"):
+        if not row.get("private_window"):
             opened = self.request("builder", "POST", "/sandproof/internal-build-windows", {})
             if (type(opened) is not dict or not isinstance(opened.get("requestWindow"), str)
                     or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", opened["requestWindow"])
@@ -576,7 +542,7 @@ class Backend:
             candidate = stage(Path(config["template_registry"]["root"]), Path(config["kernel"]),
                 store.directory(row["id"]) / "candidate.ext4", status, row["owner"],
                 resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + HOST_MEMORY_OVERHEAD_MIB,
-                candidate_id=row["id"], **({"ownership": {"id": row["id"], "nonce": row["fs_nonce"]}} if store.bounded else {}))
+                candidate_id=row["id"], ownership={"id": row["id"], "nonce": row["fs_nonce"]})
         except ValueError:
             raise BuildError(400, "CandidateStagingRejected") from None
         remaining = row["deadline"] - store.clock()
@@ -612,28 +578,21 @@ class Backend:
             if error.code != 404:
                 return False
         inbox = Path(self.config["runtime"]["template_registry"]["root"]) / "inbox"
-        if store.bounded:
-            manifest = json.loads(row["staging_cleanup"]) if row["staging_cleanup"] else {}
-            if not row["staging_cleanup"]:
-                for name in (row["id"], ".stage-" + row["id"]):
-                    path = inbox / name
-                    if path.exists() or path.is_symlink():
-                        manifest[name] = stage_inventory(path, {"id": row["id"], "nonce": row["fs_nonce"]},
-                            initialize=name == ".stage-" + row["id"])
-                store.staging_cleanup_checkpoint(row["id"], manifest)
-            store.fault("after_staging_delete_intent")
-            for name, exact in manifest.items():
-                if name not in (row["id"], ".stage-" + row["id"]):
-                    raise BuildError(503, "UnknownStagingCleanup")
-                stage_delete(inbox / name, exact)
-                store.fault("after_staging_delete_fsync")
-            store.staging_cleanup_checkpoint(row["id"], None)
-            return True
-        for name in (row["id"], ".stage-" + row["id"]):
-            path = inbox / name
-            if path.exists():
-                private_directory(path)
-                shutil.rmtree(path)  # exact supervisor-generated legacy candidate identity
+        manifest = json.loads(row["staging_cleanup"]) if row["staging_cleanup"] else {}
+        if not row["staging_cleanup"]:
+            for name in (row["id"], ".stage-" + row["id"]):
+                path = inbox / name
+                if path.exists() or path.is_symlink():
+                    manifest[name] = stage_inventory(path, {"id": row["id"], "nonce": row["fs_nonce"]},
+                        initialize=name == ".stage-" + row["id"])
+            store.staging_cleanup_checkpoint(row["id"], manifest)
+        store.fault("after_staging_delete_intent")
+        for name, exact in manifest.items():
+            if name not in (row["id"], ".stage-" + row["id"]):
+                raise BuildError(503, "UnknownStagingCleanup")
+            stage_delete(inbox / name, exact)
+            store.fault("after_staging_delete_fsync")
+        store.staging_cleanup_checkpoint(row["id"], None)
         return True
 
 
@@ -662,10 +621,7 @@ class Supervisor:
             # entry. Keep its original reservation until operator reconciliation.
             return
         try:
-            if isinstance(self.backend, Backend) and self.store.bounded:
-                cleaned = self.backend.cleanup(row, self.store)
-            else:
-                cleaned = self.backend.cleanup(row)
+            cleaned = self.backend.cleanup(row, self.store)
             if not cleaned:
                 self.store.change(job, "CleanupUnknown", failure=row["failure"])
                 return
@@ -706,8 +662,7 @@ class Supervisor:
                     if job in self.store.uploads:
                         continue
                     self.remove_inputs(job)
-                    if self.store.bounded and row["window_namespace"]:
-                        self.store.private_checkpoint(job, builder_settled={"requestWindow": None, "sandboxID": None}, private_ack=1)
+                    self.store.private_checkpoint(job, builder_settled={"requestWindow": None, "sandboxID": None}, private_ack=1)
                     self.store.change(job, "Failed", failure="BuildDeadlineExceeded", release=True)
                 continue
             if state == "Queued":
@@ -883,7 +838,7 @@ def main():
     os.umask(0o077)
     config = configuration(args.config)
     store = BuildStore(config["root"], config["limits"], binding=config["binding"],
-        bounded=config.get("bounded_builds"), migrate_legacy=config.get("migrate_legacy_builds", False),
+        bounded=config["bounded_builds"],
         physical_profile=config.get("physical_storage_profile"))
     supervisor = Supervisor(store, Backend(config))
     supervisor.recover()

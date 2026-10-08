@@ -28,62 +28,7 @@ pub(super) fn load_world(connection: &Connection) -> Result<core::World, Journal
 }
 
 fn load_world_snapshot(connection: &Connection) -> Result<core::World, JournalError> {
-    if checkpoint::config(connection)?.is_some() {
-        return checkpoint::load_world(connection);
-    }
-    let mut statement = connection
-        .prepare("SELECT sequence, input_json FROM controller_inputs ORDER BY sequence")?;
-    let rows = statement.query_map([], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
-    })?;
-    let mut world = core::initial_world();
-    let mut expected = 1_i64;
-    for row in rows {
-        let (sequence, json) = row?;
-        let entry: StoredInput = serde_json::from_slice(&json)?;
-        if sequence != expected || entry.version != 1 {
-            return Err(JournalError::CorruptStore);
-        }
-        expected = expected.checked_add(1).ok_or(JournalError::CorruptStore)?;
-        world = core::handle_controller(&world, entry.input)
-            .map_err(|_| JournalError::CorruptStore)?
-            .next;
-    }
-    Ok(world)
-}
-
-// Opening validation binds SQL-only predecessor context to the exact accepted
-// Bind inputs, rather than trusting a merely plausible smaller VM number.
-pub(super) fn replayed_host_contexts(
-    connection: &Connection,
-) -> Result<Vec<super::HostSlotContext>, JournalError> {
-    if checkpoint::config(connection)?.is_some() {
-        return checkpoint::replayed_contexts(connection);
-    }
-    let mut statement =
-        connection.prepare("SELECT input_json FROM controller_inputs ORDER BY sequence")?;
-    let mut contexts = std::collections::BTreeMap::new();
-    for bytes in statement.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
-        let entry: StoredInput = serde_json::from_slice(&bytes?)?;
-        if let core::ControllerInput::Maintenance(core::maintenance::MaintenanceInput::Slot(
-            core::maintenance::slots::SlotInput::Bind {
-                position,
-                expected_previous,
-                binding,
-            },
-        )) = entry.input
-        {
-            contexts.insert(
-                position.0,
-                super::HostSlotContext {
-                    position,
-                    expected_previous,
-                    binding,
-                },
-            );
-        }
-    }
-    Ok(contexts.into_values().collect())
+    checkpoint::load_world(connection)
 }
 
 pub(super) fn apply(

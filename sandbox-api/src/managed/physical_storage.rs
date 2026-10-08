@@ -7,20 +7,17 @@ use sandproof_controller_service::{
     template_registry::RegistryConfig,
 };
 
-fn full_profile(journal: &ControllerJournal) -> Result<Option<PhysicalStorageProfile>, PortError> {
-    let full = journal
+fn full_profile(journal: &ControllerJournal) -> Result<PhysicalStorageProfile, PortError> {
+    journal
         .maintenance_config()
         .map_err(map_journal)?
         .and_then(|value| value.capacity)
-        .is_some();
-    let profile = journal
+        .ok_or(PortError::Busy)?;
+    journal
         .bounded_host_config()
         .map_err(map_journal)?
-        .and_then(|value| value.physical_storage);
-    if full != profile.is_some() {
-        return Err(PortError::Busy);
-    }
-    Ok(profile)
+        .and_then(|value| value.physical_storage)
+        .ok_or(PortError::Busy)
 }
 
 pub(super) fn validate_registry_configuration(
@@ -28,24 +25,22 @@ pub(super) fn validate_registry_configuration(
     internal: bool,
     config: &RegistryConfig,
 ) -> Result<(), PortError> {
-    if let Some(profile) = full_profile(journal)? {
-        if internal {
-            return Err(PortError::Invalid);
-        }
-        profile
-            .validate_registry(journal.deployment_namespace(), config)
-            .map_err(map_journal)?;
+    let profile = full_profile(journal)?;
+    if internal {
+        return Err(PortError::Invalid);
     }
+    profile
+        .validate_registry(journal.deployment_namespace(), config)
+        .map_err(map_journal)?;
     Ok(())
 }
 
 pub(super) fn validate_builder_configuration(journal: &ControllerJournal) -> Result<(), PortError> {
-    if let Some(profile) = full_profile(journal)?
-        && profile
-            .pool(journal.deployment_namespace())
-            .map_err(map_journal)?
-            .role
-            != PoolRole::Builder
+    if full_profile(journal)?
+        .pool(journal.deployment_namespace())
+        .map_err(map_journal)?
+        .role
+        != PoolRole::Builder
     {
         return Err(PortError::Invalid);
     }
@@ -54,11 +49,9 @@ pub(super) fn validate_builder_configuration(journal: &ControllerJournal) -> Res
 
 impl<H: HostAdapter> ManagedPort<H> {
     pub(super) fn validate_publication_admission(&self, inner: &Inner<H>) -> Result<(), PortError> {
-        if full_profile(&inner.journal)?.is_some() {
-            let required = self.physical_admission_bytes(inner, &CreateOptions::default(), 0)?;
-            if inner.host.available_disk_bytes()? < required {
-                return Err(PortError::QuotaExceeded);
-            }
+        let required = self.physical_admission_bytes(inner, &CreateOptions::default(), 0)?;
+        if inner.host.available_disk_bytes()? < required {
+            return Err(PortError::QuotaExceeded);
         }
         Ok(())
     }
@@ -77,11 +70,6 @@ impl<H: HostAdapter> ManagedPort<H> {
         let full = maintenance
             .as_ref()
             .and_then(|value| value.capacity.as_ref());
-        if full.is_none() && profile.is_none() {
-            return disk_bytes
-                .checked_add(self.config.limits.cleanup_reserve_bytes)
-                .ok_or(PortError::QuotaExceeded);
-        }
         let capacity = full.ok_or(PortError::Busy)?;
         let profile = profile.ok_or(PortError::Busy)?;
         let pool = profile

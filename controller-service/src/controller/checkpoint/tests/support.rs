@@ -1,7 +1,6 @@
 use super::*;
 use crate::{AdmissionLimits, NeverCrash, finish_admitted_create_v1, kill_v1};
 use crate::{HostEvidence, WorkerTransportError};
-use sandbox_controller_core::maintenance::{MaintenanceLimits, windows::WindowLimits};
 use sandproof_protocol::ResourceEvidence;
 use sandproof_protocol::ResourceRef;
 use sandproof_protocol::{WorkAction, WorkOutcome, WorkReceipt};
@@ -9,20 +8,9 @@ use serde::Deserialize;
 
 pub(super) const NS: &str = "0123456789abcdef";
 pub(super) fn host_config(slots: u64) -> BoundedHostConfig {
-    BoundedHostConfig {
-        physical_storage: None,
-        console_policy: None,
-        uid_base: 1000,
-        uplink_base: 8,
-        max_data_routes_per_slot: 4,
-        max_data_routes_global: 8,
-        data_route_control_reserve: 1,
-        maintenance: MaintenanceLimits {
-            max_host_slots: slots,
-            max_retained_results: 16,
-            windows: WindowLimits::new(2, 1000).unwrap(),
-        },
-    }
+    let mut host = crate::controller::tests_support::host(slots);
+    host.maintenance.max_retained_results = 16;
+    host
 }
 pub(super) fn request(id: u64) -> core::CreateRequest {
     core::CreateRequest {
@@ -39,12 +27,11 @@ pub(super) fn request(id: u64) -> core::CreateRequest {
 }
 pub(super) fn limits() -> AdmissionLimits {
     AdmissionLimits {
-        max_vm_id: 1,
         max_active_global: 4,
         max_active_per_tenant: 1,
-        max_disk_bytes_global: 100_000,
+        max_disk_bytes_global: crate::controller::tests_support::fixture::CLEANUP_BYTES + 100_000,
         max_disk_bytes_per_tenant: 10_000,
-        cleanup_reserve_bytes: 1000,
+        cleanup_reserve_bytes: crate::controller::tests_support::fixture::CLEANUP_BYTES,
         max_timeout_secs: 600,
         max_lifetime_secs: 600,
         startup_timeout_secs: 60,
