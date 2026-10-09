@@ -1,14 +1,14 @@
 //! Lifecycle commands and queries, separate from template publication.
 use super::{
-    AdmissionError, ApplicationError, ConnectCommand, ControllerApplication, CreateAdmission,
-    CreateCommand, CreateOptions, ExpiryReport, HostAdapter, Inner, InstanceDetail, InstanceInfo,
-    InstancePage, JournalError, ListSelection, NeverCrash, Session, core, data_credentials,
-    finish_accepted_kill_v1, finish_admitted_create_v1_timed, map_admission, map_journal,
-    next_operation, next_sandbox, recover_locked, release_reclaimed_slots, sandbox_id, tenant_id,
-    token,
+    AdmissionError, ApplicationError, ConnectCommand, ControllerApplication, ControllerHost,
+    CreateAdmission, CreateCommand, CreateOptions, ExpiryReport, Inner, InstanceDetail,
+    InstanceInfo, InstancePage, JournalError, ListSelection, NeverCrash, Session, core,
+    data_credentials, finish_accepted_kill_v1, finish_admitted_create_v1_timed, map_admission,
+    map_journal, next_operation, next_sandbox, recover_locked, release_reclaimed_slots, sandbox_id,
+    tenant_id, token,
 };
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     /// # Errors
     /// Shared storage, replay or commit failures stop expiry processing.
     pub fn expire_due(&self) -> Result<usize, ApplicationError> {
@@ -167,7 +167,7 @@ impl<H: HostAdapter> ControllerApplication<H> {
     }
 }
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     // Shared production kill path for validation and user destruction.
     pub(super) fn kill_locked(
         &self,
@@ -350,7 +350,7 @@ impl<H: HostAdapter> ControllerApplication<H> {
     }
 }
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     /// # Errors
     /// Invalid/unauthorized input is refused; uncertain accepted work remains unknown.
     pub fn create(

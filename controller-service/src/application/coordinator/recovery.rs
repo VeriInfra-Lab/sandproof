@@ -1,7 +1,8 @@
 //! Exact identity-bound recovery; uncertain effects are not redispatched.
+use super::super::{HostSlots, LaunchConfiguration, WorkRecovery};
 use super::{
-    ApplicationError, BTreeSet, Clock, ControllerApplication, ControllerJournal, DataLease,
-    HostAdapter, Inner, JournalError, NeverCrash, RecoveryReport, WorkAction, WorkReceipt,
+    ApplicationError, BTreeSet, Clock, ControllerApplication, ControllerHost, ControllerJournal,
+    DataLease, Inner, JournalError, NeverCrash, RecoveryReport, WorkAction, WorkReceipt,
     WorkerTransportError, core, data_credentials, finish_accepted_kill_v1,
     finish_admitted_create_v1_timed, finish_compensating_create_v1, map_admission, map_journal,
     same_secret, token,
@@ -33,7 +34,7 @@ fn matches_current_reclaim(
     matches.map_err(map_journal)
 }
 
-fn reclaim_uncertain_actions<H: HostAdapter>(
+fn reclaim_uncertain_actions<H: WorkRecovery>(
     journal: &ControllerJournal,
     host: &mut H,
     world: &core::World,
@@ -153,7 +154,7 @@ pub(super) fn reclaimed_sandboxes(world: &core::World) -> BTreeSet<core::Sandbox
     reclaimed
 }
 
-fn observe_recovery_action<H: HostAdapter>(
+fn observe_recovery_action<H: WorkRecovery>(
     host: &H,
     world: &core::World,
     blocked: &BTreeSet<core::SandboxId>,
@@ -191,7 +192,7 @@ fn observe_recovery_action<H: HostAdapter>(
     Some(receipt)
 }
 
-fn blocked_launch_configs<H: HostAdapter>(
+fn blocked_launch_configs<H: LaunchConfiguration>(
     journal: &mut ControllerJournal,
     host: &mut H,
     initial: &core::World,
@@ -317,7 +318,7 @@ pub fn can_install_host_slot_binding(world: &core::World, sandbox: core::Sandbox
     })
 }
 
-pub(super) fn bind_recovery_slots<H: HostAdapter>(
+pub(super) fn bind_recovery_slots<H: HostSlots>(
     journal: &ControllerJournal,
     host: &mut H,
     world: &core::World,
@@ -340,7 +341,7 @@ pub(super) fn bind_recovery_slots<H: HostAdapter>(
 
 // ControllerApplication's mutex keeps admission and host effects serialized throughout
 // durable release. Route pins drop without taking that mutex; never wait here.
-pub(super) fn release_reclaimed_slots<H: HostAdapter>(
+pub(super) fn release_reclaimed_slots<H: ControllerHost>(
     inner: &mut Inner<H>,
 ) -> Result<usize, ApplicationError> {
     let mut pending = 0;
@@ -425,7 +426,7 @@ pub(super) fn release_reclaimed_slots<H: HostAdapter>(
 // Recovery is serialized by ControllerApplication's mutex. The optional sandbox filter
 // lets a repeated kill observe and finish its *existing* operation without
 // changing unrelated instances. It never accepts a second lifecycle input.
-pub(super) fn recover_locked<H: HostAdapter>(
+pub(super) fn recover_locked<H: ControllerHost>(
     inner: &mut Inner<H>,
     selected: Option<core::SandboxId>,
     clock: &dyn Clock,
@@ -538,7 +539,7 @@ pub(super) fn recover_locked<H: HostAdapter>(
     Ok(report)
 }
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     /// Call this after opening the durable journal and periodically while the
     /// service runs. Repeated calls never re-dispatch an uncertain action.
     /// # Errors

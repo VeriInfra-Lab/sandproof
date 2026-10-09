@@ -1,6 +1,6 @@
 //! A durable credential index locates one sandbox; it grants no authority.
 //! Host reads happen only after that trusted lookup, never across the fleet.
-use super::{ApplicationError, HostAdapter, Inner, map_journal, same_secret};
+use super::{ApplicationError, ControllerHost, Inner, map_journal, same_secret};
 use crate::{ControllerJournal, NeverCrash};
 use sandbox_controller_core as core;
 use sha2::{Digest, Sha256};
@@ -36,7 +36,7 @@ pub(super) fn register_original(
         .map_err(|_| ApplicationError::OutcomeUnknown)
 }
 
-pub(super) fn verify_target<H: HostAdapter>(
+pub(super) fn verify_target<H: ControllerHost>(
     inner: &Inner<H>,
     sandbox: core::SandboxId,
     generation: core::Generation,

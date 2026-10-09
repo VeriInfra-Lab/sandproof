@@ -5,14 +5,16 @@ use crate::{
     SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession, TemplatePage,
     TemplateView,
 };
-use sandproof_controller_service::application::{self as app, ControllerApplication, HostAdapter};
+use sandproof_controller_service::application::{
+    self as app, ControllerApplication, ControllerHost,
+};
 use std::sync::Arc;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-pub struct ManagedPort<H: HostAdapter> {
+pub struct ManagedPort<H: ControllerHost> {
     application: Arc<ControllerApplication<H>>,
 }
-impl<H: HostAdapter> ManagedPort<H> {
+impl<H: ControllerHost> ManagedPort<H> {
     #[must_use]
     pub fn new(application: Arc<ControllerApplication<H>>) -> Self {
         Self { application }
@@ -107,7 +109,7 @@ impl From<app::BuildStatus> for BuildVmView {
         }
     }
 }
-impl<H: HostAdapter> ControllerPort for ManagedPort<H> {
+impl<H: ControllerHost> ControllerPort for ManagedPort<H> {
     fn build_vm(
         &self,
         tenant: &str,

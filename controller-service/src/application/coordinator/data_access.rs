@@ -1,11 +1,11 @@
 //! Authority and route registration share the management lock.
 use super::{
-    ApplicationError, ControllerApplication, DataAccessPort, DataAuthorization, DataKind,
-    DataLease, DataPermit, DataTarget, HostAdapter, Inner, RelayReaper, TrackedRelayChild, core,
+    ApplicationError, ControllerApplication, ControllerHost, DataAccessPort, DataAuthorization,
+    DataKind, DataLease, DataPermit, DataTarget, Inner, RelayReaper, TrackedRelayChild, core,
     data_credentials, map_admission, map_journal, same_secret, watch,
 };
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     /// # Errors
     /// Rejects expired, revoked, unknown or non-running credentials.
     pub fn authorize_data(
@@ -189,7 +189,7 @@ impl DataAuthorization for DataPermit {
     }
 }
 
-impl<H: HostAdapter> DataAccessPort for ControllerApplication<H> {
+impl<H: ControllerHost> DataAccessPort for ControllerApplication<H> {
     type Permit = DataPermit;
     fn data_permit(&self, token: &str, kind: DataKind) -> Result<DataPermit, ApplicationError> {
         Self::data_permit(self, token, kind)

@@ -1,7 +1,7 @@
 //! The HTTP executable is not the only admission entry point. Full-capacity
 //! library users must supply a host adapter that validates the shared profile.
 use super::{
-    ApplicationError, ControllerApplication, CreateOptions, HostAdapter, Inner, map_journal,
+    ApplicationError, ControllerApplication, ControllerHost, CreateOptions, Inner, map_journal,
 };
 use crate::{
     ControllerJournal,
@@ -51,7 +51,7 @@ pub(super) fn validate_builder_configuration(
     Ok(())
 }
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     pub(super) fn validate_publication_admission(
         &self,
         inner: &Inner<H>,

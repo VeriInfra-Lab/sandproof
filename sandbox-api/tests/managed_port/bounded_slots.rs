@@ -89,8 +89,81 @@ impl BoundedHost {
     }
 }
 
-impl HostAdapter for BoundedHost {
+impl WorkEvidence for BoundedHost {
     type Evidence = Evidence;
+}
+impl WorkExecution for BoundedHost {
+    fn execute(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        let mut state = self.0.lock().unwrap();
+        if !Self::eligible(&state, action) {
+            return Err(WorkerTransportError::ConnectionLost);
+        }
+        state.actions.push(action.clone());
+        if state.unknown_cleanup
+            && matches!(action.command.command(), core::Command::CleanupVm { .. })
+        {
+            return Ok(unknown_receipt(action));
+        }
+        Ok(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(Evidence {
+                resource: action.identity.resource.clone(),
+                command: action.command.command().clone(),
+            }),
+        })
+    }
+}
+
+impl WorkRecovery for BoundedHost {
+    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
+        if !matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ) || !self.0.lock().unwrap().actions.contains(action)
+        {
+            return None;
+        }
+        Some(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(Evidence {
+                resource: action.identity.resource.clone(),
+                command: action.command.command().clone(),
+            }),
+        })
+    }
+
+    fn reclaim_incomplete_prepare(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    fn reclaim_incomplete_terminal_fence(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ));
+        self.execute(action)
+            .map(|_| ())
+            .map_err(|_| PortError::Busy)
+    }
+
+    fn reclaim_incomplete_cleanup(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+}
+
+impl HostSlots for BoundedHost {
     fn bind_host_slot(
         &mut self,
         context: &HostSlotContext,
@@ -124,6 +197,7 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+
     fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         let (current, phase) = state.row.ok_or(PortError::Busy)?;
@@ -158,6 +232,9 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+}
+
+impl DataRelay for BoundedHost {
     fn acquire_data_gate(
         &self,
         sandbox: core::SandboxId,
@@ -211,7 +288,9 @@ impl HostAdapter for BoundedHost {
         }
         Ok(state.gate_observation == Some(true))
     }
+}
 
+impl HostCapacity for BoundedHost {
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
         Ok(self
             .0
@@ -220,6 +299,7 @@ impl HostAdapter for BoundedHost {
             .physical_free
             .unwrap_or(16 * 1024 * 1024 * 1024))
     }
+
     fn validate_physical_storage(
         &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
@@ -238,6 +318,9 @@ impl HostAdapter for BoundedHost {
             Err(PortError::Busy)
         }
     }
+}
+
+impl LaunchConfiguration for BoundedHost {
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
@@ -250,9 +333,11 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
         Ok(self.0.lock().unwrap().secrets.contains_key(&sandbox.0))
     }
+
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
         self.0
             .lock()
@@ -262,69 +347,9 @@ impl HostAdapter for BoundedHost {
             .cloned()
             .ok_or(PortError::Busy)
     }
-    fn execute(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
-        let mut state = self.0.lock().unwrap();
-        if !Self::eligible(&state, action) {
-            return Err(WorkerTransportError::ConnectionLost);
-        }
-        state.actions.push(action.clone());
-        if state.unknown_cleanup
-            && matches!(action.command.command(), core::Command::CleanupVm { .. })
-        {
-            return Ok(unknown_receipt(action));
-        }
-        Ok(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome: WorkOutcome::ObservedSuccess(Evidence {
-                resource: action.identity.resource.clone(),
-                command: action.command.command().clone(),
-            }),
-        })
-    }
-    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
-        if !matches!(
-            action.command.command(),
-            core::Command::InstallFence { terminal: true, .. }
-        ) || !self.0.lock().unwrap().actions.contains(action)
-        {
-            return None;
-        }
-        Some(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome: WorkOutcome::ObservedSuccess(Evidence {
-                resource: action.identity.resource.clone(),
-                command: action.command.command().clone(),
-            }),
-        })
-    }
-    fn reclaim_incomplete_terminal_fence(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        assert!(matches!(
-            action.command.command(),
-            core::Command::InstallFence { terminal: true, .. }
-        ));
-        self.execute(action)
-            .map(|_| ())
-            .map_err(|_| PortError::Busy)
-    }
-    fn reclaim_incomplete_prepare(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-    fn reclaim_incomplete_cleanup(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
 }
+
+impl TemplateArtifacts for BoundedHost {}
 
 fn open(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
     {
