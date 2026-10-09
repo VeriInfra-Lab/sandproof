@@ -16,6 +16,10 @@ impl OwnedChild {
         Self(Some(child))
     }
     /// Explicitly transfer stop/reap responsibility to the caller.
+    ///
+    /// # Panics
+    /// Panics if the internal child is absent. Consuming this owner prevents
+    /// a second transfer through the public API.
     #[must_use]
     pub fn into_child(mut self) -> Child {
         self.0.take().expect("owned child")
