@@ -1,8 +1,8 @@
 //! Filesystem, journal and physical-profile checks before host activation.
 
 use super::config::{ConfigFile, DeploymentContract, managed_config};
-use sandproof_api::managed::ManagedConfig;
 use sandproof_controller_service::ControllerJournal;
+use sandproof_controller_service::application::ApplicationConfig;
 use sandproof_node::NodeConfig;
 use std::{
     error::Error,
@@ -14,7 +14,7 @@ use std::{
 pub(super) struct ValidatedDeployment {
     pub(super) settings: ConfigFile,
     pub(super) contract: DeploymentContract,
-    pub(super) managed: ManagedConfig,
+    pub(super) managed: ApplicationConfig,
 }
 
 impl ValidatedDeployment {

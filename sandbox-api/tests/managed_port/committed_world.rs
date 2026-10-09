@@ -106,14 +106,19 @@ fn assert_uncertain_revocation(failure: CommitFailure) {
     let stops = Arc::new(AtomicUsize::new(0));
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let committed = journal.world().unwrap();
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         restore_host(&sessions, Arc::clone(&stops)),
         config(),
     );
     let first = &sessions[0];
-    let routes = DATA_KINDS.map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let routes = DATA_KINDS.map(|kind| {
+        port.application()
+            .data_permit(&first.envd_access_token, kind)
+            .unwrap()
+    });
     let other = port
+        .application()
         .data_permit(&sessions[1].envd_access_token, DataKind::Exec)
         .unwrap();
     let connection = database(&directory);
@@ -141,7 +146,11 @@ fn assert_uncertain_revocation(failure: CommitFailure) {
     // COMMIT failed and SQLite rolled back. This same journal must reload its
     // durable Running state rather than expose the uncommitted Kill candidate.
     // Newly authorized routes get a new channel, never revive the old channel.
-    let fresh = DATA_KINDS.map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let fresh = DATA_KINDS.map(|kind| {
+        port.application()
+            .data_permit(&first.envd_access_token, kind)
+            .unwrap()
+    });
     for (new, old) in fresh.iter().zip(&routes) {
         assert_eq!(new.target, old.target);
         assert!(!*new.revocation.borrow());
@@ -172,14 +181,19 @@ fn uncertain_expiry_retains_sql_denial_and_never_dispatches_an_uncommitted_stop(
     let stops = Arc::new(AtomicUsize::new(0));
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     let committed = journal.world().unwrap();
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         restore_host(&sessions, Arc::clone(&stops)),
         config(),
     );
     let first = &sessions[0];
-    let routes = DATA_KINDS.map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let routes = DATA_KINDS.map(|kind| {
+        port.application()
+            .data_permit(&first.envd_access_token, kind)
+            .unwrap()
+    });
     let other = port
+        .application()
         .data_permit(&sessions[1].envd_access_token, DataKind::Exec)
         .unwrap();
     // The API has no injectable clock. Expire immediately, then prove a failed
@@ -189,7 +203,10 @@ fn uncertain_expiry_retains_sql_denial_and_never_dispatches_an_uncommitted_stop(
     let tail = input_tail(&connection);
     let due = deadline(&connection, &first.sandbox_id);
     for _ in 0..2 {
-        assert_eq!(port.expire_due_report(), Err(PortError::OutcomeUnknown));
+        assert_eq!(
+            port.application().expire_due_report(),
+            Err(PortError::OutcomeUnknown)
+        );
         assert_eq!(stops.load(Ordering::SeqCst), 0);
         assert_eq!(input_tail(&connection), tail);
         assert_eq!(deadline(&connection, &first.sandbox_id), due);
@@ -197,7 +214,8 @@ fn uncertain_expiry_retains_sql_denial_and_never_dispatches_an_uncommitted_stop(
         assert!(!*other.revocation.borrow());
         for kind in DATA_KINDS {
             assert_eq!(
-                port.data_permit(&first.envd_access_token, kind)
+                port.application()
+                    .data_permit(&first.envd_access_token, kind)
                     .unwrap_err(),
                 PortError::NotFound
             );
@@ -219,8 +237,13 @@ fn committed_sql_only_expiry_denies_new_permits_with_unchanged_input_history() {
     let (directory, port) = setup();
     let first = port.create("1", request()).unwrap();
     let other = port.create("2", request()).unwrap();
-    let routes = DATA_KINDS.map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let routes = DATA_KINDS.map(|kind| {
+        port.application()
+            .data_permit(&first.envd_access_token, kind)
+            .unwrap()
+    });
     let other_route = port
+        .application()
         .data_permit(&other.envd_access_token, DataKind::Exec)
         .unwrap();
     let connection = database(&directory);
@@ -233,13 +256,14 @@ fn committed_sql_only_expiry_denies_new_permits_with_unchanged_input_history() {
     assert!(!*other_route.revocation.borrow());
     for kind in DATA_KINDS {
         assert_eq!(
-            port.data_permit(&first.envd_access_token, kind)
+            port.application()
+                .data_permit(&first.envd_access_token, kind)
                 .unwrap_err(),
             PortError::NotFound
         );
     }
     assert_eq!(port.get("1", &first.sandbox_id), Err(PortError::NotFound));
-    assert_eq!(port.expire_due().unwrap(), 1);
+    assert_eq!(port.application().expire_due().unwrap(), 1);
     assert!(!*other_route.revocation.borrow());
     port.kill("2", &other.sandbox_id).unwrap();
 }
@@ -248,7 +272,11 @@ fn committed_sql_only_expiry_denies_new_permits_with_unchanged_input_history() {
 fn sql_only_connect_extension_preserves_routes_and_rechecks_old_expiry_hint() {
     let (directory, port) = setup();
     let first = port.create("1", request()).unwrap();
-    let routes = DATA_KINDS.map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let routes = DATA_KINDS.map(|kind| {
+        port.application()
+            .data_permit(&first.envd_access_token, kind)
+            .unwrap()
+    });
     let connection = database(&directory);
     let tail = input_tail(&connection);
     let old_deadline = deadline(&connection, &first.sandbox_id);
@@ -263,7 +291,8 @@ fn sql_only_connect_extension_preserves_routes_and_rechecks_old_expiry_hint() {
     for (kind, route) in DATA_KINDS.into_iter().zip(&routes) {
         assert!(!*route.revocation.borrow());
         assert_eq!(
-            port.data_permit(&first.envd_access_token, kind)
+            port.application()
+                .data_permit(&first.envd_access_token, kind)
                 .unwrap()
                 .target,
             route.target
@@ -287,13 +316,17 @@ fn sql_only_connect_extension_preserves_routes_and_rechecks_old_expiry_hint() {
     ));
     assert_eq!(journal.world().unwrap(), world);
     assert_eq!(input_tail(&connection), tail);
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         restore_host(std::slice::from_ref(&first), Arc::new(AtomicUsize::new(0))),
         config(),
     );
     for kind in DATA_KINDS {
-        assert!(port.data_permit(&first.envd_access_token, kind).is_ok());
+        assert!(
+            port.application()
+                .data_permit(&first.envd_access_token, kind)
+                .is_ok()
+        );
     }
     port.kill("1", &first.sandbox_id).unwrap();
 }
@@ -340,13 +373,15 @@ fn injected_kill_error_preserves_the_same_journals_committed_authority() {
         ));
         let stops = Arc::new(AtomicUsize::new(0));
         // Deliberately keep the same journal object after the injected error.
-        let port = ManagedPort::new(
+        let port = new_port(
             journal,
             restore_host(std::slice::from_ref(&first), Arc::clone(&stops)),
             config(),
         );
         for kind in DATA_KINDS {
-            let result = port.data_permit(&first.envd_access_token, kind);
+            let result = port
+                .application()
+                .data_permit(&first.envd_access_token, kind);
             if point == CrashPoint::AfterCommit {
                 assert_eq!(result.unwrap_err(), PortError::NotFound);
             } else {
@@ -369,7 +404,11 @@ fn warmed_data_permit_contending_with_kill_cannot_reuse_running_authority() {
         ..FakeHost::default()
     });
     let first = port.create("1", request()).unwrap();
-    let routes = DATA_KINDS.map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let routes = DATA_KINDS.map(|kind| {
+        port.application()
+            .data_permit(&first.envd_access_token, kind)
+            .unwrap()
+    });
     let killing = Arc::clone(&port);
     let external = first.sandbox_id.clone();
     let worker = std::thread::spawn(move || killing.kill("1", &external));
@@ -380,7 +419,9 @@ fn warmed_data_permit_contending_with_kill_cannot_reuse_running_authority() {
     let authorizing = Arc::clone(&port);
     let caller = std::thread::spawn(move || {
         caller_ready.wait();
-        authorizing.data_permit(&first.envd_access_token, DataKind::Exec)
+        authorizing
+            .application()
+            .data_permit(&first.envd_access_token, DataKind::Exec)
     });
     ready.wait();
     gate.release.wait();

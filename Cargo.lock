@@ -568,7 +568,6 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64",
- "getrandom",
  "percent-encoding",
  "rusqlite",
  "sandbox-controller-core",
@@ -587,6 +586,7 @@ dependencies = [
 name = "sandproof-controller-service"
 version = "0.1.0"
 dependencies = [
+ "getrandom",
  "rusqlite",
  "sandbox-controller-core",
  "sandproof-protocol",

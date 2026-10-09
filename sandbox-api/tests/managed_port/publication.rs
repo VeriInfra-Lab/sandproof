@@ -74,7 +74,7 @@ fn settings() -> ManagedConfig {
 }
 
 fn make_port(directory: &TempDir, host: FakeHost, store: CandidateStore) -> ManagedPort<FakeHost> {
-    ManagedPort::with_templates(
+    let application = ControllerApplication::with_templates(
         complete_fixture::open_registry(
             &directory.path().join("controller.db"),
             &settings(),
@@ -87,7 +87,8 @@ fn make_port(directory: &TempDir, host: FakeHost, store: CandidateStore) -> Mana
     )
     .unwrap()
     .with_registry(store)
-    .unwrap()
+    .unwrap();
+    ManagedPort::new(Arc::new(application))
 }
 
 const ONE: &str = "00000000000000000000000000000001";
@@ -392,7 +393,7 @@ fn publication_owned_alias_cas_pagination_restart_and_admitted_binding() {
         FakeHost::default(),
         CandidateStore::new(registry, uid).unwrap(),
     );
-    restarted.recover_on_startup().unwrap();
+    restarted.application().recover_on_startup().unwrap();
     assert_eq!(
         restarted.template("1", "app").unwrap().template_id,
         second.template_id
@@ -484,7 +485,7 @@ fn missing_stop_receipt_is_not_ready_or_a_second_probe() {
         },
         CandidateStore::new(registry, uid).unwrap(),
     );
-    restarted.recover_on_startup().unwrap();
+    restarted.application().recover_on_startup().unwrap();
     assert_eq!(
         restarted.publication("1", ONE).unwrap().state,
         PublicationState::Ready

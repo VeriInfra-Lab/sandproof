@@ -23,7 +23,7 @@ fn exhausted_before_admission_is_a_refusal_without_new_identity_or_host_work() {
     };
     let journal =
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
-    let port = ManagedPort::new(journal, host, config());
+    let port = new_port(journal, host, config());
     assert!(matches!(
         port.create("1", request()),
         Err(PortError::QuotaExceeded)
@@ -51,7 +51,7 @@ fn insufficient_future_receipt_headroom_refuses_before_acceptance() {
     };
     let journal =
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
-    let port = ManagedPort::new(journal, host, config());
+    let port = new_port(journal, host, config());
     assert!(matches!(
         port.create("1", request()),
         Err(PortError::QuotaExceeded)

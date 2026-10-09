@@ -30,13 +30,14 @@ fn port(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
         0,
     )
     .unwrap();
-    ManagedPort::new(journal, host, config())
+    let application = ControllerApplication::new(journal, host, config())
         .with_internal_build_vms(true)
         .with_build_retry_windows(BuildRetryConfig {
             window_duration_ms: 3_600_000,
             max_anchors: 1,
         })
-        .unwrap()
+        .unwrap();
+    ManagedPort::new(Arc::new(application))
 }
 fn settle(
     port: &ManagedPort<BoundedHost>,
@@ -109,7 +110,7 @@ fn accepted_before_close_has_same_identity_and_releases_one_slot_only_after_ack(
         port.kill("1", &created.sandbox_id).unwrap();
         // The unsettled issued-window anchor pins history and its physical
         // position even after VM cleanup; retirement cannot consume it.
-        let retired = port.maintain().unwrap().retired_sandboxes;
+        let retired = port.application().maintain().unwrap().retired_sandboxes;
         if iteration == 0 {
             assert_eq!(retired, 0);
         }

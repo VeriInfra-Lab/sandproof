@@ -131,7 +131,7 @@ fn destroyed_publication_does_not_release_build_budget_before_vm_reclaim() {
     assert!(!pending.cleanup_complete);
     drop(port);
     let restarted = complete_fixture::builder_port(&path, FakeHost::default());
-    restarted.recover_on_startup().unwrap();
+    restarted.application().recover_on_startup().unwrap();
     let final_view = restarted
         .build_vm_in_window("1", BUILD, Some(&window), None)
         .unwrap();

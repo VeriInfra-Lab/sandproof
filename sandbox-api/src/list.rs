@@ -2,7 +2,8 @@
 //! Callers supply only currently authorized, live instances; a cursor is a
 //! position in that result set, never an authorization credential.
 
-use std::{cmp::Ordering, collections::BTreeMap};
+use sandproof_controller_service::application::{InstancePage, ListCursor, ListSelection, Order};
+use std::collections::BTreeMap;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use percent_encoding::percent_decode_str;
@@ -34,13 +35,8 @@ pub struct ListQuery {
 }
 
 pub(crate) struct Selection {
-    limit: usize,
-    running: bool,
-    metadata: BTreeMap<String, String>,
-    started_after: Option<i128>,
-    template: Option<String>,
-    order: ListOrder,
-    cursor: Option<(i128, String)>,
+    pub(crate) application: ListSelection,
+    pub(crate) order: ListOrder,
 }
 
 // Match the upstream microsecond keyset, including sub-microsecond bounds.
@@ -136,79 +132,87 @@ impl ListQuery {
             })
             .transpose()?;
         Ok(Selection {
-            limit: usize::try_from(limit).map_err(|_| PortError::Invalid)?,
-            running,
-            metadata: self
-                .metadata
-                .as_deref()
-                .map(metadata_filter)
-                .transpose()?
-                .unwrap_or_default(),
-            started_after: self.started_after.as_deref().map(timestamp).transpose()?,
-            template: self.template.as_deref().map(template_filter).transpose()?,
             order,
-            cursor,
+            application: ListSelection {
+                limit: usize::try_from(limit).map_err(|_| PortError::Invalid)?,
+                running,
+                metadata: self
+                    .metadata
+                    .as_deref()
+                    .map(metadata_filter)
+                    .transpose()?
+                    .unwrap_or_default(),
+                started_after_us: self.started_after.as_deref().map(timestamp).transpose()?,
+                template: self.template.as_deref().map(template_filter).transpose()?,
+                order: match order {
+                    ListOrder::Asc => Order::Asc,
+                    ListOrder::Desc => Order::Desc,
+                },
+                cursor: cursor.map(|(started_at_us, sandbox_id)| ListCursor {
+                    started_at_us,
+                    sandbox_id,
+                }),
+            },
         })
     }
 }
 
-impl Selection {
-    fn compare(&self, a: &(i128, String), b: &(i128, String)) -> Ordering {
-        let descending = b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1));
-        match self.order {
-            ListOrder::Desc => descending,
-            ListOrder::Asc => descending.reverse(),
-        }
-    }
-
-    pub(crate) fn page(self, items: Vec<SandboxInfo>) -> Result<SandboxPage, PortError> {
-        let mut matching = Vec::new();
-        if self.running {
-            for info in items {
-                // Invalid persisted timestamps are a server failure, not a
-                // rejected client filter or a silently missing instance.
-                let started = timestamp(&info.started_at).map_err(|_| PortError::Failed)?;
-                if self.started_after.is_some_and(|bound| started < bound)
-                    || self
-                        .template
-                        .as_ref()
-                        .is_some_and(|template| *template != info.template_id)
-                    || !self
-                        .metadata
-                        .iter()
-                        .all(|(key, value)| info.metadata.get(key) == Some(value))
-                {
-                    continue;
-                }
-                matching.push(((started, info.sandbox_id.clone()), info));
-            }
-        }
-        let total_running = self.running.then_some(matching.len());
-        if let Some(cursor) = &self.cursor {
-            matching.retain(|(key, _)| self.compare(key, cursor).is_gt());
-        }
-        matching.sort_by(|(a, _), (b, _)| self.compare(a, b));
-        let next_token = if matching.len() > self.limit {
-            let (key, _) = &matching[self.limit - 1];
-            let time = OffsetDateTime::from_unix_timestamp_nanos(key.0 * 1_000)
-                .map_err(|_| PortError::Failed)?
-                .format(&Rfc3339)
-                .map_err(|_| PortError::Failed)?;
-            let suffix = if self.order == ListOrder::Asc {
-                "__asc"
-            } else {
-                ""
-            };
-            Some(URL_SAFE.encode(format!("{time}__{}{suffix}", key.1)))
-        } else {
-            None
-        };
-        matching.truncate(self.limit);
-        Ok(SandboxPage {
-            items: matching.into_iter().map(|(_, info)| info).collect(),
-            next_token,
-            total_running,
+pub(crate) fn page_to_sdk(page: InstancePage, order: ListOrder) -> Result<SandboxPage, PortError> {
+    let next_token = page
+        .next_cursor
+        .map(|key| {
+            let time = OffsetDateTime::from_unix_timestamp_nanos(
+                key.started_at_us
+                    .checked_mul(1_000)
+                    .ok_or(PortError::Failed)?,
+            )
+            .map_err(|_| PortError::Failed)?
+            .format(&Rfc3339)
+            .map_err(|_| PortError::Failed)?;
+            let suffix = if order == ListOrder::Asc { "__asc" } else { "" };
+            Ok(URL_SAFE.encode(format!("{time}__{}{suffix}", key.sandbox_id)))
         })
+        .transpose()?;
+    Ok(SandboxPage {
+        items: page
+            .items
+            .into_iter()
+            .map(SandboxInfo::try_from)
+            .collect::<Result<_, _>>()?,
+        next_token,
+        total_running: page.total_running,
+    })
+}
+
+#[cfg(test)]
+use sandproof_controller_service::application::InstanceInfo;
+
+#[cfg(test)]
+impl Selection {
+    fn page(self, items: Vec<SandboxInfo>) -> Result<SandboxPage, PortError> {
+        let items = items
+            .into_iter()
+            .map(|v| {
+                Ok(InstanceInfo {
+                    template_id: v.template_id,
+                    sandbox_id: v.sandbox_id,
+                    owner: 1,
+                    metadata: v.metadata,
+                    started_at_ms: i64::try_from(
+                        timestamp(&v.started_at)
+                            .map_err(|_| PortError::Failed)?
+                            .div_euclid(1_000),
+                    )
+                    .map_err(|_| PortError::Failed)?,
+                    end_at_ms: 0,
+                    envd_version: v.envd_version,
+                    cpu_count: v.cpu_count,
+                    memory_mb: v.memory_mb,
+                    disk_size_mb: v.disk_size_mb,
+                })
+            })
+            .collect::<Result<_, PortError>>()?;
+        page_to_sdk(self.application.page(items)?, self.order)
     }
 }
 
