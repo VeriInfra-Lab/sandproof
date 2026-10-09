@@ -205,7 +205,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 |---|---|---|
 | `controller-core` 的 `crate::effect::handle_effect_receipt` 与 `crate::publication::handle_publish_destroyed` | Charon 成功；固定 Aeneas 生成两入口的 Lean 函数及依赖。生成器仍输出标准库外部函数的公理模板，未导入或提交它；未完成外部函数可计算连接、Lean 编译或与独立模型的对应证明 | 在证明批次核对新枚举/状态与标准库连接，重新抽取正式入口，补齐接受、按序拒绝和完整后继状态对应；临时生成成功不背书历史定理或整个服务 |
 | `controller-service` 的 `crate::application::coordinator::recovery::can_install_host_slot_binding` | Charon 成功，Aeneas 在 `recovery.rs` 的 `record.terminal && record.phase == Revoking && record.current_vm.is_none()` 分支合并处报 `Could not match the contexts`。额外显式 `--include sandbox_controller_core` 展开自有核心依赖后仍在同处失败 | 后续以同一规则评估等价的局部 Rust 控制流整理，先保留所有边界回归，再重新抽取；不能将自有核心查询保持不透明或升级工具来冒充完整连接。本批只登记阻碍，不改恢复语义 |
-| `sandbox-node` 的 `crate::linux::decisions::fence_can_advance` | macOS 原目标下 Charon 明确拒绝：`crate::linux` 不存在；真实模块受 `cfg(target_os = "linux")` 约束，当前本机没有固定 nightly 的 Linux 目标，测试服务器尚未配置同一抽取工具链 | 在固定 Linux 工具环境评估原函数；不伪造平台 cfg、不复制算法或在本机空 crate 上宣布节点抽取成功。这是环境限制，尚不能判断该函数的 Aeneas 可翻译性；Linux 普通测试与 Linux 抽取分别记录 |
+| `sandbox-node` 的 `crate::linux::decisions::fence_can_advance` | macOS 原目标下 Charon 明确拒绝：`crate::linux` 不存在，真实模块受 `cfg(target_os = "linux")` 约束。固定 nightly 已安装 Linux Rust 目标；进一步使用 `--targets x86_64-unknown-linux-gnu`，原依赖 `libsqlite3-sys` 构建因缺少 `x86_64-linux-gnu-gcc` 失败。本批 Linux 验收检出未配置同一抽取工具链 | 在固定 Linux 工具环境评估原函数；不伪造平台 cfg、不复制算法或在本机空 crate 上宣布节点抽取成功。这是环境限制，尚不能判断该函数的 Aeneas 可翻译性；Linux 普通测试与 Linux 抽取分别记录 |
 
 本批是代码接口交接和抽取可行性评估，**没有新增 Lean 定理，也没有执行完整 `verify-controller.sh` 证明验收**。已有历史证明结论及开放义务不变；抽取成功、环境未就绪、翻译失败、局部证明与完整证明验收必须分别报告。
 
