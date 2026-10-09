@@ -1,6 +1,6 @@
 //! Observe original bindings before comparing pure identity values.
 use super::{
-    Fence, File, LinuxWorker, NodeResult, PathBuf, ResourceEvidence, Runtime, RuntimeConfig,
+    Fence, File, LinuxWorker, NodeResult, PathBuf, Runtime, RuntimeConfig,
     RuntimeObservationConfig, SlotBinding, TemplateBinding, WorkAction, check_trusted_path, core,
     decisions, fs, host_slots, launch_observation,
 };

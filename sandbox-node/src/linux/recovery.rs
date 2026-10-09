@@ -1,7 +1,7 @@
 //! Compensation after uncertain results; original bindings precede mutations.
 use super::{
-    Digest, Fence, LinuxWorker, NodeResult, Observation, ObservedResult, Path, RuntimeError,
-    SlotBinding, TenantId, VmState, WorkAction, core, fs, require_absent,
+    Fence, LinuxWorker, NodeResult, Observation, ObservedResult, Path, RuntimeError, SlotBinding,
+    TenantId, VmState, WorkAction, core, fs, require_absent,
 };
 
 impl LinuxWorker {

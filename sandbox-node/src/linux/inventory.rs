@@ -1,7 +1,7 @@
 //! Read-only host inventory; uncertain resources stay occupied.
 use super::{
-    BTreeMap, BTreeSet, CreateOptions, Digest, DirBuilderExt, File, HostInventory, HostSlotContext,
-    LinuxWorker, MetadataExt, NodeResult, ObservedSlot, OsStrExt, Path, PathBuf, RuntimeError,
+    BTreeMap, BTreeSet, CreateOptions, File, HostInventory, HostSlotContext, LinuxWorker,
+    MetadataExt, NodeResult, ObservedSlot, OsStrExt, Path, PathBuf, RuntimeError,
     RuntimePhysicalObserver, SlotBinding, VmState, check_trusted_path, core, fs,
     helper_observation_pending, host_slots,
 };

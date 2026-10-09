@@ -1,9 +1,8 @@
 //! Bound launch credentials and immutable template validation.
 use super::{
-    ArtifactStamp, BTreeMap, CandidateVerification, CreateOptions, Digest, File, GuestSecret,
-    LaunchCredentialStatus, LinuxWorker, NodeResult, PathBuf, Read, TemplateArtifact,
-    TemplateBinding, artifact_file_digest, check_trusted_path, core, fs, hash_token,
-    launch_observation,
+    ArtifactStamp, BTreeMap, CandidateVerification, CreateOptions, File, GuestSecret,
+    LaunchCredentialStatus, LinuxWorker, NodeResult, PathBuf, TemplateArtifact, TemplateBinding,
+    artifact_file_digest, check_trusted_path, core, fs, hash_token, launch_observation,
 };
 
 impl LinuxWorker {

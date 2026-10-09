@@ -1,8 +1,7 @@
 //! Read-only evidence collection; never dispatch execution.
 use super::{
-    Digest, DirBuilderExt, FailureCode, HostObservation, LinuxWorker, MetadataExt, NodeResult,
-    ObservedResult, Path, ResourceEvidence, VmState, WorkAction, WorkOutcome, WorkReceipt, core,
-    fs, require_absent,
+    FailureCode, HostObservation, LinuxWorker, MetadataExt, NodeResult, ObservedResult, Path,
+    VmState, WorkAction, WorkOutcome, WorkReceipt, core, fs, require_absent,
 };
 
 impl LinuxWorker {
