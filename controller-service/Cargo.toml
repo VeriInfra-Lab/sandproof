@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# Local bounded diagnostics only; not enabled by the deployed service.
+contention-diagnostics = []
+
 [dependencies]
 sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
 rusqlite = { version = "=0.40.2", features = ["bundled"] }

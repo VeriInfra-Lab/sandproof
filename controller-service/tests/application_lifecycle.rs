@@ -1,4 +1,7 @@
 //! Real application + `SQLite`; only physical effects and trusted time are controlled.
+#[cfg(feature = "contention-diagnostics")]
+#[path = "application_lifecycle/contention.rs"]
+mod contention;
 #[allow(
     dead_code,
     reason = "existing worker support is shared across test executables"
@@ -63,6 +66,8 @@ struct TestHost {
     lose_activation: bool,
     fail_clock_on_activation: bool,
     observe_time: Option<i64>,
+    #[cfg(feature = "contention-diagnostics")]
+    slow: Option<Arc<contention::SlowOperation>>,
 }
 impl TestHost {
     fn new(clock: Arc<TestClock>) -> Self {
@@ -74,6 +79,8 @@ impl TestHost {
             lose_activation: false,
             fail_clock_on_activation: false,
             observe_time: None,
+            #[cfg(feature = "contention-diagnostics")]
+            slow: None,
         }
     }
     fn launches(&self) -> usize {
@@ -94,7 +101,26 @@ impl WorkExecution for TestHost {
         &mut self,
         action: &WorkAction<core::EffectId>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        #[cfg(feature = "contention-diagnostics")]
+        {
+            sandproof_controller_service::application::diagnostics::host_call(|| {
+                self.execute_work(action)
+            })
+        }
+        #[cfg(not(feature = "contention-diagnostics"))]
+        self.execute_work(action)
+    }
+}
+impl TestHost {
+    fn execute_work(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<WorkReceipt<support::FakeHostEvidence>, WorkerTransportError> {
         self.state.lock().unwrap().actions.push(action.clone());
+        #[cfg(feature = "contention-diagnostics")]
+        if let Some(slow) = &self.slow {
+            slow.pause(action);
+        }
         if matches!(action.command.command(), core::Command::ActivateVm { .. }) {
             if let Some(time) = self.activate_time {
                 self.clock.set(time);

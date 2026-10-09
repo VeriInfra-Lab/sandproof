@@ -15,6 +15,8 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --all-targets --locked
 cargo test --workspace --doc --locked
+cargo clippy --locked -p sandproof-controller-service --all-targets --features contention-diagnostics -- -D warnings
+cargo test --locked -p sandproof-controller-service --features contention-diagnostics
 
 echo "Functional checks passed: workflow tests, documentation, format, lint, Rust tests and doctests."
 echo "This does not run KVM system tests, E2B compatibility tests, benchmarks, or proofs."
