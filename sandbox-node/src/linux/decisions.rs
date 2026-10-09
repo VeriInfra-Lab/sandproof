@@ -32,7 +32,7 @@ pub(super) fn action_fields_match(action: &WorkAction<core::EffectId>, namespace
     let command = action.command.command();
     action.identity.attempt == action.command.attempt
         && action.identity.epoch == command.epoch().unwrap_or(action.identity.epoch)
-        && !command_generation(command).is_some_and(|value| value != action.identity.generation)
+        && command_generation(command).is_none_or(|value| value == action.identity.generation)
         && action.identity.sandbox.as_str() == format!("sb-{namespace}-{}", command.sandbox().0)
 }
 

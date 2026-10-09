@@ -1,5 +1,8 @@
 //! Compensation after uncertain results; original bindings precede mutations.
-use super::*;
+use super::{
+    Digest, Fence, LinuxWorker, NodeResult, Observation, ObservedResult, Path, RuntimeError,
+    SlotBinding, TenantId, VmState, WorkAction, core, fs, require_absent,
+};
 
 impl LinuxWorker {
     /// Finish only an unlaunched `PrepareVm` whose slot binding has already

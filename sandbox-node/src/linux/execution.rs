@@ -1,5 +1,10 @@
 //! Mutations and their adjacent original physical preconditions.
-use super::*;
+use super::{
+    Duration, ENVD_URL, Fence, File, HostObservation, Instant, LinuxWorker, NodeResult,
+    Observation, ObservedResult, OsStrExt, Read, ResourceEvidence, RuntimeError, SlotBinding,
+    Stdio, UnknownReason, VmState, WorkAction, WorkOutcome, WorkReceipt, WorkerTransportError,
+    Write, check_trusted_path, core, decisions, fence_can_advance, fs, node_staging, thread,
+};
 
 impl LinuxWorker {
     /// Execute one already claimed action. Any physical uncertainty becomes an

@@ -1,5 +1,9 @@
 //! Observe original bindings before comparing pure identity values.
-use super::*;
+use super::{
+    Fence, File, LinuxWorker, NodeResult, PathBuf, ResourceEvidence, Runtime, RuntimeConfig,
+    RuntimeObservationConfig, SlotBinding, TemplateBinding, WorkAction, check_trusted_path, core,
+    decisions, fs, host_slots, launch_observation,
+};
 
 impl LinuxWorker {
     pub(super) fn vm_name(&self, vm: core::VmId) -> String {

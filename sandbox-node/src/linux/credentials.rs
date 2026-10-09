@@ -1,5 +1,10 @@
 //! Bound launch credentials and immutable template validation.
-use super::*;
+use super::{
+    ArtifactStamp, BTreeMap, CandidateVerification, CreateOptions, Digest, File, GuestSecret,
+    LaunchCredentialStatus, LinuxWorker, NodeResult, PathBuf, Read, TemplateArtifact,
+    TemplateBinding, artifact_file_digest, check_trusted_path, core, fs, hash_token,
+    launch_observation,
+};
 
 impl LinuxWorker {
     /// Create a one-time root-only credential before accepting a sandbox.

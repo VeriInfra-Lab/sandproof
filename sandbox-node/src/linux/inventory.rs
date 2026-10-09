@@ -1,5 +1,10 @@
 //! Read-only host inventory; uncertain resources stay occupied.
-use super::*;
+use super::{
+    BTreeMap, BTreeSet, CreateOptions, Digest, DirBuilderExt, File, HostInventory, HostSlotContext,
+    LinuxWorker, MetadataExt, NodeResult, ObservedSlot, OsStrExt, Path, PathBuf, RuntimeError,
+    RuntimePhysicalObserver, SlotBinding, VmState, check_trusted_path, core, fs,
+    helper_observation_pending, host_slots,
+};
 
 impl LinuxWorker {
     /// Enumerate slots, VM claims and network handles in this deployment

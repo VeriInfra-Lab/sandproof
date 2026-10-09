@@ -1,5 +1,7 @@
 //! Synchronous guest transports with exact-child ownership.
-use super::*;
+use super::{
+    Digest, ENVD_URL, LinuxWorker, NodeResult, OsStrExt, Process, Read, Stdio, Write, core,
+};
 
 impl LinuxWorker {
     pub(super) fn namespace_command(
