@@ -47,7 +47,7 @@
 | `SandboxModel/` | Lean 状态机、安全性质、处理函数及 Rust 对应证明 |
 | `verification/` | 固定版本 Charon/Aeneas 抽取结果、工具链说明和定理依赖审计 |
 | `scripts/` | 功能检查、抽取与完整证明验收入口 |
-| `tools/` | Lean 交互、轨迹与研究辅助工具 |
+| `tools/` | 模板构建服务/客户端、共享配置、CI/验收工具与 Lean/研究辅助；产品入口见[架构](docs/ARCHITECTURE.md)，评测入口见[评测说明](benchmarks/README.md) |
 | `docs/` | 当前蓝图、合同、测试计划、证明覆盖和相关研究记录 |
 
 服务、接口和宿主运行模块的职责与目录见[系统架构](docs/ARCHITECTURE.md)。crate 已存在不等于对应工作包已完整验收，不以目录数量计算完成度。
