@@ -236,7 +236,13 @@ fn scenario(probe: Probe, cycles: u32) {
     assert!(app.get("1", &created_session.sandbox_id).is_ok());
     app.kill("1", &created_session.sandbox_id).unwrap();
     clock.set(now + 2101);
-    app.maintain().unwrap();
+    let final_cleanup = app.maintain().unwrap();
+    assert_eq!(
+        final_cleanup.retired_sandboxes,
+        if matches!(probe, Probe::Expire) { 1 } else { 2 }
+    );
+    assert_eq!(final_cleanup.pending_sandboxes, 0);
+    assert_eq!(final_cleanup.tracked_data_sandboxes, 0);
     assert!(
         app.list("1", ListSelection::default())
             .unwrap()
