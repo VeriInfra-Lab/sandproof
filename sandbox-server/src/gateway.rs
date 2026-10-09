@@ -21,16 +21,13 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
-use sandproof_api::{
-    PortError,
-    managed::{DataKind, ManagedPort},
+use sandproof_controller_service::application::{
+    ApplicationError as PortError, DataAccessPort, DataAuthorization, DataKind,
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
-    process::{ChildStdin, ChildStdout, Command},
+    process::{ChildStdin, ChildStdout},
 };
-
-use crate::linux::NodeHost;
 
 mod admission;
 mod drain;
@@ -126,18 +123,6 @@ fn contains_nul_escape(bytes: &[u8]) -> bool {
             .any(|window| window.eq_ignore_ascii_case(br"\u0000"))
 }
 
-fn spawn_relay(namespace_name: &str) -> io::Result<tokio::process::Child> {
-    Command::new("/usr/bin/ip")
-        .args(["netns", "exec", namespace_name])
-        .arg(std::env::current_exe()?)
-        .arg("relay")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-}
-
 fn access_token(headers: &axum::http::HeaderMap) -> Result<String, StatusCode> {
     let mut tokens = headers.get_all("x-access-token").iter();
     let token = tokens.next().ok_or(StatusCode::UNAUTHORIZED)?;
@@ -174,9 +159,8 @@ fn request_kind(request: &Request<Body>) -> Result<(DataKind, bool), StatusCode>
 /// SDK data requests carry only the sandbox's envd bearer token. It is
 /// resolved to one running sandbox, and the core checks effective Exec or
 /// FileRead/FileWrite permission before launching a namespace-local relay.
-pub async fn handle(
-    port: Arc<ManagedPort<NodeHost>>,
-    namespace: String,
+pub async fn handle<P: DataAccessPort>(
+    port: Arc<P>,
     gateway: Option<Arc<Gateway>>,
     request: Request<Body>,
 ) -> Response<Body> {
@@ -199,7 +183,7 @@ pub async fn handle(
             }
             Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
         };
-    let destination = permit.target;
+    let destination = permit.target();
     let control = control_request(&request);
     let lease = match &gateway {
         Some(gateway) => match gateway.acquire((destination.vm.0, destination.generation), control)
@@ -211,7 +195,7 @@ pub async fn handle(
     };
     let limits = gateway.as_ref().map(|gateway| &gateway.limits);
     let request = match until_revoked(
-        &mut permit.revocation,
+        permit.revocation(),
         prepare_body(request, file_request, limits),
     )
     .await
@@ -220,14 +204,13 @@ pub async fn handle(
         Some(Err(rejection)) => return rejection,
         None => return response(StatusCode::UNAUTHORIZED),
     };
-    let namespace_name = format!("vm-{namespace}-{}", destination.vm.0);
     let (returned_permit, mut child) =
-        match launch_data_route(Arc::clone(&port), permit, namespace_name, control).await {
+        match launch_data_route(Arc::clone(&port), permit, control).await {
             Ok(value) => value,
             Err(status) => return response(status),
         };
     permit = returned_permit;
-    let mut relay_exit = drain::RelayExit::new(permit.drain.clone());
+    let mut relay_exit = drain::RelayExit::new(permit.drain().clone());
     let Ok((read, write)) = child.take_pipes() else {
         return response(StatusCode::BAD_GATEWAY);
     };
@@ -240,11 +223,8 @@ pub async fn handle(
     if limits.is_some() {
         builder.max_buf_size(64 * 1024);
     }
-    let handshake = until_revoked(
-        &mut permit.revocation,
-        builder.handshake(TokioIo::new(tunnel)),
-    )
-    .await;
+    let handshake =
+        until_revoked(permit.revocation(), builder.handshake(TokioIo::new(tunnel))).await;
     let Some(Ok((mut sender, connection))) = handshake else {
         relay_exit.stop(&mut child).await;
         return response(if handshake.is_none() {
@@ -254,31 +234,30 @@ pub async fn handle(
         });
     };
     let connection_lease = lease.clone();
-    let mut connection_revocation = permit.revocation.clone();
+    let mut connection_revocation = permit.revocation().clone();
     tokio::spawn(async move {
         let _ = until_revoked(&mut connection_revocation, connection).await;
         relay_exit.stop(&mut child).await;
         drop(connection_lease);
     });
     let response = until_revoked(
-        &mut permit.revocation,
+        permit.revocation(),
         forward_request(&mut sender, request, limits),
     )
     .await
     .unwrap_or_else(|| response(StatusCode::UNAUTHORIZED));
-    let response = drain::DrainBody::wrap(response, permit.drain);
+    let response = drain::DrainBody::wrap(response, permit.drain().clone());
     match lease {
         Some(lease) => LeasedBody::wrap(response, lease),
         None => response,
     }
 }
 
-async fn launch_data_route<H: sandproof_api::managed::HostAdapter>(
-    port: Arc<ManagedPort<H>>,
-    permit: sandproof_api::managed::DataPermit,
-    namespace: String,
+async fn launch_data_route<P: DataAccessPort>(
+    port: Arc<P>,
+    permit: P::Permit,
     control: bool,
-) -> Result<(sandproof_api::managed::DataPermit, drain::RelayProcess), StatusCode> {
+) -> Result<(P::Permit, drain::RelayProcess), StatusCode> {
     let (permit, launched) = tokio::task::spawn_blocking(move || {
         let result = port.spawn_data_relay(&permit, control);
         (permit, result)
@@ -286,10 +265,7 @@ async fn launch_data_route<H: sandproof_api::managed::HostAdapter>(
     .await
     .map_err(|_| StatusCode::BAD_GATEWAY)?;
     let child = match launched {
-        Ok(Some(child)) => drain::RelayProcess::Tracked(Some(child)),
-        Ok(None) => drain::RelayProcess::Legacy(
-            spawn_relay(&namespace).map_err(|_| StatusCode::BAD_GATEWAY)?,
-        ),
+        Ok(child) => drain::RelayProcess::new(child),
         Err(PortError::NotFound | PortError::Invalid) => return Err(StatusCode::UNAUTHORIZED),
         Err(PortError::QuotaExceeded) => return Err(StatusCode::TOO_MANY_REQUESTS),
         Err(_) => return Err(StatusCode::SERVICE_UNAVAILABLE),
@@ -512,6 +488,9 @@ pub async fn relay(bounded: bool) -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod port_tests;
 
 #[cfg(all(test, feature = "sdk-contract-tests"))]
 mod sdk_tests;

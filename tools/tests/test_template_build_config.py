@@ -4,15 +4,69 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import subprocess
+import sys
 
 from tools.template_build_config import validate_capacity, MIB, UPLOAD_ENVELOPE_BYTES
-from tools.template_build_service import (
-    bounded_data_route_limits, configuration, host_uid_range, validate_pool_resource_ranges,
-)
+from tools.template_build_config import bounded_data_route_limits, host_uid_range, validate_pool_resource_ranges
+from tools.template_build_service import configuration
 from tools.template_inputs import InvalidTemplate, platform_dns_servers
 from tools.template_worker import install_platform, validate_request
 
 GIB = 1024 * MIB
+
+
+class ConfigurationDependencyTests(unittest.TestCase):
+    def test_service_and_client_cli_help_remain_available_in_both_entry_modes(self):
+        root = Path(__file__).resolve().parents[2]
+        for module in ("template_build_service", "template_build_client"):
+            for arguments in ([str(root / "tools" / (module + ".py")), "--help"],
+                              ["-m", "tools." + module, "--help"]):
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run([sys.executable, *arguments], cwd=root,
+                                            capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("usage:", result.stdout)
+
+    def test_shared_checks_work_without_loading_http_service_in_both_import_modes(self):
+        root = Path(__file__).resolve().parents[2]
+        for module, search_root in (("tools.template_build_config", root),
+                                    ("template_build_config", root / "tools")):
+            code = """
+import builtins, importlib, json, os, pathlib, sys, tempfile
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[2])
+original = builtins.__import__
+def guarded(name, *args, **kwargs):
+    if 'template_build_service' in name or name == 'http.server':
+        raise AssertionError('shared configuration imported HTTP service')
+    return original(name, *args, **kwargs)
+builtins.__import__ = guarded
+config = importlib.import_module(sys.argv[1])
+with tempfile.TemporaryDirectory() as temporary:
+    path = pathlib.Path(temporary).resolve() / 'policy.json'
+    path.write_text(json.dumps({'runtime': {}, 'builder': {}, 'public': {}}))
+    os.chmod(path, 0o600)
+    assert config.protected_json(path) == {'runtime': {}, 'builder': {}, 'public': {}}
+    try:
+        config.acceptance_build_policy(path)
+    except ValueError as error:
+        assert 'explicit bounded pool policy' in str(error)
+    else:
+        raise AssertionError('incomplete policy accepted')
+settings = json.loads(sys.argv[3])
+assert list(config.host_uid_range(settings)) == [1000, 1001]
+builder = json.loads(sys.argv[3])
+builder['uid_base'] = builder['bounded_host']['uid_base'] = 2000
+builder['bounded_host']['uplink_base'] = 2
+config.validate_pool_resource_ranges(settings, builder)
+assert not any('template_build_service' in name for name in sys.modules)
+"""
+            with self.subTest(module=module):
+                result = subprocess.run([sys.executable, "-I", "-c", code, module,
+                                         str(search_root), json.dumps(HostUidRangeTests().settings())],
+                                        capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 
 def transfer_settings():
@@ -27,7 +81,7 @@ def transfer_settings():
 class HostUidRangeTests(unittest.TestCase):
     def settings(self):
         # Explicit synthetic limits, never deployment defaults.
-        return {'uid_base': 1000, 'max_vm_id': 2**64 - 1, 'data_transfer': transfer_settings(), 'bounded_host': {
+        return {'uid_base': 1000, 'data_transfer': transfer_settings(), 'bounded_host': {
             'uid_base': 1000, 'uplink_base': 0, 'maintenance': {'max_retained_results': 10,
                 'max_host_slots': 2, 'windows': {'max_open_windows': 2, 'max_duration_ms': 100}}}}
 
@@ -61,7 +115,8 @@ class HostUidRangeTests(unittest.TestCase):
             host_uid_range(settings)
         settings['bounded_host'] = None
         settings['max_vm_id'] = 99
-        self.assertEqual(host_uid_range(settings), range(1000, 1100))
+        with self.assertRaises(ValueError):
+            host_uid_range(settings)
         for field in transfer_settings():
             for invalid in (0, -1, True, None, '2', 1.5, 2**64):
                 settings = self.settings()
@@ -80,15 +135,16 @@ class HostUidRangeTests(unittest.TestCase):
             with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                 host_uid_range(settings)
 
-    def test_bounded_span_is_physical_count_not_permanent_identity_limit(self):
+    def test_bounded_span_is_physical_count_and_retired_mapping_is_rejected(self):
         settings = self.settings()
         self.assertEqual(host_uid_range(settings), range(1000, 1002))
-        settings['max_vm_id'] = 0
         settings['bounded_host']['maintenance']['max_host_slots'] = 3
         self.assertEqual(host_uid_range(settings), range(1000, 1003))
-        self.assertEqual(host_uid_range({'uid_base': 1000, 'max_vm_id': 99}), range(1000, 1100))
-        self.assertEqual(host_uid_range({'uid_base': 1000, 'max_vm_id': 99, 'bounded_host': None}),
-                         range(1000, 1100))
+        for invalid in ({'uid_base': 1000, 'max_vm_id': 99},
+                        settings | {'max_vm_id': 0},
+                        settings | {'bounded_host': None}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                host_uid_range(invalid)
 
     def test_last_usable_uid_and_adjacent_pools_are_exact(self):
         settings = self.settings()
@@ -177,24 +233,16 @@ class HostUidRangeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'enable flag'):
             validate_pool_resource_ranges(runtime, builder)
 
-    def test_legacy_behavior_is_preserved_and_mixed_mapping_is_checked(self):
-        runtime = {'uid_base': 1000, 'max_vm_id': 99, 'public_ipv4_enabled': True}
-        builder = {'uid_base': 1100, 'max_vm_id': 99, 'public_ipv4_enabled': True}
-        validate_pool_resource_ranges(runtime, builder)
-        builder['public_ipv4_enabled'] = False
-        validate_pool_resource_ranges(runtime, builder)
-        runtime['public_ipv4_enabled'] = False
-        validate_pool_resource_ranges(runtime, builder)
+    def test_legacy_and_mixed_pools_are_not_formal_configurations(self):
+        runtime = self.settings()
         builder = self.settings()
-        builder.update(uid_base=1100, public_ipv4_enabled=True)
-        builder['bounded_host'].update(uid_base=1100, uplink_base=100)
+        builder['uid_base'] = builder['bounded_host']['uid_base'] = 1100
+        builder['bounded_host']['uplink_base'] = 2
         validate_pool_resource_ranges(runtime, builder)
-        builder['bounded_host']['uplink_base'] = 99
-        with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
-            validate_pool_resource_ranges(runtime, builder)
-        builder['uid_base'] = builder['bounded_host']['uid_base'] = 1099
-        with self.assertRaisesRegex(ValueError, 'UID pools overlap'):
-            validate_pool_resource_ranges(runtime, builder)
+        legacy = {'uid_base': 1000, 'max_vm_id': 99, 'public_ipv4_enabled': True}
+        for pools in ((legacy, builder), (runtime, legacy), (legacy, legacy)):
+            with self.subTest(pools=pools), self.assertRaises(ValueError):
+                validate_pool_resource_ranges(*pools)
 
 
 def inputs():
@@ -204,7 +252,7 @@ def inputs():
     runtime = {'max_timeout_secs': 86400, 'max_lifetime_secs': 86400,
                'max_disk_bytes_global': 80 * GIB, 'max_disk_bytes_per_tenant': 80 * GIB,
                'cleanup_reserve_bytes': 10 * GIB, 'max_active_global': 2,
-               'max_active_per_tenant': 2, 'max_vm_id': 99,
+               'max_active_per_tenant': 2,
                'templates': {'compute_limits': compute},
                'template_registry': {'validation_timeout_secs': 45,
                    'max_artifact_bytes_global': 300 * GIB, 'max_artifact_bytes_per_tenant': 300 * GIB}}
@@ -275,62 +323,31 @@ class CapacityTests(unittest.TestCase):
                 self.check(args)
 
     def test_configuration_charges_resolved_base_not_legacy_rootfs(self):
+        from tools.tests.test_bounded_acceptance import service_fixture
+        from tools.tests.test_template_physical_storage import activate_for_test
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
-            runtime, builder, limits, base = inputs()
-            for pool, index in ((runtime, 0), (builder, 1)):
-                directory = root / str(index)
-                directory.mkdir(mode=0o700)
-                pool.update(namespace=str(index), database=str(directory / 'db'), node_state_dir=str(directory),
-                            chroot_base=str(directory), bind=f'127.0.0.1:{3100 + index}',
-                            uid_base=1000 + index * 100, credentials=[{'tenant': 1, 'secret': str(index)}],
-                            host_resources={'cgroup_parent': str(directory)})
-            registry = root / 'registry'
-            for directory in (registry, registry / 'inbox', registry / 'artifacts', root / 'builds'):
-                directory.mkdir(mode=0o700)
-            runtime['template_registry']['root'] = str(registry)
-            builder['internal_build_vms'] = True
-            kernel = root / 'kernel'
-            kernel.write_bytes(b'kernel')
-            runtime['kernel'] = str(kernel)
-            disk = root / 'builder.ext4'
-            with disk.open('wb') as output:
-                output.truncate(32 * GIB)  # sparse synthetic input; no guest/mount
-            base.update(template_id='actual-base', owner=None)
-            base['rootfs']['path'] = str(disk)
-            builder['templates'].update(templates=[base], aliases={'base': 'actual-base'})
-            builder['rootfs'] = str(kernel)  # legacy field must not undercharge
-            files = []
-            for pool, name in ((runtime, 'runtime.json'), (builder, 'builder.json')):
-                path = root / name
-                path.write_text(json.dumps(pool))
-                path.chmod(0o600)
-                files.append(str(path))
-            tool_names = ('buildctl', 'buildkitd', 'buildkit-runc', 'umoci', 'envd', 'busybox', 'regctl')
-            cfg = {'root': str(root / 'builds'), 'bind': '127.0.0.1:3102',
-                   'runtime_config': files[0], 'builder_config': files[1],
-                   'tools': {name: {'path': str(kernel), 'sha256': hashlib.sha256(b'kernel').hexdigest()} for name in tool_names},
-                   'limits': limits, 'dns_servers': ['1.1.1.1']}
-            path = root / 'service.json'
-            path.write_text(json.dumps(cfg))
-            path.chmod(0o600)
+            path, _, profile, _ = service_fixture(root)
+            Path(profile['coordination_file']).touch(mode=0o600)
+            activate_for_test(profile)
+            cfg = json.loads(path.read_text())
+            builder_path = Path(cfg['builder_config'])
+            builder = json.loads(builder_path.read_text())
+            builder['rootfs'] = str(root / 'kernel')  # Never undercharge its bound base.
+            builder_path.write_text(json.dumps(builder))
             self.assertEqual(configuration(path)['limits']['builder_disk_bytes'], 32 * GIB)
-            # The real config reader uses physical spans even with a much
-            # larger lifetime VM frontier. Test-only maintenance policy.
-            for index, pool in enumerate((runtime, builder)):
-                pool['max_vm_id'] = 2**64 - 1
-                pool['data_transfer'] = transfer_settings() | pool.get('data_transfer', {})
-                pool['bounded_host'] = {'uid_base': pool['uid_base'], 'uplink_base': index * 2,
-                    'maintenance': {'max_retained_results': 10, 'max_host_slots': 2,
-                        'windows': {'max_open_windows': 2, 'max_duration_ms': 100}}}
-                Path(files[index]).write_text(json.dumps(pool))
-            self.assertEqual(configuration(path)['limits']['builder_disk_bytes'], 32 * GIB)
+            for old in (None, 0, 2**64 - 1):
+                builder['max_vm_id'] = old
+                builder_path.write_text(json.dumps(builder))
+                with self.subTest(old=old), self.assertRaisesRegex(ValueError, 'retired max_vm_id'):
+                    configuration(path)
+            builder.pop('max_vm_id')
             builder['bounded_host']['uplink_base'] = 0
-            Path(files[1]).write_text(json.dumps(builder))
+            builder_path.write_text(json.dumps(builder))
             with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
                 configuration(path)
             builder['bounded_host']['uplink_base'] = 2
-            Path(files[1]).write_text(json.dumps(builder))
+            builder_path.write_text(json.dumps(builder))
             original_tools = dict(cfg['tools'])
             for names, accepted in ((('igzip', 'libisal.so.2'), True), (('igzip',), False),
                                     (('libisal.so.2',), False), (('unpigz',), False)):
@@ -346,6 +363,18 @@ class CapacityTests(unittest.TestCase):
             path.write_text(json.dumps(cfg))
             with self.assertRaisesRegex(ValueError, 'strings'):
                 configuration(path)
+
+    def test_formal_service_rejects_removed_or_missing_build_configuration(self):
+        from tools.tests.test_bounded_acceptance import service_fixture
+        with tempfile.TemporaryDirectory() as temporary:
+            path, _, _, _ = service_fixture(Path(temporary).resolve())
+            original = json.loads(path.read_text())
+            for changed in (original | {'migrate_legacy_builds': False},
+                            {key: value for key, value in original.items() if key != 'bounded_builds'},
+                            original | {'bounded_builds': None}):
+                path.write_text(json.dumps(changed))
+                with self.subTest(changed=changed), self.assertRaises(ValueError):
+                    configuration(path, require_physical_lease=False)
 
 
 class DnsTests(unittest.TestCase):
@@ -406,16 +435,15 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
         from pathlib import Path
         import tempfile
         from tools.template_build_config import acceptance_build_policy
-        with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+        with self.assertRaisesRegex(ValueError, 'complete bounded policy'):
             acceptance_build_policy(None)
-        self.assertIsNone(acceptance_build_policy(None, legacy_unbounded=True))
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve() / 'policy.json'
             path.write_text(json.dumps({'runtime': {'database': 'replace'}, 'builder': {}, 'public': {}}))
             path.chmod(0o600)
             with self.assertRaisesRegex(ValueError, 'explicit bounded pool policy'):
                 acceptance_build_policy(path)
-            with self.assertRaisesRegex(ValueError, 'choose an explicit'):
+            with self.assertRaises(TypeError):
                 acceptance_build_policy(path, legacy_unbounded=True)
 
     def test_policy_passes_explicit_sections_and_never_changes_existing_identity(self):
@@ -430,9 +458,17 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
                               'build_retry_windows': {'window_duration_ms': 1000, 'max_anchors': 2}},
                   'public': {'bounded_builds': {'namespace': 17}, 'workspace_bytes': 200, 'workspace_bytes_per_tenant': 100}}
         before = copy.deepcopy((runtime, builder, build))
-        self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, None), 'legacy-unbounded')
+        with self.assertRaisesRegex(ValueError, 'invalid bounded acceptance policy'):
+            apply_acceptance_build_policy(runtime, builder, build, None)
         self.assertEqual((runtime, builder, build), before)
-        with patch('tools.template_build_service.validate_pool_resource_ranges') as ranges, \
+        for pool, name in enumerate(('runtime', 'builder')):
+            legacy = copy.deepcopy((runtime, builder, build, policy))
+            legacy[pool]['max_vm_id'] = None
+            original = copy.deepcopy(legacy)
+            with self.subTest(pool=name), self.assertRaisesRegex(ValueError, 'retired max_vm_id'):
+                apply_acceptance_build_policy(*legacy)
+            self.assertEqual(legacy, original)
+        with patch('tools.template_build_config.validate_pool_resource_ranges') as ranges, \
                 patch('tools.template_build_store.bounded_configuration'), \
                 patch('tools.template_physical_storage.validate_configuration') as physical:
             self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, policy), 'windowed')
@@ -461,7 +497,7 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
             }
             policy['builder']['build_retry_windows'] = {'window_duration_ms': 1000, 'max_anchors': 2}
             runtime['max_disk_bytes_global'] += 1
-            with patch('tools.template_build_service.validate_pool_resource_ranges'), \
+            with patch('tools.template_build_config.validate_pool_resource_ranges'), \
                     patch('tools.template_build_store.bounded_configuration'):
                 with self.assertRaisesRegex(ValueError, 'pool budget'):
                     apply_acceptance_build_policy(runtime, builder, build, policy)

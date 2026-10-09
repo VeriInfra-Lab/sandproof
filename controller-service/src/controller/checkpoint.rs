@@ -14,6 +14,7 @@ use super::{
 use crate::{CrashInjector, CrashPoint, JournalError};
 pub use config::MaintenanceConfig;
 pub use retirement::RetirementCandidate;
+pub(super) use retirement::original_binding;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 use serde::{Deserialize, Serialize};
@@ -118,39 +119,29 @@ fn map_core(error: core::checkpoint::CheckpointReject) -> JournalError {
 pub(super) fn config(connection: &Connection) -> Result<Option<MaintenanceConfig>, JournalError> {
     config::read(connection)
 }
-pub(super) fn configure(
+pub(super) fn initialize(
     tx: &Transaction<'_>,
     world: &core::World,
-    requested: Option<MaintenanceConfig>,
+    config: &MaintenanceConfig,
 ) -> Result<(), JournalError> {
-    config::configure(tx, world, requested)
+    config::initialize(tx, world, config)
 }
 pub(super) fn load_world(connection: &Connection) -> Result<core::World, JournalError> {
     recovery::load(connection).map(|(world, _)| world)
 }
-pub(super) fn replayed_contexts(
-    connection: &Connection,
-) -> Result<Vec<HostSlotContext>, JournalError> {
-    recovery::load(connection).map(|(_, bindings)| bindings.contexts.into_values().collect())
-}
-
 pub(super) fn input_bytes(
     connection: &Connection,
     value: &impl Serialize,
 ) -> Result<Vec<u8>, JournalError> {
-    match config(connection)? {
-        Some(config) => encode_limited(value, config.max_input_bytes),
-        None => Ok(serde_json::to_vec(value)?),
-    }
+    let config = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    encode_limited(value, config.max_input_bytes)
 }
 
 pub(super) fn require_input_room(
     connection: &Connection,
     bytes: usize,
 ) -> Result<(), JournalError> {
-    let Some(config) = config(connection)? else {
-        return Ok(());
-    };
+    let config = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
     let cut: i64 = connection.query_row(
         "SELECT input_cut FROM controller_checkpoint WHERE id=1",
         [],
@@ -169,7 +160,7 @@ pub(super) fn require_input_room(
     Ok(())
 }
 
-fn namespace(connection: &Connection) -> Result<String, JournalError> {
+pub(super) fn namespace(connection: &Connection) -> Result<String, JournalError> {
     Ok(connection.query_row(
         "SELECT namespace FROM controller_meta WHERE id=1",
         [],
@@ -219,9 +210,7 @@ pub(super) fn validate_candidate(
     connection: &Connection,
     world: &core::World,
 ) -> Result<(), JournalError> {
-    let Some(config) = config(connection)? else {
-        return Ok(());
-    };
+    let config = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
     let value = envelope(connection, world, &config)?;
     encode_limited(&value, config.max_checkpoint_bytes)?;
     Ok(())
@@ -233,25 +222,23 @@ fn write_checkpoint(
     config: &MaintenanceConfig,
 ) -> Result<CheckpointInfo, JournalError> {
     projections::validate(tx, world, &namespace(tx)?)?;
-    if config.capacity.is_some() {
-        let previous: Option<(u64, u64, u64)> = tx
-            .query_row(
-                "SELECT generation,input_cut,length(payload) FROM controller_checkpoint WHERE id=1",
-                [],
-                |row| Ok((read_u64(row, 0)?, read_u64(row, 1)?, read_u64(row, 2)?)),
-            )
-            .optional()?;
-        if let Some((generation, input_cut, payload_bytes)) = previous
-            && input_cut == allocators::input_high_water(tx)?
-        {
-            // SQL-only projections are recovered from authoritative current SQL.
-            // An identical core cut needs no new checkpoint generation.
-            return Ok(CheckpointInfo {
-                generation,
-                input_cut,
-                payload_bytes,
-            });
-        }
+    let previous: Option<(u64, u64, u64)> = tx
+        .query_row(
+            "SELECT generation,input_cut,length(payload) FROM controller_checkpoint WHERE id=1",
+            [],
+            |row| Ok((read_u64(row, 0)?, read_u64(row, 1)?, read_u64(row, 2)?)),
+        )
+        .optional()?;
+    if let Some((generation, input_cut, payload_bytes)) = previous
+        && input_cut == allocators::input_high_water(tx)?
+    {
+        // SQL-only projections are recovered from authoritative current SQL.
+        // An identical core cut needs no new checkpoint generation.
+        return Ok(CheckpointInfo {
+            generation,
+            input_cut,
+            payload_bytes,
+        });
     }
     let envelope = envelope(tx, world, config)?;
     let bytes = encode_limited(&envelope, config.max_checkpoint_bytes)?;
@@ -277,7 +264,7 @@ fn write_checkpoint(
 }
 
 impl ControllerJournal {
-    /// Explicit maintenance settings; absent means historical behavior remains.
+    /// Explicit current maintenance settings; missing settings fail closed.
     /// # Errors
     /// Changed writers and malformed settings fail closed.
     pub fn maintenance_config(&self) -> Result<Option<MaintenanceConfig>, JournalError> {
@@ -300,53 +287,6 @@ impl ControllerJournal {
         tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(info)
-    }
-
-    /// Delete one bounded batch covered by an already committed checkpoint.
-    /// Publication and this deletion are always different `SQLite` transactions.
-    /// # Errors
-    /// Rejects damaged root/tail or uncertain commit; never guesses publication.
-    pub fn prune_checkpoint_inputs(
-        &mut self,
-        crashes: &mut impl CrashInjector,
-    ) -> Result<usize, JournalError> {
-        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        let config = config(&tx)?.ok_or(JournalError::UnsupportedInput)?;
-        let (world, _) = recovery::load(&tx)?;
-        if world != tx.world() {
-            return Err(JournalError::CorruptStore);
-        }
-        let cut: u64 = tx.query_row(
-            "SELECT input_cut FROM controller_checkpoint WHERE id=1",
-            [],
-            |row| read_u64(row, 0),
-        )?;
-        let floor: u64 = tx.query_row(
-            "SELECT deleted_through FROM controller_checkpoint_gc WHERE id=1",
-            [],
-            |row| read_u64(row, 0),
-        )?;
-        let through = floor.saturating_add(config.prune_batch_rows).min(cut);
-        if through == floor {
-            return Ok(0);
-        }
-        crashes.hit(CrashPoint::BeforeCheckpointDelete)?;
-        let removed = tx.execute(
-            "DELETE FROM controller_inputs WHERE sequence>?1 AND sequence<=?2",
-            params![sql(floor)?, sql(through)?],
-        )?;
-        if u64::try_from(removed).ok() != through.checked_sub(floor) {
-            return Err(JournalError::CorruptStore);
-        }
-        tx.execute(
-            "UPDATE controller_checkpoint_gc SET deleted_through=?1 WHERE id=1",
-            [sql(through)?],
-        )?;
-        crashes.hit(CrashPoint::AfterCheckpointDelete)?;
-        crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit()?;
-        crashes.hit(CrashPoint::AfterCommit)?;
-        Ok(removed)
     }
 }
 
@@ -383,12 +323,11 @@ pub(super) fn prepare_write(
     world: &core::World,
     committed: &super::transaction::CommittedWorld,
 ) -> Result<(), JournalError> {
-    let Some(policy) = config(connection)? else {
-        return Ok(());
-    };
-    let Some(cap) = &policy.capacity else {
-        return Ok(());
-    };
+    let policy = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    let cap = policy
+        .capacity
+        .as_ref()
+        .ok_or(JournalError::UnsupportedStore)?;
     super::capacity::truncate_wal(connection)?;
     drain_covered(connection, &policy, world, committed)?;
     let cut: u64 = connection.query_row(
@@ -460,12 +399,8 @@ fn drain_covered(
 }
 
 pub(super) fn validate_transaction(tx: &WorldTransaction<'_>) -> Result<(), JournalError> {
-    let Some(policy) = config(tx)? else {
-        return Ok(());
-    };
-    let Some(cap) = policy.capacity else {
-        return Ok(());
-    };
+    let policy = config(tx)?.ok_or(JournalError::UnsupportedStore)?;
+    let cap = policy.capacity.ok_or(JournalError::UnsupportedStore)?;
     let(count,bytes):(u64,u64)=tx.query_row("SELECT count(*),coalesce(sum(length(input_json)),0) FROM controller_inputs WHERE sequence>?1",[sql(tx.input_start)?],|row|Ok((read_u64(row,0)?,read_u64(row,1)?)))?;
     if count > cap.max_transaction_inputs || bytes > cap.max_transaction_bytes {
         return Err(JournalError::MaintenanceCapacity);
@@ -486,9 +421,7 @@ impl ControllerJournal {
     pub fn checkpoint_progress(&self) -> Result<Option<CheckpointProgress>, JournalError> {
         self.committed_world
             .ensure_ready(&self.journal.connection)?;
-        if config(&self.journal.connection)?.is_none() {
-            return Ok(None);
-        }
+        config(&self.journal.connection)?.ok_or(JournalError::UnsupportedStore)?;
         let tx = self.journal.connection.unchecked_transaction()?;
         recovery::load(&tx)?;
         let(input_cut,deleted_through)=tx.query_row("SELECT input_cut,deleted_through FROM controller_checkpoint,controller_checkpoint_gc WHERE controller_checkpoint.id=1 AND controller_checkpoint_gc.id=1",[],|row|Ok((read_u64(row,0)?,read_u64(row,1)?)))?;

@@ -71,6 +71,38 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(files["tests/test.sh"], "verifier")
         self.assertFalse((self.root / "executed").exists())
 
+    def test_modern_nested_package_and_binary_mib_are_preserved(self):
+        from shutil import move
+        for name in ('first-task', 'second-task'):
+            target = self.source / 'tasks' / name
+            target.parent.mkdir(exist_ok=True)
+            move(self.source / name, target)
+            (target / 'task.toml').write_text(
+                'schema_version="1.1"\nartifacts=[]\n[task]\nname="terminal-bench/' + name + '"\n'
+                '[environment]\nbuild_timeout_sec=600.0\ndocker_image="fixture:tag"\n'
+                'cpus=4\nmemory_mb=8192\nstorage_mb=10240\ngpus=0\nallow_internet=true\nmcp_servers=[]\n'
+                '[environment.env]\n[agent]\ntimeout_sec=3600.0\n'
+                '[verifier]\ntimeout_sec=1200.0\n[verifier.env]\n[solution.env]\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'modern schema')
+        data = json.loads(self.registry.read_bytes())
+        data[0]['version'] = '2.1'
+        for row in data[0]['tasks']:
+            row.update(path='tasks/' + row['name'], git_commit_id=self.git('rev-parse', 'HEAD'))
+        raw = json.dumps(data).encode()
+        self.registry.write_bytes(raw)
+        self.pin = replace(self.pin, version='2.1', prefix='tasks/',
+                           commit=self.git('rev-parse', 'HEAD'), registry_sha256=benchmark.digest(raw))
+        lock = self.freeze()
+        self.assertEqual(lock['dataset'], 'terminal-bench@2.1')
+        self.assertEqual(lock['tasks'][0]['package_name'], 'terminal-bench/first-task')
+        self.assertEqual(lock['tasks'][0]['requirements']['memory_mib'], 8192)
+        self.assertEqual(lock['tasks'][0]['requirements']['agent_timeout_sec'], 3600)
+
+    def test_unknown_dataset_cannot_select_untrusted_pin(self):
+        with self.assertRaises(benchmark.InvalidInput):
+            benchmark.pin_for({'dataset': 'terminal-bench@latest'})
+
     def test_lock_omission_duplicate_reorder_and_forged_hash_rejected(self):
         lock = self.freeze()
         variants = []

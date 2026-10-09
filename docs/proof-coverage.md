@@ -16,11 +16,15 @@
 | 宿主执行与回执 | 当前操作/代数/尝试及物理位置 incarnation 绑定；可信停止证据先于逻辑释放；未知结果保留资源占用，迟到回执不恢复旧权限 |
 | 精确资源清理 | 启动放行前持久登记目录身份；只消费原设备/inode/创建时间、进程、网络和位置证据；同名替换、缺见证、部分删除及持有者未排空保持未知；已确认 Free 的历史身份不阻止合法位置复用 |
 | 有界运行 | 工作流未来转换、有限重试/收尾、数据库与 WAL/temp/检查点、登记和稀疏盘未来增长的合成界；结果到期与闭包退休、单调身份前沿、窗口关闭和旧键拒绝；不以概率碰撞或逻辑释放冒充物理释放 |
-| 数据通道 | 派发与撤销/数据 pin 的次序；有界流、大输出、上传期限、写半关闭后的迟到拒绝响应、精确停止并回收中继；EOF 不是物理清理证明 |
+| 数据通道 | 单沙箱凭据摘要唯一索引、原代数绑定及跨重启局部拒绝/健康对象隔离；派发与撤销/数据 pin 的次序；有界流、大输出、上传期限、写半关闭后的迟到拒绝响应、精确停止并回收中继；EOF 不是物理清理证明 |
 
 关系允许证明侧保留抽象历史，而实现删除不再可观察的细节；不能要求压缩前后完整 World 逐字相等，也不能因此遗漏仍可查询的结果或已接受未知工作。有限机器只支持可表示前缀内的安全拒绝与明确前提下的收尾，不承诺无限接单、永久外部故障下完成或任意内存耗尽时可分配。
 
 SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密码学原语有明确外部合同；**自有检查次序、见证构造、互斥、恢复、事务连接和授权决定不是外部可信假设**。这些仍需分层对应证明与系统测试。
+
+#262 的接口整理将宿主与数据连接合同及排空/子进程持有者移入 `controller-service/src/application`，网关经 `DataAccessPort` 调用；实际授权、生命周期、恢复和维护编排已迁入 `controller-service/src/application/coordinator`，HTTP 请求与序列化仅留在 `sandbox-api/src/managed.rs`。应用查询使用数值时间与普通选择条件，SDK 时间/令牌编码不混入控制服务；模板编排单独组织但仍排除证明。此搬迁及可注入可信时钟没有改变纯核心或生成证明，新增应用代码尚无对应证明，不能用旧定理背书新模块。宿主端口已按能力拆分，生产实现位于 `sandbox-node/src/adapter.rs`，物理配置租约位于 `sandbox-node/src/physical_profile.rs`；恢复与执行只共享证据类型，仍须分别证明调用资格、未知观察和回执连接。模块搬迁没有新增 Lean 对应证明。后续对应证明须连接端口调用与原管理锁内的派发重检，以及 `TrackedRelayChild` 的确切回收/未知退出责任；还须证明各检查点读取时钟及同一互斥对象内持久决定/宿主派发/撤销/排空的组合；不能把一次时间快照代替执行后与派发前复核。系统时钟的可信性属于外部前提，应用端口不是可以整体假定正确的授权器。
+
+节点的值判断现集中于 `sandbox-node/src/linux/decisions.rs`（动作字段、资源映射、围栏、槽位坐标、进程身份及命令证据），现场读取在 `identity`/`observation`，执行和补偿在 `execution`/`recovery`，位置退休与精确释放仍由 `host_slots.rs` 负责。纯比较不是授权证书：操作/owner/物理位置核验和原锁内的现场读取顺序仍须连接证明。同步子进程统一使用 `sandbox-runtime::OwnedChild`，异步中继仍独立承担持久身份与排空责任；本次整理未运行抽取或新增 Lean 证明。
 
 ## 模板子系统排除边界
 
@@ -176,6 +180,34 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 - 模型不依赖 Rust 抽取物；对应证明单向依赖模型。扩展仍使用显式输入枚举，不用开放插件绕过穷尽检查。
 
 ## 验收与新增服务
+
+### 当前串行实现的模块交接
+
+#262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #261 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。
+
+| 局部边界与实际入口 | 输入、输出及当前责任 | 后续对应证明需要连接的事实 |
+|---|---|---|
+| 准入与持久决定：[admission.rs](../controller-service/src/controller/admission.rs) 的 `admit_create_with_options` / `admit_template_create`；[transaction.rs](../controller-service/src/controller/transaction.rs) 的 `WorldTransaction` | 输入原用户、创建参数、模板绑定、可信时间和容量限制；接受时保存请求、资源计划、寿命、预算及工作记录，拒绝/提交未知分别返回错误。`commit_with` 在调用提交前使缓存失效，仅确认提交成功后发布候选状态 | 核对 SQL、检查点＋输入尾、核心状态与 outbox 的表示关系；拒绝不产生外部工作，不确定提交不允许使用候选缓存或创建替代身份。编号高水位与业务接受分别核对，不能要求拒绝时所有持久表逐字不变 |
+| 生命周期、寿命与撤销：[lifecycle.rs](../controller-service/src/application/coordinator/lifecycle.rs) 的 `create_locked` / `kill_locked` / `expire_due_report`；[admission.rs](../controller-service/src/controller/admission.rs) 的 `publish_running_at` / `set_lifetime` / `accept_expiry` | 创建接受后才绑定原物理位置、登记原凭据并执行；宿主就绪后采样运行起点。终止意图提交后撤销原数据通道，提交未知也保守撤销但不派发未确认动作；到期时重新读取时钟与寿命 | 原管理锁内持久决定、宿主派发、时间重读、撤销和返回结果的次序；接受之后的错误不能伪装成可安全重新创建的拒绝；终止后旧激活不得恢复 Running 或访问权限 |
+| 工作领取与回执：[controller/mod.rs](../controller-service/src/controller/mod.rs) 的 `dispatch_next_for` / `claim_next` / `complete`；[workflow.rs](../controller-service/src/workflow.rs) 的 `drain` | `claim_next` 从原 outbox 选择已提交且核心预检允许的动作，持久领取后调用宿主；传输失败保留未知。`complete` 接收绑定动作身份的宿主回执，核对证据、重复/冲突、当前终止状态并原子应用资源更新与回执 | 派发提交先于副作用；回执不能先于领取；同一回执重放不重复推进，旧激活回执不可复活终止实例。底层 `Journal::dispatch_next` 只是通用记录原语，正式核心连接以 `ControllerJournal` 的资格检查和 `complete` 为准 |
+| 恢复与失败隔离：[recovery.rs](../controller-service/src/application/coordinator/recovery.rs) 的 `recover_locked` / `matches_current_reclaim` / `bind_recovery_slots`；[controller/mod.rs](../controller-service/src/controller/mod.rs) 的 `matches_current_*` / `reconcile_observed` | 从原持久快照、未知动作、密封资源计划和精确宿主观察恢复；先核对当前操作/尝试/物理位置，再执行命令专属补偿或只读观察。单实例观察失败保留该实例未知，共享存储不可信则拒绝继续 | 恢复不重新派发未知 PrepareVm；可收敛的初始化/停止补偿只处理原身份，不等于任意重试安全；局部故障隔离不吞掉全局状态损坏。缺失绑定安装资格仍需原位置与前任身份核验，不是新建凭据的许可 |
+| 宿主判断、执行与证据：[decisions.rs](../sandbox-node/src/linux/decisions.rs)、[identity.rs](../sandbox-node/src/linux/identity.rs) 的 `validate_action` / `require_fence` / `require_slot`；[execution.rs](../sandbox-node/src/linux/execution.rs) 的 `execute`；[observation.rs](../sandbox-node/src/linux/observation.rs) 的 `observe_action` | 值判断比较动作字段、围栏、位置坐标、进程身份及结果形状；节点另读取当前占用、归属和现场证据。只读观察不启动/停止/清理 VM；执行和命令专属恢复使用原身份 | 纯布尔比较不是执行证书；必须证明现场读取、判断与使用的顺序，及自有见证构造如何满足 `HostEvidence::validates`。不能将整个 NodeHost、观察器或恢复器作为外部正确假设 |
+| 终局发布、清理与容量：[publication.rs](../controller-core/src/publication.rs) 的 `handle_publish_destroyed`；[workflow.rs](../controller-service/src/workflow.rs) 的 `finish_accepted_kill_v1` / `cleanup_destroyed_resources`；[host_slots.rs](../sandbox-node/src/host_slots.rs) 的 `release_host_slot`；[recovery.rs](../controller-service/src/application/coordinator/recovery.rs) 的 `release_reclaimed_slots` | 终止计划的可信停止/关闭回执满足核心前置条件后发布 Destroyed，随后继续物理清理。物理位置先持久记录 Releasing 和原退休清单，精确清理并观察确认后才可 Free；数据持有者未排空仍保留占用 | Destroyed、物理清理完成、位置 Free、逻辑退休及结果过期是不同事实。停止证据不能直接证明目录已删；未知不释放位置或预算，旧清理不能影响复用位置。已接受工作的收尾预留和真实字节边界仍需组合证明 |
+| 数据权限与在途持有者：[data_access.rs](../controller-service/src/application/coordinator/data_access.rs) 的 `data_permit` / `spawn_data_relay`；[data_credentials.rs](../controller-service/src/application/coordinator/data_credentials.rs)；[gateway](../sandbox-server/src/gateway.rs) | 原管理锁内查可信凭据索引、核对归属/寿命/VM/代数并登记撤销、排空及宿主闸门；真正启动中继前再次核对。网关转发不另行授予访问或自行拼接宿主命令 | 许可不是永久授权；旧许可在撤销、到期或身份改变后不能启动连接。自有闸门登记、子进程回收、字节/协议结束和持有者排空须单独连接，不把 EOF 或 HTTP 成功当作物理退出证据 |
+
+局部证明按上述责任建立前置条件、返回关系和后继状态关系，然后组合“创建已受理 → 结果未知 → 接受终止 → 精确停止/清理 → 发布终局”。组合必须包含工作调用资格、持久提交和物理观察之间的关系，不能只重新运行独立模型定理；模板构建/管理仍排除，但核心使用模板绑定与资源形状仍在范围内。有限执行安全对应不能直接推出无限轨迹的最终完成性；后者仍需要内部进度量、调度及外部响应条件。
+
+### 固定工具链的局部抽取评估
+
+以下评估绑定上述代码基线和[固定工具链](../verification/README.zh-CN.md)。真实 Rust 文件未改写，未升级工具；输出保存在仓库外的独立临时目录，没有覆盖正式 LLBC/Lean 产物。采用 `--preset=aeneas --error-on-warnings --sysroot default`，Cargo 使用 `--lib --locked --offline`；Aeneas 使用 `-backend lean -abort-on-error -warnings-as-errors -split-files -emit-json`。入口是 `charon cargo --start-from <实际函数> --dest-file <独立输出> -- --manifest-path <原 crate/Cargo.toml> --lib --locked --offline`，随后转换同一 LLBC，不手写一份替代 Rust 实现。
+
+| 选定真实函数 | 已实测层次与阻碍 | 下一步，不是已完成证明 |
+|---|---|---|
+| `controller-core` 的 `crate::effect::handle_effect_receipt` 与 `crate::publication::handle_publish_destroyed` | Charon 成功；固定 Aeneas 生成两入口的 Lean 函数及依赖。生成器仍输出标准库外部函数的公理模板，未导入或提交它；未完成外部函数可计算连接、Lean 编译或与独立模型的对应证明 | 在证明批次核对新枚举/状态与标准库连接，重新抽取正式入口，补齐接受、按序拒绝和完整后继状态对应；临时生成成功不背书历史定理或整个服务 |
+| `controller-service` 的 `crate::application::coordinator::recovery::can_install_host_slot_binding` | Charon 成功，Aeneas 在 `recovery.rs` 的 `record.terminal && record.phase == Revoking && record.current_vm.is_none()` 分支合并处报 `Could not match the contexts`。额外显式 `--include sandbox_controller_core` 展开自有核心依赖后仍在同处失败 | 后续以同一规则评估等价的局部 Rust 控制流整理，先保留所有边界回归，再重新抽取；不能将自有核心查询保持不透明或升级工具来冒充完整连接。本批只登记阻碍，不改恢复语义 |
+| `sandbox-node` 的 `crate::linux::decisions::fence_can_advance` | macOS 原目标下 Charon 明确拒绝：`crate::linux` 不存在，真实模块受 `cfg(target_os = "linux")` 约束。固定 nightly 已安装 Linux Rust 目标；进一步使用 `--targets x86_64-unknown-linux-gnu`，原依赖 `libsqlite3-sys` 构建因缺少 `x86_64-linux-gnu-gcc` 失败。本批 Linux 验收检出未配置同一抽取工具链 | 在固定 Linux 工具环境评估原函数；不伪造平台 cfg、不复制算法或在本机空 crate 上宣布节点抽取成功。这是环境限制，尚不能判断该函数的 Aeneas 可翻译性；Linux 普通测试与 Linux 抽取分别记录 |
+
+本批是代码接口交接和抽取可行性评估，**没有新增 Lean 定理，也没有执行完整 `verify-controller.sh` 证明验收**。已有历史证明结论及开放义务不变；抽取成功、环境未就绪、翻译失败、局部证明与完整证明验收必须分别报告。
 
 ### 当前实现的最小证明批次：待执行义务
 

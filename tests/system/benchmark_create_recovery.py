@@ -28,13 +28,18 @@ import time
 from types import SimpleNamespace
 import urllib.request
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from harbor.models.task.config import NetworkMode
 from benchmarks.generic_environment import GenericEnvironment
 from tools import service_cgroup
 from tools.runtime_create_recovery import matching_runtime, recover_runtime_create
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
-from server_process_crash import fetch, free_loopback_port, start_server, stop_server, wait_ready
+from server_process_crash import (complete_runtime, fetch, free_loopback_port, provision_runtime,
+                                  start_server, stop_server, terminal_cleanup_confirmed, wait_ready)
 from server_template_isolation import audit_gone
 from server_templates import descriptor, record_for
 from server_vm_id_capacity import check_no_resources
@@ -66,7 +71,7 @@ def exercise(args):
     settings = {'namespace': namespace, 'database': str(root / 'db/controller.db'),
         'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'jails'),
         'jailer': str(args.jailer), 'firecracker': str(args.firecracker),
-        'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base, 'max_vm_id': 1,
+        'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base,
         'vcpu_count': 1, 'memory_mib': 256,
         'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': 512 * 1024**2},
         'file_policy_digest': 1, 'bind': url.removeprefix('http://'), 'domain': 'example.invalid',
@@ -79,6 +84,8 @@ def exercise(args):
             'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
             'max_memory_bytes_global': 512 * 1024**2, 'max_memory_bytes_per_tenant': 512 * 1024**2}}}
     config = root / 'config.json'
+    settings = complete_runtime(settings, slots=1)
+    provision_runtime(settings)
     config.write_text(json.dumps(settings)); config.chmod(0o600)
     service_record = root / 'service-cgroup.json'
     service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespace, service_record,
@@ -147,6 +154,10 @@ def exercise(args):
             found = matching_runtime(root / 'db/controller.db', env.runtime_intent,
                                      owner=1, namespace=namespace, sandbox_id=identity)
             assert found is not None and found['phase'] != 'Starting'
+            # Capture the exact original resource before DELETE/retirement.
+            _, name, claim = record_for(root, SimpleNamespace(sandbox_id=identity))
+            claim['network_inode'] = json.loads((root / 'jails/.claims' / name / 'network.json').read_text())['namespace_inode']
+            report['cleanup_identity'] = claim
             report.setdefault('delete_observations', []).append(found)
             return fetch(opener, url, 'DELETE', '/sandboxes/' + identity, key)[0]
         recovery = recover_runtime_create(root / 'db/controller.db', env.runtime_intent,
@@ -157,12 +168,11 @@ def exercise(args):
         assert len(report['delete_observations']) == 1
         if args.drop_phase == 'starting':
             assert recovery['pending_create_observed'], 'pending recovery window was missed'
-        report['physical_audit'] = [audit_gone(root, args.firecracker, args.cgroup_parent, p.name)
-                                    for p in (root / 'jails/.claims').iterdir()]
-        check_no_resources(root, namespace, args.firecracker, args.uid_base)
-        with sqlite3.connect(root / 'db/controller.db') as db:
-            assert db.execute('SELECT COUNT(*) FROM sandboxes').fetchone()[0] == 1
-            assert db.execute("SELECT COUNT(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0] == 0
+        original = report['cleanup_identity']
+        report['physical_audit'] = [audit_gone(root, args.firecracker, args.cgroup_parent,
+                                              original['resource_id'], original)]
+        check_no_resources(root, namespace, args.firecracker, args.uid_base, [original])
+        assert terminal_cleanup_confirmed(root / 'db/controller.db', recovery['sandbox_id'])
         assert sha256_file(args.rootfs) == view['rootfsSha256']
         report['status'] = 'passed'
     finally:

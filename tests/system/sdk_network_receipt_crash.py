@@ -27,8 +27,8 @@ import urllib.request
 from e2b import Sandbox
 
 from sdk_public_network import Outside, clean_vm, guest_ping, vm_identity
-from server_process_crash import (fetch, free_loopback_port, interrupted_request,
-                                  process_start_ticks, start_server, stop_server, wait_ready)
+from server_process_crash import (complete_runtime, fetch, free_loopback_port, interrupted_request,
+                                  process_start_ticks, provision_runtime, start_server, stop_server, wait_ready)
 
 
 def exercise(args: argparse.Namespace) -> None:
@@ -57,7 +57,7 @@ def exercise(args: argparse.Namespace) -> None:
     rootfs.chmod(0o644)
     port = free_loopback_port()
     config = root / "config.json"
-    config.write_text(json.dumps({
+    settings = {
         "namespace": namespace,
         "database": str(root / "db/controller.db"),
         "node_state_dir": str(root / "state"),
@@ -67,7 +67,6 @@ def exercise(args: argparse.Namespace) -> None:
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
-        "max_vm_id": 1000,
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
@@ -83,7 +82,10 @@ def exercise(args: argparse.Namespace) -> None:
         "default_timeout_secs": 300,
         "expiry_scan_seconds": 1,
         "public_ipv4_enabled": True,
-    }))
+    }
+    settings = complete_runtime(settings, slots=1)
+    provision_runtime(settings)
+    config.write_text(json.dumps(settings))
     config.chmod(0o600)
     api_url = f"http://127.0.0.1:{port}"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

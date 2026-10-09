@@ -1,0 +1,68 @@
+{
+  "schema_version": 2,
+  "dataset": "terminal-bench@2.0",
+  "source_kind": "oci",
+  "source_commit": "69671fbaac6d67a7ef0dfec016cc38a64ef7a77c",
+  "selection_note": "Frozen compatibility regression, not original benchmark scores. Generic templates only; legacy fixed-base recipes are not used. Network-blocked diagnostics may be replaced in a separate run, never relabeled as passes.",
+  "oracle_modes": {
+    "filter-js-from-html": "repaired",
+    "git-multibranch": "repaired",
+    "gpt2-codegolf": "repaired",
+    "build-cython-ext": "repaired",
+    "mcmc-sampling-stan": "repaired",
+    "make-doom-for-mips": "repaired",
+    "build-pmars": "repaired",
+    "protein-assembly": "repaired",
+    "pytorch-model-recovery": "repaired",
+    "qemu-alpine-ssh": "repaired",
+    "qemu-startup": "repaired",
+    "rstan-to-pystan": "repaired",
+    "build-pov-ray": "repaired",
+    "crack-7z-hash": "repaired",
+    "caffe-cifar-10": "repaired",
+    "install-windows-3.11": "repaired",
+    "torch-tensor-parallelism": "repaired",
+    "mteb-leaderboard": "repaired",
+    "mteb-retrieve": "repaired"
+  },
+  "profiles": {
+    "ci": {
+      "description": "Two stable CI checks; prepackaged environments and local verifier bootstrap are explicitly a CI variant",
+      "tasks": [
+        {"name": "polyglot-c-py", "coverage": "compiler, interpreter, command and file transport"},
+        {"name": "db-wal-recovery", "coverage": "guest database recovery and filesystem"}
+      ]
+    },
+    "smoke": {
+      "description": "Four capability checks, including one explicitly repaired solution",
+      "tasks": [
+        {"name": "polyglot-c-py", "coverage": "compiler and interpreter"},
+        {"name": "regex-log", "coverage": "text and filesystem"},
+        {"name": "db-wal-recovery", "coverage": "database recovery"},
+        {"name": "build-pmars", "coverage": "native compilation with reviewed legacy repair"}
+      ]
+    },
+    "regression": {
+      "description": "Compatibility regression selected by capabilities, not leaderboard sampling",
+      "tasks": [
+        {"name": "polyglot-c-py", "coverage": "compiler and interpreter"},
+        {"name": "regex-log", "coverage": "text and filesystem"},
+        {"name": "db-wal-recovery", "coverage": "database recovery"},
+        {"name": "cancel-async-tasks", "coverage": "async execution and cancellation"},
+        {"name": "kv-store-grpc", "coverage": "RPC server and persistent files"},
+        {"name": "configure-git-webserver", "coverage": "Git HTTP service and authentication"},
+        {"name": "nginx-request-logging", "coverage": "HTTP service and logs"},
+        {"name": "openssl-selfsigned-cert", "coverage": "crypto tools and permissions"},
+        {"name": "large-scale-text-editing", "coverage": "large files"},
+        {"name": "query-optimize", "coverage": "database process and SQL"},
+        {"name": "financial-document-processor", "coverage": "OCR and PDF"},
+        {"name": "adaptive-rejection-sampler", "coverage": "numerical code"},
+        {"name": "sqlite-with-gcov", "coverage": "native database compilation"},
+        {"name": "build-pmars", "coverage": "reviewed native compilation repair"},
+        {"name": "build-cython-ext", "coverage": "reviewed extension dependency repair"},
+        {"name": "caffe-cifar-10", "coverage": "reviewed training-data download repair"}
+      ]
+    },
+    "full": {"description": "All locked tasks under the explicit compatibility oracle policy", "all": true}
+  }
+}

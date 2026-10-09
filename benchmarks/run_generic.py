@@ -31,23 +31,41 @@ def validate_oracle_mode(args, selected):
 
 
 async def run_selected(args, lock):
+    if getattr(args, 'build_mode', 'windowed') != 'windowed':
+        raise InvalidInput('only windowed builds are supported')
+    if lock.get('dataset') == 'terminal-bench@2.1' and (
+            getattr(args, 'oracle_mode', 'original') != 'original' or args.source_kind == PRUNED_SOURCE):
+        raise InvalidInput('2.0 oracle/environment repairs are not applicable to 2.1')
     selected = {t['name'] for t in lock['tasks']} if args.all else set(args.task)
     entries = {t['name']: t for t in lock['tasks']}
     if not selected or not selected <= entries.keys():
         raise InvalidInput('select task names from the complete locked task set')
     mode = validate_oracle_mode(args, selected)
-    validate_source_kind(args.source_kind, [entries[name] for name in selected])
+    ci_fixtures = getattr(args, 'ci_fixtures', None)
+    if ci_fixtures is not None:
+        if args.source_kind != 'prepared-ci' or lock['dataset'] != 'terminal-bench@2.0' or mode != 'original':
+            raise InvalidInput('prepared CI requires its explicit original-oracle variant')
+        if not selected <= ci_fixtures.keys():
+            raise InvalidInput('selected task has no approved CI fixture')
+        if not callable(getattr(args, 'verifier_task_factory', None)):
+            raise InvalidInput('prepared CI requires an explicit scoring-entry variant factory')
+    else:
+        validate_source_kind(args.source_kind, [entries[name] for name in selected])
     rows = [{'name': t['name'], 'status': 'not_run',
              'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
     def report(current=None):
         text = json.dumps({
-            'schema_version': 1, 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
+            'schema_version': 1, 'dataset': lock.get('dataset', 'terminal-bench@2.0'), 'source': lock['source'], 'task_count': len(rows), 'tasks': rows,
             'source_kind': args.source_kind, 'oracle_mode': mode,
-            'original_environment': args.source_kind != PRUNED_SOURCE,
+            'original_environment': args.source_kind != PRUNED_SOURCE and ci_fixtures is None,
             'failure_diagnostics': getattr(args, 'failure_diagnostics', False),
-            'scope': ('generic templates; ' + mode + ' oracle and original verifier; '
+            'scope': ('prepared CI fixtures; original oracle and CI scoring-entry variant; '
+                      'original test assertions; exact host cleanup requires external audit'
+                      if ci_fixtures is not None else
+                      'generic templates; ' + mode + ' oracle and original verifier; '
                       'exact host cleanup requires external audit'),
-            'dependencies': 'output image digest recorded; dynamic build/verifier downloads not fully locked',
+            'dependencies': ('prepared immutable CI fixtures; runtime downloads prohibited'
+                if ci_fixtures is not None else 'output image digest recorded; dynamic build/verifier downloads not fully locked'),
         }, indent=2) + '\n'
         if current is None:
             # Before dispatch there is nothing to reconcile if publication fails.
@@ -60,13 +78,17 @@ async def run_selected(args, lock):
         environment = None
         def factory(*, recipe, **kwargs):
             nonlocal environment
-            environment = GenericEnvironment(entry=entry, source=args.source, source_kind=args.source_kind,
-                build_url=args.build_url, start_audit=getattr(args, 'start_audit', None),
-                build_mode=getattr(args, 'build_mode', 'windowed'), **kwargs)
+            factory_type = GenericEnvironment
+            if ci_fixtures is not None:
+                from benchmarks.prepared_ci_environment import PreparedCiEnvironment
+                factory_type = PreparedCiEnvironment
+                kwargs['fixture'] = ci_fixtures[name]
+            environment = factory_type(entry=entry, source=args.source, source_kind=args.source_kind,
+                build_url=args.build_url, start_audit=getattr(args, 'start_audit', None), **kwargs)
             return environment
         row = {'name': name, 'status': 'runner_error', 'oracle': 'not_run', 'verifier': 'not_run',
                'oracle_mode': mode, 'environment_source_kind': args.source_kind,
-               'original_environment': args.source_kind != PRUNED_SOURCE,
+               'original_environment': args.source_kind != PRUNED_SOURCE and ci_fixtures is None,
                'exact_cleanup': 'unknown'}
         try:
             row = await run_task(args, entry, {}, environment_factory=factory, result_row=row)
@@ -100,7 +122,9 @@ async def run_selected(args, lock):
                     try:
                         row['runtime_intent'] = load_runtime_intent(
                             result.parent, task=name, runtime_attempt=environment.runtime_attempt,
-                            build_id=environment.build_id, template=environment.template)
+                            build_id=environment.build_id, template=environment.template,
+                            benchmark=entry.get('dataset', 'terminal-bench-2.0'),
+                            prepared_ci=ci_fixtures is not None)
                     except (OSError, ValueError, TypeError) as error:
                         row.setdefault('execution_status', row['status'])
                         row.update(status='cleanup_unknown', exact_cleanup='unknown',
@@ -165,8 +189,6 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--api-url', required=True)
     parser.add_argument('--build-url', required=True)
-    parser.add_argument('--build-mode', choices=('windowed', 'legacy-unbounded'), default='windowed',
-                        help='legacy-unbounded is explicit compatibility and does not satisfy bounded retention acceptance')
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--task', action='append')
     selection.add_argument('--all', action='store_true')

@@ -36,7 +36,7 @@ for directory in (ROOT, SYSTEM):
         sys.path.insert(0, str(directory))
 
 from tools import check_kvm_host as host
-from tools.template_build_service import host_uid_range, protected_json
+from tools.template_build_config import host_uid_range, protected_json
 from tools.template_physical_storage import envelope
 
 GUEST_FILES = {

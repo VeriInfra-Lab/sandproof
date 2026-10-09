@@ -23,7 +23,7 @@ def settings():
                   node_state_dir='/run/accept/node', chroot_base='/run/accept/jails',
                   kernel='/opt/accept/kernel', rootfs='/opt/accept/rootfs',
                   jailer='/opt/accept/jailer', firecracker='/opt/accept/firecracker',
-                  uid_base=10000, max_vm_id=2, vcpu_count=1, memory_mib=512,
+                  uid_base=10000, vcpu_count=1, memory_mib=512,
                   file_policy_digest=1, max_active_global=2, max_active_per_tenant=2,
                   max_disk_bytes_global=8 * 1024 * 1024, cleanup_reserve_bytes=5 * 1024 * 1024,
                   max_timeout_secs=600, expiry_scan_seconds=1,
@@ -93,6 +93,8 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(node['state_dir'], value['node_state_dir'])
         self.assertNotIn('node_state_dir', node)
         self.assertNotIn('credentials', node)
+        self.assertNotIn('max_vm_id', node)
+        self.assertNotIn('uid_base', node)
         self.assertEqual(node['bounded_host']['max_data_routes_per_slot'], 4)
         self.assertEqual(node['bounded_host']['max_data_routes_global'], 8)
         self.assertEqual(node['bounded_host']['data_route_control_reserve'], 1)
@@ -117,6 +119,24 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class ObservationTests(unittest.TestCase):
+    def test_empty_reopen_allows_only_monotonic_maintenance_input_progress(self):
+        before = {'effect:': 45, 'input:': 209, 'outbox:': 45, 'receipt:': 45, 'sandbox:': 5}
+        probe.assert_reopen_frontiers(before, before.copy())
+        probe.assert_reopen_frontiers(before, before | {'input:': 210})
+        for kind in before:
+            bad = before | {kind: before[kind] - 1}
+            with self.subTest(regressed=kind), self.assertRaises(AssertionError):
+                probe.assert_reopen_frontiers(before, bad)
+            if kind != 'input:':
+                with self.subTest(advanced=kind), self.assertRaises(AssertionError):
+                    probe.assert_reopen_frontiers(before, before | {kind: before[kind] + 1})
+            missing = before.copy()
+            del missing[kind]
+            with self.subTest(missing=kind), self.assertRaises(AssertionError):
+                probe.assert_reopen_frontiers(before, missing)
+        with self.assertRaises(AssertionError):
+            probe.assert_reopen_frontiers(before, before | {'operation:other': 1})
+
     def test_wal_aware_reader_sees_uncheckpointed_rows_and_closes_snapshot(self):
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / 'controller.db'

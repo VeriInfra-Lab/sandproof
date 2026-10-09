@@ -1,0 +1,22 @@
+[Unit]
+Description=Sandproof trusted configurable promotion E2E checks
+After=network-online.target sandproof-ci-supervisor.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sandproof-e2e/control
+ExecStart=/usr/bin/python3 -m tools.ci_e2e_supervisor --config /etc/sandproof-ci/e2e.json --follow-promotions
+LoadCredential=app-key:/etc/sandproof-ci/app-key.pem
+Restart=on-failure
+RestartSec=60
+TimeoutStopSec=60
+UMask=0077
+NoNewPrivileges=yes
+MemoryMax=512M
+TasksMax=64
+LogRateLimitIntervalSec=60
+LogRateLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target

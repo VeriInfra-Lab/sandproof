@@ -10,9 +10,7 @@ use std::time::Duration;
 
 const APPLICATION_ID: i64 = 0x5350_4631; // SPF1
 const FORMAT_VERSION: i64 = 1;
-pub(crate) const CONTROLLER_FORMAT_VERSION: i64 = 2;
-pub(crate) const BOUNDED_FORMAT_VERSION: i64 = 3;
-pub(crate) const MAINTAINED_FORMAT_VERSION: i64 = 4;
+pub(crate) const MAINTAINED_FORMAT_VERSION: i64 = 5;
 type ExistingReceiptRow = (i64, String, Vec<u8>, Option<Vec<u8>>);
 
 /// Bytes are a projection supplied by the controller reducer's adapter.
@@ -227,6 +225,48 @@ fn require_generic_store(connection: &Connection) -> Result<(), JournalError> {
     Ok(())
 }
 
+/// Inspect only: the formal service never imports an older controller schema.
+/// This also runs under the writer lease and again in the open transaction.
+pub(crate) fn require_current_controller_store(
+    connection: &Connection,
+) -> Result<(), JournalError> {
+    let app: i64 = connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+    let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if app != APPLICATION_ID || format != MAINTAINED_FORMAT_VERSION {
+        return Err(JournalError::UnsupportedStore);
+    }
+    let version: i64 = connection.query_row(
+        "SELECT version FROM controller_meta WHERE id=1",
+        [],
+        |row| row.get(0),
+    )?;
+    // 7 is the current base lifecycle schema. 8..11 are durable feature
+    // gates (network/template/private-window evidence), not older deployments.
+    // Their existing recovery validation still checks every enabled feature.
+    if !(7..=11).contains(&version) {
+        return Err(JournalError::UnsupportedStore);
+    }
+    let maintenance: Vec<u8> = connection.query_row(
+        "SELECT config_json FROM controller_maintenance_config WHERE id=1",
+        [],
+        |row| row.get(0),
+    )?;
+    let maintenance: crate::MaintenanceConfig = serde_json::from_slice(&maintenance)?;
+    let host: Vec<u8> = connection.query_row(
+        "SELECT config_json FROM controller_bounded_config WHERE id=1",
+        [],
+        |row| row.get(0),
+    )?;
+    let host: crate::BoundedHostConfig = serde_json::from_slice(&host)?;
+    if maintenance.capacity.is_none()
+        || host.physical_storage.is_none()
+        || host.console_policy != Some(crate::ConsolePolicy::Discard)
+    {
+        return Err(JournalError::UnsupportedStore);
+    }
+    Ok(())
+}
+
 impl Journal {
     /// Opens one local `SQLite` database. WAL + FULL + IMMEDIATE transactions
     /// are part of this format's operating contract, not caller preferences.
@@ -234,23 +274,14 @@ impl Journal {
     /// # Errors
     /// Rejects unsupported/corrupt stores, unsuitable journal settings, and I/O errors.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, JournalError> {
-        Self::open_inner(path, false, false, false)
+        Self::open_inner(path, false)
     }
 
-    pub(crate) fn open_controller(
-        path: impl AsRef<Path>,
-        bounded: bool,
-        maintained: bool,
-    ) -> Result<Self, JournalError> {
-        Self::open_inner(path, true, bounded, maintained)
+    pub(crate) fn open_controller(path: impl AsRef<Path>) -> Result<Self, JournalError> {
+        Self::open_inner(path, true)
     }
 
-    fn open_inner(
-        path: impl AsRef<Path>,
-        controller: bool,
-        bounded: bool,
-        maintained: bool,
-    ) -> Result<Self, JournalError> {
+    fn open_inner(path: impl AsRef<Path>, controller: bool) -> Result<Self, JournalError> {
         let connection = Connection::open(path)?;
         if !controller {
             require_generic_store(&connection)?;
@@ -260,6 +291,9 @@ impl Journal {
 
         let app_id: i64 = connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
         let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if controller && (app_id != 0 || format != 0) {
+            require_current_controller_store(&connection)?;
+        }
         if app_id == 0 && format == 0 {
             let user_objects: i64 = connection.query_row(
                 "SELECT count(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'",
@@ -269,8 +303,9 @@ impl Journal {
             if user_objects != 0 {
                 return Err(JournalError::UnsupportedStore);
             }
-            connection.execute_batch(
-                "BEGIN IMMEDIATE;
+            if !controller {
+                connection.execute_batch(
+                    "BEGIN IMMEDIATE;
                  CREATE TABLE sandboxes (
                    sandbox_id TEXT PRIMARY KEY,
                    owner_id TEXT NOT NULL,
@@ -306,13 +341,10 @@ impl Journal {
                  PRAGMA application_id=0x53504631;
                  PRAGMA user_version=1;
                  COMMIT;",
-            )?;
+                )?;
+            }
         } else if app_id != APPLICATION_ID
-            || (format != FORMAT_VERSION
-                && !(controller
-                    && (format == CONTROLLER_FORMAT_VERSION
-                        || (bounded && format == BOUNDED_FORMAT_VERSION)
-                        || (bounded && maintained && format == MAINTAINED_FORMAT_VERSION))))
+            || (format != FORMAT_VERSION && !(controller && format == MAINTAINED_FORMAT_VERSION))
         {
             return Err(JournalError::UnsupportedStore);
         }

@@ -63,11 +63,17 @@ class BuildClient:
             connection.close()
 
 
-def saved_intent(path, client, request, *, build_mode, token=None, context=None):
+def request_window(value):
+    """Validate the only supported retry domain without inventing a new one."""
+    if (type(value) is not dict or set(value) != {"namespace", "sequence"}
+            or any(type(number) is not int or not 0 <= number < 2**64 for number in value.values())):
+        raise ValueError("invalid original request window")
+    return dict(value)
+
+
+def saved_intent(path, client, request, *, token=None, context=None):
     """Persist the full retry domain before any uncertain build submission."""
     path = Path(path)
-    if build_mode not in ("windowed", "legacy-unbounded"):
-        raise ValueError("explicit supported build mode required")
     digest = None
     if context is not None:
         hasher = hashlib.sha256()
@@ -76,22 +82,20 @@ def saved_intent(path, client, request, *, build_mode, token=None, context=None)
                 hasher.update(block)
         digest = hasher.hexdigest()
     expected = client.intent_binding() | {"request": request, "context_sha256": digest,
-                                          "build_mode": build_mode}
-    if path.exists():
+                                          "build_mode": "windowed"}
+    if path.exists() or path.is_symlink():
         if path.is_symlink() or path.stat().st_size > 65536:
             raise ValueError("invalid saved build intent")
         intent = json.loads(path.read_text())
         if any(intent.get(key) != value for key, value in expected.items()) or (token and intent.get("idempotency_key") != token):
             raise ValueError("saved build intent conflicts; never replace an uncertain request")
-        if (not intent.get("idempotency_key") or (build_mode == "windowed"
-                and not isinstance(intent.get("requestWindow"), dict))
-                or (build_mode == "legacy-unbounded" and "requestWindow" in intent)):
+        if not isinstance(intent.get("idempotency_key"), str) or not intent["idempotency_key"]:
             raise ValueError("saved intent lacks original request window/key")
+        request_window(intent.get("requestWindow"))
         return intent
     intent = expected | {"idempotency_key": token or secrets.token_hex(16)}
-    if build_mode == "windowed":
-        opened = client.request("POST", "/sandproof/template-build-windows", {"durationMs": request["timeoutSeconds"] * 1000})
-        intent["requestWindow"] = opened["requestWindow"]
+    opened = client.request("POST", "/sandproof/template-build-windows", {"durationMs": request["timeoutSeconds"] * 1000})
+    intent["requestWindow"] = request_window(opened.get("requestWindow"))
     # Exclusive stable path: no replacing a prior invocation's retry identity.
     with path.open("x") as output:
         os.chmod(path, 0o600)
@@ -119,8 +123,6 @@ def main():
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--idempotency-key")
     parser.add_argument("--intent", type=Path, required=True, help="durable retry identity; reuse this file after a lost response")
-    parser.add_argument("--build-mode", choices=("windowed", "legacy-unbounded"), required=True,
-                        help="explicit deployment mode; never downgrade an uncertain windowed request")
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
     key = os.environ.get("SANDBOX_API_KEY")
@@ -132,9 +134,8 @@ def main():
             "resources": {"cpuCount": args.cpu, "memoryMiB": args.memory_mib, "diskMiB": args.disk_mib, "minFreeMiB": args.min_free_mib}}
     if args.image:
         body["image"] = args.image
-    intent = saved_intent(args.intent, client, body, build_mode=args.build_mode,
-                          token=args.idempotency_key, context=args.context)
-    submission = body | ({"requestWindow": intent["requestWindow"]} if args.build_mode == "windowed" else {})
+    intent = saved_intent(args.intent, client, body, token=args.idempotency_key, context=args.context)
+    submission = body | {"requestWindow": intent["requestWindow"]}
     result = client.request("POST", "/sandproof/template-builds", submission,
                             token=intent["idempotency_key"])
     path = "/sandproof/template-builds/" + result["buildID"]

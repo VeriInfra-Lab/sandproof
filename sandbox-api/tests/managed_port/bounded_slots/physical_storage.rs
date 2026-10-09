@@ -32,16 +32,17 @@ fn capacity() -> MaintenanceConfig {
         }),
     }
 }
-fn profile() -> PhysicalStorageProfile {
+fn profile(path: &std::path::Path) -> PhysicalStorageProfile {
+    let directory = path.parent().unwrap();
     PhysicalStorageProfile {
         version: 1,
-        coordination_file: "/deployment/physical".into(),
+        coordination_file: directory.join("physical"),
         pools: vec![PhysicalPool {
             role: PoolRole::Runtime,
             namespace: NAMESPACE.into(),
-            database: "/deployment/controller.db".into(),
-            node_state_dir: "/deployment/node".into(),
-            chroot_base: "/deployment/jails".into(),
+            database: path.into(),
+            node_state_dir: directory.join("node"),
+            chroot_base: directory.join("jails"),
             rootfs_budget_bytes: 1000,
             max_host_slots: 1,
             kernel_copy_bytes: 100,
@@ -59,16 +60,24 @@ fn profile() -> PhysicalStorageProfile {
 fn open_full(
     path: &std::path::Path,
     host: BoundedHost,
-    physical: Option<PhysicalStorageProfile>,
+    physical: PhysicalStorageProfile,
 ) -> ManagedPort<BoundedHost> {
-    let mut bounded = bounded();
+    ManagedPort::new(Arc::new(open_full_application(path, host, physical)))
+}
+
+fn open_full_application(
+    path: &std::path::Path,
+    host: BoundedHost,
+    physical: PhysicalStorageProfile,
+) -> ControllerApplication<BoundedHost> {
+    let mut bounded = bounded(path);
     bounded.console_policy = Some(ConsolePolicy::Discard);
-    bounded.physical_storage = physical;
+    bounded.physical_storage = Some(physical);
     let mut managed = config();
-    managed.limits.cleanup_reserve_bytes = profile().pools[0].cleanup_reserve_bytes;
+    managed.limits.cleanup_reserve_bytes = profile(path).pools[0].cleanup_reserve_bytes;
     managed.limits.max_disk_bytes_global = managed.limits.cleanup_reserve_bytes + 1000;
-    ManagedPort::new(
-        ControllerJournal::open_maintained(path, NAMESPACE, bounded, capacity(), 0).unwrap(),
+    ControllerApplication::new(
+        ControllerJournal::open_complete(path, NAMESPACE, bounded, capacity(), 0).unwrap(),
         host,
         managed,
     )
@@ -76,40 +85,49 @@ fn open_full(
 
 #[test]
 fn full_library_admission_requires_profile_and_validated_host_without_identity_consumption() {
-    for declared in [None, Some(profile())] {
-        let directory = TempDir::new().unwrap();
-        let path = directory.path().join("controller.db");
-        let host = BoundedHost::default();
-        host.0.lock().unwrap().physical_free = Some(u64::MAX);
-        let port = open_full(&path, host.clone(), declared.clone());
-        assert!(matches!(port.create("1", request()), Err(PortError::Busy)));
-        assert!(host.0.lock().unwrap().actions.is_empty());
-        drop(port);
-        let mut bounded = bounded();
-        bounded.console_policy = Some(ConsolePolicy::Discard);
-        bounded.physical_storage = declared;
-        let journal =
-            ControllerJournal::open_maintained(&path, NAMESPACE, bounded, capacity(), 0).unwrap();
-        assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
-        assert!(journal.world().unwrap().sandbox_records().is_empty());
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
+    let mut missing = bounded(&path);
+    missing.physical_storage = None;
+    assert!(matches!(
+        ControllerJournal::open_complete(&path, NAMESPACE, missing, capacity(), 0),
+        Err(sandproof_controller_service::JournalError::UnsupportedStore)
+    ));
+    assert!(!path.exists());
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+
+    let physical = profile(&path);
+    let host = BoundedHost::default();
+    {
+        let mut state = host.0.lock().unwrap();
+        state.physical_profile = Some(physical.clone());
+        state.physical_error = true;
+        state.physical_free = Some(u64::MAX);
     }
+    let port = open_full(&path, host.clone(), physical.clone());
+    assert!(matches!(port.create("1", request()), Err(PortError::Busy)));
+    assert!(host.0.lock().unwrap().actions.is_empty());
+    drop(port);
+    let mut bounded = bounded(&path);
+    bounded.physical_storage = Some(physical);
+    let journal =
+        ControllerJournal::open_complete(&path, NAMESPACE, bounded, capacity(), 0).unwrap();
+    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
+    assert!(journal.world().unwrap().sandbox_records().is_empty());
 }
 
 #[test]
 fn whole_sparse_peak_gate_leaves_cleanup_and_exact_release_available_at_saturation() {
     let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
     let host = BoundedHost::default();
-    let peak = profile().peak_bytes().unwrap();
+    let peak = profile(&path).peak_bytes().unwrap();
     {
         let mut state = host.0.lock().unwrap();
-        state.physical_profile = Some(profile());
+        state.physical_profile = Some(profile(&path));
         state.physical_free = Some(peak);
     }
-    let port = open_full(
-        &directory.path().join("controller.db"),
-        host.clone(),
-        Some(profile()),
-    );
+    let port = open_full(&path, host.clone(), profile(&path));
     let first = port.create("1", request()).unwrap();
     host.0.lock().unwrap().physical_free = Some(peak - 1);
     assert!(matches!(
@@ -132,18 +150,15 @@ fn whole_sparse_peak_gate_leaves_cleanup_and_exact_release_available_at_saturati
 #[test]
 fn destroyed_with_unknown_cleanup_keeps_sparse_budget_and_position_charged() {
     let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
     let host = BoundedHost::default();
     {
         let mut state = host.0.lock().unwrap();
-        state.physical_profile = Some(profile());
-        state.physical_free = Some(profile().activation_bytes().unwrap());
+        state.physical_profile = Some(profile(&path));
+        state.physical_free = Some(profile(&path).activation_bytes().unwrap());
         state.unknown_cleanup = true;
     }
-    let port = open_full(
-        &directory.path().join("controller.db"),
-        host.clone(),
-        Some(profile()),
-    );
+    let port = open_full(&path, host.clone(), profile(&path));
     let first = port.create("1", request()).unwrap();
     assert!(matches!(
         port.kill("1", &first.sandbox_id),
@@ -160,33 +175,31 @@ fn destroyed_with_unknown_cleanup_keeps_sparse_budget_and_position_charged() {
 }
 
 #[test]
-fn runtime_profile_cannot_be_reused_for_legacy_private_builder_admission() {
+fn runtime_profile_cannot_enable_private_builder_windows() {
     let directory = TempDir::new().unwrap();
+    let path = directory.path().join("controller.db");
     let host = BoundedHost::default();
     {
         let mut state = host.0.lock().unwrap();
-        state.physical_profile = Some(profile());
-        state.physical_free = Some(profile().activation_bytes().unwrap());
+        state.physical_profile = Some(profile(&path));
+        state.physical_free = Some(profile(&path).activation_bytes().unwrap());
     }
-    let port = open_full(
-        &directory.path().join("controller.db"),
-        host.clone(),
-        Some(profile()),
-    )
-    .with_internal_build_vms(true);
+    let port =
+        open_full_application(&path, host.clone(), profile(&path)).with_internal_build_vms(true);
     assert!(matches!(
-        port.build_vm(
-            "1",
-            "0123456789abcdef0123456789abcdef",
-            Some(sandproof_api::BuildVmRequest {
-                request_window: None,
-                timeout: 300,
-                allow_internet_access: false,
-            })
-        ),
-        Err(PortError::Busy)
+        port.with_build_retry_windows(sandproof_controller_service::BuildRetryConfig {
+            window_duration_ms: 1000,
+            max_anchors: 1,
+        }),
+        Err(PortError::Invalid)
     ));
     assert!(host.0.lock().unwrap().actions.is_empty());
+    let mut bounded = bounded(&path);
+    bounded.physical_storage = Some(profile(&path));
+    let journal =
+        ControllerJournal::open_complete(&path, NAMESPACE, bounded, capacity(), 0).unwrap();
+    assert!(journal.build_retry_config().unwrap().is_none());
+    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
 }
 
 #[test]
@@ -202,6 +215,7 @@ fn single_pool_profile_refuses_unrepresented_registry_before_durable_enable() {
         fs::create_dir(path).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
     }
+    let path = directory.path().join("controller.db");
     let store = CandidateStore::new(
         RegistryConfig {
             root,
@@ -214,16 +228,14 @@ fn single_pool_profile_refuses_unrepresented_registry_before_durable_enable() {
         fs::metadata(directory.path()).unwrap().uid(),
     )
     .unwrap();
-    let path = directory.path().join("controller.db");
-    let mut bounded = bounded();
+    let mut bounded = bounded(&path);
     bounded.console_policy = Some(ConsolePolicy::Discard);
-    bounded.physical_storage = Some(profile());
+    bounded.physical_storage = Some(profile(&path));
     let mut managed = config();
-    managed.limits.cleanup_reserve_bytes = profile().pools[0].cleanup_reserve_bytes;
+    managed.limits.cleanup_reserve_bytes = profile(&path).pools[0].cleanup_reserve_bytes;
     managed.limits.max_disk_bytes_global = managed.limits.cleanup_reserve_bytes + 1000;
-    let port = ManagedPort::with_templates(
-        ControllerJournal::open_maintained(&path, NAMESPACE, bounded.clone(), capacity(), 0)
-            .unwrap(),
+    let port = ControllerApplication::with_templates(
+        ControllerJournal::open_complete(&path, NAMESPACE, bounded.clone(), capacity(), 0).unwrap(),
         BoundedHost::default(),
         managed,
         template_catalog(),
@@ -231,7 +243,7 @@ fn single_pool_profile_refuses_unrepresented_registry_before_durable_enable() {
     .unwrap();
     assert!(matches!(port.with_registry(store), Err(PortError::Busy)));
     let journal =
-        ControllerJournal::open_maintained(&path, NAMESPACE, bounded, capacity(), 0).unwrap();
+        ControllerJournal::open_complete(&path, NAMESPACE, bounded, capacity(), 0).unwrap();
     assert!(!journal.has_template_registry().unwrap());
 }
 
@@ -253,7 +265,8 @@ fn first_publication_requires_host_activation_before_intent_or_candidate_lookup(
         fs::create_dir(path).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
     }
-    let mut physical = profile();
+    let path = directory.path().join("controller.db");
+    let mut physical = profile(&path);
     physical.pools[0].kernel_copy_bytes = 1000;
     let mut builder = physical.pools[0].clone();
     builder.role = PoolRole::Builder;
@@ -285,17 +298,17 @@ fn first_publication_requires_host_activation_before_intent_or_candidate_lookup(
         fs::metadata(directory.path()).unwrap().uid(),
     )
     .unwrap();
-    let path = directory.path().join("controller.db");
-    let mut bounded = bounded();
+    let mut bounded = bounded(&path);
     bounded.console_policy = Some(ConsolePolicy::Discard);
     bounded.physical_storage = Some(physical);
     let mut managed = config();
-    managed.limits.cleanup_reserve_bytes = profile().pools[0].cleanup_reserve_bytes;
+    managed.limits.cleanup_reserve_bytes = profile(&path).pools[0].cleanup_reserve_bytes;
     managed.limits.max_disk_bytes_global = managed.limits.cleanup_reserve_bytes + 1000;
-    let port = ManagedPort::with_templates(
-        ControllerJournal::open_maintained(&path, NAMESPACE, bounded.clone(), capacity(), 0)
-            .unwrap(),
-        BoundedHost::default(),
+    let host = BoundedHost::default();
+    host.0.lock().unwrap().physical_error = true;
+    let port = ControllerApplication::with_templates(
+        ControllerJournal::open_complete(&path, NAMESPACE, bounded.clone(), capacity(), 0).unwrap(),
+        host,
         managed,
         template_catalog(),
     )
@@ -310,7 +323,7 @@ fn first_publication_requires_host_activation_before_intent_or_candidate_lookup(
     ));
     drop(port);
     let journal =
-        ControllerJournal::open_maintained(&path, NAMESPACE, bounded, capacity(), 0).unwrap();
+        ControllerJournal::open_complete(&path, NAMESPACE, bounded, capacity(), 0).unwrap();
     assert!(
         journal
             .template_publication(1, candidate)

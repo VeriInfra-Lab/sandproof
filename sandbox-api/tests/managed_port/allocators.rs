@@ -1,6 +1,5 @@
 //! Public refusal/unknown semantics around durable identifier exhaustion.
 use super::*;
-use sandproof_controller_service::JournalError;
 
 fn seed_receipt_frontier(directory: &TempDir, value: i64) {
     rusqlite::Connection::open(directory.path().join("controller.db"))
@@ -23,8 +22,8 @@ fn exhausted_before_admission_is_a_refusal_without_new_identity_or_host_work() {
         ..FakeHost::default()
     };
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
-    let port = ManagedPort::new(journal, host, config());
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let port = new_port(journal, host, config());
     assert!(matches!(
         port.create("1", request()),
         Err(PortError::QuotaExceeded)
@@ -32,18 +31,18 @@ fn exhausted_before_admission_is_a_refusal_without_new_identity_or_host_work() {
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     drop(port);
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
     assert!(journal.world().unwrap().sandbox_records().is_empty());
     assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
 }
 
 #[test]
-fn exhaustion_after_acceptance_remains_unknown_and_keeps_original_identity_queryable() {
+fn insufficient_future_receipt_headroom_refuses_before_acceptance() {
     let (directory, port) = setup();
     drop(port);
-    // One receipt still fits at admission. The fence consumes it; a later
-    // physical step cannot be recorded. This batch does not reserve an entire
-    // workflow's future receipt/cleanup budget at admission.
+    // One receipt fits, but the complete opener reserves future workflow and
+    // cleanup receipts before admitting anything. This is a refusal, not an
+    // accepted operation with an unknown result.
     seed_receipt_frontier(&directory, i64::MAX - 1);
     let calls = Arc::new(AtomicUsize::new(0));
     let host = FakeHost {
@@ -51,44 +50,18 @@ fn exhaustion_after_acceptance_remains_unknown_and_keeps_original_identity_query
         ..FakeHost::default()
     };
     let journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
-    let port = ManagedPort::new(journal, host, config());
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    let port = new_port(journal, host, config());
     assert!(matches!(
         port.create("1", request()),
-        Err(PortError::OutcomeUnknown)
+        Err(PortError::QuotaExceeded)
     ));
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
     drop(port);
-    let mut journal =
-        ControllerJournal::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
-    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(2));
+    let journal =
+        complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
+    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
     let world = journal.world().unwrap();
-    assert_eq!(world.sandbox_records().len(), 1);
-    assert_eq!(
-        world.sandbox_record(core::SandboxId(1)).unwrap().phase,
-        core::Phase::Starting
-    );
-    let query = core::ControllerInput::Request(core::Request::Query(core::QueryRequest {
-        actor: core::Actor::Tenant(core::TenantId(1)),
-        sandbox: core::SandboxId(1),
-        operation: core::OperationId(1),
-    }));
-    assert!(journal.check(query).is_ok());
-    assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
-    let retry = core::ControllerInput::Request(core::Request::Create(core::CreateRequest {
-        actor: core::Actor::Tenant(core::TenantId(1)),
-        owner: core::TenantId(1),
-        sandbox: core::SandboxId(1),
-        workspace: core::FsId(1),
-        file_policy: core::FilePolicyRef {
-            digest: core::PolicyDigest(1),
-        },
-        policy: core::NetworkPolicy::DenyAll,
-        operation: core::OperationId(1),
-    }));
-    assert!(matches!(
-        journal.apply(retry, &mut NeverCrash),
-        Err(JournalError::UnresolvedAction)
-    ));
-    assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(2));
+    assert!(world.sandbox_records().is_empty());
+    assert!(journal.uncertain_actions().unwrap().is_empty());
 }

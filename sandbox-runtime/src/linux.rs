@@ -18,12 +18,13 @@ use std::time::{Duration, Instant};
 
 #[path = "cgroup.rs"]
 mod cgroup;
-#[path = "child_process.rs"]
-mod child_process;
+use crate::child_process;
 #[path = "helper_gate.rs"]
 pub(crate) mod helper_gate;
 #[path = "jail.rs"]
 mod jail;
+#[path = "observation.rs"]
+mod observation;
 #[path = "retirement.rs"]
 mod retirement;
 #[path = "staging.rs"]
@@ -35,6 +36,7 @@ pub use helper_gate::{
     RuntimeRouteState,
 };
 pub use jail::JailObservation;
+pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
@@ -237,12 +239,51 @@ impl Runtime {
     /// # Errors
     /// Rejects untrusted executor paths, machine limits and host resources.
     pub fn for_existing(config: RuntimeConfig) -> Result<Self, RuntimeError> {
+        Self::validate_existing_physical(&config)?;
+        Self::validate_access_token_config(&config)?;
+        Ok(Self { config })
+    }
+
+    fn validate_existing_physical(config: &RuntimeConfig) -> Result<(), RuntimeError> {
         if rustix::process::geteuid().as_raw() != 0 {
             return Err(RuntimeError::InvalidConfiguration(
                 "jailer controller must run as root",
             ));
         }
         check_kvm(Path::new("/dev/kvm"))?;
+        Self::validate_physical_values(config)?;
+        for path in [&config.jailer, &config.firecracker, &config.chroot_base] {
+            check_trusted_path(path)?;
+        }
+        if let Some(settings) = &config.host_resources {
+            settings.validate(config.memory_mib)?;
+        }
+        Self::validate_namespace_config(config)?;
+        if config.private_netns.is_some() {
+            check_trusted_path(Path::new("/run"))?;
+            check_trusted_path(Path::new("/usr/bin/ip"))?;
+            check_trusted_path(Path::new("/usr/sbin/nft"))?;
+        }
+        if !config.jailer.is_file() || !config.firecracker.is_file() || !config.chroot_base.is_dir()
+        {
+            return Err(RuntimeError::InvalidConfiguration(
+                "expected binaries/images and chroot directory",
+            ));
+        }
+        if config
+            .firecracker
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_none()
+        {
+            return Err(RuntimeError::InvalidConfiguration(
+                "Firecracker executable name must be UTF-8",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_physical_values(config: &RuntimeConfig) -> Result<(), RuntimeError> {
         if config
             .host_slot
             .as_ref()
@@ -261,21 +302,24 @@ impl Runtime {
                 "invalid guest uid/gid or machine size",
             ));
         }
-        for path in [&config.jailer, &config.firecracker, &config.chroot_base] {
-            check_trusted_path(path)?;
+        Ok(())
+    }
+
+    fn validate_namespace_config(config: &RuntimeConfig) -> Result<(), RuntimeError> {
+        if config
+            .private_netns
+            .as_ref()
+            .is_some_and(|namespace| namespace.parent() != Some(Path::new("/run/netns")))
+        {
+            return Err(RuntimeError::InvalidConfiguration(
+                "private network namespace must live under /run/netns",
+            ));
         }
-        if let Some(settings) = &config.host_resources {
-            settings.validate(config.memory_mib)?;
-        }
-        if let Some(namespace) = &config.private_netns {
-            if namespace.parent() != Some(Path::new("/run/netns")) {
-                return Err(RuntimeError::InvalidConfiguration(
-                    "private network namespace must live under /run/netns",
-                ));
-            }
-            check_trusted_path(Path::new("/run"))?;
-            check_trusted_path(Path::new("/usr/bin/ip"))?;
-            check_trusted_path(Path::new("/usr/sbin/nft"))?;
+        Ok(())
+    }
+
+    fn validate_access_token_config(config: &RuntimeConfig) -> Result<(), RuntimeError> {
+        if config.private_netns.is_some() {
             let hash =
                 config
                     .access_token_hash
@@ -293,23 +337,7 @@ impl Runtime {
                 "MMDS token hash requires a private network",
             ));
         }
-        if !config.jailer.is_file() || !config.firecracker.is_file() || !config.chroot_base.is_dir()
-        {
-            return Err(RuntimeError::InvalidConfiguration(
-                "expected binaries/images and chroot directory",
-            ));
-        }
-        if config
-            .firecracker
-            .file_name()
-            .and_then(std::ffi::OsStr::to_str)
-            .is_none()
-        {
-            return Err(RuntimeError::InvalidConfiguration(
-                "Firecracker executable name must be UTF-8",
-            ));
-        }
-        Ok(Self { config })
+        Ok(())
     }
 
     fn validate_images(config: &RuntimeConfig) -> Result<(), RuntimeError> {

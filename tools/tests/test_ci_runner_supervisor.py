@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import subprocess
@@ -24,6 +25,7 @@ class FakeAPI:
         self.fail_post = False
         self.fail_delete = False
         self.rust_workflow = None
+        self.run_statuses = ('queued',)
 
     def request(self, method, path, body=None):
         if path.endswith('/workflows/rust-ci.yml'):
@@ -49,10 +51,13 @@ class FakeAPI:
         if '/jobs?' in path:
             return {'jobs': self.jobs}
         return {'workflow_runs': [{'id': 50, 'workflow_id': 20, 'run_attempt': 2, 'event': 'pull_request'}]
-                if 'status=queued' in path else []}
+                if any('status=' + status + '&' in path for status in self.run_statuses) else []}
 
 
 class FakeRuntime:
+    def admission_guard(self):
+        return nullcontext()
+
     def __init__(self):
         self.active = set()
         self.starts = []
@@ -103,6 +108,32 @@ class SupervisorTests(unittest.TestCase):
     def test_absent_rust_workflow_does_not_block_current_prs(self):
         self.service.tick()
         self.assertEqual(len(self.api.posts), 5)  # Includes existing legacy PR jobs.
+
+    def test_pending_workflow_admits_only_four_qualified_queued_pr_jobs(self):
+        self.api.run_statuses = ('pending',)
+        self.api.jobs = [job for job in self.api.jobs if job['name'] != 'rust']
+        self.api.jobs += [
+            dict(self.api.jobs[0], id=10, status='in_progress'),
+            dict(self.api.jobs[0], id=11, status='completed'),
+            dict(self.api.jobs[0], id=12, labels=self.api.jobs[0]['labels'] + ['untrusted']),
+        ]
+        roles = {'sdk', 'harbor', 'title', 'policy'}
+        self.assertEqual(dict(self.service.queued_counts()), dict.fromkeys(roles, 1))
+        self.service.tick()
+        self.service.tick()
+        self.assertEqual(set(self.state.leases), roles)
+        self.assertEqual(len(self.api.posts), 4)
+        self.assertEqual(len(self.runtime.starts), 4)
+
+    def test_same_workflow_across_queue_states_counts_each_job_once(self):
+        self.api.run_statuses = ('queued', 'pending', 'in_progress')
+        self.api.jobs = [self.api.jobs[1]]  # One SDK job, repeated in all three lists.
+        self.assertEqual(dict(self.service.queued_counts()), {'sdk': 1})
+        self.service.tick()
+        self.service.tick()
+        self.assertEqual(set(self.state.leases), {'sdk'})
+        self.assertEqual(len(self.api.posts), 1)
+        self.assertEqual(len(self.runtime.starts), 1)
 
     def test_rust_push_workflow_can_run_but_its_pr_event_cannot_admit(self):
         self.api.jobs = []
@@ -368,7 +399,10 @@ class RuntimeTests(unittest.TestCase):
             joined = ' '.join(argv)
             self.assertIn('KillMode=control-group', joined)
             self.assertIn('MemoryMax=1280M', joined)
-            self.assertIn('RuntimeMaxSec=1900', joined)
+            self.assertIn('RuntimeMaxSec=2200', joined)
+            self.assertIn('--timeout 1800', joined)
+            self.assertGreater(ci_vm.RUNNER_UNIT_SECONDS,
+                               ci_vm.RUNNER_WAIT_SECONDS + ci_vm.RUNNER_JOB_SECONDS)
             self.assertIn('LoadCredential=jit:', joined)
             self.assertIn('--slot title', joined)
             for secret in ('app-key', 'Iv23', 'fake-token'):
@@ -402,6 +436,40 @@ class RuntimeTests(unittest.TestCase):
 
 
 class AppTests(unittest.TestCase):
+    def test_optional_checks_permission_does_not_expand_ordinary_tokens(self):
+        calls = []
+        def transport(method, path, token, body=None):
+            calls.append((method, path, body))
+            if path == '/app':
+                return {'id': 123}
+            if '/app/installations?' in path:
+                return [{'id': 5, 'account': {'login': 'ningZhang-cs'}, 'repository_selection': 'selected',
+                         'permissions': dict(auth.PERMISSIONS, checks='write', contents='read')}]
+            if 'access_tokens' in path:
+                return {'token': 'fake-token', 'permissions': body['permissions'], 'expires_at': '1970-01-01T01:00:00Z'}
+            return {'total_count': 1, 'repositories': [{'id': 6, 'full_name': auth.REPOSITORY}]}
+        app = self.app(transport)
+        app.verify_installation()
+        app.access_token()
+        self.assertEqual(calls[-1][2]['permissions'], auth.PERMISSIONS)
+        with self.assertRaises(ValueError):
+            app.request('POST', '/repos/' + auth.REPOSITORY + '/check-runs')
+        app = auth.GitHubApp('client', Path('/not-read'), transport, permissions=auth.CHECK_PERMISSIONS)
+        app.jwt = lambda: 'fake-jwt'
+        app.verify_installation()
+        app.access_token()
+        self.assertEqual(calls[-1][2]['permissions'], auth.CHECK_PERMISSIONS)
+        self.assertNotIn('administration', calls[-1][2]['permissions'])
+        app = auth.GitHubApp('client', Path('/not-read'), transport, permissions=auth.SOURCE_PERMISSIONS)
+        app.jwt = lambda: 'fake-jwt'
+        app.verify_installation()
+        app.access_token()
+        self.assertEqual(calls[-1][2]['permissions'], auth.SOURCE_PERMISSIONS)
+        self.assertNotIn('checks', calls[-1][2]['permissions'])
+        self.assertNotIn('administration', calls[-1][2]['permissions'])
+        with self.assertRaises(ValueError):
+            app.request('POST', '/repos/' + auth.REPOSITORY + '/check-runs')
+
     def app(self, transport, clock=lambda: 1000):
         app = auth.GitHubApp('client', Path('/not-read'), transport, clock=clock)
         app.jwt = lambda: 'fake-jwt'

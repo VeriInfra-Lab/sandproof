@@ -67,7 +67,7 @@ def node_configuration(settings):
     """Same NodeConfig projection as sandbox-server's production assembly."""
     result = {key: copy.deepcopy(settings[key]) for key in (
         'namespace', 'jailer', 'firecracker', 'chroot_base', 'kernel', 'rootfs',
-        'uid_base', 'max_vm_id', 'vcpu_count', 'memory_mib', 'file_policy_digest')}
+        'vcpu_count', 'memory_mib', 'file_policy_digest')}
     result['state_dir'] = settings['node_state_dir']
     result['host_resources'] = copy.deepcopy(settings.get('host_resources'))
     bounded = copy.deepcopy(settings['bounded_host'])
@@ -95,8 +95,7 @@ def validate_configuration(settings, host_config, rounds, wait_seconds):
         raise ValueError('fresh complete two-position runtime-only configuration required')
     if settings.get('max_timeout_secs', 0) < 600 or settings.get('max_lifetime_secs', 600) < 600:
         raise ValueError('explicit probe lifetime must fit both unchanged deployment limits')
-    if (type(settings.get('max_vm_id')) is not int or not 0 <= settings['max_vm_id'] < rounds
-            or maintenance.get('retention_ms', 0) <= 0
+    if ('max_vm_id' in settings or maintenance.get('retention_ms', 0) <= 0
             or maintenance['retention_ms'] + 3 * settings['expiry_scan_seconds'] * 1000 >= wait_seconds * 1000):
         raise ValueError('experiment must cross the old VM bound and observe the unchanged retention period')
     profile = bounded.get('physical_storage')
@@ -208,6 +207,18 @@ def assert_budget(snapshot, settings):
     actual_rows = sum(count for table, count in snapshot['counts'].items()
                       if table not in ('controller_inputs', 'controller_checkpoint', 'controller_host_slots'))
     assert actual_rows <= cap['max_sql_rows']
+
+
+def assert_reopen_frontiers(before, after):
+    # Empty startup can append the maintenance clock/expiry input before the
+    # first HTTP read. That is not a newly allocated sandbox/effect/receipt.
+    # Never allow an identity frontier to move, disappear, or be recreated.
+    assert set(before) == set(after) and 'input:' in before, 'reopen changed allocator domains'
+    for kind, value in before.items():
+        if kind == 'input:':
+            assert after[kind] >= value, 'reopen reset the input frontier'
+        else:
+            assert after[kind] == value, 'reopen changed permanent allocator frontier: ' + kind
 
 
 def context_for(snapshot, ident):
@@ -429,7 +440,7 @@ def exercise(args):
             assert fetch(opener, url, 'DELETE', '/sandboxes/' + victim.sandbox_id, key)[0] == 404
             survivor_ok(survivor, survivor_context, survivor_identity)
         assert len(set(positions)) == 1, 'churn did not actually reuse the same physical position'
-        assert context['binding']['vm'] > settings['max_vm_id'], 'permanent VM identity never crossed old host maximum'
+        assert context['binding']['vm'] > 2, 'permanent VM identity never crossed the physical position count'
         survivor_killed = Sandbox.kill(survivor.sandbox_id, **owner)
         assert survivor_killed
         live.remove(survivor)
@@ -448,7 +459,7 @@ def exercise(args):
         wait_ready(opener, url, key, process)
         reopened = sample('all-retired-reopen')
         assert reopened['counts']['sandboxes'] == 0
-        assert reopened['highwaters'] == final['highwaters'], 'reopen reset permanent allocator frontiers'
+        assert_reopen_frontiers(final['highwaters'], reopened['highwaters'])
         stop_server(process)
         process = None
         assert tree_records((settings['node_state_dir'], Path(settings['chroot_base']) / '.claims')) == records_before

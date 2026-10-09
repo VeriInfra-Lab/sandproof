@@ -68,12 +68,12 @@ def service_groups(runtime, services):
         raise ValueError('runtime and service cgroup parents must be disjoint')
 
 
-def configuration(budgets, root, namespace, artifacts, *, uid, port, cgroup, keys, base):
+def configuration(budgets, root, namespace, artifacts, *, uid, port, cgroup, keys, base, file_size=None):
     settings = dict(budgets)
     settings.update(namespace=namespace, database=str(root / 'db/controller.db'),
         node_state_dir=str(root / 'state'), chroot_base=str(root / 'jails'),
         **{key: spec['path'] for key, spec in artifacts.items()},
-        uid_base=uid, max_vm_id=1, vcpu_count=1, memory_mib=512,
+        uid_base=uid, vcpu_count=1, memory_mib=512,
         host_resources={'cgroup_parent': str(cgroup), 'memory_max_bytes': VMM_MEMORY},
         file_policy_digest=1, bind=f'127.0.0.1:{port}', domain='example.invalid',
         credentials=[{'tenant': index + 1, 'secret': key} for index, key in enumerate(keys)],
@@ -88,7 +88,10 @@ def configuration(budgets, root, namespace, artifacts, *, uid, port, cgroup, key
     longest = root / 'jails' / Path(artifacts['firecracker']['path']).name / f'vm-{namespace}-1/root/api.socket'
     if len(os.fsencode(longest)) >= 108:
         raise ValueError('owned Firecracker socket path exceeds Linux limit')
-    return settings
+    complete_runtime = _runpy.run_path(
+        str(Path(__file__).with_name('_complete_runtime.py'))
+    )['complete_runtime']
+    return complete_runtime(settings, slots=VM_COUNT, file_size=file_size)
 
 
 def assert_no_oom(baseline, snapshot):
@@ -140,7 +143,14 @@ def live_identity(root, args, sandbox):
         raise AssertionError('original VMM PID/start identity changed')
     status = Path(f'/proc/{claim["pid"]}/status').read_text().splitlines()
     uid = next(line.split()[1:] for line in status if line.startswith('Uid:'))
-    expected_uid = args.uid_base + int(name.rsplit('-', 1)[1])
+    with closing(sqlite3.connect(f'file:{root / "db/controller.db"}?mode=ro', uri=True)) as connection:
+        contexts = [json.loads(blob) for (blob,) in connection.execute(
+            'SELECT context_json FROM controller_host_slots')]
+    context = next(value for value in contexts
+                   if value['binding']['sandbox'] == int(sandbox.sandbox_id.rsplit('-', 1)[1]))
+    if context['binding']['owner'] not in (1, 2) or context['binding']['vm'] != int(name.rsplit('-', 1)[1]):
+        raise AssertionError('original sandbox physical binding differs')
+    expected_uid = args.uid_base + context['position']
     if [int(value) for value in uid] != [expected_uid] * 4:
         raise AssertionError('actual VMM UID differs from its exclusive configured identity')
     group = args.cgroup_parent / name
@@ -280,6 +290,8 @@ def exercise(args, report):
     settings = configuration(budgets, root, namespace, approved['artifacts'], uid=args.uid_base,
                              port=int(url.rsplit(':', 1)[1]), cgroup=args.cgroup_parent, keys=keys, base=base)
     config, cgroup_record = root / 'config.json', root / 'service-cgroup.json'
+    from server_process_crash import provision_runtime, terminal_cleanup_confirmed
+    provision_runtime(settings)
     write_new(config, settings)
     report['config_sha256'] = digest(config)
     report['service_limits'] = {'cpu_quota_us': 100000, 'memory_bytes': SERVICE_MEMORY}
@@ -356,10 +368,8 @@ def exercise(args, report):
         raise AssertionError('owned UID range retained a process')
     if any(p.is_dir() for p in args.cgroup_parent.iterdir()):
         raise AssertionError('owned runtime cgroup parent retained a VM group')
-    with closing(sqlite3.connect(f'file:{settings["database"]}?mode=ro', uri=True)) as connection:
-        phases = [json.loads(blob)['phase'] for (blob,) in connection.execute('SELECT state_blob FROM sandboxes')]
-    if phases != ['Destroyed'] * VM_COUNT:
-        raise AssertionError('not all accepted VM records are Destroyed')
+    if not all(terminal_cleanup_confirmed(settings['database'], row['sandbox_id']) for row in rows):
+        raise AssertionError('not all accepted VM records are terminal or exactly retired')
     if network_state() != before_network:
         raise AssertionError('shared host network changed after exact cleanup')
     if inputs != {key: {'sha256': digest(getattr(args, key)), 'bytes': getattr(args, key).stat().st_size} for key in inputs}:

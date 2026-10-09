@@ -136,7 +136,8 @@ class AcceptanceDiskBudgetTests(unittest.TestCase):
                 self.assertEqual(updated[role][field], original[role][field])
         self.assertEqual(self.deployment, original)
         self.assertEqual(self.policy, original_policy)
-        self.assertEqual(acceptance_disk_budgets(original, None), original)
+        with self.assertRaises(ValueError):
+            acceptance_disk_budgets(original, None)
 
     def test_larger_total_cannot_hide_a_smaller_tenant_or_cleanup_budget(self):
         for field, other in (('rootfs_budget_bytes', 'cleanup_reserve_bytes'),
@@ -464,9 +465,8 @@ class SocketLayoutTests(unittest.TestCase):
     def test_uid_slot_bound_cannot_hide_lifetime_identifier_overflow(self):
         root = Path("/var/lib/sp-01a0e1bd/bc9161f-00")
         namespaces = ["0123456789abcdef", "123456789abcdef0"]
-        validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=False)
         with self.assertRaisesRegex(ValueError, "Firecracker socket"):
-            validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker", max_vm_id=99, bounded=True)
+            validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker")
 
     def test_encoded_limit_counts_multibyte_paths_on_all_platforms(self):
         namespace = "0123456789abcdef"
@@ -474,10 +474,10 @@ class SocketLayoutTests(unittest.TestCase):
         prefix = Path("/tmp/é")
         root = Path(str(prefix) + "a" * (107 - len(os.fsencode(prefix / tail))))
         self.assertEqual(len(os.fsencode(root / tail)), 107)
-        validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+        validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker")
         with self.assertRaisesRegex(ValueError, "Firecracker socket"):
             validate_acceptance_socket_paths(Path(str(root) + "b"), [namespace], "/bin/firecracker",
-                                             max_vm_id=20, bounded=True)
+)
 
     @unittest.skipUnless(sys.platform == "linux", "real 107/108-byte socket boundary requires Linux")
     def test_encoded_limit_matches_real_unix_socket_boundary(self):
@@ -489,14 +489,14 @@ class SocketLayoutTests(unittest.TestCase):
             padding = 107 - len(os.fsencode(prefix / tail))
             self.assertGreaterEqual(padding, 0)
             root = Path(str(prefix) + "a" * padding)
-            validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+            validate_acceptance_socket_paths(root, [namespace], "/bin/firecracker")
             path = root / tail
             path.parent.mkdir(parents=True)
             with socket.socket(socket.AF_UNIX) as listener:
                 listener.bind(str(path))
             too_long = Path(str(root) + "b")
             with self.assertRaisesRegex(ValueError, "Firecracker socket"):
-                validate_acceptance_socket_paths(too_long, [namespace], "/bin/firecracker", max_vm_id=20, bounded=True)
+                validate_acceptance_socket_paths(too_long, [namespace], "/bin/firecracker")
             path = too_long / tail
             path.parent.mkdir(parents=True)
             with socket.socket(socket.AF_UNIX) as listener, self.assertRaises(OSError):
@@ -504,13 +504,10 @@ class SocketLayoutTests(unittest.TestCase):
 
 
 class FixtureDiskBudgetTests(unittest.TestCase):
-    def test_legacy_floor_expands_for_two_real_32_gib_builder_disks(self):
-        self.assertEqual(acceptance_pool_disk_budget(None, "builder", 32 * GIB), {
-            "max_disk_bytes_global": 64 * GIB + 256 * MIB,
-            "max_disk_bytes_per_tenant": 64 * GIB, "cleanup_reserve_bytes": 256 * MIB})
-        self.assertEqual(acceptance_pool_disk_budget(None, "runtime", GIB), {
-            "max_disk_bytes_global": 24 * GIB, "max_disk_bytes_per_tenant": 24 * GIB - 256 * MIB,
-            "cleanup_reserve_bytes": 256 * MIB})
+    def test_missing_profile_cannot_infer_fixture_disk_or_cleanup_defaults(self):
+        for role in ("runtime", "builder"):
+            with self.subTest(role=role), self.assertRaises(ValueError):
+                acceptance_pool_disk_budget(None, role, 32 * GIB)
 
     def test_full_profile_values_are_exact_not_inferred_from_base_or_active_limit(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -530,12 +527,10 @@ class FixtureDiskBudgetTests(unittest.TestCase):
         for invalid in (0, -1, True, False, None, "32", 1.5, 2**63):
             with self.subTest(base=invalid), self.assertRaisesRegex(ValueError, "size and count"):
                 acceptance_pool_disk_budget(None, "builder", invalid)
-        for field in ("max_active", "legacy_bytes", "legacy_cleanup_bytes"):
+        for field in ("max_active",):
             for invalid in (0, -1, True, None, "2", 1.5, 2**63):
                 with self.subTest(field=field, value=invalid), self.assertRaisesRegex(ValueError, "size and count"):
                     acceptance_pool_disk_budget(None, "builder", GIB, **{field: invalid})
-        with self.assertRaisesRegex(ValueError, "overflow"):
-            acceptance_pool_disk_budget(None, "builder", 2**62)
         with self.assertRaisesRegex(ValueError, "role"):
             acceptance_pool_disk_budget(None, "other", GIB)
 

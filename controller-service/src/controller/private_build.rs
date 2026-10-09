@@ -117,6 +117,17 @@ pub(super) fn validate(
     world: &core::World,
     namespace: &str,
 ) -> Result<(), JournalError> {
+    {
+        let mut query = connection.prepare("SELECT options_json FROM sandbox_create_options")?;
+        for bytes in query.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
+            let options: CreateOptions = serde_json::from_slice(&bytes?)?;
+            if options.metadata.contains_key("_sandproof_build_id")
+                != options.metadata.contains_key("_sandproof_build_window")
+            {
+                return Err(JournalError::CorruptStore);
+            }
+        }
+    }
     let Some(config) = config(connection)? else {
         return Ok(());
     };
@@ -216,8 +227,9 @@ pub(super) fn attach(
     now_ms: u64,
 ) -> Result<(), JournalError> {
     let Some(window) = options.metadata.get("_sandproof_build_window") else {
-        // Once enabled the legacy no-window identity domain is durably closed.
-        if options.metadata.contains_key("_sandproof_build_id") && config(tx)?.is_some() {
+        // Private builds always require a fenced retry window, even when that
+        // optional service has not been enabled for this deployment.
+        if options.metadata.contains_key("_sandproof_build_id") {
             return Err(JournalError::Conflict);
         }
         return Ok(());
@@ -284,7 +296,7 @@ pub(super) fn pinned(
         };
     }
     let Some(window) = options.metadata.get("_sandproof_build_window") else {
-        return Ok(true);
+        return Err(JournalError::CorruptStore);
     };
     if config(connection)?.is_none() {
         return Err(JournalError::CorruptStore);
@@ -298,8 +310,8 @@ pub(super) fn pinned(
     if count != 0 {
         return Ok(true);
     }
-    // The immutable marker is only a migration discriminator. It cannot release
-    // an anchor while its admission domain is still open.
+    // The immutable window identity cannot release an anchor while its
+    // admission domain is still open.
     let record = world
         .sandbox_record(sandbox)
         .ok_or(JournalError::CorruptStore)?;
@@ -360,7 +372,7 @@ impl ControllerJournal {
         Ok(())
     }
 
-    /// Explicit irreversible closure of legacy private build admission.
+    /// Enable the optional private builder's sole fenced admission domain.
     /// # Errors
     /// Requires configured checkpoint maintenance and immutable finite limits.
     pub fn enable_build_retry_windows(

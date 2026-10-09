@@ -34,8 +34,8 @@ import urllib.request
 from e2b import Sandbox
 
 from server_process_crash import (
-    fetch, free_loopback_port, process_start_ticks, start_server, stop_server,
-    wait_ready,
+    complete_runtime, fetch, free_loopback_port, process_start_ticks, provision_runtime,
+    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
 )
 
 
@@ -99,7 +99,7 @@ def exercise(args: argparse.Namespace) -> None:
     rootfs.chmod(0o644)
     base_digest = sha256_file(rootfs)
     config = root / "config.json"
-    config.write_text(json.dumps({
+    settings = {
         "namespace": namespace,
         "database": str(root / "db/controller.db"),
         "node_state_dir": str(root / "state"),
@@ -109,7 +109,6 @@ def exercise(args: argparse.Namespace) -> None:
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
-        "max_vm_id": 1000,
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
@@ -123,8 +122,13 @@ def exercise(args: argparse.Namespace) -> None:
         "cleanup_reserve_bytes": disk_bytes,
         "max_timeout_secs": 600,
         "default_timeout_secs": 300,
-        "expiry_scan_seconds": 1,
-    }))
+        # Explicit restart owns failure recovery in this lifecycle race probe;
+        # the dedicated expiry tests exercise the periodic scanner separately.
+        "expiry_scan_seconds": 3600,
+    }
+    settings = complete_runtime(settings, slots=2)
+    provision_runtime(settings)
+    config.write_text(json.dumps(settings))
     config.chmod(0o600)
     gate = root / "stop-gate.sock"
     log = root / "server.log"
@@ -212,12 +216,12 @@ def exercise(args: argparse.Namespace) -> None:
         assert not Path(f"/run/netns/{failed_vm}").exists()
         assert not (root / "jails" / args.firecracker.name / failed_vm).exists()
         with sqlite3.connect(root / "db/controller.db") as database:
-            states = [row[0] for row in database.execute("SELECT state_blob FROM sandboxes")]
-        assert len(states) == before_reject + 1
-        failed = [json.loads(state) for state in states if json.loads(state)["current_operation"]["kind"] == "Create"]
+            failed = [json.loads(row[0]) for row in database.execute(
+                "SELECT state_blob FROM sandboxes WHERE sandbox_id=?", (f"sb-{namespace}-2",))]
         assert len(failed) == 1
         assert failed[0]["phase"] == "Destroyed"
         assert "Failed" in failed[0]["current_operation"]["status"]
+        assert terminal_cleanup_confirmed(root / "db/controller.db", sandbox.sandbox_id)
         assert sha256_file(rootfs) == base_digest
         completed = True
         print(json.dumps({

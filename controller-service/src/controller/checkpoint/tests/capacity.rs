@@ -35,7 +35,7 @@ pub(super) fn host() -> BoundedHostConfig {
     host
 }
 fn open_full(path: &std::path::Path) -> ControllerJournal {
-    ControllerJournal::open_maintained(path, NS, host(), full_config(), 1000).unwrap()
+    ControllerJournal::open_complete(path, NS, host(), full_config(), 1000).unwrap()
 }
 
 fn limits() -> crate::AdmissionLimits {
@@ -69,7 +69,7 @@ fn full_mode_rejects_unusable_atomic_tail_and_missing_discard() {
         let mut policy = full_config();
         policy.max_tail_inputs = inputs;
         assert!(matches!(
-            ControllerJournal::open_maintained(dir.path().join("db"), NS, host(), policy, 1000),
+            ControllerJournal::open_complete(dir.path().join("db"), NS, host(), policy, 1000),
             Err(JournalError::UnsupportedStore)
         ));
     }
@@ -77,7 +77,7 @@ fn full_mode_rejects_unusable_atomic_tail_and_missing_discard() {
     let mut host = host();
     host.console_policy = None;
     assert!(matches!(
-        ControllerJournal::open_maintained(dir.path().join("db"), NS, host, full_config(), 1000),
+        ControllerJournal::open_complete(dir.path().join("db"), NS, host, full_config(), 1000),
         Err(JournalError::UnsupportedStore)
     ));
 }
@@ -581,7 +581,7 @@ fn sqlite_full_refuses_new_work_without_changing_accepted_cleanup() {
     let mut journal = open_full(&dir.path().join("db"));
     create(&mut journal, 1);
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
-    journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap();
+    journal.publish_checkpoint(&mut NeverCrash).unwrap();
     let pages: i64 = journal
         .journal
         .connection
@@ -660,7 +660,7 @@ fn retained_expiry_credits_are_spendable_at_the_input_frontier() {
             .unwrap();
     }
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
-    journal.prune_checkpoint_inputs(&mut NeverCrash).unwrap();
+    journal.publish_checkpoint(&mut NeverCrash).unwrap();
     assert_eq!(count(&journal, "controller_inputs"), 0);
     let high = i64::MAX as u64 - 1 - 2;
     move_empty_input_frontier(&journal, high);
@@ -748,13 +748,42 @@ fn housekeeping_unknown_commit_reloads_either_durable_prefix() {
         create(&mut journal, 1);
         journal.publish_checkpoint(&mut NeverCrash).unwrap();
         let expected = journal.world().unwrap();
+        let before = journal.checkpoint_progress().unwrap().unwrap();
+        let before_rows = count(&journal, "controller_inputs");
+        let reservations = count(&journal, "controller_capacity_reservations");
+        assert!(before.deleted_through < before.input_cut);
         super::super::HOUSEKEEPING_FAILURE.with(|slot| slot.set(Some(durable)));
         assert!(matches!(
             journal.publish_checkpoint(&mut NeverCrash),
             Err(JournalError::CommitUncertain(_))
         ));
         assert_eq!(journal.world().unwrap(), expected);
+        let after = journal.checkpoint_progress().unwrap().unwrap();
+        let removed = if durable {
+            full_config()
+                .prune_batch_rows
+                .min(before.input_cut - before.deleted_through)
+        } else {
+            0
+        };
+        assert_eq!(after.input_cut, before.input_cut);
+        assert_eq!(after.input_high_water, before.input_high_water);
+        assert_eq!(after.deleted_through, before.deleted_through + removed);
+        assert_eq!(
+            count(&journal, "controller_inputs"),
+            before_rows - i64::try_from(removed).unwrap()
+        );
+        assert_eq!(
+            count(&journal, "controller_capacity_reservations"),
+            reservations
+        );
+        drop(journal);
+        let mut journal = open_full(&path);
+        assert_eq!(journal.world().unwrap(), expected);
+        assert_eq!(journal.checkpoint_progress().unwrap().unwrap(), after);
         journal.publish_checkpoint(&mut NeverCrash).unwrap();
+        let completed = journal.checkpoint_progress().unwrap().unwrap();
+        assert_eq!(completed.deleted_through, completed.input_cut);
         drop(journal);
         assert_eq!(open_full(&path).world().unwrap(), expected);
     }
@@ -772,7 +801,7 @@ fn full_mode_rejects_unearned_checkpoint_generations() {
         .unwrap();
     drop(journal);
     assert!(matches!(
-        ControllerJournal::open_maintained(&path, NS, host(), full_config(), 1000),
+        ControllerJournal::open_complete(&path, NS, host(), full_config(), 1000),
         Err(JournalError::CorruptStore)
     ));
 }
@@ -794,7 +823,7 @@ fn tight_sql_and_core_reservations_finish_the_original_workflow() {
     cap.max_sql_bytes = bytes + lease_bytes + 64;
     let dir = TempDir::new().unwrap();
     let mut journal =
-        ControllerJournal::open_maintained(dir.path().join("db"), NS, host(), policy.clone(), 1000)
+        ControllerJournal::open_complete(dir.path().join("db"), NS, host(), policy.clone(), 1000)
             .unwrap();
     create(&mut journal, 1);
     let charged = super::super::super::capacity::fixture_sql_budget(

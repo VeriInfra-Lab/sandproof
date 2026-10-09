@@ -13,17 +13,31 @@ import stat
 import time
 
 
-def load_runtime_intent(directory, *, task, runtime_attempt, build_id, template):
+BENCHMARKS = frozenset(('terminal-bench-2.0', 'terminal-bench@2.1'))
+
+
+def _template_prefix(benchmark, prepared_ci):
+    # This authority is supplied by the trusted harness, never inferred from
+    # a request/checkpoint. The ordinary publication path stays tpl- only.
+    if (type(prepared_ci) is not bool or benchmark not in BENCHMARKS
+            or (prepared_ci and benchmark != 'terminal-bench-2.0')):
+        raise ValueError('invalid explicit runtime recovery mode')
+    return 'ci-' if prepared_ci else 'tpl-'
+
+
+def load_runtime_intent(directory, *, task, runtime_attempt, build_id, template,
+                        benchmark='terminal-bench-2.0', prepared_ci: bool = False):
     """Read only this live trial's checkpoint, never discover a previous attempt.
 
     The expected correlation and template come from the supervisor's live
     environment, not from the file. The controller match still checks its own
     namespace, owner and immutable binding before any DELETE can be sent.
     """
+    prefix = _template_prefix(benchmark, prepared_ci)
     if (not isinstance(runtime_attempt, str)
             or not re.fullmatch(r'[0-9a-f]{32}', runtime_attempt)
             or not isinstance(build_id, str) or not re.fullmatch(r'[0-9a-f]{32}', build_id)
-            or not isinstance(template, dict) or template.get('templateId') != 'tpl-' + build_id
+            or not isinstance(template, dict) or template.get('templateId') != prefix + build_id
             or not isinstance(task, str) or not task):
         raise ValueError('missing live runtime correlation')
     directory = Path(directory).absolute()
@@ -54,7 +68,7 @@ def load_runtime_intent(directory, *, task, runtime_attempt, build_id, template)
     finally:
         os.close(descriptor)
     intent = json.loads(raw, object_pairs_hook=unique_keys)
-    expected = {'metadata': {'benchmark': 'terminal-bench-2.0', 'task': task,
+    expected = {'metadata': {'benchmark': benchmark, 'task': task,
         'build': build_id, 'revision': template.get('revision'), 'runtime_attempt': runtime_attempt},
         'template': template}
     if intent != expected:
@@ -62,12 +76,14 @@ def load_runtime_intent(directory, *, task, runtime_attempt, build_id, template)
     return intent
 
 
-def matching_runtime(database, intent, *, owner, namespace, sandbox_id=None):
+def matching_runtime(database, intent, *, owner, namespace, sandbox_id=None,
+                     benchmark='terminal-bench-2.0', prepared_ci: bool = False):
+    prefix = _template_prefix(benchmark, prepared_ci)
     metadata, template = intent['metadata'], intent['template']
     if (not re.fullmatch(r'[0-9a-f]{32}', metadata.get('runtime_attempt', ''))
-            or metadata.get('benchmark') != 'terminal-bench-2.0'
+            or metadata.get('benchmark') != benchmark
             or not re.fullmatch(r'[0-9a-f]{32}', metadata.get('build', ''))
-            or template['templateId'] != 'tpl-' + metadata['build']
+            or template['templateId'] != prefix + metadata['build']
             or template['revision'] != metadata.get('revision')):
         raise ValueError('invalid runtime creation intent')
     matches = []
@@ -100,7 +116,9 @@ def matching_runtime(database, intent, *, owner, namespace, sandbox_id=None):
 
 
 def recover_runtime_create(database, intent, *, owner, namespace, delete, deadline,
-                           sandbox_id=None, monotonic=time.monotonic, sleep=time.sleep):
+                           sandbox_id=None, benchmark='terminal-bench-2.0',
+                           prepared_ci: bool = False,
+                           monotonic=time.monotonic, sleep=time.sleep):
     """Wait for the original create, delete its identity once, observe its tombstone.
 
     An absent row or a 404 is not evidence that a delayed create cannot commit.
@@ -109,10 +127,12 @@ def recover_runtime_create(database, intent, *, owner, namespace, delete, deadli
     an early rejected DELETE must not stop its controller mid-preparation.
     A lost DELETE receipt is observed without repeating the operation.
     """
+    _template_prefix(benchmark, prepared_ci)
     outcome = {'status': 'unknown', 'delete_dispatched': False, 'delete_acknowledged': False,
                'pending_create_observed': False}
     while monotonic() < deadline:
-        found = matching_runtime(database, intent, owner=owner, namespace=namespace, sandbox_id=sandbox_id)
+        found = matching_runtime(database, intent, owner=owner, namespace=namespace,
+                                 sandbox_id=sandbox_id, benchmark=benchmark, prepared_ci=prepared_ci)
         if found is not None:
             outcome['sandbox_id'] = found['sandbox_id']
             if found['phase'] == 'Destroyed':

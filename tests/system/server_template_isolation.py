@@ -45,12 +45,14 @@ from sdk_template_defaults import (
     exercise as check_defaults,
 )
 from server_process_crash import (
-    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    complete_runtime, free_loopback_port, idle_snapshot, process_start_ticks,
+    provision_runtime, start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
 )
 from server_templates import MIB, assert_shape, descriptor, record_for
 
 
 VM_COUNT = 8  # Four initial VMs, two failed boots, two clean replacements.
+PHYSICAL_SLOTS = 4
 
 
 def shared_network():
@@ -74,16 +76,18 @@ def phases(database):
                 connection.execute("SELECT sandbox_id, state_blob FROM sandboxes")}
 
 
-def audit_gone(root, firecracker, cgroup_parent, name):
+def audit_gone(root, firecracker, cgroup_parent, name, identity=None):
     claim = root / "jails/.claims" / name
-    record = json.loads((claim / "record.json").read_text())
+    # Capture while live, before complete maintenance can retire claim files.
+    # The fallback is for callers that deliberately observe an unretired claim.
+    record = identity if identity is not None else json.loads((claim / "record.json").read_text())
     assert record["resource_id"] == name
     assert process_start_ticks(record["pid"]) != record["start_time_ticks"]
     assert not (root / "jails" / firecracker.name / name).exists()
     assert not Path("/run/netns", name).exists()
     assert not (cgroup_parent / name).exists()
-    network = json.loads((claim / "network.json").read_text())
-    inode = network["namespace_inode"]
+    inode = (record["network_inode"] if identity is not None else
+             json.loads((claim / "network.json").read_text())["namespace_inode"])
     for proc in Path("/proc").iterdir():
         if proc.name.isdecimal():
             try:
@@ -125,6 +129,7 @@ def live_shape(root, args, sandbox, expected, opener, url, key):
     assert (machine["vcpu_count"], machine["mem_size_mib"]) == (
         shape["cpu_count"], shape["memory_mib"])
     return {"resource_id": name, "pid": record["pid"], "start_time_ticks": record["start_time_ticks"],
+            "network_inode": json.loads((root / "jails/.claims" / name / "network.json").read_text())["namespace_inode"],
             "disk": {"device": disk.st_dev, "inode": disk.st_ino, "bytes": disk.st_size},
             "cgroup_inode": bound["inode"], "limits": limits,
             "machine": {"cpus": machine["vcpu_count"], "memory_mib": machine["mem_size_mib"]}}
@@ -134,8 +139,8 @@ async def exercise(args):
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("requires root on an isolated Linux/KVM host")
     assert importlib.metadata.version("e2b") == "2.51.0"
-    assert args.uid_base >= 1000 and args.uid_base + VM_COUNT < 2**32 - 1
-    assert not processes_in_uid_range(args.uid_base, args.uid_base + VM_COUNT - 1)
+    assert args.uid_base >= 1000 and args.uid_base + PHYSICAL_SLOTS < 2**32 - 1
+    assert not processes_in_uid_range(args.uid_base, args.uid_base + PHYSICAL_SLOTS - 1)
     parent = args.scratch_parent.resolve(strict=True)
     assert parent.stat().st_uid == 0 and not parent.stat().st_mode & 0o077
     args.cgroup_parent = args.cgroup_parent.resolve(strict=True)
@@ -193,18 +198,21 @@ async def exercise(args):
     settings = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer), "firecracker": str(args.firecracker), "chroot_base": str(root / "jails"),
-        "kernel": str(kernel), "rootfs": str(images[0]), "uid_base": args.uid_base, "max_vm_id": VM_COUNT - 1,
+        "kernel": str(kernel), "rootfs": str(images[0]), "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 512,
         "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 768 * MIB},
         "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
         "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 4, "max_active_per_tenant": 4,
         "max_disk_bytes_global": 2 * disk_sum + 1024 * MIB, "max_disk_bytes_per_tenant": 2 * disk_sum,
         "cleanup_reserve_bytes": 1024 * MIB, "max_timeout_secs": 1200, "startup_timeout_secs": 120,
-        "expiry_scan_seconds": 1, "templates": {"templates": templates + bad_templates,
+        # This probe owns explicit boot/initializer failures, not expiry races.
+        "expiry_scan_seconds": 3600, "templates": {"templates": templates + bad_templates,
         "aliases": {"first-choice": "first-r1", "second-choice": "second-r1"},
         "compute_limits": {"max_vcpus_global": 6, "max_vcpus_per_tenant": 6,
                            "max_memory_bytes_global": 4096 * MIB, "max_memory_bytes_per_tenant": 4096 * MIB}},
     }
+    settings = complete_runtime(settings, slots=PHYSICAL_SLOTS)
+    provision_runtime(settings)
     config = root / "config.json"
     config.write_text(json.dumps(settings))
     config.chmod(0o600)
@@ -328,38 +336,42 @@ async def exercise(args):
             failure = await failed_initializer(victim)
             await check_live(exclude=victim)
             name = live[victim]["host"]["resource_id"]
+            host_identity = live[victim]["host"]
             _kill_confirmed = (victim.kill())
             assert _kill_confirmed, "failed initializer VM destruction unconfirmed"
             del live[victim]
-            failure["cleanup"] = audit_gone(root, args.firecracker, args.cgroup_parent, name)
+            failure["cleanup"] = audit_gone(root, args.firecracker, args.cgroup_parent, name, host_identity)
             failure["template_id"] = template["template_id"]
             cases.append({"guest_initializer_exit_42": failure})
             print(json.dumps({"event": "guest_failure_reclaimed", "template_id": template["template_id"]}), flush=True)
             await check_live()
             # The valid manifest describes an intentionally invalid private
             # kernel. This reaches physical preparation, unlike a hash refusal.
-            before = phases(database)
+            before_id = idle_snapshot(database)["frontiers"][("sandbox", "")]
             response = httpx.post(url + "/v2/sandboxes", headers={"X-API-Key": key},
                                   json={"templateID": bad_templates[index // 2]["template_id"],
                                         "timeout": 300, "allow_internet_access": False},
                                   timeout=180, trust_env=False)
             status = response.status_code
             assert status >= 500, f"invalid kernel unexpectedly accepted: {status}"
-            added = set(phases(database)) - set(before)
-            assert len(added) == 1, "failed create must keep one durable identity"
-            ident = added.pop()
-            deadline = time.monotonic() + 150
-            while phases(database)[ident] != "Destroyed":
-                assert process.poll() is None and time.monotonic() < deadline, "failed boot cleanup unknown"
-                time.sleep(0.1)
-            assert set(phases(database)) == set(before) | {ident}, "failed create allocated another identity"
+            assert idle_snapshot(database)["frontiers"][("sandbox", "")] == before_id + 1
+            ident = f"sb-{namespace}-{before_id + 1}"
             slots = [json.loads(path.read_text()) for path in (root / "state/slots").glob("*.json")]
-            slot = next(value for value in slots if value["sandbox"] == int(ident.rsplit("-", 1)[1]))
+            slot = next(value for value in slots if value["sandbox"] == before_id + 1)
             name = f"vm-{namespace}-{slot['vm']}"
             assert (root / "jails/.claims" / name / "failed-prepare.json").is_file()
+            failed_identity = json.loads((root / "jails/.claims" / name / "record.json").read_text())
+            failed_identity["network_inode"] = json.loads((root / "jails/.claims" / name / "network.json").read_text())["namespace_inode"]
+            evidence.append({"sandbox_id": ident, "template_id": bad_templates[index // 2]["template_id"],
+                             "host": failed_identity})
+            deadline = time.monotonic() + 150
+            while not terminal_cleanup_confirmed(database, ident):
+                assert process.poll() is None and time.monotonic() < deadline, "failed boot cleanup unknown"
+                time.sleep(0.1)
+            assert idle_snapshot(database)["frontiers"][("sandbox", "")] == before_id + 1, "failed create allocated another identity"
             cases.append({"invalid_kernel_startup": {"template_id": bad_templates[index // 2]["template_id"],
                           "http_status": status, "terminal": "Destroyed",
-                          "cleanup": audit_gone(root, args.firecracker, args.cgroup_parent, name)}})
+                          "cleanup": audit_gone(root, args.firecracker, args.cgroup_parent, name, failed_identity)}})
             print(json.dumps({"event": "boot_failure_reclaimed", "template_id": template["template_id"]}), flush=True)
             await check_live()
             replacement = create(template)
@@ -371,14 +383,14 @@ async def exercise(args):
             _kill_confirmed = (sandbox.kill())
             assert _kill_confirmed
             del live[sandbox]
-        assert len(phases(database)) == VM_COUNT and set(phases(database).values()) == {"Destroyed"}
+        assert len(evidence) == VM_COUNT
+        assert all(terminal_cleanup_confirmed(database, item["sandbox_id"]) for item in evidence)
         with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as connection:
             assert connection.execute("SELECT count(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0] == 0
-            assert connection.execute("SELECT version FROM controller_meta").fetchone()[0] == 9
-        claims = sorted((root / "jails/.claims").iterdir())
-        assert len(claims) == VM_COUNT
-        cleanup = [audit_gone(root, args.firecracker, args.cgroup_parent, claim.name) for claim in claims]
-        assert not processes_in_uid_range(args.uid_base, args.uid_base + VM_COUNT - 1)
+        assert idle_snapshot(database)["frontiers"][("sandbox", "")] == VM_COUNT
+        cleanup = [audit_gone(root, args.firecracker, args.cgroup_parent,
+                              item["host"]["resource_id"], item["host"]) for item in evidence]
+        assert not processes_in_uid_range(args.uid_base, args.uid_base + PHYSICAL_SLOTS - 1)
         stop_server(process)
         assert process.poll() is not None
         assert not any(path.is_dir() for path in args.cgroup_parent.iterdir())

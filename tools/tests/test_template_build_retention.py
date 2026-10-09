@@ -15,32 +15,94 @@ from tools.template_build_service import Backend, BuildHTTP, Supervisor
 from tools.template_build_store import BuildError, BuildStore, MIB
 from tools.template_stage import file_hash, stage_delete, stage_inventory
 from tools.tests.test_template_build_service import limits, PowerLoss, FakeBackend
+from tools.tests.template_build_fixture import bounded_config, compiled_helper, synthetic_helper
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class BuildSchemaTests(unittest.TestCase):
+    """No helper execution: schema refusals preserve the existing journal."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.config = bounded_config(synthetic_helper())
+
+    def open(self, **kwargs):
+        return BuildStore(self.root, limits(), bounded=self.config, **kwargs)
+
+    def test_missing_null_or_partial_configuration_never_creates_a_journal(self):
+        with self.assertRaises(TypeError):
+            BuildStore(self.root, limits())
+        for config in (None, {}, {'namespace': 17}):
+            with self.subTest(config=config), self.assertRaises(ValueError):
+                BuildStore(self.root, limits(), bounded=config)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_empty_current_database_reopens_without_upgrading_schema(self):
+        first = self.open()
+        before = first.db.execute('SELECT name,sql FROM sqlite_master ORDER BY name').fetchall()
+        first.close()
+        second = self.open()
+        try:
+            self.assertEqual(second.db.execute('SELECT name,sql FROM sqlite_master ORDER BY name').fetchall(), before)
+            self.assertEqual(second.rows(), [])
+            self.assertIsNone(second._job_frontier())
+        finally:
+            second.close()
+
+    def test_old_formats_are_refused_without_schema_or_record_rewrites(self):
+        for version in (None, 2, 3):
+            with self.subTest(version=version):
+                folder = self.root / ('format-' + str(version))
+                folder.mkdir(mode=0o700)
+                store = BuildStore(folder, limits(), bounded=self.config)
+                settings = json.loads(store.db.execute('SELECT limits FROM settings WHERE id=1').fetchone()[0])
+                if version is None:
+                    settings.pop('schema_version')
+                    settings.pop('bounded_builds')
+                else:
+                    settings['schema_version'] = version
+                store.db.execute('UPDATE settings SET limits=? WHERE id=1', (json.dumps(settings, sort_keys=True),))
+                store.db.commit()
+                store.close()
+                before = (folder / 'builds.db').read_bytes()
+                with self.assertRaisesRegex(ValueError, 'unsupported build journal format'):
+                    BuildStore(folder, limits(), bounded=self.config)
+                self.assertEqual((folder / 'builds.db').read_bytes(), before)
+
+    def test_current_partial_schema_or_window_state_is_not_repaired(self):
+        for damage in ('DROP TABLE request_windows', 'DELETE FROM request_windows',
+                       'ALTER TABLE jobs DROP COLUMN publication_attempted', 'DROP TABLE job_allocator'):
+            with self.subTest(damage=damage):
+                folder = self.root / ('damaged-' + str(len(list(self.root.iterdir()))))
+                folder.mkdir(mode=0o700)
+                store = BuildStore(folder, limits(), bounded=self.config)
+                store.db.execute(damage)
+                store.db.commit()
+                store.close()
+                before = (folder / 'builds.db').read_bytes()
+                with self.assertRaises(ValueError):
+                    BuildStore(folder, limits(), bounded=self.config)
+                self.assertEqual((folder / 'builds.db').read_bytes(), before)
+
+    def test_removed_migration_option_cannot_reenable_a_legacy_path(self):
+        with self.assertRaises(TypeError):
+            self.open(migrate_legacy=True)
+        self.assertEqual(list(self.root.iterdir()), [])
 
 
 class RetentionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        subprocess.run(['cargo', 'build', '--locked', '-p', 'sandproof-controller-service',
-                        '--bin', 'sandproof-window-reducer'], cwd=ROOT, check=True, timeout=180)
-        target = Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'target'))
-        if not target.is_absolute():
-            target = ROOT / target
-        binary = target / 'debug/sandproof-window-reducer'
-        cls.helper = {'path': str(binary), 'sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
-                      'owner_uid': os.geteuid(), 'max_input_bytes': 65536,
-                      'max_output_bytes': 65536, 'timeout_seconds': 5}
+        cls.helper = compiled_helper()
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.now = 1000
-        self.config = {'namespace': 17, 'windows': {'max_open_windows': 4, 'max_duration_ms': 600000},
-                       'retention_ms': 1000, 'max_request_bytes': 2048, 'max_result_bytes': 8192,
-                       'max_record_bytes': 65536, 'database_bytes': 8 * MIB, 'wal_bytes': 17 * MIB,
-                       'recovery_reserve_bytes': 8 * MIB, 'helper': self.helper}
+        self.config = bounded_config(self.helper)
         self.limits = limits()
         self.store = self.open()
         self.addCleanup(lambda: self.store.close() if self.store else None)
@@ -198,31 +260,10 @@ class RetentionTests(unittest.TestCase):
             self.store.db.execute('DROP TABLE job_allocator')
         self.store.close()
         self.store = None
-        with self.assertRaisesRegex(ValueError, 'lacks a permanent build frontier'):
-            self.open(migrate_legacy=True)
+        with self.assertRaisesRegex(ValueError, 'unsupported build journal format'):
+            self.open()
         with sqlite3.connect(self.root / 'builds.db') as db:
             self.assertEqual(json.loads(db.execute('SELECT limits FROM settings WHERE id=1').fetchone()[0])['schema_version'], 3)
-
-    def test_explicit_legacy_migration_seeds_above_matching_random_ids(self):
-        self.store.close()
-        self.store = None
-        self.root = self.root / 'legacy-frontier'
-        self.root.mkdir(mode=0o700)
-        legacy = BuildStore(self.root, self.limits, clock=lambda: self.now, free_bytes=lambda: 1000000 * MIB)
-        request = {'kind': 'oci', 'image': 'ubuntu:24.04'}
-        try:
-            for suffix in (3, 9):
-                with patch('tools.template_build_store.secrets.token_hex', return_value=f"0000000000000011{suffix:016x}"):
-                    legacy.submit(1, request, 'old-' + str(suffix))
-        finally:
-            legacy.close()
-        self.store = self.open(migrate_legacy=True)
-        self.assertEqual(self.store._job_frontier(), 9)
-        self.assertEqual(self.store.submit(1, request, 'old-3')['buildID'], '00000000000000110000000000000003')
-        self.assertEqual(self.submit(owner=2), '0000000000000011000000000000000a')
-        self.reopen()
-        self.assertEqual(self.store._job_frontier(), 10)
-        self.assertEqual(sum(not row['window_namespace'] for row in self.store.rows()), 2)
 
     def test_original_tuple_precedes_closed_expiry_and_reboot(self):
         window = self.window()
@@ -258,7 +299,7 @@ class RetentionTests(unittest.TestCase):
             self.submit(window=window | {'namespace': 18})
         with self.assertRaisesRegex(BuildError, 'IdempotencyKeyRequired'):
             self.store.submit(1, {'kind': 'dockerfile'}, window=window)
-        with self.assertRaisesRegex(BuildError, 'LegacyBuildDomainClosed'):
+        with self.assertRaisesRegex(BuildError, 'RequestWindowRequired'):
             self.store.submit(1, {'kind': 'dockerfile'}, 'unseen')
         first = self.submit(window=window)
         second = self.submit(window=self.window())
@@ -610,28 +651,6 @@ class RetentionTests(unittest.TestCase):
         reader.rollback()
         self.store.change(job, 'Failed', release=True)
 
-    def test_legacy_migration_is_explicit_disjoint_and_pins_unknown_rows(self):
-        self.store.close()
-        self.store = None
-        self.root = self.root / 'legacy'
-        self.root.mkdir(mode=0o700)
-        legacy = BuildStore(self.root, self.limits, clock=lambda: self.now)
-        job = legacy.submit(1, {'kind': 'oci', 'image': 'ubuntu:24.04'}, 'old')['buildID']
-        legacy.change(job, 'Building')
-        legacy.close()
-        with self.assertRaisesRegex(ValueError, 'migration'):
-            self.open()
-        self.store = self.open(migrate_legacy=True)
-        self.assertEqual(self.store.submit(1, {'kind': 'oci', 'image': 'ubuntu:24.04'}, 'old')['buildID'], job)
-        with self.assertRaisesRegex(BuildError, 'LegacyBuildDomainClosed'):
-            self.store.submit(1, {'kind': 'dockerfile'}, 'new')
-        fresh = self.submit(token='old')
-        self.assertNotEqual(job, fresh)
-        backend = object.__new__(Backend)
-        backend.request = Mock()
-        self.assertFalse(backend.cleanup_bounded(self.store, self.store.get(job)))
-        backend.request.assert_not_called()
-
     def test_private_fence_before_absence_and_settlement_commit_before_ack(self):
         job = self.submit()
         window = 'bw-private-1-0'
@@ -651,12 +670,12 @@ class RetentionTests(unittest.TestCase):
             raise TimeoutError('ack lost')
         backend.request = request
         with self.assertRaises(TimeoutError):
-            backend.cleanup_bounded(self.store, self.store.get(job))
+            backend.cleanup(self.store.get(job), self.store)
         self.assertTrue(calls[0].endswith('/close'))
         self.assertIn('?requestWindow=', calls[1])
         self.reopen()
         backend.request = Mock(return_value={'requestWindow': window, 'settled': True})
-        self.assertTrue(backend.cleanup_bounded(self.store, self.store.get(job)))
+        self.assertTrue(backend.cleanup(self.store.get(job), self.store))
         backend.request.assert_called_once()
         self.assertTrue(backend.request.call_args.args[2].endswith('/settle'))
         self.assertEqual(self.store.get(job)['private_ack'], 1)
@@ -686,7 +705,7 @@ class RetentionTests(unittest.TestCase):
                 raise BuildError(404, 'NotFound')
             return {'requestWindow': window, 'settled': True}
         backend.request = request
-        self.assertTrue(backend.cleanup_bounded(self.store, self.store.get(job)))
+        self.assertTrue(backend.cleanup(self.store.get(job), self.store))
         thread.join(timeout=5)
         self.assertFalse(thread.is_alive())
         self.assertEqual(accepted, [])
@@ -700,16 +719,14 @@ class RetentionTests(unittest.TestCase):
             request = {'kind': 'oci', 'image': 'ubuntu:24.04', 'timeoutSeconds': 30}
             path = self.root.parent / ('intent-' + self.root.name + '.json')
             self.addCleanup(lambda: path.unlink(missing_ok=True))
-            intent = saved_intent(path, client, request, build_mode='windowed', token='original')
+            intent = saved_intent(path, client, request, token='original')
             result = client.request('POST', '/sandproof/template-builds', request | {'requestWindow': intent['requestWindow']}, token='original')
             self.store.close_window(1, intent['requestWindow'])
-            recovered = saved_intent(path, client, request, build_mode='windowed')
+            recovered = saved_intent(path, client, request)
             duplicate = client.request('POST', '/sandproof/template-builds', request | {'requestWindow': recovered['requestWindow']}, token=recovered['idempotency_key'])
             self.assertEqual(result['buildID'], duplicate['buildID'])
             self.assertEqual(intent, recovered)
-            with self.assertRaisesRegex(ValueError, 'conflicts'):
-                saved_intent(path, client, request, build_mode='legacy-unbounded')
-            with self.assertRaisesRegex(RuntimeError, 'LegacyBuildDomainClosed'):
+            with self.assertRaisesRegex(RuntimeError, 'RequestWindowRequired'):
                 client.request('POST', '/sandproof/template-builds', request, token='new-legacy')
             self.assertEqual(len(self.store.rows()), 1)
         finally:

@@ -1,5 +1,5 @@
-use super::{bounded, recovery, retirement, write_checkpoint};
-use crate::journal::{BOUNDED_FORMAT_VERSION, MAINTAINED_FORMAT_VERSION};
+use super::{bounded, recovery, write_checkpoint};
+use crate::journal::MAINTAINED_FORMAT_VERSION;
 use crate::{ControllerJournal, JournalError};
 use rusqlite::{Connection, Transaction};
 use sandbox_controller_core as core;
@@ -43,9 +43,10 @@ impl MaintenanceConfig {
         if self.max_input_bytes > self.max_tail_bytes {
             return Err(JournalError::UnsupportedStore);
         }
-        if let Some(capacity) = &self.capacity {
-            capacity.validate(self)?;
-        }
+        self.capacity
+            .as_ref()
+            .ok_or(JournalError::UnsupportedStore)?
+            .validate(self)?;
         Ok(())
     }
     pub(super) const fn core_limits(&self) -> core::checkpoint::CheckpointLimits {
@@ -59,7 +60,7 @@ impl MaintenanceConfig {
 pub(super) fn read(connection: &Connection) -> Result<Option<MaintenanceConfig>, JournalError> {
     let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if format != MAINTAINED_FORMAT_VERSION {
-        return Ok(None);
+        return Err(JournalError::UnsupportedStore);
     }
     let bytes: Vec<u8> = connection.query_row(
         "SELECT config_json FROM controller_maintenance_config WHERE id=1",
@@ -71,28 +72,12 @@ pub(super) fn read(connection: &Connection) -> Result<Option<MaintenanceConfig>,
     Ok(Some(config))
 }
 
-pub(super) fn configure(
+pub(super) fn initialize(
     tx: &Transaction<'_>,
     world: &core::World,
-    requested: Option<MaintenanceConfig>,
+    config: &MaintenanceConfig,
 ) -> Result<(), JournalError> {
-    if let Some(stored) = read(tx)? {
-        if requested.as_ref() != Some(&stored) {
-            return Err(JournalError::UnsupportedStore);
-        }
-        return Ok(());
-    }
-    let Some(config) = requested else {
-        return Ok(());
-    };
     config.validate()?;
-    let format: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if format != BOUNDED_FORMAT_VERSION {
-        return Err(JournalError::UnsupportedStore);
-    }
-    // Migration derives release evidence only from accepted ConfirmRelease
-    // inputs in the complete verified history, never from Destroyed/Free alone.
-    let bindings = recovery::legacy_bindings(tx, world)?;
     tx.execute_batch("CREATE TABLE controller_maintenance_config(id INTEGER PRIMARY KEY CHECK(id=1),config_json BLOB NOT NULL);
       CREATE TABLE controller_checkpoint(id INTEGER PRIMARY KEY CHECK(id=1),generation INTEGER NOT NULL CHECK(generation>=1),input_cut INTEGER NOT NULL CHECK(input_cut>=0),payload BLOB NOT NULL,sha256 BLOB NOT NULL CHECK(length(sha256)=32));
       CREATE TABLE controller_checkpoint_gc(id INTEGER PRIMARY KEY CHECK(id=1),deleted_through INTEGER NOT NULL CHECK(deleted_through>=0));
@@ -102,59 +87,56 @@ pub(super) fn configure(
         "INSERT INTO controller_maintenance_config VALUES(1,?1)",
         [serde_json::to_vec(&config)?],
     )?;
-    super::super::capacity::configure(tx, world, &config)?;
-    for witness in bindings.released.values() {
-        retirement::store_witness(tx, *witness)?;
-    }
-    write_checkpoint(tx, world, &config)?;
-    tx.pragma_update(None, "user_version", MAINTAINED_FORMAT_VERSION)?;
+    super::super::capacity::configure(tx, world, config)?;
+    write_checkpoint(tx, world, config)?;
     Ok(())
 }
 
 impl ControllerJournal {
-    /// Open or atomically upgrade the explicit bounded deployment to format 4.
+    /// The sole formal-server opener: complete limits and current schemas only.
+    /// New databases may be initialized; existing databases are never upgraded.
     /// # Errors
-    /// Rejects changed configuration, unsupported V1 history or insufficient capacity.
-    pub fn open_maintained(
+    /// Rejects partial capacity, old schemas, mismatched configuration or corrupt recovery.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public opener accepts an owned pair of immutable deployment configurations"
+    )]
+    pub fn open_complete(
         path: impl AsRef<std::path::Path>,
         namespace: &str,
         host: super::super::BoundedHostConfig,
         maintenance: MaintenanceConfig,
         now_ms: u64,
     ) -> Result<Self, JournalError> {
-        host.validate()?;
-        maintenance.validate()?;
-        super::super::capacity::validate_host(&host, &maintenance)?;
-        Self::open_with_bounded(path, namespace, Some(host), Some(maintenance), now_ms)
+        validate_complete(&host, &maintenance)?;
+        Self::open_current(path, namespace, host, &maintenance, now_ms)
     }
 
-    /// Read-only preflight before node initialization; open repeats validation.
+    /// Read-only current-schema check, before any host activation. Opening repeats it.
     /// # Errors
-    /// Rejects mismatched deployment configuration or unsupported formats.
-    pub fn preflight_maintained(
+    /// Rejects old/partial stores rather than enabling a migration path.
+    pub fn preflight_complete(
         path: impl AsRef<std::path::Path>,
         namespace: &str,
         host: &super::super::BoundedHostConfig,
         maintenance: &MaintenanceConfig,
     ) -> Result<(), JournalError> {
-        maintenance.validate()?;
-        host.validate()?;
-        super::super::capacity::validate_host(host, maintenance)?;
+        validate_complete(host, maintenance)?;
+        super::super::validate_namespace(namespace)?;
         let path = path.as_ref();
-        if !path.exists() {
-            return Self::preflight_bounded(path, namespace, host);
-        }
-        if path.is_symlink() {
-            return Err(JournalError::UnsupportedStore);
+        match std::fs::symlink_metadata(path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+            Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => {
+                return Err(JournalError::UnsupportedStore);
+            }
+            Ok(_) => {}
         }
         let connection =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         connection.execute_batch("PRAGMA trusted_schema=OFF;")?;
         let tx = connection.unchecked_transaction()?;
-        if read(&tx)?.is_none() {
-            drop(tx);
-            return Self::preflight_bounded(path, namespace, host);
-        }
+        crate::journal::require_current_controller_store(&tx)?;
         if read(&tx)?.as_ref() != Some(maintenance)
             || bounded::config(&tx)?.as_ref() != Some(host)
             || super::namespace(&tx)? != namespace
@@ -165,4 +147,19 @@ impl ControllerJournal {
         tx.commit()?;
         Ok(())
     }
+}
+
+fn validate_complete(
+    host: &super::super::BoundedHostConfig,
+    maintenance: &MaintenanceConfig,
+) -> Result<(), JournalError> {
+    if host.physical_storage.is_none()
+        || host.console_policy != Some(super::super::ConsolePolicy::Discard)
+        || maintenance.capacity.is_none()
+    {
+        return Err(JournalError::UnsupportedStore);
+    }
+    host.validate()?;
+    maintenance.validate()?;
+    super::super::capacity::validate_host(host, maintenance)
 }

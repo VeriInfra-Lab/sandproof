@@ -26,7 +26,10 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Publication, JournalError> {
         || (value.checked
             && value.validation_sandbox.is_none()
             && value.validation_certificate.is_none())
-        || (value.state == PublicationState::Ready && (!value.checked || value.failure.is_some()))
+        || (value.state == PublicationState::Ready
+            && (!value.checked
+                || value.failure.is_some()
+                || value.validation_certificate.is_none()))
         || (value.state == PublicationState::Failed && value.failure.is_none())
     {
         return Err(JournalError::CorruptStore);
@@ -788,8 +791,8 @@ impl ControllerJournal {
                 {
                     return Err(JournalError::CorruptStore);
                 }
-                // Legacy terminal rows are not exemptions: unknown work,
-                // incomplete cleanup, or inconsistent authority keeps the pin.
+                // Unknown work, incomplete cleanup, or inconsistent authority
+                // keeps the validation pin until exact terminal cleanup.
                 if core::maintenance::retirement::validate_terminal_cleanup(&world, sandbox)
                     .is_err()
                 {

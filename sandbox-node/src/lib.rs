@@ -4,12 +4,18 @@
 //! checking the exact claimed host resource; the guest cannot publish state.
 
 #[cfg(target_os = "linux")]
+mod adapter;
+#[cfg(target_os = "linux")]
+mod physical_profile;
+#[cfg(target_os = "linux")]
+pub use adapter::NodeHost;
+#[cfg(target_os = "linux")]
+pub use physical_profile::PhysicalProfileLease;
+
+#[cfg(target_os = "linux")]
 mod disk_space;
 #[cfg(target_os = "linux")]
 pub use disk_space::{DiskSpace, disk_space};
-
-#[cfg(any(target_os = "linux", test))]
-mod identity;
 
 #[cfg(any(target_os = "linux", test))]
 mod startup;
@@ -19,6 +25,6 @@ mod linux;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    HostInventory, HostMetadataEnvelope, HostObservation, LinuxWorker, NodeConfig, ObservedSlot,
-    RouteCapacityExceeded,
+    CredentialFault, HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus,
+    LinuxWorker, NodeConfig, ObservedSlot, RouteCapacityExceeded,
 };

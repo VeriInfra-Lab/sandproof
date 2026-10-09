@@ -1,9 +1,85 @@
 use sandbox_controller_core as core;
 use sandproof_controller_service::{
-    ControllerJournal, DispatchResult, HostEvidence, NeverCrash, WorkerTransportError,
+    AdmissionError, AdmissionLimits, ControllerJournal, CrashInjector, DispatchResult,
+    HostEvidence, JournalError, NeverCrash, WorkerTransportError, finish_admitted_create_v1,
 };
 use sandproof_protocol::{ResourceEvidence, ResourceRef, WorkAction, WorkOutcome, WorkReceipt};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+#[allow(
+    dead_code,
+    reason = "shared fixture exposes limits for several independent test executables"
+)]
+pub mod complete_fixture;
+
+pub use complete_fixture::CLEANUP_BYTES;
+
+pub fn open_complete(
+    path: impl AsRef<Path>,
+    namespace: &str,
+) -> Result<ControllerJournal, JournalError> {
+    open_complete_with_slots(path, namespace, 64)
+}
+
+pub fn open_complete_with_slots(
+    path: impl AsRef<Path>,
+    namespace: &str,
+    slots: u64,
+) -> Result<ControllerJournal, JournalError> {
+    let path = path.as_ref();
+    ControllerJournal::open_complete(
+        path,
+        namespace,
+        complete_fixture::host(path, namespace, slots, 2 * 1024 * 1024, CLEANUP_BYTES),
+        complete_fixture::maintenance(),
+        0,
+    )
+}
+
+pub fn admission_limits() -> AdmissionLimits {
+    AdmissionLimits {
+        max_active_global: 64,
+        max_active_per_tenant: 64,
+        max_disk_bytes_global: CLEANUP_BYTES + 2 * 1024 * 1024,
+        max_disk_bytes_per_tenant: 2 * 1024 * 1024,
+        cleanup_reserve_bytes: CLEANUP_BYTES,
+        max_timeout_secs: 300,
+        max_lifetime_secs: 300,
+        startup_timeout_secs: 300,
+    }
+}
+
+pub fn admit(
+    journal: &mut ControllerJournal,
+    request: core::CreateRequest,
+    crashes: &mut impl CrashInjector,
+) -> Result<core::ControllerDecision, AdmissionError> {
+    journal.admit_create(request, 0, 300, 1000, admission_limits(), crashes)
+}
+
+#[allow(
+    dead_code,
+    reason = "shared workflow helper is not used by journal-only test executables"
+)]
+pub fn admit_and_finish<W>(
+    journal: &mut ControllerJournal,
+    request: core::CreateRequest,
+    worker: &mut W,
+) -> Result<core::World, JournalError>
+where
+    W: FnMut(
+        &WorkAction<core::EffectId>,
+    ) -> Result<WorkReceipt<FakeHostEvidence>, WorkerTransportError>,
+{
+    let sandbox = request.sandbox;
+    let operation = request.operation;
+    admit(journal, request, &mut NeverCrash).map_err(|error| match error {
+        AdmissionError::Journal(error) => error,
+        _ => JournalError::UnsupportedInput,
+    })?;
+    finish_admitted_create_v1(journal, sandbox, operation, worker)
+}
 
 pub const NAMESPACE: &str = "0123456789abcdef";
 pub const SANDBOX: core::SandboxId = core::SandboxId(10);
@@ -70,7 +146,14 @@ pub fn kill(owner: u64) -> core::ControllerInput {
 }
 
 pub fn apply(journal: &mut ControllerJournal, input: core::ControllerInput) -> core::World {
-    journal.apply(input, &mut NeverCrash).unwrap().next
+    // Test setup uses the same mandatory atomic admission as the formal service.
+    // All non-create inputs still pass directly to the production journal.
+    match input {
+        core::ControllerInput::Request(core::Request::Create(request)) => {
+            admit(journal, request, &mut NeverCrash).unwrap().next
+        }
+        input => journal.apply(input, &mut NeverCrash).unwrap().next,
+    }
 }
 
 pub fn dispatch_all(journal: &mut ControllerJournal) -> usize {

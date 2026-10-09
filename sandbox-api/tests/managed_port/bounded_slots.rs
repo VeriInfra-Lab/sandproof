@@ -9,21 +9,29 @@ use sandbox_controller_core::maintenance::{
 use sandproof_controller_service::{BoundedHostConfig, HostSlotContext};
 use std::sync::Mutex;
 
-fn bounded() -> BoundedHostConfig {
-    BoundedHostConfig {
-        physical_storage: None,
-        console_policy: None,
-        uid_base: 2000,
-        uplink_base: 12,
-        max_data_routes_per_slot: 4,
-        max_data_routes_global: 8,
-        data_route_control_reserve: 1,
-        maintenance: MaintenanceLimits {
-            max_host_slots: 1,
-            max_retained_results: 16,
-            windows: WindowLimits::new(2, 1000).unwrap(),
-        },
-    }
+fn bounded(path: &std::path::Path) -> BoundedHostConfig {
+    // The exact fixture pool is present before the production complete opener.
+    let mut config = complete_fixture::host(path, NAMESPACE, &config());
+    config.uid_base = 2000;
+    config.uplink_base = 12;
+    config.maintenance = MaintenanceLimits {
+        max_host_slots: 1,
+        max_retained_results: 128,
+        windows: WindowLimits::new(2, 1000).unwrap(),
+    };
+    config.physical_storage.as_mut().unwrap().pools[0].max_host_slots = 1;
+    config
+}
+
+fn open_journal(path: &std::path::Path) -> ControllerJournal {
+    ControllerJournal::open_complete(
+        path,
+        NAMESPACE,
+        bounded(path),
+        complete_fixture::maintenance(),
+        0,
+    )
+    .unwrap()
 }
 
 #[derive(Default, PartialEq)]
@@ -36,6 +44,7 @@ enum BindingFault {
 
 #[derive(Default)]
 struct DurableHost {
+    physical_error: bool,
     physical_profile:
         Option<sandproof_controller_service::physical_storage::PhysicalStorageProfile>,
     physical_free: Option<u64>,
@@ -80,8 +89,81 @@ impl BoundedHost {
     }
 }
 
-impl HostAdapter for BoundedHost {
+impl WorkEvidence for BoundedHost {
     type Evidence = Evidence;
+}
+impl WorkExecution for BoundedHost {
+    fn execute(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        let mut state = self.0.lock().unwrap();
+        if !Self::eligible(&state, action) {
+            return Err(WorkerTransportError::ConnectionLost);
+        }
+        state.actions.push(action.clone());
+        if state.unknown_cleanup
+            && matches!(action.command.command(), core::Command::CleanupVm { .. })
+        {
+            return Ok(unknown_receipt(action));
+        }
+        Ok(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(Evidence {
+                resource: action.identity.resource.clone(),
+                command: action.command.command().clone(),
+            }),
+        })
+    }
+}
+
+impl WorkRecovery for BoundedHost {
+    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
+        if !matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ) || !self.0.lock().unwrap().actions.contains(action)
+        {
+            return None;
+        }
+        Some(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(Evidence {
+                resource: action.identity.resource.clone(),
+                command: action.command.command().clone(),
+            }),
+        })
+    }
+
+    fn reclaim_incomplete_prepare(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    fn reclaim_incomplete_terminal_fence(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ));
+        self.execute(action)
+            .map(|_| ())
+            .map_err(|_| PortError::Busy)
+    }
+
+    fn reclaim_incomplete_cleanup(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+}
+
+impl HostSlots for BoundedHost {
     fn bind_host_slot(
         &mut self,
         context: &HostSlotContext,
@@ -115,6 +197,7 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+
     fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         let (current, phase) = state.row.ok_or(PortError::Busy)?;
@@ -149,6 +232,9 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+}
+
+impl DataRelay for BoundedHost {
     fn acquire_data_gate(
         &self,
         sandbox: core::SandboxId,
@@ -176,7 +262,7 @@ impl HostAdapter for BoundedHost {
         vm: core::VmId,
         generation: core::Generation,
         _control: bool,
-    ) -> Result<Option<std::process::Child>, PortError> {
+    ) -> Result<std::process::Child, PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
             context.binding.sandbox != sandbox
@@ -192,7 +278,6 @@ impl HostAdapter for BoundedHost {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map(Some)
             .map_err(|_| PortError::Busy)
     }
 
@@ -203,21 +288,39 @@ impl HostAdapter for BoundedHost {
         }
         Ok(state.gate_observation == Some(true))
     }
+}
 
+impl HostCapacity for BoundedHost {
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
-        Ok(self.0.lock().unwrap().physical_free.unwrap_or(10_000))
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .physical_free
+            .unwrap_or(16 * 1024 * 1024 * 1024))
     }
+
     fn validate_physical_storage(
         &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
         _pool: &sandproof_controller_service::physical_storage::PhysicalPool,
     ) -> Result<(), PortError> {
-        if self.0.lock().unwrap().physical_profile.as_ref() == Some(profile) {
+        profile.validate().map_err(|_| PortError::Busy)?;
+        let state = self.0.lock().unwrap();
+        if !state.physical_error
+            && state
+                .physical_profile
+                .as_ref()
+                .is_none_or(|expected| expected == profile)
+        {
             Ok(())
         } else {
             Err(PortError::Busy)
         }
     }
+}
+
+impl LaunchConfiguration for BoundedHost {
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
@@ -230,9 +333,11 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
         Ok(self.0.lock().unwrap().secrets.contains_key(&sandbox.0))
     }
+
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
         self.0
             .lock()
@@ -242,69 +347,9 @@ impl HostAdapter for BoundedHost {
             .cloned()
             .ok_or(PortError::Busy)
     }
-    fn execute(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
-        let mut state = self.0.lock().unwrap();
-        if !Self::eligible(&state, action) {
-            return Err(WorkerTransportError::ConnectionLost);
-        }
-        state.actions.push(action.clone());
-        if state.unknown_cleanup
-            && matches!(action.command.command(), core::Command::CleanupVm { .. })
-        {
-            return Ok(unknown_receipt(action));
-        }
-        Ok(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome: WorkOutcome::ObservedSuccess(Evidence {
-                resource: action.identity.resource.clone(),
-                command: action.command.command().clone(),
-            }),
-        })
-    }
-    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
-        if !matches!(
-            action.command.command(),
-            core::Command::InstallFence { terminal: true, .. }
-        ) || !self.0.lock().unwrap().actions.contains(action)
-        {
-            return None;
-        }
-        Some(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome: WorkOutcome::ObservedSuccess(Evidence {
-                resource: action.identity.resource.clone(),
-                command: action.command.command().clone(),
-            }),
-        })
-    }
-    fn reclaim_incomplete_terminal_fence(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        assert!(matches!(
-            action.command.command(),
-            core::Command::InstallFence { terminal: true, .. }
-        ));
-        self.execute(action)
-            .map(|_| ())
-            .map_err(|_| PortError::Busy)
-    }
-    fn reclaim_incomplete_prepare(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-    fn reclaim_incomplete_cleanup(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
 }
+
+impl TemplateArtifacts for BoundedHost {}
 
 fn open(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
     {
@@ -321,13 +366,8 @@ fn open(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
             state.gate_path = Some(gate_path);
         }
     }
-    let mut config = config();
-    config.limits.max_vm_id = 1; // Legacy physical ceiling must not cap permanent IDs.
-    ManagedPort::new(
-        ControllerJournal::open_bounded(path, NAMESPACE, bounded(), 0).unwrap(),
-        host,
-        config,
-    )
+    let config = config();
+    new_port(open_journal(path), host, config)
 }
 
 #[test]
@@ -338,7 +378,9 @@ fn one_position_serves_many_permanent_ids_and_delayed_old_commands_never_touch_s
     let port = open(&path, host.clone());
     let mut old = Vec::new();
     for number in 1..=32 {
-        let session = port.create("1", request()).unwrap();
+        let session = port
+            .create("1", request())
+            .unwrap_or_else(|error| panic!("create incarnation {number}: {error:?}"));
         assert_eq!(session.sandbox_id, format!("sb-{NAMESPACE}-{number}"));
         let row = host.0.lock().unwrap().row.unwrap();
         assert_eq!(row.0.position.0, 0);
@@ -351,13 +393,16 @@ fn one_position_serves_many_permanent_ids_and_delayed_old_commands_never_touch_s
             assert!(host.clone().execute(stale).is_err());
         }
         port.kill("1", &session.sandbox_id).unwrap();
+        // The service's ordinary coordinator retires completed metadata;
+        // physical-slot reuse is exercised without an unmaintained journal.
+        assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
         let state = host.0.lock().unwrap();
         assert_eq!(state.row.unwrap().1, HostSlotPhase::Free);
         assert!(state.secrets.is_empty());
         old.clone_from(&state.actions);
     }
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     assert_eq!(journal.host_slot_contexts().unwrap().len(), 1);
     assert_eq!(journal.next_sandbox_id().unwrap().0, 33);
     assert_eq!(
@@ -386,7 +431,7 @@ fn cancelled_unbound_create_waits_without_claiming_actions_and_recovers_without_
     ));
     assert_eq!(host.0.lock().unwrap().row, previous);
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     let world = journal.world().unwrap();
     assert!(
         world
@@ -398,7 +443,13 @@ fn cancelled_unbound_create_waits_without_claiming_actions_and_recovers_without_
     drop(journal);
     host.0.lock().unwrap().binding_fault = BindingFault::None;
     let port = open(&path, host.clone());
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
     let state = host.0.lock().unwrap();
     assert_eq!(state.row.unwrap().1, HostSlotPhase::Free);
     assert!(state.secrets.is_empty());
@@ -415,7 +466,7 @@ fn cancelled_unbound_create_waits_without_claiming_actions_and_recovers_without_
 }
 
 #[test]
-fn legacy_unknown_terminal_fence_before_binding_recovers_only_the_original_cancel() {
+fn unknown_terminal_fence_before_binding_recovers_only_the_original_cancel() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("controller.db");
     let host = BoundedHost::default();
@@ -426,8 +477,8 @@ fn legacy_unknown_terminal_fence_before_binding_recovers_only_the_original_cance
         Err(PortError::OutcomeUnknown)
     ));
     drop(port);
-    let mut journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
-    // Reproduce the old persisted failure: cancellation claimed its fence even
+    let mut journal = open_journal(&path);
+    // Inject cancellation's claim/host-loss boundary: it claimed its fence even
     // though physical binding had never succeeded. It never dispatched prepare.
     let failure = kill_v1::<Evidence, _>(
         &mut journal,
@@ -443,8 +494,20 @@ fn legacy_unknown_terminal_fence_before_binding_recovers_only_the_original_cance
     drop(journal);
     host.0.lock().unwrap().binding_fault = BindingFault::None;
     let port = open(&path, host.clone());
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
     let state = host.0.lock().unwrap();
     assert!(state.secrets.is_empty());
     assert_eq!(state.row.unwrap().1, HostSlotPhase::Free);
@@ -456,7 +519,7 @@ fn legacy_unknown_terminal_fence_before_binding_recovers_only_the_original_cance
     ));
     drop(state);
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     assert_eq!(journal.next_sandbox_id().unwrap().0, 2);
     assert_eq!(
         journal
@@ -484,7 +547,13 @@ fn lost_binding_after_launch_cannot_be_reinstalled_for_terminal_cleanup() {
     ));
     drop(port);
     let port = open(&path, host.clone());
-    assert!(port.recover_on_startup().unwrap().unresolved_sandboxes > 0);
+    assert!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes
+            > 0
+    );
     let state = host.0.lock().unwrap();
     assert!(state.row.is_none());
     assert_eq!(state.actions.len(), before);
@@ -504,7 +573,13 @@ fn lost_bind_ack_restarts_before_first_fence_without_allocating_another_identity
     assert!(host.0.lock().unwrap().actions.is_empty());
     drop(port);
     let port = open(&path, host.clone());
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
     assert_eq!(
         port.get("1", &format!("sb-{NAMESPACE}-1"))
             .unwrap()
@@ -525,14 +600,14 @@ fn lost_release_ack_keeps_durable_releasing_until_exact_host_recovery() {
     host.0.lock().unwrap().lose_release = true;
     port.kill("1", &session.sandbox_id).unwrap();
     drop(port);
-    let journal = ControllerJournal::open_bounded(&path, NAMESPACE, bounded(), 0).unwrap();
+    let journal = open_journal(&path);
     assert_eq!(
         journal.host_slot_inventory().unwrap()[0].1,
         HostSlotPhase::Releasing
     );
     drop(journal);
     let port = open(&path, host.clone());
-    port.recover_on_startup().unwrap();
+    port.application().recover_on_startup().unwrap();
     assert!(port.create("1", request()).is_ok());
 }
 
@@ -545,9 +620,10 @@ fn unknown_cleanup_and_data_or_relay_pins_block_slot_reuse() {
         let port = open(&dir.path().join("controller.db"), host.clone());
         let session = port.create("1", request()).unwrap();
         let permit = port
+            .application()
             .data_permit(
                 &session.envd_access_token,
-                sandproof_api::managed::DataKind::Exec,
+                sandproof_controller_service::application::DataKind::Exec,
             )
             .unwrap();
         let _ = port.kill("1", &session.sandbox_id);
@@ -574,9 +650,10 @@ fn unknown_relay_exit_stays_blocked_after_every_pin_drops() {
     let port = open(&dir.path().join("controller.db"), host);
     let session = port.create("1", request()).unwrap();
     let permit = port
+        .application()
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     permit.drain.mark_unknown();
@@ -589,35 +666,50 @@ fn unknown_relay_exit_stays_blocked_after_every_pin_drops() {
 }
 
 #[test]
-fn bounded_format_and_configuration_cannot_be_disabled_changed_or_adopt_nonempty_legacy() {
+fn current_configuration_cannot_be_changed_and_legacy_stores_are_rejected() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("bounded.db");
     drop(open(&path, BoundedHost::default()));
-    assert!(ControllerJournal::open(&path, NAMESPACE).is_err());
+    // A different complete profile is refused, not treated as a mode change.
+    assert!(complete_fixture::open(&path, NAMESPACE).is_err());
     for changed in [
         BoundedHostConfig {
-            physical_storage: None,
-            console_policy: None,
             uid_base: 2001,
-            ..bounded()
+            ..bounded(&path)
         },
         BoundedHostConfig {
             uplink_base: 13,
-            ..bounded()
+            ..bounded(&path)
         },
     ] {
-        assert!(ControllerJournal::open_bounded(&path, NAMESPACE, changed, 0).is_err());
+        assert!(
+            ControllerJournal::open_complete(
+                &path,
+                NAMESPACE,
+                changed,
+                complete_fixture::maintenance(),
+                0
+            )
+            .is_err()
+        );
     }
     let legacy_path = dir.path().join("legacy.db");
-    let legacy = ManagedPort::new(
-        ControllerJournal::open(&legacy_path, NAMESPACE).unwrap(),
-        FakeHost::default(),
-        config(),
+    rusqlite::Connection::open(&legacy_path).unwrap().execute_batch(
+        "CREATE TABLE controller_meta(id INTEGER PRIMARY KEY,version INTEGER,namespace TEXT); PRAGMA application_id=0x53504631; PRAGMA user_version=1;"
+    ).unwrap();
+    let before = std::fs::read(&legacy_path).unwrap();
+    assert!(
+        ControllerJournal::open_complete(
+            &legacy_path,
+            NAMESPACE,
+            bounded(&legacy_path),
+            complete_fixture::maintenance(),
+            0
+        )
+        .is_err()
     );
-    legacy.create("1", request()).unwrap();
-    drop(legacy);
-    assert!(ControllerJournal::open_bounded(&legacy_path, NAMESPACE, bounded(), 0).is_err());
-    assert!(ControllerJournal::open(&legacy_path, NAMESPACE).is_ok());
+    assert!(complete_fixture::open(&legacy_path, NAMESPACE).is_err());
+    assert_eq!(std::fs::read(&legacy_path).unwrap(), before);
 }
 
 #[test]
@@ -627,9 +719,10 @@ fn unknown_relay_exit_resolves_only_after_observed_durable_gate_drain() {
     let port = open(&dir.path().join("controller.db"), host.clone());
     let session = port.create("1", request()).unwrap();
     let permit = port
+        .application()
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     permit.drain.mark_unknown();
@@ -651,21 +744,47 @@ fn relay_spawn_rechecks_authority_after_the_initial_route_permit() {
     let port = open(&dir.path().join("controller.db"), host.clone());
     let session = port.create("1", request()).unwrap();
     let permit = port
+        .application()
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
-    let mut child = port.spawn_data_relay(&permit, false).unwrap().unwrap();
+    let mut child = port.application().spawn_data_relay(&permit, false).unwrap();
     drop(child.take_stdin());
     assert!(child.wait().unwrap().success());
     assert_eq!(host.0.lock().unwrap().relay_spawns, 1);
     port.kill("1", &session.sandbox_id).unwrap();
     assert!(matches!(
-        port.spawn_data_relay(&permit, false),
+        port.application().spawn_data_relay(&permit, false),
         Err(PortError::NotFound)
     ));
     assert_eq!(host.0.lock().unwrap().relay_spawns, 1);
+}
+
+#[test]
+fn expired_permit_cannot_spawn_a_relay_before_the_expiry_worker_runs() {
+    let dir = TempDir::new().unwrap();
+    let host = BoundedHost::default();
+    let port = open(&dir.path().join("controller.db"), host.clone());
+    let session = port.create("1", request()).unwrap();
+    let permit = port
+        .application()
+        .data_permit(
+            &session.envd_access_token,
+            sandproof_controller_service::application::DataKind::Exec,
+        )
+        .unwrap();
+    // The SDK's nonpositive timeout expires the durable deadline immediately;
+    // no sleep, guessed scanner timing, or physical stop is needed here.
+    port.set_timeout("1", &session.sandbox_id, 0).unwrap();
+    assert!(*permit.revocation.borrow());
+    assert!(matches!(
+        port.application().spawn_data_relay(&permit, false),
+        Err(PortError::NotFound)
+    ));
+    assert_eq!(host.0.lock().unwrap().relay_spawns, 0);
+    assert_eq!(port.application().expire_due().unwrap(), 1);
 }
 
 #[path = "bounded_slots/maintenance.rs"]

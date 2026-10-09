@@ -1,12 +1,117 @@
-"""Cross-pool feasibility checks, not a second controller admission policy.
+"""Shared protected configuration and cross-pool feasibility checks.
 
 Reject a build service which advertises requests its configured transports or
-empty runtime pool cannot accept. Live usage, exact reclaim and physical free
+empty runtime pool cannot accept. This is not a second controller admission
+policy. Live usage, exact reclaim and physical free
 space remain the existing controllers' and worker's responsibility.
 """
+import json
+import os
+from pathlib import Path
+
 MIB = 1024 * 1024
 UPLOAD_ENVELOPE_BYTES = 64 * 1024
 HOST_MEMORY_OVERHEAD_MIB = 256
+
+
+
+def protected_json(path, maximum=65536):
+    path = Path(path)
+    if path.resolve(strict=True) != path or not path.is_file():
+        raise ValueError("protected regular config required")
+    meta = path.stat()
+    if meta.st_uid != os.geteuid() or meta.st_mode & 0o077 or meta.st_size > maximum:
+        raise ValueError("private owned bounded config required")
+    return json.loads(path.read_text())
+
+
+def bounded_data_route_limits(settings):
+    """Resolve the persisted route-cell limits from explicit gateway limits."""
+    transfer = settings.get("data_transfer")
+    budgets = {"file_upload_bytes", "file_download_bytes", "command_input_bytes",
+               "command_output_bytes", "rpc_request_bytes", "rpc_response_bytes"}
+    concurrency = {"max_transfers", "max_transfers_per_vm", "control_reserve"}
+    timeouts = {"request_idle_seconds", "file_idle_seconds", "write_idle_seconds"}
+    if type(transfer) is not dict or set(transfer) != budgets | concurrency | timeouts:
+        raise ValueError("bounded host requires explicit complete data_transfer limits")
+    if any(type(value) is not int or not 0 < value <= 2**64 - 1 for value in transfer.values()):
+        raise ValueError("invalid bounded data_transfer limits")
+    if (transfer["rpc_request_bytes"] > 8 * 1024 * 1024
+            or not transfer["control_reserve"] < transfer["max_transfers_per_vm"] <= transfer["max_transfers"]
+            or any(transfer[name] > 2**63 - 1 for name in timeouts)):
+        raise ValueError("invalid bounded data_transfer budgets or concurrency")
+    # The reserve is included in the cap; ordinary traffic still obeys the
+    # existing global/per-VM/control-reserve gateway admission checks.
+    return {'max_data_routes_per_slot': transfer['max_transfers_per_vm'],
+            'max_data_routes_global': transfer['max_transfers'],
+            'data_route_control_reserve': transfer['control_reserve']}
+
+
+def host_uid_range(settings):
+    """Check the configured UID span, without asserting network disjointness.
+
+    The sole host mapping reserves one UID per reusable physical position.
+    The retired max_vm_id configuration is not a valid deployment input.
+    """
+    def integer(value, maximum, name, minimum=1):
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError("invalid " + name)
+        return value
+
+    uid_base = integer(settings.get("uid_base"), 2**32 - 2, "UID base")
+    if "max_vm_id" in settings:
+        raise ValueError("retired max_vm_id configuration is unsupported")
+    bounded = settings.get("bounded_host")
+    if type(bounded) is not dict or set(bounded) - {"console_policy", "physical_storage"} != {"maintenance", "uid_base", "uplink_base"}:
+        raise ValueError("invalid bounded host config")
+    if "console_policy" in bounded and bounded["console_policy"] != "discard":
+        raise ValueError("invalid bounded console policy")
+    if settings.get("maintenance", {}).get("capacity") and bounded.get("console_policy") != "discard":
+        raise ValueError("full bounded capacity requires explicit discarded console output")
+    bounded_data_route_limits(settings)
+    if integer(bounded["uid_base"], 2**32 - 2, "bounded UID base") != uid_base:
+        raise ValueError("bounded host UID base differs from node UID base")
+    maintenance = bounded["maintenance"]
+    if (type(maintenance) is not dict
+            or set(maintenance) != {"max_retained_results", "max_host_slots", "windows"}):
+        raise ValueError("invalid bounded maintenance limits")
+    integer(maintenance["max_retained_results"], 2**64 - 1, "retained result limit")
+    count = integer(maintenance["max_host_slots"], 1_048_576, "host slot limit")
+    uplink_base = bounded["uplink_base"]
+    if type(uplink_base) is not int or not 0 <= uplink_base < 1_048_576:
+        raise ValueError("invalid bounded uplink base")
+    if uplink_base + count > 1_048_576:
+        raise ValueError("bounded uplink range exceeds address pool")
+    windows = maintenance["windows"]
+    if type(windows) is not dict or set(windows) != {"max_open_windows", "max_duration_ms"}:
+        raise ValueError("invalid bounded window limits")
+    for name, value in windows.items():
+        integer(value, 2**64 - 1, "window " + name)
+    # Linux's all-ones UID is reserved, and a range must never wrap.
+    if uid_base + count > 2**32 - 1:
+        raise ValueError("host UID range exceeds usable UIDs")
+    return range(uid_base, uid_base + count)
+
+
+def validate_pool_resource_ranges(runtime, builder):
+    ranges = [host_uid_range(pool) for pool in (runtime, builder)]
+    if max(value.start for value in ranges) < min(value.stop for value in ranges):
+        raise ValueError("runtime/build UID pools overlap")
+    uplinks = []
+    for pool in (runtime, builder):
+        enabled = pool.get("public_ipv4_enabled", False)
+        if type(enabled) is not bool:
+            raise ValueError("invalid public IPv4 enable flag")
+        # Bounded deployments reserve their address ranges even while new
+        # IPv4 admission is disabled: that flag does not prove older accepted
+        # public sandboxes have drained.
+        bounded = pool.get("bounded_host")
+        start = bounded["uplink_base"]
+        count = bounded["maintenance"]["max_host_slots"]
+        uplinks.append(range(start, start + count))
+    if len(uplinks) == 2 and max(value.start for value in uplinks) < min(value.stop for value in uplinks):
+        raise ValueError("runtime/build public IPv4 uplink pools overlap")
+
 
 
 def positive(settings, field):
@@ -69,13 +174,10 @@ def validate_capacity(runtime, builder, limits, base, *, kernel_bytes, largest_t
     return disk
 
 
-def acceptance_build_policy(path, *, legacy_unbounded=False):
-    """Explicit acceptance mode; these values are never production defaults."""
-    if (path is None) == (not legacy_unbounded):
-        raise ValueError("choose an explicit bounded policy or --legacy-unbounded")
+def acceptance_build_policy(path):
+    """The sole formal acceptance policy; fixture budgets are not defaults."""
     if path is None:
-        return None
-    from .template_build_service import protected_json
+        raise ValueError("explicit complete bounded policy required")
     value = protected_json(path)
     return validate_acceptance_build_policy(value)
 
@@ -90,7 +192,10 @@ def validate_acceptance_build_policy(value):
     public = value["public"]
     if type(public) is not dict or set(public) != {"bounded_builds", "workspace_bytes", "workspace_bytes_per_tenant"}:
         raise ValueError("explicit public bounded policy required")
-    from .template_build_store import bounded_configuration
+    if __package__:
+        from .template_build_store import bounded_configuration
+    else:
+        from template_build_store import bounded_configuration
     bounded_configuration(public["bounded_builds"])
     for key in ("workspace_bytes", "workspace_bytes_per_tenant"):
         positive(public, key)
@@ -101,12 +206,15 @@ def validate_acceptance_build_policy(value):
 
 def apply_acceptance_build_policy(runtime, builder, build, policy):
     """Pass through only authorized policy sections; keep pool identities fixed."""
-    if policy is None:
-        return "legacy-unbounded"
+    for name, settings in (("runtime", runtime), ("builder", builder)):
+        if "max_vm_id" in settings:
+            raise ValueError("retired max_vm_id configuration is not supported: " + name)
     validate_acceptance_build_policy(policy)
     import copy
-    from .template_build_service import validate_pool_resource_ranges
-    from .template_build_store import bounded_configuration
+    if __package__:
+        from .template_build_store import bounded_configuration
+    else:
+        from template_build_store import bounded_configuration
     runtime.update(copy.deepcopy(policy["runtime"]))
     builder.update(copy.deepcopy(policy["builder"]))
     bounded_configuration(policy["public"]["bounded_builds"])
@@ -116,6 +224,9 @@ def apply_acceptance_build_policy(runtime, builder, build, policy):
             raise ValueError("bounded acceptance workspace cannot undercut original task budget")
         build["limits"][key] = policy["public"][key]
     validate_pool_resource_ranges(runtime, builder)
-    from .template_physical_storage import validate_configuration as validate_physical_configuration
+    if __package__:
+        from .template_physical_storage import validate_configuration as validate_physical_configuration
+    else:
+        from template_physical_storage import validate_configuration as validate_physical_configuration
     validate_physical_configuration(runtime, builder, build)
     return "windowed"

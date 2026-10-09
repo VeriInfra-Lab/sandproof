@@ -29,6 +29,14 @@ import time
 import urllib.error
 import urllib.request
 
+_complete = _runpy.run_path(str(Path(__file__).with_name("_complete_runtime.py")))
+complete_runtime = _complete["complete_runtime"]
+provision_runtime = _complete["provision_runtime"]
+terminal_cleanup_confirmed = _complete["terminal_cleanup_confirmed"]
+idle_snapshot = _complete["idle_snapshot"]
+assert_idle_reopen = _complete["assert_idle_reopen"]
+retired_sandboxes = _complete["retired_sandboxes"]
+
 
 EXIT_AFTER_HOST_ACTION = 86
 EXIT_BEFORE_HOST_ACTION = 87
@@ -192,7 +200,6 @@ def exercise(args: argparse.Namespace) -> None:
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
-        "max_vm_id": 1000,
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
@@ -208,6 +215,8 @@ def exercise(args: argparse.Namespace) -> None:
         "default_timeout_secs": 300,
         "expiry_scan_seconds": 1,
     }
+    settings = complete_runtime(settings, slots=2)
+    provision_runtime(settings)
     config.write_text(json.dumps(settings))
     config.chmod(0o600)
     log = root / "server.log"

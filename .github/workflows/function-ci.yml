@@ -28,12 +28,16 @@ jobs:
       - name: Check pinned E2B SDK against loopback responses
         # No E2B cloud credentials, VM, or privileged runner are used.
         run: |
-          python3 -m venv "$RUNNER_TEMP/uv-bootstrap"
-          "$RUNNER_TEMP/uv-bootstrap/bin/python" -m pip install --disable-pip-version-check uv==0.11.31
+          uv_version="$(uv --version)"
+          uv_version_pattern='^uv 0[.]11[.]31( [(][^()[:cntrl:]]+[)])?$'
+          if [[ ! "$uv_version" =~ $uv_version_pattern ]]; then
+            printf 'Expected preinstalled uv 0.11.31, got %s\n' "$uv_version" >&2
+            exit 1
+          fi
           mkdir "$RUNNER_TEMP/ci-git"
           ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
           CI_GIT_LOCK="$GITHUB_WORKSPACE/tests/compat/uv.lock" \
-            PATH="$RUNNER_TEMP/ci-git:$RUNNER_TEMP/uv-bootstrap/bin:$PATH" bash scripts/check-compat.sh
+            PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-compat.sh
 
   harbor-inputs:
     runs-on: [self-hosted, Linux, X64, sandproof-ci-harbor]
@@ -45,12 +49,16 @@ jobs:
       - name: Check joint Harbor and E2B SDK installation
         # Imports and loopback contracts only; no task execution or cloud keys.
         run: |
-          python3 -m venv "$RUNNER_TEMP/uv-bootstrap"
-          "$RUNNER_TEMP/uv-bootstrap/bin/python" -m pip install --disable-pip-version-check uv==0.11.31
+          uv_version="$(uv --version)"
+          uv_version_pattern='^uv 0[.]11[.]31( [(][^()[:cntrl:]]+[)])?$'
+          if [[ ! "$uv_version" =~ $uv_version_pattern ]]; then
+            printf 'Expected preinstalled uv 0.11.31, got %s\n' "$uv_version" >&2
+            exit 1
+          fi
           mkdir "$RUNNER_TEMP/ci-git"
           ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
           CI_GIT_LOCK="$GITHUB_WORKSPACE/benchmarks/uv.lock" \
-            PATH="$RUNNER_TEMP/ci-git:$RUNNER_TEMP/uv-bootstrap/bin:$PATH" bash scripts/check-bench.sh
+            PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-bench.sh
 
   pr-title:
     if: github.event_name == 'pull_request'

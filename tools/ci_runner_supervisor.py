@@ -6,6 +6,7 @@ by labels; only Actions owns check conclusions. This service never writes them.
 """
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 import fcntl
 import json
 import os
@@ -20,13 +21,14 @@ import uuid
 
 if __package__:
     from .ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
-    from .ci_vm import MAX_ROLE_WORKERS, ROOT, ROLES, cleanup_work, valid_run_id, valid_slot
+    from .ci_vm import (MAX_ROLE_WORKERS, ROOT, ROLES, RUNNER_JOBS, RUNNER_JOB_SECONDS,
+                        RUNNER_UNIT_SECONDS, cleanup_work, valid_run_id, valid_slot)
 else:
     from ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
-    from ci_vm import MAX_ROLE_WORKERS, ROOT, ROLES, cleanup_work, valid_run_id, valid_slot
+    from ci_vm import (MAX_ROLE_WORKERS, ROOT, ROLES, RUNNER_JOBS, RUNNER_JOB_SECONDS,
+                       RUNNER_UNIT_SECONDS, cleanup_work, valid_run_id, valid_slot)
 
-JOBS = {'rust': 'rust', 'sdk-contract': 'sdk', 'harbor-inputs': 'harbor',
-        'pr-title': 'title', 'pr-policy': 'policy'}
+JOBS = {name: role for role, name in RUNNER_JOBS.items()}
 PREFIX = '/repos/' + REPOSITORY + '/actions/'
 STATE_ROOT = ROOT / 'supervisor'
 UNIT_PREFIX = 'sandproof-ci-worker-'
@@ -86,6 +88,14 @@ def runner_name(role, identity):
 
 
 class Runtime:
+    @contextmanager
+    def admission_guard(self):
+        # Atomic with the trusted E2E service's pause/exclusive acquisition.
+        with open(STATE_ROOT / 'admission.lock', 'a',
+                  opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
     def unit(self, identity):
         return UNIT_PREFIX + valid_run_id(identity) + '.service'
 
@@ -130,7 +140,8 @@ class Runtime:
         command = ['systemd-run', '--quiet', '--collect', '--service-type=exec', '--unit=' + unit,
             '--property=LoadCredential=jit:' + str(jit_path),
             '--property=KillMode=control-group', '--property=TimeoutStopSec=25',
-            '--property=RuntimeMaxSec=1900', '--property=MemoryMax=' + str(ROLES[lease['role']][0] + 512) + 'M',
+            '--property=RuntimeMaxSec=' + str(RUNNER_UNIT_SECONDS),
+            '--property=MemoryMax=' + str(ROLES[lease['role']][0] + 512) + 'M',
             '--property=MemorySwapMax=0', '--property=TasksMax=128',
             '--property=NoNewPrivileges=yes', '--property=ProtectSystem=strict',
             '--property=ProtectHome=yes', '--property=PrivateTmp=yes',
@@ -139,7 +150,7 @@ class Runtime:
             '--property=StandardError=append:' + str(directory / 'host.log'),
             '/usr/bin/python3', '/opt/sandproof-ci/ci_vm.py', '--role', lease['role'],
             '--slot', valid_slot(lease['role'], lease.get('slot', lease['role'])),
-            '--run-id', identity, '--timeout', '1800',
+            '--run-id', identity, '--timeout', str(RUNNER_JOB_SECONDS),
             '--jit-file', '/run/credentials/' + unit + '/jit']
         subprocess.run(command, check=True, capture_output=True, timeout=30)
 
@@ -161,7 +172,7 @@ def prune_diagnostics(root, active_ids, limit_count=40, limit_bytes=128 * 1024 *
         if not stat.S_ISDIR(details.st_mode) or details.st_uid != 0:
             continue
         entries = list(directory.iterdir())
-        if not entries or any(p.name not in {'console.log', 'qemu.log', 'report.json', 'host.log'}
+        if not entries or any(p.name not in {'console.log', 'qemu.log', 'report.json', 'host.log', 'prepared-pins.json'}
                               or not stat.S_ISREG(p.lstat().st_mode) for p in entries):
             continue
         complete.append((details.st_mtime, directory, entries, sum(p.stat().st_size for p in entries)))
@@ -253,7 +264,8 @@ class Supervisor:
         return counts
 
     def count_workflow(self, workflow_id, counts, seen):
-        for status in ('queued', 'in_progress'):
+        # GitHub can mark a run pending while its individual jobs remain queued.
+        for status in ('queued', 'pending', 'in_progress'):
             for page in range(1, 5):
                 result = self.api.request('GET', PREFIX + 'workflows/' + str(workflow_id)
                     + '/runs?status=' + status + '&per_page=100&page=' + str(page))
@@ -302,8 +314,12 @@ class Supervisor:
                 if (slot in self.state.leases or counts[role] <= unassigned[role]
                         or not self.runtime.admission(role, self.state.leases)):
                     continue
-                self.start_worker(role, slot)
-                unassigned[role] += 1
+                # Unit registration can take time. The shared guard closes the
+                # pause-after-admission race without interrupting live workers.
+                with self.runtime.admission_guard():
+                    if self.runtime.admission(role, self.state.leases):
+                        self.start_worker(role, slot)
+                        unassigned[role] += 1
 
     def start_worker(self, role, slot):
         identity = uuid.uuid4().hex
