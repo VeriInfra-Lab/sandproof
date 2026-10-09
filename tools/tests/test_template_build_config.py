@@ -4,15 +4,69 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import subprocess
+import sys
 
 from tools.template_build_config import validate_capacity, MIB, UPLOAD_ENVELOPE_BYTES
-from tools.template_build_service import (
-    bounded_data_route_limits, configuration, host_uid_range, validate_pool_resource_ranges,
-)
+from tools.template_build_config import bounded_data_route_limits, host_uid_range, validate_pool_resource_ranges
+from tools.template_build_service import configuration
 from tools.template_inputs import InvalidTemplate, platform_dns_servers
 from tools.template_worker import install_platform, validate_request
 
 GIB = 1024 * MIB
+
+
+class ConfigurationDependencyTests(unittest.TestCase):
+    def test_service_and_client_cli_help_remain_available_in_both_entry_modes(self):
+        root = Path(__file__).resolve().parents[2]
+        for module in ("template_build_service", "template_build_client"):
+            for arguments in ([str(root / "tools" / (module + ".py")), "--help"],
+                              ["-m", "tools." + module, "--help"]):
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run([sys.executable, *arguments], cwd=root,
+                                            capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("usage:", result.stdout)
+
+    def test_shared_checks_work_without_loading_http_service_in_both_import_modes(self):
+        root = Path(__file__).resolve().parents[2]
+        for module, search_root in (("tools.template_build_config", root),
+                                    ("template_build_config", root / "tools")):
+            code = """
+import builtins, importlib, json, os, pathlib, sys, tempfile
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[2])
+original = builtins.__import__
+def guarded(name, *args, **kwargs):
+    if 'template_build_service' in name or name == 'http.server':
+        raise AssertionError('shared configuration imported HTTP service')
+    return original(name, *args, **kwargs)
+builtins.__import__ = guarded
+config = importlib.import_module(sys.argv[1])
+with tempfile.TemporaryDirectory() as temporary:
+    path = pathlib.Path(temporary).resolve() / 'policy.json'
+    path.write_text(json.dumps({'runtime': {}, 'builder': {}, 'public': {}}))
+    os.chmod(path, 0o600)
+    assert config.protected_json(path) == {'runtime': {}, 'builder': {}, 'public': {}}
+    try:
+        config.acceptance_build_policy(path)
+    except ValueError as error:
+        assert 'explicit bounded pool policy' in str(error)
+    else:
+        raise AssertionError('incomplete policy accepted')
+settings = json.loads(sys.argv[3])
+assert list(config.host_uid_range(settings)) == [1000, 1001]
+builder = json.loads(sys.argv[3])
+builder['uid_base'] = builder['bounded_host']['uid_base'] = 2000
+builder['bounded_host']['uplink_base'] = 2
+config.validate_pool_resource_ranges(settings, builder)
+assert not any('template_build_service' in name for name in sys.modules)
+"""
+            with self.subTest(module=module):
+                result = subprocess.run([sys.executable, "-I", "-c", code, module,
+                                         str(search_root), json.dumps(HostUidRangeTests().settings())],
+                                        capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 
 def transfer_settings():
@@ -414,7 +468,7 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
             with self.subTest(pool=name), self.assertRaisesRegex(ValueError, 'retired max_vm_id'):
                 apply_acceptance_build_policy(*legacy)
             self.assertEqual(legacy, original)
-        with patch('tools.template_build_service.validate_pool_resource_ranges') as ranges, \
+        with patch('tools.template_build_config.validate_pool_resource_ranges') as ranges, \
                 patch('tools.template_build_store.bounded_configuration'), \
                 patch('tools.template_physical_storage.validate_configuration') as physical:
             self.assertEqual(apply_acceptance_build_policy(runtime, builder, build, policy), 'windowed')
@@ -443,7 +497,7 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
             }
             policy['builder']['build_retry_windows'] = {'window_duration_ms': 1000, 'max_anchors': 2}
             runtime['max_disk_bytes_global'] += 1
-            with patch('tools.template_build_service.validate_pool_resource_ranges'), \
+            with patch('tools.template_build_config.validate_pool_resource_ranges'), \
                     patch('tools.template_build_store.bounded_configuration'):
                 with self.assertRaisesRegex(ValueError, 'pool budget'):
                     apply_acceptance_build_policy(runtime, builder, build, policy)

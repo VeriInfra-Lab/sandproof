@@ -136,6 +136,8 @@ envd 是运行在虚拟机内的服务，负责启动用户进程、收集输出
 
 ### 3.5 模板与评测接入
 
+Python 的受保护配置读取、数据通道额度和跨池 UID/地址检查统一在 [template_build_config](../tools/template_build_config.py)。构建服务、配置生成器和验收入口调用同一实现；基础配置不导入 HTTP 服务。服务启用时的完整组装与物理租约检查仍由服务入口负责，直接脚本和模块调用均保留，不增加旧模式别名。
+
 当前已有固定 `base`、[测试来宾构建工具](../tools/build_ci_guest.py)、显式可信预制多模板运行基础、隔离候选工作器和正式发布登记。[自助构建服务](../tools/template_build_service.py)接收用户 Dockerfile+上下文或公开 OCI，提供状态/有限日志/原因；独立构建池用标准 BuildKit 构建 Dockerfile，用固定 regctl 直接导入公开镜像，经转换和原构建 VM 回收后交给运行池发布。候选须经真实启动及管理通道检查，临时 VM 精确回收后才发布。Harbor 的[通用入口](../benchmarks/run_generic.py)已接上自有构建服务与原解答/评分，实际任务验收与来源差异见[评测说明](../benchmarks/README.md)；不声称原 E2B 模板 API 完全兼容。接口、部署配置与失败合同统一见[模块合同](module-contracts.md)。
 
 运行路径是：用户 Dockerfile+上下文或公开 OCI 镜像 → 隔离构建/转换 → 启动检查 → 发布不可变模板 → 鉴权与资源准入 → 创建私有沙箱。复用 BuildKit、regctl 和 umoci。[#123](https://github.com/ningZhang-cs/sandproof/issues/123) 负责构建编排、转换和用户模板入口，[#6](https://github.com/ningZhang-cs/sandproof/issues/6) 负责启动产物及多模板私有系统盘，[#13](https://github.com/ningZhang-cs/sandproof/issues/13) 将原题环境接入同一通用流程，随后运行原解答、原评分并销毁。默认 base 保留为便捷模板，不能把所有名称映射到它。
