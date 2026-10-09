@@ -1,13 +1,13 @@
 //! A durable credential index locates one sandbox; it grants no authority.
 //! Host reads happen only after that trusted lookup, never across the fleet.
-use super::{HostAdapter, Inner, PortError, map_journal, same_secret};
+use super::{ApplicationError, HostAdapter, Inner, map_journal, same_secret};
+use crate::{ControllerJournal, NeverCrash};
 use sandbox_controller_core as core;
-use sandproof_controller_service::{ControllerJournal, NeverCrash};
 use sha2::{Digest, Sha256};
 
-pub(super) fn digest(token: &str) -> Result<[u8; 32], PortError> {
+pub(super) fn digest(token: &str) -> Result<[u8; 32], ApplicationError> {
     if token.len() != 64 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(PortError::Busy);
+        return Err(ApplicationError::Busy);
     }
     Ok(Sha256::digest(token.as_bytes()).into())
 }
@@ -19,33 +19,33 @@ pub(super) fn register_original(
     journal: &mut ControllerJournal,
     sandbox: core::SandboxId,
     token: &str,
-) -> Result<(), PortError> {
+) -> Result<(), ApplicationError> {
     let generation = journal
         .world()
-        .map_err(|_| PortError::OutcomeUnknown)?
+        .map_err(|_| ApplicationError::OutcomeUnknown)?
         .sandbox_record(sandbox)
-        .ok_or(PortError::OutcomeUnknown)?
+        .ok_or(ApplicationError::OutcomeUnknown)?
         .generation;
     journal
         .register_data_credential(
             sandbox,
             generation,
-            digest(token).map_err(|_| PortError::OutcomeUnknown)?,
+            digest(token).map_err(|_| ApplicationError::OutcomeUnknown)?,
             &mut NeverCrash,
         )
-        .map_err(|_| PortError::OutcomeUnknown)
+        .map_err(|_| ApplicationError::OutcomeUnknown)
 }
 
 pub(super) fn verify_target<H: HostAdapter>(
     inner: &Inner<H>,
     sandbox: core::SandboxId,
     generation: core::Generation,
-) -> Result<String, PortError> {
+) -> Result<String, ApplicationError> {
     let (registered_generation, registered_digest) = inner
         .journal
         .data_credential(sandbox)
         .map_err(map_journal)?
-        .ok_or(PortError::Busy)?;
+        .ok_or(ApplicationError::Busy)?;
     if registered_generation != generation
         || inner
             .journal
@@ -53,11 +53,11 @@ pub(super) fn verify_target<H: HostAdapter>(
             .map_err(map_journal)?
             != Some((sandbox, generation))
     {
-        return Err(PortError::Busy);
+        return Err(ApplicationError::Busy);
     }
     let token = inner.host.token_for(sandbox)?;
     if !same_secret(&digest(&token)?, &registered_digest) {
-        return Err(PortError::Busy);
+        return Err(ApplicationError::Busy);
     }
     Ok(token)
 }

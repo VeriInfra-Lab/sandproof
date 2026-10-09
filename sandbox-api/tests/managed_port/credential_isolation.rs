@@ -35,18 +35,22 @@ fn one_host_credential_fault_does_not_block_the_other_sandbox_after_restart() {
             "changed" => host.secrets.get_mut(&1).unwrap().0 = "f".repeat(64),
             _ => unreachable!(),
         }
-        let port = ManagedPort::new(
+        let port = new_port(
             complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
             host,
             config(),
         );
-        port.recover_on_startup().unwrap();
+        port.application().recover_on_startup().unwrap();
         for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
             assert_eq!(
-                port.authorize_data(&first.envd_access_token, kind),
+                port.application()
+                    .authorize_data(&first.envd_access_token, kind),
                 Err(PortError::Busy)
             );
-            let permit = port.data_permit(&second.envd_access_token, kind).unwrap();
+            let permit = port
+                .application()
+                .data_permit(&second.envd_access_token, kind)
+                .unwrap();
             assert_eq!(permit.target.vm, core::VmId(1));
             assert!(!*permit.revocation.borrow());
         }
@@ -57,7 +61,8 @@ fn one_host_credential_fault_does_not_block_the_other_sandbox_after_restart() {
         assert_eq!(port.get("1", &second.sandbox_id), Err(PortError::NotFound));
         assert_eq!(port.get("1", &first.sandbox_id), Err(PortError::Busy));
         assert_eq!(
-            port.authorize_data(&"0".repeat(64), DataKind::Exec),
+            port.application()
+                .authorize_data(&"0".repeat(64), DataKind::Exec),
             Err(PortError::NotFound)
         );
         port.kill("1", &first.sandbox_id).unwrap();
@@ -107,12 +112,12 @@ fn starting_credential_fault_is_local_and_never_rotates_or_repairs_a_claimed_ide
             prepare_calls: Some(Arc::clone(&prepare_calls)),
             ..FakeHost::default()
         };
-        let port = ManagedPort::new(
+        let port = new_port(
             complete_fixture::open(&path, NAMESPACE).unwrap(),
             host,
             config(),
         );
-        let report = port.recover_on_startup().unwrap();
+        let report = port.application().recover_on_startup().unwrap();
         assert_eq!(report.receipts_recovered, 1);
         assert_eq!(report.workflows_completed, 1);
         assert_eq!(report.unresolved_sandboxes, 1);
@@ -120,7 +125,10 @@ fn starting_credential_fault_is_local_and_never_rotates_or_repairs_a_claimed_ide
         assert_eq!(prepare_calls.load(Ordering::SeqCst), 0);
         for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
             assert_eq!(
-                port.authorize_data(&healthy_token, kind).unwrap().vm,
+                port.application()
+                    .authorize_data(&healthy_token, kind)
+                    .unwrap()
+                    .vm,
                 core::VmId(1)
             );
         }
@@ -168,7 +176,7 @@ fn starting_credential_fault_is_local_and_never_rotates_or_repairs_a_claimed_ide
 fn missing_shared_registration_denies_data_instead_of_scanning_or_repairing_hosts() {
     let (directory, first, second) = live_pair();
     let path = directory.path().join("controller.db");
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         saved_host(&first, &second),
         config(),
@@ -185,21 +193,26 @@ fn missing_shared_registration_denies_data_instead_of_scanning_or_repairing_host
     );
     drop(database);
     assert_eq!(
-        port.authorize_data(&second.envd_access_token, DataKind::Exec),
+        port.application()
+            .authorize_data(&second.envd_access_token, DataKind::Exec),
         Err(PortError::Busy)
     );
     // An external fault invalidates the original process's trusted cache.
     // Restart validates the actual image; it must not rebuild Running tokens.
-    assert_eq!(port.recover_on_startup(), Err(PortError::Busy));
+    assert_eq!(
+        port.application().recover_on_startup(),
+        Err(PortError::Busy)
+    );
     drop(port);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         saved_host(&first, &second),
         config(),
     );
-    port.recover_on_startup().unwrap();
+    port.application().recover_on_startup().unwrap();
     assert_eq!(
-        port.authorize_data(&second.envd_access_token, DataKind::FileRead),
+        port.application()
+            .authorize_data(&second.envd_access_token, DataKind::FileRead),
         Err(PortError::Busy)
     );
     port.kill("1", &first.sandbox_id).unwrap();
@@ -215,12 +228,13 @@ fn shared_poison_denies_new_and_previously_issued_relay_permits_but_allows_clean
         relay_calls: Some(Arc::clone(&calls)),
         ..saved_host(&first, &second)
     };
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
     let permit = port
+        .application()
         .data_permit(&second.envd_access_token, DataKind::Exec)
         .unwrap();
     let database = rusqlite::Connection::open(&path).unwrap();
@@ -236,12 +250,13 @@ fn shared_poison_denies_new_and_previously_issued_relay_permits_but_allows_clean
     drop(database);
     for session in [&first, &second] {
         assert_eq!(
-            port.authorize_data(&session.envd_access_token, DataKind::Exec),
+            port.application()
+                .authorize_data(&session.envd_access_token, DataKind::Exec),
             Err(PortError::Busy)
         );
     }
     assert!(matches!(
-        port.spawn_data_relay(&permit, false),
+        port.application().spawn_data_relay(&permit, false),
         Err(PortError::Busy)
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -250,22 +265,23 @@ fn shared_poison_denies_new_and_previously_issued_relay_permits_but_allows_clean
     // Valid durable poison survives restart without preventing the operator's
     // exact lifecycle cleanup. Corrupt/unmanaged writes are never trusted by
     // an already-running process just to keep this test green.
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         saved_host(&first, &second),
         config(),
     );
     port.kill("1", &first.sandbox_id).unwrap();
     port.kill("2", &second.sandbox_id).unwrap();
-    assert_eq!(port.maintain().unwrap().retired_sandboxes, 2);
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 2);
     drop(port);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
     assert_eq!(
-        port.authorize_data(&second.envd_access_token, DataKind::Exec),
+        port.application()
+            .authorize_data(&second.envd_access_token, DataKind::Exec),
         Err(PortError::Busy)
     );
     assert!(

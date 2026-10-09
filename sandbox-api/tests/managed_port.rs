@@ -1,4 +1,6 @@
-use sandproof_controller_service::application::HostAdapter;
+use sandproof_controller_service::application::{
+    ApplicationConfig as ManagedConfig, ControllerApplication, HostAdapter,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
@@ -14,8 +16,7 @@ use axum::{
 use sandbox_controller_core as core;
 use sandproof_api::{
     ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListOrder, ListQuery, PortError,
-    managed::{ManagedConfig, ManagedPort},
-    router,
+    managed::ManagedPort, router,
 };
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, CreateAdmission, HostEvidence, NeverCrash,
@@ -716,14 +717,28 @@ fn config() -> ManagedConfig {
     }
 }
 
+fn new_port<H: HostAdapter>(
+    journal: ControllerJournal,
+    host: H,
+    config: ManagedConfig,
+) -> ManagedPort<H> {
+    ManagedPort::new(Arc::new(ControllerApplication::new(journal, host, config)))
+}
+fn with_templates<H: HostAdapter>(
+    journal: ControllerJournal,
+    host: H,
+    config: ManagedConfig,
+    catalog: sandproof_controller_service::templates::TemplateCatalog,
+) -> Result<ManagedPort<H>, PortError> {
+    ControllerApplication::with_templates(journal, host, config, catalog)
+        .map(|app| ManagedPort::new(Arc::new(app)))
+}
+
 fn setup_with_host(host: FakeHost) -> (TempDir, Arc<ManagedPort<FakeHost>>) {
     let directory = TempDir::new().unwrap();
     let journal =
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
-    (
-        directory,
-        Arc::new(ManagedPort::new(journal, host, config())),
-    )
+    (directory, Arc::new(new_port(journal, host, config())))
 }
 
 fn setup() -> (TempDir, Arc<ManagedPort<FakeHost>>) {
@@ -847,12 +862,12 @@ fn due_unknown_prepare_fixture(
 fn expired_unready_prepare_is_fenced_exactly_aborted_and_never_relaunched() {
     let (directory, journal, host, prepare_calls, abort_calls) = due_unknown_prepare_fixture(false);
     drop(journal);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let first = port.recover_on_startup().unwrap();
+    let first = port.application().recover_on_startup().unwrap();
     assert_eq!(first.workflows_completed, 1);
     assert_eq!(first.unresolved_sandboxes, 1);
     assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
@@ -861,7 +876,7 @@ fn expired_unready_prepare_is_fenced_exactly_aborted_and_never_relaunched() {
         port.get("1", &format!("sb-{NAMESPACE}-1")),
         Err(PortError::NotFound)
     );
-    let second = port.recover_on_startup().unwrap();
+    let second = port.application().recover_on_startup().unwrap();
     assert_eq!(second.receipts_recovered, 1);
     assert_eq!(second.unresolved_sandboxes, 0);
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
@@ -933,12 +948,12 @@ fn abort_intent_alone_cannot_schedule_unfenced_or_foreign_resource() {
 fn restart_after_abort_host_success_without_receipt_reconciles_once() {
     let (directory, journal, host, prepare_calls, abort_calls) = due_unknown_prepare_fixture(true);
     drop(journal);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let first = port.recover_on_startup().unwrap();
+    let first = port.application().recover_on_startup().unwrap();
     assert_eq!(first.unresolved_sandboxes, 1);
     assert_eq!(abort_calls.load(Ordering::SeqCst), 1);
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
@@ -980,12 +995,12 @@ fn restart_after_abort_host_success_without_receipt_reconciles_once() {
     restarted_host
         .put_secret(core::SandboxId(1), &"a".repeat(64))
         .unwrap();
-    let restarted = ManagedPort::new(
+    let restarted = new_port(
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         restarted_host,
         config(),
     );
-    let report = restarted.recover_on_startup().unwrap();
+    let report = restarted.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 2);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
@@ -1056,12 +1071,12 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let mut settings = config();
     settings.public_ipv4_enabled = true;
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         settings,
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 1);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
@@ -1072,7 +1087,13 @@ fn opening_fence_interrupted_before_host_write_is_completed_only_for_current_cre
             .state,
         "running"
     );
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .receipts_recovered,
+        0
+    );
 }
 
 #[test]
@@ -1140,12 +1161,12 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
     let mut settings = config();
     settings.public_ipv4_enabled = true;
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         settings,
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 1);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
@@ -1156,7 +1177,13 @@ fn lost_public_network_receipt_is_reconciled_before_running() {
             .state,
         "running"
     );
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .receipts_recovered,
+        0
+    );
 }
 
 fn assert_activation_identity(journal: &ControllerJournal, action: &WorkAction<core::EffectId>) {
@@ -1228,13 +1255,17 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
             &BTreeMap::from([("SP_RECOVERY".into(), "different".into())]),
         )
         .unwrap();
-    let blocked = ManagedPort::new(
+    let blocked = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         wrong_host,
         config(),
     );
     assert_eq!(
-        blocked.recover_on_startup().unwrap().unresolved_sandboxes,
+        blocked
+            .application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
         1
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -1242,12 +1273,12 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
 
     let mut settings = config();
     settings.public_ipv4_enabled = true;
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         settings,
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 1);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
@@ -1259,7 +1290,13 @@ fn unknown_activation_reuses_original_attempt_and_vm_then_publishes_running() {
             .state,
         "running"
     );
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .receipts_recovered,
+        0
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     drop(port);
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
@@ -1314,12 +1351,12 @@ fn expired_unknown_activation_is_stopped_without_reinitializing_or_publishing_ru
         Err(sandproof_controller_service::JournalError::UnresolvedAction)
     ));
     drop(journal);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 0);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -1381,19 +1418,25 @@ fn unavailable_activation_is_retired_after_exact_stop_after_startup_deadline() {
         Err(sandproof_controller_service::JournalError::UnresolvedAction)
     ));
     drop(journal);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(
         port.get("1", &format!("sb-{NAMESPACE}-1")),
         Err(PortError::NotFound)
     );
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
-    assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .workflows_completed,
+        0
+    );
     drop(port);
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert!(journal.uncertain_actions().unwrap().is_empty());
@@ -1470,12 +1513,12 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
 
     let mut host = FakeHost::default();
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 1);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
@@ -1483,7 +1526,13 @@ fn lost_terminal_fence_receipt_is_reapplied_before_failed_publication() {
         port.get("1", &format!("sb-{NAMESPACE}-1")),
         Err(PortError::NotFound)
     );
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .receipts_recovered,
+        0
+    );
 }
 
 #[test]
@@ -1519,12 +1568,12 @@ fn startup_recovers_admitted_create_before_credential_write() {
         )
         .unwrap();
     drop(journal); // crash after admission, before the first credential file exists
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
-    let recovery = port.recover_on_startup().unwrap();
+    let recovery = port.application().recover_on_startup().unwrap();
     assert_eq!(recovery.receipts_recovered, 0);
     assert_eq!(recovery.workflows_completed, 1);
     assert_eq!(recovery.unresolved_sandboxes, 0);
@@ -1587,12 +1636,12 @@ fn startup_does_not_replace_a_missing_credential_after_vm_reservation() {
     ));
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
     drop(journal);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
-    let recovery = port.recover_on_startup().unwrap();
+    let recovery = port.application().recover_on_startup().unwrap();
     assert_eq!(recovery.workflows_completed, 0);
     assert_eq!(recovery.unresolved_sandboxes, 1);
     assert!(matches!(
@@ -1655,12 +1704,12 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let recovery = port.recover_on_startup().unwrap();
+    let recovery = port.application().recover_on_startup().unwrap();
     assert_eq!(recovery.receipts_recovered, 1);
     assert_eq!(recovery.workflows_completed, 1);
     assert_eq!(recovery.unresolved_sandboxes, 0);
@@ -1671,7 +1720,7 @@ fn startup_reconciles_lost_prepare_receipt_before_resuming_create() {
             .state,
         "running"
     );
-    let again = port.recover_on_startup().unwrap();
+    let again = port.application().recover_on_startup().unwrap();
     assert_eq!(again.receipts_recovered, 0);
     assert_eq!(again.workflows_completed, 0);
     assert_eq!(again.unresolved_sandboxes, 0);
@@ -1747,12 +1796,12 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
         host.put_secret(core::SandboxId(id), &format!("{id:064x}"))
             .unwrap();
     }
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let first = port.recover_on_startup().unwrap();
+    let first = port.application().recover_on_startup().unwrap();
     assert_eq!(first.receipts_recovered, 1);
     assert_eq!(first.workflows_completed, 1);
     assert_eq!(first.unresolved_sandboxes, 1);
@@ -1780,8 +1829,8 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
     };
     host.put_secret(core::SandboxId(1), &format!("{:064x}", 1))
         .unwrap();
-    let port = ManagedPort::new(journal, host, config());
-    let resumed = port.recover_on_startup().unwrap();
+    let port = new_port(journal, host, config());
+    let resumed = port.application().recover_on_startup().unwrap();
     assert_eq!(resumed.receipts_recovered, 1);
     assert_eq!(resumed.workflows_completed, 1);
     assert_eq!(resumed.unresolved_sandboxes, 0);
@@ -1852,15 +1901,21 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
         ..FakeHost::default()
     };
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let recovered = port.recover_on_startup().unwrap();
+    let recovered = port.application().recover_on_startup().unwrap();
     assert_eq!(recovered.receipts_recovered, 1);
     assert_eq!(recovered.unresolved_sandboxes, 0);
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .receipts_recovered,
+        0
+    );
     drop(port);
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
     assert!(journal.uncertain_actions().unwrap().is_empty());
@@ -1879,7 +1934,7 @@ fn periodic_recovery_reclaims_incomplete_prepare_without_replaying_launch() {
 fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
@@ -1932,7 +1987,7 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
     let late_stop = FakeHost::default().execute(&uncertain[0]).unwrap();
     drop(journal);
 
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
@@ -1940,12 +1995,18 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
         },
         config(),
     );
-    let recovery = port.recover_on_startup().unwrap();
+    let recovery = port.application().recover_on_startup().unwrap();
     assert_eq!(recovery.receipts_recovered, 1);
     assert_eq!(recovery.workflows_completed, 1);
     assert_eq!(recovery.unresolved_sandboxes, 0);
     assert_eq!(port.get("1", &sandbox_id), Err(PortError::NotFound));
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .receipts_recovered,
+        0
+    );
     drop(port);
 
     let mut journal = complete_fixture::open(&path, NAMESPACE).unwrap();
@@ -1965,7 +2026,7 @@ fn startup_reconciles_lost_stop_receipt_before_publishing_destroyed() {
 fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
@@ -2011,7 +2072,7 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
     );
     drop(journal);
 
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             stop: StopObservation::Incomplete,
@@ -2019,12 +2080,18 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
         },
         config(),
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 1);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 0);
     assert_eq!(port.get("1", &sandbox_id), Err(PortError::NotFound));
-    assert_eq!(port.recover_on_startup().unwrap().receipts_recovered, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .receipts_recovered,
+        0
+    );
     drop(port);
 
     let journal = complete_fixture::open(&path, NAMESPACE).unwrap();
@@ -2055,7 +2122,7 @@ fn interrupted_stop_is_finished_by_current_terminal_operation_without_new_kill()
 fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
@@ -2111,17 +2178,17 @@ fn periodic_recovery_completes_partial_cleanup_before_destroyed_publication() {
     let late = FakeHost::default().execute(&actions[0]).unwrap();
     drop(journal);
 
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
-    let recovered = port.recover_on_startup().unwrap();
+    let recovered = port.application().recover_on_startup().unwrap();
     assert_eq!(recovered.receipts_recovered, 1);
     assert_eq!(recovered.workflows_completed, 1);
     assert_eq!(recovered.unresolved_sandboxes, 0);
     assert_eq!(port.get("1", &sandbox_id), Err(PortError::NotFound));
-    let idle = port.recover_on_startup().unwrap();
+    let idle = port.application().recover_on_startup().unwrap();
     assert_eq!(idle.receipts_recovered, 0);
     assert_eq!(idle.workflows_completed, 0);
     assert_eq!(idle.unresolved_sandboxes, 0);
@@ -2180,15 +2247,15 @@ fn failed_create_partial_cleanup_recovers_without_restarting_the_vm() {
     drop(journal);
     let mut host = FakeHost::default();
     host.put_secret(sandbox, &"a".repeat(64)).unwrap();
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         config(),
     );
-    let recovered = port.recover_on_startup().unwrap();
+    let recovered = port.application().recover_on_startup().unwrap();
     assert_eq!(recovered.receipts_recovered, 1);
     assert_eq!(recovered.unresolved_sandboxes, 0);
-    let idle = port.recover_on_startup().unwrap();
+    let idle = port.application().recover_on_startup().unwrap();
     assert_eq!(idle.receipts_recovered, 0);
     assert_eq!(idle.workflows_completed, 0);
     assert_eq!(idle.unresolved_sandboxes, 0);
@@ -2276,7 +2343,7 @@ async fn template_http_selection_projection_and_compute_quota_release() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
     let port = Arc::new(
-        ManagedPort::with_templates(
+        with_templates(
             complete_fixture::open_with_config(&path, NAMESPACE, &template_config()).unwrap(),
             FakeHost::default(),
             template_config(),
@@ -2415,14 +2482,20 @@ fn alias_change_after_restart_does_not_rebind_old_instance() {
     drop(journal);
     let mut changed = old;
     changed.aliases.insert("ubuntu".into(), "ubuntu-r2".into());
-    let port = ManagedPort::with_templates(
+    let port = with_templates(
         complete_fixture::open_with_config(&path, NAMESPACE, &template_config()).unwrap(),
         host,
         template_config(),
         changed,
     )
     .unwrap();
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
     let detail = port.get("1", &format!("sb-{NAMESPACE}-1")).unwrap();
     assert_eq!(
         (
@@ -2465,7 +2538,7 @@ fn idle_recovery_does_not_revisit_reclaimed_history_or_change_live_authority() {
     }
     let live = port.create("1", request()).unwrap();
     for _ in 0..2 {
-        let report = port.recover_on_startup().unwrap();
+        let report = port.application().recover_on_startup().unwrap();
         assert_eq!(
             report.workflows_completed, 0,
             "completed history was resumed"
@@ -2476,15 +2549,16 @@ fn idle_recovery_does_not_revisit_reclaimed_history_or_change_live_authority() {
         assert_eq!(stop_calls.load(Ordering::SeqCst), 3);
         assert_eq!(port.list("1", ListQuery::default()).unwrap().items.len(), 1);
         assert!(
-            port.authorize_data(
-                &live.envd_access_token,
-                sandproof_controller_service::application::DataKind::Exec
-            )
-            .is_ok()
+            port.application()
+                .authorize_data(
+                    &live.envd_access_token,
+                    sandproof_controller_service::application::DataKind::Exec
+                )
+                .is_ok()
         );
         for session in &retired {
             assert_eq!(
-                port.authorize_data(
+                port.application().authorize_data(
                     &session.envd_access_token,
                     sandproof_controller_service::application::DataKind::Exec
                 ),
@@ -2507,14 +2581,15 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
         sandproof_controller_service::application::DataKind::FileWrite,
     ] {
         assert_eq!(
-            port.authorize_data(&created.envd_access_token, kind)
+            port.application()
+                .authorize_data(&created.envd_access_token, kind)
                 .unwrap()
                 .generation,
             1
         );
     }
     assert_eq!(
-        port.authorize_data(
+        port.application().authorize_data(
             &"0".repeat(64),
             sandproof_controller_service::application::DataKind::Exec
         ),
@@ -2557,7 +2632,7 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
     assert_eq!(port.set_timeout("1", &created.sandbox_id, 60), Ok(()));
     assert_eq!(port.kill("1", &created.sandbox_id), Ok(()));
     assert_eq!(
-        port.authorize_data(
+        port.application().authorize_data(
             &created.envd_access_token,
             sandproof_controller_service::application::DataKind::Exec
         ),
@@ -2611,7 +2686,7 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
             deny_out: Some(vec![]),
         });
         let expected_network = input.network.clone();
-        let port = ManagedPort::new(
+        let port = new_port(
             complete_fixture::open(&path, NAMESPACE).unwrap(),
             FakeHost {
                 public_ipv4_ready: true,
@@ -2630,7 +2705,7 @@ fn details_preserve_original_networking_after_reopen_without_list_credentials() 
             secrets: BTreeMap::from([(1, (created.envd_access_token.clone(), BTreeMap::new()))]),
             ..FakeHost::default()
         };
-        let port = ManagedPort::new(
+        let port = new_port(
             complete_fixture::open(&path, NAMESPACE).unwrap(),
             host,
             configured,
@@ -2656,7 +2731,7 @@ fn foreign_detail_and_list_do_not_read_the_host_token() {
         secrets: BTreeMap::from([(1, (created.envd_access_token, BTreeMap::new()))]),
         ..FakeHost::default()
     };
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         host,
         config(),
@@ -2713,24 +2788,37 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
     wrong_host
         .put_secret(core::SandboxId(1), &"a".repeat(64))
         .unwrap();
-    let wrong = ManagedPort::new(
+    let wrong = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         wrong_host,
         config(),
     );
-    assert_eq!(wrong.recover_on_startup().unwrap().unresolved_sandboxes, 1);
+    assert_eq!(
+        wrong
+            .application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        1
+    );
     assert_eq!(
         wrong.get("1", &format!("sb-{NAMESPACE}-1")),
         Err(PortError::NotFound)
     );
     drop(wrong);
 
-    let good = ManagedPort::new(
+    let good = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost::default(),
         config(),
     );
-    assert_eq!(good.recover_on_startup().unwrap().workflows_completed, 1);
+    assert_eq!(
+        good.application()
+            .recover_on_startup()
+            .unwrap()
+            .workflows_completed,
+        1
+    );
     assert_eq!(
         good.get("1", &format!("sb-{NAMESPACE}-1"))
             .unwrap()
@@ -2742,7 +2830,13 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
         serde_json::to_value(good.get("1", &format!("sb-{NAMESPACE}-1")).unwrap()).unwrap();
     assert!(legacy.get("allowInternetAccess").is_none());
     assert!(legacy.get("network").is_none());
-    assert_eq!(good.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        good.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
 }
 
 #[test]
@@ -2751,25 +2845,35 @@ fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
     let (_directory, port) = setup();
     let first = port.create("1", request()).unwrap();
     let second = port.create("2", request()).unwrap();
-    let first_routes = [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite]
-        .map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+    let first_routes = [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite].map(|kind| {
+        port.application()
+            .data_permit(&first.envd_access_token, kind)
+            .unwrap()
+    });
     let other_route = port
+        .application()
         .data_permit(&second.envd_access_token, DataKind::Exec)
         .unwrap();
-    assert!(port.data_permit(&"0".repeat(64), DataKind::Exec).is_err());
+    assert!(
+        port.application()
+            .data_permit(&"0".repeat(64), DataKind::Exec)
+            .is_err()
+    );
     assert_eq!(port.kill("2", &first.sandbox_id), Err(PortError::NotFound));
     port.set_timeout("1", &first.sandbox_id, 60).unwrap();
-    assert_eq!(port.expire_due().unwrap(), 0);
+    assert_eq!(port.application().expire_due().unwrap(), 0);
     assert!(first_routes.iter().all(|route| !*route.revocation.borrow()));
     port.kill("1", &first.sandbox_id).unwrap();
     assert!(first_routes.iter().all(|route| *route.revocation.borrow()));
     assert!(!*other_route.revocation.borrow());
     assert!(
-        port.data_permit(&first.envd_access_token, DataKind::Exec)
+        port.application()
+            .data_permit(&first.envd_access_token, DataKind::Exec)
             .is_err()
     );
     let replacement = port.create("1", request()).unwrap();
     let new_route = port
+        .application()
         .data_permit(&replacement.envd_access_token, DataKind::Exec)
         .unwrap();
     assert_ne!(new_route.target.vm, first_routes[0].target.vm);
@@ -2787,9 +2891,13 @@ fn nonpositive_timeout_revokes_existing_transfers_before_the_expiry_worker_runs(
         let (directory, port) = setup();
         let first = port.create("1", request()).unwrap();
         let other = port.create("2", request()).unwrap();
-        let routes = [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite]
-            .map(|kind| port.data_permit(&first.envd_access_token, kind).unwrap());
+        let routes = [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite].map(|kind| {
+            port.application()
+                .data_permit(&first.envd_access_token, kind)
+                .unwrap()
+        });
         let other_route = port
+            .application()
             .data_permit(&other.envd_access_token, DataKind::Exec)
             .unwrap();
         assert_eq!(
@@ -2810,11 +2918,12 @@ fn nonpositive_timeout_revokes_existing_transfers_before_the_expiry_worker_runs(
             Err(PortError::NotFound)
         );
         assert!(
-            port.data_permit(&first.envd_access_token, DataKind::Exec)
+            port.application()
+                .data_permit(&first.envd_access_token, DataKind::Exec)
                 .is_err()
         );
-        assert_eq!(port.expire_due().unwrap(), 1);
-        assert_eq!(port.expire_due().unwrap(), 0);
+        assert_eq!(port.application().expire_due().unwrap(), 1);
+        assert_eq!(port.application().expire_due().unwrap(), 0);
         port.kill("2", &other.sandbox_id).unwrap();
         drop(port);
         let journal =
@@ -2870,7 +2979,7 @@ fn renewal_contending_with_expiry_cleanup_cannot_resurrect_the_instance() {
         let created = port.create("1", request()).unwrap();
         port.set_timeout("1", &created.sandbox_id, 0).unwrap();
         let expiring = Arc::clone(&port);
-        let worker = std::thread::spawn(move || expiring.expire_due());
+        let worker = std::thread::spawn(move || expiring.application().expire_due());
         gate.entered.wait(); // expiry is durable and its exact host stop is in flight
         let renewing = Arc::clone(&port);
         let ready = Arc::new(Barrier::new(2));
@@ -2918,6 +3027,7 @@ fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
     });
     let sandbox = port.create("1", request()).unwrap();
     let route = port
+        .application()
         .data_permit(&sandbox.envd_access_token, DataKind::Exec)
         .unwrap();
     assert_eq!(
@@ -2926,7 +3036,8 @@ fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
     );
     assert!(*route.revocation.borrow());
     assert!(
-        port.data_permit(&sandbox.envd_access_token, DataKind::Exec)
+        port.application()
+            .data_permit(&sandbox.envd_access_token, DataKind::Exec)
             .is_err()
     );
 }
@@ -2941,6 +3052,7 @@ fn repeated_kill_observes_one_persisted_stop_without_a_new_operation() {
     });
     let created = port.create("1", request()).unwrap();
     let route = port
+        .application()
         .data_permit(
             &created.envd_access_token,
             sandproof_controller_service::application::DataKind::Exec,
@@ -3120,7 +3232,7 @@ fn create_and_kill_race_has_one_prepare_one_stop_and_no_live_access() {
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 1);
     assert_eq!(stop_calls.load(Ordering::SeqCst), 1);
     assert_eq!(
-        port.authorize_data(
+        port.application().authorize_data(
             &session.envd_access_token,
             sandproof_controller_service::application::DataKind::Exec
         ),
@@ -3194,7 +3306,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     let mut policy = config();
     policy.limits.max_active_per_tenant = 2;
     policy.limits.max_disk_bytes_per_tenant = 4_000;
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         host,
         policy.clone(),
@@ -3205,6 +3317,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     let survivor = port.create("1", request()).unwrap();
     let before = port.get("1", &survivor.sandbox_id).unwrap();
     let permit = port
+        .application()
         .data_permit(&survivor.envd_access_token, DataKind::Exec)
         .unwrap();
     assert_eq!(permit.target.vm, core::VmId(u64::MAX - 1));
@@ -3214,14 +3327,15 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     assert_eq!(port.get("1", &survivor.sandbox_id).unwrap(), before);
     for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
         assert_eq!(
-            port.authorize_data(&survivor.envd_access_token, kind)
+            port.application()
+                .authorize_data(&survivor.envd_access_token, kind)
                 .unwrap(),
             permit.target
         );
     }
     drop(port);
 
-    let reopened = ManagedPort::new(
+    let reopened = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
@@ -3230,7 +3344,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
         },
         policy,
     );
-    reopened.recover_on_startup().unwrap();
+    reopened.application().recover_on_startup().unwrap();
     assert_eq!(
         reopened.create("1", request()),
         Err(PortError::QuotaExceeded)
@@ -3240,6 +3354,7 @@ fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
     for kind in [DataKind::Exec, DataKind::FileRead, DataKind::FileWrite] {
         assert_eq!(
             reopened
+                .application()
                 .authorize_data(&survivor.envd_access_token, kind)
                 .unwrap(),
             permit.target
@@ -3309,7 +3424,7 @@ async fn credential_write_failure_after_admission_is_unknown_and_recovers_withou
     // HTTP 503 means a refused call to the pinned SDK. An already durable
     // create must instead report unknown, even when no host VM exists yet.
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             prepare_calls: Some(Arc::clone(&prepare_calls)),
@@ -3317,7 +3432,7 @@ async fn credential_write_failure_after_admission_is_unknown_and_recovers_withou
         },
         config(),
     );
-    let recovery = port.recover_on_startup().unwrap();
+    let recovery = port.application().recover_on_startup().unwrap();
     assert_eq!(recovery.workflows_completed, 1);
     assert_eq!(recovery.unresolved_sandboxes, 0);
     let items = port.list("1", ListQuery::default()).unwrap().items;
@@ -3391,7 +3506,7 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
     settings.public_ipv4_enabled = true;
     let mut create = request();
     create.allow_internet_access = Some(true);
-    let blocked = ManagedPort::new(
+    let blocked = new_port(
         complete_fixture::open_with_config(&path, NAMESPACE, &settings).unwrap(),
         FakeHost::default(),
         settings.clone(),
@@ -3405,7 +3520,7 @@ fn public_ipv4_requires_explicit_deployment_opt_in_and_ready_host() {
             .is_empty()
     );
     drop(blocked);
-    let ready = ManagedPort::new(
+    let ready = new_port(
         complete_fixture::open(&path, NAMESPACE).unwrap(),
         FakeHost {
             public_ipv4_ready: true,
@@ -3428,7 +3543,7 @@ fn two_active_sandboxes_page_without_duplicate_or_cross_tenant_leak() {
     let mut settings = config();
     settings.limits.max_active_per_tenant = 2;
     settings.limits.max_disk_bytes_per_tenant = 2_000;
-    let port = ManagedPort::new(journal, FakeHost::default(), settings);
+    let port = new_port(journal, FakeHost::default(), settings);
     let first = port.create("1", request()).unwrap();
     let second = port.create("1", request()).unwrap();
     let page = port
@@ -3536,7 +3651,7 @@ fn filtered_listing_survives_restart_and_never_counts_or_returns_foreign_instanc
     settings.limits.max_active_per_tenant = 3;
     settings.limits.max_disk_bytes_global = complete_fixture::CLEANUP + 7_000;
     settings.limits.max_disk_bytes_per_tenant = 3_000;
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open_with_config(&path, NAMESPACE, &settings).unwrap(),
         FakeHost::default(),
         settings.clone(),
@@ -3550,7 +3665,7 @@ fn filtered_listing_survives_restart_and_never_counts_or_returns_foreign_instanc
     blue.metadata = Some(BTreeMap::from([("group".into(), "blue".into())]));
     let blue = port.create("1", blue).unwrap();
     drop(port);
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open_with_config(&path, NAMESPACE, &settings).unwrap(),
         FakeHost::default(),
         settings,
@@ -3642,7 +3757,7 @@ fn two_unknown_stops() -> (TempDir, ControllerJournal) {
 #[test]
 fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     let (directory, journal) = two_unknown_stops();
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
@@ -3651,7 +3766,7 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
         },
         config(),
     );
-    let first = port.recover_on_startup().unwrap();
+    let first = port.application().recover_on_startup().unwrap();
     assert_eq!(first.receipts_recovered, 1);
     assert_eq!(first.workflows_completed, 1);
     assert_eq!(first.unresolved_sandboxes, 1);
@@ -3675,7 +3790,7 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     let unknown = journal.uncertain_actions().unwrap();
     assert_eq!(unknown.len(), 1);
     assert_eq!(unknown[0].command.command().sandbox(), core::SandboxId(1));
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
@@ -3683,12 +3798,18 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
         },
         config(),
     );
-    let resumed = port.recover_on_startup().unwrap();
+    let resumed = port.application().recover_on_startup().unwrap();
     assert_eq!(resumed.receipts_recovered, 1);
     assert_eq!(resumed.workflows_completed, 1);
     assert_eq!(resumed.unresolved_sandboxes, 0);
     assert_eq!(resumed.failed_sandboxes, 0);
-    assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .workflows_completed,
+        0
+    );
     // Quota becomes reusable only after exact recovery finishes.
     port.create("1", request()).unwrap();
 }
@@ -3696,7 +3817,7 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
 #[test]
 fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
     let (directory, journal) = two_unknown_stops();
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
@@ -3705,7 +3826,7 @@ fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
         },
         config(),
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.receipts_recovered, 1);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.failed_sandboxes, 1);
@@ -3722,7 +3843,7 @@ fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
             .phase,
         core::Phase::Revoking
     );
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
@@ -3730,7 +3851,13 @@ fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
         },
         config(),
     );
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
 }
 
 #[test]
@@ -3742,7 +3869,7 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
     port.set_timeout("2", &second.sandbox_id, 0).unwrap();
     drop(port);
 
-    let port = ManagedPort::new(
+    let port = new_port(
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         FakeHost {
             unknown_stop_for: Some(core::SandboxId(1)),
@@ -3750,7 +3877,7 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
         },
         config(),
     );
-    let report = port.expire_due_report().unwrap();
+    let report = port.application().expire_due_report().unwrap();
     assert_eq!(report.completed, 1);
     assert_eq!(report.unresolved_sandboxes, 1);
     drop(port);
@@ -3767,7 +3894,7 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
         core::Phase::Destroyed
     );
     assert_eq!(journal.uncertain_actions().unwrap().len(), 1);
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
@@ -3775,8 +3902,14 @@ fn one_unknown_expiry_stop_does_not_starve_another_due_sandbox() {
         },
         config(),
     );
-    assert_eq!(port.recover_on_startup().unwrap().workflows_completed, 1);
-    assert_eq!(port.expire_due_report().unwrap().completed, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .workflows_completed,
+        1
+    );
+    assert_eq!(port.application().expire_due_report().unwrap().completed, 0);
 }
 
 #[test]
@@ -3813,7 +3946,7 @@ fn rejected_worker_receipt_parks_only_its_create() {
             )
             .unwrap();
     }
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             bad_execute_for: Some(core::SandboxId(1)),
@@ -3821,7 +3954,7 @@ fn rejected_worker_receipt_parks_only_its_create() {
         },
         config(),
     );
-    let report = port.recover_on_startup().unwrap();
+    let report = port.application().recover_on_startup().unwrap();
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.unresolved_sandboxes, 1);
     assert_eq!(report.failed_sandboxes, 1);
@@ -3853,7 +3986,7 @@ fn corrupt_shared_journal_still_aborts_recovery() {
             .unwrap(),
         1
     );
-    let port = ManagedPort::new(
+    let port = new_port(
         journal,
         FakeHost {
             stop: StopObservation::ObservedAfterRestart,
@@ -3861,5 +3994,8 @@ fn corrupt_shared_journal_still_aborts_recovery() {
         },
         config(),
     );
-    assert_eq!(port.recover_on_startup(), Err(PortError::Busy));
+    assert_eq!(
+        port.application().recover_on_startup(),
+        Err(PortError::Busy)
+    );
 }

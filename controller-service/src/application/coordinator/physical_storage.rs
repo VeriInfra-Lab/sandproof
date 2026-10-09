@@ -1,33 +1,35 @@
 //! The HTTP executable is not the only admission entry point. Full-capacity
 //! library users must supply a host adapter that validates the shared profile.
-use super::{CreateOptions, HostAdapter, Inner, ManagedPort, PortError, map_journal};
-use sandproof_controller_service::{
+use super::{
+    ApplicationError, ControllerApplication, CreateOptions, HostAdapter, Inner, map_journal,
+};
+use crate::{
     ControllerJournal,
     physical_storage::{PhysicalStorageProfile, PoolRole},
     template_registry::RegistryConfig,
 };
 
-fn full_profile(journal: &ControllerJournal) -> Result<PhysicalStorageProfile, PortError> {
+fn full_profile(journal: &ControllerJournal) -> Result<PhysicalStorageProfile, ApplicationError> {
     journal
         .maintenance_config()
         .map_err(map_journal)?
         .and_then(|value| value.capacity)
-        .ok_or(PortError::Busy)?;
+        .ok_or(ApplicationError::Busy)?;
     journal
         .bounded_host_config()
         .map_err(map_journal)?
         .and_then(|value| value.physical_storage)
-        .ok_or(PortError::Busy)
+        .ok_or(ApplicationError::Busy)
 }
 
 pub(super) fn validate_registry_configuration(
     journal: &ControllerJournal,
     internal: bool,
     config: &RegistryConfig,
-) -> Result<(), PortError> {
+) -> Result<(), ApplicationError> {
     let profile = full_profile(journal)?;
     if internal {
-        return Err(PortError::Invalid);
+        return Err(ApplicationError::Invalid);
     }
     profile
         .validate_registry(journal.deployment_namespace(), config)
@@ -35,23 +37,28 @@ pub(super) fn validate_registry_configuration(
     Ok(())
 }
 
-pub(super) fn validate_builder_configuration(journal: &ControllerJournal) -> Result<(), PortError> {
+pub(super) fn validate_builder_configuration(
+    journal: &ControllerJournal,
+) -> Result<(), ApplicationError> {
     if full_profile(journal)?
         .pool(journal.deployment_namespace())
         .map_err(map_journal)?
         .role
         != PoolRole::Builder
     {
-        return Err(PortError::Invalid);
+        return Err(ApplicationError::Invalid);
     }
     Ok(())
 }
 
-impl<H: HostAdapter> ManagedPort<H> {
-    pub(super) fn validate_publication_admission(&self, inner: &Inner<H>) -> Result<(), PortError> {
+impl<H: HostAdapter> ControllerApplication<H> {
+    pub(super) fn validate_publication_admission(
+        &self,
+        inner: &Inner<H>,
+    ) -> Result<(), ApplicationError> {
         let required = self.physical_admission_bytes(inner, &CreateOptions::default(), 0)?;
         if inner.host.available_disk_bytes()? < required {
-            return Err(PortError::QuotaExceeded);
+            return Err(ApplicationError::QuotaExceeded);
         }
         Ok(())
     }
@@ -61,7 +68,7 @@ impl<H: HostAdapter> ManagedPort<H> {
         inner: &Inner<H>,
         options: &CreateOptions,
         disk_bytes: u64,
-    ) -> Result<u64, PortError> {
+    ) -> Result<u64, ApplicationError> {
         let maintenance = inner.journal.maintenance_config().map_err(map_journal)?;
         let bounded = inner.journal.bounded_host_config().map_err(map_journal)?;
         let profile = bounded
@@ -70,8 +77,8 @@ impl<H: HostAdapter> ManagedPort<H> {
         let full = maintenance
             .as_ref()
             .and_then(|value| value.capacity.as_ref());
-        let capacity = full.ok_or(PortError::Busy)?;
-        let profile = profile.ok_or(PortError::Busy)?;
+        let capacity = full.ok_or(ApplicationError::Busy)?;
+        let profile = profile.ok_or(ApplicationError::Busy)?;
         let pool = profile
             .pool(inner.journal.deployment_namespace())
             .map_err(map_journal)?;
@@ -91,7 +98,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                     .is_none()
                     || !options.metadata.contains_key("_sandproof_build_window")))
         {
-            return Err(PortError::Busy);
+            return Err(ApplicationError::Busy);
         }
         if let Some(registry) = &self.registry {
             profile
@@ -112,7 +119,7 @@ impl<H: HostAdapter> ManagedPort<H> {
                 .is_some_and(|template| template.kernel.size_bytes > pool.kernel_copy_bytes)
             || disk_bytes > pool.rootfs_budget_bytes
         {
-            return Err(PortError::Busy);
+            return Err(ApplicationError::Busy);
         }
         inner.host.validate_physical_storage(profile, pool)?;
         // Do not add the new disk again: the profile already includes the full

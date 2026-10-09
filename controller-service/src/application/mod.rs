@@ -1,5 +1,5 @@
 //! Application-owned host and data-route contracts: no SDK DTOs or Linux commands.
-//! Lifecycle orchestration is migrated separately, preserving its serial boundary.
+//! Lifecycle preserves the original serial decision/effect boundary.
 mod data;
 mod data_drain;
 mod host;
@@ -20,3 +20,16 @@ pub enum ApplicationError {
     OutcomeUnknown,
     Failed,
 }
+
+mod clock;
+mod coordinator;
+mod listing;
+mod models;
+pub use clock::{Clock, SystemClock};
+pub use coordinator::recovery::can_install_host_slot_binding;
+pub use coordinator::{
+    ApplicationConfig, ControllerApplication, DataPermit, ExpiryReport, MaintenanceReport,
+    RecoveryReport,
+};
+pub use listing::{InstancePage, ListCursor, ListSelection, Order};
+pub use models::*;

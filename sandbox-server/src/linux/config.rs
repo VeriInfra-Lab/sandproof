@@ -2,7 +2,7 @@
 
 use crate::gateway;
 use sandbox_controller_core as core;
-use sandproof_api::managed::ManagedConfig;
+use sandproof_controller_service::application::ApplicationConfig;
 use sandproof_controller_service::{
     AdmissionLimits, BoundedHostConfig, MaintenanceConfig, templates::TemplateCatalog,
 };
@@ -285,8 +285,8 @@ fn validate_build_retry_config(
 pub(super) fn managed_config(
     config: &ConfigFile,
     disk_bytes: u64,
-) -> Result<ManagedConfig, Box<dyn Error>> {
-    Ok(ManagedConfig {
+) -> Result<ApplicationConfig, Box<dyn Error>> {
+    Ok(ApplicationConfig {
         public_ipv4_enabled: config.public_ipv4_enabled,
         limits: AdmissionLimits {
             max_active_global: config.max_active_global,

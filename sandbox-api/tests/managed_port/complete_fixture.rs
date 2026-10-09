@@ -79,13 +79,14 @@ pub(super) fn builder_port(path: &Path, host: FakeHost) -> ManagedPort<FakeHost>
     let journal =
         ControllerJournal::open_complete(path, NAMESPACE, builder_host(path), maintenance(), 0)
             .unwrap();
-    ManagedPort::new(journal, host, config())
+    let application = ControllerApplication::new(journal, host, config())
         .with_internal_build_vms(true)
         .with_build_retry_windows(sandproof_controller_service::BuildRetryConfig {
             window_duration_ms: 3_600_000,
             max_anchors: 16,
         })
-        .unwrap()
+        .unwrap();
+    ManagedPort::new(Arc::new(application))
 }
 
 pub(super) fn open_registry(

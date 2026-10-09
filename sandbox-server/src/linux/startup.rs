@@ -11,7 +11,7 @@ use super::{
 };
 use crate::gateway;
 use sandproof_api::{ApiCredential, managed::ManagedPort, router};
-use sandproof_controller_service::ControllerJournal;
+use sandproof_controller_service::{ControllerJournal, application::ControllerApplication};
 use sandproof_node::LinuxWorker;
 use std::{error::Error, fs, path::PathBuf, sync::Arc, time::Duration};
 
@@ -79,10 +79,15 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     }
     audit_host_inventory(&node, &journal)?;
     let port = if let Some(catalog) = config.templates {
-        ManagedPort::with_templates(journal, NodeHost(node, physical_storage), managed, catalog)
-            .map_err(|_| "invalid prebuilt template configuration")?
+        ControllerApplication::with_templates(
+            journal,
+            NodeHost(node, physical_storage),
+            managed,
+            catalog,
+        )
+        .map_err(|_| "invalid prebuilt template configuration")?
     } else {
-        ManagedPort::new(journal, NodeHost(node, physical_storage), managed)
+        ControllerApplication::new(journal, NodeHost(node, physical_storage), managed)
     };
     let port = port.with_internal_build_vms(config.internal_build_vms);
     let port = if let Some(retry) = config.build_retry_windows {
@@ -113,7 +118,7 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     let write_idle = Some(Duration::from_secs(
         gateway_limits.limits.write_idle_seconds,
     ));
-    let app = router(Arc::clone(&port), credentials)
+    let app = router(Arc::new(ManagedPort::new(Arc::clone(&port))), credentials)
         .map_err(|_| "invalid API credentials")?
         .fallback(move |request| {
             gateway::handle(
