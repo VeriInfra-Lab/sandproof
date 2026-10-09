@@ -2,11 +2,127 @@ import base64
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from tools import ci_vm
+
+
+class RunnerDeadlineTests(unittest.TestCase):
+    def setUp(self):
+        self.now = 0
+        self.budget = ci_vm.RunnerDeadline(1800, 'sdk-contract', clock=lambda: self.now)
+        self.marker = b'[ 299.123456] start-jit.sh[1006]: 2026-10-09 06:16:27Z: Running job: sdk-contract\r\n'
+
+    def test_task_at_end_of_wait_gets_its_entire_execution_budget(self):
+        self.now = 299
+        self.budget.feed(self.marker)
+        self.assertTrue(self.budget.job_started)
+        self.assertEqual(self.budget.remaining(), 1800)
+        self.now = 1800
+        self.assertEqual(self.budget.remaining(), 299)  # Old VM lifetime is not task time.
+        self.now = 2099
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.budget.remaining()
+
+    def test_idle_wait_is_bounded_and_late_start_cannot_revive_it(self):
+        self.now = 300
+        with self.assertRaises(subprocess.TimeoutExpired) as failure:
+            self.budget.feed(self.marker)
+        self.assertIn('waiting', failure.exception.cmd)
+        self.assertFalse(self.budget.job_started)
+
+    def test_duplicate_or_task_fabricated_start_does_not_reset_budget(self):
+        self.now = 20
+        self.budget.feed(self.marker)
+        self.now = 1000
+        self.budget.feed(self.marker * 5)
+        self.assertEqual(self.budget.remaining(), 820)
+        self.now = 1820
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.budget.remaining()
+
+    def test_hard_ceiling_survives_delay_while_processing_start_line(self):
+        samples = iter([0, 299, 305, 305, 2100])
+        budget = ci_vm.RunnerDeadline(1800, 'sdk-contract', clock=lambda: next(samples))
+        budget.feed(self.marker)
+        self.assertEqual(budget.remaining(), 1795)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            budget.remaining()
+
+    def test_fragmented_real_console_line_switches_once_when_complete(self):
+        self.now = 25
+        self.budget.feed(self.marker[:45])
+        self.assertFalse(self.budget.job_started)
+        self.assertEqual(self.budget.remaining(), 275)
+        self.now = 30
+        self.budget.feed(self.marker[45:])
+        self.assertTrue(self.budget.job_started)
+        self.assertEqual(self.budget.remaining(), 1800)
+
+    def test_wrong_role_unrelated_output_and_long_line_do_not_extend_wait(self):
+        for data in (self.marker.replace(b'sdk-contract', b'harbor-inputs'),
+                     b'Running job: sdk-contract\n',
+                     b'[1] untrusted-command: Running job: sdk-contract\n',
+                     b'prefix' + self.marker,
+                     b'x' * 513):
+            self.budget.feed(data)
+        self.budget.feed(self.marker)  # A suffix in an oversized fragmented line.
+        self.assertFalse(self.budget.job_started)
+        self.assertLessEqual(len(self.budget.pending), 512)
+        self.budget.feed(self.marker)
+        self.assertTrue(self.budget.job_started)  # Next independent valid line.
+
+    def test_bootstrap_and_preheat_keep_absolute_timeouts(self):
+        budget = ci_vm.RunnerDeadline(600, clock=lambda: self.now)
+        self.now = 599
+        budget.feed(self.marker)
+        self.assertEqual(budget.remaining(), 1)
+        self.now = 600
+        with self.assertRaises(subprocess.TimeoutExpired):
+            budget.remaining()
+
+    def test_unknown_job_name_refused(self):
+        with self.assertRaises(ValueError):
+            ci_vm.RunnerDeadline(1800, 'arbitrary-privileged-job')
+
+    def test_pipe_wait_uses_new_budget_and_never_reads_stderr_as_job_start(self):
+        for marker_on_stdout in (True, False):
+            self.now = 0
+            process = Mock(stdout=object(), stderr=object())
+            outer = self
+            class Selector:
+                def __init__(self):
+                    self.keys, self.round = {}, 0
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+                def register(self, fileobj, _events, data):
+                    self.keys[fileobj] = SimpleNamespace(fileobj=fileobj, fd=fileobj, data=data)
+                def unregister(self, fileobj):
+                    del self.keys[fileobj]
+                def get_map(self):
+                    return self.keys
+                def select(self, timeout):
+                    outer.now = 299 if self.round == 0 else 600
+                    self.round += 1
+                    return [(key, None) for key in self.keys.values()]
+            streams = {process.stdout: iter([self.marker if marker_on_stdout else b'', b'']),
+                       process.stderr: iter([b'' if marker_on_stdout else self.marker, b''])}
+            with tempfile.TemporaryDirectory() as temp, \
+                    patch.object(ci_vm.selectors, 'DefaultSelector', Selector), \
+                    patch.object(ci_vm.time, 'monotonic', side_effect=lambda: self.now), \
+                    patch.object(ci_vm.os, 'read', side_effect=lambda fd, size: next(streams[fd])):
+                if marker_on_stdout:
+                    ci_vm.wait_with_bounded_logs(process, Path(temp), 1800, job_name='sdk-contract')
+                    process.wait.assert_called_once_with(timeout=1499)
+                else:
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        ci_vm.wait_with_bounded_logs(process, Path(temp), 1800, job_name='sdk-contract')
+                    process.wait.assert_not_called()
 
 
 class CiVmTests(unittest.TestCase):

@@ -33,6 +33,12 @@ ROLES = {'rust': (4096, 4, 32), 'sdk': (3072, 4, 32),
 PREPARATION_ROLES = {'bootstrap', 'preheat'}
 MAX_ROLE_WORKERS = 2
 PROXY = 'http://10.0.2.100:3128'
+RUNNER_JOBS = {'rust': 'rust', 'sdk': 'sdk-contract', 'harbor': 'harbor-inputs',
+               'title': 'pr-title', 'policy': 'pr-policy'}
+RUNNER_WAIT_SECONDS = 300
+RUNNER_JOB_SECONDS = 1800
+# Independent systemd ceiling includes both phases and bounded own cleanup.
+RUNNER_UNIT_SECONDS = RUNNER_WAIT_SECONDS + RUNNER_JOB_SECONDS + 100
 
 
 def valid_slot(role, slot):
@@ -371,17 +377,67 @@ def stop_owned(process):
             process.wait(timeout=15)
 
 
-def wait_with_bounded_logs(process, directory, timeout, limit=8 * 1024 ** 2):
+class RunnerDeadline:
+    """One waiting phase and at most one execution budget; never a success receipt.
+
+    The fixed runner emits its start line before executing repository steps.
+    Later task-controlled output cannot restart this budget or exceed the hard
+    ceiling. Wrong-role, partial or oversized lines never grant an extension.
+    Preparation has no job marker and retains its original absolute timeout.
+    """
+    def __init__(self, timeout, job_name=None, clock=None):
+        if job_name is not None and job_name not in RUNNER_JOBS.values():
+            raise ValueError('unknown runner job')
+        self.clock = clock or time.monotonic
+        self.timeout, self.job_name = timeout, job_name
+        self.started = self.clock()
+        self.hard_deadline = self.started + timeout + (RUNNER_WAIT_SECONDS if job_name else 0)
+        self.deadline = self.started + (RUNNER_WAIT_SECONDS if job_name else timeout)
+        self.job_started = False
+        self.pending = b''
+        self.oversized_line = False
+        self.pattern = re.compile(
+            rb'\[\s*[0-9]+(?:\.[0-9]+)?\]\s+start-jit\.sh\[[0-9]+\]: '
+            rb'[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}Z: Running job: '
+            + re.escape((job_name or '').encode()))
+
+    def remaining(self):
+        remaining = min(self.deadline, self.hard_deadline) - self.clock()
+        if remaining <= 0:
+            phase = 'waiting for runner job' if self.job_name and not self.job_started else 'execution'
+            raise subprocess.TimeoutExpired('owned CI VM ' + phase,
+                RUNNER_WAIT_SECONDS if self.job_name and not self.job_started else self.timeout)
+        return remaining
+
+    def feed(self, data):
+        if self.job_name is None or self.job_started:
+            return
+        self.remaining()  # A late marker cannot resurrect an expired wait.
+        lines = (self.pending + data).replace(b'\r', b'\n').split(b'\n')
+        if self.oversized_line:
+            if len(lines) == 1:
+                return  # Ignore the entire long line, not its marker-like tail.
+            lines = lines[1:]
+        self.oversized_line = len(lines[-1]) > 512
+        self.pending = b'' if self.oversized_line else lines[-1]
+        for line in lines[:-1]:
+            if len(line) <= 512 and self.pattern.fullmatch(line.strip()):
+                self.job_started = True
+                self.pending = b''
+                self.deadline = min(self.hard_deadline, self.clock() + self.timeout)
+                return
+
+
+def wait_with_bounded_logs(process, directory, timeout, limit=8 * 1024 ** 2, *, job_name=None):
     """Drain both pipes, bounding log bytes without limiting writable disks."""
-    started = time.monotonic()
+    budget = RunnerDeadline(timeout, job_name)
     with selectors.DefaultSelector() as selector:
         with (directory / 'console.log').open('wb') as console, (directory / 'qemu.log').open('wb') as errors:
             counts = {console: 0, errors: 0}
             selector.register(process.stdout, selectors.EVENT_READ, console)
             selector.register(process.stderr, selectors.EVENT_READ, errors)
             while selector.get_map():
-                if time.monotonic() - started > timeout:
-                    raise subprocess.TimeoutExpired('owned CI VM', timeout)
+                budget.remaining()
                 for key, _events in selector.select(timeout=1):
                     data = os.read(key.fd, 65536)
                     if not data:
@@ -393,7 +449,9 @@ def wait_with_bounded_logs(process, directory, timeout, limit=8 * 1024 ** 2):
                     counts[key.data] += min(remaining, len(data))
                     if len(data) > remaining:
                         raise ValueError('owned VM diagnostic limit exceeded')
-            process.wait(timeout=max(1, timeout - (time.monotonic() - started)))
+                    if key.data is console:
+                        budget.feed(data)
+            process.wait(timeout=budget.remaining())
 
 
 def valid_run_id(value):
@@ -472,7 +530,7 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
                    '/usr/bin/setpriv', '--no-new-privs'] + qemu_command(directory, role)
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-        wait_with_bounded_logs(process, directory, timeout)
+        wait_with_bounded_logs(process, directory, timeout, job_name=RUNNER_JOBS.get(role))
         if process.returncode != 0:
             raise ValueError('QEMU failed; inspect private run ' + run_id)
         console = (directory / 'console.log').read_text(errors='replace')
