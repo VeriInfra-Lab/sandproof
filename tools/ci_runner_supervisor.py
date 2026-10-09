@@ -21,13 +21,14 @@ import uuid
 
 if __package__:
     from .ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
-    from .ci_vm import MAX_ROLE_WORKERS, ROOT, ROLES, cleanup_work, valid_run_id, valid_slot
+    from .ci_vm import (MAX_ROLE_WORKERS, ROOT, ROLES, RUNNER_JOBS, RUNNER_JOB_SECONDS,
+                        RUNNER_UNIT_SECONDS, cleanup_work, valid_run_id, valid_slot)
 else:
     from ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
-    from ci_vm import MAX_ROLE_WORKERS, ROOT, ROLES, cleanup_work, valid_run_id, valid_slot
+    from ci_vm import (MAX_ROLE_WORKERS, ROOT, ROLES, RUNNER_JOBS, RUNNER_JOB_SECONDS,
+                       RUNNER_UNIT_SECONDS, cleanup_work, valid_run_id, valid_slot)
 
-JOBS = {'rust': 'rust', 'sdk-contract': 'sdk', 'harbor-inputs': 'harbor',
-        'pr-title': 'title', 'pr-policy': 'policy'}
+JOBS = {name: role for role, name in RUNNER_JOBS.items()}
 PREFIX = '/repos/' + REPOSITORY + '/actions/'
 STATE_ROOT = ROOT / 'supervisor'
 UNIT_PREFIX = 'sandproof-ci-worker-'
@@ -139,7 +140,8 @@ class Runtime:
         command = ['systemd-run', '--quiet', '--collect', '--service-type=exec', '--unit=' + unit,
             '--property=LoadCredential=jit:' + str(jit_path),
             '--property=KillMode=control-group', '--property=TimeoutStopSec=25',
-            '--property=RuntimeMaxSec=1900', '--property=MemoryMax=' + str(ROLES[lease['role']][0] + 512) + 'M',
+            '--property=RuntimeMaxSec=' + str(RUNNER_UNIT_SECONDS),
+            '--property=MemoryMax=' + str(ROLES[lease['role']][0] + 512) + 'M',
             '--property=MemorySwapMax=0', '--property=TasksMax=128',
             '--property=NoNewPrivileges=yes', '--property=ProtectSystem=strict',
             '--property=ProtectHome=yes', '--property=PrivateTmp=yes',
@@ -148,7 +150,7 @@ class Runtime:
             '--property=StandardError=append:' + str(directory / 'host.log'),
             '/usr/bin/python3', '/opt/sandproof-ci/ci_vm.py', '--role', lease['role'],
             '--slot', valid_slot(lease['role'], lease.get('slot', lease['role'])),
-            '--run-id', identity, '--timeout', '1800',
+            '--run-id', identity, '--timeout', str(RUNNER_JOB_SECONDS),
             '--jit-file', '/run/credentials/' + unit + '/jit']
         subprocess.run(command, check=True, capture_output=True, timeout=30)
 

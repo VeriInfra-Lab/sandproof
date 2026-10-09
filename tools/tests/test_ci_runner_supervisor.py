@@ -399,7 +399,10 @@ class RuntimeTests(unittest.TestCase):
             joined = ' '.join(argv)
             self.assertIn('KillMode=control-group', joined)
             self.assertIn('MemoryMax=1280M', joined)
-            self.assertIn('RuntimeMaxSec=1900', joined)
+            self.assertIn('RuntimeMaxSec=2200', joined)
+            self.assertIn('--timeout 1800', joined)
+            self.assertGreater(ci_vm.RUNNER_UNIT_SECONDS,
+                               ci_vm.RUNNER_WAIT_SECONDS + ci_vm.RUNNER_JOB_SECONDS)
             self.assertIn('LoadCredential=jit:', joined)
             self.assertIn('--slot title', joined)
             for secret in ('app-key', 'Iv23', 'fake-token'):
