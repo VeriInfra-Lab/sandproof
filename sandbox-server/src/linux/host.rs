@@ -1,7 +1,7 @@
 //! Host worker adaptation and deterministic debug-only fault boundaries.
 
 use sandbox_controller_core as core;
-use sandproof_api::{PortError, managed::HostAdapter};
+use sandproof_controller_service::application::{ApplicationError as PortError, HostAdapter};
 use sandproof_controller_service::{
     CreateOptions, HostSlotContext, WorkerTransportError, template_registry::CandidateVerification,
     templates::TemplateBinding,
@@ -55,11 +55,10 @@ impl HostAdapter for NodeHost {
         vm: core::VmId,
         generation: core::Generation,
         control: bool,
-    ) -> Result<Option<std::process::Child>, PortError> {
+    ) -> Result<std::process::Child, PortError> {
         let executable = std::env::current_exe().map_err(|_| PortError::Busy)?;
         self.0
             .spawn_data_relay(sandbox, vm, generation, control, &executable)
-            .map(Some)
             .map_err(|error| {
                 if error
                     .downcast_ref::<sandproof_node::RouteCapacityExceeded>()

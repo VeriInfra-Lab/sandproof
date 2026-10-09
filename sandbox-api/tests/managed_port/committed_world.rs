@@ -1,7 +1,8 @@
 //! Real `SQLite` commit boundaries and SQL-only lifetime authority with a warm
 //! controller replay cache. Host actions remain the controlled integration fake.
 use super::*;
-use sandproof_api::{SandboxSession, managed::DataKind};
+use sandproof_api::SandboxSession;
+use sandproof_controller_service::application::DataKind;
 use sandproof_controller_service::{AdmissionError, CrashInjector, CrashPoint, JournalError};
 use std::path::Path;
 

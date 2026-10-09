@@ -185,7 +185,7 @@ impl HostAdapter for BoundedHost {
         vm: core::VmId,
         generation: core::Generation,
         _control: bool,
-    ) -> Result<Option<std::process::Child>, PortError> {
+    ) -> Result<std::process::Child, PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
             context.binding.sandbox != sandbox
@@ -201,7 +201,6 @@ impl HostAdapter for BoundedHost {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map(Some)
             .map_err(|_| PortError::Busy)
     }
 
@@ -568,7 +567,7 @@ fn unknown_cleanup_and_data_or_relay_pins_block_slot_reuse() {
         let permit = port
             .data_permit(
                 &session.envd_access_token,
-                sandproof_api::managed::DataKind::Exec,
+                sandproof_controller_service::application::DataKind::Exec,
             )
             .unwrap();
         let _ = port.kill("1", &session.sandbox_id);
@@ -597,7 +596,7 @@ fn unknown_relay_exit_stays_blocked_after_every_pin_drops() {
     let permit = port
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     permit.drain.mark_unknown();
@@ -665,7 +664,7 @@ fn unknown_relay_exit_resolves_only_after_observed_durable_gate_drain() {
     let permit = port
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     permit.drain.mark_unknown();
@@ -689,10 +688,10 @@ fn relay_spawn_rechecks_authority_after_the_initial_route_permit() {
     let permit = port
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
-    let mut child = port.spawn_data_relay(&permit, false).unwrap().unwrap();
+    let mut child = port.spawn_data_relay(&permit, false).unwrap();
     drop(child.take_stdin());
     assert!(child.wait().unwrap().success());
     assert_eq!(host.0.lock().unwrap().relay_spawns, 1);
@@ -713,7 +712,7 @@ fn expired_permit_cannot_spawn_a_relay_before_the_expiry_worker_runs() {
     let permit = port
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     // The SDK's nonpositive timeout expires the durable deadline immediately;

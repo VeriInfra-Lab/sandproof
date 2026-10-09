@@ -51,27 +51,17 @@ pub enum ConfigurationError {
     WeakOrDuplicateSecret,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PortError {
-    Invalid,
-    NotFound,
-    Conflict,
-    QuotaExceeded,
-    Busy,
-    OutcomeUnknown,
-    Failed,
-}
+// Application owns failure semantics; only this boundary maps them to HTTP.
+pub use sandproof_controller_service::application::ApplicationError as PortError;
 
-impl PortError {
-    fn status(&self) -> StatusCode {
-        match self {
-            Self::Invalid => StatusCode::BAD_REQUEST,
-            Self::NotFound => StatusCode::NOT_FOUND,
-            Self::Conflict => StatusCode::CONFLICT,
-            Self::QuotaExceeded => StatusCode::TOO_MANY_REQUESTS,
-            Self::Busy => StatusCode::SERVICE_UNAVAILABLE,
-            Self::OutcomeUnknown | Self::Failed => StatusCode::INTERNAL_SERVER_ERROR,
-        }
+fn port_error_status(error: &PortError) -> StatusCode {
+    match error {
+        PortError::Invalid => StatusCode::BAD_REQUEST,
+        PortError::NotFound => StatusCode::NOT_FOUND,
+        PortError::Conflict => StatusCode::CONFLICT,
+        PortError::QuotaExceeded => StatusCode::TOO_MANY_REQUESTS,
+        PortError::Busy => StatusCode::SERVICE_UNAVAILABLE,
+        PortError::OutcomeUnknown | PortError::Failed => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
@@ -374,7 +364,7 @@ impl IntoResponse for ApiFailure {
         let status = match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::BadRequest => StatusCode::BAD_REQUEST,
-            Self::Port(error) => error.status(),
+            Self::Port(error) => port_error_status(&error),
         };
         (status, Json(serde_json::json!({"code": status.as_u16(), "message": status.canonical_reason().unwrap_or("error")}))).into_response()
     }

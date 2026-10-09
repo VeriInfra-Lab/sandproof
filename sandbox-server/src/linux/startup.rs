@@ -109,7 +109,6 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         })
         .collect();
     let gateway_port = Arc::clone(&port);
-    let gateway_namespace = config.namespace.clone();
     let gateway_limits = Arc::new(gateway::Gateway::new(contract.transfers)?);
     let write_idle = Some(Duration::from_secs(
         gateway_limits.limits.write_idle_seconds,
@@ -119,7 +118,6 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         .fallback(move |request| {
             gateway::handle(
                 Arc::clone(&gateway_port),
-                gateway_namespace.clone(),
                 Some(Arc::clone(&gateway_limits)),
                 request,
             )

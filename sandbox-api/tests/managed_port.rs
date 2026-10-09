@@ -1,3 +1,4 @@
+use sandproof_controller_service::application::HostAdapter;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
@@ -13,7 +14,7 @@ use axum::{
 use sandbox_controller_core as core;
 use sandproof_api::{
     ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListOrder, ListQuery, PortError,
-    managed::{HostAdapter, ManagedConfig, ManagedPort},
+    managed::{ManagedConfig, ManagedPort},
     router,
 };
 use sandproof_controller_service::{
@@ -407,11 +408,11 @@ impl HostAdapter for FakeHost {
         _: core::VmId,
         _: core::Generation,
         _: bool,
-    ) -> Result<Option<std::process::Child>, PortError> {
+    ) -> Result<std::process::Child, PortError> {
         if let Some(calls) = &self.relay_calls {
             calls.fetch_add(1, Ordering::SeqCst);
         }
-        Ok(None)
+        Err(PortError::Busy)
     }
 
     fn execute(
@@ -2477,7 +2478,7 @@ fn idle_recovery_does_not_revisit_reclaimed_history_or_change_live_authority() {
         assert!(
             port.authorize_data(
                 &live.envd_access_token,
-                sandproof_api::managed::DataKind::Exec
+                sandproof_controller_service::application::DataKind::Exec
             )
             .is_ok()
         );
@@ -2485,7 +2486,7 @@ fn idle_recovery_does_not_revisit_reclaimed_history_or_change_live_authority() {
             assert_eq!(
                 port.authorize_data(
                     &session.envd_access_token,
-                    sandproof_api::managed::DataKind::Exec
+                    sandproof_controller_service::application::DataKind::Exec
                 ),
                 Err(PortError::NotFound)
             );
@@ -2501,9 +2502,9 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
     assert_eq!(created.sandbox_id, format!("sb-{NAMESPACE}-1"));
     assert_eq!(created.envd_access_token.len(), 64);
     for kind in [
-        sandproof_api::managed::DataKind::Exec,
-        sandproof_api::managed::DataKind::FileRead,
-        sandproof_api::managed::DataKind::FileWrite,
+        sandproof_controller_service::application::DataKind::Exec,
+        sandproof_controller_service::application::DataKind::FileRead,
+        sandproof_controller_service::application::DataKind::FileWrite,
     ] {
         assert_eq!(
             port.authorize_data(&created.envd_access_token, kind)
@@ -2513,7 +2514,10 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
         );
     }
     assert_eq!(
-        port.authorize_data(&"0".repeat(64), sandproof_api::managed::DataKind::Exec),
+        port.authorize_data(
+            &"0".repeat(64),
+            sandproof_controller_service::application::DataKind::Exec
+        ),
         Err(PortError::NotFound)
     );
     assert!(matches!(
@@ -2555,7 +2559,7 @@ fn public_calls_use_the_durable_reducer_and_owner_lifetime_checks() {
     assert_eq!(
         port.authorize_data(
             &created.envd_access_token,
-            sandproof_api::managed::DataKind::Exec
+            sandproof_controller_service::application::DataKind::Exec
         ),
         Err(PortError::NotFound)
     );
@@ -2743,7 +2747,7 @@ fn restart_uses_admitted_environment_and_rejects_a_mismatched_host_record() {
 
 #[test]
 fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
-    use sandproof_api::managed::DataKind;
+    use sandproof_controller_service::application::DataKind;
     let (_directory, port) = setup();
     let first = port.create("1", request()).unwrap();
     let second = port.create("2", request()).unwrap();
@@ -2778,7 +2782,7 @@ fn data_revocation_is_scoped_and_cannot_be_undone_by_a_new_instance() {
 
 #[test]
 fn nonpositive_timeout_revokes_existing_transfers_before_the_expiry_worker_runs() {
-    use sandproof_api::managed::DataKind;
+    use sandproof_controller_service::application::DataKind;
     for seconds in [0, -1, i64::MIN] {
         let (directory, port) = setup();
         let first = port.create("1", request()).unwrap();
@@ -2907,7 +2911,7 @@ fn renewal_contending_with_expiry_cleanup_cannot_resurrect_the_instance() {
 
 #[test]
 fn accepted_kill_revokes_routes_even_when_stop_receipt_is_unknown() {
-    use sandproof_api::managed::DataKind;
+    use sandproof_controller_service::application::DataKind;
     let (_directory, port) = setup_with_host(FakeHost {
         stop: StopObservation::LoseReceipt,
         ..FakeHost::default()
@@ -2939,7 +2943,7 @@ fn repeated_kill_observes_one_persisted_stop_without_a_new_operation() {
     let route = port
         .data_permit(
             &created.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     assert_eq!(
@@ -3118,7 +3122,7 @@ fn create_and_kill_race_has_one_prepare_one_stop_and_no_live_access() {
     assert_eq!(
         port.authorize_data(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec
+            sandproof_controller_service::application::DataKind::Exec
         ),
         Err(PortError::NotFound)
     );
@@ -3176,7 +3180,7 @@ fn seed_checked_vm_frontier(path: &std::path::Path, next_vm_id: u64) {
 
 #[test]
 fn reclaimed_vms_do_not_reset_the_host_id_capacity() {
-    use sandproof_api::managed::DataKind;
+    use sandproof_controller_service::application::DataKind;
 
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("controller.db");
