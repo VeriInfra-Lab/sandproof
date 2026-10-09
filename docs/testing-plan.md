@@ -34,6 +34,8 @@
 
 并发使用屏障和明确故障点，时间边界使用可推进时钟。基础检查不创建产品 VM，不访问付费模型或 E2B 云服务；命令见开发指南。功能测试不产生证明结论。
 
+串行边界诊断用[应用组件夹具](../controller-service/tests/application_lifecycle/contention.rs)：两位置完整配置、真实 SQLite、受控宿主与时钟。屏障将一次准备操作至少阻塞 25 ms，分别观察另一实例的正常/过期鉴权、续期和到期清理；比较新库与 12 次创建/销毁/维护后的检查点，输入尾上限固定 64，并核对实际裁剪。运行 `cargo test --locked -p sandproof-controller-service --features contention-diagnostics --test application_lifecycle contention:: -- --nocapture`，输出请求、锁等待/持有和受控工作执行耗时；基础检查也覆盖默认关闭及显式开启两种编译。数字不是实机宿主成本或吞吐承诺，不设置平台相关的性能通过阈值。慢操作的等待影响须如实记录，但不能据此取消安全锁；并发优化需另行决定。
+
 ### 持久化、身份与有界运行
 
 - 接受意图及 outbox 先提交，再执行外部动作；提交前故障不得产生 VM。启动成功而回执未落盘时，重启认出原 VM，不创建替代身份。

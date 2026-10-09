@@ -26,6 +26,8 @@ pub enum ApplicationError {
 
 mod clock;
 mod coordinator;
+#[cfg(feature = "contention-diagnostics")]
+pub mod diagnostics;
 mod listing;
 mod models;
 pub use clock::{Clock, SystemClock};

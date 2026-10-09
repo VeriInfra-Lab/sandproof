@@ -3,8 +3,13 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
+
+#[cfg(feature = "contention-diagnostics")]
+use super::diagnostics::SerialMutex as Mutex;
+#[cfg(not(feature = "contention-diagnostics"))]
+use std::sync::Mutex;
 
 use crate::application::{
     ControllerHost, DataAccessPort, DataAuthorization, DataKind, DataLease, DataTarget,
