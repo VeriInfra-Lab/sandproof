@@ -1,13 +1,13 @@
 //! Template/build orchestration remains outside the proof scope.
 use super::{
     ApplicationError, BTreeMap, BuildCommand, BuildSettlement, BuildSettlementCommand, BuildStatus,
-    BuildWindowClosed, ControllerApplication, CreateOptions, HostAdapter, Inner, NeverCrash,
+    BuildWindowClosed, ControllerApplication, ControllerHost, CreateOptions, Inner, NeverCrash,
     PublicationFailure, PublicationView, TemplateBinding, TemplateError, TemplatePage,
     TemplateView, core, map_admission, map_journal, release_reclaimed_slots, tenant_id,
     valid_alias, valid_candidate_id,
 };
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     pub(super) fn build_vm_locked(
         &self,
         inner: &Inner<H>,
@@ -115,7 +115,7 @@ impl<H: HostAdapter> ControllerApplication<H> {
     }
 }
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     /// # Errors
     /// Invalid/unauthorized input is refused; uncertain accepted work remains unknown.
     pub fn build_vm(

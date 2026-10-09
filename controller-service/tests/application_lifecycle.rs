@@ -9,7 +9,8 @@ use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, HostSlotContext, WorkerTransportError,
     application::{
         ApplicationConfig, ApplicationError, Clock, ConnectCommand, ControllerApplication,
-        CreateCommand, DataKind, HostAdapter, ListSelection,
+        CreateCommand, DataKind, DataRelay, HostCapacity, HostSlots, LaunchConfiguration,
+        ListSelection, TemplateArtifacts, WorkEvidence, WorkExecution, WorkRecovery,
     },
     physical_storage::{PhysicalPool, PhysicalStorageProfile},
 };
@@ -85,71 +86,10 @@ impl TestHost {
             .count()
     }
 }
-impl HostAdapter for TestHost {
+impl WorkEvidence for TestHost {
     type Evidence = support::FakeHostEvidence;
-    fn bind_host_slot(&mut self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
-        Ok(())
-    }
-    fn release_host_slot(&mut self, _: &HostSlotContext) -> Result<(), ApplicationError> {
-        Ok(())
-    }
-    fn data_gate_drained(&self, _: &HostSlotContext) -> Result<bool, ApplicationError> {
-        Ok(true)
-    }
-    fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
-        Ok(u64::MAX)
-    }
-    fn validate_physical_storage(
-        &self,
-        profile: &PhysicalStorageProfile,
-        _: &PhysicalPool,
-    ) -> Result<(), ApplicationError> {
-        profile.validate().map_err(|_| ApplicationError::Busy)
-    }
-    fn put_secret(
-        &mut self,
-        sandbox: core::SandboxId,
-        token: &str,
-    ) -> Result<(), ApplicationError> {
-        let mut state = self.state.lock().unwrap();
-        if state.secrets.contains_key(&sandbox.0) {
-            return Err(ApplicationError::Conflict);
-        }
-        state.secrets.insert(sandbox.0, token.into());
-        Ok(())
-    }
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
-        Ok(self.state.lock().unwrap().secrets.contains_key(&sandbox.0))
-    }
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
-        self.state
-            .lock()
-            .unwrap()
-            .secrets
-            .get(&sandbox.0)
-            .cloned()
-            .ok_or(ApplicationError::Busy)
-    }
-    fn acquire_data_gate(
-        &self,
-        _: core::SandboxId,
-        _: core::VmId,
-        _: core::Generation,
-    ) -> Result<Option<std::fs::File>, ApplicationError> {
-        let gate = tempfile::tempfile().map_err(|_| ApplicationError::Busy)?;
-        gate.try_lock_shared().map_err(|_| ApplicationError::Busy)?;
-        Ok(Some(gate))
-    }
-    fn spawn_data_relay(
-        &mut self,
-        _: core::SandboxId,
-        _: core::VmId,
-        _: core::Generation,
-        _: bool,
-    ) -> Result<std::process::Child, ApplicationError> {
-        self.relay_calls.fetch_add(1, Ordering::SeqCst);
-        Err(ApplicationError::Busy)
-    }
+}
+impl WorkExecution for TestHost {
     fn execute(
         &mut self,
         action: &WorkAction<core::EffectId>,
@@ -168,6 +108,9 @@ impl HostAdapter for TestHost {
         }
         support::worker(action)
     }
+}
+
+impl WorkRecovery for TestHost {
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
         if !self.state.lock().unwrap().actions.contains(action) {
             return None;
@@ -177,12 +120,122 @@ impl HostAdapter for TestHost {
         }
         Some(support::success(action))
     }
+
+    fn reclaim_incomplete_prepare(
+        &mut self,
+        _: &WorkAction<core::EffectId>,
+    ) -> Result<(), ApplicationError> {
+        Err(ApplicationError::Busy)
+    }
+
     fn reclaim_incomplete_activation(
         &mut self,
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         // Only the recorded exact action is observed below, never executed again.
         Ok(())
+    }
+
+    fn reclaim_incomplete_cleanup(
+        &mut self,
+        _: &WorkAction<core::EffectId>,
+    ) -> Result<(), ApplicationError> {
+        Err(ApplicationError::Busy)
+    }
+}
+
+impl HostSlots for TestHost {
+    fn bind_host_slot(&mut self, _: &HostSlotContext, _: bool) -> Result<(), ApplicationError> {
+        Ok(())
+    }
+
+    fn release_host_slot(&mut self, _: &HostSlotContext) -> Result<(), ApplicationError> {
+        Ok(())
+    }
+}
+
+impl DataRelay for TestHost {
+    fn acquire_data_gate(
+        &self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+    ) -> Result<Option<std::fs::File>, ApplicationError> {
+        let gate = tempfile::tempfile().map_err(|_| ApplicationError::Busy)?;
+        gate.try_lock_shared().map_err(|_| ApplicationError::Busy)?;
+        Ok(Some(gate))
+    }
+
+    fn spawn_data_relay(
+        &mut self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+        _: bool,
+    ) -> Result<std::process::Child, ApplicationError> {
+        self.relay_calls.fetch_add(1, Ordering::SeqCst);
+        Err(ApplicationError::Busy)
+    }
+
+    fn data_gate_drained(&self, _: &HostSlotContext) -> Result<bool, ApplicationError> {
+        Ok(true)
+    }
+}
+
+impl HostCapacity for TestHost {
+    fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
+        Ok(u64::MAX)
+    }
+
+    fn validate_physical_storage(
+        &self,
+        profile: &PhysicalStorageProfile,
+        _: &PhysicalPool,
+    ) -> Result<(), ApplicationError> {
+        profile.validate().map_err(|_| ApplicationError::Busy)
+    }
+}
+
+impl LaunchConfiguration for TestHost {
+    fn put_secret(
+        &mut self,
+        sandbox: core::SandboxId,
+        token: &str,
+    ) -> Result<(), ApplicationError> {
+        let mut state = self.state.lock().unwrap();
+        if state.secrets.contains_key(&sandbox.0) {
+            return Err(ApplicationError::Conflict);
+        }
+        state.secrets.insert(sandbox.0, token.into());
+        Ok(())
+    }
+
+    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
+        Ok(self.state.lock().unwrap().secrets.contains_key(&sandbox.0))
+    }
+
+    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
+        self.state
+            .lock()
+            .unwrap()
+            .secrets
+            .get(&sandbox.0)
+            .cloned()
+            .ok_or(ApplicationError::Busy)
+    }
+}
+
+impl TemplateArtifacts for TestHost {}
+
+// This observer deliberately does NOT implement WorkExecution or other host
+// capabilities. An observation consumer cannot dispatch work through it.
+struct RecoveryOnly;
+impl WorkEvidence for RecoveryOnly {
+    type Evidence = support::FakeHostEvidence;
+}
+impl WorkRecovery for RecoveryOnly {
+    fn observe(&self, _: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
+        None
     }
     fn reclaim_incomplete_prepare(
         &mut self,
@@ -197,6 +250,44 @@ impl HostAdapter for TestHost {
         Err(ApplicationError::Busy)
     }
 }
+
+#[test]
+fn recovery_port_requires_no_execution_capability_and_unknown_stays_unknown() {
+    fn observe_only<H: WorkRecovery>(host: &mut H, action: &WorkAction<core::EffectId>) {
+        assert!(host.observe(action).is_none());
+        assert_eq!(
+            host.reclaim_incomplete_activation(action),
+            Err(ApplicationError::Busy)
+        );
+        assert_eq!(
+            host.reclaim_incomplete_stop(action),
+            Err(ApplicationError::Busy)
+        );
+    }
+    let directory = TempDir::new().unwrap();
+    let host = TestHost::new(TestClock::at(1000));
+    let app = application(&directory, host.clone());
+    let session = app.create("1", request()).unwrap();
+    let action = host.state.lock().unwrap().actions[0].clone();
+    let calls = host.state.lock().unwrap().actions.len();
+    observe_only(&mut RecoveryOnly, &action);
+    assert_eq!(host.state.lock().unwrap().actions.len(), calls);
+    app.kill("1", &session.sandbox_id).unwrap();
+}
+
+#[test]
+fn data_port_without_backend_refuses_relay_instead_of_starting_fallback() {
+    struct NoRelay;
+    impl DataRelay for NoRelay {}
+    fn spawn_only<H: DataRelay>(host: &mut H) {
+        assert!(matches!(
+            host.spawn_data_relay(core::SandboxId(1), core::VmId(1), 1, false),
+            Err(ApplicationError::Busy)
+        ));
+    }
+    spawn_only(&mut NoRelay);
+}
+
 fn config() -> ApplicationConfig {
     ApplicationConfig {
         public_ipv4_enabled: false,

@@ -1,5 +1,7 @@
 use sandproof_controller_service::application::{
-    ApplicationConfig as ManagedConfig, ControllerApplication, HostAdapter,
+    ApplicationConfig as ManagedConfig, ControllerApplication, ControllerHost, DataRelay,
+    HostCapacity, HostSlots, LaunchConfiguration, TemplateArtifacts, WorkEvidence, WorkExecution,
+    WorkRecovery,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -246,176 +248,10 @@ fn unknown_receipt(action: &WorkAction<core::EffectId>) -> WorkReceipt<Evidence>
     }
 }
 
-impl HostAdapter for FakeHost {
+impl WorkEvidence for FakeHost {
     type Evidence = Evidence;
-
-    // These tests replace successful physical observations. Incarnation,
-    // missing binding and lost release faults use the durable BoundedHost
-    // fixture below, rather than pretending this stateless host proves them.
-    fn bind_host_slot(
-        &mut self,
-        _: &sandproof_controller_service::HostSlotContext,
-        _: bool,
-    ) -> Result<(), PortError> {
-        Ok(())
-    }
-    fn release_host_slot(
-        &mut self,
-        _: &sandproof_controller_service::HostSlotContext,
-    ) -> Result<(), PortError> {
-        Ok(())
-    }
-    fn data_gate_drained(
-        &self,
-        _: &sandproof_controller_service::HostSlotContext,
-    ) -> Result<bool, PortError> {
-        Ok(true)
-    }
-    fn acquire_data_gate(
-        &self,
-        _: core::SandboxId,
-        _: core::VmId,
-        _: core::Generation,
-    ) -> Result<Option<std::fs::File>, PortError> {
-        let file = tempfile::tempfile().map_err(|_| PortError::Busy)?;
-        file.try_lock_shared().map_err(|_| PortError::Busy)?;
-        Ok(Some(file))
-    }
-    fn validate_physical_storage(
-        &self,
-        profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
-        pool: &sandproof_controller_service::physical_storage::PhysicalPool,
-    ) -> Result<(), PortError> {
-        profile.validate().map_err(|_| PortError::Busy)?;
-        if profile.pools.contains(pool) {
-            Ok(())
-        } else {
-            Err(PortError::Busy)
-        }
-    }
-
-    fn validate_template(
-        &self,
-        template: &sandproof_controller_service::templates::TemplateBinding,
-    ) -> Result<(), PortError> {
-        if let Some(error) = &self.template_validation_error {
-            return Err(error.clone());
-        }
-        if template.is_valid() {
-            Ok(())
-        } else {
-            Err(PortError::Invalid)
-        }
-    }
-
-    fn cache_candidate_verification(
-        &self,
-        template: &sandproof_controller_service::templates::TemplateBinding,
-        verification: &sandproof_controller_service::template_registry::CandidateVerification,
-    ) {
-        assert!(verification.matches(&template.kernel));
-        assert!(verification.matches(&template.rootfs));
-        if let Some(count) = &self.candidate_checks {
-            count.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    fn put_bound_launch_config(
-        &mut self,
-        sandbox: core::SandboxId,
-        token: &str,
-        options: &sandproof_controller_service::CreateOptions,
-    ) -> Result<(), PortError> {
-        self.put_launch_config(sandbox, token, &options.env_vars)?;
-        if let Some(template) = &options.template {
-            self.templates.insert(sandbox.0, template.clone());
-        }
-        Ok(())
-    }
-
-    fn has_bound_launch_config(
-        &self,
-        sandbox: core::SandboxId,
-        options: &sandproof_controller_service::CreateOptions,
-    ) -> Result<bool, PortError> {
-        if self.templates.get(&sandbox.0) != options.template.as_ref() {
-            return Err(PortError::Busy);
-        }
-        self.has_launch_config(sandbox, &options.env_vars)
-    }
-
-    fn public_ipv4_ready(&self) -> Result<bool, PortError> {
-        Ok(self.public_ipv4_ready)
-    }
-
-    fn available_disk_bytes(&self) -> Result<u64, PortError> {
-        Ok(self.free_bytes)
-    }
-
-    fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
-        self.put_launch_config(sandbox, token, &BTreeMap::new())
-    }
-
-    fn put_launch_config(
-        &mut self,
-        sandbox: core::SandboxId,
-        token: &str,
-        env_vars: &BTreeMap<String, String>,
-    ) -> Result<(), PortError> {
-        if let Some(error) = self.launch_error_once.take() {
-            return Err(error);
-        }
-        if self
-            .secrets
-            .insert(sandbox.0, (token.to_owned(), env_vars.clone()))
-            .is_some()
-        {
-            return Err(PortError::Conflict);
-        }
-        Ok(())
-    }
-
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
-        Ok(self.secrets.contains_key(&sandbox.0))
-    }
-
-    fn has_launch_config(
-        &self,
-        sandbox: core::SandboxId,
-        env_vars: &BTreeMap<String, String>,
-    ) -> Result<bool, PortError> {
-        match self.secrets.get(&sandbox.0) {
-            Some((_, stored)) if stored == env_vars => Ok(true),
-            Some(_) => Err(PortError::Busy),
-            None => Ok(false),
-        }
-    }
-
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
-        if self.token_error_for == Some(sandbox)
-            || self.token_error_once.swap(false, Ordering::SeqCst)
-        {
-            return Err(PortError::Busy);
-        }
-        self.secrets
-            .get(&sandbox.0)
-            .map(|(token, _)| token.clone())
-            .ok_or(PortError::Busy)
-    }
-
-    fn spawn_data_relay(
-        &mut self,
-        _: core::SandboxId,
-        _: core::VmId,
-        _: core::Generation,
-        _: bool,
-    ) -> Result<std::process::Child, PortError> {
-        if let Some(calls) = &self.relay_calls {
-            calls.fetch_add(1, Ordering::SeqCst);
-        }
-        Err(PortError::Busy)
-    }
-
+}
+impl WorkExecution for FakeHost {
     fn execute(
         &mut self,
         action: &WorkAction<core::EffectId>,
@@ -502,7 +338,9 @@ impl HostAdapter for FakeHost {
             }),
         })
     }
+}
 
+impl WorkRecovery for FakeHost {
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
         if self.bad_stop_observation_for == Some(action.command.command().sandbox())
             && matches!(action.command.command(), core::Command::StopVm { .. })
@@ -694,6 +532,184 @@ impl HostAdapter for FakeHost {
     }
 }
 
+impl HostSlots for FakeHost {
+    fn bind_host_slot(
+        &mut self,
+        _: &sandproof_controller_service::HostSlotContext,
+        _: bool,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    fn release_host_slot(
+        &mut self,
+        _: &sandproof_controller_service::HostSlotContext,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
+}
+
+impl DataRelay for FakeHost {
+    fn acquire_data_gate(
+        &self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+    ) -> Result<Option<std::fs::File>, PortError> {
+        let file = tempfile::tempfile().map_err(|_| PortError::Busy)?;
+        file.try_lock_shared().map_err(|_| PortError::Busy)?;
+        Ok(Some(file))
+    }
+
+    fn spawn_data_relay(
+        &mut self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+        _: bool,
+    ) -> Result<std::process::Child, PortError> {
+        if let Some(calls) = &self.relay_calls {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }
+        Err(PortError::Busy)
+    }
+
+    fn data_gate_drained(
+        &self,
+        _: &sandproof_controller_service::HostSlotContext,
+    ) -> Result<bool, PortError> {
+        Ok(true)
+    }
+}
+
+impl HostCapacity for FakeHost {
+    fn available_disk_bytes(&self) -> Result<u64, PortError> {
+        Ok(self.free_bytes)
+    }
+
+    fn validate_physical_storage(
+        &self,
+        profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<(), PortError> {
+        profile.validate().map_err(|_| PortError::Busy)?;
+        if profile.pools.contains(pool) {
+            Ok(())
+        } else {
+            Err(PortError::Busy)
+        }
+    }
+
+    fn public_ipv4_ready(&self) -> Result<bool, PortError> {
+        Ok(self.public_ipv4_ready)
+    }
+}
+
+impl LaunchConfiguration for FakeHost {
+    fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
+        self.put_launch_config(sandbox, token, &BTreeMap::new())
+    }
+
+    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
+        Ok(self.secrets.contains_key(&sandbox.0))
+    }
+
+    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
+        if self.token_error_for == Some(sandbox)
+            || self.token_error_once.swap(false, Ordering::SeqCst)
+        {
+            return Err(PortError::Busy);
+        }
+        self.secrets
+            .get(&sandbox.0)
+            .map(|(token, _)| token.clone())
+            .ok_or(PortError::Busy)
+    }
+
+    fn put_launch_config(
+        &mut self,
+        sandbox: core::SandboxId,
+        token: &str,
+        env_vars: &BTreeMap<String, String>,
+    ) -> Result<(), PortError> {
+        if let Some(error) = self.launch_error_once.take() {
+            return Err(error);
+        }
+        if self
+            .secrets
+            .insert(sandbox.0, (token.to_owned(), env_vars.clone()))
+            .is_some()
+        {
+            return Err(PortError::Conflict);
+        }
+        Ok(())
+    }
+
+    fn has_launch_config(
+        &self,
+        sandbox: core::SandboxId,
+        env_vars: &BTreeMap<String, String>,
+    ) -> Result<bool, PortError> {
+        match self.secrets.get(&sandbox.0) {
+            Some((_, stored)) if stored == env_vars => Ok(true),
+            Some(_) => Err(PortError::Busy),
+            None => Ok(false),
+        }
+    }
+
+    fn put_bound_launch_config(
+        &mut self,
+        sandbox: core::SandboxId,
+        token: &str,
+        options: &sandproof_controller_service::CreateOptions,
+    ) -> Result<(), PortError> {
+        self.put_launch_config(sandbox, token, &options.env_vars)?;
+        if let Some(template) = &options.template {
+            self.templates.insert(sandbox.0, template.clone());
+        }
+        Ok(())
+    }
+
+    fn has_bound_launch_config(
+        &self,
+        sandbox: core::SandboxId,
+        options: &sandproof_controller_service::CreateOptions,
+    ) -> Result<bool, PortError> {
+        if self.templates.get(&sandbox.0) != options.template.as_ref() {
+            return Err(PortError::Busy);
+        }
+        self.has_launch_config(sandbox, &options.env_vars)
+    }
+}
+
+impl TemplateArtifacts for FakeHost {
+    fn validate_template(
+        &self,
+        template: &sandproof_controller_service::templates::TemplateBinding,
+    ) -> Result<(), PortError> {
+        if let Some(error) = &self.template_validation_error {
+            return Err(error.clone());
+        }
+        if template.is_valid() {
+            Ok(())
+        } else {
+            Err(PortError::Invalid)
+        }
+    }
+
+    fn cache_candidate_verification(
+        &self,
+        template: &sandproof_controller_service::templates::TemplateBinding,
+        verification: &sandproof_controller_service::template_registry::CandidateVerification,
+    ) {
+        assert!(verification.matches(&template.kernel));
+        assert!(verification.matches(&template.rootfs));
+        if let Some(count) = &self.candidate_checks {
+            count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+}
+
 fn config() -> ManagedConfig {
     ManagedConfig {
         public_ipv4_enabled: false,
@@ -717,14 +733,14 @@ fn config() -> ManagedConfig {
     }
 }
 
-fn new_port<H: HostAdapter>(
+fn new_port<H: ControllerHost>(
     journal: ControllerJournal,
     host: H,
     config: ManagedConfig,
 ) -> ManagedPort<H> {
     ManagedPort::new(Arc::new(ControllerApplication::new(journal, host, config)))
 }
-fn with_templates<H: HostAdapter>(
+fn with_templates<H: ControllerHost>(
     journal: ControllerJournal,
     host: H,
     config: ManagedConfig,

@@ -1,12 +1,12 @@
 //! Durable host-inventory comparison and lifecycle reconciliation.
 
-use super::host::NodeHost;
 use core::maintenance::slots::HostSlotPhase;
 use sandbox_controller_core as core;
 use sandproof_controller_service::application::{
     ApplicationError as PortError, ControllerApplication, can_install_host_slot_binding,
 };
 use sandproof_controller_service::{ControllerJournal, HostSlotContext};
+use sandproof_node::NodeHost;
 use sandproof_node::{CredentialFault, LaunchCredentialStatus, LinuxWorker, ObservedSlot};
 use sandproof_protocol::WorkAction;
 use std::{

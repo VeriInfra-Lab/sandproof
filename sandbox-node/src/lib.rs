@@ -4,6 +4,15 @@
 //! checking the exact claimed host resource; the guest cannot publish state.
 
 #[cfg(target_os = "linux")]
+mod adapter;
+#[cfg(target_os = "linux")]
+mod physical_profile;
+#[cfg(target_os = "linux")]
+pub use adapter::NodeHost;
+#[cfg(target_os = "linux")]
+pub use physical_profile::PhysicalProfileLease;
+
+#[cfg(target_os = "linux")]
 mod disk_space;
 #[cfg(target_os = "linux")]
 pub use disk_space::{DiskSpace, disk_space};

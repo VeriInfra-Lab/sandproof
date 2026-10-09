@@ -35,9 +35,41 @@ impl FleetHost {
     }
 }
 
-impl HostAdapter for FleetHost {
+impl WorkEvidence for FleetHost {
     type Evidence = Evidence;
+}
+impl WorkExecution for FleetHost {
+    fn execute(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        self.sandbox(action.command.command().sandbox())
+            .map_err(|_| WorkerTransportError::ConnectionLost)?
+            .execute(action)
+    }
+}
 
+impl WorkRecovery for FleetHost {
+    fn observe(&self, _: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
+        None
+    }
+
+    fn reclaim_incomplete_prepare(
+        &mut self,
+        _: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    fn reclaim_incomplete_cleanup(
+        &mut self,
+        _: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+}
+
+impl HostSlots for FleetHost {
     fn bind_host_slot(&mut self, context: &HostSlotContext, allow: bool) -> Result<(), PortError> {
         let mut hosts = self.hosts.lock().unwrap();
         let host = hosts.entry(context.position.0).or_insert_with(|| {
@@ -49,10 +81,14 @@ impl HostAdapter for FleetHost {
         });
         host.bind_host_slot(context, allow)
     }
+
     fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
         self.sandbox(context.binding.sandbox)?
             .release_host_slot(context)
     }
+}
+
+impl DataRelay for FleetHost {
     fn acquire_data_gate(
         &self,
         sandbox: core::SandboxId,
@@ -62,13 +98,18 @@ impl HostAdapter for FleetHost {
         self.sandbox(sandbox)?
             .acquire_data_gate(sandbox, vm, generation)
     }
+
     fn data_gate_drained(&self, context: &HostSlotContext) -> Result<bool, PortError> {
         self.sandbox(context.binding.sandbox)?
             .data_gate_drained(context)
     }
+}
+
+impl HostCapacity for FleetHost {
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
         Ok(16 * 1024 * 1024 * 1024)
     }
+
     fn validate_physical_storage(
         &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
@@ -76,39 +117,23 @@ impl HostAdapter for FleetHost {
     ) -> Result<(), PortError> {
         profile.validate().map_err(|_| PortError::Busy)
     }
+}
+
+impl LaunchConfiguration for FleetHost {
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         self.sandbox(sandbox)?.put_secret(sandbox, token)
     }
+
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
         self.sandbox(sandbox)?.has_secret(sandbox)
     }
+
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
         self.sandbox(sandbox)?.token_for(sandbox)
     }
-    fn execute(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
-        self.sandbox(action.command.command().sandbox())
-            .map_err(|_| WorkerTransportError::ConnectionLost)?
-            .execute(action)
-    }
-    fn observe(&self, _: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
-        None
-    }
-    fn reclaim_incomplete_prepare(
-        &mut self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-    fn reclaim_incomplete_cleanup(
-        &mut self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
 }
+
+impl TemplateArtifacts for FleetHost {}
 
 fn host_config(path: &Path) -> BoundedHostConfig {
     let mut config = bounded(path);

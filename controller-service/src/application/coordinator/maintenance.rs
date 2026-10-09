@@ -2,7 +2,7 @@
 //! attestations: durable exact-host release and local drain ownership do.
 use super::ApplicationError;
 use super::{
-    ControllerApplication, DataLease, HostAdapter, Inner, map_journal, reclaimed_sandboxes,
+    ControllerApplication, ControllerHost, DataLease, Inner, map_journal, reclaimed_sandboxes,
     release_reclaimed_slots,
 };
 use crate::{NeverCrash, RetirementCandidate, WorkerTransportError};
@@ -20,7 +20,7 @@ pub struct MaintenanceReport {
     pub tracked_data_sandboxes: usize,
 }
 
-fn local_routes_drained<H: HostAdapter>(inner: &Inner<H>, sandbox: core::SandboxId) -> bool {
+fn local_routes_drained<H: ControllerHost>(inner: &Inner<H>, sandbox: core::SandboxId) -> bool {
     inner
         .data_revocations
         .get(&sandbox.0)
@@ -35,7 +35,7 @@ fn local_routes_drained<H: HostAdapter>(inner: &Inner<H>, sandbox: core::Sandbox
             .is_none_or(DataLease::drained)
 }
 
-fn verify_local_quiescence<H: HostAdapter>(
+fn verify_local_quiescence<H: ControllerHost>(
     inner: &Inner<H>,
     candidate: &RetirementCandidate,
     reclaimed: &BTreeSet<core::SandboxId>,
@@ -53,7 +53,7 @@ fn verify_local_quiescence<H: HostAdapter>(
     Ok(())
 }
 
-pub(super) fn maintain_locked<H: HostAdapter>(
+pub(super) fn maintain_locked<H: ControllerHost>(
     inner: &mut Inner<H>,
     now: u64,
 ) -> Result<MaintenanceReport, ApplicationError> {
@@ -142,7 +142,7 @@ pub(super) fn maintain_locked<H: HostAdapter>(
     Ok(report)
 }
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     /// Run one bounded maintenance pass using the trusted service clock and
     /// host evidence. Ordinary SDK create and raw public input are unchanged.
     /// # Errors

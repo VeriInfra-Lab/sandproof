@@ -34,7 +34,7 @@ impl ValidatedDeployment {
 pub(super) fn validate_physical_storage(
     config: &ConfigFile,
     node: &NodeConfig,
-) -> Result<crate::storage::PhysicalProfileLease, Box<dyn Error>> {
+) -> Result<sandproof_node::PhysicalProfileLease, Box<dyn Error>> {
     use sandproof_controller_service::physical_storage::PoolRole;
     let profile = node.bounded_host.physical_storage.as_ref();
     let capacity = config
@@ -109,7 +109,7 @@ pub(super) fn validate_physical_storage(
     {
         return Err("physical filesystem overhead must cover per-inode block rounding".into());
     }
-    crate::storage::PhysicalProfileLease::activate(
+    sandproof_node::PhysicalProfileLease::activate(
         profile,
         &config.namespace,
         &config.firecracker,

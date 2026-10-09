@@ -2,7 +2,6 @@
 
 use super::{
     config::{ConfigFile, DeploymentContract, node_configuration},
-    host::NodeHost,
     preflight::{
         ValidatedDeployment, preflight_journal_configuration, private_root_path,
         validate_physical_storage,
@@ -12,7 +11,7 @@ use super::{
 use crate::gateway;
 use sandproof_api::{ApiCredential, managed::ManagedPort, router};
 use sandproof_controller_service::{ControllerJournal, application::ControllerApplication};
-use sandproof_node::LinuxWorker;
+use sandproof_node::{LinuxWorker, NodeHost};
 use std::{error::Error, fs, path::PathBuf, sync::Arc, time::Duration};
 
 fn open_journal(
@@ -81,13 +80,17 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     let port = if let Some(catalog) = config.templates {
         ControllerApplication::with_templates(
             journal,
-            NodeHost(node, physical_storage),
+            NodeHost::new(node, physical_storage, std::env::current_exe()?),
             managed,
             catalog,
         )
         .map_err(|_| "invalid prebuilt template configuration")?
     } else {
-        ControllerApplication::new(journal, NodeHost(node, physical_storage), managed)
+        ControllerApplication::new(
+            journal,
+            NodeHost::new(node, physical_storage, std::env::current_exe()?),
+            managed,
+        )
     };
     let port = port.with_internal_build_vms(config.internal_build_vms);
     let port = if let Some(retry) = config.build_retry_windows {

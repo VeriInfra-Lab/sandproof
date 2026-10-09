@@ -7,8 +7,8 @@ use std::{
 };
 
 use crate::application::{
-    DataAccessPort, DataAuthorization, DataKind, DataLease, DataTarget, HostAdapter, RelayReaper,
-    TrackedRelayChild,
+    ControllerHost, DataAccessPort, DataAuthorization, DataKind, DataLease, DataTarget,
+    RelayReaper, TrackedRelayChild,
 };
 use crate::template_registry::{
     CandidateStore, PublicationFailure, PublicationView, TemplatePage, TemplateView, valid_alias,
@@ -96,14 +96,14 @@ pub struct ApplicationConfig {
     pub domain: String,
 }
 
-struct Inner<H: HostAdapter> {
+struct Inner<H: ControllerHost> {
     journal: ControllerJournal,
     host: H,
     data_revocations: BTreeMap<u64, Vec<watch::Sender<bool>>>,
     data_drains: BTreeMap<u64, DataLease>,
 }
 
-impl<H: HostAdapter> Inner<H> {
+impl<H: ControllerHost> Inner<H> {
     fn revoke_data(&mut self, sandbox: core::SandboxId) {
         if let Some(signals) = self.data_revocations.get(&sandbox.0) {
             for signal in signals {
@@ -116,7 +116,7 @@ impl<H: HostAdapter> Inner<H> {
 /// The mutex gives one process a serial operation boundary across journal
 /// decisions, host effects, and public responses. `SQLite`'s process lease
 /// excludes another controller process.
-pub struct ControllerApplication<H: HostAdapter> {
+pub struct ControllerApplication<H: ControllerHost> {
     inner: Mutex<Inner<H>>,
     config: ApplicationConfig,
     templates: Option<TemplateCatalog>,
@@ -218,7 +218,7 @@ fn map_admission(error: AdmissionError) -> ApplicationError {
     }
 }
 
-impl<H: HostAdapter> ControllerApplication<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     #[must_use]
     pub fn new(journal: ControllerJournal, host: H, config: ApplicationConfig) -> Self {
         Self {

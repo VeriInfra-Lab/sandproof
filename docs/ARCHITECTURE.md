@@ -80,7 +80,7 @@ E2B 的 `runtime` 仓库包含整套后端，不只是控制 Firecracker 的中�
 
 [sandbox-api](../sandbox-api/src/lib.rs)负责 HTTP 请求、凭据解析、租户识别和 E2B 响应映射；其中 [ManagedPort](../sandbox-api/src/managed.rs)是薄适配器，把 SDK 输入转换为普通业务命令，并把应用结果映射为 HTTP 字段、时间字符串和分页令牌。它不能绕过控制核心，直接把沙箱标成运行成功。
 
-宿主与数据连接合同由控制服务的 [application](../controller-service/src/application/mod.rs) 拥有，业务错误在 HTTP 边界转换。网关只依赖 `DataAccessPort`：接收原实例的访问许可，提交已准备好的请求，再取得已登记的中继进程；不依赖具体节点、不拼接网络空间名称，也没有自行执行 Linux 命令的后备路径。撤销通知、响应与中继的排空持有者，以及取消后的精确子进程回收仍保持原责任。创建、销毁、恢复、到期清理、维护和数据资格协调已移入 [ControllerApplication](../controller-service/src/application/coordinator.rs)，同一应用对象由 API、网关和后台扫描共享，只有一把管理锁。生命周期与模板/私有构建编排按职责分文件，模板证明排除范围不变。应用结果保留数值时间和归属，不携带 SDK 序列化字段；可信时钟在各个原检查点重新取值，可注入时钟只用于可信组装及确定性测试。宿主大接口的继续拆分和具体节点适配归位仍为 #262 后续子批次。
+宿主与数据连接合同由控制服务的 [application](../controller-service/src/application/mod.rs) 拥有，业务错误在 HTTP 边界转换。网关只依赖 `DataAccessPort`：接收原实例的访问许可，提交已准备好的请求，再取得已登记的中继进程；不依赖具体节点、不拼接网络空间名称，也没有自行执行 Linux 命令的后备路径。撤销通知、响应与中继的排空持有者，以及取消后的精确子进程回收仍保持原责任。创建、销毁、恢复、到期清理、维护和数据资格协调已移入 [ControllerApplication](../controller-service/src/application/coordinator.rs)，同一应用对象由 API、网关和后台扫描共享，只有一把管理锁。生命周期与模板/私有构建编排按职责分文件，模板证明排除范围不变。应用结果保留数值时间和归属，不携带 SDK 序列化字段；可信时钟在各个原检查点重新取值，可注入时钟只用于可信组装及确定性测试。宿主能力按工作执行、恢复观察、物理位置、数据中继、容量就绪、来宾配置和模板校验分成小端口，证据类型单独共享；恢复端口不要求执行能力。完整应用的 ControllerHost 仅为组装约束，不另建代理或锁。具体实现由节点层的 [NodeHost](../sandbox-node/src/adapter.rs)提供，物理配置租约及原测试由 [physical_profile](../sandbox-node/src/physical_profile.rs)拥有。可信组装传入内部中继程序路径，节点仍按精确实例登记后放行，不从用户请求选择程序。
 
 [sandbox-server](../sandbox-server/src/main.rs)把各模块组装成 Linux 常驻进程。`main.rs` 只选择平台入口或内部字节中继；正式服务的唯一启动顺序由 [linux/startup.rs](../sandbox-server/src/linux/startup.rs)组装，不在旧入口保留转发层。启动相关职责分成以下模块：
 
@@ -88,7 +88,6 @@ E2B 的 `runtime` 仓库包含整套后端，不只是控制 Firecracker 的中�
 |---|---|
 | [linux/config.rs](../sandbox-server/src/linux/config.rs) | 解析部署配置，校验完整容量、寿命和接口预算，构造节点与管理配置；不启动宿主动作 |
 | [linux/preflight.rs](../sandbox-server/src/linux/preflight.rs) | 检查受保护路径、当前数据库格式与配置、物理存储覆盖；显式取得物理配置租约 |
-| [linux/host.rs](../sandbox-server/src/linux/host.rs) | 将管理端口要求的宿主接口接到节点执行器；集中调试构建中的受控故障点 |
 | [linux/reconcile.rs](../sandbox-server/src/linux/reconcile.rs) | 核对控制库与宿主身份，启动前恢复，并运行恢复、到期与维护扫描 |
 | [linux/startup.rs](../sandbox-server/src/linux/startup.rs) | 按顺序连接上述职责，构造管理 API 和数据网关，最后监听 |
 
