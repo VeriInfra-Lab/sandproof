@@ -18,8 +18,7 @@ use std::time::{Duration, Instant};
 
 #[path = "cgroup.rs"]
 mod cgroup;
-#[path = "child_process.rs"]
-mod child_process;
+use crate::child_process;
 #[path = "helper_gate.rs"]
 pub(crate) mod helper_gate;
 #[path = "jail.rs"]
