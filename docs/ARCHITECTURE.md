@@ -78,7 +78,9 @@ E2B 的 `runtime` 仓库包含整套后端，不只是控制 Firecracker 的中�
 
 ### 3.1 兼容入口和组装服务
 
-[sandbox-api](../sandbox-api/src/lib.rs)负责 HTTP 请求、凭据解析、租户识别和 E2B 响应映射；其中 [ManagedPort](../sandbox-api/src/managed.rs)把管理请求接到持久控制服务。它不能绕过控制核心，直接把沙箱标成运行成功。
+[sandbox-api](../sandbox-api/src/lib.rs)负责 HTTP 请求、凭据解析、租户识别和 E2B 响应映射；其中 [ManagedPort](../sandbox-api/src/managed.rs)是薄适配器，把 SDK 输入转换为普通业务命令，并把应用结果映射为 HTTP 字段、时间字符串和分页令牌。它不能绕过控制核心，直接把沙箱标成运行成功。
+
+宿主与数据连接合同由控制服务的 [application](../controller-service/src/application/mod.rs) 拥有，业务错误在 HTTP 边界转换。网关只依赖 `DataAccessPort`：接收原实例的访问许可，提交已准备好的请求，再取得已登记的中继进程；不依赖具体节点、不拼接网络空间名称，也没有自行执行 Linux 命令的后备路径。撤销通知、响应与中继的排空持有者，以及取消后的精确子进程回收仍保持原责任。创建、销毁、恢复、到期清理、维护和数据资格协调已移入 [ControllerApplication](../controller-service/src/application/coordinator.rs)，同一应用对象由 API、网关和后台扫描共享，只有一把管理锁。生命周期与模板/私有构建编排按职责分文件，模板证明排除范围不变。应用结果保留数值时间和归属，不携带 SDK 序列化字段；可信时钟在各个原检查点重新取值，可注入时钟只用于可信组装及确定性测试。宿主能力按工作执行、恢复观察、物理位置、数据中继、容量就绪、来宾配置和模板校验分成小端口，证据类型单独共享；恢复端口不要求执行能力。完整应用的 ControllerHost 仅为组装约束，不另建代理或锁。具体实现由节点层的 [NodeHost](../sandbox-node/src/adapter.rs)提供，物理配置租约及原测试由 [physical_profile](../sandbox-node/src/physical_profile.rs)拥有。可信组装传入内部中继程序路径，节点仍按精确实例登记后放行，不从用户请求选择程序。
 
 [sandbox-server](../sandbox-server/src/main.rs)把各模块组装成 Linux 常驻进程。`main.rs` 只选择平台入口或内部字节中继；正式服务的唯一启动顺序由 [linux/startup.rs](../sandbox-server/src/linux/startup.rs)组装，不在旧入口保留转发层。启动相关职责分成以下模块：
 
@@ -86,13 +88,16 @@ E2B 的 `runtime` 仓库包含整套后端，不只是控制 Firecracker 的中�
 |---|---|
 | [linux/config.rs](../sandbox-server/src/linux/config.rs) | 解析部署配置，校验完整容量、寿命和接口预算，构造节点与管理配置；不启动宿主动作 |
 | [linux/preflight.rs](../sandbox-server/src/linux/preflight.rs) | 检查受保护路径、当前数据库格式与配置、物理存储覆盖；显式取得物理配置租约 |
-| [linux/host.rs](../sandbox-server/src/linux/host.rs) | 将管理端口要求的宿主接口接到节点执行器；集中调试构建中的受控故障点 |
 | [linux/reconcile.rs](../sandbox-server/src/linux/reconcile.rs) | 核对控制库与宿主身份，启动前恢复，并运行恢复、到期与维护扫描 |
 | [linux/startup.rs](../sandbox-server/src/linux/startup.rs) | 按顺序连接上述职责，构造管理 API 和数据网关，最后监听 |
 
 先静态校验和只读数据库预检，再取得物理配置租约、初始化节点、开库事务重检、核对宿主库存和恢复，最后监听并启动周期扫描。拆分没有把恢复提前或延后，也没有增加第二套生命周期判断。当前入口要求绑定回环地址；对外部署需要可信的 TLS 前置入口，不应直接把高权限内部监听暴露到公网。
 
 正式部署必须提供完整的 `bounded_host`、`maintenance.capacity`、`data_transfer` 和物理存储配置，不允许缺项时回退到旧模式。它们是部署预算，不是 E2B 客户端创建参数；SDK 的默认寿命和可选请求字段保持原合同。模板登记、预制目录及私有构建池等未启用能力仍可省略，不能把“功能未启用”误解为另一种控制器模式；精确配置规则见[模块合同](module-contracts.md)。
+
+应用层提供默认关闭的 `contention-diagnostics` 编译开关，局部记录同一线程的锁等待/持有与请求耗时；显式选择的宿主端口调用单独计时。它不增加另一把控制锁、部署模式、HTTP 监控接口或可观测存储，不记录凭据/实例标识，不能作为授权依据。受控慢宿主与有限历史的诊断入口及结论边界见[验收清单](testing-plan.md)。
+
+当前继续采用上述串行协调；分离短持久决定与慢宿主执行、支持不同沙箱有限并行的优化归入 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不混入本次模块重构。当前真实函数的验证接口及固定工具链抽取评估统一见[证明覆盖](proof-coverage.md#当前串行实现的模块交接)，不是新增证明或另一份业务规范。
 
 这部分对应 E2B 的 API，以及单机下简化的服务组装。我们没有团队管理后台、计费、OIDC 平台或跨节点放置算法。
 
@@ -115,6 +120,8 @@ E2B 的 `runtime` 仓库包含整套后端，不只是控制 Firecracker 的中�
 
 [sandbox-node](../sandbox-node/src/linux.rs)把控制动作映射为真实宿主操作，检查用户、实例、操作代数和资源绑定，返回可核对的观察结果。例如：登记的那个进程是否还活着、网络规则是否仍正确、私有磁盘是否属于本实例。
 
+节点按身份、凭据、只读盘点/观察、执行、恢复和传输分模块。[纯判断](../sandbox-node/src/linux/decisions.rs)只比较传入值；原操作、归属和物理位置检查，以及读取与执行顺序仍由节点负责。精确退休/释放留在位置模块，不能凭纯判断返回 true 就删除资源。同步助手进程统一使用运行层的 `OwnedChild` 管理双管道排空、早退回收及显式所有权转交；后台中继仍使用原有持久身份和独立回收机制。
+
 这里的“代数”就是区分新旧操作或实例的版本编号；“围栏”是执行前必须检查的版本/终止标记。它们用于阻止迟到的旧命令重新启动已经撤销的资源，不是来宾里的一堵防火墙。
 
 [sandbox-runtime](../sandbox-runtime/README.md)完成更底层的工作：准备私有磁盘、网络空间和 TAP；通过 jailer 启动 Firecracker；记录 PID 与启动时间；观察、停止和精确清理资源。启动前先登记身份并设置放行门控，避免出现“虚拟机已经启动，但没有留下能够认领它的记录”。
@@ -132,6 +139,8 @@ envd 是运行在虚拟机内的服务，负责启动用户进程、收集输出
 来宾及来宾 root 不可信。envd 的“成功”回复不能单独证明宿主隔离有效、Firecracker 已停止或宿主资源已经清理。文件访问权限在本版本主要是“谁能对哪个实例执行哪种操作”；实例内部的用户和文件权限由来宾 Linux 处理，**不是我们已经证明了一套逐文件夹 POSIX/ACL 权限系统**。
 
 ### 3.5 模板与评测接入
+
+Python 的受保护配置读取、数据通道额度和跨池 UID/地址检查统一在 [template_build_config](../tools/template_build_config.py)。构建服务、配置生成器和验收入口调用同一实现；基础配置不导入 HTTP 服务。服务启用时的完整组装与物理租约检查仍由服务入口负责，直接脚本和模块调用均保留，不增加旧模式别名。
 
 当前已有固定 `base`、[测试来宾构建工具](../tools/build_ci_guest.py)、显式可信预制多模板运行基础、隔离候选工作器和正式发布登记。[自助构建服务](../tools/template_build_service.py)接收用户 Dockerfile+上下文或公开 OCI，提供状态/有限日志/原因；独立构建池用标准 BuildKit 构建 Dockerfile，用固定 regctl 直接导入公开镜像，经转换和原构建 VM 回收后交给运行池发布。候选须经真实启动及管理通道检查，临时 VM 精确回收后才发布。Harbor 的[通用入口](../benchmarks/run_generic.py)已接上自有构建服务与原解答/评分，实际任务验收与来源差异见[评测说明](../benchmarks/README.md)；不声称原 E2B 模板 API 完全兼容。接口、部署配置与失败合同统一见[模块合同](module-contracts.md)。
 

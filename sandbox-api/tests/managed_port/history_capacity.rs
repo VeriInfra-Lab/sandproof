@@ -2,7 +2,8 @@
 //! No latency thresholds: the ordinary tests check semantics, the ignored test
 //! records monotonic observations for an explicitly requested capacity profile.
 use super::*;
-use sandproof_api::{SandboxSession, managed::DataKind};
+use sandproof_api::SandboxSession;
+use sandproof_controller_service::application::DataKind;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
@@ -137,6 +138,7 @@ fn probe(port: &ManagedPort<FakeHost>, live: &[SandboxSession], name: &str) {
     match name {
         "file_authorization" => {
             let target = port
+                .application()
                 .authorize_data(&session.envd_access_token, DataKind::FileRead)
                 .unwrap();
             assert_eq!(target.generation, 1);
@@ -145,6 +147,7 @@ fn probe(port: &ManagedPort<FakeHost>, live: &[SandboxSession], name: &str) {
             // This is the production gateway's permit path, not API-key auth
             // or a claim to have started a command in an actual envd/VM.
             let permit = port
+                .application()
                 .data_permit(&session.envd_access_token, DataKind::Exec)
                 .unwrap();
             assert_eq!(permit.target.generation, 1);
@@ -162,12 +165,12 @@ fn probe(port: &ManagedPort<FakeHost>, live: &[SandboxSession], name: &str) {
             assert_eq!(actual, expected);
         }
         "idle_recovery" => {
-            let report = port.recover_on_startup().unwrap();
+            let report = port.application().recover_on_startup().unwrap();
             assert_eq!(report.workflows_completed, 0);
             assert_eq!(report.receipts_recovered, 0);
             assert_eq!(report.unresolved_sandboxes, 0);
         }
-        "idle_expiry" => assert_eq!(port.expire_due().unwrap(), 0),
+        "idle_expiry" => assert_eq!(port.application().expire_due().unwrap(), 0),
         _ => panic!("unknown probe: {name}"),
     }
 }
@@ -222,7 +225,7 @@ struct Fixture {
     directory: TempDir,
     port: Option<ManagedPort<FakeHost>>,
     live: Vec<SandboxSession>,
-    identities: Vec<sandproof_api::managed::DataTarget>,
+    identities: Vec<sandproof_controller_service::application::DataTarget>,
     calls: Calls,
     completed: usize,
     setup_ns: u64,
@@ -233,7 +236,7 @@ impl Fixture {
         let directory = TempDir::new().unwrap();
         let calls = Calls::default();
         let (port, setup_ns) = measured(|| {
-            ManagedPort::new(
+            new_port(
                 open_history(&directory.path().join("controller.db")),
                 calls.host(&[]),
                 policy(),
@@ -247,7 +250,8 @@ impl Fixture {
         let identities = live
             .iter()
             .map(|session: &SandboxSession| {
-                port.data_permit(&session.envd_access_token, DataKind::Exec)
+                port.application()
+                    .data_permit(&session.envd_access_token, DataKind::Exec)
                     .unwrap()
                     .target
             })
@@ -276,10 +280,11 @@ impl Fixture {
                 let retired = port.create("1", long_request()).unwrap();
                 port.kill("1", &retired.sandbox_id).unwrap();
                 assert_eq!(
-                    port.authorize_data(&retired.envd_access_token, DataKind::Exec),
+                    port.application()
+                        .authorize_data(&retired.envd_access_token, DataKind::Exec),
                     Err(PortError::NotFound)
                 );
-                assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
+                assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
             }
         });
         self.completed = cycles;
@@ -294,7 +299,7 @@ impl Fixture {
         // bindings. This is a cold controller connection, not a cold OS cache.
         drop(self.port.take());
         let (journal, reopen_ns) = measured(|| open_history(&path));
-        let port = ManagedPort::new(journal, self.calls.host(&self.live), policy());
+        let port = new_port(journal, self.calls.host(&self.live), policy());
         let ((), first_recovery_after_reopen_ns) =
             measured(|| probe(&port, &self.live, "idle_recovery"));
         let ((), first_command_admission_after_reopen_ns) =
@@ -319,7 +324,8 @@ impl Fixture {
         assert_eq!(self.calls.snapshot(), [LIVE + cycles, cycles]);
         for (session, identity) in self.live.iter().zip(&self.identities) {
             assert_eq!(
-                port.data_permit(&session.envd_access_token, DataKind::Exec)
+                port.application()
+                    .data_permit(&session.envd_access_token, DataKind::Exec)
                     .unwrap()
                     .target,
                 *identity
@@ -396,6 +402,13 @@ pub(super) struct HostGate {
 }
 
 impl HostGate {
+    fn new(entered: mpsc::Sender<bool>, release: mpsc::Receiver<()>) -> Arc<Self> {
+        Arc::new(Self {
+            entered,
+            release: Mutex::new(release),
+        })
+    }
+
     pub(super) fn block(&self) {
         self.entered.send(true).unwrap();
         self.release.lock().unwrap().recv().unwrap();
@@ -417,9 +430,11 @@ fn other_probe(
 ) -> Result<(), PortError> {
     match name {
         "file_authorization" => port
+            .application()
             .authorize_data(&session.envd_access_token, DataKind::FileRead)
             .map(|_| ()),
         "command_admission" => port
+            .application()
             .data_permit(&session.envd_access_token, DataKind::Exec)
             .map(|permit| {
                 assert!(!*permit.revocation.borrow());
@@ -427,7 +442,7 @@ fn other_probe(
         "get" => port
             .get("2", &session.sandbox_id)
             .map(|got| assert_eq!(got.info.sandbox_id, session.sandbox_id)),
-        "idle_recovery" => port.recover_on_startup().map(|report| {
+        "idle_recovery" => port.application().recover_on_startup().map(|report| {
             // The coordinator deliberately retains the killed sandbox's
             // permit, so its physical release may still wait for drain.
             assert!(report.unresolved_sandboxes <= 1);
@@ -435,7 +450,10 @@ fn other_probe(
         }),
         // Concurrent recovery may already have destroyed the due sandbox;
         // final-state assertions below require exactly one host stop overall.
-        "due_expiry" => port.expire_due().map(|count| assert!(count <= 1)),
+        "due_expiry" => port
+            .application()
+            .expire_due()
+            .map(|count| assert!(count <= 1)),
         _ => unreachable!(),
     }
 }
@@ -444,18 +462,20 @@ fn finish_interference(
     port: &ManagedPort<FakeHost>,
     calls: &Calls,
     sessions: [&SandboxSession; 3],
-    other_permit: &sandproof_api::managed::DataPermit,
+    other_permit: &sandproof_controller_service::application::DataPermit,
 ) {
     let [first, other, due] = sessions;
     assert_eq!(calls.snapshot(), [3, 2]);
     assert_eq!(port.get("3", &due.sandbox_id), Err(PortError::NotFound));
     assert_eq!(port.get("1", &first.sandbox_id), Err(PortError::NotFound));
     assert_eq!(
-        port.authorize_data(&first.envd_access_token, DataKind::Exec),
+        port.application()
+            .authorize_data(&first.envd_access_token, DataKind::Exec),
         Err(PortError::NotFound)
     );
     assert_eq!(
-        port.data_permit(&other.envd_access_token, DataKind::Exec)
+        port.application()
+            .data_permit(&other.envd_access_token, DataKind::Exec)
             .unwrap()
             .target,
         other_permit.target
@@ -468,13 +488,10 @@ fn finish_interference(
 fn slow_stop_interference(window: Duration) -> Interference {
     let (entered_tx, entered_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
-    let gate = Arc::new(HostGate {
-        entered: entered_tx.clone(),
-        release: Mutex::new(release_rx),
-    });
+    let gate = HostGate::new(entered_tx.clone(), release_rx);
     let calls = Calls::default();
     let directory = TempDir::new().unwrap();
-    let port = Arc::new(ManagedPort::new(
+    let port = Arc::new(new_port(
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap(),
         FakeHost {
             history_stop_gate: Some((core::SandboxId(1), gate)),
@@ -487,10 +504,11 @@ fn slow_stop_interference(window: Duration) -> Interference {
     let other = port.create("2", long_request()).unwrap();
     let due = port.create("3", long_request()).unwrap();
     port.set_timeout("3", &due.sandbox_id, 0).unwrap();
-    let first_permit = port
+    let application = port.application();
+    let first_permit = application
         .data_permit(&first.envd_access_token, DataKind::Exec)
         .unwrap();
-    let other_permit = port
+    let other_permit = application
         .data_permit(&other.envd_access_token, DataKind::Exec)
         .unwrap();
     let (start_tx, start_rx) = mpsc::channel();

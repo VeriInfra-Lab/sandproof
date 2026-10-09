@@ -1,13 +1,12 @@
 //! Durable host-inventory comparison and lifecycle reconciliation.
 
-use super::host::NodeHost;
 use core::maintenance::slots::HostSlotPhase;
 use sandbox_controller_core as core;
-use sandproof_api::{
-    PortError,
-    managed::{ManagedPort, can_install_host_slot_binding},
+use sandproof_controller_service::application::{
+    ApplicationError as PortError, ControllerApplication, can_install_host_slot_binding,
 };
 use sandproof_controller_service::{ControllerJournal, HostSlotContext};
+use sandproof_node::NodeHost;
 use sandproof_node::{CredentialFault, LaunchCredentialStatus, LinuxWorker, ObservedSlot};
 use sandproof_protocol::WorkAction;
 use std::{
@@ -286,7 +285,10 @@ fn audit_launch_credential_binding(
     }
 }
 
-pub(super) fn spawn_reconciliation_scanner(port: Arc<ManagedPort<NodeHost>>, seconds: u64) {
+pub(super) fn spawn_reconciliation_scanner(
+    port: Arc<ControllerApplication<NodeHost>>,
+    seconds: u64,
+) {
     drop(tokio::spawn(async move {
         let mut timer = tokio::time::interval(Duration::from_secs(seconds));
         let mut last_failure_log: Option<Instant> = None;
@@ -331,7 +333,9 @@ pub(super) fn spawn_reconciliation_scanner(port: Arc<ManagedPort<NodeHost>>, sec
     }));
 }
 
-pub(super) fn recover_before_serving(port: &ManagedPort<NodeHost>) -> Result<(), Box<dyn Error>> {
+pub(super) fn recover_before_serving(
+    port: &ControllerApplication<NodeHost>,
+) -> Result<(), Box<dyn Error>> {
     port.maintain()
         .map_err(|error| std::io::Error::other(format!("startup maintenance failed: {error:?}")))?;
     let recovery = port

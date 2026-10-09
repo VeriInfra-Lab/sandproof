@@ -6,25 +6,7 @@ use sandbox_controller_core::NetworkPolicy;
 use crate::{CreateRequest, PortError};
 
 pub(crate) fn selected_policy(request: &CreateRequest) -> Result<NetworkPolicy, PortError> {
-    let allow_out = request
-        .network
-        .as_ref()
-        .and_then(|network| network.allow_out.as_deref())
-        .unwrap_or_default();
-    let deny_out = request
-        .network
-        .as_ref()
-        .and_then(|network| network.deny_out.as_deref())
-        .unwrap_or_default();
-    if request
-        .network
-        .as_ref()
-        .is_some_and(|network| network.allow_public_traffic == Some(false))
-    {
-        return Err(PortError::Invalid);
-    }
-    NetworkPolicy::from_sdk_ipv4(request.allow_internet_access, allow_out, deny_out)
-        .map_err(|_| PortError::Invalid)
+    sandproof_controller_service::application::selected_policy(&request.clone().into())
 }
 
 #[cfg(test)]

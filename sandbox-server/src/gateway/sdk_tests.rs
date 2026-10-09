@@ -7,6 +7,7 @@ use std::{net::SocketAddr, path::Path, process::Stdio, sync::Mutex, time::Durati
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
+    process::Command,
     sync::oneshot,
     time::timeout,
 };

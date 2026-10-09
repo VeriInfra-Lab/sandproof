@@ -1,8 +1,8 @@
 //! Filesystem, journal and physical-profile checks before host activation.
 
 use super::config::{ConfigFile, DeploymentContract, managed_config};
-use sandproof_api::managed::ManagedConfig;
 use sandproof_controller_service::ControllerJournal;
+use sandproof_controller_service::application::ApplicationConfig;
 use sandproof_node::NodeConfig;
 use std::{
     error::Error,
@@ -14,7 +14,7 @@ use std::{
 pub(super) struct ValidatedDeployment {
     pub(super) settings: ConfigFile,
     pub(super) contract: DeploymentContract,
-    pub(super) managed: ManagedConfig,
+    pub(super) managed: ApplicationConfig,
 }
 
 impl ValidatedDeployment {
@@ -34,7 +34,7 @@ impl ValidatedDeployment {
 pub(super) fn validate_physical_storage(
     config: &ConfigFile,
     node: &NodeConfig,
-) -> Result<crate::storage::PhysicalProfileLease, Box<dyn Error>> {
+) -> Result<sandproof_node::PhysicalProfileLease, Box<dyn Error>> {
     use sandproof_controller_service::physical_storage::PoolRole;
     let profile = node.bounded_host.physical_storage.as_ref();
     let capacity = config
@@ -109,7 +109,7 @@ pub(super) fn validate_physical_storage(
     {
         return Err("physical filesystem overhead must cover per-inode block rounding".into());
     }
-    crate::storage::PhysicalProfileLease::activate(
+    sandproof_node::PhysicalProfileLease::activate(
         profile,
         &config.namespace,
         &config.firecracker,

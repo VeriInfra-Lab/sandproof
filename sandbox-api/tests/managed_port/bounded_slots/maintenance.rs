@@ -35,9 +35,41 @@ impl FleetHost {
     }
 }
 
-impl HostAdapter for FleetHost {
+impl WorkEvidence for FleetHost {
     type Evidence = Evidence;
+}
+impl WorkExecution for FleetHost {
+    fn execute(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        self.sandbox(action.command.command().sandbox())
+            .map_err(|_| WorkerTransportError::ConnectionLost)?
+            .execute(action)
+    }
+}
 
+impl WorkRecovery for FleetHost {
+    fn observe(&self, _: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
+        None
+    }
+
+    fn reclaim_incomplete_prepare(
+        &mut self,
+        _: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    fn reclaim_incomplete_cleanup(
+        &mut self,
+        _: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+}
+
+impl HostSlots for FleetHost {
     fn bind_host_slot(&mut self, context: &HostSlotContext, allow: bool) -> Result<(), PortError> {
         let mut hosts = self.hosts.lock().unwrap();
         let host = hosts.entry(context.position.0).or_insert_with(|| {
@@ -49,10 +81,14 @@ impl HostAdapter for FleetHost {
         });
         host.bind_host_slot(context, allow)
     }
+
     fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
         self.sandbox(context.binding.sandbox)?
             .release_host_slot(context)
     }
+}
+
+impl DataRelay for FleetHost {
     fn acquire_data_gate(
         &self,
         sandbox: core::SandboxId,
@@ -62,13 +98,18 @@ impl HostAdapter for FleetHost {
         self.sandbox(sandbox)?
             .acquire_data_gate(sandbox, vm, generation)
     }
+
     fn data_gate_drained(&self, context: &HostSlotContext) -> Result<bool, PortError> {
         self.sandbox(context.binding.sandbox)?
             .data_gate_drained(context)
     }
+}
+
+impl HostCapacity for FleetHost {
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
         Ok(16 * 1024 * 1024 * 1024)
     }
+
     fn validate_physical_storage(
         &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
@@ -76,39 +117,23 @@ impl HostAdapter for FleetHost {
     ) -> Result<(), PortError> {
         profile.validate().map_err(|_| PortError::Busy)
     }
+}
+
+impl LaunchConfiguration for FleetHost {
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         self.sandbox(sandbox)?.put_secret(sandbox, token)
     }
+
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
         self.sandbox(sandbox)?.has_secret(sandbox)
     }
+
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
         self.sandbox(sandbox)?.token_for(sandbox)
     }
-    fn execute(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
-        self.sandbox(action.command.command().sandbox())
-            .map_err(|_| WorkerTransportError::ConnectionLost)?
-            .execute(action)
-    }
-    fn observe(&self, _: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
-        None
-    }
-    fn reclaim_incomplete_prepare(
-        &mut self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-    fn reclaim_incomplete_cleanup(
-        &mut self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
 }
+
+impl TemplateArtifacts for FleetHost {}
 
 fn host_config(path: &Path) -> BoundedHostConfig {
     let mut config = bounded(path);
@@ -130,7 +155,7 @@ fn open_maintained(path: &Path, host: FleetHost) -> ManagedPort<FleetHost> {
     let mut limits = config();
     limits.limits.max_active_per_tenant = 2;
     limits.limits.max_disk_bytes_per_tenant = 2_000;
-    ManagedPort::new(
+    new_port(
         ControllerJournal::open_complete(
             path,
             NAMESPACE,
@@ -172,7 +197,7 @@ fn production_tick_retires_newer_objects_while_old_live_or_unknown_object_stays_
         for _ in 0..8 {
             let new = port.create("1", request()).unwrap();
             port.kill("1", &new.sandbox_id).unwrap();
-            let report = port.maintain().unwrap();
+            let report = port.application().maintain().unwrap();
             assert_eq!(report.retired_sandboxes, 1);
             assert_eq!(report.tracked_data_sandboxes, 0);
             if !unknown {
@@ -209,21 +234,22 @@ fn production_tick_waits_for_body_and_unknown_relay_then_removes_local_tracking(
         let port = open_maintained(&path, host.clone());
         let old = port.create("1", request()).unwrap();
         let permit = port
+            .application()
             .data_permit(
                 &old.envd_access_token,
-                sandproof_api::managed::DataKind::Exec,
+                sandproof_controller_service::application::DataKind::Exec,
             )
             .unwrap();
         if unknown {
             permit.drain.mark_unknown();
         }
         port.kill("1", &old.sandbox_id).unwrap();
-        let report = port.maintain().unwrap();
+        let report = port.application().maintain().unwrap();
         assert_eq!(report.retired_sandboxes, 0);
         assert_eq!(report.tracked_data_sandboxes, 1);
         drop(permit);
         if unknown {
-            assert_eq!(port.maintain().unwrap().retired_sandboxes, 0);
+            assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 0);
             host.sandbox(core::SandboxId(1))
                 .unwrap()
                 .0
@@ -231,13 +257,13 @@ fn production_tick_waits_for_body_and_unknown_relay_then_removes_local_tracking(
                 .unwrap()
                 .gate_observation = Some(true);
         }
-        let report = port.maintain().unwrap();
+        let report = port.application().maintain().unwrap();
         assert_eq!(report.retired_sandboxes, 1);
         assert_eq!(report.tracked_data_sandboxes, 0);
         assert!(matches!(
-            port.authorize_data(
+            port.application().authorize_data(
                 &old.envd_access_token,
-                sandproof_api::managed::DataKind::Exec
+                sandproof_controller_service::application::DataKind::Exec
             ),
             Err(PortError::NotFound)
         ));
@@ -274,7 +300,7 @@ fn release_witness_survives_rebind_and_retirement_preserves_newer_launch_and_aut
             .0,
         0
     );
-    assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
     for action in stale {
         assert!(host.clone().execute(&action).is_err());
     }
@@ -286,8 +312,14 @@ fn release_witness_survives_rebind_and_retirement_preserves_newer_launch_and_aut
     );
     drop(port);
     let port = open_maintained(&path, host);
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
-    assert_eq!(port.maintain().unwrap().retired_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 0);
     assert_eq!(
         port.get("1", &current.sandbox_id)
             .unwrap()
@@ -319,7 +351,7 @@ fn lost_host_release_ack_cannot_authorize_retirement_before_recovery() {
     );
     drop(db);
     let port = open_maintained(&path, host);
-    assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
     drop(port);
     assert!(journal(&path).world().unwrap().sandbox_records().is_empty());
 }
@@ -365,7 +397,7 @@ async fn ordinary_sdk_create_stays_unchanged_and_http_cannot_supply_retirement_a
     ).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     // The trusted coordinator, rather than that request, performs retirement.
-    assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
 }
 
 #[test]
@@ -375,7 +407,7 @@ fn full_result_retention_refuses_new_admission_without_evicting_promised_results
     let host = FleetHost::new(dir.path());
     let mut bounded = host_config(&path);
     bounded.maintenance.max_retained_results = 2;
-    let port = ManagedPort::new(
+    let port = new_port(
         ControllerJournal::open_complete(
             &path,
             NAMESPACE,
@@ -389,14 +421,14 @@ fn full_result_retention_refuses_new_admission_without_evicting_promised_results
     );
     let first = port.create("1", request()).unwrap();
     port.kill("1", &first.sandbox_id).unwrap();
-    assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
     let physical = host.sandbox(core::SandboxId(1)).unwrap();
     let actions_before = physical.0.lock().unwrap().actions.len();
     // Full mode reserves eventual create/kill outcomes before admitting work,
     // so this request is refused before another identity or command exists.
     assert!(matches!(port.create("1", request()), Err(PortError::Busy)));
     assert_eq!(physical.0.lock().unwrap().actions.len(), actions_before);
-    let report = port.maintain().unwrap();
+    let report = port.application().maintain().unwrap();
     assert_eq!(report.retired_sandboxes, 0);
     assert_eq!(report.pending_sandboxes, 0);
     assert_eq!(report.expired_results, 0);
@@ -458,14 +490,14 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
         ControllerJournal::open_complete(&path, NAMESPACE, host.clone(), policy.clone(), 0)
             .unwrap();
     let before = initial.checkpoint_progress().unwrap().unwrap();
-    let port = ManagedPort::new(initial, FleetHost::new(dir.path()), config());
-    let first = port.maintain().unwrap();
+    let port = new_port(initial, FleetHost::new(dir.path()), config());
+    let first = port.application().maintain().unwrap();
     assert_eq!(
         first.pruned_inputs as u64,
         before.input_cut - before.deleted_through
     );
     for _ in 0..8 {
-        let report = port.maintain().unwrap();
+        let report = port.application().maintain().unwrap();
         assert_eq!(
             (
                 report.retired_sandboxes,

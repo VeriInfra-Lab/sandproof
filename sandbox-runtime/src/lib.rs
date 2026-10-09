@@ -5,6 +5,11 @@
 
 pub mod egress;
 
+#[cfg(any(target_os = "linux", test))]
+mod child_process;
+#[cfg(target_os = "linux")]
+pub use child_process::OwnedChild;
+
 #[cfg(target_os = "linux")]
 mod uplink;
 

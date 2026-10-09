@@ -28,6 +28,8 @@
 
 普通 PR 四个档位各一台合计 6.5 GiB 来宾内存，另一个 Rust 档位为 4 GiB；每个档位最多两个独立执行位置，总上限十台，但**每次启动仍须通过宿主实际内存及磁盘准入**，不意味着任一宿主都能同时运行两整套检查。优先为有需求的各类任务提供第一个位置，再按余量补第二个；同类在途检查不再强制阻塞其他 PR，标签和保留的检查名称不变。任务之间不设串行依赖，任务内部限制编译并行，防止同时编译占满测试机。不可用、启动失败、测试失败、取消和清理未知均按真实结果报告；宿主报告只说明虚拟机生命周期，不能代替 GitHub 上的测试结论。私有诊断日志和源码树/镜像/执行器摘要留在宿主，公开 PR 只贴脱敏结果。
 
+普通执行器的启动/领取阶段最多 300 秒；固定 runner 首次输出对应任务的开始行后，单独计入最多 1800 秒执行预算，等待不占用此预算。重复、其他任务、stderr 或超长开始行不能重置计时；开始行只影响一次有限预算，不是授权、任务归属或检查通过证据。Python 监视器总时长不超过 2100 秒，独立 systemd 单元上限 2200 秒含收尾余量；工作流原 5/15/20 分钟时限保持不变。制备/预热仍按原绝对期限执行。超时只终止本轮精确进程组并保留诊断，确认工作盘/JIT/执行器登记清理后才释放位置，不把退出报告当作测试成功。
+
 自动补充由宿主受控安装的[补充服务](../tools/ci_runner_supervisor.py)和[服务单元](../tools/ci_runner_supervisor.service)负责。专用 GitHub App 只安装到本仓库，权限限定为 Actions 只读、Administration 写入和默认 Metadata 只读；它不需要 webhook 或入站公网端口。Administration 是仓库管理权限，不是只允许操作执行器的细粒度权限，所以 App 密钥仍是高敏感宿主管理凭据，不能复制个人登录凭据或向 PR 发放它。
 
 部署前由管理员把 App 私钥放入 `/etc/sandproof-ci/app-key.pem`（目录 root/0700、文件 root/0600），以[鉴权工具](../tools/ci_github_app.py)核对安装范围，取得安装编号；将[配置示例](../tools/ci_runner_supervisor.example.json)填为本 App 的 Client ID、安装编号、普通工作流编号和宿主回环代理地址，安装到 `/etc/sandproof-ci/supervisor.json`（root/0600）。宿主 `/usr/bin/python3` 需要发行版提供的 PyJWT、cryptography；安装的工具、单元和配置均由 root 管理，不从 PR 下载执行。用 `systemd-analyze verify` 检查单元，再 `systemctl enable --now sandproof-ci-supervisor.service`。密钥通过 systemd 的独立凭据目录读取；工作执行单元只收到该任务的 JIT 配置，不继承 App 密钥或安装令牌。令牌限定本仓库和上述权限，并在到期前更新，不把管理凭据写入日志。

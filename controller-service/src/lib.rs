@@ -10,6 +10,7 @@
 #[cfg(test)]
 extern crate self as sandproof_controller_service;
 
+pub mod application;
 mod controller;
 mod dispatch;
 mod journal;

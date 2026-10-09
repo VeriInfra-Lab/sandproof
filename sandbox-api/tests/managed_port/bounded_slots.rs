@@ -89,8 +89,81 @@ impl BoundedHost {
     }
 }
 
-impl HostAdapter for BoundedHost {
+impl WorkEvidence for BoundedHost {
     type Evidence = Evidence;
+}
+impl WorkExecution for BoundedHost {
+    fn execute(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
+        let mut state = self.0.lock().unwrap();
+        if !Self::eligible(&state, action) {
+            return Err(WorkerTransportError::ConnectionLost);
+        }
+        state.actions.push(action.clone());
+        if state.unknown_cleanup
+            && matches!(action.command.command(), core::Command::CleanupVm { .. })
+        {
+            return Ok(unknown_receipt(action));
+        }
+        Ok(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(Evidence {
+                resource: action.identity.resource.clone(),
+                command: action.command.command().clone(),
+            }),
+        })
+    }
+}
+
+impl WorkRecovery for BoundedHost {
+    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
+        if !matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ) || !self.0.lock().unwrap().actions.contains(action)
+        {
+            return None;
+        }
+        Some(WorkReceipt {
+            identity: action.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(Evidence {
+                resource: action.identity.resource.clone(),
+                command: action.command.command().clone(),
+            }),
+        })
+    }
+
+    fn reclaim_incomplete_prepare(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+
+    fn reclaim_incomplete_terminal_fence(
+        &mut self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        assert!(matches!(
+            action.command.command(),
+            core::Command::InstallFence { terminal: true, .. }
+        ));
+        self.execute(action)
+            .map(|_| ())
+            .map_err(|_| PortError::Busy)
+    }
+
+    fn reclaim_incomplete_cleanup(
+        &mut self,
+        _action: &WorkAction<core::EffectId>,
+    ) -> Result<(), PortError> {
+        Err(PortError::Busy)
+    }
+}
+
+impl HostSlots for BoundedHost {
     fn bind_host_slot(
         &mut self,
         context: &HostSlotContext,
@@ -124,6 +197,7 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+
     fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         let (current, phase) = state.row.ok_or(PortError::Busy)?;
@@ -158,6 +232,9 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+}
+
+impl DataRelay for BoundedHost {
     fn acquire_data_gate(
         &self,
         sandbox: core::SandboxId,
@@ -185,7 +262,7 @@ impl HostAdapter for BoundedHost {
         vm: core::VmId,
         generation: core::Generation,
         _control: bool,
-    ) -> Result<Option<std::process::Child>, PortError> {
+    ) -> Result<std::process::Child, PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
             context.binding.sandbox != sandbox
@@ -201,7 +278,6 @@ impl HostAdapter for BoundedHost {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map(Some)
             .map_err(|_| PortError::Busy)
     }
 
@@ -212,7 +288,9 @@ impl HostAdapter for BoundedHost {
         }
         Ok(state.gate_observation == Some(true))
     }
+}
 
+impl HostCapacity for BoundedHost {
     fn available_disk_bytes(&self) -> Result<u64, PortError> {
         Ok(self
             .0
@@ -221,6 +299,7 @@ impl HostAdapter for BoundedHost {
             .physical_free
             .unwrap_or(16 * 1024 * 1024 * 1024))
     }
+
     fn validate_physical_storage(
         &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
@@ -239,6 +318,9 @@ impl HostAdapter for BoundedHost {
             Err(PortError::Busy)
         }
     }
+}
+
+impl LaunchConfiguration for BoundedHost {
     fn put_secret(&mut self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
@@ -251,9 +333,11 @@ impl HostAdapter for BoundedHost {
         }
         Ok(())
     }
+
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
         Ok(self.0.lock().unwrap().secrets.contains_key(&sandbox.0))
     }
+
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
         self.0
             .lock()
@@ -263,69 +347,9 @@ impl HostAdapter for BoundedHost {
             .cloned()
             .ok_or(PortError::Busy)
     }
-    fn execute(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<WorkReceipt<Evidence>, WorkerTransportError> {
-        let mut state = self.0.lock().unwrap();
-        if !Self::eligible(&state, action) {
-            return Err(WorkerTransportError::ConnectionLost);
-        }
-        state.actions.push(action.clone());
-        if state.unknown_cleanup
-            && matches!(action.command.command(), core::Command::CleanupVm { .. })
-        {
-            return Ok(unknown_receipt(action));
-        }
-        Ok(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome: WorkOutcome::ObservedSuccess(Evidence {
-                resource: action.identity.resource.clone(),
-                command: action.command.command().clone(),
-            }),
-        })
-    }
-    fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
-        if !matches!(
-            action.command.command(),
-            core::Command::InstallFence { terminal: true, .. }
-        ) || !self.0.lock().unwrap().actions.contains(action)
-        {
-            return None;
-        }
-        Some(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome: WorkOutcome::ObservedSuccess(Evidence {
-                resource: action.identity.resource.clone(),
-                command: action.command.command().clone(),
-            }),
-        })
-    }
-    fn reclaim_incomplete_terminal_fence(
-        &mut self,
-        action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        assert!(matches!(
-            action.command.command(),
-            core::Command::InstallFence { terminal: true, .. }
-        ));
-        self.execute(action)
-            .map(|_| ())
-            .map_err(|_| PortError::Busy)
-    }
-    fn reclaim_incomplete_prepare(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
-    fn reclaim_incomplete_cleanup(
-        &mut self,
-        _action: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
-        Err(PortError::Busy)
-    }
 }
+
+impl TemplateArtifacts for BoundedHost {}
 
 fn open(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
     {
@@ -343,7 +367,7 @@ fn open(path: &std::path::Path, host: BoundedHost) -> ManagedPort<BoundedHost> {
         }
     }
     let config = config();
-    ManagedPort::new(open_journal(path), host, config)
+    new_port(open_journal(path), host, config)
 }
 
 #[test]
@@ -371,7 +395,7 @@ fn one_position_serves_many_permanent_ids_and_delayed_old_commands_never_touch_s
         port.kill("1", &session.sandbox_id).unwrap();
         // The service's ordinary coordinator retires completed metadata;
         // physical-slot reuse is exercised without an unmaintained journal.
-        assert_eq!(port.maintain().unwrap().retired_sandboxes, 1);
+        assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
         let state = host.0.lock().unwrap();
         assert_eq!(state.row.unwrap().1, HostSlotPhase::Free);
         assert!(state.secrets.is_empty());
@@ -419,7 +443,13 @@ fn cancelled_unbound_create_waits_without_claiming_actions_and_recovers_without_
     drop(journal);
     host.0.lock().unwrap().binding_fault = BindingFault::None;
     let port = open(&path, host.clone());
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
     let state = host.0.lock().unwrap();
     assert_eq!(state.row.unwrap().1, HostSlotPhase::Free);
     assert!(state.secrets.is_empty());
@@ -464,8 +494,20 @@ fn unknown_terminal_fence_before_binding_recovers_only_the_original_cancel() {
     drop(journal);
     host.0.lock().unwrap().binding_fault = BindingFault::None;
     let port = open(&path, host.clone());
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
     let state = host.0.lock().unwrap();
     assert!(state.secrets.is_empty());
     assert_eq!(state.row.unwrap().1, HostSlotPhase::Free);
@@ -505,7 +547,13 @@ fn lost_binding_after_launch_cannot_be_reinstalled_for_terminal_cleanup() {
     ));
     drop(port);
     let port = open(&path, host.clone());
-    assert!(port.recover_on_startup().unwrap().unresolved_sandboxes > 0);
+    assert!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes
+            > 0
+    );
     let state = host.0.lock().unwrap();
     assert!(state.row.is_none());
     assert_eq!(state.actions.len(), before);
@@ -525,7 +573,13 @@ fn lost_bind_ack_restarts_before_first_fence_without_allocating_another_identity
     assert!(host.0.lock().unwrap().actions.is_empty());
     drop(port);
     let port = open(&path, host.clone());
-    assert_eq!(port.recover_on_startup().unwrap().unresolved_sandboxes, 0);
+    assert_eq!(
+        port.application()
+            .recover_on_startup()
+            .unwrap()
+            .unresolved_sandboxes,
+        0
+    );
     assert_eq!(
         port.get("1", &format!("sb-{NAMESPACE}-1"))
             .unwrap()
@@ -553,7 +607,7 @@ fn lost_release_ack_keeps_durable_releasing_until_exact_host_recovery() {
     );
     drop(journal);
     let port = open(&path, host.clone());
-    port.recover_on_startup().unwrap();
+    port.application().recover_on_startup().unwrap();
     assert!(port.create("1", request()).is_ok());
 }
 
@@ -566,9 +620,10 @@ fn unknown_cleanup_and_data_or_relay_pins_block_slot_reuse() {
         let port = open(&dir.path().join("controller.db"), host.clone());
         let session = port.create("1", request()).unwrap();
         let permit = port
+            .application()
             .data_permit(
                 &session.envd_access_token,
-                sandproof_api::managed::DataKind::Exec,
+                sandproof_controller_service::application::DataKind::Exec,
             )
             .unwrap();
         let _ = port.kill("1", &session.sandbox_id);
@@ -595,9 +650,10 @@ fn unknown_relay_exit_stays_blocked_after_every_pin_drops() {
     let port = open(&dir.path().join("controller.db"), host);
     let session = port.create("1", request()).unwrap();
     let permit = port
+        .application()
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     permit.drain.mark_unknown();
@@ -663,9 +719,10 @@ fn unknown_relay_exit_resolves_only_after_observed_durable_gate_drain() {
     let port = open(&dir.path().join("controller.db"), host.clone());
     let session = port.create("1", request()).unwrap();
     let permit = port
+        .application()
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     permit.drain.mark_unknown();
@@ -687,18 +744,19 @@ fn relay_spawn_rechecks_authority_after_the_initial_route_permit() {
     let port = open(&dir.path().join("controller.db"), host.clone());
     let session = port.create("1", request()).unwrap();
     let permit = port
+        .application()
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
-    let mut child = port.spawn_data_relay(&permit, false).unwrap().unwrap();
+    let mut child = port.application().spawn_data_relay(&permit, false).unwrap();
     drop(child.take_stdin());
     assert!(child.wait().unwrap().success());
     assert_eq!(host.0.lock().unwrap().relay_spawns, 1);
     port.kill("1", &session.sandbox_id).unwrap();
     assert!(matches!(
-        port.spawn_data_relay(&permit, false),
+        port.application().spawn_data_relay(&permit, false),
         Err(PortError::NotFound)
     ));
     assert_eq!(host.0.lock().unwrap().relay_spawns, 1);
@@ -711,9 +769,10 @@ fn expired_permit_cannot_spawn_a_relay_before_the_expiry_worker_runs() {
     let port = open(&dir.path().join("controller.db"), host.clone());
     let session = port.create("1", request()).unwrap();
     let permit = port
+        .application()
         .data_permit(
             &session.envd_access_token,
-            sandproof_api::managed::DataKind::Exec,
+            sandproof_controller_service::application::DataKind::Exec,
         )
         .unwrap();
     // The SDK's nonpositive timeout expires the durable deadline immediately;
@@ -721,11 +780,11 @@ fn expired_permit_cannot_spawn_a_relay_before_the_expiry_worker_runs() {
     port.set_timeout("1", &session.sandbox_id, 0).unwrap();
     assert!(*permit.revocation.borrow());
     assert!(matches!(
-        port.spawn_data_relay(&permit, false),
+        port.application().spawn_data_relay(&permit, false),
         Err(PortError::NotFound)
     ));
     assert_eq!(host.0.lock().unwrap().relay_spawns, 0);
-    assert_eq!(port.expire_due().unwrap(), 1);
+    assert_eq!(port.application().expire_due().unwrap(), 1);
 }
 
 #[path = "bounded_slots/maintenance.rs"]

@@ -1,14 +1,14 @@
 //! Exact-child ownership across cancelled blocking launches and async errors.
 //! A reaper is allocated before the host spawns anything. Dropping a launch
 //! result transfers its still-unreaped Child to that already-running thread.
-use crate::PortError;
+use super::ApplicationError;
 use std::{
     io,
     process::{Child, ChildStdin, ChildStdout, ExitStatus},
     sync::mpsc::{self, SyncSender},
 };
 
-pub(super) struct RelayReaper {
+pub struct RelayReaper {
     sender: SyncSender<Child>,
     #[cfg(test)]
     thread: std::thread::JoinHandle<()>,
@@ -24,7 +24,10 @@ pub struct TrackedRelayChild {
 }
 
 impl RelayReaper {
-    pub(super) fn new() -> Result<Self, PortError> {
+    /// Allocate the fallback reaper before any host child is started.
+    /// # Errors
+    /// Thread creation failure refuses launch before a process exists.
+    pub fn new() -> Result<Self, ApplicationError> {
         let (sender, receiver) = mpsc::sync_channel::<Child>(1);
         let thread = std::thread::Builder::new()
             .name("sandbox-route-reaper".into())
@@ -36,7 +39,7 @@ impl RelayReaper {
                     let _ = child.wait();
                 }
             })
-            .map_err(|_| PortError::Busy)?;
+            .map_err(|_| ApplicationError::Busy)?;
         #[cfg(not(test))]
         drop(thread);
         Ok(Self {
@@ -46,7 +49,8 @@ impl RelayReaper {
         })
     }
 
-    pub(super) fn attach(self, child: Child) -> TrackedRelayChild {
+    #[must_use]
+    pub fn attach(self, child: Child) -> TrackedRelayChild {
         TrackedRelayChild {
             child: Some(child),
             reaper: self.sender,

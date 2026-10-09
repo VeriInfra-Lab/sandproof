@@ -62,13 +62,21 @@ fn open_full(
     host: BoundedHost,
     physical: PhysicalStorageProfile,
 ) -> ManagedPort<BoundedHost> {
+    ManagedPort::new(Arc::new(open_full_application(path, host, physical)))
+}
+
+fn open_full_application(
+    path: &std::path::Path,
+    host: BoundedHost,
+    physical: PhysicalStorageProfile,
+) -> ControllerApplication<BoundedHost> {
     let mut bounded = bounded(path);
     bounded.console_policy = Some(ConsolePolicy::Discard);
     bounded.physical_storage = Some(physical);
     let mut managed = config();
     managed.limits.cleanup_reserve_bytes = profile(path).pools[0].cleanup_reserve_bytes;
     managed.limits.max_disk_bytes_global = managed.limits.cleanup_reserve_bytes + 1000;
-    ManagedPort::new(
+    ControllerApplication::new(
         ControllerJournal::open_complete(path, NAMESPACE, bounded, capacity(), 0).unwrap(),
         host,
         managed,
@@ -176,7 +184,8 @@ fn runtime_profile_cannot_enable_private_builder_windows() {
         state.physical_profile = Some(profile(&path));
         state.physical_free = Some(profile(&path).activation_bytes().unwrap());
     }
-    let port = open_full(&path, host.clone(), profile(&path)).with_internal_build_vms(true);
+    let port =
+        open_full_application(&path, host.clone(), profile(&path)).with_internal_build_vms(true);
     assert!(matches!(
         port.with_build_retry_windows(sandproof_controller_service::BuildRetryConfig {
             window_duration_ms: 1000,
@@ -225,7 +234,7 @@ fn single_pool_profile_refuses_unrepresented_registry_before_durable_enable() {
     let mut managed = config();
     managed.limits.cleanup_reserve_bytes = profile(&path).pools[0].cleanup_reserve_bytes;
     managed.limits.max_disk_bytes_global = managed.limits.cleanup_reserve_bytes + 1000;
-    let port = ManagedPort::with_templates(
+    let port = ControllerApplication::with_templates(
         ControllerJournal::open_complete(&path, NAMESPACE, bounded.clone(), capacity(), 0).unwrap(),
         BoundedHost::default(),
         managed,
@@ -297,7 +306,7 @@ fn first_publication_requires_host_activation_before_intent_or_candidate_lookup(
     managed.limits.max_disk_bytes_global = managed.limits.cleanup_reserve_bytes + 1000;
     let host = BoundedHost::default();
     host.0.lock().unwrap().physical_error = true;
-    let port = ManagedPort::with_templates(
+    let port = ControllerApplication::with_templates(
         ControllerJournal::open_complete(&path, NAMESPACE, bounded.clone(), capacity(), 0).unwrap(),
         host,
         managed,

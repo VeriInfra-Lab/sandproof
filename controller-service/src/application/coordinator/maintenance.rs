@@ -1,12 +1,12 @@
 //! Trusted, serial maintenance coordinator. HTTP callers never supply cleanup
 //! attestations: durable exact-host release and local drain ownership do.
+use super::ApplicationError;
 use super::{
-    DataLease, HostAdapter, Inner, ManagedPort, map_journal, now_ms, reclaimed_sandboxes,
+    ControllerApplication, ControllerHost, DataLease, Inner, map_journal, reclaimed_sandboxes,
     release_reclaimed_slots,
 };
-use crate::PortError;
+use crate::{NeverCrash, RetirementCandidate, WorkerTransportError};
 use sandbox_controller_core as core;
-use sandproof_controller_service::{NeverCrash, RetirementCandidate, WorkerTransportError};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -20,7 +20,7 @@ pub struct MaintenanceReport {
     pub tracked_data_sandboxes: usize,
 }
 
-fn local_routes_drained<H: HostAdapter>(inner: &Inner<H>, sandbox: core::SandboxId) -> bool {
+fn local_routes_drained<H: ControllerHost>(inner: &Inner<H>, sandbox: core::SandboxId) -> bool {
     inner
         .data_revocations
         .get(&sandbox.0)
@@ -35,7 +35,7 @@ fn local_routes_drained<H: HostAdapter>(inner: &Inner<H>, sandbox: core::Sandbox
             .is_none_or(DataLease::drained)
 }
 
-fn verify_local_quiescence<H: HostAdapter>(
+fn verify_local_quiescence<H: ControllerHost>(
     inner: &Inner<H>,
     candidate: &RetirementCandidate,
     reclaimed: &BTreeSet<core::SandboxId>,
@@ -53,23 +53,23 @@ fn verify_local_quiescence<H: HostAdapter>(
     Ok(())
 }
 
-pub(super) fn maintain_locked<H: HostAdapter>(
+pub(super) fn maintain_locked<H: ControllerHost>(
     inner: &mut Inner<H>,
     now: u64,
-) -> Result<MaintenanceReport, PortError> {
+) -> Result<MaintenanceReport, ApplicationError> {
     let policy = inner
         .journal
         .maintenance_config()
         .map_err(map_journal)?
-        .ok_or(PortError::Busy)?;
+        .ok_or(ApplicationError::Busy)?;
     if policy.capacity.is_none() {
-        return Err(PortError::Busy);
+        return Err(ApplicationError::Busy);
     }
     let before = inner
         .journal
         .checkpoint_progress()
         .map_err(map_journal)?
-        .ok_or(PortError::Busy)?
+        .ok_or(ApplicationError::Busy)?
         .deleted_through;
     // Full capacity mode rotates before a write would consume accepted-work
     // headroom. Do not burn checkpoint generations on every idle poll.
@@ -117,7 +117,7 @@ pub(super) fn maintain_locked<H: HostAdapter>(
                 report.pending_sandboxes = report
                     .pending_sandboxes
                     .checked_sub(1)
-                    .ok_or(PortError::Busy)?;
+                    .ok_or(ApplicationError::Busy)?;
             }
             Err(error) if error.is_local_recovery_failure() => {}
             Err(error) => return Err(map_journal(error)),
@@ -127,10 +127,11 @@ pub(super) fn maintain_locked<H: HostAdapter>(
         .journal
         .checkpoint_progress()
         .map_err(map_journal)?
-        .ok_or(PortError::Busy)?
+        .ok_or(ApplicationError::Busy)?
         .deleted_through;
-    report.pruned_inputs = usize::try_from(after.checked_sub(before).ok_or(PortError::Busy)?)
-        .map_err(|_| PortError::Busy)?;
+    report.pruned_inputs =
+        usize::try_from(after.checked_sub(before).ok_or(ApplicationError::Busy)?)
+            .map_err(|_| ApplicationError::Busy)?;
     report.tracked_data_sandboxes = inner
         .data_revocations
         .keys()
@@ -141,15 +142,15 @@ pub(super) fn maintain_locked<H: HostAdapter>(
     Ok(report)
 }
 
-impl<H: HostAdapter> ManagedPort<H> {
+impl<H: ControllerHost> ControllerApplication<H> {
     /// Run one bounded maintenance pass using the trusted service clock and
     /// host evidence. Ordinary SDK create and raw public input are unchanged.
     /// # Errors
     /// Missing complete policy, shared storage, invalid checkpoints or uncertain
     /// commits abort the pass.
-    pub fn maintain(&self) -> Result<MaintenanceReport, PortError> {
-        let mut inner = self.inner.lock().map_err(|_| PortError::Busy)?;
-        let now = u64::try_from(now_ms()?).map_err(|_| PortError::Busy)?;
+    pub fn maintain(&self) -> Result<MaintenanceReport, ApplicationError> {
+        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let now = u64::try_from(self.clock.now_ms()?).map_err(|_| ApplicationError::Busy)?;
         maintain_locked(&mut inner, now)
     }
 }

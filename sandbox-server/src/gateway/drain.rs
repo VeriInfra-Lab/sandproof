@@ -1,53 +1,35 @@
 //! Keep admission's incarnation pin through body completion and relay exit.
 use super::*;
-use sandproof_api::managed::DataLease;
+use sandproof_controller_service::application::DataLease;
 
 // Bounded children were permission-gated and durably identified before exec.
 // The std Child remains the exact unreaped same-PID process; pipe conversion
 // changes only transport readiness, never its durable host identity.
-pub(super) enum RelayProcess {
-    Legacy(tokio::process::Child),
-    Tracked(Option<sandproof_api::managed::TrackedRelayChild>),
-}
+pub(super) struct RelayProcess(
+    Option<sandproof_controller_service::application::TrackedRelayChild>,
+);
 
 impl RelayProcess {
+    pub fn new(child: sandproof_controller_service::application::TrackedRelayChild) -> Self {
+        Self(Some(child))
+    }
     pub fn take_pipes(&mut self) -> io::Result<(ChildStdout, ChildStdin)> {
         let missing = || io::Error::other("relay pipe missing");
-        match self {
-            Self::Legacy(child) => Ok((
-                child.stdout.take().ok_or_else(missing)?,
-                child.stdin.take().ok_or_else(missing)?,
-            )),
-            Self::Tracked(child) => {
-                let child = child.as_mut().ok_or_else(missing)?;
-                Ok((
-                    ChildStdout::from_std(child.take_stdout().ok_or_else(missing)?)?,
-                    ChildStdin::from_std(child.take_stdin().ok_or_else(missing)?)?,
-                ))
-            }
-        }
+        let child = self.0.as_mut().ok_or_else(missing)?;
+        Ok((
+            ChildStdout::from_std(child.take_stdout().ok_or_else(missing)?)?,
+            ChildStdin::from_std(child.take_stdin().ok_or_else(missing)?)?,
+        ))
     }
-
     async fn stop(&mut self) -> bool {
-        match self {
-            Self::Legacy(child) => {
-                child.kill().await.is_ok() || matches!(child.try_wait(), Ok(Some(_)))
-            }
-            Self::Tracked(child) => {
-                let Some(mut child) = child.take() else {
-                    return false;
-                };
-                let wait = tokio::task::spawn_blocking(move || {
-                    // The tracked shell execs ip and the relay in the same PID,
-                    // and this unreaped Child prevents PID reuse before wait.
-                    child.terminate_and_wait()
-                });
-                matches!(
-                    tokio::time::timeout(Duration::from_secs(5), wait).await,
-                    Ok(Ok(Ok(_)))
-                )
-            }
-        }
+        let Some(mut child) = self.0.take() else {
+            return false;
+        };
+        let wait = tokio::task::spawn_blocking(move || child.terminate_and_wait());
+        matches!(
+            tokio::time::timeout(Duration::from_secs(5), wait).await,
+            Ok(Ok(Ok(_)))
+        )
     }
 }
 
