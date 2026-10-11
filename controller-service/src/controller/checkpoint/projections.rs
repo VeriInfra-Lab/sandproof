@@ -26,7 +26,7 @@ pub(super) fn validate(
     registry_state(connection, world)?;
     super::super::data_credentials::validate(connection, world, namespace)?;
     super::super::private_build::validate(connection, world, namespace)?;
-    super::super::internal_inbox::validate(connection)?;
+    super::super::internal_inbox::validate(connection, world)?;
     Ok(())
 }
 
@@ -369,10 +369,10 @@ pub(super) fn publication_pins(
         |row| row.get(0),
     )?;
     let tables: i64 = connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('template_publications','template_aliases','template_registry_meta')", [], |row| row.get(0))?;
-    if tables == 0 && matches!(version, 11 | 12) {
+    if tables == 0 && matches!(version, 11 | 13) {
         return Ok(Vec::new());
     }
-    if !matches!(version, 10..=12) {
+    if !matches!(version, 10 | 11 | 13) {
         if !(1..=9).contains(&version) || tables != 0 {
             return Err(JournalError::CorruptStore);
         }
@@ -426,7 +426,7 @@ fn registry_state(connection: &Connection, world: &core::World) -> Result<(), Jo
     for bytes in query.query_map([], |row| row.get::<_, Vec<u8>>(0))? {
         let value = registry::decode(&bytes?)?;
         if value.validation_certificate.is_some() {
-            if version != 11 {
+            if !matches!(version, 11 | 13) {
                 return Err(JournalError::CorruptStore);
             }
             registry::validate_settled(world, &value)?;

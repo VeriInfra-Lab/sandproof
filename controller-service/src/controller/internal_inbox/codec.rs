@@ -13,13 +13,13 @@ pub(super) fn load(connection: &Connection) -> Result<Option<Inbox>, JournalErro
         |row| row.get(0),
     )?;
     if !exists {
-        return if version == 12 {
+        return if version == 13 {
             Err(JournalError::CorruptStore)
         } else {
             Ok(None)
         };
     }
-    if version != 12 {
+    if version != 13 {
         return Err(JournalError::CorruptStore);
     }
     let cap = capacity::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
@@ -48,8 +48,63 @@ pub(super) fn load(connection: &Connection) -> Result<Option<Inbox>, JournalErro
     inbox.validate()?;
     Ok(Some(inbox))
 }
-pub(in crate::controller) fn validate(connection: &Connection) -> Result<(), JournalError> {
-    load(connection).map(|_| ())
+pub(super) fn save(connection: &Connection, inbox: &Inbox) -> Result<(), JournalError> {
+    inbox.validate()?;
+    let bytes = serde_json::to_vec(inbox)?;
+    if bytes.len() > inbox.config.required_bytes() {
+        return Err(JournalError::MaintenanceCapacity);
+    }
+    if connection.execute(
+        "UPDATE controller_internal_inbox SET state_json=?1,sha256=?2 WHERE id=1",
+        rusqlite::params![&bytes, Sha256::digest(&bytes).as_slice()],
+    )? != 1
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(())
+}
+pub(in crate::controller) fn validate(
+    connection: &Connection,
+    world: &sandbox_controller_core::World,
+) -> Result<(), JournalError> {
+    let Some(inbox) = load(connection)? else {
+        return Ok(());
+    };
+    let namespace: String = connection.query_row(
+        "SELECT namespace FROM controller_meta WHERE id=1",
+        [],
+        |r| r.get(0),
+    )?;
+    for entry in &inbox.entries {
+        let Some(local) = entry.local else {
+            continue;
+        };
+        let id = super::super::identity::sandbox_id(&namespace, local.sandbox)?;
+        let (owner, bytes, record): (String, Vec<u8>, Vec<u8>) = connection.query_row(
+            "SELECT s.owner_id,o.options_json,s.state_blob FROM sandboxes s JOIN sandbox_create_options o USING(sandbox_id) WHERE s.sandbox_id=?1",
+            [id.as_str()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        let record: sandbox_controller_core::SandboxRecord = serde_json::from_slice(&record)?;
+        let terminated = inbox.entries.iter().any(|e| {
+            e.request.identity.sandbox_id == entry.request.identity.sandbox_id
+                && e.request.intent == sandproof_protocol::internal::lifecycle::Intent::Destroy
+        });
+        let mut options: crate::CreateOptions = serde_json::from_slice(&bytes)?;
+        let template = options.template.take().ok_or(JournalError::CorruptStore)?;
+        if owner != super::super::identity::owner_id(local.owner)?.as_str()
+            || record.owner != local.owner
+            || (terminated && !record.terminal)
+            || options.encoded().map_err(|_| JournalError::CorruptStore)?
+                != entry.request.create.options
+            || template.resources.disk_bytes != entry.request.create.resources.disk_bytes
+            || u64::from(template.resources.cpu_count) != entry.request.create.resources.cpu
+            || template.resources.host_memory_bytes != entry.request.create.resources.memory_bytes
+            || template.owner.is_some_and(|owner| owner != local.owner.0)
+        {
+            return Err(JournalError::CorruptStore);
+        }
+    }
+    super::facts::validate_saved(connection, world, &inbox)?;
+    Ok(())
 }
 
 pub(in crate::controller) fn charged_bytes(

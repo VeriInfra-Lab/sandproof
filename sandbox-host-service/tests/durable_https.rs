@@ -42,6 +42,19 @@ fn provision(path: &std::path::Path) -> Arc<Mutex<ControllerJournal>> {
     Arc::new(Mutex::new(j))
 }
 
+fn capture_empty_cleanup(
+    journal: &Mutex<ControllerJournal>,
+    destroy: &sandproof_protocol::internal::lifecycle::LifecycleRequest,
+) -> sandproof_protocol::internal::lifecycle::LifecycleResponse {
+    let cleaned = journal
+        .lock()
+        .unwrap()
+        .capture_internal_progress(destroy, &mut NeverCrash)
+        .unwrap();
+    assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
+    cleaned
+}
+
 #[tokio::test]
 async fn actual_https_records_original_journal_and_replays_after_reopen() {
     let dir = tempfile::tempdir().unwrap();
@@ -112,6 +125,11 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
         conflict.create.timeout_ms += 1;
         assert!(client.lifecycle(&conflict).await.is_err());
         client.lifecycle(&destroy).await.unwrap();
+        // This fixture never admitted a local instance. The original durable
+        // destroy fence permits empty cleanup; HTTPS must replay the saved
+        // fact/version after reopen, not manufacture success in the transport.
+        let cleaned = capture_empty_cleanup(&journal, &destroy);
+        assert_eq!(client.lifecycle(&destroy).await.unwrap(), cleaned);
         assert_eq!(
             client.lifecycle(&create).await.unwrap(),
             prior.clone().unwrap()
