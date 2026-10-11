@@ -505,7 +505,12 @@ impl Runtime {
             thread::sleep(Duration::from_millis(20));
         }
         let root = self.root_path(id);
-        fs::copy(&self.config.kernel, root.join("vmlinux"))?;
+        copy_private_kernel(
+            &self.config.kernel,
+            &root.join("vmlinux"),
+            self.config.vm_uid,
+            self.config.vm_gid,
+        )?;
         copy_private_disk(&self.config.rootfs, &root.join("rootfs.ext4"))?;
         chown(
             root.join("rootfs.ext4"),
@@ -1316,6 +1321,65 @@ fn check_kvm(path: &Path) -> Result<(), RuntimeError> {
         .map_err(RuntimeError::KvmUnavailable)
 }
 
+fn copy_private_kernel(
+    source: &Path,
+    destination: &Path,
+    vm_uid: u32,
+    vm_gid: u32,
+) -> Result<(), RuntimeError> {
+    let mut input = File::from(
+        rustix::fs::open(
+            source,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::CLOEXEC
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::NONBLOCK,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(errno_to_io)?,
+    );
+    let original = input.metadata()?;
+    if !original.is_file() {
+        return Err(RuntimeError::InvalidConfiguration("kernel is not a file"));
+    }
+    // The cached template remains untouched. A fresh inode avoids following or
+    // overwriting a same-name file/link left by interrupted preparation.
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(destination)?;
+    if io::copy(&mut input, &mut output)? != original.len() {
+        return Err(RuntimeError::IdentityMismatch("kernel length changed"));
+    }
+    // Jailer has already dropped Firecracker's credentials. Do not inherit the
+    // root-owned cache's 0400 mode; only this instance may read its kernel copy.
+    rustix::fs::fchown(
+        &output,
+        Some(Uid::from_raw(vm_uid)),
+        Some(Gid::from_raw(vm_gid)),
+    )
+    .map_err(errno_to_io)?;
+    output.set_permissions(fs::Permissions::from_mode(0o400))?;
+    output.sync_all()?;
+    let copied = output.metadata()?;
+    let current = fs::symlink_metadata(destination)?;
+    if !current.is_file()
+        || current.dev() != copied.dev()
+        || current.ino() != copied.ino()
+        || current.nlink() != 1
+        || current.uid() != vm_uid
+        || current.gid() != vm_gid
+        || current.mode() & 0o7777 != 0o400
+    {
+        return Err(RuntimeError::IdentityMismatch("private kernel replaced"));
+    }
+    File::open(destination.parent().ok_or(RuntimeError::InvalidId)?)?.sync_all()?;
+    // A failed stage remains under the original claim/cleanup responsibility;
+    // it is not overwritten on retry or reported as a booted VM.
+    Ok(())
+}
+
 fn copy_private_disk(source: &Path, destination: &Path) -> Result<(), RuntimeError> {
     let mut input = File::open(source)?;
     let metadata = input.metadata()?;
@@ -1859,6 +1923,115 @@ mod tests {
             .unwrap();
         assert!(released.wait().unwrap().success());
         assert_eq!(fs::read(&marker).unwrap(), b"started");
+    }
+
+    #[test]
+    fn private_kernel_is_readonly_independent_and_preserves_the_cached_template() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("template");
+        let destination = directory.path().join("vmlinux");
+        fs::write(&source, b"immutable cached kernel").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o400)).unwrap();
+        let original = fs::metadata(&source).unwrap();
+        let uid = rustix::process::geteuid().as_raw();
+        let gid = rustix::process::getegid().as_raw();
+
+        copy_private_kernel(&source, &destination, uid, gid).unwrap();
+
+        let copied = fs::metadata(&destination).unwrap();
+        assert_eq!(copied.mode() & 0o7777, 0o400);
+        assert_eq!((copied.uid(), copied.gid()), (uid, gid));
+        assert_eq!(copied.nlink(), 1);
+        assert_ne!(
+            (copied.dev(), copied.ino()),
+            (original.dev(), original.ino())
+        );
+        assert_eq!(fs::read(&destination).unwrap(), b"immutable cached kernel");
+        let unchanged = fs::metadata(&source).unwrap();
+        assert_eq!(unchanged.dev(), original.dev());
+        assert_eq!(unchanged.ino(), original.ino());
+        assert_eq!(unchanged.mode(), original.mode());
+        assert_eq!(unchanged.uid(), original.uid());
+        assert_eq!(unchanged.gid(), original.gid());
+        assert_eq!(fs::read(&source).unwrap(), b"immutable cached kernel");
+    }
+
+    #[test]
+    fn private_kernel_refuses_existing_files_same_inode_symlinks_and_nonfiles() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("template");
+        let existing = directory.path().join("existing");
+        let hardlink = directory.path().join("same-inode");
+        let link = directory.path().join("link");
+        let linked_source = directory.path().join("linked-source");
+        let fresh = directory.path().join("fresh");
+        fs::write(&source, b"cached kernel").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o400)).unwrap();
+        fs::write(&existing, b"foreign bytes").unwrap();
+        fs::hard_link(&source, &hardlink).unwrap();
+        std::os::unix::fs::symlink(&existing, &link).unwrap();
+        std::os::unix::fs::symlink(&source, &linked_source).unwrap();
+        let uid = rustix::process::geteuid().as_raw();
+        let gid = rustix::process::getegid().as_raw();
+        for destination in [&existing, &hardlink, &link, &source] {
+            assert!(copy_private_kernel(&source, destination, uid, gid).is_err());
+        }
+        for invalid_source in [&linked_source, directory.path()] {
+            assert!(copy_private_kernel(invalid_source, &fresh, uid, gid).is_err());
+            assert!(!fresh.exists());
+        }
+        assert_eq!(fs::read(&existing).unwrap(), b"foreign bytes");
+        assert_eq!(fs::read(&source).unwrap(), b"cached kernel");
+        assert_eq!(fs::metadata(&source).unwrap().mode() & 0o7777, 0o400);
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires root on isolated Linux to verify a distinct jailer guest uid/gid"]
+    fn private_kernel_is_readable_after_the_exact_jailer_credentials_are_dropped() {
+        use std::os::unix::process::CommandExt;
+
+        assert_eq!(rustix::process::geteuid().as_raw(), 0);
+        let directory = tempfile::tempdir().unwrap();
+        // The test's executable needs traversal only; production has the
+        // original jailer's chroot, not an exposed template parent.
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o711)).unwrap();
+        let source = directory.path().join("template");
+        let destination = directory.path().join("vmlinux");
+        fs::write(&source, b"cached kernel").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o400)).unwrap();
+        let original = fs::metadata(&source).unwrap();
+        let uid = 3_100_000;
+        let gid = 3_100_001;
+
+        copy_private_kernel(&source, &destination, uid, gid).unwrap();
+
+        let copied = fs::metadata(&destination).unwrap();
+        assert_eq!((copied.uid(), copied.gid()), (uid, gid));
+        assert_eq!(copied.mode() & 0o7777, 0o400);
+        let result = Command::new("/bin/cat")
+            .arg(&destination)
+            .uid(uid)
+            .gid(gid)
+            .output()
+            .unwrap();
+        assert!(result.status.success());
+        assert_eq!(result.stdout, b"cached kernel");
+        let refused = Command::new("/bin/cat")
+            .arg(&source)
+            .uid(uid)
+            .gid(gid)
+            .output()
+            .unwrap();
+        assert!(!refused.status.success());
+        assert_eq!(fs::metadata(&source).unwrap().uid(), original.uid());
+        assert_eq!(fs::metadata(&source).unwrap().mode(), original.mode());
+        assert_eq!(fs::read(&source).unwrap(), b"cached kernel");
     }
 
     #[test]
