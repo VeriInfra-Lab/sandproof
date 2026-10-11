@@ -156,7 +156,7 @@ impl LifecycleResponse {
                     max_end_at_ms,
                 },
             ) => {
-                started_at_ms <= request.create.startup_deadline_ms
+                started_at_ms < request.create.startup_deadline_ms
                     && started_at_ms.checked_add(request.create.timeout_ms) == Some(end_at_ms)
                     && started_at_ms.checked_add(request.create.max_lifetime_ms)
                         == Some(max_end_at_ms)
