@@ -243,15 +243,19 @@ def run(args):
             wait_file(root / "tls/listening", host, 60)
             center = launch(binary, "center", center_root / "config.json", center_output, uid=65534)
             children.append(center)
+            create_started = time.monotonic()
             wait_file(center_root / "ready.json", center, 180)
+            report["create_to_ready_seconds"] = round(time.monotonic() - create_started, 3)
             os.environ["SANDPROOF_TEST_EVIDENCE_ROOT"] = str(root)
             record_resource_identity("sb-" + settings["namespace"] + "-1")
             os.environ.pop("SANDPROOF_TEST_EVIDENCE_ROOT", None)
             report["live_identity"] = "exact PID/start ticks/UID/network identity observed"
             write_once(center_root / "release", {})
             os.chown(center_root / "release", 65534, 65534)
+            destroy_started = time.monotonic()
             if center.wait(timeout=180) != 0:
                 raise RuntimeError("center create/destroy assertions failed")
+            report["destroy_to_cleaned_seconds"] = round(time.monotonic() - destroy_started, 3)
             wait_file(root / "tls/cleaned", host, 15)
             if host.wait(timeout=15) != 0:
                 raise RuntimeError("original host failed after cleanup")
