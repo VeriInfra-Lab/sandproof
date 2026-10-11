@@ -54,7 +54,6 @@ fn capture_empty_cleanup(
     assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
     cleaned
 }
-
 #[tokio::test]
 async fn actual_https_records_original_journal_and_replays_after_reopen() {
     let dir = tempfile::tempdir().unwrap();
