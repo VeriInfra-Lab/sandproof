@@ -25,7 +25,7 @@ class CenterHostFaultsTests(unittest.TestCase):
             control_cpu_allowance=1,cpu_headroom=1,
             control_memory_allowance_bytes=2*1024**3,memory_headroom_bytes=2*1024**3))))
         profile.chmod(0o600)
-        self.args=argparse.Namespace(run_identity='exact-test-01234567',rounds=16,wait_seconds=90,
+        self.args=argparse.Namespace(run_identity='exact-test-01234567',rounds=6,wait_seconds=90,
             stale_probe_sha256='a'*64,uid_base=2000,run_root=self.root/'run',
             scratch_parent=self.root,service_cgroup_record=self.root/'run/service-cgroup.json',
             cgroup_parent=Path('/fixed/vms'),service_cgroup_parent=Path('/fixed/services'),
@@ -43,7 +43,7 @@ class CenterHostFaultsTests(unittest.TestCase):
 
     def test_only_original_finite_service_budget_is_forwarded_not_a_second_capacity_policy(self):
         self.assertEqual(self.validate(),dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
-        for name,value in (('rounds',True),('rounds',5),('rounds',17),('wait_seconds',1),
+        for name,value in (('rounds',True),('rounds',5),('rounds',7),('rounds',17),('wait_seconds',1),
                            ('wait_seconds',121),('run_identity','../unknown'),('stale_probe_sha256','bad')):
             original=getattr(self.args,name)
             setattr(self.args,name,value)

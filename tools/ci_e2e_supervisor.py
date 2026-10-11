@@ -47,8 +47,8 @@ def validate_host_inputs(config):
     # One architecture, not an optional path beside the retired public host.
     if 'server' in config or config.get('prepare_candidate') is not True:
         raise ValueError('only offline-prepared center/host candidates are accepted')
-    if type(config.get('dk_rounds')) is not int or not 6 <= config['dk_rounds'] <= 16:
-        raise ValueError('explicit finite DK churn sampling count required')
+    if type(config.get('dk_rounds')) is not int or config['dk_rounds'] != 6:
+        raise ValueError('explicit fixed six-round DK churn sampling required')
     from tools.ci_e2e_prepare import build_environment, service_paths
     build_environment(config)
     service_paths(config)

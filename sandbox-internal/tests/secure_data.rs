@@ -217,7 +217,7 @@ async fn command_stream_survives_management_deadline_and_keeps_bounded_socket_le
     );
     // A long stream does not make management unavailable when a slot is reserved.
     let probe = ProbeRequest {
-        protocol_version: 1,
+        protocol_version: sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION,
         node: wire::node("host-a"),
         request_id: "probe-while-streaming".try_into().unwrap(),
     };

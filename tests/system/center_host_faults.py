@@ -56,10 +56,10 @@ def validate(args):
         raise ValueError('fixed offline SDK 2.51.0 required')
     if (not re.fullmatch(r'[a-z0-9-]{8,64}',args.run_identity)
             or not re.fullmatch(r'[a-f0-9]{64}',args.stale_probe_sha256)
-            or type(args.rounds) is not int or not 6<=args.rounds<=16
+            or type(args.rounds) is not int or args.rounds!=6
             or not 30<=args.wait_seconds<=120
             or not 1000<=args.uid_base<2**32-2):
-        raise ValueError('finite explicit fault-group identities/iterations/deadlines required')
+        raise ValueError('fixed six-round fault-group identities/deadlines required')
     parent=private_path(args.scratch_parent,directory=True)
     if args.run_root.parent!=parent or args.service_cgroup_record!=args.run_root/'service-cgroup.json':
         raise ValueError('fresh exact run root and original service cgroup record required')

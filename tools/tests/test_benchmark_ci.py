@@ -465,7 +465,7 @@ class BenchmarkCITests(unittest.TestCase):
             cgroup_parent='/sys/fs/cgroup/runtime', build_cgroup_parent='/sys/fs/cgroup/builder',
             service_cgroup_parent='/sys/fs/cgroup/control', prepare_candidate=True,
             redis_material='/approved-fixed-redis', center_uid=65532, center_gid=65532,
-            redis_uid=65533, redis_gid=65533, dk_rounds=16)
+            redis_uid=65533, redis_gid=65533, dk_rounds=6)
         for key in ('cargo_home','uv_cache','rustup_home','cargo_target','toolchain_bin'):
             path = self.root / key
             path.mkdir(mode=0o700, exist_ok=True)
@@ -501,7 +501,7 @@ class BenchmarkCITests(unittest.TestCase):
         with patch.object(ci, 'trusted_path', side_effect=lambda path:path), patch.object(ci, 'redis_material'):
             ci.validate_host_inputs(config)  # Prepared mode needs no proxy binary.
             for changed in (dict(config, ci_fixtures=None), dict(config, source_kind='oci'),
-                            *[dict(config, dk_rounds=value) for value in (None, 0, True, 1.5, 5, 17)],
+                            *[dict(config, dk_rounds=value) for value in (None, 0, True, 1.5, 5, 7, 16)],
                             dict(config, prepared_ci_disk_budget_bytes=None),
                             dict(config, prepared_ci_disk_budget_bytes=True),
                             dict(config, prepared_ci_disk_budget_bytes=201 * 1024**3),

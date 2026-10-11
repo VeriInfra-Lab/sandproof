@@ -506,7 +506,11 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
                         assert lane['retired_through'] == survivor_identity['request_window']-1
                 return terminal
             assert time.monotonic()<deadline,'original exact terminal slot did not retire on both authorities'
-            time.sleep(.1)
+            # Give the ORIGINAL instances a complete background scan between
+            # offline audits. Repeated short restarts can starve retirement.
+            time.sleep(max(settings['expiry_scan_seconds'],
+                services.center_config['expiry_scan_ms']/1000,
+                services.center_config['poll_interval_ms']/1000)+.1)
 
     try:
         sampler.thread.start()
