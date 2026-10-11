@@ -1011,6 +1011,8 @@ dependencies = [
  "sandproof-controller-service",
  "sandproof-internal",
  "sandproof-protocol",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
 ]

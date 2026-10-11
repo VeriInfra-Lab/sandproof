@@ -19,4 +19,4 @@ cargo test --locked -p sandproof-controller-service internal_inbox
 cargo clippy --locked -p sandproof-center-store --all-targets --all-features -- -D warnings
 cargo test --locked -p sandproof-center-store --features redis-tests --all-targets
 echo "Internal identity/lifecycle HTTPS, pure center decisions, Redis dispatch boundary, original SQLite atomic local admission/termination and fact projection component tests passed."
-echo "Production application execution assembly, result retirement, public SDK routing and KVM were NOT tested."
+echo "Original application create/destroy/recovery assembly is exercised with controlled host effects; production startup/renewal/retirement/public SDK routing and KVM were NOT tested."

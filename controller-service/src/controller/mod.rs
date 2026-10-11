@@ -23,7 +23,7 @@ mod identity;
 mod internal_inbox;
 pub use internal_inbox::{
     InternalAdmission, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
-    InternalTemplate,
+    InternalTemplate, InternalWorkState,
 };
 mod private_build;
 mod registry;
