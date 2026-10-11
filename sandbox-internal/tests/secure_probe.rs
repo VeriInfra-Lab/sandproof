@@ -25,6 +25,8 @@ use tokio_rustls::{TlsAcceptor, TlsConnector, client::TlsStream};
 #[path = "support/tls.rs"]
 mod tls_fixture;
 use tls_fixture::*;
+#[path = "support/lifecycle_cases.rs"]
+mod lifecycle_cases;
 
 fn node() -> NodeIdentity {
     NodeIdentity {
@@ -311,7 +313,7 @@ async fn receiving_boundary_rejects_old_generation_wrong_binding_and_version() {
 }
 
 #[tokio::test]
-async fn only_bounded_read_only_json_probe_is_exposed() {
+async fn probe_rejects_unlisted_paths_methods_and_malformed_wire() {
     let certs = certificates();
     let running = start(&certs, limits()).await;
     let body = Bytes::from(serde_json::to_vec(&request()).unwrap());

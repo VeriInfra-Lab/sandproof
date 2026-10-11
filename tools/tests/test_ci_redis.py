@@ -1,6 +1,10 @@
 import copy
 import json
 import os
+import re
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 import tempfile
 import unittest
@@ -71,3 +75,30 @@ class CiRedisMaterialTests(unittest.TestCase):
                 with self.subTest(path=path), self.assertRaises(ValueError):
                     redis.seal(path)
             check.assert_not_called()
+
+
+class CiDistributedWorkflowTests(unittest.TestCase):
+    def test_sealed_engine_gate_fails_before_component_entry_and_runs_offline(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/function-ci.yml').read_text()
+        blocks = re.findall(r'        run: \|\n((?:          [^\n]*\n)+)', workflow)
+        blocks = [block for block in blocks if 'check-distributed-contract.sh' in block]
+        self.assertEqual(len(blocks), 1)
+        for status in (0, 2):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                program = directory / 'python3'
+                program.write_text('#!/bin/sh\nprintf "%s\\n" /usr/local/lib/sandproof-ci/redis-7.2.16/redis-server\nexit ' + str(status) + '\n')
+                program.chmod(0o700)
+                entry = directory / 'called.json'
+                program = directory / 'bash'
+                program.write_text('#!' + sys.executable + '\nimport json,os,sys\nfrom pathlib import Path\nPath(os.environ["CI_REDIS_TEST_ENTRY"]).write_text(json.dumps([sys.argv[1:],os.environ.get("SANDPROOF_REDIS_SERVER"),os.environ.get("CARGO_NET_OFFLINE")]))\n')
+                program.chmod(0o700)
+                env = os.environ | {'PATH': temporary + os.pathsep + os.environ['PATH'], 'CI_REDIS_TEST_ENTRY': str(entry)}
+                result = subprocess.run(['/bin/bash', '-e', '-o', 'pipefail', '-c', textwrap.dedent(blocks[0])], env=env, capture_output=True, text=True, timeout=10)
+                if status:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(entry.exists())
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(json.loads(entry.read_text()), [['scripts/check-distributed-contract.sh'], str(redis.INSTALLED / 'redis-server'), 'true'])

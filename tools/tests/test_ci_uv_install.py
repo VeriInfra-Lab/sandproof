@@ -99,6 +99,7 @@ class CiUvWorkflowTests(unittest.TestCase):
     def test_both_jobs_use_preinstalled_version_gate_and_original_locked_entry(self):
         workflow = (ROOT / '.github/workflows/function-ci.yml').read_text()
         blocks = re.findall(r'        run: \|\n((?:          [^\n]*\n)+)', workflow)
+        blocks = [block for block in blocks if 'uv_version=' in block]
         self.assertEqual(len(blocks), 2)
         self.assertNotIn('uv-bootstrap', workflow)
         self.assertNotIn('pip install', workflow)
