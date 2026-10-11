@@ -15,7 +15,9 @@ from unittest.mock import patch
 from tools.bounded_acceptance import (
     acceptance_disk_budgets, acceptance_pool_disk_budget, bounded_acceptance_layout, require_bounded_host_tools,
     wait_private_build_window, provision_acceptance_coordination, validate_acceptance_socket_paths,
+    prepared_ci_physical_profile, prepared_ci_runtime_configuration,
 )
+from tools.template_physical_storage import envelope
 from tools.template_build_config import apply_acceptance_build_policy
 from tools.template_build_service import configuration
 from tools.template_build_store import BuildStore
@@ -174,6 +176,83 @@ class AcceptanceDiskBudgetTests(unittest.TestCase):
             Path(service[role + '_config']).write_text(json.dumps(deployment[role]))
         self.service.write_text(json.dumps(service))
         configuration(self.service, require_physical_lease=False)
+
+
+class PreparedCIDiskBudgetTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.service, self.policy, self.original, _ = service_fixture(self.root)
+        cfg = json.loads(self.service.read_text())
+        self.runtime = json.loads(Path(cfg['runtime_config']).read_text())
+        self.runtime['templates']['templates'] = [{
+            'template_id': 'ci-fixed', 'kernel': {'path': str(self.root / 'kernel'), 'size_bytes': 64 * MIB},
+            'rootfs': {'path': str(self.root / 'ci.ext4'), 'size_bytes': 10 * GIB},
+            'resources': {'cpu_count': 1, 'memory_mib': 2048, 'disk_bytes': 10 * GIB}}]
+
+    def profile(self, **changes):
+        return prepared_ci_physical_profile(self.policy, **({'kernel_bytes': 64 * MIB,
+            'runtime_bytes': MIB, 'disk_budget_bytes': 200 * GIB} | changes))
+
+    def test_runtime_only_keeps_full_cleanup_and_twice_envelope_under_200_gib(self):
+        original = copy.deepcopy(self.policy)
+        profile = self.profile()
+        self.assertEqual(self.policy, original)
+        self.assertIsNone(profile['public_build'])
+        self.assertEqual([p['role'] for p in profile['pools']], ['runtime'])
+        for field in ('rootfs_budget_bytes', 'cleanup_reserve_bytes', 'host_metadata_bytes',
+                      'host_metadata_inodes', 'max_host_slots', 'jail_inodes_per_slot'):
+            self.assertEqual(profile['pools'][0][field], self.original['pools'][0][field])
+        peak, _ = envelope(profile)
+        self.assertLessEqual(2 * peak, 200 * GIB)
+        self.assertEqual(self.profile(disk_budget_bytes=2 * peak), profile)
+        with self.assertRaisesRegex(ValueError, 'exceeds disk ceiling'):
+            self.profile(disk_budget_bytes=2 * peak - 1)
+
+    def test_invalid_ceiling_artifacts_and_oversized_runtime_are_rejected(self):
+        for value in (None, True, 0, 201 * GIB):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.profile(disk_budget_bytes=value)
+        for field, value in (('kernel_bytes', True), ('kernel_bytes', 21 * GIB),
+                             ('runtime_bytes', 0), ('runtime_bytes', 2 * MIB)):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.profile(**{field: value})
+        for role in ('runtime', 'builder'):
+            self.policy[role]['bounded_host']['physical_storage']['pools'][0]['rootfs_budget_bytes'] = 101 * GIB
+        with self.assertRaisesRegex(ValueError, 'exceeds disk ceiling'):
+            self.profile()
+
+    def test_static_configuration_has_no_registry_and_preserves_original_task_resources(self):
+        original = copy.deepcopy(self.runtime)
+        profile = self.profile()
+        result = prepared_ci_runtime_configuration(self.runtime, self.policy, profile)
+        self.assertEqual(self.runtime, original)
+        self.assertNotIn('template_registry', result)
+        self.assertNotIn('internal_build_vms', result)
+        self.assertNotIn('build_retry_windows', result)
+        self.assertEqual(result['templates']['templates'], original['templates']['templates'])
+        self.assertEqual(result['data_transfer'], original['data_transfer'])
+        self.assertEqual(result['bounded_host']['physical_storage'], profile)
+        self.assertEqual((result['vcpu_count'], result['memory_mib']), (1, 2048))
+        self.assertEqual(result['rootfs'], str(self.root / 'ci.ext4'))
+
+    def test_foreign_layout_fallback_or_oversized_template_is_not_registered(self):
+        profile = self.profile()
+        for change in ('fallback', 'empty', 'layout', 'disk', 'kernel'):
+            settings = copy.deepcopy(self.runtime)
+            if change == 'fallback':
+                settings['templates']['templates'][0]['template_id'] = 'runtime-base'
+            elif change == 'empty':
+                settings['templates']['templates'] = []
+            elif change == 'layout':
+                settings['namespace'] = 'f' * 16
+            else:
+                field = 'rootfs_budget_bytes' if change == 'disk' else 'kernel_copy_bytes'
+                artifact = 'rootfs' if change == 'disk' else 'kernel'
+                settings['templates']['templates'][0][artifact]['size_bytes'] = profile['pools'][0][field] + 1
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                prepared_ci_runtime_configuration(settings, self.policy, profile)
 
 
 class PrivateBuildWindowObservationTests(unittest.TestCase):
