@@ -249,6 +249,13 @@ def run(args):
             os.environ["SANDPROOF_TEST_EVIDENCE_ROOT"] = str(root)
             record_resource_identity("sb-" + settings["namespace"] + "-1")
             os.environ.pop("SANDPROOF_TEST_EVIDENCE_ROOT", None)
+            evidence = json_file(root / "resource-evidence" / ("sb-" + settings["namespace"] + "-1.json"))
+            process = Path("/proc") / str(evidence["record"]["pid"])
+            if digest(process / "exe") != installed["host_assets"][installed["firecracker"]]:
+                raise RuntimeError("live VM executable differs from approved Firecracker")
+            if os.readlink(process / "ns/net") != f"net:[{evidence['network']['namespace_inode']}]":
+                raise RuntimeError("live VM network namespace differs from recorded identity")
+            report["vm_executable"] = "approved Firecracker SHA-256 matched"
             report["live_identity"] = "exact PID/start ticks/UID/network identity observed"
             write_once(center_root / "release", {})
             os.chown(center_root / "release", 65534, 65534)
