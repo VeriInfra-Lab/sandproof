@@ -979,6 +979,7 @@ dependencies = [
  "sandproof-controller-service",
  "sandproof-host-service",
  "sandproof-internal",
+ "sandproof-node",
  "sandproof-protocol",
  "serde",
  "serde_json",
