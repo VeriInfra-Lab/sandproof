@@ -1,9 +1,11 @@
 """Pure mandatory-DK launcher/identity checks; never a DK or KVM pass."""
 import argparse
 import copy
+from contextlib import contextmanager, ExitStack
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -80,6 +82,93 @@ class CenterHostFaultsTests(unittest.TestCase):
             runner.bootstrap(self.args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
         prepare.assert_not_called()
         self.assertEqual(marker.read_text(),'retain')
+
+    @contextmanager
+    def bootstrap_dependencies(self,args,outcome,*,proof_bad=False,cleanup_busy=False):
+        """Synthetic process/receipt fixtures; no host or cleanup proof is made."""
+        process=Mock()
+        if isinstance(outcome,BaseException):
+            process.wait.side_effect=outcome
+        elif isinstance(outcome,list):
+            process.wait.side_effect=outcome
+        else:
+            process.wait.return_value=outcome
+        execution=dict(run_id=args.run_identity,candidate_manifest_sha256='a'*64)
+        report=dict(services=dict(candidate='b'*40),execution_manifest=execution,service_processes={},
+            dk=dict(schema_version=1,candidate='b'*40,execution_manifest_sha256='a'*64,
+                cases=[dict(id='DK0'+str(index),status='pass',exact_cleanup='passed',
+                    execution_manifest_sha256='a'*64,evidence_sha256='c'*64) for index in range(1,7)]))
+        if proof_bad:
+            report['dk']['cases'].pop()
+        def prepare(_parent,_name,record,**_budget):
+            runner.write_once(record,dict(exact='original-receipt'))
+        def read(path,**_limits):
+            return report if Path(path).name=='report.json' else execution
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(runner,'private_path',side_effect=lambda path,**_:Path(path)))
+            stack.enter_context(patch.object(runner,'digest',return_value='a'*64))
+            stack.enter_context(patch.object(runner,'json_file',side_effect=read))
+            stack.enter_context(patch.object(runner.service_cgroup,'prepare',side_effect=prepare))
+            stack.enter_context(patch.object(runner.service_cgroup,'prefix',return_value=[]))
+            removed=stack.enter_context(patch.object(runner.service_cgroup,'remove',return_value=dict(removed=True)))
+            if cleanup_busy:
+                removed.side_effect=ValueError('original live member')
+            stack.enter_context(patch.object(runner.subprocess,'Popen',return_value=process))
+            stack.enter_context(patch.object(runner.ci_e2e_artifacts,'require_service_boundary'))
+            stack.enter_context(patch.object(runner.ci_e2e_artifacts,'require_execution_manifest',return_value=execution))
+            stack.enter_context(patch.object(runner.ci_e2e_artifacts,'require_process_evidence'))
+            yield process,removed,report
+
+    def bootstrap_args(self,name):
+        args=copy.copy(self.args)
+        args.run_root=self.root/name
+        args.service_cgroup_record=args.run_root/'service-cgroup.json'
+        return args
+
+    def test_failed_or_unknown_worker_exit_preserves_original_leaf_receipt(self):
+        for index,outcome in enumerate((1,None,True)):
+            args=self.bootstrap_args('failed-'+str(index))
+            with self.subTest(outcome=outcome),self.bootstrap_dependencies(args,outcome) as (_,removed,_), \
+                    self.assertRaises(RuntimeError):
+                runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
+            removed.assert_not_called()
+            self.assertEqual(json.loads(args.service_cgroup_record.read_text()),dict(exact='original-receipt'))
+            self.assertFalse((args.run_root/'service-cleanup.json').exists())
+
+    def test_cancel_or_deadline_never_removes_unknown_original_recovery_identity(self):
+        for name,outcome,error in (
+            ('cancelled',KeyboardInterrupt(),KeyboardInterrupt),
+            ('deadline',[subprocess.TimeoutExpired(['owned-worker'],7200),0],subprocess.TimeoutExpired)):
+            args=self.bootstrap_args(name)
+            with self.subTest(name=name),self.bootstrap_dependencies(args,outcome) as (process,removed,_), \
+                    self.assertRaises(error):
+                runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
+            removed.assert_not_called()
+            self.assertTrue(args.service_cgroup_record.exists())
+            self.assertFalse((args.run_root/'service-cleanup.json').exists())
+            if name=='deadline':
+                process.terminate.assert_called_once()
+
+    def test_missing_mandatory_success_proof_cannot_remove_an_empty_service_leaf(self):
+        args=self.bootstrap_args('bad-proof')
+        with self.bootstrap_dependencies(args,0,proof_bad=True) as (_,removed,_),self.assertRaises(ValueError):
+            runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
+        removed.assert_not_called()
+        self.assertTrue(args.service_cgroup_record.exists())
+        self.assertFalse((args.run_root/'service-cleanup.json').exists())
+
+    def test_complete_success_alone_uses_original_exact_remove_and_publishes_receipt(self):
+        args=self.bootstrap_args('success')
+        with self.bootstrap_dependencies(args,0) as (_,removed,report):
+            result=runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
+        self.assertEqual(result,report)
+        removed.assert_called_once_with(args.service_cgroup_record)
+        self.assertEqual(json.loads((args.run_root/'service-cleanup.json').read_text()),dict(removed=True))
+        args=self.bootstrap_args('live-member')
+        with self.bootstrap_dependencies(args,0,cleanup_busy=True) as (_,removed,_),self.assertRaises(ValueError):
+            runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
+        removed.assert_called_once_with(args.service_cgroup_record)
+        self.assertFalse((args.run_root/'service-cleanup.json').exists())
 
     def test_fixed_relay_destinations_cannot_be_urls_ipv6_or_another_host(self):
         self.assertEqual(harness.tuple_address('127.0.0.1:1234'),('127.0.0.1',1234))

@@ -116,14 +116,27 @@ def bootstrap(args, argv, budget):
             raise
     if (args.run_root/'dk-worker.log').stat().st_size>64*1024:
         raise ValueError('bounded fault-worker evidence output exceeded')
-    # Never kill descendants or adopt a leaf after uncertain worker exit.
-    # Exact original leaf removal independently fails if anything survives.
+    # A failed/unknown worker may have left a real VM in its separate native
+    # cgroup. Preserve this exact service leaf/receipt so the original role
+    # entries can be restarted for recovery; empty service membership alone
+    # is not the original VM's terminal evidence.
+    if type(code) is not int or code!=0:
+        raise RuntimeError('mandatory fault group failed or unknown; retain original recovery identity')
+    report=json_file(private_path(args.run_root/'report.json'),limit=4*1024**2)
+    manifest=json_file(private_path(args.candidate_manifest),limit=16384)
+    ci_e2e_artifacts.require_service_boundary(report,manifest)
+    execution=ci_e2e_artifacts.require_execution_manifest(report.get('execution_manifest'),manifest,
+        expected=json_file(private_path(args.run_root/'execution-manifest.json'),limit=32768))
+    ci_e2e_artifacts.require_process_evidence(report.get('service_processes'),execution)
+    ci_e2e_artifacts.require_dk(report['dk'],candidate=report['services']['candidate'])
+    if (execution['run_id']!=args.run_identity
+            or execution['candidate_manifest_sha256']!=digest(args.candidate_manifest)
+            or report['dk']['execution_manifest_sha256']!=digest(args.run_root/'execution-manifest.json')):
+        raise ValueError('successful DK does not bind the original execution/candidate receipts')
+    # Only complete original success evidence permits removing this leaf;
+    # the original primitive still independently refuses any live descendant.
     cleanup=service_cgroup.remove(args.service_cgroup_record)
     write_once(args.run_root/'service-cleanup.json',cleanup)
-    if code!=0:
-        raise RuntimeError('mandatory fault group failed; no Harbor launch permitted')
-    report=json_file(private_path(args.run_root/'report.json'),limit=4*1024**2)
-    ci_e2e_artifacts.require_dk(report['dk'],candidate=report['services']['candidate'])
     return report
 
 

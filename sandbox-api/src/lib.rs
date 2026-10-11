@@ -348,7 +348,7 @@ async fn create<P: ControllerPort>(
     let tenant = authenticate(&state, &headers)?;
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
     // Parse the pinned SDK's address-only policy before any host effect. The
-    // managed port separately checks host readiness before durable admission.
+    // trusted port separately checks current readiness before durable admission.
     if request.template_id.is_empty()
         || request.template_id.len() > 64
         || !request

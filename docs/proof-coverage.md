@@ -22,13 +22,13 @@
 
 SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密码学原语有明确外部合同；**自有检查次序、见证构造、互斥、恢复、事务连接和授权决定不是外部可信假设**。这些仍需分层对应证明与系统测试。
 
-#262 的接口整理将宿主与数据连接合同及排空/子进程持有者移入 `controller-service/src/application`，网关经 `DataAccessPort` 调用；实际授权、生命周期、恢复和维护编排已迁入 `controller-service/src/application/coordinator`，HTTP 请求与序列化仅留在 `sandbox-api/src/managed.rs`。应用查询使用数值时间与普通选择条件，SDK 时间/令牌编码不混入控制服务；模板编排单独组织但仍排除证明。此搬迁及可注入可信时钟没有改变纯核心或生成证明，新增应用代码尚无对应证明，不能用旧定理背书新模块。宿主端口已按能力拆分，生产实现位于 `sandbox-node/src/adapter.rs`，物理配置租约位于 `sandbox-node/src/physical_profile.rs`；恢复与执行只共享证据类型，仍须分别证明调用资格、未知观察和回执连接。模块搬迁没有新增 Lean 对应证明。后续对应证明须连接端口调用与原管理锁内的派发重检，以及 `TrackedRelayChild` 的确切回收/未知退出责任；还须证明各检查点读取时钟及同一互斥对象内持久决定/宿主派发/撤销/排空的组合；不能把一次时间快照代替执行后与派发前复核。系统时钟的可信性属于外部前提，应用端口不是可以整体假定正确的授权器。
+#262 的接口整理将宿主与数据连接合同及排空/子进程持有者移入 `controller-service/src/application`，网关经 `DataAccessPort` 调用；实际授权、生命周期、恢复和维护编排已迁入 `controller-service/src/application/coordinator`。该基线的本地 HTTP 适配目前仅保留在 `sandbox-api/tests/support/managed.rs` 作为组件夹具，生产 SDK 转换由 `sandbox-api` 的唯一解析/投影与中心 `CenterPort` 连接，不再存在 `sandbox-api/src/managed.rs` 生产模块。应用查询使用数值时间与普通选择条件，SDK 时间/令牌编码不混入控制服务；模板编排单独组织但仍排除证明。此搬迁及可注入可信时钟没有改变纯核心或生成证明，新增应用代码尚无对应证明，不能用旧定理背书新模块。宿主端口已按能力拆分，生产实现位于 `sandbox-node/src/adapter.rs`，物理配置租约位于 `sandbox-node/src/physical_profile.rs`；恢复与执行只共享证据类型，仍须分别证明调用资格、未知观察和回执连接。模块搬迁没有新增 Lean 对应证明。后续对应证明须连接端口调用与原管理锁内的派发重检，以及 `TrackedRelayChild` 的确切回收/未知退出责任；还须证明各检查点读取时钟及同一互斥对象内持久决定/宿主派发/撤销/排空的组合；不能把一次时间快照代替执行后与派发前复核。系统时钟的可信性属于外部前提，应用端口不是可以整体假定正确的授权器。
 
 节点的值判断现集中于 `sandbox-node/src/linux/decisions.rs`（动作字段、资源映射、围栏、槽位坐标、进程身份及命令证据），现场读取在 `identity`/`observation`，执行和补偿在 `execution`/`recovery`，位置退休与精确释放仍由 `host_slots.rs` 负责。纯比较不是授权证书：操作/owner/物理位置核验和原锁内的现场读取顺序仍须连接证明。同步子进程统一使用 `sandbox-runtime::OwnedChild`，异步中继仍独立承担持久身份与排空责任；本次整理未运行抽取或新增 Lean 证明。
 
 ## 中心与系统组合：工程实现与待证明连接
 
-目标与故障模型见[验证设计](formal-verification-design.md)，端口语义见[模块合同](module-contracts.md)。#292 复用原本地算法，新增纯中心决策、Redis 单块协调、宿主持久收件和两端网关；结果确认、有限节点窗口及原 SQLite 高级入口已有工程实现。唯一中心/宿主产品入口、模板和 CI 正在统一迁移，完整故障与晋升验收以该候选实际结果为准。以下是证明任务分解，不是新代码已有证明。#277 固定设计，#101 跟踪交付；实际证明批次须冻结同一组合提交。
+目标与故障模型见[验证设计](formal-verification-design.md)，端口语义见[模块合同](module-contracts.md)。#292 复用原本地算法，新增纯中心决策、Redis 单块协调、宿主持久收件和两端网关；结果确认、逐实例保留位置及代次退休、原 SQLite 高级入口已有工程实现。唯一中心/宿主产品入口、模板和 CI 正在统一迁移，完整故障与晋升验收以该候选实际结果为准。以下是证明任务分解，不是新代码已有证明。#277 固定设计，#101 跟踪交付；实际证明批次须冻结同一组合提交。
 
 | 工作包 | 待交付连接 | 当前证明状态 |
 |---|---|---|
