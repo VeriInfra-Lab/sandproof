@@ -110,12 +110,12 @@ def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressu
             'original_verifier': True, 'original_oracle_verifier': oracle_mode == 'original'}
 
 
-def observe_service_resources(binary, service_record, pids, samples, output, *, bounded, minimum_relays=0):
+def observe_service_resources(binary, service_record, pids, samples, output, *, minimum_relays=0):
     """Observe the configured relay protocol inside the original service budget."""
     snapshot = service_cgroup.observe(service_record, pids=pids)
     if snapshot['memory_events'].get('oom_kill', 0):
         raise RuntimeError('service cgroup OOM; retain original identities for recovery')
-    relay_mode = b'relay-bounded' if bounded else b'relay'
+    relay_mode = b'relay'
     relays = []
     for pid in snapshot['pids']:
         try:
@@ -374,7 +374,7 @@ def exercise(args):
         if any(p.poll() is not None for p in processes):
             raise RuntimeError('service exited; retain original resources for recovery')
         return observe_service_resources(binary, service_record, [p.pid for p in processes],
-            service_samples, root / 'service-resources.json', bounded=True,
+            service_samples, root / 'service-resources.json',
             minimum_relays=minimum_relays)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True

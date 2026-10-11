@@ -22,7 +22,7 @@ class ServiceRelayObservationTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.children = {}
-        for mode in ('relay', 'relay-bounded'):
+        for mode in ('relay', 'unrelated'):
             (self.root / mode).write_text("import sys\nprint('ready', flush=True)\nsys.stdin.read()\n")
             child = subprocess.Popen([sys.executable, mode], cwd=self.root,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -48,19 +48,18 @@ class ServiceRelayObservationTests(unittest.TestCase):
         self.assertTrue(set(pids) <= {p.pid for p in self.children.values()})
         return {'pids': [p.pid for p in self.children.values()], 'memory_events': {'oom_kill': 0}}
 
-    def observe(self, *, bounded=True, binary=None):
+    def observe(self, *, binary=None):
         return chain.observe_service_resources(binary or Path(sys.executable), self.root / 'service.json',
-            [], self.samples, self.output, bounded=bounded, minimum_relays=1)
+            [], self.samples, self.output, minimum_relays=1)
 
     def test_counts_only_the_configured_protocol_from_actual_child_cmdlines(self):
-        for bounded, mode in ((True, 'relay-bounded'), (False, 'relay')):
-            with self.subTest(bounded=bounded), patch.object(chain.service_cgroup, 'observe', self.snapshot):
-                result = self.observe(bounded=bounded)
-                expected = self.children[mode].pid
-                self.assertEqual(result['relay_mode'], mode)
-                self.assertEqual(result['relays'], [{'pid': expected,
-                    'start_time_ticks': chain.process_start_ticks(expected)}])
-                self.assertEqual(json.loads(self.output.read_text())[-1], result)
+        with patch.object(chain.service_cgroup, 'observe', self.snapshot):
+            result = self.observe()
+            expected = self.children['relay'].pid
+            self.assertEqual(result['relay_mode'], 'relay')
+            self.assertEqual(result['relays'], [{'pid': expected,
+                'start_time_ticks': chain.process_start_ticks(expected)}])
+            self.assertEqual(json.loads(self.output.read_text())[-1], result)
 
     def test_same_mode_from_another_executable_does_not_count_and_failure_is_saved(self):
         with patch.object(chain.service_cgroup, 'observe', self.snapshot):
@@ -83,7 +82,7 @@ class ServiceRelayObservationTests(unittest.TestCase):
         def ticks(pid):
             nonlocal calls
             value = original(pid)
-            if pid == self.children['relay-bounded'].pid:
+            if pid == self.children['relay'].pid:
                 calls += 1
                 return value + (calls - 1)
             return value

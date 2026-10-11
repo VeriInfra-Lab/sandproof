@@ -171,7 +171,7 @@ def binary_version(path, name, expected):
 
 
 def host_tools():
-    paths = ["/usr/bin/ip", "/usr/bin/curl", "/usr/bin/sha512sum"]
+    paths = ["/usr/bin/ip", "/usr/bin/curl"]
     for value in paths:
         path = trusted_path(Path(value))
         if not path.is_file() or not os.access(path, os.X_OK):

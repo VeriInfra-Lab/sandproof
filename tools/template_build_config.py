@@ -211,6 +211,11 @@ def apply_acceptance_build_policy(runtime, builder, build, policy):
             raise ValueError("retired max_vm_id configuration is not supported: " + name)
     validate_acceptance_build_policy(policy)
     import copy
+    # Validate prospective settings before changing even the caller's in-memory
+    # inputs. Incomplete physical configuration must not leave a half-applied
+    # acceptance policy that a caller might later serialize or retry.
+    original = (runtime, builder, build)
+    runtime, builder, build = copy.deepcopy(original)
     if __package__:
         from .template_build_store import bounded_configuration
     else:
@@ -229,4 +234,7 @@ def apply_acceptance_build_policy(runtime, builder, build, policy):
     else:
         from template_physical_storage import validate_configuration as validate_physical_configuration
     validate_physical_configuration(runtime, builder, build)
+    for target, checked in zip(original, (runtime, builder, build)):
+        target.clear()
+        target.update(checked)
     return "windowed"
