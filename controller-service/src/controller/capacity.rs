@@ -438,6 +438,9 @@ fn sql_usage(
                 }
                 bytes = add(bytes - length, 20)?;
             }
+            if table == "controller_internal_inbox" {
+                bytes = super::internal_inbox::charged_bytes(row, bytes, cap)?;
+            }
             if table == "controller_host_slots" {
                 continue;
             } // fixed global lease below

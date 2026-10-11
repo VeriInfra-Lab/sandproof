@@ -26,6 +26,7 @@ pub(super) fn validate(
     registry_state(connection, world)?;
     super::super::data_credentials::validate(connection, world, namespace)?;
     super::super::private_build::validate(connection, world, namespace)?;
+    super::super::internal_inbox::validate(connection)?;
     Ok(())
 }
 
@@ -368,10 +369,10 @@ pub(super) fn publication_pins(
         |row| row.get(0),
     )?;
     let tables: i64 = connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('template_publications','template_aliases','template_registry_meta')", [], |row| row.get(0))?;
-    if tables == 0 && version == 11 {
+    if tables == 0 && matches!(version, 11 | 12) {
         return Ok(Vec::new());
     }
-    if version != 10 && version != 11 {
+    if !matches!(version, 10..=12) {
         if !(1..=9).contains(&version) || tables != 0 {
             return Err(JournalError::CorruptStore);
         }

@@ -24,6 +24,315 @@ const MEMORY: u64 = 64 << 20;
 const KEY: &str = "sandproof:authority:fixture-deployment";
 const PASSWORD: &str = "component-fixture-not-a-production-credential";
 
+#[path = "../../sandbox-protocol/tests/support/lifecycle.rs"]
+mod lifecycle_fixture;
+#[path = "../../controller-service/tests/support/complete_fixture.rs"]
+mod local_fixture;
+use sandproof_center_core::{Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget};
+use sandproof_center_store::authority::{AuthorityError, CenterAuthority, LifecycleTransport};
+use sandproof_protocol::internal::lifecycle::{
+    Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
+};
+
+fn center_state() -> CenterState {
+    let node = lifecycle_fixture::node("host-a");
+    CenterState::new(
+        deployment(),
+        Bounds {
+            max_nodes: 1,
+            max_templates_per_node: 16,
+            max_sandboxes: 2,
+            operations_per_sandbox: 3,
+            max_options_bytes: 128,
+            platform: lifecycle_fixture::resources(2),
+        },
+        vec![NodeRegistration {
+            identity: node,
+            limit: lifecycle_fixture::resources(2),
+            mode: NodeMode::Accepting,
+            healthy_until_ms: 2000,
+            free: lifecycle_fixture::resources(2),
+            templates: vec![sandproof_center_core::AvailableTemplate {
+                revision: lifecycle_fixture::binding().template_revision,
+                digest: lifecycle_fixture::binding().template_digest,
+            }],
+            protocol_version: 1,
+        }],
+        vec![TenantBudget {
+            tenant: "1".try_into().unwrap(),
+            limit: lifecycle_fixture::resources(2),
+        }],
+    )
+    .unwrap()
+}
+fn center_authority(fixture: &Engine, address: SocketAddrV4) -> CenterAuthority {
+    let state = center_state();
+    let limit = state.bounds().required_block_bytes();
+    let (ledger, _) = RedisLedger::initialize(
+        endpoint(address),
+        Engine::config(limit),
+        fixture.lease(),
+        &state,
+    )
+    .unwrap();
+    CenterAuthority::attach(ledger).unwrap()
+}
+
+struct InboxTransport<'a>(&'a mut sandproof_controller_service::ControllerJournal);
+impl LifecycleTransport for InboxTransport<'_> {
+    type Error = sandproof_controller_service::JournalError;
+    fn send(&mut self, request: &LifecycleRequest) -> Result<LifecycleResponse, Self::Error> {
+        self.0
+            .record_internal_intent(request, &mut sandproof_controller_service::NeverCrash)
+    }
+}
+
+#[test]
+fn real_redis_commit_dispatch_sqlite_record_and_replay_are_one_identity_not_vm_success() {
+    let fixture = Engine::new();
+    let mut center = center_authority(&fixture, fixture.address);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("host.db");
+    let namespace = "0123456789abcdef";
+    let mut host = sandproof_controller_service::ControllerJournal::open_complete(
+        &path,
+        namespace,
+        local_fixture::host(&path, namespace, 64, 100_000, local_fixture::CLEANUP_BYTES),
+        local_fixture::maintenance(),
+        0,
+    )
+    .unwrap();
+    host.initialize_internal_inbox(
+        sandproof_controller_service::InternalInboxConfig {
+            node: lifecycle_fixture::node("host-a"),
+            max_sandboxes: 2,
+            operations_per_sandbox: 3,
+            max_options_bytes: 128,
+        },
+        &mut sandproof_controller_service::NeverCrash,
+    )
+    .unwrap();
+    let create = center
+        .create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0)
+        .unwrap();
+    let batch = center.dispatch_batch().unwrap();
+    assert_eq!(batch.len(), 1);
+    assert_eq!(batch[0].request(), &create);
+    let answer = batch
+        .into_iter()
+        .next()
+        .unwrap()
+        .send(&mut InboxTransport(&mut host))
+        .unwrap();
+    assert_eq!(answer.fact, LifecycleFact::Recorded);
+    center.apply_response(&answer).unwrap();
+    let replay = center
+        .dispatch_batch()
+        .unwrap()
+        .pop()
+        .unwrap()
+        .send(&mut InboxTransport(&mut host))
+        .unwrap();
+    assert_eq!(answer, replay);
+    assert!(host.world().unwrap().sandbox_records().is_empty());
+    assert!(
+        center.state().unwrap().sandboxes()[0]
+            .started_at_ms
+            .is_none()
+    );
+    let destroy = center
+        .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
+        .unwrap();
+    let answer = center
+        .dispatch_batch()
+        .unwrap()
+        .pop()
+        .unwrap()
+        .send(&mut InboxTransport(&mut host))
+        .unwrap();
+    center.apply_response(&answer).unwrap();
+    assert_eq!(
+        host.internal_pending(&lifecycle_fixture::node("host-a"))
+            .unwrap(),
+        vec![destroy]
+    );
+    assert_eq!(
+        center.state().unwrap().reserved(None, None),
+        Some(lifecycle_fixture::resources(1))
+    );
+    let old = host
+        .record_internal_intent(&create, &mut sandproof_controller_service::NeverCrash)
+        .unwrap();
+    assert_eq!(old, replay);
+    assert!(matches!(
+        center.apply_response(&old),
+        Err(AuthorityError::Decision(_))
+    ));
+    assert_eq!(
+        host.internal_pending(&lifecycle_fixture::node("host-a"))
+            .unwrap()[0]
+            .intent,
+        Intent::Destroy
+    );
+}
+
+#[test]
+fn center_actual_commit_reply_loss_blocks_dispatch_then_recovers_same_outbox() {
+    let fixture = Engine::new();
+    let proxy = ReplyLoss::new(fixture.address);
+    let mut center = center_authority(&fixture, proxy.address);
+    proxy.armed.store(1, Ordering::SeqCst);
+    assert_eq!(
+        center.create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0),
+        Err(AuthorityError::Store(StoreError::OutcomeUnknown))
+    );
+    assert!(matches!(
+        center.dispatch_batch(),
+        Err(AuthorityError::RecoveryRequired)
+    ));
+    assert!(center.state().is_err());
+    center.recover().unwrap();
+    let pending = center.state().unwrap().pending();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].identity.sandbox_id.as_str(), "sandbox-1");
+    assert_eq!(pending[0].identity.operation_id.as_str(), "operation-1");
+    assert_eq!(center.dispatch_batch().unwrap()[0].request(), &pending[0]);
+}
+
+#[test]
+fn host_transport_failure_and_old_fact_do_not_release_or_reroute() {
+    struct Failed;
+    impl LifecycleTransport for Failed {
+        type Error = ();
+        fn send(&mut self, _: &LifecycleRequest) -> Result<LifecycleResponse, ()> {
+            Err(())
+        }
+    }
+    let fixture = Engine::new();
+    let mut center = center_authority(&fixture, fixture.address);
+    let create = center
+        .create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0)
+        .unwrap();
+    assert!(
+        center
+            .dispatch_batch()
+            .unwrap()
+            .pop()
+            .unwrap()
+            .send(&mut Failed)
+            .is_err()
+    );
+    assert_eq!(center.state().unwrap().pending(), vec![create.clone()]);
+    let destroy = center
+        .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
+        .unwrap();
+    assert_eq!(destroy.intent, Intent::Destroy);
+    let old = lifecycle_fixture::response(
+        &create,
+        1,
+        LifecycleFact::Ready {
+            started_at_ms: 100,
+            end_at_ms: 200,
+            max_end_at_ms: 600,
+        },
+    );
+    assert!(matches!(
+        center.apply_response(&old),
+        Err(AuthorityError::Decision(_))
+    ));
+    assert_eq!(center.state().unwrap().pending(), vec![destroy]);
+    assert_eq!(
+        center.state().unwrap().reserved(None, None),
+        Some(lifecycle_fixture::resources(1))
+    );
+    fixture.field("payload", b"corrupted");
+    assert!(center.dispatch_batch().is_err());
+    assert!(center.dispatch_batch().is_err());
+}
+
+#[test]
+fn full_future_envelope_is_required_before_any_admission() {
+    let fixture = Engine::new();
+    let (ledger, _) = RedisLedger::initialize(
+        endpoint(fixture.address),
+        Engine::config(16_384),
+        fixture.lease(),
+        &center_state(),
+    )
+    .unwrap();
+    assert!(matches!(
+        CenterAuthority::attach(ledger),
+        Err(AuthorityError::Store(StoreError::Configuration))
+    ));
+}
+
+#[test]
+fn slow_detached_transport_does_not_hold_center_decision_lock() {
+    use std::sync::{Mutex, mpsc};
+    struct Slow {
+        entered: mpsc::SyncSender<()>,
+        release: mpsc::Receiver<()>,
+    }
+    impl LifecycleTransport for Slow {
+        type Error = ();
+        fn send(&mut self, request: &LifecycleRequest) -> Result<LifecycleResponse, ()> {
+            self.entered.send(()).map_err(|_| ())?;
+            self.release
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| ())?;
+            Ok(lifecycle_fixture::response(
+                request,
+                1,
+                LifecycleFact::Ready {
+                    started_at_ms: 100,
+                    end_at_ms: 200,
+                    max_end_at_ms: 600,
+                },
+            ))
+        }
+    }
+    let fixture = Engine::new();
+    let center = Arc::new(Mutex::new(center_authority(&fixture, fixture.address)));
+    let create = center
+        .lock()
+        .unwrap()
+        .create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0)
+        .unwrap();
+    let dispatch = center
+        .lock()
+        .unwrap()
+        .dispatch_batch()
+        .unwrap()
+        .pop()
+        .unwrap();
+    let (entered, wait) = mpsc::sync_channel(0);
+    let (release, gate) = mpsc::sync_channel(0);
+    let worker = thread::spawn(move || {
+        dispatch.send(&mut Slow {
+            entered,
+            release: gate,
+        })
+    });
+    wait.recv_timeout(Duration::from_secs(5)).unwrap();
+    let mut authority = center
+        .try_lock()
+        .expect("no authority borrow/lock spans detached RPC");
+    authority
+        .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
+        .unwrap();
+    drop(authority);
+    release.send(()).unwrap();
+    let late = worker.join().unwrap().unwrap();
+    assert!(matches!(
+        center.lock().unwrap().apply_response(&late),
+        Err(AuthorityError::Decision(_))
+    ));
+    assert_eq!(
+        center.lock().unwrap().state().unwrap().reserved(None, None),
+        Some(lifecycle_fixture::resources(1))
+    );
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct State {
@@ -49,6 +358,9 @@ fn endpoint(address: SocketAddrV4) -> RedisEndpoint {
     RedisEndpoint::new(address, "default".into(), PASSWORD.into()).unwrap()
 }
 fn connect(address: SocketAddrV4) -> Connection {
+    try_connect(address).expect("ready fixture Redis connection")
+}
+fn try_connect(address: SocketAddrV4) -> redis::RedisResult<Connection> {
     let info = ConnectionAddr::Tcp(address.ip().to_string(), address.port())
         .into_connection_info()
         .unwrap()
@@ -57,17 +369,11 @@ fn connect(address: SocketAddrV4) -> Connection {
                 .set_password(PASSWORD)
                 .set_skip_set_lib_name(),
         );
-    let connection = redis::Client::open(info)
-        .unwrap()
-        .get_connection_with_timeout(Duration::from_secs(1))
-        .unwrap();
-    connection
-        .set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
-    connection
-        .set_write_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
-    connection
+    let connection =
+        redis::Client::open(info)?.get_connection_with_timeout(Duration::from_secs(1))?;
+    connection.set_read_timeout(Some(Duration::from_secs(1)))?;
+    connection.set_write_timeout(Some(Duration::from_secs(1)))?;
+    Ok(connection)
 }
 
 struct Engine {
@@ -145,7 +451,14 @@ impl Engine {
                 TcpStream::connect_timeout(&self.address.into(), Duration::from_millis(30))
             {
                 drop(stream);
-                let mut connection = connect(self.address);
+                let Ok(mut connection) = try_connect(self.address) else {
+                    assert!(
+                        Instant::now() < deadline,
+                        "fixture Redis authentication/readiness deadline"
+                    );
+                    thread::sleep(Duration::from_millis(10));
+                    continue;
+                };
                 // Listening starts before AOF loading finishes. Poll actual
                 // readiness under the fixture deadline, not just an open port.
                 if matches!(redis::cmd("PING").query::<String>(&mut connection), Ok(reply) if reply == "PONG")

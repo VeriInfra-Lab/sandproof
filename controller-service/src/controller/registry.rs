@@ -822,7 +822,10 @@ impl ControllerJournal {
             // Old binaries reject the format before they can reopen a record
             // whose active core/options reference has been detached.
             if value.validation_certificate.is_some() {
-                tx.execute("UPDATE controller_meta SET version=11 WHERE id=1", [])?;
+                tx.execute(
+                    "UPDATE controller_meta SET version=MAX(version,11) WHERE id=1",
+                    [],
+                )?;
             }
             save(&tx, &value)?;
         }

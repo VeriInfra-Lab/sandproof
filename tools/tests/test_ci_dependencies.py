@@ -129,6 +129,19 @@ class CiDependencyInputsTests(unittest.TestCase):
             self.assertEqual((directory / 'sandbox-center-store/tests/redis_ledger.rs').read_text(),
                              '// Dependency fetch metadata only.\n')
 
+    def test_center_core_registers_metadata_but_never_packages_source(self):
+        path = 'sandbox-center-core/Cargo.toml'
+        self.assertIn('sandbox-center-core', deps.MEMBERS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-center-core/src/decision.rs', files)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / 'sandbox-center-core/src/lib.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+            self.assertFalse((directory / 'sandbox-center-core/src/decision.rs').exists())
+
     def test_prepare_rejects_wrong_approval_dirty_blob_or_existing_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'

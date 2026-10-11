@@ -959,11 +959,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandproof-center-core"
+version = "0.1.0"
+dependencies = [
+ "sandproof-protocol",
+ "serde",
+]
+
+[[package]]
 name = "sandproof-center-store"
 version = "0.1.0"
 dependencies = [
  "redis",
  "rustix",
+ "sandbox-controller-core",
+ "sandproof-center-core",
+ "sandproof-controller-service",
  "sandproof-protocol",
  "serde",
  "serde_json",

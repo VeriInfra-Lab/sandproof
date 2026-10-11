@@ -12,7 +12,9 @@ fi
 
 cargo test --locked -p sandproof-protocol --test internal_contract
 cargo test --locked -p sandproof-internal --all-targets
+cargo test --locked -p sandproof-center-core --all-targets
+cargo test --locked -p sandproof-controller-service internal_inbox
 cargo clippy --locked -p sandproof-center-store --all-targets --all-features -- -D warnings
 cargo test --locked -p sandproof-center-store --features redis-tests --all-targets
-echo "Internal identity/TLS probe and real Redis authority-storage component tests passed."
-echo "Center decisions/dispatch, host durable operations, public SDK routing and KVM were NOT tested."
+echo "Internal identity/TLS probe, pure center decisions, Redis dispatch boundary and SQLite durable inbox component tests passed."
+echo "High-level lifecycle HTTPS/local acceptance/execution, result retirement, public SDK routing and KVM were NOT tested."
