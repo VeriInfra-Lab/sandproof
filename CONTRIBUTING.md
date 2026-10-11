@@ -87,6 +87,7 @@ PR 标题与正文使用中文，保留必要的代码标识；提交主题可�
 
 ```sh
 bash scripts/check-function.sh
+bash scripts/check-function.sh --portable  # macOS 开发检查，不能代替上一条 Linux 完整检查
 bash scripts/check-compat.sh  # 修改 E2B 客户端合同或接入时运行；使用锁定依赖
 python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任务'
 ```
@@ -94,6 +95,10 @@ python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任�
 开发者仍须执行上面的本地基础检查并在 PR 记录结果。普通 PR 不再自动运行完整 Rust 检查；[独立工作流](.github/workflows/rust-ci.yml)在合入 main/test 后或手动触发时运行同一基础检查，不作为 PR 必需状态。普通 PR 保留 SDK 合同、Harbor 工具、标题与分支规则四项自动检查。测试脚本不启动产品 VM，不访问 E2B 云服务，不使用付费模型，也不执行完整 Lean 验收。独立的 SDK 合同任务从固定公开提交安装 E2B Python SDK，只向本机回环服务发送合成请求；在 Linux 上还运行 SDK 经实际 Rust 网关体处理/转发代码访问合成 envd 的组合测试，不涉及管理鉴权或宿主 relay，不能代替真实控制器或虚拟机验收。规则检查只验证 issue 编号的格式，任务是否真实存在及关联准确仍需核对。
 
 ### 测试编写和结果纪律
+
+基础工具统一通过 `scripts/python-entry.sh` 选择 Python `>=3.12,<3.14`；可用 `SANDPROOF_PYTHON` 指定解释器，显式指定后不静默回退。版本或平台不满足时在 Cargo 构建和测试前报错。SDK/Harbor 仍用各自锁定的 uv 项目，不混用工具环境。
+
+无参数 `check-function.sh` 是必需的 Linux 完整检查，发现全部工具测试；缺失依赖引起跳过也不能算完整通过。macOS 只能显式执行 `--portable`：执行同一套 Rust 非 Linux 目标检查、文档与可移植工具测试，并逐组报告未运行的 Linux ELF、稀疏盘、物理租约和真实请求窗口场景；划分只在 [测试入口](tools/check_function_tests.py) 维护，不改弱原测试或生产检查。新增未分类测试默认执行，失败不能自动转成平台豁免。macOS 结果不代表 Linux 条件模块、KVM、SDK 组合或完整基础验收通过。
 
 - 覆盖成功、顺序拒绝、边界值、未知结果、重复/迟到回执和部分失败；修复缺陷必须加对应回归。
 - 并发用屏障和明确故障点控制，时钟用可推进的假时钟；不靠随机 sleep 碰运气。随机交错保存 seed 和最小失败历史。
