@@ -104,7 +104,7 @@ def bootstrap(args, argv, budget):
             env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},start_new_session=True)
         try:
             code=process.wait(timeout=GROUP_SECONDS)
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired,KeyboardInterrupt):
             # Signal only the owned worker; its handler invokes the same
             # original child drain. Unknown survivors keep the exact leaf.
             process.terminate()

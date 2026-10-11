@@ -2,7 +2,9 @@
 mod candidates;
 mod http;
 mod stream;
-#[cfg(test)]
+// The sealed x86_64 Redis fixture is required on Linux; portable checks do
+// not stand in for its real HTTPS/store integration test.
+#[cfg(all(test, target_os = "linux"))]
 mod tests;
 
 pub use candidates::ProtectedCandidates;

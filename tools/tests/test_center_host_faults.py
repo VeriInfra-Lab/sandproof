@@ -137,7 +137,7 @@ class CenterHostFaultsTests(unittest.TestCase):
 
     def test_cancel_or_deadline_never_removes_unknown_original_recovery_identity(self):
         for name,outcome,error in (
-            ('cancelled',KeyboardInterrupt(),KeyboardInterrupt),
+            ('cancelled',[KeyboardInterrupt(),0],KeyboardInterrupt),
             ('deadline',[subprocess.TimeoutExpired(['owned-worker'],7200),0],subprocess.TimeoutExpired)):
             args=self.bootstrap_args(name)
             with self.subTest(name=name),self.bootstrap_dependencies(args,outcome) as (process,removed,_), \
@@ -146,8 +146,7 @@ class CenterHostFaultsTests(unittest.TestCase):
             removed.assert_not_called()
             self.assertTrue(args.service_cgroup_record.exists())
             self.assertFalse((args.run_root/'service-cleanup.json').exists())
-            if name=='deadline':
-                process.terminate.assert_called_once()
+            process.terminate.assert_called_once()
 
     def test_missing_mandatory_success_proof_cannot_remove_an_empty_service_leaf(self):
         args=self.bootstrap_args('bad-proof')
