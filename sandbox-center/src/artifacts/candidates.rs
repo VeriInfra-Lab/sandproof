@@ -33,8 +33,9 @@ impl ProtectedCandidates {
 
     /// This finite background work is derived from the SAME protected catalog;
     /// it is not a queue, synthetic availability or alternate default template.
-    /// Individual unavailable hosts are retried later, while shared authority
-    /// faults stop the whole scan. Running budgets remain owned by the host.
+    /// Individual unavailable artifacts/hosts are retried later, while shared
+    /// authority faults stop the whole scan. Running budgets remain owned by
+    /// the host; a failed material check never creates a cache fact.
     pub fn prepare_static(&self, deadline: Duration) -> Result<(), PortError> {
         let original = self.authority.snapshot()?;
         let templates = original.metadata.static_artifacts()?;
@@ -55,10 +56,11 @@ impl ProtectedCandidates {
             {
                 continue;
             }
-            self.store
-                .verify_binding(&binding)
-                .map_err(|_| PortError::OutcomeUnknown)?;
-            let _ = self.cache(&revision, &binding, deadline);
+            if self.store.verify_binding(&binding).is_ok() {
+                let _ = self.cache(&revision, &binding, deadline);
+            }
+            // A local material failure must not block another protected
+            // revision, but it must not hide a simultaneous shared-store fault.
             self.authority.snapshot()?;
         }
         Ok(())

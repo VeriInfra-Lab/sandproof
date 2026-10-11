@@ -12,6 +12,7 @@ mod tls;
 use sandproof_center_core::{
     Bounds, CenterState, NodeMode, NodeRegistration, NodeRole, TenantBudget,
 };
+use sandproof_center_service::RegisteredHost;
 use sandproof_center_service::business::{MetadataBudget, RegistryMetadata, TemplateRegistration};
 use sandproof_center_store::{
     ControlState, RedisLedger, authority::AuthorityState, authority::CenterAuthority,
@@ -22,15 +23,24 @@ use sandproof_controller_service::{
     templates::{ComputeLimits, ResourceShape, TemplateArtifact, TemplateBinding, TemplateCatalog},
 };
 use sandproof_internal::{
-    ArtifactClient, ClientTls, Limits, ProtectedServer, ServerTls, TransportError,
-    cache::{ArtifactPart, ArtifactRequest},
+    ArtifactClient, CacheReceiver, ClientTls, DataReceiver, InternalClient, InternalServer,
+    LifecycleReceiver, Limits, ProtectedServer, ReceiveError, RegisteredEndpoint, RejectLifecycle,
+    ServerTls, TransportError, ValidationReceiver,
+    cache::{ArtifactPart, ArtifactRequest, CacheAvailability, CacheRequest},
+    status::{HostStatus, StatusReceiver, StatusRequest},
+    template::{ValidationEvidence, ValidationRequest},
 };
-use sandproof_protocol::internal::{NodeIdentity, lifecycle::Resources};
+use sandproof_protocol::internal::{
+    ControlIdentity, NodeIdentity,
+    lifecycle::{LifecycleRequest, LifecycleResponse, Resources},
+    window::{WindowCloseAck, WindowCloseRequest},
+};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
     os::unix::fs::{MetadataExt, PermissionsExt},
+    sync::Mutex,
     time::Duration,
 };
 
@@ -112,9 +122,16 @@ fn authority(
     store: &CandidateStore,
     binding: &TemplateBinding,
 ) -> SharedBusinessAuthority {
+    authority_with_catalog(fixture, store, std::slice::from_ref(binding))
+}
+fn authority_with_catalog(
+    fixture: &engine::Engine,
+    store: &CandidateStore,
+    bindings: &[TemplateBinding],
+) -> SharedBusinessAuthority {
     let metadata = RegistryMetadata::new(
         TemplateCatalog {
-            templates: vec![binding.clone()],
+            templates: bindings.to_vec(),
             aliases: BTreeMap::new(),
             compute_limits: ComputeLimits {
                 max_vcpus_global: 2,
@@ -123,10 +140,15 @@ fn authority(
                 max_memory_bytes_per_tenant: resources().memory_bytes,
             },
         },
-        vec![TemplateRegistration {
-            revision: "base-r1".try_into().unwrap(),
-            template_id: "base".into(),
-        }],
+        bindings
+            .iter()
+            .map(|binding| TemplateRegistration {
+                revision: format!("{}-{}", binding.template_id, binding.revision)
+                    .try_into()
+                    .unwrap(),
+                template_id: binding.template_id.clone(),
+            })
+            .collect(),
         store.config().clone(),
         MetadataBudget {
             max_certificate_bytes: 65_536,
@@ -286,4 +308,219 @@ fn artifact_client(
         Duration::from_secs(2),
     )
     .unwrap()
+}
+
+/// Controlled cache effects, not a claim that these format fixtures boot a VM.
+/// Descriptor, file hashes and ext4 geometry use the original material checker;
+/// the original HTTPS receiver/client and Redis CAS handle the cache fact.
+struct VerifiedCache {
+    store: Arc<CandidateStore>,
+    requests: Arc<Mutex<Vec<CacheRequest>>>,
+    corrupt_authority: Option<std::net::SocketAddrV4>,
+}
+impl CacheReceiver for VerifiedCache {
+    async fn cache_template(
+        &self,
+        request: CacheRequest,
+    ) -> Result<CacheAvailability, ReceiveError> {
+        request
+            .validate(&node())
+            .map_err(|_| ReceiveError::Conflict)?;
+        self.store
+            .verify_binding(&request.descriptor)
+            .map_err(|_| ReceiveError::Conflict)?;
+        self.requests.lock().unwrap().push(request.clone());
+        if let Some(address) = self.corrupt_authority {
+            let _: usize = redis::cmd("HSET")
+                .arg(engine::KEY)
+                .arg("payload")
+                .arg(b"corrupted".as_slice())
+                .query(&mut engine::connect(address))
+                .unwrap();
+        }
+        Ok(CacheAvailability {
+            node: request.node,
+            revision: request.revision,
+            digest: request.digest,
+        })
+    }
+}
+impl LifecycleReceiver for VerifiedCache {
+    async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
+        RejectLifecycle.receive(request).await
+    }
+    async fn confirm(&self, result: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
+        RejectLifecycle.confirm(result).await
+    }
+    async fn close(&self, request: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
+        RejectLifecycle.close(request).await
+    }
+}
+impl DataReceiver for VerifiedCache {
+    async fn receive_data(
+        &self,
+        identity: ControlIdentity,
+        request: axum::http::Request<axum::body::Body>,
+    ) -> axum::http::Response<axum::body::Body> {
+        RejectLifecycle.receive_data(identity, request).await
+    }
+}
+impl ValidationReceiver for VerifiedCache {
+    async fn validation_evidence(
+        &self,
+        request: ValidationRequest,
+    ) -> Result<ValidationEvidence, ReceiveError> {
+        RejectLifecycle.validation_evidence(request).await
+    }
+}
+impl StatusReceiver for VerifiedCache {
+    async fn status(&self, request: StatusRequest) -> Result<HostStatus, ReceiveError> {
+        RejectLifecycle.status(request).await
+    }
+}
+
+fn second_binding(binding: &TemplateBinding) -> TemplateBinding {
+    let mut other = binding.clone();
+    other.template_id = "other".into();
+    other.kernel.path.set_file_name("other-kernel");
+    other.rootfs.path.set_file_name("other-rootfs.ext4");
+    fs::copy(&binding.kernel.path, &other.kernel.path).unwrap();
+    fs::copy(&binding.rootfs.path, &other.rootfs.path).unwrap();
+    other
+}
+
+struct CacheFixture {
+    candidates: ProtectedCandidates,
+    requests: Arc<Mutex<Vec<CacheRequest>>>,
+    stop: tokio::sync::oneshot::Sender<()>,
+    serving: tokio::task::JoinHandle<Result<(), TransportError>>,
+}
+impl CacheFixture {
+    async fn start(
+        authority: SharedBusinessAuthority,
+        store: Arc<CandidateStore>,
+        corrupt_authority: Option<std::net::SocketAddrV4>,
+    ) -> Self {
+        let certificates = tls::certificates_with_dual_roles();
+        let limits = Limits::new(4, Duration::from_secs(1), Duration::from_secs(3)).unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let receiver = VerifiedCache {
+            store: Arc::clone(&store),
+            requests: Arc::clone(&requests),
+            corrupt_authority,
+        };
+        let server = InternalServer::new(
+            ServerTls::new(
+                certificates.host.material(),
+                vec![certificates.ca.der().clone()],
+                vec![certificates.center.pin()],
+            )
+            .unwrap(),
+            node(),
+            limits,
+            receiver,
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, shutdown) = tokio::sync::oneshot::channel();
+        let serving = tokio::spawn(async move { server.serve(listener, shutdown).await });
+        let client = InternalClient::new(
+            ClientTls::new(
+                certificates.center.material(),
+                vec![certificates.ca.der().clone()],
+                vec![certificates.host.pin()],
+            )
+            .unwrap(),
+            RegisteredEndpoint::new(address, "host.test".into(), node()).unwrap(),
+            limits,
+        );
+        let hosts = RegisteredHosts::new(
+            vec![RegisteredHost {
+                identity: node(),
+                client,
+            }],
+            Handle::current(),
+        )
+        .unwrap();
+        Self {
+            candidates: ProtectedCandidates::new(authority, hosts, store),
+            requests,
+            stop,
+            serving,
+        }
+    }
+    async fn prepare(&self) -> Result<(), sandproof_api::PortError> {
+        let candidates = self.candidates.clone();
+        tokio::task::spawn_blocking(move || candidates.prepare_static(Duration::from_secs(3)))
+            .await
+            .unwrap()
+    }
+    async fn stop(self) {
+        self.stop.send(()).unwrap();
+        self.serving.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corrupt_static_material_does_not_block_a_later_healthy_revision() {
+    let fixture = engine::Engine::new();
+    let (store, first) = store(&fixture);
+    let healthy = second_binding(&first);
+    store.verify_binding(&first).unwrap();
+    store.verify_binding(&healthy).unwrap();
+    let authority = authority_with_catalog(&fixture, &store, &[first.clone(), healthy.clone()]);
+    // Corrupt A only AFTER the protected descriptors were durably registered.
+    // It retains its readonly shape, so the original actual digest check fails.
+    fs::set_permissions(&first.kernel.path, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(
+        &first.kernel.path,
+        vec![0; usize::try_from(first.kernel.size_bytes).unwrap()],
+    )
+    .unwrap();
+    fs::set_permissions(&first.kernel.path, fs::Permissions::from_mode(0o400)).unwrap();
+    assert!(store.verify_binding(&first).is_err());
+    store.verify_binding(&healthy).unwrap();
+    let cache = CacheFixture::start(authority.clone(), store, None).await;
+    assert_eq!(cache.prepare().await, Ok(()));
+    let requests = cache.requests.lock().unwrap().clone();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].descriptor, healthy);
+    let observed = authority.snapshot().unwrap();
+    let available = &observed.center.nodes()[0].templates;
+    assert_eq!(available.len(), 1);
+    assert_eq!(available[0].revision.as_str(), "other-r1");
+    assert_eq!(available[0].digest, healthy.canonical_digest().unwrap());
+    // Rechecking the bad material does not invent availability or repeat B.
+    assert_eq!(cache.prepare().await, Ok(()));
+    assert_eq!(cache.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        authority.snapshot().unwrap().center.nodes()[0].templates,
+        *available
+    );
+    cache.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shared_authority_fault_stops_static_scan_without_registering_cache_facts() {
+    let fixture = engine::Engine::new();
+    let (store, first) = store(&fixture);
+    let later = second_binding(&first);
+    let authority = authority_with_catalog(&fixture, &store, &[first.clone(), later]);
+    let cache = CacheFixture::start(authority.clone(), store, Some(fixture.address)).await;
+    // The original receiver returns exact cache evidence, but Redis is damaged
+    // before its CAS. This must fence A and prevent any request for healthy B.
+    assert_eq!(
+        cache.prepare().await,
+        Err(sandproof_api::PortError::OutcomeUnknown)
+    );
+    let requests = cache.requests.lock().unwrap().clone();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].descriptor, first);
+    assert!(authority.snapshot().is_err());
+    assert_eq!(
+        cache.prepare().await,
+        Err(sandproof_api::PortError::OutcomeUnknown)
+    );
+    assert_eq!(cache.requests.lock().unwrap().len(), 1);
+    cache.stop().await;
 }
