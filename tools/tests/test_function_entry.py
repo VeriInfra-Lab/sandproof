@@ -42,14 +42,16 @@ class FunctionEntryTests(unittest.TestCase):
         commands = [line.strip() for line in (root / 'scripts/check-function.sh').read_text().splitlines()
                     if line.strip() and not line.lstrip().startswith('#')]
         build = 'cargo build --locked -p sandproof-controller-service --bin sandproof-window-reducer'
-        tests = 'python3 -m unittest discover -s tools/tests -v'
+        tests = 'bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode"'
         self.assertIn('set -euo pipefail', commands)
         self.assertLess(commands.index(build), commands.index(tests))
-        for check in ('python3 tools/check_docs.py', 'cargo fmt --all -- --check',
+        for check in ('bash scripts/python-entry.sh tools/check_docs.py', 'cargo fmt --all -- --check',
                       'cargo clippy --workspace --all-targets --locked -- -D warnings',
                       'cargo test --workspace --all-targets --locked',
                       'cargo test --workspace --doc --locked'):
             self.assertIn(check, commands)
+        preflight = 'bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode" --preflight-only'
+        self.assertLess(commands.index(preflight), commands.index(build))
 
 
     def test_cold_harbor_entry_prepares_reducer_and_build_failure_stops_tests(self):
