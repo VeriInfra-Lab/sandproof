@@ -44,6 +44,19 @@
 
 这套普通执行环境不运行 KVM 系统验收、真实题目或 Lean 完整证明；普通绿灯和旧 2.0 报告不能代替高权限验收或 2.1 通过。自建执行器不绕过分支保护。
 
+### 中心与宿主拆分的 CI 扩展（待实现）
+
+[#292](https://github.com/ningZhang-cs/sandproof/issues/292) 使用同仓库、两套独立服务产物。普通 PR 四项检查及 test/main 后的 Rust 检查节奏保持；此扩展不增设 root runner，也不要求每 PR 真题或完整 Lean 证明。
+
+| 环境 | 待增加的工作 | 权限与通过依据 |
+|---|---|---|
+| 现有 SDK 合同隔离来宾 | 计划中的 `scripts/check-distributed-contract.sh` 独立步骤；选定中心/协议/存储 Rust 组件、真实固定 Redis 与受控节点 | 回环专用账本、受控证书，无 KVM/生产凭据；缺固定材料报错，不用假库或 skip 代替 Redis 故障验收 |
+| 可信 KVM 监督器 | 同候选中心＋Redis＋一个真实宿主，经双向认证 HTTPS；先 DK 故障组，再既有两题从中心入口运行 | 独立账号/目录/端口/身份，两端摘要绑定候选；故障组、评分、清理和报告均成功才发布原 App/检查名 |
+
+固定 Redis、证书工具与依赖在实现首批锁定，由审查过的黄金盘预热，不临时用 latest。新增普通步骤只跑选定组件，不恢复每 PR 全 workspace Rust。真实 KVM 把中心和 Redis 计入原资源预算、准入与独占，不能省略内部鉴权、直连本地函数或取消他人任务。只读预装模板可按合同复用，每轮账本与工作盘独立。
+
+目前这些步骤尚未安装或验收。部署新监督链前，批准精确代码及配置，实测真实成功、故意失败、取消和精确恢复；旧门槛在此之前保持，不产生两个竞争监督器。自动晋升、原 App 身份/检查名/提交与目标基线约束，以及受控命令行手动入口保持。测试用例和单机/多机验收边界统一见[中心与宿主验收](testing-plan.md#5-中心与宿主验收待实现)，CI 附件保存结果，不回写动态文档。
+
 ### 可信 KVM 端到端监督与晋升门槛
 
 [监督器](../tools/ci_e2e_supervisor.py)、[准备工具](../tools/ci_e2e_prepare.py)、[服务单元](../tools/ci_e2e_supervisor.service)与[私有配置示例](../tools/ci_e2e_supervisor.example.json)已实现；宿主安装与真实结果回传须以对应 issue/PR 的实测证据为准。当前通过[2.0 兼容题集](../benchmarks/terminal-bench-2.0-suites.json)回归，[2.1 原题配置](../benchmarks/terminal-bench-2.1-suites.json)保留为发布前待办；判据以[验收清单](testing-plan.md)为准，支持完整题集不等于已通过。
