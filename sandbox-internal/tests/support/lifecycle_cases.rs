@@ -9,10 +9,25 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 mod fixture;
 
 struct Counted(Arc<AtomicUsize>);
+impl sandproof_internal::DataReceiver for Counted {
+    async fn receive_data(
+        &self,
+        _: sandproof_protocol::internal::ControlIdentity,
+        _: Request<axum::body::Body>,
+    ) -> hyper::Response<axum::body::Body> {
+        hyper::Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+}
 impl LifecycleReceiver for Counted {
     async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
         self.0.fetch_add(1, Ordering::SeqCst);
         Ok(fixture::response(&request, 2, LifecycleFact::Recorded))
+    }
+    async fn confirm(&self, _: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
+        Err(ReceiveError::Unavailable)
     }
 }
 

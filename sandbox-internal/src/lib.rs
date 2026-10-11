@@ -4,15 +4,19 @@
 //! Shared authenticated transport for identity probes and high-level lifecycle
 //! intents. Existing public service wiring remains unchanged.
 //! TLS material, registered endpoint and peer pins come from trusted assembly,
-//! never from a user/template or an HTTP header. File loading belongs to the
-//! protected deployment entrypoints, not this transport library.
+//! never from a user/template or an HTTP header. Entrypoints explicitly choose
+//! paths/owners/bounds; a shared protected-file primitive avoids two loaders.
 
 mod client;
+#[cfg(unix)]
+mod protected_files;
 mod server;
 mod tls;
 
 pub use client::{InternalClient, RegisteredEndpoint};
-pub use server::{InternalServer, LifecycleReceiver, ReceiveError, RejectLifecycle};
+#[cfg(unix)]
+pub use protected_files::{ProtectedFileError, check_protected_directory, read_protected};
+pub use server::{DataReceiver, InternalServer, LifecycleReceiver, ReceiveError, RejectLifecycle};
 pub use tls::{CertificatePin, ClientTls, ServerTls, TlsIdentity};
 
 use std::{error::Error, fmt, time::Duration};

@@ -967,14 +967,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandproof-center-service"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "rcgen",
+ "redis",
+ "ring",
+ "rustls",
+ "sandbox-controller-core",
+ "sandproof-api",
+ "sandproof-center-core",
+ "sandproof-center-store",
+ "sandproof-controller-service",
+ "sandproof-data-transport",
+ "sandproof-host-service",
+ "sandproof-internal",
+ "sandproof-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "sandproof-center-store"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "rcgen",
  "redis",
  "rustix",
  "rustls",
  "sandbox-controller-core",
+ "sandproof-api",
  "sandproof-center-core",
  "sandproof-controller-service",
  "sandproof-host-service",
@@ -1003,13 +1030,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandproof-data-transport"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "percent-encoding",
+ "sandproof-protocol",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "sandproof-host-service"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "rcgen",
+ "rusqlite",
  "rustls",
  "sandbox-controller-core",
+ "sandproof-api",
  "sandproof-controller-service",
+ "sandproof-data-transport",
  "sandproof-internal",
  "sandproof-protocol",
  "serde",
@@ -1022,15 +1070,19 @@ dependencies = [
 name = "sandproof-internal"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "http-body-util",
  "hyper",
  "hyper-util",
  "rcgen",
+ "rustix",
  "rustls",
+ "sandproof-data-transport",
  "sandproof-protocol",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "tokio",
  "tokio-rustls",
 ]
@@ -1067,14 +1119,19 @@ dependencies = [
  "hyper",
  "hyper-util",
  "percent-encoding",
+ "rustls",
  "sandbox-controller-core",
  "sandbox-runtime",
  "sandproof-api",
  "sandproof-controller-service",
+ "sandproof-data-transport",
+ "sandproof-host-service",
+ "sandproof-internal",
  "sandproof-node",
  "sandproof-protocol",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 

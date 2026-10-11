@@ -13,7 +13,7 @@ mod template_api;
 pub use build_vm_api::{
     BuildSettlementRequest, BuildSettlementView, BuildVmRequest, BuildVmView, BuildWindowClosed,
 };
-pub use list::{ListOrder, ListQuery};
+pub use list::{ListOrder, ListQuery, Selection as ListSelection, page_to_sdk};
 pub use sandproof_controller_service::template_registry::{
     PublicationView, TemplatePage, TemplateView,
 };
@@ -558,6 +558,31 @@ pub fn router_with_admission<P: ControllerPort>(
     credentials: Vec<ApiCredential>,
     admission: Arc<RequestAdmission>,
 ) -> Result<Router, ConfigurationError> {
+    validate_credentials(&credentials)?;
+    let state = ApiState {
+        port,
+        credentials,
+        admission,
+    };
+    Ok(Router::new()
+        .route("/v2/sandboxes", post(create::<P>).get(list::<P>))
+        .route("/v2/sandboxes/{sandbox_id}/connect", post(connect::<P>))
+        .route(
+            "/sandboxes/{sandbox_id}",
+            get(get_sandbox::<P>).delete(kill::<P>),
+        )
+        .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
+        .merge(template_api::routes::<P>())
+        .merge(build_vm_api::routes::<P>())
+        .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
+        .with_state(state))
+}
+
+/// Shared deployment validation; it does not authenticate a request, allocate
+/// a router or install a second source of credential/tenant authority.
+/// # Errors
+/// Rejects the same malformed and duplicate credentials as [`router`].
+pub fn validate_credentials(credentials: &[ApiCredential]) -> Result<(), ConfigurationError> {
     if credentials.is_empty() {
         return Err(ConfigurationError::EmptyCredentials);
     }
@@ -580,23 +605,7 @@ pub fn router_with_admission<P: ControllerPort>(
     }) {
         return Err(ConfigurationError::WeakOrDuplicateSecret);
     }
-    let state = ApiState {
-        port,
-        credentials,
-        admission,
-    };
-    Ok(Router::new()
-        .route("/v2/sandboxes", post(create::<P>).get(list::<P>))
-        .route("/v2/sandboxes/{sandbox_id}/connect", post(connect::<P>))
-        .route(
-            "/sandboxes/{sandbox_id}",
-            get(get_sandbox::<P>).delete(kill::<P>),
-        )
-        .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
-        .merge(template_api::routes::<P>())
-        .merge(build_vm_api::routes::<P>())
-        .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
-        .with_state(state))
+    Ok(())
 }
 
 #[cfg(test)]

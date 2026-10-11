@@ -1,4 +1,9 @@
+use axum::{
+    body::{Body, to_bytes},
+    http::Request,
+};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits};
 use sandproof_center_core::{
     AvailableTemplate, Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget,
 };
@@ -11,7 +16,7 @@ use sandproof_controller_service::{
     application::{ApplicationConfig, ControllerApplication, TemplateArtifacts},
     templates::{ComputeLimits, TemplateBinding},
 };
-use sandproof_host_service::HostLifecycle;
+use sandproof_host_service::{HostFacade, data_gateway::TransferLimits};
 use sandproof_internal::{
     CertificatePin, ClientTls, InternalClient, InternalServer, Limits, RegisteredEndpoint,
     ServerTls, TlsIdentity,
@@ -168,7 +173,27 @@ async fn host(path: &Path) -> Result<()> {
     let cfg: HostConfig = serde_json::from_slice(&fs::read(path)?)?;
     let app = application(&cfg)?;
     let shape = cfg.template.resources;
-    let inbox = HostLifecycle::new(Arc::clone(&app));
+    let facade = HostFacade::new(
+        Arc::clone(&app),
+        TransferLimits {
+            file_upload_bytes: 8 * 1024 * 1024,
+            file_download_bytes: 8 * 1024 * 1024,
+            command_input_bytes: 1024 * 1024,
+            rpc_request_bytes: 64 * 1024,
+            rpc_response_bytes: 1024 * 1024,
+            max_transfers: 3,
+            max_transfers_per_vm: 2,
+            control_reserve: 1,
+            request_idle_seconds: 10,
+            file_idle_seconds: 10,
+            write_idle_seconds: 10,
+        },
+        RequestAdmission::new(RequestAdmissionLimits {
+            max_pending_requests: 4,
+            control_reserve: 1,
+        })?,
+    )?;
+    let inbox = facade.lifecycle();
     let compute = ComputeLimits {
         max_vcpus_global: u64::from(shape.cpu_count),
         max_vcpus_per_tenant: u64::from(shape.cpu_count),
@@ -186,7 +211,7 @@ async fn host(path: &Path) -> Result<()> {
         )?,
         cfg.identity.clone(),
         limits()?,
-        inbox.clone(),
+        facade,
     );
     let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
     write(&cfg.tls.join("listening"), b"authenticated host listening")?;
@@ -267,6 +292,68 @@ async fn await_fact(
     }
 }
 
+async fn guest_health(
+    client: &InternalClient,
+    response: &sandproof_protocol::internal::lifecycle::LifecycleResponse,
+    root: &Path,
+) -> Result<()> {
+    // Same registered mTLS -> original host permit -> durably launched
+    // namespace relay -> real guest envd. No native guest secret at center.
+    let LifecycleFact::Ready { max_end_at_ms, .. } = response.fact else {
+        return Err("missing original Ready lifetime".into());
+    };
+    let deadline = tokio::time::Instant::now()
+        + Duration::from_millis(
+            max_end_at_ms
+                .checked_sub(now()?)
+                .ok_or("original maximum lifetime reached")?,
+        );
+    let health = client
+        .stream_data(
+            &response.identity,
+            Request::get("/health").body(Body::empty())?,
+            Arc::new(()),
+            deadline,
+        )
+        .await?;
+    let status = health.status();
+    let _ =
+        tokio::time::timeout(Duration::from_secs(10), to_bytes(health.into_body(), 4096)).await??;
+    write(
+        &root.join("guest-health.json"),
+        &serde_json::to_vec(&serde_json::json!({
+            "identity": response.identity,
+            "path": "/health",
+            "status": status.as_u16(),
+        }))?,
+    )?;
+    require_guest_health(status)
+}
+
+fn require_guest_health(status: axum::http::StatusCode) -> Result<()> {
+    // The original pinned envd health contract returns 204, not a rewritten
+    // success code from the relay. Keep errors observable without guest data.
+    if status != axum::http::StatusCode::NO_CONTENT {
+        return Err(format!("real authenticated guest health status {}", status.as_u16()).into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn health_keeps_the_original_envd_status_contract() {
+        assert!(require_guest_health(axum::http::StatusCode::NO_CONTENT).is_ok());
+        for status in [200, 401, 404, 429, 502, 503] {
+            assert!(
+                require_guest_health(axum::http::StatusCode::from_u16(status).unwrap()).is_err()
+            );
+        }
+    }
+}
+
 async fn center(path: &Path) -> Result<()> {
     let cfg: CenterConfig = serde_json::from_slice(&fs::read(path)?)?;
     let current = now()?;
@@ -332,6 +419,7 @@ async fn center(path: &Path) -> Result<()> {
             &cfg.root.join("ready.json"),
             &serde_json::to_vec(&response)?,
         )?;
+        guest_health(&client, &response, &cfg.root).await?;
         let until = tokio::time::Instant::now() + Duration::from_secs(30);
         while !cfg.root.join("release").exists() {
             if tokio::time::Instant::now() >= until {

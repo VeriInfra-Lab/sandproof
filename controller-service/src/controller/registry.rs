@@ -565,8 +565,8 @@ impl ControllerJournal {
         )?;
         let count: i64 = self.journal.connection.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('template_publications','template_aliases','template_registry_meta')", [], |row| row.get(0))?;
         match (version, count) {
-            (10 | 11 | 13, 3) => Ok(true),
-            (1..=9 | 11 | 13, 0) => Ok(false),
+            (10 | 11 | crate::INTERNAL_INBOX_FORMAT_VERSION, 3) => Ok(true),
+            (1..=9 | 11 | crate::INTERNAL_INBOX_FORMAT_VERSION, 0) => Ok(false),
             _ => Err(JournalError::CorruptStore),
         }
     }
@@ -913,9 +913,8 @@ impl ControllerJournal {
         let value = self
             .resolve_registered_template(owner, target)?
             .ok_or(JournalError::Conflict)?;
-        if target != value.binding.template_id {
-            return Err(JournalError::Conflict);
-        }
+        crate::template_registry::query::validate_alias_target(owner, name, target, &value)
+            .map_err(|_| JournalError::Conflict)?;
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         let previous: Option<String> = tx
             .query_row(
@@ -924,17 +923,13 @@ impl ControllerJournal {
                 |row| row.get(0),
             )
             .optional()?;
-        if expected.is_some_and(|id| {
-            previous.as_deref().map(|old| format!("tpl-{old}")) != Some(id.to_owned())
-        }) {
-            return Err(JournalError::Conflict);
-        }
+        crate::template_registry::query::validate_alias_expected(previous.as_deref(), expected)
+            .map_err(|_| JournalError::Conflict)?;
         let count: i64 = tx.query_row("SELECT count(*) FROM template_aliases", [], |row| {
             row.get(0)
         })?;
-        if previous.is_none() && count >= 256 {
-            return Err(JournalError::Conflict);
-        }
+        crate::template_registry::query::validate_alias_capacity(previous.as_deref(), count)
+            .map_err(|_| JournalError::Conflict)?;
         tx.execute("INSERT INTO template_aliases VALUES(?1,?2,?3) ON CONFLICT(owner_id,name) DO UPDATE SET candidate_id=excluded.candidate_id",
             params![owner.to_string(),name,value.candidate_id])?;
         tx.commit()

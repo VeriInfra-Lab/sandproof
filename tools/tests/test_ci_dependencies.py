@@ -134,6 +134,27 @@ class CiDependencyInputsTests(unittest.TestCase):
             self.assertEqual((directory / 'sandbox-center-store/tests/redis_ledger.rs').read_text(),
                              '// Dependency fetch metadata only.\n')
 
+    def test_center_service_preheats_fixed_metadata_without_packaging_product_code(self):
+        path = 'sandbox-center-service/Cargo.toml'
+        self.assertIn('sandbox-center-service', deps.MEMBERS)
+        self.assertIn(path, deps.INPUT_PATHS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-center-service/src/application.rs', files)
+        manifest = files[path]
+        for data in (manifest.replace(b'../sandbox-protocol', b'../../private'),
+                     manifest.replace(b'../sandbox-protocol', b'../unregistered-member'),
+                     manifest + b'\n[dependencies.unregistered]\ngit = "https://example.invalid/code"\n'):
+            with self.subTest(data=data[-80:]), self.assertRaises(ValueError):
+                deps.validate_input(self.replace_file(self.damaged(), path, data))
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / path).read_bytes(), manifest)
+            self.assertEqual((directory / 'sandbox-center-service/src/lib.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+            self.assertFalse((directory / 'sandbox-center-service/src/application.rs').exists())
+
     def test_center_core_registers_metadata_but_never_packages_source(self):
         path = 'sandbox-center-core/Cargo.toml'
         self.assertIn('sandbox-center-core', deps.MEMBERS)

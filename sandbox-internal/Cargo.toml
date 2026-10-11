@@ -6,6 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+axum = { version = "=0.8.9", features = ["tokio", "http1"] }
+sandproof-data-transport = { path = "../sandbox-data-transport" }
 sandproof-protocol = { path = "../sandbox-protocol" }
 http-body-util = "=0.1.5"
 hyper = { version = "=1.11.1", features = ["client", "server", "http1"] }
@@ -18,8 +20,12 @@ tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring"] }
 
 [dev-dependencies]
+tempfile = "=3.23.0"
 rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
 tokio = { version = "=1.49.0", features = ["test-util"] }
 
 [lints]
 workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.5", features = ["fs"] }

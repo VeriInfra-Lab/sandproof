@@ -34,13 +34,19 @@ pub struct InternalInboxConfig {
     pub max_options_bytes: u32,
 }
 impl InternalInboxConfig {
-    pub(super) fn valid(&self) -> bool {
+    /// Pure deployment validation for the original bounded inbox; it neither
+    /// opens storage nor grants a lifecycle capability.
+    #[must_use]
+    pub fn valid(&self) -> bool {
         (1..=4096).contains(&self.max_sandboxes)
             && (2..=64).contains(&self.operations_per_sandbox)
             && (1..=65_536).contains(&self.max_options_bytes)
             && self.required_bytes() <= 16 * 1024 * 1024
     }
-    pub(super) fn required_bytes(&self) -> usize {
+    /// Conservative reserved row envelope, including every retained request
+    /// and response. Protected entrypoints use this SAME capacity formula.
+    #[must_use]
+    pub fn required_bytes(&self) -> usize {
         usize::from(self.max_sandboxes)
             .saturating_mul(usize::from(self.operations_per_sandbox))
             .saturating_mul(
@@ -163,11 +169,13 @@ impl Inbox {
                 {
                     return Err(JournalError::CorruptStore);
                 }
-            } else if matches!(
-                entry.response.fact,
-                LifecycleFact::Ready { .. } | LifecycleFact::Renewed { .. }
-            ) {
-                // Renewed is not implemented by this adapter yet.
+            } else if matches!(entry.response.fact, LifecycleFact::Ready { .. })
+                || (matches!(entry.response.fact, LifecycleFact::Renewed { .. })
+                    && !self.entries[..index].iter().any(|create| {
+                        create.request.identity.sandbox_id == request.identity.sandbox_id
+                            && create.local.is_some()
+                    }))
+            {
                 return Err(JournalError::CorruptStore);
             }
             sandboxes.insert(request.identity.sandbox_id.as_str());

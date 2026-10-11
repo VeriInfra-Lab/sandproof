@@ -53,6 +53,18 @@ def digest(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def private_path(path, *, directory=False):
+    """Canonical, owner-only evidence/config path shared by trusted runners."""
+    path = Path(path)
+    if not path.is_absolute() or path.resolve(strict=True) != path:
+        raise ValueError("canonical private path required")
+    details = path.lstat()
+    kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not kind(details.st_mode) or details.st_uid != os.geteuid() or details.st_mode & 0o077:
+        raise ValueError("owner-only regular file or directory required")
+    return path
+
+
 def json_file(path, limit=1024 * 1024):
     # Refuse symlinks and oversized/nonregular evidence; never follow a planted
     # report link while exporting. All run directories are private throughout.

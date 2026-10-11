@@ -1,0 +1,90 @@
+//! Registered mTLS network adapter. Public strings never choose destinations.
+use crate::HostPort;
+use sandproof_api::PortError;
+use sandproof_internal::InternalClient;
+use sandproof_protocol::internal::{
+    NodeIdentity,
+    lifecycle::{LifecycleRequest, LifecycleResponse},
+};
+use std::{collections::BTreeSet, time::Duration};
+use tokio::runtime::Handle;
+
+pub struct RegisteredHost {
+    pub identity: NodeIdentity,
+    pub client: InternalClient,
+}
+pub struct RegisteredHosts {
+    hosts: Vec<RegisteredHost>,
+    runtime: Handle,
+}
+impl RegisteredHosts {
+    /// # Errors
+    /// Refuses unbounded, duplicate or cross-deployment registration.
+    pub fn new(hosts: Vec<RegisteredHost>, runtime: Handle) -> Result<Self, PortError> {
+        let Some(first) = hosts.first() else {
+            return Err(PortError::Invalid);
+        };
+        if hosts.len() > 256
+            || hosts
+                .iter()
+                .any(|host| host.identity != *host.client.node_identity())
+            || hosts
+                .iter()
+                .any(|host| host.identity.deployment_id != first.identity.deployment_id)
+            || hosts
+                .iter()
+                .map(|host| host.identity.node_id.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
+                != hosts.len()
+        {
+            return Err(PortError::Invalid);
+        }
+        Ok(Self { hosts, runtime })
+    }
+    pub(crate) fn client(&self, node: &NodeIdentity) -> Result<InternalClient, PortError> {
+        self.hosts
+            .iter()
+            .find(|host| host.identity == *node)
+            .map(|host| host.client.clone())
+            .ok_or(PortError::Busy)
+    }
+}
+impl HostPort for RegisteredHosts {
+    fn send(
+        &self,
+        request: &LifecycleRequest,
+        deadline: Duration,
+    ) -> Result<LifecycleResponse, PortError> {
+        let host = self
+            .hosts
+            .iter()
+            .find(|host| host.identity == request.identity.node)
+            .ok_or(PortError::OutcomeUnknown)?;
+        // ControllerPort calls run inside the API's bounded spawn_blocking.
+        // Never invoke this sync adapter on a Tokio runtime worker thread.
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, host.client.lifecycle(request))
+                .await
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .map_err(|_| PortError::OutcomeUnknown)
+        })
+    }
+    fn confirm(
+        &self,
+        result: &LifecycleResponse,
+        deadline: Duration,
+    ) -> Result<LifecycleResponse, PortError> {
+        let host = self
+            .hosts
+            .iter()
+            .find(|host| host.identity == result.identity.node)
+            .ok_or(PortError::OutcomeUnknown)?;
+        self.runtime.block_on(async {
+            tokio::time::timeout(deadline, host.client.confirm_result(result))
+                .await
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .map_err(|_| PortError::OutcomeUnknown)
+        })
+    }
+}

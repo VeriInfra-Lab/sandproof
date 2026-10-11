@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct TransferLimits {
+pub struct TransferLimits {
     pub file_upload_bytes: usize,
     pub file_download_bytes: usize,
     pub command_input_bytes: usize,
@@ -22,6 +22,7 @@ pub(crate) struct TransferLimits {
 
 impl TransferLimits {
     #[cfg(test)]
+    #[must_use]
     pub fn fixture() -> Self {
         // Test data, not claimed production defaults or measured task needs.
         Self {
@@ -39,6 +40,8 @@ impl TransferLimits {
         }
     }
 
+    /// # Errors
+    /// Rejects missing/oversized byte, concurrency or idle-time envelopes.
     pub fn validate(&self) -> Result<(), &'static str> {
         if [
             self.file_upload_bytes,

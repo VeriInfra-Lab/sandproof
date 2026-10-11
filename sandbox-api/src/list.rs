@@ -34,9 +34,11 @@ pub struct ListQuery {
     pub order: Option<ListOrder>,
 }
 
-pub(crate) struct Selection {
-    pub(crate) application: ListSelection,
-    pub(crate) order: ListOrder,
+/// Pure parsing result shared by local component adapters and the center.
+/// The caller must supply owner-authorized records from its current authority.
+pub struct Selection {
+    pub application: ListSelection,
+    pub order: ListOrder,
 }
 
 // Match the upstream microsecond keyset, including sub-microsecond bounds.
@@ -96,7 +98,9 @@ fn template_filter(value: &str) -> Result<String, PortError> {
 }
 
 impl ListQuery {
-    pub(crate) fn validate(&self) -> Result<Selection, PortError> {
+    /// # Errors
+    /// Rejects malformed filters, cursors, directions and page boundaries.
+    pub fn validate(&self) -> Result<Selection, PortError> {
         let limit = self.limit.unwrap_or(100);
         if !(1..=100).contains(&limit) {
             return Err(PortError::Invalid);
@@ -157,7 +161,10 @@ impl ListQuery {
     }
 }
 
-pub(crate) fn page_to_sdk(page: InstancePage, order: ListOrder) -> Result<SandboxPage, PortError> {
+/// Pure response serialization; it does not query or grant access.
+/// # Errors
+/// Rejects unrepresentable timestamps or response fields.
+pub fn page_to_sdk(page: InstancePage, order: ListOrder) -> Result<SandboxPage, PortError> {
     let next_token = page
         .next_cursor
         .map(|key| {

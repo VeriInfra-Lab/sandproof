@@ -29,6 +29,86 @@ impl<H: ControllerHost> ControllerApplication<H> {
     ) -> Result<DataPermit, ApplicationError> {
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let (sandbox, target) = self.data_target(&inner, supplied, kind)?;
+        Self::register_data_permit(&mut inner, sandbox, target, kind)
+    }
+
+    /// Internal mTLS assembly supplies the center-authorized full global
+    /// binding. A valid peer alone is NOT permission to access a local VM.
+    /// No public API key/token, host path or numeric VM target is accepted.
+    /// # Errors
+    /// Unknown, superseded, terminating, mismatched or expired responsibility
+    /// refuses the route. Native authority is rechecked again at relay launch.
+    pub fn internal_data_permit(
+        &self,
+        identity: &sandproof_protocol::internal::ControlIdentity,
+        kind: DataKind,
+    ) -> Result<DataPermit, ApplicationError> {
+        self.internal_data_authorization(identity, kind)
+            .map(|(permit, _)| permit)
+    }
+
+    /// Bind the permit and the ORIGINAL guest credential under one authority
+    /// lock. Only trusted host transport may use the returned secret, never a
+    /// public response, center request, JSON DTO, log or credential fallback.
+    /// Relay dispatch still rechecks the native authority before physical exec.
+    /// # Errors
+    /// Same exact identity, lifecycle, lifetime and permission checks as the
+    /// internal permit path; a local credential fault is not global authority.
+    pub fn internal_data_authorization(
+        &self,
+        identity: &sandproof_protocol::internal::ControlIdentity,
+        kind: DataKind,
+    ) -> Result<(DataPermit, String), ApplicationError> {
+        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let request = inner
+            .journal
+            .internal_request(identity)
+            .map_err(map_journal)?;
+        let state = inner
+            .journal
+            .internal_work_state(&request)
+            .map_err(map_journal)?;
+        if !state.current
+            || request.intent == sandproof_protocol::internal::lifecycle::Intent::Destroy
+        {
+            return Err(ApplicationError::NotFound);
+        }
+        let local = state.local.ok_or(ApplicationError::NotFound)?;
+        let world = inner.journal.world().map_err(map_journal)?;
+        let record = world
+            .sandbox_record(local.sandbox)
+            .ok_or(ApplicationError::NotFound)?;
+        if record.owner != local.owner {
+            return Err(ApplicationError::Busy);
+        }
+        if record.phase != core::Phase::Running || record.current_vm.is_none() {
+            return Err(ApplicationError::NotFound);
+        }
+        inner
+            .journal
+            .live_lifetime(
+                &core::Actor::Tenant(local.owner),
+                local.sandbox,
+                self.clock.now_ms()?,
+            )
+            .map_err(map_admission)?;
+        let secret = data_credentials::verify_target(&inner, local.sandbox, record.generation)?;
+        let (sandbox, target) = self.data_target(&inner, &secret, kind)?;
+        if sandbox != local.sandbox {
+            return Err(ApplicationError::Busy);
+        }
+        let permit = Self::register_data_permit(&mut inner, sandbox, target, kind)?;
+        Ok((permit, secret))
+    }
+
+    // A single original registration algorithm for local component and
+    // authenticated internal callers; both keep the application lock held.
+    fn register_data_permit(
+        inner: &mut Inner<H>,
+        sandbox: core::SandboxId,
+        target: DataTarget,
+        kind: DataKind,
+    ) -> Result<DataPermit, ApplicationError> {
         let helper_gate = inner
             .host
             .acquire_data_gate(sandbox, target.vm, target.generation)?;

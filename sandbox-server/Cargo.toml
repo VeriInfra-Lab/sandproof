@@ -7,9 +7,14 @@ rust-version.workspace = true
 
 [features]
 # Compiles only the test harness; never exposes an unauthenticated server mode.
-sdk-contract-tests = []
+sdk-contract-tests = ["sandproof-host-service/sdk-contract-tests"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
+sandproof-host-service = { path = "../sandbox-host-service" }
+sandproof-internal = { path = "../sandbox-internal" }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
+sha2 = "=0.10.9"
+sandproof-data-transport = { path = "../sandbox-data-transport" }
 sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
 sandproof-api = { path = "../sandbox-api" }
 sandproof-controller-service = { path = "../controller-service" }

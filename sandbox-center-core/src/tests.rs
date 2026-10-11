@@ -2,7 +2,7 @@
 mod fixture;
 use crate::*;
 use fixture::*;
-use sandproof_protocol::internal::lifecycle::LifecycleFact;
+use sandproof_protocol::internal::lifecycle::{LifecycleFact, Resources};
 fn state() -> CenterState {
     CenterState::new(
         node("host-a").deployment_id,
@@ -116,4 +116,68 @@ fn retained_history_is_bounded_without_forgetting_old_identities() {
         Err(DecisionError::Capacity)
     );
     assert!(s.is_valid());
+}
+
+#[test]
+fn confirmed_compaction_bounds_renewal_history_without_reusing_intent_or_destroy_slot() {
+    let tenant = "1".try_into().unwrap();
+    let mut s = state();
+    s.bounds.operations_per_sandbox = 4;
+    let (next, create) = s.create(&tenant, binding(), 0).unwrap();
+    s = next
+        .apply_response(&response(
+            &create,
+            1,
+            LifecycleFact::Ready {
+                started_at_ms: 100,
+                end_at_ms: 200,
+                max_end_at_ms: 600,
+            },
+        ))
+        .unwrap();
+    let mut old = None;
+    for version in 2..40 {
+        let (next, request) = s
+            .renew(&tenant, &create.identity.sandbox_id, 500, 150)
+            .unwrap();
+        assert_eq!(request.identity.intent_version.get(), version);
+        s = next;
+        if let Some(previous) = &old {
+            assert_eq!(s.compact_confirmed(previous), Err(DecisionError::Stale));
+        }
+        let result = response(&request, version, LifecycleFact::Renewed { end_at_ms: 500 });
+        s = s.apply_response(&result).unwrap();
+        s = s.compact_confirmed(&result).unwrap();
+        assert_eq!(s.sandboxes[0].operations.len(), 2);
+        assert_eq!(s.sandboxes[0].operations[0].request, create);
+        assert_eq!(s.sandboxes[0].end_at_ms, Some(500));
+        assert!(s.is_valid());
+        old = Some(result);
+    }
+    // One missed confirmation leaves an extra historical renewal. Destruction
+    // may compact it only while retaining the final confirmed lifetime anchor.
+    let (next, renewal) = s
+        .renew(&tenant, &create.identity.sandbox_id, 500, 150)
+        .unwrap();
+    s = next
+        .apply_response(&response(
+            &renewal,
+            40,
+            LifecycleFact::Renewed { end_at_ms: 500 },
+        ))
+        .unwrap();
+    let (s, destroy) = s.destroy(&tenant, &create.identity.sandbox_id).unwrap();
+    assert_eq!(destroy.identity.intent_version.get(), 41);
+    assert_eq!(s.reserved(None, None), Some(resources(1)));
+    let result = response(&destroy, 41, LifecycleFact::Cleaned);
+    let s = s
+        .apply_response(&result)
+        .unwrap()
+        .compact_confirmed(&result)
+        .unwrap();
+    assert!(s.is_valid());
+    assert_eq!(s.sandboxes[0].operations.len(), 3);
+    assert_eq!(s.sandboxes[0].operations[1].request, renewal);
+    assert_eq!(s.sandboxes[0].end_at_ms, Some(500));
+    assert_eq!(s.reserved(None, None), Some(Resources::ZERO));
 }

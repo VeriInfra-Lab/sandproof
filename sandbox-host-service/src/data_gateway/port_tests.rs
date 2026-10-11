@@ -1,6 +1,7 @@
-//! The actual gateway consumes a small application port, not a Linux node.
+//! The relocated actual gateway consumes the SAME application port.
 //! The controlled port replaces authority/host I/O only; no VM claim is made.
 use super::*;
+use axum::http::Method;
 use sandbox_controller_core as core;
 use sandproof_controller_service::application::{
     DataLease, DataTarget, RelayReaper, TrackedRelayChild,
@@ -13,6 +14,10 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::watch,
 };
+
+#[allow(dead_code, reason = "shared original application fixture")]
+#[path = "../../../controller-service/tests/support/internal_application.rs"]
+mod local;
 
 struct Permit {
     revocation: watch::Receiver<bool>,
@@ -121,6 +126,69 @@ fn request_lease() -> Arc<RequestLease> {
         .unwrap()
 }
 
+#[test]
+fn native_guest_credential_replaces_all_public_bearers_without_fallback() {
+    let mut request = request("/process.Process/Start", true, Body::empty());
+    request
+        .headers_mut()
+        .append("x-access-token", "second-public-token".parse().unwrap());
+    replace_guest_credential(&mut request, "original-native-guest-credential").unwrap();
+    assert_eq!(
+        request.headers().get_all("x-access-token").iter().count(),
+        1
+    );
+    assert_eq!(
+        request.headers()["x-access-token"],
+        "original-native-guest-credential"
+    );
+    assert!(replace_guest_credential(&mut request, "invalid\r\ncredential").is_err());
+}
+
+#[tokio::test]
+async fn native_identity_binds_original_guest_secret_through_body_preparation() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = Arc::new(std::sync::Mutex::new(local::State::default()));
+    let application = local::application(
+        &directory.path().join("db"),
+        Arc::clone(&state),
+        Arc::new(local::TestClock(std::sync::atomic::AtomicI64::new(10))),
+        true,
+    );
+    let create = local::request();
+    application.record_internal_intent(&create).unwrap();
+    application
+        .advance_internal_lifecycle(&create, Some(local::template()), local::compute())
+        .unwrap();
+    let native = NativeDataPort {
+        application,
+        identity: create.identity,
+    };
+    let (permit, secret) = native.data_permit(DataKind::Exec).unwrap();
+    let secret = secret.unwrap();
+    let original = state
+        .lock()
+        .unwrap()
+        .configurations
+        .values()
+        .next()
+        .unwrap()
+        .0
+        .clone();
+    assert_eq!(secret, original);
+    assert_ne!(secret, "controlled-test-token");
+    let mut request = request("/process.Process/Start", true, Body::from("{}"));
+    replace_guest_credential(&mut request, &secret).unwrap();
+    let request = prepare_body(request, false, Some(&fixture_limits()))
+        .await
+        .unwrap();
+    assert_eq!(request.headers()["x-access-token"], secret);
+    assert_eq!(
+        request.headers().get_all("x-access-token").iter().count(),
+        1
+    );
+    drop(permit);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn locked_authorization_is_bounded_before_dispatch_for_good_and_bad_tokens() {
     let requests = RequestAdmission::new(sandproof_api::admission::RequestAdmissionLimits {
@@ -128,8 +196,7 @@ async fn locked_authorization_is_bounded_before_dispatch_for_good_and_bad_tokens
         control_reserve: 1,
     })
     .unwrap();
-    let gateway =
-        Arc::new(Gateway::with_admission(TransferLimits::fixture(), requests.clone()).unwrap());
+    let gateway = Arc::new(Gateway::with_admission(fixture_limits(), requests.clone()).unwrap());
     let lock = Arc::new(std::sync::Mutex::new(()));
     let (locked, held) = tokio::sync::oneshot::channel();
     let (release, released) = std::sync::mpsc::channel::<()>();
@@ -248,7 +315,7 @@ async fn application_authorization_errors_keep_the_http_mapping_without_launch()
 #[tokio::test]
 async fn rejected_body_drops_its_pin_without_dispatching_a_host_connection() {
     let port = Arc::new(ControlledPort::new(None, None));
-    let gateway = Arc::new(Gateway::new(TransferLimits::fixture()).unwrap());
+    let gateway = Arc::new(Gateway::new(fixture_limits()).unwrap());
     let response = handle(
         Arc::clone(&port),
         Some(gateway),

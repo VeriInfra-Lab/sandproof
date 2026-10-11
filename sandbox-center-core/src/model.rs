@@ -99,6 +99,29 @@ pub struct Sandbox {
     pub max_end_at_ms: Option<u64>,
     pub observation_version: Option<PositiveCounter>,
 }
+impl Sandbox {
+    pub(crate) fn renewal_anchor(&self) -> Option<usize> {
+        (self.operations.last()?.request.intent
+            == sandproof_protocol::internal::lifecycle::Intent::Destroy)
+            .then(|| {
+                self.operations.iter().rposition(|op| {
+                    op.response.as_ref().is_some_and(|r| {
+                        matches!(
+                            r.fact,
+                            sandproof_protocol::internal::lifecycle::LifecycleFact::Renewed { .. }
+                        )
+                    })
+                })
+            })
+            .flatten()
+    }
+    /// Detailed ordinary results can be dropped, but origin/current intent and
+    /// the last confirmed lifetime before destruction remain authoritative.
+    #[must_use]
+    pub fn has_compaction_work(&self) -> bool {
+        self.operations.len() > 2 + usize::from(self.renewal_anchor().is_some())
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CenterState {
