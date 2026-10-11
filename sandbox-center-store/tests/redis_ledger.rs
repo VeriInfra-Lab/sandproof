@@ -146,9 +146,12 @@ impl Engine {
             {
                 drop(stream);
                 let mut connection = connect(self.address);
-                let reply: String = redis::cmd("PING").query(&mut connection).unwrap();
-                assert_eq!(reply, "PONG");
-                break;
+                // Listening starts before AOF loading finishes. Poll actual
+                // readiness under the fixture deadline, not just an open port.
+                if matches!(redis::cmd("PING").query::<String>(&mut connection), Ok(reply) if reply == "PONG")
+                {
+                    break;
+                }
             }
             assert!(
                 Instant::now() < deadline,
