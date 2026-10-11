@@ -166,7 +166,7 @@ mod tests {
     fn secret(token: &str) -> GuestSecret {
         GuestSecret {
             token: token.into(),
-            sha512: hash_token(token).unwrap(),
+            sha512: hash_token(token),
             env_vars: std::collections::BTreeMap::default(),
             template: None,
         }
