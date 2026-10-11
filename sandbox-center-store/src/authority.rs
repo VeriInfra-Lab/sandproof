@@ -33,7 +33,23 @@ pub trait LifecycleTransport {
     type Error;
     /// # Errors
     /// No transport error is proof of a side-effect-free business refusal.
-    fn send(&mut self, request: &LifecycleRequest) -> Result<LifecycleResponse, Self::Error>;
+    fn send(
+        &mut self,
+        request: &LifecycleRequest,
+    ) -> impl std::future::Future<Output = Result<LifecycleResponse, Self::Error>> + Send;
+}
+impl<F, Fut, E> LifecycleTransport for F
+where
+    F: FnMut(LifecycleRequest) -> Fut,
+    Fut: std::future::Future<Output = Result<LifecycleResponse, E>> + Send,
+{
+    type Error = E;
+    fn send(
+        &mut self,
+        request: &LifecycleRequest,
+    ) -> impl std::future::Future<Output = Result<LifecycleResponse, Self::Error>> + Send {
+        self(request.clone())
+    }
 }
 pub struct Dispatch {
     request: LifecycleRequest,
@@ -49,11 +65,14 @@ impl Dispatch {
     /// outbox. No host I/O executes under the center authority lock.
     /// # Errors
     /// Errors/wrong replies are unknown and cannot release reservations.
-    pub fn send(
+    pub async fn send(
         self,
         transport: &mut impl LifecycleTransport,
     ) -> Result<LifecycleResponse, DispatchUnknown> {
-        let response = transport.send(&self.request).map_err(|_| DispatchUnknown)?;
+        let response = transport
+            .send(&self.request)
+            .await
+            .map_err(|_| DispatchUnknown)?;
         response
             .validate_for(&self.request)
             .map_err(|_| DispatchUnknown)?;

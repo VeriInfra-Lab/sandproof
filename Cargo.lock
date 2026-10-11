@@ -970,15 +970,20 @@ dependencies = [
 name = "sandproof-center-store"
 version = "0.1.0"
 dependencies = [
+ "rcgen",
  "redis",
  "rustix",
+ "rustls",
  "sandbox-controller-core",
  "sandproof-center-core",
  "sandproof-controller-service",
+ "sandproof-host-service",
+ "sandproof-internal",
  "sandproof-protocol",
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -997,6 +1002,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandproof-host-service"
+version = "0.1.0"
+dependencies = [
+ "rcgen",
+ "rustls",
+ "sandbox-controller-core",
+ "sandproof-controller-service",
+ "sandproof-internal",
+ "sandproof-protocol",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "sandproof-internal"
 version = "0.1.0"
 dependencies = [
@@ -1006,6 +1025,7 @@ dependencies = [
  "rcgen",
  "rustls",
  "sandproof-protocol",
+ "serde",
  "serde_json",
  "sha2",
  "tokio",
