@@ -56,6 +56,9 @@ class CompleteFixtureTests(unittest.TestCase):
         self.assertEqual(result["cleanup_reserve_bytes"], pool["host_metadata_bytes"] + cap["max_online_storage_bytes"])
         self.assertEqual(cap["max_online_storage_bytes"], sum(cap[key] for key in (
             "max_database_bytes", "max_wal_bytes", "max_shm_bytes", "checkpoint_scratch_bytes")))
+        self.assertEqual(cap["max_sql_value_bytes"],cap["max_sql_bytes"])
+        self.assertEqual(cap["max_sql_bytes"],16*fixture.MIB)
+        self.assertEqual(cap["max_online_storage_bytes"],fixture.ONLINE_BYTES)
         self.assertEqual(result["max_disk_bytes_global"], pool["rootfs_budget_bytes"] + result["cleanup_reserve_bytes"])
         self.assertEqual(pool["node_state_dir"], result["node_state_dir"])
         self.assertEqual(host["console_policy"], "discard")

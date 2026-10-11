@@ -188,7 +188,8 @@ class RuntimeServices:
         versions=contract_versions(paths['center'],{'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
         if contract_versions(paths['host'],{'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})!=versions:
             raise ValueError('actual service metadata disagrees')
-        manifest=artifacts.load(Path(args.candidate_manifest),candidate=candidate,paths=paths,versions=versions)
+        manifest=artifacts.load(Path(args.candidate_manifest),candidate=candidate,
+            paths={role:str(path) for role,path in paths.items()},versions=versions)
         redis_receipt=check_material(Path(args.redis_material),protected=True)
         hosts=[]
         for native in pools:

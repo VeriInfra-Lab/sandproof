@@ -384,7 +384,8 @@ def preflight(args, report):
     paths={name:host.trusted_path(getattr(args,name)) for name in ('center','host')}
     receipt=host.trusted_path(args.candidate_manifest)
     versions=json_file(receipt,limit=16384)['versions']
-    manifest=artifacts.load(receipt,candidate=args.expected_commit,paths=paths,versions=versions)
+    manifest=artifacts.load(receipt,candidate=args.expected_commit,
+        paths={role:str(path) for role,path in paths.items()},versions=versions)
     report['services']=artifacts.public_identity(manifest)
     for name,path in paths.items():
         require(os.access(path,os.X_OK),'hash_mismatch')
@@ -453,7 +454,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
     config["data_transfer"]["file_upload_bytes"] = 8 * 1024 * 1024
     provision_runtime(config)
     binding=descriptor('base',root/'vmlinux',root/'rootfs.ext4',1,512)
-    catalog=dict(templates=[binding],aliases={'base':'base'},compute_limits=dict(
+    catalog=dict(templates=[binding],aliases={},compute_limits=dict(
         max_vcpus_global=2,max_vcpus_per_tenant=2,max_memory_bytes_global=2*768*1024**2,
         max_memory_bytes_per_tenant=2*768*1024**2))
     config['templates']=catalog

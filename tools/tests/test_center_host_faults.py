@@ -18,6 +18,23 @@ import _runtime_services as services
 
 
 class CenterHostFaultsTests(unittest.TestCase):
+    def test_failure_diagnostics_include_bounded_code_locations_not_credentials_or_paths(self):
+        secret='credential-never-print-this'
+        try:
+            runner.failure_summary(17)  # Exercise a frame in approved source.
+        except AttributeError as error:
+            error.args=(secret,)
+            value=runner.failure_summary(error)
+        else:
+            self.fail('expected diagnostic error')
+        self.assertEqual(value['failure_type'],'AttributeError')
+        self.assertTrue(any(frame['file']=='center_host_faults.py' for frame in value['frames']))
+        self.assertLessEqual(len(value['frames']),12)
+        raw=json.dumps(value)
+        self.assertNotIn(secret,raw)
+        self.assertNotIn(str(ROOT),raw)
+        self.assertLess(len(raw),4096)
+
     def test_fault_harness_imports_the_original_service_activation_ceiling(self):
         self.assertEqual(harness.MAX_ACTIVATION_BYTES, services.MAX_ACTIVATION_BYTES)
         self.assertEqual(harness.MAX_ACTIVATION_BYTES, 200 * 1024**3)

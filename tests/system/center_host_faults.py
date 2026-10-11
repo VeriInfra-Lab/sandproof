@@ -185,12 +185,28 @@ def main(argv=None):
     return bootstrap(args,argv,budget)
 
 
+def failure_summary(error):
+    """Bounded source locations only, never exception text, locals or secrets."""
+    frames=[]
+    traceback=error.__traceback__
+    while traceback is not None:
+        code=traceback.tb_frame.f_code
+        path=Path(code.co_filename)
+        if (path.is_absolute() and path.is_relative_to(ROOT)
+                and re.fullmatch(r'[a-zA-Z0-9_]+\.py',path.name)
+                and re.fullmatch(r'[a-zA-Z0-9_]+|<module>',code.co_name)):
+            frames.append(dict(file=path.name,line=traceback.tb_lineno,function=code.co_name))
+            frames=frames[-12:]
+        traceback=traceback.tb_next
+    return dict(status='failed',failure_type=type(error).__name__,frames=frames)
+
+
 if __name__=='__main__':
     try:
         report=main()
     except (Exception,KeyboardInterrupt) as error:
         # Do not print credentials, arbitrary errors, private paths or logs.
-        print(json.dumps(dict(status='failed',failure_type=type(error).__name__)),flush=True)
+        print(json.dumps(failure_summary(error)),flush=True)
         raise SystemExit(1) from None
     print(json.dumps(dict(status='passed',candidate=report['services']['candidate'],
                          mandatory_cases=[case['id'] for case in report['dk']['cases']])),flush=True)

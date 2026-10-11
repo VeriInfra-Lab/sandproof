@@ -17,6 +17,40 @@ from tools.benchmark_ci import remove_private_tree
 
 
 class RuntimeServicesTests(unittest.TestCase):
+    def test_real_prepare_validates_original_string_path_manifest_before_role_staging(self):
+        """Keep the original artifact validator; stop before any role allocation."""
+        with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
+            root=Path(temporary).resolve()
+            for part in ('db','state','jails'):
+                (root/part).mkdir()
+            paths={role:str(root/('sandproof-'+role)) for role in ('center','host')}
+            versions=dict(internal_protocol=2,center_store=6,host_store=16)
+            candidate='a'*40
+            manifest=dict(schema_version=1,architecture=services.artifacts.ARCHITECTURE,
+                candidate=candidate,versions=versions,
+                artifacts={role:dict(path=path,sha256='b'*64) for role,path in paths.items()})
+            args=SimpleNamespace(**paths,center_uid=1001,center_gid=1001,redis_uid=1002,
+                redis_gid=1002,candidate_manifest=root/'manifest.json',redis_material=root/'redis',
+                service_staging_parent=root/'staging')
+            native=dict(uid_base=3200000,database=str(root/'db/controller.db'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'))
+            class BeforeStaging(RuntimeError):
+                pass
+            with patch.object(services.os,'geteuid',return_value=0), \
+                    patch.object(services,'private_path',side_effect=lambda path,**_:Path(path)), \
+                    patch.object(services,'json_file',return_value=manifest), \
+                    patch.object(services.artifacts,'json_file',return_value=manifest), \
+                    patch.object(services.artifacts,'private_path',side_effect=lambda path,**_:Path(path)), \
+                    patch.object(services.artifacts,'_fingerprint',return_value='b'*64), \
+                    patch.object(services.subprocess,'check_output',return_value=candidate), \
+                    patch.object(services,'contract_versions',return_value=versions), \
+                    patch.object(services,'check_material',return_value={}), \
+                    patch.object(services,'stage_role_directories',side_effect=BeforeStaging) as stage, \
+                    self.assertRaises(BeforeStaging):
+                services.RuntimeServices.prepare(args,root,[native],[{}],'test-key',
+                    '127.0.0.1:12345',root/'record.json',2,registry_config={})
+            stage.assert_called_once()
+
     def node(self):
         identity=dict(deployment_id='exact-domain',node_id='host-runtime',node_generation=1)
         bounds=dict(instances=2,cpu=2,memory_bytes=4000,disk_bytes=8000)

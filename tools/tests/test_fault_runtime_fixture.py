@@ -54,9 +54,17 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
             native = data["native_pools"][0]
             catalog = data["registered_catalogs"][0]
             self.assertEqual(native["templates"], catalog)
+            # `base` is the real template ID. A same-name alias is rejected by
+            # the original Rust catalog, not silently treated as a no-op.
+            self.assertEqual(catalog["aliases"], {})
+            self.assertEqual(catalog["templates"][0]["template_id"], "base")
             self.assertEqual(native["expiry_scan_seconds"], 3600)
             self.assertEqual(native["max_disk_bytes_per_tenant"], 2048)
             self.assertEqual(catalog["compute_limits"]["max_vcpus_global"], 2)
+            host_memory=catalog["templates"][0]["resources"]["host_memory_bytes"]
+            self.assertEqual(catalog["compute_limits"]["max_memory_bytes_global"],2*host_memory)
+            self.assertEqual(catalog["compute_limits"]["max_memory_bytes_per_tenant"],host_memory)
+            self.assertEqual(catalog["templates"][0]["resources"]["memory_mib"],256)
             self.assertEqual(catalog["templates"][0]["kernel"]["sha256"],
                              hashlib.sha256(kernel.read_bytes()).hexdigest())
             self.assertEqual(data["job_count"], 4)

@@ -133,10 +133,10 @@ def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=
         "envd_version": "0.9.0"}
     cpu = settings["vcpu_count"]
     global_slots, personal = settings["max_active_global"], settings["max_active_per_tenant"]
-    catalog = {"templates": [template], "aliases": {"base": "base"}, "compute_limits": {
+    catalog = {"templates": [template], "aliases": {}, "compute_limits": {
         "max_vcpus_global": cpu * global_slots, "max_vcpus_per_tenant": cpu * personal,
-        "max_memory_bytes_global": memory * 1024**2 * global_slots,
-        "max_memory_bytes_per_tenant": memory * 1024**2 * personal}}
+        "max_memory_bytes_global": host_memory * global_slots,
+        "max_memory_bytes_per_tenant": host_memory * personal}}
     settings = {**settings, "templates": catalog,
         "max_lifetime_secs": settings.get("max_lifetime_secs", settings["max_timeout_secs"]),
         "startup_timeout_secs": settings.get("startup_timeout_secs", 300),

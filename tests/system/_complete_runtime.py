@@ -89,7 +89,11 @@ def complete_runtime(settings, *, slots, file_size=None):
     result["maintenance"] = {
         "capacity": {
             "max_live_sandboxes": 64, "max_sql_rows": 4096, "max_sql_bytes": 16 * MIB,
-            "max_sql_value_bytes": 256 * 1024, "max_receipt_bytes": 16 * 1024,
+            # The retained inbox is ONE original SQL row. Let it use the
+            # existing 16 MiB aggregate ceiling; Rust derives/reserves its
+            # exact future row size and still refuses insufficient TOTAL SQL.
+            # Neither aggregate SQL nor physical online storage is increased.
+            "max_sql_value_bytes": 16 * MIB, "max_receipt_bytes": 16 * 1024,
             "max_transaction_inputs": 4, "max_transaction_bytes": 32 * 1024,
             "max_database_bytes": 512 * MIB, "max_wal_bytes": 520 * MIB,
             "max_shm_bytes": 2 * MIB, "checkpoint_scratch_bytes": 8 * MIB,
