@@ -116,8 +116,7 @@ fn request(path: &str, token: bool, body: Body) -> Request<Body> {
 }
 
 fn request_lease() -> Arc<RequestLease> {
-    RequestAdmission::new(Default::default())
-        .unwrap()
+    Arc::new(RequestAdmission::default())
         .try_acquire(RequestClass::Ordinary)
         .unwrap()
 }

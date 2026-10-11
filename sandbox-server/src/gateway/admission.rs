@@ -24,7 +24,7 @@ impl Gateway {
     pub fn new(limits: TransferLimits) -> Result<Self, &'static str> {
         Self::with_admission(
             limits,
-            sandproof_api::admission::RequestAdmission::new(Default::default())?,
+            Arc::new(sandproof_api::admission::RequestAdmission::default()),
         )
     }
 
