@@ -2,6 +2,10 @@
 # Fast functional-development checks; no KVM, cloud access, or Lean proof claims.
 set -euo pipefail
 
+# Compiled checked helpers must not be group/other-writable even when a
+# developer's login umask is 002. Existing cache identities are still checked.
+umask 022
+
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
