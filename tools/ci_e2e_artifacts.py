@@ -1,10 +1,10 @@
-"""Strict candidate identity for the forthcoming center/host KVM assembly.
+"""Strict candidate identity for the unique center/host KVM assembly.
 
-This is an unenabled preparation/report boundary, not a second runtime mode.
+This is the shared preparation/report boundary, not a second runtime mode.
 It records two protected binaries from one approved candidate. It does not
 claim they were executed, that HTTPS/KVM worked, or that a DK case passed.
-The production entry switch must wire this same boundary into both preparation
-and the installed supervisor; a legacy single-server report is not compatible.
+Preparation and the supervisor use this same boundary; a legacy single-server
+report is not compatible. Source wiring alone is not deployed CI evidence.
 """
 
 import hashlib

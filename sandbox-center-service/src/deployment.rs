@@ -139,7 +139,7 @@ struct DeploymentFile {
 
 /// Validated ingredients only. No `Debug`/`Serialize` exposes user/Redis keys.
 /// The complete mutable template publication/build provider and remote data
-/// gateway remain mandatory dependencies of the eventual executable assembly.
+/// gateway remain mandatory dependencies of the executable assembly.
 pub struct CenterAssemblyInputs {
     pub application: CenterConfig,
     pub bind: SocketAddr,
