@@ -65,7 +65,7 @@
           }
         ],
         "filesystem_overhead_bytes": 33554432,
-        "filesystem_overhead_inodes": 4096
+        "filesystem_overhead_inodes": 16384
       },
       "console_policy": "discard",
       "maintenance": {

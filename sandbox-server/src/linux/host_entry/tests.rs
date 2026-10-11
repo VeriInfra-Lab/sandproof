@@ -107,6 +107,10 @@ fn documented_host_example_uses_the_original_validator_and_rejects_missing_or_ol
     let value: Value =
         serde_json::from_str(include_str!("../../../../deploy/host.example.json")).unwrap();
     assert!(check(value.clone()));
+    let mut insufficient_inodes = value.clone();
+    insufficient_inodes["native"]["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"] =
+        json!(4096);
+    assert!(!check(insufficient_inodes));
     for field in [
         "native",
         "inbox",
