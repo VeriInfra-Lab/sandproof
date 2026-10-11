@@ -26,6 +26,11 @@ serde_json = "=1.0.142"
 tempfile = "=3.23.0"
 sandproof-controller-service = { path = "../controller-service" }
 sandbox-controller-core = { path = "../controller-core" }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+sandproof-internal = { path = "../sandbox-internal" }
+sandproof-host-service = { path = "../sandbox-host-service" }
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
 
 [lints]
 workspace = true

@@ -6,6 +6,36 @@ use sandproof_protocol::{
     },
 };
 
+#[path = "support/lifecycle.rs"]
+mod lifecycle;
+
+#[test]
+fn ready_must_precede_the_original_startup_deadline() {
+    use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
+
+    let request = lifecycle::request(1, 1, Intent::Create);
+    let deadline = request.create.startup_deadline_ms;
+    for started_at_ms in [deadline - 1, deadline, deadline + 1] {
+        let response = lifecycle::response(
+            &request,
+            1,
+            LifecycleFact::Ready {
+                started_at_ms,
+                end_at_ms: started_at_ms + request.create.timeout_ms,
+                max_end_at_ms: started_at_ms + request.create.max_lifetime_ms,
+            },
+        );
+        assert_eq!(
+            response.validate_for(&request),
+            if started_at_ms < deadline {
+                Ok(())
+            } else {
+                Err(InternalError::BindingMismatch)
+            }
+        );
+    }
+}
+
 fn node() -> NodeIdentity {
     NodeIdentity {
         deployment_id: DeploymentId::try_from("deployment-a").unwrap(),

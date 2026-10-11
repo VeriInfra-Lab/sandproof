@@ -4,6 +4,10 @@ use crate::ResourceId;
 use serde::{Deserialize, Serialize};
 
 pub const MAX_OPTIONS_BYTES: usize = 65_536;
+/// JSON byte arrays encode a byte in at most four bytes including separators.
+/// Fixed identity/shape allowance preserves the original option limit.
+pub const LIFECYCLE_BODY_BYTES: usize = 4 * MAX_OPTIONS_BYTES + 8192;
+pub const LIFECYCLE_PATH: &str = "/internal/v1/lifecycle";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -152,7 +156,7 @@ impl LifecycleResponse {
                     max_end_at_ms,
                 },
             ) => {
-                started_at_ms <= request.create.startup_deadline_ms
+                started_at_ms < request.create.startup_deadline_ms
                     && started_at_ms.checked_add(request.create.timeout_ms) == Some(end_at_ms)
                     && started_at_ms.checked_add(request.create.max_lifetime_ms)
                         == Some(max_end_at_ms)
