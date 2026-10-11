@@ -92,6 +92,19 @@ fn assets() -> (Vec<u8>, Vec<u8>, CacheRequest) {
     };
     (kernel, rootfs, request)
 }
+fn cache_config(root: std::path::PathBuf) -> PhysicalTemplateCache {
+    PhysicalTemplateCache {
+        namespace: "0123456789abcdef".into(),
+        root,
+        max_entries: 2,
+        max_downloads: 1,
+        max_entry_bytes: 8192,
+        artifact_bytes: 16384,
+        temporary_bytes: 8192,
+        metadata_bytes: 4096 + 2 * 2 * (64 * 1024 + 4096),
+        inode_budget: 19,
+    }
+}
 async fn fixture(block: bool) -> Fixture {
     let directory = tempfile::tempdir_in("/run").unwrap();
     fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
@@ -105,17 +118,7 @@ async fn fixture(block: bool) -> Fixture {
         .mode(0o600)
         .open(root.join(".cache.lock"))
         .unwrap();
-    let config = PhysicalTemplateCache {
-        namespace: "0123456789abcdef".into(),
-        root,
-        max_entries: 2,
-        max_downloads: 1,
-        max_entry_bytes: 8192,
-        artifact_bytes: 16384,
-        temporary_bytes: 8192,
-        metadata_bytes: 4096 + 2 * 2 * (64 * 1024 + 4096),
-        inode_budget: 19,
-    };
+    let config = cache_config(root);
     let host = Arc::new(Mutex::new(local::State::default()));
     let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
     let app = local::application_with_cache_config(
@@ -692,7 +695,7 @@ async fn cache_configuration_private_roots_and_writer_lease_remain_shared_startu
             "configuration" => config.max_downloads = 0,
             "root" => {
                 fs::set_permissions(config.root.join("inbox"), fs::Permissions::from_mode(0o755))
-                    .unwrap()
+                    .unwrap();
             }
             "lease" => fs::set_permissions(
                 config.root.join(".cache.lock"),

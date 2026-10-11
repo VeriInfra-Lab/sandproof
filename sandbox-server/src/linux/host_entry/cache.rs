@@ -374,7 +374,7 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         if downloaded.is_err() {
             // Do not release an uncertain directory after an identity change.
             // Only these exact private files were ever permitted before seal.
-            if self.cleanup_partial(&manifest, &staging).is_ok() {
+            if Self::cleanup_partial(&manifest, &staging).is_ok() {
                 let mut cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
                 let state = cache.ready_mut()?;
                 let pending = state
@@ -611,7 +611,7 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
             if entry.downloading {
                 return Err(ReceiveError::Unavailable);
             }
-            self.cleanup_partial(
+            Self::cleanup_partial(
                 &entry.manifest,
                 &self
                     .config
@@ -622,7 +622,7 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         }
         Ok(())
     }
-    fn cleanup_partial(&self, manifest: &Manifest, staging: &Path) -> Result<(), ReceiveError> {
+    fn cleanup_partial(manifest: &Manifest, staging: &Path) -> Result<(), ReceiveError> {
         exact_directory(staging, manifest)?;
         // Never unlink the sole durable identity. A crash during these removals
         // remains recoverable from the same manifest, including an empty inbox.
