@@ -7,86 +7,12 @@ use rusqlite::{Connection, Transaction, params};
 use sandbox_controller_core::{
     self as core,
     maintenance::{
-        MaintenanceInput, MaintenanceLimits,
+        MaintenanceInput,
         slots::{HostBinding, HostSlotId, HostSlotPhase, SlotInput},
     },
 };
-use serde::{Deserialize, Serialize};
 
-/// Only VMM console output is discarded; guest command and
-/// self-service build logs have independent retention contracts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConsolePolicy {
-    Discard,
-}
-
-/// Explicit deployment mapping. None of these limits has a production default.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BoundedHostConfig {
-    /// Required immutable shared-filesystem profile; absence is rejected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub physical_storage: Option<crate::physical_storage::PhysicalStorageProfile>,
-    /// Required VMM console policy; absence is rejected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub console_policy: Option<ConsolePolicy>,
-    pub maintenance: MaintenanceLimits,
-    pub uid_base: u32,
-    /// First deployment-allocated /30 index in the finite 100.64.0.0/10 pool.
-    pub uplink_base: u64,
-    /// Derived from the deployment's explicit data-transfer per-VM cap.
-    pub max_data_routes_per_slot: u64,
-    pub max_data_routes_global: u64,
-    pub data_route_control_reserve: u64,
-}
-
-impl BoundedHostConfig {
-    /// # Errors
-    /// Rejects invalid limits, reserved UIDs and exhausted physical IPv4 space.
-    pub fn validate(&self) -> Result<(), JournalError> {
-        self.physical_storage
-            .as_ref()
-            .ok_or(JournalError::UnsupportedStore)?
-            .validate()?;
-        if self.console_policy != Some(ConsolePolicy::Discard) {
-            return Err(JournalError::UnsupportedStore);
-        }
-        let slots = self.maintenance.max_host_slots;
-        if self.data_route_control_reserve == 0
-            || self.max_data_routes_per_slot <= self.data_route_control_reserve
-            || self.max_data_routes_global < self.max_data_routes_per_slot
-            || usize::try_from(self.max_data_routes_global).is_err()
-            || self.max_data_routes_per_slot == 0
-            || usize::try_from(self.max_data_routes_per_slot).is_err()
-            || slots == 0
-            || slots > 1_048_576
-            || self
-                .uplink_base
-                .checked_add(slots - 1)
-                .is_none_or(|last| last >= 1_048_576)
-            || self.maintenance.max_retained_results == 0
-            || usize::try_from(self.maintenance.max_retained_results).is_err()
-            || self.uid_base == 0
-            || u64::from(self.uid_base)
-                .checked_add(slots - 1)
-                .is_none_or(|uid| uid >= u64::from(u32::MAX))
-        {
-            return Err(JournalError::UnsupportedStore);
-        }
-        Ok(())
-    }
-}
-
-/// Kept per physical position, including the predecessor needed after a lost
-/// host bind acknowledgement. It is never reconstructed from current maxima.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HostSlotContext {
-    pub position: HostSlotId,
-    pub expected_previous: Option<core::VmId>,
-    pub binding: HostBinding,
-}
+pub use crate::host_contract::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
 
 pub(super) fn config(connection: &Connection) -> Result<Option<BoundedHostConfig>, JournalError> {
     let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
