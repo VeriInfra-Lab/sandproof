@@ -66,6 +66,7 @@ async fn authority_fault_during_advance_halts_before_another_healthy_request() {
     let mut healthy = local::request();
     healthy.identity.sandbox_id = "sandbox-2".try_into().unwrap();
     healthy.identity.operation_id = "operation-2".try_into().unwrap();
+    healthy.identity.retention_slot = 2;
     host.receive(healthy).await.unwrap();
     assert_eq!(
         host.drive_once(config(), Arc::new(CorruptAuthority(database)))
@@ -143,6 +144,7 @@ async fn missing_material_does_not_start_vm_or_suppress_another_durable_request(
     let mut healthy = local::request();
     healthy.identity.operation_id = "operation-2".try_into().unwrap();
     healthy.identity.sandbox_id = "sandbox-2".try_into().unwrap();
+    healthy.identity.retention_slot = 2;
     host.receive(healthy.clone()).await.unwrap();
     let report = host
         .drive_once(config(), Arc::new(Templates))

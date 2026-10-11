@@ -92,7 +92,10 @@ async fn missing_or_mismatched_material_stays_recorded_never_capacity_rejected()
     use sandproof_controller_service::application::ApplicationError;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let state = Arc::new(Mutex::new(local::State::default()));
+    let state = Arc::new(Mutex::new(local::State {
+        disk_available: Some(0),
+        ..local::State::default()
+    }));
     let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
     let app = local::application(&path, Arc::clone(&state), clock, true);
     let service = HostLifecycle::new(app);
@@ -113,6 +116,25 @@ async fn missing_or_mismatched_material_stays_recorded_never_capacity_rejected()
         Err(ApplicationError::Invalid)
     );
     assert_eq!(service.receive(create.clone()).await.unwrap(), original);
+    // Even definitive low disk cannot turn a foreign registered private owner
+    // or changed immutable resource shape into a capacity acceptance fact.
+    for private_owner in [true, false] {
+        let mut changed = local::template();
+        if private_owner {
+            changed.registered.owner = Some(2);
+            changed.local.owner = Some(2);
+        } else {
+            changed.registered.resources.cpu_count = 2;
+            changed.local.resources.cpu_count = 2;
+        }
+        changed.digest = changed.registered.canonical_digest().unwrap();
+        let error = service
+            .advance(create.clone(), Some(changed), local::compute())
+            .await
+            .unwrap_err();
+        assert_eq!(error, ApplicationError::Invalid);
+        assert_eq!(service.receive(create.clone()).await.unwrap(), original);
+    }
     // A callback error cannot masquerade as the original numeric capacity
     // decision, even if its coarse application category also says quota.
     state.lock().unwrap().template_error = Some(ApplicationError::QuotaExceeded);

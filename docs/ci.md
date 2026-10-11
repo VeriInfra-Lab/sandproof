@@ -24,7 +24,7 @@ SDK 与 Harbor 的原锁定检查使用 `UV_OFFLINE=1`、`CARGO_NET_OFFLINE=true
 
 SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tools/ci_redis.py check` 校验黄金盘中受保护的固定 Redis 源/二进制摘要及可执行权限，再以离线 Cargo 运行选定协议、中心、HTTPS 和原 SQLite 收件组件。只在本轮隔离来宾启动私有回环 Redis；没有宿主凭据或产品 KVM。缺引擎、材料损坏或 Rust 依赖缺失立即失败，不下载 Redis、跳过或回退旧组件。该步骤启用前必须实测候选黄金盘的两次全新离线来宾及故意缺料失败，然后受控切换；源码有此步骤不等于宿主已完成安装，实际切换证据归关联 PR/issue。
 
-中心/宿主的[双产物清单](../tools/ci_e2e_artifacts.py)复用唯一[离线准备入口](../tools/ci_e2e_prepare.py)：同一干净候选离线构建 `sandproof-center`、`sandproof-host` 及原窗口工具，实际执行两个产物的 `contract-versions` 并核对一致。准备不带 App 凭据，不运行 VM，缺固定材料立即失败。监督器源码已拒绝旧 `server` 配置、单服务报告和旧运行状态；工具自测不是已安装或已执行双服务的证据。真实运行、DK 故障组和两题报告仍须同候选组合验收，成功/故意失败/取消收尾完成后才可受控切换原 App 必需检查。不得用现役单服务成功满足新架构验收。
+中心/宿主的[双产物清单](../tools/ci_e2e_artifacts.py)复用唯一[离线准备入口](../tools/ci_e2e_prepare.py)：同一干净候选离线构建 `sandproof-center`、`sandproof-host`、原窗口工具及原迟到动作检查助手，实际执行两个服务的 `contract-versions` 并核对一致。准备不带 App 凭据，不运行 VM，缺固定材料立即失败。固定验收构建使用 `--release` 并明确开启 `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`，让原受控故障点可实际触发；DK 和两题使用同一对真实产物，不另编译一套宿主。这是测试构建，不是普通部署 release 或证明证据。助手必须来自该候选构建目录，其摘要在准备完成后固化，DK 启动前和实际使用前再次核对。监督器源码已拒绝旧 `server` 配置、单服务报告和旧运行状态；工具自测不是已安装或已执行双服务的证据。真实运行、DK 故障组和两题报告仍须同候选组合验收，成功/故意失败/取消收尾完成后才可受控切换原 App 必需检查。不得用现役单服务成功满足新架构验收。
 
 普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器、rustup 与 uv 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。[uv 安装入口](../tools/ci_install_uv.sh)只从固定官方 PyPI 制品下载 uv 0.11.31，核对 SHA256 后以 root/0555 安装到 `/usr/local/bin/uv`；SDK/Harbor 工作流直接检查 `uv --version`，版本缺失或不符即失败。工具或执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
 
@@ -89,7 +89,7 @@ SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tool
 
 两级晋升规则由[开发指南](../CONTRIBUTING.md#5-github-配置)维护，两题预装环境的题集、判据与扩展验收范围由[验收清单](testing-plan.md#4-通用模板与-terminal-bench)维护；专用 App 的两题门槛已接通，部署证据留 #14，不在本页维护另一份进度或旧门槛。结果注明原题/兼容/预装环境、评分启动变体和实际范围；普通任务 PR 不跑真题。test/main 的端到端检查绑定专用 GitHub App 的 ID，运行中阻塞、真实成功后才放行；integration 的保护不增加真题门槛。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口仍未接通，受控命令行入口保留。
 
-新双服务监督配置必须显式提供 `dk_rounds`（1～1024 的整数，故障组另要求足够覆盖实际保留位置的复用），不能依赖脚本默认轮数。故障组仍受原 7200 秒总期限约束，按同一配置摘要记录循环、采样和原镜像/预算；它与两题共享原候选，但有独立的新测试数据和精确资源身份。`rootfs` 是该受保护配置批准的基础盘；两题预装档位的实际题目盘另由 `ci_fixtures` 固定，不能为了故障测试暗中替换题目盘或提高磁盘额度。
+新双服务监督配置必须显式提供 `dk_rounds`（6～16 的整数，故障组另要求足够覆盖实际保留位置的复用），不能依赖脚本默认轮数。故障组仍受原 7200 秒总期限约束，按同一配置摘要记录循环、采样和原镜像/预算；它与两题共享原候选，但有独立的新测试数据和精确资源身份。`rootfs` 是该受保护配置批准的基础盘；两题预装档位的实际题目盘另由 `ci_fixtures` 固定，不能为了故障测试暗中替换题目盘或提高磁盘额度。
 
 给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 

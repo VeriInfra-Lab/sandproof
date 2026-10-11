@@ -1,4 +1,4 @@
-//! Existing deterministic fault boundaries, compiled out of release adapters.
+//! Existing deterministic fault boundaries, absent from ordinary deployment releases.
 use crate::HostObservation;
 use sandbox_controller_core as core;
 use sandproof_controller_service::WorkerTransportError;
@@ -60,8 +60,8 @@ pub(super) fn after_execute(
     result: &Result<WorkReceipt<HostObservation>, WorkerTransportError>,
 ) {
     // The integration test exits the *whole service* after a real
-    // host result but before the journal records its receipt. Release
-    // binaries have no fault injection path.
+    // host result but before the journal records its receipt. Ordinary release
+    // binaries omit it; the fixed controlled CI build enables debug assertions.
     #[cfg(debug_assertions)]
     if result
         .as_ref()

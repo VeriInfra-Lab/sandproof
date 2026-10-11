@@ -121,6 +121,51 @@ fn validate_template_and_time(
     Ok(())
 }
 
+fn validate_owner(
+    request: &LifecycleRequest,
+    template: &InternalTemplate,
+) -> Result<(), AdmissionError> {
+    if template
+        .local
+        .owner
+        .is_some_and(|expected| expected.to_string() != request.identity.tenant_id.as_str())
+    {
+        return Err(AdmissionError::Unauthorized);
+    }
+    Ok(())
+}
+
+fn checked_options(
+    request: &LifecycleRequest,
+) -> Result<(CreateOptions, core::NetworkPolicy), AdmissionError> {
+    let options: CreateOptions = serde_json::from_slice(&request.create.options)
+        .map_err(|_| AdmissionError::InvalidCreateOptions)?;
+    if options.template.is_some()
+        || options
+            .metadata
+            .keys()
+            .any(|key| key.starts_with("_sandproof_"))
+    {
+        return Err(AdmissionError::InvalidCreateOptions);
+    }
+    let policy = policy(&options)?;
+    Ok((options, policy))
+}
+
+impl InternalAdmission {
+    /// The original pure binding checks, before a numeric physical-capacity
+    /// veto may become definitive. No mapping, allocation or host I/O occurs.
+    pub(crate) fn validate_attachment(
+        &self,
+        request: &LifecycleRequest,
+    ) -> Result<(), AdmissionError> {
+        validate_template_and_time(request, self)?;
+        validate_owner(request, &self.template)?;
+        checked_options(request)?;
+        Ok(())
+    }
+}
+
 fn local_owner(
     journal: &ControllerJournal,
     inbox: &super::model::Inbox,
@@ -188,13 +233,7 @@ impl ControllerJournal {
         } = admission;
         let binding = &request.create;
         let shape = template.local.resources;
-        if template
-            .local
-            .owner
-            .is_some_and(|expected| expected.to_string() != request.identity.tenant_id.as_str())
-        {
-            return Err(AdmissionError::Unauthorized);
-        }
+        validate_owner(request, &template)?;
         let owner = local_owner(self, &inbox, &request.identity.tenant_id)?;
         let registered_template = template.registered;
         // Do not confuse global identity with allocation order on this host.
@@ -208,17 +247,7 @@ impl ControllerJournal {
             owner,
             operation: core::OperationId(1),
         };
-        let mut options: CreateOptions = serde_json::from_slice(&binding.options)
-            .map_err(|_| AdmissionError::InvalidCreateOptions)?;
-        if options.template.is_some()
-            || options
-                .metadata
-                .keys()
-                .any(|key| key.starts_with("_sandproof_"))
-        {
-            return Err(AdmissionError::InvalidCreateOptions);
-        }
-        let policy = policy(&options)?;
+        let (mut options, policy) = checked_options(request)?;
         options.template = Some(template.local);
         let response = entry.response.clone();
         self.admit_with_compute(

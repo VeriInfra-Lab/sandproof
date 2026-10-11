@@ -47,7 +47,7 @@ def validate_host_inputs(config):
     # One architecture, not an optional path beside the retired public host.
     if 'server' in config or config.get('prepare_candidate') is not True:
         raise ValueError('only offline-prepared center/host candidates are accepted')
-    if type(config.get('dk_rounds')) is not int or not 1 <= config['dk_rounds'] <= 1024:
+    if type(config.get('dk_rounds')) is not int or not 6 <= config['dk_rounds'] <= 16:
         raise ValueError('explicit finite DK churn sampling count required')
     from tools.ci_e2e_prepare import build_environment, service_paths
     build_environment(config)
@@ -441,8 +441,13 @@ class Supervisor:
         entry=trusted_path(checkout/'tests/system/center_host_faults.py')
         if not entry.is_file():
             raise ValueError('mandatory real DK producer missing; no Harbor launch permitted')
+        from tools.system_acceptance import digest as file_digest
+        stale_sha = self.state.get('stale_probe_sha256')
+        if (not isinstance(stale_sha, str) or not re.fullmatch(r'[0-9a-f]{64}', stale_sha)
+                or file_digest(trusted_path(Path(config['stale_probe']))) != stale_sha):
+            raise ValueError('same-candidate stale action probe missing or changed')
         root=private_path(config['scratch_parent'],directory=True)/uuid.uuid4().hex[:8]
-        command=[str(checkout/'tests/compat/.venv/bin/python'),str(entry)]
+        command=[str(checkout/'benchmarks/.venv/bin/python'),str(entry)]
         for flag in ('center','host','redis_material','tls_material','service_staging_parent',
                      'center_uid','center_gid','redis_uid','redis_gid','jailer','firecracker',
                      'kernel','rootfs','uid_base','scratch_parent','cgroup_parent','service_cgroup_parent'):
@@ -450,6 +455,7 @@ class Supervisor:
         command.extend(['--candidate-manifest',self.state['candidate_manifest'],
             '--run-root',str(root),'--run-identity',self.state['id'],
             '--service-cgroup-record',str(root/'service-cgroup.json'),
+            '--stale-probe',config['stale_probe'],'--stale-probe-sha256',stale_sha,
             '--service-profile',config['budget_profile'], '--rounds',str(config['dk_rounds'])])
         self.state['dk'].update(root=str(root),command=command,checkout=str(checkout),
             deadline_seconds=7200,unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',phase='launching')
@@ -621,6 +627,7 @@ class Supervisor:
             try:
                 self.verified_candidate()
                 state['window_helper_sha256'] = file_digest(trusted_path(Path(self.config['window_helper'])))
+                state['stale_probe_sha256'] = file_digest(trusted_path(Path(self.config['stale_probe'])))
             except (OSError, ValueError, TimeoutError):
                 self.block('candidate_service_artifact_identity_unknown')
                 return

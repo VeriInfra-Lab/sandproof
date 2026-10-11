@@ -29,6 +29,7 @@
   "redis_uid": 65533,
   "redis_gid": 65533,
   "window_helper": "/var/lib/sandproof-e2e/target/release/sandproof-window-reducer",
+  "stale_probe": "/var/lib/sandproof-e2e/target/release/examples/stale_host_actions",
   "dataset": "terminal-bench@2.0",
   "task_source": "/opt/sandproof-e2e/tasks-20",
   "task_registry": "/opt/sandproof-e2e/registry-20.json",

@@ -1,6 +1,6 @@
 """Offline dual-service candidate preparation; no runtime or pass attestation.
 
-One approved checkout produces the center, host and existing window reducer.
+One approved checkout produces the center, host and existing acceptance helpers.
 No inherited credentials, network fallback or old single-server output is used.
 """
 import argparse
@@ -24,6 +24,9 @@ def build_environment(config):
     tools = str(private_path(config['toolchain_bin'], directory=True))
     return dict(PATH=tools + ':/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                 CARGO_BUILD_JOBS='2', CARGO_NET_OFFLINE='true', UV_OFFLINE='true',
+                # One controlled test build for DK and Harbor alike. Ordinary
+                # deployment releases do not include these debug-only faults.
+                CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS='true',
                 CARGO_TARGET_DIR=caches['cargo_target'], CARGO_HOME=caches['cargo_home'],
                 UV_CACHE_DIR=caches['uv_cache'], RUSTUP_HOME=caches['rustup_home'],
                 GIT_TERMINAL_PROMPT='0', GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null')
@@ -35,7 +38,8 @@ def service_paths(config):
     paths = {role: config[role] for role in artifacts.BINARIES}
     if ('server' in config
             or any(paths[role] != str(target / name) for role, name in artifacts.BINARIES.items())
-            or config['window_helper'] != str(target / 'sandproof-window-reducer')):
+            or config['window_helper'] != str(target / 'sandproof-window-reducer')
+            or config['stale_probe'] != str(target / 'examples/stale_host_actions')):
         raise ValueError('service outputs must belong to this exact candidate build target')
     return paths
 
@@ -100,6 +104,14 @@ def prepare(config):
                             ('sandproof-controller-service', 'sandproof-window-reducer')):
         subprocess.run([config['cargo'], 'build', '--release', '--locked', '--offline',
                         '-p', package, '--bin', binary], cwd=checkout, env=env, check=True, timeout=900)
+    subprocess.run([config['cargo'], 'build', '--release', '--locked', '--offline',
+                    '-p', 'sandproof-node', '--example', 'stale_host_actions'],
+                   cwd=checkout, env=env, check=True, timeout=900)
+    # Helpers must exist in this same candidate target, not an external tool.
+    for name in ('window_helper', 'stale_probe'):
+        helper = artifacts.trusted_path(Path(config[name]))
+        if not helper.is_file() or not os.access(helper, os.X_OK):
+            raise ValueError('same-candidate acceptance helper is not executable')
     # Publish no fake runtime result. The original system harness owns runtime
     # provenance, binary fingerprints, task inputs and actual host admission.
     # One shared Rust source defines versions, but BOTH actual binaries must

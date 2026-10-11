@@ -220,20 +220,28 @@ impl<H: ControllerHost> ControllerApplication<H> {
             &options,
             template.local.resources.disk_bytes,
         )?;
+        let mut admission = InternalAdmission {
+            now_ms: self.clock.now_ms()?,
+            limits: self.config.limits,
+            compute,
+            template,
+            file_policy_digest: self.config.file_policy_digest,
+        };
+        // A physical veto is definitive only for this valid original immutable
+        // attachment. Bad material cannot turn into a successful quota release
+        // merely because the same host currently has little free space.
+        admission
+            .validate_attachment(request)
+            .map_err(map_admission)?;
         if inner.host.available_disk_bytes()? < required {
             return Ok(InternalAdmissionDecision::CapacityVeto);
         }
-        let decision = inner.journal.admit_internal_create(
-            request,
-            InternalAdmission {
-                now_ms: self.clock.now_ms()?,
-                limits: self.config.limits,
-                compute,
-                template,
-                file_policy_digest: self.config.file_policy_digest,
-            },
-            &mut NeverCrash,
-        );
+        // Preserve the original journal's fresh clock/rejection checks after
+        // the potentially slow host observation, rather than reusing its time.
+        admission.now_ms = self.clock.now_ms()?;
+        let decision = inner
+            .journal
+            .admit_internal_create(request, admission, &mut NeverCrash);
         match decision {
             Ok(_) => Ok(InternalAdmissionDecision::Admitted),
             Err(crate::AdmissionError::QuotaExceeded) => {

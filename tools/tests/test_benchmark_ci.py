@@ -472,7 +472,8 @@ class BenchmarkCITests(unittest.TestCase):
             config[key] = str(path)
         target = Path(config['cargo_target']) / 'release'
         config.update(center=str(target / 'sandproof-center'), host=str(target / 'sandproof-host'),
-                      window_helper=str(target / 'sandproof-window-reducer'))
+                      window_helper=str(target / 'sandproof-window-reducer'),
+                      stale_probe=str(target / 'examples/stale_host_actions'))
         staging = self.root / 'service-staging'
         staging.mkdir(exist_ok=True)
         staging.chmod(0o711)
@@ -500,7 +501,7 @@ class BenchmarkCITests(unittest.TestCase):
         with patch.object(ci, 'trusted_path', side_effect=lambda path:path), patch.object(ci, 'redis_material'):
             ci.validate_host_inputs(config)  # Prepared mode needs no proxy binary.
             for changed in (dict(config, ci_fixtures=None), dict(config, source_kind='oci'),
-                            *[dict(config, dk_rounds=value) for value in (None, 0, True, 1.5, 1025)],
+                            *[dict(config, dk_rounds=value) for value in (None, 0, True, 1.5, 5, 17)],
                             dict(config, prepared_ci_disk_budget_bytes=None),
                             dict(config, prepared_ci_disk_budget_bytes=True),
                             dict(config, prepared_ci_disk_budget_bytes=201 * 1024**3),
@@ -975,6 +976,11 @@ class BenchmarkCITests(unittest.TestCase):
         entry = self.root / 'tests/system/center_host_faults.py'
         entry.parent.mkdir(parents=True)
         entry.write_text('# controlled fixture entry; never executed\n')
+        probe = Path(supervisor.config['stale_probe'])
+        probe.parent.mkdir(parents=True)
+        probe.write_bytes(b'original same-candidate stale action helper')
+        from tools.system_acceptance import digest as file_digest
+        supervisor.state['stale_probe_sha256'] = file_digest(probe)
         with patch.object(ci, 'validate_host_inputs'), \
                 patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
                 patch.object(ci, 'trusted_path', side_effect=lambda path: path), \
@@ -984,13 +990,37 @@ class BenchmarkCITests(unittest.TestCase):
         saved = json.loads((self.root / 'state.json').read_text())['dk']
         self.assertEqual(saved['phase'], 'launching')
         command = saved['command']
+        self.assertEqual(command[0], str(self.root / 'benchmarks/.venv/bin/python'))
         for flag, value in (('--cgroup-parent', supervisor.config['cgroup_parent']),
                             ('--service-cgroup-parent', supervisor.config['service_cgroup_parent']),
                             ('--rootfs', supervisor.config['rootfs']),
                             ('--rounds', str(supervisor.config['dk_rounds'])),
+                            ('--stale-probe', supervisor.config['stale_probe']),
+                            ('--stale-probe-sha256', supervisor.state['stale_probe_sha256']),
                             ('--candidate-manifest', supervisor.state['candidate_manifest'])):
             self.assertEqual(command[command.index(flag) + 1], value)
         self.assertNotEqual(supervisor.config['cgroup_parent'], supervisor.config['service_cgroup_parent'])
+
+    def test_absent_or_replaced_same_candidate_stale_helper_never_launches_dk(self):
+        supervisor = self.supervisor()
+        supervisor.config = self.host_config()
+        supervisor.state['dk'] = dict(phase='new')
+        entry = self.root / 'tests/system/center_host_faults.py'
+        entry.parent.mkdir(parents=True)
+        entry.write_text('# controlled fixture entry; never executed\n')
+        probe = Path(supervisor.config['stale_probe'])
+        probe.parent.mkdir(parents=True)
+        probe.write_bytes(b'replacement helper')
+        with patch.object(ci, 'validate_host_inputs'), \
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch.object(ci, 'trusted_path', side_effect=lambda path: path), \
+                patch.object(ci, 'launch') as launch:
+            for saved in (None, 'not-a-sha256', 'f' * 64):
+                with self.subTest(saved=saved), self.assertRaisesRegex(ValueError, 'probe missing or changed'):
+                    supervisor.state['stale_probe_sha256'] = saved
+                    supervisor.prepare_dk()
+        launch.assert_not_called()
+        self.assertEqual(supervisor.state['dk']['phase'], 'new')
 
     def test_absent_unit_after_lost_launch_receipt_blocks_and_keeps_host_lease(self):
         supervisor = self.supervisor()
