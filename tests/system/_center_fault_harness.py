@@ -106,7 +106,8 @@ class Harness:
         native = prepared_native(args,self.root,secrets.token_hex(8))
         self.services = prepare_fault_services(args,self.root,native,slots=2,key=self.key,
             port=free_loopback_port(),job_count=2,shared_template=True,
-            extra_credentials=[dict(tenant=2,secret=self.foreign_key)])
+            extra_credentials=[dict(tenant=2,secret=self.foreign_key)],
+            checkpoint_tail_inputs=args.checkpoint_tail_inputs)
         self.native = self.services.native_pools[0]
         profile = self.native['bounded_host']['physical_storage']
         control=self.services.layout['host_controls'][0]
@@ -119,6 +120,7 @@ class Harness:
         peak, inodes = envelope(profile)
         assert 2*peak <= MAX_ACTIVATION_BYTES == 200*1024**3
         self.policy = dict(schema_version=1,rounds=args.rounds,case_wait_seconds=args.wait_seconds,
+            checkpoint_tail_inputs=args.checkpoint_tail_inputs,
             controlled_test_debug_assertions=True,
             rootfs_bytes=Path(args.rootfs).stat().st_size,rootfs_sha256=digest(args.rootfs),
             kernel_sha256=digest(args.kernel),service_profile_sha256=digest(args.service_profile),

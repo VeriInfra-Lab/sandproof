@@ -104,7 +104,7 @@ def interrupted_host_request(
 
 
 def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=4,
-                           extra_credentials=None, shared_template=False):
+                           extra_credentials=None, shared_template=False, checkpoint_tail_inputs=1000):
     """Construct fresh explicit native/catalog inputs for the one real fixture.
 
     No retired public-host field is translated or accepted. The production
@@ -141,7 +141,7 @@ def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=
         "max_lifetime_secs": settings.get("max_lifetime_secs", settings["max_timeout_secs"]),
         "startup_timeout_secs": settings.get("startup_timeout_secs", 300),
         "public_ipv4_enabled": settings.get("public_ipv4_enabled", False)}
-    native = complete_runtime(settings, slots=slots)
+    native = complete_runtime(settings, slots=slots, checkpoint_tail_inputs=checkpoint_tail_inputs)
     artifact_bytes = kernel.stat().st_size + rootfs.stat().st_size
     registry = {"root": str(root / "registry"), "max_templates_global": 1,
         "max_templates_per_tenant": 1, "max_artifact_bytes_global": artifact_bytes,

@@ -166,6 +166,7 @@ class CenterHostFaultsTests(unittest.TestCase):
             control_memory_allowance_bytes=2*1024**3,memory_headroom_bytes=2*1024**3))))
         profile.chmod(0o600)
         self.args=argparse.Namespace(run_identity='exact-test-01234567',rounds=6,wait_seconds=90,
+            checkpoint_tail_inputs=128,
             stale_probe_sha256='a'*64,uid_base=2000,run_root=self.root/'run',
             scratch_parent=self.root,service_cgroup_record=self.root/'run/service-cgroup.json',
             cgroup_parent=Path('/fixed/vms'),service_cgroup_parent=Path('/fixed/services'),
@@ -184,6 +185,7 @@ class CenterHostFaultsTests(unittest.TestCase):
     def test_only_original_finite_service_budget_is_forwarded_not_a_second_capacity_policy(self):
         self.assertEqual(self.validate(),dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
         for name,value in (('rounds',True),('rounds',5),('rounds',7),('rounds',17),('wait_seconds',1),
+                           *[('checkpoint_tail_inputs',item) for item in (None,True,15,129,'128',128.0)],
                            ('wait_seconds',121),('run_identity','../unknown'),('stale_probe_sha256','bad')):
             original=getattr(self.args,name)
             setattr(self.args,name,value)
@@ -207,7 +209,7 @@ class CenterHostFaultsTests(unittest.TestCase):
     def test_parser_requires_iterations_and_approved_late_action_helper_no_silent_skip(self):
         parser=runner.parser()
         required={action.dest for action in parser._actions if action.required}
-        self.assertTrue({'rounds','stale_probe','stale_probe_sha256','cgroup_parent',
+        self.assertTrue({'rounds','checkpoint_tail_inputs','stale_probe','stale_probe_sha256','cgroup_parent',
             'service_cgroup_parent','service_profile','candidate_manifest'}<=required)
         self.assertNotIn('server',required)
 
@@ -300,6 +302,7 @@ class CenterHostFaultsTests(unittest.TestCase):
         with self.bootstrap_dependencies(args,0) as (_,removed,report):
             result=runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
         self.assertEqual(result,report)
+        self.assertEqual(json.loads((args.run_root/'dk-launch.json').read_text())['checkpoint_tail_inputs'],128)
         removed.assert_called_once_with(args.service_cgroup_record)
         self.assertEqual(json.loads((args.run_root/'service-cleanup.json').read_text()),dict(removed=True))
         args=self.bootstrap_args('live-member')
@@ -307,6 +310,33 @@ class CenterHostFaultsTests(unittest.TestCase):
             runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
         removed.assert_called_once_with(args.service_cgroup_record)
         self.assertFalse((args.run_root/'service-cleanup.json').exists())
+
+    def test_checkpoint_trigger_drift_rejects_the_worker_before_any_original_role_is_started(self):
+        args=self.bootstrap_args('trigger-drift')
+        with self.bootstrap_dependencies(args,1),self.assertRaises(RuntimeError):
+            runner.bootstrap(args,[],dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
+        args.checkpoint_tail_inputs=64
+        with patch.object(runner,'digest',return_value='a'*64), \
+                patch.object(runner.service_cgroup,'observe') as observe, \
+                patch.object(harness,'Harness') as constructor, \
+                self.assertRaisesRegex(ValueError,'test-launch intent mismatch'):
+            runner.worker(args)
+        observe.assert_not_called()
+        constructor.assert_not_called()
+        self.assertEqual(json.loads((args.run_root/'dk-launch.json').read_text())['checkpoint_tail_inputs'],128)
+
+    def test_harness_passes_the_explicit_trigger_to_the_original_renderer_before_initialization(self):
+        self.args.run_root.mkdir(mode=0o700)
+        class PreparedBoundary(Exception):
+            pass
+        with patch.object(harness,'prepared_native',return_value={'fresh':'native'}), \
+                patch.object(harness,'free_loopback_port',return_value=12345), \
+                patch.object(harness,'prepare_fault_services',side_effect=PreparedBoundary) as prepared, \
+                self.assertRaises(PreparedBoundary):
+            harness.Harness(self.args)
+        self.assertEqual(prepared.call_args.kwargs['checkpoint_tail_inputs'],128)
+        self.assertEqual(prepared.call_args.kwargs['slots'],2)
+        self.assertEqual(prepared.call_args.kwargs['job_count'],2)
 
     def test_fixed_relay_destinations_cannot_be_urls_ipv6_or_another_host(self):
         self.assertEqual(harness.tuple_address('127.0.0.1:1234'),('127.0.0.1',1234))

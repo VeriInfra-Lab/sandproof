@@ -49,6 +49,9 @@ def validate_host_inputs(config):
         raise ValueError('only offline-prepared center/host candidates are accepted')
     if type(config.get('dk_rounds')) is not int or config['dk_rounds'] != 6:
         raise ValueError('explicit fixed six-round DK churn sampling required')
+    if (type(config.get('dk_checkpoint_tail_inputs')) is not int
+            or not 16 <= config['dk_checkpoint_tail_inputs'] <= 128):
+        raise ValueError('explicit finite DK checkpoint tail budget required')
     from tools.ci_e2e_prepare import build_environment, service_paths
     build_environment(config)
     service_paths(config)
@@ -456,7 +459,8 @@ class Supervisor:
             '--run-root',str(root),'--run-identity',self.state['id'],
             '--service-cgroup-record',str(root/'service-cgroup.json'),
             '--stale-probe',config['stale_probe'],'--stale-probe-sha256',stale_sha,
-            '--service-profile',config['budget_profile'], '--rounds',str(config['dk_rounds'])])
+            '--service-profile',config['budget_profile'], '--rounds',str(config['dk_rounds']),
+            '--checkpoint-tail-inputs',str(config['dk_checkpoint_tail_inputs'])])
         self.state['dk'].update(root=str(root),command=command,checkout=str(checkout),
             deadline_seconds=7200,unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',phase='launching')
         self.save()  # A lost launch acknowledgement never permits another group.

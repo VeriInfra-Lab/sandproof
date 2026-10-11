@@ -497,7 +497,7 @@ class BenchmarkCITests(unittest.TestCase):
             cgroup_parent='/sys/fs/cgroup/runtime', build_cgroup_parent='/sys/fs/cgroup/builder',
             service_cgroup_parent='/sys/fs/cgroup/control', prepare_candidate=True,
             redis_material='/approved-fixed-redis', center_uid=65532, center_gid=65532,
-            redis_uid=65533, redis_gid=65533, dk_rounds=6)
+            redis_uid=65533, redis_gid=65533, dk_rounds=6, dk_checkpoint_tail_inputs=128)
         for key in ('cargo_home','uv_cache','rustup_home','cargo_target','toolchain_bin'):
             path = self.root / key
             path.mkdir(mode=0o700, exist_ok=True)
@@ -534,6 +534,8 @@ class BenchmarkCITests(unittest.TestCase):
             ci.validate_host_inputs(config)  # Prepared mode needs no proxy binary.
             for changed in (dict(config, ci_fixtures=None), dict(config, source_kind='oci'),
                             *[dict(config, dk_rounds=value) for value in (None, 0, True, 1.5, 5, 7, 16)],
+                            *[dict(config, dk_checkpoint_tail_inputs=value) for value in (None, 0, True, 15, 129, "128", 128.0)],
+                            {key:value for key,value in config.items() if key != 'dk_checkpoint_tail_inputs'},
                             dict(config, prepared_ci_disk_budget_bytes=None),
                             dict(config, prepared_ci_disk_budget_bytes=True),
                             dict(config, prepared_ci_disk_budget_bytes=201 * 1024**3),
@@ -1118,6 +1120,7 @@ class BenchmarkCITests(unittest.TestCase):
                             ('--service-cgroup-parent', supervisor.config['service_cgroup_parent']),
                             ('--rootfs', supervisor.config['rootfs']),
                             ('--rounds', str(supervisor.config['dk_rounds'])),
+                            ('--checkpoint-tail-inputs', str(supervisor.config['dk_checkpoint_tail_inputs'])),
                             ('--stale-probe', supervisor.config['stale_probe']),
                             ('--stale-probe-sha256', supervisor.state['stale_probe_sha256']),
                             ('--candidate-manifest', supervisor.state['candidate_manifest'])):

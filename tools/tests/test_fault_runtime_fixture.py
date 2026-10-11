@@ -68,6 +68,13 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
             self.assertEqual(catalog["templates"][0]["kernel"]["sha256"],
                              hashlib.sha256(kernel.read_bytes()).hexdigest())
             self.assertEqual(data["job_count"], 4)
+            self.assertEqual(native["maintenance"]["max_tail_inputs"], 1000)
+            with patch.object(runtime.RuntimeServices, "prepare", return_value="one-fixture") as selected:
+                faults.prepare_fault_services(args, root, values, slots=2,
+                    key="synthetic-key", port=12345, checkpoint_tail_inputs=128)
+            self.assertEqual(selected.call_args.kwargs["native_pools"][0]["maintenance"]["max_tail_inputs"], 128)
+            self.assertEqual(selected.call_args.kwargs["native_pools"][0]["maintenance"]["capacity"],
+                             native["maintenance"]["capacity"])
             for retired in runtime.RETIRED_NATIVE_FIELDS:
                 with self.subTest(retired=retired), self.assertRaises(ValueError), \
                         patch.object(runtime.RuntimeServices, "prepare") as forbidden:

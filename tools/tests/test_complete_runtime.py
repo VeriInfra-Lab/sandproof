@@ -89,6 +89,20 @@ class CompleteFixtureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fixture.complete_runtime(self.settings | {"data_transfer": budgets | {"max_transfers_per_vm": 129}}, slots=2)
 
+    def test_explicit_checkpoint_tail_only_changes_the_fresh_declared_trigger(self):
+        ordinary = self.complete()
+        self.assertEqual(ordinary["maintenance"]["max_tail_inputs"], 1000)
+        for inputs in (16, 128, 1000):
+            with self.subTest(inputs=inputs):
+                selected = fixture.complete_runtime(self.settings, slots=2, checkpoint_tail_inputs=inputs)
+                expected = copy.deepcopy(ordinary)
+                expected["maintenance"]["max_tail_inputs"] = inputs
+                self.assertEqual(selected, expected)
+                self.assertGreaterEqual(inputs, selected["maintenance"]["capacity"]["max_transaction_inputs"])
+        for inputs in (None, True, 0, 15, 1001, "128", 128.0):
+            with self.subTest(inputs=inputs), self.assertRaises(ValueError):
+                fixture.complete_runtime(self.settings, slots=2, checkpoint_tail_inputs=inputs)
+
     def test_provision_is_once_only_and_keeps_exact_coordination_identity(self):
         result = self.complete()
         with patch.object(fixture.os, "statvfs", return_value=self.free):

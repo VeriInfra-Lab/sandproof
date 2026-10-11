@@ -28,7 +28,7 @@ _envelope = _runpy.run_path(
 )["envelope"]
 
 
-def complete_runtime(settings, *, slots, file_size=None):
+def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=1000):
     """Construct a single-runtime test DTO from explicit artifact/path inputs.
 
     The caller already owns the fresh private roots. No files are changed here;
@@ -37,6 +37,8 @@ def complete_runtime(settings, *, slots, file_size=None):
     """
     if type(slots) is not int or not 1 <= slots <= 64:
         raise ValueError("explicit finite test slot count required")
+    if type(checkpoint_tail_inputs) is not int or not 16 <= checkpoint_tail_inputs <= 1000:
+        raise ValueError("explicit finite test checkpoint tail budget required")
     if any(key in settings for key in ("max_vm_id", "bounded_host", "maintenance")):
         raise ValueError("fresh test configuration required, not legacy or existing deployment")
     if (settings.get("internal_build_vms") or settings.get("template_registry")
@@ -101,7 +103,7 @@ def complete_runtime(settings, *, slots, file_size=None):
         },
         "retention_ms": 60_000, "max_checkpoint_bytes": 4 * MIB,
         "max_records": 10_000, "max_references": 1_000_000,
-        "max_tail_inputs": 1000, "max_tail_bytes": 4 * MIB,
+        "max_tail_inputs": checkpoint_tail_inputs, "max_tail_bytes": 4 * MIB,
         "max_input_bytes": 8192, "prune_batch_rows": 7,
     }
     result["bounded_host"] = {

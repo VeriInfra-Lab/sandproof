@@ -43,6 +43,7 @@ def parser():
     value.add_argument('--uid-base',type=int,required=True)
     value.add_argument('--run-identity',required=True)
     value.add_argument('--rounds',type=int,required=True)
+    value.add_argument('--checkpoint-tail-inputs',type=int,required=True)
     value.add_argument('--wait-seconds',type=int,default=90)
     # Private test launcher protocol, NOT another product entry or deployment.
     value.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
@@ -57,9 +58,10 @@ def validate(args):
     if (not re.fullmatch(r'[a-z0-9-]{8,64}',args.run_identity)
             or not re.fullmatch(r'[a-f0-9]{64}',args.stale_probe_sha256)
             or type(args.rounds) is not int or args.rounds!=6
+            or type(args.checkpoint_tail_inputs) is not int or not 16<=args.checkpoint_tail_inputs<=128
             or not 30<=args.wait_seconds<=120
             or not 1000<=args.uid_base<2**32-2):
-        raise ValueError('fixed six-round fault-group identities/deadlines required')
+        raise ValueError('fixed fault-group identities/deadlines and finite checkpoint tail required')
     parent=private_path(args.scratch_parent,directory=True)
     if args.run_root.parent!=parent or args.service_cgroup_record!=args.run_root/'service-cgroup.json':
         raise ValueError('fresh exact run root and original service cgroup record required')
@@ -91,7 +93,8 @@ def bootstrap(args, argv, budget):
     private_path(args.run_root,directory=True)
     write_once(args.run_root/'dk-launch.json',dict(schema_version=1,run_identity=args.run_identity,
         candidate_manifest_sha256=digest(args.candidate_manifest),producer_sha256=digest(Path(__file__)),
-        rounds=args.rounds,wait_seconds=args.wait_seconds,rootfs_sha256=digest(args.rootfs),
+        rounds=args.rounds,checkpoint_tail_inputs=args.checkpoint_tail_inputs,
+        wait_seconds=args.wait_seconds,rootfs_sha256=digest(args.rootfs),
         kernel_sha256=digest(args.kernel),stale_probe_sha256=args.stale_probe_sha256))
     service_cgroup.prepare(args.service_cgroup_parent,'svc-'+os.urandom(16).hex(),
                            args.service_cgroup_record,**budget)
@@ -146,7 +149,8 @@ def worker(args):
     launch=json_file(private_path(args.run_root/'dk-launch.json'))
     expected=dict(schema_version=1,run_identity=args.run_identity,
         candidate_manifest_sha256=digest(args.candidate_manifest),producer_sha256=digest(Path(__file__)),
-        rounds=args.rounds,wait_seconds=args.wait_seconds,rootfs_sha256=digest(args.rootfs),
+        rounds=args.rounds,checkpoint_tail_inputs=args.checkpoint_tail_inputs,
+        wait_seconds=args.wait_seconds,rootfs_sha256=digest(args.rootfs),
         kernel_sha256=digest(args.kernel),stale_probe_sha256=args.stale_probe_sha256)
     if launch!=expected:
         raise ValueError('original test-launch intent mismatch; never reprovision')

@@ -40,9 +40,9 @@ pub trait CandidatePort: Send + Sync + 'static {
     fn verified(&self, tenant: &TenantId, candidate: &str)
     -> Result<ProtectedCandidate, PortError>;
     /// Seal/cache using original artifact rules, outside the decision lock.
-    /// Replays use the SAME accepted description. This batch additionally
-    /// requires its exact revision/digest already in protected node registration;
-    /// successful I/O alone does not invent a node availability attestation.
+    /// Replays use the SAME accepted description. Success requires sealed
+    /// artifacts and exact authenticated cache evidence durably registered in
+    /// the original authority; successful I/O alone is not an availability fact.
     /// # Errors
     /// Only explicit `Rejected` may fail an unattached publication.
     fn prepare(
