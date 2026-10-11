@@ -276,3 +276,227 @@ async fn cache_profile_reserve_is_checked_before_any_download_or_managed_directo
     f.shutdown.send(()).unwrap();
     f.server.await.unwrap().unwrap();
 }
+
+fn partial_file(directory: &Path, name: &str, contents: &[u8]) {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(directory.join(name))
+        .unwrap();
+    file.write_all(contents).unwrap();
+    file.sync_all().unwrap();
+    File::open(directory).unwrap().sync_all().unwrap();
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cache_restart_reclaims_durable_empty_and_partial_downloads_without_changing_identity() {
+    for (kernel_length, rootfs_length) in [
+        (None, None),
+        (Some(0), None),
+        (None, Some(0)),
+        (Some(4), None),
+        (None, Some(128)),
+        (Some(13), Some(128)),
+    ] {
+        let mut f = fixture(false).await;
+        let (kernel, rootfs, _) = assets();
+        partial_file(f.directory.path(), "base-kernel", &kernel);
+        partial_file(f.directory.path(), "base-rootfs", &rootfs);
+        let original_kernel = f.directory.path().join("base-kernel");
+        let original_rootfs = f.directory.path().join("base-rootfs");
+        for path in [&original_kernel, &original_rootfs] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o400)).unwrap();
+        }
+        f.request.descriptor.kernel.path = original_kernel.clone();
+        f.request.descriptor.rootfs.path = original_rootfs.clone();
+        f.request.digest = f.request.descriptor.canonical_digest().unwrap();
+        let manifest = f.cache.prepare(f.request.clone()).unwrap();
+        let staging = f.cache.config.root.join("inbox").join(key(&f.request));
+        let manifest_bytes = fs::read(staging.join("manifest.json")).unwrap();
+        if let Some(length) = kernel_length {
+            partial_file(&staging, "kernel", &kernel[..length]);
+        }
+        if let Some(length) = rootfs_length {
+            partial_file(&staging, "rootfs.ext4", &rootfs[..length]);
+        }
+        let config = f.cache.config.clone();
+        let client = f.cache.client.clone();
+        let lifecycle = f.cache.lifecycle.clone();
+        // Exact fault point: original manifest and any partial file are durable,
+        // but neither download completion nor publish ran. Dropping this sole
+        // owner releases only the process lease, not the original disk record.
+        drop(f.cache);
+        let reopened = Arc::new(
+            TemplateCache::open(config, f.request.node.clone(), client, lifecycle).unwrap(),
+        );
+        assert!(reopened.known(&f.request).unwrap().is_none());
+        let metadata = fs::symlink_metadata(&staging).unwrap();
+        assert_eq!(
+            (metadata.dev(), metadata.ino()),
+            (manifest.device, manifest.inode)
+        );
+        assert_eq!(
+            fs::read(staging.join("manifest.json")).unwrap(),
+            manifest_bytes
+        );
+        assert!(!staging.join("kernel").exists());
+        assert!(!staging.join("rootfs.ext4").exists());
+        assert!(!reopened.state.lock().unwrap().pending[&key(&f.request)].downloading);
+        let availability = Arc::clone(&reopened)
+            .receive(f.request.clone())
+            .await
+            .unwrap();
+        availability.validate_for(&f.request).unwrap();
+        assert_eq!(f.requests.load(Ordering::SeqCst), 2);
+        assert_eq!(fs::read(&original_kernel).unwrap(), kernel);
+        assert_eq!(fs::read(&original_rootfs).unwrap(), rootfs);
+        assert_eq!(fs::metadata(original_rootfs).unwrap().mode() & 0o777, 0o400);
+        assert!(reopened.state.lock().unwrap().pending.is_empty());
+        assert_eq!(reopened.downloads.available_permits(), 1);
+        f.shutdown.send(()).unwrap();
+        f.server.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cache_idle_recovery_holds_full_entry_reserve_without_consuming_download_capacity() {
+    let f = fixture(false).await;
+    f.cache.prepare(f.request.clone()).unwrap();
+    let config = f.cache.config.clone();
+    let client = f.cache.client.clone();
+    let lifecycle = f.cache.lifecycle.clone();
+    drop(f.cache);
+    let reopened =
+        Arc::new(TemplateCache::open(config, f.request.node.clone(), client, lifecycle).unwrap());
+    let mut next = f.request.clone();
+    next.revision = "other-revision".try_into().unwrap();
+    next.descriptor.revision = "r2".into();
+    next.digest = next.descriptor.canonical_digest().unwrap();
+    let availability = Arc::clone(&reopened).receive(next).await.unwrap();
+    assert_eq!(availability.revision.as_str(), "other-revision");
+    assert_eq!(reopened.downloads.available_permits(), 1);
+    assert_eq!(reopened.state.lock().unwrap().pending.len(), 1);
+    let mut third = f.request.clone();
+    third.revision = "third-revision".try_into().unwrap();
+    third.descriptor.revision = "r3".into();
+    third.digest = third.descriptor.canonical_digest().unwrap();
+    assert_eq!(
+        Arc::clone(&reopened).receive(third).await,
+        Err(ReceiveError::Capacity)
+    );
+    assert_eq!(f.requests.load(Ordering::SeqCst), 2);
+    let original = Arc::clone(&reopened)
+        .receive(f.request.clone())
+        .await
+        .unwrap();
+    original.validate_for(&f.request).unwrap();
+    assert_eq!(reopened.state.lock().unwrap().ready.len(), 2);
+    assert!(reopened.state.lock().unwrap().pending.is_empty());
+    f.shutdown.send(()).unwrap();
+    f.server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cache_recovery_rejects_changed_identity_bad_manifest_and_symlink_without_cleanup() {
+    for failure in ["identity", "manifest", "symlink", "owner"] {
+        let f = fixture(false).await;
+        let mut manifest = f.cache.prepare(f.request.clone()).unwrap();
+        let staging = f.cache.config.root.join("inbox").join(key(&f.request));
+        partial_file(&staging, "rootfs.ext4", b"original-partial");
+        match failure {
+            "identity" => {
+                manifest.inode += 1;
+                fs::set_permissions(
+                    staging.join("manifest.json"),
+                    fs::Permissions::from_mode(0o600),
+                )
+                .unwrap();
+                fs::write(
+                    staging.join("manifest.json"),
+                    serde_json::to_vec(&manifest).unwrap(),
+                )
+                .unwrap();
+                fs::set_permissions(
+                    staging.join("manifest.json"),
+                    fs::Permissions::from_mode(0o400),
+                )
+                .unwrap();
+            }
+            "manifest" => {
+                fs::set_permissions(
+                    staging.join("manifest.json"),
+                    fs::Permissions::from_mode(0o600),
+                )
+                .unwrap();
+                fs::write(staging.join("manifest.json"), b"{partial").unwrap();
+                fs::set_permissions(
+                    staging.join("manifest.json"),
+                    fs::Permissions::from_mode(0o400),
+                )
+                .unwrap();
+            }
+            "symlink" => {
+                std::os::unix::fs::symlink(
+                    f.directory.path().join("not-owned"),
+                    staging.join("kernel"),
+                )
+                .unwrap();
+            }
+            "owner" => std::os::unix::fs::chown(&staging, Some(64_001), None).unwrap(),
+            _ => unreachable!(),
+        }
+        let config = f.cache.config.clone();
+        let client = f.cache.client.clone();
+        let lifecycle = f.cache.lifecycle.clone();
+        drop(f.cache);
+        assert!(TemplateCache::open(config, f.request.node.clone(), client, lifecycle).is_err());
+        assert_eq!(
+            fs::read(staging.join("rootfs.ext4")).unwrap(),
+            b"original-partial"
+        );
+        assert!(staging.join("manifest.json").exists());
+        if failure == "owner" {
+            std::os::unix::fs::chown(&staging, Some(0), None).unwrap();
+        }
+        f.shutdown.send(()).unwrap();
+        f.server.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test]
+#[ignore = "root-owned protected cache and real Linux TLS component"]
+async fn cache_failed_exact_cleanup_does_not_release_unknown_temporary_reservation() {
+    let f = fixture(true).await;
+    let cache = Arc::clone(&f.cache);
+    let request = f.request.clone();
+    let caller = tokio::spawn(async move { cache.receive(request).await });
+    f.entered.notified().await;
+    let staging = f.cache.config.root.join("inbox").join(key(&f.request));
+    partial_file(
+        &staging,
+        "unknown-file",
+        b"not part of the original manifest",
+    );
+    f.release.notify_one();
+    assert_eq!(caller.await.unwrap(), Err(ReceiveError::Unavailable));
+    assert_eq!(f.cache.downloads.available_permits(), 1);
+    assert!(f.cache.state.lock().unwrap().pending[&key(&f.request)].downloading);
+    let mut next = f.request.clone();
+    next.revision = "other-revision".try_into().unwrap();
+    next.descriptor.revision = "r2".into();
+    next.digest = next.descriptor.canonical_digest().unwrap();
+    assert_eq!(
+        Arc::clone(&f.cache).receive(next).await,
+        Err(ReceiveError::Capacity)
+    );
+    assert_eq!(f.requests.load(Ordering::SeqCst), 2);
+    assert!(staging.join("kernel").exists());
+    assert!(staging.join("rootfs.ext4").exists());
+    assert!(staging.join("unknown-file").exists());
+    f.shutdown.send(()).unwrap();
+    f.server.await.unwrap().unwrap();
+}

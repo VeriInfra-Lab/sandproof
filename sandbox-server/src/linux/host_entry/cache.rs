@@ -42,8 +42,13 @@ struct Manifest {
 struct State {
     ready: BTreeMap<String, InternalTemplate>,
     /// Full maximum remains charged until exact owned temporary cleanup.
-    pending: BTreeMap<String, Manifest>,
+    pending: BTreeMap<String, Pending>,
     ready_bytes: u64,
+}
+struct Pending {
+    manifest: Manifest,
+    /// Only this process can own a download while holding the cache lease.
+    downloading: bool,
 }
 pub(super) struct TemplateCache<H: ControllerHost = NodeHost> {
     config: PhysicalTemplateCache,
@@ -128,7 +133,7 @@ fn project(request: &CacheRequest, directory: &Path) -> TemplateBinding {
     local.rootfs.path = directory.join("rootfs.ext4");
     local
 }
-fn exact_directory(path: &Path, manifest: &Manifest) -> Result<(), ReceiveError> {
+fn exact_directory(path: &Path, manifest: &Manifest) -> Result<u64, ReceiveError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| ReceiveError::Unavailable)?;
     if !metadata.is_dir()
         || metadata.uid() != 0
@@ -137,6 +142,7 @@ fn exact_directory(path: &Path, manifest: &Manifest) -> Result<(), ReceiveError>
     {
         return Err(ReceiveError::Unavailable);
     }
+    let mut partial_bytes = 0u64;
     for entry in fs::read_dir(path).map_err(|_| ReceiveError::Unavailable)? {
         let entry = entry.map_err(|_| ReceiveError::Unavailable)?;
         if !matches!(
@@ -159,55 +165,65 @@ fn exact_directory(path: &Path, manifest: &Manifest) -> Result<(), ReceiveError>
         {
             return Err(ReceiveError::Unavailable);
         }
+        if entry.file_name() != "manifest.json" {
+            partial_bytes = partial_bytes
+                .checked_add(metadata.len())
+                .ok_or(ReceiveError::Capacity)?;
+        }
     }
-    Ok(())
+    Ok(partial_bytes)
+}
+fn load_manifest(
+    directory: &Path,
+    config: &PhysicalTemplateCache,
+    node: &NodeIdentity,
+) -> Result<(Manifest, u64), Box<dyn Error>> {
+    let manifest: Manifest = serde_json::from_slice(&read_protected(
+        &directory.join("manifest.json"),
+        0,
+        MANIFEST_BYTES,
+    )?)?;
+    manifest.request.validate(node)?;
+    let id = key(&manifest.request);
+    if manifest.version != 1
+        || directory.file_name().and_then(|v| v.to_str()) != Some(&id)
+        || manifest.local != project(&manifest.request, &config.root.join("artifacts").join(&id))
+        || bytes(&manifest.local).map_err(|_| "cache length overflow")? > config.max_entry_bytes
+    {
+        return Err("invalid protected cache manifest".into());
+    }
+    let partial_bytes =
+        exact_directory(directory, &manifest).map_err(|_| "cache directory identity changed")?;
+    Ok((manifest, partial_bytes))
 }
 
-impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
-    pub(super) fn open(
-        config: PhysicalTemplateCache,
-        node: NodeIdentity,
-        client: ArtifactClient,
-        lifecycle: HostLifecycle<H>,
+impl State {
+    fn restore(
+        config: &PhysicalTemplateCache,
+        node: &NodeIdentity,
+        store: &CandidateStore,
     ) -> Result<Self, Box<dyn Error>> {
-        config.validate()?;
-        let lease = CacheLease::open(&config.root)?;
-        let store = CandidateStore::new(
-            RegistryConfig {
-                root: config.root.clone(),
-                max_templates_global: usize::try_from(config.max_entries)?,
-                max_templates_per_tenant: usize::try_from(config.max_entries)?,
-                max_artifact_bytes_global: config.artifact_bytes,
-                max_artifact_bytes_per_tenant: config.max_entry_bytes,
-                validation_timeout_secs: 300,
-            },
-            0,
-        )?;
-        let mut state = State::default();
+        let mut state = Self::default();
+        let mut partial_bytes = 0u64;
         for area in ["inbox", "artifacts"] {
             for entry in fs::read_dir(config.root.join(area))? {
-                let directory = entry?.path();
-                let manifest: Manifest = serde_json::from_slice(&read_protected(
-                    &directory.join("manifest.json"),
-                    0,
-                    MANIFEST_BYTES,
-                )?)?;
-                manifest.request.validate(&node)?;
+                let (manifest, length) = load_manifest(&entry?.path(), config, node)?;
                 let id = key(&manifest.request);
-                if manifest.version != 1
-                    || directory.file_name().and_then(|v| v.to_str()) != Some(&id)
-                    || manifest.local
-                        != project(&manifest.request, &config.root.join("artifacts").join(&id))
-                    || bytes(&manifest.local).map_err(|_| "cache length overflow")?
-                        > config.max_entry_bytes
-                {
-                    return Err("invalid protected cache manifest".into());
-                }
-                exact_directory(&directory, &manifest)
-                    .map_err(|_| "cache directory identity changed")?;
                 if area == "inbox" {
+                    partial_bytes = partial_bytes
+                        .checked_add(length)
+                        .ok_or("cache temporary capacity overflow")?;
                     if config.root.join("artifacts").join(&id).try_exists()?
-                        || state.pending.insert(id, manifest).is_some()
+                        || state
+                            .pending
+                            .insert(
+                                id,
+                                Pending {
+                                    manifest,
+                                    downloading: false,
+                                },
+                            )
+                            .is_some()
                     {
                         return Err("ambiguous cache staging identity".into());
                     }
@@ -238,21 +254,48 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         }
         if state.ready.len() + state.pending.len() > usize::try_from(config.max_entries)?
             || state.ready_bytes > config.artifact_bytes
-            || state.pending.len() > usize::try_from(config.max_downloads)?
+            || partial_bytes > config.temporary_bytes
             || state
                 .pending
                 .values()
                 .try_fold(state.ready_bytes, |total, entry| {
                     total
-                        .checked_add(bytes(&entry.local).map_err(|_| "cache length overflow")?)
+                        .checked_add(
+                            bytes(&entry.manifest.local).map_err(|_| "cache length overflow")?,
+                        )
                         .ok_or("cache capacity overflow")
                 })?
                 > config.artifact_bytes
         {
             return Err("existing cache exceeds its immutable reservation".into());
         }
+        Ok(state)
+    }
+}
+
+impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
+    pub(super) fn open(
+        config: PhysicalTemplateCache,
+        node: NodeIdentity,
+        client: ArtifactClient,
+        lifecycle: HostLifecycle<H>,
+    ) -> Result<Self, Box<dyn Error>> {
+        config.validate()?;
+        let lease = CacheLease::open(&config.root)?;
+        let store = CandidateStore::new(
+            RegistryConfig {
+                root: config.root.clone(),
+                max_templates_global: usize::try_from(config.max_entries)?,
+                max_templates_per_tenant: usize::try_from(config.max_entries)?,
+                max_artifact_bytes_global: config.artifact_bytes,
+                max_artifact_bytes_per_tenant: config.max_entry_bytes,
+                validation_timeout_secs: 300,
+            },
+            0,
+        )?;
+        let state = State::restore(&config, &node, &store)?;
         let downloads = Arc::new(Semaphore::new(usize::try_from(config.max_downloads)?));
-        Ok(Self {
+        let value = Self {
             config,
             node,
             client,
@@ -261,7 +304,14 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
             state: Mutex::new(state),
             downloads,
             lease,
-        })
+        };
+        // The lease excludes every original worker. Validate the whole restored
+        // inventory before changing anything, then discard only exact partial
+        // files; the durable manifest and original directory identity remain.
+        value
+            .reclaim_interrupted_downloads()
+            .map_err(|_| "interrupted cache identity could not be reclaimed")?;
+        Ok(value)
     }
 
     pub(super) async fn receive(
@@ -299,12 +349,13 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         if downloaded.is_err() {
             // Do not release an uncertain directory after an identity change.
             // Only these exact private files were ever permitted before seal.
-            if self.cleanup(&manifest, &staging).is_ok() {
-                self.state
-                    .lock()
-                    .map_err(|_| ReceiveError::Unavailable)?
+            if self.cleanup_partial(&manifest, &staging).is_ok() {
+                let mut state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+                let pending = state
                     .pending
-                    .remove(&key(&request));
+                    .get_mut(&key(&request))
+                    .ok_or(ReceiveError::Unavailable)?;
+                pending.downloading = false;
             }
             return Err(ReceiveError::Unavailable);
         }
@@ -354,13 +405,31 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
     }
     fn prepare(&self, request: CacheRequest) -> Result<Manifest, ReceiveError> {
         let mut state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        if state
+            .pending
+            .values()
+            .filter(|entry| entry.downloading)
+            .count()
+            >= usize::try_from(self.config.max_downloads).map_err(|_| ReceiveError::Capacity)?
+        {
+            return Err(ReceiveError::Capacity);
+        }
+        let id = key(&request);
+        if let Some(pending) = state.pending.get_mut(&id) {
+            if pending.downloading || pending.manifest.request != request {
+                return Err(ReceiveError::Unavailable);
+            }
+            exact_directory(&self.config.root.join("inbox").join(&id), &pending.manifest)?;
+            pending.downloading = true;
+            return Ok(pending.manifest.clone());
+        }
         let length = bytes(&request.descriptor)?;
         let reserved = state
             .pending
             .values()
             .try_fold(state.ready_bytes, |total, entry| {
                 total
-                    .checked_add(bytes(&entry.local)?)
+                    .checked_add(bytes(&entry.manifest.local)?)
                     .ok_or(ReceiveError::Capacity)
             })?;
         if length > self.config.max_entry_bytes
@@ -372,20 +441,11 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         {
             return Err(ReceiveError::Capacity);
         }
-        if state.pending.len()
-            >= usize::try_from(self.config.max_downloads).map_err(|_| ReceiveError::Capacity)?
-        {
-            return Err(ReceiveError::Capacity);
-        }
         if state
             .pending
             .values()
-            .any(|entry| entry.request.revision == request.revision)
+            .any(|entry| entry.manifest.request.revision == request.revision)
         {
-            return Err(ReceiveError::Unavailable);
-        }
-        let id = key(&request);
-        if state.pending.contains_key(&id) {
             return Err(ReceiveError::Unavailable);
         }
         let staging = self.config.root.join("inbox").join(&id);
@@ -412,7 +472,13 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
             inode: metadata.ino(),
         };
         // Retain full responsibility even if manifest publication is unknown.
-        state.pending.insert(id, manifest.clone());
+        state.pending.insert(
+            id,
+            Pending {
+                manifest: manifest.clone(),
+                downloading: true,
+            },
+        );
         let encoded = sandproof_controller_service::template_registry::evidence::encode_bounded(
             &manifest,
             MANIFEST_BYTES,
@@ -464,7 +530,7 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         self.store
             .verify_binding(&binding)
             .map_err(|_| ReceiveError::Unavailable)?;
-        exact_directory(staging, manifest)
+        exact_directory(staging, manifest).map(|_| ())
     }
     fn publish(&self, manifest: Manifest, staging: &Path) -> Result<(), ReceiveError> {
         exact_directory(staging, &manifest)?;
@@ -508,17 +574,38 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         );
         Ok(())
     }
-    fn cleanup(&self, manifest: &Manifest, staging: &Path) -> Result<(), ReceiveError> {
+    fn reclaim_interrupted_downloads(&self) -> Result<(), ReceiveError> {
+        self.lease
+            .validate()
+            .map_err(|_| ReceiveError::Unavailable)?;
+        let state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        for entry in state.pending.values() {
+            if entry.downloading {
+                return Err(ReceiveError::Unavailable);
+            }
+            self.cleanup_partial(
+                &entry.manifest,
+                &self
+                    .config
+                    .root
+                    .join("inbox")
+                    .join(key(&entry.manifest.request)),
+            )?;
+        }
+        Ok(())
+    }
+    fn cleanup_partial(&self, manifest: &Manifest, staging: &Path) -> Result<(), ReceiveError> {
         exact_directory(staging, manifest)?;
-        for name in ["kernel", "rootfs.ext4", "manifest.json"] {
+        // Never unlink the sole durable identity. A crash during these removals
+        // remains recoverable from the same manifest, including an empty inbox.
+        for name in ["kernel", "rootfs.ext4"] {
             match fs::remove_file(staging.join(name)) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(_) => return Err(ReceiveError::Unavailable),
             }
         }
-        fs::remove_dir(staging).map_err(|_| ReceiveError::Unavailable)?;
-        File::open(self.config.root.join("inbox"))
+        File::open(staging)
             .and_then(|file| file.sync_all())
             .map_err(|_| ReceiveError::Unavailable)
     }
