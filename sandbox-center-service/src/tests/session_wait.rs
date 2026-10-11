@@ -2,7 +2,6 @@
 //! result does not update health; an explicit later observation does. These
 //! deterministic cut points are not Redis, mTLS, or KVM acceptance evidence.
 use super::*;
-use std::time::Instant;
 
 fn observations(f: &Fixture, steps: impl IntoIterator<Item = ProjectionStep>) {
     f.app.authority.lock().unwrap().projection_steps = steps.into_iter().collect();
@@ -121,16 +120,12 @@ fn ready_at_original_reply_deadline_cannot_start_a_new_session_budget() {
 #[test]
 fn otherwise_valid_session_projection_cannot_complete_after_reply_deadline() {
     let f = fixture();
-    f.app.create("1", command()).unwrap();
-    let request = original_ready(&f);
-    let before = reads(&f);
-    let deadline = Instant::now() + f.app.config.reply_timeout;
-    observations(&f, [ProjectionStep::CompleteAt(deadline)]);
-    assert_eq!(
-        f.app.session_until(&request, deadline),
-        Err(PortError::OutcomeUnknown)
+    observations(
+        &f,
+        [ProjectionStep::CompleteAfter(f.app.config.reply_timeout)],
     );
-    assert_eq!(reads(&f) - before, 1);
+    assert_eq!(f.app.create("1", command()), Err(PortError::OutcomeUnknown));
+    assert_eq!(reads(&f), 1);
     original_ready(&f);
     // Ordinary queries preserve their own original semantics, independently
     // of the expired Create reply budget.
@@ -138,15 +133,31 @@ fn otherwise_valid_session_projection_cannot_complete_after_reply_deadline() {
 }
 
 #[test]
-fn expired_reply_budget_cannot_issue_a_session_even_with_fresh_health() {
+fn renewed_at_original_reply_deadline_cannot_issue_another_session() {
     let f = fixture();
-    f.app.create("1", command()).unwrap();
-    let request = original_ready(&f);
+    let session = f.app.create("1", command()).unwrap();
     let before = reads(&f);
+    f.host.consume_reply_budget.store(true, Ordering::SeqCst);
     assert_eq!(
-        f.app.session_until(&request, Instant::now()),
+        f.app
+            .connect("1", &session.sandbox_id, ConnectCommand::default()),
         Err(PortError::OutcomeUnknown)
     );
-    assert_eq!(reads(&f), before);
-    original_ready(&f);
+    assert_eq!(
+        reads(&f) - before,
+        1,
+        "only the original connect acceptance view"
+    );
+    assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
+    let state = f.app.snapshot().unwrap();
+    assert_eq!(state.sandboxes().len(), 1);
+    assert_eq!(state.sandboxes()[0].operations.len(), 2);
+    assert!(matches!(
+        state.sandboxes()[0].operations[1]
+            .response
+            .as_ref()
+            .unwrap()
+            .fact,
+        LifecycleFact::Renewed { .. }
+    ));
 }

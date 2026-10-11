@@ -230,13 +230,6 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     ) -> Result<sandproof_controller_service::application::Session, PortError> {
         let deadline = self.reply_deadline()?;
         self.wait_until(request, deadline)?;
-        self.session_until(request, deadline)
-    }
-    pub(crate) fn session_until(
-        &self,
-        request: &LifecycleRequest,
-        deadline: Instant,
-    ) -> Result<sandproof_controller_service::application::Session, PortError> {
         loop {
             if remaining(deadline).is_none() {
                 return Err(PortError::OutcomeUnknown);
@@ -339,16 +332,45 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         response
             .validate_for(request)
             .map_err(|_| AttemptError::UnknownHost)?;
-        self.authority
+        let applied = self
+            .authority
             .lock()
             .map_err(|_| AttemptError::SharedAuthority)?
-            .apply_response(&response)
-            .map_err(|error| match error {
-                AuthorityError::Decision(DecisionError::Stale | DecisionError::NotFound) => {
-                    AttemptError::Superseded
+            .apply_response(&response);
+        match applied {
+            Ok(()) => {}
+            Err(AuthorityError::Decision(DecisionError::Stale)) => {
+                // A detached reply can lag a background observation of the
+                // SAME request. Reconfirm the original authority after releasing
+                // the apply lock; do not accept the old packet or a cached view.
+                let state = self.snapshot().map_err(|_| AttemptError::SharedAuthority)?;
+                let current = find(
+                    &state,
+                    &request.identity.tenant_id,
+                    &request.identity.sandbox_id,
+                )
+                .map_err(|_| AttemptError::Superseded)?
+                .operations
+                .last()
+                .ok_or(AttemptError::Superseded)?;
+                if current.request == *request
+                    && current.response.as_ref().is_some_and(|saved| {
+                        saved.identity == response.identity
+                            && saved.observation_version.get() > response.observation_version.get()
+                    })
+                {
+                    // The existing wait may only requery this original intent
+                    // within its original deadline. Ready/health still receive
+                    // their normal checks; this old reply is never success.
+                    return Err(AttemptError::UnknownHost);
                 }
-                _ => AttemptError::SharedAuthority,
-            })?;
+                return Err(AttemptError::Superseded);
+            }
+            Err(AuthorityError::Decision(DecisionError::NotFound)) => {
+                return Err(AttemptError::Superseded);
+            }
+            Err(_) => return Err(AttemptError::SharedAuthority),
+        }
         if !matches!(
             response.fact,
             LifecycleFact::Recorded | LifecycleFact::Stopped

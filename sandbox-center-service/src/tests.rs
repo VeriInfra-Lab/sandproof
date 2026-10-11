@@ -1,5 +1,6 @@
 //! The storage/host substitutes inject faults around the SAME pure center
 //! transitions. These tests do not claim Redis, TLS or KVM acceptance.
+mod late_observation;
 mod session_wait;
 #[test]
 fn physical_observation_has_bounded_freshness_and_clock_skew() {
@@ -199,11 +200,12 @@ struct MemoryAuthority {
     unknown_create: Arc<AtomicBool>,
     projection_steps: std::collections::VecDeque<ProjectionStep>,
     projection_reads: u64,
+    fence_after_stale: bool,
 }
 enum ProjectionStep {
     Health(u64),
     SharedFault,
-    CompleteAt(std::time::Instant),
+    CompleteAfter(Duration),
 }
 fn consume_reply_budget(budget: Duration) {
     let (_sender, receiver) = std::sync::mpsc::sync_channel::<()>(0);
@@ -229,9 +231,7 @@ impl AuthorityPort for MemoryAuthority {
                     .refresh_node(&node.identity, healthy_until, node.free)?;
             }
             Some(ProjectionStep::SharedFault) => self.unreadable.store(true, Ordering::SeqCst),
-            Some(ProjectionStep::CompleteAt(deadline)) => {
-                consume_reply_budget(deadline.saturating_duration_since(std::time::Instant::now()));
-            }
+            Some(ProjectionStep::CompleteAfter(budget)) => consume_reply_budget(budget),
             None => {}
         }
         Ok(PublicSnapshot {
@@ -278,7 +278,15 @@ impl AuthorityPort for MemoryAuthority {
     }
     fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        self.state = self.state.apply_response(response)?;
+        match self.state.apply_response(response) {
+            Ok(next) => self.state = next,
+            Err(error) => {
+                if self.fence_after_stale && error == sandproof_center_core::DecisionError::Stale {
+                    self.unreadable.store(true, Ordering::SeqCst);
+                }
+                return Err(error.into());
+            }
+        }
         Ok(())
     }
     fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
@@ -335,6 +343,7 @@ struct Host {
     responses: Arc<Mutex<std::collections::BTreeMap<String, LifecycleResponse>>>,
     fence_after_send: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     gate: Arc<Mutex<Option<NetworkGate>>>,
+    late_response: Arc<Mutex<Option<LifecycleResponse>>>,
 }
 struct NetworkGate {
     entered: std::sync::mpsc::SyncSender<()>,
@@ -358,6 +367,7 @@ impl Default for Host {
             responses: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             fence_after_send: Arc::new(Mutex::new(None)),
             gate: Arc::new(Mutex::new(None)),
+            late_response: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -408,6 +418,9 @@ impl HostPort for Host {
         if let Some(gate) = gate {
             gate.entered.send(()).unwrap();
             gate.release.recv().unwrap();
+        }
+        if let Some(response) = self.late_response.lock().unwrap().take() {
+            return Ok(response);
         }
         if self.consume_reply_budget.load(Ordering::SeqCst) {
             consume_reply_budget(budget);
@@ -767,6 +780,7 @@ fn fixture() -> Fixture {
                 unknown_create: Arc::clone(&unknown_create),
                 projection_steps: std::collections::VecDeque::new(),
                 projection_reads: 0,
+                fence_after_stale: false,
             },
             host.clone(),
             Templates,
