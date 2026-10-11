@@ -15,6 +15,7 @@ use crate::{CrashInjector, CrashPoint, JournalError};
 pub use config::MaintenanceConfig;
 pub use retirement::RetirementCandidate;
 pub(super) use retirement::original_binding;
+pub(super) use retirement::witnesses as release_witnesses;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 use serde::{Deserialize, Serialize};

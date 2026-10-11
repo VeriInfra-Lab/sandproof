@@ -73,7 +73,7 @@ pub(super) fn store_witness(
     Ok(())
 }
 
-pub(super) fn witnesses(
+pub(in crate::controller) fn witnesses(
     connection: &Connection,
     world: &core::World,
 ) -> Result<Vec<HostReleaseWitness>, JournalError> {
@@ -145,6 +145,9 @@ fn pinned(
     namespace: &str,
     sandbox: core::SandboxId,
 ) -> Result<bool, JournalError> {
+    if super::super::internal_inbox::pinned(connection, sandbox)? {
+        return Ok(true);
+    }
     let id = super::super::identity::sandbox_id(namespace, sandbox)?;
     let options: Option<Vec<u8>> = connection
         .query_row(

@@ -240,10 +240,10 @@ pub(crate) fn require_current_controller_store(
         [],
         |row| row.get(0),
     )?;
-    // 7 is the current base lifecycle schema. 8..12 are durable feature
+    // 7 is the current base lifecycle schema. 8..11 and 13 are durable feature
     // gates (network/template/private-window/inbox evidence), not older deployments.
     // Their existing recovery validation still checks every enabled feature.
-    if !(7..=12).contains(&version) {
+    if !(7..=11).contains(&version) && version != 13 {
         return Err(JournalError::UnsupportedStore);
     }
     let maintenance: Vec<u8> = connection.query_row(

@@ -84,7 +84,7 @@ fn checked_deadline(now_ms: i64, seconds: u64) -> Result<i64, AdmissionError> {
         .ok_or(AdmissionError::TimeOverflow)
 }
 
-fn read_lifetime(
+pub(super) fn read_lifetime(
     tx: &Transaction<'_>,
     namespace: &str,
     sandbox: core::SandboxId,
@@ -256,7 +256,7 @@ impl ControllerJournal {
         admission: CreateAdmission,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
-        self.admit_with_compute(request, admission, None, None, crashes)
+        self.admit_with_compute(request, admission, None, None, None, crashes)
     }
 
     /// Atomically bind a prebuilt template and charge its actual resource shape.
@@ -269,7 +269,7 @@ impl ControllerJournal {
         compute: ComputeLimits,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
-        self.admit_with_compute(request, admission, Some(compute), None, crashes)
+        self.admit_with_compute(request, admission, Some(compute), None, None, crashes)
     }
 
     /// The validation VM identity and create intent commit together, before host work.
@@ -288,6 +288,7 @@ impl ControllerJournal {
             admission,
             Some(compute),
             Some(publication),
+            None,
             crashes,
         )
     }
@@ -296,12 +297,13 @@ impl ControllerJournal {
         clippy::too_many_lines,
         reason = "all resource charges and the reducer intent must share one transaction"
     )]
-    fn admit_with_compute(
+    pub(super) fn admit_with_compute(
         &mut self,
         request: core::CreateRequest,
         admission: CreateAdmission,
         compute: Option<ComputeLimits>,
         publication: Option<&str>,
+        internal: Option<&super::internal_inbox::AdmissionAttachment>,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
         let CreateAdmission {
@@ -525,6 +527,9 @@ impl ControllerJournal {
                     .as_ref()
                     .ok_or(AdmissionError::InvalidCreateOptions)?,
             )?;
+        }
+        if let Some(attachment) = internal {
+            super::internal_inbox::attach_admission(&tx, &self.namespace, attachment)?;
         }
         reserved.next = tx.world();
         crashes.hit(CrashPoint::BeforeCommit)?;

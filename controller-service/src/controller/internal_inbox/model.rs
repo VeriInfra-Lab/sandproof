@@ -1,5 +1,6 @@
 //! Pure bounded inbox transitions and canonical parameter checks; no `SQLite` I/O.
 use crate::{CreateOptions, JournalError};
+use sandbox_controller_core as core;
 use sandproof_protocol::internal::lifecycle::{
     Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
 };
@@ -7,6 +8,22 @@ use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
+
+/// Permanent local identities, allocated only with the original create admission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InternalLocalBinding {
+    pub sandbox: core::SandboxId,
+    pub owner: core::TenantId,
+    pub operation: core::OperationId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct TenantBinding {
+    pub tenant: sandproof_protocol::TenantId,
+    pub local: core::TenantId,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,6 +57,7 @@ pub(super) struct Entry {
     pub(super) request: LifecycleRequest,
     pub(super) digest: [u8; 32],
     pub(super) response: LifecycleResponse,
+    pub(super) local: Option<InternalLocalBinding>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,6 +65,8 @@ pub(super) struct Inbox {
     pub(super) config: InternalInboxConfig,
     pub(super) observation: PositiveCounter,
     pub(super) entries: Vec<Entry>,
+    pub(super) tenant_highwater: u64,
+    pub(super) tenants: Vec<TenantBinding>,
 }
 
 fn encoded_request(
@@ -74,8 +94,37 @@ fn encoded_request(
     Ok(serde_json::to_vec(request)?)
 }
 impl Inbox {
+    fn validate_tenants(&self) -> Result<(), JournalError> {
+        let mut tenants = BTreeSet::new();
+        let mut local_tenants = BTreeSet::new();
+        if self.tenants.len() > usize::from(self.config.max_sandboxes)
+            || self.tenant_highwater
+                != self
+                    .tenants
+                    .iter()
+                    .map(|binding| binding.local.0)
+                    .max()
+                    .unwrap_or(0)
+            || self.tenants.iter().any(|binding| {
+                binding.local.0 == 0
+                    || binding.local.0 > self.tenant_highwater
+                    || !tenants.insert(binding.tenant.as_str())
+                    || !local_tenants.insert(binding.local.0)
+                    || !self.entries.iter().any(|entry| {
+                        entry
+                            .local
+                            .is_some_and(|local| local.owner == binding.local)
+                            && entry.request.identity.tenant_id == binding.tenant
+                    })
+            })
+        {
+            return Err(JournalError::CorruptStore);
+        }
+        Ok(())
+    }
     pub(super) fn validate(&self) -> Result<(), JournalError> {
-        if self.observation.get() != self.entries.len() as u64 + 1
+        self.validate_tenants()?;
+        if self.observation.get() < self.entries.len() as u64 + 1
             || !self.config.valid()
             || self.entries.len()
                 > usize::from(self.config.max_sandboxes)
@@ -86,6 +135,7 @@ impl Inbox {
         let mut operations = BTreeSet::new();
         let mut sandboxes = BTreeSet::new();
         let mut observations = BTreeSet::new();
+        let mut local_sandboxes = BTreeSet::new();
         for (index, entry) in self.entries.iter().enumerate() {
             let request = &entry.request;
             let encoded =
@@ -93,10 +143,31 @@ impl Inbox {
             if Sha256::digest(encoded).as_slice() != entry.digest
                 || !operations.insert(request.identity.operation_id.as_str())
                 || entry.response.validate_for(request).is_err()
-                || entry.response.fact != LifecycleFact::Recorded
                 || entry.response.observation_version.get() > self.observation.get()
                 || !observations.insert(entry.response.observation_version.get())
             {
+                return Err(JournalError::CorruptStore);
+            }
+            if let Some(local) = entry.local {
+                if request.intent != Intent::Create
+                    || local.operation != core::OperationId(1)
+                    || local.sandbox.0 == 0
+                    || !local_sandboxes.insert(local.sandbox.0)
+                    || !self.tenants.iter().any(|binding| {
+                        binding.tenant == request.identity.tenant_id && binding.local == local.owner
+                    })
+                    || !matches!(
+                        entry.response.fact,
+                        LifecycleFact::Recorded | LifecycleFact::Ready { .. }
+                    )
+                {
+                    return Err(JournalError::CorruptStore);
+                }
+            } else if matches!(
+                entry.response.fact,
+                LifecycleFact::Ready { .. } | LifecycleFact::Renewed { .. }
+            ) {
+                // Renewed is not implemented by this adapter yet.
                 return Err(JournalError::CorruptStore);
             }
             sandboxes.insert(request.identity.sandbox_id.as_str());
@@ -217,6 +288,7 @@ impl Inbox {
             request: request.clone(),
             digest: Sha256::digest(encoded).into(),
             response: response.clone(),
+            local: None,
         });
         self.validate()?;
         Ok(response)
