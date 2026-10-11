@@ -11,7 +11,7 @@ use std::{
 /// machines/directories cannot be detected by a local file lock.
 pub struct WriterLease {
     pub(crate) deployment: DeploymentId,
-    _file: File,
+    file: File,
 }
 
 impl WriterLease {
@@ -76,9 +76,37 @@ impl WriterLease {
             return Err(StoreError::Configuration);
         }
         file.try_lock().map_err(|_| StoreError::WriterUnavailable)?;
-        Ok(Self {
-            deployment,
-            _file: file,
-        })
+        Ok(Self { deployment, file })
+    }
+}
+
+impl Drop for WriterLease {
+    fn drop(&mut self) {
+        // CLOEXEC closes in an executed child, not during the fork→exec window.
+        // Explicit unlock prevents a transient inherited descriptor from
+        // retaining this process-scoped lease after its owner has retired.
+        // If the OS refuses unlock, any next writer still fails closed.
+        let _ = self.file.unlock();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn retained_duplicate_descriptor_does_not_keep_a_retired_writer_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let deployment: DeploymentId = "descriptor-fixture".try_into().unwrap();
+        let writer = WriterLease::acquire(directory.path(), deployment.clone()).unwrap();
+        // A duplicate has the same open file description, as an inherited
+        // descriptor does during fork→exec. No scheduling race is necessary.
+        let retained = writer.file.try_clone().unwrap();
+        drop(writer);
+        let replacement = WriterLease::acquire(directory.path(), deployment).unwrap();
+        drop(retained);
+        drop(replacement);
     }
 }

@@ -56,7 +56,7 @@ fn writer_is_exclusive_immediate_and_released_by_drop() {
         Err(StoreError::WriterUnavailable)
     ));
     drop(first);
-    assert!(WriterLease::acquire(root.path(), deployment()).is_ok());
+    WriterLease::acquire(root.path(), deployment()).unwrap();
 }
 
 #[test]
