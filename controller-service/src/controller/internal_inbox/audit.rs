@@ -11,7 +11,7 @@ use sandproof_protocol::internal::{
     lifecycle::{Intent, LifecycleResponse},
 };
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A checked database snapshot, not a current physical observation or permit.
 /// Counts are bounded by the original checkpoint and inbox configurations.
@@ -130,6 +130,43 @@ pub(in crate::controller) fn snapshot(
 }
 
 impl ControllerJournal {
+    /// Available original physical positions and retained-history lanes under
+    /// one checked read transaction. No row means never bound only in the
+    /// complete protected physical-position domain, not absence of responsibility.
+    /// Unretired requests and exhausted lane generations remain unavailable.
+    /// # Errors
+    /// Missing, changed or corrupt authority and wrong node fail closed.
+    pub fn internal_available_instances(&self, node: &NodeIdentity) -> Result<u64, JournalError> {
+        self.committed_world
+            .ensure_ready(&self.journal.connection)?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        let world = super::super::checkpoint::load_world(&tx)?;
+        let audit = snapshot(&tx, &world)?;
+        if audit.node != *node {
+            return Err(JournalError::Conflict);
+        }
+        let config = super::super::bounded::config(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        let physical = super::super::bounded::available_positions(&world, &config)?;
+        let retained: BTreeSet<_> = audit
+            .operations
+            .iter()
+            .map(|operation| operation.identity.retention_slot)
+            .collect();
+        let lanes = u64::try_from(
+            audit
+                .lanes
+                .iter()
+                .filter(|lane| {
+                    lane.current_window.is_some() && !retained.contains(&lane.retention_slot)
+                })
+                .count(),
+        )
+        .map_err(|_| JournalError::CorruptStore)?;
+        tx.commit()?;
+        Ok(physical.min(lanes))
+    }
+
     /// Inspect the original authority under one read transaction. This never
     /// receives requests, advances time, recovers work or accesses host secrets.
     /// # Errors

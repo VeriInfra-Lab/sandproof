@@ -136,6 +136,9 @@ impl HostCapacity for TestHost {
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
         Ok(self.0.lock().unwrap().disk_available.unwrap_or(u64::MAX))
     }
+    fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
+        Ok((2, 512 * 1024 * 1024))
+    }
     fn validate_physical_storage(
         &self,
         profile: &PhysicalStorageProfile,

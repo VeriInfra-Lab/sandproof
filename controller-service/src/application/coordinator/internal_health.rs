@@ -4,7 +4,6 @@ use super::{
     map_journal,
 };
 use crate::{physical_storage::PhysicalTemplateCache, templates::ComputeLimits};
-use sandbox_controller_core::maintenance::slots::HostSlotPhase;
 use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::internal::lifecycle::Resources;
 
@@ -52,10 +51,14 @@ impl<H: ControllerHost> ControllerApplication<H> {
         compute: ComputeLimits,
     ) -> Result<(u64, Resources), ApplicationError> {
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        let audit = inner.journal.internal_audit().map_err(map_journal)?;
-        if audit.node != *node {
-            return Err(ApplicationError::Invalid);
-        }
+        let slots =
+            inner
+                .journal
+                .internal_available_instances(node)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ApplicationError::Invalid,
+                    other => map_journal(other),
+                })?;
         let usage = inner
             .journal
             .retained_resource_usage()
@@ -75,14 +78,6 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .available_disk_bytes()?
             .saturating_sub(profile.peak_bytes().map_err(map_journal)?);
         let (cpu, memory) = inner.host.available_compute()?;
-        let slots = u64::try_from(
-            audit
-                .host_slots
-                .iter()
-                .filter(|(_, phase)| *phase == HostSlotPhase::Free)
-                .count(),
-        )
-        .map_err(|_| ApplicationError::Busy)?;
         let free = Resources {
             instances: self
                 .config

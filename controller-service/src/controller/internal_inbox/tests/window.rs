@@ -482,6 +482,12 @@ fn maximum_window_retires_to_exhausted_without_counter_wrap_or_reset() {
     assert_eq!(audit.lanes[0].retired_through, u64::MAX);
     assert_eq!(audit.lanes[0].current_window, None);
     assert!(audit.operations.is_empty());
+    assert_eq!(
+        journal
+            .internal_available_instances(&config().node)
+            .unwrap(),
+        1
+    );
     journal
         .close_internal_window(&close(&journal, u64::MAX), &mut NeverCrash)
         .unwrap();
@@ -494,6 +500,84 @@ fn maximum_window_retires_to_exhausted_without_counter_wrap_or_reset() {
         Err(JournalError::Conflict)
     ));
     assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(1));
+}
+
+#[test]
+fn all_exhausted_retention_generations_advertise_zero_and_reject_new_incarnations() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = open(&path);
+    journal
+        .initialize_internal_inbox(config(), &mut NeverCrash)
+        .unwrap();
+    assert_eq!(
+        journal
+            .internal_available_instances(&config().node)
+            .unwrap(),
+        2
+    );
+    let mut inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
+    inbox.observation = u64::from(config().max_sandboxes).try_into().unwrap();
+    for lane in &mut inbox.lanes {
+        lane.retired_through = u64::MAX - 1;
+        lane.current_window = Some(u64::MAX.try_into().unwrap());
+        let mut prior = request(u64::from(lane.retention_slot), 2, Intent::Destroy);
+        prior.identity.retention_slot = lane.retention_slot;
+        prior.identity.request_window = (u64::MAX - 1).try_into().unwrap();
+        prior.identity.sandbox_id = format!("old-slot-{}", lane.retention_slot)
+            .try_into()
+            .unwrap();
+        prior.identity.operation_id = format!("old-operation-{}", lane.retention_slot)
+            .try_into()
+            .unwrap();
+        lane.last_retired = Some(response(
+            &prior,
+            u64::from(lane.retention_slot),
+            LifecycleFact::Cleaned,
+        ));
+    }
+    codec::save(&journal.journal.connection, &inbox).unwrap();
+    for slot in 1..=config().max_sandboxes {
+        let mut destroy = request(u64::from(slot), 2, Intent::Destroy);
+        destroy.identity.retention_slot = slot;
+        destroy.identity.request_window = u64::MAX.try_into().unwrap();
+        destroy.identity.sandbox_id = format!("last-slot-{slot}").try_into().unwrap();
+        journal
+            .record_internal_intent(&destroy, &mut NeverCrash)
+            .unwrap();
+        let result = journal
+            .capture_internal_progress(&destroy, &mut NeverCrash)
+            .unwrap();
+        journal
+            .confirm_internal_result(&result, &mut NeverCrash)
+            .unwrap();
+        journal
+            .close_internal_window(&WindowCloseRequest::new(result), &mut NeverCrash)
+            .unwrap();
+        assert_eq!(
+            journal
+                .internal_available_instances(&config().node)
+                .unwrap(),
+            u64::from(config().max_sandboxes - slot)
+        );
+    }
+    drop(journal);
+    let mut journal = open(&path);
+    assert!(journal.internal_audit().unwrap().host_slots.is_empty());
+    assert_eq!(
+        journal
+            .internal_available_instances(&config().node)
+            .unwrap(),
+        0
+    );
+    for slot in 1..=config().max_sandboxes {
+        let mut create = request(u64::from(slot), 1, Intent::Create);
+        create.identity.retention_slot = slot;
+        assert!(matches!(
+            journal.record_internal_intent(&create, &mut NeverCrash),
+            Err(JournalError::Conflict)
+        ));
+    }
 }
 
 #[test]

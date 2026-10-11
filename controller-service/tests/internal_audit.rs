@@ -82,6 +82,102 @@ fn assert_no_authority_write(root: &Path, mut before: BTreeMap<PathBuf, (usize, 
 }
 
 #[test]
+fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired_responsibility() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("controller.db");
+    let state = Arc::new(Mutex::new(State::default()));
+    let mut inbox = inbox();
+    inbox.max_sandboxes = 1;
+    let mut bounded = host(&path);
+    bounded.maintenance.max_host_slots = 1;
+    bounded.physical_storage.as_mut().unwrap().pools[0].max_host_slots = 1;
+    let app = fixture::application_with_host_config(
+        &path,
+        state.clone(),
+        Arc::new(TestClock(AtomicI64::new(100))),
+        true,
+        inbox.clone(),
+        bounded,
+    );
+    let free = || {
+        let (observed_at_ms, resources) = app
+            .internal_free_resources(&inbox.node, fixture::compute())
+            .unwrap();
+        assert_eq!(observed_at_ms, 100);
+        resources.instances
+    };
+    assert!(app.internal_audit().unwrap().host_slots.is_empty());
+    assert_eq!(
+        free(),
+        1,
+        "an initialized empty host must accept its first VM"
+    );
+    let create = fixture::request();
+    app.record_internal_intent(&create).unwrap();
+    assert_eq!(
+        free(),
+        0,
+        "Recorded without a native mapping still occupies its lane"
+    );
+    let ready = app
+        .advance_internal_lifecycle(&create, Some(fixture::template()), fixture::compute())
+        .unwrap();
+    assert!(matches!(ready.fact, LifecycleFact::Ready { .. }));
+    assert_eq!(free(), 0);
+    let mut destroy = create;
+    destroy.intent = Intent::Destroy;
+    destroy.identity.intent_version = 2.try_into().unwrap();
+    destroy.identity.operation_id = "destroy-1".try_into().unwrap();
+    app.record_internal_intent(&destroy).unwrap();
+    state.lock().unwrap().release_unknown = true;
+    assert_eq!(
+        app.advance_internal_lifecycle(&destroy, None, fixture::compute())
+            .unwrap()
+            .fact,
+        LifecycleFact::Stopped
+    );
+    assert_eq!(
+        app.internal_audit().unwrap().host_slots[0].1,
+        sandbox_controller_core::maintenance::slots::HostSlotPhase::Releasing
+    );
+    assert_eq!(
+        free(),
+        0,
+        "unknown physical release cannot advertise capacity"
+    );
+    state.lock().unwrap().release_unknown = false;
+    let cleaned = app
+        .advance_internal_lifecycle(&destroy, None, fixture::compute())
+        .unwrap();
+    assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
+    assert_eq!(free(), 0, "physical Free does not retire the retained lane");
+    app.confirm_internal_result(&cleaned).unwrap();
+    assert_eq!(free(), 0, "confirmation alone does not close the lane");
+    app.close_internal_window(&WindowCloseRequest::new(cleaned))
+        .unwrap();
+    assert_eq!(free(), 1);
+    let actions = state.lock().unwrap().actions.len();
+    assert_eq!(free(), 1);
+    assert_eq!(
+        state.lock().unwrap().actions.len(),
+        actions,
+        "health is read-only"
+    );
+    let mut next = fixture::request();
+    next.identity.request_window = 2.try_into().unwrap();
+    next.identity.sandbox_id = "successor".try_into().unwrap();
+    next.identity.operation_id = "create-successor".try_into().unwrap();
+    app.record_internal_intent(&next).unwrap();
+    assert!(matches!(
+        app.advance_internal_lifecycle(&next, Some(fixture::template()), fixture::compute())
+            .unwrap()
+            .fact,
+        LifecycleFact::Ready { .. }
+    ));
+    assert_eq!(free(), 0);
+}
+
+#[test]
 fn audit_projects_exact_global_local_mapping_and_latest_fact_without_host_work() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("controller.db");
