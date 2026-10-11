@@ -105,6 +105,8 @@ def check_material(directory, *, protected=False):
             info = path.lstat()
             if info.st_uid != 0 or stat.S_ISLNK(info.st_mode) or info.st_mode & 0o022:
                 raise ValueError('Redis material is not protected')
+        if not os.access(directory / 'redis-server', os.X_OK):
+            raise ValueError('Redis material is not executable by this CI user')
     return receipt
 
 
@@ -114,7 +116,9 @@ def seal(stage):
     if stage.parent != Path('/var/tmp') or not stage.name.startswith('sandproof-ci-redis.'):
         raise ValueError('Redis stage cleanup target is not the recipe directory')
     receipt = check_material(stage)
-    INSTALLED.parent.mkdir(parents=True, exist_ok=True)
+    if not INSTALLED.parent.exists():
+        INSTALLED.parent.mkdir(mode=0o755)
+        INSTALLED.parent.chmod(0o755)
     for parent in [INSTALLED.parent, *INSTALLED.parent.parents]:
         info = parent.lstat()
         if info.st_uid != 0 or stat.S_ISLNK(info.st_mode) or info.st_mode & 0o022:
@@ -125,6 +129,7 @@ def seal(stage):
             raise ValueError('existing Redis material differs; no overwrite')
     else:
         INSTALLED.mkdir(mode=0o755)
+        INSTALLED.chmod(0o755)
         for name in ('redis-server', 'material.json'):
             with (INSTALLED / name).open('xb') as destination:
                 destination.write(regular_bytes(stage / name, BINARY_LIMIT))
