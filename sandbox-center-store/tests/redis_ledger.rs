@@ -34,6 +34,8 @@ use sandproof_protocol::internal::lifecycle::{
     Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
 };
 
+#[path = "redis_ledger/aof.rs"]
+mod aof;
 #[path = "redis_ledger/window.rs"]
 mod window;
 
