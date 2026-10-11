@@ -673,6 +673,7 @@ class Supervisor:
                     report = json_file(private_path(root / 'report.json'), limit=4 * 1024 * 1024)
                     service_artifacts.require_service_boundary(report, manifest)
                     assets = self.config['host_assets']
+                    from tools.system_acceptance import digest as file_digest
                     result = batch_result(root, candidate=state['candidate'], names=batch['names'],
                         dataset=state.get('dataset', 'terminal-bench@2.1'), source_kind=self.config['source_kind'],
                         oracle_mode=batch.get('oracle_mode', 'original'),
@@ -681,7 +682,9 @@ class Supervisor:
                         exit_code=int(fields['ExecMainStatus']), full_task_count=len(state['all_tasks']), expected_hashes={
                             name: assets[self.config[key]] for name, key in
                             (('kernel_sha256', 'kernel'), ('builder_base_sha256', 'rootfs'))},
-                        service_manifest=manifest,dk_evidence=state['dk']['result'])
+                        service_manifest=manifest,dk_evidence=state['dk']['result'],
+                        expected_run_id=state['id'],
+                        expected_candidate_manifest_sha256=file_digest(private_path(Path(state['candidate_manifest']))))
                     batch['result'] = result
                     batch['root_identity'] = [root.stat().st_dev, root.stat().st_ino]
                     batch['phase'] = 'reclaiming'

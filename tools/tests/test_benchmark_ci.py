@@ -39,7 +39,8 @@ class BenchmarkCITests(unittest.TestCase):
                 execution_manifest_sha256='9'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
 
     def batch_result(self, root, **kwargs):
-        return bench.batch_result(root, service_manifest=self.services_manifest,dk_evidence=self.dk, **kwargs)
+        return bench.batch_result(root, service_manifest=self.services_manifest,dk_evidence=self.dk,
+            expected_run_id='b'*64,expected_candidate_manifest_sha256='c'*64,**kwargs)
 
     def test_profile_scope_and_configurable_batches(self):
         batches = bench.selection(self.lock, self.manifest, self.policy)
@@ -393,6 +394,32 @@ class BenchmarkCITests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.batch_result(self.root, **dict(self.prepared_args(), exit_code=1))
 
+    def test_matching_incoming_cohort_cannot_replace_original_supervisor_identity(self):
+        # Both incoming copies agree, and the candidate, binaries, role facts,
+        # DK and task/cleanup evidence are otherwise unchanged. They still
+        # cannot cover the original supervisor's independently retained intent.
+        for field,value in (('run_id','e'*64),('candidate_manifest_sha256','f'*64)):
+            with self.subTest(field=field):
+                report=self.prepared_report()
+                report['execution_manifest'][field]=value
+                (self.root/'execution-manifest.json').write_text(json.dumps(report['execution_manifest']))
+                (self.root/'report.json').write_text(json.dumps(report))
+                with self.assertRaisesRegex(ValueError,'original supervised run'):
+                    self.batch_result(self.root,**self.prepared_args())
+
+    def test_missing_or_extra_execution_fields_reject_even_when_incoming_copies_agree(self):
+        for field in ('run_id','candidate_manifest_sha256','unreviewed_cohort'):
+            with self.subTest(field=field):
+                report=self.prepared_report()
+                if field=='unreviewed_cohort':
+                    report['execution_manifest'][field]='e'*64
+                else:
+                    report['execution_manifest'].pop(field)
+                (self.root/'execution-manifest.json').write_text(json.dumps(report['execution_manifest']))
+                (self.root/'report.json').write_text(json.dumps(report))
+                with self.assertRaises(ValueError):
+                    self.batch_result(self.root,**self.prepared_args())
+
     def test_prepared_ci_each_guest_preflight_and_verifier_identity_is_required(self):
         original = self.prepared_report()
         args = self.prepared_args()
@@ -691,6 +718,10 @@ class BenchmarkCITests(unittest.TestCase):
         supervisor.config = config
         supervisor.state.update(dataset='terminal-bench@2.0', configuration=config,
             expected=self.names[:4], all_tasks=self.names[:4])
+        candidate_manifest=self.root/'candidate-artifacts.json'
+        candidate_manifest.write_text(json.dumps(self.services_manifest))
+        candidate_manifest.chmod(0o600)
+        supervisor.state['candidate_manifest']=str(candidate_manifest)
         batch = supervisor.state['batches'][0]
         Path(batch['root']).mkdir(mode=0o700)
         batch['services'] = service_artifacts.public_identity(self.services_manifest)
@@ -704,6 +735,9 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(reduce.call_args.kwargs['expected_fixture_sha256'], 'e'*64)
         self.assertFalse(reduce.call_args.kwargs['proxy_required'])
         self.assertEqual(reduce.call_args.kwargs['source_kind'], 'prepared-ci')
+        self.assertEqual(reduce.call_args.kwargs['expected_run_id'],supervisor.state['id'])
+        self.assertEqual(reduce.call_args.kwargs['expected_candidate_manifest_sha256'],
+                         hashlib.sha256(candidate_manifest.read_bytes()).hexdigest())
         remove.assert_called_once()
         self.assertEqual(batch['phase'], 'done')
         supervisor.tick()
@@ -767,7 +801,8 @@ class BenchmarkCITests(unittest.TestCase):
     def test_old_report_missing_role_receipts_or_one_fault_case_never_passes(self):
         self.report()
         args=dict(candidate='a'*40,names=self.names[:4],exit_code=0,full_task_count=89,
-            service_manifest=self.services_manifest)
+            service_manifest=self.services_manifest,expected_run_id='b'*64,
+            expected_candidate_manifest_sha256='c'*64)
         for dk in (None,{},dict(self.dk,cases=self.dk['cases'][:5])):
             with self.subTest(dk=dk),self.assertRaises(ValueError):
                 bench.batch_result(self.root,dk_evidence=dk,**args)
@@ -844,6 +879,8 @@ class BenchmarkCITests(unittest.TestCase):
                                             peak_bytes=1024,inode_budget=4)])
             sampler.stop()
             report=self.report(service_data=sampler.declaration(),service_storage=sampler.report())
+            self.assertEqual(report['execution_manifest']['run_id'],'b'*64)
+            self.assertEqual(report['execution_manifest']['candidate_manifest_sha256'],'c'*64)
             report['tasks']=[dict(row,name=name) for row,name in zip(report['tasks'],names)]
             (self.root/'report.json').write_text(json.dumps(report))
             batch=self.batch_result(self.root,candidate='a'*40,names=names,exit_code=0,

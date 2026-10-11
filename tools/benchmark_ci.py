@@ -160,7 +160,8 @@ def instantiate_policy(template, root, namespaces, *, job_count):
 
 def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expected_hashes=None,
                  full_task_count, dataset='terminal-bench@2.1', source_kind='dockerfile', oracle_mode='original',
-                 expected_fixture_sha256=None, service_manifest, dk_evidence):
+                 expected_fixture_sha256=None, service_manifest, dk_evidence,
+                 expected_run_id, expected_candidate_manifest_sha256):
     from tools.ci_e2e_artifacts import (require_service_boundary, require_execution_manifest,
         require_process_evidence,require_dk)
     from tools.service_storage_observation import require_storage_observation
@@ -185,6 +186,12 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     execution_path=private_path(root/'execution-manifest.json')
     execution=require_execution_manifest(report.get('execution_manifest'),service_manifest,
         expected=json_file(execution_path,limit=32768))
+    # Agreement between the two incoming files is insufficient: another cohort
+    # can use the same candidate and binaries. Only the supervisor's durable
+    # original intent and sealed candidate receipt may supply these expectations.
+    if (execution['run_id']!=expected_run_id
+            or execution['candidate_manifest_sha256']!=expected_candidate_manifest_sha256):
+        raise ValueError('batch execution differs from the original supervised run')
     storage=require_storage_observation(report.get('service_storage'),expected=execution['service_data'])
     processes=require_process_evidence(report.get('service_processes'),execution)
     service = json_file(root / 'service-cleanup.json')
