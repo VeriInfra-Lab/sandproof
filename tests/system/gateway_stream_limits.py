@@ -153,35 +153,31 @@ def download_boundary(sandbox, directory, limit=RESPONSE_LIMIT):
     return cases
 
 
-def command_overflow(sandbox, directory, limit=RESPONSE_LIMIT):
-    marker = f"{directory}/overflow-starts"
+def command_large_output(sandbox, directory, size=RESPONSE_LIMIT + 1024 * 1024):
+    marker = f"{directory}/large-output-starts"
     # Append before output, so a retransmitted Start leaves a second marker.
-    # stdout equal to the budget exceeds it once Connect JSON/base64 is added.
+    # Exceed the former total output cap; it is not a deployed byte budget.
     command = (f"printf 'once\\n' >> {shlex.quote(marker)}; "
-               f"head -c {limit} /dev/zero | tr '\\000' X")
+               f"head -c {size} /dev/zero | tr '\\000' X")
     handle = sandbox.commands.run(command, background=True, timeout=30)
-    error_name = None
     received = 0
 
     def observe_output(chunk):
         nonlocal received
+        assert not chunk.strip('X'), 'command output bytes changed'
         received += len(chunk.encode())
 
     try:
-        handle.wait(on_stdout=observe_output)
-    except Exception as error:
-        if not stream_failure(error):
-            raise
-        error_name = type(error).__name__
+        result = handle.wait(on_stdout=observe_output)
+        assert result.exit_code == 0
     finally:
         # Query/terminate the known handle; never issue Start again to learn
         # whether the original command happened. kill() may return False if done.
         handle.kill()
-    assert error_name is not None, "oversized command stream reported successful completion"
-    assert received > 0, "command stream failed before any output was observed"
+    assert received == size, "large command stream was lost or truncated"
     assert sandbox.files.read(marker) == "once\n", "command side effect was replayed"
     healthy(sandbox)
-    return {"pid": handle.pid, "stream_error": error_name,
+    return {"pid": handle.pid, "exit_code": result.exit_code,
             "stdout_bytes": received, "observed_starts": 1}
 
 
@@ -221,10 +217,9 @@ def exercise(args):
             "sandbox_id": sandbox.sandbox_id,
             "sdk_version": "2.51.0",
             "configured_budgets": {"file_upload_bytes": args.file_upload_bytes,
-                                   "file_download_bytes": args.file_download_bytes,
-                                   "command_output_bytes": args.command_output_bytes},
+                                   "file_download_bytes": args.file_download_bytes},
             "download_boundaries": download_boundary(sandbox, directory, args.file_download_bytes),
-            "command_overflow": command_overflow(sandbox, directory, args.command_output_bytes),
+            "command_large_output": command_large_output(sandbox, directory, args.command_output_test_bytes),
             "disconnect": disconnect_and_reconnect(sandbox, directory),
         }
         if args.file_upload_bytes is not None:
@@ -249,5 +244,5 @@ if __name__ == "__main__":
     parser.add_argument("--file-upload-bytes", type=positive_bytes,
                         help="enable streaming upload cases; match deployed data_transfer exactly")
     parser.add_argument("--file-download-bytes", type=positive_bytes, default=RESPONSE_LIMIT)
-    parser.add_argument("--command-output-bytes", type=positive_bytes, default=RESPONSE_LIMIT)
+    parser.add_argument("--command-output-test-bytes", type=positive_bytes, default=RESPONSE_LIMIT + 1024 * 1024)
     exercise(parser.parse_args())

@@ -109,8 +109,8 @@ class GatewayWireContract(EnvdWireContract):
                     self.assertEqual(len(downloads), 1)
                     self.assertEqual(self.sandbox.commands.run("printf healthy").exit_code, 0)
 
-    def test_command_output_limit_fails_without_replaying_start(self):
-        self.app.process.stdout_chunks = [b"X" * (64 * 1024)] * 512
+    def test_command_large_output_completes_without_replaying_start(self):
+        self.app.process.stdout_chunks = [b"X" * (64 * 1024)] * 528
         handle = self.sandbox.commands.run("synthetic-large-output", background=True)
         self.assertEqual(handle.pid, 4321)
         received = 0
@@ -120,13 +120,9 @@ class GatewayWireContract(EnvdWireContract):
             self.assertEqual(chunk, "X" * len(chunk))
             received += len(chunk)
 
-        with self.assertRaises(TimeoutException) as error:
-            handle.wait(on_stdout=output)
-        # The pinned SDK's exception name is misleading: its typed cause is
-        # chunked HTTP EOF, not a deadline. The script must check that cause.
-        self.assertTrue(stream_failure(error.exception))
-        self.assertGreater(received, 0)
-        self.assertLess(received, 32 * MIB)
+        result = handle.wait(on_stdout=output)
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(received, 33 * MIB)
         self.assertEqual(len(self.app.process.starts), 1)
         self.app.process.stdout_chunks = [b"synthetic\n"]
         self.assertEqual(self.sandbox.commands.run("printf healthy").stdout, "synthetic\n")
@@ -255,8 +251,8 @@ class GatewayAsyncContract(AsyncEnvdWireContract):
         self.app = SyntheticEnvd()
         self.server.set_app(self.app)
 
-    async def test_async_command_output_limit_fails_without_replaying_start(self):
-        self.app.process.stdout_chunks = [b"X" * (64 * 1024)] * 512
+    async def test_async_command_large_output_completes_without_replaying_start(self):
+        self.app.process.stdout_chunks = [b"X" * (64 * 1024)] * 528
         received = 0
 
         def output(chunk):
@@ -267,13 +263,9 @@ class GatewayAsyncContract(AsyncEnvdWireContract):
         handle = await self.sandbox.commands.run(
             "synthetic-large-output", background=True, on_stdout=output)
         self.assertEqual(handle.pid, 4321)
-        with self.assertRaises(TimeoutException) as error:
-            await handle.wait()
-        self.assertTrue(async_stream_failure(error.exception),
-                        (repr(error.exception), repr(error.exception.__cause__),
-                         repr(error.exception.__context__)))
-        self.assertGreater(received, 0)
-        self.assertLess(received, 32 * MIB)
+        result = await handle.wait()
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(received, 33 * MIB)
         self.assertEqual(len(self.app.process.starts), 1)
         self.app.process.stdout_chunks = [b"synthetic\n"]
         self.assertEqual((await self.sandbox.commands.run("healthy")).stdout, "synthetic\n")

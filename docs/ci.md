@@ -14,6 +14,8 @@
 
 监督配置显式选择 `source_kind=prepared-ci`、`selection.profile=ci`、`ci_fixtures=<root 私有清单>` 和 `check_name=E2E / terminal-bench-ci`，把清单摘要纳入 `host_assets`，同时更新选择目录的 `selection_sha256`。每轮仍跑候选代码的真实 SDK/控制器/宿主启停与精确清理；不启动下载代理、不启用全局转发、不改变宿主 VPN/DNS。评分只在独立派生目录替换启动脚本，不改冻结源文件和断言；缺少材料失败，不临时联网安装。模板可重复用，工作盘及成绩不可重复用。平台安装程序或模板内容变化须重新制备与批准清单。该模式跳过本轮模板构建，相关构建变更仍用原通用构建定向验收；判据和上线切换看[验收清单](testing-plan.md)。
 
+两题预装运行只启动运行池控制服务，登记已核对的静态模板，不启动构建池或公共构建服务、不开放动态模板登记。配置显式给出 `prepared_ci_disk_budget_bytes`（示例为 200 GiB），它限制**包含两倍安全余量后的总空闲磁盘要求**，不是单台虚拟机磁盘上限。运行/清理/元数据额度及文件系统余量沿用批准策略；内核与运行程序副本按实际固定产物计入，完整包络仍由原 Rust 物理准入核验。实际包络超过上限时在派发前拒绝，不截断额度或跳过检查。原题资源、解答/评分时限和断言保持；通用构建与一次性模板制备仍执行原双池完整资源合同，不适用这一档位。新配置只用于全新验收身份，旧失败和在途配置原样保留，不把旧失败改成成功。报告另列运行池、无构建派发、实际启动要求和总预算，检查回传前核验这些证据。
+
 ### 普通 CI 自建执行环境
 
 普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器、rustup 与 uv 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。[uv 安装入口](../tools/ci_install_uv.sh)只从固定官方 PyPI 制品下载 uv 0.11.31，核对 SHA256 后以 root/0555 安装到 `/usr/local/bin/uv`；SDK/Harbor 工作流直接检查 `uv --version`，版本缺失或不符即失败。工具或执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
@@ -54,7 +56,7 @@
 
 手动入口为同一监督器的 `--candidate <批准的完整提交> --base <目标完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-promotions`，私有配置明确批准 `auto_promotions=true`、固定仓库和 `promotion_floor=<已审查门槛实现的完整提交>`；只接收该最低版本之后的受保护分支，避免首次安装时执行旧 test。现有 `--follow-test`／`auto_test` 保留为旧部署入口，不与新模式同时启用。自动模式不接受命令行改题集、手动候选或 `--local-only`。
 
-两级晋升的题集、检查名称与启用条件以[验收清单](testing-plan.md)为准，实际部署证据留 #14，不在本页另列旧门槛。结果注明原题/兼容/预装环境、评分启动变体和实际范围；普通任务 PR 不跑真题。test/main 的端到端检查绑定专用 GitHub App 的 ID，运行中阻塞、真实成功后才放行；integration 的保护不增加真题门槛。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口仍未接通，受控命令行入口保留。
+两级晋升规则由[开发指南](../CONTRIBUTING.md#5-github-配置)维护，两题预装环境的题集、判据与扩展验收范围由[验收清单](testing-plan.md#4-通用模板与-terminal-bench)维护；专用 App 的两题门槛已接通，部署证据留 #14，不在本页维护另一份进度或旧门槛。结果注明原题/兼容/预装环境、评分启动变体和实际范围；普通任务 PR 不跑真题。test/main 的端到端检查绑定专用 GitHub App 的 ID，运行中阻塞、真实成功后才放行；integration 的保护不增加真题门槛。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口仍未接通，受控命令行入口保留。
 
 给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 

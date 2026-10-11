@@ -38,6 +38,17 @@ pub(crate) fn start_request(startup: &TemplateStartup) -> Result<Vec<u8>, serde_
 
 /// Only an actual Start event confirms dispatch. EOF, errors, a trailer,
 /// compression, output or an oversized response never count as success.
+/// A malformed header is also complete for transport purposes: stop reading
+/// promptly and let `read_started` reject it, without treating it as success.
+pub(crate) fn first_frame_complete(bytes: &[u8]) -> bool {
+    if bytes.len() < 5 {
+        return false;
+    }
+    let size = u32::from_be_bytes(bytes[1..5].try_into().expect("frame header")) as usize;
+    bytes[0] != 0 || !(1..=8192).contains(&size) || bytes.len() >= 5 + size
+}
+
+/// Validate a fully observed, size-bounded first frame.
 pub(crate) fn read_started(mut source: impl Read) -> Result<u32, Box<dyn std::error::Error>> {
     let mut header = [0; 5];
     source.read_exact(&mut header)?;
@@ -84,6 +95,18 @@ impl StartupRecord {
 mod tests {
     use super::*;
     use sandproof_controller_service::templates::{ResourceShape, TemplateArtifact};
+    #[test]
+    fn prefix_detection_waits_for_payload_and_rejects_bad_headers_promptly() {
+        for size in 0..5 {
+            assert!(!first_frame_complete(&[0; 5][..size]));
+        }
+        assert!(!first_frame_complete(&[0, 0, 0, 0, 1]));
+        assert!(first_frame_complete(&[0, 0, 0, 0, 1, b'x']));
+        for header in [[0, 0, 0, 0, 0], [0, 0, 0, 32, 1], [2, 0, 0, 0, 1]] {
+            assert!(first_frame_complete(&header));
+            assert!(read_started(&header[..]).is_err());
+        }
+    }
     fn defaults() -> TemplateStartup {
         TemplateStartup {
             env_vars: BTreeMap::from([("VALUE".into(), "image".into())]),

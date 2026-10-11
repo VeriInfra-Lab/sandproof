@@ -74,8 +74,8 @@ def envelope(profile):
 def validate_configuration(runtime, builder, build, *, file_size=None):
     """Cross-check both known configs; host additionally derives its exact metadata.
 
-    A full profile in either pool requires the same complete profile everywhere.
-    No profile and no full-capacity controller preserves the previous mode.
+    Both pools require the same complete profile and explicit capacity.
+    Missing configuration is rejection, never an optional successful mode.
     """
     def optional_object(pool, key):
         value = pool.get(key)
@@ -86,8 +86,6 @@ def validate_configuration(runtime, builder, build, *, file_size=None):
         return value
     profiles = [optional_object(pool, "bounded_host").get("physical_storage") for pool in (runtime, builder)]
     full = [optional_object(pool, "maintenance").get("capacity") for pool in (runtime, builder)]
-    if all(profile is None for profile in profiles) and all(value is None for value in full):
-        return None
     if (any(type(value) is not dict or not value for value in full) or profiles[0] is None
             or profiles[0] != profiles[1] or not build.get("bounded_builds")):
         raise ValueError("full physical capacity requires identical explicit profiles and bounded pools/builds")

@@ -4,6 +4,7 @@
 //! This crate does not make lifecycle decisions: the trusted `ControllerPort`
 //! must authorize every operation against the durable controller state.
 
+pub mod admission;
 mod build_vm_api;
 mod list;
 pub mod managed;
@@ -19,6 +20,7 @@ pub use sandproof_controller_service::template_registry::{
 
 use std::{sync::Arc, time::Duration};
 
+use admission::{RequestAdmission, RequestClass};
 use axum::{
     Json, Router,
     extract::{
@@ -54,7 +56,7 @@ pub enum ConfigurationError {
 // Application owns failure semantics; only this boundary maps them to HTTP.
 pub use sandproof_controller_service::application::ApplicationError as PortError;
 
-fn port_error_status(error: &PortError) -> StatusCode {
+fn port_error_status(error: PortError) -> StatusCode {
     match error {
         PortError::Invalid => StatusCode::BAD_REQUEST,
         PortError::NotFound => StatusCode::NOT_FOUND,
@@ -306,6 +308,7 @@ pub trait ControllerPort: Send + Sync + 'static {
 struct ApiState<P> {
     port: Arc<P>,
     credentials: Vec<ApiCredential>,
+    admission: Arc<RequestAdmission>,
 }
 
 impl<P> Clone for ApiState<P> {
@@ -313,6 +316,7 @@ impl<P> Clone for ApiState<P> {
         Self {
             port: Arc::clone(&self.port),
             credentials: self.credentials.clone(),
+            admission: Arc::clone(&self.admission),
         }
     }
 }
@@ -364,28 +368,37 @@ impl IntoResponse for ApiFailure {
         let status = match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::BadRequest => StatusCode::BAD_REQUEST,
-            Self::Port(error) => port_error_status(&error),
+            Self::Port(error) => port_error_status(error),
         };
         (status, Json(serde_json::json!({"code": status.as_u16(), "message": status.canonical_reason().unwrap_or("error")}))).into_response()
     }
 }
 
 async fn blocking<T: Send + 'static>(
+    admission: Arc<RequestAdmission>,
+    class: RequestClass,
     work: impl FnOnce() -> Result<T, PortError> + Send + 'static,
 ) -> Result<T, ApiFailure> {
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
-        .map_err(ApiFailure::Port)
+    let lease = admission
+        .try_acquire(class)
+        .ok_or(ApiFailure::Port(PortError::QuotaExceeded))?;
+    tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        work()
+    })
+    .await
+    .map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
+    .map_err(ApiFailure::Port)
 }
 
 async fn bounded_kill(
+    admission: Arc<RequestAdmission>,
     work: impl FnOnce() -> Result<(), PortError> + Send + 'static,
     deadline: Duration,
 ) -> Result<(), ApiFailure> {
     // After a response timeout the blocking task continues under the durable
     // reducer lock. The caller sees unknown, not a fabricated completion.
-    tokio::time::timeout(deadline, blocking(work))
+    tokio::time::timeout(deadline, blocking(admission, RequestClass::Control, work))
         .await
         .map_err(|_| ApiFailure::Port(PortError::OutcomeUnknown))?
 }
@@ -425,7 +438,10 @@ async fn create<P: ControllerPort>(
     {
         return Err(ApiFailure::BadRequest);
     }
-    let session = blocking(move || state.port.create(&tenant, request)).await?;
+    let session = blocking(state.admission.clone(), RequestClass::Ordinary, move || {
+        state.port.create(&tenant, request)
+    })
+    .await?;
     Ok((StatusCode::CREATED, Json(session)))
 }
 
@@ -440,7 +456,10 @@ async fn connect<P: ControllerPort>(
     if !valid_timeout(request.timeout) {
         return Err(ApiFailure::BadRequest);
     }
-    let session = blocking(move || state.port.connect(&tenant, &sandbox_id, request)).await?;
+    let session = blocking(state.admission.clone(), RequestClass::Control, move || {
+        state.port.connect(&tenant, &sandbox_id, request)
+    })
+    .await?;
     Ok(Json(session))
 }
 
@@ -451,7 +470,10 @@ async fn get_sandbox<P: ControllerPort>(
 ) -> Result<Json<SandboxDetail>, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     Ok(Json(
-        blocking(move || state.port.get(&tenant, &sandbox_id)).await?,
+        blocking(state.admission.clone(), RequestClass::Ordinary, move || {
+            state.port.get(&tenant, &sandbox_id)
+        })
+        .await?,
     ))
 }
 
@@ -463,7 +485,10 @@ async fn list<P: ControllerPort>(
     let tenant = authenticate(&state, &headers)?;
     let Query(query) = query.map_err(|_| ApiFailure::BadRequest)?;
     query.validate().map_err(ApiFailure::Port)?;
-    let page = blocking(move || state.port.list(&tenant, query)).await?;
+    let page = blocking(state.admission.clone(), RequestClass::Ordinary, move || {
+        state.port.list(&tenant, query)
+    })
+    .await?;
     let mut response = Json(page.items).into_response();
     if let Some(total) = page.total_running {
         response.headers_mut().insert(
@@ -487,6 +512,7 @@ async fn kill<P: ControllerPort>(
 ) -> Result<StatusCode, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     bounded_kill(
+        state.admission.clone(),
         move || state.port.kill(&tenant, &sandbox_id),
         KILL_REPLY_DEADLINE,
     )
@@ -502,7 +528,7 @@ async fn set_timeout<P: ControllerPort>(
 ) -> Result<StatusCode, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
-    blocking(move || {
+    blocking(state.admission.clone(), RequestClass::Control, move || {
         state
             .port
             .set_timeout(&tenant, &sandbox_id, request.timeout)
@@ -519,6 +545,18 @@ async fn set_timeout<P: ControllerPort>(
 pub fn router<P: ControllerPort>(
     port: Arc<P>,
     credentials: Vec<ApiCredential>,
+) -> Result<Router, ConfigurationError> {
+    router_with_admission(port, credentials, Arc::new(RequestAdmission::default()))
+}
+
+/// Construct a management router sharing its pre-dispatch budget with the
+/// data gateway and background scanner. SDK request defaults are unchanged.
+/// # Errors
+/// Rejects invalid API credentials, as does [`router`].
+pub fn router_with_admission<P: ControllerPort>(
+    port: Arc<P>,
+    credentials: Vec<ApiCredential>,
+    admission: Arc<RequestAdmission>,
 ) -> Result<Router, ConfigurationError> {
     if credentials.is_empty() {
         return Err(ConfigurationError::EmptyCredentials);
@@ -542,7 +580,11 @@ pub fn router<P: ControllerPort>(
     }) {
         return Err(ConfigurationError::WeakOrDuplicateSecret);
     }
-    let state = ApiState { port, credentials };
+    let state = ApiState {
+        port,
+        credentials,
+        admission,
+    };
     Ok(Router::new()
         .route("/v2/sandboxes", post(create::<P>).get(list::<P>))
         .route("/v2/sandboxes/{sandbox_id}/connect", post(connect::<P>))
@@ -560,15 +602,102 @@ pub fn router<P: ControllerPort>(
 #[cfg(test)]
 mod lifecycle_deadline_tests {
     use super::*;
+    use crate::admission::RequestAdmissionLimits;
     use std::sync::mpsc;
+
+    #[tokio::test]
+    async fn public_failures_remain_status_only_without_internal_diagnostics() {
+        for (error, status) in [
+            (PortError::Invalid, StatusCode::BAD_REQUEST),
+            (PortError::NotFound, StatusCode::NOT_FOUND),
+            (PortError::Conflict, StatusCode::CONFLICT),
+            (PortError::QuotaExceeded, StatusCode::TOO_MANY_REQUESTS),
+            (PortError::Busy, StatusCode::SERVICE_UNAVAILABLE),
+            (PortError::OutcomeUnknown, StatusCode::INTERNAL_SERVER_ERROR),
+            (PortError::Failed, StatusCode::INTERNAL_SERVER_ERROR),
+        ] {
+            let response = ApiFailure::Port(error).into_response();
+            assert_eq!(response.status(), status);
+            let bytes = axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(
+                body,
+                serde_json::json!({ "code": status.as_u16(), "message": status.canonical_reason().unwrap() })
+            );
+        }
+    }
+
+    fn budget() -> Arc<RequestAdmission> {
+        RequestAdmission::new(RequestAdmissionLimits {
+            max_pending_requests: 2,
+            control_reserve: 1,
+        })
+        .unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancelled_request_keeps_its_blocking_slot_until_work_finishes() {
+        let budget = budget();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let work_budget = budget.clone();
+        let task = tokio::spawn(blocking(work_budget, RequestClass::Ordinary, move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            Ok(())
+        }));
+        entered_rx.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let call = called.clone();
+        assert!(matches!(
+            blocking(budget.clone(), RequestClass::Ordinary, move || {
+                call.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+            .await,
+            Err(ApiFailure::Port(PortError::QuotaExceeded))
+        ));
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(budget.try_acquire(RequestClass::Control).is_some());
+        assert!(budget.try_acquire(RequestClass::Background).is_some());
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while budget.try_acquire(RequestClass::Ordinary).is_none() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn panic_releases_admission_but_retains_unknown_outcome() {
+        let budget = budget();
+        assert!(matches!(
+            blocking::<()>(budget.clone(), RequestClass::Ordinary, || panic!(
+                "injected worker panic"
+            ))
+            .await,
+            Err(ApiFailure::Port(PortError::OutcomeUnknown))
+        ));
+        assert!(budget.try_acquire(RequestClass::Ordinary).is_some());
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn reply_deadline_returns_unknown_but_does_not_cancel_physical_completion() {
+        let budget = budget();
+        let ordinary = budget.try_acquire(RequestClass::Ordinary).unwrap();
         let (started_tx, started_rx) = mpsc::sync_channel(1);
         let (release_tx, release_rx) = mpsc::sync_channel(1);
         let (done_tx, done_rx) = mpsc::sync_channel(1);
+        let work_budget = budget.clone();
         let pending = tokio::spawn(async move {
             bounded_kill(
+                work_budget,
                 move || {
                     started_tx.send(()).unwrap();
                     release_rx.recv().unwrap();
@@ -584,7 +713,17 @@ mod lifecycle_deadline_tests {
             pending.await.unwrap(),
             Err(ApiFailure::Port(PortError::OutcomeUnknown))
         ));
+        assert!(budget.try_acquire(RequestClass::Control).is_none());
+        assert!(budget.try_acquire(RequestClass::Background).is_some());
         release_tx.send(()).unwrap();
         done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while budget.try_acquire(RequestClass::Control).is_none() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        drop(ordinary);
     }
 }

@@ -77,7 +77,7 @@ def complete_runtime(settings, *, slots, file_size=None):
     if "data_transfer" not in result:
         result["data_transfer"] = {
             "file_upload_bytes": 64 * MIB, "file_download_bytes": 96 * MIB,
-            "command_input_bytes": 8 * MIB, "command_output_bytes": 64 * MIB,
+            "command_input_bytes": 8 * MIB,
             "rpc_request_bytes": 64 * 1024, "rpc_response_bytes": MIB,
             "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
             "request_idle_seconds": 30, "file_idle_seconds": 30, "write_idle_seconds": 30,

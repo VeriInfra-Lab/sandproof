@@ -4,12 +4,7 @@ use sandproof_protocol::{ActionIdentity, ResourceEvidence, WorkAction, WorkRecei
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-/// An interrupted transport does not prove whether the worker ran the action.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WorkerTransportError {
-    ConnectionLost,
-    ReplyLost,
-}
+pub use crate::host_contract::WorkerTransportError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DispatchResult<E> {

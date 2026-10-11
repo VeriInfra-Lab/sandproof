@@ -7,7 +7,6 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 const BUFFER_BYTES: usize = 64 * 1024;
 
 pub(super) async fn relay<I, O, R, W>(
-    _bounded: bool,
     input: I,
     mut output: O,
     reader: R,
@@ -34,7 +33,7 @@ where
         output.flush().await?;
         Ok::<(), io::Error>(())
     };
-    // Both host modes have TCP half-close semantics. Upload EOF only closes
+    // The relay has TCP half-close semantics. Upload EOF only closes
     // the guest's write half; it is not a revocation or a cleanup certificate.
     // A guest may stop accepting an upload before returning its rejection
     // (for example, HTTP 507). Preserve that response even if the request
@@ -95,54 +94,50 @@ mod tests {
 
     #[tokio::test]
     async fn upload_write_failure_preserves_the_guests_rejection_response() {
-        for bounded in [false, true] {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let (mut client_input, input) = tokio::io::duplex(17);
-                let (output, mut client_output) = tokio::io::duplex(19);
-                let (mut guest, reader) = tokio::io::duplex(23);
-                let (refused, rejection_ready) = oneshot::channel();
-                let relay = relay(bounded, input, output, reader, RefusedUpload(Some(refused)));
-                let client = async {
-                    client_input.write_all(b"upload").await.unwrap();
-                    let mut response = Vec::new();
-                    client_output.read_to_end(&mut response).await.unwrap();
-                    response
-                };
-                let response = [
-                    b"HTTP/1.1 507 Insufficient Storage\r\n\r\n".as_slice(),
-                    &vec![b'X'; 256 * 1024 + 1],
-                ]
-                .concat();
-                let expected = response.clone();
-                let server = async move {
-                    rejection_ready.await.unwrap();
-                    // The write failure is observed first. The response must
-                    // still flow, with backpressure and no upload EOF needed.
-                    guest.write_all(&response).await
-                };
-                let (result, received, sent) = tokio::join!(relay, client, server);
-                assert!(
-                    received == expected,
-                    "upload error discarded the guest response ({} of {} bytes)",
-                    received.len(),
-                    expected.len()
-                );
-                sent.unwrap();
-                assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
-            })
-            .await
-            .expect("rejected upload stalled");
-        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let (mut client_input, input) = tokio::io::duplex(17);
+            let (output, mut client_output) = tokio::io::duplex(19);
+            let (mut guest, reader) = tokio::io::duplex(23);
+            let (refused, rejection_ready) = oneshot::channel();
+            let relay = relay(input, output, reader, RefusedUpload(Some(refused)));
+            let client = async {
+                client_input.write_all(b"upload").await.unwrap();
+                let mut response = Vec::new();
+                client_output.read_to_end(&mut response).await.unwrap();
+                response
+            };
+            let response = [
+                b"HTTP/1.1 507 Insufficient Storage\r\n\r\n".as_slice(),
+                &vec![b'X'; 256 * 1024 + 1],
+            ]
+            .concat();
+            let expected = response.clone();
+            let server = async move {
+                rejection_ready.await.unwrap();
+                // The write failure is observed first. The response must
+                // still flow, with backpressure and no upload EOF needed.
+                guest.write_all(&response).await
+            };
+            let (result, received, sent) = tokio::join!(relay, client, server);
+            assert!(
+                received == expected,
+                "upload error discarded the guest response ({} of {} bytes)",
+                received.len(),
+                expected.len()
+            );
+            sent.unwrap();
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        })
+        .await
+        .expect("rejected upload stalled");
     }
 
     #[tokio::test]
     async fn forwards_before_upload_eof_and_keeps_response_after_half_close() {
-        for bounded in [false, true] {
-            half_close_response(bounded).await;
-        }
+        half_close_response().await;
     }
 
-    async fn half_close_response(bounded: bool) {
+    async fn half_close_response() {
         // Tiny duplex queues force partial reads/writes in both directions.
         let (mut client_input, input) = tokio::io::duplex(17);
         let (output, mut client_output) = tokio::io::duplex(19);
@@ -174,11 +169,8 @@ mod tests {
             guest.shutdown().await.unwrap();
         };
         tokio::time::timeout(Duration::from_secs(5), async {
-            let (result, (), ()) = tokio::join!(
-                relay(bounded, input, output, reader, writer),
-                client,
-                server
-            );
+            let (result, (), ()) =
+                tokio::join!(relay(input, output, reader, writer), client, server);
             result.unwrap();
         })
         .await
@@ -187,61 +179,55 @@ mod tests {
 
     #[tokio::test]
     async fn downstream_error_cancels_an_upload_that_has_no_eof() {
-        for bounded in [false, true] {
-            downstream_error(bounded).await;
-        }
+        downstream_error().await;
     }
 
-    async fn downstream_error(bounded: bool) {
+    async fn downstream_error() {
         let (_open_input, input) = tokio::io::duplex(17);
         let (output, closed_reader) = tokio::io::duplex(19);
         drop(closed_reader);
         let (stream, mut guest) = tokio::io::duplex(23);
         let (reader, writer) = tokio::io::split(stream);
         guest.write_all(b"response").await.unwrap();
-        let error = tokio::time::timeout(
-            Duration::from_secs(5),
-            relay(bounded, input, output, reader, writer),
-        )
-        .await
-        .expect("failed response waited for upload EOF")
-        .unwrap_err();
+        let error =
+            tokio::time::timeout(Duration::from_secs(5), relay(input, output, reader, writer))
+                .await
+                .expect("failed response waited for upload EOF")
+                .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[tokio::test]
-    async fn upload_eof_waits_for_explicitly_delayed_response_in_both_modes() {
-        for bounded in [false, true] {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                let (mut client_input, input) = tokio::io::duplex(17);
-                let (output, mut client_output) = tokio::io::duplex(19);
-                let (stream, mut guest) = tokio::io::duplex(23);
-                let (reader, writer) = tokio::io::split(stream);
-                let task = tokio::spawn(relay(bounded, input, output, reader, writer));
-                client_input.write_all(b"request").await.unwrap();
-                client_input.shutdown().await.unwrap();
-                let mut request = Vec::new();
-                guest.read_to_end(&mut request).await.unwrap();
-                assert_eq!(request, b"request");
-                // The guest has observed FIN, but deliberately has not replied.
-                // No sleep: observing FIN is the scheduling barrier.
-                tokio::task::yield_now().await;
-                assert!(!task.is_finished(), "upload EOF cancelled the response");
-                let expected = vec![0x42; 256 * 1024 + 3];
-                let send = async {
-                    guest.write_all(&expected).await.unwrap();
-                    guest.shutdown().await.unwrap();
-                };
-                let receive = async {
-                    let mut bytes = Vec::new();
-                    client_output.read_to_end(&mut bytes).await.unwrap();
-                    assert_eq!(bytes, expected);
-                };
-                tokio::join!(send, receive);
-                task.await.unwrap().unwrap();
-            })
-            .await
-            .expect("delayed half-close response stalled");
-        }
+    async fn upload_eof_waits_for_explicitly_delayed_response_() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let (mut client_input, input) = tokio::io::duplex(17);
+            let (output, mut client_output) = tokio::io::duplex(19);
+            let (stream, mut guest) = tokio::io::duplex(23);
+            let (reader, writer) = tokio::io::split(stream);
+            let task = tokio::spawn(relay(input, output, reader, writer));
+            client_input.write_all(b"request").await.unwrap();
+            client_input.shutdown().await.unwrap();
+            let mut request = Vec::new();
+            guest.read_to_end(&mut request).await.unwrap();
+            assert_eq!(request, b"request");
+            // The guest has observed FIN, but deliberately has not replied.
+            // No sleep: observing FIN is the scheduling barrier.
+            tokio::task::yield_now().await;
+            assert!(!task.is_finished(), "upload EOF cancelled the response");
+            let expected = vec![0x42; 256 * 1024 + 3];
+            let send = async {
+                guest.write_all(&expected).await.unwrap();
+                guest.shutdown().await.unwrap();
+            };
+            let receive = async {
+                let mut bytes = Vec::new();
+                client_output.read_to_end(&mut bytes).await.unwrap();
+                assert_eq!(bytes, expected);
+            };
+            tokio::join!(send, receive);
+            task.await.unwrap().unwrap();
+        })
+        .await
+        .expect("delayed half-close response stalled");
     }
 }

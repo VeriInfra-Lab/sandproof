@@ -6,6 +6,8 @@
 #[cfg(target_os = "linux")]
 mod adapter;
 #[cfg(target_os = "linux")]
+mod fault;
+#[cfg(target_os = "linux")]
 mod physical_profile;
 #[cfg(target_os = "linux")]
 pub use adapter::NodeHost;

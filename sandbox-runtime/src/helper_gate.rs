@@ -2,7 +2,7 @@
 //! The child cannot exec until its PID/start/boot/context marker is synced.
 //! A surviving helper blocks every later lease even if it closes every FD.
 
-use super::child_process::OwnedChild;
+use super::child_process::{HelperLimits, OwnedChild};
 use super::{Runtime, RuntimeError, RuntimeHostSlot, check_trusted_path, read_proc};
 use rustix::fs::{FlockOperation, flock};
 use serde::{Deserialize, Serialize};
@@ -439,7 +439,7 @@ impl RuntimeHelperGuard {
         context: &RuntimeHostSlot,
         program: &str,
         args: &[&str],
-    ) -> Result<Child, RuntimeError> {
+    ) -> Result<OwnedChild, RuntimeError> {
         self.validate_context(context)?;
         let (path, stage) = self.gate.inflight_paths()?;
         if super::path_present(&path)? {
@@ -514,16 +514,18 @@ impl RuntimeHelperGuard {
                 }
                 fs::remove_file(&path)?;
             }
-            return self.spawn_reserved(
-                context,
-                Some(index),
-                Some(control),
-                &path,
-                &stage,
-                staged,
-                program,
-                args,
-            );
+            return self
+                .spawn_reserved(
+                    context,
+                    Some(index),
+                    Some(control),
+                    &path,
+                    &stage,
+                    staged,
+                    program,
+                    args,
+                )
+                .map(OwnedChild::into_child);
         }
         Err(RuntimeError::InvalidConfiguration(
             "all bounded data route cells are occupied",
@@ -560,10 +562,10 @@ impl RuntimeHelperGuard {
         mut staged: File,
         program: &str,
         args: &[&str],
-    ) -> Result<Child, RuntimeError> {
+    ) -> Result<OwnedChild, RuntimeError> {
         sync_parent(stage)?;
-        let mut child = match self.gated_command(program, args).spawn() {
-            Ok(child) => OwnedChild::new(child),
+        let mut child = match OwnedChild::spawn(&mut self.gated_command(program, args)) {
+            Ok(child) => child,
             Err(error) => {
                 // No child obtained permission or published a process witness.
                 // Remove only this still-empty reservation; otherwise a clean
@@ -583,7 +585,7 @@ impl RuntimeHelperGuard {
             args,
             &mut child,
         )?;
-        Ok(child.into_child())
+        Ok(child)
     }
 
     fn abandon_unspawned_stage(&self, stage: &Path, staged: &File) -> Result<(), RuntimeError> {
@@ -853,41 +855,35 @@ pub(crate) fn helper_output(
     args: &[&str],
     input: Option<&str>,
 ) -> Result<Vec<u8>, RuntimeError> {
-    let child = match (gate, context) {
+    let input = input.unwrap_or_default().as_bytes();
+    if input.len() > HelperLimits::CONTROL.input_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "host helper input exceeds budget",
+        )
+        .into());
+    }
+    let mut child = match (gate, context) {
         (Some(gate), Some(context)) => gate.spawn_tracked(context, program, args)?,
-        (None, None) => Command::new(program)
-            .args(args)
-            .env_clear()
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?,
+        (None, None) => OwnedChild::spawn(
+            Command::new(program)
+                .args(args)
+                .env_clear()
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )?,
         _ => {
             return Err(RuntimeError::IdentityMismatch(
                 "host helper gate/context presence",
             ));
         }
     };
-    let mut child = OwnedChild::new(child);
-    write_helper_input(&mut child, input)?;
-    let result = child.wait_output()?;
+    let result = child.exchange(input, HelperLimits::CONTROL)?;
     if let Some(gate) = gate {
         gate.finish_tracked()?;
     }
     checked_output(operation, result)
-}
-
-fn write_helper_input(child: &mut OwnedChild, input: Option<&str>) -> Result<(), RuntimeError> {
-    if let Some(input) = input {
-        child
-            .stdin
-            .take()
-            .ok_or(RuntimeError::Protocol("host helper stdin"))?
-            .write_all(input.as_bytes())?;
-    } else {
-        drop(child.stdin.take());
-    }
-    Ok(())
 }
 
 fn checked_output(operation: &'static str, result: Output) -> Result<Vec<u8>, RuntimeError> {
@@ -1041,7 +1037,9 @@ mod tests {
         let mut child = if route {
             guard.spawn_route(context, false, "/bin/sh", &args)
         } else {
-            guard.spawn_tracked(context, "/bin/sh", &args)
+            guard
+                .spawn_tracked(context, "/bin/sh", &args)
+                .map(OwnedChild::into_child)
         }
         .unwrap();
         let mut line = String::new();
@@ -1468,6 +1466,7 @@ mod tests {
                         ],
                     )
                     .unwrap()
+                    .into_child()
             } else {
                 paused(&guard, &context, false)
             };
@@ -1482,11 +1481,40 @@ mod tests {
             } else {
                 drop(child.stdin.take());
             }
-            assert!(write_helper_input(&mut child, Some("body")).is_err());
+            assert!(child.exchange(b"body", HelperLimits::CONTROL).is_err());
             drop(child);
             assert_reaped(id);
             guard.finish_tracked().unwrap();
         }
+    }
+
+    #[test]
+    fn timed_out_exchange_preserves_original_marker_until_exact_observation() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_temp, context) = fixture(1);
+        let guard = acquire(&context, false).unwrap();
+        let mut child = guard
+            .spawn_tracked(&context, "/bin/sh", &["-c", "while :; do :; done"])
+            .unwrap();
+        let id = child.id();
+        let (path, _) = context.helper_gate.inflight_paths().unwrap();
+        let original = fs::read(&path).unwrap();
+        let error = child
+            .exchange(
+                &[],
+                HelperLimits {
+                    timeout: std::time::Duration::from_millis(100),
+                    ..HelperLimits::CONTROL
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert_reaped(id);
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(guard.spawn_tracked(&context, "/bin/true", &[]).is_err());
+        // This only discharges the exited process witness, not its side effects.
+        guard.finish_tracked().unwrap();
+        assert!(!path.exists());
     }
 
     #[test]

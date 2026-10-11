@@ -1,3 +1,6 @@
+use sandproof_controller_service::application::fault::{
+    FaultContext, FaultKind, FaultRecord, FaultScope, FaultStage,
+};
 use sandproof_controller_service::application::{
     ApplicationConfig as ManagedConfig, ControllerApplication, ControllerHost, DataRelay,
     HostCapacity, HostSlots, LaunchConfiguration, TemplateArtifacts, WorkEvidence, WorkExecution,
@@ -32,6 +35,8 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+#[path = "managed_port/admission.rs"]
+mod admission;
 #[path = "managed_port/allocators.rs"]
 mod allocators;
 #[path = "managed_port/bounded_slots.rs"]
@@ -688,7 +693,7 @@ impl TemplateArtifacts for FakeHost {
         template: &sandproof_controller_service::templates::TemplateBinding,
     ) -> Result<(), PortError> {
         if let Some(error) = &self.template_validation_error {
-            return Err(error.clone());
+            return Err(*error);
         }
         if template.is_valid() {
             Ok(())
@@ -1822,6 +1827,12 @@ fn failed_prepare_reclaim_parks_only_its_sandbox_without_relaunching_either_vm()
     assert_eq!(first.workflows_completed, 1);
     assert_eq!(first.unresolved_sandboxes, 1);
     assert_eq!(first.failed_sandboxes, 1);
+    let fault = first.first_fault.unwrap();
+    assert_eq!(fault.scope, FaultScope::Instance);
+    assert_eq!(fault.stage, FaultStage::Reclaim);
+    assert_eq!(fault.context.sandbox, Some(1));
+    assert_eq!(fault.context.operation, Some(1));
+    assert_eq!(fault.context.attempt, Some(0));
     assert_eq!(prepare_calls.load(Ordering::SeqCst), 0);
     assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
     assert_eq!(
@@ -3787,6 +3798,13 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     assert_eq!(first.workflows_completed, 1);
     assert_eq!(first.unresolved_sandboxes, 1);
     assert_eq!(first.failed_sandboxes, 1);
+    let fault = first.first_fault.unwrap();
+    assert_eq!(fault.scope, FaultScope::Instance);
+    assert_eq!(fault.stage, FaultStage::Reclaim);
+    assert_eq!(fault.kind, FaultKind::Application(PortError::Busy));
+    assert_eq!(fault.context.sandbox, Some(1));
+    assert!(fault.context.operation.is_some());
+    assert_eq!(fault.context.attempt, Some(0));
     // The stopped but unconfirmed first VM still consumes its tenant slot;
     // the other tenant can reuse only its own reclaimed slot.
     assert_eq!(port.create("1", request()), Err(PortError::QuotaExceeded));
@@ -3819,6 +3837,7 @@ fn failed_stop_reclaim_parks_only_its_sandbox_then_recovers_same_attempt() {
     assert_eq!(resumed.workflows_completed, 1);
     assert_eq!(resumed.unresolved_sandboxes, 0);
     assert_eq!(resumed.failed_sandboxes, 0);
+    assert_eq!(resumed.first_fault, None);
     assert_eq!(
         port.application()
             .recover_on_startup()
@@ -3846,6 +3865,12 @@ fn invalid_receipt_is_rejected_without_delaying_the_other_sandbox() {
     assert_eq!(report.receipts_recovered, 1);
     assert_eq!(report.workflows_completed, 1);
     assert_eq!(report.failed_sandboxes, 1);
+    let fault = report.first_fault.unwrap();
+    assert_eq!(fault.scope, FaultScope::Instance);
+    assert_eq!(fault.stage, FaultStage::RecoverReceipt);
+    assert_eq!(fault.kind, FaultKind::MismatchedIdentity);
+    assert_eq!(fault.context.sandbox, Some(1));
+    assert_eq!(fault.context.attempt, Some(0));
     drop(port);
     let journal =
         complete_fixture::open(directory.path().join("controller.db"), NAMESPACE).unwrap();
@@ -4002,6 +4027,13 @@ fn corrupt_shared_journal_still_aborts_recovery() {
             .unwrap(),
         1
     );
+    let error = journal.world().unwrap_err();
+    let fault = FaultRecord::journal(FaultStage::Recovery, &error, FaultContext::default());
+    assert_eq!(fault.scope, FaultScope::SharedStorage);
+    assert!(matches!(
+        fault.kind,
+        FaultKind::CorruptStore | FaultKind::JsonSyntax | FaultKind::JsonEof | FaultKind::JsonData
+    ));
     let port = new_port(
         journal,
         FakeHost {

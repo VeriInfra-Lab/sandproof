@@ -123,38 +123,33 @@ async def download_boundary(sandbox, directory, limit):
     return cases
 
 
-async def command_overflow(sandbox, directory, limit):
-    marker = f'{directory}/overflow-starts'
+async def command_large_output(sandbox, directory, size):
+    marker = f'{directory}/async-large-output-starts'
     received = 0
 
     # Positive control: a smaller stream must end with a complete result.
-    below = limit // 2
+    below = size // 2
     result = await sandbox.commands.run(
         f"head -c {below} /dev/zero | tr '\\000' X", timeout=30)
     assert result.stdout == 'X' * below and result.exit_code == 0
 
     def observe_output(chunk):
         nonlocal received
+        assert not chunk.strip('X'), 'command output bytes changed'
         received += len(chunk.encode())
 
     command = (f"printf 'once\\n' >> {shlex.quote(marker)}; "
-               f"head -c {limit} /dev/zero | tr '\\000' X")
+               f"head -c {size} /dev/zero | tr '\\000' X")
     handle = await sandbox.commands.run(command, background=True, timeout=30, on_stdout=observe_output)
-    error_name = None
     try:
-        await handle.wait()
-    except Exception as error:
-        if not async_stream_failure(error):
-            raise
-        error_name = type(error).__name__
+        result = await handle.wait()
+        assert result.exit_code == 0
     finally:
         await handle.kill()
-    assert error_name is not None, 'oversized command stream reported success'
-    assert received > 0, 'command failed before any output'
-    assert received < limit, 'raw stdout already exceeds the encoded body budget'
+    assert received == size, 'large command stream was lost or truncated'
     assert await sandbox.files.read(marker) == 'once\n', 'command Start was replayed'
     await healthy(sandbox)
-    return {'pid': handle.pid, 'stream_error': error_name,
+    return {'pid': handle.pid, 'exit_code': result.exit_code,
             'stdout_bytes': received, 'below_limit_stdout_bytes': below, 'observed_starts': 1}
 
 
@@ -196,11 +191,10 @@ async def exercise(args):
         await sandbox.files.make_dir(directory)
         report = {'sandbox_id': sandbox.sandbox_id, 'sdk_version': '2.51.0',
                   'configured_budgets': {'file_upload_bytes': args.file_upload_bytes,
-                                         'file_download_bytes': args.file_download_bytes,
-                                         'command_output_bytes': args.command_output_bytes}}
+                                         'file_download_bytes': args.file_download_bytes}}
         report['upload_boundaries'] = await upload_boundary(sandbox, directory, args.file_upload_bytes)
         report['download_boundaries'] = await download_boundary(sandbox, directory, args.file_download_bytes)
-        report['command_overflow'] = await command_overflow(sandbox, directory, args.command_output_bytes)
+        report['command_large_output'] = await command_large_output(sandbox, directory, args.command_output_test_bytes)
         report['disconnect'] = await disconnect_and_reconnect(sandbox, directory)
     finally:
         _kill_confirmed = (await AsyncSandbox.kill(sandbox.sandbox_id, **owner))
@@ -221,5 +215,5 @@ if __name__ == '__main__':
     parser.add_argument('--sandbox-url', required=True)
     parser.add_argument('--file-upload-bytes', required=True, type=positive_bytes)
     parser.add_argument('--file-download-bytes', required=True, type=positive_bytes)
-    parser.add_argument('--command-output-bytes', required=True, type=positive_bytes)
+    parser.add_argument('--command-output-test-bytes', type=positive_bytes, default=33 * 1024 * 1024)
     asyncio.run(exercise(parser.parse_args()))

@@ -6,6 +6,29 @@ use super::*;
 use serde_json::{Value, json};
 
 #[test]
+fn request_admission_has_finite_defaults_and_rejects_invalid_overrides() {
+    let config: ConfigFile = serde_json::from_value(settings()).unwrap();
+    let contract = DeploymentContract::validate(&config).unwrap();
+    assert_eq!(contract.requests.max_pending_requests, 64);
+    assert_eq!(contract.requests.control_reserve, 8);
+    for policy in [
+        json!({"max_pending_requests": 2, "control_reserve": 0}),
+        json!({"max_pending_requests": 2, "control_reserve": 2}),
+        json!({"max_pending_requests": 8193, "control_reserve": 1}),
+        json!({"max_pending_requests": 2}),
+        json!({"max_pending_requests": 2, "control_reserve": 1, "typo": true}),
+        Value::Null,
+    ] {
+        let mut changed = settings();
+        changed["request_admission"] = policy;
+        assert!(check(changed).is_err());
+    }
+    let mut valid = settings();
+    valid["request_admission"] = json!({"max_pending_requests": 2, "control_reserve": 1});
+    assert!(check(valid).is_ok());
+}
+
+#[test]
 fn formal_contract_rejects_every_partial_mode_without_filesystem_effects() {
     for path in [
         "/bounded_host",

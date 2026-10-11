@@ -29,7 +29,7 @@ def bounded_data_route_limits(settings):
     """Resolve the persisted route-cell limits from explicit gateway limits."""
     transfer = settings.get("data_transfer")
     budgets = {"file_upload_bytes", "file_download_bytes", "command_input_bytes",
-               "command_output_bytes", "rpc_request_bytes", "rpc_response_bytes"}
+               "rpc_request_bytes", "rpc_response_bytes"}
     concurrency = {"max_transfers", "max_transfers_per_vm", "control_reserve"}
     timeouts = {"request_idle_seconds", "file_idle_seconds", "write_idle_seconds"}
     if type(transfer) is not dict or set(transfer) != budgets | concurrency | timeouts:
@@ -211,6 +211,11 @@ def apply_acceptance_build_policy(runtime, builder, build, policy):
             raise ValueError("retired max_vm_id configuration is not supported: " + name)
     validate_acceptance_build_policy(policy)
     import copy
+    # Validate prospective settings before changing even the caller's in-memory
+    # inputs. Incomplete physical configuration must not leave a half-applied
+    # acceptance policy that a caller might later serialize or retry.
+    original = (runtime, builder, build)
+    runtime, builder, build = copy.deepcopy(original)
     if __package__:
         from .template_build_store import bounded_configuration
     else:
@@ -229,4 +234,7 @@ def apply_acceptance_build_policy(runtime, builder, build, policy):
     else:
         from template_physical_storage import validate_configuration as validate_physical_configuration
     validate_physical_configuration(runtime, builder, build)
+    for target, checked in zip(original, (runtime, builder, build)):
+        target.clear()
+        target.update(checked)
     return "windowed"

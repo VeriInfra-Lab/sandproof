@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
-sandproof-controller-service = { path = "../controller-service" }
+sandproof-controller-service = { path = "../controller-service", default-features = false }
 sandproof-protocol = { path = "../sandbox-protocol" }
 sandbox-runtime = { path = "../sandbox-runtime" }
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -17,6 +17,11 @@ tempfile = "=3.23.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { version = "=1.1.5", features = ["process", "fs"] }
 sha2 = "=0.10.9"
+
+[dev-dependencies]
+# The host/controller composition tests use the real journal. This does not
+# add SQLite to the standalone production library or its extraction graph.
+sandproof-controller-service = { path = "../controller-service", features = ["durable"] }
 
 [lints]
 workspace = true

@@ -14,7 +14,7 @@
 | 证明 | [覆盖与剩余义务](proof-coverage.md) | 哪些真实输入已对应、前提和未完成证明 | 改动对应模块的人 |
 | 证明 | [证明操作流程](proof-workflow.md) | 目标读取、隔离试验和完整验收的专门做法 | 证明开发者 |
 | 工程 | [CI 运行环境](ci.md) | 普通隔离执行环境、通用宿主要求及私有运维配置 | CI 维护者 |
-| 评测工具 | [Terminal-Bench 评测](../benchmarks/README.md) | 2.1 迁移状态、版本锁定与运行方法；2.0 历史入口 | C |
+| 评测工具 | [Terminal-Bench 评测](../benchmarks/README.md) | 2.0/2.1 的独立版本锁与工具入口；验收判据和两题晋升范围链接至测试清单 | C |
 
 证明工具链的专门细节见 [verification 说明](../verification/README.zh-CN.md)；固定外部源码出处见[证据索引](../references/code-evidence.md)。它们是叶子资料，不是第二份项目计划。
 

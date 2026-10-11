@@ -19,8 +19,7 @@ mod linux;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::args_os().nth(1) {
-        Some(arg) if arg == "relay" => gateway::relay(false).await,
-        Some(arg) if arg == "relay-bounded" => gateway::relay(true).await,
+        Some(arg) if arg == "relay" => gateway::relay().await,
         _ => linux::startup::run().await,
     }
 }

@@ -35,11 +35,15 @@ async fn query<P: ControllerPort>(
 ) -> Result<Json<BuildVmView>, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     Ok(Json(
-        blocking(move || {
-            state
-                .port
-                .build_vm_in_window(&tenant, &id, query.request_window.as_deref(), None)
-        })
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || {
+                state
+                    .port
+                    .build_vm_in_window(&tenant, &id, query.request_window.as_deref(), None)
+            },
+        )
         .await?,
     ))
 }
@@ -52,7 +56,12 @@ async fn create<P: ControllerPort>(
     let tenant = authenticate(&state, &headers)?;
     let Json(input) = input.map_err(|_| ApiFailure::BadRequest)?;
     Ok(Json(
-        blocking(move || state.port.build_vm(&tenant, &id, Some(input))).await?,
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || state.port.build_vm(&tenant, &id, Some(input)),
+        )
+        .await?,
     ))
 }
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -89,7 +98,12 @@ async fn issue<P: ControllerPort>(
 ) -> Result<Json<sandproof_controller_service::BuildWindow>, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     Ok(Json(
-        blocking(move || state.port.issue_build_window(&tenant)).await?,
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || state.port.issue_build_window(&tenant),
+        )
+        .await?,
     ))
 }
 async fn close<P: ControllerPort>(
@@ -99,7 +113,12 @@ async fn close<P: ControllerPort>(
 ) -> Result<Json<BuildWindowClosed>, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     Ok(Json(
-        blocking(move || state.port.close_build_window(&tenant, &window)).await?,
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Control,
+            move || state.port.close_build_window(&tenant, &window),
+        )
+        .await?,
     ))
 }
 async fn settle<P: ControllerPort>(
@@ -111,7 +130,12 @@ async fn settle<P: ControllerPort>(
     let tenant = authenticate(&state, &headers)?;
     let Json(input) = input.map_err(|_| ApiFailure::BadRequest)?;
     Ok(Json(
-        blocking(move || state.port.settle_build_vm(&tenant, &id, input)).await?,
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Control,
+            move || state.port.settle_build_vm(&tenant, &id, input),
+        )
+        .await?,
     ))
 }
 

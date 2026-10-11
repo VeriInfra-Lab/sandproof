@@ -8,6 +8,61 @@ use sandproof_controller_service::WorkerTransportError;
 use sandproof_node::HostObservation;
 use std::{fs, path::PathBuf};
 
+#[test]
+fn reconciliation_fault_identifies_the_failed_stage_without_running_later_steps() {
+    use std::cell::RefCell;
+    let stages = [
+        FaultStage::MaintenanceBefore,
+        FaultStage::Recovery,
+        FaultStage::Expiry,
+        FaultStage::MaintenanceAfter,
+    ];
+    for failing in 0..=stages.len() {
+        let calls = RefCell::new(Vec::new());
+        let step = |stage| {
+            let mut calls = calls.borrow_mut();
+            calls.push(stage);
+            if calls.len() - 1 == failing {
+                Err(PortError::OutcomeUnknown)
+            } else {
+                Ok(())
+            }
+        };
+        let mut maintenance_count = 0;
+        let result = reconciliation_pass(
+            || {
+                let stage = if maintenance_count == 0 {
+                    FaultStage::MaintenanceBefore
+                } else {
+                    FaultStage::MaintenanceAfter
+                };
+                maintenance_count += 1;
+                step(stage).map(|()| MaintenanceReport::default())
+            },
+            || step(FaultStage::Recovery).map(|()| RecoveryReport::default()),
+            || step(FaultStage::Expiry).map(|()| ExpiryReport::default()),
+        );
+        if failing == stages.len() {
+            assert!(result.is_ok());
+        } else {
+            let fault = result.unwrap_err();
+            assert_eq!(fault.stage, stages[failing]);
+            assert_eq!(
+                fault.kind,
+                FaultKind::Application(PortError::OutcomeUnknown)
+            );
+            assert_eq!(
+                fault.scope,
+                sandproof_controller_service::application::fault::FaultScope::Unclassified
+            );
+        }
+        assert_eq!(
+            calls.into_inner(),
+            stages[..(failing + 1).min(stages.len())]
+        );
+    }
+}
+
 struct CredentialScratch(PathBuf);
 
 impl Drop for CredentialScratch {

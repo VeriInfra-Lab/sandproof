@@ -1,6 +1,7 @@
 """Isolated KVM acceptance of original tasks via self-service templates.
 
-Uses two independent controller pools and an exclusive namespace/UID range.
+Template builds use two independent pools; prepared CI runs only the runtime
+pool, with no build/publication authority. Both use exclusive namespaces/UIDs.
 Retains original failures and audit evidence. No manual task recipes/models.
 """
 
@@ -15,6 +16,7 @@ from tools.template_build_config import acceptance_build_policy, apply_acceptanc
 from tools.bounded_acceptance import (
     acceptance_disk_budgets, bounded_acceptance_layout, completion_build_observation,
     provision_acceptance_coordination, require_bounded_host_tools, validate_acceptance_socket_paths,
+    prepared_ci_physical_profile, prepared_ci_runtime_configuration,
 )
 
 import argparse
@@ -110,12 +112,12 @@ def repetition_outcome(rows, selected, *, oracle_mode, resource_pressure, pressu
             'original_verifier': True, 'original_oracle_verifier': oracle_mode == 'original'}
 
 
-def observe_service_resources(binary, service_record, pids, samples, output, *, bounded, minimum_relays=0):
+def observe_service_resources(binary, service_record, pids, samples, output, *, minimum_relays=0):
     """Observe the configured relay protocol inside the original service budget."""
     snapshot = service_cgroup.observe(service_record, pids=pids)
     if snapshot['memory_events'].get('oom_kill', 0):
         raise RuntimeError('service cgroup OOM; retain original identities for recovery')
-    relay_mode = b'relay-bounded' if bounded else b'relay'
+    relay_mode = b'relay'
     relays = []
     for pid in snapshot['pids']:
         try:
@@ -225,6 +227,12 @@ def exercise(args):
         for fixture in ci_fixtures.values():
             if fixture.kernel_sha256 != sha256_file(args.kernel):
                 raise ValueError('prepared fixture kernel differs from the approved host kernel')
+    disk_ceiling = getattr(args, 'prepared_ci_disk_budget_bytes', None)
+    if ci_fixtures is None and disk_ceiling is not None:
+        raise ValueError('prepared CI disk ceiling is not a template-build acceptance budget')
+    prepared_profile = (prepared_ci_physical_profile(bounded_policy,
+        kernel_bytes=args.kernel.stat().st_size, runtime_bytes=args.firecracker.stat().st_size,
+        disk_budget_bytes=disk_ceiling) if ci_fixtures is not None else None)
     capacity_basis = {'scope': args.capacity_scope, 'selected_tasks': sorted(selected),
                       'planning_tasks': [t['name'] for t in capacity_entries],
                       'repetitions': args.repetitions}
@@ -241,6 +249,13 @@ def exercise(args):
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
                          profile=load(args.budget_profile))
     deployment = acceptance_disk_budgets(deployment, bounded_policy)
+    if prepared_profile is not None:
+        from tools.template_physical_storage import envelope
+        deployment['host']['minimum_free_disk_bytes'] = 2 * envelope(prepared_profile)[0]
+        deployment['host']['minimum_cpus'] -= deployment['builder_shape']['cpu_count']
+        deployment['host']['minimum_available_memory_bytes'] -= deployment['host']['builder_vmm_memory_bytes']
+        deployment['prepared_ci_disk_budget_bytes'] = disk_ceiling
+        deployment['builder_dispatched'] = False
     proxy_binary = getattr(args, 'proxy_binary', None)
     proxy_digest = getattr(args, 'proxy_sha256', None)
     if (proxy_binary is None) != (proxy_digest is None):
@@ -256,7 +271,7 @@ def exercise(args):
     superblock = subprocess.check_output(['/usr/sbin/dumpe2fs', '-h', str(args.rootfs)],
                                         text=True, env={**os.environ, 'LC_ALL': 'C'}, stderr=subprocess.DEVNULL)
     fields = dict(line.split(':', 1) for line in superblock.splitlines() if ':' in line)
-    if int(fields['Free blocks']) * int(fields['Block size']) < capacity['worker_required_free_bytes']:
+    if ci_fixtures is None and int(fields['Free blocks']) * int(fields['Block size']) < capacity['worker_required_free_bytes']:
         raise RuntimeError('builder base lacks free space for bounded import and candidate')
     stride = capacity['uid_stride']
     if args.uid_base < 1000 or args.uid_base + 2 * stride >= 2**32 - 1:
@@ -311,7 +326,7 @@ def exercise(args):
     key, builder_key = secrets.token_hex(32), secrets.token_hex(32)
     firecracker = args.firecracker.resolve(strict=True)
     settings = []
-    for i in range(2):
+    for i in range(1 if ci_fixtures is not None else 2):
         pool = root / str(i)
         pool.mkdir(mode=0o700)
         for name in ('db', 'state', 'jails'):
@@ -334,10 +349,12 @@ def exercise(args):
             cfg['internal_build_vms'] = True
         else:
             if ci_fixtures is not None:
-                cfg['templates']['templates'].extend(f.template_descriptor() for f in ci_fixtures.values())
-            for p in (root / 'registry', root / 'registry/inbox', root / 'registry/artifacts'):
-                p.mkdir(mode=0o700)
-            cfg['template_registry'] = {'root': str(root / 'registry'), **deployment['registry']}
+                cfg['templates']['templates'] = [f.template_descriptor() for f in ci_fixtures.values()]
+                cfg = prepared_ci_runtime_configuration(cfg, bounded_policy, prepared_profile)
+            else:
+                for p in (root / 'registry', root / 'registry/inbox', root / 'registry/artifacts'):
+                    p.mkdir(mode=0o700)
+                cfg['template_registry'] = {'root': str(root / 'registry'), **deployment['registry']}
         settings.append(cfg)
         (pool / 'config.json').write_text(json.dumps(cfg))
         (pool / 'config.json').chmod(0o600)
@@ -348,20 +365,21 @@ def exercise(args):
         'dns_servers': ['1.1.1.1', '8.8.8.8'],
         'limits': deployment['limits']}
     original_workspace = build['limits']['workspace_bytes']
-    build_mode = apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy)
+    build_mode = ('windowed' if ci_fixtures is not None else
+                  apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy))
     for i, config in enumerate(settings):
         (root / str(i) / 'config.json').write_text(json.dumps(config))
     deployment['build_mode'] = build_mode
-    extra = build['limits']['workspace_bytes'] - original_workspace
+    extra = 0 if ci_fixtures is not None else build['limits']['workspace_bytes'] - original_workspace
     deployment['host']['minimum_free_disk_bytes'] += extra
     if shutil.disk_usage(root).free < deployment['host']['minimum_free_disk_bytes']:
         raise ValueError('bounded build policy exceeds acceptance disk headroom')
     if args.docker_hub_mirror is not None:
         build['docker_hub_mirror'] = args.docker_hub_mirror
-    (root / 'build.json').write_text(json.dumps(build))
-    (root / 'build.json').chmod(0o600)
-    validate_build_service(root / 'build.json', prepared=ci_fixtures is not None,
-                           require_physical_lease=False)
+    if ci_fixtures is None:
+        (root / 'build.json').write_text(json.dumps(build))
+        (root / 'build.json').chmod(0o600)
+        validate_build_service(root / 'build.json', require_physical_lease=False)
     controllers, supervisor, log = [], None, None
     transport = (BenchmarkProxy(root / 'proxy', namespaces, proxy_binary, proxy_digest,
                                port=getattr(args, 'proxy_socks_port', 7897))
@@ -374,7 +392,7 @@ def exercise(args):
         if any(p.poll() is not None for p in processes):
             raise RuntimeError('service exited; retain original resources for recovery')
         return observe_service_resources(binary, service_record, [p.pid for p in processes],
-            service_samples, root / 'service-resources.json', bounded=True,
+            service_samples, root / 'service-resources.json',
             minimum_relays=minimum_relays)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     rows, complete, all_passed = [], False, True
@@ -445,7 +463,7 @@ def exercise(args):
             if time.monotonic() >= deadline:
                 raise RuntimeError('original build still owns its reservation')
             time.sleep(0.5)
-        for i in range(2):
+        for i in range(len(settings)):
             pool = root / str(i)
             while True:
                 if controllers[i].poll() is not None:
@@ -488,7 +506,7 @@ def exercise(args):
             transport.start()
         service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
                                **deployment['service_cgroup'])
-        for i in range(2):
+        for i in range(len(settings)):
             p = start_server(binary, root / str(i) / 'config.json', root / str(i) / 'server.log', None,
                              command_prefix=service_prefix)
             controllers.append(p)
@@ -585,7 +603,7 @@ def exercise(args):
                 time.sleep(0.5)
             if pending:
                 raise RuntimeError('original build identity still owns cleanup budget')
-            for i in range(2):
+            for i in range(len(settings)):
                 with sqlite3.connect(root / str(i) / 'db/controller.db') as db:
                     phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
                 if any(p != 'Destroyed' for p in phases):
@@ -635,6 +653,10 @@ def exercise(args):
                 'network_transport': network_transport_evidence(transport, prepared=ci_fixtures is not None),
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
+                'prepared_ci_physical': ({'disk_budget_bytes': disk_ceiling,
+                    'activation_bytes': deployment['host']['minimum_free_disk_bytes'],
+                    'pool_roles': ['runtime'], 'builder_dispatched': False, 'public_build': False}
+                    if ci_fixtures is not None else None),
                 'service_cgroup': service_samples[-1],
                 'no_process_network_cgroup_jail_residue': True,
                 **outcome, 'paid_model_used': False}, indent=2) + '\n')
@@ -710,6 +732,8 @@ if __name__ == '__main__':
     parser.add_argument('--source-kind', choices=(*SOURCE_KINDS, 'prepared-ci'), default='oci')
     parser.add_argument('--ci-fixtures', type=Path,
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
+    parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
+                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 200 GiB')
     parser.add_argument('--prepare-ci-fixtures', type=Path,
                         help='one-time fresh private destination; builds clean fixtures, never scores tasks')
     parser.add_argument('--ci-preparation-timeout', type=int,

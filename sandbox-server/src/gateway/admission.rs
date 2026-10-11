@@ -15,14 +15,27 @@ struct Counts {
 
 pub(crate) struct Gateway {
     pub limits: TransferLimits,
+    pub requests: Arc<sandproof_api::admission::RequestAdmission>,
     counts: Mutex<Counts>,
 }
 
 impl Gateway {
+    #[cfg(test)]
     pub fn new(limits: TransferLimits) -> Result<Self, &'static str> {
+        Self::with_admission(
+            limits,
+            Arc::new(sandproof_api::admission::RequestAdmission::default()),
+        )
+    }
+
+    pub fn with_admission(
+        limits: TransferLimits,
+        requests: Arc<sandproof_api::admission::RequestAdmission>,
+    ) -> Result<Self, &'static str> {
         limits.validate()?;
         Ok(Self {
             limits,
+            requests,
             counts: Mutex::default(),
         })
     }

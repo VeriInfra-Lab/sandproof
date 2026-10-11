@@ -115,7 +115,7 @@ def exercise(args):
                 "compute_limits": {"max_vcpus_global": 4, "max_vcpus_per_tenant": 4,
                     "max_memory_bytes_global": 4608 * MIB, "max_memory_bytes_per_tenant": 4608 * MIB}},
             "data_transfer": {"file_upload_bytes": 256 * MIB, "file_download_bytes": 2048 * MIB,
-                "command_input_bytes": MIB, "command_output_bytes": 4 * MIB, "rpc_request_bytes": MIB,
+                "command_input_bytes": MIB, "rpc_request_bytes": MIB,
                 "rpc_response_bytes": MIB, "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
                 "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60}}
         if i:
