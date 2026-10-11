@@ -101,6 +101,33 @@ class ReadinessSimulation:
 
 
 class RuntimeServicesTests(unittest.TestCase):
+    def test_one_storage_sampler_precedes_redis_and_spans_all_role_restarts(self):
+        instance=services.RuntimeServices()
+        events=[]
+        instance.service_storage=Mock()
+        instance.service_storage.start.side_effect=lambda:events.append('sample-start')
+        instance.native_pools=[{}]
+        instance.center_config=dict(redis={})
+        instance.processes=Mock(children={'redis':Mock()})
+        instance.processes.start.side_effect=lambda role,**_:events.append('start-'+role)
+        instance.processes.initialize.side_effect=lambda role:events.append('initialize-'+role)
+        with patch.object(services,'_wait_redis'):
+            instance.start()
+        self.assertEqual(events,['sample-start','start-redis','initialize-host-0',
+            'start-host-0','initialize-center','start-center'])
+        instance.service_storage.start.assert_called_once()
+
+    def test_storage_sampler_is_drained_even_when_an_original_role_exit_is_unknown(self):
+        instance=services.RuntimeServices()
+        instance.service_storage=Mock()
+        instance.processes=Mock()
+        instance.processes.stop_all.side_effect=RuntimeError('original role exit unknown')
+        with self.assertRaisesRegex(RuntimeError,'original role exit unknown'):
+            instance.stop_all()
+        instance.service_storage.stop.assert_called_once()
+        instance.service_storage.report.return_value={'last-stable':'original'}
+        self.assertEqual(instance.storage_peaks(),{'last-stable':'original'})
+
     def test_sealed_cargo_source_hardlink_copies_to_independent_target_with_original_hash(self):
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()

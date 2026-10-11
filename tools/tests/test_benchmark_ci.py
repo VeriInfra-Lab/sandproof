@@ -12,6 +12,7 @@ from tools import benchmark_ci as bench
 from tools import ci_e2e_supervisor as ci
 from tools import ci_e2e_artifacts as service_artifacts
 from tools.ci_github_app import APIError
+from tools.tests.storage_observation_fixture import observation
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,6 +33,7 @@ class BenchmarkCITests(unittest.TestCase):
                        for role, name, hash_value in (('center','sandproof-center','a'),
                                                       ('host','sandproof-host','d'))})
         self.dk=dict(schema_version=1,candidate='a'*40,execution_manifest_sha256='9'*64,
+            service_storage=observation(),
             cases=[dict(id='DK'+str(number).zfill(2),status='pass',exact_cleanup='passed',
                 execution_manifest_sha256='9'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
 
@@ -219,6 +221,7 @@ class BenchmarkCITests(unittest.TestCase):
 
     def report(self):
         data = dict(commit='a'*40, dataset='terminal-bench@2.1', fixed_task_count=89,
+            service_storage=observation(),
             oracle_mode='original', original_verifier=True, original_oracle_verifier=True,
             services=service_artifacts.public_identity(self.services_manifest),
             service_boundary=dict(public_api='center', center_unprivileged=True,
@@ -797,7 +800,7 @@ class BenchmarkCITests(unittest.TestCase):
     def test_only_complete_full_selection_can_claim_full_suite(self):
         names = [t['name'] for t in self.lock['tasks']]
         batch = dict(candidate='a'*40, tasks=[{'name':n} for n in names], passed=True, cleanup='passed',
-                     dk=self.dk,execution_manifest_sha256='b'*64,
+                     dk=self.dk,execution_manifest_sha256='b'*64,service_storage=observation(),
                      services=service_artifacts.public_identity(self.services_manifest),
                      service_boundary=service_artifacts.require_boundary(dict(public_api='center',
                          center_unprivileged=True, redis_authority='validated',
@@ -821,6 +824,56 @@ class BenchmarkCITests(unittest.TestCase):
                             batch['services']['versions'], host_store=14)))):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 bench.aggregate('a'*40, [batch, changed], self.names)
+
+    def test_storage_summary_is_retained_per_batch_and_dk_after_durable_roundtrip(self):
+        self.report()
+        batch = self.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0,
+                                  full_task_count=len(self.lock['tasks']))
+        self.assertEqual(batch['service_storage'], observation())
+        self.assertEqual(batch['dk']['service_storage'], observation())
+        persisted = json.loads(json.dumps(batch))
+        peer = copy.deepcopy(persisted)
+        peer['tasks'] = [dict(row, name=name) for row,name in zip(peer['tasks'], self.names[4:])]
+        peer['service_storage']['roots'][0]['identity'][1] += 1
+        result = bench.aggregate('a'*40, [persisted, peer], self.names)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['service_storage'], [batch['service_storage'], peer['service_storage']])
+        self.assertEqual(result['dk']['service_storage'], self.dk['service_storage'])
+        self.assertEqual(json.loads(json.dumps(result))['service_storage'], result['service_storage'])
+
+    def test_missing_unknown_or_exceeded_storage_never_passes_after_recovery(self):
+        self.report()
+        batch = self.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0,
+                                  full_task_count=len(self.lock['tasks']))
+        invalid = [None, dict(observation(), sampler_exited=False),
+                   dict(observation(), successful_samples=0)]
+        exceeded = observation()
+        exceeded['roots'][0]['observed_peak']['logical_file_bytes'] = 1025
+        invalid.append(exceeded)
+        for value in invalid:
+            with self.subTest(value=value):
+                report = self.report()
+                report['service_storage'] = value
+                (self.root/'report.json').write_text(json.dumps(report))
+                with self.assertRaises(ValueError):
+                    self.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0,
+                                      full_task_count=len(self.lock['tasks']))
+                persisted = json.loads(json.dumps(dict(batch, service_storage=value)))
+                with self.assertRaises(ValueError):
+                    bench.aggregate('a'*40, [persisted], self.names[:4])
+                persisted = copy.deepcopy(batch)
+                persisted['dk']['service_storage'] = value
+                with self.assertRaises(ValueError):
+                    bench.aggregate('a'*40, [persisted], self.names[:4])
+        report = self.report()
+        del report['service_storage']
+        (self.root/'report.json').write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            self.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0,
+                              full_task_count=len(self.lock['tasks']))
+        del batch['service_storage']
+        with self.assertRaises(ValueError):
+            bench.aggregate('a'*40, [json.loads(json.dumps(batch))], self.names[:4])
 
     def test_failed_unpublished_build_is_failed_execution_not_unknown_cleanup(self):
         report = self.report()

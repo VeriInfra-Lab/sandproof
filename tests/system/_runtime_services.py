@@ -28,6 +28,7 @@ import urllib.request
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 from _center_host_services import (Processes, identities, local_binding, render,
     redis_configuration, role_facts, stage_role_directories, stage_tls, write_role,test_credentials,process_facts)
+from tools.service_storage_observation import ServiceStoragePeaks
 from server_process_crash import fetch, free_loopback_port
 from tools import ci_e2e_artifacts as artifacts
 from tools.benchmark_ci import remove_private_tree
@@ -334,9 +335,11 @@ class RuntimeServices:
             hosts=[dict(binary=binary,config=path,uid=0,gid=0) for binary,path in zip(host_bins,host_paths)],
             redis=dict(binary=redis_bin,config=redis_path,uid=ids['redis'][0],gid=ids['redis'][1]),
             record=record,logs=layout['logs'])
+        value.service_storage=ServiceStoragePeaks(profile['service_data'])
         return value
 
     def start(self, *, host_envs=None):
+        self.service_storage.start()
         self.processes.start('redis')
         # PING only proves the original fixed Redis process accepts its own
         # generated key. Center initialize then independently checks AOF/health.
@@ -463,7 +466,14 @@ class RuntimeServices:
         return 'sb-'+self.native_pools[index]['namespace']+'-'+str(self.local_for(sandbox,index=index))
 
     def stop_all(self):
-        self.processes.stop_all()
+        try:
+            self.processes.stop_all()
+        finally:
+            self.service_storage.stop()
+
+    def storage_peaks(self):
+        """Original finite service roots, including AOF/temp/logs; not a quota."""
+        return self.service_storage.report()
 
     def cleanup_staging(self):
         """Remove only this generated staging AFTER independent VM cleanup.
@@ -487,6 +497,9 @@ class RuntimeServices:
             if ((original.st_dev,original.st_ino)!=self.staging_identity[name]
                     or original.st_uid!=self.staging_owners[name] or original.st_mode&0o7777!=0o700):
                 raise ValueError('original generated service role changed; retain evidence')
+        if not self.service_storage.closed:
+            raise RuntimeError('original service storage sampler must exit before removal')
+        self.storage_peaks()  # Never erase failed/unknown final capacity evidence.
         for name in ('center','redis'):
             remove_private_tree(self.layout[name],list(self.staging_identity[name]),
                                 owner_uid=self.staging_owners[name])

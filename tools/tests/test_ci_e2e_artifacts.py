@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from tools import ci_e2e_artifacts as artifacts
+from tools.tests.storage_observation_fixture import observation
 
 
 class CandidateArtifactsTests(unittest.TestCase):
@@ -75,6 +76,7 @@ class CandidateArtifactsTests(unittest.TestCase):
 
     def test_all_six_dk_cases_are_mandatory_same_candidate_and_same_group_execution(self):
         evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
+            service_storage=observation(),
             cases=[dict(id='DK'+str(number).zfill(2),status='pass',exact_cleanup='passed',
                 execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
         self.assertEqual(artifacts.require_dk(evidence,candidate=self.candidate),evidence)
@@ -102,6 +104,20 @@ class CandidateArtifactsTests(unittest.TestCase):
         for role, path in self.paths.items():
             self.assertEqual(manifest["artifacts"][role]["path"], path)
             self.assertEqual(len(manifest["artifacts"][role]["sha256"]), 64)
+
+    def test_dk_retains_validated_storage_and_rejects_missing_or_unknown_final_inventory(self):
+        evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
+            service_storage=observation(),
+            cases=[dict(id='DK0'+str(number),status='pass',exact_cleanup='passed',
+                execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
+        persisted=json.loads(json.dumps(evidence))
+        self.assertEqual(artifacts.require_dk(persisted,candidate=self.candidate)['service_storage'],observation())
+        for value in (None,dict(observation(),sampler_exited=False),dict(observation(),roots=[])):
+            with self.assertRaises(ValueError):
+                artifacts.require_dk(dict(persisted,service_storage=value),candidate=self.candidate)
+        del persisted['service_storage']
+        with self.assertRaises(ValueError):
+            artifacts.require_dk(persisted,candidate=self.candidate)
 
     def test_old_single_server_and_additional_roles_cannot_be_new_candidates(self):
         old = dict(schema_version=1, candidate=self.candidate,

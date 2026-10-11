@@ -563,6 +563,7 @@ def exercise(args):
             assert sha256_file(source) == template['rootfsSha256']
         return result
 
+    service_report = None
     try:
         if transport is not None:
             transport.start()
@@ -720,7 +721,7 @@ def exercise(args):
                     if supervisor is not None else None))
             if execution!=json_file(root/'execution-manifest.json',limit=32768):
                 raise RuntimeError('original execution configuration/material receipt changed')
-            (root / 'report.json').write_text(json.dumps({'commit': commit,
+            service_report = {'commit': commit,
                 'services':execution['services'],'execution_manifest':execution,'service_processes':processes,
                 'service_boundary':dict(public_api='center',center_unprivileged=True,
                     redis_authority='validated',host_transport='mutual-tls',host_public_management=False),
@@ -738,8 +739,10 @@ def exercise(args):
                     'pool_roles': ['runtime'], 'builder_dispatched': False, 'public_build': False}
                     if ci_fixtures is not None else None),
                 'service_cgroup': service_samples[-1],
+                'service_storage': services.storage_peaks(),
                 'no_process_network_cgroup_jail_residue': True,
-                **outcome, 'paid_model_used': False}, indent=2) + '\n')
+                **outcome, 'paid_model_used': False}
+            (root / 'report.json').write_text(json.dumps(service_report, indent=2) + '\n')
             passed = outcome.get('fixture_preparation_passed', outcome['execution_passed'])
             all_passed = all_passed and passed
             print(json.dumps({'repetition': repetition, 'execution_passed': outcome['execution_passed'],
@@ -764,6 +767,9 @@ def exercise(args):
             log.close()
         try:
             services.stop_all()
+            if service_report is not None:
+                service_report['service_storage'] = services.storage_peaks()
+                (root / 'report.json').write_text(json.dumps(service_report, indent=2) + '\n')
             if complete:
                 services.cleanup_staging()
         except Exception as error:

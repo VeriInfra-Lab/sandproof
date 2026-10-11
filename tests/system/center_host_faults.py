@@ -97,7 +97,8 @@ def bootstrap(args, argv, budget):
                            args.service_cgroup_record,**budget)
     command=[*service_cgroup.prefix(args.service_cgroup_record),sys.executable,str(Path(__file__)),*argv,'--worker']
     # Only this reviewed worker's bounded summary is emitted. Product logs are
-    # already bounded/charged under original RuntimeServices service roots.
+    # declared/observed under the original service roots; pathname sampling is
+    # not a hard log limit or a replacement for bounded deployment collection.
     with (args.run_root/'dk-worker.log').open('xb') as output:
         os.chmod(args.run_root/'dk-worker.log',0o600)
         process=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=output,stderr=output,

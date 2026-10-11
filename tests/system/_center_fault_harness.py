@@ -276,6 +276,7 @@ class Harness:
         self.last_processes=actual
         service = service_cgroup.observe(self.args.service_cgroup_record,pids=[os.getpid(),*(row['pid'] for row in actual.values())])
         assert service['memory_events'].get('oom_kill',0)==0
+        self.services.storage_peaks()  # Cumulative shared sampler; seal once at final exit.
         evidence = dict(schema_version=1,case=case,candidate=self.manifest['services']['candidate'],
             execution_manifest_sha256=self.execution_sha,details=details,
             actual_role_history=self.history,relay=self.relay.facts(),
@@ -303,20 +304,26 @@ class Harness:
 
     def finish(self):
         dk = dict(schema_version=1,candidate=self.manifest['services']['candidate'],
-                  execution_manifest_sha256=self.execution_sha,cases=self.cases)
-        ci_e2e_artifacts.require_dk(dk,candidate=dk['candidate'])
+                  execution_manifest_sha256=self.execution_sha,cases=self.cases,
+                  service_storage=self.services.storage_peaks())
         report = dict(schema_version=1,services=ci_e2e_artifacts.public_identity(self.services.manifest),
             service_boundary=dict(public_api='center',center_unprivileged=True,
                 redis_authority='validated',host_transport='mutual-tls',host_public_management=False),
             execution_manifest=self.manifest,service_processes=self.last_processes,dk=dk)
         ci_e2e_artifacts.require_service_boundary(report,self.services.manifest)
         ci_e2e_artifacts.require_process_evidence(report['service_processes'],self.manifest)
+        self.finished_report=report
         return report
 
     def stop(self, *, successful):
         self.relay.stop()
         self.services.stop_all()
         if successful:
+            # Same returned report gets the stable post-exit observation before
+            # exact staging removal; no successful mid-run sample substitutes.
+            dk=self.finished_report['dk']
+            dk['service_storage']=self.services.storage_peaks()
+            ci_e2e_artifacts.require_dk(dk,candidate=dk['candidate'])
             self.materials.remove()
             self.services.cleanup_staging()
 

@@ -368,8 +368,9 @@ def require_dk(evidence, *, candidate):
     is bound to the SAME approved candidate, and each real case keeps its own
     bounded private evidence digest. No task scoring is substituted by this.
     """
+    from tools.service_storage_observation import require_storage_observation
     _candidate(candidate)
-    require_keys(evidence,{'schema_version','candidate','execution_manifest_sha256','cases'},'DK report')
+    require_keys(evidence,{'schema_version','candidate','execution_manifest_sha256','cases','service_storage'},'DK report')
     if (type(evidence['schema_version']) is not int or evidence['schema_version']!=1
             or evidence['candidate']!=candidate or type(evidence['cases']) is not list
             or len(evidence['cases'])!=6):
@@ -386,4 +387,5 @@ def require_dk(evidence, *, candidate):
         names.add(case['id'])
         _sha256(case['evidence_sha256'],'DK private case evidence')
         checked.append(dict(case))
-    return dict(schema_version=1,candidate=candidate,execution_manifest_sha256=execution_sha,cases=checked)
+    return dict(schema_version=1,candidate=candidate,execution_manifest_sha256=execution_sha,cases=checked,
+                service_storage=require_storage_observation(evidence['service_storage']))

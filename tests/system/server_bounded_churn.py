@@ -437,6 +437,7 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
         value['host_metadata'] = metadata_usage(settings)
         assert value['host_metadata']['entries'] <= pool['host_metadata_inodes']
         assert value['host_metadata']['logical_file_bytes'] <= pool['host_metadata_bytes']
+        value['service_storage'] = services.storage_peaks()
         report['observations'].append(dict(label=label, **value))
         return value
 
@@ -628,6 +629,7 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
         services.processes.start('host-0')
         services.wait_ready(for_admission=False)
         services.processes.observe()
+        report['service_storage'] = services.storage_peaks()
         report['result'] = 'passed'
     except BaseException as error:
         report['failure_type'] = type(error).__name__
