@@ -184,20 +184,23 @@ class PhysicalProfileTests(unittest.TestCase):
         lease = PhysicalProfileLease(self.profile)
         lease.close()
 
-    def test_null_legacy_options_are_not_a_physical_profile(self):
+    def test_null_pool_options_refuse_before_physical_writes(self):
         for settings in (self.runtime, self.builder):
             settings["bounded_host"] = None
             settings["maintenance"] = None
-        self.assertIsNone(self.validate())
+        with self.assertRaisesRegex(ValueError, "identical explicit"):
+            self.validate()
+        self.assertEqual(Path(self.profile["coordination_file"]).read_bytes(), b"")
         self.runtime["maintenance"] = ["invalid"]
         with self.assertRaisesRegex(ValueError, "optional physical"):
             self.validate()
 
-    def test_disabled_legacy_mode_stays_absent(self):
+    def test_missing_capacity_and_profiles_refuse_without_activation(self):
         for settings in (self.runtime, self.builder):
             settings.pop("maintenance")
             settings["bounded_host"].pop("physical_storage")
-        self.assertIsNone(self.validate())
+        with self.assertRaisesRegex(ValueError, "identical explicit"):
+            self.validate()
         self.assertEqual(Path(self.profile["coordination_file"]).read_bytes(), b"")
 
     def test_overflow_and_public_untracked_history_refuse(self):
