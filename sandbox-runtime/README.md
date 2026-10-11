@@ -35,7 +35,7 @@ sudo ./target/debug/sandproof-vm smoke \
 
 有界 claim 使用有限目标名对应的固定 staging 文件；只有与原规范化 JSON 完全相符的前缀可以续写，完成后以不覆盖 rename 发布并同步目录。helper/route 的未提交 staging 无法释放许可，恢复可以在精确 gate 下移除；已发布的权威记录损坏仍保持未知。退休只删除清单中 inode/摘要相符的文件及空 claim 目录，包含已登记的部分 staging；任意部分删除后都可用外部持久清单重试，已不存在的条目也同步父目录。`observe_retired` 提供重启后的只读物理空闲检查；helper 的终局记录与未提交 staging 恢复可能同步或整理固定 sidecar，不能以文件缺失自行补出清理成功。
 
-该新增路径只有无权限单元/组件测试证据，未运行 root、网络、真实 conntrack 或 KVM 复用验收；不可由普通 CI 的绿灯推断已具备生产隔离保证。旧无位置诊断模式不调用退休 API，仍保留不可复用 claim。生产启用与完整协议边界见[模块合同](../docs/module-contracts.md)。
+物理位置及退休的实机覆盖须按[验收清单](../docs/testing-plan.md)和对应 issue/PR 的精确提交、身份及配置判断，不从普通 CI 绿灯推断生产隔离或全部 conntrack/KVM 故障已验收。旧无位置诊断模式不调用退休 API，仍保留不可复用 claim。生产启用与完整协议边界见[模块合同](../docs/module-contracts.md)。
 
 ## 宿主 CPU 与内存限制
 
@@ -103,7 +103,7 @@ sudo <固定 SDK Python> tests/system/server_template_isolation.py \
 
 部署者先批准每张镜像的摘要和长度、验证其可启动，再填完整的 `TemplateBinding`，不得把未知名称统统映射为 base。描述例子和双模板运行入口见[实机探针](../tests/system/server_templates.py)；脚本只复制已批准镜像，不能替代镜像构建或认证。实例清理、当前格式拒绝、编号不可改写及别名筛选规则见模块合同，不提供旧库迁移。源镜像丢失不妨碍已有私有 VM 的观察/停止/清理，但将拒绝新启动；不得把磁盘复制等价为共享卷或快照。
 
-[`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；本工具不跟随 latest，仍不接收用户 Dockerfile/OCI。通用构建/转换由计划中的 [#123](https://github.com/ningZhang-cs/sandproof/issues/123) 单独交付，整体在证明范围外，见[覆盖记录](../docs/proof-coverage.md)。本配置用于可复现联调，其历史证据不能视为通用模板或生产默认值验收。
+[`tests/system/base-inputs.json`](../tests/system/base-inputs.json) 固定新的离线 base 制备输入：Firecracker 官方 Ubuntu 24.04 SquashFS、软件包清单、6.1.176 内核，以及固定源码构建的 envd 0.9.0。URL、长度和 SHA-256 随代码复核；本工具不跟随 latest，仍不接收用户 Dockerfile/OCI。通用构建/转换使用已实现的 [#123 自助模板入口](https://github.com/ningZhang-cs/sandproof/issues/123)，须显式部署，整体在证明范围外，见[覆盖记录](../docs/proof-coverage.md)。本配置用于可复现联调，其历史证据不能视为通用模板或生产默认值验收。
 
 准备阶段按清单下载并校验输入，解开清单固定的 Go 工具链和 envd 源码，提前缓存 `packages/envd` 所需的 Go 模块（`go mod download`，保留 go.sum 校验）。在源码的 `packages/envd` 目录使用以下构建参数；离线时设置 `GOPROXY=off`，缺少依赖直接失败：
 
@@ -162,7 +162,7 @@ sudo tests/compat/.venv/bin/python tests/system/guest_smoke.py \
 
 ## 独立复现 B01 节点验收
 
-[节点实机用例](../sandbox-node/tests/host_smoke.rs)可独立于公共 HTTP 服务执行，使用真实控制器日志、jailer、envd 与资源观察。先按[宿主预检](../docs/testing-plan.md#4-独立运行宿主预检)确认干净提交及固定产物，再构建该提交的测试可执行文件：
+[节点实机用例](../sandbox-node/tests/host_smoke.rs)可独立于公共 HTTP 服务执行，使用真实控制器日志、jailer、envd 与资源观察。先按[宿主预检](../docs/testing-plan.md#3-linuxkvm-验收)确认干净提交及固定产物，再构建该提交的测试可执行文件：
 
 ```sh
 cargo test -p sandproof-node --test host_smoke --locked --no-run --message-format=json \
