@@ -31,6 +31,7 @@ from _center_host_services import (Processes, identities, local_binding, render,
 from server_process_crash import fetch, free_loopback_port
 from tools import ci_e2e_artifacts as artifacts
 from tools.benchmark_ci import remove_private_tree
+from tools.check_kvm_host import trusted_path
 from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.system_acceptance import digest, json_file, private_path
@@ -63,10 +64,10 @@ def _copy(source, target, *, identity, executable=False, expected=None):
     Sparse blocks never reduce the declared logical-byte physical reservation.
     Both source/target fingerprints are checked. Existing targets are rejected.
     """
-    source = Path(source)
+    source = trusted_path(Path(source))
     before = source.lstat()
     if (source.resolve(strict=True) != source or not stat.S_ISREG(before.st_mode)
-            or before.st_nlink != 1 or before.st_uid != 0 or before.st_mode & 0o022
+            or before.st_nlink < 1 or before.st_uid != 0 or before.st_mode & 0o022
             or target.exists() or target.is_symlink()):
         raise ValueError('fresh copy of exact protected operator artifact required')
     checksum = digest(source)
@@ -75,8 +76,12 @@ def _copy(source, target, *, identity, executable=False, expected=None):
     subprocess.run(['/usr/bin/cp','--reflink=auto','--sparse=always','--no-clobber',str(source),str(target)],
                    check=True, timeout=900, env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
     after = source.lstat()
-    fingerprint = lambda item:(item.st_dev,item.st_ino,item.st_size,item.st_mtime_ns,item.st_ctime_ns)
-    if fingerprint(before) != fingerprint(after) or digest(target) != checksum:
+    # Cargo legitimately links its protected release output to deps/. A second
+    # name does not confer write permission; observe link count and content as
+    # part of the original sealed source identity instead of refusing Cargo.
+    fingerprint = lambda item:(item.st_dev,item.st_ino,item.st_nlink,item.st_size,item.st_mtime_ns,item.st_ctime_ns)
+    if (fingerprint(before) != fingerprint(after) or target.lstat().st_nlink != 1
+            or digest(target) != checksum):
         raise ValueError('original operator artifact changed during exact copy')
     os.chown(target,*identity)
     target.chmod(0o500 if executable else 0o400)

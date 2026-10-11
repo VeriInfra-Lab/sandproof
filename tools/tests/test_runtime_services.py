@@ -3,6 +3,7 @@ import argparse
 import copy
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -17,6 +18,33 @@ from tools.benchmark_ci import remove_private_tree
 
 
 class RuntimeServicesTests(unittest.TestCase):
+    def test_sealed_cargo_source_hardlink_copies_to_independent_target_with_original_hash(self):
+        with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
+            root=Path(temporary).resolve()
+            source,target=root/'sandproof-center',root/'staged-center'
+            source.write_bytes(b'protected-cargo-output')
+            source.chmod(0o700)
+            os.link(source,root/'cargo-deps-name')
+            self.assertEqual(source.lstat().st_nlink,2)
+            original_lstat=Path.lstat
+            def metadata(path):
+                value=original_lstat(path)
+                if path==source:
+                    # Only the root-owner deployment boundary is substituted;
+                    # hardlink/inode/bytes/hash and copy checks remain real.
+                    return SimpleNamespace(**{key:getattr(value,key) for key in (
+                        'st_dev','st_ino','st_nlink','st_size','st_mtime_ns','st_ctime_ns','st_mode')},st_uid=0)
+                return value
+            with patch.object(services,'trusted_path',side_effect=lambda path:path), \
+                    patch.object(Path,'lstat',metadata),patch.object(services.os,'chown'), \
+                    patch.object(services.subprocess,'run',side_effect=lambda *_args,**_kwargs:shutil.copyfile(source,target)):
+                services._copy(source,target,identity=(1001,1001),executable=True,expected=services.digest(source))
+                with self.assertRaises(ValueError):
+                    services._copy(source,target,identity=(1001,1001))
+            self.assertEqual(target.lstat().st_nlink,1)
+            self.assertNotEqual(source.lstat().st_ino,target.lstat().st_ino)
+            self.assertEqual(services.digest(target),services.digest(source))
+
     def test_real_prepare_validates_original_string_path_manifest_before_role_staging(self):
         """Keep the original artifact validator; stop before any role allocation."""
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
