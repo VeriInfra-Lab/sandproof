@@ -1,4 +1,9 @@
+use axum::{
+    body::{Body, to_bytes},
+    http::Request,
+};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits};
 use sandproof_center_core::{
     AvailableTemplate, Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget,
 };
@@ -11,7 +16,7 @@ use sandproof_controller_service::{
     application::{ApplicationConfig, ControllerApplication, TemplateArtifacts},
     templates::{ComputeLimits, TemplateBinding},
 };
-use sandproof_host_service::HostLifecycle;
+use sandproof_host_service::{HostFacade, data_gateway::TransferLimits};
 use sandproof_internal::{
     CertificatePin, ClientTls, InternalClient, InternalServer, Limits, RegisteredEndpoint,
     ServerTls, TlsIdentity,
@@ -168,7 +173,27 @@ async fn host(path: &Path) -> Result<()> {
     let cfg: HostConfig = serde_json::from_slice(&fs::read(path)?)?;
     let app = application(&cfg)?;
     let shape = cfg.template.resources;
-    let inbox = HostLifecycle::new(Arc::clone(&app));
+    let facade = HostFacade::new(
+        Arc::clone(&app),
+        TransferLimits {
+            file_upload_bytes: 8 * 1024 * 1024,
+            file_download_bytes: 8 * 1024 * 1024,
+            command_input_bytes: 1024 * 1024,
+            rpc_request_bytes: 64 * 1024,
+            rpc_response_bytes: 1024 * 1024,
+            max_transfers: 3,
+            max_transfers_per_vm: 2,
+            control_reserve: 1,
+            request_idle_seconds: 10,
+            file_idle_seconds: 10,
+            write_idle_seconds: 10,
+        },
+        RequestAdmission::new(RequestAdmissionLimits {
+            max_pending_requests: 4,
+            control_reserve: 1,
+        })?,
+    )?;
+    let inbox = facade.lifecycle();
     let compute = ComputeLimits {
         max_vcpus_global: u64::from(shape.cpu_count),
         max_vcpus_per_tenant: u64::from(shape.cpu_count),
@@ -186,7 +211,7 @@ async fn host(path: &Path) -> Result<()> {
         )?,
         cfg.identity.clone(),
         limits()?,
-        inbox.clone(),
+        facade,
     );
     let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
     write(&cfg.tls.join("listening"), b"authenticated host listening")?;
@@ -331,6 +356,36 @@ async fn center(path: &Path) -> Result<()> {
         write(
             &cfg.root.join("ready.json"),
             &serde_json::to_vec(&response)?,
+        )?;
+        // Same registered mTLS -> original host permit -> durably launched
+        // namespace relay -> real guest envd. The center never learns the
+        // native guest secret; this request has no public access token.
+        let health = client
+            .stream_data(
+                &response.identity,
+                Request::get("/health").body(Body::empty())?,
+                Arc::new(()),
+                tokio::time::Instant::now()
+                    + Duration::from_millis(match response.fact {
+                        LifecycleFact::Ready { max_end_at_ms, .. } => max_end_at_ms
+                            .checked_sub(now()?)
+                            .ok_or("original maximum lifetime reached")?,
+                        _ => return Err("missing original Ready lifetime".into()),
+                    }),
+            )
+            .await?;
+        if health.status() != axum::http::StatusCode::OK {
+            return Err("real authenticated guest health request failed".into());
+        }
+        let _ = tokio::time::timeout(Duration::from_secs(10), to_bytes(health.into_body(), 4096))
+            .await??;
+        write(
+            &cfg.root.join("guest-health.json"),
+            &serde_json::to_vec(&serde_json::json!({
+                "identity": response.identity,
+                "path": "/health",
+                "status": 200,
+            }))?,
         )?;
         let until = tokio::time::Instant::now() + Duration::from_secs(30);
         while !cfg.root.join("release").exists() {

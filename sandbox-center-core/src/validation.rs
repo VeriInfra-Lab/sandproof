@@ -112,6 +112,7 @@ impl CenterState {
             let mut end = None;
             let mut max_end = None;
             let mut prior_operation = 0;
+            let mut prior_intent = 0;
             for (index, op) in sandbox.operations.iter().enumerate() {
                 let request = &op.request;
                 let id = &request.identity;
@@ -124,7 +125,8 @@ impl CenterState {
                 };
                 if !operations.insert(id.operation_id.as_str())
                     || n <= prior_operation
-                    || id.intent_version.get() != index as u64 + 1
+                    || (index == 0 && id.intent_version.get() != 1)
+                    || id.intent_version.get() <= prior_intent
                     || id.request_window.get() != 1
                     || id.node != first.request.identity.node
                     || id.tenant_id != first.request.identity.tenant_id
@@ -141,6 +143,7 @@ impl CenterState {
                     return false;
                 }
                 prior_operation = n;
+                prior_intent = id.intent_version.get();
                 if let Intent::Renew { end_at_ms } = request.intent
                     && (started.is_none() || max_end.is_none_or(|maximum| end_at_ms > maximum))
                 {

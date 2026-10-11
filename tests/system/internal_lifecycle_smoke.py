@@ -210,7 +210,7 @@ def run(args):
     trusted_path(shared_parent)
     shared = Path(tempfile.mkdtemp(prefix="run-", dir=shared_parent))
     shared.chmod(0o711)
-    report = {"commit": args.expected_commit, "scope": "real Redis + mTLS + original host create/destroy",
+    report = {"commit": args.expected_commit, "scope": "real Redis + mTLS + original host create/guest-health/destroy",
               "cleanup": "unknown", "result": "failed", "resources": "unknown",
               "host_lease_identity": lease_identity}
     children = []
@@ -262,6 +262,12 @@ def run(args):
             destroy_started = time.monotonic()
             if center.wait(timeout=180) != 0:
                 raise RuntimeError("center create/destroy assertions failed")
+            health = json_file(center_root / "guest-health.json")
+            if (set(health) != {"identity", "path", "status"}
+                    or health["identity"] != json_file(center_root / "ready.json")["identity"]
+                    or health["path"] != "/health" or health["status"] != 200):
+                raise RuntimeError("real guest health did not retain exact accepted binding")
+            report["guest_data"] = "real authenticated envd health via original host permit and relay"
             report["destroy_to_cleaned_seconds"] = round(time.monotonic() - destroy_started, 3)
             wait_file(root / "tls/cleaned", host, 15)
             if host.wait(timeout=15) != 0:

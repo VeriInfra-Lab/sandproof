@@ -13,13 +13,13 @@ pub(super) fn load(connection: &Connection) -> Result<Option<Inbox>, JournalErro
         |row| row.get(0),
     )?;
     if !exists {
-        return if version == 13 {
+        return if version == crate::INTERNAL_INBOX_FORMAT_VERSION {
             Err(JournalError::CorruptStore)
         } else {
             Ok(None)
         };
     }
-    if version != 13 {
+    if version != crate::INTERNAL_INBOX_FORMAT_VERSION {
         return Err(JournalError::CorruptStore);
     }
     let cap = capacity::config(connection)?.ok_or(JournalError::UnsupportedStore)?;

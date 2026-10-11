@@ -9,9 +9,18 @@ use sandproof_controller_service::{
     templates::ComputeLimits,
 };
 use sandproof_internal::{LifecycleReceiver, ReceiveError};
-use sandproof_protocol::internal::lifecycle::{LifecycleRequest, LifecycleResponse};
+use sandproof_protocol::internal::{
+    NodeIdentity,
+    lifecycle::{LifecycleRequest, LifecycleResponse},
+};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+
+pub mod data_gateway;
+mod driver;
+mod facade;
+pub use driver::{DriveReport, DriverConfig, TemplateSource};
+pub use facade::HostFacade;
 
 /// Non-waiting serialized work budget shared by HTTPS reception and the worker.
 /// A canceled caller retains its permit until actual blocking work has exited.
@@ -55,6 +64,18 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
             .await
     }
 
+    /// One bounded snapshot of original pending identities for the trusted
+    /// worker. Template resolution is a separate protected cache concern;
+    /// renewal/destruction/recovery do not require source artifacts.
+    /// # Errors
+    /// Shared authority errors or wrong registered identity abort the scan.
+    pub async fn pending(
+        &self,
+        node: NodeIdentity,
+    ) -> Result<Vec<LifecycleRequest>, ApplicationError> {
+        self.blocking(move |app| app.internal_pending(&node)).await
+    }
+
     /// Startup/periodic reconciliation even if the center is disconnected.
     /// Preserve independent local expiry; never reset a lifetime on restart.
     /// # Errors
@@ -93,6 +114,23 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             app.record_internal_intent(&request)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+    async fn confirm(&self, result: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
+        let permit = Arc::clone(&self.work)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.confirm_internal_result(&result)
                 .map_err(|error| match error {
                     JournalError::Conflict => ReceiveError::Conflict,
                     JournalError::MaintenanceCapacity => ReceiveError::Capacity,

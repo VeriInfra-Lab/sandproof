@@ -40,6 +40,7 @@ use recovery::{reclaimed_sandboxes, recover_locked, release_reclaimed_slots};
 
 mod data_access;
 mod data_credentials;
+mod internal_health;
 mod internal_lifecycle;
 mod lifecycle;
 mod maintenance;

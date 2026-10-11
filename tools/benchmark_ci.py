@@ -13,7 +13,7 @@ import stat
 
 from tools.benchmark_tasks import PIN21, canonical, digest, InvalidInput, pin_for
 from tools.bounded_acceptance import bounded_acceptance_layout
-from tools.system_acceptance import json_file
+from tools.system_acceptance import json_file, private_path
 from benchmarks.ci_verifier import (BOOTSTRAP_SHA256, LAUNCHER, MODE as CI_VERIFIER_MODE,
                                     REQUIREMENTS_SHA256)
 
@@ -54,17 +54,6 @@ def oracle_modes(lock, manifest):
         if name not in REPAIRS or original.get('sha256') != REPAIRS[name]:
             raise InvalidInput('oracle repair differs from the fixed original solution')
     return {n: overrides.get(n, 'original') for n in entries}
-
-
-def private_path(path, *, directory=False):
-    path = Path(path)
-    if not path.is_absolute() or path.resolve(strict=True) != path:
-        raise ValueError('canonical private path required')
-    details = path.lstat()
-    kind = stat.S_ISDIR if directory else stat.S_ISREG
-    if not kind(details.st_mode) or details.st_uid != os.geteuid() or details.st_mode & 0o077:
-        raise ValueError('owner-only regular file or directory required')
-    return path
 
 
 def selection(lock, manifest, policy):

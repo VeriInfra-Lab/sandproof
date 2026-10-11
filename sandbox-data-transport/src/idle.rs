@@ -121,7 +121,7 @@ impl hyper::body::Body for IdleBody {
 
 /// Times only a pending write/flush/shutdown, never a quiet command waiting
 /// to produce output. Used on the frontend and the namespace relay pipes.
-pub(crate) struct WriteIdle<T> {
+pub struct WriteIdle<T> {
     inner: T,
     idle: Option<Duration>,
     deadline: Option<Pin<Box<Sleep>>>,
@@ -189,7 +189,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for WriteIdle<T> {
     }
 }
 
-pub(crate) struct GatewayListener {
+pub struct GatewayListener {
     listener: TcpListener,
     idle: Option<Duration>,
 }

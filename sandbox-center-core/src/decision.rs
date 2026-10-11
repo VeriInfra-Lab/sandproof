@@ -311,4 +311,42 @@ impl CenterState {
             Err(DecisionError::Invalid)
         }
     }
+
+    /// Compact only after the host durably acknowledges the center's EXACT
+    /// committed final result. Keep the original create, current operation and
+    /// last confirmed lifetime before destruction: immutable origin/lifetime
+    /// and the current intent fence must remain independently recoverable.
+    /// This does NOT retire a sandbox/window or release native history pins.
+    /// # Errors
+    /// A stale acknowledgement cannot compact a newer intent or unknown result.
+    pub fn compact_confirmed(&self, response: &LifecycleResponse) -> Result<Self, DecisionError> {
+        if !self.is_valid() {
+            return Err(DecisionError::Invalid);
+        }
+        let index = self.index(&response.identity.tenant_id, &response.identity.sandbox_id)?;
+        let record = &self.sandboxes[index];
+        if record.operations.last().and_then(|op| op.response.as_ref()) != Some(response)
+            || matches!(
+                response.fact,
+                LifecycleFact::Recorded | LifecycleFact::Stopped
+            )
+        {
+            return Err(DecisionError::Stale);
+        }
+        let mut next = self.clone();
+        let renewal_anchor = record.renewal_anchor();
+        let operations = &mut next.sandboxes[index].operations;
+        let last = operations.len() - 1;
+        *operations = operations
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index == 0 || *index == last || Some(*index) == renewal_anchor)
+            .map(|(_, operation)| operation.clone())
+            .collect();
+        if next.is_valid() {
+            Ok(next)
+        } else {
+            Err(DecisionError::Invalid)
+        }
+    }
 }

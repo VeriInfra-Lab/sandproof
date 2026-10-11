@@ -1,5 +1,7 @@
 #[path = "durable_https/execution.rs"]
 mod execution;
+#[path = "durable_https/internal_data.rs"]
+mod internal_data;
 #[allow(
     dead_code,
     reason = "shared application fixture also serves execution/recovery cases"
@@ -9,7 +11,9 @@ mod local;
 use local::wire as fixture;
 #[path = "../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
-use sandproof_host_service::HostLifecycle;
+use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits};
+use sandproof_data_transport::TransferLimits;
+use sandproof_host_service::{HostFacade, HostLifecycle};
 use sandproof_internal::{
     ClientTls, InternalClient, InternalServer, LifecycleReceiver, Limits, ReceiveError,
     RegisteredEndpoint, ServerTls,
@@ -20,6 +24,35 @@ use std::{
     time::Duration,
 };
 use tokio::{net::TcpListener, sync::oneshot};
+
+fn facade(
+    application: Arc<
+        sandproof_controller_service::application::ControllerApplication<local::TestHost>,
+    >,
+) -> HostFacade<local::TestHost> {
+    HostFacade::new(
+        application,
+        TransferLimits {
+            file_upload_bytes: 1024,
+            file_download_bytes: 1024,
+            command_input_bytes: 1024,
+            rpc_request_bytes: 1024,
+            rpc_response_bytes: 1024,
+            max_transfers: 3,
+            max_transfers_per_vm: 2,
+            control_reserve: 1,
+            request_idle_seconds: 5,
+            file_idle_seconds: 5,
+            write_idle_seconds: 5,
+        },
+        RequestAdmission::new(RequestAdmissionLimits {
+            max_pending_requests: 4,
+            control_reserve: 1,
+        })
+        .unwrap(),
+    )
+    .unwrap()
+}
 
 #[tokio::test]
 async fn actual_https_records_original_journal_and_replays_after_reopen() {
@@ -35,7 +68,8 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
             local::application(&path, Arc::clone(&state), Arc::clone(&clock), provision);
         let certs = tls::certificates();
         let limits = Limits::new(4, Duration::from_secs(2), Duration::from_secs(5)).unwrap();
-        let inbox = HostLifecycle::new(Arc::clone(&application));
+        let facade = facade(Arc::clone(&application));
+        let inbox = facade.lifecycle();
         let server = InternalServer::new(
             ServerTls::new(
                 certs.host.material(),
@@ -45,7 +79,7 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
             .unwrap(),
             fixture::node("host-a"),
             limits,
-            inbox.clone(),
+            facade,
         );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let foreign_client = InternalClient::new(
@@ -113,7 +147,7 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
             application
                 .internal_pending(&fixture::node("host-a"))
                 .unwrap(),
-            vec![destroy.clone()]
+            vec![]
         );
         assert!(state.lock().unwrap().actions.is_empty());
         assert_eq!(client.active_calls(), 0);

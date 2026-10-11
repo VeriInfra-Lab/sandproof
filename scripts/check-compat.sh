@@ -11,9 +11,9 @@ uv run --locked --project tests/compat \
 echo "SDK wire checks passed against synthetic loopback responses."
 
 if [[ "$(uname -s)" == Linux ]]; then
-  cargo clippy -p sandproof-server --all-targets --features sdk-contract-tests --locked -- -D warnings
-  cargo test -p sandproof-server --features sdk-contract-tests --locked \
-    gateway::sdk_tests:: -- --test-threads=1 --nocapture
+  cargo clippy -p sandproof-host-service --all-targets --features sdk-contract-tests --locked -- -D warnings
+  cargo test -p sandproof-host-service --features sdk-contract-tests --locked \
+    data_gateway::sdk_tests:: -- --test-threads=1 --nocapture
   echo "SDK/gateway composition checks passed; authorization, host relay and VM are not tested."
 else
   echo "SDK/gateway composition checks not run: the gateway requires Linux."

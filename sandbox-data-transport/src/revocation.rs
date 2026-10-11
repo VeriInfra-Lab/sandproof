@@ -3,7 +3,7 @@
 use std::future::Future;
 use tokio::sync::watch;
 
-pub(super) async fn until_revoked<T>(
+pub async fn until_revoked<T>(
     signal: &mut watch::Receiver<bool>,
     work: impl Future<Output = T>,
 ) -> Option<T> {

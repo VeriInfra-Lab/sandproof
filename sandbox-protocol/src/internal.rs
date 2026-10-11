@@ -10,6 +10,11 @@ use std::{error::Error, fmt, num::NonZeroU64};
 pub const INTERNAL_PROTOCOL_VERSION: u16 = 1;
 pub const PROBE_PATH: &str = "/internal/v1/probe";
 pub const PROBE_BODY_BYTES: usize = 4096;
+/// Namespace-specific data requests use the original envd URI after this prefix.
+/// The only routable destination is the node's original, authorized namespace.
+pub const DATA_PATH_PREFIX: &str = "/internal/v1/data";
+pub const DATA_IDENTITY_HEADER: &str = "x-sandproof-control-identity";
+pub const DATA_IDENTITY_BYTES: usize = 2048;
 
 pub mod lifecycle;
 

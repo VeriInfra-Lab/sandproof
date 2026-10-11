@@ -23,6 +23,9 @@ use sandproof_protocol::{
 pub struct InternalTemplate {
     pub revision: ResourceId,
     pub digest: [u8; 32],
+    /// Before admission, owner is the registered GLOBAL numeric user identity.
+    /// Admission authenticates that exact decimal ID, then projects it into
+    /// the host's private tenant mapping for the original local algorithm.
     pub local: TemplateBinding,
 }
 
@@ -164,18 +167,24 @@ impl ControllerJournal {
             now_ms,
             limits,
             compute,
-            template,
+            mut template,
             file_policy_digest,
         } = admission;
         let binding = &request.create;
         let shape = template.local.resources;
-        let owner = local_owner(self, &inbox, &request.identity.tenant_id)?;
         if template
             .local
             .owner
-            .is_some_and(|expected| expected != owner.0)
+            .is_some_and(|expected| expected.to_string() != request.identity.tenant_id.as_str())
         {
             return Err(AdmissionError::Unauthorized);
+        }
+        let owner = local_owner(self, &inbox, &request.identity.tenant_id)?;
+        // Do not confuse global identity with allocation order on this host.
+        // None stays explicitly shared; private descriptions retain the SAME
+        // authenticated owner through the original local admission checks.
+        if template.local.owner.is_some() {
+            template.local.owner = Some(owner.0);
         }
         let local = InternalLocalBinding {
             sandbox: self.next_sandbox_id()?,

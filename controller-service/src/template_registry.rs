@@ -3,6 +3,7 @@
 
 use crate::{JournalError, templates::TemplateBinding};
 use serde::{Deserialize, Serialize};
+pub mod query;
 mod verification;
 use std::{
     fs::{self, File},

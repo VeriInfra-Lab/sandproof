@@ -11,6 +11,19 @@ use sandproof_protocol::internal::{
 };
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Exact result acknowledgement shares the original writer and lock.
+    /// # Errors
+    /// Result mismatches/storage errors never erase unknown responsibility.
+    pub fn confirm_internal_result(
+        &self,
+        result: &LifecycleResponse,
+    ) -> Result<LifecycleResponse, JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?
+            .journal
+            .confirm_internal_result(result, &mut NeverCrash)
+    }
     /// Authenticated internal reception only. A mapped destroy withdraws local
     /// data routes under the original lock, including an uncertain commit.
     /// # Errors
@@ -63,12 +76,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .map_err(map_journal)
     }
 
-    /// One original create/destroy workflow step; the trusted cache descriptor
+    /// One original create/renew/destroy workflow step; the trusted cache descriptor
     /// is needed ONLY before local admission. Recovery uses persisted options.
     /// Caller cancellation cannot safely cancel this synchronous host work.
     /// # Errors
     /// Shared errors abort; unavailable/local failures retain identity and quota.
-    /// Renewal assembly is not implemented and is explicitly refused here.
     pub fn advance_internal_lifecycle(
         &self,
         request: &LifecycleRequest,
@@ -83,13 +95,34 @@ impl<H: ControllerHost> ControllerApplication<H> {
         if !state.current
             || matches!(
                 state.response.fact,
-                LifecycleFact::Ready { .. } | LifecycleFact::Cleaned | LifecycleFact::NotAccepted
+                LifecycleFact::Ready { .. }
+                    | LifecycleFact::Renewed { .. }
+                    | LifecycleFact::Cleaned
+                    | LifecycleFact::NotAccepted
             )
         {
             return Ok(state.response);
         }
-        if matches!(request.intent, Intent::Renew { .. }) {
-            return Err(ApplicationError::Invalid);
+        if let Intent::Renew { end_at_ms } = request.intent {
+            let now_ms = self.clock.now_ms()?;
+            let result = inner
+                .journal
+                .apply_internal_renew(request, now_ms, &mut NeverCrash);
+            if end_at_ms <= u64::try_from(now_ms).map_err(|_| ApplicationError::Invalid)?
+                && (result.is_ok()
+                    || matches!(
+                        result,
+                        Err(crate::AdmissionError::Journal(
+                            JournalError::CommitUncertain(_)
+                        ))
+                    ))
+                && let Some(local) = state.local
+            {
+                // As on the original set_timeout path, immediate expiry closes
+                // current data before the independent worker stops the VM.
+                inner.revoke_data(local.sandbox);
+            }
+            return result.map_err(map_admission);
         }
         if request.intent == Intent::Create && state.local.is_none() {
             self.admit_internal_locked(

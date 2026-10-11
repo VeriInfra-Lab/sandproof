@@ -30,6 +30,10 @@ pub use host_contract::{
     HostEvidence, HostSlotContext, WorkerTransportError,
 };
 
+/// Current original host metadata format when the authenticated inbox is
+/// explicitly provisioned. Older experimental formats are refused, not upgraded.
+pub const INTERNAL_INBOX_FORMAT_VERSION: i64 = 14;
+
 #[cfg(feature = "durable")]
 pub use controller::{
     BuildAnchor, BuildRetryConfig, BuildWindow, CapacityConfig, CheckpointInfo, CheckpointProgress,

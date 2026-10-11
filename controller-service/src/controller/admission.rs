@@ -128,6 +128,72 @@ pub(super) fn read_lifetime(
     )
 }
 
+/// The original update preconditions, shared by local API normalization and
+/// authenticated fixed-deadline internal intents. Keep their rejection order.
+pub(super) fn lifetime_for_update(
+    tx: &WorldTransaction<'_>,
+    namespace: &str,
+    actor: &core::Actor,
+    sandbox: core::SandboxId,
+    now_ms: i64,
+) -> Result<Lifetime, AdmissionError> {
+    if now_ms < 0 {
+        return Err(AdmissionError::InvalidClock);
+    }
+    let world = tx.world();
+    let record = world
+        .sandbox_record(sandbox)
+        .ok_or(AdmissionError::NotRunning)?;
+    if actor != &core::Actor::Tenant(record.owner) {
+        return Err(AdmissionError::Unauthorized);
+    }
+    if record.phase == core::Phase::Revoking {
+        return Err(AdmissionError::ChangingState);
+    }
+    if record.phase != core::Phase::Running {
+        return Err(AdmissionError::NotRunning);
+    }
+    let lifetime = read_lifetime(tx, namespace, sandbox, record.owner)?
+        .ok_or(AdmissionError::MissingLifetime)?;
+    if lifetime.started_at_ms.is_some_and(|start| now_ms < start) {
+        return Err(AdmissionError::InvalidClock);
+    }
+    if now_ms > lifetime.max_deadline_ms {
+        return Err(AdmissionError::MaxLifetimeExceeded);
+    }
+    if lifetime.deadline_ms <= now_ms {
+        return Err(AdmissionError::Expired);
+    }
+    Ok(lifetime)
+}
+
+/// Write only a legal exact deadline. The caller owns the same transaction as
+/// its accepted operation/result; this does not renormalize a replay from now.
+pub(super) fn write_lifetime_deadline(
+    tx: &WorldTransaction<'_>,
+    namespace: &str,
+    sandbox: core::SandboxId,
+    mut lifetime: Lifetime,
+    end_ms: i64,
+) -> Result<Lifetime, AdmissionError> {
+    if end_ms < 0
+        || lifetime.started_at_ms.is_some_and(|start| end_ms < start)
+        || end_ms > lifetime.max_deadline_ms
+    {
+        return Err(AdmissionError::InvalidTimeout);
+    }
+    let id = identity::sandbox_id(namespace, sandbox)?;
+    if tx.execute(
+        "UPDATE sandbox_lifetimes SET deadline_ms=?1 WHERE sandbox_id=?2",
+        params![end_ms, id.as_str()],
+    )? != 1
+    {
+        return Err(AdmissionError::MissingLifetime);
+    }
+    lifetime.deadline_ms = end_ms;
+    Ok(lifetime)
+}
+
 fn active(record: &core::SandboxRecord) -> bool {
     record.phase != core::Phase::Destroyed
 }
@@ -662,41 +728,13 @@ impl ControllerJournal {
             return Err(AdmissionError::InvalidClock);
         }
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        let world = tx.world();
-        let record = world
-            .sandbox_record(sandbox)
-            .ok_or(AdmissionError::NotRunning)?;
-        if actor != &core::Actor::Tenant(record.owner) {
-            return Err(AdmissionError::Unauthorized);
-        }
-        if record.phase == core::Phase::Revoking {
-            return Err(AdmissionError::ChangingState);
-        }
-        if record.phase != core::Phase::Running {
-            return Err(AdmissionError::NotRunning);
-        }
-        let mut lifetime = read_lifetime(&tx, &self.namespace, sandbox, record.owner)?
-            .ok_or(AdmissionError::MissingLifetime)?;
-        if lifetime.started_at_ms.is_some_and(|start| now_ms < start) {
-            return Err(AdmissionError::InvalidClock);
-        }
-        if now_ms > lifetime.max_deadline_ms {
-            return Err(AdmissionError::MaxLifetimeExceeded);
-        }
-        if lifetime.deadline_ms <= now_ms {
-            return Err(AdmissionError::Expired);
-        }
+        let mut lifetime = lifetime_for_update(&tx, &self.namespace, actor, sandbox, now_ms)?;
         // Widen before multiplying: even i64::MAX seconds clamps correctly.
         let capped =
             (i128::from(now_ms) + seconds * 1000).min(i128::from(lifetime.max_deadline_ms));
         let end = i64::try_from(capped).map_err(|_| AdmissionError::TimeOverflow)?;
         if allow_shorter || end > lifetime.deadline_ms {
-            let id = identity::sandbox_id(&self.namespace, sandbox)?;
-            tx.execute(
-                "UPDATE sandbox_lifetimes SET deadline_ms=?1 WHERE sandbox_id=?2",
-                params![end, id.as_str()],
-            )?;
-            lifetime.deadline_ms = end;
+            lifetime = write_lifetime_deadline(&tx, &self.namespace, sandbox, lifetime, end)?;
         }
         tx.commit()?;
         Ok(lifetime)

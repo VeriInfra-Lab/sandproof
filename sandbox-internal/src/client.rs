@@ -5,6 +5,7 @@ use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
 use sandproof_protocol::internal::lifecycle::{
     LIFECYCLE_BODY_BYTES, LIFECYCLE_PATH, LifecycleRequest, LifecycleResponse,
+    RESULT_CONFIRMATION_BODY_BYTES, RESULT_CONFIRMATION_PATH,
 };
 use sandproof_protocol::internal::{
     NodeIdentity, PROBE_BODY_BYTES, PROBE_PATH, ProbeRequest, ProbeResponse,
@@ -12,6 +13,8 @@ use sandproof_protocol::internal::{
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
 use tokio_rustls::TlsConnector;
+
+mod data;
 
 /// Fixed protected registration; no URL, redirect, resolver or user target.
 #[derive(Clone)]
@@ -72,6 +75,12 @@ impl InternalClient {
         self.limits.max_connections - self.calls.available_permits()
     }
 
+    /// The exact protected endpoint identity, never a public target selector.
+    #[must_use]
+    pub const fn node_identity(&self) -> &NodeIdentity {
+        &self.endpoint.node
+    }
+
     /// One call only. No transport failure results in a automatic resubmission.
     /// # Errors
     /// Rejects foreign requests locally, overload, failed authentication,
@@ -115,6 +124,43 @@ impl InternalClient {
                 .validate_for(request)
                 .map_err(|_| TransportError::InvalidResponse)?;
             Ok(response)
+        };
+        timeout(self.limits.request_timeout, work)
+            .await
+            .map_err(|_| TransportError::Deadline)?
+    }
+
+    /// One exact durable-result confirmation. Lost acknowledgements only allow
+    /// replay of this same result, never optimistic removal at the center.
+    /// # Errors
+    /// Authentication, capacity, deadline, rejection or mismatched echo fail.
+    pub async fn confirm_result(
+        &self,
+        result: &LifecycleResponse,
+    ) -> Result<LifecycleResponse, TransportError> {
+        result
+            .identity
+            .validate_node(&self.endpoint.node)
+            .map_err(|_| TransportError::Rejected)?;
+        let _permit = self
+            .calls
+            .try_acquire()
+            .map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded = serde_json::to_vec(result).map_err(|_| TransportError::Rejected)?;
+            let body = self
+                .exchange_bytes(
+                    RESULT_CONFIRMATION_PATH,
+                    encoded,
+                    RESULT_CONFIRMATION_BODY_BYTES,
+                )
+                .await?;
+            let answer: LifecycleResponse =
+                serde_json::from_slice(&body).map_err(|_| TransportError::InvalidResponse)?;
+            if answer != *result {
+                return Err(TransportError::InvalidResponse);
+            }
+            Ok(answer)
         };
         timeout(self.limits.request_timeout, work)
             .await

@@ -6,12 +6,11 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 const BUFFER_BYTES: usize = 64 * 1024;
 
-pub(super) async fn relay<I, O, R, W>(
-    input: I,
-    mut output: O,
-    reader: R,
-    mut writer: W,
-) -> io::Result<()>
+/// Forward both directions with bounded buffers and TCP half-close semantics.
+/// # Errors
+/// Returns the original read/write/flush/shutdown failure; an upload failure
+/// still permits the downstream rejection response to drain first.
+pub async fn relay<I, O, R, W>(input: I, mut output: O, reader: R, mut writer: W) -> io::Result<()>
 where
     I: AsyncRead + Unpin,
     O: AsyncWrite + Unpin,
