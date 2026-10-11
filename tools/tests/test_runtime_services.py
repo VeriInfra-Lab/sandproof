@@ -100,6 +100,36 @@ class RuntimeServicesTests(unittest.TestCase):
                 services._bind_profile([native],[catalog],layout,registry=registry,service_peaks=[])
             self.assertEqual(native['bounded_host']['physical_storage']['host_template_caches'][0]['artifact_bytes'],1024)
 
+    def test_serial_static_batches_fit_without_reducing_original_runtime_or_cleanup_quota(self):
+        gib = 1024**3
+        with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
+            root=Path(temporary).resolve()
+            native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'),kernel=str(root/'kernel'),
+                rootfs=str(root/'rootfs'),firecracker=str(root/'firecracker'),uid_base=3200000,
+                max_active_global=2,max_active_per_tenant=2,max_disk_bytes_global=48*gib,
+                max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=8*gib),slots=2,file_size=lambda _:1024)
+            physical=native['bounded_host']['physical_storage']
+            physical['filesystem_overhead_bytes']=2*gib
+            physical['pools'][0].update(rootfs_budget_bytes=40*gib,cleanup_reserve_bytes=8*gib)
+            original=copy.deepcopy(physical['pools'])
+            layout=dict(hosts=[root],center_identity=(1001,1001),registry=root/'registry')
+            image=dict(kernel=dict(size_bytes=44_649_272),rootfs=dict(size_bytes=10*gib))
+            def bind(count):
+                return services._bind_profile([native],[dict(templates=[image]*count)],layout,
+                    registry=dict(max_artifact_bytes_global=count*(10*gib+44_649_272),max_templates_global=count),
+                    service_peaks=[dict(root=str(root/'assets'),owner_uid=1001,
+                                        peak_bytes=count*(10*gib+44_649_272)+gib,inode_budget=32)])
+            with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
+                    f_bavail=10**12,f_frsize=4096,f_favail=10**9)):
+                with self.assertRaisesRegex(ValueError,'exceeds 200 GiB; no quota is reduced'):
+                    bind(2)
+                self.assertEqual(native['bounded_host']['physical_storage']['pools'],original)
+                self.assertEqual(native['bounded_host']['physical_storage']['host_template_caches'],[])
+                profile=bind(1)
+            self.assertLessEqual(2*services.envelope(profile)[0],services.MAX_ACTIVATION_BYTES)
+            self.assertEqual(profile['pools'],original)
+
     def test_role_cleanup_requires_original_exit_and_parent_identity(self):
         instance=services.RuntimeServices()
         instance.processes=Mock(bindings={'center':{},'redis':{},'host-0':{}},
