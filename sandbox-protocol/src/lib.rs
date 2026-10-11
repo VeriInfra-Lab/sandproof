@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display};
 
+pub mod internal;
+
 pub const PROTOCOL_VERSION: u16 = 1;
 
 /// Reject malformed opaque identifiers before they reach logs or resource lookup.
@@ -95,6 +97,8 @@ opaque_id!(OperationId);
 opaque_id!(LogicalActionId);
 opaque_id!(ResourceId);
 opaque_id!(ClientRequestId);
+opaque_id!(DeploymentId);
+opaque_id!(NodeId);
 
 /// Built only after C authenticates the caller. It cannot be deserialized
 /// directly from an untrusted HTTP body. A still checks ownership.

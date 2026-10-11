@@ -3,9 +3,14 @@
   "purpose": "固定开发依赖和源码阅读依据；不是部署机器台账、测试结果或形式化验收报告",
   "code_baseline": {
     "rust_toolchain": "1.97.0",
-    "cargo_lock_sha256": "b5ee905843ddf726f011db1df8ab20eadc6c61a1ed4c7fbbc8d1371270ae907b",
+    "cargo_lock_sha256": "ce5d8a5d3525235227501643a522890d10fc6bd85d9262dd532ed6ff4452b9c4",
     "sdk_python": "e2b==2.51.0",
-    "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef"
+    "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
+    "internal_transport": {
+      "rustls": "0.23.45",
+      "tokio_rustls": "0.26.6",
+      "test_rcgen": "0.14.10"
+    }
   },
   "source_revisions": {
     "e2b_sdk": "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b",
