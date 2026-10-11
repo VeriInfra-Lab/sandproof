@@ -2,6 +2,10 @@
 # Fast functional-development checks; no KVM, cloud access, or Lean proof claims.
 set -euo pipefail
 
+# Compiled checked helpers must not be group/other-writable even when a
+# developer's login umask is 002. Existing cache identities are still checked.
+umask 022
+
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
@@ -17,10 +21,12 @@ bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode" 
 # Standalone node contracts must not pull in the journal/C toolchain. Feature
 # unification in the complete server is expected and is checked separately.
 node_dependencies="$(cargo tree --locked -p sandproof-node --edges normal,build --prefix none --format '{p}')"
-if printf '%s\n' "$node_dependencies" | rg -q '^(rusqlite|libsqlite3-sys) '; then
-  echo 'standalone node unexpectedly depends on SQLite' >&2
-  exit 1
-fi
+case "$node_dependencies" in
+  *'rusqlite '*|*'libsqlite3-sys '*)
+    echo 'standalone node unexpectedly depends on SQLite' >&2
+    exit 1
+    ;;
+esac
 cargo clippy --locked -p sandproof-node --lib -- -D warnings
 cargo test --locked -p sandproof-controller-service --no-default-features --lib
 
