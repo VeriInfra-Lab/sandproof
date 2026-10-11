@@ -203,7 +203,9 @@ def run(args):
     lease_identity = secrets.token_hex(16)
     lease = lease_module["HostLease"](installed["ci_state_root"], lease_identity)
     root = Path(tempfile.mkdtemp(prefix="m.", dir=installed["scratch_parent"]))
-    shared_parent = Path("/opt/sandproof-e2e/min-runs")
+    # A dedicated traversable parent; do not relax the existing private CI
+    # installation directory to make the unprivileged processes work.
+    shared_parent = Path("/opt/sandproof-min-runs")
     shared_parent.mkdir(mode=0o755, exist_ok=True)
     trusted_path(shared_parent)
     shared = Path(tempfile.mkdtemp(prefix="run-", dir=shared_parent))
