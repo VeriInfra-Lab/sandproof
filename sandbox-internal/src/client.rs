@@ -3,6 +3,9 @@ use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Request, body::Bytes, client::conn::http1};
 use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
+use sandproof_protocol::internal::lifecycle::{
+    LIFECYCLE_BODY_BYTES, LIFECYCLE_PATH, LifecycleRequest, LifecycleResponse,
+};
 use sandproof_protocol::internal::{
     NodeIdentity, PROBE_BODY_BYTES, PROBE_PATH, ProbeRequest, ProbeResponse,
 };
@@ -46,14 +49,14 @@ impl RegisteredEndpoint {
 /// No connection pool, retry queue, response map or background driver to leak.
 /// Clones share the same total outstanding-call budget through complete bodies.
 #[derive(Clone)]
-pub struct ProbeClient {
+pub struct InternalClient {
     tls: ClientTls,
     endpoint: RegisteredEndpoint,
     limits: Limits,
     calls: Arc<Semaphore>,
 }
 
-impl ProbeClient {
+impl InternalClient {
     #[must_use]
     pub fn new(tls: ClientTls, endpoint: RegisteredEndpoint, limits: Limits) -> Self {
         Self {
@@ -86,9 +89,58 @@ impl ProbeClient {
             .map_err(|_| TransportError::Deadline)?
     }
 
+    /// One authenticated high-level intent. No automatic retry. In particular,
+    /// rejection/timeout is NOT a side-effect-free admission refusal.
+    /// # Errors
+    /// Bounded transport failures retain the original operation at the caller.
+    pub async fn lifecycle(
+        &self,
+        request: &LifecycleRequest,
+    ) -> Result<LifecycleResponse, TransportError> {
+        request
+            .validate(&self.endpoint.node)
+            .map_err(|_| TransportError::Rejected)?;
+        let _permit = self
+            .calls
+            .try_acquire()
+            .map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded = serde_json::to_vec(request).map_err(|_| TransportError::Rejected)?;
+            let body = self
+                .exchange_bytes(LIFECYCLE_PATH, encoded, LIFECYCLE_BODY_BYTES)
+                .await?;
+            let response: LifecycleResponse =
+                serde_json::from_slice(&body).map_err(|_| TransportError::InvalidResponse)?;
+            response
+                .validate_for(request)
+                .map_err(|_| TransportError::InvalidResponse)?;
+            Ok(response)
+        };
+        timeout(self.limits.request_timeout, work)
+            .await
+            .map_err(|_| TransportError::Deadline)?
+    }
+
     async fn exchange(&self, request: &ProbeRequest) -> Result<ProbeResponse, TransportError> {
         let encoded = serde_json::to_vec(request).map_err(|_| TransportError::Rejected)?;
-        if encoded.len() > PROBE_BODY_BYTES {
+        let body = self
+            .exchange_bytes(PROBE_PATH, encoded, PROBE_BODY_BYTES)
+            .await?;
+        let response: ProbeResponse =
+            serde_json::from_slice(&body).map_err(|_| TransportError::InvalidResponse)?;
+        response
+            .validate_for(request)
+            .map_err(|_| TransportError::InvalidResponse)?;
+        Ok(response)
+    }
+
+    async fn exchange_bytes(
+        &self,
+        path: &'static str,
+        encoded: Vec<u8>,
+        limit: usize,
+    ) -> Result<Bytes, TransportError> {
+        if encoded.len() > limit {
             return Err(TransportError::Rejected);
         }
         let socket = TcpStream::connect(self.endpoint.address)
@@ -113,7 +165,7 @@ impl ProbeClient {
             .handshake(TokioIo::new(stream))
             .await
             .map_err(|_| TransportError::Communication)?;
-        let http_request = Request::post(PROBE_PATH)
+        let http_request = Request::post(path)
             .header(
                 hyper::header::HOST,
                 self.endpoint.server_name.to_str().as_ref(),
@@ -141,16 +193,11 @@ impl ProbeClient {
             {
                 return Err(TransportError::InvalidResponse);
             }
-            let body = Limited::new(response.into_body(), PROBE_BODY_BYTES)
+            let body = Limited::new(response.into_body(), limit)
                 .collect()
                 .await
                 .map_err(|_| TransportError::InvalidResponse)?;
-            let response: ProbeResponse = serde_json::from_slice(&body.to_bytes())
-                .map_err(|_| TransportError::InvalidResponse)?;
-            response
-                .validate_for(request)
-                .map_err(|_| TransportError::InvalidResponse)?;
-            Ok(response)
+            Ok(body.to_bytes())
         };
         tokio::pin!(exchange);
         tokio::pin!(connection);

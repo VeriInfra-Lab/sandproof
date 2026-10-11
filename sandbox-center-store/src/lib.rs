@@ -2,13 +2,15 @@
 
 //! Center authority-block storage, NOT a second local lifecycle controller.
 //!
-//! This component is not connected to the public service. A future center
-//! adapter supplies a strict, validated snapshot type and dispatches only after
-//! receiving `Committed`. Reads are only `Observed`, including after restart:
+//! This component is not connected to the public service. The authority
+//! assembly connects the pure center type and durable detached dispatch boundary.
+//! The generic primitive returns only `Observed` from reads, including restart:
 //! seeing a value is not evidence of an earlier unknown write's durability.
 //! Redis is co-located with the single center writer, on literal loopback with
 //! ACL. There is no remote Redis, DNS, automatic reconnect, or cache fallback.
 
+#[cfg(unix)]
+pub mod authority;
 mod codec;
 mod scripts;
 #[cfg(unix)]

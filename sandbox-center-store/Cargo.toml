@@ -16,6 +16,7 @@ required-features = ["redis-tests"]
 
 [dependencies]
 sandproof-protocol = { path = "../sandbox-protocol" }
+sandproof-center-core = { path = "../sandbox-center-core" }
 redis = { version = "=1.7.1", default-features = false }
 rustix = { version = "=1.1.5", features = ["fs"] }
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -23,6 +24,13 @@ serde_json = "=1.0.142"
 
 [dev-dependencies]
 tempfile = "=3.23.0"
+sandproof-controller-service = { path = "../controller-service" }
+sandbox-controller-core = { path = "../controller-core" }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+sandproof-internal = { path = "../sandbox-internal" }
+sandproof-host-service = { path = "../sandbox-host-service" }
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
 
 [lints]
 workspace = true

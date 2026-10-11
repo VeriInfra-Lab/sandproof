@@ -99,6 +99,7 @@ class CiUvWorkflowTests(unittest.TestCase):
     def test_both_jobs_use_preinstalled_version_gate_and_original_locked_entry(self):
         workflow = (ROOT / '.github/workflows/function-ci.yml').read_text()
         blocks = re.findall(r'        run: \|\n((?:          [^\n]*\n)+)', workflow)
+        blocks = [block for block in blocks if 'uv_version=' in block]
         self.assertEqual(len(blocks), 2)
         self.assertNotIn('uv-bootstrap', workflow)
         self.assertNotIn('pip install', workflow)
@@ -119,7 +120,9 @@ class CiUvWorkflowTests(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 Path(os.environ['CI_UV_TEST_STAGE'], 'entry.json').write_text(json.dumps({
-    'arguments': sys.argv[1:], 'lock': os.environ.get('CI_GIT_LOCK')}))
+    'arguments': sys.argv[1:], 'lock': os.environ.get('CI_GIT_LOCK'),
+    'uv_offline': os.environ.get('UV_OFFLINE'),
+    'cargo_offline': os.environ.get('CARGO_NET_OFFLINE')}))
 ''')
                     bash.chmod(0o700)
                     env = os.environ | {'PATH': temp + os.pathsep + os.environ['PATH'],
@@ -133,7 +136,8 @@ Path(os.environ['CI_UV_TEST_STAGE'], 'entry.json').write_text(json.dumps({
                                    'uv 0.11.31 (b7fdec626 2026-07-21 x86_64-unknown-linux-gnu)'):
                         self.assertEqual(result.returncode, 0, result.stderr)
                         self.assertEqual(json.loads(entry.read_text()), {
-                            'arguments': ['scripts/' + script], 'lock': str(ROOT / lock)})
+                            'arguments': ['scripts/' + script], 'lock': str(ROOT / lock),
+                            'uv_offline': '1', 'cargo_offline': 'true'})
                         self.assertEqual((stage / 'ci-git/git').resolve(), ROOT / 'tools/ci_git.py')
                     else:
                         self.assertNotEqual(result.returncode, 0)

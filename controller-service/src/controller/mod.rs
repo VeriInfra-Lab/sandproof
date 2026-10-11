@@ -20,6 +20,8 @@ mod allocators;
 mod bounded;
 mod checkpoint;
 mod identity;
+mod internal_inbox;
+pub use internal_inbox::InternalInboxConfig;
 mod private_build;
 mod registry;
 mod storage;

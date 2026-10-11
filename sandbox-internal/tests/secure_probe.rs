@@ -1,14 +1,10 @@
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, Response, StatusCode, body::Bytes, client::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
-use rcgen::{
-    BasicConstraints, Certificate, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer,
-    KeyPair, KeyUsagePurpose,
-};
-use rustls::{ClientConfig, RootCertStore, ServerConfig, pki_types::PrivatePkcs8KeyDer};
+use rustls::{ClientConfig, RootCertStore, ServerConfig};
 use sandproof_internal::{
-    CertificatePin, ClientTls, Limits, ProbeClient, ProbeServer, RegisteredEndpoint, ServerTls,
-    TlsIdentity, TransportError,
+    ClientTls, InternalClient, InternalServer, Limits, RegisteredEndpoint, RejectLifecycle,
+    ServerTls, TransportError,
 };
 use sandproof_protocol::{
     DeploymentId, NodeId, OperationId,
@@ -26,59 +22,11 @@ use tokio::{
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector, client::TlsStream};
 
-struct Identity {
-    certificate: Certificate,
-    key: KeyPair,
-}
-
-impl Identity {
-    fn material(&self) -> TlsIdentity {
-        TlsIdentity {
-            chain: vec![self.certificate.der().clone()],
-            private_key: PrivatePkcs8KeyDer::from(self.key.serialize_der()).into(),
-        }
-    }
-
-    fn pin(&self) -> CertificatePin {
-        CertificatePin::from_certificate(self.certificate.der())
-    }
-}
-
-struct Certificates {
-    ca: Certificate,
-    center: Identity,
-    host: Identity,
-    other: Identity,
-}
-
-fn certificates() -> Certificates {
-    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
-    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    params.key_usages = vec![
-        KeyUsagePurpose::KeyCertSign,
-        KeyUsagePurpose::DigitalSignature,
-    ];
-    let ca_key = KeyPair::generate().unwrap();
-    let ca = params.self_signed(&ca_key).unwrap();
-    let issuer = Issuer::new(params, ca_key);
-    Certificates {
-        ca,
-        center: leaf(&issuer, "center.test", ExtendedKeyUsagePurpose::ClientAuth),
-        host: leaf(&issuer, "host.test", ExtendedKeyUsagePurpose::ServerAuth),
-        other: leaf(&issuer, "other.test", ExtendedKeyUsagePurpose::ClientAuth),
-    }
-}
-
-fn leaf(issuer: &Issuer<'_, KeyPair>, name: &str, purpose: ExtendedKeyUsagePurpose) -> Identity {
-    let mut params = CertificateParams::new(vec![name.to_owned()]).unwrap();
-    params.extended_key_usages = vec![purpose];
-    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    let key = KeyPair::generate().unwrap();
-    Identity {
-        certificate: params.signed_by(&key, issuer).unwrap(),
-        key,
-    }
-}
+#[path = "support/tls.rs"]
+mod tls_fixture;
+use tls_fixture::*;
+#[path = "support/lifecycle_cases.rs"]
+mod lifecycle_cases;
 
 fn node() -> NodeIdentity {
     NodeIdentity {
@@ -101,7 +49,7 @@ fn limits() -> Limits {
 }
 
 struct Running {
-    server: ProbeServer,
+    server: InternalServer<RejectLifecycle>,
     address: SocketAddr,
     shutdown: oneshot::Sender<()>,
     task: JoinHandle<Result<(), TransportError>>,
@@ -127,7 +75,7 @@ fn start_listener(certs: &Certificates, limits: Limits, listener: TcpListener) -
         vec![certs.center.pin()],
     )
     .unwrap();
-    let server = ProbeServer::new(tls, node(), limits);
+    let server = InternalServer::new(tls, node(), limits, RejectLifecycle);
     let address = listener.local_addr().unwrap();
     let (shutdown, receiver) = oneshot::channel();
     let run_server = server.clone();
@@ -140,14 +88,14 @@ fn start_listener(certs: &Certificates, limits: Limits, listener: TcpListener) -
     }
 }
 
-fn client(certs: &Certificates, address: SocketAddr) -> ProbeClient {
+fn client(certs: &Certificates, address: SocketAddr) -> InternalClient {
     let tls = ClientTls::new(
         certs.center.material(),
         vec![certs.ca.der().clone()],
         vec![certs.host.pin()],
     )
     .unwrap();
-    ProbeClient::new(
+    InternalClient::new(
         tls,
         RegisteredEndpoint::new(address, "host.test".into(), node()).unwrap(),
         limits(),
@@ -321,7 +269,7 @@ async fn client_requires_server_root_name_and_registered_pin() {
         (certs.ca.der().clone(), certs.host.pin(), "other.test"),
     ] {
         let tls = ClientTls::new(certs.center.material(), vec![root], vec![pin]).unwrap();
-        let client = ProbeClient::new(
+        let client = InternalClient::new(
             tls,
             RegisteredEndpoint::new(running.address, name.into(), node()).unwrap(),
             limits(),
@@ -365,7 +313,7 @@ async fn receiving_boundary_rejects_old_generation_wrong_binding_and_version() {
 }
 
 #[tokio::test]
-async fn only_bounded_read_only_json_probe_is_exposed() {
+async fn probe_rejects_unlisted_paths_methods_and_malformed_wire() {
     let certs = certificates();
     let running = start(&certs, limits()).await;
     let body = Bytes::from(serde_json::to_vec(&request()).unwrap());
@@ -572,7 +520,7 @@ async fn caller_cancellation_closes_original_tls_connection_before_reusing_slot(
     healthy.stop().await;
 }
 
-async fn wait_for_active(server: &ProbeServer, count: usize) {
+async fn wait_for_active(server: &InternalServer<RejectLifecycle>, count: usize) {
     timeout(Duration::from_secs(5), async {
         while server.active_connections() != count {
             tokio::task::yield_now().await;
@@ -644,7 +592,7 @@ async fn client_budget_has_no_wait_queue_and_no_detached_driver_on_deadline() {
         vec![certs.host.pin()],
     )
     .unwrap();
-    let client = ProbeClient::new(
+    let client = InternalClient::new(
         tls,
         RegisteredEndpoint::new(listener.local_addr().unwrap(), "host.test".into(), node())
             .unwrap(),

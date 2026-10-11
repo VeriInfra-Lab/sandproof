@@ -21,24 +21,29 @@ import sys
 import tempfile
 import tomllib
 from urllib.parse import parse_qs, urlsplit, urlunsplit
+try:
+    from . import ci_redis
+except ImportError:
+    import ci_redis
 
 
 MEMBERS = ('controller-core', 'sandbox-protocol', 'controller-service',
            'sandbox-runtime', 'sandbox-node', 'sandbox-api', 'sandbox-server',
-           'sandbox-internal', 'sandbox-center-store')
+           'sandbox-internal', 'sandbox-center-store', 'sandbox-center-core', 'sandbox-host-service')
 PROJECTS = ('tests/compat', 'benchmarks')
 INPUT_PATHS = frozenset(('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
-    'tools/ci_git.py', *(member + '/Cargo.toml' for member in MEMBERS),
+    'tools/ci_git.py', 'tools/ci_redis.py', *(member + '/Cargo.toml' for member in MEMBERS),
     *(project + '/' + name for project in PROJECTS for name in ('pyproject.toml', 'uv.lock'))))
 PLATFORM = {'system': 'Linux', 'machine': 'x86_64', 'python': '3.12',
             'rust': '1.97.0', 'uv': '0.11.31', 'target': 'x86_64-unknown-linux-gnu'}
 UV_ARGUMENTS = ['sync', '--locked', '--python', '/usr/bin/python3',
                 '--no-python-downloads', '--no-managed-python', '--no-config']
 CARGO_ARGUMENTS = ['fetch', '--locked', '--target', PLATFORM['target']]
-RECIPE = {'version': 1, 'projects': list(PROJECTS), 'uv': UV_ARGUMENTS,
+RECIPE = {'version': 2, 'projects': list(PROJECTS), 'uv': UV_ARGUMENTS,
           'cargo': CARGO_ARGUMENTS, 'offline_rebuild': True,
           'cargo_sources': 'generated empty metadata targets; never compiled',
-          'provenance': 'version, original Git URL, commit and subdirectory'}
+          'provenance': 'version, original Git URL, commit and subdirectory',
+          'redis': ci_redis.PIN}
 PUBLIC_GIT = {'e2b': ('https://github.com/e2b-dev/E2B.git', 'packages/python-sdk'),
               'harbor': ('https://github.com/laude-institute/harbor.git', None)}
 MAX_FILE_BYTES = 4 * 1024 ** 2
@@ -180,7 +185,7 @@ def validate_sources(files):
 
 
 def validate_input(bundle):
-    exact_fields(bundle, ('input_sha256', 'manifest', 'files'))
+    exact_fields(bundle, ('input_sha256', 'manifest', 'files', 'redis_archive'))
     manifest = bundle['manifest']
     exact_fields(manifest, ('schema', 'source_commit', 'platform', 'recipe', 'recipe_sha256', 'files'))
     if (type(manifest['schema']) is not int or manifest['schema'] != 1
@@ -210,8 +215,18 @@ def validate_input(bundle):
             raise ValueError('dependency file content differs from manifest')
         files[path] = data
     validate_sources(files)
-    if files['tools/ci_git.py'] != Path(__file__).with_name('ci_git.py').read_bytes():
-        raise ValueError('Git adapter differs from the controlled CI tool')
+    for name in ('ci_git.py', 'ci_redis.py'):
+        if files['tools/' + name] != Path(__file__).with_name(name).read_bytes():
+            raise ValueError('adapter differs from the controlled CI tool')
+    encoded = bundle['redis_archive']
+    if not isinstance(encoded, str) or len(encoded) > 4 * ((ci_redis.ARCHIVE_LIMIT + 2) // 3):
+        raise ValueError('Redis archive exceeds fixed input budget')
+    try:
+        archive = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError('invalid Redis archive encoding') from error
+    if len(archive) > ci_redis.ARCHIVE_LIMIT or ci_redis.digest(archive) != ci_redis.PIN['archive_sha256']:
+        raise ValueError('Redis archive differs from fixed official input')
     return files
 
 
@@ -221,7 +236,7 @@ def load_input(path):
     return bundle
 
 
-def prepare_input(checkout, approved_commit, output):
+def prepare_input(checkout, approved_commit, output, redis_archive):
     if not re.fullmatch(r'[0-9a-f]{40}', approved_commit):
         raise ValueError('an approved complete Git commit is required')
     checkout = checkout.absolute()
@@ -247,7 +262,9 @@ def prepare_input(checkout, approved_commit, output):
     manifest = {'schema': 1, 'source_commit': approved_commit, 'platform': PLATFORM,
                 'recipe': RECIPE, 'recipe_sha256': recipe_sha256(),
                 'files': {path: {'size': len(data), 'sha256': sha256(data)} for path, data in files.items()}}
+    archive = ci_redis.checked_archive(redis_archive)
     bundle = {'manifest': manifest, 'input_sha256': sha256(canonical_json(manifest)),
+              'redis_archive': base64.b64encode(archive).decode(),
               'files': {path: base64.b64encode(data).decode() for path, data in files.items()}}
     validate_input(bundle)
     encoded = canonical_json(bundle) + b'\n'
@@ -349,12 +366,13 @@ def main(argv=None):
     prepare.add_argument('--checkout', type=Path, required=True)
     prepare.add_argument('--approved-commit', required=True)
     prepare.add_argument('--output', type=Path, required=True)
+    prepare.add_argument('--redis-archive', type=Path, required=True)
     guest = commands.add_parser('warmup')
     guest.add_argument('--input', type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == 'prepare-input':
-            bundle = prepare_input(args.checkout, args.approved_commit, args.output)
+            bundle = prepare_input(args.checkout, args.approved_commit, args.output, args.redis_archive)
             print(json.dumps({'input_sha256': bundle['input_sha256'], 'source_commit': args.approved_commit}))
         else:
             warmup(args.input)

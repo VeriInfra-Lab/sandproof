@@ -136,6 +136,15 @@ pub struct RedisLedger<T> {
 }
 
 impl<T: ControlState> RedisLedger<T> {
+    #[must_use]
+    pub const fn max_block_bytes(&self) -> usize {
+        self.config.max_block_bytes
+    }
+    #[must_use]
+    pub const fn deployment(&self) -> &DeploymentId {
+        &self.config.deployment
+    }
+
     /// Explicit provisioning only; never called by ordinary startup/recovery.
     /// Does not overwrite ANY existing key, even a wrong-type/corrupt one.
     /// # Errors

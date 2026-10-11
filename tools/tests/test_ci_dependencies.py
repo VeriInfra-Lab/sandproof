@@ -20,6 +20,11 @@ class CiDependencyInputsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.fixture = tempfile.TemporaryDirectory(prefix='ci-dependency-tests-')
+        cls.redis_archive = Path(cls.fixture.name) / 'redis.tar.gz'
+        cls.redis_archive.write_bytes(b'explicit input-codec fixture; not an engine')
+        pin = mock.patch.dict(deps.ci_redis.PIN, {'archive_sha256': deps.sha256(cls.redis_archive.read_bytes())})
+        pin.start()
+        cls.addClassCleanup(pin.stop)
         cls.checkout = Path(cls.fixture.name) / 'checkout'
         cls.checkout.mkdir()
         for path in deps.INPUT_PATHS:
@@ -32,7 +37,7 @@ class CiDependencyInputsTests(unittest.TestCase):
             '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], check=True)
         cls.commit = subprocess.check_output(['git', '-C', str(cls.checkout), 'rev-parse', 'HEAD'], text=True).strip()
         cls.bundle_path = Path(cls.fixture.name) / 'input.json'
-        cls.bundle = deps.prepare_input(cls.checkout, cls.commit, cls.bundle_path)
+        cls.bundle = deps.prepare_input(cls.checkout, cls.commit, cls.bundle_path, cls.redis_archive)
 
     @classmethod
     def tearDownClass(cls):
@@ -57,7 +62,7 @@ class CiDependencyInputsTests(unittest.TestCase):
             destination.write_text('never copied')
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'
-            bundle = deps.prepare_input(self.checkout, self.commit, output)
+            bundle = deps.prepare_input(self.checkout, self.commit, output, self.redis_archive)
             self.assertEqual(deps.load_input(output), bundle)
             self.assertEqual(set(bundle['files']), deps.INPUT_PATHS)
             self.assertEqual(bundle['manifest']['source_commit'], self.commit)
@@ -129,24 +134,52 @@ class CiDependencyInputsTests(unittest.TestCase):
             self.assertEqual((directory / 'sandbox-center-store/tests/redis_ledger.rs').read_text(),
                              '// Dependency fetch metadata only.\n')
 
+    def test_center_core_registers_metadata_but_never_packages_source(self):
+        path = 'sandbox-center-core/Cargo.toml'
+        self.assertIn('sandbox-center-core', deps.MEMBERS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-center-core/src/decision.rs', files)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / 'sandbox-center-core/src/lib.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+            self.assertFalse((directory / 'sandbox-center-core/src/decision.rs').exists())
+
+    def test_host_service_is_metadata_only_and_redis_artifact_cannot_be_substituted(self):
+        files = deps.validate_input(self.bundle)
+        self.assertIn('sandbox-host-service/Cargo.toml', files)
+        self.assertNotIn('sandbox-host-service/src/lib.rs', files)
+        self.assertEqual(files['tools/ci_redis.py'], (ROOT / 'tools/ci_redis.py').read_bytes())
+        for value in ('%%%', base64.b64encode(b'wrong engine').decode(), 'a' * (4 * deps.ci_redis.ARCHIVE_LIMIT + 1)):
+            bundle = self.damaged()
+            bundle['redis_archive'] = value
+            with self.assertRaises(ValueError):
+                deps.validate_input(bundle)
+        bundle = self.damaged()
+        del bundle['redis_archive']
+        with self.assertRaises(ValueError):
+            deps.validate_input(bundle)
+
     def test_prepare_rejects_wrong_approval_dirty_blob_or_existing_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'
             for commit in ('main', 'a' * 40, self.commit[:12]):
                 with self.subTest(commit=commit), self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, commit, output)
+                    deps.prepare_input(self.checkout, commit, output, self.redis_archive)
             target = self.checkout / 'Cargo.toml'
             original = target.read_bytes()
             try:
                 target.write_bytes(original + b'\n# unreviewed\n')
                 with self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, self.commit, output)
+                    deps.prepare_input(self.checkout, self.commit, output, self.redis_archive)
                 self.assertFalse(output.exists())
             finally:
                 target.write_bytes(original)
             output.write_text('preserve')
             with self.assertRaises(FileExistsError):
-                deps.prepare_input(self.checkout, self.commit, output)
+                deps.prepare_input(self.checkout, self.commit, output, self.redis_archive)
             self.assertEqual(output.read_text(), 'preserve')
 
     def test_prepare_rejects_linked_file_and_parent(self):
@@ -159,7 +192,7 @@ class CiDependencyInputsTests(unittest.TestCase):
                 target.unlink()
                 target.symlink_to(linked)
                 with self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input')
+                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input', self.redis_archive)
             finally:
                 target.unlink()
                 target.write_bytes(original)
@@ -169,7 +202,7 @@ class CiDependencyInputsTests(unittest.TestCase):
             try:
                 parent.symlink_to(moved, target_is_directory=True)
                 with self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input')
+                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input', self.redis_archive)
             finally:
                 parent.unlink()
                 moved.rename(parent)

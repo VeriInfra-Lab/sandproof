@@ -3,7 +3,7 @@
   "purpose": "固定开发依赖和源码阅读依据；不是部署机器台账、测试结果或形式化验收报告",
   "code_baseline": {
     "rust_toolchain": "1.97.0",
-    "cargo_lock_sha256": "2db5e72a413c6471f320261b8f1d7a484e560e5d08753afdae6c23018afe5f1b",
+    "cargo_lock_sha256": "ee79a574452d951af15658db3f8e1fb851f00417f7f5b595799b3ea304d90d89",
     "sdk_python": "e2b==2.51.0",
     "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
     "center_storage": {
