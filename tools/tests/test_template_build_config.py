@@ -72,7 +72,7 @@ assert not any('template_build_service' in name for name in sys.modules)
 def transfer_settings():
     # Explicit synthetic policy, not deployment defaults.
     return {'file_upload_bytes': 1024, 'file_download_bytes': 1024,
-            'command_input_bytes': 1024, 'command_output_bytes': 1024,
+            'command_input_bytes': 1024,
             'rpc_request_bytes': 1024, 'rpc_response_bytes': 1024,
             'max_transfers': 8, 'max_transfers_per_vm': 4, 'control_reserve': 1,
             'request_idle_seconds': 5, 'file_idle_seconds': 5, 'write_idle_seconds': 5}

@@ -76,6 +76,20 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class CleanupTests(unittest.TestCase):
+    def test_output_variant_requires_both_sdks_and_real_start_prefix_case(self):
+        report = {'result': 'passed', 'config_sha256': 'a' * 64,
+                  'server': {'executable_sha256': 'b' * 64}, 'sandbox_ids': ['one', 'two'],
+                  'cases': {'command_output_sync': {}, 'command_output_async': {}, 'template_start_once': []}}
+        with patch.object(Path, 'read_bytes', return_value=json.dumps(report).encode()):
+            self.assertEqual(probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64,
+                ['one', 'two'], command_output_only=True), report)
+            with self.assertRaises(AssertionError):
+                probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64, ['one', 'two'])
+        del report['cases']['template_start_once']
+        with patch.object(Path, 'read_bytes', return_value=json.dumps(report).encode()), self.assertRaises(AssertionError):
+            probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64,
+                ['one', 'two'], command_output_only=True)
+
     def test_namespace_scan_sees_fd_only_holder_and_compares_device_and_inode(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

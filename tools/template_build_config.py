@@ -29,7 +29,7 @@ def bounded_data_route_limits(settings):
     """Resolve the persisted route-cell limits from explicit gateway limits."""
     transfer = settings.get("data_transfer")
     budgets = {"file_upload_bytes", "file_download_bytes", "command_input_bytes",
-               "command_output_bytes", "rpc_request_bytes", "rpc_response_bytes"}
+               "rpc_request_bytes", "rpc_response_bytes"}
     concurrency = {"max_transfers", "max_transfers_per_vm", "control_reserve"}
     timeouts = {"request_idle_seconds", "file_idle_seconds", "write_idle_seconds"}
     if type(transfer) is not dict or set(transfer) != budgets | concurrency | timeouts:

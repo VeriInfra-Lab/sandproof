@@ -9,7 +9,6 @@ pub(crate) struct TransferLimits {
     pub file_upload_bytes: usize,
     pub file_download_bytes: usize,
     pub command_input_bytes: usize,
-    pub command_output_bytes: usize,
     pub rpc_request_bytes: usize,
     pub rpc_response_bytes: usize,
     pub max_transfers: usize,
@@ -29,7 +28,6 @@ impl TransferLimits {
             file_upload_bytes: 64 * 1024 * 1024,
             file_download_bytes: 96 * 1024 * 1024,
             command_input_bytes: super::PROCESS_REQUEST_LIMIT,
-            command_output_bytes: super::RESPONSE_LIMIT,
             rpc_request_bytes: 64 * 1024,
             rpc_response_bytes: 1024 * 1024,
             max_transfers: 8,
@@ -46,7 +44,6 @@ impl TransferLimits {
             self.file_upload_bytes,
             self.file_download_bytes,
             self.command_input_bytes,
-            self.command_output_bytes,
             self.rpc_request_bytes,
             self.rpc_response_bytes,
         ]
