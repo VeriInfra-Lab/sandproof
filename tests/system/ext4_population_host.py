@@ -1,9 +1,10 @@
 """Opt-in single-host supervision of the real guest ext4 population probe.
 
-The operator starts an approved server with its existing complete private
-builder configuration and remains responsible for server/service-group exit.
-This process never starts a server, mounts a host filesystem, changes networking,
-retries VM creation, or cleans host resources directly. All evidence is retained.
+The original complete two-pool fixture owns the center, Redis and private hosts.
+Its protected backend credential authorizes the original private build window;
+checked offline audits provide the exact global-to-native binding. This process
+never mounts a host filesystem, changes networking, retries VM creation or
+cleans host resources directly. Unknown retains the original fixture/evidence.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
@@ -13,7 +14,6 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import argparse
-from contextlib import closing
 import hashlib
 import importlib.metadata
 import json
@@ -21,13 +21,9 @@ import os
 from pathlib import Path
 import re
 import secrets
-import sqlite3
-import stat
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 SYSTEM = Path(__file__).resolve().parent
@@ -38,6 +34,10 @@ for directory in (ROOT, SYSTEM):
 from tools import check_kvm_host as host
 from tools.template_build_config import host_uid_range, protected_json
 from tools.template_physical_storage import envelope
+from tools.template_build_service import Backend, configuration
+from tools.template_build_store import BuildError
+from tools.runtime_create_recovery import terminal_result
+from _center_host_services import local_binding
 
 GUEST_FILES = {
     'template_worker.py': ROOT / 'tools/template_worker.py',
@@ -90,14 +90,19 @@ def write_new(path, value):
         os.close(descriptor)
 
 
-def validate_configuration(settings, api_url):
-    if api_url != 'http://' + settings.get('bind', '') or not re.fullmatch(
-            r'http://127\.0\.0\.1:[0-9]{1,5}', api_url):
-        raise ValueError('exact configured loopback builder URL required')
+def validate_configuration(settings, center, build):
+    """Use the original typed fixture; never upgrade an old public host config."""
+    if {'bind', 'domain', 'credentials', 'internal_build_vms', 'build_retry_windows',
+            'template_registry', 'request_admission'} & set(settings):
+        raise ValueError('retired public host configuration is unsupported')
     bounded = settings.get('bounded_host', {})
-    if (settings.get('internal_build_vms') is not True or settings.get('template_registry')
-            or not settings.get('maintenance', {}).get('capacity')
-            or not settings.get('build_retry_windows') or bounded.get('console_policy') != 'discard'):
+    private = center.get('private_builds')
+    boundary = center.get('private_build_boundary')
+    if (not settings.get('maintenance', {}).get('capacity') or not private or not boundary
+            or bounded.get('console_policy') != 'discard'
+            or boundary['bind'] != build['center']['private_address']
+            or build['center']['domain'] != center['domain']
+            or not re.fullmatch(r'127\.0\.0\.1:[0-9]{1,5}', boundary['bind'])):
         raise ValueError('deployed complete private bounded builder required')
     uid_range = host_uid_range(settings)
     profile = bounded.get('physical_storage')
@@ -112,12 +117,10 @@ def validate_configuration(settings, api_url):
         total = settings.get('max_timeout_secs', 0)
     if min(settings.get('max_timeout_secs', 0), total) < VM_SECONDS:
         raise ValueError('unchanged builder lifetime must admit 600 seconds')
-    credentials = settings.get('credentials')
-    if (not isinstance(credentials, list) or len(credentials) != 1
-            or type(credentials[0].get('tenant')) is not int or credentials[0]['tenant'] <= 0
-            or not isinstance(credentials[0].get('secret'), str) or not credentials[0]['secret']):
-        raise ValueError('one independent private builder credential required')
-    return credentials[0], uid_range
+    policy = private['policy']
+    if min(policy['max_timeout_secs'], policy['max_lifetime_secs']) < VM_SECONDS:
+        raise ValueError('unchanged center builder lifetime must admit 600 seconds')
+    return uid_range
 
 
 def fixed_artifacts(settings, tenant):
@@ -139,35 +142,32 @@ def fixed_artifacts(settings, tenant):
 
 
 class Client:
-    def __init__(self, api_url, key):
-        self.api_url, self.key = api_url, key
-        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    """Thin use of the production private backend, not another HTTP algorithm."""
+    def __init__(self, backend, owner):
+        if type(owner) is not int or not 0 < owner < 2**64:
+            raise ValueError('exact authenticated private owner required')
+        self.backend, self.owner = backend, owner
 
     def __call__(self, method, path, body=None, *, timeout=60):
-        request = urllib.request.Request(self.api_url + path, method=method,
-            data=json.dumps(body).encode() if body is not None else None,
-            headers={'X-API-Key': self.key, 'Content-Type': 'application/json'})
         try:
-            with self.opener.open(request, timeout=timeout) as response:
-                raw = response.read(MAX_JSON_BYTES + 1)
-                if not 200 <= response.status < 300:
-                    raise RequestFailed(response.status)
-        except urllib.error.HTTPError as error:
+            return self.backend.request('builder', method, path, body,
+                owner=self.owner, timeout=timeout)
+        except BuildError as error:
             raise RequestFailed(error.code) from None
-        if len(raw) > MAX_JSON_BYTES:
-            raise ValueError('bounded controller response exceeded')
-        return json.loads(raw, object_pairs_hook=host.unique_keys) if raw else None
 
 
-def sdk_sandbox(settings, api_url, key, session):
+def sdk_sandbox(backend, owner, session):
     # Same fixed constructor used by the production trusted build backend.
     from e2b import Sandbox
     from e2b.connection_config import ConnectionConfig
     from packaging.version import Version
+    center = backend.config['center']
+    api_url = 'http://' + center['private_address']
     connection = ConnectionConfig(api_url=api_url, sandbox_url=api_url,
-        domain=settings['domain'], api_key=key, retries=0, request_timeout=30,
-        extra_sandbox_headers={'X-Access-Token': session['envdAccessToken']})
-    return Sandbox(sandbox_id=session['sandboxID'], sandbox_domain=settings['domain'],
+        domain=center['domain'], api_key=backend.backend_key, retries=0, request_timeout=30,
+        extra_sandbox_headers={'X-Access-Token': session['envdAccessToken'],
+            'x-sandproof-build-key': backend.backend_key, 'x-sandproof-build-owner': str(owner)})
+    return Sandbox(sandbox_id=session['sandboxID'], sandbox_domain=center['domain'],
         envd_version=Version(session['envdVersion']), envd_access_token=session['envdAccessToken'],
         connection_config=connection)
 
@@ -188,29 +188,38 @@ def validate_guest(value):
     return value
 
 
-def sandbox_id(value, namespace):
+def sandbox_id(value):
     if not isinstance(value, str) or not re.fullmatch(
-            r'sb-' + re.escape(namespace) + r'-[1-9][0-9]*', value):
+            r'sandbox-[1-9][0-9]*', value):
         raise ValueError('original sandbox identity invalid')
     return value
 
 
-def capture_identity(settings, ident):
+def mapped_context(center, observed, ident, *, node, owner):
+    """Only the original checked authorities determine local IDs and ownership."""
+    sandbox_id(ident)
+    matches = [row for row in center['sandboxes']
+               if row['create']['identity']['sandbox_id'] == ident]
+    if (center['deployment'] != node['deployment_id'] or len(matches) != 1
+            or matches[0]['private'] is not True):
+        raise ValueError('original private center identity unknown or ambiguous')
+    create = matches[0]['create']['identity']
+    if create['node'] != node or create['tenant_id'] != str(owner) or create['intent_version'] != 1:
+        raise ValueError('original private create binding mismatch')
+    local = local_binding(observed, ident, expected_node=node)
+    contexts = [context for context, _phase in observed['host_slots']
+                if context['binding']['sandbox'] == local['sandbox']]
+    if len(contexts) != 1 or contexts[0]['binding']['owner'] != local['owner']:
+        raise ValueError('original sandbox lacks exact mapped host context')
+    return create, local, contexts[0]
+
+
+def capture_identity(settings, ident, center, observed, *, node, owner):
     from server_process_crash import process_start_ticks
-    ident = sandbox_id(ident, settings['namespace'])
-    number = int(ident.rsplit('-', 1)[1])
-    with closing(sqlite3.connect(Path(settings['database']).as_uri() + '?mode=ro', uri=True, timeout=2)) as db:
-        contexts = [json.loads(row[0]) for row in db.execute(
-            'SELECT context_json FROM controller_host_slots')]
-    contexts = [row for row in contexts if row['binding']['sandbox'] == number]
-    if len(contexts) != 1:
-        raise ValueError('original sandbox lacks unique host context')
-    context = contexts[0]
-    if context['binding']['owner'] != settings['credentials'][0]['tenant']:
-        raise ValueError('original host context belongs to another owner')
+    create, local, context = mapped_context(center, observed, ident, node=node, owner=owner)
     name = f"vm-{settings['namespace']}-{context['binding']['vm']}"
     claim = Path(settings['chroot_base']) / '.claims' / name
-    result = dict(sandbox_id=ident, context=context, resource_id=name,
+    result = dict(sandbox_id=ident, create_identity=create, local=local, context=context, resource_id=name,
         uid=settings['bounded_host']['uid_base'] + context['position'], process=None, network=None)
     record = claim / 'record.json'
     if record.exists():
@@ -273,23 +282,21 @@ def namespace_holders(identity):
     return sorted(found)
 
 
-def controller_cleanup(settings, identity):
-    """Short WAL-aware SQL read; never hold an external reader across maintenance."""
-    with closing(sqlite3.connect(Path(settings['database']).as_uri() + '?mode=ro', uri=True, timeout=2)) as db:
-        ident = identity['sandbox_id']
-        row = db.execute('SELECT state_blob FROM sandboxes WHERE sandbox_id=?', (ident,)).fetchone()
-        if row is not None:
-            state = json.loads(row[0])
-            if (state['phase'] != 'Destroyed' or state['terminal'] is not True
-                    or state['current_vm'] is not None or state['net_slot'] is not None):
-                raise ValueError('original controller state is not terminal')
-        pending = db.execute("SELECT count(*) FROM outbox WHERE sandbox_id=? AND dispatch_state!='receipted'", (ident,)).fetchone()[0]
-        anchors = db.execute('SELECT count(*) FROM private_build_anchors WHERE sandbox_id=?', (ident,)).fetchone()[0]
-        row = db.execute('SELECT context_json FROM controller_host_slots WHERE position=?',
-                         (identity['context']['position'],)).fetchone()
-        if pending or anchors or row is None or json.loads(row[0]) != identity['context']:
-            raise ValueError('original controller work, anchor or context unresolved')
-    return {'original_state_terminal_or_retired': True, 'pending_actions': 0, 'private_anchors': 0}
+def controller_cleanup(center, observed, identity):
+    """Read exact saved confirmations/frontiers, never infer Cleaned from absence."""
+    terminal = terminal_result(center, observed, identity['create_identity'])
+    if terminal is None:
+        raise ValueError('original controller terminal confirmation unresolved')
+    rows = [row for row in observed['native'] if row['sandbox'] == identity['local']['sandbox']]
+    if rows and (len(rows) != 1 or rows[0]['owner'] != identity['local']['owner']
+            or rows[0]['phase'] != 'Destroyed' or rows[0]['terminal'] is not True
+            or rows[0]['current_vm'] is not None or any(rows[0]['resources'].values())):
+        raise ValueError('original native controller state is not terminal')
+    contexts = [(context, phase) for context, phase in observed['host_slots']
+                if context['position'] == identity['context']['position']]
+    if contexts != [(identity['context'], 'Free')]:
+        raise ValueError('original checked host context is not Free')
+    return {'original_state_terminal_or_retired': True, 'terminal_status': terminal['status']}
 
 
 def complete_identity(identity):
@@ -298,7 +305,7 @@ def complete_identity(identity):
             and bool(identity.get('network')) and bool(identity.get('cgroup')))
 
 
-def audit_absent(settings, identity):
+def audit_absent(settings, identity, center, observed):
     from sdk_c02_acceptance import processes_in_uid_range
     from server_process_crash import process_start_ticks
     if identity is not None and not complete_identity(identity):
@@ -308,12 +315,17 @@ def audit_absent(settings, identity):
         raise ValueError('builder UID process remains')
     namespace = settings['namespace']
     controller = {}
+    if (any(phase != 'Free' for _context, phase in observed['host_slots'])
+            or any(row['phase'] != 'Destroyed' or row['terminal'] is not True
+                   or row['current_vm'] is not None or any(row['resources'].values())
+                   for row in observed['native'])):
+        raise ValueError('original checked builder authority is not empty or terminal')
     for path in (Path(settings['node_state_dir']) / 'host-slots').iterdir():
         slot = private_json(path)
         if slot.get('value') is not None and slot['value'].get('phase') != 'Free':
             raise ValueError('builder position is not confirmed Free')
     if identity is not None:
-        controller = controller_cleanup(settings, identity)
+        controller = controller_cleanup(center, observed, identity)
         name = identity['resource_id']
         context = identity['context']
         slot = private_json(Path(settings['node_state_dir']) / 'host-slots' / (str(context['position']) + '.json'))
@@ -341,6 +353,30 @@ def audit_absent(settings, identity):
             'namespace_holders_absent': bool(identity and identity['network']), **controller}
 
 
+class Observations:
+    """Original owned planned audits; neither live-lease bypass nor attach."""
+    def __init__(self, deployment, owner):
+        self.deployment, self.owner = deployment, owner
+        self.settings = deployment.settings[1]
+        self.node = deployment.services.host_configs[1]['inbox']['node']
+
+    def snapshots(self):
+        # Each helper stops only its OWN original child and restarts the same
+        # immutable config. Mixed observations stay unknown until exact pairs
+        # agree; none is a cleanup permission or VM operation.
+        observed = self.deployment.services.planned_audit('host-1')
+        return self.deployment.center_snapshot(), observed
+
+    def capture(self, ident):
+        center, observed = self.snapshots()
+        return capture_identity(self.settings, ident, center, observed,
+                                node=self.node, owner=self.owner)
+
+    def absent(self, identity):
+        center, observed = self.snapshots()
+        return audit_absent(self.settings, identity, center, observed)
+
+
 def supervise(settings, request, make_sandbox, evidence, capture, audit, *,
               clock=time.monotonic, sleep=time.sleep, build_id=None):
     """One identity and one create POST; injected interfaces only support tests."""
@@ -348,7 +384,7 @@ def supervise(settings, request, make_sandbox, evidence, capture, audit, *,
     if not re.fullmatch(r'[0-9a-f]{32}', build_id):
         raise ValueError('invalid fixed build ID')
     report = dict(version=1, scope='single_host_ext4_population', build_id=build_id,
-                  guest_passed=False, cleanup={'passed': False}, server_exit='outer_supervisor')
+                  guest_passed=False, cleanup={'passed': False}, service_exit='pending_original_children')
     window, ident, identity = None, None, None
     deleted, capture_error, capture_attempts = False, None, 0
 
@@ -369,11 +405,11 @@ def supervise(settings, request, make_sandbox, evidence, capture, audit, *,
             capture_error = type(error).__name__
             return False
 
-    evidence('intent', {'version': 1, 'build_id': build_id, 'namespace': settings['namespace']})
+    evidence('intent', {'version': 1, 'build_id': build_id,
+                        'deployment': settings['deployment'], 'owner': settings['owner']})
     try:
         opened = request('POST', '/sandproof/internal-build-windows', {})
-        tenant = settings['credentials'][0]['tenant']
-        pattern = f"bw-{settings['namespace']}-{tenant}-(0|[1-9][0-9]*)"
+        pattern = r'bw-' + re.escape(settings['deployment']) + '-' + str(settings['owner']) + r'-(0|[1-9][0-9]*)'
         if (not isinstance(opened, dict) or set(opened) != {'requestWindow', 'expiresAtMs'}
                 or not isinstance(opened.get('requestWindow'), str)
                 or not re.fullmatch(pattern, opened['requestWindow'])
@@ -384,7 +420,7 @@ def supervise(settings, request, make_sandbox, evidence, capture, audit, *,
         body = {'requestWindow': window, 'timeout': VM_SECONDS, 'allowInternetAccess': False}
         evidence('create', {'build_id': build_id, 'request': body})
         vm = request('POST', '/sandproof/internal-build-vms/' + build_id, body, timeout=VM_SECONDS)
-        ident = sandbox_id(vm['sandboxID'], settings['namespace'])
+        ident = sandbox_id(vm['sandboxID'])
         evidence('vm', {'sandboxID': ident, 'state': vm['state']})  # Never save the session token.
         if not capture_original() or not identity['process'].get('observed_alive'):
             raise ValueError('original live VMM identity incomplete')
@@ -422,7 +458,7 @@ def supervise(settings, request, make_sandbox, evidence, capture, audit, *,
                         vm = None  # Only the preceding durable close permits this conclusion.
                     if vm is None:
                         break
-                    current = sandbox_id(vm['sandboxID'], settings['namespace'])
+                    current = sandbox_id(vm['sandboxID'])
                     if ident is not None and ident != current:
                         raise ValueError('original build identity changed')
                     ident = current
@@ -483,50 +519,81 @@ def supervise(settings, request, make_sandbox, evidence, capture, audit, *,
 
 def exercise(args):
     from sdk_c02_acceptance import processes_in_uid_range
+    from _complete_registry_runtime import prepare_registry_runtime
+    from server_process_crash import free_loopback_port
+    from template_build import BUILDKIT_HASHES
+    from tools.template_fetch import REGCTL_SHA256
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise ValueError('root isolated Linux host required')
     if importlib.metadata.version('e2b') != '2.51.0':
         raise ValueError('fixed SDK 2.51.0 required')
-    config_sha = digest(host.trusted_path(args.config))
-    settings = private_json(args.config)
-    if digest(args.config) != config_sha:
-        raise ValueError('configuration changed during its protected read')
-    credential, uids = validate_configuration(settings, args.api_url)
     revision = host.source_revision()
-    hashes = fixed_artifacts(settings, credential['tenant'])
+    limits, config_hashes = {}, {}
+    for name in ('registry', 'build'):
+        path = host.trusted_path(getattr(args, name + '_limits'))
+        config_hashes[name] = digest(path)
+        limits[name] = private_json(path)
+        if digest(path) != config_hashes[name]:
+            raise ValueError('approved limits changed during protected read')
+    config_hashes['bounded_policy'] = digest(host.trusted_path(args.bounded_policy))
+    tool_hashes = dict(BUILDKIT_HASHES, regctl=REGCTL_SHA256)
+    if any(digest(host.trusted_path(args.tools / name)) != checksum for name, checksum in tool_hashes.items()):
+        raise ValueError('fixed original builder tool fingerprint mismatch')
     inputs = {name: digest(path) for name, path in GUEST_FILES.items()}
     report_path = Path(args.report)
     parent = host.trusted_path(report_path.parent)
     if not parent.is_dir() or parent.stat().st_mode & 0o077 or report_path.exists():
         raise ValueError('new root-private report required')
-    managed = [Path(settings['database']).parent, Path(settings['node_state_dir']), Path(settings['chroot_base'])]
-    public = settings['bounded_host']['physical_storage']['public_build']
-    if public:
-        managed += [Path(public['root']), Path(public['registry_root'])]
-    if any(parent == root or root in parent.parents for root in managed):
+    run_root = Path(args.run_root).absolute()
+    if run_root == parent or run_root in parent.parents:
         raise ValueError('evidence must be outside managed allocation roots')
     evidence = lambda name, value: write_new(report_path.with_suffix('.' + name + '.json'), value)
     # Reserve the final path before issuing even a request window.
     fd = os.open(report_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
     report = {'version': 1, 'scope': 'single_host_ext4_population', 'passed': False}
+    deployment = None
     try:
-        if processes_in_uid_range(uids.start, uids.stop - 1):
-            raise ValueError('exclusive builder UID pool occupied')
-        audit_absent(settings, None)
-        report = supervise(settings, Client(args.api_url, credential['secret']),
-            lambda session: sdk_sandbox(settings, args.api_url, credential['secret'], session),
-            evidence, lambda ident: capture_identity(settings, ident),
-            lambda identity: audit_absent(settings, identity))
-        report.update(source_commit=revision['revision'], config_sha256=config_sha,
+        deployment = prepare_registry_runtime(args, tool_hashes=tool_hashes,
+            registry_limits=limits['registry'], build_limits=limits['build'],
+            ports=[free_loopback_port() for _ in range(3)])
+        services, settings = deployment.services, deployment.settings[1]
+        build = configuration(deployment.build_config, require_physical_lease=False)
+        validate_configuration(settings, services.center_config, build)
+        hashes = fixed_artifacts(settings, 1)
+        if any(processes_in_uid_range(pool.start, pool.stop - 1)
+               for pool in map(host_uid_range, deployment.settings)):
+            raise ValueError('exclusive runtime or builder UID pool occupied')
+        backend, observations = Backend(build), Observations(deployment, 1)
+        services.start()
+        services.wait_ready()
+        manifest, processes = services.execution(secrets.token_hex(16), args.bounded_policy)
+        evidence('execution', {'manifest': manifest, 'actual_processes': processes})
+        observations.absent(None)
+        original = dict(deployment=services.center_config['deployment_id'], owner=1)
+        report = supervise(original, Client(backend, 1), lambda session: sdk_sandbox(backend, 1, session),
+            evidence, observations.capture, observations.absent)
+        report.update(source_commit=revision['revision'], config_sha256=config_hashes,
+            candidate_manifest_sha256=services.manifest_sha256,
+            execution_manifest_sha256=hashlib.sha256(json.dumps(manifest,
+                sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
             host_kernel=os.uname().release, sdk='2.51.0', input_sha256=inputs,
             inputs_unchanged=inputs == {name: digest(path) for name, path in GUEST_FILES.items()},
             artifacts_before=hashes, artifacts_after={name: digest(settings[name]) for name in hashes},
-            config_unchanged=digest(args.config) == config_sha)
+            config_unchanged=all(digest(getattr(args, name + '_limits')) == config_hashes[name]
+                for name in limits) and digest(args.bounded_policy) == config_hashes['bounded_policy'])
         report['artifacts_unchanged'] = report['artifacts_before'] == report['artifacts_after']
         report['passed'] &= report['artifacts_unchanged'] and report['config_unchanged'] and report['inputs_unchanged']
     except BaseException as error:
         report.update(passed=False, error_type=type(error).__name__)
     finally:
+        if deployment is not None:
+            try:
+                deployment.services.stop_all()
+                report['service_exit'] = 'confirmed_original_children'
+            except BaseException as error:
+                report.update(passed=False, service_exit='unknown', service_exit_error=type(error).__name__)
+        # No cgroup/staging/resource deletion: an unknown original request must
+        # retain its identity, anchor, leaf and private evidence for the owner.
         with os.fdopen(fd, 'w') as output:
             json.dump(report, output, sort_keys=True)
             output.flush()
@@ -534,12 +601,20 @@ def exercise(args):
     return report
 
 
-if __name__ == '__main__':
+def arguments():
+    from _complete_registry_runtime import add_registry_arguments
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--api-url', required=True)
-    parser.add_argument('--config', required=True, type=Path)
+    for name in ('jailer', 'firecracker', 'kernel', 'rootfs', 'scratch-parent',
+                 'cgroup-parent', 'tools', 'registry-limits', 'build-limits'):
+        parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--uid-base', required=True, type=int)
+    add_registry_arguments(parser)
     parser.add_argument('--report', required=True, type=Path)
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == '__main__':
+    args = arguments().parse_args()
     try:
         result = exercise(args)
     except Exception as error:
