@@ -18,5 +18,10 @@ tempfile = "=3.23.0"
 rustix = { version = "=1.1.5", features = ["process", "fs"] }
 sha2 = "=0.10.9"
 
+[dev-dependencies]
+# The host/controller composition tests use the real journal. This does not
+# add SQLite to the standalone production library or its extraction graph.
+sandproof-controller-service = { path = "../controller-service", features = ["durable"] }
+
 [lints]
 workspace = true
