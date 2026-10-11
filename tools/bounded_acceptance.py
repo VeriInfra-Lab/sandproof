@@ -153,6 +153,57 @@ def acceptance_disk_budgets(deployment, policy):
     return result
 
 
+def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_budget_bytes):
+    """Narrow the approved deployment to its static-template runtime pool.
+
+    Prepared CI never imports/publishes templates or dispatches build VMs.
+    Keep runtime/cleanup/metadata quotas and the original filesystem overhead;
+    bound kernel/runtime copies by the pinned artifacts actually registered.
+    Rust still activates the same profile with twice its complete envelope.
+    """
+    profile = copy.deepcopy(_acceptance_profile(policy))
+    if type(disk_budget_bytes) is not int or not 0 < disk_budget_bytes <= 200 * 1024**3:
+        raise ValueError("explicit prepared CI disk ceiling at most 200 GiB required")
+    pool = next(pool for pool in profile["pools"] if pool["role"] == "runtime")
+    for field, actual in (("kernel_copy_bytes", kernel_bytes), ("runtime_copy_bytes", runtime_bytes)):
+        if type(actual) is not int or not 0 < actual <= pool[field]:
+            raise ValueError("prepared CI artifact exceeds approved physical copy ceiling")
+        pool[field] = actual
+    profile.update(pools=[pool], public_build=None)
+    peak, _ = envelope(profile)
+    if 2 * peak > disk_budget_bytes:
+        raise ValueError("prepared CI complete physical activation exceeds disk ceiling")
+    return profile
+
+
+def prepared_ci_runtime_configuration(settings, policy, profile):
+    """Bind only prevalidated static CI descriptors; expose no build registry."""
+    result = copy.deepcopy(settings)
+    catalog = result["templates"]["templates"]
+    if not catalog or any(not item["template_id"].startswith("ci-") for item in catalog):
+        raise ValueError("prepared CI requires only approved static CI templates")
+    base = catalog[0]
+    pool = profile["pools"][0]
+    if (len(profile["pools"]) != 1 or pool["role"] != "runtime" or profile["public_build"] is not None
+            or any(pool[field] != result[field] for field in ("namespace", "database", "node_state_dir", "chroot_base"))):
+        raise ValueError("prepared CI runtime profile differs from explicit configuration")
+    for item in catalog:
+        if (item["rootfs"]["size_bytes"] > pool["rootfs_budget_bytes"]
+                or item["kernel"]["size_bytes"] > pool["kernel_copy_bytes"]):
+            raise ValueError("prepared CI template exceeds runtime physical quota")
+    result.pop("template_registry", None)
+    result.update(rootfs=base["rootfs"]["path"], kernel=base["kernel"]["path"],
+                  vcpu_count=base["resources"]["cpu_count"], memory_mib=base["resources"]["memory_mib"],
+                  bounded_host=copy.deepcopy(policy["runtime"]["bounded_host"]),
+                  maintenance=copy.deepcopy(policy["runtime"]["maintenance"]),
+                  max_disk_bytes_global=pool["rootfs_budget_bytes"] + pool["cleanup_reserve_bytes"],
+                  max_disk_bytes_per_tenant=pool["rootfs_budget_bytes"],
+                  cleanup_reserve_bytes=pool["cleanup_reserve_bytes"])
+    result["bounded_host"]["physical_storage"] = copy.deepcopy(profile)
+    result["templates"]["aliases"] = {"base": base["template_id"]}
+    return result
+
+
 def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):
     """Return the explicit layout only when the unchanged profile matches it.
 
