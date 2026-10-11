@@ -180,6 +180,59 @@ impl Fixture {
 }
 
 #[test]
+fn documented_center_example_loads_with_operator_material_through_the_original_validator() {
+    let fixture = Fixture::new();
+    let mut example: Value =
+        serde_json::from_str(include_str!("../../../deploy/center.example.json")).unwrap();
+    // The example has intentionally empty credentials and no private keys.
+    // Supply ONLY operator material from the existing protected/TLS fixture;
+    // retain its complete shape, identity, bounds, timings and registrations.
+    example["credentials"][0]["secret"] = fixture.config["credentials"][0]["secret"].clone();
+    example["redis"]["password"] = fixture.config["redis"]["password"].clone();
+    example["redis"]["writer_root"] = fixture.config["redis"]["writer_root"].clone();
+    example["data_token_key"] = fixture.config["data_token_key"].clone();
+    example["template_registry"]["root"] = fixture.config["template_registry"]["root"].clone();
+    for field in [
+        "certificate_chain_der",
+        "private_key_der",
+        "trusted_roots_der",
+    ] {
+        example["tls"][field] = fixture.config["tls"][field].clone();
+        example["artifact_service"]["tls"][field] =
+            fixture.config["artifact_service"]["tls"][field].clone();
+    }
+    example["nodes"][0]["peer_certificates_der"] =
+        fixture.config["nodes"][0]["peer_certificates_der"].clone();
+    let result = fixture.load(&example);
+    assert!(result.is_ok(), "original validator: {:?}", result.err());
+    for field in [
+        "nodes",
+        "artifact_service",
+        "node_observation",
+        "private_builds",
+        "private_build_boundary",
+    ] {
+        let mut missing = example.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        assert!(fixture.load(&missing).is_err(), "missing {field}");
+    }
+    let mut unknown = example.clone();
+    unknown["mode"] = json!("legacy");
+    assert!(fixture.load(&unknown).is_err());
+    let mut missing_slot = example.clone();
+    missing_slot["nodes"][0]["registration"]
+        .as_object_mut()
+        .unwrap()
+        .remove("retention_slots");
+    assert!(fixture.load(&missing_slot).is_err());
+    let mut fake_healthy = example.clone();
+    fake_healthy["nodes"][0]["registration"]["healthy_until_ms"] = json!(60_000);
+    assert!(fixture.load(&fake_healthy).is_err());
+    example["credentials"][0]["secret"] = json!("");
+    assert!(fixture.load(&example).is_err());
+}
+
+#[test]
 fn private_build_capability_is_explicit_role_bound_and_uses_the_registered_digest() {
     let fixture = Fixture::new();
     let config = fixture.with_private_builds();

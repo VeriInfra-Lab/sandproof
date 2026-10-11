@@ -101,6 +101,44 @@ envd 在 VM 内执行用户进程、信号与文件操作；来宾及来宾 root
 
 中心与 Redis 使用独立非 root 账号/目录，宿主与私有辅助工具按实际权限运行，jailer 将 VM 降到精确非特权身份。证书、配置、可执行文件和目录身份由可信部署固定。可信时钟、Linux/KVM、文件/网络原语、存储引擎和管理员是明确外部前提，不是本批 Lean 结论。
 
+### 单机三角色部署样例
+
+[部署样例目录](../deploy)包含[中心配置](../deploy/center.example.json)、[宿主配置](../deploy/host.example.json)、[Redis 配置](../deploy/redis.example.conf)与对应的[中心](../deploy/sandproof-center.service)、[宿主](../deploy/sandproof-host.service)、[Redis](../deploy/sandproof-redis.service)服务单元。它们使用上述唯一产品入口，没有自动安装或初始化脚本。JSON 由原 Rust 配置解析与校验测试检查，不维护另一份配置规则；该检查不代表单元已经在 Linux/KVM 部署通过。
+
+这些是**必须审核、填料后才可使用的输入样例，不是生产默认值**：示例为一个运行节点、两个资源位置、1 GiB 私有盘和 128 MiB 来宾内存，不包含私有构建助手。部署者须核对实际镜像形状、全部资源预算、摘要、envd/Firecracker/jailer 版本、地址与标识；全零产物摘要和空凭据不得沿用。缺凭据、受保护证书或原存储时拒绝启动，不能用 base 或旧格式补齐。公网示例明确关闭，不自动修改共享网络。
+
+制备和身份要求：
+
+1. 创建不具登录权限的 `sandproof-center`、`sandproof-redis` 两个独立账号。示例物理配置的 UID `1001/1002` 只是明确示例输入；先选定真实不重叠 UID/GID，再同步账号、服务单元和 `service_data.owner_uid`。不得与宿主 root 或 VM 的原 `uid_base` 范围重叠。先检查现有账号，不能自动占用或修改他人账号。
+2. `/var/lib/sandproof-services` 由 root 管理为 0711，其 `center`、`redis` 子树分别为对应账号的 0700；`/var/lib/sandproof-host` 及其全部子树为 root/0700。路径必须原生、不可互相别名且同受管文件系统，不能靠放宽宿主目录让中心读 VM 状态。按样例先制备中心 `control/bin`、`control/tls`、`assets`、`writer`、`registry/inbox`、`registry/artifacts`；Redis `control/bin`、`data`；宿主 `control/bin`、`control/tls`、`control/bootstrap`、空 `db`、`state`、`jails`、`template-cache/inbox`、`template-cache/artifacts`。
+3. 二进制来自同一固定源码与锁，制备后核 SHA-256 和两个 `contract-versions`；角色二进制为对应账号/0500，配置、密钥和 TLS 材料为对应账号/0600。宿主 bootstrap 镜像为 root 私有预置输入；中心 `assets` 保存单独、中心可读的相同不可变产物，宿主从空缓存通过真正 mTLS 下载后才登记可用，不把 bootstrap 目录当缓存事实。
+4. 私有 CA 和两端叶证书由部署者制备，叶子分别包含 `center.test`、`host.test` 及客户端/服务端双用途；私钥不跨角色复制，只复制固定 CA/对端叶的公有 DER 并核摘要。安全生成 API 凭据、独立 Redis 凭据与至少 32 字节的中心令牌密钥；只写各角色私有配置。Redis 的 `control/users.acl` 必须显式制备：关闭 default 用户，给独占引擎的 `sandproof-center` 用户设置独立随机凭据及原存储所需权限（包括持久化配置检查）。缺 ACL 文件不能换成公开样例密码或无鉴权引擎。
+5. 首次制备原 `physical-profile` 与缓存 `.cache.lock`，均为 root/0600、空的普通单链接文件；缓存和原 DB/状态/监狱目录必须是本次空身份。不要覆盖现有协调文件、账本、缓存或失败现场。物理配置显式计费实例/清理、宿主缓存、中心模板与登记、Redis/AOF、二进制和控制材料；原 Rust 激活检查全峰值的两倍余量。Redis `maxmemory` 不限制 AOF 总大小，重写与观察也不能被称为长期硬磁盘上限；`service_data.peak_bytes` 是物理预留，不是对 Redis 的写入限额。部署者须为独立 Redis 受管根落实已批准的磁盘限额及 AOF/重写/备份峰值、恢复检查，不能截断 AOF 或削减原预算造通过，也不重挂载整个宿主文件系统。
+6. 原 VM cgroup 父目录 `/sys/fs/cgroup/sandproof-vms` 由可信 root 显式制备，必须在 `sandproof-host.service` 单元 cgroup **之外**，保持原 `host_resources` 与位置内存检查。服务控制内存/CPU及宿主总体余量使用同一批准服务预算和实际 cgroup 核验；这些单元不猜测 `MemoryMax` 或另外设磁盘默认值，上线前须明确配置相符的资源 drop-in。样例显式丢弃三服务 stdout/stderr 及 Redis 文件日志，放弃控制台诊断，不是已部署的监控；需要保留日志时须另审核有限收集/轮转及原物理预算，不把日志默认交给无限 journald。
+
+把审核后的配置和单位文件装入样例所示固定路径，先以部署主机的 `systemd-analyze verify` 检查单位，再执行以下**首次**顺序；命令不生成材料或修复缺失状态：
+
+```sh
+sudo systemctl start sandproof-redis.service
+sudo /var/lib/sandproof-host/control/bin/sandproof-host initialize --config /var/lib/sandproof-host/control/host.json
+sudo -u sandproof-center /var/lib/sandproof-services/center/control/bin/sandproof-center initialize --config /var/lib/sandproof-services/center/control/center.json
+sudo systemctl start sandproof-host.service
+sudo systemctl start sandproof-center.service
+```
+
+只有真实健康、模板封存与持久回执后才能创建成功；公共 HTTP 200 本身不是就绪。单元只有 `serve`，没有 `ExecStartPre=initialize`；后续恢复只用同一配置重启，缺库或旧格式保留未知、拒绝，不再运行 initialize。公开接口只监听回环，部署者另提供可信 TLS 前置入口；不能把宿主/Redis 端口暴露给客户。
+
+宿主收到 SIGTERM 后，原入口停止接入并等待 HTTP 连接、持久工作驱动和缓存工作排空。[systemd 的 process 停止语义](https://github.com/systemd/systemd/blob/main/man/systemd.kill.xml)只终止主进程，因此宿主单元刻意使用 `KillMode=process`，不采用 `mixed/control-group`、`ExecStop` 杀 VM 或删除资源；示例 60 秒控制服务停止期限到达后也只杀主进程。残留实例/助手仍占原身份和责任，不能把单元 stopped 当 Cleaned。该方式不让 systemd 管理全部子进程，必须由原持久观察/恢复核对它们；计划维护先走正常销毁并核精确清理，不依赖停服务清场。
+
+离线审计时显式停止对应写者，保留 Redis 运行；审计不修改状态、不初始化，也不代替 VM 物理清理：
+
+```sh
+sudo systemctl stop sandproof-center.service sandproof-host.service
+sudo -u sandproof-center /var/lib/sandproof-services/center/control/bin/sandproof-center audit --config /var/lib/sandproof-services/center/control/center.json
+sudo /var/lib/sandproof-host/control/bin/sandproof-host audit --config /var/lib/sandproof-host/control/host.json
+sudo systemctl start sandproof-host.service sandproof-center.service
+```
+
 普通 CI 检查解析、组件与工具，不启动产品 VM。两级晋升采用同一个监督器、同一候选双产物/版本清单和固定两题原解答/评分，SDK 只指向中心。成功、失败、取消均核对原全局→本地映射与真实残留，不能用旧单服务报告满足新链路。DK 与两题范围见[验收清单](testing-plan.md)，部署与离线缓存见[CI 运行环境](ci.md)。
 
 原纯本地核心证明只适用指定版本。新增中心、Redis、内部映射、两端网关和组装只有工程检查；后续分别证明决定、存储/派发、接收/执行及组合。并行宿主工作仍归 [P2 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，本次不改变原串行算法。

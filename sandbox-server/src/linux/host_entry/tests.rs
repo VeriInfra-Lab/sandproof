@@ -101,3 +101,50 @@ fn cache_is_one_reserved_source_not_a_static_availability_fallback() {
     value["artifact_source"]["idle_timeout_ms"] = json!(60001);
     assert!(!check(value));
 }
+
+#[test]
+fn documented_host_example_uses_the_original_validator_and_rejects_missing_or_old_inputs() {
+    let value: Value =
+        serde_json::from_str(include_str!("../../../../deploy/host.example.json")).unwrap();
+    assert!(check(value.clone()));
+    for field in [
+        "native",
+        "inbox",
+        "internal",
+        "template_cache",
+        "artifact_source",
+    ] {
+        let mut missing = value.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        assert!(!check(missing), "missing required {field}");
+    }
+    for field in [
+        "credentials",
+        "template_registry",
+        "internal_build_vms",
+        "build_retry_windows",
+    ] {
+        let mut retired = value.clone();
+        retired["native"][field] = json!(true);
+        assert!(!check(retired), "retired native input {field}");
+    }
+    let mut unreserved = value.clone();
+    unreserved["template_cache"]["artifact_bytes"] = json!(1);
+    assert!(!check(unreserved));
+    let config: HostConfig = serde_json::from_value(value).unwrap();
+    config
+        .native
+        .templates
+        .as_ref()
+        .unwrap()
+        .validate()
+        .unwrap();
+    let (contract, _) = config.validate_static().unwrap();
+    let peak = contract
+        .bounded
+        .physical_storage
+        .unwrap()
+        .peak_bytes()
+        .unwrap();
+    assert!(peak.checked_mul(2).unwrap() < 200 * 1024 * 1024 * 1024);
+}
