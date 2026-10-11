@@ -115,6 +115,9 @@ class CiDependencyInputsTests(unittest.TestCase):
         manifest = files[path]
         for data in (manifest.replace(b'../sandbox-protocol', b'../../private'),
                      manifest.replace(b'../sandbox-protocol', b'../unregistered-member'),
+                     manifest.replace(b'name = "redis_ledger"', b'name = "../private"'),
+                     manifest.replace(b'name = "redis_ledger"', b'name = "/private"'),
+                     manifest.replace(b'name = "redis_ledger"', b'name = ""'),
                      manifest + b'\n[dependencies.unregistered]\ngit = "https://example.invalid/code"\n'):
             with self.subTest(data=data[-80:]), self.assertRaises(ValueError):
                 deps.validate_input(self.replace_file(self.damaged(), path, data))
@@ -123,6 +126,8 @@ class CiDependencyInputsTests(unittest.TestCase):
             deps.write_workspace(directory, files)
             self.assertEqual((directory / path).read_bytes(), manifest)
             self.assertFalse((directory / 'sandbox-center-store/src/store.rs').exists())
+            self.assertEqual((directory / 'sandbox-center-store/tests/redis_ledger.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
 
     def test_prepare_rejects_wrong_approval_dirty_blob_or_existing_output(self):
         with tempfile.TemporaryDirectory() as temporary:

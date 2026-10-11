@@ -160,6 +160,10 @@ def validate_sources(files):
         for path, value in parsed.items():
             if path.endswith('Cargo.toml'):
                 check_cargo(value)
+                for target in value.get('test', []):
+                    if (not isinstance(target, dict) or not isinstance(target.get('name'), str)
+                            or not re.fullmatch(r'[A-Za-z0-9_-]+', target['name'])):
+                        raise ValueError('unsupported Cargo test target name')
         for package in parsed['Cargo.lock']['package']:
             if 'source' in package and (package['source'] != 'registry+https://github.com/rust-lang/crates.io-index'
                     or not re.fullmatch(r'[0-9a-f]{64}', package.get('checksum', ''))):
@@ -266,6 +270,8 @@ def write_workspace(directory, files):
         manifest = tomllib.loads(files[member + '/Cargo.toml'].decode())
         for target in manifest.get('bin', []):
             paths.add(target.get('path', 'src/main.rs'))
+        for target in manifest.get('test', []):
+            paths.add(target.get('path', 'tests/' + target['name'] + '.rs'))
         for path in paths:
             destination = directory / member / path
             destination.parent.mkdir(parents=True, exist_ok=True)
