@@ -4,9 +4,9 @@
 
 ## 当前回归：冻结的 Terminal-Bench 2.0 兼容基线
 
-日常晋升新增 `ci` 两题预装变体：使用[制备配方](ci-fixture.Dockerfile)、仓库外不可变干净模板和固定本地评分环境，原解答/测试断言不变；公网关闭、每题全新沙箱。[评分启动器](ci_verifier.py)只替换已审核的公共安装段，不覆盖未知评分脚本。此模式不代表原环境、原启动脚本或本轮通用模板构建通过。部署配置看[CI 运行环境](../docs/ci.md)，正式启用与通过判据看[验收清单](../docs/testing-plan.md)。原四题、十六题和全量入口仍供扩展验收，题集仍由配置选择。
+日常晋升使用 `ci` 两题预装变体：使用[制备配方](ci-fixture.Dockerfile)、仓库外不可变干净模板和固定本地评分环境，原解答/测试断言不变；公网关闭、每题全新沙箱。[评分启动器](ci_verifier.py)只替换已审核的公共安装段，不覆盖未知评分脚本。此模式不代表原环境、原启动脚本或本轮通用模板构建通过。部署配置看[CI 运行环境](../docs/ci.md)，正式启用与通过判据看[验收清单](../docs/testing-plan.md)。原四题、十六题和全量入口仍供扩展验收，题集仍由配置选择。
 
-2026-10-06 owner 决定先稳定功能回归、推进核心证明，再做 2.1 发布验收。[2.0 题集配置](terminal-bench-2.0-suites.json)使用既有完整源码锁和通用 OCI 模板链，提供四题 `smoke`、十六题 `regression`、`full` 及自选名单；不调用旧固定 base 配方。显式 `oracle_modes` 只启用已有且原脚本摘要匹配的修补，批次遇到不同解答模式时拆分，原评分/资源/时限不变；报告逐题保留 original/repaired。配置与候选固定后不在该验收身份内删换失败题，兼容回归不是原题榜单成绩，也不是形式化证明。
+当前采用 2.0 兼容回归，2.1 原题全量为发布前待办。[2.0 题集配置](terminal-bench-2.0-suites.json)使用既有完整源码锁和通用 OCI 模板链，提供四题 `smoke`、十六题 `regression`、`full` 及自选名单；不调用旧固定 base 配方。显式 `oracle_modes` 只启用已有且原脚本摘要匹配的修补，批次遇到不同解答模式时拆分，原评分/资源/时限不变；报告逐题保留 original/repaired。配置与候选固定后不在该验收身份内删换失败题，兼容回归不是原题榜单成绩，也不是形式化证明。
 
 人工诊断遇到外部网络超时可结束该次运行并另选题，不排查代理、不新增网络修复任务；旧检查仍保留实际非成功状态，新名单产生独立身份。不能通过换题把原固定范围、完整 89 题或清理未知改成成功。本次少量实测也不核销全部兼容题的同版本验收。
 
@@ -14,7 +14,7 @@
 
 最终全题集目标为 **Terminal-Bench 2.1 全部 89 题**，来源为[官方题库](https://github.com/harbor-framework/terminal-bench-2-1)与[Harbor Hub 数据集](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1)。官方使用的数据集名称为 `terminal-bench/terminal-bench-2-1`；正式执行须冻结具体发布摘要与源码提交，不直接跟随 `latest` 或 `main`。[官方发布说明](https://github.com/harbor-framework/terminal-bench-docs/blob/main/content/blog/terminal-bench-2-1.mdx)说明此次修订处理了外部依赖漂移、资源预算和题意/评分不一致等问题；不据修复数量推断本项目旧失败题已全部解决。
 
-2026-10-05 owner 要求范围和批次大小通过参数/配置选择。[题集目录](terminal-bench-2.1-suites.json)提供原八题 `smoke`、扩展十六题 `regression` 和按完整锁生成的 `full`；也支持事前批准的自定义名单。十六题面向编译、Python/异步、文件、Git/HTTP/RPC、数据库、密码工具、OCR 与较大计算资源的工程回归，不是官方小数据集，也不是榜单成绩的统计替代。名单与配置在运行前冻结，失败后不换题；不同范围、版本和提交不拼成 89/89。
+范围和批次大小通过参数/配置选择。[题集目录](terminal-bench-2.1-suites.json)提供原八题 `smoke`、扩展十六题 `regression` 和按完整锁生成的 `full`；也支持事前批准的自定义名单。十六题面向编译、Python/异步、文件、Git/HTTP/RPC、数据库、密码工具、OCR 与较大计算资源的工程回归，不是官方小数据集，也不是榜单成绩的统计替代。名单与配置在运行前冻结，失败后不换题；不同范围、版本和提交不拼成 89/89。
 
 [2.1 完整锁](terminal-bench-2.1.lock.json)固定官方发布期间的源码提交 `c5ee500c185224c97cd6caff7866a990a0057f41`、全部 89 题输入和原始资源/时限。[源码清单](terminal-bench-2.1.registry.json)由该 Git 树产生，不是已验证的 Harbor Hub 下载包或发布包摘要；两者不能混称。固定 Harbor/SDK 不升级，原 Harbor 可直接加载 1.1 配置。短任务 ID 仅用于本地目录与报告，原 `[task].name` 保存在锁内；不修改原任务文件。2.0 本地解答/环境修补不能用于 2.1。
 
@@ -104,7 +104,7 @@ python3 tools/benchmark_tasks.py audit \
 
 ## 执行与验收边界
 
-目标为[#123 通用模板链](https://github.com/ningZhang-cs/sandproof/issues/123)。自助构建服务和下述 #13 通用执行入口已实现；实现存在不等于全部 89 题验收通过。下述固定 base 手动诊断是旧路线的局部实验，不是最终产品接口，也不能代替通用构建/转换能力。后续按[验收清单](../docs/testing-plan.md)保留原解答与原评分，全部 89 题不因失败删除；修订解答和跨提交汇总必须单独报告。
+功能入口为[#123 通用模板链](https://github.com/ningZhang-cs/sandproof/issues/123)。自助构建服务和下述 #13 通用执行入口已实现；实现存在不等于全部 89 题验收通过。下述固定 base 手动诊断是旧路线的局部实验，不是最终产品接口，也不能代替通用构建/转换能力。后续按[验收清单](../docs/testing-plan.md)保留原解答与原评分，全部 89 题不因失败删除；修订解答和跨提交汇总必须单独报告。
 
 现有诊断工具已实现全部任务的显式初始化配方、固定 base 指纹和 Harbor 薄适配；每题是否初始化成功、标准解答与原评分器是否完成，仍以绑定提交和环境的实际报告为准。配方清单不是通用 Dockerfile 解释器，也不表示任意上游镜像标签都可作为模板。
 
@@ -164,7 +164,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 原题运行器与固定 base 诊断入口共用逐试验产物预算。可显式传 `--artifact-max-bytes`（默认 134217728，即 128 MiB）、`--artifact-max-file-bytes`（默认 100663296，即 96 MiB）、`--artifact-max-entries`（4096）和 `--artifact-max-depth`（16，最多 64）；数值须为正整数，单文件可调低但不得超过既有 96 MiB 硬上限或总字节。它们是可配置验收默认值，不是已实测的生产容量。命令事件、来宾下载与另存诊断共同计费，重复/失败不退额；原奖励与阶段单独保留，缺证据不能报告完整通过。边界和排除项见[模块合同](../docs/module-contracts.md)，用例见[验收清单](../docs/testing-plan.md)。监督入口按每试验字节上限 × 题数 × 次数计入磁盘预检（默认 89 题两轮仅此项为 22.25 GiB），另计锁定的原环境上下文、构建日志、报告副本、数据库及收尾余量；来宾实际可用块和运行时配额仍须独立检查。
 
-[实机监督入口](../tests/system/harbor_generic_chain.py)的目标部署使用 `--bounded-policy <私有策略文件>`；现存旧配置生成参数由 [#262](https://github.com/ningZhang-cs/sandproof/issues/262) 清除，不属于目标部署合同。独立任务入口不再接受 `--build-mode`，只提交窗口请求；旧服务缺少窗口接口时明确失败，不自动降级。该监督入口额外记录实际 Firecracker 配置、CPU/内存 cgroup、私有盘身份与模板摘要，并在服务退出前核对精确进程、网络空间持有者、jail/cgroup、构建预留和持久终态。它需要独占 root/KVM 主机、固定工具、完整题库、三个已委派的独占 cgroup 父组（运行池、构建池、`--service-cgroup-parent`）和新 UID 范围；`--repetitions 2` 为全新构建/沙箱重复实验。临时开启转发仅在事前授权后使用 `--temporarily-forward`，退出恢复原值。实机使用同一精确提交的 `cargo build --release -p sandproof-server --bin sandproof-server --locked` 产物，报告须记录二进制摘要和构建 profile；调试构建对大磁盘的摘要校验可能耗尽原题期限。选择 `--all` 可运行全部锁定题目；监督入口根据题目资源及重复次数预留模板存储、工作区和 VM 编号，派发前校验宿主资源与可信构建盘空闲量。每题结束后审计原任务身份和两池回收，明确失败可继续，未知则停止；收尾等待还覆盖迟到发布检查 VM 的有界启动/存活期限，期间保持原控制器运行，不把题目执行期限一起延长；任一选中题失败/未运行时返回非零。私有配置保留到操作者完成独立审计，失败时可用原身份恢复，审计后再精确删除本轮目录。实际结果和提交在 PR/#13 记录，不把脚本存在、替身测试或旧路线成绩算作新链路通过。
+[实机监督入口](../tests/system/harbor_generic_chain.py)要求 `--bounded-policy <私有策略文件>`，不接受不完整物理/容量配置或旧运行模式。独立任务入口不再接受 `--build-mode`，只提交窗口请求；旧服务缺少窗口接口时明确失败，不自动降级。该监督入口额外记录实际 Firecracker 配置、CPU/内存 cgroup、私有盘身份与模板摘要，并在服务退出前核对精确进程、网络空间持有者、jail/cgroup、构建预留和持久终态。它需要独占 root/KVM 主机、固定工具、完整题库、三个已委派的独占 cgroup 父组（运行池、构建池、`--service-cgroup-parent`）和新 UID 范围；`--repetitions 2` 为全新构建/沙箱重复实验。临时开启转发仅在事前授权后使用 `--temporarily-forward`，退出恢复原值。实机使用同一精确提交的 `cargo build --release -p sandproof-server --bin sandproof-server --locked` 产物，报告须记录二进制摘要和构建 profile；调试构建对大磁盘的摘要校验可能耗尽原题期限。选择 `--all` 可运行全部锁定题目；监督入口根据题目资源及重复次数预留模板存储、工作区和 VM 编号，派发前校验宿主资源与可信构建盘空闲量。每题结束后审计原任务身份和两池回收，明确失败可继续，未知则停止；收尾等待还覆盖迟到发布检查 VM 的有界启动/存活期限，期间保持原控制器运行，不把题目执行期限一起延长；任一选中题失败/未运行时返回非零。私有配置保留到操作者完成独立审计，失败时可用原身份恢复，审计后再精确删除本轮目录。实际结果和提交在 PR/#13 记录，不把脚本存在、替身测试或旧路线成绩算作新链路通过。
 
 另有[预选两题](diagnostic-tasks.json)的手动诊断链路，由[实机脚本](../tests/system/harbor_diagnostic_chain.py)执行：要求锁定的 Harbor/E2B 联合环境、固定提交的原题源码、经核对的 Ubuntu 24.04 10 GiB base、隔离 KVM 宿主与预先批准且在整轮不变的公网 IPv4 策略。每题全新沙箱，先核对 CPU/内存/磁盘和空初态；来宾固定使用公网 DNS `1.1.1.1`，因为现有 base 的宿主本地 DNS 桩不可在 VM 内使用，此处是与原 Docker 环境的已知差异。`polyglot-c-py` 只在来宾内执行原 Dockerfile 的 `apt update && apt install -y gcc`；随后依次上传并运行原 `solution/solve.sh`。原评分器所需的 Python 3.13.9 固定运行时在解答结束后传入并核对哈希，避免原评分器访问其固定下载地址超时；运行时来源和哈希见预选清单，这是另一项明确的环境差异。接着上传并运行未改动的原 `tests/test.sh` 与 `test_outputs.py`，读取原 `reward.txt`。评分后销毁并检查数据库终态、精确进程/网络/磁盘与 base 指纹。失败保留本轮私有目录诊断，不将失败题从预选名单删除；不使用付费模型，不宣称原 Harbor 模板 API 或完整榜单兼容。 这条两题链路的运行时预填与报告独立于下方全题集入口；不能用两题通过代表其余 87 题，也不替代原 Harbor OracleAgent/Verifier 的全题集接入。
 
