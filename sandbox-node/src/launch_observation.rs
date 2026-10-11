@@ -137,7 +137,7 @@ fn classify(
     }
     if stored.token.len() < 32
         || stored.sha512.len() != 128
-        || hash_token(&stored.token)? != stored.sha512
+        || hash_token(&stored.token) != stored.sha512
     {
         return Ok(LaunchCredentialStatus::Unavailable(
             CredentialFault::TokenHashMismatch,
