@@ -28,7 +28,7 @@ import urllib.request
 from e2b import Sandbox, CommandExitException
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
-from server_process_crash import free_loopback_port, start_server, stop_server, wait_ready
+from server_process_crash import free_loopback_port
 from server_vm_id_capacity import check_no_resources
 from template_build import BUILDKIT_HASHES, MIB, checked, upload
 from template_stage import stage
@@ -82,14 +82,13 @@ def exercise(args):
         ports=[free_loopback_port() for _ in range(3)])
     root = deployment.root
     print(f"test root={root} namespace={args.namespace} commit={commit}", flush=True)
-    binary = deployment.binary
+    services = deployment.services
     original_paths = (args.kernel, args.rootfs, args.builder_rootfs or args.rootfs)
     original = [sha256_file(path) for path in original_paths]
-    url, key = deployment.urls[0], deployment.keys[0]
-    config = root / "0/config.json"
+    url, key = services.sdk_url, deployment.key
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     owner = dict(options(key, url, url), request_timeout=180)
-    process, builder_process, active, evidence = None, None, [], []
+    active, evidence = [], []
 
     def no_resources():
         for index, namespace in enumerate(deployment.namespaces):
@@ -105,10 +104,8 @@ def exercise(args):
                "max_input_bytes": 256 * MIB, "max_expanded_bytes": 1024 * MIB, "max_entries": 50000,
                "timeout_seconds": 240, "max_log_bytes": 2 * MIB}
     try:
-        process = start_server(binary, config, root / "server.log", None)
-        wait_ready(opener, url, key, process)
-        builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
-        wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
+        services.start()
+        services.wait_ready()
         jobs = list(IMAGES) + [dict(IMAGES[0], name="missing-digest", reference="docker.io/library/debian@sha256:" + "0" * 64),
                               dict(IMAGES[0], name="download-limit")]
         for item in jobs:
@@ -178,7 +175,8 @@ def exercise(args):
             deployment.close_builder(builder_identity)
             no_resources()
             if name not in ("missing-digest", "download-limit"):
-                candidate = stage(root / "registry", args.kernel, disk, status, 1, 1, 512, 768)
+                candidate = stage(services.layout['registry'], args.kernel, disk, status, 1, 1, 512, 768,
+                                  registry_owner_uid=args.center_uid)
                 publication = urllib.request.Request(url + "/sandproof/template-publications",
                     data=json.dumps({"candidateID": candidate}).encode(), method="POST",
                     headers={"X-API-Key": key, "Content-Type": "application/json"})
@@ -205,7 +203,7 @@ def exercise(args):
         assert allocated == 8, "unexpected replacement or validation VM"
         assert [sha256_file(path) for path in original_paths] == original
         no_resources()
-        report = {"commit": commit, "namespace": args.namespace, "server_sha256": sha256_file(binary),
+        report = {"commit": commit, "namespace": args.namespace, "service_artifacts": services.manifest,
                   "base_sha256": original, "tools": hashes, "sdk": "2.51.0", "evidence": evidence,
                   "destroyed_vms": allocated, "cleanup": "passed", "scope": "complete two-pool guest public acquisition, publication and SDK; not public build API or recovery"}
         (root / "report.json").write_text(json.dumps(report, indent=2))
@@ -213,9 +211,6 @@ def exercise(args):
     finally:
         try:
             if list(root.glob("builder-intent-*.json")):
-                if builder_process is None or builder_process.poll() is not None:
-                    builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
-                    wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
                 deployment.close_builders()
             for sandbox_id in active:
                 try:
@@ -223,14 +218,13 @@ def exercise(args):
                 except Exception as error:
                     print("cleanup unresolved: " + sandbox_id + " " + type(error).__name__, file=sys.stderr)
         finally:
-            stop_server(process)
-            stop_server(builder_process)
+            services.stop_all()
         print("retained private evidence: " + str(root), flush=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "cgroup-parent", "tools"):
+    for name in ("jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "cgroup-parent", "tools"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     add_registry_arguments(parser)

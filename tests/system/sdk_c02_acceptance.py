@@ -1,7 +1,7 @@
 """Run only the two existing C02 probes on an approved isolated Linux/KVM host.
 
 No host execution is authorized by invoking this CLI. Supply an independently
-approved exact commit, server digest, and existing host.example.json profile.
+approved exact commit, double-artifact receipt, and existing host profile.
 Every run retains a private directory; --export-run reads a safe summary only
 and never replays an interrupted profile or attempts host-direct cleanup.
 """
@@ -44,8 +44,12 @@ from tools.system_acceptance import (
 if not sys.flags.optimize:
     from server_process_crash import (
         complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
-        retired_sandboxes, start_server, stop_server, wait_ready,
+        retired_sandboxes,
     )
+    from _process_utils import stop_child
+    from _runtime_services import RuntimeServices
+    from _center_host_services import terminal_result
+    from tools import ci_e2e_artifacts as artifacts
 
 # Existing system supervisors import this public helper.
 sha256_file = digest
@@ -62,6 +66,13 @@ SOURCE_FILES = {
     "complete_runtime_helper": "tests/system/_complete_runtime.py",
     "resource_evidence_helper": "tests/system/_resource_evidence.py",
     "physical_profile_helper": "tools/template_physical_storage.py",
+    "runtime_services_helper": "tests/system/_runtime_services.py",
+    "role_fixture_helper": "tests/system/_center_host_services.py",
+    "artifact_helper":"tools/ci_e2e_artifacts.py",
+    "recovery_helper":"tools/runtime_create_recovery.py",
+    "service_cgroup_helper":"tools/service_cgroup.py",
+    "template_helper":"tests/system/server_templates.py",
+    "process_helper":"tests/system/_process_utils.py",
     "sdk_server_smoke.py": "tests/system/sdk_server_smoke.py",
     "sdk_data_contract.py": "tests/system/sdk_data_contract.py",
     "sdk_data_samples.py": "tests/compat/sdk_data_samples.py",
@@ -229,7 +240,71 @@ def probe_environment(owner_key, foreign_key, evidence_root=None):
     return result
 
 
-def run_probe(root, name, base_url, environment, namespace, *, timeout=240):
+def record_requests(root,services,report):
+    """Parent-only private test callback to the ORIGINAL offline host audit."""
+    _require_assertions(Failure)
+    from _center_host_services import local_binding
+    files=sorted((root/'resource-requests').iterdir())
+    require(all(re.fullmatch(r'[0-9a-f]{64}\.(request|ack)\.json',path.name) is not None
+                for path in files),'identity_unknown')
+    requests=[path for path in files if path.name.endswith('.request.json')]
+    require(len(requests)<=EXPECTED_SANDBOXES and len(files)<=2*EXPECTED_SANDBOXES,'identity_unknown')
+    for path in requests:
+        info=path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_nlink==1
+                and not info.st_mode&0o077 and info.st_size<=256,'identity_unknown')
+        value=json_file(path,limit=256)
+        require(type(value) is dict and set(value)=={'sandbox'},'identity_unknown')
+        ident=value['sandbox']
+        require(type(ident) is str and re.fullmatch(r'sandbox-[1-9][0-9]{0,19}',ident) is not None
+                and int(ident.removeprefix('sandbox-'))<2**64,'identity_unknown')
+        name=hashlib.sha256(ident.encode()).hexdigest()
+        require(path.name==name+'.request.json','identity_unknown')
+        ack=path.with_name(name+'.ack.json')
+        if ack.exists():
+            details=ack.lstat()
+            require(stat.S_ISREG(details.st_mode) and details.st_uid==0 and details.st_nlink==1
+                    and not details.st_mode&0o077 and details.st_size<=256,'identity_unknown')
+            acknowledgement=json_file(ack,limit=256)
+            require(type(acknowledgement) is dict and set(acknowledgement)=={'sandbox','recorded'}
+                    and acknowledgement['sandbox']==ident and acknowledgement['recorded'] is True,'identity_unknown')
+            continue
+        center=services.planned_audit('center')
+        matching=[row for row in center['sandboxes'] if row['create']['identity']['sandbox_id']==ident
+                  and row['private'] is False and row['create']['identity']['tenant_id']=='1']
+        require(len(matching)==1,'identity_unknown')
+        identity=matching[0]['create']['identity']
+        services.processes.stop('host-0')
+        try:
+            audit=services.processes.audit('host-0')
+            local=local_binding(audit,ident,expected_node=services.host_configs[0]['inbox']['node'])
+            require(local['owner']==1,'identity_unknown')
+            number=local['sandbox']
+            native_id='sb-'+services.native_pools[0]['namespace']+'-'+str(number)
+            contexts=[context for context,_phase in audit['host_slots']
+                      if type(context.get('binding')) is dict and context['binding']['sandbox']==number
+                      and context['binding']['owner']==1]
+            require(len(contexts)==1,'identity_unknown')
+            context=contexts[0]
+            name_vm='vm-'+services.native_pools[0]['namespace']+'-'+str(context['binding']['vm'])
+            claim=root/'jails/.claims'/name_vm
+            record,network=json_file(claim/'record.json'),json_file(claim/'network.json')
+            require(record['resource_id']==name_vm and network['resource_id']==name_vm
+                and process_start_ticks(record['pid'])==record['start_time_ticks'],'resource_unknown')
+            uid=int(next(line.split()[1] for line in Path('/proc',str(record['pid']),'status').read_text().splitlines()
+                         if line.startswith('Uid:')))
+            require(uid==services.native_pools[0]['bounded_host']['uid_base']+context['position'],'resource_unknown')
+            write_once(root/'resource-evidence'/(native_id+'.json'),dict(sandbox=native_id,global_id=ident,
+                create_identity=identity,context=context,record=record,network=network))
+            report.setdefault('global_identities',{})[ident]=identity
+            report.setdefault('global_native',{})[ident]=native_id
+        finally:
+            services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
+        write_once(ack,dict(sandbox=ident,recorded=True))
+
+
+def run_probe(root, name, base_url, environment, namespace, *, timeout=240,services=None,report=None):
     _require_assertions(Failure)
     require(name in PROBES, "invalid_configuration")
     process = None
@@ -244,7 +319,20 @@ def run_probe(root, name, base_url, environment, namespace, *, timeout=240):
                 start_new_session=True,
             )
             try:
-                code = process.wait(timeout=timeout)
+                if services is None:
+                    code = process.wait(timeout=timeout)  # Inert component test.
+                else:
+                    deadline=time.monotonic()+timeout
+                    while True:
+                        record_requests(root,services,report)
+                        left=deadline-time.monotonic()
+                        if left<=0:
+                            raise Failure('timeout')
+                        try:
+                            code=process.wait(timeout=min(.1,left))
+                            break
+                        except subprocess.TimeoutExpired:
+                            continue
             except subprocess.TimeoutExpired as error:
                 raise Failure("timeout") from error
             require(code == 0, "probe_failed")
@@ -253,7 +341,7 @@ def run_probe(root, name, base_url, environment, namespace, *, timeout=240):
         finally:
             # The caller cannot discover/clean DB identities until this child is reaped.
             try:
-                stop_server(process)
+                stop_child(process)
             except BaseException as error:
                 secondary.append(error)
             for output in (out, err):
@@ -276,8 +364,7 @@ def run_probe(root, name, base_url, environment, namespace, *, timeout=240):
 
 def preflight(args, report):
     _require_assertions(Failure)
-    require(re.fullmatch(r"[0-9a-f]{40}", args.expected_commit or "") is not None
-            and re.fullmatch(r"[0-9a-f]{64}", args.server_sha256 or "") is not None,
+    require(re.fullmatch(r"[0-9a-f]{40}", args.expected_commit or "") is not None,
             "invalid_configuration")
     require(sys.platform == "linux" and os.geteuid() == 0, "preflight_failed")
     require(1000 <= args.uid_base and args.uid_base + PHYSICAL_SLOTS - 1 < 2**32 - 1, "invalid_configuration")
@@ -294,9 +381,15 @@ def preflight(args, report):
         observed = digest(path)
         require(observed == config["artifacts"][name]["sha256"], "hash_mismatch")
         report["hashes"][name] = observed
-    server = host.trusted_path(args.server)
-    require(os.access(server, os.X_OK) and digest(server) == args.server_sha256, "hash_mismatch")
-    report["hashes"]["server"] = args.server_sha256
+    paths={name:host.trusted_path(getattr(args,name)) for name in ('center','host')}
+    receipt=host.trusted_path(args.candidate_manifest)
+    versions=json_file(receipt,limit=16384)['versions']
+    manifest=artifacts.load(receipt,candidate=args.expected_commit,paths=paths,versions=versions)
+    report['services']=artifacts.public_identity(manifest)
+    for name,path in paths.items():
+        require(os.access(path,os.X_OK),'hash_mismatch')
+        report['hashes'][name]=digest(path)
+    report['hashes']['candidate_manifest']=digest(args.candidate_manifest)
     report["hashes"]["python"] = digest(Path(sys.executable).resolve(strict=True))
     for name, relative in SOURCE_FILES.items():
         path = CHECKOUT / relative
@@ -321,24 +414,24 @@ def preflight(args, report):
 
 def prepare(args, root, namespace, owner_key, foreign_key, port, report):
     _require_assertions(Failure)
+    from server_templates import descriptor
     firecracker = args.firecracker.name
     longest_socket = root / "jails" / firecracker / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
     require(len(os.fsencode(longest_socket)) < 108, "invalid_configuration")
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "jails","resource-evidence","resource-requests"):
         (root / name).mkdir(mode=0o700)
-    (root / "resource-evidence").mkdir(mode=0o700)
     report["private_staged"] = {}
     report["staged_copies"] = "retained"
-    for name, source, destination in (("server", args.server, root / "sandproof-server"),
-                                     ("kernel", args.kernel, root / "vmlinux"),
+    for name, source, destination in (("kernel", args.kernel, root / "vmlinux"),
                                      ("rootfs", args.rootfs, root / "rootfs.ext4")):
         report["staged_files"][name] = "unknown"
         shutil.copyfile(source, destination)
-        destination.chmod(0o700 if name == "server" else 0o644)
+        destination.chmod(0o400)
         require(digest(destination) == report["hashes"][name], "hash_mismatch")
         metadata = destination.lstat()
         report["private_staged"][name] = {"device": metadata.st_dev, "inode": metadata.st_ino,
-                                          "bytes": metadata.st_size}
+            "bytes": metadata.st_size,'owner':metadata.st_uid,'path':str(destination),
+            'parent_device':destination.parent.stat().st_dev,'parent_inode':destination.parent.stat().st_ino}
         report["staged_files"][name] = "retained"
 
     disk_bytes = args.rootfs.stat().st_size
@@ -348,9 +441,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         "firecracker": str(args.firecracker), "chroot_base": str(root / "jails"),
         "kernel": str(root / "vmlinux"), "rootfs": str(root / "rootfs.ext4"),
         "uid_base": args.uid_base, "vcpu_count": 1,
-        "memory_mib": 512, "file_policy_digest": 1, "bind": f"127.0.0.1:{port}",
-        "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": owner_key}, {"tenant": 2, "secret": foreign_key}],
+        "memory_mib": 512, "file_policy_digest": 1,
         "max_active_global": 2, "max_active_per_tenant": 2,
         "max_disk_bytes_global": disk_bytes * 6, "max_disk_bytes_per_tenant": disk_bytes * 4,
         "cleanup_reserve_bytes": disk_bytes, "max_timeout_secs": 600,
@@ -361,8 +452,30 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
     # explicit fixture upload budget; it is not an SDK or product default.
     config["data_transfer"]["file_upload_bytes"] = 8 * 1024 * 1024
     provision_runtime(config)
-    write_once(root / "config.json", config)
-    report["hashes"]["service_config"] = digest(root / "config.json")
+    binding=descriptor('base',root/'vmlinux',root/'rootfs.ext4',1,512)
+    catalog=dict(templates=[binding],aliases={'base':'base'},compute_limits=dict(
+        max_vcpus_global=2,max_vcpus_per_tenant=2,max_memory_bytes_global=2*768*1024**2,
+        max_memory_bytes_per_tenant=2*768*1024**2))
+    config['templates']=catalog
+    services=RuntimeServices.prepare(args,root,[config],[catalog],owner_key,f'127.0.0.1:{port}',
+        args.service_cgroup_record,job_count=EXPECTED_SANDBOXES,extra_credentials=[dict(tenant=2,secret=foreign_key)],
+        registry_config=dict(root=str(root/'unused-registry'),max_templates_global=1,max_templates_per_tenant=1,
+            max_artifact_bytes_global=disk_bytes+args.kernel.stat().st_size,
+            max_artifact_bytes_per_tenant=disk_bytes+args.kernel.stat().st_size,validation_timeout_secs=60))
+    for name in ('center','host'):
+        role=services.processes.bindings['host-0' if name=='host' else name]
+        path=Path(role['binary'])
+        info=path.lstat()
+        report['private_staged'][name]=dict(device=info.st_dev,inode=info.st_ino,bytes=info.st_size,
+            owner=role['uid'],path=str(path),parent_device=path.parent.stat().st_dev,
+            parent_inode=path.parent.stat().st_ino)
+        report['staged_files'][name]='retained'
+    budget=root/'service-budgets.json'
+    write_once(budget,services.native_pools[0]['bounded_host']['physical_storage'])
+    config_receipt={name:digest(Path(role['config'])) for name,role in services.processes.bindings.items()}
+    report['hashes']['service_config']=hashlib.sha256(json.dumps(config_receipt,sort_keys=True,
+        separators=(',',':')).encode()).hexdigest()
+    return services
 
 
 def kill_one(opener, base_url, owner_key, ident):
@@ -378,39 +491,57 @@ def kill_one(opener, base_url, owner_key, ident):
     require(status in (204, 404), "cleanup_failed")
 
 
-def cleanup(root, namespace, args, opener, base_url, owner_key, process, report):
+def cleanup(root, namespace, args, opener, base_url, owner_key, services, report):
     _require_assertions(Failure)
     """Attempt every observed exact persistent identity even after another fails."""
     report["cleanup"] = "unknown"
     require(report.get("probe_reaped", True), "identity_unknown")
-    observed = {ident: None for ident in report.get("identities", [])}
-    require(all(valid_sandbox_id(ident, namespace) for ident in observed), "identity_unknown")
+    observed = dict(report.get('global_identities',{}))
     attempted = set()
-    def attempt_known(identities):
-        for ident in sorted(set(identities) - attempted):
-            attempted.add(ident)
+    deadline=time.monotonic()+30
+    while True:
+        center=services.planned_audit('center')
+        records={row['create']['identity']['sandbox_id']:row for row in center['sandboxes']
+                 if row['private'] is False and row['create']['identity']['tenant_id']=='1'}
+        require(len(records)<=EXPECTED_SANDBOXES,'identity_unknown')
+        for ident,row in records.items():
+            identity=row['create']['identity']
+            require(ident not in observed or observed[ident]==identity,'identity_unknown')
+            observed[ident]=identity
+        report['global_identities']=dict(observed)
+        report['known_sandboxes']=len(observed)
+        # Original terminal confirmation is independent of HTTP 204/404 and
+        # native SQL retirement. Never resend an already dispatched Destroy.
+        host_audit=services.planned_audit('host-0')
+        terminals={ident:terminal_result(center,host_audit,identity)
+                   for ident,identity in observed.items()}
+        for ident in sorted(observed):
+            if terminals[ident] is not None or ident in attempted:
+                continue
+            row=records.get(ident)
+            if row is None:
+                continue  # Missing original record is UNKNOWN, not Cleaned.
+            latest=row['operations'][-1]['intent'] if row['operations'] else None
+            if latest is not None and latest['kind']=='destroy':
+                attempted.add(ident)
+                continue
+            attempted.add(ident)  # Mark BEFORE the one original HTTP request.
             try:
-                require(process is not None and process.poll() is None, "server_exited")
-                kill_one(opener, base_url, owner_key, ident)
+                services.wait_ready(for_admission=False)
+                kill_one(opener,base_url,owner_key,ident)
             except Exception as error:
-                record_failure(report, "cleanup", error, cleanup=True)
-    # Previously validated persistent identities remain usable if the DB later
-    # becomes unavailable. Its loss still prevents a cleanup confirmation.
-    attempt_known(observed)
-    # A late committed create is discovered without replaying the creating probe.
-    for _ in range(EXPECTED_SANDBOXES + 1):
-        rows = durable_rows(root / "db/controller.db", namespace)
-        require(set(observed).issubset(rows), "identity_unknown")
-        observed = rows
-        report["known_sandboxes"] = len(rows)
-        report["identities"] = sorted(rows)
-        if not set(rows) - attempted:
+                record_failure(report,'cleanup',error,cleanup=True)
+        if all(terminals.values()):
             break
-        attempt_known(rows)
-    wait_for_destroyed(root / "db/controller.db", namespace, observed)
+        require(time.monotonic()<deadline,'terminal_state_invalid')
+        time.sleep(.2)
+    native=dict(report.get('global_native',{}))
+    require(set(native)==set(observed),'identity_unknown')
+    report['identities']=sorted(native.values())
+    wait_for_destroyed(root / 'db/controller.db',namespace,native.values())
     report["known_claims"] = assert_no_exact_resources(
         root, namespace, args.uid_base, args.firecracker.name)
-    require(process is not None and process.poll() is None, "server_exited")
+    require(all(child.poll() is None for child in services.processes.children.values()),'server_exited')
     require(not report["cleanup_errors"], "cleanup_failed")
     if len(observed) == EXPECTED_SANDBOXES:
         require(report["known_claims"] == EXPECTED_SANDBOXES, "resource_unknown")
@@ -419,12 +550,12 @@ def cleanup(root, namespace, args, opener, base_url, owner_key, process, report)
     require(not report["failures"] or len(observed) == EXPECTED_SANDBOXES, "identity_unknown")
     report["cleanup"] = "confirmed"
     report["phases"]["cleanup"] = "pass"
-    return set(observed)
+    return set(native.values())
 
 
 def unchanged(args, root, report):
     _require_assertions(Failure)
-    for name in ("server", "kernel", "rootfs", "jailer", "firecracker"):
+    for name in ("center", "host", "candidate_manifest", "kernel", "rootfs", "jailer", "firecracker"):
         require(digest(getattr(args, name)) == report["hashes"][name], "hash_mismatch")
     require(digest(root / "rootfs.ext4") == report["hashes"]["rootfs"], "hash_mismatch")
     for name, path in SOURCE_FILES.items():
@@ -434,47 +565,60 @@ def unchanged(args, root, report):
 
 def remove_staged_copies(root, report):
     _require_assertions(Failure)
-    """After successful shutdown/audit, unlink only the three exact staged copies."""
+    """After successful shutdown/audit, unlink only the four registered copies."""
     report["staged_copies"] = "unknown"
-    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    files = (("server", "sandproof-server"), ("kernel", "vmlinux"), ("rootfs", "rootfs.ext4"))
+    files=tuple((name,Path(report['private_staged'][name]['path'])) for name in
+                ('center','host','kernel','rootfs'))
     try:
         with ExitStack() as opened:
             validated = {}
             # Validate the complete set before removing any file. Retain all
             # available copies when one target has changed or cannot be observed.
-            for name, filename in files:
+            directories={}
+            for name, path in files:
                 report["staged_files"][name] = "unknown"
                 expected = report["private_staged"][name]
-                fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+                directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+                opened.callback(os.close,directory)
+                parent=os.fstat(directory)
+                expected_name={'center':'sandproof-center','host':'sandproof-host',
+                    'kernel':'vmlinux','rootfs':'rootfs.ext4'}[name]
+                require(path.name==expected_name and path.resolve(strict=True)==path
+                        and parent.st_uid==expected['owner'] and not parent.st_mode&0o077
+                        and (parent.st_dev,parent.st_ino)==(expected['parent_device'],expected['parent_inode']),
+                        'identity_unknown')
+                directories[name]=directory
+                fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
                 source = opened.enter_context(os.fdopen(fd, "rb"))
                 info = os.fstat(source.fileno())
                 require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
-                        and info.st_uid == os.geteuid()
+                        and info.st_uid == expected['owner']
                         and (info.st_dev, info.st_ino, info.st_size) ==
                         (expected["device"], expected["inode"], expected["bytes"]), "identity_unknown")
                 require(hashlib.file_digest(source, "sha256").hexdigest() == report["hashes"][name],
                         "hash_mismatch")
                 validated[name] = info
                 report["staged_files"][name] = "retained"
-            for name, filename in files:
+            for name, path in files:
                 info = validated[name]
-                current = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+                directory=directories[name]
+                current = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
                 require(stat.S_ISREG(current.st_mode) and current.st_nlink == 1
                         and (current.st_dev, current.st_ino, current.st_size) ==
                         (info.st_dev, info.st_ino, info.st_size), "identity_unknown")
                 report["staged_files"][name] = "unknown"
-                os.unlink(filename, dir_fd=directory)
+                os.unlink(path.name, dir_fd=directory)
                 report["staged_files"][name] = "removed"
-            os.fsync(directory)
-    finally:
-        os.close(directory)
+            for directory in directories.values():
+                os.fsync(directory)
+    except BaseException:
+        raise
     report["staged_copies"] = "removed"
 
 
 def run_profile(args, root, report):
     _require_assertions(Failure)
-    process = None
+    services = None
     started = False
     identities = None
     namespace = report["private_identity"]["namespace"]
@@ -488,29 +632,42 @@ def run_profile(args, root, report):
         stage = "prepare"
         port = free_loopback_port()
         base_url = f"http://127.0.0.1:{port}"
-        prepare(args, root, namespace, owner_key, foreign_key, port, report)
+        services=prepare(args, root, namespace, owner_key, foreign_key, port, report)
         report["phases"][stage] = "pass"
         # Durable provenance before launching any service that can create VMs.
         write_once(root / "ready.json", report)
         stage = "server_start"
         started = True
         report["cleanup"] = "unknown"
-        process = start_server(root / "sandproof-server", root / "config.json", root / "server.log", None)
+        services.start()
         report["kvm"] = "attempted"
-        wait_ready(opener, base_url, owner_key, process)
+        services.wait_ready()
+        run_identity=hashlib.sha256((report['run_id']+report['commit']).encode()).hexdigest()
+        execution,processes=services.execution(run_identity,root/'service-budgets.json')
+        write_once(root/'execution-manifest.json',execution)
+        report['execution_manifest']=execution
+        report['private_candidate_manifest']=services.manifest
+        report['service_processes']=processes
+        report['hashes']['execution_manifest']=digest(root/'execution-manifest.json')
+        report['services']=execution['services']
+        report['service_boundary']=dict(public_api='center',center_unprivileged=True,
+            redis_authority='validated',host_transport='mutual-tls',host_public_management=False)
         report["phases"][stage] = "pass"
         for name in PROBES:
             stage = name
             report["probes"][name] = run_probe(
-                root, name, base_url, probe_environment(owner_key, foreign_key, root), namespace)
+                root, name, base_url, probe_environment(owner_key, foreign_key, root), namespace,
+                services=services,report=report)
             report["kvm"] = "executed"
-            require(process.poll() is None, "server_exited")
+            require(all(child.poll() is None for child in services.processes.children.values()),'server_exited')
             report["phases"][stage] = "pass"
         stage = "terminal_state"
         rows = durable_rows(root / "db/controller.db", namespace)
         report["known_sandboxes"] = len(rows)
         report["identities"] = sorted(rows)
         require(len(rows) == EXPECTED_SANDBOXES, "terminal_state_invalid")
+        require(set(report.get('global_identities',{}))==set(report.get('global_native',{}))
+                and len(report.get('global_identities',{}))==EXPECTED_SANDBOXES,'identity_unknown')
         wait_for_destroyed(root / "db/controller.db", namespace, rows)
         report["phases"][stage] = "pass"
         stage = "resource_audit"
@@ -530,7 +687,7 @@ def run_profile(args, root, report):
         try:
             if started:
                 try:
-                    identities = cleanup(root, namespace, args, opener, base_url, owner_key, process, report)
+                    identities = cleanup(root, namespace, args, opener, base_url, owner_key, services, report)
                 except BaseException as error:
                     record_failure(report, "cleanup", error, cleanup=True)
                     report["cleanup"] = "unknown"
@@ -539,7 +696,8 @@ def run_profile(args, root, report):
                 report["cleanup"] = "not_created"
         finally:
             try:
-                stop_server(process)
+                if services is not None:
+                    services.stop_all()
                 report["phases"]["server_stop"] = "pass"
             except BaseException as error:
                 record_failure(report, "server_stop", error, cleanup=True)
@@ -559,6 +717,8 @@ def run_profile(args, root, report):
     if not report["failures"] and not report["cleanup_errors"]:
         try:
             remove_staged_copies(root, report)
+            require(services is not None,'identity_unknown')
+            services.cleanup_staging()
             report["phases"]["artifact_cleanup"] = "pass"
             report["status"] = "pass"
         except BaseException as error:
@@ -636,11 +796,13 @@ def exercise(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export-run", type=Path, help="read-only safe summary; no resume or cleanup")
-    for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "host-config"):
+    for name in ("center","host","candidate-manifest","redis-material","tls-material",
+                 "service-staging-parent","service-cgroup-record","jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "host-config"):
         parser.add_argument("--" + name, type=Path)
     parser.add_argument("--uid-base", type=int)
     parser.add_argument("--expected-commit")
-    parser.add_argument("--server-sha256")
+    for name in ('center-uid','center-gid','redis-uid','redis-gid'):
+        parser.add_argument('--'+name,type=int)
     args = parser.parse_args(argv)
     if args.export_run is not None:
         try:
@@ -648,13 +810,14 @@ def main(argv=None):
             print(json.dumps(result, indent=2))
             return 0 if result["status"] == "pass" else 1
         except (OSError, ValueError, TypeError, Failure):
-            print(json.dumps({"schema_version": 1, "profile": "c02", "status": "fail",
+            print(json.dumps({"schema_version": 2, "profile": "c02", "status": "fail",
                               "cleanup": "unknown", "error": "report_unavailable"}))
             return 1
-    required = ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch_parent", "host_config",
-                "uid_base", "expected_commit", "server_sha256")
+    required = ("center","host","candidate_manifest","redis_material","tls_material","service_staging_parent",
+                "service_cgroup_record","center_uid","center_gid","redis_uid","redis_gid", "jailer", "firecracker", "kernel", "rootfs", "scratch_parent", "host_config",
+                "uid_base", "expected_commit")
     if any(getattr(args, name) is None for name in required):
-        parser.error("execution requires existing artifact flags plus --host-config, --expected-commit and --server-sha256")
+        parser.error("execution requires the exact center/host manifest, fixed Redis/TLS/role inputs and approved host profile")
     return exercise(args)
 
 

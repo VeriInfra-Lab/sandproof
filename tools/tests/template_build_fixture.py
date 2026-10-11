@@ -11,8 +11,17 @@ from pathlib import Path
 import subprocess
 
 from tools.template_build_store import BuildStore, MIB
+from tools.template_build_client import BuildClient
 
 ROOT = Path(__file__).resolve().parents[2]
+PRIVATE_TEST_KEY = 'private-build-test-credential-000001'
+
+
+class PrivateBuildClient(BuildClient):
+    """Explicit protected helper caller in tests, not an alternative product CLI."""
+    def headers(self):
+        owner = {'owner': '1', 'synthetic': '1', 'other': '2'}.get(self.key, self.key)
+        return {'x-sandproof-build-key': PRIVATE_TEST_KEY, 'x-sandproof-build-owner': owner}
 
 
 def bounded_config(helper):
@@ -53,7 +62,7 @@ def complete_pool_policy(root, runtime, builder, config):
     from tools.tests.test_template_build_config import transfer_settings
     from tools.tests.test_template_physical_storage import activate_for_test
     kernel = Path(runtime['kernel'])
-    registry = runtime['template_registry']
+    registry = config['registry']
     registry.setdefault('max_templates_global', config['limits']['max_jobs'])
     config['bounded_builds'] = bounded_config(synthetic_helper())
     pools = []
@@ -76,14 +85,15 @@ def complete_pool_policy(root, runtime, builder, config):
                 *(item['kernel']['size_bytes'] for item in settings['templates'].get('templates', []))),
             'runtime_copy_bytes': kernel.stat().st_size, 'cleanup_reserve_bytes': settings['cleanup_reserve_bytes'],
             'host_metadata_bytes': MIB, 'host_metadata_inodes': 32, 'jail_inodes_per_slot': 12})
-    builder['build_retry_windows'] = {'window_duration_ms': 600000, 'max_anchors': 4}
     inode_budget = 8 + 19 * config['limits']['max_jobs'] + 5 * registry['max_templates_global']
     profile = {'version': 1, 'coordination_file': str(root / 'physical-profile'), 'pools': pools,
-        'public_build': {'root': config['root'], 'registry_root': registry['root'],
+        'public_build': {'workspace_owner_uid': os.geteuid(), 'registry_owner_uid': os.geteuid(), 'root': config['root'], 'registry_root': registry['root'],
             'workspace_bytes': config['limits']['workspace_bytes'],
             'registry_bytes': registry['max_artifact_bytes_global'] + registry['max_templates_global'] * (65536 + 87),
             'max_jobs': config['limits']['max_jobs'], 'max_templates': registry['max_templates_global'],
             'inode_budget': inode_budget},
+        'host_template_caches': [],
+        'service_data': [],
         'filesystem_overhead_bytes': (inode_budget + 512) * MIB,
         'filesystem_overhead_inodes': inode_budget + 512}
     for settings in (runtime, builder):

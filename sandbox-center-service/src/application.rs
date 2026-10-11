@@ -127,8 +127,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         };
         options.validate().map_err(|_| PortError::Invalid)?;
         let now = self.now()?;
-        let binding =
-            crate::create_binding::create_binding(&template, &options, timeout, now, &self.config)?;
+        let binding = crate::create_binding::create_binding(
+            &template,
+            &options,
+            timeout,
+            now,
+            (&self.config).into(),
+        )?;
         let request = self
             .authority
             .lock()

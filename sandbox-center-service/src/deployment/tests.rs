@@ -139,7 +139,9 @@ impl Fixture {
             b"private-build-config-test-credential-0001",
         );
         config["private_builds"] = json!({"windows":{"max_open_windows":2,"max_duration_ms":60000},
-            "window_duration_ms":5000,"max_anchors":1,"builder_revision":"builder-r1"});
+            "window_duration_ms":5000,"max_anchors":1,"builder_revision":"builder-r1",
+            "policy":{"max_timeout_secs":600,"max_lifetime_secs":900,
+                      "startup_timeout_secs":30,"public_ipv4_enabled":true}});
         config["private_build_boundary"] = json!({"bind":"127.0.0.1:9200","backend_address":"127.0.0.1:9201",
             "credential_file":self.root.path().join("build.key"),"request_timeout_ms":60000,
             "max_request_bytes":65536,"max_response_bytes":409_600});

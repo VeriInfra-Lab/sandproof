@@ -29,7 +29,8 @@ def line(process, timeout=20):
     return json.loads(value)
 
 
-def exercise(parent, evidence):
+def exercise(parent, evidence, *, service_uid=None, service_gid=None):
+    service_identity = cg.service_identity(service_uid, service_gid)
     checkout = Path(__file__).resolve().parents[2]
     if subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain']).strip():
         raise ValueError('clean reviewed commit required')
@@ -44,12 +45,13 @@ def exercise(parent, evidence):
     record, sentinel_record = evidence / 'load.json', evidence / 'sentinel.json'
     tag = 'svc-probe-' + os.urandom(8).hex()
     result = {'commit': commit, 'status': 'running', 'scope': 'kernel enforcement only; no real service/relay/VM',
-              'parent': str(parent), 'cases': [], 'records': [str(record), str(sentinel_record)]}
+              'parent': str(parent), 'cases': [], 'records': [str(record), str(sentinel_record)],
+              'non_root_launcher': 'not_run'}
     children, records = [], []
     def save():
         (evidence / 'report.json').write_text(json.dumps(result, indent=2) + '\n')
-    def launch(record, program):
-        p = subprocess.Popen([*cg.prefix(record), sys.executable, '-u', '-c', program],
+    def launch(record, program, *, uid=None, gid=None):
+        p = subprocess.Popen([*cg.prefix(record, uid=uid, gid=gid), sys.executable, '-u', '-c', program],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         children.append(p)
         return p
@@ -58,6 +60,49 @@ def exercise(parent, evidence):
         for destination, suffix, quota in ((record, 'load', 20000), (sentinel_record, 'sentinel', 10000)):
             cg.prepare(parent, tag + '-' + suffix, destination, cpu_quota_us=quota, memory_bytes=64 * 1024**2)
             records.append(destination)
+        if service_identity is not None:
+            # The evidence is deliberately root/0700. The child must be unable
+            # to read this TEST-ONLY marker; no production credential is used.
+            marker = evidence / 'host-private-marker'
+            marker.write_text('test-only-no-credential\n')
+            marker.chmod(0o600)
+            identity_code = ('import json,os,sys\nfrom pathlib import Path\n'
+                'status=dict(line.split(":",1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)\n'
+                'value={"pid":os.getpid(),"uids":list(os.getresuid()),"gids":list(os.getresgid()),"groups":os.getgroups(),'
+                '"filesystem_uid":status["Uid"].split(),"filesystem_gid":status["Gid"].split(),'
+                '"capabilities":{key:status[key].strip() for key in ("CapInh","CapPrm","CapEff","CapAmb")}}\n')
+            child_code = identity_code + 'print(json.dumps(value),flush=True); sys.stdin.readline()\n'
+            program = (identity_code + 'import subprocess\n'
+                f'p=subprocess.Popen([sys.executable,"-u","-c",{child_code!r}],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)\n'
+                'try:\n'
+                ' child=json.loads(p.stdout.readline())\n'
+                ' denied=False\n'
+                f' try: Path({str(marker)!r}).read_bytes()\n'
+                ' except PermissionError: denied=True\n'
+                ' print(json.dumps({"parent":value,"child":child,"host_private_denied":denied}),flush=True)\n'
+                ' sys.stdin.readline()\n'
+                'finally:\n'
+                ' p.stdin.close(); p.wait(timeout=5)\n')
+            dropped = launch(record, program, uid=service_uid, gid=service_gid)
+            actual = line(dropped)
+            assert actual['parent']['pid'] == dropped.pid
+            assert actual['host_private_denied'] is True
+            for role in ('parent', 'child'):
+                identity = actual[role]
+                assert identity['uids'] == [service_uid] * 3
+                assert identity['gids'] == [service_gid] * 3
+                assert identity['filesystem_uid'] == [str(service_uid)] * 4
+                assert identity['filesystem_gid'] == [str(service_gid)] * 4
+                assert identity['groups'] == []
+                assert all(value == '0000000000000000' for value in identity['capabilities'].values())
+            original = cg.observe(record, pids=[actual['parent']['pid'], actual['child']['pid']])
+            dropped.stdin.write('stop\n'); dropped.stdin.flush()
+            assert dropped.wait(timeout=10) == 0
+            after_drop = cg.observe(record)
+            assert not after_drop['pids'] and not after_drop['populated']
+            result['non_root_launcher'] = {'status': 'passed', 'identity': actual,
+                                          'original_cgroup': original, 'cleanup': after_drop}
+            result['cases'].append('non-root-saved-filesystem-ids-zero-capabilities-and-inherited-cgroup')
         sentinel = launch(sentinel_record, 'import json,os,sys; print(json.dumps({"pid":os.getpid()})); sys.stdin.readline()')
         assert line(sentinel)['pid'] == sentinel.pid
         initial = cg.observe(sentinel_record, pids=[sentinel.pid])
@@ -146,5 +191,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--parent', type=Path, required=True)
     parser.add_argument('--evidence', type=Path, required=True)
+    parser.add_argument('--service-uid', type=int, help='explicit approved non-system UID for the real privilege-drop probe')
+    parser.add_argument('--service-gid', type=int, help='required together with --service-uid; supplementary groups are cleared')
     args = parser.parse_args()
-    print(json.dumps(exercise(args.parent, args.evidence)))
+    print(json.dumps(exercise(args.parent, args.evidence,
+                             service_uid=args.service_uid, service_gid=args.service_gid)))

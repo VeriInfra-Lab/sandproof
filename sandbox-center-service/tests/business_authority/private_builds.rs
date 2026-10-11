@@ -9,6 +9,22 @@ use sandproof_protocol::internal::{lifecycle::Intent, window::WindowCloseAck};
 use std::sync::Arc;
 
 fn provision(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
+    provision_with_policy(
+        fixture,
+        proxy,
+        sandproof_center_service::LifecyclePolicy {
+            max_timeout_secs: 5,
+            max_lifetime_secs: 5,
+            startup_timeout_secs: 1,
+            public_ipv4_enabled: false,
+        },
+    )
+}
+fn provision_with_policy(
+    fixture: &Engine,
+    proxy: &reply_loss::ReplyLoss,
+    policy: sandproof_center_service::LifecyclePolicy,
+) -> SharedBusinessAuthority {
     let mut original = serde_json::to_value(envelope()).unwrap();
     let builder = wire::node("builder-a");
     let binding = descriptor("builder-base", None);
@@ -18,6 +34,7 @@ fn provision(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessA
         max_anchors: 2,
         builder_revision: "builder-r1".try_into().unwrap(),
         builder_digest: binding.canonical_digest().unwrap(),
+        policy,
     };
     original["metadata"]["private_builds"] = serde_json::json!({"config":config,"windows":{"limits":config.windows,"issued_through":null,"time_floor_ms":0,"open":[]},"anchors":[]});
     original["metadata"]["catalog"]["templates"]
@@ -352,5 +369,162 @@ fn actual_private_driver_reuses_global_lifecycle_and_original_token_but_never_pu
     assert_eq!(
         business.snapshot().unwrap().center.identity_frontiers().0,
         1
+    );
+}
+
+#[test]
+fn actual_builder_policy_does_not_widen_runtime_network_or_lifetime_limits() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let policy = sandproof_center_service::LifecyclePolicy {
+        max_timeout_secs: 600,
+        max_lifetime_secs: 900,
+        startup_timeout_secs: 60,
+        public_ipv4_enabled: true,
+    };
+    let business = provision_with_policy(&fixture, &proxy, policy);
+    let (_, app, _) = super::templates::application(&business, true);
+    let app = Arc::new(app);
+    let port = CenterBuildPort::new(app.clone());
+    let window = port.issue_build_window("8").unwrap();
+    let vm = port
+        .build_vm(
+            "8",
+            &candidate().candidate_id,
+            Some(BuildVmRequest {
+                request_window: Some(window.request_window.clone()),
+                timeout: 600,
+                allow_internet_access: true,
+            }),
+        )
+        .unwrap();
+    assert_eq!(vm.state, "Running");
+    let snapshot = business.snapshot().unwrap();
+    let original = &snapshot.metadata.private_build_anchors()[0].original_create;
+    assert_eq!(original.identity.node, wire::node("builder-a"));
+    assert_eq!(original.create.timeout_ms, 600_000);
+    assert_eq!(original.create.max_lifetime_ms, 900_000);
+    assert_eq!(original.create.startup_deadline_ms, 60_000);
+    let options: CreateOptions = serde_json::from_slice(&original.create.options).unwrap();
+    assert_eq!(
+        options.networking.unwrap().allow_internet_access,
+        Some(true)
+    );
+    let public = sandproof_controller_service::application::CreateCommand {
+        template_id: "base".into(),
+        timeout: Some(300),
+        env_vars: None,
+        metadata: None,
+        allow_internet_access: Some(true),
+        network: None,
+    };
+    assert!(matches!(
+        app.create("8", public.clone()),
+        Err(PortError::Invalid)
+    ));
+    assert!(matches!(
+        app.create(
+            "8",
+            sandproof_controller_service::application::CreateCommand {
+                timeout: Some(600),
+                allow_internet_access: Some(false),
+                ..public
+            }
+        ),
+        Err(PortError::Invalid)
+    ));
+    assert_eq!(
+        business.snapshot().unwrap().center.identity_frontiers().0,
+        1
+    );
+    let mut lifecycle = business.clone();
+    AuthorityPort::recover(&mut lifecycle).unwrap();
+    let recovered = business.snapshot().unwrap();
+    assert_eq!(
+        recovered.metadata.private_build_config().unwrap().policy,
+        policy
+    );
+    assert!(recovered.metadata.registration_matches(&snapshot.metadata));
+    let mut changed = serde_json::to_value(&snapshot.metadata).unwrap();
+    changed["private_builds"]["config"]["policy"]["max_lifetime_secs"] = serde_json::json!(901);
+    let changed: RegistryMetadata = serde_json::from_value(changed).unwrap();
+    assert!(!recovered.metadata.registration_matches(&changed));
+}
+
+#[test]
+fn actual_disabled_builder_network_rejects_before_global_admission() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let business = provision(&fixture, &proxy);
+    let (_, app, _) = super::templates::application(&business, true);
+    let port = CenterBuildPort::new(Arc::new(app));
+    let window = port.issue_build_window("8").unwrap();
+    assert!(matches!(
+        port.build_vm(
+            "8",
+            &candidate().candidate_id,
+            Some(BuildVmRequest {
+                request_window: Some(window.request_window),
+                timeout: 5,
+                allow_internet_access: true,
+            })
+        ),
+        Err(PortError::Invalid)
+    ));
+    assert_eq!(
+        business.snapshot().unwrap().center.identity_frontiers(),
+        (0, 0)
+    );
+}
+
+#[test]
+fn actual_static_runtime_and_builder_catalog_do_not_consume_dynamic_publication_quota() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let business = provision(&fixture, &proxy);
+    assert_eq!(
+        business
+            .snapshot()
+            .unwrap()
+            .metadata
+            .registry()
+            .config()
+            .max_templates_global,
+        2
+    );
+    for (number, owner) in [(1_u64, 8_u64), (2, 9)] {
+        let mut value = candidate();
+        value.candidate_id = format!("{number:032x}");
+        value.binding = descriptor(&format!("tpl-{}", value.candidate_id), Some(owner));
+        business
+            .begin_publication(value, format!("candidate-{number}-r1").try_into().unwrap())
+            .unwrap();
+    }
+    assert_eq!(
+        business
+            .snapshot()
+            .unwrap()
+            .metadata
+            .registry()
+            .records()
+            .len(),
+        2
+    );
+    let mut third = candidate();
+    third.candidate_id = format!("{:032x}", 3);
+    third.binding = descriptor(&format!("tpl-{}", third.candidate_id), Some(10));
+    assert_eq!(
+        business.begin_publication(third, "candidate-3-r1".try_into().unwrap()),
+        Err(PortError::QuotaExceeded)
+    );
+    assert_eq!(
+        business
+            .snapshot()
+            .unwrap()
+            .metadata
+            .registry()
+            .records()
+            .len(),
+        2
     );
 }

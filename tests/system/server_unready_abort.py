@@ -14,6 +14,7 @@ _require_assertions()
 
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -27,9 +28,10 @@ import time
 import urllib.request
 
 from server_process_crash import (
-    complete_runtime, fetch, free_loopback_port, process_start_ticks, provision_runtime,
-    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
+    fetch, free_loopback_port, interrupted_host_request, original_create_identity,
+    prepare_fault_services, process_start_ticks, terminal_cleanup_confirmed,
 )
+from _runtime_services import add_arguments
 
 
 def sha256_file(path: Path) -> str:
@@ -64,9 +66,6 @@ def exercise(args: argparse.Namespace) -> None:
     port = free_loopback_port()
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
-    binary = root / "sandproof-server"
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
     shutil.copyfile(args.kernel, kernel)
@@ -80,7 +79,6 @@ def exercise(args: argparse.Namespace) -> None:
         image.write(bytes(4096))
         image.flush()
         os.fsync(image.fileno())
-    config = root / "config.json"
     settings = {
         "namespace": namespace,
         "database": str(root / "db/controller.db"),
@@ -94,9 +92,6 @@ def exercise(args: argparse.Namespace) -> None:
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
-        "bind": f"127.0.0.1:{port}",
-        "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": key}],
         "max_active_global": 2,
         "max_active_per_tenant": 2,
         "max_disk_bytes_global": disk_bytes * 3,
@@ -107,29 +102,29 @@ def exercise(args: argparse.Namespace) -> None:
         "startup_timeout_secs": 5,
         "expiry_scan_seconds": 1,
     }
-    settings = complete_runtime(settings, slots=2)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
     if args.cgroup_parent is not None:
-        configured = json.loads(config.read_text())
-        configured['host_resources'] = {
+        settings['host_resources'] = {
             'cgroup_parent': str(args.cgroup_parent.resolve(strict=True)),
             'memory_max_bytes': args.host_memory_max_bytes,
         }
-        config.write_text(json.dumps(configured))
-    log = root / "server.log"
+    # This descriptor is made AFTER corrupting only the controlled private
+    # kernel. A hash-valid but unbootable artifact tests native lifecycle
+    # failure; a post-cache mutation would rightly be refused before any VM.
+    services = prepare_fault_services(args, root, settings, slots=2, key=key, port=port)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     base_url = f"http://127.0.0.1:{port}"
     process = None
+    requests = ThreadPoolExecutor(max_workers=1)
+    metadata = {"unready_abort_intent": secrets.token_hex(16)}
     completed = False
     try:
-        process = start_server(binary, config, log, "abort_prepare")
-        wait_ready(opener, base_url, key, process)
-        status, _ = fetch(opener, base_url, "POST", "/v2/sandboxes", key, {
+        services.start(host_envs={"host-0": {"SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION": "abort_prepare"}})
+        services.wait_ready(for_admission=False)
+        process = services.processes.children["host-0"]
+        request = requests.submit(fetch, opener, base_url, "POST", "/v2/sandboxes", key, {
             "templateID": "base", "timeout": 5, "allow_internet_access": False,
+            "metadata": metadata,
         })
-        assert status >= 500, f"invalid kernel was published: HTTP {status}"
         claim = root / "jails/.claims" / vm_name
         record = json.loads(wait_for(
             lambda: (claim / "record.json").read_text() if (claim / "record.json").exists() else None,
@@ -154,6 +149,9 @@ def exercise(args: argparse.Namespace) -> None:
             assert membership == '0::/' + str(cgroup.relative_to('/sys/fs/cgroup'))
             cgroup_evidence = {'inode': binding['inode'], 'limits': limits, 'membership': membership}
         assert process.wait(timeout=30) == 86, "debug exit after exact abort did not fire"
+        interrupted_host_request(lambda: request.result(timeout=45), process)
+        identity = original_create_identity(services, metadata)
+        native_id = services.native_id_for(identity["sandbox_id"])
         assert process_start_ticks(pid) != ticks, "exact VMM survived durable abort"
         marker = claim / "failed-prepare.json"
         assert marker.is_file(), "physical reclaim marker missing before receipt"
@@ -169,11 +167,10 @@ def exercise(args: argparse.Namespace) -> None:
         assert sum(b'"Compensate"' in row for row in inputs) == 1
         assert actions == ["dispatched"], actions
 
-        process = start_server(binary, config, log, None)
-        wait_ready(opener, base_url, key, process)
+        process = services.processes.start("host-0")
+        services.wait_ready(for_admission=False)
 
-        sandbox_id = f"sb-{namespace}-1"
-        wait_for(lambda: terminal_cleanup_confirmed(root / "db/controller.db", sandbox_id),
+        wait_for(lambda: terminal_cleanup_confirmed(root / "db/controller.db", native_id),
                  20, "failed terminal publication or exact quiescent retirement")
         status, body = fetch(opener, base_url, "GET", "/v2/sandboxes", key)
         assert status == 200 and json.loads(body) == [], (status, body)
@@ -193,7 +190,8 @@ def exercise(args: argparse.Namespace) -> None:
         completed = True
         print(json.dumps({
             "scope": "real VMM, unready boot, durable deadline abort, receipt-loss restart",
-            "binary_sha256": sha256_file(binary),
+            "host_sha256": sha256_file(args.host),
+            "center_sha256": sha256_file(args.center),
             "base_sha256": base_digest,
             "resource_id": vm_name,
             "pid": pid,
@@ -206,8 +204,10 @@ def exercise(args: argparse.Namespace) -> None:
             "residual": "no exact process, jail or network namespace; base disk unchanged",
         }))
     finally:
-        stop_server(process)
+        services.stop_all()
+        requests.shutdown(wait=True, cancel_futures=True)
         if completed and not args.keep_artifacts:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             outcome = 'completed' if completed else 'failed'
@@ -216,7 +216,7 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", required=True, type=Path)
+    add_arguments(parser)
     parser.add_argument("--jailer", required=True, type=Path)
     parser.add_argument("--firecracker", required=True, type=Path)
     parser.add_argument("--kernel", required=True, type=Path)

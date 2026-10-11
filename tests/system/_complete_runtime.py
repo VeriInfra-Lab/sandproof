@@ -115,6 +115,8 @@ def complete_runtime(settings, *, slots, file_size=None):
                 "host_metadata_inodes": metadata_inodes, "jail_inodes_per_slot": 12,
             }],
             "public_build": None,
+            "host_template_caches": [],
+            "service_data": [],
             "filesystem_overhead_bytes": 16 * MIB * slots,
             "filesystem_overhead_inodes": 2048 * slots,
         },

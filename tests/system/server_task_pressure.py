@@ -37,11 +37,10 @@ from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_command_input import call
 from sdk_server_smoke import options
 from sdk_task_global_pressure import exercise as pressure
-from server_process_crash import (
-    complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
-    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
-)
-from server_templates import record_for
+from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
+from _runtime_services import RuntimeServices, add_arguments
+from server_process_crash import free_loopback_port, process_start_ticks
+from server_templates import descriptor, record_for
 
 
 MIB = 1024 * 1024
@@ -95,11 +94,18 @@ def process_tree(server_pid, server_ticks, vm_pids):
 
 
 class Observations:
-    def __init__(self, root, process, cgroup_parent):
-        self.root, self.process, self.cgroup_parent = root, process, cgroup_parent
-        self.ticks = process_start_ticks(process.pid)
+    def __init__(self, root, services, cgroup_parent):
+        self.root, self.services, self.cgroup_parent = root, services, cgroup_parent
+        self.refresh_processes()
         self.phase, self.rows, self.live = 'startup', [], []
         self.stopped = asyncio.Event()
+
+    def refresh_processes(self):
+        # Planned fixture restarts are observed explicitly. The sampler never
+        # accepts a silently substituted service process or omits Redis/center.
+        facts = self.services.processes.observe()
+        self.processes = [(self.services.processes.children[name], value['start_time_ticks'])
+                          for name, value in facts.items()]
 
     def snapshot(self):
         groups = []
@@ -116,7 +122,12 @@ class Observations:
                 # Destruction can race a periodic sample. Deterministic live
                 # checkpoints and the final physical audit separately assert it.
                 pass
-        tree = process_tree(self.process.pid, self.ticks, [vm['pid'] for vm in self.live])
+        rows = {}
+        for process, ticks in self.processes:
+            assert process.poll() is None
+            for row in process_tree(process.pid, ticks, [vm['pid'] for vm in self.live]):
+                rows[row['pid']] = row
+        tree = list(rows.values())
         return {'monotonic_seconds': time.monotonic(), 'phase': self.phase,
                 'service_and_relay_processes': tree,
                 'service_and_relay_rss_bytes': sum(row['rss_bytes'] for row in tree),
@@ -138,8 +149,8 @@ class Observations:
                 pass
 
 
-async def live_shape(root, args, sandbox):
-    _, name, record = record_for(root, sandbox)
+async def live_shape(root, args, sandbox, native_id):
+    _, name, record = record_for(root, native_id=native_id)
     assert process_start_ticks(record['pid']) == record['start_time_ticks']
     group = args.cgroup_parent / name
     bound = json.loads((root / 'jails/.claims' / name / 'cgroup.json').read_text())
@@ -167,7 +178,7 @@ async def live_shape(root, args, sandbox):
     info = await call(sandbox.get_info)
     assert (info.cpu_count, info.memory_mb) == (1, 512)
     network = json.loads((root / 'jails/.claims' / name / 'network.json').read_text())
-    return {'sandbox_id': sandbox.sandbox_id, 'resource_id': name, 'pid': record['pid'],
+    return {'sandbox_id': sandbox.sandbox_id, 'native_id': native_id, 'resource_id': name, 'pid': record['pid'],
             'start_ticks': record['start_time_ticks'], 'network_inode': network['namespace_inode'],
             'cgroup_inode': bound['inode'], 'limits': limits,
             'disk': {'device': disk.st_dev, 'inode': disk.st_ino, 'bytes': disk.st_size},
@@ -198,7 +209,7 @@ async def exercise(args):
     checkout = Path(__file__).resolve().parents[2]
     assert not subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain'])
     commit = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip()
-    for name in ('server', 'jailer', 'firecracker', 'kernel', 'rootfs', 'scratch_parent', 'cgroup_parent'):
+    for name in ('center', 'host', 'jailer', 'firecracker', 'kernel', 'rootfs', 'scratch_parent', 'cgroup_parent'):
         setattr(args, name, getattr(args, name).resolve(strict=True))
     parent = args.scratch_parent
     assert parent.stat().st_uid == 0 and not parent.stat().st_mode & 0o077
@@ -211,7 +222,7 @@ async def exercise(args):
     assert len(os.sched_getaffinity(0)) >= 3
     assert preflight['disk_available_bytes'] >= 3 * args.rootfs.stat().st_size + budgets['cleanup_reserve_bytes']
     inputs = {name: {'sha256': sha256_file(getattr(args, name)), 'bytes': getattr(args, name).stat().st_size}
-              for name in ('server', 'jailer', 'firecracker', 'kernel', 'rootfs')}
+              for name in ('center', 'host', 'jailer', 'firecracker', 'kernel', 'rootfs')}
     before_network = network_state()
     root = Path(tempfile.mkdtemp(prefix='tp-', dir=parent))
     namespace = secrets.token_hex(8)
@@ -220,35 +231,37 @@ async def exercise(args):
                       'source_commit': commit}), flush=True)
     for name in ('db', 'state', 'jails'):
         (root / name).mkdir(mode=0o700)
-    binary = root / 'sandproof-server'
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
     keys = [secrets.token_hex(32), secrets.token_hex(32)]
     url = f'http://127.0.0.1:{free_loopback_port()}'
     database = root / 'db/controller.db'
+    template = descriptor('runtime-base', args.kernel, args.rootfs, 1, 512)
+    template['owner'] = None
+    template['resources']['host_memory_bytes'] = 1024 * MIB
+    catalog = dict(templates=[template], aliases={'base': template['template_id']}, compute_limits=dict(
+        max_vcpus_global=3, max_vcpus_per_tenant=2,
+        max_memory_bytes_global=3*1024*MIB, max_memory_bytes_per_tenant=2*1024*MIB))
     settings = {**budgets, 'namespace': namespace, 'database': str(database),
                 'node_state_dir': str(root / 'state'), 'jailer': str(args.jailer),
                 'firecracker': str(args.firecracker), 'chroot_base': str(root / 'jails'),
                 'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base,
                 'vcpu_count': 1, 'memory_mib': 512,
                 'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': 1024 * MIB},
-                'file_policy_digest': 1, 'bind': url.removeprefix('http://'), 'domain': 'example.invalid',
-                'credentials': [{'tenant': index + 1, 'secret': key} for index, key in enumerate(keys)],
+                'file_policy_digest': 1, 'templates': catalog, 'public_ipv4_enabled': False,
                 'max_active_global': 3, 'max_active_per_tenant': 2, 'startup_timeout_secs': 120}
-    config = root / 'config.json'
     settings = complete_runtime(settings, slots=3)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process, sampler, monitor = None, None, None
+    registry = dict(root=str(root / 'registry'), max_templates_global=1, max_templates_per_tenant=1,
+        max_artifact_bytes_global=args.kernel.stat().st_size+args.rootfs.stat().st_size,
+        max_artifact_bytes_per_tenant=args.kernel.stat().st_size+args.rootfs.stat().st_size,
+        validation_timeout_secs=60)
+    services = RuntimeServices.prepare(args, root, [settings], [catalog], keys[0],
+        url.removeprefix('http://'), args.service_cgroup_record, job_count=12, registry_config=registry,
+        extra_credentials=[dict(tenant=2, secret=keys[1])])
+    sampler, monitor = None, None
     known, evidence, results = [], [], []
     completed = False
     try:
-        process = start_server(binary, config, root / 'server.log', None)
-        await asyncio.to_thread(wait_ready, opener, url, keys[0], process)
-        monitor = Observations(root, process, args.cgroup_parent)
-        sampler = asyncio.create_task(monitor.sample())
+        services.start()
+        await asyncio.to_thread(services.wait_ready)
         for cls in (Sandbox, AsyncSandbox):
             cohort = []
             for tenant in (0, 0, 1):
@@ -258,7 +271,18 @@ async def exercise(args):
                                      allow_internet_access=False, **owner)
                 known.append(sandbox)
                 cohort.append(sandbox)
-                row = await live_shape(root, args, sandbox)
+            # The global IDs cannot identify a local VM. Stop this exact host
+            # once for its original offline inbox audit; then restore its SAME
+            # configuration before the measured workload, without initialization.
+            services.processes.stop('host-0')
+            native_ids = [services.native_id_for(item.sandbox_id) for item in cohort]
+            services.processes.start('host-0')
+            await asyncio.to_thread(services.wait_ready, for_admission=False)
+            monitor = Observations(root, services, args.cgroup_parent) if monitor is None else monitor
+            monitor.refresh_processes()
+            sampler = asyncio.create_task(monitor.sample())
+            for sandbox, native_id in zip(cohort, native_ids):
+                row = await live_shape(root, args, sandbox, native_id)
                 evidence.append(row)
                 monitor.live.append(row)
             assert len({(row['disk']['device'], row['disk']['inode']) for row in monitor.live}) == 3
@@ -266,7 +290,8 @@ async def exercise(args):
                 await monitor.mark(cls.__name__ + ':' + phase)
             await observe('three-vms-ready')
             results.append({'sdk': cls.__name__, **await pressure(cohort, url, budgets['data_transfer'], observe)})
-            assert [await live_shape(root, args, sandbox) for sandbox in cohort] == monitor.live
+            assert [await live_shape(root, args, sandbox, native_id)
+                    for sandbox, native_id in zip(cohort, native_ids)] == monitor.live
             for sandbox in cohort:
                 _kill_confirmed = (await call(sandbox.kill))
                 assert _kill_confirmed
@@ -274,10 +299,12 @@ async def exercise(args):
             audit_gone(root, args, monitor.live)
             monitor.live = []
             await observe('cohort-destroyed')
-        monitor.stopped.set()
-        await sampler
+            monitor.stopped.set()
+            await sampler
+            sampler = None
+            monitor.stopped = asyncio.Event()
         assert len(evidence) == VM_COUNT
-        assert all(terminal_cleanup_confirmed(database, row['sandbox_id']) for row in evidence)
+        assert all(terminal_cleanup_confirmed(database, row['native_id']) for row in evidence)
         audit_gone(root, args, evidence)
         assert not processes_in_uid_range(args.uid_base, args.uid_base + 2)
         assert not any(path.is_dir() for path in args.cgroup_parent.iterdir())
@@ -324,8 +351,9 @@ async def exercise(args):
                 except Exception as error:
                     cleanup_errors.append(error)
         finally:
-            stop_server(process)
+            services.stop_all()
         if completed and not args.keep_artifacts:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f'Exact run artifacts retained: {root}', file=sys.stderr)
@@ -335,7 +363,8 @@ async def exercise(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for argument in ('server', 'jailer', 'firecracker', 'kernel', 'rootfs', 'scratch-parent', 'cgroup-parent'):
+    add_arguments(parser)
+    for argument in ('jailer', 'firecracker', 'kernel', 'rootfs', 'scratch-parent', 'cgroup-parent'):
         parser.add_argument(f'--{argument}', type=Path, required=True)
     parser.add_argument('--uid-base', type=int, required=True)
     parser.add_argument('--keep-artifacts', action='store_true')

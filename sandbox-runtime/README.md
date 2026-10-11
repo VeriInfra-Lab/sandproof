@@ -65,7 +65,7 @@ sudo python3 tools/service_cgroup.py prepare \
   --cpu-quota-us 100000 --memory-bytes 2147483648
 sudo python3 tools/service_cgroup.py exec \
   --record /var/lib/sandproof/service-budget.json -- \
-  /usr/local/bin/sandproof-server /etc/sandproof/runtime.json
+  /usr/local/bin/sandproof-host serve --config /etc/sandproof/host.json
 ```
 
 构建池服务与构建监督程序须经同一 `exec --record` 启动或重启，不能只有一个服务使用限额。`check --record` 核对 boot ID、父/子组 inode、实际限额、成员与计数；`remove --record` 只删除身份匹配且没有进程/子组的组，保留记录。限额篡改、同名替换、记录创建中断或仍有进程时均保留现场，不能按名称猜测回收。服务异常或 OOM 后由外部操作方按原配置和原 VM 身份恢复；不将杀服务等同于 VM 清理完成。独立内核验证入口与真实 VM 组合验收范围见[验收清单](../docs/testing-plan.md)。
@@ -73,13 +73,10 @@ sudo python3 tools/service_cgroup.py exec \
 多模板包数据库与启动设置隔离由固定 SDK 的[实机脚本](../tests/system/server_template_isolation.py)检查。使用干净的精确提交、同提交服务二进制、两个经核对且容量不同的 Debian/Ubuntu 系统盘，均须具备 root/ubuntu 账户和可用 home；探针固定两种测试形状为 1 CPU/512 MiB 和 2 CPU/1024 MiB，整个 VMM 各增加 256 MiB 宿主额度。四台 VM 并存，模板默认用户分别为 ubuntu/root；双客户端检查命令/文件默认值与覆盖、别名变更及同库服务重启后的原启动进程不重派。总计使用八个不可复用身份（含两次启动失败与两次替换），预留连续八个 UID；宿主至少六个可用 CPU、8 GiB 可用内存和三倍输入磁盘总量加 1 GiB 收尾空间。以下入口不调用云端或外部软件仓库：
 
 ```sh
-sudo <固定 SDK Python> tests/system/server_template_isolation.py \
-  --server <同提交 sandproof-server> --jailer <固定 jailer> \
-  --firecracker <固定 firecracker> --kernel <固定内核> \
-  --rootfs <第一系统盘> --second-rootfs <第二系统盘> \
-  --scratch-parent <root 私有目录> --cgroup-parent <独占空父组> \
-  --uid-base <独占范围起点> --keep-artifacts
+<固定 SDK Python> tests/system/server_template_isolation.py --help
 ```
+
+按帮助提供同提交的 `--center`、`--host`、候选清单、固定 Redis/mTLS 材料、独立服务账户与受保护暂存父目录，再提供上述两套镜像和资源范围。探针只通过中心调用 SDK，宿主只提供私有接口；不再接受旧公开服务的 `--server` 参数。准确参数由唯一脚本维护，避免本文保留第二套过时启动命令。
 
 结果区分来宾初始化失败和内核启动失败；逐项范围见[验收清单](../docs/testing-plan.md)。探针显式使用 180 秒请求、120 秒启动和 900 秒实例寿命，给大盘核验/复制留出时间；这些是验收配置，不是生产默认值或启动时延承诺。失败只保留本次精确私有目录，不重派未知创建；按原 journal/实例身份恢复收尾。`--keep-artifacts` 也保留成功目录供独立审计，其中只有 `report.json` 是可导出的脱敏结果，配置和原始日志不得提交。完整确认资源已回收后再处理该目录；脚本存在不表示实跑通过。
 

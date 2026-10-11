@@ -92,9 +92,9 @@ def budgets(capacity, builder_bytes, kernel_bytes, *, profile=None):
                           'disk_bytes': builder_bytes}, 'rootfs': {'size_bytes': builder_bytes}}
     # Reuse the service's actual cross-pool contract rather than a parallel
     # model of what its publication and transport layers will accept.
-    validate_capacity(runtime | {'templates': {'compute_limits': runtime_compute}, 'template_registry': registry},
+    validate_capacity(runtime | {'templates': {'compute_limits': runtime_compute}},
                       builder | {'templates': {'compute_limits': builder_compute}}, limits, base,
-                      kernel_bytes=kernel_bytes, largest_tool_bytes=capacity['input_bytes'])
+                      registry=registry, kernel_bytes=kernel_bytes, largest_tool_bytes=capacity['input_bytes'])
     host = {'minimum_cpus': r['max_vcpus'] + b['cpu_count'] + h['control_cpu_allowance'] + h['cpu_headroom'],
             'minimum_available_memory_bytes': r['max_host_memory_bytes'] + builder_memory
                 + h['control_memory_allowance_bytes'] + h['memory_headroom_bytes'],

@@ -10,7 +10,7 @@ use std::{error::Error, fmt, num::NonZeroU64};
 pub const INTERNAL_PROTOCOL_VERSION: u16 = 1;
 /// Formats deployed by the sole center/host products. Kept alongside the wire
 /// contract so the host does not link the Redis adapter to report compatibility.
-pub const CENTER_STORE_FORMAT_VERSION: u32 = 4;
+pub const CENTER_STORE_FORMAT_VERSION: u32 = 5;
 pub const HOST_STORE_FORMAT_VERSION: i64 = 15;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

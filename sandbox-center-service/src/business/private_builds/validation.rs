@@ -149,6 +149,11 @@ impl PrivateBuilds {
             && binding.owner.is_none()
             && create.create.resources == resources
             && parameters.timeout_secs.checked_mul(1000) == Some(create.create.timeout_ms)
+            && parameters.timeout_secs > 0
+            && parameters.timeout_secs <= self.config.policy.max_timeout_secs
+            && self.config.policy.max_lifetime_secs.checked_mul(1000)
+                == Some(create.create.max_lifetime_ms)
+            && (!parameters.allow_internet_access || self.config.policy.public_ipv4_enabled)
             && options.validate().is_ok()
             && options.template.is_none()
             && options.env_vars.is_empty()

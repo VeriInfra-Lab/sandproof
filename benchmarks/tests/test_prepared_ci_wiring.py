@@ -38,7 +38,7 @@ class PreparedCiWiringTests(unittest.TestCase):
                 completion_audit=lambda row: {'exact_cleanup': 'passed'})
             entry = {'name': 'sample', 'dataset': 'terminal-bench-2.0'}
             lock = {'dataset': 'terminal-bench@2.0', 'tasks': [entry], 'source': {'commit': 'a' * 40}}
-            env = SimpleNamespace(create_dispatched=True, sandbox_id=None, kill_confirmed=False,
+            env = SimpleNamespace(create_dispatched=True, sandbox_id=None, kill_confirmed=False,kill_dispatched=False,
                 build_dispatched=False, build_id='b' * 32, build_result=None,
                 template={'templateId': 'ci-' + 'b' * 32}, runtime_attempt='e' * 32)
             intent = {'metadata': {'build': 'b' * 32}, 'template': env.template}
@@ -81,11 +81,12 @@ class PreparedCiWiringTests(unittest.TestCase):
     def test_original_build_service_is_validated_before_launch_in_service_cgroup(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            (root/'control-logs').mkdir()
             process = Mock()
             def launch(argv, **kwargs):
-                configure.assert_called_once_with(root / 'build.json')
+                configure.assert_called_once_with(root / 'build-control/build.json')
                 self.assertEqual(argv, ['fixed-prefix', chain.sys.executable,
-                    str(root / 'source/tools/template_build_service.py'), '--config', str(root / 'build.json')])
+                    str(root / 'source/tools/template_build_service.py'), '--config', str(root / 'build-control/build.json')])
                 self.assertIs(kwargs['stderr'], chain.subprocess.STDOUT)
                 return process
             with (patch.object(chain, 'validate_build_service') as configure,
@@ -98,6 +99,7 @@ class PreparedCiWiringTests(unittest.TestCase):
     def test_original_build_launch_failure_closes_its_log(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            (root/'control-logs').mkdir()
             with (patch.object(chain, 'validate_build_service'),
                   patch.object(chain.subprocess, 'Popen', side_effect=OSError('cannot launch')) as launch):
                 with self.assertRaises(OSError):

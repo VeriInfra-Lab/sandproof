@@ -260,19 +260,25 @@ def run(args):
             write_once(center_root / "release", {})
             os.chown(center_root / "release", 65534, 65534)
             destroy_started = time.monotonic()
-            if center.wait(timeout=180) != 0:
-                raise RuntimeError("center create/destroy assertions failed")
-            health = json_file(center_root / "guest-health.json")
-            if (set(health) != {"identity", "path", "status"}
-                    or health["identity"] != json_file(center_root / "ready.json")["identity"]
-                    or health["path"] != "/health" or health["status"] != 200):
-                raise RuntimeError("real guest health did not retain exact accepted binding")
-            report["guest_data"] = "real authenticated envd health via original host permit and relay"
-            report["destroy_to_cleaned_seconds"] = round(time.monotonic() - destroy_started, 3)
+            center_status = center.wait(timeout=180)
+            # A failed data assertion can still durably destroy the original
+            # VM. Prove cleanup before releasing this round's host lease; do
+            # not conflate a failed assertion with unknown physical cleanup.
             wait_file(root / "tls/cleaned", host, 15)
             if host.wait(timeout=15) != 0:
                 raise RuntimeError("original host failed after cleanup")
             report["observed_instances"] = assert_no_exact_resources(root, settings["namespace"], settings["uid_base"], Path(settings["firecracker"]).name, expected=1)
+            report.update(resources="confirmed absent", cleanup="confirmed")
+            safe = True
+            if center_status != 0:
+                raise RuntimeError("center create/destroy assertions failed; exact resources confirmed absent")
+            health = json_file(center_root / "guest-health.json")
+            if (set(health) != {"identity", "path", "status"}
+                    or health["identity"] != json_file(center_root / "ready.json")["identity"]
+                    or health["path"] != "/health" or health["status"] != 204):
+                raise RuntimeError("real guest health did not retain exact accepted binding")
+            report["guest_data"] = "real authenticated envd health via original host permit and relay"
+            report["destroy_to_cleaned_seconds"] = round(time.monotonic() - destroy_started, 3)
             for item in (template["kernel"], template["rootfs"]):
                 approved(item["path"], item["sha256"])
             report.update(result="passed", resources="confirmed absent", cleanup="confirmed", template="unchanged", accounts="center 65534 / Redis 65533 / host root")

@@ -30,7 +30,7 @@ except ImportError:
 MEMBERS = ('controller-core', 'sandbox-protocol', 'controller-service',
            'sandbox-runtime', 'sandbox-node', 'sandbox-api', 'sandbox-server', 'sandbox-data-transport',
            'sandbox-internal', 'sandbox-center-store', 'sandbox-center-core', 'sandbox-host-service',
-           'sandbox-center-service')
+           'sandbox-center-service', 'sandbox-center')
 PROJECTS = ('tests/compat', 'benchmarks')
 INPUT_PATHS = frozenset(('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
     'tools/ci_git.py', 'tools/ci_redis.py', *(member + '/Cargo.toml' for member in MEMBERS),

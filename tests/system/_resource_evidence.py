@@ -11,13 +11,13 @@ _require_assertions = _runpy.run_path(
 )["require_assertions"]
 _require_assertions()
 
-from contextlib import closing
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import sqlite3
 import stat
+import time
 
 
 def record_resource_identity(sandbox):
@@ -29,45 +29,44 @@ def record_resource_identity(sandbox):
     if (not root.is_absolute() or not stat.S_ISDIR(metadata.st_mode)
             or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077):
         raise RuntimeError("private owned C02 evidence root required")
-    settings = json.loads((root / "config.json").read_text())
-    namespace = settings["namespace"]
-    if re.fullmatch(r"sb-" + re.escape(namespace) + r"-[1-9][0-9]*", sandbox) is None:
-        raise RuntimeError("sandbox outside the private C02 deployment")
-    number = int(sandbox.rsplit("-", 1)[1])
-    with closing(sqlite3.connect(Path(settings["database"]).as_uri() + "?mode=ro", uri=True)) as connection:
-        connection.execute("BEGIN")
-        contexts = [json.loads(row[0]) for row in connection.execute("SELECT context_json FROM controller_host_slots")]
-    matches = [value for value in contexts if value["binding"]["sandbox"] == number and value["binding"]["owner"] == 1]
-    if len(matches) != 1:
-        raise RuntimeError("sandbox has no exact current physical binding")
-    context = matches[0]
-    name = f"vm-{namespace}-{context['binding']['vm']}"
-    claim = Path(settings["chroot_base"]) / ".claims" / name
-    record = json.loads((claim / "record.json").read_text())
-    network = json.loads((claim / "network.json").read_text())
-    if (set(record) != {"resource_id", "pid", "start_time_ticks"} or record["resource_id"] != name
-            or type(record["pid"]) is not int or record["pid"] <= 0
-            or type(record["start_time_ticks"]) is not int or record["start_time_ticks"] <= 0
-            or network["resource_id"] != name or type(network["namespace_inode"]) is not int
-            or network["namespace_inode"] <= 0):
-        raise RuntimeError("malformed exact C02 VM evidence")
-    fields = Path(f"/proc/{record['pid']}/stat").read_text().rsplit(")", 1)[1].split()
-    uid = int(next(line.split()[1] for line in Path(f"/proc/{record['pid']}/status").read_text().splitlines()
-                   if line.startswith("Uid:")))
-    if (fields[0] == "Z" or int(fields[19]) != record["start_time_ticks"]
-            or uid != settings["bounded_host"]["uid_base"] + context["position"]):
-        raise RuntimeError("live C02 VM identity/physical UID differs")
-    evidence = root / "resource-evidence"
-    metadata = evidence.lstat()
+    if (type(sandbox) is not str or re.fullmatch(r'sandbox-[1-9][0-9]{0,19}',sandbox) is None
+            or int(sandbox.removeprefix('sandbox-'))>=2**64):
+        raise RuntimeError('exact public center sandbox id required, not a native suffix')
+    requests=root/'resource-requests'
+    metadata = requests.lstat()
     if (not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077):
         raise RuntimeError("private resource-evidence directory required")
-    descriptor = os.open(evidence / (sandbox + ".json"), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    name=hashlib.sha256(sandbox.encode()).hexdigest()
+    descriptor = os.open(requests/(name+'.request.json'), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "w") as output:
-        json.dump({"sandbox": sandbox, "context": context, "record": record, "network": network}, output)
+        json.dump({'sandbox':sandbox},output)
         output.flush()
         os.fsync(output.fileno())
-    directory = os.open(evidence, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    directory = os.open(requests, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(directory)
     finally:
         os.close(directory)
+    # This is only a bounded private test callback. The parent owns the actual
+    # services, performs a planned offline original host audit, saves physical
+    # evidence and restarts that same host. The child never signals product PIDs
+    # or reads raw SQL/configuration as another authority.
+    deadline=time.monotonic()+120
+    acknowledgement=requests/(name+'.ack.json')
+    while time.monotonic()<deadline:
+        try:
+            fd=os.open(acknowledgement,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        except FileNotFoundError:
+            time.sleep(.05)
+            continue
+        with os.fdopen(fd,'rb') as source:
+            info=os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_uid!=os.geteuid()
+                    or info.st_mode&0o077 or info.st_size>256):
+                raise RuntimeError('private exact resource observation reply required')
+            value=json.loads(source.read(257))
+        if (type(value) is not dict or set(value)!={'sandbox','recorded'}
+                or value['sandbox']!=sandbox or value['recorded'] is not True):
+            raise RuntimeError('original physical identity recording unknown')
+        return
+    raise TimeoutError('original parent resource observation unknown; retain request')

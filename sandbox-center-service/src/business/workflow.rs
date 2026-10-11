@@ -276,6 +276,6 @@ fn validation_binding(
         &options,
         metadata.registry.config().validation_timeout_secs,
         driver.now_ms()?,
-        config,
+        config.into(),
     )
 }

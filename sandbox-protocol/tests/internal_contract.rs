@@ -10,6 +10,14 @@ use sandproof_protocol::{
 mod lifecycle;
 
 #[test]
+fn deployed_contract_formats_change_only_the_business_center_envelope() {
+    let versions = sandproof_protocol::internal::ContractVersions::current();
+    assert_eq!(versions.internal_protocol, 1);
+    assert_eq!(versions.center_store, 5);
+    assert_eq!(versions.host_store, 15);
+}
+
+#[test]
 fn ready_must_precede_the_original_startup_deadline() {
     use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
 

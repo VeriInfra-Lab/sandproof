@@ -35,10 +35,14 @@ class BuildClient:
         return {"origin": urllib.parse.urlunsplit(self.url),
                 "credential_sha256": hashlib.sha256(self.key.encode()).hexdigest()}
 
+    def headers(self):
+        """Ordinary public authentication; transport is shared by diagnostics."""
+        return {"X-API-Key": self.key}
+
     def request(self, method, path, body=None, *, size=None, token=None):
         connection_class = http.client.HTTPSConnection if self.url.scheme == "https" else http.client.HTTPConnection
         connection = connection_class(self.url.hostname, self.url.port, timeout=30)
-        headers = {"X-API-Key": self.key}
+        headers = self.headers()
         if isinstance(body, dict):
             body = json.dumps(body).encode()
             headers["Content-Type"] = "application/json"

@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools import ci_e2e_artifacts as artifacts, ci_e2e_services_prepare as preparation
+from tools import ci_e2e_artifacts as artifacts, ci_e2e_prepare as preparation
 
 
-VERSIONS = {'internal_protocol': 1, 'center_store': 2, 'host_store': 14}
+VERSIONS = {'internal_protocol': 1, 'center_store': 5, 'host_store': 15}
 
 
 class Preparation(unittest.TestCase):
@@ -115,6 +115,16 @@ class Preparation(unittest.TestCase):
                 self.build(arguments, **kwargs)
         with self.assertRaises(FileNotFoundError):
             self.prepare(build=incomplete)
+        self.assertFalse(Path(self.config['candidate_manifest']).exists())
+
+    def test_both_actual_binaries_must_report_identical_contract_versions(self):
+        with patch.object(preparation, 'git', side_effect=['a' * 40, '', 'a' * 40, '']), \
+                patch.object(preparation.subprocess, 'run', side_effect=self.build), \
+                patch.object(preparation, 'contract_versions', side_effect=[VERSIONS, dict(VERSIONS, host_store=14)]) as versions:
+            with self.assertRaisesRegex(ValueError, 'versions differ'):
+                preparation.prepare(self.config)
+        self.assertEqual([call.args[0] for call in versions.call_args_list],
+                         [self.config['center'], self.config['host']])
         self.assertFalse(Path(self.config['candidate_manifest']).exists())
         with self.assertRaises(ValueError):
             self.prepare(versions=dict(VERSIONS, host_store=True))

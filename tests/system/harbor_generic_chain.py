@@ -38,7 +38,11 @@ import urllib.request
 from types import SimpleNamespace
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
-from server_process_crash import fetch, free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready
+from server_process_crash import fetch, free_loopback_port, process_start_ticks
+from _process_utils import stop_child
+from _runtime_services import RuntimeServices, add_arguments
+from _center_host_services import find_runtime_create, terminal_result, process_facts
+from tools.runtime_create_recovery import recover_runtime_create
 from server_templates import descriptor, record_for
 from server_template_isolation import audit_gone
 from server_vm_id_capacity import check_no_resources
@@ -47,10 +51,10 @@ from template_resource_pressure import ready_for_pressure
 from template_build import IGZIP_HASHES
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
-from tools.runtime_create_recovery import recover_runtime_create
 from tools.benchmark_proxy import BenchmarkProxy
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
+from tools.system_acceptance import write_once,json_file
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected, validate_oracle_mode
@@ -79,11 +83,12 @@ def validate_build_service(path, *, prepared=False, require_physical_lease=True)
 def launch_build_service(checkout, root, service_prefix, *, prepared=False):
     if prepared:
         return None, None
-    validate_build_service(root / 'build.json')
-    log = (root / 'build-service.log').open('ab')
+    config = root / 'build-control/build.json'
+    validate_build_service(config)
+    log = (root / 'control-logs/build-service.log').open('ab')
     try:
         process = subprocess.Popen([*service_prefix, sys.executable,
-            str(checkout / 'tools/template_build_service.py'), '--config', str(root / 'build.json')],
+            str(checkout / 'tools/template_build_service.py'), '--config', str(config)],
             stdout=log, stderr=subprocess.STDOUT)
     except BaseException:
         log.close()
@@ -309,9 +314,6 @@ def exercise(args):
     provision_acceptance_coordination(bounded_policy, run_root=root,
         namespace=namespaces[0], build_namespace=namespaces[1])
     print(f'root={root} commit={commit}', flush=True)
-    binary = root / 'server'
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
     original = [sha256_file(p) for p in (args.kernel, args.rootfs)]
     if (any(not re.fullmatch('[0-9a-f]{16}', n) for n in namespaces)
             or namespaces[0][:6] == namespaces[1][:6]):
@@ -321,9 +323,8 @@ def exercise(args):
     (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
     (root / 'capacity-basis.json').write_text(json.dumps(capacity_basis, indent=2))
     (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
-    ports = [free_loopback_port() for _ in range(3)]
-    urls = [f'http://127.0.0.1:{p}' for p in ports]
-    key, builder_key = secrets.token_hex(32), secrets.token_hex(32)
+    public_address = '127.0.0.1:' + str(free_loopback_port())
+    key = secrets.token_hex(32)
     firecracker = args.firecracker.resolve(strict=True)
     settings = []
     for i in range(1 if ci_fixtures is not None else 2):
@@ -340,35 +341,27 @@ def exercise(args):
             'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base + stride * i,
             'vcpu_count': cpu, 'memory_mib': memory,
             'host_resources': {'cgroup_parent': str(args.build_cgroup_parent if i else args.cgroup_parent), 'memory_max_bytes': (memory + 256) * MIB},
-            'file_policy_digest': 1, 'bind': f'127.0.0.1:{ports[i]}', 'domain': 'example.invalid',
-            'credentials': [{'tenant': 1, 'secret': builder_key if i else key}],
+            'file_policy_digest': 1,
             'public_ipv4_enabled': ci_fixtures is None, **deployment['builder' if i else 'runtime'],
             'templates': {'templates': [base], 'aliases': {'base': base['template_id']},
                 'compute_limits': deployment['builder_compute' if i else 'runtime_compute']}}
         if i:
-            cfg['internal_build_vms'] = True
-        else:
-            if ci_fixtures is not None:
-                cfg['templates']['templates'] = [f.template_descriptor() for f in ci_fixtures.values()]
-                cfg = prepared_ci_runtime_configuration(cfg, bounded_policy, prepared_profile)
-            else:
-                for p in (root / 'registry', root / 'registry/inbox', root / 'registry/artifacts'):
-                    p.mkdir(mode=0o700)
-                cfg['template_registry'] = {'root': str(root / 'registry'), **deployment['registry']}
+            base['owner'] = None  # Private builder selection remains center authority.
+        elif ci_fixtures is not None:
+            cfg['templates']['templates'] = [f.template_descriptor() for f in ci_fixtures.values()]
+            cfg = prepared_ci_runtime_configuration(cfg, bounded_policy, prepared_profile)
         settings.append(cfg)
-        (pool / 'config.json').write_text(json.dumps(cfg))
-        (pool / 'config.json').chmod(0o600)
     (root / 'builds').mkdir(mode=0o700)
-    build = {'root': str(root / 'builds'), 'bind': f'127.0.0.1:{ports[2]}',
-        'runtime_config': str(root / '0/config.json'), 'builder_config': str(root / '1/config.json'),
+    build = {'root': str(root / 'builds'),
+        'registry':{'root':str(root/'registry'),**deployment['registry']},
+        'registry_owner_uid':bounded_policy['runtime']['bounded_host']['physical_storage']['public_build']['registry_owner_uid']
+            if ci_fixtures is None else args.center_uid,
         'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in build_tools.items()},
         'dns_servers': ['1.1.1.1', '8.8.8.8'],
         'limits': deployment['limits']}
     original_workspace = build['limits']['workspace_bytes']
     build_mode = ('windowed' if ci_fixtures is not None else
                   apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy))
-    for i, config in enumerate(settings):
-        (root / str(i) / 'config.json').write_text(json.dumps(config))
     deployment['build_mode'] = build_mode
     extra = 0 if ci_fixtures is not None else build['limits']['workspace_bytes'] - original_workspace
     deployment['host']['minimum_free_disk_bytes'] += extra
@@ -376,19 +369,58 @@ def exercise(args):
         raise ValueError('bounded build policy exceeds acceptance disk headroom')
     if args.docker_hub_mirror is not None:
         build['docker_hub_mirror'] = args.docker_hub_mirror
+    service_record = Path(args.service_cgroup_record)
+    if service_record != root / 'service-cgroup.json':
+        raise ValueError('service cgroup receipt must belong to this exact acceptance run')
+    private_builds = None
     if ci_fixtures is None:
-        (root / 'build.json').write_text(json.dumps(build))
-        (root / 'build.json').chmod(0o600)
-        validate_build_service(root / 'build.json', require_physical_lease=False)
-    controllers, supervisor, log = [], None, None
+        windows = bounded_policy['builder']['build_retry_windows']
+        private_builds = dict(windows=bounded_policy['public']['bounded_builds']['windows'],
+            window_duration_ms=windows['window_duration_ms'], max_anchors=windows['max_anchors'],
+            builder_revision=settings[1]['templates']['templates'][0]['template_id']+'-r1',
+            policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',
+                'max_lifetime_secs','startup_timeout_secs')})
+    registry = {'root': str(root / 'registry'), **deployment['registry']}
+    services = RuntimeServices.prepare(args,root,settings,[config['templates'] for config in settings],
+        key,public_address,record=service_record,job_count=capacity['jobs'],
+        private_builds=private_builds,registry_config=registry)
+    settings = services.native_pools  # Exactly the profile Rust initializes.
+    registry_root = services.layout['registry']
+    urls = [services.sdk_url] * 3  # Every public SDK/build request goes to center.
+    binary = services.processes.bindings['host-0']['binary']
+    build_path = root / 'build-control/build.json'
+    if ci_fixtures is None:
+        build.update(bind=services.layout['helper_backend_address'],
+            runtime_config=str(services.processes.bindings['host-0']['config']),
+            builder_config=str(services.processes.bindings['host-1']['config']),
+            registry=services.center_config['template_registry'], registry_owner_uid=args.center_uid,
+            builder_template=services.center_config['templates']['templates'][-1],
+            center=dict(private_address=services.layout['private_address'],domain='example.invalid',
+                credential_file=str(services.layout['build_key_file']),
+                private_windows={key:private_builds[key] for key in ('window_duration_ms','max_anchors')},
+                max_timeout_secs=settings[1]['max_timeout_secs'],max_lifetime_secs=settings[1]['max_lifetime_secs']))
+        build_path.write_text(json.dumps(build))
+        build_path.chmod(0o600)
+        validate_build_service(build_path,require_physical_lease=False)
+    from tools.template_physical_storage import envelope
+    activation_bytes=2*envelope(settings[0]['bounded_host']['physical_storage'])[0]
+    if ci_fixtures is not None and activation_bytes>disk_ceiling:
+        raise ValueError('dual-service/cache activation exceeds approved prepared CI ceiling')
+    deployment['host']['minimum_free_disk_bytes']=max(deployment['host']['minimum_free_disk_bytes'],activation_bytes)
+    (root/'acceptance-budgets.json').write_text(json.dumps(deployment,indent=2))
+    supervisor, log = None, None
     transport = (BenchmarkProxy(root / 'proxy', namespaces, proxy_binary, proxy_digest,
                                port=getattr(args, 'proxy_socks_port', 7897))
                  if proxy_binary is not None else None)
-    service_record = root / 'service-cgroup.json'
     service_prefix = service_cgroup.prefix(service_record)
     service_samples = []
     def observe_services(*, require_builder=True, minimum_relays=0):
-        processes = [p for p in [*controllers, *([supervisor] if require_builder else [])] if p is not None]
+        services.processes.observe()
+        processes = list(services.processes.children.values())
+        if require_builder and supervisor is not None:
+            process_facts(supervisor,Path(sys.executable),build_path,service_record,uid=0,gid=0,
+                argv=[sys.executable,str(checkout/'tools/template_build_service.py'),'--config',str(build_path)])
+            processes.append(supervisor)
         if any(p.poll() is not None for p in processes):
             raise RuntimeError('service exited; retain original resources for recovery')
         return observe_service_resources(binary, service_record, [p.pid for p in processes],
@@ -398,10 +430,27 @@ def exercise(args):
     rows, complete, all_passed = [], False, True
     pressure_report = ({'status': 'not_run', 'reason': 'requires_two_published_audited_templates'}
                        if args.resource_pressure else None)
+    create_identities = {}
+    physical_identities = []
     def audit_shape(env):
         observe_services()
         template = env.template
-        secret, name, claim = record_for(root / '0', env._sandbox)
+        # Planned offline audit, not a guessed GLOBAL suffix or a public host.
+        center_audit=services.planned_audit('center')
+        create_identities[env.sandbox_id]=find_runtime_create(center_audit,env.runtime_intent['metadata'],
+            deployment=services.center_config['deployment_id'])
+        services.processes.stop('host-0')
+        try:
+            native_id=services.native_id_for(env.sandbox_id)
+            secret,name,claim=record_for(root/'0',native_id=native_id)
+            network=json.loads((root/'0/jails/.claims'/name/'network.json').read_text())
+            if network['resource_id']!=name:
+                raise RuntimeError('original network resource differs from mapped VM')
+            physical=claim|dict(network_inode=network['namespace_inode'])
+            physical_identities.append(physical)
+        finally:
+            services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
         bound = secret['template']
         expected = {'cpu_count': template['cpuCount'], 'memory_mib': template['memoryMib'],
                     'disk_bytes': template['diskBytes'], 'host_memory_bytes': template['hostMemoryBytes']}
@@ -429,6 +478,8 @@ def exercise(args):
                 machine = json.loads(response.read(65536))
         assert (machine['vcpu_count'], machine['mem_size_mib']) == (template['cpuCount'], template['memoryMib'])
         return {'template_id': template['templateId'], 'revision': template['revision'], 'resources': expected,
+                'native_id':native_id,'create_identity':create_identities[env.sandbox_id],
+                'physical_identity':physical,
                 'pid': claim['pid'], 'start_time_ticks': claim['start_time_ticks'],
                 'disk_inode': disk.stat().st_ino, 'disk_logical_bytes': disk.stat().st_size,
                 'disk_allocated_bytes': disk.stat().st_blocks * 512,
@@ -443,19 +494,26 @@ def exercise(args):
         deadline = (time.monotonic() + max(0, original_deadline - time.time())
                     + 2 * capacity['max_build_seconds'] + 90)
         result = {}
-        if row.get('create_dispatched') and not row.get('kill_confirmed'):
+        if row.get('create_dispatched'):
             if not row.get('runtime_intent'):
                 raise RuntimeError('missing runtime creation intent; retain original identity')
-            # The public SDK list omits Starting instances. Only this trusted
-            # operator reads its own private journal, including pending creates.
-            recovery = recover_runtime_create(
-                root / '0/db/controller.db', row['runtime_intent'],
-                owner=settings[0]['credentials'][0]['tenant'], namespace=namespaces[0],
-                benchmark=lock['dataset'] if lock['dataset'] == 'terminal-bench@2.1' else 'terminal-bench-2.0',
-                sandbox_id=row.get('sandbox_id'), deadline=deadline,
-                prepared_ci=ci_fixtures is not None,
-                delete=lambda identity: fetch(opener, urls[0], 'DELETE', '/sandboxes/' + identity, key)[0])
-            result.update(sandbox_id=recovery['sandbox_id'], runtime_recovery=recovery)
+            expected_node=services.host_configs[0]['inbox']['node']
+            def read_host(node):
+                if node!=expected_node:
+                    raise RuntimeError('runtime recovery selected a foreign registered host')
+                return services.planned_audit('host-0')
+            def delete(ident):
+                services.wait_ready(for_admission=False)
+                row['kill_dispatched']=True  # Survives later completion callbacks.
+                return fetch(opener,urls[0],'DELETE','/sandboxes/'+ident,key)[0]
+            recovered=recover_runtime_create(row['runtime_intent'],
+                read_center=lambda:services.planned_audit('center'),read_host=read_host,
+                deployment=services.center_config['deployment_id'],owner=1,delete=delete,
+                deadline=deadline,sandbox_id=row.get('sandbox_id'),
+                create_identity=create_identities.get(row.get('sandbox_id')),
+                delete_dispatched=bool(row.get('kill_dispatched')),
+                prepared_ci=ci_fixtures is not None)
+            result.update(sandbox_id=recovered['sandbox_id'],runtime_recovery=recovered)
         while True:
             pending = pending_build_reservations(root / 'builds', prepared=ci_fixtures is not None, row=row)
             if not pending:
@@ -466,8 +524,8 @@ def exercise(args):
         for i in range(len(settings)):
             pool = root / str(i)
             while True:
-                if controllers[i].poll() is not None:
-                    raise RuntimeError('controller exited before exact cleanup')
+                if services.processes.children['host-'+str(i)].poll() is not None:
+                    raise RuntimeError('private host exited before exact cleanup')
                 with sqlite3.connect(pool / 'db/controller.db') as db:
                     phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
                     pending_actions = db.execute("SELECT COUNT(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0]
@@ -475,9 +533,13 @@ def exercise(args):
                     assert not pending_actions and all(p == 'Destroyed' for p in phases)
                     claims = pool / 'jails/.claims'
                     if claims.exists():
-                        check_no_resources(pool, namespaces[i], firecracker, args.uid_base + i * stride)
+                        check_no_resources(pool, namespaces[i], firecracker, args.uid_base + i * stride,
+                                           physical_identities if i==0 else (),native=settings[i])
                         for claim in claims.iterdir():
                             audit_gone(pool, firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
+                    if i==0:
+                        for identity in physical_identities:
+                            audit_gone(pool,firecracker,args.cgroup_parent,identity['resource_id'],identity=identity)
                     break
                 except AssertionError:
                     if time.monotonic() >= deadline:
@@ -497,7 +559,7 @@ def exercise(args):
         template = row.get('template') or (result.get('build') or {}).get('template')
         if template:
             source = (ci_fixtures[row['name']].rootfs if ci_fixtures is not None else
-                      root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
+                      registry_root / 'artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
             assert sha256_file(source) == template['rootfsSha256']
         return result
 
@@ -506,17 +568,17 @@ def exercise(args):
             transport.start()
         service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
                                **deployment['service_cgroup'])
-        for i in range(len(settings)):
-            p = start_server(binary, root / str(i) / 'config.json', root / str(i) / 'server.log', None,
-                             command_prefix=service_prefix)
-            controllers.append(p)
-            wait_ready(opener, urls[i], builder_key if i else key, p)
+        services.start()
+        services.wait_ready()
         supervisor, log = launch_build_service(checkout, root, service_prefix,
                                                prepared=ci_fixtures is not None)
         if supervisor is not None:
             for _ in range(60):
                 try:
-                    if fetch(opener, urls[2], 'GET', '/missing', key)[0] == 404:
+                    # This known route reaches the private helper only AFTER
+                    # center authentication. A generic center 404 proves none
+                    # of the builder boundary and must not signal readiness.
+                    if fetch(opener,urls[2],'GET','/sandproof/template-builds/'+'0'*32,key)[0]==404:
                         break
                 except OSError:
                     if supervisor.poll() is not None:
@@ -527,6 +589,11 @@ def exercise(args):
         observe_services()
         deployment['host']['control_allowance_enforced_by_cgroup'] = True
         (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
+        helper=(dict(config=build_path,process=supervisor,binary=Path(sys.executable),
+            argv=[sys.executable,str(checkout/'tools/template_build_service.py'),'--config',str(build_path)])
+            if supervisor is not None else None)
+        execution,_=services.execution(args.run_identity,root/'acceptance-budgets.json',helper=helper)
+        write_once(root/'execution-manifest.json',execution)
         for repetition in range(args.repetitions):
             output = root / f'run-{repetition}'
             output.mkdir(mode=0o700)
@@ -547,7 +614,7 @@ def exercise(args):
                 run_args.prepare_ci_fixtures = args.prepare_ci_fixtures
                 run_args.preparation_timeout_secs = preparation_timeout
                 run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
-                run_args.ready_artifacts_root, run_args.kernel = root / 'registry/artifacts', args.kernel
+                run_args.ready_artifacts_root, run_args.kernel = registry_root / 'artifacts', args.kernel
             if ci_fixtures is not None:
                 from benchmarks.ci_verifier import prepare_ci_verifier_task
                 from harbor.models.task.task import Task
@@ -579,10 +646,10 @@ def exercise(args):
                 def restart_builds():
                     nonlocal supervisor
                     supervisor = subprocess.Popen([*service_prefix, sys.executable, str(checkout / 'tools/template_build_service.py'),
-                        '--config', str(root / 'build.json')], stdout=log, stderr=subprocess.STDOUT)
+                        '--config', str(build_path)], stdout=log, stderr=subprocess.STDOUT)
                     return supervisor
                 try:
-                    pressure_report = asyncio.run(pressure(root=root, urls=urls, key=key, builder_key=builder_key,
+                    pressure_report = asyncio.run(pressure(root=root, services=services, key=key, build_config=build_path,
                         rows=current, deployment=deployment, supervisor=supervisor, restart=restart_builds,
                         source_entry=selected_entries[0], audit_shape=audit_shape, completion_audit=completion_audit,
                         build_mode=build_mode,
@@ -610,12 +677,16 @@ def exercise(args):
                     raise RuntimeError('durable terminal cleanup incomplete')
                 claims = root / str(i) / 'jails/.claims'
                 if claims.exists():
-                    check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * stride)
+                    check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * stride,
+                                       physical_identities if i==0 else (),native=settings[i])
                     for claim in claims.iterdir():
                         audit_gone(root / str(i), firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
                 else:
                     for parent in (root / str(i) / 'jails', Path('/run/netns'), Path('/sys/fs/cgroup')):
                         assert not list(parent.rglob(f'vm-{namespaces[i]}-*'))
+                if i==0:
+                    for identity in physical_identities:
+                        audit_gone(root/'0',firecracker,args.cgroup_parent,identity['resource_id'],identity=identity)
             if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
                 raise RuntimeError('exact pool UID process remains')
             for row in current:
@@ -623,7 +694,7 @@ def exercise(args):
                 template = row.get('template') or (row.get('build') or {}).get('template')
                 if template:
                     source = (ci_fixtures[row['name']].rootfs if ci_fixtures is not None else
-                              root / 'registry/artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
+                              registry_root / 'artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
                     assert sha256_file(source) == template['rootfsSha256']
             rows.extend(current)
             observe_services()
@@ -643,7 +714,16 @@ def exercise(args):
                                fixture_preparation_passed=(len(current) == len(selected)
                                    and all(r['status'] == 'prepared' and r.get('exact_cleanup') == 'passed'
                                            for r in current)))
-            (root / 'report.json').write_text(json.dumps({'commit': commit, 'server_sha256': sha256_file(binary),
+            execution,processes=services.execution(args.run_identity,root/'acceptance-budgets.json',
+                helper=(dict(config=build_path,process=supervisor,binary=Path(sys.executable),
+                    argv=[sys.executable,str(checkout/'tools/template_build_service.py'),'--config',str(build_path)])
+                    if supervisor is not None else None))
+            if execution!=json_file(root/'execution-manifest.json',limit=32768):
+                raise RuntimeError('original execution configuration/material receipt changed')
+            (root / 'report.json').write_text(json.dumps({'commit': commit,
+                'services':execution['services'],'execution_manifest':execution,'service_processes':processes,
+                'service_boundary':dict(public_api='center',center_unprivileged=True,
+                    redis_authority='validated',host_transport='mutual-tls',host_public_management=False),
                 'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': build_tools,
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': lock['task_count'],
                 'dataset': lock['dataset'], 'task_source': lock['source'],
@@ -654,7 +734,7 @@ def exercise(args):
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'prepared_ci_physical': ({'disk_budget_bytes': disk_ceiling,
-                    'activation_bytes': deployment['host']['minimum_free_disk_bytes'],
+                    'activation_bytes': activation_bytes,
                     'pool_roles': ['runtime'], 'builder_dispatched': False, 'public_build': False}
                     if ci_fixtures is not None else None),
                 'service_cgroup': service_samples[-1],
@@ -675,13 +755,19 @@ def exercise(args):
         return 0 if all_passed else 1
     finally:
         stop_errors = []
-        for p in [supervisor, *reversed(controllers)]:
+        for p in [supervisor]:
             try:
-                stop_server(p)
+                stop_child(p)
             except Exception as error:
                 stop_errors.append(type(error).__name__)
         if log:
             log.close()
+        try:
+            services.stop_all()
+            if complete:
+                services.cleanup_staging()
+        except Exception as error:
+            stop_errors.append(type(error).__name__)
         if service_record.exists():
             try:
                 # Keep the original group usable for service restart while any
@@ -711,7 +797,9 @@ def exercise(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('server', 'firecracker', 'jailer', 'kernel', 'rootfs', 'tools', 'scratch-parent',
+    add_arguments(parser)
+    parser.add_argument('--run-identity',required=True,help='approved supervisor run SHA256')
+    for name in ('firecracker', 'jailer', 'kernel', 'rootfs', 'tools', 'scratch-parent',
                  'cgroup-parent', 'build-cgroup-parent', 'service-cgroup-parent', 'registry', 'source'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--uid-base', type=int, required=True)

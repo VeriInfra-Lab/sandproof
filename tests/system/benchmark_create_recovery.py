@@ -35,11 +35,13 @@ if str(ROOT) not in sys.path:
 from harbor.models.task.config import NetworkMode
 from benchmarks.generic_environment import GenericEnvironment
 from tools import service_cgroup
-from tools.runtime_create_recovery import matching_runtime, recover_runtime_create
+from tools.runtime_create_recovery import find_runtime_create, recover_runtime_create
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
-from server_process_crash import (complete_runtime, fetch, free_loopback_port, provision_runtime,
-                                  start_server, stop_server, terminal_cleanup_confirmed, wait_ready)
+from server_process_crash import fetch, free_loopback_port, terminal_cleanup_confirmed
+from _complete_runtime import complete_runtime
+from _runtime_services import RuntimeServices, add_arguments
+from _center_host_services import local_binding
 from server_template_isolation import audit_gone
 from server_templates import descriptor, record_for
 from server_vm_id_capacity import check_no_resources
@@ -74,31 +76,80 @@ def exercise(args):
         'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base,
         'vcpu_count': 1, 'memory_mib': 256,
         'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': 512 * 1024**2},
-        'file_policy_digest': 1, 'bind': url.removeprefix('http://'), 'domain': 'example.invalid',
-        'credentials': [{'tenant': 1, 'secret': key}], 'max_active_global': 1, 'max_active_per_tenant': 1,
+        'file_policy_digest': 1, 'max_active_global': 1, 'max_active_per_tenant': 1,
         'max_disk_bytes_global': args.rootfs.stat().st_size * 2,
         'max_disk_bytes_per_tenant': args.rootfs.stat().st_size * 2,
-        'cleanup_reserve_bytes': 256 * 1024**2, 'max_timeout_secs': 86400, 'expiry_scan_seconds': 3600,
+        'cleanup_reserve_bytes': 256 * 1024**2, 'max_timeout_secs': 86400,
+        'max_lifetime_secs': 86400, 'startup_timeout_secs': 300, 'expiry_scan_seconds': 1,
         'public_ipv4_enabled': True,
         'templates': {'templates': [bound], 'aliases': {'base': bound['template_id']}, 'compute_limits': {
             'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
             'max_memory_bytes_global': 512 * 1024**2, 'max_memory_bytes_per_tenant': 512 * 1024**2}}}
-    config = root / 'config.json'
     settings = complete_runtime(settings, slots=1)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings)); config.chmod(0o600)
-    service_record = root / 'service-cgroup.json'
-    service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespace, service_record,
-                           cpu_quota_us=100000, memory_bytes=2 * 1024**3)
-    report = {'commit': commit, 'server_sha256': sha256_file(args.server), 'namespace': namespace,
+    service_record = args.service_cgroup_record
+    registry = dict(root=str(root/'unused-registry'), max_templates_global=1,
+        max_templates_per_tenant=1, max_artifact_bytes_global=args.rootfs.stat().st_size*2,
+        max_artifact_bytes_per_tenant=args.rootfs.stat().st_size*2,
+        max_template_disk_bytes=args.rootfs.stat().st_size, validation_timeout_secs=120)
+    services = RuntimeServices.prepare(args, root, [settings], [settings['templates']], key,
+        url.removeprefix('http://'), service_record, job_count=2, registry_config=registry)
+    report = {'commit': commit, 'center_sha256': sha256_file(args.center),
+              'host_sha256': sha256_file(args.host), 'namespace': namespace,
               'uid_base': args.uid_base, 'template': view, 'scope': 'prebuilt KVM create receipt recovery',
               'drop_phase': args.drop_phase, 'status': 'failed', 'create_requests': 0}
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process = None
+    native_identity = None
+
+    def observe_pending_native(intent):
+        # Diagnostic fault-window observation only. No global identity, cleanup
+        # or authorization is inferred from these local rows. Recovery below
+        # uses the ORIGINAL checked center/host audits and their full binding.
+        with contextlib.closing(sqlite3.connect(
+                (root/'db/controller.db').as_uri()+'?mode=ro', uri=True)) as db:
+            rows = db.execute('SELECT s.sandbox_id,s.state_blob,o.options_json FROM sandboxes s '
+                              'JOIN sandbox_create_options o USING(sandbox_id)').fetchall()
+        matches = [(identity,json.loads(state)) for identity,state,options_blob in rows
+                   if json.loads(options_blob).get('metadata') == intent['metadata']]
+        assert len(matches) <= 1, 'ambiguous original pending native observation'
+        if matches:
+            identity,state = matches[0]
+            assert state['phase'] == 'Starting', 'required fault window was missed'
+            return dict(native_id=identity, phase='Starting')
+        return None
+
+    def capture(identity, center, host):
+        nonlocal native_identity
+        row = [r for r in host['operations'] if r['current'] and
+               r['identity']['sandbox_id'] == identity['sandbox_id']]
+        assert len(row) == 1, 'original host responsibility unknown'
+        if row[0]['local'] is None:
+            report['no_local_admission'] = True
+            return
+        local = local_binding(host, identity['sandbox_id'], expected_node=identity['node'])
+        native = [value for value in host['native'] if value['sandbox'] == local['sandbox']]
+        assert len(native) == 1 and native[0]['owner'] == local['owner']
+        if native[0]['phase'] == 'Starting':
+            return False  # Observe the original preparation; never issue Create again.
+        native_identity = f"sb-{namespace}-{local['sandbox']}"
+        services.processes.stop('host-0')
+        try:
+            assert services.native_id_for(identity['sandbox_id']) == native_identity
+            secret, name, claim = record_for(root, native_id=native_identity)
+            actual = secret['template']
+            assert actual['template_id'] == view['templateId'] and actual['revision'] == view['revision']
+            assert actual['kernel']['sha256'] == view['kernelSha256']
+            assert actual['rootfs']['sha256'] == view['rootfsSha256']
+            assert actual['resources'] == dict(cpu_count=view['cpuCount'],memory_mib=view['memoryMib'],
+                disk_bytes=view['diskBytes'],host_memory_bytes=view['hostMemoryBytes'])
+            claim['network_inode'] = json.loads((root/'jails/.claims'/name/'network.json').read_text())['namespace_inode']
+        finally:
+            services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
+        report['cleanup_identity'] = claim
+        report.setdefault('delete_observations', []).append(dict(identity=identity, local=local))
     try:
-        process = start_server(args.server, config, root / 'server.log', None,
-                               command_prefix=service_cgroup.prefix(service_record))
-        wait_ready(opener, url, key, process)
+        services.start()
+        services.wait_ready()
         env = object.__new__(GenericEnvironment)
         env._network_policy = SimpleNamespace(network_mode=NetworkMode.PUBLIC)
         env.entry = {'requirements': {'build_timeout_sec': 120}}
@@ -120,8 +171,7 @@ def exercise(args):
                 try:
                     deadline = time.monotonic() + 120
                     while time.monotonic() < deadline:
-                        found = await asyncio.to_thread(matching_runtime, root / 'db/controller.db',
-                            env.runtime_intent, owner=1, namespace=namespace)
+                        found = await asyncio.to_thread(observe_pending_native, env.runtime_intent)
                         if found is not None:
                             assert found['phase'] == 'Starting', 'required fault window was missed'
                             report['original_pending_identity'] = found
@@ -135,10 +185,10 @@ def exercise(args):
             response = await original_send(client, request, *positional, **kwargs)
             assert response.status_code == 201
             data = response.json()
-            _, name, claim = record_for(root, SimpleNamespace(sandbox_id=data['sandboxID']))
-            report['original_claim'] = claim
-            report['resource_name'] = name
-            report['service_live'] = service_cgroup.observe(service_record, pids=[process.pid])
+            report['service_live'] = services.processes.observe()
+            report['original_create_identity'] = find_runtime_create(services.planned_audit('center'),
+                env.runtime_intent['metadata'], deployment=services.center_config['deployment_id'])
+            assert report['original_create_identity']['sandbox_id'] == data['sandboxID']
             await response.aclose()
             raise httpx.ReadError('injected lost create response', request=request)
         httpx.AsyncClient.send = drop_receipt
@@ -150,45 +200,45 @@ def exercise(args):
         finally:
             httpx.AsyncClient.send = original_send
         assert report['create_requests'] == 1 and env.create_dispatched and env.sandbox_id is None
-        def delete_settled_create(identity):
-            found = matching_runtime(root / 'db/controller.db', env.runtime_intent,
-                                     owner=1, namespace=namespace, sandbox_id=identity)
-            assert found is not None and found['phase'] != 'Starting'
-            # Capture the exact original resource before DELETE/retirement.
-            _, name, claim = record_for(root, SimpleNamespace(sandbox_id=identity))
-            claim['network_inode'] = json.loads((root / 'jails/.claims' / name / 'network.json').read_text())['namespace_inode']
-            report['cleanup_identity'] = claim
-            report.setdefault('delete_observations', []).append(found)
-            return fetch(opener, url, 'DELETE', '/sandboxes/' + identity, key)[0]
-        recovery = recover_runtime_create(root / 'db/controller.db', env.runtime_intent,
-            owner=1, namespace=namespace, deadline=time.monotonic() + 120,
-            delete=delete_settled_create)
+        def read_host(node):
+            assert node == services.host_configs[0]['inbox']['node']
+            return services.planned_audit('host-0')
+        recovery = recover_runtime_create(env.runtime_intent,
+            read_center=lambda: services.planned_audit('center'), read_host=read_host,
+            owner=1, deployment=services.center_config['deployment_id'],
+            deadline=time.monotonic()+120, before_delete=capture,
+            create_identity=report.get('original_create_identity'),
+            delete=lambda identity: fetch(opener, url, 'DELETE', '/sandboxes/'+identity, key)[0])
         report['recovery'] = recovery
         assert recovery['status'] == 'destroyed' and recovery['delete_acknowledged']
-        assert len(report['delete_observations']) == 1
+        assert len(report.get('delete_observations', [])) + int(report.get('no_local_admission',False)) == 1
         if args.drop_phase == 'starting':
-            assert recovery['pending_create_observed'], 'pending recovery window was missed'
-        original = report['cleanup_identity']
-        report['physical_audit'] = [audit_gone(root, args.firecracker, args.cgroup_parent,
-                                              original['resource_id'], original)]
-        check_no_resources(root, namespace, args.firecracker, args.uid_base, [original])
-        assert terminal_cleanup_confirmed(root / 'db/controller.db', recovery['sandbox_id'])
+            assert report['original_pending_identity']['phase'] == 'Starting'
+        original = report.get('cleanup_identity')
+        report['physical_audit'] = ([audit_gone(root,args.firecracker,args.cgroup_parent,
+            original['resource_id'],original)] if original is not None else [])
+        check_no_resources(root,namespace,args.firecracker,args.uid_base,
+            [original] if original is not None else [],native=services.native_pools[0])
+        if native_identity is not None:
+            assert terminal_cleanup_confirmed(root/'db/controller.db',native_identity)
+        else:
+            assert not report['physical_audit'] and report['no_local_admission']
         assert sha256_file(args.rootfs) == view['rootfsSha256']
         report['status'] = 'passed'
     finally:
-        if process is not None:
-            stop_server(process)
+        services.processes.stop_all()
         if report['status'] == 'passed':
-            report['service_cleanup'] = service_cgroup.remove(service_record)
+            report['service_cleanup'] = services.cleanup_staging()
         (root / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({'status': report['status'], 'evidence': str(root), 'commit': commit}), flush=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('server', 'jailer', 'firecracker', 'kernel', 'rootfs', 'scratch-parent',
+    for name in ('jailer', 'firecracker', 'kernel', 'rootfs', 'scratch-parent',
                  'cgroup-parent', 'service-cgroup-parent'):
         parser.add_argument('--' + name, type=lambda p: Path(p).resolve(strict=True), required=True)
     parser.add_argument('--uid-base', type=int, required=True)
     parser.add_argument('--drop-phase', choices=('starting', 'running'), default='running')
+    add_arguments(parser)
     exercise(parser.parse_args())

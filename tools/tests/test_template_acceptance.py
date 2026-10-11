@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -8,10 +9,9 @@ import unittest
 
 from tools.generic_capacity import GIB, MIB, plan
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE, RUNTIME_PROFILE
-from tools.template_build_client import BuildClient
 from tools.template_build_service import BuildHTTP, Supervisor, configuration
 from tools.template_build_store import BuildStore
-from tools.tests.template_build_fixture import compiled_helper, complete_pool_policy
+from tools.tests.template_build_fixture import compiled_helper, complete_pool_policy, PRIVATE_TEST_KEY, PrivateBuildClient as BuildClient
 from tools.template_worker import validate_request
 from tools.template_inputs import InvalidTemplate
 from tools.tests.test_template_build_service import FakeBackend, PowerLoss
@@ -42,18 +42,14 @@ def configured(root, deployment, *, builder_bytes=32 * GIB, **extra_config):
         base = {'template_id': 'base', 'owner': None, 'rootfs': {'path': str(disk), 'size_bytes': builder_bytes},
                 'resources': shape | {'disk_bytes': builder_bytes}}
         pool.update(namespace=str(i), database=str(directory / 'db/controller.db'), node_state_dir=str(directory / 'state'),
-                    chroot_base=str(directory / 'jails'), bind=f'127.0.0.1:{3100 + i}', uid_base=1000 + 100 * i,
-                    credentials=[{'tenant': 1, 'secret': f'pool-{i}'}], kernel=str(kernel),
+                    chroot_base=str(directory / 'jails'), uid_base=1000 + 100 * i, kernel=str(kernel),
                     rootfs=str(disk), host_resources={'cgroup_parent': str(directory / 'cgroup')},
                     public_ipv4_enabled=True, templates={'templates': [base], 'aliases': {'base': 'base'},
                         'compute_limits': deployment[kind + '_compute']})
-        if i:
-            pool['internal_build_vms'] = True
-        else:
+        if not i:
             registry = root / 'registry'
             for path in (registry, registry / 'inbox', registry / 'artifacts'):
                 path.mkdir(mode=0o700)
-            pool['template_registry'] = deployment['registry'] | {'root': str(registry)}
         path = root / f'{kind}.json'
         path.write_text(json.dumps(pool))
         path.chmod(0o600)
@@ -64,10 +60,20 @@ def configured(root, deployment, *, builder_bytes=32 * GIB, **extra_config):
     config = {'root': str(root / 'builds'), 'bind': '127.0.0.1:3102',
               'runtime_config': str(pool_files[0]), 'builder_config': str(pool_files[1]),
               'tools': {name: {'path': str(kernel), 'sha256': hashlib.sha256(b'kernel').hexdigest()} for name in tools},
-              'limits': deployment['limits'], 'dns_servers': ['1.1.1.1']}
+              'limits': deployment['limits'], 'dns_servers': ['1.1.1.1'],
+              'registry': deployment['registry'] | {'root': str(registry)}, 'registry_owner_uid': os.geteuid(),
+              'builder_template': copy.deepcopy(pools[1]['templates']['templates'][0]),
+              'center': {'private_address': '127.0.0.1:3103', 'domain': 'localhost',
+                         'credential_file': str(root / 'private.key'),
+                         'private_windows': {'window_duration_ms': 600000, 'max_anchors': 4},
+                         'max_timeout_secs': pools[1]['max_timeout_secs'],
+                         'max_lifetime_secs': pools[1]['max_lifetime_secs']}}
+    (root / 'private.key').write_text(PRIVATE_TEST_KEY)
+    (root / 'private.key').chmod(0o600)
     complete_pool_policy(root, pools[0], pools[1], config)
     for path, pool in zip(pool_files, pools):
-        path.write_text(json.dumps(pool))
+        path.write_text(json.dumps({'native': pool, 'inbox': {}, 'internal': {},
+                                    'template_cache': {}, 'artifact_source': {}}))
     config.update(extra_config)
     path = root / 'build.json'
     path.write_text(json.dumps(config))
@@ -233,7 +239,7 @@ class AcceptancePressureTests(unittest.TestCase):
             backend.fail = True
             backend.cleanup_known = False
             store = BuildStore(root / 'builds', limits, bounded=cfg['bounded_builds'] | {'helper': compiled_helper()}, physical_profile=cfg['physical_storage_profile'], clock=lambda: 1000, free_bytes=lambda: 1000 * GIB)
-            server = BuildHTTP(('127.0.0.1', 0), store, [{'tenant': 1, 'secret': 'owner'}])
+            server = BuildHTTP(('127.0.0.1', 0), store, PRIVATE_TEST_KEY)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             client = BuildClient('http://127.0.0.1:' + str(server.server_port), 'owner')

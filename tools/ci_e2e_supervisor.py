@@ -26,6 +26,9 @@ from tools.ci_runner_supervisor import atomic_json
 from tools.system_acceptance import json_file, write_once
 from tools.check_kvm_host import trusted_path
 from tools.bounded_acceptance import prepared_ci_physical_profile
+from tools import ci_e2e_artifacts as service_artifacts
+from tools.ci_redis import check_material as redis_material
+from tools.service_cgroup import service_identity
 
 PREFIX = '/repos/' + REPOSITORY + '/'
 REPO = 'https://github.com/' + REPOSITORY + '.git'
@@ -41,6 +44,30 @@ def dataset_files(config):
 
 
 def validate_host_inputs(config):
+    # One architecture, not an optional path beside the retired public host.
+    if 'server' in config or config.get('prepare_candidate') is not True:
+        raise ValueError('only offline-prepared center/host candidates are accepted')
+    from tools.ci_e2e_prepare import build_environment, service_paths
+    build_environment(config)
+    service_paths(config)
+    redis_material(Path(config['redis_material']), protected=True)
+    tls_root = private_path(config['tls_material'], directory=True)
+    host_roles = ('runtime',) if config.get('source_kind') == 'prepared-ci' else ('runtime', 'builder')
+    tls_paths = {str(tls_root / name) for name in service_artifacts.tls_material_files(host_roles)}
+    for path in tls_paths:
+        value = private_path(path)
+        if not 0 < value.stat().st_size <= 64 * 1024:
+            raise ValueError('fixed bounded protected service TLS material required')
+    identities = [service_identity(config[role + '_uid'], config[role + '_gid'])
+                  for role in ('center', 'redis')]
+    if (None in identities or identities[0][0] == identities[1][0]
+            or type(config['uid_base']) is not int
+            or any(identity[0] >= config['uid_base'] for identity in identities)):
+        raise ValueError('independent non-root service identities outside instance UID pools required')
+    staging = trusted_path(Path(config['service_staging_parent']))
+    metadata = staging.stat()
+    if not staging.is_dir() or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o777 != 0o711:
+        raise ValueError('independent protected traversable service staging parent required')
     for flag in ('policy_template', 'budget_profile'):
         private_path(config[flag])
     for path, expected in config['host_assets'].items():
@@ -48,8 +75,10 @@ def validate_host_inputs(config):
         from tools.system_acceptance import digest as file_digest
         if file_digest(artifact) != expected:
             raise ValueError('approved host artifact changed')
+    if len({file_digest(tls_root / ('host-' + role + '.der')) for role in host_roles}) != len(host_roles):
+        raise ValueError('distinct node TLS leaves required for runtime and builder')
     prepared = config.get('source_kind') == 'prepared-ci'
-    required = {config[k] for k in ('kernel', 'rootfs', 'firecracker', 'jailer',
+    required = tls_paths | {config[k] for k in ('kernel', 'rootfs', 'firecracker', 'jailer',
                                     'policy_template', 'budget_profile')}
     if prepared:
         if not config.get('ci_fixtures'):
@@ -284,6 +313,8 @@ class Supervisor:
         self.root = private_path(config['state_root'], directory=True)
         self.path = self.root / 'state.json'
         self.state = json_file(self.path, limit=4 * 1024 * 1024) if self.path.exists() else None
+        if self.state and self.state.get('architecture') != service_artifacts.ARCHITECTURE:
+            raise ValueError('retired single-server state cannot cover a center/host candidate')
         if self.state and self.state['phase'] not in ('done', 'blocked'):
             # Never use a new configuration or checkout for an in-flight run.
             self.config = self.state['configuration']
@@ -325,10 +356,28 @@ class Supervisor:
                 expected_fixture_sha256=self.config['host_assets'][self.config['ci_fixtures']])
         return {}
 
-    def begin(self, candidate, base, observed_test=None, observed_promotion=None):
+    def verified_candidate(self):
+        """Reobserve BOTH sealed actual binaries, not a build's exit code alone."""
+        from tools.ci_e2e_prepare import build_environment, contract_versions, service_paths
+        paths = service_paths(self.config)
+        expected = self.root / (self.state['id'] + '-candidate-artifacts.json')
+        if self.state.get('candidate_manifest') != str(expected):
+            raise ValueError('exact supervised candidate manifest required')
+        saved = json_file(private_path(expected), limit=16 * 1024)
+        manifest = service_artifacts.load(expected, candidate=self.state['candidate'],
+            paths=paths, versions=saved.get('versions'))
+        environment = build_environment(self.config)
+        for binary in paths.values():
+            if contract_versions(binary, environment) != manifest['versions']:
+                raise ValueError('actual service contract versions differ from the candidate receipt')
+        # Reject replacement during the metadata probes too.
+        return service_artifacts.load(expected, candidate=self.state['candidate'],
+            paths=paths, versions=manifest['versions'])
+
+    def begin(self, candidate, base, observed_promotion=None):
         if observed_promotion is not None and self.config.get('auto_promotions') is not True:
             raise ValueError('automatic promotion policy is not enabled')
-        authorize(candidate, approved_commits=self.config['approved_commits'], observed_test=observed_test,
+        authorize(candidate, approved_commits=self.config['approved_commits'],
                   observed_promotion=observed_promotion)
         validate_host_inputs(self.config)
         checkout = private_path(self.config['checkout'], directory=True)
@@ -368,9 +417,11 @@ class Supervisor:
             archive = self.root / (self.state['id'] + '.json')
             if not archive.exists():
                 write_once(archive, self.state)
-        self.state = dict(id=identity, candidate=candidate, base=base, phase='waiting', configuration=self.config,
+        self.state = dict(id=identity, architecture=service_artifacts.ARCHITECTURE,
+            candidate=candidate, base=base, phase='waiting', configuration=self.config,
             dataset=dataset,
             promotion=dict(source=observed_promotion[0], target=observed_promotion[1]) if observed_promotion else None,
+            dk=dict(phase='new'),
             batches=[dict(names=names, oracle_mode=modes[names[0]], phase='new') for names in batches],
             expected=[name for names in batches for name in names], check_id=None,
             check_name=self.config.get('check_name', check_name(dataset, source_kind=self.config.get('source_kind'))),
@@ -379,28 +430,112 @@ class Supervisor:
                          for t in lock['tasks'] if t['name'] in {n for b in batches for n in b}})
         self.save()
 
+    def prepare_dk(self):
+        """Persist one exact fault-group intent before launching ANY Harbor task."""
+        config=self.config
+        validate_host_inputs(config)
+        self.verified_candidate()
+        checkout=Path(config['checkout'])
+        entry=trusted_path(checkout/'tests/system/center_host_faults.py')
+        if not entry.is_file():
+            raise ValueError('mandatory real DK producer missing; no Harbor launch permitted')
+        root=private_path(config['scratch_parent'],directory=True)/uuid.uuid4().hex[:8]
+        command=[str(checkout/'tests/compat/.venv/bin/python'),str(entry)]
+        for flag in ('center','host','redis_material','tls_material','service_staging_parent',
+                     'center_uid','center_gid','redis_uid','redis_gid','jailer','firecracker',
+                     'kernel','rootfs','uid_base','scratch_parent','service_cgroup_parent'):
+            command.extend(['--'+flag.replace('_','-'),str(config[flag])])
+        command.extend(['--candidate-manifest',self.state['candidate_manifest'],
+            '--run-root',str(root),'--run-identity',self.state['id'],
+            '--service-cgroup-record',str(root/'service-cgroup.json'),
+            '--service-profile',config['budget_profile']])
+        self.state['dk'].update(root=str(root),command=command,checkout=str(checkout),
+            deadline_seconds=7200,unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',phase='launching')
+        self.save()  # A lost launch acknowledgement never permits another group.
+
+    def observe_dk(self):
+        """Require real six-case/role/cleanup evidence; no old-chain fallback."""
+        group=self.state.get('dk')
+        if not isinstance(group,dict):
+            self.block('mandatory_fault_group_identity_unknown')
+            return False
+        if group['phase']=='done':
+            service_artifacts.require_dk(group.get('result'),candidate=self.state['candidate'])
+            return True
+        if group['phase']=='new':
+            try:
+                self.prepare_dk()
+                launch(group)
+            except (OSError,ValueError,TimeoutError):
+                self.block('mandatory_fault_group_preparation_or_launch_unknown')
+                return False
+            group['phase']='running'
+            self.save()
+            return False
+        fields=unit_state(group['unit'])
+        if fields.get('ActiveState') in ('activating','deactivating') or (
+                fields.get('ActiveState')=='active' and fields.get('ExecMainCode')=='0'):
+            return False
+        if fields.get('ExecMainCode')!='1':
+            self.block('mandatory_fault_group_termination_unknown')
+            return False
+        root=Path(group['root'])
+        try:
+            if group['phase']!='reclaiming':
+                manifest=self.verified_candidate()
+                report=json_file(private_path(root/'report.json'),limit=4*1024**2)
+                service_artifacts.require_service_boundary(report,manifest)
+                execution=service_artifacts.require_execution_manifest(report.get('execution_manifest'),manifest,
+                    expected=json_file(private_path(root/'execution-manifest.json'),limit=32768))
+                service_artifacts.require_process_evidence(report.get('service_processes'),execution)
+                from tools.system_acceptance import digest as file_digest
+                if (execution['run_id']!=self.state['id']
+                        or execution['candidate_manifest_sha256']!=file_digest(Path(self.state['candidate_manifest']))
+                        or fields.get('ExecMainStatus')!='0'
+                        or json_file(private_path(root/'service-cleanup.json')).get('removed') is not True):
+                    raise ValueError('fault group candidate, actual execution or exact cleanup unconfirmed')
+                result=service_artifacts.require_dk(report.get('dk'),candidate=self.state['candidate'])
+                if result['execution_manifest_sha256']!=file_digest(root/'execution-manifest.json'):
+                    raise ValueError('fault group cases do not bind its original execution receipt')
+                group.update(result=result,root_identity=[root.stat().st_dev,root.stat().st_ino],phase='reclaiming')
+                self.save()
+            if root.exists():
+                remove_private_tree(root,group['root_identity'])
+            subprocess.run(['systemctl','stop',group['unit']],check=True,capture_output=True,timeout=20)
+            group['phase']='done'
+            self.save()
+            return True
+        except (OSError,ValueError):
+            self.block('mandatory_fault_group_failed_or_cleanup_unknown')
+            return False
+
     def prepare(self, batch, index):
         config = self.config
         validate_host_inputs(config)
+        manifest = self.verified_candidate()
         checkout = Path(config['checkout'])
         root = private_path(config['scratch_parent'], directory=True) / uuid.uuid4().hex[:8]
         namespaces = [uuid.uuid4().hex[:16], uuid.uuid4().hex[:16]]
         policy = instantiate_policy(json_file(Path(config['policy_template'])), root, namespaces,
                                     job_count=len(batch['names']))
-        if self.state.get('candidate_artifacts'):
+        if self.state.get('window_helper_sha256'):
             from tools.system_acceptance import digest as file_digest
-            for path, expected in self.state['candidate_artifacts'].items():
-                if file_digest(trusted_path(Path(path))) != expected:
-                    raise ValueError('prepared candidate artifact changed')
+            if file_digest(trusted_path(Path(config['window_helper']))) != self.state['window_helper_sha256']:
+                raise ValueError('prepared window reducer changed')
             helper = policy['public']['bounded_builds']['helper']
-            helper.update(path=config['window_helper'], sha256=self.state['candidate_artifacts'][config['window_helper']])
+            helper.update(path=config['window_helper'], sha256=self.state['window_helper_sha256'])
         policy_file = self.root / (self.state['id'] + '-' + str(index) + '-policy.json')
         write_once(policy_file, policy)
         args = [str(checkout / 'benchmarks/.venv/bin/python'), str(checkout / 'tests/system/harbor_generic_chain.py')]
-        for flag in ('server', 'firecracker', 'jailer', 'kernel', 'rootfs', 'tools',
+        for flag in ('center', 'host', 'redis_material', 'tls_material', 'service_staging_parent',
+                     'center_uid', 'center_gid', 'redis_uid', 'redis_gid',
+                     'firecracker', 'jailer', 'kernel', 'rootfs', 'tools',
                      'scratch_parent', 'cgroup_parent', 'build_cgroup_parent', 'service_cgroup_parent',
                      'uid_base', 'budget_profile'):
             args.extend(['--' + flag.replace('_', '-'), str(config[flag])])
+        args.extend(['--candidate-manifest', self.state['candidate_manifest'],
+                     '--run-identity', self.state['id'],
+                     '--service-cgroup-record',str(root/'service-cgroup.json')])
         if config.get('source_kind') == 'prepared-ci':
             args.extend(['--ci-fixtures', config['ci_fixtures'],
                          '--prepared-ci-disk-budget-bytes', str(config['prepared_ci_disk_budget_bytes'])])
@@ -420,6 +555,7 @@ class Supervisor:
         for name in batch['names']:
             args.extend(['--task', name])
         batch.update(root=str(root), command=args, checkout=str(checkout),
+            services=service_artifacts.public_identity(manifest),
             deadline_seconds=int(sum(sum(self.state['task_inputs'][name]['requirements'][key]
                 for key in ('build_timeout_sec', 'agent_timeout_sec', 'verifier_timeout_sec'))
                 for name in batch['names'])) + 7200,
@@ -445,12 +581,14 @@ class Supervisor:
             lease.pause()
             if not lease.exclusive():
                 return
-            state['phase'] = 'preparing' if self.config.get('prepare_candidate') else 'running'
+            state['phase'] = 'preparing'
             self.save()
         if state['phase'] == 'preparing':
             if 'prepare_unit' not in state:
                 state['prepare_unit'] = 'sandproof-e2e-prepare-' + uuid.uuid4().hex + '.service'
-                preparation = dict(self.config, candidate=state['candidate'])
+                state['candidate_manifest'] = str(self.root / (state['id'] + '-candidate-artifacts.json'))
+                preparation = dict(self.config, candidate=state['candidate'],
+                                   candidate_manifest=state['candidate_manifest'])
                 prepare_path = self.root / (state['id'] + '-prepare.json')
                 write_once(prepare_path, preparation)
                 self.save()
@@ -478,15 +616,25 @@ class Supervisor:
                 return
             subprocess.run(['systemctl', 'stop', state['prepare_unit']], check=True, capture_output=True, timeout=20)
             from tools.system_acceptance import digest as file_digest
-            state['candidate_artifacts'] = {self.config[key]: file_digest(trusted_path(Path(self.config[key])))
-                                           for key in ('server', 'window_helper')}
+            try:
+                self.verified_candidate()
+                state['window_helper_sha256'] = file_digest(trusted_path(Path(self.config['window_helper'])))
+            except (OSError, ValueError, TimeoutError):
+                self.block('candidate_service_artifact_identity_unknown')
+                return
             state['phase'] = 'running'
             self.save()
+        if not self.observe_dk():
+            return
         for index, batch in enumerate(state['batches']):
             if batch['phase'] == 'done':
                 continue
             if batch['phase'] == 'new':
-                self.prepare(batch, index)
+                try:
+                    self.prepare(batch, index)
+                except (OSError, ValueError, TimeoutError):
+                    self.block('candidate_service_preparation_identity_unknown')
+                    return
                 launch(batch)
                 batch['phase'] = 'running'
                 self.save()
@@ -502,7 +650,11 @@ class Supervisor:
             root = Path(batch['root'])
             try:
                 if batch['phase'] != 'reclaiming':
-                    assets = self.config['host_assets'] | state.get('candidate_artifacts', {})
+                    manifest = self.verified_candidate()
+                    service_artifacts.require_report_identity(batch.get('services'), manifest)
+                    report = json_file(private_path(root / 'report.json'), limit=4 * 1024 * 1024)
+                    service_artifacts.require_service_boundary(report, manifest)
+                    assets = self.config['host_assets']
                     result = batch_result(root, candidate=state['candidate'], names=batch['names'],
                         dataset=state.get('dataset', 'terminal-bench@2.1'), source_kind=self.config['source_kind'],
                         oracle_mode=batch.get('oracle_mode', 'original'),
@@ -510,8 +662,8 @@ class Supervisor:
                         expected_fixture_sha256=self.result_policy().get('expected_fixture_sha256'),
                         exit_code=int(fields['ExecMainStatus']), full_task_count=len(state['all_tasks']), expected_hashes={
                             name: assets[self.config[key]] for name, key in
-                            (('server_sha256', 'server'), ('kernel_sha256', 'kernel'),
-                             ('builder_base_sha256', 'rootfs'))})
+                            (('kernel_sha256', 'kernel'), ('builder_base_sha256', 'rootfs'))},
+                        service_manifest=manifest,dk_evidence=state['dk']['result'])
                     batch['result'] = result
                     batch['root_identity'] = [root.stat().st_dev, root.stat().st_ino]
                     batch['phase'] = 'reclaiming'
@@ -555,9 +707,7 @@ def main():
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--candidate')
     parser.add_argument('--base')
-    automatic = parser.add_mutually_exclusive_group()
-    automatic.add_argument('--follow-test', action='store_true', help='legacy trusted test-only observer')
-    automatic.add_argument('--follow-promotions', action='store_true',
+    parser.add_argument('--follow-promotions', action='store_true',
                            help='protected promotions and legal main→test sync only')
     parser.add_argument('--local-only', action='store_true', help='no GitHub check write; not automatic CI acceptance')
     selected = parser.add_mutually_exclusive_group()
@@ -568,7 +718,7 @@ def main():
     if os.geteuid() != 0:
         parser.error('trusted root host only; never run as a GitHub PR job')
     config = json_file(private_path(args.config))
-    if (args.follow_test or args.follow_promotions) and (args.profile or args.task or args.batch_size is not None):
+    if args.follow_promotions and (args.profile or args.task or args.batch_size is not None):
         parser.error('automatic selection comes only from the protected host policy')
     if args.profile or args.task or args.batch_size is not None:
         config['selection'] = dict(config['selection'])
@@ -583,14 +733,14 @@ def main():
             config['selection']['tasks'] = args.task
         if args.batch_size is not None:
             config['selection']['batch_size'] = args.batch_size
-    if args.follow_test and (args.candidate or args.base or not config.get('auto_test')):
-        parser.error('follow-test requires the reviewed auto_test policy and no manual candidate')
+    if 'auto_test' in config:
+        parser.error('retired test-only observer configuration is not accepted')
     if args.follow_promotions and (args.candidate or args.base or args.local_only
             or config.get('auto_promotions') is not True or not config.get('repository')
             or type(config.get('ordinary_check_app_id')) is not int or config['ordinary_check_app_id'] <= 0
             or re.fullmatch('[0-9a-f]{40}', config.get('promotion_floor', '')) is None):
         parser.error('follow-promotions requires an enabled private repository/floor policy and GitHub checks')
-    if not (args.follow_test or args.follow_promotions) and (not args.candidate or not args.base):
+    if not args.follow_promotions and (not args.candidate or not args.base):
         parser.error('manual admission requires candidate and base')
     root = private_path(config['state_root'], directory=True)
     lock = (root / 'supervisor.lock').open('a')
@@ -616,7 +766,6 @@ def main():
                 break
             if not supervisor.state or supervisor.state['phase'] == 'done':
                 observed_promotion = None
-                refs = {}
                 if args.follow_promotions:
                     heads = promotion_heads(source_client=source_client, proxy=config.get('proxy'))
                     repository = private_path(config['repository'], directory=True)
@@ -635,22 +784,16 @@ def main():
                     source, target, candidate, base = proposal
                     observed_promotion = (source, target, candidate)
                 else:
-                    values = git('ls-remote', REPO, 'refs/heads/test', 'refs/heads/main',
-                        source_client=source_client, proxy=config.get('proxy')) if args.follow_test else ''
-                    refs = {line.split()[1]: line.split()[0] for line in values.splitlines()}
-                    candidate = refs['refs/heads/test'] if args.follow_test else args.candidate
-                    base = refs['refs/heads/main'] if args.follow_test else args.base
+                    candidate, base = args.candidate, args.base
                 authorize(candidate, approved_commits=config['approved_commits'],
-                          observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None,
                           observed_promotion=observed_promotion)
                 prepared = checkout_candidate(config, candidate, source_client) if config.get('repository') else config
                 supervisor.config = prepared
-                supervisor.begin(candidate, base, observed_test=refs.get('refs/heads/test') if config.get('auto_test') else None,
-                                 observed_promotion=observed_promotion)
+                supervisor.begin(candidate, base, observed_promotion=observed_promotion)
             if supervisor.state['phase'] == 'blocked':
                 break
             supervisor.tick()
-            if not (args.follow_test or args.follow_promotions) and supervisor.state['phase'] == 'done':
+            if not args.follow_promotions and supervisor.state['phase'] == 'done':
                 break
         except (APIError, subprocess.SubprocessError, OSError, ValueError) as error:
             print('E2E observation pending: ' + type(error).__name__, flush=True)

@@ -30,6 +30,7 @@ pub use contracts::{
     AuthorityPort, CenterConfig, CommittedDriver, HostPort, NodeObservationPolicy, PublicTemplate,
     TemplateProvider,
 };
+pub use create_binding::LifecyclePolicy;
 pub use private_gate::CenterBuildPort;
 pub use projection::DataRoute;
 pub use public_snapshot::PublicSnapshot;

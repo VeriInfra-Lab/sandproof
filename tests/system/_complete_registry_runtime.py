@@ -15,6 +15,7 @@ _require_assertions()
 from dataclasses import dataclass
 import copy
 import json
+import http.client
 import os
 from pathlib import Path
 import secrets
@@ -24,6 +25,8 @@ import sys
 import tempfile
 import time
 import urllib.parse
+import urllib.request
+import urllib.error
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -34,6 +37,8 @@ from tools.bounded_acceptance import (
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
 from tools.template_build_service import Backend, configuration
 from tools.template_stage import file_hash
+from _runtime_services import RuntimeServices, add_arguments as add_service_arguments
+from server_process_crash import fetch
 
 MIB = 1024 * 1024
 
@@ -89,10 +94,59 @@ class RegistryDeployment:
     root: Path
     namespaces: list
     settings: list
-    urls: list
-    keys: list
-    binary: Path
+    key: str
+    foreign_key: str
+    services: RuntimeServices
     build_config: Path
+
+    def wait_center_listener(self):
+        """Observe read-only readiness, without requiring a faulted host alive."""
+        child = self.services.processes.children['center']
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if child.poll() is not None:
+                raise RuntimeError('original center exited after audit restart')
+            try:
+                if fetch(opener, self.services.sdk_url, 'GET', '/v2/sandboxes', self.key)[0] == 200:
+                    return
+            except (OSError, http.client.HTTPException):
+                pass
+            time.sleep(.1)
+        raise RuntimeError('original center listener remained unobserved after audit restart')
+
+    def center_snapshot(self):
+        """Read the ORIGINAL allowlisted audit under its exact writer lease."""
+        processes = self.services.processes
+        child = processes.children.get('center')
+        running = child is not None and child.poll() is None
+        processes.stop('center')
+        try:
+            return processes.audit('center')
+        finally:
+            if running:
+                processes.start('center')
+                self.wait_center_listener()
+
+    def native_id(self, sandbox, *, index=0):
+        processes = self.services.processes
+        role = 'host-' + str(index)
+        child = processes.children.get(role)
+        running = child is not None and child.poll() is None
+        processes.stop(role)
+        try:
+            return self.services.native_id_for(sandbox, index=index)
+        finally:
+            if running:
+                processes.start(role)
+
+    def validation_snapshot(self, candidate):
+        values = self.center_snapshot()
+        matches = [record for record in values['sandboxes'] if record['private'] is True
+                   and record['create']['template_revision'] == 'candidate-' + candidate + '-r1']
+        if len(matches) != 1:
+            raise ValueError('exact original private validation identity is unknown or ambiguous')
+        return matches[0]
 
     def open_builder(self, *, timeout=600, internet=False):
         """Persist the original private identity before its only VM POST."""
@@ -100,23 +154,24 @@ class RegistryDeployment:
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
         backend = Backend(configuration(self.build_config))
-        opened = backend.request("builder", "POST", "/sandproof/internal-build-windows", {})
+        opened = backend.request("builder", "POST", "/sandproof/internal-build-windows", {}, owner=1)
         window = opened["requestWindow"]
         identity = secrets.token_hex(16)
         intent = {"id": identity, "requestWindow": window, "sandboxID": None, "settled": False}
         _save(self.root / ("builder-intent-" + identity + ".json"), intent, fresh=True)
         vm = backend.request("builder", "POST", "/sandproof/internal-build-vms/" + identity,
-            {"timeout": timeout, "allowInternetAccess": internet, "requestWindow": window}, timeout=timeout)
+            {"timeout": timeout, "allowInternetAccess": internet, "requestWindow": window}, owner=1, timeout=timeout)
         session = vm.get("session")
         if session is None:
             raise RuntimeError("original private builder session is unavailable")
         intent["sandboxID"] = session["sandboxID"]
         _save(self.root / ("builder-intent-" + identity + ".json"), intent)
-        settings, url = self.settings[1], self.urls[1]
-        connection = ConnectionConfig(api_url=url, sandbox_url=url, domain=settings["domain"],
-            api_key=self.keys[1], retries=0, request_timeout=30,
-            extra_sandbox_headers={"X-Access-Token": session["envdAccessToken"]})
-        sandbox = Sandbox(sandbox_id=session["sandboxID"], sandbox_domain=settings["domain"],
+        url, center = 'http://' + backend.config['center']['private_address'], backend.config['center']
+        connection = ConnectionConfig(api_url=url, sandbox_url=url, domain=center["domain"],
+            api_key=backend.backend_key, retries=0, request_timeout=30,
+            extra_sandbox_headers={"X-Access-Token": session["envdAccessToken"],
+                "x-sandproof-build-key": backend.backend_key, "x-sandproof-build-owner": "1"})
+        sandbox = Sandbox(sandbox_id=session["sandboxID"], sandbox_domain=center["domain"],
             envd_version=Version(session["envdVersion"]), envd_access_token=session["envdAccessToken"],
             connection_config=connection)
         return sandbox, identity
@@ -134,27 +189,27 @@ class RegistryDeployment:
         settled = intent.get("builder_settled")
         if settled is None:
             fenced = backend.request("builder", "POST", "/sandproof/internal-build-windows/"
-                + urllib.parse.quote(window, safe="") + "/close", {})
+                + urllib.parse.quote(window, safe="") + "/close", {}, owner=1)
             assert fenced == {"requestWindow": window, "closed": True}
             query = "/sandproof/internal-build-vms/" + identity + "?" + urllib.parse.urlencode({"requestWindow": window})
             from tools.template_build_store import BuildError
             try:
-                vm = backend.request("builder", "GET", query)
+                vm = backend.request("builder", "GET", query, owner=1)
             except BuildError as error:
                 if error.code != 404:
                     raise
                 vm = None  # Only the committed fence permits this absence conclusion.
             if vm is not None and not vm["cleanupComplete"]:
-                backend.request("builder", "DELETE", "/sandboxes/" + vm["sandboxID"])
+                backend.request("builder", "DELETE", "/sandboxes/" + vm["sandboxID"], owner=1)
                 deadline = time.monotonic() + 60
                 while not vm["cleanupComplete"]:
                     assert time.monotonic() < deadline, "original builder cleanup remains unknown"
                     time.sleep(0.1)
-                    vm = backend.request("builder", "GET", query)
+                    vm = backend.request("builder", "GET", query, owner=1)
             settled = {"requestWindow": window, "sandboxID": vm["sandboxID"] if vm else None}
             intent["builder_settled"] = settled
             _save(path, intent)
-        acknowledged = backend.request("builder", "POST", "/sandproof/internal-build-vms/" + identity + "/settle", settled)
+        acknowledged = backend.request("builder", "POST", "/sandproof/internal-build-vms/" + identity + "/settle", settled, owner=1)
         assert acknowledged == {"requestWindow": window, "settled": True}
         intent["settled"] = True
         _save(path, intent)
@@ -179,13 +234,9 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
         raise ValueError("three distinct loopback ports required")
     root.mkdir(mode=0o700)
     provision_acceptance_coordination(policy, run_root=root, namespace=namespaces[0], build_namespace=namespaces[1])
-    binary = root / "server"
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
-    for name in ("images", "inputs", "builds", "registry", "registry/inbox", "registry/artifacts"):
+    for name in ("images", "inputs", "builds"):
         (root / name).mkdir(mode=0o700)
-    urls = [f"http://127.0.0.1:{port}" for port in ports]
-    keys = [secrets.token_hex(32) for _ in range(3)]
+    key, foreign_key = secrets.token_hex(32), secrets.token_hex(32)
     settings = []
     builder_rootfs = getattr(args, "builder_rootfs", None) or args.rootfs
     for index, shape in enumerate((runtime_shape, builder_shape)):
@@ -196,16 +247,16 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
         cpu, memory = shape
         rootfs = builder_rootfs if index else args.rootfs
         base = _descriptor("builder-base" if index else "runtime-base", args.kernel, rootfs, cpu, memory)
+        base['owner'] = None
         config = {"namespace": namespaces[index], "database": str(pool / "db/controller.db"),
             "node_state_dir": str(pool / "state"), "jailer": str(args.jailer), "firecracker": str(firecracker),
             "chroot_base": str(pool / "jails"), "kernel": str(args.kernel), "rootfs": str(rootfs),
             "uid_base": args.uid_base + index * 100, "vcpu_count": cpu, "memory_mib": memory,
             "host_resources": {"cgroup_parent": str(args.build_cgroup_parent if index else args.cgroup_parent),
                                "memory_max_bytes": (memory + 256) * MIB},
-            "file_policy_digest": 1, "bind": urls[index].removeprefix("http://"), "domain": "example.invalid",
-            "credentials": [{"tenant": 1, "secret": keys[index]}], "max_active_global": 2,
+            "file_policy_digest": 1, "max_active_global": 2,
             "max_active_per_tenant": 2, "max_timeout_secs": 1300, "startup_timeout_secs": 40,
-            "expiry_scan_seconds": 2, "public_ipv4_enabled": bool(index),
+            "max_lifetime_secs": 1300, "expiry_scan_seconds": 2, "public_ipv4_enabled": bool(index),
             **acceptance_pool_disk_budget(policy, "builder" if index else "runtime", rootfs.stat().st_size),
             "templates": {"templates": [base], "aliases": {"base": base["template_id"]},
                 "compute_limits": {"max_vcpus_global": 4, "max_vcpus_per_tenant": 4,
@@ -214,27 +265,42 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
                 "command_input_bytes": MIB, "rpc_request_bytes": MIB,
                 "rpc_response_bytes": MIB, "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
                 "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60}}
-        if index:
-            config["internal_build_vms"] = True
-        else:
-            config["credentials"].append({"tenant": 2, "secret": keys[2]})
-            config["template_registry"] = {"root": str(root / "registry"), **copy.deepcopy(registry_limits)}
         settings.append(config)
-    build = {"root": str(root / "builds"), "bind": urls[2].removeprefix("http://"),
-        "runtime_config": str(root / "0/config.json"), "builder_config": str(root / "1/config.json"),
+    declared = policy['runtime']['bounded_host']['physical_storage']['public_build']
+    build = {"root": str(root / "builds"), "registry": {"root": declared['registry_root'], **copy.deepcopy(registry_limits)},
+        "registry_owner_uid": declared['registry_owner_uid'],
         "tools": {name: {"path": str((args.tools / name).resolve(strict=True)), "sha256": digest}
                   for name, digest in tool_hashes.items()},
         "dns_servers": ["1.1.1.1", "8.8.8.8"], "limits": copy.deepcopy(build_limits)}
     apply_acceptance_build_policy(settings[0], settings[1], build, policy)
-    for index, config in enumerate(settings):
-        _save(root / str(index) / "config.json", config, fresh=True)
+    windows = policy['builder']['build_retry_windows']
+    services = RuntimeServices.prepare(args, root, settings, [pool['templates'] for pool in settings], key,
+        '127.0.0.1:' + str(ports[0]), args.service_cgroup_record, job_count=build_limits['max_jobs'] + 16,
+        private_builds=dict(windows=settings[1]['bounded_host']['maintenance']['windows'],
+            window_duration_ms=windows['window_duration_ms'], max_anchors=windows['max_anchors'], builder_revision='builder-base-r1',
+            policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',
+                                                      'max_lifetime_secs','startup_timeout_secs')}),
+        registry_config=build['registry'], extra_credentials=[{'tenant':'2','secret':foreign_key}])
+    settings = services.native_pools
+    build.update(bind=services.layout['helper_backend_address'],
+        runtime_config=str(services.processes.bindings['host-0']['config']),
+        builder_config=str(services.processes.bindings['host-1']['config']),
+        registry=services.center_config['template_registry'],registry_owner_uid=args.center_uid,
+        builder_template=next(item for item in services.center_config['templates']['templates']
+                              if item['template_id'] == 'builder-base'),
+        center=dict(private_address=services.layout['private_address'],domain=services.center_config['domain'],
+            credential_file=str(services.layout['build_key_file']),
+            private_windows={k:windows[k] for k in ('window_duration_ms','max_anchors')},
+            max_timeout_secs=services.center_config['private_builds']['policy']['max_timeout_secs'],
+            max_lifetime_secs=services.center_config['private_builds']['policy']['max_lifetime_secs']))
     build_config = root / "build.json"
     _save(build_config, build, fresh=True)
     configuration(build_config, require_physical_lease=False)
-    return RegistryDeployment(root, namespaces, settings, urls, keys, binary, build_config)
+    return RegistryDeployment(root, namespaces, settings, key, foreign_key, services, build_config)
 
 
 def add_registry_arguments(parser):
+    add_service_arguments(parser)
     for name in ("bounded-policy", "run-root", "build-cgroup-parent"):
         parser.add_argument("--" + name, type=Path, required=True)
     for name in ("namespace", "build-namespace"):

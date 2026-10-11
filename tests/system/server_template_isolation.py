@@ -46,9 +46,10 @@ from sdk_template_defaults import (
 )
 from server_process_crash import (
     complete_runtime, free_loopback_port, idle_snapshot, process_start_ticks,
-    provision_runtime, start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
+    original_create_identity, terminal_cleanup_confirmed,
 )
-from server_templates import MIB, assert_shape, descriptor, record_for
+from server_templates import MIB, assert_shape, descriptor, mapped_template, record_for
+from _runtime_services import RuntimeServices, add_arguments
 
 
 VM_COUNT = 8  # Four initial VMs, two failed boots, two clean replacements.
@@ -99,10 +100,10 @@ def audit_gone(root, firecracker, cgroup_parent, name, identity=None):
             "exact_resources_absent": True}
 
 
-def live_shape(root, args, sandbox, expected, opener, url, key):
+def live_shape(root, args, sandbox, expected, opener, url, key, *, native_id, native_template):
     record = assert_shape(root, args.firecracker, args.cgroup_parent,
-                          sandbox, expected, opener, url, key)
-    _, name, _ = record_for(root, sandbox)
+                          sandbox,expected,opener,url,key,native_id=native_id,native_template=native_template)
+    _, name, _ = record_for(root,native_id=native_id)
     private = root / "jails" / args.firecracker.name / name / "root/rootfs.ext4"
     source = Path(expected["rootfs"]["path"]).stat()
     disk = private.stat()
@@ -128,7 +129,7 @@ def live_shape(root, args, sandbox, expected, opener, url, key):
             machine = json.load(response)
     assert (machine["vcpu_count"], machine["mem_size_mib"]) == (
         shape["cpu_count"], shape["memory_mib"])
-    return {"resource_id": name, "pid": record["pid"], "start_time_ticks": record["start_time_ticks"],
+    return {"native_id":native_id,"resource_id": name, "pid": record["pid"], "start_time_ticks": record["start_time_ticks"],
             "network_inode": json.loads((root / "jails/.claims" / name / "network.json").read_text())["namespace_inode"],
             "disk": {"device": disk.st_dev, "inode": disk.st_ino, "bytes": disk.st_size},
             "cgroup_inode": bound["inode"], "limits": limits,
@@ -150,10 +151,10 @@ async def exercise(args):
     checkout = Path(__file__).resolve().parents[2]
     assert not subprocess.check_output(["git", "-C", str(checkout), "status", "--porcelain"])
     commit = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
-    for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "second_rootfs"):
+    for name in ("center","host", "jailer", "firecracker", "kernel", "rootfs", "second_rootfs"):
         setattr(args, name, getattr(args, name).resolve(strict=True))
     inputs = {name: {"sha256": sha256_file(getattr(args, name)), "bytes": getattr(args, name).stat().st_size}
-              for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "second_rootfs")}
+              for name in ("center","host", "jailer", "firecracker", "kernel", "rootfs", "second_rootfs")}
     assert inputs["rootfs"] != inputs["second_rootfs"], "use distinct approved template images"
     assert inputs["rootfs"]["bytes"] != inputs["second_rootfs"]["bytes"], "exercise two disk sizes"
     disk_sum = inputs["rootfs"]["bytes"] + inputs["second_rootfs"]["bytes"]
@@ -169,9 +170,6 @@ async def exercise(args):
                       "source_commit": commit}), flush=True)
     for name in ("db", "state", "jails", "images"):
         (root / name).mkdir(mode=0o700)
-    binary = root / "sandproof-server"
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
     kernel = root / "images/kernel"
     bad_kernel = root / "images/unbootable-kernel"
     images = [root / "images/first.ext4", root / "images/second.ext4"]
@@ -201,8 +199,7 @@ async def exercise(args):
         "kernel": str(kernel), "rootfs": str(images[0]), "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 512,
         "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 768 * MIB},
-        "file_policy_digest": 1, "bind": url.removeprefix("http://"), "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": key}], "max_active_global": 4, "max_active_per_tenant": 4,
+        "file_policy_digest": 1, "max_active_global": 4, "max_active_per_tenant": 4,
         "max_disk_bytes_global": 2 * disk_sum + 1024 * MIB, "max_disk_bytes_per_tenant": 2 * disk_sum,
         "cleanup_reserve_bytes": 1024 * MIB, "max_timeout_secs": 1200, "startup_timeout_secs": 120,
         # This probe owns explicit boot/initializer failures, not expiry races.
@@ -212,10 +209,15 @@ async def exercise(args):
                            "max_memory_bytes_global": 4096 * MIB, "max_memory_bytes_per_tenant": 4096 * MIB}},
     }
     settings = complete_runtime(settings, slots=PHYSICAL_SLOTS)
-    provision_runtime(settings)
-    config = root / "config.json"
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
+    artifact_bytes=sum(binding[kind]['size_bytes'] for binding in templates+bad_templates for kind in ('kernel','rootfs'))
+    registry=dict(root=str(root/'registry'),max_templates_global=4,max_templates_per_tenant=4,
+        max_artifact_bytes_global=artifact_bytes,max_artifact_bytes_per_tenant=artifact_bytes,validation_timeout_secs=60)
+    services=RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[settings['templates']],
+        key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
+        job_count=VM_COUNT,registry_config=registry)
+    settings=services.native_pools[0]
+    config=services.processes.bindings['center']['config']
+    original_config=config.read_bytes()
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     owner = options(key, url, url)
     # Large private disks need time for validation/copy before create returns.
@@ -255,7 +257,8 @@ async def exercise(args):
         for sandbox, row in live.items():
             if sandbox is exclude:
                 continue
-            current = live_shape(root, args, sandbox, row["template"], opener, url, key)
+            current = live_shape(root,args,sandbox,row['template'],opener,url,key,
+                native_id=row['mapping'][0],native_template=row['mapping'][1])
             assert current == row["host"], "survivor identity or resources changed"
             identity = (current["disk"]["device"], current["disk"]["inode"])
             assert identity not in disks, "live instances share a writable disk"
@@ -270,13 +273,20 @@ async def exercise(args):
             await check_startup(sandbox, row)
 
     def create(template, *, alias=None):
+        nonlocal process
         instance = secrets.token_hex(8)
         sandbox = Sandbox.create(template=alias or template["template_id"], timeout=900,
                                  envs={"INSTANCE_MARKER": instance, "LAYERED": "create-" + instance},
                                  allow_internet_access=False, **owner)
         # Record identity before further assertions so finally can stop this VM.
         live[sandbox] = {"template": template, "version": None, "instance": instance}
-        live[sandbox]["host"] = live_shape(root, args, sandbox, template, opener, url, key)
+        services.processes.stop('host-0')
+        mapping=mapped_template(services,sandbox.sandbox_id,template['template_id'])
+        live[sandbox]['mapping']=mapping
+        process=services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
+        live[sandbox]["host"] = live_shape(root,args,sandbox,template,opener,url,key,
+            native_id=mapping[0],native_template=mapping[1])
         evidence.append({"sandbox_id": sandbox.sandbox_id, "template_id": template["template_id"],
                          "host": live[sandbox]["host"]})
         print(json.dumps({"event": "created", "sandbox_id": sandbox.sandbox_id,
@@ -284,18 +294,27 @@ async def exercise(args):
         return sandbox
 
     try:
-        process = start_server(binary, config, root / "server.log", None)
-        wait_ready(opener, url, key, process)
+        services.start()
+        services.wait_ready()
+        process=services.processes.children['host-0']
         original = [create(template, alias=("first-choice", "second-choice")[index])
                     for index, template in enumerate(templates) for _ in range(2)]
         await check_live()
-        for stage in ("before-restart", "after-alias-change-and-restart"):
+        for stage in ("before-restart", "after-immutable-alias-refusal-and-restart"):
             if stage != "before-restart":
-                stop_server(process)
-                settings["templates"]["aliases"] = {"first-choice": "second-r1", "second-choice": "first-r1"}
-                config.write_text(json.dumps(settings))
-                process = start_server(binary, config, root / "server.log", None)
-                wait_ready(opener, url, key, process)
+                services.processes.stop('center')
+                changed=json.loads(original_config)
+                changed['templates']['aliases']={'first-choice':'second-r1','second-choice':'first-r1'}
+                try:
+                    config.write_text(json.dumps(changed))
+                    rejected=services.processes.start('center')
+                    assert rejected.wait(timeout=30)!=0,'changed static alias replaced the original authority'
+                finally:
+                    config.write_bytes(original_config)
+                    services.processes.start('center')
+                services.processes.stop('host-0')
+                process=services.processes.start('host-0')
+                services.wait_ready(for_admission=False)
                 await check_live()
             for sandbox in original:
                 row = live[sandbox]
@@ -307,7 +326,7 @@ async def exercise(args):
                                                        **result}})
                 await check_live()
             print(json.dumps({"event": "startup_defaults_verified", "stage": stage}), flush=True)
-        cases.append("four original VMM and startup PID/start identities survive alias changes and service restart without replay")
+        cases.append("four original VMM and startup PID/start identities survive immutable alias attach refusal and both-role restart without replay")
         for index, sandbox in enumerate(original):
             version = f"{index + 1}.0"
             await install(sandbox, version, sandbox.sandbox_id)
@@ -348,22 +367,34 @@ async def exercise(args):
             # The valid manifest describes an intentionally invalid private
             # kernel. This reaches physical preparation, unlike a hash refusal.
             before_id = idle_snapshot(database)["frontiers"][("sandbox", "")]
+            marker={'invalid_kernel_intent':secrets.token_hex(16)}
             response = httpx.post(url + "/v2/sandboxes", headers={"X-API-Key": key},
                                   json={"templateID": bad_templates[index // 2]["template_id"],
-                                        "timeout": 300, "allow_internet_access": False},
+                                        "timeout": 300, "allow_internet_access": False,"metadata":marker},
                                   timeout=180, trust_env=False)
             status = response.status_code
             assert status >= 500, f"invalid kernel unexpectedly accepted: {status}"
             assert idle_snapshot(database)["frontiers"][("sandbox", "")] == before_id + 1
-            ident = f"sb-{namespace}-{before_id + 1}"
+            original_create=original_create_identity(services,marker)
+            services.processes.stop('host-0')
+            ident=services.native_id_for(original_create['sandbox_id'])
+            local=services.local_for(original_create['sandbox_id'])
+            assert local==before_id+1,'original accepted boot request allocated another native identity'
+            process=services.processes.start('host-0')
+            services.wait_ready(for_admission=False)
             slots = [json.loads(path.read_text()) for path in (root / "state/slots").glob("*.json")]
-            slot = next(value for value in slots if value["sandbox"] == before_id + 1)
+            slot = next(value for value in slots if value["sandbox"] == local)
             name = f"vm-{namespace}-{slot['vm']}"
             assert (root / "jails/.claims" / name / "failed-prepare.json").is_file()
             failed_identity = json.loads((root / "jails/.claims" / name / "record.json").read_text())
             failed_identity["network_inode"] = json.loads((root / "jails/.claims" / name / "network.json").read_text())["namespace_inode"]
-            evidence.append({"sandbox_id": ident, "template_id": bad_templates[index // 2]["template_id"],
+            evidence.append({"sandbox_id":original_create['sandbox_id'],"native_id":ident,
+                             "template_id": bad_templates[index // 2]["template_id"],
                              "host": failed_identity})
+            # An HTTP failure is not cleanup. Destroy this exact original global
+            # request through the public authenticated path, then inspect native.
+            assert httpx.delete(url+'/sandboxes/'+original_create['sandbox_id'],headers={'X-API-Key':key},
+                                timeout=180,trust_env=False).status_code==204
             deadline = time.monotonic() + 150
             while not terminal_cleanup_confirmed(database, ident):
                 assert process.poll() is None and time.monotonic() < deadline, "failed boot cleanup unknown"
@@ -384,14 +415,15 @@ async def exercise(args):
             assert _kill_confirmed
             del live[sandbox]
         assert len(evidence) == VM_COUNT
-        assert all(terminal_cleanup_confirmed(database, item["sandbox_id"]) for item in evidence)
+        assert all(terminal_cleanup_confirmed(database,item.get('native_id',item['host'].get('native_id')))
+                   for item in evidence)
         with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as connection:
             assert connection.execute("SELECT count(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0] == 0
         assert idle_snapshot(database)["frontiers"][("sandbox", "")] == VM_COUNT
         cleanup = [audit_gone(root, args.firecracker, args.cgroup_parent,
                               item["host"]["resource_id"], item["host"]) for item in evidence]
         assert not processes_in_uid_range(args.uid_base, args.uid_base + PHYSICAL_SLOTS - 1)
-        stop_server(process)
+        services.stop_all()
         assert process.poll() is not None
         assert not any(path.is_dir() for path in args.cgroup_parent.iterdir())
         assert shared_network() == before_network
@@ -411,7 +443,7 @@ async def exercise(args):
                   "probe_timeouts_seconds": {"request": 180, "startup": 120, "sandbox": 900},
                   "service_exited": True, "result": "passed",
                   "scope": "trusted prebuilt templates; four concurrent VMs, sync/async startup defaults and file paths, "
-                           "alias change plus service restart without command replay, local packages, guest-init and boot failures; "
+                           "immutable static-alias refusal plus both-role restart without command replay, local packages, guest-init and boot failures; "
                            "no self-service build, arbitrary crash, cloud/model, full V1 or proof claim"}
         (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report), flush=True)
@@ -425,8 +457,9 @@ async def exercise(args):
                     del live[sandbox]
             except Exception as error:
                 print(f"cleanup unconfirmed for {sandbox.sandbox_id}: {type(error).__name__}", file=sys.stderr)
-        stop_server(process)
+        services.stop_all()
         if completed and not args.keep_artifacts:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f"Exact {'completed' if completed else 'failed'} run retained: {root}", file=sys.stderr)
@@ -434,7 +467,8 @@ async def exercise(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for argument in ("server", "jailer", "firecracker", "kernel", "rootfs", "second-rootfs", "scratch-parent", "cgroup-parent"):
+    add_arguments(parser)
+    for argument in ("jailer", "firecracker", "kernel", "rootfs", "second-rootfs", "scratch-parent", "cgroup-parent"):
         parser.add_argument(f"--{argument}", type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--keep-artifacts", action="store_true")

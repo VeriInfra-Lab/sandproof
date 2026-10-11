@@ -120,9 +120,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         let Some(input) = create else {
             return self.builder_status(&tenant, window, id);
         };
-        if input.request_window.as_deref() != Some(window)
-            || (input.allow_internet_access && !self.config.public_ipv4_enabled)
-        {
+        if input.request_window.as_deref() != Some(window) {
             return Err(PortError::Invalid);
         }
         let business = self.business()?;
@@ -131,6 +129,9 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .metadata
             .private_build_config()
             .ok_or(PortError::NotFound)?;
+        if input.allow_internet_access && !private.policy.public_ipv4_enabled {
+            return Err(PortError::Invalid);
+        }
         let template = self
             .templates
             .bound(&private.builder_revision, &private.builder_digest)?;
@@ -146,7 +147,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             },
             input.timeout,
             now,
-            &self.config,
+            private.policy,
         )?;
         let parameters = BuildParameters {
             timeout_secs: input.timeout,

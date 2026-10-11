@@ -29,6 +29,7 @@ pub(super) struct PrivateBuildFile {
     window_duration_ms: u64,
     max_anchors: usize,
     builder_revision: ResourceId,
+    policy: crate::LifecyclePolicy,
 }
 impl PrivateBuildFile {
     pub(super) fn resolve(
@@ -66,6 +67,7 @@ impl PrivateBuildFile {
             max_anchors: self.max_anchors,
             builder_revision: self.builder_revision.clone(),
             builder_digest,
+            policy: self.policy,
         })
     }
 }

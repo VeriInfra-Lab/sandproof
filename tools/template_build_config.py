@@ -8,6 +8,8 @@ space remain the existing controllers' and worker's responsibility.
 import json
 import os
 from pathlib import Path
+import re
+import stat
 
 MIB = 1024 * 1024
 UPLOAD_ENVELOPE_BYTES = 64 * 1024
@@ -23,6 +25,65 @@ def protected_json(path, maximum=65536):
     if meta.st_uid != os.geteuid() or meta.st_mode & 0o077 or meta.st_size > maximum:
         raise ValueError("private owned bounded config required")
     return json.loads(path.read_text())
+
+
+def host_native(path):
+    """Read only the unique typed host format, never resurrect flat inputs."""
+    value = protected_json(path)
+    fields = {"native", "inbox", "internal", "template_cache", "artifact_source"}
+    if type(value) is not dict or set(value) != fields or type(value["native"]) is not dict:
+        raise ValueError("typed host config required")
+    native = value["native"]
+    retired = {"bind", "domain", "credentials", "template_registry", "internal_build_vms",
+               "build_retry_windows", "request_admission"}
+    if retired & set(native):
+        raise ValueError("retired public host configuration is unsupported")
+    return native
+
+
+def owned_registry_directory(path, owner):
+    """Explicit center-owned output root; does not relax root helper storage."""
+    path = Path(path)
+    if (type(owner) is not int or not 0 <= owner <= 2**32 - 2
+            or not path.is_absolute() or path.resolve(strict=True) != path):
+        raise ValueError("protected registry directory required")
+    meta = path.stat()
+    if not stat.S_ISDIR(meta.st_mode) or meta.st_uid != owner or meta.st_mode & 0o077:
+        raise ValueError("private center-owned registry directory required")
+
+
+def private_center_configuration(value):
+    """Static helper boundary only; center still authorizes every job tuple."""
+    fields = {"private_address", "domain", "credential_file", "private_windows",
+              "max_timeout_secs", "max_lifetime_secs"}
+    if type(value) is not dict or set(value) != fields:
+        raise ValueError("explicit protected center helper boundary required")
+    loopback_address(value["private_address"])
+    if (not isinstance(value["domain"], str) or not value["domain"]
+            or len(value["domain"]) > 253 or any(c.isspace() or c in "/:" for c in value["domain"])):
+        raise ValueError("invalid private center domain")
+    path = Path(value["credential_file"])
+    if path.resolve(strict=True) != path or not path.is_file():
+        raise ValueError("private backend credential required")
+    meta = path.stat()
+    key = path.read_bytes() if meta.st_size <= 256 else b""
+    if (meta.st_uid != os.geteuid() or meta.st_mode & 0o077 or meta.st_nlink != 1
+            or not 32 <= len(key) <= 256 or any(not 0x21 <= c <= 0x7e for c in key)):
+        raise ValueError("protected opaque backend credential required")
+    windows = value["private_windows"]
+    if (type(windows) is not dict or set(windows) != {"window_duration_ms", "max_anchors"}
+            or any(type(v) is not int or v <= 0 for v in windows.values())
+            or windows["window_duration_ms"] > 86_400_000 or windows["max_anchors"] > 4096):
+        raise ValueError("explicit finite center private windows required")
+    lifetime(value, 1, "center")
+    return key.decode("ascii")
+
+
+def loopback_address(value):
+    if not isinstance(value, str) or not re.fullmatch(r"127\.0\.0\.1:[0-9]{1,5}", value):
+        raise ValueError("fixed loopback endpoint required")
+    if not 1 <= int(value.rsplit(":", 1)[1]) <= 65535:
+        raise ValueError("fixed loopback endpoint required")
 
 
 def bounded_data_route_limits(settings):
@@ -145,10 +206,9 @@ def pool_shape(settings, cpu, memory, disk, name):
     positive(settings, "max_active_per_tenant")
 
 
-def validate_capacity(runtime, builder, limits, base, *, kernel_bytes, largest_tool_bytes):
+def validate_capacity(runtime, builder, limits, base, *, registry, kernel_bytes, largest_tool_bytes):
     """Checks static necessary conditions; returns the actual bound builder disk."""
     lifetime(builder, limits["timeout_seconds"] + 60, "builder")
-    registry = runtime["template_registry"]
     lifetime(runtime, positive(registry, "validation_timeout_secs"), "publication")
     shape = base["resources"]
     disk = positive(shape, "disk_bytes")
@@ -221,7 +281,12 @@ def apply_acceptance_build_policy(runtime, builder, build, policy):
     else:
         from template_build_store import bounded_configuration
     runtime.update(copy.deepcopy(policy["runtime"]))
-    builder.update(copy.deepcopy(policy["builder"]))
+    # Retry-window limits are now a protected center capability, not part of
+    # NativeSettings. Only original host maintenance/physical declarations
+    # cross into the native DTO; the caller passes the window section to the
+    # center assembly separately.
+    builder.update({name: copy.deepcopy(policy["builder"][name])
+                    for name in ("bounded_host", "maintenance")})
     bounded_configuration(policy["public"]["bounded_builds"])
     build["bounded_builds"] = copy.deepcopy(policy["public"]["bounded_builds"])
     for key in ("workspace_bytes", "workspace_bytes_per_tenant"):

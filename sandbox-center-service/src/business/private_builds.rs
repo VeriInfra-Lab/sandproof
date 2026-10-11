@@ -19,10 +19,12 @@ pub struct PrivateBuildConfig {
     pub max_anchors: usize,
     pub builder_revision: ResourceId,
     pub builder_digest: [u8; 32],
+    pub policy: crate::LifecyclePolicy,
 }
 impl PrivateBuildConfig {
     pub(super) fn valid(&self) -> bool {
-        self.windows.max_open_windows() <= 1024
+        self.policy.is_valid()
+            && self.windows.max_open_windows() <= 1024
             && self.windows.max_duration_ms() <= 86_400_000
             && self.window_duration_ms > 0
             && self.window_duration_ms <= self.windows.max_duration_ms()

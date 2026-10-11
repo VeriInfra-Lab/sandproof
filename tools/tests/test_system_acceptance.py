@@ -6,6 +6,7 @@ are not evidence of C02 KVM acceptance.
 
 from contextlib import ExitStack, redirect_stdout
 import copy
+import hashlib
 import importlib.util
 import io
 import json
@@ -21,13 +22,51 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools import system_acceptance as reports
+from tools import ci_e2e_artifacts as artifacts
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/system"))
 import sdk_c02_acceptance as runner
+import server_vm_id_capacity as native_resources
+import _resource_evidence as resource_callback
 
 NS = "1234567890abcdef"
 CANARY = "secret-canary-key-env-absolute-path"
+
+
+class NativeResourceAuditTests(unittest.TestCase):
+    def test_resource_range_uses_explicit_native_not_old_flat_or_global_id_suffix(self):
+        native = {'namespace': NS, 'uid_base': 3200000,
+                  'bounded_host': {'maintenance': {'max_host_slots': 2}}}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'jails/.claims').mkdir(parents=True)
+            # A stale/public flat file cannot change the explicit checked span.
+            (root / 'config.json').write_text(json.dumps({'secret': CANARY}))
+            identity = dict(resource_id=f'vm-{NS}-17', pid=345, start_time_ticks=100)
+            with patch.object(native_resources, 'process_start_ticks', return_value=101), \
+                    patch.object(native_resources, 'processes_in_uid_range', return_value=[]) as uids, \
+                    patch.object(Path, 'rglob', return_value=[]):
+                native_resources.check_no_resources(root, NS, Path('/approved/firecracker'),
+                    3200000, [identity], native=native)
+            uids.assert_called_once_with(3200000, 3200001)
+            with self.assertRaises(TypeError):
+                native_resources.check_no_resources(root, NS, Path('/approved/firecracker'), 3200000)
+
+    def test_foreign_pool_or_invalid_slot_span_is_rejected_before_resource_scan(self):
+        native = {'namespace': NS, 'uid_base': 3200000,
+                  'bounded_host': {'maintenance': {'max_host_slots': 2}}}
+        variants = [dict(native, namespace='f' * 16), dict(native, uid_base=3200001),
+                    dict(native, bounded_host={'maintenance': {'max_host_slots': True}}),
+                    dict(native, bounded_host={'maintenance': {'max_host_slots': 2**32}})]
+        with patch.object(Path, 'iterdir') as scanned, \
+                patch.object(native_resources, 'processes_in_uid_range') as uids:
+            for settings in variants:
+                with self.subTest(settings=settings), self.assertRaises(ValueError):
+                    native_resources.check_no_resources(Path('/private/run'), NS,
+                        Path('/approved/firecracker'), 3200000, native=settings)
+            scanned.assert_not_called()
+            uids.assert_not_called()
 
 
 def complete_report():
@@ -39,6 +78,28 @@ def complete_report():
     report["preflight"] = {name: "pass" for name in reports.PREFLIGHT_NAMES}
     report["phases"] = {name: "pass" for name in reports.PHASES}
     report["probes"] = {name: {"status": "pass"} for name in reports.PROBES}
+    report['services']=dict(architecture=artifacts.ARCHITECTURE,candidate='a'*40,
+        versions=dict(internal_protocol=1,center_store=5,host_store=15),center_sha256='b'*64,host_sha256='b'*64)
+    report['service_boundary']=dict(public_api='center',center_unprivileged=True,
+        redis_authority='validated',host_transport='mutual-tls',host_public_management=False)
+    manifest=dict(schema_version=1,architecture=artifacts.ARCHITECTURE,candidate='a'*40,
+        versions=report['services']['versions'],artifacts={role:dict(path='/approved/'+binary,sha256='b'*64)
+            for role,binary in artifacts.BINARIES.items()})
+    def role(uid,inode,checksum):
+        return dict(uid=uid,gid=uid,config_sha256=checksum*64,
+            directory=dict(device=1,inode=inode,uid=uid,gid=uid,mode=0o700))
+    report['private_candidate_manifest']=manifest
+    report['execution_manifest']=artifacts.execution_manifest(manifest,
+        run_id=hashlib.sha256((report['run_id']+report['commit']).encode()).hexdigest(),
+        candidate_manifest_sha256=report['hashes']['candidate_manifest'],
+        roles=dict(center=role(1001,1,'a'),redis=role(1002,2,'b'),host=[role(0,3,'c')]),
+        redis=dict(artifacts.REDIS_PIN,binary_sha256='d'*64,binary_bytes=1000),
+        tls_sha256='e'*64,budget_sha256='f'*64)
+    report['hashes']['execution_manifest']=hashlib.sha256((json.dumps(report['execution_manifest'],
+        sort_keys=True,indent=2)+'\n').encode()).hexdigest()
+    report['service_processes']={name:dict(pid=index+10,start_time_ticks=100,
+        uid=uid,gid=uid,executable=dict(device=1,inode=index+20))
+        for index,(name,uid) in enumerate((('center',1001),('redis',1002),('host-0',0)))}
     return report
 
 
@@ -50,6 +111,25 @@ def state(phase="Destroyed"):
 
 def rows(count=4, phase="Destroyed"):
     return {f"sb-{NS}-{number}": state(phase) for number in range(count)}
+
+
+def original_center(count=4):
+    return dict(sandboxes=[dict(private=False,create=dict(identity=dict(sandbox_id='sandbox-'+str(number+1),
+        tenant_id='1',node=dict(deployment_id='domain',node_id='host',node_generation=1),request_window=1)),
+        operations=[dict(intent=dict(kind='create'))]) for number in range(count)])
+
+
+def fake_services(count=4):
+    return SimpleNamespace(planned_audit=Mock(side_effect=lambda role:original_center(count) if role=='center' else {}),
+        wait_ready=Mock(),processes=SimpleNamespace(children={'host-0':SimpleNamespace(poll=lambda:None)}))
+
+
+def original_report(count=4):
+    report=reports.new_report('sp12-abcdefgh')
+    identities=[row['create']['identity'] for row in original_center(count)['sandboxes']]
+    report['global_identities']={value['sandbox_id']:value for value in identities}
+    report['global_native']={value['sandbox_id']:native for value,native in zip(identities,rows(count))}
+    return report
 
 
 def database(path, values):
@@ -76,12 +156,25 @@ def data_probe():
                          ("text.txt", "nested/binary.bin", "nested/deep/empty")},
                          "reconnected_pid": 1, "killed_pid": 2}
     return {"sdk_version": "2.51.0",
-            "sync": {"sandbox_id": f"sb-{NS}-2", "cases": [case("root"), case("ubuntu")]},
-            "async": {"sandbox_id": f"sb-{NS}-3", "cases": [case("root"), case("ubuntu")]},
+            "sync": {"sandbox_id": "sandbox-3", "cases": [case("root"), case("ubuntu")]},
+            "async": {"sandbox_id": "sandbox-4", "cases": [case("root"), case("ubuntu")]},
             "scope": "real controller/gateway/VM data calls; resource residuals and timeout/fault matrices require separate evidence"}
 
 
 class ReportTests(unittest.TestCase):
+    def test_old_or_mixed_execution_or_missing_actual_role_receipt_cannot_pass(self):
+        for field,value in (('execution_manifest',None),('service_processes',{}),
+                ('private_candidate_manifest',{})):
+            report=complete_report()
+            report[field]=value
+            self.assertEqual(reports.safe_export(report)['status'],'fail')
+        for owner in (0,True,1002):
+            report=complete_report()
+            report['service_processes']['center']['uid']=owner
+            self.assertEqual(reports.safe_export(report)['status'],'fail')
+        report=complete_report()
+        report['execution_manifest']['candidate_manifest_sha256']='f'*64
+        self.assertEqual(reports.safe_export(report)['status'],'fail')
     def test_pass_requires_every_phase_probe_hash_preflight_and_exact_full_count(self):
         self.assertEqual(reports.safe_export(complete_report())["status"], "pass")
         for field in ("phases", "probes", "hashes", "preflight"):
@@ -276,48 +369,95 @@ class IdentityTests(unittest.TestCase):
             self.assertEqual(failure.exception.code, "terminal_state_invalid")
 
     def test_cleanup_attempts_every_identity_after_first_delete_fails(self):
-        report = reports.new_report("sp12-abcdefgh")
-        process = SimpleNamespace(poll=lambda: None)
+        report = original_report()
+        process = fake_services()
         args = SimpleNamespace(uid_base=1000, firecracker=Path("firecracker"))
         with patch.object(runner, "durable_rows", return_value=rows()), \
                 patch.object(runner, "kill_one", side_effect=[OSError(CANARY), None, None, None]) as kill, \
+                patch.object(runner,'terminal_result',side_effect=[None]*4+[{'status':'cleaned'}]*4), \
                 patch.object(runner, "wait_for_destroyed", return_value=rows()), \
                 patch.object(runner, "assert_no_exact_resources", return_value=4):
             with self.assertRaises(reports.Failure):
                 runner.cleanup(Path("/unused"), NS, args, None, "http://127.0.0.1:1", CANARY, process, report)
-        self.assertEqual([call.args[-1] for call in kill.call_args_list], sorted(rows()))
+        self.assertEqual([call.args[-1] for call in kill.call_args_list], sorted(report['global_identities']))
         self.assertEqual(report["cleanup"], "unknown")
         self.assertEqual(report["cleanup_errors"][0]["code"], "io_error")
 
     def test_partial_failure_audits_variable_claim_count_but_keeps_unknown(self):
-        report = reports.new_report("sp12-abcdefgh")
+        report = original_report(1)
         reports.record_failure(report, reports.PROBES[0], reports.Failure("probe_failed"))
         args = SimpleNamespace(uid_base=1000, firecracker=Path("firecracker"))
         with patch.object(runner, "durable_rows", return_value=rows(1)), \
                 patch.object(runner, "kill_one") as kill, \
+                patch.object(runner,'terminal_result',side_effect=[None,{'status':'cleaned'}]), \
                 patch.object(runner, "wait_for_destroyed", return_value=rows(1)), \
                 patch.object(runner, "assert_no_exact_resources", return_value=1) as audit:
             with self.assertRaises(reports.Failure):
                 runner.cleanup(Path("/unused"), NS, args, None, "http://127.0.0.1:1", CANARY,
-                               SimpleNamespace(poll=lambda: None), report)
+                               fake_services(1), report)
         self.assertEqual(kill.call_count, 1)
         self.assertNotIn("expected", audit.call_args.kwargs)
         self.assertEqual(report["known_claims"], 1)
         self.assertEqual(report["cleanup"], "unknown")
 
     def test_cleanup_reads_late_committed_id_without_replaying_probe(self):
-        report = reports.new_report("sp12-abcdefgh")
+        report = original_report(2)
         args = SimpleNamespace(uid_base=1000, firecracker=Path("firecracker"))
-        with patch.object(runner, "durable_rows", side_effect=[rows(1), rows(2), rows(2)]), \
+        services=fake_services(2)
+        services.planned_audit.side_effect=[original_center(1),{},original_center(2),{},original_center(2),{}]
+        with patch.object(runner, "durable_rows", return_value=rows(2)), \
+                patch.object(runner,'terminal_result',side_effect=[None,None,{'status':'cleaned'},None,{'status':'cleaned'},{'status':'cleaned'}]), \
                 patch.object(runner, "kill_one") as kill, \
                 patch.object(runner, "wait_for_destroyed", return_value=rows(2)), \
                 patch.object(runner, "assert_no_exact_resources", return_value=2):
             runner.cleanup(Path("/unused"), NS, args, None, "http://127.0.0.1:1", CANARY,
-                           SimpleNamespace(poll=lambda: None), report)
-        self.assertEqual([c.args[-1] for c in kill.call_args_list], list(rows(2)))
+                           services, report)
+        self.assertEqual([c.args[-1] for c in kill.call_args_list], ['sandbox-1','sandbox-2'])
 
 
 class ProbeProcessTests(unittest.TestCase):
+    def test_private_resource_callback_uses_exact_global_id_and_never_guesses_native(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve()
+            requests=root/'resource-requests'
+            requests.mkdir(mode=0o700)
+            sandbox='sandbox-29'
+            name=hashlib.sha256(sandbox.encode()).hexdigest()
+            reports.write_once(requests/(name+'.ack.json'),dict(sandbox=sandbox,recorded=True))
+            with patch.dict(os.environ,{'SANDPROOF_TEST_EVIDENCE_ROOT':str(root)}):
+                resource_callback.record_resource_identity(sandbox)
+            self.assertEqual(reports.json_file(requests/(name+'.request.json')),dict(sandbox=sandbox))
+            self.assertFalse((root/'resource-evidence').exists())
+
+    def test_private_resource_callback_foreign_nonboolean_or_linked_ack_is_unknown(self):
+        for attack in ('foreign','integer','symlink','hardlink'):
+            with self.subTest(attack=attack),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary).resolve()
+                requests=root/'resource-requests'
+                requests.mkdir(mode=0o700)
+                sandbox='sandbox-29'
+                ack=requests/(hashlib.sha256(sandbox.encode()).hexdigest()+'.ack.json')
+                value=dict(sandbox='sandbox-30' if attack=='foreign' else sandbox,
+                    recorded=1 if attack=='integer' else True)
+                reports.write_once(ack,value)
+                if attack=='symlink':
+                    ack.rename(root/'target')
+                    ack.symlink_to(root/'target')
+                if attack=='hardlink':
+                    os.link(ack,root/'target')
+                with patch.dict(os.environ,{'SANDPROOF_TEST_EVIDENCE_ROOT':str(root)}), \
+                        self.assertRaises((OSError,RuntimeError)):
+                    resource_callback.record_resource_identity(sandbox)
+
+    def test_native_or_unbounded_callback_id_rejected_before_request_write(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve()
+            (root/'resource-requests').mkdir(mode=0o700)
+            with patch.dict(os.environ,{'SANDPROOF_TEST_EVIDENCE_ROOT':str(root)}):
+                for sandbox in ('sb-'+NS+'-1','sandbox-0','sandbox-01','sandbox-'+str(2**64),True):
+                    with self.subTest(sandbox=sandbox),self.assertRaises(RuntimeError):
+                        resource_callback.record_resource_identity(sandbox)
+            self.assertEqual(list((root/'resource-requests').iterdir()),[])
     def run_fake_probe(self, body, *, timeout=5):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -459,6 +599,9 @@ class SupervisorTests(unittest.TestCase):
             report["commit"] = "a" * 40
             report["hashes"] = complete_report()["hashes"]
             report["preflight"] = complete_report()["preflight"]
+            report['services']=complete_report()['services']
+            report['global_identities']=original_report()['global_identities']
+            report['global_native']=original_report()['global_native']
         def cleanup(*args):
             events.append("cleanup")
             out = args[-1]
@@ -468,12 +611,20 @@ class SupervisorTests(unittest.TestCase):
         def stop(_process):
             events.append("stop")
             process.poll.return_value = 0
+        services=fake_services()
+        services.processes.children={'host-0':process}
+        services.start=Mock()
+        services.stop_all=Mock(side_effect=lambda:stop(None))
+        services.cleanup_staging=Mock()
+        services.manifest=complete_report()['private_candidate_manifest']
+        services.execution=Mock(return_value=(complete_report()['execution_manifest'],complete_report()['service_processes']))
+        process.services=services
         stack = ExitStack()
-        patches = {"preflight": preflight, "prepare": Mock(), "start_server": Mock(return_value=process),
-                   "wait_ready": Mock(), "run_probe": Mock(return_value={"status": "pass"}),
+        patches = {"preflight": preflight, "prepare": Mock(return_value=services),
+                   "run_probe": Mock(return_value={"status": "pass"}),
                    "durable_rows": Mock(return_value=rows()), "wait_for_destroyed": Mock(return_value=rows()),
                    "assert_no_exact_resources": Mock(return_value=4), "unchanged": Mock(),
-                   "cleanup": cleanup, "stop_server": stop, "remove_staged_copies": lambda root, report: report.update(staged_copies="removed", staged_files={name: "removed" for name in reports.STAGED_FILES}),
+                   "cleanup": cleanup, "remove_staged_copies": lambda root, report: report.update(staged_copies="removed", staged_files={name: "removed" for name in reports.STAGED_FILES}),
                    "free_loopback_port": Mock(return_value=12345)}
         for name, replacement in patches.items():
             stack.enter_context(patch.object(runner, name, side_effect=replacement))
@@ -492,15 +643,17 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(reports.safe_export(report)["status"], "pass")
 
     def test_each_phase_failure_is_sticky_and_server_always_stops(self):
-        for target in ("preflight", "prepare", "start_server", "wait_ready", "run_probe",
+        for target in ("preflight", "prepare", "start", "wait_ready", "run_probe",
                        "wait_for_destroyed", "assert_no_exact_resources", "unchanged"):
             with self.subTest(target=target), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                args, report, _process, events, stack = self.fixture(root)
-                with stack, patch.object(runner, target, side_effect=OSError(CANARY)):
+                args, report, process, events, stack = self.fixture(root)
+                owner=process.services if target in ('start','wait_ready') else runner
+                with stack, patch.object(owner, target, side_effect=OSError(CANARY)):
                     runner.run_profile(args, root, report)
                 self.assertEqual(report["status"], "fail")
-                self.assertIn("stop", events)
+                if target not in ('preflight','prepare'):
+                    self.assertIn("stop", events)
                 if target in ("preflight", "prepare"):
                     self.assertEqual(report["cleanup"], "not_created")
                     self.assertNotIn("cleanup", events)
@@ -510,10 +663,10 @@ class SupervisorTests(unittest.TestCase):
 
     def test_original_failure_and_cleanup_and_stop_errors_are_separate(self):
         with tempfile.TemporaryDirectory() as temporary:
-            args, report, _process, _events, stack = self.fixture(Path(temporary))
+            args, report, process, _events, stack = self.fixture(Path(temporary))
             with stack, patch.object(runner, "run_probe", side_effect=reports.Failure("probe_failed")), \
                     patch.object(runner, "cleanup", side_effect=reports.Failure("database_unknown")), \
-                    patch.object(runner, "stop_server", side_effect=OSError(CANARY)):
+                    patch.object(process.services, "stop_all", side_effect=OSError(CANARY)):
                 runner.run_profile(args, Path(temporary), report)
             self.assertEqual(report["failures"], [{"stage": reports.PROBES[0], "code": "probe_failed"}])
             self.assertEqual([e["code"] for e in report["cleanup_errors"]], ["database_unknown", "io_error"])
@@ -577,7 +730,10 @@ import sdk_c02_acceptance as r
 root=Path({temporary!r})
 args=SimpleNamespace(scratch_parent=root,uid_base=1000,firecracker=Path("firecracker"))
 def interrupt(*args,**kwargs): os.kill(os.getpid(),{int(sig)})
-with patch.object(r.host,"trusted_path",side_effect=lambda p:p), patch.object(r,"preflight",return_value=None), patch.object(r,"prepare",return_value=None), patch.object(r,"start_server",return_value=SimpleNamespace(poll=lambda:None)), patch.object(r,"wait_ready",return_value=None), patch.object(r,"run_probe",side_effect=interrupt), patch.object(r,"cleanup",side_effect=r.Failure("database_unknown")), patch.object(r,"stop_server",return_value=None):
+def preflight(_args,report): report['commit']='a'*40
+from unittest.mock import Mock
+services=SimpleNamespace(start=Mock(),wait_ready=Mock(),manifest={{}},execution=Mock(return_value=({{'services':{{}}}},{{}})),stop_all=Mock(),processes=SimpleNamespace(children={{'host-0':SimpleNamespace(poll=lambda:None)}}))
+with patch.object(r.host,"trusted_path",side_effect=lambda p:p), patch.object(r,"preflight",side_effect=preflight), patch.object(r,"free_loopback_port",return_value=3100), patch.object(r,"prepare",return_value=services), patch.object(r,"run_probe",side_effect=interrupt), patch.object(r,"cleanup",side_effect=r.Failure("database_unknown")):
  raise SystemExit(r.exercise(args))
 '''
                 result = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True,
@@ -593,7 +749,7 @@ with patch.object(r.host,"trusted_path",side_effect=lambda p:p), patch.object(r,
 
 class FinalBoundaryTests(unittest.TestCase):
     def test_schema_profile_and_run_id_cannot_be_normalized_into_pass(self):
-        for field, value in (("schema_version", True), ("schema_version", 2),
+        for field, value in (("schema_version", True), ("schema_version", 1),
                              ("profile", "other"), ("run_id", "/private/" + CANARY)):
             report = complete_report()
             report[field] = value
@@ -630,15 +786,16 @@ class FinalBoundaryTests(unittest.TestCase):
             self.assertNotEqual(reports.read_report(root)["status"], "pass")
 
     def test_full_four_rows_without_claims_cannot_confirm_cleanup(self):
-        report = reports.new_report("sp12-abcdefgh")
+        report = original_report()
         args = SimpleNamespace(uid_base=1000, firecracker=Path("firecracker"))
         with patch.object(runner, "durable_rows", return_value=rows()), \
                 patch.object(runner, "kill_one"), \
+                patch.object(runner,'terminal_result',return_value={'status':'cleaned'}), \
                 patch.object(runner, "wait_for_destroyed", return_value=rows()), \
                 patch.object(runner, "assert_no_exact_resources", return_value=0):
             with self.assertRaises(reports.Failure):
                 runner.cleanup(Path("/unused"), NS, args, None, "http://127.0.0.1:1", CANARY,
-                               SimpleNamespace(poll=lambda: None), report)
+                               fake_services(), report)
         self.assertEqual(report["cleanup"], "unknown")
 
     def test_unreaped_probe_cannot_race_cleanup_discovery_or_delete(self):
@@ -653,16 +810,19 @@ class FinalBoundaryTests(unittest.TestCase):
         kill.assert_not_called()
         self.assertEqual(report["cleanup"], "unknown")
 
-    def test_previously_known_ids_are_attempted_when_database_becomes_unavailable(self):
-        report = reports.new_report("sp12-abcdefgh")
-        report["identities"] = list(rows(2))
+    def test_previously_known_ids_do_not_replay_destroy_when_original_authority_unavailable(self):
+        report = original_report(2)
         args = SimpleNamespace(uid_base=1000, firecracker=Path("firecracker"))
-        with patch.object(runner, "durable_rows", side_effect=reports.Failure("database_unknown")), \
+        services=fake_services(2)
+        services.planned_audit.side_effect=reports.Failure('database_unknown')
+        with patch.object(runner, "durable_rows") as native, \
                 patch.object(runner, "kill_one") as kill:
             with self.assertRaises(reports.Failure):
                 runner.cleanup(Path("/unused"), NS, args, None, "http://127.0.0.1:1", CANARY,
-                               SimpleNamespace(poll=lambda: None), report)
-        self.assertEqual([c.args[-1] for c in kill.call_args_list], list(rows(2)))
+                               services, report)
+        kill.assert_not_called()
+        native.assert_not_called()
+        self.assertEqual(len(report['global_identities']),2)
         self.assertEqual(report["cleanup"], "unknown")
 
     def test_existing_supervisor_hash_helper_stays_compatible(self):
@@ -702,13 +862,14 @@ class StagedCopyTests(unittest.TestCase):
     def staged(self, root):
         report = complete_report()
         report["private_staged"] = {}
-        for name, filename in (("server", "sandproof-server"), ("kernel", "vmlinux"),
+        for name, filename in (("center", "sandproof-center"),("host", "sandproof-host"), ("kernel", "vmlinux"),
                                ("rootfs", "rootfs.ext4")):
             path = root / filename
             path.write_bytes(("staged-" + name).encode())
             info = path.stat()
             report["private_staged"][name] = {"device": info.st_dev, "inode": info.st_ino,
-                                              "bytes": info.st_size}
+                "bytes": info.st_size,'owner':info.st_uid,'path':str(path.resolve()),
+                'parent_device':path.parent.stat().st_dev,'parent_inode':path.parent.stat().st_ino}
             report["hashes"][name] = reports.digest(path)
             report["staged_files"][name] = "retained"
         return report
@@ -730,7 +891,7 @@ class StagedCopyTests(unittest.TestCase):
             with self.subTest(attack=attack), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 report = self.staged(root)
-                victim = root / "sandproof-server"
+                victim = root / "sandproof-host"
                 other = root / "unrelated"
                 other.write_text(CANARY)
                 if attack == "symlink":
@@ -740,7 +901,7 @@ class StagedCopyTests(unittest.TestCase):
                     os.link(victim, root / "extra-link")
                 elif attack == "replacement":
                     victim.rename(root / "original")
-                    victim.write_bytes(b"staged-server")
+                    victim.write_bytes(b"staged-host")
                 else:
                     victim.write_bytes(b"altered-bytes")
                 with self.assertRaises((OSError, reports.Failure)):
@@ -749,7 +910,7 @@ class StagedCopyTests(unittest.TestCase):
                 self.assertEqual(other.read_text(), CANARY)
                 self.assertEqual(report["staged_copies"], "unknown")
 
-    def test_last_file_mismatch_preserves_all_three_copies(self):
+    def test_last_file_mismatch_preserves_all_four_copies(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             report = self.staged(root)
@@ -757,7 +918,7 @@ class StagedCopyTests(unittest.TestCase):
             with self.assertRaises(reports.Failure):
                 runner.remove_staged_copies(root, report)
             self.assertTrue(all((root / name).exists() for name in
-                                ("sandproof-server", "vmlinux", "rootfs.ext4")))
+                                ("sandproof-center","sandproof-host", "vmlinux", "rootfs.ext4")))
 
     def test_partial_unlink_records_exact_removed_remaining_and_unknown_files(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -771,10 +932,11 @@ class StagedCopyTests(unittest.TestCase):
             with patch.object(runner.os, "unlink", side_effect=fail_second):
                 with self.assertRaises(OSError):
                     runner.remove_staged_copies(root, report)
-            self.assertFalse((root / "sandproof-server").exists())
+            self.assertFalse((root / "sandproof-center").exists())
+            self.assertFalse((root / "sandproof-host").exists())
             self.assertTrue((root / "rootfs.ext4").exists())
             self.assertEqual(report["staged_files"],
-                             {"server": "removed", "kernel": "unknown", "rootfs": "retained"})
+                             {"center": "removed","host":"removed", "kernel": "unknown", "rootfs": "retained"})
             exported = reports.safe_export(report)
             self.assertEqual(exported["staged_files"], report["staged_files"])
             self.assertNotEqual(exported["status"], "pass")
@@ -800,7 +962,7 @@ class StagedCopyTests(unittest.TestCase):
             self.assertEqual(report["staged_copies"], "unknown")
             self.assertEqual(set(report["staged_files"].values()), {"removed"})
             self.assertFalse(any((root / name).exists() for name in
-                                 ("sandproof-server", "vmlinux", "rootfs.ext4")))
+                                 ("sandproof-center","sandproof-host", "vmlinux", "rootfs.ext4")))
             self.assertEqual(report["phases"]["artifact_cleanup"], "fail")
             self.assertNotEqual(reports.safe_export(report)["status"], "pass")
 

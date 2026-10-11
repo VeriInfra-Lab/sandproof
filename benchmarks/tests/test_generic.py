@@ -42,6 +42,20 @@ def template():
 
 
 class GenericInputTests(unittest.TestCase):
+    def test_lost_delete_ack_is_recorded_before_original_sdk_request(self):
+        from benchmarks.sdk_environment import SdkEnvironment
+        env=object.__new__(SdkEnvironment)
+        env.kill_dispatched,env.kill_confirmed=False,False
+        async def lost():
+            self.assertTrue(env.kill_dispatched)
+            raise OSError('test-only lost reply')
+        env._sandbox=SimpleNamespace(kill=AsyncMock(side_effect=lost))
+        with self.assertRaises(OSError):
+            asyncio.run(env.stop())
+        self.assertTrue(env.kill_dispatched)
+        self.assertFalse(env.kill_confirmed)
+        env._sandbox.kill.assert_awaited_once()
+
     def test_lost_create_receipt_has_durable_intent_before_dispatch_and_no_retry(self):
         from harbor.models.task.config import NetworkMode
         with tempfile.TemporaryDirectory() as tmp:

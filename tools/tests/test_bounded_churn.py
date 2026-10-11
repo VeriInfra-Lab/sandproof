@@ -39,6 +39,8 @@ def settings():
                 host_metadata_bytes=1024 * 1024, host_metadata_inodes=20, jail_inodes_per_slot=10)
     result['bounded_host']['physical_storage'] = dict(
         version=1, coordination_file='/run/accept/coordination', pools=[pool], public_build=None,
+        host_template_caches=[],
+        service_data=[],
         filesystem_overhead_bytes=1024, filesystem_overhead_inodes=100)
     return result
 
@@ -181,7 +183,9 @@ class ObservationTests(unittest.TestCase):
             self.assertEqual(snapshot['tail'], {'rows': 1, 'bytes': 4})
             self.assertEqual(snapshot['checkpoint']['deleted_through'], 2)
             self.assertEqual(snapshot['highwaters'], {'sandbox:': 9})
-            self.assertEqual(probe.context_for(snapshot, 'sb-x-9'), context)
+            self.assertEqual(probe.context_for(snapshot, 9), context)
+            with self.assertRaises(ValueError):
+                probe.context_for(snapshot,'sp-global-id-not-a-native-number')
             self.assertEqual(actions, [{'accepted': 'real'}])
             # The observation does not keep an external reader pinned.
             self.assertEqual(writer.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0], 0)
