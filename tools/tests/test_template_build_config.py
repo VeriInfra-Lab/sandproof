@@ -497,9 +497,39 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
             }
             policy['builder']['build_retry_windows'] = {'window_duration_ms': 1000, 'max_anchors': 2}
             runtime['max_disk_bytes_global'] += 1
+            before = copy.deepcopy((runtime, builder, build))
             with patch('tools.template_build_config.validate_pool_resource_ranges'), \
                     patch('tools.template_build_store.bounded_configuration'):
                 with self.assertRaisesRegex(ValueError, 'pool budget'):
                     apply_acceptance_build_policy(runtime, builder, build, policy)
+            self.assertEqual((runtime, builder, build), before)
+            self.assertEqual(Path(profile['coordination_file']).read_bytes(), b'')
+            self.assertEqual(list((root / 'public').iterdir()), [])
+
+    def test_generator_rejects_missing_physical_profile_without_mutating_inputs(self):
+        import copy
+        from unittest.mock import patch
+        from tools.template_build_config import apply_acceptance_build_policy
+        from tools.tests.test_template_physical_storage import configuration as physical_fixture
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime, builder, build, profile = physical_fixture(root)
+            build['limits']['workspace_bytes_per_tenant'] = 1000
+            for pool in (runtime, builder):
+                pool['bounded_host'].pop('physical_storage')
+                pool['maintenance'].pop('capacity')
+            policy = {
+                'runtime': {key: copy.deepcopy(runtime[key]) for key in ('bounded_host', 'maintenance')},
+                'builder': {key: copy.deepcopy(builder[key]) for key in ('bounded_host', 'maintenance')},
+                'public': {'bounded_builds': copy.deepcopy(build['bounded_builds']),
+                           'workspace_bytes': 2000, 'workspace_bytes_per_tenant': 1000},
+            }
+            policy['builder']['build_retry_windows'] = {'window_duration_ms': 1000, 'max_anchors': 2}
+            before = copy.deepcopy((runtime, builder, build))
+            with patch('tools.template_build_config.validate_pool_resource_ranges'), \
+                    patch('tools.template_build_store.bounded_configuration'), \
+                    self.assertRaisesRegex(ValueError, 'identical explicit'):
+                apply_acceptance_build_policy(runtime, builder, build, policy)
+            self.assertEqual((runtime, builder, build), before)
             self.assertEqual(Path(profile['coordination_file']).read_bytes(), b'')
             self.assertEqual(list((root / 'public').iterdir()), [])

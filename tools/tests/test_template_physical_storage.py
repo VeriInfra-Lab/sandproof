@@ -67,6 +67,24 @@ class PhysicalProfileTests(unittest.TestCase):
     def validate(self):
         return validate_configuration(self.runtime, self.builder, self.public, file_size=lambda _: 100)
 
+    def test_absent_null_or_partial_profiles_always_refuse(self):
+        for missing in ('absent', 'null', 'one_pool', 'capacity'):
+            runtime, builder = copy.deepcopy((self.runtime, self.builder))
+            if missing in ('absent', 'null'):
+                for pool in (runtime, builder):
+                    pool['bounded_host'].pop('physical_storage')
+                    pool['maintenance'].pop('capacity')
+                    if missing == 'null':
+                        pool['bounded_host']['physical_storage'] = None
+                        pool['maintenance']['capacity'] = None
+            elif missing == 'one_pool':
+                builder['bounded_host'].pop('physical_storage')
+            else:
+                builder['maintenance'].pop('capacity')
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, 'identical explicit'):
+                validate_configuration(runtime, builder, self.public, file_size=lambda _: 100)
+        self.assertEqual((self.root / 'physical-profile').read_bytes(), b'')
+
     def test_shared_peak_includes_old_sparse_copies_registry_and_workspace(self):
         _, peak, inodes = self.validate()
         self.assertEqual(peak, 2 * 1024 * 1024 + 65536 + 2 * (1000 + 2 * (200 + 100) + 200) + 2000 + 1000 + 65536 + 87)
@@ -166,20 +184,23 @@ class PhysicalProfileTests(unittest.TestCase):
         lease = PhysicalProfileLease(self.profile)
         lease.close()
 
-    def test_null_legacy_options_are_not_a_physical_profile(self):
+    def test_null_pool_options_refuse_before_physical_writes(self):
         for settings in (self.runtime, self.builder):
             settings["bounded_host"] = None
             settings["maintenance"] = None
-        self.assertIsNone(self.validate())
+        with self.assertRaisesRegex(ValueError, "identical explicit"):
+            self.validate()
+        self.assertEqual(Path(self.profile["coordination_file"]).read_bytes(), b"")
         self.runtime["maintenance"] = ["invalid"]
         with self.assertRaisesRegex(ValueError, "optional physical"):
             self.validate()
 
-    def test_disabled_legacy_mode_stays_absent(self):
+    def test_missing_capacity_and_profiles_refuse_without_activation(self):
         for settings in (self.runtime, self.builder):
             settings.pop("maintenance")
             settings["bounded_host"].pop("physical_storage")
-        self.assertIsNone(self.validate())
+        with self.assertRaisesRegex(ValueError, "identical explicit"):
+            self.validate()
         self.assertEqual(Path(self.profile["coordination_file"]).read_bytes(), b"")
 
     def test_overflow_and_public_untracked_history_refuse(self):

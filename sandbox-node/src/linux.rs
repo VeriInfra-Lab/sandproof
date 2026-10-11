@@ -15,7 +15,7 @@ use sandproof_protocol::{
     WorkAction, WorkOutcome, WorkReceipt,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::{self, DirBuilder, File};
@@ -398,7 +398,7 @@ impl LinuxWorker {
                 return Err("node state subdirectory must be root-only".into());
             }
         }
-        for binary in ["/usr/bin/ip", "/usr/bin/curl", "/usr/bin/sha512sum"] {
+        for binary in ["/usr/bin/ip", "/usr/bin/curl"] {
             check_trusted_path(Path::new(binary))?;
         }
         let worker = Self {
@@ -447,30 +447,29 @@ fn require_absent(path: &Path) -> NodeResult<()> {
     }
 }
 
-fn hash_token(token: &str) -> NodeResult<String> {
-    let mut child = sandbox_runtime::OwnedChild::spawn(
-        Process::new("/usr/bin/sha512sum")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null()),
-    )?;
-    let output = child.exchange(token.as_bytes(), sandbox_runtime::HelperLimits::METADATA)?;
-    if !output.status.success() {
-        return Err("sha512 computation failed".into());
-    }
-    let output = String::from_utf8(output.stdout)?;
-    let digest = output
-        .split_whitespace()
-        .next()
-        .ok_or("empty sha512 digest")?;
-    if digest.len() != 128 || !digest.bytes().all(|c| c.is_ascii_hexdigit()) {
-        return Err("invalid sha512 digest".into());
-    }
-    Ok(digest.to_owned())
+fn hash_token(token: &str) -> String {
+    // envd expects the same lowercase, 128-hex SHA-512 digest as sha512sum.
+    // No subprocess or extra executable identity is needed for this pure value.
+    format!("{:x}", Sha512::digest(token.as_bytes()))
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn token_hash_preserves_envd_sha512_format_without_external_programs() {
+        for (input, expected) in [
+            (
+                "",
+                "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e",
+            ),
+            (
+                "abc",
+                "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+            ),
+        ] {
+            assert_eq!(super::hash_token(input), expected);
+        }
+    }
     use super::{
         Fence, NodeResult, RuntimeError, artifact_digest, artifact_file_digest,
         artifact_file_digest_with, fence_can_advance, helper_observation_pending, require_absent,

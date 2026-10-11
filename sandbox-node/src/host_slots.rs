@@ -1237,7 +1237,7 @@ impl LinuxWorker {
             &context,
             control,
             "/usr/bin/ip",
-            &["netns", "exec", &name, executable, "relay-bounded"],
+            &["netns", "exec", &name, executable, "relay"],
         )?;
         // The durable route cell survives even if the child closes inherited
         // descriptors. Only exact observation under the management lock may

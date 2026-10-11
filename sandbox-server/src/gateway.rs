@@ -522,17 +522,10 @@ async fn forward_request(
 ///
 /// # Errors
 /// Fails when envd is unreachable or the caller disconnects.
-pub async fn relay(bounded: bool) -> Result<(), Box<dyn Error>> {
+pub async fn relay() -> Result<(), Box<dyn Error>> {
     let stream = tokio::net::TcpStream::connect(ENVD_ADDRESS).await?;
     let (reader, writer) = stream.into_split();
-    tunnel::relay(
-        bounded,
-        tokio::io::stdin(),
-        tokio::io::stdout(),
-        reader,
-        writer,
-    )
-    .await?;
+    tunnel::relay(tokio::io::stdin(), tokio::io::stdout(), reader, writer).await?;
     Ok(())
 }
 

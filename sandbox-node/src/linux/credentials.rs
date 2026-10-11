@@ -62,7 +62,7 @@ impl LinuxWorker {
         }) {
             return Err("invalid guest initialization variable".into());
         }
-        let sha512 = hash_token(token)?;
+        let sha512 = hash_token(token);
         let value = GuestSecret {
             token: token.to_owned(),
             sha512,
@@ -218,7 +218,7 @@ impl LinuxWorker {
         File::open(path.parent().ok_or("secret parent")?)?.sync_all()?;
         if value.token.len() < 32
             || value.sha512.len() != 128
-            || hash_token(&value.token)? != value.sha512
+            || hash_token(&value.token) != value.sha512
             || value
                 .template
                 .as_ref()
