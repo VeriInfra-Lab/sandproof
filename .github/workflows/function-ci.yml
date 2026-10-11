@@ -36,6 +36,7 @@ jobs:
           fi
           mkdir "$RUNNER_TEMP/ci-git"
           ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
+          export UV_OFFLINE=1 CARGO_NET_OFFLINE=true
           CI_GIT_LOCK="$GITHUB_WORKSPACE/tests/compat/uv.lock" \
             PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-compat.sh
       - name: Check distributed components against sealed Redis
@@ -65,6 +66,7 @@ jobs:
           fi
           mkdir "$RUNNER_TEMP/ci-git"
           ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
+          export UV_OFFLINE=1 CARGO_NET_OFFLINE=true
           CI_GIT_LOCK="$GITHUB_WORKSPACE/benchmarks/uv.lock" \
             PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-bench.sh
 
