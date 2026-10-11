@@ -911,6 +911,71 @@ fn connect_defaults_extend_only_after_host_confirmation_and_keep_public_token() 
 }
 
 #[test]
+fn stale_node_health_refuses_connect_and_positive_timeout_before_new_intent_or_dispatch() {
+    for healthy_until in [0, 999, 1000] {
+        let f = fixture();
+        let session = f.app.create("1", command()).unwrap();
+        {
+            let mut authority = f.app.authority.lock().unwrap();
+            let node = authority.state.nodes()[0].identity.clone();
+            authority.state = authority
+                .state
+                .refresh_node(&node, healthy_until, Resources::ZERO)
+                .unwrap();
+        }
+        let original = f.app.snapshot().unwrap();
+        assert_eq!(
+            f.app
+                .connect("1", &session.sandbox_id, ConnectCommand::default()),
+            Err(PortError::Busy)
+        );
+        assert_eq!(
+            f.app.set_timeout("1", &session.sandbox_id, 100),
+            Err(PortError::Busy)
+        );
+        assert_eq!(f.app.snapshot().unwrap(), original);
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
+        // A failed time/health observation must not prevent exact cleanup.
+        f.app.kill("1", &session.sandbox_id).unwrap();
+        assert_eq!(
+            f.app.snapshot().unwrap().reserved(None, None),
+            Some(Resources::ZERO)
+        );
+    }
+}
+
+#[test]
+fn unhealthy_node_still_accepts_nonpositive_expiry_and_reconciles_original_destroy() {
+    for seconds in [0, -1, i64::MIN] {
+        let f = fixture();
+        let session = f.app.create("1", command()).unwrap();
+        {
+            let mut authority = f.app.authority.lock().unwrap();
+            let node = authority.state.nodes()[0].identity.clone();
+            authority.state = authority
+                .state
+                .refresh_node(&node, 0, Resources::ZERO)
+                .unwrap();
+        }
+        f.app
+            .set_timeout("1", &session.sandbox_id, seconds)
+            .unwrap();
+        assert!(f.app.snapshot().unwrap().sandboxes()[0].terminating);
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            f.app.snapshot().unwrap().reserved(None, None),
+            Some(resources(1))
+        );
+        f.app.reconcile_once().unwrap();
+        assert_eq!(
+            f.app.snapshot().unwrap().reserved(None, None),
+            Some(Resources::ZERO)
+        );
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
+    }
+}
+
+#[test]
 fn set_timeout_can_shorten_and_large_seconds_cap_without_overflow() {
     let f = fixture();
     let session = f.app.create("1", command()).unwrap();

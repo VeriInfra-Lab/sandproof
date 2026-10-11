@@ -90,6 +90,52 @@ fn physical_refresh_cannot_forget_unknown_responsibility_or_change_policy() {
     );
 }
 #[test]
+fn stale_or_vetoed_health_blocks_new_renewals_but_not_original_destroy() {
+    let tenant = "1".try_into().unwrap();
+    let (created, request) = state().create(&tenant, binding(), 0).unwrap();
+    let running = created
+        .apply_response(&response(
+            &request,
+            1,
+            LifecycleFact::Ready {
+                started_at_ms: 100,
+                end_at_ms: 200,
+                max_end_at_ms: 600,
+            },
+        ))
+        .unwrap();
+    for healthy_until in [0, 149, 150] {
+        let stale = running
+            .refresh_node(&node("host-a"), healthy_until, Resources::ZERO)
+            .unwrap();
+        assert_eq!(
+            stale.renew(&tenant, &request.identity.sandbox_id, 400, 150),
+            Err(DecisionError::Unavailable)
+        );
+        assert_eq!(stale.identity_frontiers(), running.identity_frontiers());
+        assert_eq!(stale.pending(), running.pending());
+        let (terminating, destroy) = stale
+            .destroy(&tenant, &request.identity.sandbox_id)
+            .unwrap();
+        assert_eq!(
+            destroy.intent,
+            sandproof_protocol::internal::lifecycle::Intent::Destroy
+        );
+        assert!(terminating.sandboxes()[0].terminating);
+    }
+    let fresh = running
+        .refresh_node(&node("host-a"), 151, Resources::ZERO)
+        .unwrap()
+        .begin_drain(&node("host-a"))
+        .unwrap();
+    assert!(
+        fresh
+            .renew(&tenant, &request.identity.sandbox_id, 400, 150)
+            .is_ok()
+    );
+}
+
+#[test]
 fn identity_exhaustion_reserves_the_final_destroy_id() {
     let mut s = state();
     s.operation_highwater = u64::MAX - 1;

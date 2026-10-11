@@ -181,7 +181,8 @@ impl CenterState {
         Ok((next, request))
     }
     /// # Errors
-    /// Requires original owner, live confirmed lifetime and one free ordinary slot.
+    /// Requires original owner, live confirmed lifetime, fresh registered node
+    /// health and one free ordinary slot. Destroy remains independent of health.
     pub fn renew(
         &self,
         tenant: &TenantId,
@@ -209,6 +210,16 @@ impl CenterState {
             })
         {
             return Err(DecisionError::Conflict);
+        }
+        let node = &record
+            .operations
+            .first()
+            .ok_or(DecisionError::Invalid)?
+            .request
+            .identity
+            .node;
+        if !self.node_is_reachable(node, now_ms) {
+            return Err(DecisionError::Unavailable);
         }
         // Keep the last slot for termination even when ordinary history is full.
         if record.operations.len() + 1 >= usize::from(self.bounds.operations_per_sandbox) {
