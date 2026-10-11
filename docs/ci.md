@@ -54,7 +54,7 @@
 
 手动入口为同一监督器的 `--candidate <批准的完整提交> --base <目标完整提交>`；可加 `--profile full --batch-size 4`，或重复 `--task <准确题名>`。通过带 `LoadCredential` 的受控 systemd 单元调用；不在 shell/仓库保存令牌。`--local-only` 不回传 GitHub 状态。自动服务使用 `--follow-promotions`，私有配置明确批准 `auto_promotions=true`、固定仓库和 `promotion_floor=<已审查门槛实现的完整提交>`；只接收该最低版本之后的受保护分支，避免首次安装时执行旧 test。现有 `--follow-test`／`auto_test` 保留为旧部署入口，不与新模式同时启用。自动模式不接受命令行改题集、手动候选或 `--local-only`。
 
-两级晋升的题集、检查名称与启用条件以[验收清单](testing-plan.md)为准，实际部署证据留 #14，不在本页另列旧门槛。结果注明原题/兼容/预装环境、评分启动变体和实际范围；普通任务 PR 不跑真题。test/main 的端到端检查绑定专用 GitHub App 的 ID，运行中阻塞、真实成功后才放行；integration 的保护不增加真题门槛。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口仍未接通，受控命令行入口保留。
+两级晋升规则由[开发指南](../CONTRIBUTING.md#5-github-配置)维护，两题预装环境的题集、判据与扩展验收范围由[验收清单](testing-plan.md#4-通用模板与-terminal-bench)维护；专用 App 的两题门槛已接通，部署证据留 #14，不在本页维护另一份进度或旧门槛。结果注明原题/兼容/预装环境、评分启动变体和实际范围；普通任务 PR 不跑真题。test/main 的端到端检查绑定专用 GitHub App 的 ID，运行中阻塞、真实成功后才放行；integration 的保护不增加真题门槛。手动覆盖使用 `/ diagnostic`，不能满足正式门槛；人工换题须独立身份，原超时不能改成成功。GitHub 页面手动入口仍未接通，受控命令行入口保留。
 
 给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 
