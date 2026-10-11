@@ -132,6 +132,36 @@ class InternalFaultRelayTests(unittest.TestCase):
         backend.close.assert_called_once()
         value.server.relay.failed.set.assert_not_called()
 
+    def test_backend_requires_http_alpn_and_closes_wrapped_socket_on_rejection(self):
+        materials = Mock()
+        connection = materials.client.wrap_socket.return_value
+        for selected in (None, 'h2'):
+            with self.subTest(selected=selected):
+                connection.reset_mock()
+                connection.selected_alpn_protocol.return_value = selected
+                backend = relay._Backend(('127.0.0.1', 2345), materials)
+                raw = Mock()
+                with patch.object(relay.socket, 'create_connection', return_value=raw), self.assertRaises(ValueError):
+                    backend.connect()
+                connection.close.assert_called_once()
+                raw.close.assert_called_once()
+                connection.getpeercert.assert_not_called()
+
+    def test_frontend_requires_http_alpn_and_closes_wrapped_socket_on_rejection(self):
+        server = relay._FiniteServer.__new__(relay._FiniteServer)
+        server.relay = Mock()
+        connection = server.relay.materials.server.wrap_socket.return_value
+        for selected in (None, 'h2'):
+            with self.subTest(selected=selected):
+                connection.reset_mock()
+                connection.selected_alpn_protocol.return_value = selected
+                raw = Mock()
+                with patch.object(relay.HTTPServer, 'get_request', return_value=(raw, ('127.0.0.1', 1234))), self.assertRaises(OSError):
+                    server.get_request()
+                connection.close.assert_called_once()
+                raw.close.assert_called_once()
+                connection.getpeercert.assert_not_called()
+
     def test_bad_authenticated_backend_data_still_fails_instead_of_becoming_unavailable(self):
         value=relay._Handler.__new__(relay._Handler)
         value.path='/internal/v2/node-status'

@@ -27,6 +27,9 @@ mod tls_fixture;
 use tls_fixture::*;
 #[path = "support/lifecycle_cases.rs"]
 mod lifecycle_cases;
+#[cfg(unix)]
+#[path = "support/python_relay.rs"]
+mod python_relay;
 #[path = "support/status_cases.rs"]
 mod status_cases;
 

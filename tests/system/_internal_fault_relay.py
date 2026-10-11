@@ -184,10 +184,12 @@ class RelayMaterials:
         self.server = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.server.minimum_version = ssl.TLSVersion.TLSv1_2
         self.server.verify_mode = ssl.CERT_REQUIRED
+        self.server.set_alpn_protocols(['http/1.1'])
         self.server.load_verify_locations(str(self.root/'ca.der.pem'))
         self.server.load_cert_chain(str(self.root/'host-runtime.der.pem'), str(self.root/'host-runtime-key.der.pem'))
         self.client = ssl.create_default_context(cafile=str(self.root/'ca.der.pem'))
         self.client.minimum_version = ssl.TLSVersion.TLSv1_2
+        self.client.set_alpn_protocols(['http/1.1'])
         self.client.load_cert_chain(str(self.root/'center.der.pem'), str(self.root/'center-key.der.pem'))
 
     def remove(self):
@@ -212,9 +214,13 @@ class _Backend(http.client.HTTPSConnection):
         raw = socket.create_connection((self.host, self.port), timeout=self.timeout)
         try:
             self.sock = self._context.wrap_socket(raw, server_hostname='host.test')
+            if self.sock.selected_alpn_protocol() != 'http/1.1':
+                raise ValueError('fixed host HTTP protocol mismatch')
             if hashlib.sha256(self.sock.getpeercert(binary_form=True)).digest() != self.materials.host_pin:
                 raise ValueError('fixed host leaf mismatch')
         except BaseException:
+            if self.sock is not None:
+                self.sock.close()
             raw.close()
             raise
 
@@ -230,13 +236,18 @@ class _FiniteServer(ThreadingMixIn, HTTPServer):
     def get_request(self):
         raw, address = super().get_request()
         raw.settimeout(5)
+        connection = None
         try:
             connection = self.relay.materials.server.wrap_socket(raw, server_side=True)
+            if connection.selected_alpn_protocol() != 'http/1.1':
+                raise ValueError('fixed center HTTP protocol mismatch')
             if hashlib.sha256(connection.getpeercert(binary_form=True)).digest() != self.relay.materials.center_pin:
                 raise ValueError('fixed center leaf mismatch')
             connection.settimeout(15)
             return connection, address
         except BaseException:
+            if connection is not None:
+                connection.close()
             raw.close()
             raise OSError('fixed mutual authentication failed') from None
 

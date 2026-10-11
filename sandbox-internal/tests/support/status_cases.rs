@@ -136,3 +136,52 @@ async fn status_uses_original_mtls_budget_and_rejects_foreign_or_oversized_input
     task.await.unwrap().unwrap();
     assert_eq!(server.active_connections(), 0);
 }
+
+/// The real Rust status transport crosses both original Python relay TLS legs.
+/// This is a local authenticated component test, not a KVM/SDK acceptance claim.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn original_status_crosses_python_double_mtls_with_strict_chain_and_alpn() {
+    let certs = certificates_with_dual_roles();
+    let count = Arc::new(AtomicUsize::new(0));
+    let server = InternalServer::new(
+        ServerTls::new(
+            certs.host.material(),
+            vec![certs.ca.der().clone()],
+            vec![certs.center.pin()],
+        )
+        .unwrap(),
+        node(),
+        limits(),
+        Observed(Arc::clone(&count)),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let backend = listener.local_addr().unwrap();
+    let (stop, shutdown) = oneshot::channel();
+    let run = server.clone();
+    let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
+    let mut relay = super::python_relay::PythonRelay::start(&certs, backend, &node());
+    let caller = client(&certs, relay.address);
+    let status = caller.status().await.unwrap();
+    assert_eq!(status.node, node());
+    assert_eq!(status.retention_slots, 2);
+    assert_eq!(status.observed_at_ms, 1234);
+    assert_eq!(caller.active_calls(), 0);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    // A CA-valid but unregistered caller must not cross the first leaf pin.
+    let foreign = raw_request(
+        relay.address,
+        raw_config(&certs, Some(&certs.other)),
+        http_request(
+            STATUS_PATH,
+            Bytes::from(serde_json::to_vec(&StatusRequest { node: node() }).unwrap()),
+        ),
+    )
+    .await;
+    assert!(foreign.is_err());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    relay.stop();
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(server.active_connections(), 0);
+}
