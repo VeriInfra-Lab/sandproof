@@ -75,7 +75,7 @@ def prepare(args, installed, root, shared):
     jailer = approved(installed["jailer"], installed["host_assets"][installed["jailer"]])
     relay = approved(args.relay, args.relay_sha256)
     binary = approved(args.binary, args.binary_sha256)
-    redis = approved(args.redis_server, args.redis_sha256)
+    redis = approved(args.redis_server, args.redis_server_sha256)
     namespace = secrets.token_hex(8)
     uid_base = installed["uid_base"]
     if processes_in_uid_range(uid_base, uid_base + 1):
@@ -116,7 +116,7 @@ def prepare(args, installed, root, shared):
     for directory, uid, mode in ((center_root, 65534, 0o700), (redis_root, 65533, 0o700), (bin_root, 0, 0o755)):
         directory.mkdir(mode=mode)
         os.chown(directory, uid, uid)
-    for source, name, expected in ((binary, "kvm_lifecycle", args.binary_sha256), (redis, "redis-server", args.redis_sha256)):
+    for source, name, expected in ((binary, "kvm_lifecycle", args.binary_sha256), (redis, "redis-server", args.redis_server_sha256)):
         destination = bin_root / name
         shutil.copyfile(source, destination)
         destination.chmod(0o755)
@@ -168,6 +168,26 @@ def prepare(args, installed, root, shared):
     return binary, settings, center_root, redis_root, redis_port, template
 
 
+def remove_test_credential(path, uid):
+    """After all owned children exit, remove only the exact private test file."""
+    try:
+        before = path.lstat()
+    except FileNotFoundError:
+        return
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid != uid
+            or before.st_mode & 0o077 or before.st_nlink != 1):
+        raise RuntimeError("test credential identity changed; retained")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(descriptor)
+        current = path.lstat()
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
+            raise RuntimeError("test credential identity changed; retained")
+        path.unlink()
+    finally:
+        os.close(descriptor)
+
+
 def run(args):
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("real lifecycle acceptance requires isolated root Linux/KVM")
@@ -194,6 +214,7 @@ def run(args):
     children = []
     paused = False
     safe = False
+    host_started = False
     try:
         lease.pause()
         paused = True
@@ -216,6 +237,7 @@ def run(args):
                     time.sleep(0.1)
             host = launch(binary, "host", root / "host.json", host_output)
             children.append(host)
+            host_started = True
             wait_file(root / "tls/listening", host, 60)
             center = launch(binary, "center", center_root / "config.json", center_output, uid=65534)
             children.append(center)
@@ -239,11 +261,19 @@ def run(args):
     finally:
         # Child PIDs are owned Popen handles. Do not stop host/center while VM
         # responsibility is unknown; original local deadline remains active.
-        if safe:
+        if safe or not host_started:
             for child in reversed(children):
                 if child.poll() is None:
                     child.terminate()
                     child.wait(timeout=15)
+            for path, uid in ((root / "tls/host.key", 0), (root / "tls/center.key", 0),
+                              (shared / "center/tls/center.key", 65534),
+                              (shared / "center/config.json", 65534),
+                              (shared / "redis/redis.conf", 65533)):
+                remove_test_credential(path, uid)
+            report["test_credentials"] = "removed"
+            if not host_started:
+                report["cleanup"] = "no VM execution attempted"
             if paused:
                 lease.release()
         report["private_evidence"] = str(root)
@@ -254,14 +284,18 @@ def run(args):
         raise RuntimeError("acceptance incomplete; private evidence and host lease retained")
 
 
-def main():
+def arguments(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host-config", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
     for name in ("binary", "redis-server", "relay"):
         parser.add_argument("--" + name, type=Path, required=True)
         parser.add_argument("--" + name + "-sha256", required=True)
-    run(parser.parse_args())
+    return parser.parse_args(argv)
+
+
+def main():
+    run(arguments())
 
 
 if __name__ == "__main__":

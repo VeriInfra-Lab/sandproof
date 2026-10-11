@@ -1,5 +1,6 @@
 """Unprivileged checks for the explicit, manual real-lifecycle entrypoint."""
 from pathlib import Path
+import importlib.util
 import os
 import subprocess
 import sys
@@ -10,6 +11,18 @@ SCRIPT = ROOT / "tests/system/internal_lifecycle_smoke.py"
 
 
 class InternalLifecycleSmokeTests(unittest.TestCase):
+    def test_parsed_fingerprints_match_all_consumed_argument_names(self):
+        spec = importlib.util.spec_from_file_location("manual_smoke", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        args = module.arguments(["--host-config", "/config", "--expected-commit", "a" * 40,
+                                 "--binary", "/binary", "--binary-sha256", "b" * 64,
+                                 "--redis-server", "/redis", "--redis-server-sha256", "c" * 64,
+                                 "--relay", "/relay", "--relay-sha256", "d" * 64])
+        self.assertEqual(args.redis_server_sha256, "c" * 64)
+        self.assertEqual(args.binary_sha256, "b" * 64)
+        self.assertEqual(args.relay_sha256, "d" * 64)
+
     def test_normal_help_loads_without_root_or_starting_resources(self):
         env = {key: value for key, value in os.environ.items()
                if key not in {"PYTHONOPTIMIZE", "PYTHONPATH"}}
