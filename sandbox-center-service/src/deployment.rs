@@ -44,15 +44,22 @@ pub enum AssemblyError {
     IncompleteTemplateRegistration,
     InvalidPublicBoundary,
 }
-impl std::fmt::Display for AssemblyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
+impl AssemblyError {
+    /// A fixed diagnostic category without configuration, paths or credentials.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
             Self::ProtectedInput => "protected center input rejected",
             Self::InvalidConfiguration => "invalid center deployment configuration",
             Self::InvalidTls => "invalid registered center TLS material",
             Self::IncompleteTemplateRegistration => "incomplete trusted template registration",
             Self::InvalidPublicBoundary => "invalid public center boundary",
-        })
+        }
+    }
+}
+impl std::fmt::Display for AssemblyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 impl std::error::Error for AssemblyError {}

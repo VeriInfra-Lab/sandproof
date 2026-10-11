@@ -1,6 +1,9 @@
 //! Product composition only; explicit provisioning never runs on recovery.
 use crate::{audit, cli::Command, runtime};
-use sandproof_center_service::{business::RegistryMetadata, deployment::CenterAssemblyInputs};
+use sandproof_center_service::{
+    business::RegistryMetadata,
+    deployment::{AssemblyError, CenterAssemblyInputs},
+};
 use sandproof_center_store::{RedisLedger, WriterLease, business::BusinessEnvelope};
 use std::path::Path;
 
@@ -11,8 +14,7 @@ pub fn load(path: &Path) -> Result<CenterAssemblyInputs, &'static str> {
     if owner.is_root() || owner != rustix::process::getuid() {
         return Err("center requires its own unprivileged deployment account");
     }
-    CenterAssemblyInputs::load(path, owner.as_raw())
-        .map_err(|_| "protected center configuration rejected")
+    CenterAssemblyInputs::load(path, owner.as_raw()).map_err(AssemblyError::as_str)
 }
 
 pub fn execute(command: Command) -> Result<(), &'static str> {

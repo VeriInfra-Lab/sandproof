@@ -8,6 +8,36 @@ use std::{
     os::unix::fs::{MetadataExt, PermissionsExt, symlink},
 };
 
+#[test]
+fn assembly_errors_expose_only_their_fixed_diagnostic_category() {
+    let categories = [
+        (
+            AssemblyError::ProtectedInput,
+            "protected center input rejected",
+        ),
+        (
+            AssemblyError::InvalidConfiguration,
+            "invalid center deployment configuration",
+        ),
+        (
+            AssemblyError::InvalidTls,
+            "invalid registered center TLS material",
+        ),
+        (
+            AssemblyError::IncompleteTemplateRegistration,
+            "incomplete trusted template registration",
+        ),
+        (
+            AssemblyError::InvalidPublicBoundary,
+            "invalid public center boundary",
+        ),
+    ];
+    for (error, expected) in categories {
+        assert_eq!(error.as_str(), expected);
+        assert_eq!(error.to_string(), expected);
+    }
+}
+
 struct Fixture {
     root: tempfile::TempDir,
     owner: u32,
