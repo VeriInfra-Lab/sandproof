@@ -21,11 +21,16 @@ from tools.runtime_create_recovery import find_runtime_create
 def sdk_from_detail(harness, sandbox_id):
     """The pinned SDK's original no-create constructor; does not renew lifetime."""
     from e2b import Sandbox
+    from e2b.connection_config import ConnectionConfig
+    from packaging.version import Version
     status, raw = harness.fetch('GET','/sandboxes/'+sandbox_id)
     assert status==200
     value=json.loads(raw)
-    return Sandbox(sandbox_id=sandbox_id,envd_version=value['envdVersion'],
-        envd_access_token=value['envdAccessToken'],**harness.sdk_options())
+    connection=ConnectionConfig(**harness.sdk_options(),
+        extra_sandbox_headers={'X-Access-Token':value['envdAccessToken']})
+    return Sandbox(sandbox_id=sandbox_id,sandbox_domain=value['domain'],
+        envd_version=Version(value['envdVersion']),envd_access_token=value['envdAccessToken'],
+        connection_config=connection)
 
 
 def dk01(h):

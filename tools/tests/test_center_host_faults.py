@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import subprocess
 import tempfile
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 from tools.tests.storage_observation_fixture import declaration, observation
@@ -16,9 +17,56 @@ sys.path.insert(0,str(ROOT/'tests/system'))
 import center_host_faults as runner
 import _center_fault_harness as harness
 import _runtime_services as services
+import _center_fault_cases as cases
 
 
 class CenterHostFaultsTests(unittest.TestCase):
+    def test_recovery_constructor_uses_exact_required_sdk_fields_without_create_or_renew(self):
+        # No **kwargs on these fixtures: the previous incomplete constructor
+        # must fail just as it did in the real pinned SandboxBase signature.
+        class StrictVersion:
+            def __init__(self, value):
+                self.value=value
+        class StrictConnection:
+            def __init__(self, *, api_url, sandbox_url, api_key, domain, retries,
+                         request_timeout, extra_sandbox_headers):
+                self.values=dict(api_url=api_url,sandbox_url=sandbox_url,api_key=api_key,
+                    domain=domain,retries=retries,request_timeout=request_timeout,
+                    extra_sandbox_headers=extra_sandbox_headers)
+        class StrictSandbox:
+            def __init__(self, sandbox_id, envd_version, envd_access_token,
+                         sandbox_domain, connection_config, traffic_access_token=None):
+                self.sandbox_id=sandbox_id
+                self.version=envd_version
+                self.token=envd_access_token
+                self.domain=sandbox_domain
+                self.connection=connection_config
+            create=Mock(side_effect=AssertionError('unexpected create'))
+            connect=Mock(side_effect=AssertionError('unexpected renew'))
+            set_timeout=Mock(side_effect=AssertionError('unexpected renew'))
+        modules={name:ModuleType(name) for name in (
+            'e2b','e2b.connection_config','packaging','packaging.version')}
+        modules['e2b'].Sandbox=StrictSandbox
+        modules['e2b.connection_config'].ConnectionConfig=StrictConnection
+        modules['packaging.version'].Version=StrictVersion
+        value=dict(domain='actual-detail.invalid',envdVersion='0.5.14',
+                   envdAccessToken='synthetic-guest-token')
+        options=dict(api_url='http://127.0.0.1:12345',sandbox_url='http://127.0.0.1:12345',
+                     api_key='synthetic-owner-key',domain='fallback.invalid',retries=0,request_timeout=30)
+        probe=SimpleNamespace(fetch=Mock(return_value=(200,json.dumps(value).encode())),
+                              sdk_options=Mock(return_value=options))
+        with patch.dict(sys.modules,modules):
+            sandbox=cases.sdk_from_detail(probe,'exact-original-sandbox')
+        probe.fetch.assert_called_once_with('GET','/sandboxes/exact-original-sandbox')
+        self.assertEqual(sandbox.sandbox_id,'exact-original-sandbox')
+        self.assertEqual(sandbox.domain,value['domain'])
+        self.assertEqual(sandbox.version.value,value['envdVersion'])
+        self.assertEqual(sandbox.token,value['envdAccessToken'])
+        self.assertEqual(sandbox.connection.values,dict(options,
+            extra_sandbox_headers={'X-Access-Token':value['envdAccessToken']}))
+        for method in (StrictSandbox.create,StrictSandbox.connect,StrictSandbox.set_timeout):
+            method.assert_not_called()
+
     def test_finish_requires_original_storage_evidence_and_stop_updates_the_same_report_after_exit(self):
         value=harness.Harness.__new__(harness.Harness)
         value.manifest=dict(services=dict(candidate='a'*40),service_data=declaration())
