@@ -383,7 +383,7 @@ def exercise(args):
     registry = {'root': str(root / 'registry'), **deployment['registry']}
     services = RuntimeServices.prepare(args,root,settings,[config['templates'] for config in settings],
         key,public_address,record=service_record,job_count=capacity['jobs'],
-        private_builds=private_builds,registry_config=registry)
+        private_builds=private_builds,registry_config=registry,activation_ceiling_bytes=disk_ceiling)
     settings = services.native_pools  # Exactly the profile Rust initializes.
     registry_root = services.layout['registry']
     urls = [services.sdk_url] * 3  # Every public SDK/build request goes to center.

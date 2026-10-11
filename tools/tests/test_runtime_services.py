@@ -115,20 +115,31 @@ class RuntimeServicesTests(unittest.TestCase):
             original=copy.deepcopy(physical['pools'])
             layout=dict(hosts=[root],center_identity=(1001,1001),registry=root/'registry')
             image=dict(kernel=dict(size_bytes=44_649_272),rootfs=dict(size_bytes=10*gib))
-            def bind(count):
+            def bind(count,ceiling=services.MAX_ACTIVATION_BYTES):
                 return services._bind_profile([native],[dict(templates=[image]*count)],layout,
                     registry=dict(max_artifact_bytes_global=count*(10*gib+44_649_272),max_templates_global=count),
                     service_peaks=[dict(root=str(root/'assets'),owner_uid=1001,
-                                        peak_bytes=count*(10*gib+44_649_272)+gib,inode_budget=32)])
+                                        peak_bytes=count*(10*gib+44_649_272)+gib,inode_budget=32)],
+                    activation_ceiling_bytes=ceiling)
             with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
                     f_bavail=10**12,f_frsize=4096,f_favail=10**9)):
-                with self.assertRaisesRegex(ValueError,'exceeds 200 GiB; no quota is reduced'):
+                with self.assertRaisesRegex(ValueError,'exceeds prepared CI ceiling; no quota is reduced'):
                     bind(2)
                 self.assertEqual(native['bounded_host']['physical_storage']['pools'],original)
                 self.assertEqual(native['bounded_host']['physical_storage']['host_template_caches'],[])
                 profile=bind(1)
+                native['bounded_host']['physical_storage']['service_data']=[]
+                native['bounded_host']['physical_storage']['host_template_caches']=[]
+                for invalid in (0,True,services.MAX_ACTIVATION_BYTES+1):
+                    with self.subTest(ceiling=invalid),self.assertRaisesRegex(ValueError,'explicit prepared CI activation ceiling'):
+                        bind(2,invalid)
+                generic_profile=bind(2,None)
             self.assertLessEqual(2*services.envelope(profile)[0],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(profile['pools'],original)
+            # General template/build probes keep their own original approved
+            # envelope and actual free-space check, not the two-task CI ceiling.
+            self.assertGreater(2*services.envelope(generic_profile)[0],services.MAX_ACTIVATION_BYTES)
+            self.assertEqual(generic_profile['pools'],original)
 
     def test_role_cleanup_requires_original_exit_and_parent_identity(self):
         instance=services.RuntimeServices()

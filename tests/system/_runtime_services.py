@@ -115,7 +115,7 @@ def _wait_redis(config,process):
     raise RuntimeError('fixed Redis startup unobserved; no center initialized')
 
 
-def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks):
+def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None):
     """Bind one fresh test declaration; never raise supplied task/cache quotas."""
     profiles = [native['bounded_host']['physical_storage'] for native in native_pools]
     if any(profile != profiles[0] for profile in profiles[1:]):
@@ -153,8 +153,12 @@ def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks):
         raise ValueError('fresh service declarations required; existing service roots are not relocated')
     profile['service_data']=copy.deepcopy(service_peaks)
     peak,inodes=envelope(profile)
-    if 2*peak>MAX_ACTIVATION_BYTES:
-        raise ValueError('complete dual-service activation exceeds 200 GiB; no quota is reduced')
+    if activation_ceiling_bytes is not None:
+        if (type(activation_ceiling_bytes) is not int
+                or not 0<activation_ceiling_bytes<=MAX_ACTIVATION_BYTES):
+            raise ValueError('explicit prepared CI activation ceiling at most 200 GiB required')
+        if 2*peak>activation_ceiling_bytes:
+            raise ValueError('complete dual-service activation exceeds prepared CI ceiling; no quota is reduced')
     free=os.statvfs(layout['hosts'][0])
     if free.f_bavail*free.f_frsize<2*peak or free.f_favail<2*inodes:
         raise RuntimeError('insufficient complete physical bytes/inodes; system probe not executed')
@@ -167,7 +171,7 @@ class RuntimeServices:
     """One owned process assembly; every restart uses its original configuration."""
     @classmethod
     def prepare(cls,args,root,native_pools,registered_catalogs,key,public_address,record,
-                job_count,private_builds=None,registry_config=None,extra_credentials=None):
+                job_count,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None):
         if os.geteuid()!=0 or not 1<=len(native_pools)<=2 or len(native_pools)!=len(registered_catalogs):
             raise ValueError('explicit isolated root host cohort required')
         if registry_config is None or any(RETIRED_NATIVE_FIELDS & native.keys() for native in native_pools):
@@ -249,7 +253,8 @@ class RuntimeServices:
                   for control in layout['host_controls']))]
         if private_builds is not None:
             service_peaks.append(dict(root=str(layout['build_control']),owner_uid=0,peak_bytes=8*MIB,inode_budget=32))
-        profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks)
+        profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
+                              activation_ceiling_bytes=activation_ceiling_bytes)
         # Complete original byte/inode activation is checked BEFORE any large
         # disk copy. Rust checks the same final profile independently at init.
         for source,target,checksum in pending_copies:
