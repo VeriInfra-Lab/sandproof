@@ -22,4 +22,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Check pinned Rust workspace
-        run: bash scripts/check-function.sh
+        # The full workspace includes real Redis-backed component contracts.
+        # Missing sealed material must fail before the original check entry.
+        run: |
+          redis_server="$(python3 tools/ci_redis.py check)"
+          export SANDPROOF_REDIS_SERVER="$redis_server"
+          export CARGO_NET_OFFLINE=true
+          bash scripts/check-function.sh

@@ -78,27 +78,45 @@ class CiRedisMaterialTests(unittest.TestCase):
 
 
 class CiDistributedWorkflowTests(unittest.TestCase):
-    def test_sealed_engine_gate_fails_before_component_entry_and_runs_offline(self):
+    def check_gate(self, workflow_name, entry_command):
         root = Path(__file__).resolve().parents[2]
-        workflow = (root / '.github/workflows/function-ci.yml').read_text()
+        workflow = (root / '.github/workflows' / workflow_name).read_text()
         blocks = re.findall(r'        run: \|\n((?:          [^\n]*\n)+)', workflow)
-        blocks = [block for block in blocks if 'check-distributed-contract.sh' in block]
+        blocks = [block for block in blocks if entry_command in block]
         self.assertEqual(len(blocks), 1)
         for status in (0, 2):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
+                checked = directory / 'checked.json'
                 program = directory / 'python3'
-                program.write_text('#!/bin/sh\nprintf "%s\\n" /usr/local/lib/sandproof-ci/redis-7.2.16/redis-server\nexit ' + str(status) + '\n')
+                program.write_text('#!' + sys.executable + '\nimport json,os,sys\nfrom pathlib import Path\n'
+                    'assert sys.argv[1:] == ["tools/ci_redis.py", "check"]\n'
+                    'Path(os.environ["CI_REDIS_TEST_CHECK"]).write_text(json.dumps(sys.argv[1:]))\n'
+                    'status = int(os.environ["CI_REDIS_TEST_STATUS"])\n'
+                    'if not status: print(' + repr(str(redis.INSTALLED / 'redis-server')) + ')\n'
+                    'raise SystemExit(status)\n')
                 program.chmod(0o700)
                 entry = directory / 'called.json'
                 program = directory / 'bash'
-                program.write_text('#!' + sys.executable + '\nimport json,os,sys\nfrom pathlib import Path\nPath(os.environ["CI_REDIS_TEST_ENTRY"]).write_text(json.dumps([sys.argv[1:],os.environ.get("SANDPROOF_REDIS_SERVER"),os.environ.get("CARGO_NET_OFFLINE")]))\n')
+                program.write_text('#!' + sys.executable + '\nimport json,os,sys\nfrom pathlib import Path\n'
+                    'with Path(os.environ["CI_REDIS_TEST_ENTRY"]).open("x") as output:\n'
+                    '    json.dump([sys.argv[1:],os.environ.get("SANDPROOF_REDIS_SERVER"),os.environ.get("CARGO_NET_OFFLINE")], output)\n')
                 program.chmod(0o700)
-                env = os.environ | {'PATH': temporary + os.pathsep + os.environ['PATH'], 'CI_REDIS_TEST_ENTRY': str(entry)}
+                env = os.environ | {'PATH': temporary + os.pathsep + os.environ['PATH'],
+                    'CI_REDIS_TEST_ENTRY': str(entry), 'CI_REDIS_TEST_CHECK': str(checked),
+                    'CI_REDIS_TEST_STATUS': str(status), 'SANDPROOF_REDIS_SERVER': 'unverified-existing-value'}
+                env.pop('CARGO_NET_OFFLINE', None)
                 result = subprocess.run(['/bin/bash', '-e', '-o', 'pipefail', '-c', textwrap.dedent(blocks[0])], env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(json.loads(checked.read_text()), ['tools/ci_redis.py', 'check'])
                 if status:
-                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertFalse(entry.exists())
                 else:
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(json.loads(entry.read_text()), [['scripts/check-distributed-contract.sh'], str(redis.INSTALLED / 'redis-server'), 'true'])
+                    self.assertEqual(json.loads(entry.read_text()), [[entry_command], str(redis.INSTALLED / 'redis-server'), 'true'])
+
+    def test_sealed_engine_gate_fails_before_component_entry_and_runs_offline(self):
+        self.check_gate('function-ci.yml', 'scripts/check-distributed-contract.sh')
+
+    def test_sealed_engine_gate_fails_before_full_function_entry_and_runs_offline(self):
+        self.check_gate('rust-ci.yml', 'scripts/check-function.sh')
