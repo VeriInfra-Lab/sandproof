@@ -67,6 +67,45 @@ class CiDependencyInputsTests(unittest.TestCase):
                 self.assertEqual(base64.b64decode(bundle['files'][project + '/uv.lock']),
                                  (ROOT / project / 'uv.lock').read_bytes())
 
+    def test_internal_transport_is_fixed_manifest_metadata_not_repository_source(self):
+        path = 'sandbox-internal/Cargo.toml'
+        self.assertIn('sandbox-internal', deps.MEMBERS)
+        self.assertIn(path, deps.INPUT_PATHS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-internal/src/tls.rs', files)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / path).read_bytes(), files[path])
+            self.assertEqual((directory / 'sandbox-internal/src/lib.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+            self.assertFalse((directory / 'sandbox-internal/src/tls.rs').exists())
+            self.assertEqual(deps.CARGO_ARGUMENTS,
+                             ['fetch', '--locked', '--target', deps.PLATFORM['target']])
+
+    def test_new_member_does_not_allow_unregistered_members_paths_or_git_sources(self):
+        root = (ROOT / 'Cargo.toml').read_bytes()
+        manifest = (ROOT / 'sandbox-internal/Cargo.toml').read_bytes()
+        mutations = [
+            ('Cargo.toml', root.replace(b'"sandbox-internal"', b'"unregistered-member"')),
+            ('sandbox-internal/Cargo.toml', manifest.replace(
+                b'path = "../sandbox-protocol"', b'path = "../../private"')),
+            ('sandbox-internal/Cargo.toml', manifest.replace(
+                b'path = "../sandbox-protocol"', b'path = "../unregistered-member"')),
+            ('sandbox-internal/Cargo.toml', manifest +
+                b'\n[dependencies.unregistered]\ngit = "https://example.invalid/code"\n'),
+        ]
+        for path, data in mutations:
+            with self.subTest(path=path, data=data[-80:]), self.assertRaises(ValueError):
+                deps.validate_input(self.replace_file(self.damaged(), path, data))
+        for section in ('files', 'manifest'):
+            bundle = self.damaged()
+            files = bundle[section] if section == 'files' else bundle['manifest']['files']
+            del files['sandbox-internal/Cargo.toml']
+            with self.subTest(section=section), self.assertRaises(ValueError):
+                deps.validate_input(self.resign(bundle))
+
     def test_prepare_rejects_wrong_approval_dirty_blob_or_existing_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'

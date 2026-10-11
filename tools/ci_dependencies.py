@@ -24,7 +24,8 @@ from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 
 MEMBERS = ('controller-core', 'sandbox-protocol', 'controller-service',
-           'sandbox-runtime', 'sandbox-node', 'sandbox-api', 'sandbox-server')
+           'sandbox-runtime', 'sandbox-node', 'sandbox-api', 'sandbox-server',
+           'sandbox-internal')
 PROJECTS = ('tests/compat', 'benchmarks')
 INPUT_PATHS = frozenset(('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
     'tools/ci_git.py', *(member + '/Cargo.toml' for member in MEMBERS),
