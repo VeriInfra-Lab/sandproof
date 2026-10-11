@@ -1324,8 +1324,8 @@ fn check_kvm(path: &Path) -> Result<(), RuntimeError> {
 fn copy_private_kernel(
     source: &Path,
     destination: &Path,
-    vm_uid: u32,
-    vm_gid: u32,
+    user_id: u32,
+    group_id: u32,
 ) -> Result<(), RuntimeError> {
     let mut input = File::from(
         rustix::fs::open(
@@ -1356,8 +1356,8 @@ fn copy_private_kernel(
     // root-owned cache's 0400 mode; only this instance may read its kernel copy.
     rustix::fs::fchown(
         &output,
-        Some(Uid::from_raw(vm_uid)),
-        Some(Gid::from_raw(vm_gid)),
+        Some(Uid::from_raw(user_id)),
+        Some(Gid::from_raw(group_id)),
     )
     .map_err(errno_to_io)?;
     output.set_permissions(fs::Permissions::from_mode(0o400))?;
@@ -1368,8 +1368,8 @@ fn copy_private_kernel(
         || current.dev() != copied.dev()
         || current.ino() != copied.ino()
         || current.nlink() != 1
-        || current.uid() != vm_uid
-        || current.gid() != vm_gid
+        || current.uid() != user_id
+        || current.gid() != group_id
         || current.mode() & 0o7777 != 0o400
     {
         return Err(RuntimeError::IdentityMismatch("private kernel replaced"));
