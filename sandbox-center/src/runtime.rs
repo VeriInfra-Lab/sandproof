@@ -205,7 +205,7 @@ async fn coordinate(
                 return;
             }
             if templates.reconcile_once(app.as_ref()).is_ok() {
-                let _ = app.retire_idle_windows_once();
+                let _ = app.retire_terminal_history_once();
             }
         })
         .await

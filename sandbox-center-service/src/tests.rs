@@ -165,6 +165,7 @@ fn state() -> CenterState {
             platform: resources(8),
         },
         vec![NodeRegistration {
+            retention_slots: 8,
             role: sandproof_center_core::NodeRole::Runtime,
             identity,
             limit: resources(8),
@@ -175,7 +176,7 @@ fn state() -> CenterState {
                 revision: template().revision,
                 digest: template().digest,
             }],
-            protocol_version: 1,
+            protocol_version: 2,
         }],
         vec![
             TenantBudget {
@@ -266,9 +267,12 @@ impl AuthorityPort for MemoryAuthority {
         self.state = self.state.begin_drain(node)?;
         Ok(())
     }
-    fn begin_close(&mut self, node: &NodeIdentity) -> Result<WindowCloseRequest, AuthorityError> {
+    fn begin_close(
+        &mut self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, AuthorityError> {
         self.snapshot()?;
-        let (state, request) = self.state.begin_close(node)?;
+        let (state, request) = self.state.begin_close(terminal)?;
         self.state = state;
         Ok(request)
     }
@@ -296,6 +300,7 @@ struct Host {
     close_requests: Arc<Mutex<Vec<WindowCloseRequest>>>,
     confirmation_budgets: Arc<Mutex<Vec<Duration>>>,
     recorded: Arc<AtomicBool>,
+    capacity_refusal: Arc<AtomicBool>,
     last: Arc<Mutex<Option<LifecycleRequest>>>,
     responses: Arc<Mutex<std::collections::BTreeMap<String, LifecycleResponse>>>,
     fence_after_send: Arc<Mutex<Option<Arc<AtomicBool>>>>,
@@ -317,6 +322,7 @@ impl Default for Host {
             close_requests: Arc::new(Mutex::new(Vec::new())),
             confirmation_budgets: Arc::new(Mutex::new(Vec::new())),
             recorded: Arc::new(AtomicBool::new(false)),
+            capacity_refusal: Arc::new(AtomicBool::new(false)),
             last: Arc::new(Mutex::new(None)),
             responses: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             fence_after_send: Arc::new(Mutex::new(None)),
@@ -337,7 +343,7 @@ impl HostPort for Host {
         // This controlled unit port does NOT attest host persistence. A separate
         // real mTLS + original SQLite test exercises actual host-close storage.
         Ok(WindowCloseAck {
-            identity: request.identity.clone(),
+            terminal: request.terminal.clone(),
         })
     }
     fn confirm(
@@ -382,19 +388,22 @@ impl HostPort for Host {
         {
             return Err(PortError::Busy);
         }
-        let fact = if self.recorded.load(Ordering::SeqCst) {
-            LifecycleFact::Recorded
-        } else {
-            match request.intent {
-                Intent::Create => LifecycleFact::Ready {
-                    started_at_ms: 1000,
-                    end_at_ms: 1000 + request.create.timeout_ms,
-                    max_end_at_ms: 1000 + request.create.max_lifetime_ms,
-                },
-                Intent::Renew { end_at_ms } => LifecycleFact::Renewed { end_at_ms },
-                Intent::Destroy => LifecycleFact::Cleaned,
-            }
-        };
+        let fact =
+            if self.capacity_refusal.load(Ordering::SeqCst) && request.intent == Intent::Create {
+                LifecycleFact::NotAccepted
+            } else if self.recorded.load(Ordering::SeqCst) {
+                LifecycleFact::Recorded
+            } else {
+                match request.intent {
+                    Intent::Create => LifecycleFact::Ready {
+                        started_at_ms: 1000,
+                        end_at_ms: 1000 + request.create.timeout_ms,
+                        max_end_at_ms: 1000 + request.create.max_lifetime_ms,
+                    },
+                    Intent::Renew { end_at_ms } => LifecycleFact::Renewed { end_at_ms },
+                    Intent::Destroy => LifecycleFact::Cleaned,
+                }
+            };
         let mut responses = self.responses.lock().unwrap();
         let key = request.identity.operation_id.as_str().to_owned();
         if let Some(previous) = responses.get(&key)
@@ -501,7 +510,6 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
         .identity
         .node
         .clone();
-    f.app.begin_drain(&node).unwrap();
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
     f.app.kill("1", &session.sandbox_id).unwrap();
     let terminal = f.app.snapshot().unwrap();
@@ -509,7 +517,8 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
     assert_eq!(record.operations.len(), 2);
     assert!(!record.has_compaction_work());
     assert!(record.terminal_confirmation.is_none());
-    assert_eq!(f.app.begin_close(&node), Err(PortError::Conflict));
+    let cleaned = record.operations.last().unwrap().response.clone().unwrap();
+    assert_eq!(f.app.begin_close(&cleaned), Err(PortError::Conflict));
     assert!(f.host.close_requests.lock().unwrap().is_empty());
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
@@ -524,7 +533,7 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
             .as_ref()
     );
     f.host.unknown_close.store(true, Ordering::SeqCst);
-    let close = f.app.begin_close(&node).unwrap();
+    let close = f.app.begin_close(&cleaned).unwrap();
     assert!(f.host.close_requests.lock().unwrap().is_empty()); // decision committed before detached I/O
     f.app.reconcile_once().unwrap();
     assert_eq!(
@@ -535,7 +544,15 @@ fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
     f.app.reconcile_once().unwrap();
     let reopened = f.app.snapshot().unwrap();
     assert!(reopened.sandboxes().is_empty());
-    assert_eq!(reopened.window(&node).unwrap().current().unwrap().get(), 2);
+    assert_eq!(
+        reopened
+            .lane(&node, cleaned.identity.retention_slot)
+            .unwrap()
+            .current()
+            .unwrap()
+            .get(),
+        2
+    );
     assert_eq!(
         *f.host.close_requests.lock().unwrap(),
         vec![close.clone(), close]
@@ -564,45 +581,44 @@ fn one_operation_not_accepted_requires_exact_terminal_confirmation() {
         terminal.clone(),
     );
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
-    f.app.begin_drain(&request.identity.node).unwrap();
     f.app.reconcile_once().unwrap();
     assert!(
         f.app.snapshot().unwrap().sandboxes()[0]
             .terminal_confirmation
             .is_none()
     );
-    assert_eq!(
-        f.app.begin_close(&request.identity.node),
-        Err(PortError::Conflict)
-    );
+    assert_eq!(f.app.begin_close(&terminal), Err(PortError::Conflict));
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     let state = f.app.snapshot().unwrap();
     assert_eq!(state.sandboxes()[0].operations.len(), 1);
-    assert_eq!(state.sandboxes()[0].terminal_confirmation, Some(terminal));
-    assert!(f.app.begin_close(&request.identity.node).is_ok());
+    assert_eq!(
+        state.sandboxes()[0].terminal_confirmation,
+        Some(terminal.clone())
+    );
+    assert!(f.app.begin_close(&terminal).is_ok());
 }
 
 #[test]
-fn idle_background_retirement_retries_exact_close_without_rotating_empty_successors() {
+fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successors() {
     let f = fixture();
     let session = f.app.create("1", command()).unwrap();
     let original = f.host.last.lock().unwrap().clone().unwrap();
-    f.app.retire_idle_windows_once().unwrap();
+    f.app.retire_terminal_history_once().unwrap();
     assert!(f.host.close_requests.lock().unwrap().is_empty());
     f.host.unknown_confirmation.store(true, Ordering::SeqCst);
     f.app.kill("1", &session.sandbox_id).unwrap();
-    f.app.retire_idle_windows_once().unwrap();
+    f.app.retire_terminal_history_once().unwrap();
     assert!(f.host.close_requests.lock().unwrap().is_empty());
     f.host.unknown_confirmation.store(false, Ordering::SeqCst);
     f.app.reconcile_once().unwrap();
     f.host.unknown_close.store(true, Ordering::SeqCst);
-    f.app.retire_idle_windows_once().unwrap();
+    f.app.retire_terminal_history_once().unwrap();
     let pending = f.app.snapshot().unwrap().pending_closes();
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].identity.node, original.identity.node);
+    assert_eq!(pending[0].terminal.identity.node, original.identity.node);
     assert_eq!(
-        pending[0].identity.request_window,
+        pending[0].terminal.identity.request_window,
         original.identity.request_window
     );
     f.host.unknown_close.store(false, Ordering::SeqCst);
@@ -611,7 +627,7 @@ fn idle_background_retirement_retries_exact_close_without_rotating_empty_success
     assert!(successor.sandboxes().is_empty());
     assert_eq!(
         successor
-            .window(&original.identity.node)
+            .lane(&original.identity.node, original.identity.retention_slot)
             .unwrap()
             .current()
             .unwrap()
@@ -620,7 +636,7 @@ fn idle_background_retirement_retries_exact_close_without_rotating_empty_success
     );
     let requests = f.host.close_requests.lock().unwrap().clone();
     assert_eq!(requests, vec![pending[0].clone(), pending[0].clone()]);
-    f.app.retire_idle_windows_once().unwrap();
+    f.app.retire_terminal_history_once().unwrap();
     assert_eq!(*f.host.close_requests.lock().unwrap(), requests);
     let next = f.app.create("1", command()).unwrap();
     assert_ne!(next.sandbox_id, session.sandbox_id);
@@ -636,6 +652,64 @@ fn idle_background_retirement_retries_exact_close_without_rotating_empty_success
             .get(),
         2
     );
+}
+
+#[test]
+fn background_retirement_keeps_a_live_sibling_and_its_original_data_token() {
+    let f = fixture();
+    let survivor = f.app.create("1", command()).unwrap();
+    let original = f.app.snapshot().unwrap().sandboxes()[0].clone();
+    let original_view = f.app.get("1", &survivor.sandbox_id).unwrap();
+    for round in 1..=8 {
+        let peer = f.app.create("1", command()).unwrap();
+        let request = f.host.last.lock().unwrap().clone().unwrap();
+        assert_eq!(request.identity.request_window.get(), round);
+        assert_ne!(
+            request.identity.retention_slot,
+            original.operations[0].request.identity.retention_slot
+        );
+        f.app.kill("1", &peer.sandbox_id).unwrap();
+        f.host.unknown_close.store(true, Ordering::SeqCst);
+        f.app.retire_terminal_history_once().unwrap();
+        let pending = f.app.snapshot().unwrap().pending_closes();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            pending[0].terminal.identity.sandbox_id.as_str(),
+            peer.sandbox_id
+        );
+        assert!(
+            f.app
+                .resolve_data_route(&survivor.envd_access_token)
+                .is_ok()
+        );
+        f.host.unknown_close.store(false, Ordering::SeqCst);
+        f.app.reconcile_once().unwrap();
+        let snapshot = f.app.snapshot().unwrap();
+        assert_eq!(snapshot.sandboxes(), std::slice::from_ref(&original));
+        assert_eq!(f.app.get("1", &survivor.sandbox_id).unwrap(), original_view);
+        assert!(
+            f.app
+                .resolve_data_route(&survivor.envd_access_token)
+                .is_ok()
+        );
+    }
+}
+
+#[test]
+fn durable_original_capacity_refusal_is_429_and_never_waits_for_a_fake_destroy() {
+    let f = fixture();
+    f.host.capacity_refusal.store(true, Ordering::SeqCst);
+    assert_eq!(f.app.create("1", command()), Err(PortError::QuotaExceeded));
+    let snapshot = f.app.snapshot().unwrap();
+    let record = &snapshot.sandboxes()[0];
+    assert_eq!(record.operations.len(), 1);
+    let terminal = record.operations[0].response.as_ref().unwrap();
+    assert_eq!(terminal.fact, LifecycleFact::NotAccepted);
+    assert_eq!(record.terminal_confirmation.as_ref(), Some(terminal));
+    assert_eq!(snapshot.reserved(None, None), Some(Resources::ZERO));
+    f.app.retire_terminal_history_once().unwrap();
+    assert!(f.app.snapshot().unwrap().sandboxes().is_empty());
+    assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
 }
 type App = CenterApplication<MemoryAuthority, Host, Templates>;
 struct Fixture {

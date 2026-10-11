@@ -1,10 +1,13 @@
 //! Bounded, secret-free projections of the original validated authority.
-use super::{codec, model::InternalLocalBinding};
+use super::{
+    codec,
+    model::{InternalLocalBinding, InternalRetentionLane},
+};
 use crate::{ControllerJournal, HostSlotContext, JournalError};
 use rusqlite::Connection;
 use sandbox_controller_core as core;
 use sandproof_protocol::internal::{
-    ControlIdentity, NodeIdentity, PositiveCounter,
+    ControlIdentity, NodeIdentity,
     lifecycle::{Intent, LifecycleResponse},
 };
 use serde::Serialize;
@@ -15,10 +18,8 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct InternalAudit {
     pub node: NodeIdentity,
-    /// The original durable rejection frontier, never inferred from entries.
-    pub retired_through: u64,
-    /// Original frontier's successor; `None` means permanently exhausted.
-    pub current_window: Option<PositiveCounter>,
+    /// Fixed original durable frontiers and exact most recent terminal stamps.
+    pub lanes: Vec<InternalRetentionLane>,
     pub operations: Vec<InternalAuditOperation>,
     pub native: Vec<InternalNativeAudit>,
     /// Includes original last bindings of already-free physical positions.
@@ -120,8 +121,7 @@ pub(in crate::controller) fn snapshot(
         })
         .collect();
     Ok(InternalAudit {
-        current_window: inbox.current_window(),
-        retired_through: inbox.retired_through,
+        lanes: inbox.lanes,
         node: inbox.config.node,
         operations,
         native,

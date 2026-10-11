@@ -24,8 +24,8 @@ mod identity;
 mod internal_inbox;
 pub use internal_inbox::{
     InternalAdmission, InternalAudit, InternalAuditOperation, InternalCreateResult,
-    InternalInboxConfig, InternalLocalBinding, InternalNativeAudit, InternalTemplate,
-    InternalWorkState,
+    InternalInboxConfig, InternalLocalBinding, InternalNativeAudit, InternalRetentionLane,
+    InternalTemplate, InternalWorkState,
 };
 mod private_build;
 mod registry;

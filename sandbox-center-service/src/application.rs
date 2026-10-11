@@ -239,7 +239,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                         return Ok(response);
                     }
                     if response.fact == LifecycleFact::NotAccepted {
-                        return Err(PortError::Failed);
+                        // The sole production producer is a durable, original
+                        // no-side-effect capacity refusal. Unknown template/
+                        // execution/transport failures never use this fact.
+                        return Err(PortError::QuotaExceeded);
                     }
                 }
                 // Reception shares the original host worker's finite budget.
@@ -365,7 +368,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         Ok(())
     }
     /// Trusted assembly explicitly stops new creates; public callers never
-    /// choose a host or issue a window.
+    /// choose a host or issue a retention lane.
     /// # Errors
     /// Unknown nodes and uncertain authority writes remain fenced.
     pub fn begin_drain(&self, node: &NodeIdentity) -> Result<(), PortError> {
@@ -378,28 +381,30 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     /// Commit a close responsibility through the full business authority before
     /// detached dispatch in reconciliation. This is NOT a close acknowledgement.
     /// # Errors
-    /// Active/unconfirmed windows or unsettled business pins cannot dispatch.
-    pub fn begin_close(&self, node: &NodeIdentity) -> Result<WindowCloseRequest, PortError> {
+    /// Active/unconfirmed lanes or unsettled business pins cannot dispatch.
+    pub fn begin_close(
+        &self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, PortError> {
         self.authority
             .lock()
             .map_err(|_| PortError::Busy)?
-            .begin_close(node)
+            .begin_close(terminal)
             .map_err(authority_error)
     }
-    /// Retire only nonempty windows whose complete lifecycle history already
-    /// has exact durable terminal confirmations. Template/build references are
-    /// independently checked by the SAME business authority before closing.
+    /// Retire only individual histories with exact durable terminal
+    /// confirmations. A live sibling never needs to stop. Template/build
+    /// references are checked by the SAME business authority before closing.
     /// Call after publication reconciliation so its evidence has been settled.
     /// There is no time-based deletion or separately retained retry queue.
     /// # Errors
-    /// Shared authority failures stop this scan; business pins keep their window
-    /// draining while unrelated eligible nodes may still close safely.
-    pub fn retire_idle_windows_once(&self) -> Result<(), PortError> {
-        let candidates = self.snapshot()?.idle_window_candidates();
-        for node in candidates {
+    /// Shared authority failures stop this scan; a known business pin keeps
+    /// only its own lane while other confirmed lanes may close safely.
+    pub fn retire_terminal_history_once(&self) -> Result<(), PortError> {
+        let candidates = self.snapshot()?.retirement_candidates();
+        for terminal in candidates {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
-            authority.begin_drain(&node).map_err(authority_error)?;
-            match authority.begin_close(&node) {
+            match authority.begin_close(&terminal) {
                 Ok(_)
                 | Err(AuthorityError::Decision(
                     DecisionError::Conflict | DecisionError::Stale | DecisionError::NotFound,

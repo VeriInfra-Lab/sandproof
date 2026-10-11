@@ -17,7 +17,7 @@ class CandidateArtifactsTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.root.chmod(0o700)
         self.candidate = "a" * 40
-        self.versions = dict(internal_protocol=1, center_store=1, host_store=5)
+        self.versions = dict(internal_protocol=2, center_store=6, host_store=16)
         self.paths = {}
         for role, name in artifacts.BINARIES.items():
             path = self.root / name
@@ -119,7 +119,7 @@ class CandidateArtifactsTests(unittest.TestCase):
         original = self.record()
         for field, value in (("candidate", "b" * 40), ("candidate", "test"),
                              ("architecture", "single-host"), ("schema_version", True),
-                             ("schema_version", 2), ("versions", dict(self.versions, host_store=6)),
+                             ("schema_version", 2), ("versions", dict(self.versions, host_store=15)),
                              ("versions", dict(self.versions, host_store=True)),
                              ("versions", dict(self.versions, extra=1))):
             with self.subTest(field=field, value=value), self.assertRaises(ValueError):
@@ -130,7 +130,7 @@ class CandidateArtifactsTests(unittest.TestCase):
     def test_implicit_or_unbounded_versions_are_rejected_before_artifact_access(self):
         for invalid in (None, {}, dict(self.versions, internal_protocol=0),
                         dict(self.versions, center_store=-1), dict(self.versions, host_store=2**32),
-                        dict(self.versions, host_store=1.0), dict(self.versions, host_store="5")):
+                        dict(self.versions, host_store=1.0), dict(self.versions, host_store="16")):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError), \
                     patch.object(artifacts, "_fingerprint") as fingerprint:
                 artifacts.record(self.candidate, self.paths, invalid)
@@ -374,7 +374,7 @@ class CandidateArtifactsTests(unittest.TestCase):
         expected = self.execution()
         for identity in (dict(expected["services"], candidate="0" * 40),
                          dict(expected["services"], host_sha256="0" * 64),
-                         dict(expected["services"], versions=dict(self.versions, host_store=6))):
+                         dict(expected["services"], versions=dict(self.versions, host_store=15))):
             evidence = dict(expected, services=identity)
             with self.subTest(identity=identity), self.assertRaises(ValueError):
                 artifacts.require_execution_manifest(evidence, self.record(), expected=expected)

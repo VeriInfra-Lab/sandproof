@@ -280,7 +280,7 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
             window_duration_ms=windows['window_duration_ms'], max_anchors=windows['max_anchors'], builder_revision='builder-base-r1',
             policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',
                                                       'max_lifetime_secs','startup_timeout_secs')}),
-        registry_config=build['registry'], extra_credentials=[{'tenant':'2','secret':foreign_key}])
+        registry_config=build['registry'], extra_credentials=[{'tenant':2,'secret':foreign_key}])
     settings = services.native_pools
     build.update(bind=services.layout['helper_backend_address'],
         runtime_config=str(services.processes.bindings['host-0']['config']),

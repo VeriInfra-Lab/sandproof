@@ -3,7 +3,7 @@ use crate::{ReceiveError, TransportError};
 use sandproof_protocol::internal::{NodeIdentity, lifecycle::Resources};
 use serde::{Deserialize, Serialize};
 
-pub const STATUS_PATH: &str = "/internal/v1/node-status";
+pub const STATUS_PATH: &str = "/internal/v2/node-status";
 pub const STATUS_REQUEST_BYTES: usize = 1024;
 pub const STATUS_RESPONSE_BYTES: usize = 2048;
 
@@ -27,6 +27,8 @@ impl StatusRequest {
 #[serde(deny_unknown_fields)]
 pub struct HostStatus {
     pub node: NodeIdentity,
+    /// Protected inbox capacity, not inferred from native IDs or physical slots.
+    pub retention_slots: u16,
     pub observed_at_ms: u64,
     /// Conservative physical/local free capacity. It can only veto admission;
     /// center reservations are still counted separately by the pure core.
@@ -36,7 +38,7 @@ impl HostStatus {
     /// # Errors
     /// Responses for a different node or generation cannot refresh registration.
     pub fn validate_for(&self, request: &StatusRequest) -> Result<(), TransportError> {
-        if self.node != request.node {
+        if self.node != request.node || self.retention_slots == 0 || self.retention_slots > 4096 {
             return Err(TransportError::InvalidResponse);
         }
         Ok(())

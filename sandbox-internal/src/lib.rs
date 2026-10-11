@@ -2,7 +2,7 @@
 
 //! Bounded, mutually authenticated center/host transport.
 //! Shared authenticated transport for identity probes and high-level lifecycle
-//! intents. Existing public service wiring remains unchanged.
+//! intents. The center is the sole public product entrance.
 //! TLS material, registered endpoint and peer pins come from trusted assembly,
 //! never from a user/template or an HTTP header. Entrypoints explicitly choose
 //! paths/owners/bounds; a shared protected-file primitive avoids two loaders.

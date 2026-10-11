@@ -4,11 +4,43 @@ use super::*;
 use sandproof_protocol::internal::{
     PositiveCounter,
     lifecycle::RESULT_CONFIRMATION_BODY_BYTES,
-    window::{WINDOW_CLOSE_BODY_BYTES, WindowCloseAck, WindowCloseRequest},
+    window::{RETENTION_LANE_BYTES, WindowCloseAck, WindowCloseRequest},
 };
 
-fn close(window: u64) -> WindowCloseRequest {
-    WindowCloseRequest::new(config().node, window.try_into().unwrap())
+fn close(journal: &ControllerJournal, window: u64) -> WindowCloseRequest {
+    let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let result = inbox
+        .entries
+        .iter()
+        .rev()
+        .find(|entry| {
+            entry.request.identity.retention_slot == 1
+                && entry.request.identity.request_window.get() == window
+        })
+        .map(|entry| entry.response.clone())
+        .or_else(|| {
+            inbox
+                .lane(1)
+                .unwrap()
+                .last_retired
+                .clone()
+                .filter(|last| last.identity.request_window.get() == window)
+        });
+    let mut terminal = result.unwrap_or_else(|| {
+        let mut destroy = request(window, 2, Intent::Destroy);
+        destroy.identity.request_window = window.try_into().unwrap();
+        destroy.identity.sandbox_id = format!("sandbox-{window}").try_into().unwrap();
+        response(&destroy, 1, LifecycleFact::Cleaned)
+    });
+    terminal.fact = LifecycleFact::Cleaned;
+    WindowCloseRequest::new(terminal)
+}
+fn frontier(journal: &ControllerJournal) -> (u64, Option<PositiveCounter>) {
+    let lane = journal
+        .internal_retention_lanes(&config().node)
+        .unwrap()
+        .remove(0);
+    (lane.retired_through, lane.current_window)
 }
 
 fn terminal_without_native(
@@ -36,13 +68,33 @@ fn running_native_with_admission(
     journal: &mut ControllerJournal,
     admission: InternalAdmission,
 ) -> (LifecycleRequest, InternalLocalBinding) {
+    running_native_in_lane(journal, admission, 1)
+}
+fn running_native_in_lane(
+    journal: &mut ControllerJournal,
+    admission: InternalAdmission,
+    slot: u16,
+) -> (LifecycleRequest, InternalLocalBinding) {
     let mut create = local_request();
     create.create.template_digest = admission.template.digest;
-    let (_, current) = journal.internal_window_frontier(&config().node).unwrap();
+    let current = journal
+        .internal_retention_lanes(&config().node)
+        .unwrap()
+        .into_iter()
+        .find(|lane| lane.retention_slot == slot)
+        .unwrap()
+        .current_window;
     let current = current.unwrap().get();
     create.identity.request_window = current.try_into().unwrap();
-    create.identity.sandbox_id = format!("sandbox-{current}").try_into().unwrap();
-    create.identity.operation_id = format!("create-{current}").try_into().unwrap();
+    create.identity.retention_slot = slot;
+    create.identity.sandbox_id = if slot == 1 {
+        format!("sandbox-{current}")
+    } else {
+        format!("victim-{current}")
+    }
+    .try_into()
+    .unwrap();
+    create.identity.operation_id = format!("create-{slot}-{current}").try_into().unwrap();
     journal
         .record_internal_intent(&create, &mut NeverCrash)
         .unwrap();
@@ -73,9 +125,13 @@ fn stop_native(
     let mut destroy = create.clone();
     destroy.intent = Intent::Destroy;
     destroy.identity.intent_version = 2.try_into().unwrap();
-    destroy.identity.operation_id = format!("destroy-{}", create.identity.request_window.get())
-        .try_into()
-        .unwrap();
+    destroy.identity.operation_id = format!(
+        "destroy-{}-{}",
+        create.identity.retention_slot,
+        create.identity.request_window.get()
+    )
+    .try_into()
+    .unwrap();
     journal
         .record_internal_intent(&destroy, &mut NeverCrash)
         .unwrap();
@@ -121,7 +177,7 @@ fn capacity_reserves_each_future_exact_confirmation_and_the_window_frontier() {
         cfg.required_bytes(),
         original
             + slots * (RESULT_CONFIRMATION_BODY_BYTES + b",\"confirmed\":".len())
-            + WINDOW_CLOSE_BODY_BYTES
+            + usize::from(cfg.max_sandboxes) * RETENTION_LANE_BYTES
     );
 }
 
@@ -133,22 +189,22 @@ fn unknown_running_stopped_and_unconfirmed_windows_keep_all_history_and_native_p
         .initialize_internal_inbox(config(), &mut NeverCrash)
         .unwrap();
     let mut create = local_request();
-    create.identity.operation_id = "create-1".try_into().unwrap();
+    create.identity.operation_id = "create-1-1".try_into().unwrap();
     journal
         .record_internal_intent(&create, &mut NeverCrash)
         .unwrap();
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::Conflict)
     ));
     let (create, local) = running_native(&mut journal);
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::Conflict)
     ));
     let destroy = stop_native(&mut journal, &create, local);
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::Conflict)
     ));
     let context = journal.host_slot_context(local.sandbox).unwrap().unwrap();
@@ -162,24 +218,21 @@ fn unknown_running_stopped_and_unconfirmed_windows_keep_all_history_and_native_p
             .is_err()
     );
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::Conflict)
     ));
     let cleaned = clean_native(&mut journal, &destroy, local);
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::Conflict)
     ));
     assert!(journal.retirement_candidates().unwrap().is_empty());
-    assert_eq!(
-        journal.internal_window_frontier(&config().node).unwrap().0,
-        0
-    );
+    assert_eq!(frontier(&journal).0, 0);
     journal
         .confirm_internal_result(&cleaned, &mut NeverCrash)
         .unwrap();
     journal
-        .close_internal_window(&close(1), &mut NeverCrash)
+        .close_internal_window(&close(&journal, 1), &mut NeverCrash)
         .unwrap();
     assert!(journal.internal_pending(&config().node).unwrap().is_empty());
     // Window closure removes only inbox references. Original native cleanup,
@@ -217,25 +270,25 @@ fn durable_confirmations_and_close_crashes_reopen_the_exact_same_window_identity
             .confirm_internal_result(&result, &mut NeverCrash)
             .unwrap();
         assert!(matches!(
-            journal.close_internal_window(&close(1), &mut Stop(point)),
+            journal.close_internal_window(&close(&journal, 1), &mut Stop(point)),
             Err(JournalError::InjectedCrash(_))
         ));
         drop(journal);
         let mut journal = open(&path);
         let committed = point == CrashPoint::AfterCommit;
         let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
-        assert_eq!(inbox.retired_through, u64::from(committed));
+        assert_eq!(inbox.lanes[0].retired_through, u64::from(committed));
         assert_eq!(inbox.entries.is_empty(), committed);
         if !committed {
             assert_eq!(inbox.entries[0].confirmed.as_ref(), Some(&result));
         }
         let answer = journal
-            .close_internal_window(&close(1), &mut NeverCrash)
+            .close_internal_window(&close(&journal, 1), &mut NeverCrash)
             .unwrap();
         assert_eq!(
             answer,
             WindowCloseAck {
-                identity: close(1).identity
+                terminal: close(&journal, 1).terminal
             }
         );
         assert!(matches!(
@@ -246,10 +299,7 @@ fn durable_confirmations_and_close_crashes_reopen_the_exact_same_window_identity
             journal.confirm_internal_result(&result, &mut NeverCrash),
             Err(JournalError::Conflict)
         ));
-        assert_eq!(
-            journal.internal_window_frontier(&config().node).unwrap(),
-            (1, Some(2.try_into().unwrap()))
-        );
+        assert_eq!(frontier(&journal), (1, Some(2.try_into().unwrap())));
     }
 }
 
@@ -268,26 +318,21 @@ fn unknown_close_commit_recovers_both_outcomes_without_a_fresh_request_or_fake_a
             .unwrap();
         super::super::super::transaction::fail_next_commit(durable);
         assert!(matches!(
-            journal.close_internal_window(&close(1), &mut NeverCrash),
+            journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
             Err(JournalError::CommitUncertain(_))
         ));
         drop(journal);
         let mut journal = open(&path);
-        assert_eq!(
-            journal.internal_window_frontier(&config().node).unwrap().0,
-            u64::from(durable)
-        );
+        assert_eq!(frontier(&journal).0, u64::from(durable));
         assert_eq!(
             journal
-                .close_internal_window(&close(1), &mut NeverCrash)
+                .close_internal_window(&close(&journal, 1), &mut NeverCrash)
                 .unwrap()
+                .terminal
                 .identity,
-            close(1).identity
+            close(&journal, 1).terminal.identity
         );
-        assert_eq!(
-            journal.internal_window_frontier(&config().node).unwrap().0,
-            1
-        );
+        assert_eq!(frontier(&journal).0, 1);
     }
 }
 
@@ -309,7 +354,7 @@ fn bounded_long_churn_preserves_observation_frontier_rejects_old_and_future_work
             .confirm_internal_result(&result, &mut NeverCrash)
             .unwrap();
         journal
-            .close_internal_window(&close(window), &mut NeverCrash)
+            .close_internal_window(&close(&journal, window), &mut NeverCrash)
             .unwrap();
         let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
         assert!(inbox.entries.is_empty());
@@ -321,16 +366,15 @@ fn bounded_long_churn_preserves_observation_frontier_rejects_old_and_future_work
                 journal.record_internal_intent(stale, &mut NeverCrash),
                 Err(JournalError::Conflict)
             ));
-            assert_eq!(
-                journal
-                    .close_internal_window(
-                        &close(stale.identity.request_window.get()),
-                        &mut NeverCrash
-                    )
-                    .unwrap()
-                    .identity,
-                close(stale.identity.request_window.get()).identity
+            let answer = journal.close_internal_window(
+                &close(&journal, stale.identity.request_window.get()),
+                &mut NeverCrash,
             );
+            if stale.identity.request_window.get() == window {
+                assert!(answer.is_ok());
+            } else {
+                assert!(matches!(answer, Err(JournalError::Conflict)));
+            }
         }
         let mut future = request(100, 1, Intent::Create);
         future.identity.request_window = (window + 2).try_into().unwrap();
@@ -341,7 +385,7 @@ fn bounded_long_churn_preserves_observation_frontier_rejects_old_and_future_work
         drop(journal);
         journal = open(&path);
         assert_eq!(
-            journal.internal_window_frontier(&config().node).unwrap(),
+            frontier(&journal),
             (window, Some((window + 1).try_into().unwrap()))
         );
     }
@@ -352,7 +396,7 @@ fn bounded_long_churn_preserves_observation_frontier_rejects_old_and_future_work
         .unwrap();
     let original = codec::load(&journal.journal.connection).unwrap().unwrap();
     journal
-        .close_internal_window(&close(32), &mut NeverCrash)
+        .close_internal_window(&close(&journal, 32), &mut NeverCrash)
         .unwrap();
     assert_eq!(
         codec::load(&journal.journal.connection).unwrap().unwrap(),
@@ -378,7 +422,7 @@ fn tenant_mapping_and_native_ids_do_not_recur_when_closed_histories_disappear() 
             .confirm_internal_result(&result, &mut NeverCrash)
             .unwrap();
         journal
-            .close_internal_window(&close(window), &mut NeverCrash)
+            .close_internal_window(&close(&journal, window), &mut NeverCrash)
             .unwrap();
         let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
         assert_eq!(inbox.tenant_highwater, window);
@@ -405,10 +449,7 @@ fn tenant_mapping_and_native_ids_do_not_recur_when_closed_histories_disappear() 
     }
     assert!(journal.world().unwrap().sandbox_records().is_empty());
     assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(4));
-    assert_eq!(
-        journal.internal_window_frontier(&config().node).unwrap().0,
-        3
-    );
+    assert_eq!(frontier(&journal).0, 3);
 }
 
 #[test]
@@ -420,27 +461,29 @@ fn maximum_window_retires_to_exhausted_without_counter_wrap_or_reset() {
         .initialize_internal_inbox(config(), &mut NeverCrash)
         .unwrap();
     let mut inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
-    inbox.retired_through = u64::MAX - 1;
+    inbox.lanes[0].retired_through = u64::MAX - 1;
+    inbox.lanes[0].current_window = Some(u64::MAX.try_into().unwrap());
+    let mut prior = request(99, 2, Intent::Destroy);
+    prior.identity.request_window = (u64::MAX - 1).try_into().unwrap();
+    prior.identity.sandbox_id = "retired-old".try_into().unwrap();
+    inbox.lanes[0].last_retired = Some(response(&prior, 1, LifecycleFact::Cleaned));
     codec::save(&journal.journal.connection, &inbox).unwrap();
     let (destroy, result) = terminal_without_native(&mut journal, u64::MAX);
     journal
         .confirm_internal_result(&result, &mut NeverCrash)
         .unwrap();
     journal
-        .close_internal_window(&close(u64::MAX), &mut NeverCrash)
+        .close_internal_window(&close(&journal, u64::MAX), &mut NeverCrash)
         .unwrap();
     drop(journal);
     let mut journal = open(&path);
-    assert_eq!(
-        journal.internal_window_frontier(&config().node).unwrap(),
-        (u64::MAX, None)
-    );
+    assert_eq!(frontier(&journal), (u64::MAX, None));
     let audit = journal.internal_audit().unwrap();
-    assert_eq!(audit.retired_through, u64::MAX);
-    assert_eq!(audit.current_window, None);
+    assert_eq!(audit.lanes[0].retired_through, u64::MAX);
+    assert_eq!(audit.lanes[0].current_window, None);
     assert!(audit.operations.is_empty());
     journal
-        .close_internal_window(&close(u64::MAX), &mut NeverCrash)
+        .close_internal_window(&close(&journal, u64::MAX), &mut NeverCrash)
         .unwrap();
     assert!(matches!(
         journal.record_internal_intent(&destroy, &mut NeverCrash),
@@ -466,13 +509,13 @@ fn foreign_window_or_external_store_commit_never_acknowledges_or_changes_authori
         .confirm_internal_result(&result, &mut NeverCrash)
         .unwrap();
     for field in 0..5 {
-        let mut altered = close(1);
+        let mut altered = close(&journal, 1);
         match field {
-            0 => altered.identity.protocol_version = 2,
-            1 => altered.identity.node.deployment_id = "elsewhere".try_into().unwrap(),
-            2 => altered.identity.node.node_id = "elsewhere".try_into().unwrap(),
-            3 => altered.identity.node.node_generation = 2.try_into().unwrap(),
-            _ => altered.identity.request_window = 2.try_into().unwrap(),
+            0 => altered.terminal.identity.protocol_version = 3,
+            1 => altered.terminal.identity.node.deployment_id = "elsewhere".try_into().unwrap(),
+            2 => altered.terminal.identity.node.node_id = "elsewhere".try_into().unwrap(),
+            3 => altered.terminal.identity.node.node_generation = 2.try_into().unwrap(),
+            _ => altered.terminal.identity.request_window = 2.try_into().unwrap(),
         }
         assert!(matches!(
             journal.close_internal_window(&altered, &mut NeverCrash),
@@ -484,11 +527,11 @@ fn foreign_window_or_external_store_commit_never_acknowledges_or_changes_authori
         .execute("CREATE TABLE foreign_writer(id INTEGER)", [])
         .unwrap();
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::CorruptStore)
     ));
     let original = codec::load(&journal.journal.connection).unwrap().unwrap();
-    assert_eq!(original.retired_through, 0);
+    assert_eq!(original.lanes[0].retired_through, 0);
     assert_eq!(original.entries[0].confirmed.as_ref(), Some(&result));
 }
 
@@ -505,7 +548,7 @@ fn exact_saved_confirmations_and_current_window_are_required_during_restore() {
         .unwrap();
     let original = codec::load(&journal.journal.connection).unwrap().unwrap();
     let mut wrong = original.clone();
-    wrong.retired_through = 1;
+    wrong.lanes[0].retired_through = 1;
     assert!(matches!(wrong.validate(), Err(JournalError::CorruptStore)));
     let mut wrong = original.clone();
     wrong.entries[0]
@@ -519,7 +562,7 @@ fn exact_saved_confirmations_and_current_window_are_required_during_restore() {
     wrong.entries[0].confirmed = Some(wrong.entries[0].response.clone());
     assert!(matches!(wrong.validate(), Err(JournalError::CorruptStore)));
     let mut no_fields = serde_json::to_value(&original).unwrap();
-    no_fields.as_object_mut().unwrap().remove("retired_through");
+    no_fields.as_object_mut().unwrap().remove("lanes");
     assert!(serde_json::from_value::<model::Inbox>(no_fields).is_err());
     let mut no_fields = serde_json::to_value(&original).unwrap();
     no_fields["entries"][0]
@@ -530,7 +573,7 @@ fn exact_saved_confirmations_and_current_window_are_required_during_restore() {
     let unconfirmed: model::Inbox = serde_json::from_value(no_fields).unwrap();
     assert!(unconfirmed.entries[0].confirmed.is_none());
     assert_eq!(
-        original.current_window(),
+        original.current_window(1),
         Some(PositiveCounter::try_from(1).unwrap())
     );
 }
@@ -598,13 +641,10 @@ fn active_native_registry_pin_vetoes_close_until_original_certificate_settlement
     tx.commit().unwrap();
     assert!(journal.host_slot_release_pinned(local.sandbox).unwrap());
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::UnresolvedAction)
     ));
-    assert_eq!(
-        journal.internal_window_frontier(&config().node).unwrap().0,
-        0
-    );
+    assert_eq!(frontier(&journal).0, 0);
     assert_eq!(
         journal
             .template_publication(1, &value.candidate_id)
@@ -623,7 +663,7 @@ fn active_native_registry_pin_vetoes_close_until_original_certificate_settlement
     journal.reconcile_template_publications(false).unwrap();
     assert!(!journal.host_slot_release_pinned(local.sandbox).unwrap());
     journal
-        .close_internal_window(&close(1), &mut NeverCrash)
+        .close_internal_window(&close(&journal, 1), &mut NeverCrash)
         .unwrap();
     let settled = journal
         .template_publication(1, &value.candidate_id)
@@ -661,13 +701,13 @@ fn terminal_confirmation_crashes_preserve_exact_stamp_or_refuse_window_close() {
         if point == CrashPoint::BeforeCommit {
             assert!(inbox.entries[0].confirmed.is_none());
             assert!(matches!(
-                journal.close_internal_window(&close(1), &mut NeverCrash),
+                journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
                 Err(JournalError::Conflict)
             ));
         } else {
             assert_eq!(inbox.entries[0].confirmed.as_ref(), Some(&result));
             journal
-                .close_internal_window(&close(1), &mut NeverCrash)
+                .close_internal_window(&close(&journal, 1), &mut NeverCrash)
                 .unwrap();
         }
     }
@@ -694,11 +734,11 @@ fn native_physical_release_evidence_cannot_be_replaced_by_a_saved_cleaned_stamp(
         .execute("DELETE FROM controller_release_witnesses", [])
         .unwrap();
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::CorruptStore)
     ));
     let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
-    assert_eq!(inbox.retired_through, 0);
+    assert_eq!(inbox.lanes[0].retired_through, 0);
     assert_eq!(
         inbox.entries.last().unwrap().confirmed.as_ref(),
         Some(&result)
@@ -725,14 +765,130 @@ fn not_accepted_without_native_attachment_also_requires_exact_terminal_confirmat
     let result = inbox.entries[0].response.clone();
     codec::save(&journal.journal.connection, &inbox).unwrap();
     assert!(matches!(
-        journal.close_internal_window(&close(1), &mut NeverCrash),
+        journal.close_internal_window(&close(&journal, 1), &mut NeverCrash),
         Err(JournalError::Conflict)
     ));
     journal
         .confirm_internal_result(&result, &mut NeverCrash)
         .unwrap();
     journal
-        .close_internal_window(&close(1), &mut NeverCrash)
+        .close_internal_window(&WindowCloseRequest::new(result), &mut NeverCrash)
         .unwrap();
     assert!(journal.world().unwrap().sandbox_records().is_empty());
+}
+
+#[test]
+fn live_survivor_keeps_its_mapping_while_peer_native_metadata_retires_each_round() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = open(&path);
+    journal
+        .initialize_internal_inbox(config(), &mut NeverCrash)
+        .unwrap();
+    let (survivor, live) = running_native(&mut journal);
+    let mut old: Option<WindowCloseRequest> = None;
+    for round in 1..=12 {
+        let (create, local) = running_native_in_lane(&mut journal, local_admission(), 2);
+        assert_eq!(create.identity.request_window.get(), round);
+        assert_eq!(local.owner, live.owner);
+        assert!(local.sandbox.0 > live.sandbox.0);
+        let destroy = stop_native(&mut journal, &create, local);
+        let result = clean_native(&mut journal, &destroy, local);
+        journal
+            .confirm_internal_result(&result, &mut NeverCrash)
+            .unwrap();
+        let close = WindowCloseRequest::new(result);
+        journal
+            .close_internal_window(&close, &mut NeverCrash)
+            .unwrap();
+        if let Some(old) = old {
+            assert!(matches!(
+                journal.close_internal_window(&old, &mut NeverCrash),
+                Err(JournalError::Conflict)
+            ));
+        }
+        old = Some(close);
+        let candidates = journal.retirement_candidates().unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].sandbox, local.sandbox);
+        journal
+            .retire_reclaimed(local.sandbox, 700_000, |_| Ok(()), &mut NeverCrash)
+            .unwrap();
+        assert_eq!(journal.world().unwrap().sandbox_records().len(), 1);
+        assert_eq!(
+            journal
+                .world()
+                .unwrap()
+                .sandbox_record(live.sandbox)
+                .unwrap()
+                .phase,
+            core::Phase::Running
+        );
+        assert_eq!(
+            journal.internal_work_state(&survivor).unwrap().local,
+            Some(live)
+        );
+        let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
+        assert_eq!(inbox.entries.len(), 1);
+        assert_eq!(inbox.tenants.len(), 1);
+        assert_eq!(inbox.lanes.len(), 2);
+        assert_eq!(inbox.lanes[0].retired_through, 0);
+        assert_eq!(inbox.lanes[1].retired_through, round);
+        assert!(serde_json::to_vec(&inbox).unwrap().len() < inbox.config.required_bytes());
+        drop(journal);
+        journal = open(&path);
+    }
+}
+
+#[test]
+fn retained_stamps_cannot_forge_observation_or_duplicate_live_identity_on_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut journal = open(&dir.path().join("db"));
+    journal
+        .initialize_internal_inbox(config(), &mut NeverCrash)
+        .unwrap();
+    let (_, result) = terminal_without_native(&mut journal, 1);
+    journal
+        .confirm_internal_result(&result, &mut NeverCrash)
+        .unwrap();
+    journal
+        .close_internal_window(&WindowCloseRequest::new(result), &mut NeverCrash)
+        .unwrap();
+    let mut create = request(99, 1, Intent::Create);
+    create.identity.retention_slot = 2;
+    create.identity.sandbox_id = "peer".try_into().unwrap();
+    journal
+        .record_internal_intent(&create, &mut NeverCrash)
+        .unwrap();
+    let original = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut bad = original.clone();
+    bad.lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .observation_version = u64::MAX.try_into().unwrap();
+    assert!(matches!(bad.validate(), Err(JournalError::CorruptStore)));
+    let mut bad = original.clone();
+    bad.lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .observation_version = bad.entries[0].response.observation_version;
+    assert!(matches!(bad.validate(), Err(JournalError::CorruptStore)));
+    let mut bad = original.clone();
+    bad.lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .identity
+        .operation_id = create.identity.operation_id;
+    assert!(matches!(bad.validate(), Err(JournalError::CorruptStore)));
+    let mut bad = original;
+    bad.lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .identity
+        .sandbox_id = create.identity.sandbox_id;
+    assert!(matches!(bad.validate(), Err(JournalError::CorruptStore)));
 }

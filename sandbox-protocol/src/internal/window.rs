@@ -1,69 +1,58 @@
-//! Bounded window-retirement binding, not a VM cleanup observation or permit.
-//! No public tenant request can close a window. The authenticated host adapter
-//! must commit its terminal/confirmation checks and rejection frontier before
-//! returning an acknowledgement; these types only check exact wire identity.
-use super::{INTERNAL_PROTOCOL_VERSION, InternalError, NodeIdentity, PositiveCounter};
+//! Retirement of one bounded retention-slot incarnation, never a node-wide sweep.
+//! The terminal result is one exact previously committed fact, not a cleanup
+//! assertion supplied by a caller. Native release remains the original workflow.
+use super::lifecycle::{LifecycleFact, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES};
+use super::{InternalError, NodeIdentity};
 use serde::{Deserialize, Serialize};
 
-pub const WINDOW_CLOSE_PATH: &str = "/internal/v1/window-close";
-pub const WINDOW_CLOSE_BODY_BYTES: usize = 4096;
-
-/// Stable close identity, without a caller-supplied deletion list or TTL.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WindowIdentity {
-    pub protocol_version: u16,
-    pub node: NodeIdentity,
-    pub request_window: PositiveCounter,
-}
-impl WindowIdentity {
-    /// # Errors
-    /// Rejects protocol/deployment/node/generation mismatches.
-    pub fn validate_node(&self, expected: &NodeIdentity) -> Result<(), InternalError> {
-        super::validate_version(self.protocol_version)?;
-        super::validate_node(&self.node, expected)
-    }
-}
+pub const WINDOW_CLOSE_PATH: &str = "/internal/v2/window-close";
+/// A complete terminal response plus the fixed JSON wrapper, not a deletion list.
+pub const WINDOW_CLOSE_BODY_BYTES: usize = RESULT_CONFIRMATION_BODY_BYTES + 32;
+/// Future permanent per-slot frontier and COMPLETE recent terminal stamp.
+pub const RETENTION_LANE_BYTES: usize = RESULT_CONFIRMATION_BODY_BYTES + 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WindowCloseRequest {
-    pub identity: WindowIdentity,
+    pub terminal: LifecycleResponse,
 }
 impl WindowCloseRequest {
     #[must_use]
-    pub fn new(node: NodeIdentity, request_window: PositiveCounter) -> Self {
-        Self {
-            identity: WindowIdentity {
-                protocol_version: INTERNAL_PROTOCOL_VERSION,
-                node,
-                request_window,
-            },
-        }
+    pub const fn new(terminal: LifecycleResponse) -> Self {
+        Self { terminal }
     }
-    /// Identity validation does not authorize a close or attest durable state.
+    /// Identity validation does not authorize retirement or attest durable state.
     /// # Errors
-    /// Requires the registered peer's complete node identity.
+    /// Rejects foreign nodes, zero slots, nonterminal facts and oversized results.
     pub fn validate(&self, expected: &NodeIdentity) -> Result<(), InternalError> {
-        self.identity.validate_node(expected)
+        self.terminal.identity.validate_node(expected)?;
+        if !matches!(
+            self.terminal.fact,
+            LifecycleFact::Cleaned | LifecycleFact::NotAccepted
+        ) || !serde_json::to_vec(&self.terminal)
+            .is_ok_and(|bytes| bytes.len() <= RESULT_CONFIRMATION_BODY_BYTES)
+        {
+            return Err(InternalError::BindingMismatch);
+        }
+        Ok(())
     }
 }
 
-/// Only window rejection/retirement is acknowledged. No `Cleaned` fact is
-/// manufactured for an individual sandbox and no physical cleanup is asserted.
+/// Durable retirement of this exact terminal incarnation only. It does not
+/// invent a `Cleaned` fact or certify physical cleanup of another object.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WindowCloseAck {
-    pub identity: WindowIdentity,
+    pub terminal: LifecycleResponse,
 }
 impl WindowCloseAck {
     /// # Errors
-    /// Rejects unrelated windows and any protocol or node identity mismatch.
-    /// Durable host closure and authenticated transport remain adapter duties.
+    /// Rejects any changed identity, observation or fact, even for an older
+    /// incarnation of the same slot on the same authenticated host.
     pub fn validate_for(&self, request: &WindowCloseRequest) -> Result<(), InternalError> {
-        request.validate(&self.identity.node)?;
-        self.identity.validate_node(&request.identity.node)?;
-        if self.identity == request.identity {
+        request.validate(&self.terminal.identity.node)?;
+        WindowCloseRequest::new(self.terminal.clone()).validate(&request.terminal.identity.node)?;
+        if self.terminal == request.terminal {
             Ok(())
         } else {
             Err(InternalError::BindingMismatch)

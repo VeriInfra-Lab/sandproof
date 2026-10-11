@@ -244,6 +244,7 @@ fn initial_state(templates: &Templates) -> CenterState {
             platform: capacity,
         },
         vec![NodeRegistration {
+            retention_slots: 2,
             role: sandproof_center_core::NodeRole::Runtime,
             identity: local::wire::node("host-a"),
             limit: capacity,
@@ -254,7 +255,7 @@ fn initial_state(templates: &Templates) -> CenterState {
                 revision: templates.host.revision.clone(),
                 digest: templates.host.digest,
             }],
-            protocol_version: 1,
+            protocol_version: 2,
         }],
         vec![
             TenantBudget {

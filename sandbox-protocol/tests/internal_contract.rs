@@ -10,11 +10,11 @@ use sandproof_protocol::{
 mod lifecycle;
 
 #[test]
-fn deployed_contract_formats_change_only_the_business_center_envelope() {
+fn deployed_contract_formats_bind_the_single_retention_lane_protocol() {
     let versions = sandproof_protocol::internal::ContractVersions::current();
-    assert_eq!(versions.internal_protocol, 1);
-    assert_eq!(versions.center_store, 5);
-    assert_eq!(versions.host_store, 15);
+    assert_eq!(versions.internal_protocol, 2);
+    assert_eq!(versions.center_store, 6);
+    assert_eq!(versions.host_store, 16);
 }
 
 #[test]
@@ -60,6 +60,7 @@ fn control() -> ControlIdentity {
         sandbox_id: SandboxId::try_from("sandbox-a").unwrap(),
         operation_id: OperationId::try_from("operation-a").unwrap(),
         intent_version: PositiveCounter::try_from(1).unwrap(),
+        retention_slot: 1,
         request_window: PositiveCounter::try_from(1).unwrap(),
     }
 }
@@ -68,7 +69,7 @@ fn control() -> ControlIdentity {
 fn complete_control_binding_is_checked_without_granting_execution() {
     let request = control();
     assert_eq!(request.validate_response(&request), Ok(()));
-    let mut variants = vec![request.clone(); 8];
+    let mut variants = vec![request.clone(); 9];
     variants[0].node.deployment_id = DeploymentId::try_from("deployment-b").unwrap();
     variants[1].node.node_id = NodeId::try_from("node-b").unwrap();
     variants[2].node.node_generation = PositiveCounter::try_from(2).unwrap();
@@ -77,6 +78,7 @@ fn complete_control_binding_is_checked_without_granting_execution() {
     variants[5].operation_id = OperationId::try_from("operation-b").unwrap();
     variants[6].intent_version = PositiveCounter::try_from(2).unwrap();
     variants[7].request_window = PositiveCounter::try_from(2).unwrap();
+    variants[8].retention_slot = 2;
     for response in variants {
         assert_eq!(
             response.validate_response(&request),

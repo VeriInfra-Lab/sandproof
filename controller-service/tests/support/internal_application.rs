@@ -48,6 +48,7 @@ pub struct State {
     pub block_prepare: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
     pub release_unknown: bool,
     pub disk_available: Option<u64>,
+    pub template_error: Option<ApplicationError>,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -194,6 +195,9 @@ impl LaunchConfiguration for TestHost {
 }
 impl TemplateArtifacts for TestHost {
     fn validate_template(&self, template: &TemplateBinding) -> Result<(), ApplicationError> {
+        if let Some(error) = self.0.lock().unwrap().template_error {
+            return Err(error);
+        }
         if template.is_valid() {
             Ok(())
         } else {

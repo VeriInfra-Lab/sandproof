@@ -7,7 +7,7 @@ use sandproof_protocol::{SandboxId, TenantId};
 mod window;
 
 impl ControlState for CenterState {
-    const FORMAT_VERSION: u32 = 3;
+    const FORMAT_VERSION: u32 = 4;
     fn is_valid(&self) -> bool {
         self.is_valid()
     }

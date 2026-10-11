@@ -20,7 +20,7 @@ class RuntimeServicesTests(unittest.TestCase):
     def node(self):
         identity=dict(deployment_id='exact-domain',node_id='host-runtime',node_generation=1)
         bounds=dict(instances=2,cpu=2,memory_bytes=4000,disk_bytes=8000)
-        return dict(identity=identity,role='runtime',mode='accepting',protocol_version=1,
+        return dict(identity=identity,role='runtime',mode='accepting',protocol_version=2,retention_slots=4,
                     healthy_until_ms=1100,free=copy.deepcopy(bounds),limit=bounds,
                     templates=[dict(revision='base-r1',digest=[1]*32)])
 
@@ -40,7 +40,8 @@ class RuntimeServicesTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertFalse(services.nodes_ready(dict(nodes=[malformed]),registered,templates,
                     now_ms=1000,for_admission=False))
-        for field,value in (('healthy_until_ms',999),('protocol_version',2),('role','builder'),
+        for field,value in (('healthy_until_ms',999),('protocol_version',1),('retention_slots',3),
+                            ('retention_slots',True),('retention_slots',None),('role','builder'),
                             ('templates',[]),('mode','draining')):
             malformed=copy.deepcopy(node)
             malformed[field]=value
@@ -72,7 +73,7 @@ class RuntimeServicesTests(unittest.TestCase):
         self.assertEqual(mapped.call_args.args[1],'global-999')
 
     def test_static_cache_declaration_is_complete_and_original_supplied_quota_not_raised(self):
-        with tempfile.TemporaryDirectory(dir='/private/tmp',prefix='rs-') as temporary:
+        with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()
             native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
                 node_state_dir=str(root/'state'),chroot_base=str(root/'jails'),kernel=str(root/'kernel'),

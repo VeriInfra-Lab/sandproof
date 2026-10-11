@@ -303,8 +303,11 @@ pub trait AuthorityPort: Send + 'static {
     /// Stops new creates only after the original authority commit succeeds.
     fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError>;
     /// # Errors
-    /// Requires terminal confirmations and the full business envelope's pin veto.
-    fn begin_close(&mut self, node: &NodeIdentity) -> Result<WindowCloseRequest, AuthorityError>;
+    /// Requires ONE exact terminal confirmation and its business pin veto.
+    fn begin_close(
+        &mut self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, AuthorityError>;
     /// # Errors
     /// Returns only committed close responsibilities from the original authority.
     fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError>;
@@ -364,8 +367,11 @@ impl AuthorityPort for CenterAuthority<CenterState> {
     fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError> {
         Self::begin_drain(self, node)
     }
-    fn begin_close(&mut self, node: &NodeIdentity) -> Result<WindowCloseRequest, AuthorityError> {
-        Self::begin_close(self, node)
+    fn begin_close(
+        &mut self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, AuthorityError> {
+        Self::begin_close(self, terminal)
     }
     fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
         Self::close_batch(self)

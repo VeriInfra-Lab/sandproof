@@ -68,7 +68,10 @@ impl ValidationEvidencePort for Evidence {
         let record = &state.center.sandboxes()[0];
         let cleaned = record.operations.last().unwrap().response.clone().unwrap();
         assert_eq!(cleaned.identity, request.terminal);
-        assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
+        assert!(matches!(
+            cleaned.fact,
+            LifecycleFact::Cleaned | LifecycleFact::NotAccepted
+        ));
         let outcome = if self.admitted {
             let (local, certificate) = local_certificate(true);
             ValidationOutcome::Admitted {
@@ -97,6 +100,7 @@ impl Clock for Time {
 pub(super) struct Host {
     authority: SharedBusinessAuthority,
     admitted: bool,
+    capacity_refusal: bool,
     observations: AtomicU64,
 }
 impl HostPort for Host {
@@ -123,6 +127,7 @@ impl HostPort for Host {
                 end_at_ms: 1 + request.create.timeout_ms,
                 max_end_at_ms: 1 + request.create.max_lifetime_ms,
             },
+            Intent::Create if self.capacity_refusal => LifecycleFact::NotAccepted,
             Intent::Create => LifecycleFact::Recorded,
             Intent::Destroy => LifecycleFact::Cleaned,
             Intent::Renew { .. } => panic!("publication does not renew its validation VM"),
@@ -146,7 +151,7 @@ impl HostPort for Host {
         _: Duration,
     ) -> Result<WindowCloseAck, PortError> {
         Ok(WindowCloseAck {
-            identity: request.identity.clone(),
+            terminal: request.terminal.clone(),
         })
     }
 }
@@ -155,6 +160,13 @@ type Application = CenterApplication<SharedBusinessAuthority, Host, Templates>;
 pub(super) fn application(
     authority: &SharedBusinessAuthority,
     admitted: bool,
+) -> (Templates, Application, Arc<Time>) {
+    application_with_refusal(authority, admitted, false)
+}
+fn application_with_refusal(
+    authority: &SharedBusinessAuthority,
+    admitted: bool,
+    capacity_refusal: bool,
 ) -> (Templates, Application, Arc<Time>) {
     let templates = BusinessTemplates::new(
         authority.clone(),
@@ -171,6 +183,7 @@ pub(super) fn application(
         Host {
             authority: authority.clone(),
             admitted,
+            capacity_refusal,
             observations: AtomicU64::new(0),
         },
         templates.clone(),
@@ -310,9 +323,8 @@ fn actual_never_admitted_candidate_cleanup_settles_failed_then_allows_window_ret
         link.settlement.as_ref().unwrap().admission,
         ValidationAdmission::NotAdmitted
     );
-    let node = link.create.node.clone();
-    app.begin_drain(&node).unwrap();
-    app.begin_close(&node).unwrap();
+    let cleaned = link.settlement.as_ref().unwrap().cleaned.clone();
+    app.begin_close(&cleaned).unwrap();
     app.reconcile_once().unwrap();
     let retired = authority.snapshot().unwrap();
     assert!(retired.center.sandboxes().is_empty());
@@ -323,4 +335,60 @@ fn actual_never_admitted_candidate_cleanup_settles_failed_then_allows_window_ret
     let tampered: sandproof_center_store::business::BusinessEnvelope<super::RegistryMetadata> =
         serde_json::from_value(tampered).unwrap();
     assert!(!tampered.is_valid());
+}
+
+#[test]
+fn actual_capacity_refused_candidate_settles_original_create_without_a_fake_destroy() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = authority(&fixture, &proxy);
+    let (templates, app, _) = application_with_refusal(&authority, false, true);
+    assert_eq!(
+        templates
+            .publish(&app, "8", &candidate().candidate_id)
+            .unwrap()
+            .state,
+        PublicationState::Failed
+    );
+    let settled = authority.snapshot().unwrap();
+    let sandbox = &settled.center.sandboxes()[0];
+    assert_eq!(sandbox.operations.len(), 1);
+    assert_eq!(sandbox.operations[0].request.intent, Intent::Create);
+    let response = sandbox.operations[0].response.as_ref().unwrap();
+    assert_eq!(response.fact, LifecycleFact::NotAccepted);
+    assert_eq!(sandbox.terminal_confirmation.as_ref(), Some(response));
+    assert_eq!(
+        settled.center.reserved(None, None),
+        Some(sandproof_protocol::internal::lifecycle::Resources::ZERO)
+    );
+    let record = &settled.metadata.registry().records()[0];
+    assert!(!record.value().checked);
+    assert!(record.value().validation_certificate.is_none());
+    let link = record.validation().unwrap();
+    assert!(link.local.is_none());
+    let saved = link.settlement.as_ref().unwrap();
+    assert_eq!(saved.original_create, sandbox.operations[0].request);
+    assert_eq!(&saved.cleaned, response);
+    assert_eq!(saved.admission, ValidationAdmission::NotAdmitted);
+
+    let mut without_confirmation = serde_json::to_value(&settled).unwrap();
+    without_confirmation["center"]["sandboxes"][0]["terminal_confirmation"] =
+        serde_json::Value::Null;
+    let invalid: sandproof_center_store::business::BusinessEnvelope<super::RegistryMetadata> =
+        serde_json::from_value(without_confirmation).unwrap();
+    assert!(!invalid.is_valid());
+    app.retire_terminal_history_once().unwrap();
+    let retired = authority.snapshot().unwrap();
+    assert!(retired.center.sandboxes().is_empty());
+    assert!(retired.is_valid());
+    assert_eq!(
+        retired.metadata.registry().records()[0].value().state,
+        PublicationState::Failed
+    );
+    let mut forged = serde_json::to_value(retired).unwrap();
+    forged["metadata"]["registry"]["records"][0]["validation"]["settlement"]["admission"] =
+        serde_json::json!("admitted");
+    let invalid: sandproof_center_store::business::BusinessEnvelope<super::RegistryMetadata> =
+        serde_json::from_value(forged).unwrap();
+    assert!(!invalid.is_valid());
 }

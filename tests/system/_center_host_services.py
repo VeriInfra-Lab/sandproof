@@ -103,6 +103,8 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
     platform = dict(instances=0, cpu=0, memory_bytes=0, disk_bytes=0)
     tenant = dict(platform)
     max_records = job_count + sum(pool['max_active_global'] for pool in native_pools)
+    if type(max_records) is not int or not 0 < max_records <= 2**16 - 1:
+        raise ValueError('existing inbox capacity must fit the mandatory retention slot count')
     expected_roles = ('runtime',) if len(native_pools) == 1 else ('runtime','builder')
     for index, (source, registered, address, tls_root) in enumerate(zip(
             native_pools, registered_catalogs, host_addresses, host_tls_roots)):
@@ -161,7 +163,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         # No positive free/health/cache claim is manufactured by configuration.
         nodes.append(dict(registration=dict(identity=node, role=role, limit=limits, mode='accepting',
             healthy_until_ms=0, free={name: 0 for name in limits}, templates=[],
-            protocol_version=versions['internal_protocol']), address=address,
+            protocol_version=versions['internal_protocol'], retention_slots=max_records), address=address,
             server_name='host.test', peer_certificates_der=[str(center_root / ('tls/host-' + role + '.der'))]))
     if len({entry['template_id'] for entry in registrations}) != len(registrations):
         raise ValueError('static template identities collide across registered hosts')

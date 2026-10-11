@@ -94,8 +94,12 @@ fn audit_projects_exact_global_local_mapping_and_latest_fact_without_host_work()
     create.identity.tenant_id = "2".try_into().unwrap();
     app.record_internal_intent(&create).unwrap();
     let received = app.internal_audit().unwrap();
-    assert_eq!(received.retired_through, 0);
-    assert_eq!(received.current_window.unwrap().get(), 1);
+    assert_eq!(received.lanes.len(), usize::from(inbox().max_sandboxes));
+    assert!(received.lanes.iter().all(|lane| {
+        lane.retired_through == 0
+            && lane.current_window.unwrap().get() == 1
+            && lane.last_retired.is_none()
+    }));
     assert_eq!(received.operations[0].confirmed, None);
     assert!(received.native.is_empty());
     assert_eq!(received.operations[0].local, None);
@@ -202,15 +206,29 @@ fn audit_exports_original_exact_confirmation_and_retired_floor_after_history_is_
     let confirmed = app.internal_audit().unwrap();
     assert_eq!(confirmed.operations[0].confirmed, Some(cleaned.clone()));
     assert_eq!(confirmed.operations[0].response, cleaned);
-    app.close_internal_window(&WindowCloseRequest::new(
-        inbox().node,
-        1.try_into().unwrap(),
-    ))
-    .unwrap();
+    app.close_internal_window(&WindowCloseRequest::new(cleaned.clone()))
+        .unwrap();
     let retired = app.internal_audit().unwrap();
     assert!(retired.operations.is_empty());
-    assert_eq!(retired.retired_through, 1);
-    assert_eq!(retired.current_window.unwrap().get(), 2);
+    let lane = retired
+        .lanes
+        .iter()
+        .find(|lane| lane.retention_slot == destroy.identity.retention_slot)
+        .unwrap();
+    assert_eq!(lane.retired_through, 1);
+    assert_eq!(lane.current_window.unwrap().get(), 2);
+    assert_eq!(lane.last_retired, Some(cleaned));
+    assert!(
+        retired
+            .lanes
+            .iter()
+            .filter(|other| other.retention_slot != lane.retention_slot)
+            .all(|other| {
+                other.retired_through == 0
+                    && other.current_window.unwrap().get() == 1
+                    && other.last_retired.is_none()
+            })
+    );
     drop(app);
     let before = files(directory.path());
     assert_eq!(

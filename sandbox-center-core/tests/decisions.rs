@@ -8,6 +8,7 @@ fn registration(name: &str) -> NodeRegistration {
     NodeRegistration {
         role: sandproof_center_core::NodeRole::Runtime,
         identity: node(name),
+        retention_slots: 8,
         limit: resources(2),
         mode: NodeMode::Accepting,
         healthy_until_ms: 2000,
@@ -16,7 +17,7 @@ fn registration(name: &str) -> NodeRegistration {
             revision: binding().template_revision,
             digest: binding().template_digest,
         }],
-        protocol_version: 1,
+        protocol_version: sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION,
     }
 }
 fn state() -> CenterState {

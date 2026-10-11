@@ -8,6 +8,8 @@ use crate::{AdmissionError, InternalAdmission, InternalTemplate};
 use crate::{CrashPoint, NeverCrash};
 use fixture::*;
 use sandbox_controller_core as core;
+#[path = "tests/capacity_rejection.rs"]
+mod capacity_rejection;
 #[path = "tests/renewal.rs"]
 mod renewal;
 #[path = "tests/validation.rs"]
@@ -432,6 +434,7 @@ fn internal_inbox_multitenant_mapping_is_stable_injective_and_charges_original_c
     let mut second = first.clone();
     second.identity.tenant_id = "researcher-b".try_into().unwrap();
     second.identity.sandbox_id = "sandbox-2".try_into().unwrap();
+    second.identity.retention_slot = 2;
     second.identity.operation_id = "operation-2".try_into().unwrap();
     j.record_internal_intent(&second, &mut NeverCrash).unwrap();
     let other = j
@@ -443,6 +446,7 @@ fn internal_inbox_multitenant_mapping_is_stable_injective_and_charges_original_c
     assert_ne!(local.sandbox, other.sandbox);
     let mut third = first.clone();
     third.identity.sandbox_id = "sandbox-3".try_into().unwrap();
+    third.identity.retention_slot = 3;
     third.identity.operation_id = "operation-3".try_into().unwrap();
     j.record_internal_intent(&third, &mut NeverCrash).unwrap();
     assert!(matches!(

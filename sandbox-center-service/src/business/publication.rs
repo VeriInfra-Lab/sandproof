@@ -25,6 +25,8 @@ pub struct ValidationLink {
 #[serde(deny_unknown_fields)]
 pub struct ValidationSettlement {
     pub original_create: LifecycleRequest,
+    /// Exact terminal response: `Cleaned` after destroy, or the original
+    /// `NotAccepted` create with authenticated, durable non-admission evidence.
     pub cleaned: LifecycleResponse,
     pub admission: ValidationAdmission,
 }
@@ -45,23 +47,39 @@ impl ValidationSettlement {
             || create.identity.intent_version.get() != 1
             || create.validate(&link.create.node).is_err()
             || link.terminal.as_ref() != Some(&cleaned.identity)
-            || cleaned.fact != LifecycleFact::Cleaned
-            || cleaned.identity.intent_version.get() <= create.identity.intent_version.get()
-            || cleaned.identity.operation_id == create.identity.operation_id
+            || (cleaned.fact == LifecycleFact::NotAccepted
+                && self.admission != ValidationAdmission::NotAdmitted)
         {
             return false;
         }
-        // Reuse exact response validation with the immutable original binding.
-        // Only the operation and monotone intent version may differ.
-        let mut terminal = create.clone();
-        terminal.intent = Intent::Destroy;
-        terminal
-            .identity
-            .operation_id
-            .clone_from(&cleaned.identity.operation_id);
-        terminal.identity.intent_version = cleaned.identity.intent_version;
-        cleaned.validate_for(&terminal).is_ok()
+        terminal_request(create, cleaned).is_some()
     }
+}
+
+/// Recover only the original exact terminal request from immutable creation
+/// and its existing protocol response checks. Shared by both business pins;
+/// absence, timeouts and an invented destroy never constitute non-admission.
+pub(super) fn terminal_request(
+    create: &LifecycleRequest,
+    result: &LifecycleResponse,
+) -> Option<LifecycleRequest> {
+    let mut terminal = create.clone();
+    match result.fact {
+        LifecycleFact::NotAccepted => {}
+        LifecycleFact::Cleaned
+            if result.identity.intent_version.get() > create.identity.intent_version.get()
+                && result.identity.operation_id != create.identity.operation_id =>
+        {
+            terminal.intent = Intent::Destroy;
+            terminal
+                .identity
+                .operation_id
+                .clone_from(&result.identity.operation_id);
+            terminal.identity.intent_version = result.identity.intent_version;
+        }
+        _ => return None,
+    }
+    result.validate_for(&terminal).is_ok().then_some(terminal)
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

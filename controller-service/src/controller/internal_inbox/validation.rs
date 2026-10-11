@@ -35,17 +35,22 @@ fn original_pair<'a>(
         .iter()
         .find(|entry| entry.request.identity == *terminal)
         .ok_or(JournalError::Conflict)?;
+    let no_admission = original == final_entry
+        && original.local.is_none()
+        && final_entry.response.fact == LifecycleFact::NotAccepted;
+    let destroyed = final_entry.request.intent == Intent::Destroy
+        && final_entry.response.fact == LifecycleFact::Cleaned
+        && terminal.intent_version.get() > create.intent_version.get()
+        && terminal.operation_id != create.operation_id;
     if original.request.intent != Intent::Create
         || create.intent_version.get() != 1
-        || final_entry.request.intent != Intent::Destroy
-        || final_entry.response.fact != LifecycleFact::Cleaned
+        || !(no_admission || destroyed)
         || original.request.create != final_entry.request.create
         || create.node != terminal.node
         || create.tenant_id != terminal.tenant_id
         || create.sandbox_id != terminal.sandbox_id
         || create.request_window != terminal.request_window
-        || terminal.intent_version.get() <= create.intent_version.get()
-        || terminal.operation_id == create.operation_id
+        || create.retention_slot != terminal.retention_slot
         || inbox.entries.iter().any(|entry| {
             entry.request.identity.sandbox_id == terminal.sandbox_id
                 && entry.request.identity.intent_version.get() > terminal.intent_version.get()

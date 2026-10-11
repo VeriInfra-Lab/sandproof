@@ -16,7 +16,7 @@ use sandproof_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const VALIDATION_PATH: &str = "/internal/v1/template-validation-evidence";
+pub const VALIDATION_PATH: &str = "/internal/v2/template-validation-evidence";
 pub const VALIDATION_REQUEST_BODY_BYTES: usize = LIFECYCLE_BODY_BYTES;
 /// The same cap bounds host encoding and client collection, not just chunks.
 pub const VALIDATION_RESPONSE_BODY_BYTES: usize = MAX_VALIDATION_CERTIFICATE_BYTES
@@ -48,9 +48,11 @@ impl ValidationRequest {
             || self.create.tenant_id != self.terminal.tenant_id
             || self.create.sandbox_id != self.terminal.sandbox_id
             || self.create.request_window != self.terminal.request_window
+            || self.create.retention_slot != self.terminal.retention_slot
             || self.create.intent_version.get() != 1
-            || self.terminal.intent_version.get() <= self.create.intent_version.get()
-            || self.terminal.operation_id == self.create.operation_id
+            || (self.create != self.terminal
+                && (self.terminal.intent_version.get() <= self.create.intent_version.get()
+                    || self.terminal.operation_id == self.create.operation_id))
             || self
                 .publication
                 .binding

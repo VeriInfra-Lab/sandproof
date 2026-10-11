@@ -1,7 +1,7 @@
 //! Cross-reference checking and retirement use exact original global records.
 use super::{PrivateBuilds, owner};
 use crate::business::{PrivateBuildConfig, RegistryMetadata};
-use sandproof_center_core::{CenterState, NodeRole, WindowPhase};
+use sandproof_center_core::{CenterState, LanePhase, NodeRole};
 use sandproof_controller_service::{CreateOptions, template_registry::valid_candidate_id};
 use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact, LifecycleRequest};
 
@@ -73,7 +73,8 @@ impl PrivateBuilds {
             {
                 return false;
             }
-            let Some(window) = center.window(&create.identity.node) else {
+            let Some(lane) = center.lane(&create.identity.node, create.identity.retention_slot)
+            else {
                 return false;
             };
             let live = center.sandboxes().iter().find(|sandbox| {
@@ -82,31 +83,17 @@ impl PrivateBuilds {
                 })
             });
             if anchor.settlement.is_none()
-                && (window.phase() == WindowPhase::ClosePending || live.is_none())
+                && (lane.phase() == LanePhase::ClosePending || live.is_none())
             {
                 return false;
             }
             if let Some(cleaned) = &anchor.settlement {
                 if self.windows.window(anchor.window).is_some()
-                    || cleaned.fact != LifecycleFact::Cleaned
+                    || crate::business::publication::terminal_request(create, cleaned).is_none()
                 {
                     return false;
                 }
-                let mut terminal = create.clone();
-                terminal.intent = Intent::Destroy;
-                terminal
-                    .identity
-                    .operation_id
-                    .clone_from(&cleaned.identity.operation_id);
-                terminal.identity.intent_version = cleaned.identity.intent_version;
-                if cleaned.identity.intent_version.get() <= create.identity.intent_version.get()
-                    || cleaned.identity.operation_id == create.identity.operation_id
-                    || cleaned.validate_for(&terminal).is_err()
-                {
-                    return false;
-                }
-                if live.is_none() && window.retired_through() < create.identity.request_window.get()
-                {
+                if live.is_none() && lane.retired_through() < create.identity.request_window.get() {
                     return false;
                 }
             }
@@ -117,9 +104,11 @@ impl PrivateBuilds {
                     .is_some_and(|first| first.request == *create)
                     && anchor.settlement.as_ref().is_none_or(|cleaned| {
                         record.operations.last().is_some_and(|last| {
-                            last.request.intent == Intent::Destroy
+                            crate::business::publication::terminal_request(create, cleaned).as_ref()
+                                == Some(&last.request)
                                 && last.response.as_ref() == Some(cleaned)
-                        })
+                        }) && (cleaned.fact != LifecycleFact::NotAccepted
+                            || record.terminal_confirmation.as_ref() == Some(cleaned))
                     })
             })
         })
@@ -174,9 +163,12 @@ impl PrivateBuilds {
                     })
                 })
                 || center
-                    .window(&anchor.original_create.identity.node)
-                    .is_none_or(|window| {
-                        window.retired_through()
+                    .lane(
+                        &anchor.original_create.identity.node,
+                        anchor.original_create.identity.retention_slot,
+                    )
+                    .is_none_or(|lane| {
+                        lane.retired_through()
                             < anchor.original_create.identity.request_window.get()
                     })
         });

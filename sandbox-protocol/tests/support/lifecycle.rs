@@ -35,12 +35,13 @@ pub fn binding() -> CreateBinding {
 pub fn request(operation: u64, version: u64, intent: Intent) -> LifecycleRequest {
     LifecycleRequest {
         identity: ControlIdentity {
-            protocol_version: 1,
+            protocol_version: sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION,
             node: node("host-a"),
             tenant_id: "1".try_into().unwrap(),
             sandbox_id: "sandbox-1".try_into().unwrap(),
             operation_id: format!("operation-{operation}").try_into().unwrap(),
             intent_version: version.try_into().unwrap(),
+            retention_slot: 1,
             request_window: 1.try_into().unwrap(),
         },
         create: binding(),

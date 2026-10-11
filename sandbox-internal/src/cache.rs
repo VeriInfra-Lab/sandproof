@@ -4,10 +4,10 @@ use sandproof_controller_service::templates::TemplateBinding;
 use sandproof_protocol::{ResourceId, internal::NodeIdentity};
 use serde::{Deserialize, Serialize};
 
-pub const CACHE_PATH: &str = "/internal/v1/template-cache";
+pub const CACHE_PATH: &str = "/internal/v2/template-cache";
 pub const CACHE_REQUEST_BYTES: usize = 64 * 1024 + 4096;
 pub const CACHE_RESPONSE_BYTES: usize = 4096;
-pub const ARTIFACT_PATH: &str = "/internal/v1/template-artifact";
+pub const ARTIFACT_PATH: &str = "/internal/v2/template-artifact";
 pub const ARTIFACT_REQUEST_BYTES: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

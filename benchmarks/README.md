@@ -170,7 +170,7 @@ uv run --locked --project benchmarks python -m benchmarks.run_generic \
 
 完整容量模式还须同时提供 `--run-root <事前指定的新目录>`、`--namespace <16位小写十六进制>`、`--build-namespace <独立身份>`；两个身份的前六位也须不同。私有策略中的数据库、节点目录、jail、构建工作区和注册库必须逐项绑定这些原路径，不会为了测试搬迁或改写 profile。协调文件须在该新目录的直接子路径中；入口在独占创建空目录后，以排他方式持久化私有空文件，已有目录、文件或符号链接均不接管。创建目录前先按有界模式的完整 u64 VM 编号检查 socket 路径长度，不沿用 UID 槽位上限。入口先静态核对配置，两个 Rust 池启动并激活原 profile 后再让 Python 监督服务加入原租约；静态预检不是启动授权。自助模板探针可用 `--builder-rootfs` 指定独立构建基盘，磁盘字段取完整 profile 的原额度，而非沿用固定 24 GiB。首次启用需要空且静止的受管目录；已有部署、部分策略或身份不符直接拒绝；不再提供 `--legacy-unbounded` 或无策略的成功启动入口。
 
-最终服务预算的两项慢流/内存收尾使用[独立监督入口](../tests/system/server_slow_boundaries.py)，参数为 `--server`、`--server-sha256`、`--host-config`、`--scratch-parent`、`--cgroup-parent`、`--service-cgroup-parent` 和 `--uid-base`。它不运行题目或联网；范围、原时间边界与精确清理规则只以[验收清单](../docs/testing-plan.md)为准，不用旧的缩短空闲配置替代最终配置。
+最终服务预算的两项慢流/内存收尾使用[独立监督入口](../tests/system/server_slow_boundaries.py)，与其他系统探针共用同候选中心/私有宿主、固定 Redis/mTLS 和完整服务预算参数；准确必填参数以该入口 `--help` 为准，不保留旧公开服务启动参数。它不运行题目或联网；范围、原时间边界与精确清理规则只以[验收清单](../docs/testing-plan.md)为准，不用旧的缩短空闲配置替代最终配置。
 
 
 固定镜像的 `benchmarks.run_local` 与 `tests/system/harbor_diagnostic_chain.py` 仅供显式诊断，不作为通用模板产品或 2.1 验收入口。任务修订、逐轮成绩与失败归因查对应 PR/私有报告，不在长期文档维护第二份题目修复台账。

@@ -992,6 +992,7 @@ version = "0.1.0"
 dependencies = [
  "sandproof-protocol",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

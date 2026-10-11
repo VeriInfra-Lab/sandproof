@@ -55,12 +55,17 @@ fn provision_with_policy(
         .as_array_mut()
         .unwrap()
         .push(registered);
-    let mut window = original["center"]["node_windows"][0].clone();
-    window["node"] = serde_json::to_value(&builder).unwrap();
-    original["center"]["node_windows"]
-        .as_array_mut()
+    let lanes = original["center"]["retention_lanes"]
+        .as_array()
         .unwrap()
-        .push(window);
+        .clone();
+    for mut lane in lanes {
+        lane["node"] = serde_json::to_value(&builder).unwrap();
+        original["center"]["retention_lanes"]
+            .as_array_mut()
+            .unwrap()
+            .push(lane);
+    }
     let original: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(original).unwrap();
     assert!(original.is_valid());
     let (ledger, _) = RedisLedger::initialize(
@@ -112,6 +117,23 @@ fn parameters() -> BuildParameters {
         timeout_secs: 5,
         allow_internet_access: false,
     }
+}
+
+fn confirm_build_cleanup(
+    business: &SharedBusinessAuthority,
+    lifecycle: &mut SharedBusinessAuthority,
+    create: &sandproof_protocol::internal::lifecycle::LifecycleRequest,
+) -> sandproof_protocol::internal::lifecycle::LifecycleResponse {
+    let destroy = AuthorityPort::destroy(
+        lifecycle,
+        &create.identity.tenant_id,
+        &create.identity.sandbox_id,
+    )
+    .unwrap();
+    let cleaned = wire::response(&destroy, 1, LifecycleFact::Cleaned);
+    AuthorityPort::apply_response(lifecycle, &cleaned).unwrap();
+    business.confirm_terminal(&cleaned).unwrap();
+    cleaned
 }
 
 #[test]
@@ -233,11 +255,10 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
     let cleaned = wire::response(&destroy, 1, LifecycleFact::Cleaned);
     AuthorityPort::apply_response(&mut lifecycle, &cleaned).unwrap();
     business.confirm_terminal(&cleaned).unwrap();
-    business.begin_drain(&original.identity.node).unwrap();
     // No close request can escape before the private build has acknowledged
     // settlement, even though physical cleanup is already durably confirmed.
-    assert!(business.begin_close(&original.identity.node).is_err());
-    AuthorityPort::recover(&mut lifecycle).unwrap();
+    assert_eq!(business.begin_close(&cleaned), Err(PortError::Conflict));
+    assert!(business.snapshot().is_ok());
     proxy.lose_after(1);
     assert_eq!(
         business.settle_build(
@@ -257,9 +278,9 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
             .settlement
             .is_some()
     );
-    let close = business.begin_close(&original.identity.node).unwrap();
+    let close = business.begin_close(&cleaned).unwrap();
     let acknowledgement = WindowCloseAck {
-        identity: close.identity.clone(),
+        terminal: close.terminal.clone(),
     };
     // Original apply_close_ack consumes its already confirmed view; unlike
     // settlement it commits directly, without a preceding fresh-view write.
@@ -293,6 +314,172 @@ fn actual_private_settlement_precedes_close_and_only_exact_confirmed_retirement_
         ),
         Err(PortError::Conflict)
     );
+}
+
+#[test]
+fn capacity_refused_builder_settles_exact_create_after_window_close_and_terminal_confirmation() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let business = provision(&fixture, &proxy);
+    let tenant = "8".try_into().unwrap();
+    let window = business.issue_build_window(&tenant, 0).unwrap();
+    let original = business
+        .accept_build(
+            &tenant,
+            &window.request_window,
+            &candidate().candidate_id,
+            &parameters(),
+            create_binding(),
+            0,
+        )
+        .unwrap();
+    let mut lifecycle = business.clone();
+    let refused = wire::response(&original, 1, LifecycleFact::NotAccepted);
+    AuthorityPort::apply_response(&mut lifecycle, &refused).unwrap();
+    let settle = || {
+        business.settle_build(
+            &tenant,
+            &window.request_window,
+            &candidate().candidate_id,
+            Some(&original.identity.sandbox_id),
+        )
+    };
+    assert_eq!(settle(), Err(PortError::Conflict));
+    business
+        .close_build_window(&tenant, &window.request_window, 1)
+        .unwrap();
+    assert_eq!(settle(), Err(PortError::Conflict));
+    business.confirm_terminal(&refused).unwrap();
+    // The original pre-admission receipt releases resources, but not its
+    // business pin. A lost settlement reply fences both views until recovery.
+    assert_eq!(business.begin_close(&refused), Err(PortError::Conflict));
+    proxy.lose_after(1);
+    assert_eq!(settle(), Err(PortError::OutcomeUnknown));
+    assert!(business.snapshot().is_err());
+    AuthorityPort::recover(&mut lifecycle).unwrap();
+    let settled = business.snapshot().unwrap();
+    let anchor = &settled.metadata.private_build_anchors()[0];
+    assert_eq!(anchor.original_create, original);
+    assert_eq!(anchor.settlement.as_ref(), Some(&refused));
+    assert_eq!(settled.center.sandboxes()[0].operations.len(), 1);
+    assert_eq!(settled.center.reserved(None, None), Some(Resources::ZERO));
+    let mut unconfirmed = serde_json::to_value(&settled).unwrap();
+    unconfirmed["center"]["sandboxes"][0]["terminal_confirmation"] = serde_json::Value::Null;
+    let invalid: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(unconfirmed).unwrap();
+    assert!(!invalid.is_valid());
+    let close = business.begin_close(&refused).unwrap();
+    assert_eq!(close.terminal, refused);
+    business
+        .apply_close_ack(&WindowCloseAck {
+            terminal: close.terminal,
+        })
+        .unwrap();
+    let retired = business.snapshot().unwrap();
+    assert!(retired.center.sandboxes().is_empty());
+    assert!(retired.metadata.private_build_anchors().is_empty());
+    assert!(retired.is_valid());
+    assert_eq!(settle(), Err(PortError::Conflict));
+}
+
+#[test]
+fn one_unsettled_build_does_not_pin_a_different_build_lane_or_global_authority() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let business = provision(&fixture, &proxy);
+    let tenant = "8".try_into().unwrap();
+    let first_window = business.issue_build_window(&tenant, 0).unwrap();
+    let peer_window = business.issue_build_window(&tenant, 0).unwrap();
+    let peer_job = format!("{:032x}", 2);
+    let pinned = business
+        .accept_build(
+            &tenant,
+            &first_window.request_window,
+            &candidate().candidate_id,
+            &parameters(),
+            create_binding(),
+            0,
+        )
+        .unwrap();
+    let peer = business
+        .accept_build(
+            &tenant,
+            &peer_window.request_window,
+            &peer_job,
+            &parameters(),
+            create_binding(),
+            0,
+        )
+        .unwrap();
+    assert_ne!(pinned.identity.retention_slot, peer.identity.retention_slot);
+    let mut lifecycle = business.clone();
+    business
+        .close_build_window(&tenant, &first_window.request_window, 1)
+        .unwrap();
+    let pinned_cleaned = confirm_build_cleanup(&business, &mut lifecycle, &pinned);
+    assert_eq!(
+        business.begin_close(&pinned_cleaned),
+        Err(PortError::Conflict)
+    );
+    let original = business
+        .build_anchor(
+            &tenant,
+            &first_window.request_window,
+            &candidate().candidate_id,
+        )
+        .unwrap()
+        .unwrap();
+    assert!(business.snapshot().is_ok());
+    business
+        .close_build_window(&tenant, &peer_window.request_window, 1)
+        .unwrap();
+    let peer_cleaned = confirm_build_cleanup(&business, &mut lifecycle, &peer);
+    business
+        .settle_build(
+            &tenant,
+            &peer_window.request_window,
+            &peer_job,
+            Some(&peer.identity.sandbox_id),
+        )
+        .unwrap();
+    let close = business.begin_close(&peer_cleaned).unwrap();
+    business
+        .apply_close_ack(&WindowCloseAck {
+            terminal: close.terminal,
+        })
+        .unwrap();
+    let retained = business.snapshot().unwrap();
+    assert_eq!(retained.center.sandboxes().len(), 1);
+    assert_eq!(
+        serde_json::to_value(retained.metadata.private_build_anchors()).unwrap(),
+        serde_json::to_value(std::slice::from_ref(&original)).unwrap()
+    );
+    assert_eq!(
+        retained
+            .center
+            .lane(&pinned.identity.node, pinned.identity.retention_slot)
+            .unwrap()
+            .retired_through(),
+        0
+    );
+    assert!(
+        business
+            .build_anchor(&tenant, &peer_window.request_window, &peer_job)
+            .unwrap()
+            .is_none()
+    );
+    let next_window = business.issue_build_window(&tenant, 2).unwrap();
+    let next = business
+        .accept_build(
+            &tenant,
+            &next_window.request_window,
+            &format!("{:032x}", 3),
+            &parameters(),
+            create_binding(),
+            2,
+        )
+        .unwrap();
+    assert_eq!(next.identity.retention_slot, peer.identity.retention_slot);
+    assert_eq!(next.identity.request_window.get(), 2);
 }
 
 #[test]

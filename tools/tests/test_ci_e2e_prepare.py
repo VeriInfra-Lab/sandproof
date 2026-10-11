@@ -10,7 +10,7 @@ from unittest.mock import patch
 from tools import ci_e2e_artifacts as artifacts, ci_e2e_prepare as preparation
 
 
-VERSIONS = {'internal_protocol': 1, 'center_store': 5, 'host_store': 15}
+VERSIONS = {'internal_protocol': 2, 'center_store': 6, 'host_store': 16}
 
 
 class Preparation(unittest.TestCase):
@@ -142,7 +142,7 @@ class Preparation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'command failed'):
             run("printf '%s' '{}'\nexit 3\n")
         with self.assertRaisesRegex(ValueError, 'duplicate JSON key'):
-            run("printf '%s' '{\"host_store\":14,\"host_store\":15}'\n")
+            run("printf '%s' '{\"host_store\":15,\"host_store\":16}'\n")
         with patch.object(preparation.time, 'monotonic', side_effect=[0, 6]), \
                 self.assertRaisesRegex(TimeoutError, 'metadata deadline'):
             run('exec /bin/sleep 30\n')

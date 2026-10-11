@@ -370,6 +370,7 @@ async fn center(path: &Path) -> Result<()> {
             platform: resources,
         },
         vec![NodeRegistration {
+            retention_slots: 1,
             role: sandproof_center_core::NodeRole::Runtime,
             identity: cfg.identity.clone(),
             limit: resources,
@@ -380,7 +381,7 @@ async fn center(path: &Path) -> Result<()> {
                 revision: cfg.binding.template_revision.clone(),
                 digest: cfg.binding.template_digest,
             }],
-            protocol_version: 1,
+            protocol_version: 2,
         }],
         vec![TenantBudget {
             tenant: "1".try_into()?,

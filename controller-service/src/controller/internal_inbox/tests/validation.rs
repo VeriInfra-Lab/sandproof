@@ -65,7 +65,13 @@ fn finish(
     }
     let mut destroy = create.clone();
     destroy.intent = Intent::Destroy;
-    destroy.identity.operation_id = "destroy-validation".try_into().unwrap();
+    destroy.identity.operation_id = format!(
+        "destroy-validation-{}-{}",
+        create.identity.retention_slot,
+        create.identity.request_window.get()
+    )
+    .try_into()
+    .unwrap();
     destroy.identity.intent_version = 2.try_into().unwrap();
     journal
         .record_internal_intent(&destroy, &mut NeverCrash)
@@ -229,6 +235,7 @@ fn validation_identity_descriptor_and_unknown_mapping_never_issue_evidence() {
     assert!(not_admitted.admitted().is_none());
     let mut create = create;
     create.identity.sandbox_id = "validation-second".try_into().unwrap();
+    create.identity.retention_slot = 2;
     create.identity.operation_id = "validation-create-second".try_into().unwrap();
     let (local, destroy) = finish(&mut journal, &create, admission, true);
     release(&mut journal, local, &destroy);
@@ -303,10 +310,7 @@ fn validation_after_window_retirement_uses_original_native_owner_not_global_numb
         .confirm_internal_result(&cleaned, &mut NeverCrash)
         .unwrap();
     journal
-        .close_internal_window(
-            &WindowCloseRequest::new(config().node, 1.try_into().unwrap()),
-            &mut NeverCrash,
-        )
+        .close_internal_window(&WindowCloseRequest::new(cleaned.clone()), &mut NeverCrash)
         .unwrap();
     assert!(
         journal
@@ -371,10 +375,7 @@ fn private_template_across_windows_rejects_foreign_or_changed_global_binding_wit
         .confirm_internal_result(&cleaned, &mut NeverCrash)
         .unwrap();
     journal
-        .close_internal_window(
-            &WindowCloseRequest::new(config().node, 1.try_into().unwrap()),
-            &mut NeverCrash,
-        )
+        .close_internal_window(&WindowCloseRequest::new(cleaned.clone()), &mut NeverCrash)
         .unwrap();
     let mut next = first;
     next.identity.request_window = 2.try_into().unwrap();
@@ -427,10 +428,7 @@ fn private_template_global_binding_and_native_projection_commit_together_across_
             .confirm_internal_result(&cleaned, &mut NeverCrash)
             .unwrap();
         journal
-            .close_internal_window(
-                &WindowCloseRequest::new(config().node, 1.try_into().unwrap()),
-                &mut NeverCrash,
-            )
+            .close_internal_window(&WindowCloseRequest::new(cleaned.clone()), &mut NeverCrash)
             .unwrap();
         let mut next = first;
         next.identity.request_window = 2.try_into().unwrap();

@@ -86,17 +86,22 @@ impl ValidationEvidence {
         publication: &Publication,
     ) -> Result<(), JournalError> {
         super::state::validate_begin(publication)?;
+        let no_admission = self.cleaned.fact == LifecycleFact::NotAccepted
+            && create == terminal
+            && matches!(self.outcome, ValidationOutcome::NotAdmitted);
+        let destroyed = self.cleaned.fact == LifecycleFact::Cleaned
+            && terminal.intent_version.get() > create.intent_version.get()
+            && terminal.operation_id != create.operation_id;
         if self.create != *create
             || self.cleaned.identity != *terminal
-            || self.cleaned.fact != LifecycleFact::Cleaned
+            || !(no_admission || destroyed)
             || create.validate_node(&terminal.node).is_err()
             || create.node != terminal.node
             || create.tenant_id != terminal.tenant_id
             || create.sandbox_id != terminal.sandbox_id
             || create.request_window != terminal.request_window
+            || create.retention_slot != terminal.retention_slot
             || create.intent_version.get() != 1
-            || terminal.intent_version.get() <= create.intent_version.get()
-            || terminal.operation_id == create.operation_id
             || publication
                 .binding
                 .owner

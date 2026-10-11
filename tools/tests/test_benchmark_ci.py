@@ -27,7 +27,7 @@ class BenchmarkCITests(unittest.TestCase):
         self.names = [t['name'] for t in self.manifest['profiles']['smoke']['tasks']]
         self.policy = {'profile':'smoke', 'batch_size':4}
         self.services_manifest = dict(schema_version=1, architecture=service_artifacts.ARCHITECTURE,
-            candidate='a'*40, versions=dict(internal_protocol=1, center_store=5, host_store=15),
+            candidate='a'*40, versions=dict(internal_protocol=2, center_store=6, host_store=16),
             artifacts={role:dict(path='/fixed/' + name, sha256=hash_value*64)
                        for role, name, hash_value in (('center','sandproof-center','a'),
                                                       ('host','sandproof-host','d'))})
@@ -465,7 +465,7 @@ class BenchmarkCITests(unittest.TestCase):
             cgroup_parent='/sys/fs/cgroup/runtime', build_cgroup_parent='/sys/fs/cgroup/builder',
             service_cgroup_parent='/sys/fs/cgroup/control', prepare_candidate=True,
             redis_material='/approved-fixed-redis', center_uid=65532, center_gid=65532,
-            redis_uid=65533, redis_gid=65533)
+            redis_uid=65533, redis_gid=65533, dk_rounds=16)
         for key in ('cargo_home','uv_cache','rustup_home','cargo_target','toolchain_bin'):
             path = self.root / key
             path.mkdir(mode=0o700, exist_ok=True)
@@ -500,6 +500,7 @@ class BenchmarkCITests(unittest.TestCase):
         with patch.object(ci, 'trusted_path', side_effect=lambda path:path), patch.object(ci, 'redis_material'):
             ci.validate_host_inputs(config)  # Prepared mode needs no proxy binary.
             for changed in (dict(config, ci_fixtures=None), dict(config, source_kind='oci'),
+                            *[dict(config, dk_rounds=value) for value in (None, 0, True, 1.5, 1025)],
                             dict(config, prepared_ci_disk_budget_bytes=None),
                             dict(config, prepared_ci_disk_budget_bytes=True),
                             dict(config, prepared_ci_disk_budget_bytes=201 * 1024**3),
@@ -965,6 +966,31 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(supervisor.state['phase'],'blocked')
         self.assertIn('mandatory_fault_group',supervisor.state['reason'])
         launch.assert_not_called()
+
+    def test_fault_group_persists_exact_native_and_service_cgroup_inputs_before_launch(self):
+        supervisor = self.supervisor()
+        supervisor.config = self.host_config()
+        supervisor.state['dk'] = dict(phase='new')
+        supervisor.state['candidate_manifest'] = str(self.root / 'candidate-artifacts.json')
+        entry = self.root / 'tests/system/center_host_faults.py'
+        entry.parent.mkdir(parents=True)
+        entry.write_text('# controlled fixture entry; never executed\n')
+        with patch.object(ci, 'validate_host_inputs'), \
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch.object(ci, 'trusted_path', side_effect=lambda path: path), \
+                patch.object(ci, 'launch') as launch:
+            supervisor.prepare_dk()
+        launch.assert_not_called()
+        saved = json.loads((self.root / 'state.json').read_text())['dk']
+        self.assertEqual(saved['phase'], 'launching')
+        command = saved['command']
+        for flag, value in (('--cgroup-parent', supervisor.config['cgroup_parent']),
+                            ('--service-cgroup-parent', supervisor.config['service_cgroup_parent']),
+                            ('--rootfs', supervisor.config['rootfs']),
+                            ('--rounds', str(supervisor.config['dk_rounds'])),
+                            ('--candidate-manifest', supervisor.state['candidate_manifest'])):
+            self.assertEqual(command[command.index(flag) + 1], value)
+        self.assertNotEqual(supervisor.config['cgroup_parent'], supervisor.config['service_cgroup_parent'])
 
     def test_absent_unit_after_lost_launch_receipt_blocks_and_keeps_host_lease(self):
         supervisor = self.supervisor()

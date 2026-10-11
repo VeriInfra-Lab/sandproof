@@ -39,6 +39,132 @@ fn renew(
 }
 
 #[tokio::test]
+async fn definitive_original_pre_admission_capacity_veto_is_durable_not_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(local::State {
+        disk_available: Some(0),
+        ..local::State::default()
+    }));
+    let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
+    let create = local::request();
+    let result;
+    {
+        let service = HostLifecycle::new(local::application(
+            &path,
+            Arc::clone(&state),
+            Arc::clone(&clock),
+            true,
+        ));
+        service.receive(create.clone()).await.unwrap();
+        result = service
+            .advance(create.clone(), Some(local::template()), local::compute())
+            .await
+            .unwrap();
+        assert_eq!(result.fact, LifecycleFact::NotAccepted);
+        assert_eq!(launches(&state), 0);
+        assert!(state.lock().unwrap().configurations.is_empty());
+    }
+    // Restored free space must not silently re-admit this original refused
+    // identity. A later fresh center intent uses its own retired lane generation.
+    state.lock().unwrap().disk_available = None;
+    let app = local::application(&path, Arc::clone(&state), clock, false);
+    assert!(
+        app.internal_pending(&create.identity.node)
+            .unwrap()
+            .is_empty()
+    );
+    let service = HostLifecycle::new(app);
+    assert_eq!(service.receive(create.clone()).await.unwrap(), result);
+    assert_eq!(
+        service
+            .advance(create, None, local::compute())
+            .await
+            .unwrap(),
+        result
+    );
+    assert_eq!(launches(&state), 0);
+    assert!(state.lock().unwrap().configurations.is_empty());
+}
+
+#[tokio::test]
+async fn missing_or_mismatched_material_stays_recorded_never_capacity_rejected() {
+    use sandproof_controller_service::application::ApplicationError;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(local::State::default()));
+    let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
+    let app = local::application(&path, Arc::clone(&state), clock, true);
+    let service = HostLifecycle::new(app);
+    let create = local::request();
+    let original = service.receive(create.clone()).await.unwrap();
+    assert_eq!(
+        service
+            .advance(create.clone(), None, local::compute())
+            .await,
+        Err(ApplicationError::Busy)
+    );
+    let mut changed = local::template();
+    changed.digest = [9; 32];
+    assert_eq!(
+        service
+            .advance(create.clone(), Some(changed), local::compute())
+            .await,
+        Err(ApplicationError::Invalid)
+    );
+    assert_eq!(service.receive(create.clone()).await.unwrap(), original);
+    // A callback error cannot masquerade as the original numeric capacity
+    // decision, even if its coarse application category also says quota.
+    state.lock().unwrap().template_error = Some(ApplicationError::QuotaExceeded);
+    assert_eq!(
+        service
+            .advance(create.clone(), Some(local::template()), local::compute())
+            .await,
+        Err(ApplicationError::QuotaExceeded)
+    );
+    assert_eq!(service.receive(create).await.unwrap(), original);
+    assert_eq!(launches(&state), 0);
+}
+
+#[tokio::test]
+async fn original_native_compute_quota_refuses_peer_without_changing_live_instance() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(local::State::default()));
+    let app = local::application(
+        &path,
+        Arc::clone(&state),
+        Arc::new(local::TestClock(AtomicI64::new(10))),
+        true,
+    );
+    let service = HostLifecycle::new(Arc::clone(&app));
+    let first = local::request();
+    let mut compute = local::compute();
+    compute.max_vcpus_per_tenant = 1;
+    service.receive(first.clone()).await.unwrap();
+    let running = service
+        .advance(first.clone(), Some(local::template()), compute)
+        .await
+        .unwrap();
+    assert!(matches!(running.fact, LifecycleFact::Ready { .. }));
+    let actions = state.lock().unwrap().actions.clone();
+    let mut peer = first.clone();
+    peer.identity.retention_slot = 2;
+    peer.identity.sandbox_id = "sandbox-2".try_into().unwrap();
+    peer.identity.operation_id = "operation-2".try_into().unwrap();
+    service.receive(peer.clone()).await.unwrap();
+    let refused = service
+        .advance(peer.clone(), Some(local::template()), compute)
+        .await
+        .unwrap();
+    assert_eq!(refused.fact, LifecycleFact::NotAccepted);
+    assert_eq!(state.lock().unwrap().actions, actions);
+    assert_eq!(app.internal_audit().unwrap().native.len(), 1);
+    assert_eq!(service.receive(first).await.unwrap(), running);
+    assert_eq!(service.advance(peer, None, compute).await.unwrap(), refused);
+}
+
+#[tokio::test]
 async fn registered_builder_uses_original_internal_admission_without_private_window_metadata() {
     use sandproof_controller_service::physical_storage::{PhysicalBuildStorage, PoolRole};
     let directory = tempfile::tempdir().unwrap();

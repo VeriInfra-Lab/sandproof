@@ -1,7 +1,7 @@
 use sandproof_protocol::internal::lifecycle::{
     LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES, Resources,
 };
-use sandproof_protocol::internal::window::WINDOW_CLOSE_BODY_BYTES;
+use sandproof_protocol::internal::window::RETENTION_LANE_BYTES;
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use sandproof_protocol::{DeploymentId, TenantId};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,10 @@ impl Bounds {
                     .saturating_add(RESULT_CONFIRMATION_BODY_BYTES),
             )
             .saturating_add(usize::from(self.max_nodes).saturating_mul(
-                4096 + WINDOW_CLOSE_BODY_BYTES + usize::from(self.max_templates_per_node) * 512,
+                4096 + usize::from(self.max_templates_per_node) * 512
+                    // Each node has at most max_sandboxes protected positions.
+                    // Recent closed stamps are future state, not free old slack.
+                    + usize::from(self.max_sandboxes).saturating_mul(RETENTION_LANE_BYTES),
             ))
             .saturating_add(8192)
     }
@@ -85,6 +88,8 @@ pub struct AvailableTemplate {
 #[serde(deny_unknown_fields)]
 pub struct NodeRegistration {
     pub identity: NodeIdentity,
+    /// Must equal this protected host's original inbox `max_sandboxes`.
+    pub retention_slots: u16,
     pub role: NodeRole,
     pub limit: Resources,
     pub mode: NodeMode,
@@ -146,7 +151,7 @@ pub struct CenterState {
     pub(crate) bounds: Bounds,
     pub(crate) nodes: Vec<NodeRegistration>,
     /// Durable authority, not mutable heartbeat/registration input.
-    pub(crate) node_windows: Vec<NodeWindow>,
+    pub(crate) retention_lanes: Vec<RetentionLane>,
     pub(crate) tenants: Vec<TenantBudget>,
     pub(crate) sandbox_highwater: u64,
     pub(crate) operation_highwater: u64,
@@ -161,21 +166,34 @@ impl CenterState {
         nodes: Vec<NodeRegistration>,
         tenants: Vec<TenantBudget>,
     ) -> Result<Self, DecisionError> {
-        let current = 1.try_into().map_err(|_| DecisionError::Invalid)?;
-        let node_windows = nodes
+        // Validate the fixed future envelope BEFORE allocating the lane vector.
+        if !(1..=256).contains(&bounds.max_nodes)
+            || !(1..=4096).contains(&bounds.max_sandboxes)
+            || nodes.len() > usize::from(bounds.max_nodes)
+            || bounds.required_block_bytes() > 16 * 1024 * 1024
+            || nodes.iter().any(|node| {
+                node.retention_slots == 0 || node.retention_slots > bounds.max_sandboxes
+            })
+        {
+            return Err(DecisionError::Invalid);
+        }
+        let retention_lanes = nodes
             .iter()
-            .map(|node| NodeWindow {
-                node: node.identity.clone(),
-                current: Some(current),
-                retired_through: 0,
-                phase: WindowPhase::Open,
+            .flat_map(|node| {
+                (1..=node.retention_slots).map(move |retention_slot| RetentionLane {
+                    node: node.identity.clone(),
+                    retention_slot,
+                    retired_through: 0,
+                    phase: LanePhase::Open,
+                    last_retired: None,
+                })
             })
             .collect();
         let state = Self {
             deployment,
             bounds,
             nodes,
-            node_windows,
+            retention_lanes,
             tenants,
             sandbox_highwater: 0,
             operation_highwater: 0,
@@ -234,6 +252,7 @@ impl CenterState {
             && self.nodes.iter().all(|node| {
                 registration.nodes.iter().any(|expected| {
                     node.identity == expected.identity
+                        && node.retention_slots == expected.retention_slots
                         && node.role == expected.role
                         && node.limit == expected.limit
                         && node.protocol_version == expected.protocol_version
@@ -298,6 +317,7 @@ impl CenterState {
             .find(|n| n.identity == observation.identity)
             .ok_or(DecisionError::NotFound)?;
         if node.limit != observation.limit
+            || node.retention_slots != observation.retention_slots
             || node.role != observation.role
             || node.protocol_version != observation.protocol_version
         {
@@ -339,39 +359,47 @@ impl CenterState {
     }
 }
 
-/// One finite lifecycle window per registered node; no historical close list.
+/// One bounded retention incarnation per protected slot, never a whole-node drain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum WindowPhase {
+pub enum LanePhase {
     Open,
-    Draining,
     ClosePending,
     Exhausted,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct NodeWindow {
+pub struct RetentionLane {
     pub(crate) node: NodeIdentity,
-    pub(crate) current: Option<PositiveCounter>,
+    pub(crate) retention_slot: u16,
     pub(crate) retired_through: u64,
-    pub(crate) phase: WindowPhase,
+    pub(crate) phase: LanePhase,
+    pub(crate) last_retired: Option<LifecycleResponse>,
 }
-impl NodeWindow {
+impl RetentionLane {
     #[must_use]
     pub const fn node(&self) -> &NodeIdentity {
         &self.node
     }
     #[must_use]
-    pub const fn current(&self) -> Option<PositiveCounter> {
-        self.current
+    pub const fn retention_slot(&self) -> u16 {
+        self.retention_slot
+    }
+    #[must_use]
+    pub fn current(&self) -> Option<PositiveCounter> {
+        self.retired_through.checked_add(1)?.try_into().ok()
     }
     #[must_use]
     pub const fn retired_through(&self) -> u64 {
         self.retired_through
     }
     #[must_use]
-    pub const fn phase(&self) -> WindowPhase {
+    pub const fn phase(&self) -> LanePhase {
         self.phase
+    }
+    #[must_use]
+    pub const fn last_retired(&self) -> Option<&LifecycleResponse> {
+        self.last_retired.as_ref()
     }
 }

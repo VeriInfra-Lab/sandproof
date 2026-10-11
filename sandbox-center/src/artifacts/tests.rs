@@ -145,13 +145,14 @@ fn authority(
             platform: resources(),
         },
         vec![NodeRegistration {
+            retention_slots: 2,
             identity: node(),
             role: NodeRole::Runtime,
             limit: resources(),
             free: Resources::ZERO,
             healthy_until_ms: 0,
             mode: NodeMode::Accepting,
-            protocol_version: 1,
+            protocol_version: 2,
             templates: vec![],
         }],
         vec![TenantBudget {

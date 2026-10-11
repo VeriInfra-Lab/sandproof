@@ -1,7 +1,7 @@
 //! Bounded allowlisted view of the already validated ORIGINAL control block.
 //! Not an authorizing port or another recovery/lifecycle implementation.
 use crate::entry::Envelope;
-use sandproof_center_core::{NodeRegistration, NodeWindow};
+use sandproof_center_core::{NodeRegistration, RetentionLane};
 use sandproof_center_store::Revision;
 use sandproof_controller_service::CreateOptions;
 use sandproof_protocol::{
@@ -26,7 +26,7 @@ pub struct AuditView<'a> {
     sandbox_highwater: u64,
     operation_highwater: u64,
     nodes: &'a [NodeRegistration],
-    windows: Vec<&'a NodeWindow>,
+    retention_lanes: &'a [RetentionLane],
     sandboxes: Vec<SandboxAudit<'a>>,
 }
 
@@ -97,26 +97,15 @@ pub fn view(envelope: &Envelope, revision: Revision) -> Result<AuditView<'_>, &'
         })
         .collect::<Result<_, &'static str>>()?;
     let (sandbox_highwater, operation_highwater) = envelope.center.identity_frontiers();
-    let windows = envelope
-        .center
-        .nodes()
-        .iter()
-        .map(|node| {
-            envelope
-                .center
-                .window(&node.identity)
-                .ok_or("invalid original center window")
-        })
-        .collect::<Result<_, _>>()?;
     Ok(AuditView {
-        schema_version: 1,
+        schema_version: 2,
         versions: sandproof_protocol::internal::ContractVersions::current(),
         deployment: envelope.center.deployment(),
         revision,
         sandbox_highwater,
         operation_highwater,
         nodes: envelope.center.nodes(),
-        windows,
+        retention_lanes: envelope.center.retention_lanes(),
         sandboxes,
     })
 }

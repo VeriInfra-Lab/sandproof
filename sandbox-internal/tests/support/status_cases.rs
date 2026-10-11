@@ -13,11 +13,32 @@ use sandproof_protocol::internal::{
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct Observed(Arc<AtomicUsize>);
+
+#[test]
+fn status_requires_explicit_bounded_protected_retention_capacity() {
+    let request = StatusRequest { node: node() };
+    let valid = HostStatus {
+        node: node(),
+        retention_slots: 2,
+        observed_at_ms: 1234,
+        free: Resources::ZERO,
+    };
+    assert!(valid.validate_for(&request).is_ok());
+    for slots in [0, 4097] {
+        let mut invalid = valid.clone();
+        invalid.retention_slots = slots;
+        assert!(invalid.validate_for(&request).is_err());
+    }
+    let mut encoded = serde_json::to_value(valid).unwrap();
+    encoded.as_object_mut().unwrap().remove("retention_slots");
+    assert!(serde_json::from_value::<HostStatus>(encoded).is_err());
+}
 impl StatusReceiver for Observed {
     async fn status(&self, request: StatusRequest) -> Result<HostStatus, ReceiveError> {
         self.0.fetch_add(1, Ordering::SeqCst);
         Ok(HostStatus {
             node: request.node,
+            retention_slots: 2,
             observed_at_ms: 1234,
             free: Resources::ZERO,
         })
@@ -84,6 +105,7 @@ async fn status_uses_original_mtls_budget_and_rejects_foreign_or_oversized_input
     let status = caller.status().await.unwrap();
     assert_eq!(status.node, node());
     assert_eq!(status.observed_at_ms, 1234);
+    assert_eq!(status.retention_slots, 2);
     assert_eq!(caller.active_calls(), 0);
     let mut wrong = StatusRequest { node: node() };
     wrong.node.node_generation = 2.try_into().unwrap();

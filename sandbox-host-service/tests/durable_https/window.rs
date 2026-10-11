@@ -73,10 +73,10 @@ async fn successor_survives_old_close(
     assert_eq!(client.close_window(close).await.unwrap(), ack);
     assert_eq!(client.lifecycle(&successor).await.unwrap(), recorded);
     let mut future = close.clone();
-    future.identity.request_window = 3.try_into().unwrap();
+    future.terminal.identity.request_window = 3.try_into().unwrap();
     assert!(client.close_window(&future).await.is_err());
     let mut foreign = close.clone();
-    foreign.identity.node.node_generation = 2.try_into().unwrap();
+    foreign.terminal.identity.node.node_generation = 2.try_into().unwrap();
     assert!(client.close_window(&foreign).await.is_err());
     assert!(client.lifecycle(create).await.is_err());
 }
@@ -88,7 +88,6 @@ async fn exact_terminal_confirmation_and_lost_close_ack_survive_real_https_and_r
     let state = Arc::new(Mutex::new(local::State::default()));
     let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
     let node = fixture::node("host-a");
-    let close = WindowCloseRequest::new(node.clone(), 1.try_into().unwrap());
     let create = local::request();
     let mut destroy = create.clone();
     destroy.intent = Intent::Destroy;
@@ -143,6 +142,11 @@ async fn exact_terminal_confirmation_and_lost_close_ack_survive_real_https_and_r
                 .await
                 .unwrap();
             assert!(matches!(ready.fact, LifecycleFact::Ready { .. }));
+            let close = WindowCloseRequest::new(LifecycleResponse {
+                identity: destroy.identity.clone(),
+                observation_version: ready.observation_version,
+                fact: LifecycleFact::Cleaned,
+            });
             assert!(client.close_window(&close).await.is_err()); // active is not terminal
             client.lifecycle(&destroy).await.unwrap();
             let cleaned = worker
@@ -150,6 +154,7 @@ async fn exact_terminal_confirmation_and_lost_close_ack_survive_real_https_and_r
                 .await
                 .unwrap();
             assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
+            let close = WindowCloseRequest::new(cleaned.clone());
             assert!(client.close_window(&close).await.is_err()); // Cleaned alone is not confirmed
             let mut altered = cleaned.clone();
             altered.observation_version =
@@ -161,6 +166,7 @@ async fn exact_terminal_confirmation_and_lost_close_ack_survive_real_https_and_r
             assert!(client.lifecycle(&create).await.is_err()); // durable floor already rejects old creates
             saved_terminal = Some(cleaned);
         } else {
+            let close = WindowCloseRequest::new(saved_terminal.clone().unwrap());
             let ack = client.close_window(&close).await.unwrap();
             ack.validate_for(&close).unwrap(); // same original close survives both layers' restart
             assert!(

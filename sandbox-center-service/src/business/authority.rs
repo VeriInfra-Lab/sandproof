@@ -16,9 +16,7 @@ use sandproof_controller_service::template_registry::{
 use sandproof_internal::template::ValidationRequest;
 use sandproof_protocol::{
     ResourceId, SandboxId, TenantId,
-    internal::lifecycle::{
-        CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
-    },
+    internal::lifecycle::{CreateBinding, LifecycleFact, LifecycleRequest, LifecycleResponse},
     internal::window::{WindowCloseAck, WindowCloseRequest},
     internal::{ControlIdentity, NodeIdentity},
 };
@@ -118,9 +116,9 @@ impl SharedBusinessAuthority {
             .snapshot_envelope()
             .map_err(authority_error)
     }
-    /// Protected background coordination only, never a public client action.
+    /// Protected operational node drain only, never a public client action.
     /// # Errors
-    /// Uses the original durable drain decision; unknown commits fence all views.
+    /// Uses the original drain decision, independently of terminal-lane retirement.
     pub fn begin_drain(&self, node: &NodeIdentity) -> Result<(), PortError> {
         self.0
             .lock()
@@ -141,11 +139,14 @@ impl SharedBusinessAuthority {
     /// Commit the fixed close before dispatching it outside this borrow.
     /// # Errors
     /// Unconfirmed or active windows refuse; no host I/O executes under the lock.
-    pub fn begin_close(&self, node: &NodeIdentity) -> Result<WindowCloseRequest, PortError> {
+    pub fn begin_close(
+        &self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, PortError> {
         self.0
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .begin_close(node)
+            .begin_close(terminal)
             .map_err(authority_error)
     }
     /// Apply authenticated exact close evidence to the SAME business envelope.
@@ -408,8 +409,12 @@ impl SharedBusinessAuthority {
                     .as_ref()
                     .ok_or(AuthorityError::Decision(DecisionError::Conflict))?;
                 if last.request.identity != *terminal
-                    || last.request.intent != Intent::Destroy
-                    || cleaned.fact != LifecycleFact::Cleaned
+                    || super::publication::terminal_request(&original_create, cleaned).as_ref()
+                        != Some(&last.request)
+                    || (cleaned.fact == LifecycleFact::NotAccepted
+                        && (certificate.is_some()
+                            || link.local.is_some()
+                            || sandbox.terminal_confirmation.as_ref() != Some(cleaned)))
                     || evidence.is_some_and(|(_, observed)| observed.cleaned != *cleaned)
                 {
                     return Err(DecisionError::Conflict.into());
@@ -569,11 +574,14 @@ impl AuthorityPort for SharedBusinessAuthority {
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .begin_drain(node)
     }
-    fn begin_close(&mut self, node: &NodeIdentity) -> Result<WindowCloseRequest, AuthorityError> {
+    fn begin_close(
+        &mut self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, AuthorityError> {
         self.0
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
-            .begin_close(node)
+            .begin_close(terminal)
     }
     fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
         self.0

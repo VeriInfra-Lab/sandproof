@@ -19,6 +19,7 @@ from tools.template_build_store import BuildError
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests/system'))
+from _center_host_services import test_credentials
 SPEC = importlib.util.spec_from_file_location("complete_registry_fixture", ROOT / "tests/system/_complete_registry_runtime.py")
 FIXTURE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = FIXTURE
@@ -65,6 +66,8 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
             def assembled(_args, _root, settings, catalogs, key, sdk_address, _record, **kwargs):
                 # A controlled assembly port checks the real new DTO contract;
                 # this static test does not claim TLS/Redis or KVM startup.
+                credentials = test_credentials(key, kwargs['extra_credentials'])
+                self.assertEqual([entry['tenant'] for entry in credentials], [1, 2])
                 for suffix in ('registry','registry/inbox','registry/artifacts'):
                     (root / suffix).mkdir(mode=0o700)
                 for index, native in enumerate(settings):

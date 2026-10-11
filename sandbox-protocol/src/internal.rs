@@ -7,11 +7,11 @@ use crate::{DeploymentId, NodeId, OperationId, SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, num::NonZeroU64};
 
-pub const INTERNAL_PROTOCOL_VERSION: u16 = 1;
+pub const INTERNAL_PROTOCOL_VERSION: u16 = 2;
 /// Formats deployed by the sole center/host products. Kept alongside the wire
 /// contract so the host does not link the Redis adapter to report compatibility.
-pub const CENTER_STORE_FORMAT_VERSION: u32 = 5;
-pub const HOST_STORE_FORMAT_VERSION: i64 = 15;
+pub const CENTER_STORE_FORMAT_VERSION: u32 = 6;
+pub const HOST_STORE_FORMAT_VERSION: i64 = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct ContractVersions {
@@ -29,11 +29,11 @@ impl ContractVersions {
         }
     }
 }
-pub const PROBE_PATH: &str = "/internal/v1/probe";
+pub const PROBE_PATH: &str = "/internal/v2/probe";
 pub const PROBE_BODY_BYTES: usize = 4096;
 /// Namespace-specific data requests use the original envd URI after this prefix.
 /// The only routable destination is the node's original, authorized namespace.
-pub const DATA_PATH_PREFIX: &str = "/internal/v1/data";
+pub const DATA_PATH_PREFIX: &str = "/internal/v2/data";
 pub const DATA_IDENTITY_HEADER: &str = "x-sandproof-control-identity";
 pub const DATA_IDENTITY_BYTES: usize = 2048;
 
@@ -99,6 +99,9 @@ pub struct ControlIdentity {
     pub sandbox_id: SandboxId,
     pub operation_id: OperationId,
     pub intent_version: PositiveCounter,
+    /// A bounded protected inbox position, not a native VM or public identifier.
+    pub retention_slot: u16,
+    /// Incarnation of this ONE retention slot, never a node-wide window.
     pub request_window: PositiveCounter,
 }
 
@@ -107,7 +110,11 @@ impl ControlIdentity {
     /// Rejects unknown protocol versions and a foreign registered node binding.
     pub fn validate_node(&self, expected: &NodeIdentity) -> Result<(), InternalError> {
         validate_version(self.protocol_version)?;
-        validate_node(&self.node, expected)
+        validate_node(&self.node, expected)?;
+        if self.retention_slot == 0 {
+            return Err(InternalError::BindingMismatch);
+        }
+        Ok(())
     }
 
     /// # Errors

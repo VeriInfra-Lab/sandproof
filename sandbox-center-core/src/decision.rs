@@ -1,4 +1,4 @@
-use crate::{CenterState, DecisionError, NodeMode, NodeRole, Operation, Sandbox, WindowPhase};
+use crate::{CenterState, DecisionError, NodeMode, NodeRole, Operation, Sandbox};
 use sandproof_protocol::internal::lifecycle::{
     CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
 };
@@ -43,9 +43,7 @@ impl CenterState {
                     });
                 available |= registered_ready;
                 (registered_ready
-                    && self
-                        .window(&n.identity)
-                        .is_some_and(|window| window.phase() == WindowPhase::Open)
+                    && self.available_lane(&n.identity).is_some()
                     && create.resources.fits(n.free)
                     && used.checked_add(create.resources)?.fits(n.limit))
                 .then_some((n, ratio(used, n.limit)))
@@ -125,10 +123,9 @@ impl CenterState {
             return Err(DecisionError::Capacity);
         }
         let node = self.select_node(&create, now_ms, role)?;
-        let request_window = self
-            .window(&node)
-            .and_then(crate::NodeWindow::current)
-            .ok_or(DecisionError::Capacity)?;
+        let lane = self.available_lane(&node).ok_or(DecisionError::Capacity)?;
+        let retention_slot = lane.retention_slot();
+        let request_window = lane.current().ok_or(DecisionError::Capacity)?;
         let sandbox_number = self
             .sandbox_highwater
             .checked_add(1)
@@ -159,6 +156,7 @@ impl CenterState {
                     .try_into()
                     .map_err(|_| DecisionError::Exhausted)?,
                 intent_version: 1.try_into().map_err(|_| DecisionError::Exhausted)?,
+                retention_slot,
                 request_window,
             },
             create,

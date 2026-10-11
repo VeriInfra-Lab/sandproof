@@ -1,13 +1,12 @@
 //! Pure component regressions, NOT network/Redis/SQLite or KVM retirement.
 use super::*;
 use sandproof_protocol::internal::lifecycle::{
-    LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES,
+    Intent, LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES,
 };
 use sandproof_protocol::internal::window::{
-    WINDOW_CLOSE_BODY_BYTES, WindowCloseAck, WindowCloseRequest,
+    RETENTION_LANE_BYTES, WindowCloseAck, WindowCloseRequest,
 };
-
-fn create(state: &CenterState) -> (CenterState, LifecycleRequest) {
+fn make_create(state: &CenterState) -> (CenterState, LifecycleRequest) {
     state
         .create(&"1".try_into().unwrap(), binding(), 0)
         .unwrap()
@@ -27,7 +26,7 @@ fn ready(state: &CenterState, request: &LifecycleRequest) -> CenterState {
 }
 fn ack(request: &WindowCloseRequest) -> WindowCloseAck {
     WindowCloseAck {
-        identity: request.identity.clone(),
+        terminal: request.terminal.clone(),
     }
 }
 fn not_accepted(
@@ -37,78 +36,103 @@ fn not_accepted(
     let result = response(request, 1, LifecycleFact::NotAccepted);
     (state.apply_response(&result).unwrap(), result)
 }
-
+fn retire(state: &CenterState, result: &LifecycleResponse) -> (CenterState, WindowCloseAck) {
+    let (pending, close) = state
+        .confirm_terminal(result)
+        .unwrap()
+        .begin_close(result)
+        .unwrap();
+    let answer = ack(&close);
+    (pending.apply_close_ack(&answer).unwrap(), answer)
+}
 #[test]
-fn future_envelope_explicitly_reserves_confirmations_and_node_windows() {
+fn future_envelope_explicitly_reserves_confirmations_and_every_retention_lane() {
     let state = state();
-    let bounds = &state.bounds;
-    let prior = usize::from(bounds.max_sandboxes)
-        * (usize::from(bounds.operations_per_sandbox)
-            * (bounds.max_options_bytes as usize * 4 + 8192)
+    let b = &state.bounds;
+    let prior = usize::from(b.max_sandboxes)
+        * (usize::from(b.operations_per_sandbox) * (b.max_options_bytes as usize * 4 + 8192)
             + 8192)
-        + usize::from(bounds.max_nodes) * (4096 + usize::from(bounds.max_templates_per_node) * 512)
+        + usize::from(b.max_nodes) * (4096 + usize::from(b.max_templates_per_node) * 512)
         + 8192;
     assert_eq!(
-        bounds.required_block_bytes(),
+        b.required_block_bytes(),
         prior
-            + usize::from(bounds.max_sandboxes) * RESULT_CONFIRMATION_BODY_BYTES
-            + usize::from(bounds.max_nodes) * WINDOW_CLOSE_BODY_BYTES
+            + usize::from(b.max_sandboxes) * RESULT_CONFIRMATION_BODY_BYTES
+            + usize::from(b.max_nodes) * usize::from(b.max_sandboxes) * RETENTION_LANE_BYTES
+    );
+    let mut nodes = state.nodes.clone();
+    nodes[0].retention_slots = 0;
+    assert_eq!(
+        CenterState::new(
+            state.deployment.clone(),
+            b.clone(),
+            nodes,
+            state.tenants.clone()
+        ),
+        Err(DecisionError::Invalid)
+    );
+    let mut nodes = state.nodes.clone();
+    nodes[0].retention_slots = b.max_sandboxes + 1;
+    assert_eq!(
+        CenterState::new(
+            state.deployment.clone(),
+            b.clone(),
+            nodes,
+            state.tenants.clone()
+        ),
+        Err(DecisionError::Invalid)
     );
 }
-
 #[test]
-fn idle_retirement_requires_nonempty_exactly_confirmed_terminal_history() {
+fn retirement_requires_nonempty_exactly_confirmed_terminal_history() {
     let initial = state();
-    assert!(initial.idle_window_candidates().is_empty());
-    let (pending, create) = create(&initial);
-    assert!(pending.idle_window_candidates().is_empty());
-    let (terminal, result) = not_accepted(&pending, &create);
-    assert!(terminal.idle_window_candidates().is_empty());
+    assert!(initial.retirement_candidates().is_empty());
+    let (unknown, create) = make_create(&initial);
+    assert!(unknown.retirement_candidates().is_empty());
+    let (terminal, result) = not_accepted(&unknown, &create);
+    assert!(terminal.retirement_candidates().is_empty());
+    assert_eq!(terminal.begin_close(&result), Err(DecisionError::Conflict));
     let confirmed = terminal.confirm_terminal(&result).unwrap();
-    assert_eq!(
-        confirmed.idle_window_candidates(),
-        vec![create.identity.node.clone()]
-    );
-    let draining = confirmed.begin_drain(&create.identity.node).unwrap();
-    assert_eq!(
-        draining.idle_window_candidates(),
-        vec![create.identity.node.clone()]
-    );
-    let (closing, close) = draining.begin_close(&create.identity.node).unwrap();
-    assert!(closing.idle_window_candidates().is_empty());
-    let successor = closing.apply_close_ack(&ack(&close)).unwrap();
-    assert!(successor.idle_window_candidates().is_empty());
+    assert_eq!(confirmed.retirement_candidates(), vec![result.clone()]);
+    let (pending, close) = confirmed.begin_close(&result).unwrap();
+    assert!(pending.retirement_candidates().is_empty());
+    let successor = pending.apply_close_ack(&ack(&close)).unwrap();
+    assert!(successor.retirement_candidates().is_empty());
     assert_eq!(
         successor
-            .window(&create.identity.node)
+            .lane(&create.identity.node, 1)
             .unwrap()
             .current()
             .unwrap()
             .get(),
         2
     );
-}
-
-#[test]
-fn drain_stops_new_creates_without_consuming_ids_or_closing_live_work() {
-    let host = node("host-a");
-    let initial = state();
-    assert_eq!(initial.begin_close(&host), Err(DecisionError::Conflict));
-    let (initial, create) = create(&initial);
-    let running = ready(&initial, &create).begin_drain(&host).unwrap();
     assert_eq!(
-        running.window(&host).unwrap().phase(),
-        WindowPhase::Draining
+        successor
+            .lane(&create.identity.node, 2)
+            .unwrap()
+            .current()
+            .unwrap()
+            .get(),
+        1
     );
+}
+#[test]
+fn operational_drain_stops_creates_but_not_existing_renewal_or_terminal_retirement() {
+    let host = node("host-a");
+    let (initial, create) = make_create(&state());
+    let running = ready(&initial, &create).begin_drain(&host).unwrap();
+    assert_eq!(running.nodes[0].mode, NodeMode::Draining);
+    assert_eq!(running.lane(&host, 1).unwrap().phase(), LanePhase::Open);
     assert_eq!(running.begin_drain(&host).unwrap(), running);
     assert_eq!(
         running.create(&"1".try_into().unwrap(), binding(), 0),
-        Err(DecisionError::Capacity)
+        Err(DecisionError::Unavailable)
     );
-    assert_eq!(running.sandbox_highwater, 1);
-    assert_eq!(running.operation_highwater, 1);
-    // Draining is not expiry/revocation: ordinary existing lifecycle operations
-    // retain the original window, and a final destroy slot remains available.
+    assert_eq!(
+        (running.sandbox_highwater, running.operation_highwater),
+        (1, 1)
+    );
     let (renewing, renewal) = running
         .renew(
             &"1".try_into().unwrap(),
@@ -117,6 +141,10 @@ fn drain_stops_new_creates_without_consuming_ids_or_closing_live_work() {
             150,
         )
         .unwrap();
+    assert_eq!(
+        renewal.identity.retention_slot,
+        create.identity.retention_slot
+    );
     assert_eq!(
         renewal.identity.request_window,
         create.identity.request_window
@@ -132,16 +160,18 @@ fn drain_stops_new_creates_without_consuming_ids_or_closing_live_work() {
         .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
         .unwrap();
     assert_eq!(
+        destroy.identity.retention_slot,
+        create.identity.retention_slot
+    );
+    assert_eq!(
         destroy.identity.request_window,
         create.identity.request_window
     );
-    assert_eq!(destroying.begin_close(&host), Err(DecisionError::Conflict));
+    assert!(destroying.retirement_candidates().is_empty());
 }
-
 #[test]
-fn unknown_ready_stopped_and_unconfirmed_terminal_windows_cannot_close() {
-    let host = node("host-a");
-    let (unknown, create) = create(&state());
+fn unknown_ready_stopped_and_unconfirmed_cleaned_cannot_close() {
+    let (unknown, create) = make_create(&state());
     let running = ready(&unknown, &create);
     let (destroying, destroy) = running
         .destroy(&"1".try_into().unwrap(), &create.identity.sandbox_id)
@@ -149,33 +179,21 @@ fn unknown_ready_stopped_and_unconfirmed_terminal_windows_cannot_close() {
     let stopped = destroying
         .apply_response(&response(&destroy, 2, LifecycleFact::Stopped))
         .unwrap();
-    let cleaned_result = response(&destroy, 3, LifecycleFact::Cleaned);
-    let cleaned = stopped.apply_response(&cleaned_result).unwrap();
+    let result = response(&destroy, 3, LifecycleFact::Cleaned);
+    let cleaned = stopped.apply_response(&result).unwrap();
     for state in [unknown, running, destroying, stopped, cleaned.clone()] {
-        let draining = state.begin_drain(&host).unwrap();
-        assert_eq!(draining.begin_close(&host), Err(DecisionError::Conflict));
+        assert!(state.begin_close(&result).is_err());
+        assert!(state.retirement_candidates().is_empty());
     }
-    // Two-operation history has no ordinary compaction work, but still MUST
-    // receive the exact terminal acknowledgement before its window closes.
     assert!(!cleaned.sandboxes[0].has_compaction_work());
-    let confirmed = cleaned.confirm_terminal(&cleaned_result).unwrap();
-    assert_eq!(
-        confirmed.confirm_terminal(&cleaned_result).unwrap(),
-        confirmed
-    );
-    assert!(
-        confirmed
-            .begin_drain(&host)
-            .unwrap()
-            .begin_close(&host)
-            .is_ok()
-    );
+    let confirmed = cleaned.confirm_terminal(&result).unwrap();
+    assert_eq!(confirmed.confirm_terminal(&result).unwrap(), confirmed);
+    assert!(confirmed.begin_close(&result).is_ok());
 }
-
 #[test]
-fn terminal_confirmation_matches_every_field_and_cannot_certify_running() {
-    let (initial, create) = create(&state());
-    let running_result = response(
+fn terminal_confirmation_matches_all_fields_and_cannot_certify_running() {
+    let (initial, create) = make_create(&state());
+    let running = response(
         &create,
         1,
         LifecycleFact::Ready {
@@ -186,148 +204,173 @@ fn terminal_confirmation_matches_every_field_and_cannot_certify_running() {
     );
     assert_eq!(
         initial
-            .apply_response(&running_result)
+            .apply_response(&running)
             .unwrap()
-            .confirm_terminal(&running_result),
+            .confirm_terminal(&running),
         Err(DecisionError::Stale)
     );
     let (terminal, result) = not_accepted(&initial, &create);
-    let mut variants = vec![result.clone(); 8];
+    let mut variants = vec![result.clone(); 9];
     variants[0].observation_version = 2.try_into().unwrap();
     variants[1].identity.operation_id = "other-operation".try_into().unwrap();
     variants[2].identity.request_window = 2.try_into().unwrap();
     variants[3].identity.node.node_generation = 2.try_into().unwrap();
     variants[4].identity.tenant_id = "2".try_into().unwrap();
     variants[5].identity.sandbox_id = "other-sandbox".try_into().unwrap();
-    variants[6].identity.protocol_version = 2;
+    variants[6].identity.protocol_version = 3;
     variants[7].fact = LifecycleFact::Cleaned;
+    variants[8].identity.retention_slot = 2;
     for altered in variants {
         assert!(terminal.confirm_terminal(&altered).is_err());
         assert!(terminal.sandboxes[0].terminal_confirmation.is_none());
     }
     assert_eq!(terminal.reserved(None, None), Some(Resources::ZERO));
-    assert!(terminal.confirm_terminal(&result).unwrap().is_valid());
 }
-
 #[test]
-fn lost_close_ack_keeps_exact_outbox_history_and_same_retry_identity() {
-    let host = node("host-a");
-    let (initial, create) = create(&state());
+fn lost_close_ack_keeps_exact_outbox_and_occupied_lane_without_blocking_a_peer() {
+    let (initial, create) = make_create(&state());
     let (terminal, result) = not_accepted(&initial, &create);
-    let confirmed = terminal
-        .confirm_terminal(&result)
-        .unwrap()
-        .begin_drain(&host)
-        .unwrap();
-    let (pending, close) = confirmed.begin_close(&host).unwrap();
+    let confirmed = terminal.confirm_terminal(&result).unwrap();
+    let (pending, close) = confirmed.begin_close(&result).unwrap();
     assert_eq!(pending.pending_closes(), vec![close.clone()]);
     assert_eq!(pending.sandboxes.len(), 1);
-    assert_eq!(pending.window(&host).unwrap().retired_through(), 0);
     assert_eq!(
-        pending.begin_close(&host).unwrap(),
+        pending
+            .lane(&create.identity.node, 1)
+            .unwrap()
+            .retired_through(),
+        0
+    );
+    assert_eq!(
+        pending.begin_close(&result).unwrap(),
         (pending.clone(), close.clone())
     );
-    assert_eq!(pending.begin_drain(&host).unwrap(), pending);
-    // The lost response has no event to apply. It is NOT an individual Cleaned
-    // result and cannot authorize a new window or delete its retained details.
-    assert_eq!(
-        pending.create(&"1".try_into().unwrap(), binding(), 0),
-        Err(DecisionError::Capacity)
-    );
+    let (peer, request) = make_create(&pending);
+    assert_eq!(request.identity.retention_slot, 2);
+    assert_eq!(peer.pending_closes(), vec![close]);
 }
-
 #[test]
-fn sequential_retirement_is_bounded_and_never_reuses_global_or_window_ids() {
-    let host = node("host-a");
-    let mut state = state();
+fn survivor_does_not_pin_long_churn_or_global_ids_or_native_position_generations() {
+    let (initial, survivor) = make_create(&state());
+    let mut state = ready(&initial, &survivor);
     let mut old_results = vec![];
-    let mut old_acks = vec![];
+    let mut old_acks: Vec<WindowCloseAck> = vec![];
     for round in 1..=32 {
-        let (next, create) = create(&state);
-        assert_eq!(create.identity.request_window.get(), round);
+        let (next, victim) = make_create(&state);
+        assert_eq!(victim.identity.retention_slot, 2);
+        assert_eq!(victim.identity.request_window.get(), round);
         assert_eq!(
-            create.identity.sandbox_id.as_str(),
-            format!("sandbox-{round}")
+            victim.identity.sandbox_id.as_str(),
+            format!("sandbox-{}", round + 1)
         );
-        assert_eq!(
-            create.identity.operation_id.as_str(),
-            format!("operation-{round}")
-        );
-        let (terminal, result) = not_accepted(&next, &create);
-        state = terminal
-            .confirm_terminal(&result)
-            .unwrap()
-            .begin_drain(&host)
-            .unwrap();
-        let (pending, close) = state.begin_close(&host).unwrap();
-        let answer = ack(&close);
-        state = pending.apply_close_ack(&answer).unwrap();
+        let (terminal, result) = not_accepted(&next, &victim);
+        let (next, answer) = retire(&terminal, &result);
+        state = next;
         assert!(state.is_valid());
-        assert!(state.sandboxes.is_empty());
-        assert!(state.pending_closes().is_empty());
+        assert_eq!(state.sandboxes.len(), 1);
+        assert_eq!(state.sandboxes[0].operations[0].request, survivor);
+        assert_eq!(state.reserved(None, None), Some(resources(1)));
         assert_eq!(
-            state.window(&host).unwrap().current().unwrap().get(),
-            round + 1
+            state
+                .lane(&survivor.identity.node, 1)
+                .unwrap()
+                .current()
+                .unwrap()
+                .get(),
+            1
         );
-        assert_eq!(state.window(&host).unwrap().retired_through(), round);
         assert_eq!(
-            (state.sandbox_highwater, state.operation_highwater),
-            (round, round)
+            state
+                .lane(&survivor.identity.node, 2)
+                .unwrap()
+                .retired_through(),
+            round
         );
+        assert_eq!(state.apply_close_ack(&answer).unwrap(), state);
+        for stale in &old_acks {
+            assert_eq!(state.apply_close_ack(stale), Err(DecisionError::Stale));
+        }
         old_results.push(result);
         old_acks.push(answer);
-        for result in &old_results {
-            assert_eq!(state.apply_response(result), Err(DecisionError::NotFound));
-            assert_eq!(state.confirm_terminal(result), Err(DecisionError::NotFound));
+        for stale in &old_results {
+            assert_eq!(state.apply_response(stale), Err(DecisionError::NotFound));
+            assert_eq!(state.confirm_terminal(stale), Err(DecisionError::NotFound));
         }
-        for duplicate in &old_acks {
-            assert_eq!(state.apply_close_ack(duplicate).unwrap(), state);
-        }
+        // Restart semantics use the exact serialized bounded authority, not a rebuilt catalog.
+        state = serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+        assert!(state.is_valid());
     }
-    let (live, _) = create(&state);
-    for old in &old_acks {
-        assert_eq!(live.apply_close_ack(old).unwrap(), live);
-    }
-}
-
-#[test]
-fn wrong_or_premature_close_ack_never_advances_a_window() {
-    let host = node("host-a");
-    let initial = state();
-    let request = WindowCloseRequest::new(host.clone(), 1.try_into().unwrap());
+    let (successor, _) = make_create(&state);
     assert_eq!(
-        initial.apply_close_ack(&ack(&request)),
-        Err(DecisionError::Conflict)
+        successor.apply_close_ack(old_acks.last().unwrap()).unwrap(),
+        successor
     );
-    let (pending, request) = initial
-        .begin_drain(&host)
+    let mut changed = old_acks.last().unwrap().clone();
+    changed.terminal.observation_version =
+        changed.terminal.observation_version.checked_next().unwrap();
+    assert_eq!(
+        successor.apply_close_ack(&changed),
+        Err(DecisionError::Stale)
+    );
+    assert_eq!(
+        (state.sandbox_highwater, state.operation_highwater),
+        (33, 33)
+    );
+}
+#[test]
+fn wrong_or_premature_close_ack_never_advances_a_lane() {
+    let initial = state();
+    let fake = response(
+        &fixture::request(1, 1, Intent::Create),
+        1,
+        LifecycleFact::NotAccepted,
+    );
+    assert!(
+        initial
+            .apply_close_ack(&ack(&WindowCloseRequest::new(fake)))
+            .is_err()
+    );
+    let (next, create) = make_create(&initial);
+    let (terminal, result) = not_accepted(&next, &create);
+    let (pending, request) = terminal
+        .confirm_terminal(&result)
         .unwrap()
-        .begin_close(&host)
+        .begin_close(&result)
         .unwrap();
-    let mut variants = vec![ack(&request); 5];
-    variants[0].identity.protocol_version = 2;
-    variants[1].identity.node.deployment_id = "other-deployment".try_into().unwrap();
-    variants[2].identity.node.node_id = "other-node".try_into().unwrap();
-    variants[3].identity.node.node_generation = 2.try_into().unwrap();
-    variants[4].identity.request_window = 2.try_into().unwrap();
+    let mut variants = vec![ack(&request); 8];
+    variants[0].terminal.identity.protocol_version = 3;
+    variants[1].terminal.identity.node.deployment_id = "other-deployment".try_into().unwrap();
+    variants[2].terminal.identity.node.node_id = "other-node".try_into().unwrap();
+    variants[3].terminal.identity.node.node_generation = 2.try_into().unwrap();
+    variants[4].terminal.identity.request_window = 2.try_into().unwrap();
+    variants[5].terminal.identity.retention_slot = 2;
+    variants[6].terminal.observation_version = 2.try_into().unwrap();
+    variants[7].terminal.fact = LifecycleFact::Cleaned;
     for altered in variants {
         assert!(pending.apply_close_ack(&altered).is_err());
-        assert_eq!(pending.window(&host).unwrap().retired_through(), 0);
+        assert_eq!(
+            pending
+                .lane(&create.identity.node, 1)
+                .unwrap()
+                .retired_through(),
+            0
+        );
     }
 }
-
 #[test]
-fn health_observation_never_resets_durable_window_and_unknown_nodes_are_not_initialized() {
+fn health_and_catalog_refresh_never_reset_lanes_or_change_protected_slot_count() {
     let host = node("host-a");
     let initial = state().begin_drain(&host).unwrap();
     let mut observation = initial.nodes[0].clone();
     observation.healthy_until_ms = 10_000;
     let updated = initial.observe_node(observation.clone()).unwrap();
-    assert_eq!(updated.node_windows, initial.node_windows);
+    assert_eq!(updated.retention_lanes, initial.retention_lanes);
+    observation.retention_slots = 1;
     assert_eq!(
-        updated.create(&"1".try_into().unwrap(), binding(), 0),
-        Err(DecisionError::Capacity)
+        updated.observe_node(observation.clone()),
+        Err(DecisionError::Conflict)
     );
+    observation = initial.nodes[0].clone();
     observation.identity = node("host-b");
     assert_eq!(
         updated.observe_node(observation.clone()),
@@ -337,21 +380,9 @@ fn health_observation_never_resets_durable_window_and_unknown_nodes_are_not_init
         updated.begin_drain(&observation.identity),
         Err(DecisionError::NotFound)
     );
-    assert_eq!(
-        updated.begin_close(&observation.identity),
-        Err(DecisionError::NotFound)
-    );
-    assert_eq!(
-        updated.apply_close_ack(&ack(&WindowCloseRequest::new(
-            observation.identity,
-            1.try_into().unwrap()
-        ))),
-        Err(DecisionError::NotFound)
-    );
 }
-
 #[test]
-fn blocked_node_does_not_close_or_remove_another_nodes_active_responsibility() {
+fn retirement_of_another_node_preserves_active_responsibility() {
     let mut initial = state();
     initial.bounds.max_nodes = 2;
     let mut second = initial.nodes[0].clone();
@@ -364,93 +395,95 @@ fn blocked_node_does_not_close_or_remove_another_nodes_active_responsibility() {
         initial.tenants,
     )
     .unwrap();
-    let (unknown, first) = create(&initial);
-    assert_eq!(first.identity.node, node("host-a"));
+    let (unknown, first) = make_create(&initial);
     let draining = unknown.begin_drain(&node("host-a")).unwrap();
-    let (next, second) = create(&draining);
+    let (next, second) = make_create(&draining);
     assert_eq!(second.identity.node, node("host-b"));
     let (terminal, result) = not_accepted(&next, &second);
-    let confirmed = terminal.confirm_terminal(&result).unwrap();
-    assert_eq!(
-        confirmed.begin_close(&node("host-a")),
-        Err(DecisionError::Conflict)
-    );
-    let (pending, close) = confirmed
-        .begin_drain(&node("host-b"))
-        .unwrap()
-        .begin_close(&node("host-b"))
-        .unwrap();
-    let closed = pending.apply_close_ack(&ack(&close)).unwrap();
+    let (closed, _) = retire(&terminal, &result);
     assert_eq!(closed.sandboxes.len(), 1);
     assert_eq!(closed.sandboxes[0].operations[0].request, first);
-    assert_eq!(closed.reserved(None, None), Some(resources(1)));
-    assert_eq!(closed.window(&node("host-a")).unwrap().retired_through(), 0);
-    assert_eq!(closed.window(&node("host-b")).unwrap().retired_through(), 1);
+    assert_eq!(
+        closed.lane(&node("host-a"), 1).unwrap().retired_through(),
+        0
+    );
+    assert_eq!(
+        closed.lane(&node("host-b"), 1).unwrap().retired_through(),
+        1
+    );
 }
-
 #[test]
-fn maximum_window_closes_without_wrapping_or_preventing_terminal_retirement() {
-    let host = node("host-a");
-    let mut initial = state();
-    initial.node_windows[0].retired_through = u64::MAX - 1;
-    initial.node_windows[0].current = Some(u64::MAX.try_into().unwrap());
-    assert!(initial.is_valid());
-    let (next, create) = create(&initial);
+fn maximum_incarnation_exhausts_only_its_lane_without_wrap() {
+    let initial = state();
+    let (next, create) = make_create(&initial);
+    let (terminal, result) = not_accepted(&next, &create);
+    let (mut prior, _) = retire(&terminal, &result);
+    prior.retention_lanes[0].retired_through = u64::MAX - 1;
+    prior.retention_lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .identity
+        .request_window = (u64::MAX - 1).try_into().unwrap();
+    assert!(prior.is_valid());
+    let (next, create) = make_create(&prior);
     assert_eq!(create.identity.request_window.get(), u64::MAX);
     let (terminal, result) = not_accepted(&next, &create);
-    let (pending, close) = terminal
-        .confirm_terminal(&result)
-        .unwrap()
-        .begin_drain(&host)
-        .unwrap()
-        .begin_close(&host)
-        .unwrap();
-    let exhausted = pending.apply_close_ack(&ack(&close)).unwrap();
-    assert!(exhausted.is_valid());
-    assert!(exhausted.sandboxes.is_empty());
-    assert_eq!(exhausted.window(&host).unwrap().current(), None);
-    assert_eq!(exhausted.window(&host).unwrap().retired_through(), u64::MAX);
+    let (exhausted, answer) = retire(&terminal, &result);
     assert_eq!(
-        exhausted.window(&host).unwrap().phase(),
-        WindowPhase::Exhausted
-    );
-    assert_eq!(exhausted.apply_close_ack(&ack(&close)).unwrap(), exhausted);
-    assert_eq!(exhausted.begin_drain(&host), Err(DecisionError::Exhausted));
-    assert_eq!(exhausted.begin_close(&host), Err(DecisionError::Exhausted));
-    assert_eq!(
-        exhausted.create(&"1".try_into().unwrap(), binding(), 0),
-        Err(DecisionError::Capacity)
+        exhausted.lane(&create.identity.node, 1).unwrap().current(),
+        None
     );
     assert_eq!(
-        (exhausted.sandbox_highwater, exhausted.operation_highwater),
-        (1, 1)
+        exhausted.lane(&create.identity.node, 1).unwrap().phase(),
+        LanePhase::Exhausted
     );
+    assert_eq!(exhausted.apply_close_ack(&answer).unwrap(), exhausted);
+    let (_, peer) = make_create(&exhausted);
+    assert_eq!(peer.identity.retention_slot, 2);
+    assert_eq!(peer.identity.request_window.get(), 1);
 }
-
 #[test]
-fn recovery_rejects_window_gaps_duplicates_foreign_nodes_and_unbound_terminal_stamps() {
+fn restore_rejects_lane_gaps_duplicates_wrong_nodes_and_allocator_regressions() {
     let initial = state();
     let mut bad = initial.clone();
-    bad.node_windows[0].current = Some(2.try_into().unwrap());
+    bad.retention_lanes[0].retired_through = 1;
     assert!(!bad.is_valid());
     let mut bad = initial.clone();
-    bad.node_windows[0].phase = WindowPhase::Exhausted;
-    bad.node_windows[0].current = None;
+    bad.retention_lanes[0].phase = LanePhase::Exhausted;
     assert!(!bad.is_valid());
     let mut bad = initial.clone();
-    bad.node_windows[0].node.node_generation = 2.try_into().unwrap();
+    bad.retention_lanes[0].node.node_generation = 2.try_into().unwrap();
     assert!(!bad.is_valid());
     let mut bad = initial.clone();
-    bad.node_windows.push(bad.node_windows[0].clone());
+    bad.retention_lanes[0].retention_slot = 0;
     assert!(!bad.is_valid());
     let mut bad = initial.clone();
-    bad.node_windows.clear();
+    bad.retention_lanes.push(bad.retention_lanes[0].clone());
     assert!(!bad.is_valid());
-    let (unknown, create) = create(&initial);
+    let mut bad = initial.clone();
+    bad.retention_lanes.clear();
+    assert!(!bad.is_valid());
+    let (unknown, create) = make_create(&initial);
     let mut bad = unknown.clone();
-    bad.node_windows[0].phase = WindowPhase::ClosePending;
+    bad.retention_lanes[0].phase = LanePhase::ClosePending;
     assert!(!bad.is_valid());
     let (terminal, result) = not_accepted(&unknown, &create);
+    let (retired, _) = retire(&terminal, &result);
+    let mut bad = retired.clone();
+    bad.sandbox_highwater = 0;
+    assert!(!bad.is_valid());
+    let mut bad = retired.clone();
+    bad.operation_highwater = 0;
+    assert!(!bad.is_valid());
+    let mut bad = retired.clone();
+    bad.retention_lanes[0]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .identity
+        .retention_slot = 3;
+    assert!(!bad.is_valid());
     let mut bad = terminal.confirm_terminal(&result).unwrap();
     bad.sandboxes[0]
         .terminal_confirmation
@@ -459,17 +492,45 @@ fn recovery_rejects_window_gaps_duplicates_foreign_nodes_and_unbound_terminal_st
         .identity
         .request_window = 2.try_into().unwrap();
     assert!(!bad.is_valid());
-    let mut bad = terminal;
+    let mut bad = unknown.clone();
     bad.sandboxes[0].operations[0]
         .request
         .identity
-        .request_window = 2.try_into().unwrap();
+        .retention_slot = 3;
     assert!(!bad.is_valid());
     let mut bad = ready(&unknown, &create);
     bad.sandboxes[0].terminal_confirmation = bad.sandboxes[0].operations[0].response.clone();
     assert!(!bad.is_valid());
-    assert_eq!(
-        bad.begin_drain(&node("host-a")),
-        Err(DecisionError::Invalid)
-    );
+}
+
+#[test]
+fn recent_stamp_global_ids_are_unique_across_retired_and_live_lanes() {
+    let (first_state, first) = make_create(&state());
+    let (both, second) = make_create(&first_state);
+    let (terminal, result1) = not_accepted(&both, &first);
+    let (terminal, result2) = not_accepted(&terminal, &second);
+    let (one, _) = retire(&terminal, &result1);
+    let (closed, _) = retire(&one, &result2);
+    let mut bad = closed.clone();
+    let mut duplicate = bad.retention_lanes[0].last_retired.clone().unwrap();
+    duplicate.identity.retention_slot = 2;
+    bad.retention_lanes[1].last_retired = Some(duplicate);
+    assert!(!bad.is_valid());
+    let (live, current) = make_create(&closed);
+    let mut bad = live.clone();
+    bad.retention_lanes[1]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .identity
+        .sandbox_id = current.identity.sandbox_id;
+    assert!(!bad.is_valid());
+    let mut bad = live;
+    bad.retention_lanes[1]
+        .last_retired
+        .as_mut()
+        .unwrap()
+        .identity
+        .operation_id = current.identity.operation_id;
+    assert!(!bad.is_valid());
 }

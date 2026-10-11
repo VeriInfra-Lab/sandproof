@@ -18,6 +18,7 @@ fn state() -> CenterState {
         },
         vec![NodeRegistration {
             identity: node("host-a"),
+            retention_slots: 2,
             role: NodeRole::Runtime,
             limit: resources(2),
             mode: NodeMode::Accepting,
@@ -27,7 +28,7 @@ fn state() -> CenterState {
                 revision: binding().template_revision,
                 digest: binding().template_digest,
             }],
-            protocol_version: 1,
+            protocol_version: sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION,
         }],
         vec![TenantBudget {
             tenant: "1".try_into().unwrap(),
@@ -68,7 +69,7 @@ fn physical_refresh_cannot_forget_unknown_responsibility_or_change_policy() {
         refreshed.reserved(None, None),
         original.reserved(None, None)
     );
-    assert_eq!(refreshed.node_windows, original.node_windows);
+    assert_eq!(refreshed.retention_lanes, original.retention_lanes);
     assert_eq!(refreshed.nodes[0].templates, original.nodes[0].templates);
     assert_eq!(refreshed.nodes[0].mode, original.nodes[0].mode);
     assert_eq!(

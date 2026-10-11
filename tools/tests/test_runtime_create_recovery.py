@@ -24,11 +24,15 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.intent = dict(metadata=dict(benchmark='terminal-bench-2.0', task='sample',
             build='a'*32, revision='r1', runtime_attempt='e'*32), template=self.template)
         self.node = dict(deployment_id='test-deployment', node_id='host-runtime', node_generation=3)
-        self.identity = dict(protocol_version=1, node=self.node, tenant_id='1', sandbox_id='sandbox-17',
-                             operation_id='operation-41', intent_version=1, request_window=2)
-        self.center = dict(deployment='test-deployment', sandboxes=[],
-                           windows=[dict(node=self.node, retired_through=1)])
-        self.host = dict(node=self.node, retired_through=1, operations=[])
+        self.identity = dict(protocol_version=2, node=self.node, tenant_id='1', sandbox_id='sandbox-17',
+                             operation_id='operation-41', intent_version=1, retention_slot=1, request_window=2)
+        previous = dict(identity=dict(self.identity, sandbox_id='sandbox-16', request_window=1),
+                        observation_version=2, fact=dict(kind='cleaned'))
+        versions = dict(internal_protocol=2, center_store=6, host_store=16)
+        self.center = dict(schema_version=2, versions=versions, deployment='test-deployment', sandboxes=[],
+            retention_lanes=[dict(node=self.node, retention_slot=1, retired_through=1, last_retired=previous)])
+        self.host = dict(schema_version=2, versions=versions, node=self.node, operations=[],
+            lanes=[dict(retention_slot=1, retired_through=1, last_retired=previous)])
         self.now = 0
 
     def insert(self, *, pending=False, terminal=False):
@@ -175,17 +179,71 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.center['sandboxes'][0]['operations'][0]['response']['fact']['kind'] = 'stopped'
         self.assertIsNone(terminal_result(self.center, self.host, self.identity))
         self.center['sandboxes'] = []
-        self.host['retired_through'] = 2
+        self.retire(self.host['lanes'][0], 2)
         self.assertIsNone(terminal_result(self.center, self.host, self.identity))
-        self.center['windows'][0]['retired_through'] = 2
+        self.retire(self.center['retention_lanes'][0], 2)
         result = self.recover(Mock(), create_identity=self.identity)
-        self.assertEqual(result['terminal']['status'], 'retired_terminal_window')
+        self.assertEqual(result['terminal']['status'], 'retired_terminal_slot')
 
     def test_saved_identity_cannot_consume_foreign_host_frontier(self):
-        self.center['windows'][0]['retired_through'] = self.host['retired_through'] = 2
+        self.retire(self.center['retention_lanes'][0], 2)
+        self.retire(self.host['lanes'][0], 2)
         self.host['node'] = dict(self.node, node_generation=4)
         with self.assertRaises(ValueError):
             self.recover(Mock(), create_identity=self.identity)
+
+    def retire(self, lane, floor):
+        lane.update(retired_through=floor, last_retired=dict(
+            identity=dict(self.identity, operation_id='operation-42', intent_version=2, request_window=floor),
+            observation_version=3, fact=dict(kind='cleaned')))
+
+    def test_other_slot_retirement_does_not_prove_original_cleanup(self):
+        self.center['sandboxes'] = []
+        for lane in (self.center['retention_lanes'][0], self.host['lanes'][0]):
+            lane['retention_slot'] = 2
+            lane['last_retired']['identity']['retention_slot'] = 2
+        with self.assertRaisesRegex(ValueError, 'slot frontier'):
+            terminal_result(self.center, self.host, self.identity)
+
+    def test_retirement_requires_exact_stamp_and_current_audit_schema(self):
+        self.retire(self.center['retention_lanes'][0], 2)
+        self.retire(self.host['lanes'][0], 2)
+        for side in ('center', 'host'):
+            for mutation in ('schema', 'version', 'binding', 'observation', 'missing'):
+                center, host = copy.deepcopy(self.center), copy.deepcopy(self.host)
+                audit = center if side == 'center' else host
+                lane = audit['retention_lanes' if side == 'center' else 'lanes'][0]
+                if mutation == 'schema': audit['schema_version'] = 1
+                elif mutation == 'version': audit['versions']['host_store'] -= 1
+                elif mutation == 'binding': lane['last_retired']['identity']['sandbox_id'] = 'sandbox-99'
+                elif mutation == 'observation': lane['last_retired']['observation_version'] += 1
+                else: lane['last_retired'] = None
+                with self.subTest(side=side, mutation=mutation), self.assertRaises(ValueError):
+                    terminal_result(center, host, self.identity)
+
+    def test_terminal_response_cannot_change_original_retention_slot(self):
+        self.insert(terminal=True)
+        self.center['sandboxes'][0]['operations'][0]['response']['identity']['retention_slot'] = 2
+        with self.assertRaisesRegex(ValueError, 'create binding'):
+            terminal_result(self.center, self.host, self.identity)
+
+    def test_retired_stamps_must_be_complete_and_typed_not_just_equal(self):
+        self.retire(self.center['retention_lanes'][0], 2)
+        self.retire(self.host['lanes'][0], 2)
+        for mutation in ('missing_operation', 'missing_intent', 'missing_observation',
+                         'bool_slot', 'float_schema', 'bool_generation', 'extra_fact'):
+            center, host = copy.deepcopy(self.center), copy.deepcopy(self.host)
+            for audit, key in ((center, 'retention_lanes'), (host, 'lanes')):
+                stamp = audit[key][0]['last_retired']
+                if mutation == 'missing_operation': del stamp['identity']['operation_id']
+                elif mutation == 'missing_intent': del stamp['identity']['intent_version']
+                elif mutation == 'missing_observation': del stamp['observation_version']
+                elif mutation == 'bool_slot': stamp['identity']['retention_slot'] = True
+                elif mutation == 'float_schema': audit['schema_version'] = 2.0
+                elif mutation == 'bool_generation': stamp['identity']['node']['node_generation'] = True
+                else: stamp['fact']['extra'] = 'unknown'
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                terminal_result(center, host, self.identity)
 
     def test_physical_check_precedes_delete_and_failure_retains_original(self):
         self.insert()

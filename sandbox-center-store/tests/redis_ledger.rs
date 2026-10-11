@@ -59,6 +59,7 @@ fn center_state_with_resources(
             platform: resources,
         },
         vec![NodeRegistration {
+            retention_slots: 2,
             role: sandproof_center_core::NodeRole::Runtime,
             identity: node,
             limit: resources,
@@ -69,7 +70,7 @@ fn center_state_with_resources(
                 revision: binding.template_revision.clone(),
                 digest: binding.template_digest,
             }],
-            protocol_version: 1,
+            protocol_version: 2,
         }],
         vec![TenantBudget {
             tenant: "1".try_into().unwrap(),

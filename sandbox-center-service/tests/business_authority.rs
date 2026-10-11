@@ -165,13 +165,14 @@ fn envelope() -> BusinessEnvelope<RegistryMetadata> {
                 platform: resources(2),
             },
             vec![NodeRegistration {
+                retention_slots: 2,
                 role: sandproof_center_core::NodeRole::Runtime,
                 identity: wire::node("host-a"),
                 mode: NodeMode::Accepting,
                 limit: resources(2),
                 free: resources(2),
                 healthy_until_ms: 2000,
-                protocol_version: 1,
+                protocol_version: 2,
                 templates: vec![],
             }],
             vec![TenantBudget {
@@ -456,10 +457,10 @@ fn original_failed_create_certificate_remains_bound_after_same_envelope_retireme
     business
         .settle_validation(&candidate().candidate_id, &destroy.identity, certificate)
         .unwrap();
-    let close = business.begin_close(&destroy.identity.node).unwrap();
+    let close = business.begin_close(&cleaned).unwrap();
     business
         .apply_close_ack(&sandproof_protocol::internal::window::WindowCloseAck {
-            identity: close.identity,
+            terminal: close.terminal,
         })
         .unwrap();
     let retired = business.snapshot().unwrap();
@@ -473,6 +474,72 @@ fn original_failed_create_certificate_remains_bound_after_same_envelope_retireme
         serde_json::json!(999);
     let changed: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(changed).unwrap();
     assert!(!changed.is_valid());
+}
+
+#[test]
+fn unsettled_validation_pins_only_its_exact_lane_without_fencing_healthy_siblings() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let business = authority(&fixture, &proxy);
+    let mut lifecycle = business.clone();
+    let tenant = "8".try_into().unwrap();
+    business.begin_publication(candidate(), revision()).unwrap();
+    cache_candidate(&business);
+    let validation = business
+        .create_validation(&candidate().candidate_id, binding(), 0)
+        .unwrap();
+    let peer = AuthorityPort::create(&mut lifecycle, &tenant, binding(), 0).unwrap();
+    assert_ne!(
+        validation.identity.retention_slot,
+        peer.identity.retention_slot
+    );
+    let destroy =
+        AuthorityPort::destroy(&mut lifecycle, &tenant, &validation.identity.sandbox_id).unwrap();
+    let pinned = wire::response(&destroy, 1, LifecycleFact::Cleaned);
+    AuthorityPort::apply_response(&mut lifecycle, &pinned).unwrap();
+    business.confirm_terminal(&pinned).unwrap();
+    assert_eq!(business.begin_close(&pinned), Err(PortError::Conflict));
+    // A pure, known business veto must not turn into an authority fault.
+    assert!(business.snapshot().is_ok());
+    let original = AuthorityPort::snapshot(&mut lifecycle).unwrap().sandboxes()[0].clone();
+    let destroy_peer =
+        AuthorityPort::destroy(&mut lifecycle, &tenant, &peer.identity.sandbox_id).unwrap();
+    let cleaned_peer = wire::response(&destroy_peer, 1, LifecycleFact::Cleaned);
+    AuthorityPort::apply_response(&mut lifecycle, &cleaned_peer).unwrap();
+    business.confirm_terminal(&cleaned_peer).unwrap();
+    let close = business.begin_close(&cleaned_peer).unwrap();
+    business
+        .apply_close_ack(&sandproof_protocol::internal::window::WindowCloseAck {
+            terminal: close.terminal,
+        })
+        .unwrap();
+    let retained = business.snapshot().unwrap();
+    assert_eq!(retained.center.sandboxes(), std::slice::from_ref(&original));
+    assert!(retained.center.pending_closes().is_empty());
+    assert_eq!(
+        retained
+            .center
+            .lane(
+                &validation.identity.node,
+                validation.identity.retention_slot
+            )
+            .unwrap()
+            .retired_through(),
+        0
+    );
+    let next = AuthorityPort::create(&mut lifecycle, &tenant, binding(), 0).unwrap();
+    assert_eq!(next.identity.retention_slot, peer.identity.retention_slot);
+    assert_eq!(next.identity.request_window.get(), 2);
+    let public = AuthorityPort::public_snapshot(&mut lifecycle).unwrap();
+    assert_eq!(
+        public
+            .state
+            .sandboxes()
+            .iter()
+            .filter(|record| public.visible(record))
+            .count(),
+        1
+    );
 }
 
 fn bind_exact_mapping(
@@ -530,13 +597,14 @@ fn settle_then_retire(
     );
     assert!(business.snapshot().is_err());
     assert!(AuthorityPort::snapshot(&mut lifecycle).is_err());
-    assert!(business.begin_close(&destroy.identity.node).is_err());
+    let cleaned = wire::response(destroy, 2, LifecycleFact::Cleaned);
+    assert!(business.begin_close(&cleaned).is_err());
     AuthorityPort::recover(&mut lifecycle).unwrap();
     let state = business.snapshot().unwrap();
     assert_settled_and_independent(&state);
-    let close = business.begin_close(&destroy.identity.node).unwrap();
+    let close = business.begin_close(&cleaned).unwrap();
     let close = sandproof_protocol::internal::window::WindowCloseAck {
-        identity: close.identity,
+        terminal: close.terminal,
     };
     business.apply_close_ack(&close).unwrap();
     let retired = business.snapshot().unwrap();
@@ -562,21 +630,17 @@ fn assert_unsettled_close_veto(
             .is_valid()
     );
     business.confirm_terminal(cleaned).unwrap();
-    business.begin_drain(&cleaned.identity.node).unwrap();
-    assert!(business.begin_close(&cleaned.identity.node).is_err());
-    assert!(business.snapshot().is_err());
-    let mut lifecycle = business.clone();
-    AuthorityPort::recover(&mut lifecycle).unwrap();
+    assert_eq!(business.begin_close(cleaned), Err(PortError::Conflict));
     let retained = business.snapshot().unwrap();
     assert_eq!(retained.center.sandboxes().len(), 1);
     assert!(retained.center.pending_closes().is_empty());
     assert_eq!(
         retained
             .center
-            .window(&cleaned.identity.node)
+            .lane(&cleaned.identity.node, cleaned.identity.retention_slot)
             .unwrap()
             .phase(),
-        sandproof_center_core::WindowPhase::Draining
+        sandproof_center_core::LanePhase::Open
     );
 }
 
@@ -601,16 +665,16 @@ fn assert_settled_and_independent(state: &BusinessEnvelope<RegistryMetadata>) {
     );
     assert_eq!(state.center.reserved(None, None), Some(Resources::ZERO));
     assert!(serde_json::to_vec(state).unwrap().len() < state.required_block_bytes());
-    // The same settlement commit transferred the full original create and
-    // terminal result, so lifecycle removal cannot erase their bindings.
+    // The receipt preserves bindings, but absence is NOT retirement evidence:
+    // only the matching slot frontier may authorize lifecycle removal.
     let mut retired = serde_json::to_value(state).unwrap();
     retired["center"]["sandboxes"] = serde_json::json!([]);
     let retired: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(retired).unwrap();
-    assert!(retired.is_valid());
+    assert!(!retired.is_valid());
 }
 
 fn assert_settlement_tampering_refused(state: &BusinessEnvelope<RegistryMetadata>) {
-    for case in 0..10 {
+    for case in 0..12 {
         let mut altered = serde_json::to_value(state).unwrap();
         let link = &mut altered["metadata"]["registry"]["records"][0]["validation"];
         match case {
@@ -638,9 +702,14 @@ fn assert_settlement_tampering_refused(state: &BusinessEnvelope<RegistryMetadata
             6 => link["local"]["create_operation"] = serde_json::json!(999),
             7 => link["settlement"]["cleaned"]["identity"]["request_window"] = serde_json::json!(2),
             8 => link["settlement"] = serde_json::Value::Null,
-            _ => {
+            9 => {
                 altered["center"]["nodes"][0]["identity"]["node_generation"] = serde_json::json!(2);
             }
+            10 => {
+                link["settlement"]["original_create"]["identity"]["retention_slot"] =
+                    serde_json::json!(2);
+            }
+            _ => link["settlement"]["cleaned"]["identity"]["retention_slot"] = serde_json::json!(2),
         }
         let altered: BusinessEnvelope<RegistryMetadata> = serde_json::from_value(altered).unwrap();
         assert!(!altered.is_valid(), "mutation {case}");

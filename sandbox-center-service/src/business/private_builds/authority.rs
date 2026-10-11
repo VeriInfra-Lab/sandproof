@@ -12,7 +12,7 @@ use sandproof_center_core::DecisionError;
 use sandproof_controller_service::{BuildWindow, template_registry::valid_candidate_id};
 use sandproof_protocol::{
     SandboxId, TenantId,
-    internal::lifecycle::{CreateBinding, Intent, LifecycleFact, LifecycleRequest},
+    internal::lifecycle::{CreateBinding, LifecycleFact, LifecycleRequest},
 };
 
 fn window_error(error: WindowReject) -> PortError {
@@ -268,7 +268,7 @@ impl SharedBusinessAuthority {
             })
             .map_err(authority_error)
     }
-    /// Exact closed-domain absence or current Cleaned is the only settlement.
+    /// Exact closed-domain absence or current terminal evidence settles a build.
     /// A bare 404, elapsed TTL, Stopped, or stale terminal cannot remove a pin.
     /// # Errors
     /// Mismatched sandboxes, still-open windows and unknown cleanup stay pinned.
@@ -331,9 +331,14 @@ impl SharedBusinessAuthority {
                         .ok_or(DecisionError::Conflict)?;
                     let last = record.operations.last().ok_or(DecisionError::Invalid)?;
                     let cleaned = last.response.as_ref().ok_or(DecisionError::Conflict)?;
-                    if last.request.intent != Intent::Destroy
-                        || cleaned.fact != LifecycleFact::Cleaned
-                        || cleaned.validate_for(&last.request).is_err()
+                    if crate::business::publication::terminal_request(
+                        &anchor.original_create,
+                        cleaned,
+                    )
+                    .as_ref()
+                        != Some(&last.request)
+                        || (cleaned.fact == LifecycleFact::NotAccepted
+                            && record.terminal_confirmation.as_ref() != Some(cleaned))
                     {
                         return Err(DecisionError::Conflict.into());
                     }

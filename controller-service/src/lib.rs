@@ -41,8 +41,8 @@ pub use controller::{
     BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProgress,
     ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission, InternalAudit,
     InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
-    InternalNativeAudit, InternalTemplate, InternalWorkState, Lifetime, MaintenanceConfig,
-    RetirementCandidate,
+    InternalNativeAudit, InternalRetentionLane, InternalTemplate, InternalWorkState, Lifetime,
+    MaintenanceConfig, RetirementCandidate,
 };
 
 #[cfg(feature = "durable")]

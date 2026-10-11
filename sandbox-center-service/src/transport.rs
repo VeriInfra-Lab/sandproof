@@ -126,7 +126,7 @@ impl HostPort for RegisteredHosts {
         let host = self
             .hosts
             .iter()
-            .find(|host| host.identity == request.identity.node)
+            .find(|host| host.identity == request.terminal.identity.node)
             .ok_or(PortError::OutcomeUnknown)?;
         self.runtime.block_on(async {
             tokio::time::timeout(deadline, host.client.close_window(request))

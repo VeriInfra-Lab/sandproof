@@ -472,6 +472,8 @@ def nodes_ready(audit,registered,templates,*,now_ms,for_admission=True):
         if (node['identity']!=original['registration']['identity']
                 or node['role']!=original['registration']['role'] or node['mode']!='accepting'
                 or node['protocol_version']!=original['registration']['protocol_version']
+                or type(node.get('retention_slots')) is not int
+                or node['retention_slots']!=original['registration']['retention_slots']
                 or node['healthy_until_ms']<=now_ms or set(free)!=set(bounds)
                 or any(type(value) is not int or not 0<=value<=bounds[name]
                        or (for_admission and value==0) for name,value in free.items())

@@ -82,7 +82,7 @@ impl Fixture {
             "tenants":[{"tenant":"1","limit":resources}],
             "nodes":[{"registration":{"identity":{"deployment_id":"assembly-fixture","node_id":"host-a","node_generation":1},
                 "role":"runtime","limit":resources,"mode":"accepting","healthy_until_ms":0,"free":{"instances":0,"cpu":0,"memory_bytes":0,"disk_bytes":0},
-                "templates":[],"protocol_version":1},
+                "templates":[],"protocol_version":2,"retention_slots":4},
                 "address":"127.0.0.1:9000","server_name":"host.test","peer_certificates_der":[path("host.der")]}],
             "template_registry":{"root":path("registry"),"max_templates_global":8,"max_templates_per_tenant":4,
                 "max_artifact_bytes_global":16*1024*1024*1024u64,"max_artifact_bytes_per_tenant":8*1024*1024*1024u64,"validation_timeout_secs":30},

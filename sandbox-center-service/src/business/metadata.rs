@@ -3,7 +3,7 @@ use super::private_builds::{PrivateBuildConfig, PrivateBuilds};
 use super::publication::GlobalPublication;
 use crate::PublicTemplate;
 use sandproof_api::PortError;
-use sandproof_center_core::{CenterState, WindowPhase};
+use sandproof_center_core::{CenterState, LanePhase};
 use sandproof_center_store::business::BusinessMetadata;
 use sandproof_controller_service::{
     CreateOptions, JournalError,
@@ -15,7 +15,7 @@ use sandproof_controller_service::{
 use sandproof_protocol::{
     ResourceId, TenantId,
     internal::lifecycle::{
-        CreateBinding, Intent, LIFECYCLE_BODY_BYTES, LifecycleRequest,
+        CreateBinding, Intent, LIFECYCLE_BODY_BYTES, LifecycleFact, LifecycleRequest,
         RESULT_CONFIRMATION_BODY_BYTES, Resources,
     },
 };
@@ -179,16 +179,15 @@ impl RegistryMetadata {
         let Some(link) = &entry.validation else {
             return true;
         };
-        if &link.create.node.deployment_id != center.deployment()
-            || center.window(&link.create.node).is_none()
-        {
+        if &link.create.node.deployment_id != center.deployment() {
             return false;
         }
+        let Some(lane) = center.lane(&link.create.node, link.create.retention_slot) else {
+            return false;
+        };
         if link.settlement.is_none()
-            && center.window(&link.create.node).is_some_and(|window| {
-                window.phase() == WindowPhase::ClosePending
-                    && window.current() == Some(link.create.request_window)
-            })
+            && lane.phase() == LanePhase::ClosePending
+            && lane.current() == Some(link.create.request_window)
         {
             // Veto BEFORE the close can be dispatched: the host still owns
             // the only native history from which this certificate can be made.
@@ -203,6 +202,9 @@ impl RegistryMetadata {
                 .is_some_and(|first| first.request.identity.sandbox_id == link.create.sandbox_id)
         });
         if let Some(saved) = &link.settlement {
+            if live.is_none() && lane.retired_through() < link.create.request_window.get() {
+                return false;
+            }
             if !self
                 .validation_tenant(entry, &saved.original_create.create)
                 .is_ok_and(|tenant| tenant == saved.original_create.identity.tenant_id)
@@ -215,11 +217,13 @@ impl RegistryMetadata {
                     .first()
                     .is_some_and(|first| first.request == saved.original_create)
                     && sandbox.operations.last().is_some_and(|last| {
-                        last.request.intent == Intent::Destroy
-                            && last.request.create == saved.original_create.create
-                            && last.request.identity == saved.cleaned.identity
+                        super::publication::terminal_request(&saved.original_create, &saved.cleaned)
+                            .as_ref()
+                            == Some(&last.request)
                             && last.response.as_ref() == Some(&saved.cleaned)
                     })
+                    && (saved.cleaned.fact != LifecycleFact::NotAccepted
+                        || sandbox.terminal_confirmation.as_ref() == Some(&saved.cleaned))
             });
         }
         let Some(sandbox) = live else {

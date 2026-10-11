@@ -187,7 +187,7 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
                 .as_ref()
                 .is_some_and(|response| response.fact == LifecycleFact::NotAccepted)
             {
-                return Ok(false); // no production producer; never invent native evidence
+                return self.finish_terminal(driver, candidate);
             }
             if !current
                 .response
@@ -199,12 +199,12 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
             }
             let destroy = driver.destroy_exact(&link.create.tenant_id, &link.create.sandbox_id)?;
             let _ = driver.drive_committed(&destroy);
-            return self.finish_cleaned(driver, candidate);
+            return self.finish_terminal(driver, candidate);
         }
-        self.finish_cleaned(driver, candidate)
+        self.finish_terminal(driver, candidate)
     }
 
-    fn finish_cleaned(
+    fn finish_terminal(
         &self,
         driver: &dyn CommittedDriver,
         candidate: &str,
@@ -216,7 +216,7 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
             .record(candidate)
             .ok_or(PortError::OutcomeUnknown)?;
         let link = record.validation().ok_or(PortError::OutcomeUnknown)?;
-        let current = value
+        let sandbox = value
             .center
             .sandboxes()
             .iter()
@@ -226,12 +226,15 @@ impl<C: CandidatePort, E: ValidationEvidencePort> BusinessTemplates<C, E> {
                     .first()
                     .is_some_and(|first| first.request.identity == link.create)
             })
-            .and_then(|sandbox| sandbox.operations.last())
             .ok_or(PortError::OutcomeUnknown)?;
+        let current = sandbox.operations.last().ok_or(PortError::OutcomeUnknown)?;
         let Some(cleaned) = &current.response else {
             return Ok(false);
         };
-        if current.request.intent != Intent::Destroy || cleaned.fact != LifecycleFact::Cleaned {
+        let original = &sandbox.operations[0].request;
+        if super::publication::terminal_request(original, cleaned).as_ref()
+            != Some(&current.request)
+        {
             return Ok(false);
         }
         let request = ValidationRequest {

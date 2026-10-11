@@ -103,25 +103,85 @@ def find_runtime_create(audit, metadata, *, deployment):
     return identity
 
 
+def _control_shape(identity):
+    """Typed original audit projection, not a lifecycle or permission check."""
+    if type(identity) is not dict or set(identity) != {
+            'protocol_version', 'node', 'tenant_id', 'sandbox_id', 'operation_id',
+            'intent_version', 'retention_slot', 'request_window'}:
+        return False
+    node = identity['node']
+    return (type(identity['protocol_version']) is int and identity['protocol_version'] == 2
+        and type(identity['retention_slot']) is int and 0 < identity['retention_slot'] < 2**16
+        and all(type(identity[key]) is int and 0 < identity[key] < 2**64
+                for key in ('intent_version', 'request_window'))
+        and all(type(identity[key]) is str and identity[key]
+                for key in ('tenant_id', 'sandbox_id', 'operation_id'))
+        and type(node) is dict and set(node) == {'deployment_id', 'node_id', 'node_generation'}
+        and all(type(node[key]) is str and node[key] for key in ('deployment_id', 'node_id'))
+        and type(node['node_generation']) is int and 0 < node['node_generation'] < 2**64)
+
+
+def _terminal_shape(response):
+    return (type(response) is dict and set(response) == {'identity', 'observation_version', 'fact'}
+        and _control_shape(response['identity'])
+        and type(response['observation_version']) is int and 0 < response['observation_version'] < 2**64
+        and type(response['fact']) is dict and set(response['fact']) == {'kind'}
+        and response['fact']['kind'] in ('cleaned', 'not_accepted'))
+
+
 def terminal_result(center, host, create_identity):
-    """Read both ORIGINAL exact durable confirmations or closed frontiers.
+    """Read both ORIGINAL exact durable confirmations or one retired slot.
 
     This never releases anything. Missing records, Stopped, unconfirmed results
     and a single advanced frontier remain unknown. The saved create identity
     must have been obtained from its original checked authority before retirement.
     """
+    if not _control_shape(create_identity):
+        raise ValueError('complete typed saved create binding required')
     node, window = create_identity['node'], create_identity['request_window']
-    if (type(window) is not int or not 0 < window < 2**64 or host.get('node') != node
+    slot = create_identity.get('retention_slot')
+    versions = center.get('versions')
+    if (type(center.get('schema_version')) is not int or center['schema_version'] != 2
+            or type(host.get('schema_version')) is not int or host['schema_version'] != 2
+            or type(versions) is not dict or versions != host.get('versions')
+            or set(versions) != {'internal_protocol', 'center_store', 'host_store'}
+            or any(type(value) is not int or value <= 0 for value in versions.values())
+            or versions['internal_protocol'] != 2 or create_identity.get('protocol_version') != 2
+            or type(slot) is not int or not 0 < slot < 2**16
+            or type(window) is not int or not 0 < window < 2**64 or host.get('node') != node
             or center.get('deployment') != node['deployment_id']):
-        raise ValueError('original saved create and both exact node identities required')
-    windows = [value for value in center['windows'] if value['node'] == node]
-    if len(windows) != 1:
-        raise ValueError('original center node frontier unknown or ambiguous')
-    floors = (windows[0]['retired_through'], host['retired_through'])
+        raise ValueError('current audits and original saved create binding required')
+    lanes = ([value for value in center['retention_lanes']
+              if value['node'] == node and value['retention_slot'] == slot],
+             [value for value in host['lanes'] if value['retention_slot'] == slot])
+    if any(len(values) != 1 for values in lanes):
+        raise ValueError('original retention slot frontier unknown or ambiguous')
+    pair = tuple(values[0] for values in lanes)
+    if (any(type(value['retention_slot']) is not int for value in pair)
+            or type(pair[0]['node'].get('node_generation')) is not int):
+        raise ValueError('typed original retention slot binding required')
+    floors = tuple(value['retired_through'] for value in pair)
     if any(type(floor) is not int or not 0 <= floor < 2**64 for floor in floors):
-        raise ValueError('original checked window frontier required')
+        raise ValueError('original checked slot frontier required')
+    immutable = ('protocol_version', 'node', 'tenant_id', 'sandbox_id', 'retention_slot', 'request_window')
+    for lane, floor in zip(pair, floors):
+        stamp = lane.get('last_retired')
+        if floor == 0:
+            if stamp is not None:
+                raise ValueError('empty slot has a retired stamp')
+            continue
+        if (not _terminal_shape(stamp)
+                or stamp['identity'].get('node') != node
+                or stamp['identity'].get('retention_slot') != slot
+                or stamp['identity'].get('request_window') != floor
+                or stamp['identity'].get('protocol_version') != versions['internal_protocol']):
+            raise ValueError('original exact retired terminal stamp required')
+        if floor == window and any(stamp['identity'].get(key) != create_identity[key] for key in immutable):
+            raise ValueError('retired stamp changed original create binding')
+    if floors[0] == floors[1] and pair[0].get('last_retired') != pair[1].get('last_retired'):
+        raise ValueError('same slot frontier has different terminal stamps')
     if all(floor >= window for floor in floors):
-        return dict(status='retired_terminal_window', identity=create_identity,
+        return dict(status='retired_terminal_slot', identity=create_identity,
                     center_retired_through=floors[0], host_retired_through=floors[1])
     records = [value for value in center['sandboxes'] if value['create']['identity'] == create_identity]
     if len(records) != 1:
@@ -132,8 +192,9 @@ def terminal_result(center, host, create_identity):
     response = record['operations'][-1]['response']
     if response is None or response['fact']['kind'] not in ('cleaned', 'not_accepted'):
         return None
+    if not _terminal_shape(response):
+        raise ValueError('complete typed original terminal response required')
     identity = response['identity']
-    immutable = ('protocol_version', 'node', 'tenant_id', 'sandbox_id', 'request_window')
     if any(identity[key] != create_identity[key] for key in immutable):
         raise ValueError('original terminal response changed create binding')
     rows = [value for value in host['operations'] if value['current'] is True

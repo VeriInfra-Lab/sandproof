@@ -1,124 +1,141 @@
-//! Pure window decisions only; no network, storage, host sweep or TTL.
-//! Adapters must commit close intent before dispatch and veto outstanding
-//! business/publication references before committing terminal-history removal.
-use crate::{CenterState, DecisionError, NodeWindow, WindowPhase};
+//! Pure bounded-slot retirement. No network, TTL, host sweep or second queue.
+//! The adapter commits intent and vetoes its original business pins before close.
+use crate::{CenterState, DecisionError, LanePhase, NodeMode, RetentionLane, Sandbox};
 use sandproof_protocol::internal::{
-    NodeIdentity, PositiveCounter,
+    NodeIdentity,
     lifecycle::{LifecycleFact, LifecycleResponse},
     window::{WindowCloseAck, WindowCloseRequest},
 };
 use std::collections::BTreeSet;
 
-fn terminal(response: &LifecycleResponse) -> bool {
-    matches!(
-        response.fact,
-        LifecycleFact::Cleaned | LifecycleFact::NotAccepted
-    )
+fn terminal(record: &Sandbox) -> Option<&LifecycleResponse> {
+    let response = record.operations.last()?.response.as_ref()?;
+    (record.released
+        && matches!(
+            response.fact,
+            LifecycleFact::Cleaned | LifecycleFact::NotAccepted
+        )
+        && record.terminal_confirmation.as_ref() == Some(response))
+    .then_some(response)
 }
 
 impl CenterState {
-    /// Read-only durable frontier, never supplied by node health observations.
     #[must_use]
-    pub fn window(&self, node: &NodeIdentity) -> Option<&NodeWindow> {
-        self.node_windows.iter().find(|window| &window.node == node)
+    pub fn retention_lanes(&self) -> &[RetentionLane] {
+        &self.retention_lanes
     }
 
-    fn window_index(&self, node: &NodeIdentity) -> Result<usize, DecisionError> {
-        self.node_windows
+    #[must_use]
+    pub fn lane(&self, node: &NodeIdentity, slot: u16) -> Option<&RetentionLane> {
+        self.retention_lanes
             .iter()
-            .position(|window| &window.node == node)
+            .find(|lane| &lane.node == node && lane.retention_slot == slot)
+    }
+
+    fn lane_index(&self, node: &NodeIdentity, slot: u16) -> Result<usize, DecisionError> {
+        self.retention_lanes
+            .iter()
+            .position(|lane| &lane.node == node && lane.retention_slot == slot)
             .ok_or(DecisionError::NotFound)
     }
 
-    fn terminal_window(&self, node: &NodeIdentity, window: PositiveCounter) -> bool {
-        self.sandboxes
-            .iter()
-            .filter(|record| {
-                record.operations.first().is_some_and(|first| {
-                    &first.request.identity.node == node
-                        && first.request.identity.request_window == window
-                })
+    fn lane_record(&self, node: &NodeIdentity, slot: u16) -> Option<&Sandbox> {
+        self.sandboxes.iter().find(|record| {
+            record.operations.first().is_some_and(|first| {
+                &first.request.identity.node == node
+                    && first.request.identity.retention_slot == slot
             })
-            .all(|record| {
-                record.released
-                    && record.operations.last().is_some_and(|last| {
-                        last.response.as_ref().is_some_and(|response| {
-                            terminal(response)
-                                && record.terminal_confirmation.as_ref() == Some(response)
-                        })
-                    })
-            })
+        })
     }
 
-    /// Finite background work derived from the current authority, never from
-    /// elapsed time, a missing heartbeat or an independent retirement queue.
-    /// Empty successors are deliberately excluded: rotating them would consume
-    /// the window identity space without any completed lifecycle history.
+    pub(crate) fn available_lane(&self, node: &NodeIdentity) -> Option<&RetentionLane> {
+        self.retention_lanes.iter().find(|lane| {
+            &lane.node == node
+                && lane.phase == LanePhase::Open
+                && lane.current().is_some()
+                && self.lane_record(node, lane.retention_slot).is_none()
+        })
+    }
+
+    /// Empty slots do not rotate, and a long-lived peer never blocks this candidate.
     #[must_use]
-    pub fn idle_window_candidates(&self) -> Vec<NodeIdentity> {
-        self.node_windows
+    pub fn retirement_candidates(&self) -> Vec<LifecycleResponse> {
+        self.sandboxes
             .iter()
-            .filter(|window| matches!(window.phase, WindowPhase::Open | WindowPhase::Draining))
-            .filter_map(|window| {
-                let current = window.current?;
-                let contains_history = self.sandboxes.iter().any(|record| {
-                    record.operations.first().is_some_and(|first| {
-                        first.request.identity.node == window.node
-                            && first.request.identity.request_window == current
-                    })
-                });
-                (contains_history && self.terminal_window(&window.node, current))
-                    .then(|| window.node.clone())
+            .filter_map(|record| {
+                let result = terminal(record)?;
+                let lane = self.lane(&result.identity.node, result.identity.retention_slot)?;
+                (lane.phase == LanePhase::Open).then(|| result.clone())
             })
             .collect()
     }
 
-    pub(crate) fn valid_windows(&self) -> bool {
-        let mut nodes = BTreeSet::new();
-        self.node_windows.len() == self.nodes.len()
-            && self.node_windows.iter().all(|window| {
-                if !nodes.insert(window.node.node_id.as_str())
-                    || !self.nodes.iter().any(|node| node.identity == window.node)
+    pub(crate) fn valid_lanes(&self) -> bool {
+        let expected = self
+            .nodes
+            .iter()
+            .map(|node| usize::from(node.retention_slots))
+            .sum::<usize>();
+        let mut identities = BTreeSet::new();
+        self.retention_lanes.len() == expected
+            && self.retention_lanes.iter().all(|lane| {
+                let Some(node) = self.nodes.iter().find(|node| node.identity == lane.node) else {
+                    return false;
+                };
+                if lane.retention_slot == 0
+                    || lane.retention_slot > node.retention_slots
+                    || !identities.insert((lane.node.node_id.as_str(), lane.retention_slot))
+                    || (lane.phase == LanePhase::Exhausted) != lane.current().is_none()
+                    || !valid_last_retired(lane, self)
                 {
                     return false;
                 }
-                match (window.phase, window.current) {
-                    (WindowPhase::Exhausted, None) => window.retired_through == u64::MAX,
-                    (WindowPhase::Exhausted, Some(_)) | (_, None) => false,
-                    (phase, Some(current)) => {
-                        window.retired_through.checked_add(1) == Some(current.get())
-                            && (phase != WindowPhase::ClosePending
-                                || self.terminal_window(&window.node, current))
-                    }
+                let records = self
+                    .sandboxes
+                    .iter()
+                    .filter(|record| {
+                        record.operations.first().is_some_and(|first| {
+                            first.request.identity.node == lane.node
+                                && first.request.identity.retention_slot == lane.retention_slot
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if records.len() > 1 {
+                    return false;
+                }
+                match records.first() {
+                    Some(record) => record.operations.first().is_some_and(|first| {
+                        lane.current() == Some(first.request.identity.request_window)
+                            && lane.phase != LanePhase::Exhausted
+                            && (lane.phase != LanePhase::ClosePending || terminal(record).is_some())
+                    }),
+                    None => lane.phase != LanePhase::ClosePending,
                 }
             })
     }
 
-    /// Stop NEW creates in this node's window. Existing lifecycle work is not
-    /// cancelled. The adapter must commit this state before treating it as closed
-    /// to admission; draining alone never releases a resource or native pin.
+    /// Operational node drain only. It never rotates retention slots or releases quota.
     /// # Errors
-    /// Unknown nodes, invalid authority or exhausted windows are refused.
+    /// Unknown nodes and invalid authority cannot alter protected registration.
     pub fn begin_drain(&self, node: &NodeIdentity) -> Result<Self, DecisionError> {
         if !self.is_valid() {
             return Err(DecisionError::Invalid);
         }
-        let index = self.window_index(node)?;
-        if self.node_windows[index].phase == WindowPhase::Exhausted {
-            return Err(DecisionError::Exhausted);
-        }
+        let index = self
+            .nodes
+            .iter()
+            .position(|registered| &registered.identity == node)
+            .ok_or(DecisionError::NotFound)?;
         let mut next = self.clone();
-        if next.node_windows[index].phase == WindowPhase::Open {
-            next.node_windows[index].phase = WindowPhase::Draining;
+        if next.nodes[index].mode == NodeMode::Accepting {
+            next.nodes[index].mode = NodeMode::Draining;
         }
         Ok(next)
     }
 
-    /// Record the host's EXACT durable acknowledgement of the latest already
-    /// committed terminal result. Authenticated transport and actual host commit
-    /// are adapter obligations, not facts established by this pure function.
+    /// Persist only the host's EXACT acknowledged latest terminal result.
     /// # Errors
-    /// Unknown, superseded, nonterminal or altered results cannot enable close.
+    /// Foreign, superseded, uncommitted and nonterminal facts cannot enable close.
     pub fn confirm_terminal(&self, result: &LifecycleResponse) -> Result<Self, DecisionError> {
         if !self.is_valid() {
             return Err(DecisionError::Invalid);
@@ -126,7 +143,9 @@ impl CenterState {
         let index = self.index(&result.identity.tenant_id, &result.identity.sandbox_id)?;
         let record = &self.sandboxes[index];
         if !record.released
-            || !terminal(result)
+            || WindowCloseRequest::new(result.clone())
+                .validate(&result.identity.node)
+                .is_err()
             || record.operations.last().and_then(|op| op.response.as_ref()) != Some(result)
         {
             return Err(DecisionError::Stale);
@@ -136,95 +155,121 @@ impl CenterState {
         Ok(next)
     }
 
-    /// Produce one fixed close identity AFTER draining and exact terminal
-    /// confirmation. The returned state must durably commit before dispatch.
-    /// Lost replies retain this same close, never create another operation.
+    /// Commit one slot's close intent before dispatch, without draining its node.
+    /// The composition adapter must veto its original metadata/build/publication pins.
     /// # Errors
-    /// Open, active, unknown, stopped-only or unconfirmed windows cannot close.
+    /// Active, unconfirmed, stale or changed terminal results cannot close a slot.
     pub fn begin_close(
         &self,
-        node: &NodeIdentity,
+        result: &LifecycleResponse,
     ) -> Result<(Self, WindowCloseRequest), DecisionError> {
         if !self.is_valid() {
             return Err(DecisionError::Invalid);
         }
-        let index = self.window_index(node)?;
-        let frontier = &self.node_windows[index];
-        let current = frontier.current.ok_or(DecisionError::Exhausted)?;
-        if frontier.phase == WindowPhase::Open || !self.terminal_window(node, current) {
+        let index = self.index(&result.identity.tenant_id, &result.identity.sandbox_id)?;
+        if terminal(&self.sandboxes[index]) != Some(result) {
             return Err(DecisionError::Conflict);
         }
+        let lane_index = self.lane_index(&result.identity.node, result.identity.retention_slot)?;
+        let lane = &self.retention_lanes[lane_index];
+        if lane.current() != Some(result.identity.request_window)
+            || lane.phase == LanePhase::Exhausted
+        {
+            return Err(DecisionError::Stale);
+        }
         let mut next = self.clone();
-        next.node_windows[index].phase = WindowPhase::ClosePending;
-        Ok((next, WindowCloseRequest::new(node.clone(), current)))
+        next.retention_lanes[lane_index].phase = LanePhase::ClosePending;
+        Ok((next, WindowCloseRequest::new(result.clone())))
     }
 
-    /// A bounded outbox projection from VALIDATED, COMMITTED authority; there is
-    /// no independently growing close-retry queue or automatic window issuance.
+    /// Finite projection of COMMITTED close intents, not an independently growing queue.
     #[must_use]
     pub fn pending_closes(&self) -> Vec<WindowCloseRequest> {
-        self.node_windows
+        self.retention_lanes
             .iter()
-            .filter(|window| window.phase == WindowPhase::ClosePending)
-            .filter_map(|window| {
-                window
-                    .current
-                    .map(|current| WindowCloseRequest::new(window.node.clone(), current))
+            .filter(|lane| lane.phase == LanePhase::ClosePending)
+            .filter_map(|lane| {
+                self.lane_record(&lane.node, lane.retention_slot)
+                    .and_then(terminal)
             })
+            .cloned()
+            .map(WindowCloseRequest::new)
             .collect()
     }
 
-    /// Remove only confirmed terminal LIFECYCLE history after the exact close
-    /// acknowledgement. This is NOT a physical cleanup or business-pin check.
-    /// The composition adapter MUST veto live metadata/build/publication pins
-    /// and atomically preserve the full business envelope's validation/CAS;
-    /// blindly replacing only its center projection is not a valid retirement.
-    /// Global identity highwaters survive. MAX retires into permanent Exhausted.
+    /// Retire only the exact confirmed terminal incarnation after its durable ACK.
+    /// Original business pins must be vetoed in the SAME complete envelope CAS.
+    /// Native physical cleanup is never performed or invented by this pure function.
     /// # Errors
-    /// Unexpected/foreign acknowledgements cannot advance or erase a window.
+    /// Unknown, altered, future or unconfirmed ACKs cannot touch the slot's successor.
     pub fn apply_close_ack(&self, ack: &WindowCloseAck) -> Result<Self, DecisionError> {
         if !self.is_valid() {
             return Err(DecisionError::Invalid);
         }
-        let index = self.window_index(&ack.identity.node)?;
-        let frontier = &self.node_windows[index];
-        ack.identity
-            .validate_node(&frontier.node)
+        let id = &ack.terminal.identity;
+        let lane_index = self.lane_index(&id.node, id.retention_slot)?;
+        let lane = &self.retention_lanes[lane_index];
+        WindowCloseRequest::new(ack.terminal.clone())
+            .validate(&lane.node)
             .map_err(|_| DecisionError::Stale)?;
-        let target = ack.identity.request_window;
-        if target.get() <= frontier.retired_through {
-            // This namespace issued every sequence through its durable frontier.
-            // A duplicate acknowledgement cannot touch its active successor.
-            return Ok(self.clone());
+        if id.request_window.get() <= lane.retired_through {
+            return if lane.last_retired.as_ref() == Some(&ack.terminal) {
+                Ok(self.clone())
+            } else {
+                Err(DecisionError::Stale)
+            };
         }
-        let current = frontier.current.ok_or(DecisionError::Exhausted)?;
-        let request = WindowCloseRequest::new(frontier.node.clone(), current);
-        ack.validate_for(&request)
-            .map_err(|_| DecisionError::Stale)?;
-        if frontier.phase != WindowPhase::ClosePending
-            || !self.terminal_window(&frontier.node, current)
-        {
+        if lane.current() != Some(id.request_window) || lane.phase != LanePhase::ClosePending {
             return Err(DecisionError::Conflict);
         }
+        let index = self.index(&id.tenant_id, &id.sandbox_id)?;
+        if terminal(&self.sandboxes[index]) != Some(&ack.terminal) {
+            return Err(DecisionError::Stale);
+        }
         let mut next = self.clone();
-        next.sandboxes.retain(|record| {
-            record.operations.first().is_none_or(|first| {
-                first.request.identity.node != frontier.node
-                    || first.request.identity.request_window != current
-            })
-        });
-        let window = &mut next.node_windows[index];
-        window.retired_through = current.get();
-        window.current = current.checked_next().ok();
-        window.phase = if window.current.is_some() {
-            WindowPhase::Open
+        next.sandboxes.remove(index);
+        let lane = &mut next.retention_lanes[lane_index];
+        lane.retired_through = id.request_window.get();
+        lane.last_retired = Some(ack.terminal.clone());
+        lane.phase = if lane.current().is_some() {
+            LanePhase::Open
         } else {
-            WindowPhase::Exhausted
+            LanePhase::Exhausted
         };
         if next.is_valid() {
             Ok(next)
         } else {
             Err(DecisionError::Invalid)
         }
+    }
+}
+
+fn valid_last_retired(lane: &RetentionLane, state: &CenterState) -> bool {
+    match (&lane.last_retired, lane.retired_through) {
+        (None, 0) => true,
+        (Some(result), floor) if floor > 0 => {
+            result.identity.request_window.get() == floor
+                && result.identity.retention_slot == lane.retention_slot
+                && crate::validation::number(
+                    result.identity.sandbox_id.as_str(),
+                    "sandbox-",
+                    state.sandbox_highwater,
+                )
+                .is_some()
+                && crate::validation::number(
+                    result.identity.operation_id.as_str(),
+                    "operation-",
+                    state.operation_highwater,
+                )
+                .is_some()
+                && state
+                    .tenants
+                    .iter()
+                    .any(|tenant| tenant.tenant == result.identity.tenant_id)
+                && WindowCloseRequest::new(result.clone())
+                    .validate(&lane.node)
+                    .is_ok()
+        }
+        _ => false,
     }
 }

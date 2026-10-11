@@ -4,7 +4,7 @@ These tests never run the KVM preflight, root tools, service binary or VM. They
 are not evidence of C02 KVM acceptance.
 """
 
-from contextlib import ExitStack, redirect_stdout
+from contextlib import ExitStack, closing, redirect_stdout
 import copy
 import hashlib
 import importlib.util
@@ -79,7 +79,7 @@ def complete_report():
     report["phases"] = {name: "pass" for name in reports.PHASES}
     report["probes"] = {name: {"status": "pass"} for name in reports.PROBES}
     report['services']=dict(architecture=artifacts.ARCHITECTURE,candidate='a'*40,
-        versions=dict(internal_protocol=1,center_store=5,host_store=15),center_sha256='b'*64,host_sha256='b'*64)
+        versions=dict(internal_protocol=2,center_store=6,host_store=16),center_sha256='b'*64,host_sha256='b'*64)
     report['service_boundary']=dict(public_api='center',center_unprivileged=True,
         redis_authority='validated',host_transport='mutual-tls',host_public_management=False)
     manifest=dict(schema_version=1,architecture=artifacts.ARCHITECTURE,candidate='a'*40,
@@ -115,7 +115,9 @@ def rows(count=4, phase="Destroyed"):
 
 def original_center(count=4):
     return dict(sandboxes=[dict(private=False,create=dict(identity=dict(sandbox_id='sandbox-'+str(number+1),
-        tenant_id='1',node=dict(deployment_id='domain',node_id='host',node_generation=1),request_window=1)),
+        tenant_id='1',node=dict(deployment_id='domain',node_id='host',node_generation=1),
+        protocol_version=2,retention_slot=number+1,request_window=1,
+        operation_id='operation-'+str(number+1),intent_version=1)),
         operations=[dict(intent=dict(kind='create'))]) for number in range(count)])
 
 
@@ -134,7 +136,7 @@ def original_report(count=4):
 
 def database(path, values):
     path.parent.mkdir(exist_ok=True)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("CREATE TABLE sandboxes(sandbox_id TEXT, owner_id TEXT, state_blob BLOB)")
         connection.execute("CREATE TABLE controller_checkpoint(id INTEGER,input_cut INTEGER,payload BLOB)")
         connection.execute("CREATE TABLE controller_inputs(sequence INTEGER,input_json BLOB)")
@@ -317,7 +319,7 @@ class IdentityTests(unittest.TestCase):
             with self.assertRaises(reports.Failure):
                 runner.wait_for_destroyed(path, NS, {ident}, timeout=0)
             retained = [[{'sandbox': 1}, {'owner': 1, 'ledger': {'sandbox': 1, 'result': 'Destroyed'}}]]
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute('UPDATE controller_checkpoint SET payload=?', (
                     json.dumps({'namespace': NS, 'core': {'maintenance': {'retained': retained}}}).encode(),))
             observed = runner.durable_rows(path, NS)
@@ -326,7 +328,7 @@ class IdentityTests(unittest.TestCase):
             self.assertTrue(runner.destroyed(observed))
             self.assertEqual(runner.wait_for_destroyed(path, NS, {ident}), observed)
             retained[0][1]['owner'] = 2
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute('UPDATE controller_checkpoint SET payload=?', (
                     json.dumps({'namespace': NS, 'core': {'maintenance': {'retained': retained}}}).encode(),))
             self.assertEqual(runner.durable_rows(path, NS), {})

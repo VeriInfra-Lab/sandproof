@@ -45,6 +45,73 @@ async fn validation_real_https_not_admitted_requires_original_create_and_durable
     actual_https_validation(false).await;
 }
 
+#[tokio::test]
+async fn validation_real_https_capacity_rejection_attests_exact_original_create_not_cleaned() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(local::State {
+        disk_available: Some(0),
+        ..local::State::default()
+    }));
+    let app = local::application(
+        &dir.path().join("db"),
+        Arc::clone(&state),
+        Arc::new(local::TestClock(AtomicI64::new(10))),
+        true,
+    );
+    let facade = facade(Arc::clone(&app));
+    let lifecycle = facade.lifecycle();
+    let (server, listener, client, foreign) = validation_transport(facade).await;
+    let (stop, shutdown) = oneshot::channel();
+    let run = server.clone();
+    let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
+    let (create, template, publication) = validation_inputs();
+    let request = ValidationRequest {
+        create: create.identity.clone(),
+        terminal: create.identity.clone(),
+        revision: create.create.template_revision.clone(),
+        publication,
+    };
+    client.lifecycle(&create).await.unwrap();
+    assert!(client.validation_evidence(&request).await.is_err()); // Recorded is not refusal.
+    let refused = lifecycle
+        .advance(create.clone(), Some(template), local::compute())
+        .await
+        .unwrap();
+    assert_eq!(refused.fact, LifecycleFact::NotAccepted);
+    assert!(state.lock().unwrap().actions.is_empty());
+    assert!(state.lock().unwrap().configurations.is_empty());
+    assert!(foreign.validation_evidence(&request).await.is_err());
+    let before = app.internal_audit().unwrap();
+    let result = client.validation_evidence(&request).await.unwrap();
+    assert_eq!(result.create, create.identity);
+    assert_eq!(result.cleaned, refused);
+    assert_eq!(
+        result.outcome,
+        sandproof_internal::template::ValidationOutcome::NotAdmitted
+    );
+    assert!(result.admitted().is_none());
+    let mut forged = result.clone();
+    forged.cleaned.fact = LifecycleFact::Cleaned;
+    assert!(
+        forged
+            .validate_for(&request.create, &request.terminal, &request.publication)
+            .is_err()
+    );
+    assert_eq!(app.internal_audit().unwrap(), before);
+    assert_eq!(client.confirm_result(&refused).await.unwrap(), refused);
+    let close = sandproof_protocol::internal::window::WindowCloseRequest::new(refused);
+    assert_eq!(
+        client.close_window(&close).await.unwrap().terminal,
+        close.terminal
+    );
+    assert!(app.internal_audit().unwrap().operations.is_empty());
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(server.active_connections(), 0);
+    assert_eq!(client.active_calls(), 0);
+    assert_eq!(lifecycle.active_work(), 0);
+}
+
 async fn validation_transport(
     facade: HostFacade<local::TestHost>,
 ) -> (

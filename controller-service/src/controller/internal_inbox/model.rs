@@ -4,7 +4,7 @@ use sandbox_controller_core as core;
 use sandproof_protocol::internal::lifecycle::{
     Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES,
 };
-use sandproof_protocol::internal::window::WINDOW_CLOSE_BODY_BYTES;
+use sandproof_protocol::internal::window::{RETENTION_LANE_BYTES, WindowCloseRequest};
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -62,7 +62,7 @@ impl InternalInboxConfig {
             )
             .saturating_add(8192)
             // The rejection frontier is future storage, not guessed old slack.
-            .saturating_add(WINDOW_CLOSE_BODY_BYTES)
+            .saturating_add(usize::from(self.max_sandboxes).saturating_mul(RETENTION_LANE_BYTES))
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,8 +95,47 @@ pub(super) struct Inbox {
     pub(super) entries: Vec<Entry>,
     pub(super) tenant_highwater: u64,
     pub(super) tenants: Vec<TenantBinding>,
-    /// All older windows are permanently rejected, including after restart.
-    pub(super) retired_through: u64,
+    /// Fixed protected positions. A retired incarnation never becomes absent.
+    pub(super) lanes: Vec<InternalRetentionLane>,
+}
+
+/// Original durable per-position rejection memory. It contains no guest secret
+/// or create payload; a stamp is an exact confirmed fact, not permission.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InternalRetentionLane {
+    pub retention_slot: u16,
+    pub retired_through: u64,
+    pub current_window: Option<PositiveCounter>,
+    pub last_retired: Option<LifecycleResponse>,
+}
+impl InternalRetentionLane {
+    pub(super) fn fresh(retention_slot: u16) -> Self {
+        Self {
+            retention_slot,
+            retired_through: 0,
+            current_window: Some(1.try_into().expect("positive literal")),
+            last_retired: None,
+        }
+    }
+    fn valid(&self, node: &NodeIdentity) -> bool {
+        let successor = self
+            .retired_through
+            .checked_add(1)
+            .and_then(|v| v.try_into().ok());
+        if self.current_window != successor {
+            return false;
+        }
+        match (&self.last_retired, self.retired_through) {
+            (None, 0) => true,
+            (Some(last), floor) if floor > 0 => {
+                last.identity.retention_slot == self.retention_slot
+                    && last.identity.request_window.get() == floor
+                    && WindowCloseRequest::new(last.clone()).validate(node).is_ok()
+            }
+            _ => false,
+        }
+    }
 }
 
 fn encoded_request(
@@ -125,8 +164,25 @@ fn encoded_request(
     Ok(serde_json::to_vec(request)?)
 }
 impl Inbox {
-    pub(super) fn current_window(&self) -> Option<PositiveCounter> {
-        self.retired_through.checked_add(1)?.try_into().ok()
+    pub(super) fn lane(&self, slot: u16) -> Option<&InternalRetentionLane> {
+        self.lanes.iter().find(|lane| lane.retention_slot == slot)
+    }
+    pub(super) fn current_window(&self, slot: u16) -> Option<PositiveCounter> {
+        self.lane(slot)?.current_window
+    }
+    fn validate_lanes(&self) -> Result<(), JournalError> {
+        let mut slots = BTreeSet::new();
+        if self.lanes.len() != usize::from(self.config.max_sandboxes)
+            || self.lanes.iter().any(|lane| {
+                lane.retention_slot == 0
+                    || lane.retention_slot > self.config.max_sandboxes
+                    || !slots.insert(lane.retention_slot)
+                    || !lane.valid(&self.config.node)
+            })
+        {
+            return Err(JournalError::CorruptStore);
+        }
+        Ok(())
     }
     fn validate_tenants(&self) -> Result<(), JournalError> {
         let mut tenants = BTreeSet::new();
@@ -156,7 +212,52 @@ impl Inbox {
         }
         Ok(())
     }
+    fn validate_history(&self, index: usize, entry: &Entry) -> Result<(), JournalError> {
+        let request = &entry.request;
+        let prior = self.entries[..index]
+            .iter()
+            .rev()
+            .find(|e| e.request.identity.sandbox_id == request.identity.sandbox_id);
+        if let Some(prior) = prior {
+            if prior.request.identity.tenant_id != request.identity.tenant_id
+                || prior.request.identity.retention_slot != request.identity.retention_slot
+                || prior.request.identity.request_window != request.identity.request_window
+                || prior.request.create != request.create
+                || prior.request.intent == Intent::Destroy
+                || request.intent == Intent::Create
+                || request.identity.intent_version.get()
+                    <= prior.request.identity.intent_version.get()
+                || entry.response.observation_version.get()
+                    <= prior.response.observation_version.get()
+            {
+                return Err(JournalError::CorruptStore);
+            }
+        } else if self.entries[..index]
+            .iter()
+            .any(|other| other.request.identity.retention_slot == request.identity.retention_slot)
+            || (request.intent != Intent::Destroy
+                && (request.intent != Intent::Create || request.identity.intent_version.get() != 1))
+        {
+            return Err(JournalError::CorruptStore);
+        }
+        let count = self
+            .entries
+            .iter()
+            .filter(|e| e.request.identity.sandbox_id == request.identity.sandbox_id)
+            .count();
+        if count > usize::from(self.config.operations_per_sandbox)
+            || (count == usize::from(self.config.operations_per_sandbox)
+                && !self.entries.iter().any(|e| {
+                    e.request.identity.sandbox_id == request.identity.sandbox_id
+                        && e.request.intent == Intent::Destroy
+                }))
+        {
+            return Err(JournalError::CorruptStore);
+        }
+        Ok(())
+    }
     pub(super) fn validate(&self) -> Result<(), JournalError> {
+        self.validate_lanes()?;
         self.validate_tenants()?;
         if self.observation.get() < self.entries.len() as u64 + 1
             || !self.config.valid()
@@ -170,10 +271,27 @@ impl Inbox {
         let mut sandboxes = BTreeSet::new();
         let mut observations = BTreeSet::new();
         let mut local_sandboxes = BTreeSet::new();
+        for stamp in self
+            .lanes
+            .iter()
+            .filter_map(|lane| lane.last_retired.as_ref())
+        {
+            if stamp.observation_version.get() > self.observation.get()
+                || !observations.insert(stamp.observation_version.get())
+                || !operations.insert(stamp.identity.operation_id.as_str())
+                || !sandboxes.insert(stamp.identity.sandbox_id.as_str())
+            {
+                return Err(JournalError::CorruptStore);
+            }
+        }
         for (index, entry) in self.entries.iter().enumerate() {
             let request = &entry.request;
-            let encoded = encoded_request(request, &self.config, self.current_window())
-                .map_err(|_| JournalError::CorruptStore)?;
+            let encoded = encoded_request(
+                request,
+                &self.config,
+                self.current_window(request.identity.retention_slot),
+            )
+            .map_err(|_| JournalError::CorruptStore)?;
             if Sha256::digest(encoded).as_slice() != entry.digest
                 || !operations.insert(request.identity.operation_id.as_str())
                 || entry.response.validate_for(request).is_err()
@@ -207,44 +325,27 @@ impl Inbox {
             {
                 return Err(JournalError::CorruptStore);
             }
+            if self
+                .lanes
+                .iter()
+                .filter_map(|lane| lane.last_retired.as_ref())
+                .any(|stamp| stamp.identity.sandbox_id == request.identity.sandbox_id)
+            {
+                return Err(JournalError::CorruptStore);
+            }
             sandboxes.insert(request.identity.sandbox_id.as_str());
-            let prior = self.entries[..index]
-                .iter()
-                .rev()
-                .find(|e| e.request.identity.sandbox_id == request.identity.sandbox_id);
-            if let Some(prior) = prior {
-                if prior.request.identity.tenant_id != request.identity.tenant_id
-                    || prior.request.create != request.create
-                    || prior.request.intent == Intent::Destroy
-                    || request.intent == Intent::Create
-                    || request.identity.intent_version.get()
-                        <= prior.request.identity.intent_version.get()
-                    || entry.response.observation_version.get()
-                        <= prior.response.observation_version.get()
-                {
-                    return Err(JournalError::CorruptStore);
-                }
-            } else if request.intent != Intent::Destroy
-                && (request.intent != Intent::Create || request.identity.intent_version.get() != 1)
-            {
-                return Err(JournalError::CorruptStore);
-            }
-            let count = self
-                .entries
-                .iter()
-                .filter(|e| e.request.identity.sandbox_id == request.identity.sandbox_id)
-                .count();
-            if count > usize::from(self.config.operations_per_sandbox)
-                || (count == usize::from(self.config.operations_per_sandbox)
-                    && !self.entries.iter().any(|e| {
-                        e.request.identity.sandbox_id == request.identity.sandbox_id
-                            && e.request.intent == Intent::Destroy
-                    }))
-            {
-                return Err(JournalError::CorruptStore);
-            }
+            self.validate_history(index, entry)?;
         }
-        if sandboxes.len() > usize::from(self.config.max_sandboxes) {
+        // Recent stamps and live incarnations share the uniqueness set but not
+        // the active-instance bound: each position can retain one of each.
+        if self
+            .entries
+            .iter()
+            .map(|entry| entry.request.identity.sandbox_id.as_str())
+            .collect::<BTreeSet<_>>()
+            .len()
+            > usize::from(self.config.max_sandboxes)
+        {
             return Err(JournalError::CorruptStore);
         }
         Ok(())
@@ -253,7 +354,11 @@ impl Inbox {
         &mut self,
         request: &LifecycleRequest,
     ) -> Result<LifecycleResponse, JournalError> {
-        let encoded = encoded_request(request, &self.config, self.current_window())?;
+        let encoded = encoded_request(
+            request,
+            &self.config,
+            self.current_window(request.identity.retention_slot),
+        )?;
         if let Some(entry) = self
             .entries
             .iter()
@@ -271,6 +376,8 @@ impl Inbox {
             .find(|e| e.request.identity.sandbox_id == request.identity.sandbox_id);
         if let Some(prior) = prior
             && (prior.request.identity.tenant_id != request.identity.tenant_id
+                || prior.request.identity.retention_slot != request.identity.retention_slot
+                || prior.request.identity.request_window != request.identity.request_window
                 || prior.request.create != request.create
                 || (prior.request.intent == Intent::Destroy && request.intent != Intent::Destroy))
         {
@@ -296,6 +403,11 @@ impl Inbox {
                 return Err(JournalError::Conflict);
             }
         } else {
+            if self.entries.iter().any(|other| {
+                other.request.identity.retention_slot == request.identity.retention_slot
+            }) {
+                return Err(JournalError::Conflict);
+            }
             if self
                 .entries
                 .iter()

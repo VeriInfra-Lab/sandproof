@@ -47,6 +47,8 @@ def validate_host_inputs(config):
     # One architecture, not an optional path beside the retired public host.
     if 'server' in config or config.get('prepare_candidate') is not True:
         raise ValueError('only offline-prepared center/host candidates are accepted')
+    if type(config.get('dk_rounds')) is not int or not 1 <= config['dk_rounds'] <= 1024:
+        raise ValueError('explicit finite DK churn sampling count required')
     from tools.ci_e2e_prepare import build_environment, service_paths
     build_environment(config)
     service_paths(config)
@@ -443,12 +445,12 @@ class Supervisor:
         command=[str(checkout/'tests/compat/.venv/bin/python'),str(entry)]
         for flag in ('center','host','redis_material','tls_material','service_staging_parent',
                      'center_uid','center_gid','redis_uid','redis_gid','jailer','firecracker',
-                     'kernel','rootfs','uid_base','scratch_parent','service_cgroup_parent'):
+                     'kernel','rootfs','uid_base','scratch_parent','cgroup_parent','service_cgroup_parent'):
             command.extend(['--'+flag.replace('_','-'),str(config[flag])])
         command.extend(['--candidate-manifest',self.state['candidate_manifest'],
             '--run-root',str(root),'--run-identity',self.state['id'],
             '--service-cgroup-record',str(root/'service-cgroup.json'),
-            '--service-profile',config['budget_profile']])
+            '--service-profile',config['budget_profile'], '--rounds',str(config['dk_rounds'])])
         self.state['dk'].update(root=str(root),command=command,checkout=str(checkout),
             deadline_seconds=7200,unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',phase='launching')
         self.save()  # A lost launch acknowledgement never permits another group.

@@ -18,14 +18,20 @@ SPEC.loader.exec_module(fixture)
 
 class FixtureTests(unittest.TestCase):
     def terminal_audits(self):
-        identity=dict(protocol_version=1,node=dict(deployment_id='domain',node_id='host-runtime',node_generation=1),
-            tenant_id='tenant-1',sandbox_id='sandbox-29',operation_id='operation-8',intent_version=1,request_window=7)
+        identity=dict(protocol_version=2,node=dict(deployment_id='domain',node_id='host-runtime',node_generation=1),
+            tenant_id='tenant-1',sandbox_id='sandbox-29',operation_id='operation-8',intent_version=1,
+            retention_slot=1,request_window=1)
         latest=dict(identity,operation_id='operation-10',intent_version=3)
         response=dict(identity=latest,observation_version=5,fact=dict(kind='cleaned'))
-        center=dict(deployment='domain',windows=[dict(node=identity['node'],retired_through=6)],sandboxes=[dict(
+        versions=dict(internal_protocol=2,center_store=6,host_store=16)
+        center=dict(schema_version=2,versions=copy.deepcopy(versions),deployment='domain',
+            retention_lanes=[dict(node=identity['node'],retention_slot=1,retired_through=0,
+                phase='open',last_retired=None)],sandboxes=[dict(
             create=dict(identity=identity),released=True,operations=[dict(response=response)],
             terminal_confirmation=copy.deepcopy(response))])
-        host=dict(node=identity['node'],retired_through=6,operations=[dict(identity=latest,current=True,
+        host=dict(schema_version=2,versions=versions,node=identity['node'],
+            lanes=[dict(retention_slot=1,retired_through=0,current_window=1,last_retired=None)],
+            operations=[dict(identity=latest,current=True,
             response=copy.deepcopy(response),confirmed=copy.deepcopy(response))])
         return identity,center,host
 
@@ -46,14 +52,15 @@ class FixtureTests(unittest.TestCase):
         host['operations']=[]
         self.assertIsNone(fixture.terminal_result(center,host,identity))
 
-    def test_retired_evidence_requires_both_exact_original_node_frontiers_and_saved_window(self):
+    def test_retired_evidence_requires_both_exact_original_slot_frontiers_and_saved_incarnation(self):
         identity,center,host=self.terminal_audits()
+        response=copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
         center['sandboxes']=[]
         host['operations']=[]
-        center['windows'][0]['retired_through']=7
+        center['retention_lanes'][0].update(retired_through=1,last_retired=copy.deepcopy(response))
         self.assertIsNone(fixture.terminal_result(center,host,identity))
-        host['retired_through']=7
-        self.assertEqual(fixture.terminal_result(center,host,identity)['status'],'retired_terminal_window')
+        host['lanes'][0].update(retired_through=1,current_window=2,last_retired=copy.deepcopy(response))
+        self.assertEqual(fixture.terminal_result(center,host,identity)['status'],'retired_terminal_slot')
         foreign=copy.deepcopy(host)
         foreign['node']['node_generation']=2
         with self.assertRaises(ValueError):
@@ -61,9 +68,75 @@ class FixtureTests(unittest.TestCase):
         for bad in (True,0,2**64):
             with self.subTest(window=bad),self.assertRaises(ValueError):
                 fixture.terminal_result(center,host,dict(identity,request_window=bad))
-        host['retired_through']=True
+        host['lanes'][0]['retired_through']=True
         with self.assertRaises(ValueError):
             fixture.terminal_result(center,host,identity)
+
+    def test_retired_stamp_is_exact_and_other_slot_cannot_retire_the_saved_identity(self):
+        identity,center,host=self.terminal_audits()
+        response=copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
+        center['sandboxes']=[]
+        host['operations']=[]
+        other=copy.deepcopy(response)
+        other['identity'].update(retention_slot=2,request_window=8,sandbox_id='unrelated-sandbox')
+        center['retention_lanes'].append(dict(node=identity['node'],retention_slot=2,
+            retired_through=8,phase='open',last_retired=copy.deepcopy(other)))
+        host['lanes'].append(dict(retention_slot=2,retired_through=8,current_window=9,last_retired=copy.deepcopy(other)))
+        self.assertIsNone(fixture.terminal_result(center,host,identity))
+        for lane in (center['retention_lanes'][0],host['lanes'][0]):
+            lane.update(retired_through=1,last_retired=copy.deepcopy(response))
+        malformed=[]
+        for field,value in (('tenant_id','other-owner'),('sandbox_id','other-sandbox'),
+                ('retention_slot',2),('request_window',2),('protocol_version',1)):
+            stamp=copy.deepcopy(response)
+            stamp['identity'][field]=value
+            malformed.append(stamp)
+        malformed.extend((None,dict(response,observation_version=6),
+                          dict(response,fact=dict(kind='stopped'))))
+        for stamp in malformed:
+            changed=copy.deepcopy(host)
+            changed['lanes'][0]['last_retired']=stamp
+            with self.subTest(stamp=stamp),self.assertRaises(ValueError):
+                fixture.terminal_result(center,changed,identity)
+        newer=copy.deepcopy(response)
+        newer['identity'].update(sandbox_id='later-sandbox',operation_id='later-operation',request_window=2)
+        for lane in (center['retention_lanes'][0],host['lanes'][0]):
+            lane.update(retired_through=2,last_retired=copy.deepcopy(newer))
+        self.assertEqual(fixture.terminal_result(center,host,identity)['status'],'retired_terminal_slot')
+
+    def test_audit_schema_and_full_terminal_stamp_refuse_missing_or_loosely_typed_fields(self):
+        identity,center,host=self.terminal_audits()
+        response=copy.deepcopy(center['sandboxes'][0]['terminal_confirmation'])
+        for lane in (center['retention_lanes'][0],host['lanes'][0]):
+            lane.update(retired_through=1,last_retired=copy.deepcopy(response))
+        for audit in (center,host):
+            for schema in (1,True,2.0):
+                changed=copy.deepcopy(audit)
+                changed['schema_version']=schema
+                pair=(changed,host) if audit is center else (center,changed)
+                with self.subTest(schema=schema),self.assertRaises(ValueError):
+                    fixture.terminal_result(*pair,identity)
+        malformed=[]
+        for field in ('observation_version','identity','fact'):
+            stamp=copy.deepcopy(response)
+            del stamp[field]
+            malformed.append(stamp)
+        for field in ('operation_id','intent_version'):
+            stamp=copy.deepcopy(response)
+            del stamp['identity'][field]
+            malformed.append(stamp)
+        for field,value in (('retention_slot',True),('request_window',True),('intent_version',True)):
+            stamp=copy.deepcopy(response)
+            stamp['identity'][field]=value
+            malformed.append(stamp)
+        malformed.extend((dict(response,observation_version=True),
+                          dict(response,fact=dict(kind='cleaned',extra='unexpected'))))
+        for stamp in malformed:
+            changed_center,changed_host=copy.deepcopy(center),copy.deepcopy(host)
+            changed_center['retention_lanes'][0]['last_retired']=copy.deepcopy(stamp)
+            changed_host['lanes'][0]['last_retired']=copy.deepcopy(stamp)
+            with self.subTest(stamp=stamp),self.assertRaises(ValueError):
+                fixture.terminal_result(changed_center,changed_host,identity)
 
     def native(self):
         return dict(namespace='a'*16,
@@ -88,7 +161,7 @@ class FixtureTests(unittest.TestCase):
             artifact_address='127.0.0.1:9002', redis_address='127.0.0.1:9003',
             password='TESTONLYREDISKEY', key='TESTONLYPUBLICKEY', job_count=2,
             registry=dict(root='/approved/center/registry', max_templates_global=2),
-            versions=dict(internal_protocol=1, center_store=5, host_store=15))
+            versions=dict(internal_protocol=2, center_store=6, host_store=16))
 
     def test_public_credentials_are_only_at_center_and_original_native_budgets_unchanged(self):
         source = self.native()
@@ -100,6 +173,7 @@ class FixtureTests(unittest.TestCase):
         self.assertNotIn('credentials', hosts[0])
         self.assertNotIn('TESTONLYPUBLICKEY', str(hosts))
         self.assertEqual(hosts[0]['inbox']['node'], center['nodes'][0]['registration']['identity'])
+        self.assertEqual(center['nodes'][0]['registration']['retention_slots'],hosts[0]['inbox']['max_sandboxes'])
         self.assertNotIn('template_registrations', hosts[0])
         self.assertEqual(center['template_registrations'][0]['template_id'], center['templates']['templates'][0]['template_id'])
 
@@ -111,7 +185,7 @@ class FixtureTests(unittest.TestCase):
                 host_addresses=['127.0.0.1:9001'],public_address='127.0.0.1:9000',
                 artifact_address='127.0.0.1:9002',redis_address='127.0.0.1:9003',
                 password='TESTREDIS',key='OWNERONE',job_count=2,registry={'root':'/approved/registry'},
-                versions=dict(internal_protocol=1,center_store=5,host_store=15),extra_credentials=extra)
+                versions=dict(internal_protocol=2,center_store=6,host_store=16),extra_credentials=extra)
         base,_=render([])
         center,hosts=render([dict(tenant=2,secret='OWNERTWO')])
         self.assertEqual([value['tenant'] for value in center['credentials']],[1,2])
@@ -129,6 +203,16 @@ class FixtureTests(unittest.TestCase):
             source=dict(self.native(),**{name:None})
             with self.subTest(field=name),self.assertRaisesRegex(ValueError,'not upgraded'):
                 self.render([source])
+
+    def test_retention_slots_use_existing_inbox_capacity_and_overflow_is_not_wrapped(self):
+        source=self.native()
+        center,hosts=self.render([source])
+        self.assertEqual(hosts[0]['inbox']['max_sandboxes'],4)
+        self.assertEqual(center['nodes'][0]['registration']['retention_slots'],4)
+        self.assertEqual(source,self.native())
+        source['max_active_global']=2**16-2
+        with self.assertRaisesRegex(ValueError,'retention slot count'):
+            self.render([source])
 
     def test_no_free_health_cache_or_canonical_digest_is_manufactured(self):
         center, hosts = self.render()
@@ -170,7 +254,7 @@ class FixtureTests(unittest.TestCase):
             artifact_address='127.0.0.1:9002',redis_address='127.0.0.1:9003',
             password='TESTONLYREDISKEY',key='TESTONLYPUBLICKEY',job_count=2,
             registry=dict(root='/approved/center/registry', max_templates_global=2),
-            versions=dict(internal_protocol=1,center_store=5,host_store=15))
+            versions=dict(internal_protocol=2,center_store=6,host_store=16))
         self.assertEqual([node['registration']['role'] for node in center['nodes']], ['runtime','builder'])
         self.assertEqual([node['peer_certificates_der'] for node in center['nodes']],
             [['/approved/center/tls/host-runtime.der'],['/approved/center/tls/host-builder.der']])

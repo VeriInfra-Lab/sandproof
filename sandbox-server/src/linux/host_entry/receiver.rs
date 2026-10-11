@@ -25,6 +25,7 @@ pub(super) struct RegisteredHost {
     pub(super) templates: Arc<TemplateCache>,
     pub(super) compute: ComputeLimits,
     pub(super) node: NodeIdentity,
+    pub(super) retention_slots: u16,
 }
 impl LifecycleReceiver for RegisteredHost {
     async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
@@ -77,6 +78,7 @@ impl StatusReceiver for RegisteredHost {
             .map_err(|_| ReceiveError::Unavailable)?;
         Ok(HostStatus {
             node: self.node.clone(),
+            retention_slots: self.retention_slots,
             observed_at_ms,
             free,
         })

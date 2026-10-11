@@ -25,6 +25,14 @@ use sandproof_protocol::internal::NodeIdentity;
 use std::{error::Error, io::Write, net::SocketAddr, path::Path, sync::Arc};
 use tokio::sync::{oneshot, watch};
 
+#[derive(serde::Serialize)]
+struct HostAuditView<'a> {
+    schema_version: u16,
+    versions: sandproof_protocol::internal::ContractVersions,
+    #[serde(flatten)]
+    view: &'a sandproof_controller_service::InternalAudit,
+}
+
 const MAX_CONFIG_BYTES: usize = 16 * 1024 * 1024;
 
 fn read_configuration(path: &Path) -> Result<HostConfig, Box<dyn Error>> {
@@ -75,7 +83,14 @@ pub(crate) fn audit(path: &Path) -> Result<(), Box<dyn Error>> {
         LinuxWorker::inspect_existing(node_configuration(&config.native, contract.bounded))?;
     observation.host_slot_inventory()?;
     let mut output = std::io::stdout().lock();
-    serde_json::to_writer(&mut output, &view)?;
+    serde_json::to_writer(
+        &mut output,
+        &HostAuditView {
+            schema_version: 2,
+            versions: sandproof_protocol::internal::ContractVersions::current(),
+            view: &view,
+        },
+    )?;
     writeln!(output)?;
     Ok(())
 }
@@ -159,6 +174,7 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
         templates: Arc::clone(&templates),
         compute: driver.compute,
         node: config.inbox.node.clone(),
+        retention_slots: config.inbox.max_sandboxes,
     };
     Ok(ActivatedHost {
         receiver,
