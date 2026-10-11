@@ -1,7 +1,8 @@
 """Unshortened request/write idle deadlines on an externally supervised service.
 
-The operator supplies two fresh, long-lived VMs, a fixed controller/config and
-its private service cgroup record. This client never creates or destroys VMs.
+The operator supplies two fresh, long-lived VMs, the unique protected center
+configuration/identity and its private service cgroup record. This client never
+creates or destroys VMs, stops either authority or inspects host-local journals.
 Raw loopback HTTP controls body progress and TCP backpressure; the pinned SDK
 checks admission, reserved control, and an independent tenant. Host reclamation
 belongs to the outer supervisor. No timeout override is accepted.
@@ -29,6 +30,7 @@ import struct
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 from urllib.parse import urlencode, urlsplit
 import uuid
 
@@ -39,6 +41,62 @@ DEADLINE_MARGIN = 180
 MIB = 1024 * 1024
 DOWNLOAD_BYTES = 64 * MIB
 PROGRESS_BYTES = 8 * MIB
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def validate_center_configuration(settings):
+    """Project the sole center DTO into the original pure transfer predicate.
+
+    This is not a compatibility parser: the retired flat host shape has no
+    center bounds and is rejected. Product initialization owns full validation.
+    """
+    from gateway_slow_boundaries import validate_configuration
+    try:
+        instances = settings['bounds']['platform']['instances']
+    except (KeyError, TypeError) as error:
+        raise ValueError('protected center bounds required, not a flat host configuration') from error
+    if type(instances) is not int or instances < 2:
+        raise ValueError('two externally supervised center instances required')
+    return validate_configuration(dict(data_transfer=settings.get('data_transfer'),
+                                       max_active_global=instances))
+
+
+def center_binding(args):
+    """Read one protected center role and observe its original live process.
+
+    No service is started, stopped or authorized here. The same role/PID/config
+    evidence is checked again after the original long-idle workload.
+    """
+    from _center_host_services import process_facts, role_facts
+    from gateway_slow_boundaries import digest, loopback_url, start_ticks
+    from tools import service_cgroup
+    from tools.system_acceptance import json_file
+
+    service_cgroup.service_identity(args.center_uid, args.center_gid)
+    if any(type(value) is not int or value <= 0
+           for value in (args.center_pid, args.center_start_ticks)):
+        raise ValueError('positive explicit center PID/start identity required')
+    config = Path(args.config)
+    role = role_facts(config.parent, config, uid=args.center_uid, gid=args.center_gid)
+    settings = json_file(config)
+    transfers = validate_center_configuration(settings)
+    url = loopback_url(args.sandbox_url)
+    if loopback_url(args.api_url) != url or settings['bind'] != url.removeprefix('http://'):
+        raise ValueError('both client origins must match the protected center listener')
+    proc = Path('/proc') / str(args.center_pid)
+    binary = Path(os.fsdecode((proc / 'cmdline').read_bytes().split(b'\0')[0]))
+    if not binary.is_absolute() or binary.name != 'sandproof-center':
+        raise ValueError('unique sandproof-center executable required')
+    process = SimpleNamespace(pid=args.center_pid,
+        poll=lambda: None if start_ticks(args.center_pid) == args.center_start_ticks else 1)
+    observed = process_facts(process, binary, config, args.service_cgroup_record,
+                             uid=args.center_uid, gid=args.center_gid)
+    if observed['start_time_ticks'] != args.center_start_ticks:
+        raise ValueError('original center PID/start identity changed')
+    observed['executable_sha256'] = digest(proc / 'exe')
+    return dict(role=role, process=observed, data_transfer=transfers), url
 
 
 def received_bytes(sock):
@@ -238,22 +296,19 @@ def polling_delay(now, write_started, *, expired):
 async def exercise(args, report, checkpoint=lambda _report: None):
     from e2b import Sandbox
     import gateway_pressure as helpers
-    from gateway_slow_boundaries import (digest, loopback_url, private_json,
-        process_binding, start_ticks, validate_configuration)
+    from gateway_slow_boundaries import start_ticks
     from sdk_server_smoke import options
     from tools import service_cgroup
 
-    url = loopback_url(args.sandbox_url)
-    settings = private_json(args.config)
-    report['data_transfer'] = validate_configuration(settings)
-    if loopback_url(args.api_url) != url or settings['bind'] != url.removeprefix('http://'):
-        raise ValueError('fixed server and client origins must match')
-    report['config_sha256'] = digest(args.config)
-    report['server'] = process_binding(args.server_pid, args.server_start_ticks, args.config)
+    binding, url = center_binding(args)
+    report['data_transfer'] = binding['data_transfer']
+    report['config_sha256'] = binding['role']['config_sha256']
+    report['center'] = binding['process']
+    report['center_role'] = binding['role']
     report['sdk_version'] = importlib.metadata.version('e2b')
     if report['sdk_version'] != '2.51.0':
         raise ValueError('locked original SDK 2.51.0 required')
-    baseline = service_cgroup.observe(args.service_cgroup_record, pids=[args.server_pid])
+    baseline = service_cgroup.observe(args.service_cgroup_record, pids=[args.center_pid])
     report.update(service_baseline=baseline, service_samples=[], cases={}, phase='preparing',
                   host_cleanup='outer_supervisor_required')
     keys = [os.environ.get(name) for name in ('SANDPROOF_TEST_API_KEY', 'SANDPROOF_TEST_FOREIGN_API_KEY')]
@@ -307,7 +362,7 @@ async def exercise(args, report, checkpoint=lambda _report: None):
             await asyncio.to_thread(transfer.start_download, path)
         samples = report['tcp_samples'] = {'expiry': [], 'progress': []}
         for name, transfer in (('expiry', write_expiry), ('progress', write_progress)):
-            report['cases']['write_' + name] = dict(initial_backpressure=await backpressure(transfer, args.server_pid, samples[name]))
+            report['cases']['write_' + name] = dict(initial_backpressure=await backpressure(transfer, args.center_pid, samples[name]))
         report['initial_admission'] = await admission(target, control, directory, url, 4, helpers)
         started = min(transfer.started for transfer in transfers)
         deadline = max(transfer.started for transfer in transfers) + FINISH_SECONDS
@@ -318,9 +373,9 @@ async def exercise(args, report, checkpoint=lambda _report: None):
         report.update(phase='holding', observation_started_utc=datetime.now(timezone.utc).isoformat())
         while time.monotonic() < deadline:
             now = time.monotonic()
-            if start_ticks(args.server_pid) != args.server_start_ticks:
-                raise AssertionError('original controller exited or was replaced')
-            observation = service_cgroup.observe(args.service_cgroup_record, pids=[args.server_pid])
+            if start_ticks(args.center_pid) != args.center_start_ticks:
+                raise AssertionError('original center exited or was replaced')
+            observation = service_cgroup.observe(args.service_cgroup_record, pids=[args.center_pid])
             observation['elapsed_seconds'] = now - started
             report['service_samples'].append(observation)
             if observation['identity'] != baseline['identity'] or observation['limits'] != baseline['limits']:
@@ -329,7 +384,7 @@ async def exercise(args, report, checkpoint=lambda _report: None):
                    for key in ('oom', 'oom_kill', 'oom_group_kill')):
                 raise AssertionError('service OOM counter increased')
             for name, transfer in (('expiry', write_expiry), ('progress', write_progress)):
-                row = peer_snapshot(transfer.sock, args.server_pid)
+                row = peer_snapshot(transfer.sock, args.center_pid)
                 row['elapsed_seconds'] = time.monotonic() - transfer.started
                 samples[name].append(row)
                 if name == 'progress' and not row['owned']:
@@ -353,7 +408,7 @@ async def exercise(args, report, checkpoint=lambda _report: None):
                 report['request_progress_at_seconds'] = time.monotonic() - request_progress.started
                 before = received_bytes(write_progress.sock)
                 await asyncio.to_thread(write_progress.take, PROGRESS_BYTES)
-                after = await backpressure(write_progress, args.server_pid, samples['progress'])
+                after = await backpressure(write_progress, args.center_pid, samples['progress'])
                 if after['received_bytes'] - before < PROGRESS_BYTES // 2:
                     raise AssertionError('resume did not produce new TCP receive progress')
                 report['write_progress_at_seconds'] = time.monotonic() - write_progress.started
@@ -389,8 +444,8 @@ async def exercise(args, report, checkpoint=lambda _report: None):
         for transfer in transfers:
             transfer.close()
         report['final_admission'] = await admission(target, control, directory, url, 0, helpers)
-        if digest(args.config) != report['config_sha256'] or process_binding(args.server_pid, args.server_start_ticks, args.config) != report['server']:
-            raise AssertionError('original server/configuration binding changed')
+        if center_binding(args)[0] != binding:
+            raise AssertionError('original center/configuration binding changed')
         report['phase'] = 'passed'
     finally:
         for transfer in transfers:
@@ -417,9 +472,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for field in ('api-url', 'sandbox-url', 'target-sandbox-id', 'control-sandbox-id'):
         parser.add_argument('--' + field, required=True)
-    for field in ('config', 'service-cgroup-record', 'report'):
+    parser.add_argument('--config', type=Path, required=True, help='protected non-root center configuration')
+    for field in ('service-cgroup-record', 'report'):
         parser.add_argument('--' + field, type=Path, required=True)
-    for field in ('server-pid', 'server-start-ticks'):
+    for field in ('center-pid', 'center-start-ticks', 'center-uid', 'center-gid'):
         parser.add_argument('--' + field, type=int, required=True)
     args = parser.parse_args(argv)
     if os.geteuid() != 0 or sys.platform != 'linux':
@@ -430,7 +486,7 @@ def main(argv=None):
     if not args.report.is_absolute() or args.report.is_symlink():
         parser.error('new absolute private report path required')
     fd = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    report = dict(schema_version=1, result='incomplete', host_cleanup='outer_supervisor_required')
+    report = dict(schema_version=2, result='incomplete', host_cleanup='outer_supervisor_required')
     code = 1
     root = Path(__file__).resolve().parents[2]
     try:
