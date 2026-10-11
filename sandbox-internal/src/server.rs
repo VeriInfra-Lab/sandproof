@@ -1,27 +1,35 @@
-use crate::{HTTP_HEADER_BUFFER_BYTES, HTTP_MAX_HEADERS, Limits, ServerTls, TransportError};
+use crate::cache::{
+    CACHE_PATH, CACHE_REQUEST_BYTES, CACHE_RESPONSE_BYTES, CacheAvailability, CacheReceiver,
+    CacheRequest,
+};
+use crate::status::{
+    HostStatus, STATUS_PATH, STATUS_REQUEST_BYTES, STATUS_RESPONSE_BYTES, StatusReceiver,
+    StatusRequest,
+};
+use crate::template::{
+    VALIDATION_PATH, VALIDATION_REQUEST_BODY_BYTES, VALIDATION_RESPONSE_BODY_BYTES,
+    ValidationEvidence, ValidationReceiver, ValidationRequest,
+};
+use crate::{CertificatePin, Limits, ProtectedHttp, ProtectedServer, ServerTls, TransportError};
 use axum::body::Body;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{
     Method, Request, Response, StatusCode,
     body::{Bytes, Incoming},
-    server::conn::http1,
-    service::service_fn,
 };
-use hyper_util::rt::{TokioIo, TokioTimer};
-use sandproof_data_transport::WriteIdle;
 use sandproof_protocol::internal::lifecycle::{
     LIFECYCLE_BODY_BYTES, LIFECYCLE_PATH, LifecycleRequest, LifecycleResponse,
     RESULT_CONFIRMATION_BODY_BYTES, RESULT_CONFIRMATION_PATH,
+};
+use sandproof_protocol::internal::window::{
+    WINDOW_CLOSE_BODY_BYTES, WINDOW_CLOSE_PATH, WindowCloseAck, WindowCloseRequest,
 };
 use sandproof_protocol::internal::{
     ControlIdentity, DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity,
     PROBE_BODY_BYTES, PROBE_PATH, ProbeRequest, ProbeResponse,
 };
 use std::{convert::Infallible, sync::Arc};
-use tokio::{
-    net::TcpListener, sync::Semaphore, sync::oneshot, sync::watch, task::JoinSet, time::timeout,
-};
-use tokio_rustls::TlsAcceptor;
+use tokio::{net::TcpListener, sync::Semaphore, sync::oneshot, sync::watch, time::timeout};
 
 /// Effectful receiver after mutual authentication AND complete node binding.
 /// Cancellation can leave durable effects: implementations must keep their
@@ -37,6 +45,12 @@ pub trait LifecycleReceiver: Send + Sync + 'static {
         &self,
         result: LifecycleResponse,
     ) -> impl std::future::Future<Output = Result<LifecycleResponse, ReceiveError>> + Send;
+    /// Close only a fully confirmed terminal window in the original durable
+    /// transaction. Missing support cannot fall back to an acknowledged echo.
+    fn close(
+        &self,
+        request: WindowCloseRequest,
+    ) -> impl std::future::Future<Output = Result<WindowCloseAck, ReceiveError>> + Send;
 }
 
 /// A data stream is authorized AGAIN by the original local application. Mutual
@@ -67,10 +81,31 @@ impl LifecycleReceiver for RejectLifecycle {
     async fn confirm(&self, _: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
         Err(ReceiveError::Unavailable)
     }
+    async fn close(&self, _: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
 }
 impl DataReceiver for RejectLifecycle {
     async fn receive_data(&self, _: ControlIdentity, _: Request<Body>) -> Response<Body> {
         sandproof_data_transport::response(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+impl ValidationReceiver for RejectLifecycle {
+    async fn validation_evidence(
+        &self,
+        _: ValidationRequest,
+    ) -> Result<ValidationEvidence, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
+impl CacheReceiver for RejectLifecycle {
+    async fn cache_template(&self, _: CacheRequest) -> Result<CacheAvailability, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
+impl StatusReceiver for RejectLifecycle {
+    async fn status(&self, _: StatusRequest) -> Result<HostStatus, ReceiveError> {
+        Err(ReceiveError::Unavailable)
     }
 }
 
@@ -96,7 +131,9 @@ impl<H> Clone for InternalServer<H> {
     }
 }
 
-impl<H: LifecycleReceiver + DataReceiver> InternalServer<H> {
+impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + StatusReceiver>
+    InternalServer<H>
+{
     #[must_use]
     pub fn new(tls: ServerTls, node: NodeIdentity, limits: Limits, handler: H) -> Self {
         Self {
@@ -122,76 +159,51 @@ impl<H: LifecycleReceiver + DataReceiver> InternalServer<H> {
     pub async fn serve(
         &self,
         listener: TcpListener,
-        mut shutdown: oneshot::Receiver<()>,
+        shutdown: oneshot::Receiver<()>,
     ) -> Result<(), TransportError> {
-        let mut tasks = JoinSet::new();
-        let result = loop {
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => break Ok(()),
-                _ = tasks.join_next(), if !tasks.is_empty() => {},
-                accepted = listener.accept() => {
-                    let Ok((socket, _)) = accepted else {
-                        break Err(TransportError::Communication);
-                    };
-                    let Ok(permit) = Arc::clone(&self.connections).try_acquire_owned() else {
-                        // Cannot send HTTP until TLS is authenticated. Closing
-                        // the excess socket creates neither task nor wait queue.
-                        drop(socket);
-                        continue;
-                    };
-                    let tls = self.tls.clone();
-                    let node = self.node.clone();
-                    let limits = self.limits;
-                    let handler = Arc::clone(&self.handler);
-                    tasks.spawn(async move {
-                        let _permit = permit;
-                        let (streaming, mut stream_status) = watch::channel(false);
-                        let work = async {
-                            let stream = timeout(
-                                limits.handshake_timeout,
-                                TlsAcceptor::from(Arc::clone(&tls.config)).accept(socket),
-                            ).await
-                                .map_err(|_| TransportError::Deadline)?
-                                .map_err(|_| TransportError::Authentication)?;
-                            tls.verify_peer(stream.get_ref().1.peer_certificates())?;
-                            if stream.get_ref().1.alpn_protocol() != Some(b"http/1.1") {
-                                return Err(TransportError::Authentication);
-                            }
-                            let service = service_fn(move |request| route(request, node.clone(), Arc::clone(&handler), limits, streaming.clone()));
-                            http1::Builder::new()
-                                .keep_alive(false)
-                                .max_headers(HTTP_MAX_HEADERS)
-                                .max_buf_size(HTTP_HEADER_BUFFER_BYTES)
-                                .timer(TokioTimer::new())
-                                .header_read_timeout(limits.request_timeout)
-                                .serve_connection(TokioIo::new(WriteIdle::new(stream, Some(limits.request_timeout))), service)
-                                .await
-                                .map_err(|_| TransportError::Communication)
-                        };
-                        // Start the original finite request deadline BEFORE
-                        // handshake/headers/body/dispatch, not only when the
-                        // service is eventually polled. Only a parsed complete
-                        // node-bound data request switches to original stream
-                        // idle/lifetime/revocation rules. Unclassified traffic
-                        // and partial management bodies still close the socket.
-                        tokio::pin!(work);
-                        tokio::select! {
-                            result = &mut work => result,
-                            Ok(()) = stream_status.changed() => work.await,
-                            () = tokio::time::sleep(limits.request_timeout) => Err(TransportError::Deadline),
-                        }
-                    });
-                }
-            }
-        };
-        tasks.abort_all();
-        while tasks.join_next().await.is_some() {}
-        result
+        ProtectedServer::from_parts(
+            self.tls.clone(),
+            self.limits,
+            Arc::clone(&self.connections),
+            LifecycleHttp {
+                node: self.node.clone(),
+                handler: Arc::clone(&self.handler),
+                limits: self.limits,
+            },
+        )
+        .serve(listener, shutdown)
+        .await
     }
 }
 
-async fn route<H: LifecycleReceiver + DataReceiver>(
+struct LifecycleHttp<H> {
+    node: NodeIdentity,
+    handler: Arc<H>,
+    limits: Limits,
+}
+impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + StatusReceiver>
+    ProtectedHttp for LifecycleHttp<H>
+{
+    async fn respond(
+        &self,
+        _: CertificatePin,
+        request: Request<Incoming>,
+        streaming: watch::Sender<bool>,
+    ) -> Result<Response<Body>, Infallible> {
+        route(
+            request,
+            self.node.clone(),
+            Arc::clone(&self.handler),
+            self.limits,
+            streaming,
+        )
+        .await
+    }
+}
+
+async fn route<
+    H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + StatusReceiver,
+>(
     request: Request<Incoming>,
     node: NodeIdentity,
     handler: Arc<H>,
@@ -251,21 +263,41 @@ async fn receive_data<H: DataReceiver>(
     handler.receive_data(identity, request.map(Body::new)).await
 }
 
-async fn management_route<H: LifecycleReceiver>(
+async fn management_route<
+    H: LifecycleReceiver + ValidationReceiver + CacheReceiver + StatusReceiver,
+>(
     request: Request<Incoming>,
     node: NodeIdentity,
     handler: Arc<H>,
 ) -> Response<Full<Bytes>> {
     let lifecycle = request.uri().path() == LIFECYCLE_PATH;
     let confirmation = request.uri().path() == RESULT_CONFIRMATION_PATH;
-    let limit = if confirmation {
+    let closing = request.uri().path() == WINDOW_CLOSE_PATH;
+    let validation = request.uri().path() == VALIDATION_PATH;
+    let cache = request.uri().path() == CACHE_PATH;
+    let status_request = request.uri().path() == STATUS_PATH;
+    let limit = if status_request {
+        STATUS_REQUEST_BYTES
+    } else if cache {
+        CACHE_REQUEST_BYTES
+    } else if validation {
+        VALIDATION_REQUEST_BODY_BYTES
+    } else if closing {
+        WINDOW_CLOSE_BODY_BYTES
+    } else if confirmation {
         RESULT_CONFIRMATION_BODY_BYTES
     } else if lifecycle {
         LIFECYCLE_BODY_BYTES
     } else {
         PROBE_BODY_BYTES
     };
-    let status = if (!lifecycle && !confirmation && request.uri().path() != PROBE_PATH)
+    let status = if (!lifecycle
+        && !confirmation
+        && !closing
+        && !validation
+        && !cache
+        && !status_request
+        && request.uri().path() != PROBE_PATH)
         || request.uri().query().is_some()
     {
         Some(StatusCode::NOT_FOUND)
@@ -300,6 +332,18 @@ async fn management_route<H: LifecycleReceiver>(
         return response(StatusCode::BAD_REQUEST, Bytes::new());
     };
     let bytes = body.to_bytes();
+    if status_request {
+        return node_status(&bytes, &node, &*handler).await;
+    }
+    if cache {
+        return cache_template(&bytes, &node, &*handler).await;
+    }
+    if validation {
+        return validation_evidence(&bytes, &node, &*handler).await;
+    }
+    if closing {
+        return close_window(&bytes, &node, &*handler).await;
+    }
     if confirmation {
         return confirm_result(&bytes, &node, &*handler).await;
     }
@@ -313,6 +357,48 @@ async fn management_route<H: LifecycleReceiver>(
         return response(StatusCode::CONFLICT, Bytes::new());
     };
     json_response(&answer, limit)
+}
+async fn node_status<H: StatusReceiver>(
+    bytes: &[u8],
+    node: &NodeIdentity,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    let Ok(request) = serde_json::from_slice::<StatusRequest>(bytes) else {
+        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    };
+    if request.validate(node).is_err() {
+        return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    match handler.status(request.clone()).await {
+        Ok(answer) if answer.validate_for(&request).is_ok() => {
+            json_response(&answer, STATUS_RESPONSE_BYTES)
+        }
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
+}
+async fn cache_template<H: CacheReceiver>(
+    bytes: &[u8],
+    node: &NodeIdentity,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    let Ok(request) = serde_json::from_slice::<CacheRequest>(bytes) else {
+        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    };
+    if request.validate(node).is_err() {
+        return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    match handler.cache_template(request.clone()).await {
+        Ok(answer) if answer.validate_for(&request).is_ok() => {
+            json_response(&answer, CACHE_RESPONSE_BYTES)
+        }
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
 }
 
 async fn receive_intent<H: LifecycleReceiver>(
@@ -358,19 +444,66 @@ async fn confirm_result<H: LifecycleReceiver>(
     }
 }
 
+async fn close_window<H: LifecycleReceiver>(
+    bytes: &[u8],
+    node: &NodeIdentity,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    let Ok(request) = serde_json::from_slice::<WindowCloseRequest>(bytes) else {
+        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    };
+    if request.validate(node).is_err() {
+        return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    match handler.close(request.clone()).await {
+        Ok(answer) if answer.validate_for(&request).is_ok() => {
+            json_response(&answer, WINDOW_CLOSE_BODY_BYTES)
+        }
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Unavailable | ReceiveError::Capacity) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
+}
+
 fn json_response(answer: &impl serde::Serialize, limit: usize) -> Response<Full<Bytes>> {
-    let Ok(encoded) = serde_json::to_vec(answer) else {
+    let Ok(encoded) =
+        sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit)
+    else {
         return response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new());
     };
-    if encoded.len() > limit {
-        return response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new());
-    }
     let mut answer = response(StatusCode::OK, Bytes::from(encoded));
     answer.headers_mut().insert(
         hyper::header::CONTENT_TYPE,
         hyper::header::HeaderValue::from_static("application/json"),
     );
     answer
+}
+
+async fn validation_evidence<H: ValidationReceiver>(
+    bytes: &[u8],
+    node: &NodeIdentity,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    let Ok(request) = serde_json::from_slice::<ValidationRequest>(bytes) else {
+        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    };
+    if request.validate(node).is_err() {
+        return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    match handler.validation_evidence(request.clone()).await {
+        Ok(answer)
+            if answer
+                .validate_for(&request.create, &request.terminal, &request.publication)
+                .is_ok() =>
+        {
+            json_response(&answer, VALIDATION_RESPONSE_BODY_BYTES)
+        }
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Unavailable | ReceiveError::Capacity) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
 }
 
 fn response(status: StatusCode, body: Bytes) -> Response<Full<Bytes>> {

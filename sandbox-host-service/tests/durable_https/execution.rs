@@ -39,6 +39,91 @@ fn renew(
 }
 
 #[tokio::test]
+async fn registered_builder_uses_original_internal_admission_without_private_window_metadata() {
+    use sandproof_controller_service::physical_storage::{PhysicalBuildStorage, PoolRole};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db");
+    let state = Arc::new(Mutex::new(local::State::default()));
+    let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
+    let namespace = "0123456789abcdef";
+    let mut host = local::complete_fixture::host(&path, namespace, 64, 2 * 1024 * 1024, reserve);
+    let profile = host.physical_storage.as_mut().unwrap();
+    profile.pools[0].role = PoolRole::Builder;
+    let mut runtime = profile.pools[0].clone();
+    runtime.role = PoolRole::Runtime;
+    runtime.namespace = "1123456789abcdef".into();
+    runtime.database = directory.path().join("runtime-db");
+    runtime.node_state_dir = directory.path().join("runtime-node");
+    runtime.chroot_base = directory.path().join("runtime-jails");
+    profile.pools.push(runtime);
+    profile.public_build = Some(PhysicalBuildStorage {
+        workspace_owner_uid: 0,
+        registry_owner_uid: 0,
+        root: directory.path().join("build-work"),
+        registry_root: directory.path().join("center-registry"),
+        workspace_bytes: 4096,
+        registry_bytes: 4096,
+        max_jobs: 1,
+        max_templates: 1,
+        inode_budget: 32,
+    });
+    profile.filesystem_overhead_inodes = 4096;
+    let inbox = sandproof_controller_service::InternalInboxConfig {
+        node: fixture::node("host-a"),
+        max_sandboxes: 2,
+        operations_per_sandbox: 4,
+        max_options_bytes: 1024,
+    };
+    let app = local::application_with_host_config(
+        &path,
+        Arc::clone(&state),
+        Arc::new(local::TestClock(AtomicI64::new(10))),
+        true,
+        inbox,
+        host.clone(),
+    );
+    let service = HostLifecycle::new(app);
+    let create = local::request();
+    service.receive(create.clone()).await.unwrap();
+    assert!(matches!(
+        service
+            .advance(create, Some(local::template()), local::compute())
+            .await
+            .unwrap()
+            .fact,
+        LifecycleFact::Ready { .. }
+    ));
+    assert_eq!(launches(&state), 1);
+    assert!(
+        state
+            .lock()
+            .unwrap()
+            .configurations
+            .values()
+            .all(|(_, options)| options.metadata.is_empty())
+    );
+    for missing in [false, true] {
+        let mut changed = host.clone();
+        let pool = &mut changed.physical_storage.as_mut().unwrap().pools[0];
+        if missing {
+            pool.namespace = "2123456789abcdef".into();
+        } else {
+            pool.role = PoolRole::Runtime;
+        }
+        assert!(
+            sandproof_controller_service::ControllerJournal::preflight_complete(
+                &path,
+                namespace,
+                &changed,
+                &local::complete_fixture::maintenance()
+            )
+            .is_err()
+        );
+    }
+    assert_eq!(launches(&state), 1);
+}
+
+#[tokio::test]
 async fn original_create_reopen_destroy_and_physical_release_publish_exact_cached_facts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");

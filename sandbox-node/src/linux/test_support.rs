@@ -21,6 +21,8 @@ pub(super) fn physical_profile(
             "jail_inodes_per_slot": 12
         }],
         "public_build": null,
+        "host_template_caches": [],
+        "service_data": [],
         "filesystem_overhead_bytes": 1_048_576,
         "filesystem_overhead_inodes": 64
     }))

@@ -27,6 +27,8 @@ mod tls_fixture;
 use tls_fixture::*;
 #[path = "support/lifecycle_cases.rs"]
 mod lifecycle_cases;
+#[path = "support/status_cases.rs"]
+mod status_cases;
 
 fn node() -> NodeIdentity {
     NodeIdentity {

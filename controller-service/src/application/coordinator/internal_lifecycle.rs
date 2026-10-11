@@ -8,9 +8,23 @@ use crate::{CreateOptions, InternalAdmission, InternalTemplate, templates::Compu
 use sandproof_protocol::internal::{
     NodeIdentity,
     lifecycle::{Intent, LifecycleFact, LifecycleRequest, LifecycleResponse},
+    window::{WindowCloseAck, WindowCloseRequest},
 };
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Original exclusive writer/host lock, with no alternate cleanup algorithm.
+    /// # Errors
+    /// Unknown/active/unconfirmed/pinned responsibilities cannot close a window.
+    pub fn close_internal_window(
+        &self,
+        request: &WindowCloseRequest,
+    ) -> Result<WindowCloseAck, JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?
+            .journal
+            .close_internal_window(request, &mut NeverCrash)
+    }
     /// Exact result acknowledgement shares the original writer and lock.
     /// # Errors
     /// Result mismatches/storage errors never erase unknown responsibility.
@@ -186,8 +200,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
         }
         inner.host.validate_template(&template.local)?;
         release_reclaimed_slots(inner)?;
-        let required =
-            self.physical_admission_bytes(inner, &options, template.local.resources.disk_bytes)?;
+        let required = self.internal_physical_admission_bytes(
+            inner,
+            &options,
+            template.local.resources.disk_bytes,
+        )?;
         if inner.host.available_disk_bytes()? < required {
             return Err(ApplicationError::QuotaExceeded);
         }

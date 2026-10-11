@@ -3,6 +3,8 @@ mod fixture;
 use crate::*;
 use fixture::*;
 use sandproof_protocol::internal::lifecycle::{LifecycleFact, Resources};
+#[path = "window_tests.rs"]
+mod windows;
 fn state() -> CenterState {
     CenterState::new(
         node("host-a").deployment_id,
@@ -16,6 +18,7 @@ fn state() -> CenterState {
         },
         vec![NodeRegistration {
             identity: node("host-a"),
+            role: NodeRole::Runtime,
             limit: resources(2),
             mode: NodeMode::Accepting,
             healthy_until_ms: 2000,
@@ -32,6 +35,58 @@ fn state() -> CenterState {
         }],
     )
     .unwrap()
+}
+#[test]
+fn registration_checks_static_subset_without_resetting_dynamic_facts() {
+    let configured = state();
+    let mut current = configured.clone();
+    current.nodes[0].templates.push(AvailableTemplate {
+        revision: "other-revision".try_into().unwrap(),
+        digest: [8; 32],
+    });
+    current.nodes[0].healthy_until_ms = 0;
+    current.nodes[0].free = Resources::ZERO;
+    assert!(current.registration_matches(&configured));
+    current.nodes[0].templates.remove(0);
+    assert!(!current.registration_matches(&configured));
+    let mut changed = configured.clone();
+    changed.nodes[0].identity.node_generation = 2.try_into().unwrap();
+    assert!(!current.registration_matches(&changed));
+}
+
+#[test]
+fn physical_refresh_cannot_forget_unknown_responsibility_or_change_policy() {
+    let (original, request) = state()
+        .create(&"1".try_into().unwrap(), binding(), 0)
+        .unwrap();
+    let refreshed = original
+        .refresh_node(&node("host-a"), 0, Resources::ZERO)
+        .unwrap();
+    assert!(refreshed.is_valid());
+    assert_eq!(refreshed.pending(), vec![request]);
+    assert_eq!(
+        refreshed.reserved(None, None),
+        original.reserved(None, None)
+    );
+    assert_eq!(refreshed.node_windows, original.node_windows);
+    assert_eq!(refreshed.nodes[0].templates, original.nodes[0].templates);
+    assert_eq!(refreshed.nodes[0].mode, original.nodes[0].mode);
+    assert_eq!(
+        refreshed.create(&"1".try_into().unwrap(), binding(), 0),
+        Err(DecisionError::Unavailable)
+    );
+    assert_eq!(
+        refreshed.identity_frontiers(),
+        original.identity_frontiers()
+    );
+    assert_eq!(
+        original.refresh_node(&node("host-a"), 3000, resources(3)),
+        Err(DecisionError::Invalid)
+    );
+    assert_eq!(
+        original.refresh_node(&node("host-b"), 3000, Resources::ZERO),
+        Err(DecisionError::NotFound)
+    );
 }
 #[test]
 fn identity_exhaustion_reserves_the_final_destroy_id() {

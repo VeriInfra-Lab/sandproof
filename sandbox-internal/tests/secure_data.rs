@@ -42,11 +42,25 @@ impl hyper::body::Body for Frames {
 }
 type Sender = mpsc::Sender<Result<Frame<Bytes>, io::Error>>;
 struct Streams(Arc<Mutex<Vec<Sender>>>);
+impl sandproof_internal::ValidationReceiver for Streams {
+    async fn validation_evidence(
+        &self,
+        _: sandproof_internal::template::ValidationRequest,
+    ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl LifecycleReceiver for Streams {
     async fn receive(&self, _: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
         Err(ReceiveError::Unavailable)
     }
     async fn confirm(&self, _: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+    async fn close(
+        &self,
+        _: sandproof_protocol::internal::window::WindowCloseRequest,
+    ) -> Result<sandproof_protocol::internal::window::WindowCloseAck, ReceiveError> {
         Err(ReceiveError::Unavailable)
     }
 }
@@ -101,7 +115,7 @@ impl Fixture {
             .unwrap(),
             wire::node("host-a"),
             limits,
-            Streams(Arc::clone(&senders)),
+            sandproof_internal::diagnostic::RejectTemplateCache::new(Streams(Arc::clone(&senders))),
         );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let client = InternalClient::new(

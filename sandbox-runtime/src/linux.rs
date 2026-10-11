@@ -1278,6 +1278,16 @@ fn validate_namespace_id(namespace: &Path, id: &str) -> Result<(), RuntimeError>
 /// # Errors
 /// Rejects a component which a less trusted process can replace.
 pub fn check_trusted_path(path: &Path) -> Result<(), RuntimeError> {
+    check_trusted_path_for_owner(path, 0)
+}
+
+/// Check a registered service-owned path with root or that service owning all
+/// ancestors. The owner is trusted deployment configuration, never a guest or
+/// request parameter. Callers additionally check the exact leaf owner.
+/// # Errors
+/// Rejects the same replaceable, writable or symlink components as the root
+/// check; unrelated service and guest owners are not trusted.
+pub fn check_trusted_path_for_owner(path: &Path, trusted_owner: u32) -> Result<(), RuntimeError> {
     if !path.is_absolute() {
         return Err(RuntimeError::InvalidConfiguration("paths must be absolute"));
     }
@@ -1285,7 +1295,9 @@ pub fn check_trusted_path(path: &Path) -> Result<(), RuntimeError> {
     for component in path.components().skip(1) {
         current.push(component);
         let metadata = fs::symlink_metadata(&current)?;
-        if metadata.file_type().is_symlink() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0
+        if metadata.file_type().is_symlink()
+            || ![0, trusted_owner].contains(&metadata.uid())
+            || metadata.mode() & 0o022 != 0
         {
             return Err(RuntimeError::InvalidConfiguration(
                 "runtime path has a symlink or writable/non-root-owned component",
@@ -1550,6 +1562,29 @@ fn wait_pidfd_exit(pidfd: &std::os::fd::OwnedFd, timeout: Duration) -> Result<bo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires root to establish distinct registered service and guest owners"]
+    fn registered_path_owner_rejects_guest_owner_and_writable_ancestor() {
+        let directory = tempfile::tempdir_in("/run").unwrap();
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let parent = directory.path().join("service");
+        fs::create_dir(&parent).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+        let leaf = parent.join("artifact");
+        fs::write(&leaf, b"trusted").unwrap();
+        fs::set_permissions(&leaf, fs::Permissions::from_mode(0o400)).unwrap();
+        for path in [&parent, &leaf] {
+            std::os::unix::fs::chown(path, Some(64001), None).unwrap();
+        }
+        assert!(check_trusted_path_for_owner(&leaf, 64001).is_ok());
+        assert!(check_trusted_path(&leaf).is_err());
+        std::os::unix::fs::chown(&leaf, Some(64002), None).unwrap();
+        assert!(check_trusted_path_for_owner(&leaf, 64001).is_err());
+        std::os::unix::fs::chown(&leaf, Some(64001), None).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o722)).unwrap();
+        assert!(check_trusted_path_for_owner(&leaf, 64001).is_err());
+    }
 
     #[test]
     fn ids_cannot_escape_or_alias_jailer_paths() {

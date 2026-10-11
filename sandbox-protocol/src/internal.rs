@@ -8,6 +8,27 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, num::NonZeroU64};
 
 pub const INTERNAL_PROTOCOL_VERSION: u16 = 1;
+/// Formats deployed by the sole center/host products. Kept alongside the wire
+/// contract so the host does not link the Redis adapter to report compatibility.
+pub const CENTER_STORE_FORMAT_VERSION: u32 = 4;
+pub const HOST_STORE_FORMAT_VERSION: i64 = 15;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct ContractVersions {
+    pub internal_protocol: u16,
+    pub center_store: u32,
+    pub host_store: i64,
+}
+impl ContractVersions {
+    #[must_use]
+    pub const fn current() -> Self {
+        Self {
+            internal_protocol: INTERNAL_PROTOCOL_VERSION,
+            center_store: CENTER_STORE_FORMAT_VERSION,
+            host_store: HOST_STORE_FORMAT_VERSION,
+        }
+    }
+}
 pub const PROBE_PATH: &str = "/internal/v1/probe";
 pub const PROBE_BODY_BYTES: usize = 4096;
 /// Namespace-specific data requests use the original envd URI after this prefix.
@@ -17,6 +38,7 @@ pub const DATA_IDENTITY_HEADER: &str = "x-sandproof-control-identity";
 pub const DATA_IDENTITY_BYTES: usize = 2048;
 
 pub mod lifecycle;
+pub mod window;
 
 /// Independent of the local core's epoch/generation and Redis revision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

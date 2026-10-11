@@ -2,12 +2,16 @@
 use crate::{CreateOptions, JournalError};
 use sandbox_controller_core as core;
 use sandproof_protocol::internal::lifecycle::{
-    Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
+    Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES,
 };
+use sandproof_protocol::internal::window::WINDOW_CLOSE_BODY_BYTES;
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
+
+pub(super) const CONFIRMATION_FIELD_BYTES: usize =
+    RESULT_CONFIRMATION_BODY_BYTES + b",\"confirmed\":".len();
 
 /// Permanent local identities, allocated only with the original create admission.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,9 +56,13 @@ impl InternalInboxConfig {
             .saturating_mul(
                 (self.max_options_bytes as usize)
                     .saturating_mul(4)
-                    .saturating_add(8192),
+                    .saturating_add(8192)
+                    // Every future entry may retain its EXACT center confirmation.
+                    .saturating_add(CONFIRMATION_FIELD_BYTES),
             )
             .saturating_add(8192)
+            // The rejection frontier is future storage, not guessed old slack.
+            .saturating_add(WINDOW_CLOSE_BODY_BYTES)
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,7 +71,21 @@ pub(super) struct Entry {
     pub(super) request: LifecycleRequest,
     pub(super) digest: [u8; 32],
     pub(super) response: LifecycleResponse,
+    pub(super) confirmed: Option<LifecycleResponse>,
     pub(super) local: Option<InternalLocalBinding>,
+}
+impl Entry {
+    fn valid_confirmation(&self) -> bool {
+        self.confirmed.as_ref().is_none_or(|confirmed| {
+            confirmed == &self.response
+                && !matches!(
+                    confirmed.fact,
+                    LifecycleFact::Recorded | LifecycleFact::Stopped
+                )
+                && serde_json::to_vec(confirmed)
+                    .is_ok_and(|bytes| bytes.len() <= RESULT_CONFIRMATION_BODY_BYTES)
+        })
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -73,16 +95,19 @@ pub(super) struct Inbox {
     pub(super) entries: Vec<Entry>,
     pub(super) tenant_highwater: u64,
     pub(super) tenants: Vec<TenantBinding>,
+    /// All older windows are permanently rejected, including after restart.
+    pub(super) retired_through: u64,
 }
 
 fn encoded_request(
     request: &LifecycleRequest,
     config: &InternalInboxConfig,
+    current: Option<PositiveCounter>,
 ) -> Result<Vec<u8>, JournalError> {
     request
         .validate(&config.node)
         .map_err(|_| JournalError::Conflict)?;
-    if request.identity.request_window.get() != 1
+    if Some(request.identity.request_window) != current
         || request.create.options.len() > config.max_options_bytes as usize
     {
         return Err(JournalError::Conflict);
@@ -100,12 +125,15 @@ fn encoded_request(
     Ok(serde_json::to_vec(request)?)
 }
 impl Inbox {
+    pub(super) fn current_window(&self) -> Option<PositiveCounter> {
+        self.retired_through.checked_add(1)?.try_into().ok()
+    }
     fn validate_tenants(&self) -> Result<(), JournalError> {
         let mut tenants = BTreeSet::new();
         let mut local_tenants = BTreeSet::new();
         if self.tenants.len() > usize::from(self.config.max_sandboxes)
             || self.tenant_highwater
-                != self
+                < self
                     .tenants
                     .iter()
                     .map(|binding| binding.local.0)
@@ -144,13 +172,14 @@ impl Inbox {
         let mut local_sandboxes = BTreeSet::new();
         for (index, entry) in self.entries.iter().enumerate() {
             let request = &entry.request;
-            let encoded =
-                encoded_request(request, &self.config).map_err(|_| JournalError::CorruptStore)?;
+            let encoded = encoded_request(request, &self.config, self.current_window())
+                .map_err(|_| JournalError::CorruptStore)?;
             if Sha256::digest(encoded).as_slice() != entry.digest
                 || !operations.insert(request.identity.operation_id.as_str())
                 || entry.response.validate_for(request).is_err()
                 || entry.response.observation_version.get() > self.observation.get()
                 || !observations.insert(entry.response.observation_version.get())
+                || !entry.valid_confirmation()
             {
                 return Err(JournalError::CorruptStore);
             }
@@ -224,7 +253,7 @@ impl Inbox {
         &mut self,
         request: &LifecycleRequest,
     ) -> Result<LifecycleResponse, JournalError> {
-        let encoded = encoded_request(request, &self.config)?;
+        let encoded = encoded_request(request, &self.config, self.current_window())?;
         if let Some(entry) = self
             .entries
             .iter()
@@ -296,6 +325,7 @@ impl Inbox {
             request: request.clone(),
             digest: Sha256::digest(encoded).into(),
             response: response.clone(),
+            confirmed: None,
             local: None,
         });
         self.validate()?;

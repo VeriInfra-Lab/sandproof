@@ -1,6 +1,7 @@
-//! Plain business values; no SDK serialization or HTTP timestamps.
+//! Business values and retry-window DTOs; no storage or HTTP processing.
 use super::ApplicationError;
 use crate::CreateNetwork;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,6 +65,14 @@ pub struct BuildStatus {
     pub state: String,
     pub cleanup_complete: bool,
     pub session: Option<super::Session>,
+}
+
+/// Public retry-window value; its durable authority belongs to the adapter.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BuildWindow {
+    pub request_window: String,
+    pub expires_at_ms: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -10,8 +10,13 @@ use fixture::*;
 use sandbox_controller_core as core;
 #[path = "tests/renewal.rs"]
 mod renewal;
+#[path = "tests/validation.rs"]
+mod validation;
+#[path = "tests/window.rs"]
+mod window;
 
 fn local_admission() -> InternalAdmission {
+    let local = local_template();
     InternalAdmission {
         now_ms: 10,
         limits: super::super::tests_support::limits(),
@@ -23,38 +28,43 @@ fn local_admission() -> InternalAdmission {
         },
         template: InternalTemplate {
             revision: "template-revision".try_into().unwrap(),
-            digest: [1; 32],
-            local: TemplateBinding {
-                template_id: "base-fixed".into(),
-                revision: "r1".into(),
-                owner: None,
-                kernel: TemplateArtifact {
-                    path: "/protected-cache/kernel".into(),
-                    sha256: "a".repeat(64),
-                    size_bytes: 100,
-                },
-                rootfs: TemplateArtifact {
-                    path: "/protected-cache/rootfs".into(),
-                    sha256: "b".repeat(64),
-                    size_bytes: 4096,
-                },
-                resources: ResourceShape {
-                    cpu_count: 1,
-                    memory_mib: 128,
-                    host_memory_bytes: 129 * 1024 * 1024,
-                    disk_bytes: 4096,
-                },
-                envd_version: "fixed-envd".into(),
-                startup: None,
-            },
+            digest: local.canonical_digest().unwrap(),
+            registered: local.clone(),
+            local,
         },
         file_policy_digest: core::PolicyDigest(1),
+    }
+}
+fn local_template() -> TemplateBinding {
+    TemplateBinding {
+        template_id: "base-fixed".into(),
+        revision: "r1".into(),
+        owner: None,
+        kernel: TemplateArtifact {
+            path: "/protected-cache/kernel".into(),
+            sha256: "a".repeat(64),
+            size_bytes: 100,
+        },
+        rootfs: TemplateArtifact {
+            path: "/protected-cache/rootfs".into(),
+            sha256: "b".repeat(64),
+            size_bytes: 4096,
+        },
+        resources: ResourceShape {
+            cpu_count: 1,
+            memory_mib: 128,
+            host_memory_bytes: 129 * 1024 * 1024,
+            disk_bytes: 4096,
+        },
+        envd_version: "fixed-envd".into(),
+        startup: None,
     }
 }
 fn local_request() -> LifecycleRequest {
     let mut r = request(1, 1, Intent::Create);
     r.create.timeout_ms = 60_000;
     r.create.max_lifetime_ms = 600_000;
+    r.create.template_digest = local_admission().template.digest;
     r.create.resources.memory_bytes = local_admission().template.local.resources.host_memory_bytes;
     r.create.options = serde_json::to_vec(&crate::CreateOptions {
         networking: Some(crate::CreateNetworking {

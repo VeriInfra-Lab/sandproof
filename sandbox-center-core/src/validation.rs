@@ -29,6 +29,7 @@ impl CenterState {
             || self.tenants.len() > usize::from(b.max_sandboxes)
             || self.sandboxes.len() > usize::from(b.max_sandboxes)
             || b.required_block_bytes() > 16 * 1024 * 1024
+            || !self.valid_windows()
         {
             return false;
         }
@@ -104,6 +105,12 @@ impl CenterState {
                     != last.response.as_ref().is_some_and(|r| {
                         matches!(r.fact, LifecycleFact::Cleaned | LifecycleFact::NotAccepted)
                     })
+                || sandbox
+                    .terminal_confirmation
+                    .as_ref()
+                    .is_some_and(|confirmed| {
+                        !sandbox.released || last.response.as_ref() != Some(confirmed)
+                    })
             {
                 return false;
             }
@@ -127,7 +134,9 @@ impl CenterState {
                     || n <= prior_operation
                     || (index == 0 && id.intent_version.get() != 1)
                     || id.intent_version.get() <= prior_intent
-                    || id.request_window.get() != 1
+                    || id.request_window != first.request.identity.request_window
+                    || self.window(&id.node).and_then(crate::NodeWindow::current)
+                        != Some(id.request_window)
                     || id.node != first.request.identity.node
                     || id.tenant_id != first.request.identity.tenant_id
                     || id.sandbox_id != first.request.identity.sandbox_id

@@ -4,12 +4,47 @@
 use super::{ControllerJournal, identity, storage, transaction::WorldTransaction};
 use crate::templates::ComputeLimits;
 use crate::{CrashInjector, CrashPoint, JournalError};
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 
 pub use crate::host_contract::{
     AdmissionError, AdmissionLimits, CreateOptions, DEFAULT_TIMEOUT_SECS,
 };
+
+// The same canonical read is also used inside an already validated original
+// read transaction. It does not consult/re-enter the autocommit cache guard.
+pub(in crate::controller) fn read_create_options(
+    connection: &Connection,
+    namespace: &str,
+    sandbox: core::SandboxId,
+) -> Result<CreateOptions, AdmissionError> {
+    let id = identity::sandbox_id(namespace, sandbox)?;
+    let encoded: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
+            [id.as_str()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(bytes) = encoded {
+        let options: CreateOptions =
+            serde_json::from_slice(&bytes).map_err(|_| AdmissionError::InvalidCreateOptions)?;
+        if options.encoded()? != bytes {
+            return Err(AdmissionError::InvalidCreateOptions);
+        }
+        Ok(options)
+    } else {
+        let admitted: i64 = connection.query_row(
+            "SELECT count(*) FROM sandbox_lifetimes WHERE sandbox_id=?1",
+            [id.as_str()],
+            |row| row.get(0),
+        )?;
+        if admitted != 0 {
+            return Err(AdmissionError::MissingCreateOptions);
+        }
+        Ok(CreateOptions::default())
+    }
+}
 
 fn reserve_startup_in_admission(
     tx: &WorldTransaction<'_>,
@@ -439,63 +474,17 @@ impl ControllerJournal {
         if storage::unresolved(&world, request.sandbox) {
             return Err(JournalError::UnresolvedAction.into());
         }
-        let mut global = 0_u64;
-        let mut tenant = 0_u64;
-        let mut global_disk = 0_u64;
-        let mut tenant_disk = 0_u64;
-        let mut global_cpu = 0_u64;
-        let mut tenant_cpu = 0_u64;
-        let mut global_memory = 0_u64;
-        let mut tenant_memory = 0_u64;
-        for (id, record) in world.sandbox_records() {
-            if !accounted(&world, *id, record) {
-                continue;
-            }
-            let lifetime = read_lifetime(&tx, &self.namespace, *id, record.owner)?
-                .ok_or(AdmissionError::UnmanagedActive)?;
-            if compute.is_some() {
-                let bytes: Vec<u8> = tx.query_row(
-                    "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
-                    [identity::sandbox_id(&self.namespace, *id)?.as_str()],
-                    |row| row.get(0),
-                )?;
-                let stored: CreateOptions = serde_json::from_slice(&bytes)
-                    .map_err(|_| AdmissionError::InvalidCreateOptions)?;
-                if stored.encoded()? != bytes {
-                    return Err(AdmissionError::InvalidCreateOptions);
-                }
-                let template = stored.template.ok_or(AdmissionError::UnmanagedActive)?;
-                if template.resources.disk_bytes != lifetime.disk_bytes
-                    || template.owner.is_some_and(|owner| owner != record.owner.0)
-                {
-                    return Err(AdmissionError::CorruptLifetime);
-                }
-                global_cpu = global_cpu
-                    .checked_add(u64::from(template.resources.cpu_count))
-                    .ok_or(AdmissionError::QuotaExceeded)?;
-                global_memory = global_memory
-                    .checked_add(template.resources.host_memory_bytes)
-                    .ok_or(AdmissionError::QuotaExceeded)?;
-                if record.owner == request.owner {
-                    tenant_cpu = tenant_cpu
-                        .checked_add(u64::from(template.resources.cpu_count))
-                        .ok_or(AdmissionError::QuotaExceeded)?;
-                    tenant_memory = tenant_memory
-                        .checked_add(template.resources.host_memory_bytes)
-                        .ok_or(AdmissionError::QuotaExceeded)?;
-                }
-            }
-            global = global.checked_add(1).ok_or(AdmissionError::QuotaExceeded)?;
-            global_disk = global_disk
-                .checked_add(lifetime.disk_bytes)
-                .ok_or(AdmissionError::QuotaExceeded)?;
-            if record.owner == request.owner {
-                tenant = tenant.checked_add(1).ok_or(AdmissionError::QuotaExceeded)?;
-                tenant_disk = tenant_disk
-                    .checked_add(lifetime.disk_bytes)
-                    .ok_or(AdmissionError::QuotaExceeded)?;
-            }
-        }
+        let (global, tenant) = super::admission_usage::usage(
+            &tx,
+            &self.namespace,
+            &world,
+            request.owner,
+            compute.is_some(),
+        )?;
+        let (global_cpu, tenant_cpu) = (global.cpu, tenant.cpu);
+        let (global_memory, tenant_memory) = (global.memory_bytes, tenant.memory_bytes);
+        let (global_disk, tenant_disk) = (global.disk_bytes, tenant.disk_bytes);
+        let (global, tenant) = (global.instances, tenant.instances);
         if global >= limits.max_active_global
             || tenant >= limits.max_active_per_tenant
             || global_disk
@@ -529,8 +518,36 @@ impl ControllerJournal {
             // Template IDs are immutable after their first accepted use, even
             // across catalog replacement. Aliases may point at another ID.
             tx.execute("CREATE TABLE IF NOT EXISTS admitted_templates (template_id TEXT PRIMARY KEY, binding_json BLOB NOT NULL)", [])?;
+            // Distributed admission keeps GLOBAL cache authorization immutable
+            // across native tenant retirement. Native options remain the exact
+            // LOCAL owner projection used by the original core/worker rules.
+            let immutable = if let Some(attachment) = internal {
+                let registered = &attachment.registered_template;
+                let mut projected = registered.clone();
+                if projected.owner.is_some() {
+                    projected.owner = Some(request.owner.0);
+                }
+                // Global artifact paths are metadata only. Execution uses the
+                // checked host cache's exact local immutable paths.
+                projected.kernel.path.clone_from(&template.kernel.path);
+                projected.rootfs.path.clone_from(&template.rootfs.path);
+                if !registered.is_valid()
+                    || registered.owner.is_some_and(|owner| {
+                        owner.to_string() != attachment.request.identity.tenant_id.as_str()
+                    })
+                    || projected != *template
+                    || attachment.local.owner != request.owner
+                    || attachment.local.sandbox != request.sandbox
+                    || attachment.local.operation != request.operation
+                {
+                    return Err(AdmissionError::InvalidCreateOptions);
+                }
+                registered
+            } else {
+                template
+            };
             let binding =
-                serde_json::to_vec(template).map_err(|_| AdmissionError::InvalidCreateOptions)?;
+                serde_json::to_vec(immutable).map_err(|_| AdmissionError::InvalidCreateOptions)?;
             let previous: Option<Vec<u8>> = tx
                 .query_row(
                     "SELECT binding_json FROM admitted_templates WHERE template_id=?1",
@@ -614,34 +631,7 @@ impl ControllerJournal {
     ) -> Result<CreateOptions, AdmissionError> {
         self.committed_world
             .ensure_ready(&self.journal.connection)?;
-        let id = identity::sandbox_id(&self.namespace, sandbox)?;
-        let encoded: Option<Vec<u8>> = self
-            .journal
-            .connection
-            .query_row(
-                "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
-                [id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(bytes) = encoded {
-            let options: CreateOptions =
-                serde_json::from_slice(&bytes).map_err(|_| AdmissionError::InvalidCreateOptions)?;
-            if options.encoded()? != bytes {
-                return Err(AdmissionError::InvalidCreateOptions);
-            }
-            Ok(options)
-        } else {
-            let admitted: i64 = self.journal.connection.query_row(
-                "SELECT count(*) FROM sandbox_lifetimes WHERE sandbox_id=?1",
-                [id.as_str()],
-                |row| row.get(0),
-            )?;
-            if admitted != 0 {
-                return Err(AdmissionError::MissingCreateOptions);
-            }
-            Ok(CreateOptions::default())
-        }
+        read_create_options(&self.journal.connection, &self.namespace, sandbox)
     }
 
     /// Verify owner, Running authority and unexpired lifetime. API data-plane

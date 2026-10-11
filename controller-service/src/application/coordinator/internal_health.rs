@@ -1,8 +1,110 @@
 //! Preserve shared journal failure classes at the autonomous host boundary.
-use super::{ControllerApplication, ControllerHost, JournalError};
+use super::{
+    ApplicationError, ControllerApplication, ControllerHost, JournalError, map_admission,
+    map_journal,
+};
+use crate::{physical_storage::PhysicalTemplateCache, templates::ComputeLimits};
+use sandbox_controller_core::maintenance::slots::HostSlotPhase;
 use sandproof_protocol::internal::NodeIdentity;
+use sandproof_protocol::internal::lifecycle::Resources;
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Original profile/lease and complete peak check before managed cache I/O.
+    /// # Errors
+    /// Unregistered cache, corrupt authority or low physical reserve refuses.
+    pub fn validate_internal_cache_storage(
+        &self,
+        node: &NodeIdentity,
+        cache: &PhysicalTemplateCache,
+    ) -> Result<(), ApplicationError> {
+        let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        inner.journal.internal_pending(node).map_err(map_journal)?;
+        let bounded = inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .ok_or(ApplicationError::Busy)?;
+        let profile = bounded.physical_storage.ok_or(ApplicationError::Busy)?;
+        if profile
+            .template_cache(inner.journal.deployment_namespace())
+            .map_err(map_journal)?
+            != cache
+        {
+            return Err(ApplicationError::Invalid);
+        }
+        let pool = profile
+            .pool(inner.journal.deployment_namespace())
+            .map_err(map_journal)?;
+        inner.host.validate_physical_storage(&profile, pool)?;
+        if inner.host.available_disk_bytes()? < profile.peak_bytes().map_err(map_journal)? {
+            return Err(ApplicationError::QuotaExceeded);
+        }
+        Ok(())
+    }
+
+    /// A current physical veto, never permission to release center reservations.
+    /// Uses the SAME checked authority, original resource accounting and lease.
+    /// # Errors
+    /// Unknown host state or shared corruption cannot produce a healthy report.
+    pub fn internal_free_resources(
+        &self,
+        node: &NodeIdentity,
+        compute: ComputeLimits,
+    ) -> Result<(u64, Resources), ApplicationError> {
+        let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let audit = inner.journal.internal_audit().map_err(map_journal)?;
+        if audit.node != *node {
+            return Err(ApplicationError::Invalid);
+        }
+        let usage = inner
+            .journal
+            .retained_resource_usage()
+            .map_err(map_admission)?;
+        let bounded = inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .ok_or(ApplicationError::Busy)?;
+        let profile = bounded.physical_storage.ok_or(ApplicationError::Busy)?;
+        let pool = profile
+            .pool(inner.journal.deployment_namespace())
+            .map_err(map_journal)?;
+        inner.host.validate_physical_storage(&profile, pool)?;
+        let disk = inner
+            .host
+            .available_disk_bytes()?
+            .saturating_sub(profile.peak_bytes().map_err(map_journal)?);
+        let (cpu, memory) = inner.host.available_compute()?;
+        let slots = u64::try_from(
+            audit
+                .host_slots
+                .iter()
+                .filter(|(_, phase)| *phase == HostSlotPhase::Free)
+                .count(),
+        )
+        .map_err(|_| ApplicationError::Busy)?;
+        let free = Resources {
+            instances: self
+                .config
+                .limits
+                .max_active_global
+                .saturating_sub(usage.instances)
+                .min(slots),
+            cpu: compute.max_vcpus_global.saturating_sub(usage.cpu).min(cpu),
+            memory_bytes: compute
+                .max_memory_bytes_global
+                .saturating_sub(usage.memory_bytes)
+                .min(memory),
+            disk_bytes: pool
+                .rootfs_budget_bytes
+                .saturating_sub(usage.disk_bytes)
+                .min(disk),
+        };
+        Ok((
+            u64::try_from(self.clock.now_ms()?).map_err(|_| ApplicationError::Invalid)?,
+            free,
+        ))
+    }
     /// Inspect the ORIGINAL authority under its application lock. This is not
     /// physical health or a check of every guest credential, and grants no
     /// permission. Unlike public error mapping it retains shared failure class.

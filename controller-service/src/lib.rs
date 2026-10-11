@@ -11,6 +11,7 @@
 extern crate self as sandproof_controller_service;
 
 pub mod application;
+pub use application::BuildWindow;
 #[cfg(feature = "durable")]
 mod controller;
 #[cfg(feature = "durable")]
@@ -32,14 +33,16 @@ pub use host_contract::{
 
 /// Current original host metadata format when the authenticated inbox is
 /// explicitly provisioned. Older experimental formats are refused, not upgraded.
-pub const INTERNAL_INBOX_FORMAT_VERSION: i64 = 14;
+pub const INTERNAL_INBOX_FORMAT_VERSION: i64 =
+    sandproof_protocol::internal::HOST_STORE_FORMAT_VERSION;
 
 #[cfg(feature = "durable")]
 pub use controller::{
-    BuildAnchor, BuildRetryConfig, BuildWindow, CapacityConfig, CheckpointInfo, CheckpointProgress,
-    ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission,
-    InternalCreateResult, InternalInboxConfig, InternalLocalBinding, InternalTemplate,
-    InternalWorkState, Lifetime, MaintenanceConfig, RetirementCandidate,
+    BuildAnchor, BuildRetryConfig, CapacityConfig, CheckpointInfo, CheckpointProgress,
+    ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission, InternalAudit,
+    InternalAuditOperation, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
+    InternalNativeAudit, InternalTemplate, InternalWorkState, Lifetime, MaintenanceConfig,
+    RetirementCandidate,
 };
 
 #[cfg(feature = "durable")]

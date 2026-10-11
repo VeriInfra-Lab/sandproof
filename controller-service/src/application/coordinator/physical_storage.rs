@@ -69,6 +69,47 @@ impl<H: ControllerHost> ControllerApplication<H> {
         options: &CreateOptions,
         disk_bytes: u64,
     ) -> Result<u64, ApplicationError> {
+        let role = if self.internal_build_vms {
+            PoolRole::Builder
+        } else {
+            PoolRole::Runtime
+        };
+        if self.internal_build_vms
+            && (inner
+                .journal
+                .build_retry_config()
+                .map_err(map_journal)?
+                .is_none()
+                || !options.metadata.contains_key("_sandproof_build_window"))
+        {
+            return Err(ApplicationError::Busy);
+        }
+        self.physical_capacity_bytes(inner, options, disk_bytes, role)
+    }
+
+    /// Internal lifecycle uses the original registered pool, not the removed
+    /// public/private build product's second retry-window metadata or journal.
+    pub(super) fn internal_physical_admission_bytes(
+        &self,
+        inner: &Inner<H>,
+        options: &CreateOptions,
+        disk_bytes: u64,
+    ) -> Result<u64, ApplicationError> {
+        let profile = full_profile(&inner.journal)?;
+        let role = profile
+            .pool(inner.journal.deployment_namespace())
+            .map_err(map_journal)?
+            .role;
+        self.physical_capacity_bytes(inner, options, disk_bytes, role)
+    }
+
+    fn physical_capacity_bytes(
+        &self,
+        inner: &Inner<H>,
+        options: &CreateOptions,
+        disk_bytes: u64,
+        role: PoolRole,
+    ) -> Result<u64, ApplicationError> {
         let maintenance = inner.journal.maintenance_config().map_err(map_journal)?;
         let bounded = inner.journal.bounded_host_config().map_err(map_journal)?;
         let profile = bounded
@@ -84,20 +125,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .map_err(map_journal)?;
         pool.validate_limits(&self.config.limits)
             .map_err(map_journal)?;
-        let role = if self.internal_build_vms {
-            PoolRole::Builder
-        } else {
-            PoolRole::Runtime
-        };
-        if pool.role != role
-            || (self.internal_build_vms
-                && (inner
-                    .journal
-                    .build_retry_config()
-                    .map_err(map_journal)?
-                    .is_none()
-                    || !options.metadata.contains_key("_sandproof_build_window")))
-        {
+        if pool.role != role {
             return Err(ApplicationError::Busy);
         }
         if let Some(registry) = &self.registry {

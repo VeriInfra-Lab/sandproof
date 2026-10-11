@@ -119,6 +119,34 @@ impl InternalClient {
             hyper::header::CONNECTION,
             hyper::header::HeaderValue::from_static("close"),
         );
+        self.stream_request(request, route_lease, max_deadline)
+            .await
+    }
+
+    /// Shared pinned streaming transport; callers authorize their own fixed
+    /// endpoint and protocol before entering. Not an arbitrary public proxy.
+    pub(crate) async fn stream_request(
+        &self,
+        mut request: Request<Body>,
+        route_lease: Arc<dyn Send + Sync>,
+        max_deadline: Instant,
+    ) -> Result<hyper::Response<Body>, TransportError> {
+        if max_deadline <= Instant::now() {
+            return Err(TransportError::Deadline);
+        }
+        request.headers_mut().insert(
+            hyper::header::HOST,
+            self.endpoint
+                .server_name
+                .to_str()
+                .as_ref()
+                .try_into()
+                .map_err(|_| TransportError::Configuration)?,
+        );
+        request.headers_mut().insert(
+            hyper::header::CONNECTION,
+            hyper::header::HeaderValue::from_static("close"),
+        );
         let permit = Arc::new(
             Arc::clone(&self.calls)
                 .try_acquire_owned()

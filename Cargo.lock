@@ -959,6 +959,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandproof-center"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "rcgen",
+ "redis",
+ "rustix",
+ "rustls",
+ "sandproof-api",
+ "sandproof-center-core",
+ "sandproof-center-service",
+ "sandproof-center-store",
+ "sandproof-controller-service",
+ "sandproof-data-transport",
+ "sandproof-internal",
+ "sandproof-protocol",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "sandproof-center-core"
 version = "0.1.0"
 dependencies = [
@@ -1077,6 +1105,7 @@ dependencies = [
  "rcgen",
  "rustix",
  "rustls",
+ "sandproof-controller-service",
  "sandproof-data-transport",
  "sandproof-protocol",
  "serde",
@@ -1117,8 +1146,8 @@ dependencies = [
  "axum",
  "http-body-util",
  "hyper",
- "hyper-util",
- "percent-encoding",
+ "rcgen",
+ "rustix",
  "rustls",
  "sandbox-controller-core",
  "sandbox-runtime",
@@ -1132,6 +1161,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "tokio",
 ]
 

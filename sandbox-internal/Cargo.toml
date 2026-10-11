@@ -9,6 +9,7 @@ rust-version.workspace = true
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
 sandproof-data-transport = { path = "../sandbox-data-transport" }
 sandproof-protocol = { path = "../sandbox-protocol" }
+sandproof-controller-service = { path = "../controller-service", default-features = false }
 http-body-util = "=0.1.5"
 hyper = { version = "=1.11.1", features = ["client", "server", "http1"] }
 hyper-util = { version = "=0.1.21", features = ["tokio"] }

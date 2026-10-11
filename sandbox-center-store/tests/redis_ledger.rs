@@ -6,11 +6,11 @@ use sandproof_center_store::{
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{BufReader, Read, Write},
-    net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
+    io::Write,
+    net::SocketAddrV4,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -34,11 +34,18 @@ use sandproof_protocol::internal::lifecycle::{
     Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
 };
 
+#[path = "redis_ledger/window.rs"]
+mod window;
+
 fn center_state() -> CenterState {
-    center_state_with_resources(lifecycle_fixture::resources(2))
+    center_state_with_resources(
+        lifecycle_fixture::resources(2),
+        &lifecycle_fixture::binding(),
+    )
 }
 fn center_state_with_resources(
     resources: sandproof_protocol::internal::lifecycle::Resources,
+    binding: &sandproof_protocol::internal::lifecycle::CreateBinding,
 ) -> CenterState {
     let node = lifecycle_fixture::node("host-a");
     CenterState::new(
@@ -52,14 +59,15 @@ fn center_state_with_resources(
             platform: resources,
         },
         vec![NodeRegistration {
+            role: sandproof_center_core::NodeRole::Runtime,
             identity: node,
             limit: resources,
             mode: NodeMode::Accepting,
             healthy_until_ms: 2000,
             free: resources,
             templates: vec![sandproof_center_core::AvailableTemplate {
-                revision: lifecycle_fixture::binding().template_revision,
-                digest: lifecycle_fixture::binding().template_digest,
+                revision: binding.template_revision.clone(),
+                digest: binding.template_digest,
             }],
             protocol_version: 1,
         }],
@@ -115,7 +123,21 @@ async fn committed_outbox_real_https_sqlite_and_lost_reply_preserve_one_operatio
         inbox: sandproof_host_service::HostLifecycle<host_application::TestHost>,
         lose: AtomicBool,
     }
+    impl sandproof_internal::ValidationReceiver for LoseFirst {
+        async fn validation_evidence(
+            &self,
+            request: sandproof_internal::template::ValidationRequest,
+        ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
+            self.inbox.validation_evidence(request).await
+        }
+    }
     impl LifecycleReceiver for LoseFirst {
+        async fn close(
+            &self,
+            request: sandproof_protocol::internal::window::WindowCloseRequest,
+        ) -> Result<sandproof_protocol::internal::window::WindowCloseAck, ReceiveError> {
+            self.inbox.close(request).await
+        }
         async fn confirm(
             &self,
             result: LifecycleResponse,
@@ -151,7 +173,7 @@ async fn committed_outbox_real_https_sqlite_and_lost_reply_preserve_one_operatio
     let fixture = Engine::new();
     let binding = host_application::request().create;
     let resources = binding.resources.checked_add(binding.resources).unwrap();
-    let state = center_state_with_resources(resources);
+    let state = center_state_with_resources(resources, &binding);
     let limit = state.bounds().required_block_bytes();
     let mut center = center_authority_with_state(&fixture, fixture.address, &state);
     let dir = tempfile::tempdir().unwrap();
@@ -173,10 +195,10 @@ async fn committed_outbox_real_https_sqlite_and_lost_reply_preserve_one_operatio
         .unwrap(),
         lifecycle_fixture::node("host-a"),
         limits,
-        LoseFirst {
+        sandproof_internal::diagnostic::RejectTemplateCache::new(LoseFirst {
             inbox: inbox.clone(),
             lose: AtomicBool::new(true),
-        },
+        }),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let client = Arc::new(InternalClient::new(
@@ -253,7 +275,7 @@ async fn committed_outbox_real_https_sqlite_and_lost_reply_preserve_one_operatio
         .unwrap();
     assert!(matches!(ready.fact, LifecycleFact::Ready { .. }));
     drop(center);
-    let (ledger, _) = RedisLedger::open(
+    let (ledger, _) = RedisLedger::<CenterState>::open(
         endpoint(fixture.address),
         Engine::config(limit),
         fixture.lease(),
@@ -428,7 +450,7 @@ fn center_actual_commit_reply_loss_blocks_dispatch_then_recovers_same_outbox() {
     let fixture = Engine::new();
     let proxy = ReplyLoss::new(fixture.address);
     let mut center = center_authority(&fixture, proxy.address);
-    proxy.armed.store(1, Ordering::SeqCst);
+    proxy.lose_after(0);
     assert_eq!(
         center.create(&"1".try_into().unwrap(), lifecycle_fixture::binding(), 0),
         Err(AuthorityError::Store(StoreError::OutcomeUnknown))
@@ -875,147 +897,9 @@ fn truncated_aof_refuses_start_without_repairing_the_original_file() {
     ));
 }
 
-// Controlled proxy changes only delivery of an actual Redis reply. It neither
-// implements nor mocks the authority store. Frames/threads have fixed budgets.
-struct ReplyLoss {
-    address: SocketAddrV4,
-    armed: Arc<AtomicU8>,
-    stop: Arc<AtomicBool>,
-    worker: Option<thread::JoinHandle<()>>,
-}
-impl ReplyLoss {
-    fn new(target: SocketAddrV4) -> Self {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, listener.local_addr().unwrap().port());
-        let armed = Arc::new(AtomicU8::new(0));
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker_arm = Arc::clone(&armed);
-        let worker_stop = Arc::clone(&stop);
-        let worker = thread::spawn(move || {
-            for incoming in listener.incoming() {
-                if worker_stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                let Ok(client) = incoming else {
-                    break;
-                };
-                let upstream =
-                    TcpStream::connect_timeout(&target.into(), Duration::from_secs(1)).unwrap();
-                for stream in [&client, &upstream] {
-                    stream
-                        .set_read_timeout(Some(Duration::from_secs(2)))
-                        .unwrap();
-                    stream
-                        .set_write_timeout(Some(Duration::from_secs(2)))
-                        .unwrap();
-                }
-                let mut client = BufReader::new(client);
-                let mut upstream = BufReader::new(upstream);
-                while let Ok(request) = frame(&mut client) {
-                    let fault = if request.windows(4).any(|part| part == b"HSET") {
-                        worker_arm.swap(0, Ordering::SeqCst)
-                    } else {
-                        0
-                    };
-                    if fault == 2 {
-                        // Real noeviction refusal after the adapter's health
-                        // check, not a fabricated Redis error response.
-                        let _: () = redis::cmd("CONFIG")
-                            .arg("SET")
-                            .arg("maxmemory")
-                            .arg(1)
-                            .query(&mut connect(target))
-                            .unwrap();
-                    }
-                    if upstream.get_mut().write_all(&request).is_err() {
-                        break;
-                    }
-                    let Ok(reply) = frame(&mut upstream) else {
-                        break;
-                    };
-                    if fault == 1 {
-                        assert_eq!(reply, b":0\r\n");
-                        break; // commit acknowledged by real engine, not by caller
-                    }
-                    if client.get_mut().write_all(&reply).is_err() {
-                        break;
-                    }
-                }
-            }
-        });
-        Self {
-            address,
-            armed,
-            stop,
-            worker: Some(worker),
-        }
-    }
-}
-impl Drop for ReplyLoss {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        let _ = TcpStream::connect_timeout(&self.address.into(), Duration::from_secs(1));
-        self.worker.take().unwrap().join().unwrap();
-    }
-}
-fn frame(reader: &mut BufReader<TcpStream>) -> std::io::Result<Vec<u8>> {
-    fn read(
-        reader: &mut BufReader<TcpStream>,
-        output: &mut Vec<u8>,
-        depth: usize,
-    ) -> std::io::Result<()> {
-        if depth > 8 {
-            return Err(std::io::Error::other("fixture frame depth"));
-        }
-        let mut line = Vec::new();
-        loop {
-            let mut byte = [0];
-            reader.read_exact(&mut byte)?;
-            line.push(byte[0]);
-            if line.len() > 4096 {
-                return Err(std::io::Error::other("fixture header bound"));
-            }
-            if line.ends_with(b"\r\n") {
-                break;
-            }
-        }
-        let number = || -> std::io::Result<usize> {
-            std::str::from_utf8(&line[1..line.len() - 2])
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .filter(|value| *value < 32768)
-                .ok_or_else(|| std::io::Error::other("fixture frame bound"))
-        };
-        let prefix = line[0];
-        let count = if matches!(prefix, b'$' | b'*') {
-            Some(number()?)
-        } else {
-            None
-        };
-        output.extend_from_slice(&line);
-        match prefix {
-            b'$' => {
-                let mut bytes = vec![0; count.unwrap() + 2];
-                reader.read_exact(&mut bytes)?;
-                output.extend(bytes);
-            }
-            b'*' => {
-                for _ in 0..count.unwrap() {
-                    read(reader, output, depth + 1)?;
-                }
-            }
-            b'+' | b'-' | b':' => {}
-            _ => return Err(std::io::Error::other("fixture RESP2")),
-        }
-        if output.len() > 65536 {
-            return Err(std::io::Error::other("fixture aggregate bound"));
-        }
-        Ok(())
-    }
-    let mut output = Vec::new();
-    read(reader, &mut output, 0)?;
-    Ok(output)
-}
+#[path = "support/reply_loss.rs"]
+mod reply_loss;
+use reply_loss::ReplyLoss;
 
 #[test]
 fn actual_commit_reply_loss_fences_until_original_state_is_durably_reaffirmed() {

@@ -6,6 +6,7 @@ use sandproof_protocol::internal::lifecycle::LifecycleFact;
 
 fn registration(name: &str) -> NodeRegistration {
     NodeRegistration {
+        role: sandproof_center_core::NodeRole::Runtime,
         identity: node(name),
         limit: resources(2),
         mode: NodeMode::Accepting,
@@ -91,14 +92,14 @@ fn stale_health_physical_free_templates_and_draining_are_vetoes() {
     let s = s.observe_node(b.clone()).unwrap();
     assert_eq!(
         s.create(&tenant, binding(), 0),
-        Err(DecisionError::Capacity)
+        Err(DecisionError::Unavailable)
     );
     b.healthy_until_ms = 2000;
     b.templates.clear();
     let s = s.observe_node(b).unwrap();
     assert_eq!(
         s.create(&tenant, binding(), 0),
-        Err(DecisionError::Capacity)
+        Err(DecisionError::Unavailable)
     );
 }
 #[test]
@@ -236,5 +237,42 @@ fn tenant_quota_does_not_block_another_tenant_and_template_digest_must_match() {
     assert!(s.create(&two, binding(), 0).is_ok());
     let mut wrong = binding();
     wrong.template_digest = [2; 32];
-    assert_eq!(s.create(&two, wrong, 0), Err(DecisionError::Capacity));
+    assert_eq!(s.create(&two, wrong, 0), Err(DecisionError::Unavailable));
+}
+
+#[test]
+fn private_build_role_reuses_admission_without_consuming_runtime_pool() {
+    let mut builder = registration("host-a");
+    builder.role = NodeRole::Builder;
+    let s = state().observe_node(builder);
+    assert_eq!(s, Err(DecisionError::Conflict));
+    let mut builder = registration("host-a");
+    builder.role = NodeRole::Builder;
+    let initial = CenterState::new(
+        node("host-a").deployment_id,
+        state().bounds().clone(),
+        vec![builder, registration("host-b")],
+        vec![TenantBudget {
+            tenant: "1".try_into().unwrap(),
+            limit: resources(4),
+        }],
+    )
+    .unwrap();
+    let tenant = "1".try_into().unwrap();
+    let (normal, public) = initial.create(&tenant, binding(), 0).unwrap();
+    assert_eq!(public.identity.node, node("host-b"));
+    let (both, private) = normal.create_builder(&tenant, binding(), 0).unwrap();
+    assert_eq!(private.identity.node, node("host-a"));
+    assert_ne!(public.identity.sandbox_id, private.identity.sandbox_id);
+    assert_ne!(public.identity.operation_id, private.identity.operation_id);
+    assert_eq!(
+        both.reserved(None, Some(&node("host-b"))),
+        Some(resources(1))
+    );
+    assert_eq!(
+        both.reserved(None, Some(&node("host-a"))),
+        Some(resources(1))
+    );
+    assert_eq!(both.pending(), vec![public, private]);
+    assert!(both.is_valid());
 }

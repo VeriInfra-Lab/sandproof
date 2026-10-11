@@ -1,7 +1,6 @@
 //! Read-only center assembly. No Redis/KVM/real gateway acceptance is claimed.
 use super::*;
-#[path = "../../../sandbox-internal/tests/support/tls.rs"]
-mod tls;
+use crate::test_tls as tls;
 use sandproof_controller_service::templates::{ResourceShape, TemplateArtifact, TemplateBinding};
 use serde_json::{Value, json};
 use std::{
@@ -28,7 +27,7 @@ impl Fixture {
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let owner = fs::metadata(root.path()).unwrap().uid();
         let path = |name: &str| root.path().join(name);
-        let tls = tls::certificates();
+        let tls = tls::certificates_with_dual_roles();
         write_private(&path("center.der"), tls.center.certificate.der());
         write_private(&path("center-key.der"), &tls.center.key.serialize_der());
         write_private(&path("ca.der"), tls.ca.der());
@@ -64,34 +63,39 @@ impl Fixture {
             envd_version: "0.9.0".into(),
             startup: None,
         };
-        let template =
-            PublicTemplate::from_binding(binding.clone(), "base-r1".try_into().unwrap()).unwrap();
         let resources = json!({"instances":4,"cpu":4,"memory_bytes":516*1024*1024u64,"disk_bytes":4*1024*1024*1024u64});
         let config = json!({
             "deployment_id":"assembly-fixture","bind":"127.0.0.1:3000","domain":"sandbox.test",
             "credentials":[{"tenant":1,"secret":"center-config-user-fixture-only-key-0001"}],
             "data_token_key":path("token.key"),"max_timeout_secs":300,"max_lifetime_secs":3600,
             "startup_timeout_secs":300,"reply_timeout_ms":1000,"poll_interval_ms":10,"expiry_scan_ms":1000,
+            "node_observation":{"health_window_ms":5000,"max_clock_skew_ms":100},
             "public_ipv4_enabled":false,"request_admission":{"max_pending_requests":8,"control_reserve":2},
             "data_transfer":{"file_upload_bytes":1_048_576,"file_download_bytes":1_048_576,"command_input_bytes":65_536,
                 "rpc_request_bytes":65_536,"rpc_response_bytes":65_536,"max_transfers":8,"max_transfers_per_vm":4,
                 "control_reserve":1,"request_idle_seconds":5,"file_idle_seconds":5,"write_idle_seconds":5},
             "redis":{"address":"127.0.0.1:6379","username":"center-fixture","password":"redis-config-fixture-only-key",
-                "max_block_bytes":2_097_152,"memory_bytes":67_108_864,"operation_timeout_ms":1000,"writer_root":path("writer")},
+                "max_block_bytes":8_388_608,"memory_bytes":67_108_864,"operation_timeout_ms":1000,"writer_root":path("writer")},
             "tls":{"certificate_chain_der":[path("center.der")],"private_key_der":path("center-key.der"),
                 "trusted_roots_der":[path("ca.der")],"max_connections":12,"handshake_timeout_ms":500,"request_timeout_ms":1000},
             "bounds":{"max_nodes":2,"max_templates_per_node":4,"max_sandboxes":4,"operations_per_sandbox":4,"max_options_bytes":4096,"platform":resources},
             "tenants":[{"tenant":"1","limit":resources}],
             "nodes":[{"registration":{"identity":{"deployment_id":"assembly-fixture","node_id":"host-a","node_generation":1},
-                "limit":resources,"mode":"accepting","healthy_until_ms":100_000,"free":resources,
-                "templates":[{"revision":"base-r1","digest":template.digest()}],"protocol_version":1},
+                "role":"runtime","limit":resources,"mode":"accepting","healthy_until_ms":0,"free":{"instances":0,"cpu":0,"memory_bytes":0,"disk_bytes":0},
+                "templates":[],"protocol_version":1},
                 "address":"127.0.0.1:9000","server_name":"host.test","peer_certificates_der":[path("host.der")]}],
             "template_registry":{"root":path("registry"),"max_templates_global":8,"max_templates_per_tenant":4,
                 "max_artifact_bytes_global":16*1024*1024*1024u64,"max_artifact_bytes_per_tenant":8*1024*1024*1024u64,"validation_timeout_secs":30},
+            "metadata_budget":{"max_certificate_bytes":65_536},
+            "private_builds":null,
+            "private_build_boundary":null,
             "templates":{"templates":[binding],"aliases":{"default":"base"},"compute_limits":{
                 "max_vcpus_global":4,"max_vcpus_per_tenant":4,
                 "max_memory_bytes_global":516*1024*1024u64,"max_memory_bytes_per_tenant":516*1024*1024u64}},
             "template_registrations":[{"revision":"base-r1","template_id":"base"}]
+            ,"artifact_service":{"bind":"127.0.0.1:9100","server_name":"center.test","tls":{"certificate_chain_der":[path("center.der")],
+                "private_key_der":path("center-key.der"),"trusted_roots_der":[path("ca.der")]},
+                "max_connections":4,"handshake_timeout_ms":500,"request_timeout_ms":1000,"stream_timeout_ms":60000}
         });
         Self {
             root,
@@ -104,6 +108,136 @@ impl Fixture {
         write_private(&path, &serde_json::to_vec(config).unwrap());
         CenterAssemblyInputs::load(&path, self.owner)
     }
+    fn with_private_builds(&self) -> Value {
+        let mut config = self.config.clone();
+        let mut builder = config["templates"]["templates"][0].clone();
+        builder["template_id"] = json!("builder-base");
+        config["templates"]["templates"]
+            .as_array_mut()
+            .unwrap()
+            .push(builder);
+        config["template_registrations"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"revision":"builder-r1","template_id":"builder-base"}));
+        let tls = tls::certificates_with_dual_roles();
+        write_private(
+            &self.root.path().join("builder.der"),
+            tls.other.certificate.der(),
+        );
+        // A different valid leaf pin suffices for assembly; actual peer trust
+        // against its issuer is tested by the transport, not invented here.
+        let mut node = config["nodes"][0].clone();
+        node["registration"]["identity"]["node_id"] = json!("host-builder");
+        node["registration"]["role"] = json!("builder");
+        node["address"] = json!("127.0.0.1:9001");
+        node["server_name"] = json!("other.test");
+        node["peer_certificates_der"] = json!([self.root.path().join("builder.der")]);
+        config["nodes"].as_array_mut().unwrap().push(node);
+        write_private(
+            &self.root.path().join("build.key"),
+            b"private-build-config-test-credential-0001",
+        );
+        config["private_builds"] = json!({"windows":{"max_open_windows":2,"max_duration_ms":60000},
+            "window_duration_ms":5000,"max_anchors":1,"builder_revision":"builder-r1"});
+        config["private_build_boundary"] = json!({"bind":"127.0.0.1:9200","backend_address":"127.0.0.1:9201",
+            "credential_file":self.root.path().join("build.key"),"request_timeout_ms":60000,
+            "max_request_bytes":65536,"max_response_bytes":409_600});
+        config
+    }
+}
+
+#[test]
+fn private_build_capability_is_explicit_role_bound_and_uses_the_registered_digest() {
+    let fixture = Fixture::new();
+    let config = fixture.with_private_builds();
+    let loaded = fixture.load(&config).unwrap();
+    let private = loaded.provisioning.metadata.private_build_config().unwrap();
+    let binding: TemplateBinding =
+        serde_json::from_value(config["templates"]["templates"][1].clone()).unwrap();
+    assert_eq!(private.builder_digest, binding.canonical_digest().unwrap());
+    assert!(loaded.private_build_boundary.is_some());
+    let mut missing = config.clone();
+    missing["private_builds"]
+        .as_object_mut()
+        .unwrap()
+        .insert("builder_digest".into(), json!(vec![0; 32]));
+    assert!(fixture.load(&missing).is_err());
+    for path in ["private_builds", "private_build_boundary"] {
+        let mut changed = config.clone();
+        changed[path] = Value::Null;
+        assert!(fixture.load(&changed).is_err());
+        changed.as_object_mut().unwrap().remove(path);
+        assert!(fixture.load(&changed).is_err());
+    }
+    for revision in ["missing", "base-r1"] {
+        let mut changed = config.clone();
+        changed["private_builds"]["builder_revision"] = json!(revision);
+        assert!(fixture.load(&changed).is_err());
+    }
+    let mut no_builder = config.clone();
+    no_builder["nodes"][1]["registration"]["role"] = json!("runtime");
+    assert!(fixture.load(&no_builder).is_err());
+}
+
+#[test]
+fn private_build_transport_preserves_large_input_bounds_and_refuses_unsafe_boundaries() {
+    let fixture = Fixture::new();
+    let config = fixture.with_private_builds();
+    for bytes in [65536_u64, 16 * 1024 * 1024 * 1024 + 64 * 1024] {
+        let mut changed = config.clone();
+        changed["private_build_boundary"]["max_request_bytes"] = json!(bytes);
+        assert!(fixture.load(&changed).is_ok());
+    }
+    for (field, value) in [
+        ("bind", json!("0.0.0.0:9200")),
+        ("bind", json!("127.0.0.1:3000")),
+        ("backend_address", json!("127.0.0.1:9200")),
+        ("max_response_bytes", json!(409_599)),
+        (
+            "max_request_bytes",
+            json!(16_u64 * 1024 * 1024 * 1024 + 64 * 1024 + 1),
+        ),
+    ] {
+        let mut changed = config.clone();
+        changed["private_build_boundary"][field] = value;
+        assert!(fixture.load(&changed).is_err());
+    }
+}
+
+#[test]
+fn artifact_server_role_and_bounded_status_freshness_are_required() {
+    let fixture = Fixture::new();
+    let mut changed = fixture.config.clone();
+    changed["artifact_service"]["server_name"] = json!("not-center.test");
+    assert!(matches!(
+        fixture.load(&changed),
+        Err(AssemblyError::InvalidTls)
+    ));
+    for (window, skew) in [(0, 0), (1000, 0), (5000, 5001), (86_400_001, 0)] {
+        let mut changed = fixture.config.clone();
+        changed["node_observation"] = json!({"health_window_ms":window,"max_clock_skew_ms":skew});
+        assert!(matches!(
+            fixture.load(&changed),
+            Err(AssemblyError::InvalidConfiguration)
+        ));
+    }
+    let one_role = tls::certificates();
+    write_private(&fixture.root.path().join("ca.der"), one_role.ca.der());
+    write_private(
+        &fixture.root.path().join("center.der"),
+        one_role.center.certificate.der(),
+    );
+    write_private(
+        &fixture.root.path().join("center-key.der"),
+        &one_role.center.key.serialize_der(),
+    );
+    // with_single_cert alone accepts this client-only identity. Production
+    // protected load must reject it BEFORE binding the artifact listener.
+    assert!(matches!(
+        fixture.load(&fixture.config),
+        Err(AssemblyError::InvalidTls)
+    ));
 }
 
 #[test]
@@ -112,13 +246,12 @@ fn center_inputs_load_protected_original_bindings_without_host_artifact_io() {
     let loaded = fixture.load(&fixture.config).unwrap();
     assert_eq!(loaded.hosts.len(), 1);
     assert_eq!(loaded.hosts[0].identity.node_id.as_str(), "host-a");
-    assert_eq!(loaded.templates[0].template_id(), "base");
+    assert!(loaded.provisioning.is_valid());
     assert_eq!(
-        loaded.catalog.resolve(1, "default").unwrap().template_id,
-        "base"
+        loaded.provisioning.center.bounds().operations_per_sandbox,
+        4
     );
-    assert!(loaded.registration.is_valid());
-    assert_eq!(loaded.registration.bounds().operations_per_sandbox, 4);
+    assert!(loaded.provisioning.metadata.registry().records().is_empty());
     assert!(
         loaded
             .admission
@@ -188,11 +321,23 @@ fn nodes_require_exact_deployment_original_template_digest_and_tls_role_pins() {
         Err(AssemblyError::InvalidConfiguration)
     ));
     let mut digest = fixture.config.clone();
-    digest["nodes"][0]["registration"]["templates"][0]["digest"] = json!(vec![0; 32]);
+    digest["template_registrations"][0]["template_id"] = json!("missing-template");
     assert!(matches!(
         fixture.load(&digest),
         Err(AssemblyError::IncompleteTemplateRegistration)
     ));
+    for field in ["healthy_until_ms", "free", "templates"] {
+        let mut invented = fixture.config.clone();
+        invented["nodes"][0]["registration"][field] = match field {
+            "healthy_until_ms" => json!(100_000),
+            "free" => json!({"instances":1,"cpu":1,"memory_bytes":1,"disk_bytes":1}),
+            _ => json!([{"revision":"base-r1","digest":vec![0;32]}]),
+        };
+        assert!(matches!(
+            fixture.load(&invented),
+            Err(AssemblyError::InvalidConfiguration)
+        ));
+    }
     let mut center_pin = fixture.config.clone();
     center_pin["nodes"][0]["peer_certificates_der"] =
         json!([fixture.root.path().join("center.der")]);
@@ -238,4 +383,34 @@ fn tls_key_and_global_token_files_use_same_protected_owner_and_size_checks() {
         fixture.load(&fixture.config),
         Err(AssemblyError::InvalidTls)
     ));
+}
+
+#[test]
+fn provisioning_requires_whole_business_future_budget_without_separate_storage_mode() {
+    let fixture = Fixture::new();
+    let loaded = fixture.load(&fixture.config).unwrap();
+    let required = loaded.provisioning.required_block_bytes();
+    assert!(required > loaded.provisioning.center.bounds().required_block_bytes());
+    for budget in [required - 1, 2_097_152] {
+        let mut insufficient = fixture.config.clone();
+        insufficient["redis"]["max_block_bytes"] = json!(budget);
+        assert!(matches!(
+            fixture.load(&insufficient),
+            Err(AssemblyError::InvalidConfiguration)
+        ));
+    }
+    let mut missing = fixture.config.clone();
+    missing.as_object_mut().unwrap().remove("metadata_budget");
+    assert!(matches!(
+        fixture.load(&missing),
+        Err(AssemblyError::InvalidConfiguration)
+    ));
+    for certificate in [0, 65_535, 16 * 1024 * 1024 + 1] {
+        let mut invalid = fixture.config.clone();
+        invalid["metadata_budget"]["max_certificate_bytes"] = json!(certificate);
+        assert!(matches!(
+            fixture.load(&invalid),
+            Err(AssemblyError::InvalidConfiguration)
+        ));
+    }
 }

@@ -21,7 +21,7 @@ fn production_journal_wiring_rejects_policy_disable_and_change() {
     fs::create_dir(&directory).unwrap();
     let scratch = Scratch(directory);
     let database = scratch.0.join("controller.db");
-    let config: ConfigFile = serde_json::from_value(full_capacity_settings()).unwrap();
+    let config: NativeSettings = serde_json::from_value(full_capacity_settings()).unwrap();
     let mut contract = DeploymentContract::validate(&config).unwrap();
     let policy = contract.maintenance.clone();
     drop(open_journal(database.clone(), &config.namespace, &contract).unwrap());
@@ -67,7 +67,7 @@ fn persisted_route_limits_refuse_changed_config_without_changing_the_original() 
     let database = scratch.0.join("controller.db");
     let namespace = "0123456789abcdef";
     let original = resolve(settings());
-    let maintenance = serde_json::from_value::<ConfigFile>(settings())
+    let maintenance = serde_json::from_value::<NativeSettings>(settings())
         .unwrap()
         .maintenance
         .unwrap();

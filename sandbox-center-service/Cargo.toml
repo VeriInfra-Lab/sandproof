@@ -17,10 +17,10 @@ required-features = ["redis-tests"]
 [dependencies]
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
 sandproof-data-transport = { path = "../sandbox-data-transport" }
-sandproof-api = { path = "../sandbox-api" }
+sandproof-api = { path = "../sandbox-api", default-features = false }
 sandproof-center-core = { path = "../sandbox-center-core" }
 sandproof-center-store = { path = "../sandbox-center-store" }
-sandproof-controller-service = { path = "../controller-service" }
+sandproof-controller-service = { path = "../controller-service", default-features = false }
 sandproof-internal = { path = "../sandbox-internal" }
 sandproof-protocol = { path = "../sandbox-protocol" }
 sandbox-controller-core = { path = "../controller-core" }

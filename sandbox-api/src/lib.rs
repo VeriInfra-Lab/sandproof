@@ -5,22 +5,30 @@
 //! must authorize every operation against the durable controller state.
 
 pub mod admission;
+mod authentication;
 mod build_vm_api;
 mod list;
-pub mod managed;
+pub use authentication::{
+    PRIVATE_BUILD_CREDENTIAL_HEADER, PRIVATE_BUILD_TENANT_HEADER, PrivateBuildCredential,
+    authenticate_public,
+};
 mod network;
+mod projection;
 mod template_api;
 pub use build_vm_api::{
-    BuildSettlementRequest, BuildSettlementView, BuildVmRequest, BuildVmView, BuildWindowClosed,
+    BuildPort, BuildSettlementRequest, BuildSettlementView, BuildVmRequest, BuildVmView,
+    BuildWindowClosed,
 };
 pub use list::{ListOrder, ListQuery, Selection as ListSelection, page_to_sdk};
 pub use sandproof_controller_service::template_registry::{
     PublicationView, TemplatePage, TemplateView,
 };
+pub use template_api::BuildPublicationPort;
 
 use std::{sync::Arc, time::Duration};
 
 use admission::{RequestAdmission, RequestClass};
+use authentication::Authentication;
 use axum::{
     Json, Router,
     extract::{
@@ -182,59 +190,6 @@ pub enum SandboxOnTimeout {
 /// `create` must commit a unique admission before host I/O; an uncertain
 /// physical outcome must never be silently retried as another create.
 pub trait ControllerPort: Send + Sync + 'static {
-    /// Private build-pool identity API. Disabled on ordinary controllers.
-    /// # Errors
-    /// Missing identities return `NotFound`; an admitted identity is never replaced.
-    fn build_vm(
-        &self,
-        _tenant: &str,
-        _id: &str,
-        _create: Option<BuildVmRequest>,
-    ) -> Result<BuildVmView, PortError> {
-        Err(PortError::NotFound)
-    }
-    /// Exact private retry tuple lookup, including accepted closed windows.
-    /// # Errors
-    /// Unknown identities are not proof that delayed admission is impossible.
-    fn build_vm_in_window(
-        &self,
-        tenant: &str,
-        id: &str,
-        window: Option<&str>,
-        create: Option<BuildVmRequest>,
-    ) -> Result<BuildVmView, PortError> {
-        if window.is_some() {
-            return Err(PortError::NotFound);
-        }
-        self.build_vm(tenant, id, create)
-    }
-    /// # Errors
-    /// Requires explicitly configured private retry windows.
-    fn issue_build_window(
-        &self,
-        _tenant: &str,
-    ) -> Result<sandproof_controller_service::BuildWindow, PortError> {
-        Err(PortError::NotFound)
-    }
-    /// # Errors
-    /// Unknown commits do not establish an admission fence.
-    fn close_build_window(
-        &self,
-        _tenant: &str,
-        _window: &str,
-    ) -> Result<BuildWindowClosed, PortError> {
-        Err(PortError::NotFound)
-    }
-    /// # Errors
-    /// Exact closed admission and core cleanup are required before releasing anchors.
-    fn settle_build_vm(
-        &self,
-        _tenant: &str,
-        _id: &str,
-        _request: BuildSettlementRequest,
-    ) -> Result<BuildSettlementView, PortError> {
-        Err(PortError::NotFound)
-    }
     /// # Errors
     /// Disabled registries return `NotFound`; unknown work is not re-dispatched.
     fn publish_template(
@@ -307,7 +262,7 @@ pub trait ControllerPort: Send + Sync + 'static {
 
 struct ApiState<P> {
     port: Arc<P>,
-    credentials: Vec<ApiCredential>,
+    authentication: Authentication,
     admission: Arc<RequestAdmission>,
 }
 
@@ -315,39 +270,17 @@ impl<P> Clone for ApiState<P> {
     fn clone(&self) -> Self {
         Self {
             port: Arc::clone(&self.port),
-            credentials: self.credentials.clone(),
+            authentication: self.authentication.clone(),
             admission: Arc::clone(&self.admission),
         }
     }
 }
 
-/// Check a same-length key without early exit on its contents. Credential
-/// comparison is only one defense; production still needs private transport.
-fn secret_equal(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    let mut difference = 0_u8;
-    for (&a, &b) in left.iter().zip(right) {
-        difference |= a ^ b;
-    }
-    difference == 0
-}
-
 fn authenticate<P>(state: &ApiState<P>, headers: &HeaderMap) -> Result<String, ApiFailure> {
-    let mut values = headers.get_all("x-api-key").iter();
-    let supplied = values.next().ok_or(ApiFailure::Unauthorized)?;
-    if values.next().is_some() {
-        return Err(ApiFailure::Unauthorized);
-    }
-    let supplied = supplied.as_bytes();
-    let mut tenant = None;
-    for credential in &state.credentials {
-        if secret_equal(supplied, credential.secret.as_bytes()) {
-            tenant = Some(credential.tenant.clone());
-        }
-    }
-    tenant.ok_or(ApiFailure::Unauthorized)
+    state
+        .authentication
+        .authenticate(headers)
+        .ok_or(ApiFailure::Unauthorized)
 }
 
 #[derive(Debug)]
@@ -561,7 +494,7 @@ pub fn router_with_admission<P: ControllerPort>(
     validate_credentials(&credentials)?;
     let state = ApiState {
         port,
-        credentials,
+        authentication: Authentication::Public(credentials.into()),
         admission,
     };
     Ok(Router::new()
@@ -573,9 +506,28 @@ pub fn router_with_admission<P: ControllerPort>(
         )
         .route("/sandboxes/{sandbox_id}/timeout", post(set_timeout::<P>))
         .merge(template_api::routes::<P>())
-        .merge(build_vm_api::routes::<P>())
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
         .with_state(state))
+}
+
+/// Private build-helper boundary. It never exposes ordinary create, list,
+/// template or user-credential routes. Deployment must keep this listener
+/// private; the typed port must restrict lifecycle operations to exact anchors.
+pub fn private_build_router_with_admission<P: BuildPort + BuildPublicationPort>(
+    port: Arc<P>,
+    credential: PrivateBuildCredential,
+    admission: Arc<RequestAdmission>,
+) -> Router {
+    let state = ApiState {
+        port,
+        authentication: Authentication::PrivateBuild(credential),
+        admission,
+    };
+    Router::new()
+        .merge(build_vm_api::routes::<P>())
+        .merge(template_api::build_publication_routes::<P>())
+        .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
+        .with_state(state)
 }
 
 /// Shared deployment validation; it does not authenticate a request, allocate

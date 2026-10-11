@@ -23,6 +23,9 @@ use sandproof_protocol::{
 pub struct InternalTemplate {
     pub revision: ResourceId,
     pub digest: [u8; 32],
+    /// Exact GLOBAL immutable registration. Its canonical digest is the wire
+    /// binding; global paths are metadata, never local execution targets.
+    pub registered: TemplateBinding,
     /// Before admission, owner is the registered GLOBAL numeric user identity.
     /// Admission authenticates that exact decimal ID, then projects it into
     /// the host's private tenant mapping for the original local algorithm.
@@ -51,6 +54,8 @@ pub struct InternalCreateResult {
 pub(in crate::controller) struct AdmissionAttachment {
     pub request: LifecycleRequest,
     pub local: InternalLocalBinding,
+    /// Original protected cache descriptor before GLOBAL-to-LOCAL owner mapping.
+    pub registered_template: TemplateBinding,
 }
 
 fn policy(options: &CreateOptions) -> Result<core::NetworkPolicy, AdmissionError> {
@@ -79,7 +84,18 @@ fn validate_template_and_time(
     let now = u64::try_from(*now_ms).map_err(|_| AdmissionError::InvalidClock)?;
     let binding = &request.create;
     let shape = template.local.resources;
+    let mut projected = template.registered.clone();
+    projected
+        .kernel
+        .path
+        .clone_from(&template.local.kernel.path);
+    projected
+        .rootfs
+        .path
+        .clone_from(&template.local.rootfs.path);
     if !template.local.is_valid()
+        || projected != template.local
+        || template.registered.canonical_digest().ok() != Some(template.digest)
         || template.revision != binding.template_revision
         || template.digest != binding.template_digest
         || binding.resources.instances != 1
@@ -180,6 +196,7 @@ impl ControllerJournal {
             return Err(AdmissionError::Unauthorized);
         }
         let owner = local_owner(self, &inbox, &request.identity.tenant_id)?;
+        let registered_template = template.registered;
         // Do not confuse global identity with allocation order on this host.
         // None stays explicitly shared; private descriptions retain the SAME
         // authenticated owner through the original local admission checks.
@@ -231,6 +248,7 @@ impl ControllerJournal {
             Some(&AdmissionAttachment {
                 request: request.clone(),
                 local,
+                registered_template,
             }),
             crashes,
         )?;

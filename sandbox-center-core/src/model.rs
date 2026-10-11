@@ -1,4 +1,7 @@
-use sandproof_protocol::internal::lifecycle::{LifecycleRequest, LifecycleResponse, Resources};
+use sandproof_protocol::internal::lifecycle::{
+    LifecycleRequest, LifecycleResponse, RESULT_CONFIRMATION_BODY_BYTES, Resources,
+};
+use sandproof_protocol::internal::window::WINDOW_CLOSE_BODY_BYTES;
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use sandproof_protocol::{DeploymentId, TenantId};
 use serde::{Deserialize, Serialize};
@@ -7,6 +10,8 @@ use serde::{Deserialize, Serialize};
 pub enum DecisionError {
     Invalid,
     Capacity,
+    /// No authenticated fresh host/template is eligible; not a tenant quota.
+    Unavailable,
     NotFound,
     Conflict,
     Exhausted,
@@ -38,12 +43,13 @@ impl Bounds {
                             .saturating_mul(4)
                             .saturating_add(8192),
                     )
-                    .saturating_add(8192),
+                    .saturating_add(8192)
+                    // Reserve the ENTIRE future exact terminal acknowledgement.
+                    .saturating_add(RESULT_CONFIRMATION_BODY_BYTES),
             )
-            .saturating_add(
-                usize::from(self.max_nodes)
-                    .saturating_mul(4096 + usize::from(self.max_templates_per_node) * 512),
-            )
+            .saturating_add(usize::from(self.max_nodes).saturating_mul(
+                4096 + WINDOW_CLOSE_BODY_BYTES + usize::from(self.max_templates_per_node) * 512,
+            ))
             .saturating_add(8192)
     }
 }
@@ -62,6 +68,13 @@ pub enum NodeMode {
     Unreachable,
     Disabled,
 }
+/// Protected resource-pool assignment. Public clients cannot select this role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeRole {
+    Runtime,
+    Builder,
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AvailableTemplate {
@@ -72,6 +85,7 @@ pub struct AvailableTemplate {
 #[serde(deny_unknown_fields)]
 pub struct NodeRegistration {
     pub identity: NodeIdentity,
+    pub role: NodeRole,
     pub limit: Resources,
     pub mode: NodeMode,
     pub healthy_until_ms: u64,
@@ -98,6 +112,9 @@ pub struct Sandbox {
     pub end_at_ms: Option<u64>,
     pub max_end_at_ms: Option<u64>,
     pub observation_version: Option<PositiveCounter>,
+    /// Exact latest terminal result durably acknowledged by the host. This is
+    /// not ordinary renewal compaction and never replaces cleanup evidence.
+    pub terminal_confirmation: Option<LifecycleResponse>,
 }
 impl Sandbox {
     pub(crate) fn renewal_anchor(&self) -> Option<usize> {
@@ -128,6 +145,8 @@ pub struct CenterState {
     pub(crate) deployment: DeploymentId,
     pub(crate) bounds: Bounds,
     pub(crate) nodes: Vec<NodeRegistration>,
+    /// Durable authority, not mutable heartbeat/registration input.
+    pub(crate) node_windows: Vec<NodeWindow>,
     pub(crate) tenants: Vec<TenantBudget>,
     pub(crate) sandbox_highwater: u64,
     pub(crate) operation_highwater: u64,
@@ -142,10 +161,21 @@ impl CenterState {
         nodes: Vec<NodeRegistration>,
         tenants: Vec<TenantBudget>,
     ) -> Result<Self, DecisionError> {
+        let current = 1.try_into().map_err(|_| DecisionError::Invalid)?;
+        let node_windows = nodes
+            .iter()
+            .map(|node| NodeWindow {
+                node: node.identity.clone(),
+                current: Some(current),
+                retired_through: 0,
+                phase: WindowPhase::Open,
+            })
+            .collect();
         let state = Self {
             deployment,
             bounds,
             nodes,
+            node_windows,
             tenants,
             sandbox_highwater: 0,
             operation_highwater: 0,
@@ -164,6 +194,55 @@ impl CenterState {
     #[must_use]
     pub const fn deployment(&self) -> &DeploymentId {
         &self.deployment
+    }
+    #[must_use]
+    pub fn nodes(&self) -> &[NodeRegistration] {
+        &self.nodes
+    }
+    /// Read-only registration check for trusted metadata decisions. It neither
+    /// allocates an identity nor substitutes for the original resource admission.
+    #[must_use]
+    pub fn tenant_is_registered(&self, tenant: &TenantId) -> bool {
+        self.tenants
+            .iter()
+            .any(|registered| registered.tenant == *tenant)
+    }
+    /// Existing sessions remain bound to this exact node; stale health is a
+    /// temporary route veto, never NotFound/Destroyed or quota release.
+    #[must_use]
+    pub fn node_is_reachable(&self, identity: &NodeIdentity, now_ms: u64) -> bool {
+        self.nodes.iter().any(|node| {
+            node.identity == *identity
+                && matches!(node.mode, NodeMode::Accepting | NodeMode::Draining)
+                && node.healthy_until_ms > now_ms
+        })
+    }
+    /// Diagnostic identity frontiers, not an allocation or restoration API.
+    #[must_use]
+    pub const fn identity_frontiers(&self) -> (u64, u64) {
+        (self.sandbox_highwater, self.operation_highwater)
+    }
+    /// Protected startup registration must agree with the original immutable
+    /// deployment shape. Health/cache facts, windows and history are NOT reset
+    /// from configuration when the process reattaches its existing authority.
+    #[must_use]
+    pub fn registration_matches(&self, registration: &Self) -> bool {
+        self.deployment == registration.deployment
+            && self.bounds == registration.bounds
+            && self.tenants == registration.tenants
+            && self.nodes.len() == registration.nodes.len()
+            && self.nodes.iter().all(|node| {
+                registration.nodes.iter().any(|expected| {
+                    node.identity == expected.identity
+                        && node.role == expected.role
+                        && node.limit == expected.limit
+                        && node.protocol_version == expected.protocol_version
+                        && expected
+                            .templates
+                            .iter()
+                            .all(|template| node.templates.contains(template))
+                })
+            })
     }
     #[must_use]
     pub fn sandboxes(&self) -> &[Sandbox] {
@@ -218,7 +297,9 @@ impl CenterState {
             .iter_mut()
             .find(|n| n.identity == observation.identity)
             .ok_or(DecisionError::NotFound)?;
-        if node.limit != observation.limit || node.protocol_version != observation.protocol_version
+        if node.limit != observation.limit
+            || node.role != observation.role
+            || node.protocol_version != observation.protocol_version
         {
             return Err(DecisionError::Conflict);
         }
@@ -228,5 +309,69 @@ impl CenterState {
         } else {
             Err(DecisionError::Invalid)
         }
+    }
+
+    /// Refresh only the authenticated physical/time veto. Registration policy,
+    /// template facts, durable windows and accepted responsibility stay intact.
+    /// # Errors
+    /// Wrong node generations and capacity beyond the protected limit reject.
+    pub fn refresh_node(
+        &self,
+        identity: &NodeIdentity,
+        healthy_until_ms: u64,
+        free: Resources,
+    ) -> Result<Self, DecisionError> {
+        if !self.is_valid() {
+            return Err(DecisionError::Invalid);
+        }
+        let mut next = self.clone();
+        let node = next
+            .nodes
+            .iter_mut()
+            .find(|node| node.identity == *identity)
+            .ok_or(DecisionError::NotFound)?;
+        if !free.fits(node.limit) {
+            return Err(DecisionError::Invalid);
+        }
+        node.healthy_until_ms = healthy_until_ms;
+        node.free = free;
+        Ok(next)
+    }
+}
+
+/// One finite lifecycle window per registered node; no historical close list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowPhase {
+    Open,
+    Draining,
+    ClosePending,
+    Exhausted,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodeWindow {
+    pub(crate) node: NodeIdentity,
+    pub(crate) current: Option<PositiveCounter>,
+    pub(crate) retired_through: u64,
+    pub(crate) phase: WindowPhase,
+}
+impl NodeWindow {
+    #[must_use]
+    pub const fn node(&self) -> &NodeIdentity {
+        &self.node
+    }
+    #[must_use]
+    pub const fn current(&self) -> Option<PositiveCounter> {
+        self.current
+    }
+    #[must_use]
+    pub const fn retired_through(&self) -> u64 {
+        self.retired_through
+    }
+    #[must_use]
+    pub const fn phase(&self) -> WindowPhase {
+        self.phase
     }
 }

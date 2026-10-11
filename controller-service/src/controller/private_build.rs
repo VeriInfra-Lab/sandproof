@@ -1,7 +1,7 @@
 //! Private builder retry identities. Window fencing and create admission share
 //! the controller transaction boundary; a 404 alone is never settlement proof.
 use super::{ControllerJournal, CreateOptions, identity, storage, transaction::WorldTransaction};
-use crate::{CrashInjector, CrashPoint, JournalError};
+use crate::{BuildWindow, CrashInjector, CrashPoint, JournalError};
 use rusqlite::{Connection, OptionalExtension, params};
 use sandbox_controller_core::{
     self as core,
@@ -43,13 +43,6 @@ pub struct BuildAnchor {
     pub sandbox: u64,
     pub request: String,
     pub options: CreateOptions,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BuildWindow {
-    pub request_window: String,
-    pub expires_at_ms: u64,
 }
 
 pub(super) fn config(connection: &Connection) -> Result<Option<BuildRetryConfig>, JournalError> {

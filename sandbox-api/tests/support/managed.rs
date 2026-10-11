@@ -1,15 +1,13 @@
-//! Thin SDK adapter. Business orchestration lives in controller-service.
-use crate::{
-    BuildSettlementView, BuildVmRequest, BuildVmView, BuildWindowClosed, ConnectRequest,
-    ControllerPort, CreateRequest, ListQuery, PortError, PublicationView, SandboxDetail,
-    SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession, TemplatePage,
-    TemplateView,
+//! Original local-controller component fixture; never a production adapter.
+use sandproof_api::{
+    BuildPort, BuildSettlementView, BuildWindowClosed, ConnectRequest, ControllerPort,
+    CreateRequest, ListQuery, PortError, PublicationView, SandboxDetail, SandboxPage,
+    SandboxSession, TemplatePage, TemplateView,
 };
 use sandproof_controller_service::application::{
     self as app, ControllerApplication, ControllerHost,
 };
 use std::sync::Arc;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub struct ManagedPort<H: ControllerHost> {
     application: Arc<ControllerApplication<H>>,
@@ -25,101 +23,7 @@ impl<H: ControllerHost> ManagedPort<H> {
     }
 }
 
-impl From<CreateRequest> for app::CreateCommand {
-    fn from(value: CreateRequest) -> Self {
-        Self {
-            template_id: value.template_id,
-            timeout: value.timeout,
-            allow_internet_access: value.allow_internet_access,
-            network: value.network,
-            metadata: value.metadata,
-            env_vars: value.env_vars,
-        }
-    }
-}
-impl From<BuildVmRequest> for app::BuildCommand {
-    fn from(value: BuildVmRequest) -> Self {
-        Self {
-            request_window: value.request_window,
-            timeout: value.timeout,
-            allow_internet_access: value.allow_internet_access,
-        }
-    }
-}
-impl From<app::Session> for SandboxSession {
-    fn from(value: app::Session) -> Self {
-        Self {
-            template_id: value.template_id,
-            sandbox_id: value.sandbox_id,
-            client_id: format!("tenant-{}", value.owner),
-            envd_version: value.envd_version,
-            envd_access_token: value.envd_access_token,
-            domain: value.domain,
-        }
-    }
-}
-fn rfc3339(milliseconds: i64) -> Result<String, PortError> {
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(milliseconds) * 1_000_000)
-        .map_err(|_| PortError::Busy)?
-        .format(&Rfc3339)
-        .map_err(|_| PortError::Busy)
-}
-impl TryFrom<app::InstanceInfo> for SandboxInfo {
-    type Error = PortError;
-    fn try_from(value: app::InstanceInfo) -> Result<Self, PortError> {
-        Ok(Self {
-            template_id: value.template_id,
-            sandbox_id: value.sandbox_id,
-            client_id: format!("tenant-{}", value.owner),
-            metadata: value.metadata,
-            started_at: rfc3339(value.started_at_ms)?,
-            end_at: rfc3339(value.end_at_ms)?,
-            envd_version: value.envd_version,
-            cpu_count: value.cpu_count,
-            memory_mb: value.memory_mb,
-            disk_size_mb: value.disk_size_mb,
-            state: "running".into(),
-            volume_mounts: Vec::new(),
-        })
-    }
-}
-impl TryFrom<app::InstanceDetail> for SandboxDetail {
-    type Error = PortError;
-    fn try_from(value: app::InstanceDetail) -> Result<Self, PortError> {
-        Ok(Self {
-            info: value.info.try_into()?,
-            envd_access_token: value.envd_access_token,
-            domain: value.domain,
-            allow_internet_access: value.allow_internet_access,
-            network: value.network,
-            lifecycle: SandboxLifecycle {
-                on_timeout: SandboxOnTimeout::Kill,
-                auto_resume: false,
-            },
-        })
-    }
-}
-impl From<app::BuildStatus> for BuildVmView {
-    fn from(value: app::BuildStatus) -> Self {
-        Self {
-            sandbox_id: value.sandbox_id,
-            state: value.state,
-            cleanup_complete: value.cleanup_complete,
-            session: value.session.map(Into::into),
-        }
-    }
-}
-impl<H: ControllerHost> ControllerPort for ManagedPort<H> {
-    fn build_vm(
-        &self,
-        tenant: &str,
-        id: &str,
-        create: Option<crate::BuildVmRequest>,
-    ) -> Result<crate::BuildVmView, PortError> {
-        self.application
-            .build_vm(tenant, id, create.map(Into::into))
-            .map(Into::into)
-    }
+impl<H: ControllerHost> BuildPort for ManagedPort<H> {
     fn issue_build_window(
         &self,
         tenant: &str,
@@ -130,7 +34,7 @@ impl<H: ControllerHost> ControllerPort for ManagedPort<H> {
         &self,
         tenant: &str,
         window: &str,
-    ) -> Result<crate::BuildWindowClosed, PortError> {
+    ) -> Result<sandproof_api::BuildWindowClosed, PortError> {
         self.application
             .close_build_window(tenant, window)
             .map(|v| BuildWindowClosed {
@@ -142,8 +46,8 @@ impl<H: ControllerHost> ControllerPort for ManagedPort<H> {
         &self,
         tenant: &str,
         id: &str,
-        request: crate::BuildSettlementRequest,
-    ) -> Result<crate::BuildSettlementView, PortError> {
+        request: sandproof_api::BuildSettlementRequest,
+    ) -> Result<sandproof_api::BuildSettlementView, PortError> {
         self.application
             .settle_build_vm(
                 tenant,
@@ -163,12 +67,18 @@ impl<H: ControllerHost> ControllerPort for ManagedPort<H> {
         tenant: &str,
         id: &str,
         window: Option<&str>,
-        create: Option<crate::BuildVmRequest>,
-    ) -> Result<crate::BuildVmView, PortError> {
+        create: Option<sandproof_api::BuildVmRequest>,
+    ) -> Result<sandproof_api::BuildVmView, PortError> {
         self.application
             .build_vm_in_window(tenant, id, window, create.map(Into::into))
             .map(Into::into)
     }
+    fn kill_build_vm(&self, tenant: &str, sandbox_id: &str) -> Result<(), PortError> {
+        self.application.kill(tenant, sandbox_id)
+    }
+}
+
+impl<H: ControllerHost> ControllerPort for ManagedPort<H> {
     fn publish_template(
         &self,
         tenant: &str,
@@ -230,7 +140,7 @@ impl<H: ControllerHost> ControllerPort for ManagedPort<H> {
     fn list(&self, tenant: &str, query: ListQuery) -> Result<SandboxPage, PortError> {
         let selection = query.validate()?;
         let order = selection.order;
-        crate::list::page_to_sdk(self.application.list(tenant, selection.application)?, order)
+        sandproof_api::page_to_sdk(self.application.list(tenant, selection.application)?, order)
     }
     fn kill(&self, tenant: &str, external: &str) -> Result<(), PortError> {
         self.application.kill(tenant, external)

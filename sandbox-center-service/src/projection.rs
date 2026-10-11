@@ -1,6 +1,6 @@
 //! Queries are projections of ONE freshly confirmed global view. A list never
 //! concatenates node pages; cursor/filters reuse the existing business reducer.
-use crate::application::{find, tenant_id};
+use crate::application::tenant_id;
 use crate::{AuthorityPort, CenterApplication, HostPort, PublicTemplate, TemplateProvider};
 use sandproof_api::PortError;
 use sandproof_center_core::Sandbox;
@@ -20,7 +20,7 @@ pub struct DataRoute {
     pub max_end_at_ms: u64,
 }
 
-fn live(record: &Sandbox, now: u64) -> bool {
+pub(crate) fn live(record: &Sandbox, now: u64) -> bool {
     !record.terminating
         && !record.released
         && record.started_at_ms.is_some()
@@ -87,16 +87,35 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     pub fn get(&self, tenant: &str, sandbox: &str) -> Result<InstanceDetail, PortError> {
         let tenant = tenant_id(tenant)?;
         let sandbox: SandboxId = sandbox.try_into().map_err(|_| PortError::NotFound)?;
-        let state = self.snapshot()?;
-        let record = find(&state, &tenant, &sandbox)?;
+        let view = self.public_snapshot()?;
+        let record = view.find(&tenant, &sandbox)?;
         if !live(record, self.now()?) {
             return Err(PortError::NotFound);
         }
+        let node = &record
+            .operations
+            .first()
+            .ok_or(PortError::Busy)?
+            .request
+            .identity
+            .node;
+        if !view.state.node_is_reachable(node, self.now()?) {
+            return Err(PortError::Busy);
+        }
+        self.detail_for_record(&tenant, record)
+    }
+    /// Caller must first authorize this record in the SAME fresh envelope.
+    /// Public and protected build projections share the original DTO/token code.
+    pub(crate) fn detail_for_record(
+        &self,
+        tenant: &TenantId,
+        record: &Sandbox,
+    ) -> Result<InstanceDetail, PortError> {
         let request = &record.operations.first().ok_or(PortError::Busy)?.request;
         let options: CreateOptions =
             serde_json::from_slice(&request.create.options).map_err(|_| PortError::Busy)?;
         Ok(InstanceDetail {
-            info: self.info(&tenant, record)?,
+            info: self.info(tenant, record)?,
             envd_access_token: self.tokens.issue(&request.identity)?,
             domain: self.config.domain.clone(),
             allow_internet_access: options.networking.as_ref().map(|n| n.allow_internet_access),
@@ -108,13 +127,15 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     pub fn list(&self, tenant: &str, selection: ListSelection) -> Result<InstancePage, PortError> {
         let tenant = tenant_id(tenant)?;
         let selection = selection.validate()?;
-        let state = self.snapshot()?;
+        let view = self.public_snapshot()?;
         let now = self.now()?;
-        let items = state
+        let items = view
+            .state
             .sandboxes()
             .iter()
             .filter(|record| {
-                live(record, now)
+                view.visible(record)
+                    && live(record, now)
                     && record
                         .operations
                         .first()
@@ -130,32 +151,45 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     /// # Errors
     /// Bad/revoked tokens and unknown authority never authorize a route.
     pub fn resolve_data_route(&self, token: &str) -> Result<DataRoute, PortError> {
-        let state = self.snapshot()?;
+        let view = self.public_snapshot()?;
         let now = self.now()?;
         let mut result = None;
         // Bounds constrain this scan. Verify all candidate tags without a
         // content-dependent early exit; no separate token->route authority.
-        for record in state.sandboxes() {
+        for record in view.state.sandboxes() {
             let Some(first) = record.operations.first() else {
                 return Err(PortError::Busy);
             };
             let matching = self.tokens.verify(&first.request.identity, token);
-            if matching && live(record, now) {
+            if matching && view.visible(record) && live(record, now) {
                 if result.is_some() {
                     return Err(PortError::Busy);
                 }
-                result = Some(DataRoute {
-                    request: record
-                        .operations
-                        .last()
-                        .ok_or(PortError::Busy)?
-                        .request
-                        .clone(),
-                    authorized_at_ms: now,
-                    max_end_at_ms: record.max_end_at_ms.ok_or(PortError::Busy)?,
-                });
+                if !view
+                    .state
+                    .node_is_reachable(&first.request.identity.node, now)
+                {
+                    return Err(PortError::Busy);
+                }
+                result = Some(Self::route_for_record(record, now)?);
             }
         }
         result.ok_or(PortError::NotFound)
+    }
+    /// Caller must authorize visibility/owner/token before using this helper.
+    pub(crate) fn route_for_record(record: &Sandbox, now: u64) -> Result<DataRoute, PortError> {
+        if !live(record, now) {
+            return Err(PortError::NotFound);
+        }
+        Ok(DataRoute {
+            request: record
+                .operations
+                .last()
+                .ok_or(PortError::Busy)?
+                .request
+                .clone(),
+            authorized_at_ms: now,
+            max_end_at_ms: record.max_end_at_ms.ok_or(PortError::Busy)?,
+        })
     }
 }

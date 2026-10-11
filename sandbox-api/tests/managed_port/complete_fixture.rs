@@ -64,6 +64,8 @@ pub(super) fn builder_host(path: &Path) -> BoundedHostConfig {
     profile.pools[0].role = PoolRole::Builder;
     profile.pools.insert(0, runtime);
     profile.public_build = Some(PhysicalBuildStorage {
+        workspace_owner_uid: 0,
+        registry_owner_uid: 0,
         root: parent.join("public-build"),
         registry_root: parent.join("registry"),
         workspace_bytes: 1024 * 1024,

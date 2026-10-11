@@ -2,15 +2,20 @@
 //! Recorded != locally admitted. Local admission attaches to the SAME original
 //! transaction; cached facts are derived from the original local authority.
 mod admission;
+mod audit;
 mod codec;
 mod confirmation;
 mod facts;
 mod model;
 mod renewal;
+mod validation;
+mod window;
 use super::{ControllerJournal, capacity, transaction::WorldTransaction};
 use crate::{CrashInjector, CrashPoint, JournalError};
 pub(super) use admission::{AdmissionAttachment, attach_admission};
 pub use admission::{InternalAdmission, InternalCreateResult, InternalTemplate};
+pub(super) use audit::snapshot as audit_snapshot;
+pub use audit::{InternalAudit, InternalAuditOperation, InternalNativeAudit};
 use codec::load;
 pub(super) use codec::{charged_bytes, validate};
 pub(super) use facts::pinned;
@@ -28,6 +33,12 @@ pub struct InternalWorkState {
     pub response: LifecycleResponse,
     pub local: Option<InternalLocalBinding>,
     pub current: bool,
+}
+
+pub(super) fn configuration_snapshot(
+    connection: &rusqlite::Connection,
+) -> Result<Option<InternalInboxConfig>, JournalError> {
+    Ok(load(connection)?.map(|inbox| inbox.config))
 }
 
 impl ControllerJournal {
@@ -110,6 +121,7 @@ impl ControllerJournal {
             entries: vec![],
             tenant_highwater: 0,
             tenants: vec![],
+            retired_through: 0,
         };
         let cap = capacity::config(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         if inbox.config.required_bytes() as u64 > cap.max_sql_value_bytes {

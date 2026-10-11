@@ -80,6 +80,8 @@ pub fn host(
                 jail_inodes_per_slot: 12,
             }],
             public_build: None,
+            host_template_caches: vec![],
+            service_data: vec![],
             filesystem_overhead_bytes: 4 * 1024 * 1024,
             filesystem_overhead_inodes: 1024,
         }),

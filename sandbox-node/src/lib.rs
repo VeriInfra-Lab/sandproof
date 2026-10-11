@@ -8,6 +8,8 @@ mod adapter;
 #[cfg(target_os = "linux")]
 mod fault;
 #[cfg(target_os = "linux")]
+mod host_capacity;
+#[cfg(target_os = "linux")]
 mod physical_profile;
 #[cfg(target_os = "linux")]
 pub use adapter::NodeHost;
@@ -28,5 +30,5 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     CredentialFault, HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus,
-    LinuxWorker, NodeConfig, ObservedSlot, RouteCapacityExceeded,
+    LinuxObservation, LinuxWorker, NodeConfig, ObservedSlot, RouteCapacityExceeded,
 };
