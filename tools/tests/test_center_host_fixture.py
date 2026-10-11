@@ -410,7 +410,7 @@ class FixtureTests(unittest.TestCase):
     def test_dedicated_redis_is_durable_noeviction_not_an_optional_cache(self):
         text = fixture.redis_configuration('/approved/redis', port=6379, password='TESTONLYKEY')
         for setting in ('bind 127.0.0.1', 'appendonly yes', 'appendfsync always',
-                        'maxmemory-policy noeviction', 'aof-load-truncated no'):
+                        'maxmemory-policy noeviction', 'aof-load-truncated no', 'set-proc-title no'):
             self.assertIn(setting + '\n', text)
         for port, password in ((True, 'KEY'), (0, 'KEY'), (6379, 'KEY\nunsafe')):
             with self.assertRaises(ValueError):

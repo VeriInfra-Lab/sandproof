@@ -208,7 +208,9 @@ def redis_configuration(root, *, port, password):
     return (f'bind 127.0.0.1\nport {port}\nprotected-mode yes\nrequirepass {password}\n'
         f'appendonly yes\nappendfsync always\nmaxmemory {REDIS_MEMORY_BYTES}\nmaxmemory-policy noeviction\n'
         'no-appendfsync-on-rewrite no\naof-load-truncated no\nauto-aof-rewrite-percentage 100\n'
-        'auto-aof-rewrite-min-size 16mb\nsave ""\n'
+        # The exact role observer verifies the approved argv. Redis must not
+        # replace it with a mutable process title after startup.
+        'auto-aof-rewrite-min-size 16mb\nset-proc-title no\nsave ""\n'
         f'dir {root}\nlogfile {root / "redis.log"}\n')
 
 
