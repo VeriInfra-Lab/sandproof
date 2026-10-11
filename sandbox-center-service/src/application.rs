@@ -240,19 +240,28 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .checked_duration_since(Instant::now())
                 .filter(|d| !d.is_zero())
                 .ok_or(PortError::OutcomeUnknown)?;
-            let response = self
-                .send_current(request, remaining)
-                .map_err(|_| PortError::OutcomeUnknown)?;
-            if matches!(
-                response.fact,
-                LifecycleFact::Ready { .. }
-                    | LifecycleFact::Renewed { .. }
-                    | LifecycleFact::Cleaned
-            ) {
-                return Ok(response);
-            }
-            if response.fact == LifecycleFact::NotAccepted {
-                return Err(PortError::Failed);
+            match self.send_current(request, remaining) {
+                Ok(response) => {
+                    if matches!(
+                        response.fact,
+                        LifecycleFact::Ready { .. }
+                            | LifecycleFact::Renewed { .. }
+                            | LifecycleFact::Cleaned
+                    ) {
+                        return Ok(response);
+                    }
+                    if response.fact == LifecycleFact::NotAccepted {
+                        return Err(PortError::Failed);
+                    }
+                }
+                // Reception shares the original host worker's finite budget.
+                // Busy/disconnected is UNKNOWN, not a terminal refusal. Query
+                // the SAME durable intent again within the original deadline;
+                // never allocate a replacement or reset that deadline.
+                Err(AttemptError::UnknownHost) => {}
+                Err(AttemptError::SharedAuthority | AttemptError::Superseded) => {
+                    return Err(PortError::OutcomeUnknown);
+                }
             }
             std::thread::sleep(
                 self.config

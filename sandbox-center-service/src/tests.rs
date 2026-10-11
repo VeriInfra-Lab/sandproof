@@ -232,6 +232,7 @@ struct Host {
     calls: Arc<AtomicU64>,
     observations: Arc<AtomicU64>,
     unknown: Arc<AtomicBool>,
+    transient_unknown: Arc<AtomicU64>,
     unknown_confirmation: Arc<AtomicBool>,
     recorded: Arc<AtomicBool>,
     last: Arc<Mutex<Option<LifecycleRequest>>>,
@@ -249,6 +250,7 @@ impl Default for Host {
             calls: Arc::new(AtomicU64::new(0)),
             observations: Arc::new(AtomicU64::new(0)),
             unknown: Arc::new(AtomicBool::new(false)),
+            transient_unknown: Arc::new(AtomicU64::new(0)),
             unknown_confirmation: Arc::new(AtomicBool::new(false)),
             recorded: Arc::new(AtomicBool::new(false)),
             last: Arc::new(Mutex::new(None)),
@@ -290,7 +292,14 @@ impl HostPort for Host {
             gate.entered.send(()).unwrap();
             gate.release.recv().unwrap();
         }
-        if self.unknown.load(Ordering::SeqCst) {
+        if self.unknown.load(Ordering::SeqCst)
+            || self
+                .transient_unknown
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                    remaining.checked_sub(1)
+                })
+                .is_ok()
+        {
             return Err(PortError::Busy);
         }
         let fact = if self.recorded.load(Ordering::SeqCst) {
@@ -551,6 +560,21 @@ fn host_transport_failure_after_admission_is_unknown_and_retains_original_identi
     f.app.reconcile_once().unwrap();
     assert_eq!(f.host.last.lock().unwrap().as_ref().unwrap(), &original);
     assert_eq!(f.app.snapshot().unwrap().sandboxes().len(), 1);
+}
+
+#[test]
+fn transient_host_budget_refusal_retries_only_the_original_durable_intent() {
+    let f = fixture();
+    f.host.transient_unknown.store(2, Ordering::SeqCst);
+    let session = f.app.create("1", command()).unwrap();
+    assert_eq!(f.host.calls.load(Ordering::SeqCst), 3);
+    let state = f.app.snapshot().unwrap();
+    assert_eq!(state.sandboxes().len(), 1);
+    assert_eq!(state.sandboxes()[0].operations.len(), 1);
+    let request = &state.sandboxes()[0].operations[0].request;
+    assert_eq!(request.identity.sandbox_id.as_str(), session.sandbox_id);
+    assert_eq!(request.identity.operation_id.as_str(), "operation-1");
+    assert_eq!(f.host.last.lock().unwrap().as_ref(), Some(request));
 }
 
 #[test]

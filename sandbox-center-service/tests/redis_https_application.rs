@@ -142,10 +142,19 @@ struct Reception {
     wake: Arc<Notify>,
     reply_loss: Arc<AtomicBool>,
     loss_observed: Arc<Notify>,
+    capacity_observed: Arc<Notify>,
 }
 impl LifecycleReceiver for Reception {
     async fn receive(&self, request: LifecycleRequest) -> Result<LifecycleResponse, ReceiveError> {
-        let result = self.host.receive(request).await?;
+        let result = match self.host.receive(request).await {
+            Ok(result) => result,
+            Err(error) => {
+                if error == ReceiveError::Capacity {
+                    self.capacity_observed.notify_one();
+                }
+                return Err(error);
+            }
+        };
         if matches!(
             result.fact,
             LifecycleFact::Recorded | LifecycleFact::Stopped
@@ -153,7 +162,7 @@ impl LifecycleReceiver for Reception {
             self.wake.notify_one();
         }
         if matches!(result.fact, LifecycleFact::Ready { .. })
-            && self.reply_loss.swap(false, Ordering::SeqCst)
+            && self.reply_loss.load(Ordering::SeqCst)
         {
             self.loss_observed.notify_one();
             Err(ReceiveError::Unavailable)
@@ -189,6 +198,7 @@ struct Fixture {
     endpoint: std::net::SocketAddr,
     reply_loss: Arc<AtomicBool>,
     loss_observed: Arc<Notify>,
+    capacity_observed: Arc<Notify>,
     host: HostLifecycle<local::TestHost>,
     server_stop: oneshot::Sender<()>,
     server: JoinHandle<Result<(), sandproof_internal::TransportError>>,
@@ -274,6 +284,7 @@ impl Fixture {
         let wake = Arc::new(Notify::new());
         let reply_loss = Arc::new(AtomicBool::new(false));
         let loss_observed = Arc::new(Notify::new());
+        let capacity_observed = Arc::new(Notify::new());
         let server = InternalServer::new(
             ServerTls::new(
                 certificate.host.material(),
@@ -288,6 +299,7 @@ impl Fixture {
                 wake: Arc::clone(&wake),
                 reply_loss: Arc::clone(&reply_loss),
                 loss_observed: Arc::clone(&loss_observed),
+                capacity_observed: Arc::clone(&capacity_observed),
             },
         );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -321,6 +333,7 @@ impl Fixture {
             endpoint,
             reply_loss,
             loss_observed,
+            capacity_observed,
             host,
             server_stop,
             server,
@@ -567,6 +580,7 @@ async fn lost_durable_ready_then_center_reopen_preserves_original_vm_and_lifetim
     tokio::time::timeout(Duration::from_secs(5), fixture.loss_observed.notified())
         .await
         .unwrap();
+    fixture.reply_loss.store(false, Ordering::SeqCst);
     let before = application.snapshot().unwrap();
     assert_eq!(before.sandboxes().len(), 1);
     assert_eq!(before.sandboxes()[0].started_at_ms, None);
@@ -627,5 +641,60 @@ async fn lost_durable_ready_then_center_reopen_preserves_original_vm_and_lifetim
         Some(Resources::ZERO)
     );
     drop((recovered_router, recovered));
+    fixture.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn real_host_worker_budget_contention_does_not_end_original_create_wait() {
+    let fixture = Fixture::new().await;
+    let (entered, prepared) = std::sync::mpsc::channel();
+    let (release, resume) = std::sync::mpsc::channel();
+    fixture.physical.lock().unwrap().block_prepare = Some((entered, resume));
+    let application = fixture.application();
+    let router = api_router(&application);
+    let request_router = router.clone();
+    let create = tokio::spawn(async move {
+        send(
+            &request_router,
+            "POST",
+            "/v2/sandboxes",
+            ALICE,
+            Some(json!({"templateID":"base","timeout":60,"allow_internet_access":false})),
+        )
+        .await
+    });
+    tokio::task::spawn_blocking(move || prepared.recv_timeout(Duration::from_secs(5)).unwrap())
+        .await
+        .unwrap();
+    // This notification comes only from the real shared host work semaphore:
+    // the original PrepareVm still holds it. No wall-clock race or sleep.
+    let contention =
+        tokio::time::timeout(Duration::from_secs(5), fixture.capacity_observed.notified()).await;
+    release.send(()).unwrap();
+    contention.unwrap();
+    let (status, created) = create.await.unwrap();
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let state = application.snapshot().unwrap();
+    assert_eq!(state.sandboxes().len(), 1);
+    assert_eq!(state.sandboxes()[0].operations.len(), 1);
+    assert_eq!(fixture.preparations(), 1);
+    let sandbox = created["sandboxID"].as_str().unwrap();
+    assert_eq!(
+        send(
+            &router,
+            "DELETE",
+            &format!("/sandboxes/{sandbox}"),
+            ALICE,
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        application.snapshot().unwrap().reserved(None, None),
+        Some(Resources::ZERO)
+    );
+    drop((router, application));
     fixture.stop().await;
 }
