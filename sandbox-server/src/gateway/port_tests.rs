@@ -77,7 +77,7 @@ impl DataAccessPort for ControlledPort {
             return Err(PortError::NotFound);
         }
         if let Some(error) = &self.authorization_error {
-            return Err(error.clone());
+            return Err(*error);
         }
         Ok(Permit {
             revocation: self.revocation.subscribe(),
@@ -95,7 +95,7 @@ impl DataAccessPort for ControlledPort {
             return Err(PortError::NotFound);
         }
         if let Some(error) = &self.launch_error {
-            return Err(error.clone());
+            return Err(*error);
         }
         let reaper = RelayReaper::new()?;
         let child = Command::new("/bin/cat")

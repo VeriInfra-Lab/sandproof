@@ -4,6 +4,7 @@
 mod data;
 #[cfg(feature = "durable")]
 mod data_drain;
+pub mod fault;
 mod host;
 #[cfg(feature = "durable")]
 mod relay_child;
@@ -19,7 +20,7 @@ pub use host::{
 pub use relay_child::{RelayReaper, TrackedRelayChild};
 
 /// Business failure categories; transports decide their HTTP representation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApplicationError {
     Invalid,
     NotFound,

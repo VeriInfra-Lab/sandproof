@@ -5,6 +5,7 @@ use super::{
     ControllerApplication, ControllerHost, DataLease, Inner, map_journal, reclaimed_sandboxes,
     release_reclaimed_slots,
 };
+use super::{FaultContext, FaultRecord, FaultStage};
 use crate::{NeverCrash, RetirementCandidate, WorkerTransportError};
 use sandbox_controller_core as core;
 use std::collections::BTreeSet;
@@ -119,7 +120,14 @@ pub(super) fn maintain_locked<H: ControllerHost>(
                     .checked_sub(1)
                     .ok_or(ApplicationError::Busy)?;
             }
-            Err(error) if error.is_local_recovery_failure() => {}
+            Err(error) if error.is_local_recovery_failure() => {
+                FaultRecord::journal(
+                    FaultStage::MaintenanceAfter,
+                    &error,
+                    FaultContext::instance(sandbox, None),
+                )
+                .emit();
+            }
             Err(error) => return Err(map_journal(error)),
         }
     }

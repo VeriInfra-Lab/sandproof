@@ -1,12 +1,36 @@
 //! Exact identity-bound recovery; uncertain effects are not redispatched.
+use super::super::fault::{FaultContext, FaultKind, FaultRecord, FaultStage};
 use super::super::{HostSlots, LaunchConfiguration, WorkRecovery};
 use super::{
     ApplicationError, BTreeSet, Clock, ControllerApplication, ControllerHost, ControllerJournal,
     DataLease, Inner, JournalError, NeverCrash, RecoveryReport, WorkAction, WorkReceipt,
     WorkerTransportError, core, data_credentials, finish_accepted_kill_v1,
     finish_admitted_create_v1_timed, finish_compensating_create_v1, map_admission, map_journal,
-    same_secret, token,
+    map_journal_at, same_secret, token,
 };
+
+fn remember(first: &mut Option<FaultRecord>, fault: FaultRecord) {
+    first.get_or_insert(fault);
+    fault.emit();
+}
+
+fn remember_journal(
+    first: &mut Option<FaultRecord>,
+    stage: FaultStage,
+    error: &JournalError,
+    context: FaultContext,
+) {
+    remember(first, FaultRecord::journal(stage, error, context));
+}
+
+fn remember_host(
+    first: &mut Option<FaultRecord>,
+    stage: FaultStage,
+    kind: FaultKind,
+    context: FaultContext,
+) {
+    remember(first, FaultRecord::host(stage, kind, context));
+}
 
 fn matches_current_reclaim(
     journal: &ControllerJournal,
@@ -31,7 +55,8 @@ fn matches_current_reclaim(
         core::Command::CleanupVm { .. } => journal.matches_current_cleanup(world, action),
         _ => return Ok(true),
     };
-    matches.map_err(map_journal)
+    matches
+        .map_err(|error| map_journal_at(error, FaultStage::Reclaim, FaultContext::action(action)))
 }
 
 fn reclaim_uncertain_actions<H: WorkRecovery>(
@@ -40,6 +65,7 @@ fn reclaim_uncertain_actions<H: WorkRecovery>(
     world: &core::World,
     blocked: &mut BTreeSet<core::SandboxId>,
     selected: Option<core::SandboxId>,
+    first_fault: &mut Option<FaultRecord>,
 ) -> Result<(), ApplicationError> {
     // This is a compensating observation, never a replay of PrepareVm. Check
     // the exact current operation and sealed plan before touching the host.
@@ -59,6 +85,14 @@ fn reclaim_uncertain_actions<H: WorkRecovery>(
             continue;
         }
         if !matches_current_reclaim(journal, world, &action)? {
+            remember(
+                first_fault,
+                FaultRecord::host(
+                    FaultStage::Reclaim,
+                    FaultKind::BindingMismatch,
+                    FaultContext::action(&action),
+                ),
+            );
             blocked.insert(sandbox);
             continue;
         }
@@ -80,7 +114,15 @@ fn reclaim_uncertain_actions<H: WorkRecovery>(
             core::Command::CleanupVm { .. } => host.reclaim_incomplete_cleanup(&action),
             _ => Ok(()),
         };
-        if result.is_err() {
+        if let Err(error) = result {
+            remember(
+                first_fault,
+                FaultRecord::application(
+                    FaultStage::Reclaim,
+                    &error,
+                    FaultContext::action(&action),
+                ),
+            );
             // Keep the original claim unknown; no later action for this
             // sandbox can run during this pass.
             blocked.insert(sandbox);
@@ -198,6 +240,7 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
     initial: &core::World,
     selected: Option<core::SandboxId>,
     prior_blocked: &BTreeSet<core::SandboxId>,
+    first_fault: &mut Option<FaultRecord>,
 ) -> Result<BTreeSet<core::SandboxId>, ApplicationError> {
     let mut blocked = BTreeSet::new();
     for (sandbox, record) in initial.sandbox_records() {
@@ -210,6 +253,10 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
             continue;
         }
         let operation = record.current_operation.ok_or(ApplicationError::Busy)?;
+        let context = FaultContext {
+            generation: Some(record.generation),
+            ..FaultContext::instance(*sandbox, Some(operation.id))
+        };
         let key = core::OperationKey {
             sandbox: *sandbox,
             operation: operation.id,
@@ -218,7 +265,8 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
         let options = journal.create_options(*sandbox).map_err(map_admission)?;
         let registered = match journal.data_credential(*sandbox) {
             Ok(value) => value,
-            Err(JournalError::CredentialIndexPoisoned) => {
+            Err(error @ JournalError::CredentialIndexPoisoned) => {
+                remember_journal(first_fault, FaultStage::ReadCredential, &error, context);
                 blocked.insert(*sandbox);
                 continue;
             }
@@ -232,67 +280,129 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
                 )
         });
         if registered.is_none() && !unclaimed {
+            remember_host(
+                first_fault,
+                FaultStage::ReadCredential,
+                FaultKind::CredentialUnavailable,
+                context,
+            );
             // The sole launch path commits the index before its first claim.
             // A missing index after dispatch cannot be an unfinished register.
             blocked.insert(*sandbox);
             continue;
         }
-        match host.has_bound_launch_config(*sandbox, &options) {
-            Ok(true) => {}
-            Ok(false) if registered.is_some() => {
-                // A durable index means the original host credential was
-                // written. Its loss cannot authorize rotating a live token.
-                blocked.insert(*sandbox);
-            }
-            Ok(false) if unclaimed => {
-                // The VM/slot identity is now reserved with the create intent.
-                // A missing credential may be created only if no host action
-                // was ever claimed. Once any action was claimed, losing the
-                // credential must remain unresolved instead of minting a new
-                // token for a possibly live VM.
-                if host
-                    .put_bound_launch_config(*sandbox, &token()?, &options)
-                    .is_err()
-                {
-                    blocked.insert(*sandbox);
-                    continue;
-                }
-            }
-            Ok(false) | Err(_) => {
-                blocked.insert(*sandbox);
-                continue;
-            }
-        }
-        if blocked.contains(sandbox) {
+        if !ensure_launch_config(
+            host,
+            *sandbox,
+            &options,
+            registered.is_some(),
+            unclaimed,
+            context,
+            first_fault,
+        )? {
+            blocked.insert(*sandbox);
             continue;
         }
         let credential = host
             .token_for(*sandbox)
             .and_then(|value| data_credentials::digest(&value));
-        let Ok(digest) = credential else {
-            blocked.insert(*sandbox);
-            continue;
+        let digest = match credential {
+            Ok(value) => value,
+            Err(error) => {
+                remember(
+                    first_fault,
+                    FaultRecord::application(FaultStage::ReadCredential, &error, context),
+                );
+                blocked.insert(*sandbox);
+                continue;
+            }
         };
         if let Some((original_generation, original_digest)) = registered {
             if original_generation != record.generation || !same_secret(&original_digest, &digest) {
+                remember_host(
+                    first_fault,
+                    FaultStage::CheckCredential,
+                    FaultKind::CredentialMismatch,
+                    context,
+                );
                 // A bad target descriptor is local. Do not turn a file read
                 // into a request to replace the shared, immutable identity.
                 blocked.insert(*sandbox);
             }
             continue;
         }
-        match journal.register_data_credential(*sandbox, record.generation, digest, &mut NeverCrash)
-        {
-            Ok(()) => {}
-            Err(JournalError::CredentialIndexPoisoned) => {
-                // Management and exact cleanup remain available; no new
-                // data authorization can pass the poisoned shared index.
-                blocked.insert(*sandbox);
-            }
-            Err(error) => return Err(map_journal(error)),
+        if !register_recovered_credential(
+            journal,
+            *sandbox,
+            record.generation,
+            digest,
+            context,
+            first_fault,
+        )? {
+            blocked.insert(*sandbox);
         }
     }
     Ok(blocked)
+}
+
+fn register_recovered_credential(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+    digest: [u8; 32],
+    context: FaultContext,
+    first_fault: &mut Option<FaultRecord>,
+) -> Result<bool, ApplicationError> {
+    match journal.register_data_credential(sandbox, generation, digest, &mut NeverCrash) {
+        Ok(()) => Ok(true),
+        Err(error @ JournalError::CredentialIndexPoisoned) => {
+            // Management and exact cleanup stay available, but this shared
+            // index can never authorize a new data route while poisoned.
+            remember_journal(
+                first_fault,
+                FaultStage::CredentialRegistration,
+                &error,
+                context,
+            );
+            Ok(false)
+        }
+        Err(error) => Err(map_journal(error)),
+    }
+}
+
+fn ensure_launch_config<H: LaunchConfiguration>(
+    host: &mut H,
+    sandbox: core::SandboxId,
+    options: &crate::CreateOptions,
+    registered: bool,
+    unclaimed: bool,
+    context: FaultContext,
+    first_fault: &mut Option<FaultRecord>,
+) -> Result<bool, ApplicationError> {
+    let fault = match host.has_bound_launch_config(sandbox, options) {
+        Ok(true) => return Ok(true),
+        // A registered credential or a claimed action forbids token rotation,
+        // even if the original descriptor is no longer readable.
+        Ok(false) if registered || !unclaimed => FaultRecord::host(
+            FaultStage::CheckCredential,
+            FaultKind::CredentialUnavailable,
+            context,
+        ),
+        Ok(false) => match host.put_bound_launch_config(sandbox, &token()?, options) {
+            Ok(()) => return Ok(true),
+            Err(error) => FaultRecord::application(FaultStage::PutCredential, &error, context),
+        },
+        Err(error) => FaultRecord::application(FaultStage::CheckCredential, &error, context),
+    };
+    remember(first_fault, fault);
+    Ok(false)
+}
+
+fn host_routes_drained<H: ControllerHost>(host: &H, context: &crate::HostSlotContext) -> bool {
+    host.data_gate_drained(context).unwrap_or_else(|error| {
+        FaultRecord::application(FaultStage::DataGate, &error, FaultContext::slot(context)).emit();
+        false
+    })
 }
 
 /// Whether a committed physical position may acquire its missing host binding.
@@ -323,6 +433,7 @@ pub(super) fn bind_recovery_slots<H: HostSlots>(
     host: &mut H,
     world: &core::World,
     selected: Option<core::SandboxId>,
+    first_fault: &mut Option<FaultRecord>,
 ) -> Result<BTreeSet<core::SandboxId>, ApplicationError> {
     let mut blocked = BTreeSet::new();
     for (context, phase) in journal.host_slot_inventory().map_err(map_journal)? {
@@ -332,7 +443,15 @@ pub(super) fn bind_recovery_slots<H: HostSlots>(
             continue;
         }
         let allow_install = can_install_host_slot_binding(world, context.binding.sandbox);
-        if host.bind_host_slot(&context, allow_install).is_err() {
+        if let Err(error) = host.bind_host_slot(&context, allow_install) {
+            remember(
+                first_fault,
+                FaultRecord::application(
+                    FaultStage::BindSlot,
+                    &error,
+                    FaultContext::slot(&context),
+                ),
+            );
             blocked.insert(context.binding.sandbox);
         }
     }
@@ -372,7 +491,7 @@ pub(super) fn release_reclaimed_slots<H: ControllerHost>(
             .data_drains
             .get(&sandbox.0)
             .is_none_or(DataLease::drained)
-            || (drained && inner.host.data_gate_drained(&context).unwrap_or(false));
+            || (drained && host_routes_drained(&inner.host, &context));
         if !drained
             || !known_exit
             || inner
@@ -387,8 +506,15 @@ pub(super) fn release_reclaimed_slots<H: ControllerHost>(
         match journal.release_host_slot(
             context,
             |context| {
-                host.release_host_slot(context)
-                    .map_err(|_| WorkerTransportError::ReplyLost)
+                host.release_host_slot(context).map_err(|error| {
+                    FaultRecord::application(
+                        FaultStage::ReleaseSlot,
+                        &error,
+                        FaultContext::slot(context),
+                    )
+                    .emit();
+                    WorkerTransportError::ReplyLost
+                })
             },
             &mut NeverCrash,
         ) {
@@ -397,6 +523,12 @@ pub(super) fn release_reclaimed_slots<H: ControllerHost>(
                 inner.data_drains.remove(&sandbox.0);
             }
             Err(error) if error.is_local_recovery_failure() => {
+                FaultRecord::journal(
+                    FaultStage::ReleaseSlot,
+                    &error,
+                    FaultContext::slot(&context),
+                )
+                .emit();
                 pending += 1;
             }
             Err(error) => return Err(map_journal(error)),
@@ -445,28 +577,34 @@ pub(super) fn recover_locked<H: ControllerHost>(
     // reclaimed history must not repeatedly replay the entire journal through
     // each completed workflow while holding the management/data admission lock.
     let reclaimed = reclaimed_sandboxes(&initial);
-    let mut blocked = bind_recovery_slots(journal, host, &initial, selected)?;
-    let launch_blocked = blocked_launch_configs(journal, host, &initial, selected, &blocked)?;
+    let mut first_fault = None;
+    let mut blocked = bind_recovery_slots(journal, host, &initial, selected, &mut first_fault)?;
+    let launch_blocked = blocked_launch_configs(
+        journal,
+        host,
+        &initial,
+        selected,
+        &blocked,
+        &mut first_fault,
+    )?;
     blocked.extend(launch_blocked);
-    reclaim_uncertain_actions(journal, host, &initial, &mut blocked, selected)?;
+    reclaim_uncertain_actions(
+        journal,
+        host,
+        &initial,
+        &mut blocked,
+        selected,
+        &mut first_fault,
+    )?;
     let recovery_world = journal.world().map_err(map_journal)?;
-    let mut receipts_recovered = 0;
-    for action in journal.uncertain_actions().map_err(map_journal)? {
-        let Some(receipt) =
-            observe_recovery_action(host, &recovery_world, &blocked, selected, &action)
-        else {
-            continue;
-        };
-        match journal.reconcile_observed(&action, &receipt) {
-            Ok(accepted) => receipts_recovered += usize::from(accepted),
-            Err(error) if error.is_local_recovery_failure() => {
-                // The rejected observation remains uncommitted. Do not run
-                // more actions for this sandbox in the same recovery pass.
-                blocked.insert(action.command.command().sandbox());
-            }
-            Err(error) => return Err(map_journal(error)),
-        }
-    }
+    let receipts_recovered = recover_receipts(
+        journal,
+        host,
+        &recovery_world,
+        &mut blocked,
+        selected,
+        &mut first_fault,
+    )?;
     // Host I/O can cross the deadline. Recheck before any Running publication.
     if selected.is_none() {
         journal
@@ -476,6 +614,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
     let pending = journal.world().map_err(map_journal)?;
     let mut report = RecoveryReport {
         receipts_recovered,
+        first_fault,
         ..RecoveryReport::default()
     };
     let mut unresolved = blocked.clone();
@@ -489,46 +628,32 @@ pub(super) fn recover_locked<H: ControllerHost>(
         let Some(operation) = record.current_operation else {
             continue;
         };
-        let resume = match (record.phase, operation.kind) {
-            (core::Phase::Starting, core::OperationKind::Create) => {
-                finish_admitted_create_v1_timed(
-                    journal,
-                    *sandbox,
-                    operation.id,
-                    &mut |action| host.execute(action),
-                    &mut || clock.publication_ms(),
-                )
-                .map(|_| ())
-            }
-            (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Create)
-                if matches!(
-                    operation.status,
-                    core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
-                ) =>
-            {
-                finish_compensating_create_v1(journal, *sandbox, operation.id, &mut |action| {
-                    host.execute(action)
-                })
-                .map(|_| ())
-            }
-            (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Kill) => {
-                finish_accepted_kill_v1(journal, *sandbox, operation.id, &mut |action| {
-                    host.execute(action)
-                })
-                .map(|_| ())
-            }
-            _ => continue,
+        let Some(resume) = resume_workflow(journal, host, clock, *sandbox, record) else {
+            continue;
         };
         match resume {
             Ok(()) | Err(JournalError::OperationFailed) => report.workflows_completed += 1,
-            Err(JournalError::UnresolvedAction) => {
-                unresolved.insert(*sandbox);
-            }
             Err(error) if error.is_local_recovery_failure() => {
-                blocked.insert(*sandbox);
+                remember_journal(
+                    &mut report.first_fault,
+                    FaultStage::RecoverWorkflow,
+                    &error,
+                    FaultContext::instance(*sandbox, Some(operation.id)),
+                );
+                // Unresolved is not a newly rejected observation/host error.
+                // Preserve the original failed_sandboxes accounting.
+                if !matches!(error, JournalError::UnresolvedAction) {
+                    blocked.insert(*sandbox);
+                }
                 unresolved.insert(*sandbox);
             }
-            Err(error) => return Err(map_journal(error)),
+            Err(error) => {
+                return Err(map_journal_at(
+                    error,
+                    FaultStage::RecoverWorkflow,
+                    FaultContext::instance(*sandbox, Some(operation.id)),
+                ));
+            }
         }
     }
     for action in journal.uncertain_actions().map_err(map_journal)? {
@@ -537,6 +662,83 @@ pub(super) fn recover_locked<H: ControllerHost>(
     report.unresolved_sandboxes = unresolved.len();
     report.failed_sandboxes = blocked.len();
     Ok(report)
+}
+
+fn recover_receipts<H: WorkRecovery>(
+    journal: &mut ControllerJournal,
+    host: &H,
+    world: &core::World,
+    blocked: &mut BTreeSet<core::SandboxId>,
+    selected: Option<core::SandboxId>,
+    first_fault: &mut Option<FaultRecord>,
+) -> Result<usize, ApplicationError> {
+    let mut recovered = 0;
+    for action in journal.uncertain_actions().map_err(map_journal)? {
+        let Some(receipt) = observe_recovery_action(host, world, blocked, selected, &action) else {
+            continue;
+        };
+        match journal.reconcile_observed(&action, &receipt) {
+            Ok(accepted) => recovered += usize::from(accepted),
+            Err(error) if error.is_local_recovery_failure() => {
+                remember_journal(
+                    first_fault,
+                    FaultStage::RecoverReceipt,
+                    &error,
+                    FaultContext::action(&action),
+                );
+                // Rejected evidence remains uncommitted; no later work for
+                // this sandbox may run in the same recovery pass.
+                blocked.insert(action.command.command().sandbox());
+            }
+            Err(error) => {
+                return Err(map_journal_at(
+                    error,
+                    FaultStage::RecoverReceipt,
+                    FaultContext::action(&action),
+                ));
+            }
+        }
+    }
+    Ok(recovered)
+}
+
+fn resume_workflow<H: ControllerHost>(
+    journal: &mut ControllerJournal,
+    host: &mut H,
+    clock: &dyn Clock,
+    sandbox: core::SandboxId,
+    record: &core::SandboxRecord,
+) -> Option<Result<(), JournalError>> {
+    let operation = record.current_operation?;
+    let result = match (record.phase, operation.kind) {
+        (core::Phase::Starting, core::OperationKind::Create) => finish_admitted_create_v1_timed(
+            journal,
+            sandbox,
+            operation.id,
+            &mut |action| host.execute(action),
+            &mut || clock.publication_ms(),
+        )
+        .map(|_| ()),
+        (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Create)
+            if matches!(
+                operation.status,
+                core::OperationStatus::Compensating(_) | core::OperationStatus::Failed(_)
+            ) =>
+        {
+            finish_compensating_create_v1(journal, sandbox, operation.id, &mut |action| {
+                host.execute(action)
+            })
+            .map(|_| ())
+        }
+        (core::Phase::Revoking | core::Phase::Destroyed, core::OperationKind::Kill) => {
+            finish_accepted_kill_v1(journal, sandbox, operation.id, &mut |action| {
+                host.execute(action)
+            })
+            .map(|_| ())
+        }
+        _ => return None,
+    };
+    Some(result)
 }
 
 impl<H: ControllerHost> ControllerApplication<H> {
