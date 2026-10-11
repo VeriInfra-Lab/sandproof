@@ -179,11 +179,13 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     boundary = require_service_boundary(report, service_manifest)
     if boundary['services']['candidate'] != candidate:
         raise ValueError('runtime service candidate differs from the requested commit')
-    dk=require_dk(dk_evidence,candidate=candidate)
-    storage=require_storage_observation(report.get('service_storage'))
+    # DK is the already checked root-owned result of its separate fresh cohort.
+    dk=require_dk(dk_evidence,candidate=candidate,
+        expected_service_data=dk_evidence.get('service_data') if isinstance(dk_evidence,dict) else None)
     execution_path=private_path(root/'execution-manifest.json')
     execution=require_execution_manifest(report.get('execution_manifest'),service_manifest,
         expected=json_file(execution_path,limit=32768))
+    storage=require_storage_observation(report.get('service_storage'),expected=execution['service_data'])
     processes=require_process_evidence(report.get('service_processes'),execution)
     service = json_file(root / 'service-cleanup.json')
     rows = report.get('tasks', [])
@@ -266,6 +268,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
                 report_sha256=hashlib.sha256((root / 'report.json').read_bytes()).hexdigest(),
                 execution_manifest_sha256=hashlib.sha256(execution_path.read_bytes()).hexdigest(),
                 service_roles=sorted(processes),dk=dk,service_storage=storage,
+                service_data=execution['service_data'],
                 **boundary)
     if prepared:
         result.update(fixture_sha256=expected_fixture_sha256, original_environment=False,
@@ -278,16 +281,24 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
 def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal-bench@2.1',
               source_kind=None, expected_fixture_sha256=None):
     from tools.ci_e2e_artifacts import require_public_identity, require_boundary,require_dk
-    from tools.service_storage_observation import require_storage_observation
+    from tools.service_storage_observation import require_storage_declaration, require_storage_observation
     service_identity = None
     boundary = None
     dk = None
     storage = []
+    declarations = []
     for batch in batches:
         identity = require_public_identity(batch.get('services'), candidate=candidate)
         observed = require_boundary(batch.get('service_boundary'))
-        faults=require_dk(batch.get('dk'),candidate=candidate)
-        storage.append(require_storage_observation(batch.get('service_storage')))
+        retained_dk=batch.get('dk')
+        faults=require_dk(retained_dk,candidate=candidate,
+            expected_service_data=retained_dk.get('service_data') if isinstance(retained_dk,dict) else None)
+        # This declaration was retained from the checked original receipt by
+        # batch_result, before the original root was removed. It is not derived
+        # from the summary being checked and is kept separately for each batch.
+        declaration=require_storage_declaration(batch.get('service_data'))
+        storage.append(require_storage_observation(batch.get('service_storage'),expected=declaration))
+        declarations.append(declaration)
         if dk is not None and faults!=dk:
             raise ValueError('cannot combine different exact-candidate DK cohorts')
         dk=faults
@@ -340,7 +351,8 @@ def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal
     if service_identity is not None:
         # Preserve each validated cohort's original summary in batch order;
         # different role roots cannot be merged into a synthetic peak.
-        result.update(services=service_identity, service_boundary=boundary,dk=dk,service_storage=storage)
+        result.update(services=service_identity, service_boundary=boundary,dk=dk,
+                      service_data=declarations,service_storage=storage)
     if prepared:
         result.update(source_kind='prepared-ci', fixture_sha256=fixture_sha256,
             baseline='prepackaged CI regression; original solution and test assertions',

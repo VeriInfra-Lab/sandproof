@@ -77,7 +77,12 @@ class ServiceStorageTests(unittest.TestCase):
                 return inner
             def __iter__(inner):
                 yield from inner.iterator
+                before = self.root.stat()
                 self.write('arrived-after-enumeration', b'new')
+                # Deterministically change the original stamp, including on
+                # filesystems where two writes can share a timestamp tick.
+                # This test does not claim an atomic pathname snapshot.
+                os.utime(self.root, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
             def __exit__(inner, *_):
                 inner.iterator.close()
 
@@ -117,7 +122,7 @@ class ServiceStorageTests(unittest.TestCase):
         self.assertIsNone(sampler.latest)
         (self.root/'redis-temp-rewrite').unlink()
         sampler.stop()
-        final = storage.require_storage_observation(sampler.report())
+        final = storage.require_storage_observation(sampler.report(), expected=sampler.declaration())
         self.assertEqual(final['roots'][0]['observed_peak']['logical_file_bytes'], 7)
         self.assertEqual(final['roots'][0]['last_stable']['logical_file_bytes'], 0)
         self.assertEqual(final['unknown_samples'], 1)
@@ -149,7 +154,7 @@ class ServiceStorageTests(unittest.TestCase):
         original = sampler.report()
         persisted = json.loads(json.dumps(original))
         with patch.object(storage, 'inventory', side_effect=AssertionError('no report IO')):
-            checked = storage.require_storage_observation(persisted)
+            checked = storage.require_storage_observation(persisted, expected=sampler.declaration())
         self.assertEqual(checked, original)
         checked['roots'][0]['budget']['entries'] += 1
         self.assertNotEqual(checked, persisted)
@@ -175,15 +180,15 @@ class ServiceStorageTests(unittest.TestCase):
                 parent = parent[key]
             parent[path[-1]] = value
             with self.subTest(path=path), self.assertRaises(ValueError):
-                storage.require_storage_observation(changed)
+                storage.require_storage_observation(changed, expected=sampler.declaration())
         for missing in report:
             changed = copy.deepcopy(report)
             del changed[missing]
             with self.subTest(missing=missing), self.assertRaises(ValueError):
-                storage.require_storage_observation(changed)
+                storage.require_storage_observation(changed, expected=sampler.declaration())
         for changed in (None, dict(report, private_path=str(self.root))):
             with self.assertRaises(ValueError):
-                storage.require_storage_observation(changed)
+                storage.require_storage_observation(changed, expected=sampler.declaration())
         for foreign in (False, True):
             changed = copy.deepcopy(report)
             peer = copy.deepcopy(changed['roots'][0])
@@ -193,7 +198,39 @@ class ServiceStorageTests(unittest.TestCase):
                 peer['identity'][1] += 1
             changed['roots'].append(peer)
             with self.assertRaises(ValueError):
-                storage.require_storage_observation(changed)
+                storage.require_storage_observation(changed, expected=sampler.declaration())
+
+    def test_summary_cannot_replace_original_receipt_root_owner_or_budget(self):
+        sampler = storage.ServiceStoragePeaks([self.record])
+        sampler.stop()
+        expected = json.loads(json.dumps(sampler.declaration()))
+        self.assertEqual(storage.require_storage_observation(sampler.report(), expected=expected), sampler.report())
+        for key, value in (('identity', [expected[0]['identity'][0], expected[0]['identity'][1] + 1]),
+                           ('owner_uid', self.record['owner_uid'] + 1),
+                           ('budget', dict(logical_file_bytes=1025, entries=12))):
+            report = sampler.report()
+            report['roots'][0][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'original execution declaration'):
+                storage.require_storage_observation(report, expected=expected)
+        # The first observation remains fixed; caller mutation cannot retarget
+        # future execution receipts, and no paths or file content are exported.
+        copied = sampler.declaration()
+        copied[0]['identity'][1] += 1
+        self.assertEqual(sampler.declaration(), expected)
+        self.assertNotIn(str(self.root), json.dumps(expected))
+
+    def test_original_declaration_is_bounded_exact_and_independent_of_report_io(self):
+        sampler = storage.ServiceStoragePeaks([self.record])
+        original = sampler.declaration()
+        with patch.object(storage.os, 'lstat', side_effect=AssertionError('no receipt IO')):
+            self.assertEqual(storage.require_storage_declaration(original), original)
+        invalid = [None, [], original * 9, [dict(original[0], root=str(self.root))],
+                   [dict(original[0], index=True)], [dict(original[0], owner_uid=True)],
+                   [dict(original[0], identity=[original[0]['identity'][0], 0])],
+                   [dict(original[0], budget=dict(logical_file_bytes=0, entries=12))]]
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                storage.require_storage_declaration(value)
 
     def test_unexpected_background_observation_failure_cannot_seal_old_sample(self):
         sampler = storage.ServiceStoragePeaks([self.record])

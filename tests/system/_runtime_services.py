@@ -451,7 +451,8 @@ class RuntimeServices:
         tls_sha=hashlib.sha256(json.dumps(public_tls,sort_keys=True,separators=(',',':')).encode()).hexdigest()
         manifest=artifacts.execution_manifest(self.manifest,run_id=run_id,
             candidate_manifest_sha256=self.manifest_sha256,roles=roles,redis=self.redis_receipt,
-            tls_sha256=tls_sha,budget_sha256=digest(budget_path))
+            tls_sha256=tls_sha,budget_sha256=digest(budget_path),
+            service_data=self.service_storage.declaration())
         return manifest,observed
 
     def local_for(self,sandbox,*,index=0):

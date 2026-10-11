@@ -24,7 +24,7 @@ BINARIES = {"center": "sandproof-center", "host": "sandproof-host"}
 VERSION_KEYS = {"internal_protocol", "center_store", "host_store"}
 MANIFEST_KEYS = {"schema_version", "architecture", "candidate", "versions", "artifacts"}
 EXECUTION_KEYS = {"schema_version", "run_id", "candidate_manifest_sha256", "services",
-                  "roles", "redis", "tls_sha256", "budget_sha256"}
+                  "roles", "redis", "tls_sha256", "budget_sha256", "service_data"}
 ROLE_KEYS = {"uid", "gid", "config_sha256", "directory"}
 DIRECTORY_KEYS = {"device", "inode", "uid", "gid", "mode"}
 
@@ -272,7 +272,7 @@ def _roles(value):
 
 
 def execution_manifest(manifest, *, run_id, candidate_manifest_sha256, roles,
-                       redis, tls_sha256, budget_sha256):
+                       redis, tls_sha256, budget_sha256, service_data):
     """Original run binding, NOT execution, scoring or cleanup evidence.
 
     The trusted supervisor must first collect actual protected directory/owner
@@ -283,6 +283,7 @@ def execution_manifest(manifest, *, run_id, candidate_manifest_sha256, roles,
     second configuration parser here. This helper never installs a supervisor
     or changes the promotion gate.
     """
+    from tools.service_storage_observation import require_storage_declaration
     identity = public_identity(manifest)  # The sole candidate/version validator.
     checked_roles = _roles(roles)
     # This is the original fixed-material receipt, not another Redis pin/schema.
@@ -296,7 +297,8 @@ def execution_manifest(manifest, *, run_id, candidate_manifest_sha256, roles,
                 candidate_manifest_sha256=_sha256(candidate_manifest_sha256, "candidate manifest"),
                 services=identity, roles=checked_roles, redis=dict(redis),
                 tls_sha256=_sha256(tls_sha256, "public TLS material"),
-                budget_sha256=_sha256(budget_sha256, "complete resource budget"))
+                budget_sha256=_sha256(budget_sha256, "complete resource budget"),
+                service_data=require_storage_declaration(service_data))
 
 
 def require_execution_manifest(evidence, manifest, *, expected):
@@ -361,16 +363,22 @@ def require_process_evidence(processes, execution):
     return checked
 
 
-def require_dk(evidence, *, candidate):
+def require_dk(evidence, *, candidate, expected_service_data):
     """All six mandatory real fault cases; missing/unknown cannot be green.
 
     DK may use a separate fresh cohort from Harbor. Its one execution receipt
     is bound to the SAME approved candidate, and each real case keeps its own
     bounded private evidence digest. No task scoring is substituted by this.
+    Expected storage comes from that cohort's checked original execution, or
+    the root-owned result already retained after this same check; it must not
+    be obtained from an incoming observation's own roots or budgets.
     """
-    from tools.service_storage_observation import require_storage_observation
+    from tools.service_storage_observation import require_storage_declaration, require_storage_observation
     _candidate(candidate)
-    require_keys(evidence,{'schema_version','candidate','execution_manifest_sha256','cases','service_storage'},'DK report')
+    require_keys(evidence,{'schema_version','candidate','execution_manifest_sha256','cases','service_storage','service_data'},'DK report')
+    declaration = require_storage_declaration(expected_service_data)
+    if require_storage_declaration(evidence['service_data']) != declaration:
+        raise ValueError('DK storage declaration differs from original execution receipt')
     if (type(evidence['schema_version']) is not int or evidence['schema_version']!=1
             or evidence['candidate']!=candidate or type(evidence['cases']) is not list
             or len(evidence['cases'])!=6):
@@ -388,4 +396,5 @@ def require_dk(evidence, *, candidate):
         _sha256(case['evidence_sha256'],'DK private case evidence')
         checked.append(dict(case))
     return dict(schema_version=1,candidate=candidate,execution_manifest_sha256=execution_sha,cases=checked,
-                service_storage=require_storage_observation(evidence['service_storage']))
+                service_data=declaration,
+                service_storage=require_storage_observation(evidence['service_storage'],expected=declaration))

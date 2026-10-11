@@ -94,7 +94,9 @@ def complete_report():
         candidate_manifest_sha256=report['hashes']['candidate_manifest'],
         roles=dict(center=role(1001,1,'a'),redis=role(1002,2,'b'),host=[role(0,3,'c')]),
         redis=dict(artifacts.REDIS_PIN,binary_sha256='d'*64,binary_bytes=1000),
-        tls_sha256='e'*64,budget_sha256='f'*64)
+        tls_sha256='e'*64,budget_sha256='f'*64,
+        service_data=[dict(index=0,identity=[1,4],owner_uid=0,
+            budget=dict(logical_file_bytes=1024,entries=4))])
     report['hashes']['execution_manifest']=hashlib.sha256((json.dumps(report['execution_manifest'],
         sort_keys=True,indent=2)+'\n').encode()).hexdigest()
     report['service_processes']={name:dict(pid=index+10,start_time_ticks=100,

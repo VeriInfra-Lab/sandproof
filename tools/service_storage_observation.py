@@ -18,13 +18,41 @@ U64_MAX = 2**64 - 1
 OBSERVATION = 'sampled_pathname_peak_not_hard_quota'
 LIMITATIONS = 'No instantaneous peak, open-unlinked allocation or long-term disk guarantee.'
 USAGE_FIELDS = frozenset({'logical_file_bytes', 'allocated_bytes', 'entries'})
+DECLARATION_FIELDS = frozenset({'index', 'identity', 'owner_uid', 'budget'})
 
 
-def require_storage_observation(value):
+def require_storage_declaration(value):
+    """Original execution's finite immutable projection, without private paths."""
+    if type(value) is not list or not 1 <= len(value) <= 8:
+        raise ValueError('original finite service storage declaration required')
+    identities = set()
+    device = None
+    for index, row in enumerate(value):
+        if (type(row) is not dict or set(row) != DECLARATION_FIELDS
+                or type(row['index']) is not int or row['index'] != index
+                or type(row['owner_uid']) is not int or not 0 <= row['owner_uid'] < 2**32
+                or type(row['identity']) is not list or len(row['identity']) != 2
+                or any(type(number) is not int or not 0 <= number <= U64_MAX
+                       for number in row['identity']) or row['identity'][1] == 0
+                or tuple(row['identity']) in identities
+                or (device is not None and row['identity'][0] != device)):
+            raise ValueError('distinct original service storage identities required')
+        identities.add(tuple(row['identity']))
+        device = row['identity'][0]
+        budget = row['budget']
+        if (type(budget) is not dict or set(budget) != {'logical_file_bytes', 'entries'}
+                or any(type(number) is not int or not 0 < number <= U64_MAX
+                       for number in budget.values())):
+            raise ValueError('original finite service storage budget required')
+    return copy.deepcopy(value)
+
+
+def require_storage_observation(value, *, expected):
     """Retain one finite, post-exit engineering summary, not a quota attestation.
 
-    Existing candidate/config/execution receipts bind the original declaration.
-    This validator only checks the summary and never invents another budget,
+    Expected is the original immutable projection from the checked execution
+    receipt (or its already checked durable reducer result), not the summary's
+    own budget. This validator never invents another budget,
     merges different cohorts, reads paths or attests an unobserved interval.
     """
     fields = {'schema_version', 'observation', 'limitations', 'sample_interval_ms',
@@ -41,26 +69,16 @@ def require_storage_observation(value):
             or not 0 <= value['unknown_samples'] <= U64_MAX
             or type(value['roots']) is not list or not 1 <= len(value['roots']) <= 8):
         raise ValueError('finite stable post-exit service storage observation required')
-    identities = set()
-    device = None
-    for index, row in enumerate(value['roots']):
-        if (type(row) is not dict or set(row) != {'index', 'identity', 'owner_uid', 'budget',
-                                                'observed_peak', 'last_stable'}
-                or type(row['index']) is not int or row['index'] != index
-                or type(row['owner_uid']) is not int or not 0 <= row['owner_uid'] < 2**32
-                or type(row['identity']) is not list or len(row['identity']) != 2
-                or any(type(number) is not int or not 0 <= number <= U64_MAX
-                       for number in row['identity']) or row['identity'][1] == 0
-                or tuple(row['identity']) in identities
-                or (device is not None and row['identity'][0] != device)):
-            raise ValueError('distinct original service storage identities required')
-        identities.add(tuple(row['identity']))
-        device = row['identity'][0]
+    original = require_storage_declaration(expected)
+    for row in value['roots']:
+        if (type(row) is not dict or set(row) != DECLARATION_FIELDS | {'observed_peak', 'last_stable'}):
+            raise ValueError('exact original service storage observation fields required')
+    observed = require_storage_declaration([
+        {key: row[key] for key in DECLARATION_FIELDS} for row in value['roots']])
+    if observed != original:
+        raise ValueError('service storage observation differs from original execution declaration')
+    for row in value['roots']:
         budget, peak, stable = row['budget'], row['observed_peak'], row['last_stable']
-        if (type(budget) is not dict or set(budget) != {'logical_file_bytes', 'entries'}
-                or any(type(number) is not int or not 0 < number <= U64_MAX
-                       for number in budget.values())):
-            raise ValueError('original finite service storage budget required')
         for usage in (peak, stable):
             if (type(usage) is not dict or set(usage) != USAGE_FIELDS
                     or any(type(number) is not int or not 0 <= number <= U64_MAX
@@ -200,6 +218,10 @@ class ServiceStoragePeaks:
                 raise ValueError('original service roots overlap')
             self.roots.append(path)
             self.identities.append(_identity(info))
+        self.bound_declaration = require_storage_declaration([
+            dict(index=index, identity=list(identity), owner_uid=row['owner_uid'],
+                 budget=dict(logical_file_bytes=row['peak_bytes'], entries=row['inode_budget']))
+            for index, (row, identity) in enumerate(zip(self.records, self.identities))])
         self.peaks = [dict(logical_file_bytes=0, allocated_bytes=0, entries=0) for _ in records]
         self.latest = None
         self.successful_samples = self.unknown_samples = 0
@@ -207,6 +229,10 @@ class ServiceStoragePeaks:
         self.lock, self.stopped = threading.Lock(), threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.closed = False
+
+    def declaration(self):
+        """Retain the first observed original roots, even after staging removal."""
+        return copy.deepcopy(self.bound_declaration)
 
     def sample(self):
         with self.lock:
@@ -282,8 +308,6 @@ class ServiceStoragePeaks:
                 sample_interval_ms=int(SAMPLE_SECONDS * 1000),
                 successful_samples=self.successful_samples, unknown_samples=self.unknown_samples,
                 sampler_exited=self.closed,
-                roots=[dict(index=index, identity=list(identity), owner_uid=row['owner_uid'],
-                    budget=dict(logical_file_bytes=row['peak_bytes'], entries=row['inode_budget']),
+                roots=[dict(declaration,
                     observed_peak=copy.deepcopy(peak), last_stable=copy.deepcopy(current))
-                    for index, (row, identity, peak, current) in enumerate(
-                        zip(self.records, self.identities, self.peaks, self.latest))])
+                    for declaration, peak, current in zip(self.declaration(), self.peaks, self.latest)])

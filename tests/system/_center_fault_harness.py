@@ -12,6 +12,7 @@ _require_assertions = _runpy.run_path(
 )["require_assertions"]
 _require_assertions()
 
+import copy
 import hashlib
 import json
 import os
@@ -305,6 +306,7 @@ class Harness:
     def finish(self):
         dk = dict(schema_version=1,candidate=self.manifest['services']['candidate'],
                   execution_manifest_sha256=self.execution_sha,cases=self.cases,
+                  service_data=copy.deepcopy(self.manifest['service_data']),
                   service_storage=self.services.storage_peaks())
         report = dict(schema_version=1,services=ci_e2e_artifacts.public_identity(self.services.manifest),
             service_boundary=dict(public_api='center',center_unprivileged=True,
@@ -323,7 +325,8 @@ class Harness:
             # exact staging removal; no successful mid-run sample substitutes.
             dk=self.finished_report['dk']
             dk['service_storage']=self.services.storage_peaks()
-            ci_e2e_artifacts.require_dk(dk,candidate=dk['candidate'])
+            ci_e2e_artifacts.require_dk(dk,candidate=dk['candidate'],
+                                      expected_service_data=self.manifest['service_data'])
             self.materials.remove()
             self.services.cleanup_staging()
 

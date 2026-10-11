@@ -129,7 +129,8 @@ def bootstrap(args, argv, budget):
     execution=ci_e2e_artifacts.require_execution_manifest(report.get('execution_manifest'),manifest,
         expected=json_file(private_path(args.run_root/'execution-manifest.json'),limit=32768))
     ci_e2e_artifacts.require_process_evidence(report.get('service_processes'),execution)
-    ci_e2e_artifacts.require_dk(report['dk'],candidate=report['services']['candidate'])
+    ci_e2e_artifacts.require_dk(report['dk'],candidate=report['services']['candidate'],
+                              expected_service_data=execution['service_data'])
     if (execution['run_id']!=args.run_identity
             or execution['candidate_manifest_sha256']!=digest(args.candidate_manifest)
             or report['dk']['execution_manifest_sha256']!=digest(args.run_root/'execution-manifest.json')):

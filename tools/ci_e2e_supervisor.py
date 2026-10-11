@@ -468,7 +468,9 @@ class Supervisor:
             self.block('mandatory_fault_group_identity_unknown')
             return False
         if group['phase']=='done':
-            service_artifacts.require_dk(group.get('result'),candidate=self.state['candidate'])
+            result=group.get('result')
+            service_artifacts.require_dk(result,candidate=self.state['candidate'],
+                expected_service_data=result.get('service_data') if isinstance(result,dict) else None)
             return True
         if group['phase']=='new':
             try:
@@ -502,11 +504,18 @@ class Supervisor:
                         or fields.get('ExecMainStatus')!='0'
                         or json_file(private_path(root/'service-cleanup.json')).get('removed') is not True):
                     raise ValueError('fault group candidate, actual execution or exact cleanup unconfirmed')
-                result=service_artifacts.require_dk(report.get('dk'),candidate=self.state['candidate'])
+                result=service_artifacts.require_dk(report.get('dk'),candidate=self.state['candidate'],
+                    expected_service_data=execution['service_data'])
                 if result['execution_manifest_sha256']!=file_digest(root/'execution-manifest.json'):
                     raise ValueError('fault group cases do not bind its original execution receipt')
                 group.update(result=result,root_identity=[root.stat().st_dev,root.stat().st_ino],phase='reclaiming')
                 self.save()
+            # The root-owned result retained the checked original projection
+            # before role roots were reclaimed; a restart cannot accept a new
+            # summary's self-declared budget in its place.
+            result=group.get('result')
+            service_artifacts.require_dk(result,candidate=self.state['candidate'],
+                expected_service_data=result.get('service_data') if isinstance(result,dict) else None)
             if root.exists():
                 remove_private_tree(root,group['root_identity'])
             subprocess.run(['systemctl','stop',group['unit']],check=True,capture_output=True,timeout=20)

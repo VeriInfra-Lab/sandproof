@@ -11,8 +11,9 @@ from unittest.mock import Mock, patch
 from tools import benchmark_ci as bench
 from tools import ci_e2e_supervisor as ci
 from tools import ci_e2e_artifacts as service_artifacts
+from tools.service_storage_observation import ServiceStoragePeaks
 from tools.ci_github_app import APIError
-from tools.tests.storage_observation_fixture import observation
+from tools.tests.storage_observation_fixture import declaration, observation
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -33,7 +34,7 @@ class BenchmarkCITests(unittest.TestCase):
                        for role, name, hash_value in (('center','sandproof-center','a'),
                                                       ('host','sandproof-host','d'))})
         self.dk=dict(schema_version=1,candidate='a'*40,execution_manifest_sha256='9'*64,
-            service_storage=observation(),
+            service_storage=observation(),service_data=declaration(),
             cases=[dict(id='DK'+str(number).zfill(2),status='pass',exact_cleanup='passed',
                 execution_manifest_sha256='9'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
 
@@ -219,9 +220,9 @@ class BenchmarkCITests(unittest.TestCase):
             ci.git('status', '--porcelain')
         self.assertNotIn('GIT_CONFIG_VALUE_0', call.call_args.kwargs['env'])
 
-    def report(self):
+    def report(self, *, service_data=None, service_storage=None):
         data = dict(commit='a'*40, dataset='terminal-bench@2.1', fixed_task_count=89,
-            service_storage=observation(),
+            service_storage=observation() if service_storage is None else service_storage,
             oracle_mode='original', original_verifier=True, original_oracle_verifier=True,
             services=service_artifacts.public_identity(self.services_manifest),
             service_boundary=dict(public_api='center', center_unprivileged=True,
@@ -240,7 +241,8 @@ class BenchmarkCITests(unittest.TestCase):
             run_id='b'*64,candidate_manifest_sha256='c'*64,
             roles=dict(center=role(1001,1,'a'),redis=role(1002,2,'b'),host=[role(0,3,'c')]),
             redis=dict(service_artifacts.REDIS_PIN,binary_sha256='d'*64,binary_bytes=1000),
-            tls_sha256='e'*64,budget_sha256='f'*64)
+            tls_sha256='e'*64,budget_sha256='f'*64,
+            service_data=declaration() if service_data is None else service_data)
         data['service_processes']={name:dict(pid=index+10,start_time_ticks=100,uid=uid,gid=uid,
             executable=dict(device=1,inode=index+20)) for index,(name,uid) in
             enumerate((('center',1001),('redis',1002),('host-0',0)))}
@@ -801,6 +803,7 @@ class BenchmarkCITests(unittest.TestCase):
         names = [t['name'] for t in self.lock['tasks']]
         batch = dict(candidate='a'*40, tasks=[{'name':n} for n in names], passed=True, cleanup='passed',
                      dk=self.dk,execution_manifest_sha256='b'*64,service_storage=observation(),
+                     service_data=declaration(),
                      services=service_artifacts.public_identity(self.services_manifest),
                      service_boundary=service_artifacts.require_boundary(dict(public_api='center',
                          center_unprivileged=True, redis_authority='validated',
@@ -826,20 +829,50 @@ class BenchmarkCITests(unittest.TestCase):
                 bench.aggregate('a'*40, [batch, changed], self.names)
 
     def test_storage_summary_is_retained_per_batch_and_dk_after_durable_roundtrip(self):
-        self.report()
-        batch = self.batch_result(self.root, candidate='a'*40, names=self.names[:4], exit_code=0,
-                                  full_task_count=len(self.lock['tasks']))
-        self.assertEqual(batch['service_storage'], observation())
-        self.assertEqual(batch['dk']['service_storage'], observation())
-        persisted = json.loads(json.dumps(batch))
-        peer = copy.deepcopy(persisted)
-        peer['tasks'] = [dict(row, name=name) for row,name in zip(peer['tasks'], self.names[4:])]
-        peer['service_storage']['roots'][0]['identity'][1] += 1
-        result = bench.aggregate('a'*40, [persisted, peer], self.names)
+        # Real independent original stat roots; synthetic task/process receipts
+        # remain parser fixtures, not executed services or scores.
+        batches=[]
+        for index,names in enumerate((self.names[:4],self.names[4:])):
+            temporary=tempfile.TemporaryDirectory()
+            self.addCleanup(temporary.cleanup)
+            root=Path(temporary.name).resolve()
+            root.chmod(0o700)
+            path=root/'declared-service.log'
+            path.write_bytes(b'x'*(index+1))
+            path.chmod(0o600)
+            sampler=ServiceStoragePeaks([dict(root=str(root),owner_uid=os.geteuid(),
+                                            peak_bytes=1024,inode_budget=4)])
+            sampler.stop()
+            report=self.report(service_data=sampler.declaration(),service_storage=sampler.report())
+            report['tasks']=[dict(row,name=name) for row,name in zip(report['tasks'],names)]
+            (self.root/'report.json').write_text(json.dumps(report))
+            batch=self.batch_result(self.root,candidate='a'*40,names=names,exit_code=0,
+                                   full_task_count=len(self.lock['tasks']))
+            self.assertEqual(batch['service_data'],sampler.declaration())
+            self.assertEqual(batch['service_storage'],sampler.report())
+            batches.append(json.loads(json.dumps(batch)))
+        self.assertNotEqual(batches[0]['service_data'],batches[1]['service_data'])
+        result = bench.aggregate('a'*40, batches, self.names)
         self.assertTrue(result['passed'])
-        self.assertEqual(result['service_storage'], [batch['service_storage'], peer['service_storage']])
+        self.assertEqual(result['service_storage'], [row['service_storage'] for row in batches])
+        self.assertEqual(result['service_data'], [row['service_data'] for row in batches])
         self.assertEqual(result['dk']['service_storage'], self.dk['service_storage'])
         self.assertEqual(json.loads(json.dumps(result))['service_storage'], result['service_storage'])
+
+    def test_same_receipt_storage_root_owner_or_budget_change_rejects_before_and_after_reduction(self):
+        for key,value in (('identity',[1,3]),('owner_uid',1),
+                          ('budget',dict(logical_file_bytes=2048,entries=4))):
+            report=self.report()
+            batch=self.batch_result(self.root,candidate='a'*40,names=self.names[:4],exit_code=0,
+                                   full_task_count=len(self.lock['tasks']))
+            report['service_storage']['roots'][0][key]=value
+            (self.root/'report.json').write_text(json.dumps(report))
+            with self.subTest(stage='original receipt',key=key),self.assertRaises(ValueError):
+                self.batch_result(self.root,candidate='a'*40,names=self.names[:4],exit_code=0,
+                                  full_task_count=len(self.lock['tasks']))
+            batch['service_storage']['roots'][0][key]=value
+            with self.subTest(stage='durable receipt',key=key),self.assertRaises(ValueError):
+                bench.aggregate('a'*40,[json.loads(json.dumps(batch))],self.names[:4])
 
     def test_missing_unknown_or_exceeded_storage_never_passes_after_recovery(self):
         self.report()

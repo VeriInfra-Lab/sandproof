@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from tools import ci_e2e_artifacts as artifacts
-from tools.tests.storage_observation_fixture import observation
+from tools.tests.storage_observation_fixture import declaration, observation
 
 
 class CandidateArtifactsTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class CandidateArtifactsTests(unittest.TestCase):
         roles['host'] = [roles['host']]
         return dict(run_id="b" * 64, candidate_manifest_sha256="c" * 64, roles=roles,
                     redis=dict(artifacts.REDIS_PIN, binary_sha256="d" * 64, binary_bytes=1024),
-                    tls_sha256="e" * 64, budget_sha256="f" * 64)
+                    tls_sha256="e" * 64, budget_sha256="f" * 64, service_data=declaration())
 
     def execution(self):
         return artifacts.execution_manifest(self.record(), **self.execution_inputs())
@@ -76,23 +76,25 @@ class CandidateArtifactsTests(unittest.TestCase):
 
     def test_all_six_dk_cases_are_mandatory_same_candidate_and_same_group_execution(self):
         evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
-            service_storage=observation(),
+            service_storage=observation(),service_data=declaration(),
             cases=[dict(id='DK'+str(number).zfill(2),status='pass',exact_cleanup='passed',
                 execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
-        self.assertEqual(artifacts.require_dk(evidence,candidate=self.candidate),evidence)
+        self.assertEqual(artifacts.require_dk(evidence,candidate=self.candidate,
+            expected_service_data=declaration()),evidence)
         for missing in range(6):
             changed=copy.deepcopy(evidence)
             del changed['cases'][missing]
             with self.assertRaises(ValueError):
-                artifacts.require_dk(changed,candidate=self.candidate)
+                artifacts.require_dk(changed,candidate=self.candidate,expected_service_data=declaration())
         for field,value in (('id','DK05'),('status','not_run'),('status','failed'),
                 ('exact_cleanup','unknown'),('execution_manifest_sha256','b'*64),('evidence_sha256','x')):
             changed=copy.deepcopy(evidence)
             changed['cases'][-1][field]=value
             with self.subTest(field=field),self.assertRaises(ValueError):
-                artifacts.require_dk(changed,candidate=self.candidate)
+                artifacts.require_dk(changed,candidate=self.candidate,expected_service_data=declaration())
         with self.assertRaises(ValueError):
-            artifacts.require_dk(dict(evidence,candidate='f'*40),candidate=self.candidate)
+            artifacts.require_dk(dict(evidence,candidate='f'*40),candidate=self.candidate,
+                expected_service_data=declaration())
 
     def test_manifest_binds_exact_two_products_versions_and_private_paths(self):
         manifest = self.record()
@@ -107,17 +109,31 @@ class CandidateArtifactsTests(unittest.TestCase):
 
     def test_dk_retains_validated_storage_and_rejects_missing_or_unknown_final_inventory(self):
         evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
-            service_storage=observation(),
+            service_storage=observation(),service_data=declaration(),
             cases=[dict(id='DK0'+str(number),status='pass',exact_cleanup='passed',
                 execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
         persisted=json.loads(json.dumps(evidence))
-        self.assertEqual(artifacts.require_dk(persisted,candidate=self.candidate)['service_storage'],observation())
+        self.assertEqual(artifacts.require_dk(persisted,candidate=self.candidate,
+            expected_service_data=declaration())['service_storage'],observation())
         for value in (None,dict(observation(),sampler_exited=False),dict(observation(),roots=[])):
             with self.assertRaises(ValueError):
-                artifacts.require_dk(dict(persisted,service_storage=value),candidate=self.candidate)
+                artifacts.require_dk(dict(persisted,service_storage=value),candidate=self.candidate,
+                    expected_service_data=declaration())
         del persisted['service_storage']
         with self.assertRaises(ValueError):
-            artifacts.require_dk(persisted,candidate=self.candidate)
+            artifacts.require_dk(persisted,candidate=self.candidate,expected_service_data=declaration())
+
+    def test_dk_rejects_another_cohort_even_when_its_storage_summary_is_self_consistent(self):
+        evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
+            service_storage=observation(),service_data=declaration(),
+            cases=[dict(id='DK0'+str(number),status='pass',exact_cleanup='passed',
+                execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
+        # A valid summary from a different root cannot substitute for this
+        # original execution, even when its own declaration was also copied.
+        evidence['service_data'][0]['identity'][1] += 1
+        evidence['service_storage']['roots'][0]['identity'][1] += 1
+        with self.assertRaisesRegex(ValueError, 'original execution receipt'):
+            artifacts.require_dk(evidence,candidate=self.candidate,expected_service_data=declaration())
 
     def test_old_single_server_and_additional_roles_cannot_be_new_candidates(self):
         old = dict(schema_version=1, candidate=self.candidate,
@@ -266,6 +282,7 @@ class CandidateArtifactsTests(unittest.TestCase):
         fingerprint.assert_not_called()
         private_path.assert_not_called()
         self.assertEqual(observed, execution)
+        self.assertEqual(execution['service_data'], declaration())
         self.assertEqual(execution["services"], artifacts.public_identity(manifest))
         self.assertEqual(execution["roles"], inputs["roles"])
         self.assertEqual(execution["redis"], inputs["redis"])
@@ -275,10 +292,29 @@ class CandidateArtifactsTests(unittest.TestCase):
         # The returned facts are a copy, not references to mutable caller input.
         inputs["roles"]["host"][0]["directory"]["inode"] = 10
         inputs["redis"]["binary_sha256"] = "0" * 64
+        inputs['service_data'][0]['identity'][1] += 1
         manifest["versions"]["host_store"] = 100
         self.assertEqual(execution["roles"]["host"][0]["directory"]["inode"], 2)
         self.assertEqual(execution["redis"]["binary_sha256"], "d" * 64)
+        self.assertEqual(execution['service_data'], declaration())
         self.assertEqual(execution["services"]["versions"], self.versions)
+
+    def test_execution_storage_projection_changes_and_missing_original_declaration_reject(self):
+        expected=self.execution()
+        for key,value in (('identity',[1,3]),('owner_uid',1),
+                          ('budget',dict(logical_file_bytes=2048,entries=4))):
+            evidence=copy.deepcopy(expected)
+            evidence['service_data'][0][key]=value
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'approved run staging'):
+                artifacts.require_execution_manifest(evidence,self.record(),expected=expected)
+        for declaration_value in (None,[],declaration()*9,
+                                 [dict(declaration()[0],path='/private/another-root')]):
+            evidence=dict(expected,service_data=declaration_value)
+            with self.subTest(declaration=declaration_value),self.assertRaises(ValueError):
+                artifacts.require_execution_manifest(evidence,self.record(),expected=evidence)
+        del expected['service_data']
+        with self.assertRaises(ValueError):
+            artifacts.require_execution_manifest(expected,self.record(),expected=expected)
 
     def test_execution_refuses_missing_legacy_or_additional_roles_and_secrets(self):
         inputs = self.execution_inputs()

@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
-from tools.tests.storage_observation_fixture import observation
+from tools.tests.storage_observation_fixture import declaration, observation
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests/system'))
@@ -21,7 +21,7 @@ import _runtime_services as services
 class CenterHostFaultsTests(unittest.TestCase):
     def test_finish_requires_original_storage_evidence_and_stop_updates_the_same_report_after_exit(self):
         value=harness.Harness.__new__(harness.Harness)
-        value.manifest=dict(services=dict(candidate='a'*40))
+        value.manifest=dict(services=dict(candidate='a'*40),service_data=declaration())
         value.execution_sha='b'*64
         value.last_processes={}
         value.cases=[dict(id='DK0'+str(index),status='pass',exact_cleanup='passed',
@@ -40,6 +40,8 @@ class CenterHostFaultsTests(unittest.TestCase):
             value.services.storage_peaks.return_value=dict(observation(),sampler_exited=False)
             report=value.finish()
         self.assertIs(report['dk']['service_storage']['sampler_exited'],False)
+        self.assertEqual(report['dk']['service_data'],value.manifest['service_data'])
+        self.assertIsNot(report['dk']['service_data'],value.manifest['service_data'])
         value.services.storage_peaks.return_value=observation()
         value.stop(successful=True)
         self.assertEqual(report['dk']['service_storage'],observation())
@@ -47,6 +49,29 @@ class CenterHostFaultsTests(unittest.TestCase):
                        if call==unittest.mock.call.storage_peaks()]
         self.assertLess(value.services.mock_calls.index(unittest.mock.call.stop_all()),storage_calls[-1])
         value.services.cleanup_staging.assert_called_once()
+
+    def test_finish_stop_cannot_accept_an_observation_from_another_original_cohort(self):
+        value=harness.Harness.__new__(harness.Harness)
+        value.manifest=dict(services=dict(candidate='a'*40),service_data=declaration())
+        value.execution_sha='b'*64
+        value.last_processes={}
+        value.cases=[dict(id='DK0'+str(index),status='pass',exact_cleanup='passed',
+            execution_manifest_sha256='b'*64,evidence_sha256='c'*64) for index in range(1,7)]
+        value.services=Mock()
+        value.relay=Mock()
+        value.materials=Mock()
+        with patch.object(harness.ci_e2e_artifacts,'public_identity',return_value={'candidate':'a'*40}), \
+                patch.object(harness.ci_e2e_artifacts,'require_service_boundary'), \
+                patch.object(harness.ci_e2e_artifacts,'require_process_evidence'):
+            value.services.storage_peaks.return_value=dict(observation(),sampler_exited=False)
+            value.finish()
+        foreign=observation()
+        foreign['roots'][0]['identity'][1] += 1
+        value.services.storage_peaks.return_value=foreign
+        with self.assertRaisesRegex(ValueError,'original execution declaration'):
+            value.stop(successful=True)
+        value.services.cleanup_staging.assert_not_called()
+        value.materials.remove.assert_not_called()
 
     def test_unknown_final_storage_never_removes_original_redis_or_materials(self):
         value=harness.Harness.__new__(harness.Harness)
@@ -158,10 +183,10 @@ class CenterHostFaultsTests(unittest.TestCase):
             process.wait.side_effect=outcome
         else:
             process.wait.return_value=outcome
-        execution=dict(run_id=args.run_identity,candidate_manifest_sha256='a'*64)
+        execution=dict(run_id=args.run_identity,candidate_manifest_sha256='a'*64,service_data=declaration())
         report=dict(services=dict(candidate='b'*40),execution_manifest=execution,service_processes={},
             dk=dict(schema_version=1,candidate='b'*40,execution_manifest_sha256='a'*64,
-                service_storage=observation(),
+                service_storage=observation(),service_data=declaration(),
                 cases=[dict(id='DK0'+str(index),status='pass',exact_cleanup='passed',
                     execution_manifest_sha256='a'*64,evidence_sha256='c'*64) for index in range(1,7)]))
         if proof_bad:
