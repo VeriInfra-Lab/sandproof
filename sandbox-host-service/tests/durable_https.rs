@@ -112,6 +112,16 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
         conflict.create.timeout_ms += 1;
         assert!(client.lifecycle(&conflict).await.is_err());
         client.lifecycle(&destroy).await.unwrap();
+        // This fixture never admitted a local instance. The original durable
+        // destroy fence permits empty cleanup; HTTPS must replay the saved
+        // fact/version after reopen, not manufacture success in the transport.
+        let cleaned = journal
+            .lock()
+            .unwrap()
+            .capture_internal_progress(&destroy, &mut NeverCrash)
+            .unwrap();
+        assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
+        assert_eq!(client.lifecycle(&destroy).await.unwrap(), cleaned);
         assert_eq!(
             client.lifecycle(&create).await.unwrap(),
             prior.clone().unwrap()
