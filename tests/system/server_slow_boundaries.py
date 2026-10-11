@@ -219,12 +219,14 @@ def namespace_holders(device, inode):
     return sorted(holders)
 
 
-def check_child_report(path, code, settings_sha, server_sha, identities):
+def check_child_report(path, code, settings_sha, server_sha, identities, *, command_output_only=False):
     value = json.loads(path.read_bytes(), object_pairs_hook=host.unique_keys)
     if (code != 0 or value.get('result') != 'passed' or value.get('config_sha256') != settings_sha
             or value.get('server', {}).get('executable_sha256') != server_sha
             or value.get('sandbox_ids') != identities
-            or set(value.get('cases', {})) != {'file_idle_and_progress', 'paused_download_memory'}):
+            or set(value.get('cases', {})) != (
+                {'command_output_sync', 'command_output_async', 'template_start_once'}
+                if command_output_only else {'file_idle_and_progress', 'paused_download_memory'})):
         raise AssertionError('original child acceptance report incomplete or mismatched')
     return value
 
@@ -287,6 +289,10 @@ def exercise(args, report):
     url = f'http://127.0.0.1:{free_loopback_port()}'
     base = descriptor('slow-boundary-base', args.kernel, args.rootfs, 1, 512)
     base['owner'] = None
+    if args.command_output_only:
+        # First-frame observation must detach only curl, not this guest process.
+        base['startup'] = {'user': 'root', 'workdir': '/', 'env_vars': {},
+                           'argv': ['/bin/sh', '-c', "printf 'once\\n' >> /tmp/template-starts; exec sleep 600"]}
     settings = configuration(budgets, root, namespace, approved['artifacts'], uid=args.uid_base,
                              port=int(url.rsplit(':', 1)[1]), cgroup=args.cgroup_parent, keys=keys, base=base)
     config, cgroup_record = root / 'config.json', root / 'service-cgroup.json'
@@ -322,6 +328,8 @@ def exercise(args, report):
                    '--target-sandbox-id', known[0].sandbox_id, '--control-sandbox-id', known[1].sandbox_id,
                    '--config', str(config), '--service-cgroup-record', str(cgroup_record),
                    '--server-pid', str(process.pid), '--server-start-ticks', str(ticks), '--report', str(child_report)]
+        if args.command_output_only:
+            command.append('--command-output-only')
         environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C',
                        'SANDPROOF_TEST_API_KEY': keys[0], 'SANDPROOF_TEST_FOREIGN_API_KEY': keys[1]}
         with (root / 'gateway.stdout').open('xb') as out, (root / 'gateway.stderr').open('xb') as err:
@@ -331,7 +339,8 @@ def exercise(args, report):
             child = subprocess.run(command, env=environment, stdout=out, stderr=err, timeout=420)
         report['gateway_returncode'] = child.returncode
         child_value = check_child_report(child_report, child.returncode, report['config_sha256'],
-                                         args.server_sha256, [s.sandbox_id for s in known])
+                                         args.server_sha256, [s.sandbox_id for s in known],
+                                         command_output_only=args.command_output_only)
         report['gateway'] = {'report_sha256': digest(child_report), 'result': child_value['result'],
                              'cases': child_value['cases']}
         if [live_identity(root, args, sandbox) for sandbox in known] != rows:
@@ -385,12 +394,19 @@ def main(argv=None):
         parser.add_argument('--' + field, required=True, type=Path)
     parser.add_argument('--server-sha256', required=True)
     parser.add_argument('--uid-base', required=True, type=int)
+    parser.add_argument('--command-output-only', action='store_true',
+                        help='finite sync/async large output and template Start-prefix check instead of slow files')
     args = parser.parse_args(argv)
     if sys.platform != 'linux' or os.geteuid() != 0:
         parser.error('exclusive root Linux/KVM host required')
     report = {'schema_version': 1, 'result': 'incomplete', 'cleanup_errors': [],
               'scope': 'two_finite_final_profile_sync_gateway_cases_with_real_host_cleanup',
-              'not_tested': ['async_sdk', '13000_second_idle_expiry', 'complete_terminal_bench_suite', 'formal_proofs']}
+              'not_tested': ['13000_second_idle_expiry', 'complete_terminal_bench_suite', 'formal_proofs']}
+    if args.command_output_only:
+        report['scope'] = 'finite_sync_async_large_output_and_template_start_with_real_host_cleanup'
+        report['not_tested'].append('slow_file_cases')
+    else:
+        report['not_tested'].append('async_sdk')
     code = 1
     try:
         exercise(args, report)

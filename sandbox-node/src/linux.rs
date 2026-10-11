@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::{self, DirBuilder, File};
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
@@ -448,18 +448,13 @@ fn require_absent(path: &Path) -> NodeResult<()> {
 }
 
 fn hash_token(token: &str) -> NodeResult<String> {
-    let child = Process::new("/usr/bin/sha512sum")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let mut child = sandbox_runtime::OwnedChild::new(child);
-    child
-        .stdin
-        .take()
-        .ok_or("sha512 stdin unavailable")?
-        .write_all(token.as_bytes())?;
-    let output = child.wait_output()?;
+    let mut child = sandbox_runtime::OwnedChild::spawn(
+        Process::new("/usr/bin/sha512sum")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null()),
+    )?;
+    let output = child.exchange(token.as_bytes(), sandbox_runtime::HelperLimits::METADATA)?;
     if !output.status.success() {
         return Err("sha512 computation failed".into());
     }

@@ -416,11 +416,15 @@ async fn forward_request(
     let file_response = request.uri().path() == "/files"
         || request.uri().path().starts_with("/filesystem.Filesystem/");
     let file_download = request.uri().path() == "/files" && request.method() == Method::GET;
+    // Start/Connect carry a potentially long guest output stream. Backpressure,
+    // connection admission and revocation bound host residency, not total bytes.
+    let command_stream = matches!(
+        request.uri().path(),
+        "/process.Process/Start" | "/process.Process/Connect"
+    );
     let response_limit = limits.map_or(RESPONSE_LIMIT, |limits| {
         if file_download {
             limits.file_download_bytes
-        } else if request.uri().path().starts_with("/process.Process/") {
-            limits.command_output_bytes
         } else {
             limits.rpc_response_bytes
         }
@@ -498,7 +502,11 @@ async fn forward_request(
             // (a Hyper assertion), or can disguise truncation as completion.
             // BodyStream preserves data/trailers/errors without buffering.
             upstream.map(|body| {
-                let body = Body::new(BodyStream::new(Limited::new(body, response_limit)));
+                let body = if command_stream {
+                    Body::new(BodyStream::new(body))
+                } else {
+                    Body::new(BodyStream::new(Limited::new(body, response_limit)))
+                };
                 match limits.filter(|_| file_response) {
                     Some(limits) => IdleBody::wrap(body, limits.file_idle_seconds, Activity::new()),
                     None => body,

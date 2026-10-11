@@ -1,170 +1,305 @@
-//! Own an unreaped synchronous helper across every early-return path.
+//! Bounded host-helper exchange; guest commands use a separate streaming path.
+use rustix::{
+    event::{PollFd, PollFlags, Timespec, poll},
+    fs::{OFlags, fcntl_getfl, fcntl_setfl},
+};
 use std::{
-    io::{self, Read},
+    io::{self, Read, Write},
     ops::{Deref, DerefMut},
-    process::{Child, Output},
+    os::fd::AsFd,
+    process::{Child, Command, Output},
     thread,
+    time::{Duration, Instant},
 };
 
-/// Owns one synchronous helper. Dropping it kills and reaps that exact child.
-/// Persisted asynchronous relays retain their separate ownership protocol.
-pub struct OwnedChild(Option<Child>);
+mod reaper;
+use reaper::Slot;
+
+/// Trusted operation policy, not a client-selected guest command budget.
+#[derive(Clone, Copy, Debug)]
+pub struct HelperLimits {
+    pub timeout: Duration,
+    pub input_bytes: usize,
+    pub stdout_bytes: usize,
+    pub stderr_bytes: usize,
+}
+impl HelperLimits {
+    /// Network configuration/observation and bounded envd control requests.
+    pub const CONTROL: Self = Self {
+        timeout: Duration::from_secs(10),
+        input_bytes: 1024 * 1024,
+        stdout_bytes: 2 * 1024 * 1024,
+        stderr_bytes: 16 * 1024,
+    };
+    /// Small fixed-format metadata such as a token digest.
+    pub const METADATA: Self = Self {
+        timeout: Duration::from_secs(3),
+        input_bytes: 64 * 1024,
+        stdout_bytes: 1024,
+        stderr_bytes: 4096,
+    };
+}
+const REAP_GRACE: Duration = Duration::from_secs(2);
+const POLL_SLICE: Duration = Duration::from_millis(10);
+const CHUNK_BYTES: usize = 8192;
+
+/// Exact unreaped child plus a pre-spawn admission slot. Unknown exits move to
+/// one fixed reaper and keep their slot; Drop never performs an unbounded wait.
+/// Persisted async relays retain their separate ownership protocol.
+pub struct OwnedChild {
+    child: Option<Child>,
+    slot: Option<Slot>,
+}
 impl OwnedChild {
-    /// Take responsibility for stopping and reaping this child on early returns.
-    #[must_use]
-    pub fn new(child: Child) -> Self {
-        Self(Some(child))
-    }
-    /// Explicitly transfer stop/reap responsibility to the caller.
-    ///
-    /// # Panics
-    /// Panics if the internal child is absent. Consuming this owner prevents
-    /// a second transfer through the public API.
-    #[must_use]
-    pub fn into_child(mut self) -> Child {
-        self.0.take().expect("owned child")
-    }
-    fn stop_and_reap(&mut self) {
-        if let Some(child) = &mut self.0 {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-    /// Drain both pipes concurrently and reap the child.
-    ///
+    /// Admit before spawning; a full helper budget cannot launch a child.
     /// # Errors
-    /// Returns pipe, wait, or reader admission errors after stopping the child.
-    pub fn wait_output(&mut self) -> io::Result<Output> {
-        drop(self.stdin.take());
-        let stdout = self.stdout.take();
-        let stderr = self.stderr.take();
-        thread::scope(|scope| {
-            // Fallible thread admission ensures an OS thread-limit error
-            // stops the child before the scope joins a still-blocked reader.
-            let stdout = match thread::Builder::new().spawn_scoped(scope, move || read_pipe(stdout))
-            {
-                Ok(reader) => reader,
-                Err(error) => {
-                    self.stop_and_reap();
-                    return Err(error);
-                }
-            };
-            let stderr = match thread::Builder::new().spawn_scoped(scope, move || read_pipe(stderr))
-            {
-                Ok(reader) => reader,
-                Err(error) => {
-                    self.stop_and_reap();
-                    return Err(error);
-                }
-            };
-            let status = self.wait();
-            if status.is_err() {
-                self.stop_and_reap();
-            }
-            let stdout = stdout
-                .join()
-                .map_err(|_| io::Error::other("stdout helper reader panicked"))??;
-            let stderr = stderr
-                .join()
-                .map_err(|_| io::Error::other("stderr helper reader panicked"))??;
-            Ok(Output {
-                status: status?,
-                stdout,
-                stderr,
-            })
+    /// Returns admission, reaper-start or process-launch failures.
+    pub fn spawn(command: &mut Command) -> io::Result<Self> {
+        let slot = Slot::acquire()?;
+        Ok(Self {
+            child: Some(command.spawn()?),
+            slot: Some(slot),
         })
     }
+    #[cfg(test)]
+    pub(crate) fn new(child: Child) -> Self {
+        Self {
+            child: Some(child),
+            slot: Some(Slot::acquire().unwrap()),
+        }
+    }
+    /// Transfer stop/reap responsibility to a separately bounded lifetime owner.
+    /// # Panics
+    /// Panics if this child has already been handed to the unknown-exit reaper.
+    #[must_use]
+    pub fn into_child(mut self) -> Child {
+        self.child.take().expect("owned child")
+    }
+
+    fn stop_and_reap(&mut self) -> io::Result<std::process::ExitStatus> {
+        let child = self.child.as_mut().expect("owned child");
+        if let Ok(Some(status)) = child.try_wait() {
+            return Ok(status);
+        }
+        // Child owns this unreaped PID; do not signal a numeric process group.
+        let _ = child.kill();
+        drop(child.stdin.take());
+        drop(child.stdout.take());
+        drop(child.stderr.take());
+        let deadline = Instant::now() + REAP_GRACE;
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Ok(status);
+            }
+            if Instant::now() >= deadline {
+                let child = self.child.take().expect("owned child");
+                self.slot.take().expect("helper admission").retain(child);
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "host helper exit remains unknown",
+                ));
+            }
+            thread::sleep(POLL_SLICE);
+        }
+    }
+    /// Simultaneously write finite input and drain both outputs. The deadline
+    /// includes blocked input, output EOF and process-exit observation.
+    /// # Errors
+    /// Budget, protocol, pipe and exit failures are never successful truncation.
+    pub fn exchange(&mut self, input: &[u8], limits: HelperLimits) -> io::Result<Output> {
+        self.exchange_until(input, limits, |_| false)
+    }
+    /// Observe a bounded protocol prefix, then stop/reap only the host helper.
+    /// Used for detached envd Start: it must not terminate the guest command.
+    /// Returned status can be signalled; the caller validates the actual frame.
+    /// # Errors
+    /// As for exchange; unconfirmed helper exit never returns a valid prefix.
+    pub fn exchange_until(
+        &mut self,
+        input: &[u8],
+        limits: HelperLimits,
+        complete: impl Fn(&[u8]) -> bool,
+    ) -> io::Result<Output> {
+        let result = self.pump(input, limits, complete);
+        if result.is_err() && self.child.is_some() {
+            let _ = self.stop_and_reap();
+        }
+        result
+    }
+    /// Drain a host helper using the standard control-operation policy.
+    /// # Errors
+    /// Returns bounded exchange errors after bounded stop/reap handling.
+    pub fn wait_output(&mut self) -> io::Result<Output> {
+        self.exchange(&[], HelperLimits::CONTROL)
+    }
+
+    fn pump(
+        &mut self,
+        input: &[u8],
+        limits: HelperLimits,
+        complete: impl Fn(&[u8]) -> bool,
+    ) -> io::Result<Output> {
+        let deadline = Instant::now()
+            .checked_add(limits.timeout)
+            .filter(|_| !limits.timeout.is_zero())
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid helper deadline")
+            })?;
+        if input.len() > limits.input_bytes {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "host helper input exceeds budget",
+            ));
+        }
+        let mut stdin = self.stdin.take();
+        let mut stdout = self.stdout.take();
+        let mut stderr = self.stderr.take();
+        if !input.is_empty() && stdin.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "host helper stdin unavailable",
+            ));
+        }
+        if let Some(pipe) = &stdin {
+            nonblocking(pipe)?;
+        }
+        if let Some(pipe) = &stdout {
+            nonblocking(pipe)?;
+        }
+        if let Some(pipe) = &stderr {
+            nonblocking(pipe)?;
+        }
+        let mut written: usize = 0;
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        loop {
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "host helper exchange timed out",
+                ));
+            }
+            if written == input.len() {
+                stdin.take();
+            }
+            wait_readiness(stdin.as_ref(), stdout.as_ref(), stderr.as_ref(), deadline)?;
+            if let Some(pipe) = &mut stdin {
+                let end = input.len().min(written.saturating_add(CHUNK_BYTES));
+                match pipe.write(&input[written..end]) {
+                    Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+                    Ok(n) => written += n,
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                        ) => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            drain_chunk(&mut stdout, &mut out, limits.stdout_bytes)?;
+            drain_chunk(&mut stderr, &mut err, limits.stderr_bytes)?;
+            if written == input.len() && complete(&out) {
+                let status = self.stop_and_reap()?;
+                return Ok(Output {
+                    status,
+                    stdout: out,
+                    stderr: err,
+                });
+            }
+            if let Some(status) = self.try_wait()?
+                && stdout.is_none()
+                && stderr.is_none()
+            {
+                if written != input.len() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "helper exited before accepting input",
+                    ));
+                }
+                return Ok(Output {
+                    status,
+                    stdout: out,
+                    stderr: err,
+                });
+            }
+        }
+    }
+}
+fn wait_readiness(
+    stdin: Option<&impl AsFd>,
+    stdout: Option<&impl AsFd>,
+    stderr: Option<&impl AsFd>,
+    deadline: Instant,
+) -> io::Result<()> {
+    let mut fds = Vec::with_capacity(3);
+    if let Some(pipe) = stdin {
+        fds.push(PollFd::new(pipe, PollFlags::OUT));
+    }
+    if let Some(pipe) = stdout {
+        fds.push(PollFd::new(pipe, PollFlags::IN));
+    }
+    if let Some(pipe) = stderr {
+        fds.push(PollFd::new(pipe, PollFlags::IN));
+    }
+    let slice = deadline
+        .saturating_duration_since(Instant::now())
+        .min(POLL_SLICE);
+    let timeout = Timespec {
+        tv_sec: 0,
+        tv_nsec: i64::try_from(slice.as_nanos()).expect("short poll slice"),
+    };
+    match poll(&mut fds, Some(&timeout)) {
+        Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+fn nonblocking(pipe: &impl AsFd) -> io::Result<()> {
+    fcntl_setfl(pipe, fcntl_getfl(pipe)? | OFlags::NONBLOCK)?;
+    Ok(())
+}
+fn drain_chunk(pipe: &mut Option<impl Read>, bytes: &mut Vec<u8>, limit: usize) -> io::Result<()> {
+    if let Some(reader) = pipe {
+        let mut chunk = [0; CHUNK_BYTES];
+        match reader.read(&mut chunk) {
+            Ok(0) => {
+                pipe.take();
+            }
+            Ok(n) => {
+                if n > limit.saturating_sub(bytes.len()) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::FileTooLarge,
+                        "host helper output exceeds budget",
+                    ));
+                }
+                bytes.extend_from_slice(&chunk[..n]);
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }
 impl Deref for OwnedChild {
     type Target = Child;
     fn deref(&self) -> &Child {
-        self.0.as_ref().expect("owned child")
+        self.child.as_ref().expect("owned child")
     }
 }
 impl DerefMut for OwnedChild {
     fn deref_mut(&mut self) -> &mut Child {
-        self.0.as_mut().expect("owned child")
+        self.child.as_mut().expect("owned child")
     }
 }
 impl Drop for OwnedChild {
     fn drop(&mut self) {
-        self.stop_and_reap();
+        if self.child.is_some() {
+            let _ = self.stop_and_reap();
+        }
     }
 }
-fn read_pipe(pipe: Option<impl Read>) -> io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    if let Some(mut pipe) = pipe {
-        pipe.read_to_end(&mut bytes)?;
-    }
-    Ok(bytes)
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-    #[test]
-    fn explicit_transfer_keeps_child_alive_until_new_owner_finishes() {
-        let child = Command::new("/bin/sh")
-            .args(["-c", "IFS= read -r input; printf '%s' \"$input\""])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut child = OwnedChild::new(child).into_child();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(b"transferred\n")
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success());
-        assert_eq!(output.stdout, b"transferred");
-    }
-
-    #[test]
-    fn large_dual_pipe_output_does_not_deadlock() {
-        let child = Command::new("/bin/sh")
-            .args(["-c", "i=0; while [ \"$i\" -lt 8192 ]; do printf 0123456789abcdef; printf fedcba9876543210 >&2; i=$((i+1)); done"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let output = OwnedChild::new(child).wait_output().unwrap();
-        assert!(output.status.success());
-        assert_eq!(output.stdout, b"0123456789abcdef".repeat(8192));
-        assert_eq!(output.stderr, b"fedcba9876543210".repeat(8192));
-    }
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn early_return_reaps_the_exact_blocked_child() {
-        let child = Command::new("/bin/sh")
-            .args(["-c", "IFS= read -r input"])
-            .stdin(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let id = child.id();
-        drop(OwnedChild::new(child));
-        let pid = rustix::process::Pid::from_raw(i32::try_from(id).unwrap()).unwrap();
-        assert!(matches!(
-            rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG),
-            Err(rustix::io::Errno::CHILD)
-        ));
-    }
-    #[test]
-    fn borrowed_output_wait_drains_both_pipes_and_reaps() {
-        let child = Command::new("/bin/sh")
-            .args(["-c", "printf out; printf err >&2; exit 7"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut child = OwnedChild::new(child);
-        let output = child.wait_output().unwrap();
-        assert_eq!(output.stdout, b"out");
-        assert_eq!(output.stderr, b"err");
-        assert_eq!(output.status.code(), Some(7));
-    }
-}
+mod tests;
