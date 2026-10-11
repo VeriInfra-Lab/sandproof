@@ -8,7 +8,7 @@ use sandproof_center_store::{
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, InternalInboxConfig, InternalTemplate, MaintenanceConfig,
     NeverCrash,
-    application::{ApplicationConfig, ControllerApplication},
+    application::{ApplicationConfig, ControllerApplication, TemplateArtifacts},
     templates::{ComputeLimits, TemplateBinding},
 };
 use sandproof_host_service::HostLifecycle;
@@ -97,8 +97,7 @@ struct CenterConfig {
     root: PathBuf,
 }
 
-async fn host(path: &Path) -> Result<()> {
-    let cfg: HostConfig = serde_json::from_slice(&fs::read(path)?)?;
+fn application(cfg: &HostConfig) -> Result<Arc<ControllerApplication<NodeHost>>> {
     let bounded = cfg.node.bounded_host.clone();
     let profile = bounded
         .physical_storage
@@ -125,7 +124,7 @@ async fn host(path: &Path) -> Result<()> {
         &cfg.database,
         &cfg.node.namespace,
         bounded.clone(),
-        cfg.maintenance,
+        cfg.maintenance.clone(),
         now()?,
     )?;
     journal.initialize_internal_inbox(
@@ -137,10 +136,9 @@ async fn host(path: &Path) -> Result<()> {
         },
         &mut NeverCrash,
     )?;
-    let node = NodeHost::new(worker, storage, cfg.relay);
-    use sandproof_controller_service::application::TemplateArtifacts;
+    let node = NodeHost::new(worker, storage, cfg.relay.clone());
     checked(node.validate_template(&cfg.template))?;
-    let app = Arc::new(ControllerApplication::new(
+    Ok(Arc::new(ControllerApplication::new(
         journal,
         node,
         ApplicationConfig {
@@ -163,7 +161,13 @@ async fn host(path: &Path) -> Result<()> {
             envd_version: cfg.template.envd_version.clone(),
             domain: "example.invalid".into(),
         },
-    ));
+    )))
+}
+
+async fn host(path: &Path) -> Result<()> {
+    let cfg: HostConfig = serde_json::from_slice(&fs::read(path)?)?;
+    let app = application(&cfg)?;
+    let shape = cfg.template.resources;
     let inbox = HostLifecycle::new(Arc::clone(&app));
     let compute = ComputeLimits {
         max_vcpus_global: u64::from(shape.cpu_count),
@@ -188,7 +192,7 @@ async fn host(path: &Path) -> Result<()> {
     write(&cfg.tls.join("listening"), b"authenticated host listening")?;
     let (stop, shutdown) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move { server.serve(listener, shutdown).await });
-    let until = tokio::time::Instant::now() + Duration::from_secs(600);
+    let until = tokio::time::Instant::now() + Duration::from_mins(10);
     let execution = async {
         loop {
             if tokio::time::Instant::now() >= until {
@@ -234,7 +238,7 @@ async fn await_fact(
     client: &Arc<InternalClient>,
     ready: bool,
 ) -> Result<sandproof_protocol::internal::lifecycle::LifecycleResponse> {
-    let until = tokio::time::Instant::now() + Duration::from_secs(180);
+    let until = tokio::time::Instant::now() + Duration::from_mins(3);
     loop {
         for dispatch in checked(center.dispatch_batch())? {
             let mut transport = {
