@@ -1,0 +1,82 @@
+#![forbid(unsafe_code)]
+
+//! Bounded, mutually authenticated center/host transport.
+//! Shared authenticated transport for identity probes and high-level lifecycle
+//! intents. Existing public service wiring remains unchanged.
+//! TLS material, registered endpoint and peer pins come from trusted assembly,
+//! never from a user/template or an HTTP header. File loading belongs to the
+//! protected deployment entrypoints, not this transport library.
+
+mod client;
+mod server;
+mod tls;
+
+pub use client::{InternalClient, RegisteredEndpoint};
+pub use server::{InternalServer, LifecycleReceiver, ReceiveError, RejectLifecycle};
+pub use tls::{CertificatePin, ClientTls, ServerTls, TlsIdentity};
+
+use std::{error::Error, fmt, time::Duration};
+
+// Both HTTP parsers use the same explicit budget; body limits are separate.
+pub(crate) const HTTP_MAX_HEADERS: usize = 16;
+pub(crate) const HTTP_HEADER_BUFFER_BYTES: usize = 8192;
+
+/// Explicit deployment budgets; no semaphore wait queue is created.
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    pub(crate) max_connections: usize,
+    pub(crate) handshake_timeout: Duration,
+    pub(crate) request_timeout: Duration,
+}
+
+impl Limits {
+    /// # Errors
+    /// Rejects zero/oversized budgets and handshake deadlines beyond the call.
+    pub fn new(
+        max_connections: usize,
+        handshake_timeout: Duration,
+        request_timeout: Duration,
+    ) -> Result<Self, TransportError> {
+        if !(1..=8192).contains(&max_connections)
+            || handshake_timeout.is_zero()
+            || handshake_timeout > request_timeout
+            || request_timeout > Duration::from_hours(24)
+        {
+            return Err(TransportError::Configuration);
+        }
+        Ok(Self {
+            max_connections,
+            handshake_timeout,
+            request_timeout,
+        })
+    }
+}
+
+/// A communication failure is never definitive lifecycle failure/no effects.
+/// Callers of future effectful endpoints must retain the original operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportError {
+    Configuration,
+    Overloaded,
+    Deadline,
+    Authentication,
+    Communication,
+    InvalidResponse,
+    Rejected,
+}
+
+impl fmt::Display for TransportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Configuration => "invalid internal transport configuration",
+            Self::Overloaded => "internal transport capacity exhausted",
+            Self::Deadline => "internal call deadline exceeded",
+            Self::Authentication => "internal peer authentication failed",
+            Self::Communication => "internal communication unavailable",
+            Self::InvalidResponse => "invalid internal response",
+            Self::Rejected => "internal request rejected",
+        })
+    }
+}
+
+impl Error for TransportError {}

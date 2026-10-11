@@ -219,7 +219,7 @@ class CiVmTests(unittest.TestCase):
             ci_vm.source_image('sdk', {'golden_sha256': None})
 
     def test_preheat_has_no_runner_or_credentials_and_root_owns_final_receipt(self):
-        bundle = {'input_sha256': 'a' * 64, 'manifest': {'test': True}}
+        bundle = {'input_sha256': 'a' * 64, 'manifest': {'test': True}, 'redis_archive': 'Zml4dHVyZQ=='}
         nonce = 'c' * 64
         config = ci_vm.cloud_config('preheat', pins={}, dependency_bundle=bundle,
                                     completion_nonce=nonce)
@@ -229,6 +229,10 @@ class CiVmTests(unittest.TestCase):
         self.assertIn('runuser -u runner -- python3', script)
         self.assertIn('stop-preparation-processes.py', script)
         self.assertIn('cmp /root/tools-before.json /root/tools-after.json', script)
+        self.assertEqual(files['/opt/sandproof-ci/redis-7.2.16.tar.gz']['encoding'], 'b64')
+        self.assertIn('ci_redis.py build --archive', script)
+        self.assertIn('ci_redis.py seal --stage', script)
+        self.assertLess(script.index('ci_redis.py seal'), script.index('tools-before.json'))
         self.assertIn('SANDPROOF_CI_DEPENDENCIES_SEALED ' + 'a' * 64 + ' ' + nonce, script)
         self.assertFalse(any('.jit' in path or 'sandproof-ci-job.service' in path for path in files))
         inventory = files['/root/tool-inventory.py']['content']

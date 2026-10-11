@@ -120,6 +120,16 @@ def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_non
                   'set -a\nsource /etc/sandproof-ci.env\nset +a\n'
                   '/usr/sbin/runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py\n'
                   'bash /opt/sandproof-ci/install-uv.sh /root/ci-pins.json\n'
+                  'if test -e /usr/local/lib/sandproof-ci/redis-7.2.16; then\n'
+                  '  python3 /opt/sandproof-ci/ci_redis.py check >/dev/null\n'
+                  'else\n'
+                  '  redis_stage="$(mktemp -d /var/tmp/sandproof-ci-redis.XXXXXXXX)"\n'
+                  '  chown runner:runner "$redis_stage"\n'
+                  '  /usr/sbin/runuser -u runner -- python3 /opt/sandproof-ci/ci_redis.py '
+                  'build --archive /opt/sandproof-ci/redis-7.2.16.tar.gz --output "$redis_stage"\n'
+                  '  python3 /root/stop-preparation-processes.py\n'
+                  '  python3 /opt/sandproof-ci/ci_redis.py seal --stage "$redis_stage"\n'
+                  'fi\n'
                   'python3 /root/tool-inventory.py > /root/tools-before.json\n'
                   '/usr/sbin/runuser -u runner -- python3 /opt/sandproof-ci/ci_dependencies.py '
                   'warmup --input /opt/sandproof-ci/dependency-input.json\n'
@@ -130,6 +140,7 @@ def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_non
                   'rm -- /opt/sandproof-ci/dependency-input.json /root/ci-pins.json '
                   '/root/tools-before.json /root/tools-after.json /root/tool-inventory.py '
                   '/root/stop-preparation-processes.py /root/ci-preheat.sh\n'
+                  'rm -- /opt/sandproof-ci/redis-7.2.16.tar.gz\n'
                   'printf "%s\\n" "SANDPROOF_CI_DEPENDENCIES_SEALED ' + input_sha + ' '
                   + completion_nonce + '"\n')
         # Root-only receipt: dependency build backends run as runner and cannot
@@ -205,6 +216,10 @@ if processes():
                        Path(__file__).with_name('ci_dependencies.py').read_text(), '0555'),
             file_entry('/opt/sandproof-ci/ci_git.py',
                        Path(__file__).with_name('ci_git.py').read_text(), '0555'),
+            file_entry('/opt/sandproof-ci/ci_redis.py',
+                       Path(__file__).with_name('ci_redis.py').read_text(), '0555'),
+            dict(file_entry('/opt/sandproof-ci/redis-7.2.16.tar.gz',
+                            dependency_bundle['redis_archive'], '0444'), encoding='b64'),
             file_entry('/opt/sandproof-ci/dependency-input.json',
                        json.dumps(dependency_bundle), '0444'),
             file_entry('/opt/sandproof-ci/dependency-manifest.json',

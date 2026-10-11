@@ -20,6 +20,11 @@ class CiDependencyInputsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.fixture = tempfile.TemporaryDirectory(prefix='ci-dependency-tests-')
+        cls.redis_archive = Path(cls.fixture.name) / 'redis.tar.gz'
+        cls.redis_archive.write_bytes(b'explicit input-codec fixture; not an engine')
+        pin = mock.patch.dict(deps.ci_redis.PIN, {'archive_sha256': deps.sha256(cls.redis_archive.read_bytes())})
+        pin.start()
+        cls.addClassCleanup(pin.stop)
         cls.checkout = Path(cls.fixture.name) / 'checkout'
         cls.checkout.mkdir()
         for path in deps.INPUT_PATHS:
@@ -32,7 +37,7 @@ class CiDependencyInputsTests(unittest.TestCase):
             '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], check=True)
         cls.commit = subprocess.check_output(['git', '-C', str(cls.checkout), 'rev-parse', 'HEAD'], text=True).strip()
         cls.bundle_path = Path(cls.fixture.name) / 'input.json'
-        cls.bundle = deps.prepare_input(cls.checkout, cls.commit, cls.bundle_path)
+        cls.bundle = deps.prepare_input(cls.checkout, cls.commit, cls.bundle_path, cls.redis_archive)
 
     @classmethod
     def tearDownClass(cls):
@@ -57,7 +62,7 @@ class CiDependencyInputsTests(unittest.TestCase):
             destination.write_text('never copied')
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'
-            bundle = deps.prepare_input(self.checkout, self.commit, output)
+            bundle = deps.prepare_input(self.checkout, self.commit, output, self.redis_archive)
             self.assertEqual(deps.load_input(output), bundle)
             self.assertEqual(set(bundle['files']), deps.INPUT_PATHS)
             self.assertEqual(bundle['manifest']['source_commit'], self.commit)
@@ -67,24 +72,114 @@ class CiDependencyInputsTests(unittest.TestCase):
                 self.assertEqual(base64.b64decode(bundle['files'][project + '/uv.lock']),
                                  (ROOT / project / 'uv.lock').read_bytes())
 
+    def test_internal_transport_is_fixed_manifest_metadata_not_repository_source(self):
+        path = 'sandbox-internal/Cargo.toml'
+        self.assertIn('sandbox-internal', deps.MEMBERS)
+        self.assertIn(path, deps.INPUT_PATHS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-internal/src/tls.rs', files)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / path).read_bytes(), files[path])
+            self.assertEqual((directory / 'sandbox-internal/src/lib.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+            self.assertFalse((directory / 'sandbox-internal/src/tls.rs').exists())
+            self.assertEqual(deps.CARGO_ARGUMENTS,
+                             ['fetch', '--locked', '--target', deps.PLATFORM['target']])
+
+    def test_new_member_does_not_allow_unregistered_members_paths_or_git_sources(self):
+        root = (ROOT / 'Cargo.toml').read_bytes()
+        manifest = (ROOT / 'sandbox-internal/Cargo.toml').read_bytes()
+        mutations = [
+            ('Cargo.toml', root.replace(b'"sandbox-internal"', b'"unregistered-member"')),
+            ('sandbox-internal/Cargo.toml', manifest.replace(
+                b'path = "../sandbox-protocol"', b'path = "../../private"')),
+            ('sandbox-internal/Cargo.toml', manifest.replace(
+                b'path = "../sandbox-protocol"', b'path = "../unregistered-member"')),
+            ('sandbox-internal/Cargo.toml', manifest +
+                b'\n[dependencies.unregistered]\ngit = "https://example.invalid/code"\n'),
+        ]
+        for path, data in mutations:
+            with self.subTest(path=path, data=data[-80:]), self.assertRaises(ValueError):
+                deps.validate_input(self.replace_file(self.damaged(), path, data))
+        for section in ('files', 'manifest'):
+            bundle = self.damaged()
+            files = bundle[section] if section == 'files' else bundle['manifest']['files']
+            del files['sandbox-internal/Cargo.toml']
+            with self.subTest(section=section), self.assertRaises(ValueError):
+                deps.validate_input(self.resign(bundle))
+
+    def test_center_store_fetches_only_registered_fixed_dependency_metadata(self):
+        path = 'sandbox-center-store/Cargo.toml'
+        self.assertIn('sandbox-center-store', deps.MEMBERS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-center-store/src/store.rs', files)
+        manifest = files[path]
+        for data in (manifest.replace(b'../sandbox-protocol', b'../../private'),
+                     manifest.replace(b'../sandbox-protocol', b'../unregistered-member'),
+                     manifest.replace(b'name = "redis_ledger"', b'name = "../private"'),
+                     manifest.replace(b'name = "redis_ledger"', b'name = "/private"'),
+                     manifest.replace(b'name = "redis_ledger"', b'name = ""'),
+                     manifest + b'\n[dependencies.unregistered]\ngit = "https://example.invalid/code"\n'):
+            with self.subTest(data=data[-80:]), self.assertRaises(ValueError):
+                deps.validate_input(self.replace_file(self.damaged(), path, data))
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / path).read_bytes(), manifest)
+            self.assertFalse((directory / 'sandbox-center-store/src/store.rs').exists())
+            self.assertEqual((directory / 'sandbox-center-store/tests/redis_ledger.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+
+    def test_center_core_registers_metadata_but_never_packages_source(self):
+        path = 'sandbox-center-core/Cargo.toml'
+        self.assertIn('sandbox-center-core', deps.MEMBERS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-center-core/src/decision.rs', files)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / 'sandbox-center-core/src/lib.rs').read_text(),
+                             '// Dependency fetch metadata only.\n')
+            self.assertFalse((directory / 'sandbox-center-core/src/decision.rs').exists())
+
+    def test_host_service_is_metadata_only_and_redis_artifact_cannot_be_substituted(self):
+        files = deps.validate_input(self.bundle)
+        self.assertIn('sandbox-host-service/Cargo.toml', files)
+        self.assertNotIn('sandbox-host-service/src/lib.rs', files)
+        self.assertEqual(files['tools/ci_redis.py'], (ROOT / 'tools/ci_redis.py').read_bytes())
+        for value in ('%%%', base64.b64encode(b'wrong engine').decode(), 'a' * (4 * deps.ci_redis.ARCHIVE_LIMIT + 1)):
+            bundle = self.damaged()
+            bundle['redis_archive'] = value
+            with self.assertRaises(ValueError):
+                deps.validate_input(bundle)
+        bundle = self.damaged()
+        del bundle['redis_archive']
+        with self.assertRaises(ValueError):
+            deps.validate_input(bundle)
+
     def test_prepare_rejects_wrong_approval_dirty_blob_or_existing_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'
             for commit in ('main', 'a' * 40, self.commit[:12]):
                 with self.subTest(commit=commit), self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, commit, output)
+                    deps.prepare_input(self.checkout, commit, output, self.redis_archive)
             target = self.checkout / 'Cargo.toml'
             original = target.read_bytes()
             try:
                 target.write_bytes(original + b'\n# unreviewed\n')
                 with self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, self.commit, output)
+                    deps.prepare_input(self.checkout, self.commit, output, self.redis_archive)
                 self.assertFalse(output.exists())
             finally:
                 target.write_bytes(original)
             output.write_text('preserve')
             with self.assertRaises(FileExistsError):
-                deps.prepare_input(self.checkout, self.commit, output)
+                deps.prepare_input(self.checkout, self.commit, output, self.redis_archive)
             self.assertEqual(output.read_text(), 'preserve')
 
     def test_prepare_rejects_linked_file_and_parent(self):
@@ -97,7 +192,7 @@ class CiDependencyInputsTests(unittest.TestCase):
                 target.unlink()
                 target.symlink_to(linked)
                 with self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input')
+                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input', self.redis_archive)
             finally:
                 target.unlink()
                 target.write_bytes(original)
@@ -107,7 +202,7 @@ class CiDependencyInputsTests(unittest.TestCase):
             try:
                 parent.symlink_to(moved, target_is_directory=True)
                 with self.assertRaises(ValueError):
-                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input')
+                    deps.prepare_input(self.checkout, self.commit, Path(temporary) / 'input', self.redis_archive)
             finally:
                 parent.unlink()
                 moved.rename(parent)
