@@ -89,6 +89,7 @@ PR 标题与正文使用中文，保留必要的代码标识；提交主题可�
 bash scripts/check-function.sh
 bash scripts/check-function.sh --portable  # macOS 开发检查，不能代替上一条 Linux 完整检查
 bash scripts/check-compat.sh  # 修改 E2B 客户端合同或接入时运行；使用锁定依赖
+bash scripts/check-bench.sh   # Linux：修改 Harbor/评测消费者或其夹具时运行；包含 benchmarks/tests
 python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任务'
 ```
 
