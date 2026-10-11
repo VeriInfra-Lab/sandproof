@@ -34,8 +34,8 @@ pub use host_contract::{
 pub use controller::{
     BuildAnchor, BuildRetryConfig, BuildWindow, CapacityConfig, CheckpointInfo, CheckpointProgress,
     ControllerJournal, CreateAdmission, HostReleaseWitness, InternalAdmission,
-    InternalCreateResult, InternalInboxConfig, InternalLocalBinding, InternalTemplate, Lifetime,
-    MaintenanceConfig, RetirementCandidate,
+    InternalCreateResult, InternalInboxConfig, InternalLocalBinding, InternalTemplate,
+    InternalWorkState, Lifetime, MaintenanceConfig, RetirementCandidate,
 };
 
 #[cfg(feature = "durable")]

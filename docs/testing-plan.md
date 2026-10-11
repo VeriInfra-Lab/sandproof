@@ -57,6 +57,9 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #292 的[原子本地映射与事实组件](../controller-service/src/controller/internal_inbox/tests.rs)纳入 `scripts/check-distributed-contract.sh` 的原收件测试步骤：准入提交前后与两种未知提交结果均重开真实 SQLite，检查实例/租户映射、原配额、固定位置和编号同进退；模板修订/摘要/形状/owner、期限及配额拒绝不产生本地责任；多租户映射单射且重复请求不重分配。销毁收件与原核心终止同事务，准备动作回执丢失时也不得继续旧创建。原工作流的受控证据只用于组件测试：Ready 使用原发布时刻，事实提交前后故障可重建原结果；Destroyed/逻辑回收还不是 Cleaned，必须核对原 ConfirmRelease；确认退休未实现前本地维护不能删掉映射依赖。旧收件格式明确拒绝且不修复。这些不是原应用执行组装、KVM 或两题通过的证据，实机仍按 DK 场景验收。
 
+
+[宿主应用执行组件](../sandbox-host-service/tests/durable_https/execution.rs)在原 ControllerApplication 和真实 SQLite 上验收创建/重复/重开、丢激活回执恢复、销毁先到、原数据许可即时撤销及排空、物理释放未知保留 Stopped、中心断线后的原到期处理；取消由明确宿主屏障控制，实际工作结束前入口许可不归还。[真实 Redis/HTTPS 组合](../sandbox-center-store/tests/redis_ledger.rs)再检查原本地执行事实已持久而中心丢回执/重启，重发原请求得到同一 VM/寿命，只有收到原 Cleaned 才释放中心额度。宿主物理动作在这些组件中受控，不能记为 KVM、SDK 生产入口或 DK 用例通过。
+
 凭据隔离另以[同库索引故障](../controller-service/src/controller/data_credentials/tests.rs)、[管理层恢复与授权](../sandbox-api/tests/managed_port/credential_isolation.rs)及[两台真实虚拟机](../tests/system/server_credential_isolation.py)分层验收：单个宿主凭据缺失、损坏或有效内容改变只拒绝该对象；健康对象仍可执行命令、读写文件。共享索引缺失、损坏或重复绑定须拒绝数据授权，不自动补造登记；原管理清理仍按生命周期合同进行。实机入口保留原凭据 inode，故障后恢复它并逐台核对精确资源，不代表恶意宿主存储已验证。
 
 ## 3. Linux/KVM 验收

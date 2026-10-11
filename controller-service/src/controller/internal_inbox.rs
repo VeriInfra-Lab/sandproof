@@ -20,7 +20,43 @@ use sandproof_protocol::internal::NodeIdentity;
 use sandproof_protocol::internal::lifecycle::{LifecycleRequest, LifecycleResponse};
 use sha2::{Digest, Sha256};
 
+/// Read-only original request state. A binding is identity, NOT a worker permit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InternalWorkState {
+    pub response: LifecycleResponse,
+    pub local: Option<InternalLocalBinding>,
+    pub current: bool,
+}
+
 impl ControllerJournal {
+    /// # Errors
+    /// Requires an exact recorded request and valid original authority image.
+    pub fn internal_work_state(
+        &self,
+        request: &LifecycleRequest,
+    ) -> Result<InternalWorkState, JournalError> {
+        self.world()?;
+        let inbox = load(&self.journal.connection)?.ok_or(JournalError::UnsupportedStore)?;
+        let entry = inbox
+            .entries
+            .iter()
+            .find(|e| e.request == *request)
+            .ok_or(JournalError::Conflict)?;
+        let local = inbox
+            .entries
+            .iter()
+            .filter(|e| e.request.identity.sandbox_id == request.identity.sandbox_id)
+            .find_map(|e| e.local);
+        let current = !inbox.entries.iter().any(|e| {
+            e.request.identity.sandbox_id == request.identity.sandbox_id
+                && e.request.identity.intent_version.get() > request.identity.intent_version.get()
+        });
+        Ok(InternalWorkState {
+            response: entry.response.clone(),
+            local,
+            current,
+        })
+    }
     /// Explicit provisioning on an empty complete store. Not an old-store
     /// migration, mode flag, separate `SQLite` writer or automatic repair.
     /// # Errors
