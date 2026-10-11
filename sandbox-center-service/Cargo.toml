@@ -1,0 +1,43 @@
+[package]
+name = "sandproof-center-service"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Component fixture only. The explicit suite requires the locked real engine;
+# absence is failure, never a runtime storage mode or dynamic skip.
+redis-tests = []
+
+[[test]]
+name = "redis_https_application"
+required-features = ["redis-tests"]
+
+[dependencies]
+axum = { version = "=0.8.9", features = ["tokio", "http1"] }
+sandproof-data-transport = { path = "../sandbox-data-transport" }
+sandproof-api = { path = "../sandbox-api" }
+sandproof-center-core = { path = "../sandbox-center-core" }
+sandproof-center-store = { path = "../sandbox-center-store" }
+sandproof-controller-service = { path = "../controller-service" }
+sandproof-internal = { path = "../sandbox-internal" }
+sandproof-protocol = { path = "../sandbox-protocol" }
+sandbox-controller-core = { path = "../controller-core" }
+ring = "=0.17.14"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.142"
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "time"] }
+
+[dev-dependencies]
+axum = { version = "=0.8.9", features = ["json", "tokio", "http1"] }
+redis = { version = "=1.7.1", default-features = false }
+sandproof-host-service = { path = "../sandbox-host-service" }
+tempfile = "=3.23.0"
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tower = { version = "=0.5.2", features = ["util"] }
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
+
+[lints]
+workspace = true

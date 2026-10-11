@@ -29,6 +29,15 @@ fn launches(state: &Mutex<local::State>) -> usize {
         .count()
 }
 
+fn renew(
+    create: &sandproof_protocol::internal::lifecycle::LifecycleRequest,
+    end_at_ms: u64,
+) -> sandproof_protocol::internal::lifecycle::LifecycleRequest {
+    let mut request = destroy(create);
+    request.intent = Intent::Renew { end_at_ms };
+    request
+}
+
 #[tokio::test]
 async fn original_create_reopen_destroy_and_physical_release_publish_exact_cached_facts() {
     let dir = tempfile::tempdir().unwrap();
@@ -175,7 +184,7 @@ async fn destroy_before_admission_prevents_late_create_and_cached_template_reuse
     assert_eq!(launches(&state), 0);
     assert_eq!(
         app.internal_pending(&fixture::node("host-a")).unwrap(),
-        vec![stop]
+        vec![]
     );
 }
 
@@ -265,4 +274,109 @@ async fn destroy_reception_revokes_data_before_worker_stop_and_waits_for_origina
             .fact,
         LifecycleFact::Cleaned
     );
+}
+
+#[tokio::test]
+async fn fixed_renewal_reopen_replay_retains_original_vm_and_host_expiry() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(local::State::default()));
+    let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
+    let create = local::request();
+    let renewal = renew(&create, 90_010);
+    let renewed;
+    {
+        let service = HostLifecycle::new(local::application(
+            &path,
+            Arc::clone(&state),
+            Arc::clone(&clock),
+            true,
+        ));
+        service.receive(create.clone()).await.unwrap();
+        service
+            .advance(create, Some(local::template()), local::compute())
+            .await
+            .unwrap();
+        clock.0.store(100, Ordering::SeqCst);
+        service.receive(renewal.clone()).await.unwrap();
+        assert_eq!(
+            service.pending(fixture::node("host-a")).await.unwrap(),
+            vec![renewal.clone()]
+        );
+        renewed = service
+            .advance(renewal.clone(), None, local::compute())
+            .await
+            .unwrap();
+        assert_eq!(renewed.fact, LifecycleFact::Renewed { end_at_ms: 90_010 });
+    }
+    clock.0.store(90_010, Ordering::SeqCst);
+    let service = HostLifecycle::new(local::application(
+        &path,
+        Arc::clone(&state),
+        Arc::clone(&clock),
+        false,
+    ));
+    assert_eq!(service.receive(renewal.clone()).await.unwrap(), renewed);
+    assert_eq!(
+        service
+            .advance(renewal, None, local::compute())
+            .await
+            .unwrap(),
+        renewed
+    );
+    let (_, expiry) = service.recover().await.unwrap();
+    assert_eq!(expiry.completed, 1);
+    assert_eq!(launches(&state), 1);
+}
+
+#[tokio::test]
+async fn immediate_fixed_expiry_revokes_data_without_waiting_for_physical_stop() {
+    use sandproof_controller_service::application::{ApplicationError, DataKind};
+    let dir = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(local::State::default()));
+    let clock = Arc::new(local::TestClock(AtomicI64::new(10)));
+    let app = local::application(
+        &dir.path().join("db"),
+        Arc::clone(&state),
+        Arc::clone(&clock),
+        true,
+    );
+    let service = HostLifecycle::new(Arc::clone(&app));
+    let create = local::request();
+    service.receive(create.clone()).await.unwrap();
+    service
+        .advance(create.clone(), Some(local::template()), local::compute())
+        .await
+        .unwrap();
+    let credential = state
+        .lock()
+        .unwrap()
+        .configurations
+        .values()
+        .next()
+        .unwrap()
+        .0
+        .clone();
+    let permit = app.data_permit(&credential, DataKind::Exec).unwrap();
+    clock.0.store(100, Ordering::SeqCst);
+    let renewal = renew(&create, 100);
+    service.receive(renewal.clone()).await.unwrap();
+    assert!(!*permit.revocation.borrow());
+    assert_eq!(
+        service
+            .advance(renewal, None, local::compute())
+            .await
+            .unwrap()
+            .fact,
+        LifecycleFact::Renewed { end_at_ms: 100 }
+    );
+    assert!(*permit.revocation.borrow());
+    assert_eq!(
+        app.authorize_data(&credential, DataKind::Exec),
+        Err(ApplicationError::NotFound)
+    );
+    assert_eq!(launches(&state), 1);
+    drop(permit);
+    let (_, expiry) = service.recover().await.unwrap();
+    assert_eq!(expiry.completed, 1);
 }

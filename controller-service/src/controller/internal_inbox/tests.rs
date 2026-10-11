@@ -8,6 +8,8 @@ use crate::{AdmissionError, InternalAdmission, InternalTemplate};
 use crate::{CrashPoint, NeverCrash};
 use fixture::*;
 use sandbox_controller_core as core;
+#[path = "tests/renewal.rs"]
+mod renewal;
 
 fn local_admission() -> InternalAdmission {
     InternalAdmission {
@@ -692,18 +694,23 @@ fn internal_inbox_old_unbound_format_is_refused_without_upgrade_or_repair() {
         .unwrap();
     drop(j);
     let db = rusqlite::Connection::open(&path).unwrap();
-    db.execute("UPDATE controller_meta SET version=12 WHERE id=1", [])
+    for version in [12, 13] {
+        db.execute(
+            "UPDATE controller_meta SET version=?1 WHERE id=1",
+            [version],
+        )
         .unwrap();
-    assert!(matches!(
-        super::super::tests_support::open(&path, "0123456789abcdef"),
-        Err(JournalError::UnsupportedStore)
-    ));
-    assert_eq!(
-        db.query_row("SELECT version FROM controller_meta", [], |r| r
-            .get::<_, i64>(0))
-            .unwrap(),
-        12
-    );
+        assert!(matches!(
+            super::super::tests_support::open(&path, "0123456789abcdef"),
+            Err(JournalError::UnsupportedStore)
+        ));
+        assert_eq!(
+            db.query_row("SELECT version FROM controller_meta", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            version
+        );
+    }
 }
 
 #[test]

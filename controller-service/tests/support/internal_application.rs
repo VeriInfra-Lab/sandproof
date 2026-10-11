@@ -258,6 +258,29 @@ pub fn application(
     clock: Arc<TestClock>,
     provision: bool,
 ) -> Arc<ControllerApplication<TestHost>> {
+    application_with_inbox_config(
+        path,
+        state,
+        clock,
+        provision,
+        InternalInboxConfig {
+            node: wire::node("host-a"),
+            max_sandboxes: 2,
+            operations_per_sandbox: 3,
+            max_options_bytes: 128,
+        },
+    )
+}
+
+/// Selected component suites supply their explicit operation/options budget;
+/// the original application and all local admission/recovery logic stay shared.
+pub fn application_with_inbox_config(
+    path: &Path,
+    state: Arc<Mutex<State>>,
+    clock: Arc<TestClock>,
+    provision: bool,
+    inbox: InternalInboxConfig,
+) -> Arc<ControllerApplication<TestHost>> {
     let reserve = workflow::CLEANUP_BYTES + 1000;
     let mut journal = sandproof_controller_service::ControllerJournal::open_complete(
         path,
@@ -269,15 +292,7 @@ pub fn application(
     .unwrap();
     if provision {
         journal
-            .initialize_internal_inbox(
-                InternalInboxConfig {
-                    node: wire::node("host-a"),
-                    max_sandboxes: 2,
-                    operations_per_sandbox: 3,
-                    max_options_bytes: 128,
-                },
-                &mut NeverCrash,
-            )
+            .initialize_internal_inbox(inbox, &mut NeverCrash)
             .unwrap();
     }
     let mut limits = workflow::admission_limits();

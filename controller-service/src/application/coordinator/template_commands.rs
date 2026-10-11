@@ -463,22 +463,19 @@ impl<H: ControllerHost> ControllerApplication<H> {
     ) -> Result<TemplatePage, ApplicationError> {
         let owner = tenant_id(tenant)?;
         self.registry.as_ref().ok_or(ApplicationError::NotFound)?;
-        if !(1..=100).contains(&limit)
-            || cursor.is_some_and(|c| !c.strip_prefix("tpl-").is_some_and(valid_candidate_id))
-        {
-            return Err(ApplicationError::Invalid);
-        }
+        crate::template_registry::query::validate_page(limit, cursor)
+            .map_err(|_| ApplicationError::Invalid)?;
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let values = inner
             .journal
             .registered_templates(owner.0)
             .map_err(map_journal)?;
-        let mut values = values
+        let selected =
+            crate::template_registry::query::select_templates(owner.0, values, limit, cursor)
+                .map_err(|_| ApplicationError::Invalid)?;
+        let items = selected
+            .items
             .into_iter()
-            .filter(|v| cursor.is_none_or(|c| v.binding.template_id.as_str() > c));
-        let items = values
-            .by_ref()
-            .take(limit)
             .map(|v| {
                 Ok(v.template_view(
                     inner
@@ -488,10 +485,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 ))
             })
             .collect::<Result<Vec<_>, ApplicationError>>()?;
-        let next_cursor = values
-            .next()
-            .and_then(|_| items.last().map(|v| v.template_id.clone()));
-        Ok(TemplatePage { items, next_cursor })
+        Ok(TemplatePage {
+            items,
+            next_cursor: selected.next_cursor,
+        })
     }
 
     /// # Errors

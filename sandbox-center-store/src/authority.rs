@@ -5,7 +5,7 @@ use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleRequest, L
 use sandproof_protocol::{SandboxId, TenantId};
 
 impl ControlState for CenterState {
-    const FORMAT_VERSION: u32 = 1;
+    const FORMAT_VERSION: u32 = 2;
     fn is_valid(&self) -> bool {
         self.is_valid()
     }
@@ -108,6 +108,28 @@ impl CenterAuthority {
             .map(Observed::state)
             .ok_or(AuthorityError::RecoveryRequired)
     }
+    /// A public read/authorization view must be confirmed during this call,
+    /// not taken from a pre-request cache. Reaffirm never lifts an unknown
+    /// write fence; that requires explicit recovery of the original block.
+    /// # Errors
+    /// Storage failures invalidate even the previously observed view.
+    pub fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
+        let observed = self
+            .observed
+            .as_ref()
+            .ok_or(AuthorityError::RecoveryRequired)?;
+        match self.ledger.reaffirm(observed) {
+            Ok(committed) => {
+                let state = committed.state().clone();
+                self.observed = Some(committed.into_observed());
+                Ok(state)
+            }
+            Err(error) => {
+                self.observed = None;
+                Err(error.into())
+            }
+        }
+    }
     fn commit(&mut self, next: &CenterState) -> Result<(), AuthorityError> {
         let previous = self
             .observed
@@ -164,6 +186,16 @@ impl CenterAuthority {
     /// Old/wrong observations cannot update a newer intent.
     pub fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
         let next = self.state()?.apply_response(response)?;
+        self.commit(&next)
+    }
+    /// Called only after the host confirms the EXACT already committed result.
+    /// # Errors
+    /// Unknown compaction commits require recovery; stale acknowledgements fail.
+    pub fn compact_confirmed(
+        &mut self,
+        response: &LifecycleResponse,
+    ) -> Result<(), AuthorityError> {
+        let next = self.state()?.compact_confirmed(response)?;
         self.commit(&next)
     }
     /// # Errors

@@ -3,8 +3,10 @@
 //! transaction; cached facts are derived from the original local authority.
 mod admission;
 mod codec;
+mod confirmation;
 mod facts;
 mod model;
+mod renewal;
 use super::{ControllerJournal, capacity, transaction::WorldTransaction};
 use crate::{CrashInjector, CrashPoint, JournalError};
 pub(super) use admission::{AdmissionAttachment, attach_admission};
@@ -29,6 +31,35 @@ pub struct InternalWorkState {
 }
 
 impl ControllerJournal {
+    /// Existing protected configuration, never inferred from caller limits.
+    /// # Errors
+    /// Shared authority/format corruption fails instead of becoming empty.
+    pub fn internal_inbox_configuration(
+        &self,
+    ) -> Result<Option<InternalInboxConfig>, JournalError> {
+        self.world()?;
+        Ok(load(&self.journal.connection)?.map(|inbox| inbox.config))
+    }
+    /// Locate a complete ORIGINAL request using its authenticated wire identity.
+    /// This is read-only and cannot receive, allocate or manufacture a binding.
+    /// # Errors
+    /// Foreign, missing or retired operations and corrupt shared authority fail.
+    pub fn internal_request(
+        &self,
+        identity: &sandproof_protocol::internal::ControlIdentity,
+    ) -> Result<LifecycleRequest, JournalError> {
+        self.world()?;
+        let inbox = load(&self.journal.connection)?.ok_or(JournalError::UnsupportedStore)?;
+        identity
+            .validate_node(&inbox.config.node)
+            .map_err(|_| JournalError::Conflict)?;
+        inbox
+            .entries
+            .iter()
+            .find(|entry| &entry.request.identity == identity)
+            .map(|entry| entry.request.clone())
+            .ok_or(JournalError::Conflict)
+    }
     /// # Errors
     /// Requires an exact recorded request and valid original authority image.
     pub fn internal_work_state(
@@ -85,7 +116,11 @@ impl ControllerJournal {
             return Err(JournalError::MaintenanceCapacity);
         }
         let bytes = serde_json::to_vec(&inbox)?;
-        tx.execute_batch("CREATE TABLE controller_internal_inbox(id INTEGER PRIMARY KEY CHECK(id=1),state_json BLOB NOT NULL,sha256 BLOB NOT NULL CHECK(length(sha256)=32),reserve_bytes INTEGER NOT NULL CHECK(reserve_bytes>0)); UPDATE controller_meta SET version=13 WHERE id=1;")?;
+        tx.execute_batch("CREATE TABLE controller_internal_inbox(id INTEGER PRIMARY KEY CHECK(id=1),state_json BLOB NOT NULL,sha256 BLOB NOT NULL CHECK(length(sha256)=32),reserve_bytes INTEGER NOT NULL CHECK(reserve_bytes>0));")?;
+        tx.execute(
+            "UPDATE controller_meta SET version=?1 WHERE id=1",
+            [crate::INTERNAL_INBOX_FORMAT_VERSION],
+        )?;
         tx.execute(
             "INSERT INTO controller_internal_inbox VALUES(1,?1,?2,?3)",
             params![
@@ -134,6 +169,13 @@ impl ControllerJournal {
         Ok(inbox
             .entries
             .iter()
+            .filter(|entry| {
+                matches!(
+                    entry.response.fact,
+                    sandproof_protocol::internal::lifecycle::LifecycleFact::Recorded
+                        | sandproof_protocol::internal::lifecycle::LifecycleFact::Stopped
+                )
+            })
             .filter(|e| {
                 !inbox.entries.iter().any(|newer| {
                     newer.request.identity.sandbox_id == e.request.identity.sandbox_id

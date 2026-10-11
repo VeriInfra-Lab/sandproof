@@ -8,6 +8,10 @@ pub const MAX_OPTIONS_BYTES: usize = 65_536;
 /// Fixed identity/shape allowance preserves the original option limit.
 pub const LIFECYCLE_BODY_BYTES: usize = 4 * MAX_OPTIONS_BYTES + 8192;
 pub const LIFECYCLE_PATH: &str = "/internal/v1/lifecycle";
+/// The center sends the EXACT result only after its durable commit. This is
+/// not a lifecycle intent, an arbitrary deletion list or a window-close proof.
+pub const RESULT_CONFIRMATION_PATH: &str = "/internal/v1/result-confirmation";
+pub const RESULT_CONFIRMATION_BODY_BYTES: usize = 8192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

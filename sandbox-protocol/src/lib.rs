@@ -14,6 +14,15 @@ pub mod internal;
 
 pub const PROTOCOL_VERSION: u16 = 1;
 
+/// Requested data capability only. A value grants no authority: the original
+/// host application must check its current VM, owner, lifetime and permissions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataKind {
+    Exec,
+    FileRead,
+    FileWrite,
+}
+
 /// Reject malformed opaque identifiers before they reach logs or resource lookup.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContractError {

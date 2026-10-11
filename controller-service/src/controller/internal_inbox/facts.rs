@@ -92,7 +92,10 @@ impl ControllerJournal {
         let previous = inbox.entries[index].response.clone();
         if matches!(
             previous.fact,
-            LifecycleFact::Ready { .. } | LifecycleFact::Cleaned | LifecycleFact::NotAccepted
+            LifecycleFact::Ready { .. }
+                | LifecycleFact::Renewed { .. }
+                | LifecycleFact::Cleaned
+                | LifecycleFact::NotAccepted
         ) {
             return Ok(previous);
         }
@@ -190,6 +193,27 @@ pub(super) fn validate_saved(
                         || !checkpoint::release_witnesses(connection, world)?
                             .iter()
                             .any(|w| w.context.binding.sandbox == local.sandbox))
+                {
+                    return Err(JournalError::CorruptStore);
+                }
+            }
+            LifecycleFact::Renewed { end_at_ms } => {
+                let (started, deadline, maximum): (i64, i64, i64) = connection.query_row(
+                    "SELECT started_at_ms,deadline_ms,max_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
+                    [super::super::identity::sandbox_id(&namespace, local.sandbox)?.as_str()],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )?;
+                let end = i64::try_from(end_at_ms).map_err(|_| JournalError::CorruptStore)?;
+                let newer_renewed = inbox.entries.iter().any(|newer| {
+                    newer.request.identity.sandbox_id == entry.request.identity.sandbox_id
+                        && newer.request.identity.intent_version.get()
+                            > entry.request.identity.intent_version.get()
+                        && matches!(newer.response.fact, LifecycleFact::Renewed { .. })
+                });
+                if record.phase == core::Phase::Starting
+                    || end < started
+                    || end > maximum
+                    || (!newer_renewed && end != deadline)
                 {
                     return Err(JournalError::CorruptStore);
                 }

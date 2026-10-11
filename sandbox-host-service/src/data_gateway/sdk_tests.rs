@@ -1,4 +1,4 @@
-//! Pinned SDK -> real gateway body handling / HTTP -> synthetic envd.
+//! Pinned SDK -> relocated native gateway body handling -> synthetic envd.
 //! No management authorization, relay subprocess, namespace or VM is tested.
 
 use super::*;
@@ -21,12 +21,9 @@ async fn pinned_sdk_through_gateway() {
 
 #[tokio::test]
 async fn pinned_sdk_through_streaming_gateway() {
-    timeout(
-        Duration::from_mins(2),
-        run_contract(Some(TransferLimits::fixture())),
-    )
-    .await
-    .expect("streaming SDK/gateway contract timed out");
+    timeout(Duration::from_mins(2), run_contract(Some(fixture_limits())))
+        .await
+        .expect("streaming SDK/gateway contract timed out");
 }
 
 async fn run_contract(limits: Option<TransferLimits>) {
@@ -131,7 +128,7 @@ async fn forward_fixture(
     write_idle: Option<Duration>,
 ) -> Response<Body> {
     // Only the authorization/namespace boundary is replaced by fixture identity.
-    let Some((_, file_request)) = operation(request.method(), request.uri().path()) else {
+    let Ok((_, file_request)) = request_kind(&request) else {
         return response(StatusCode::NOT_FOUND);
     };
     let lease = if let Some(gateway) = &gateway {
@@ -164,7 +161,7 @@ async fn forward_fixture(
     }));
     let response = forward_request(&mut sender, request, limits).await;
     match lease {
-        Some(lease) => LeasedBody::wrap(response, lease),
+        Some(lease) => hold_response(response, lease),
         None => response,
     }
 }
