@@ -9,7 +9,9 @@ use super::{
     reconcile::{audit_host_inventory, recover_before_serving, spawn_reconciliation_scanner},
 };
 use crate::gateway;
-use sandproof_api::{ApiCredential, managed::ManagedPort, router};
+use sandproof_api::{
+    ApiCredential, admission::RequestAdmission, managed::ManagedPort, router_with_admission,
+};
 use sandproof_controller_service::{ControllerJournal, application::ControllerApplication};
 use sandproof_node::{LinuxWorker, NodeHost};
 use std::{error::Error, fs, path::PathBuf, sync::Arc, time::Duration};
@@ -117,21 +119,29 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
         })
         .collect();
     let gateway_port = Arc::clone(&port);
-    let gateway_limits = Arc::new(gateway::Gateway::new(contract.transfers)?);
+    let requests = RequestAdmission::new(contract.requests)?;
+    let gateway_limits = Arc::new(gateway::Gateway::with_admission(
+        contract.transfers,
+        Arc::clone(&requests),
+    )?);
     let write_idle = Some(Duration::from_secs(
         gateway_limits.limits.write_idle_seconds,
     ));
-    let app = router(Arc::new(ManagedPort::new(Arc::clone(&port))), credentials)
-        .map_err(|_| "invalid API credentials")?
-        .fallback(move |request| {
-            gateway::handle(
-                Arc::clone(&gateway_port),
-                Some(Arc::clone(&gateway_limits)),
-                request,
-            )
-        });
+    let app = router_with_admission(
+        Arc::new(ManagedPort::new(Arc::clone(&port))),
+        credentials,
+        Arc::clone(&requests),
+    )
+    .map_err(|_| "invalid API credentials")?
+    .fallback(move |request| {
+        gateway::handle(
+            Arc::clone(&gateway_port),
+            Some(Arc::clone(&gateway_limits)),
+            request,
+        )
+    });
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
-    spawn_reconciliation_scanner(Arc::clone(&port), config.expiry_scan_seconds);
+    spawn_reconciliation_scanner(Arc::clone(&port), config.expiry_scan_seconds, requests);
     axum::serve(gateway::GatewayListener::new(listener, write_idle), app).await?;
     Ok(())
 }

@@ -288,14 +288,21 @@ fn audit_launch_credential_binding(
 pub(super) fn spawn_reconciliation_scanner(
     port: Arc<ControllerApplication<NodeHost>>,
     seconds: u64,
+    admission: Arc<sandproof_api::admission::RequestAdmission>,
 ) {
     drop(tokio::spawn(async move {
         let mut timer = tokio::time::interval(Duration::from_secs(seconds));
         let mut last_failure_log: Option<Instant> = None;
         loop {
             timer.tick().await;
+            let Some(lease) =
+                admission.try_acquire(sandproof_api::admission::RequestClass::Background)
+            else {
+                continue;
+            };
             let port = Arc::clone(&port);
             match tokio::task::spawn_blocking(move || {
+                let _lease = lease;
                 // Free tail capacity before recovery/expiry append inputs.
                 port.maintain()?;
                 let recovery = port.recover_on_startup()?;

@@ -21,6 +21,7 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
+use sandproof_api::admission::{RequestAdmission, RequestClass, RequestLease};
 use sandproof_controller_service::application::{
     ApplicationError as PortError, DataAccessPort, DataAuthorization, DataKind,
 };
@@ -172,19 +173,41 @@ pub async fn handle<P: DataAccessPort>(
         Ok(token) => token,
         Err(status) => return response(status),
     };
-    let authorization_port = Arc::clone(&port);
-    let mut permit =
-        match tokio::task::spawn_blocking(move || authorization_port.data_permit(&token, kind))
-            .await
-        {
-            Ok(Ok(value)) => value,
-            Ok(Err(PortError::NotFound | PortError::Invalid)) => {
-                return response(StatusCode::UNAUTHORIZED);
-            }
-            Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
-        };
-    let destination = permit.target();
+    // Even a syntactically valid but unknown token consumes a pre-auth slot.
+    // The standalone test path is finite too; production always supplies the
+    // gateway sharing its budget with management and reconciliation.
+    static TEST_REQUESTS: std::sync::OnceLock<Arc<RequestAdmission>> = std::sync::OnceLock::new();
+    let requests = gateway.as_ref().map_or_else(
+        || {
+            TEST_REQUESTS
+                .get_or_init(|| RequestAdmission::new(Default::default()).expect("valid defaults"))
+        },
+        |gateway| &gateway.requests,
+    );
     let control = control_request(&request);
+    let class = if control {
+        RequestClass::Control
+    } else {
+        RequestClass::Ordinary
+    };
+    let Some(request_lease) = requests.try_acquire(class) else {
+        return response(StatusCode::TOO_MANY_REQUESTS);
+    };
+    let authorization_port = Arc::clone(&port);
+    let authorization_lease = Arc::clone(&request_lease);
+    let mut permit = match tokio::task::spawn_blocking(move || {
+        let _lease = authorization_lease;
+        authorization_port.data_permit(&token, kind)
+    })
+    .await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(PortError::NotFound | PortError::Invalid)) => {
+            return response(StatusCode::UNAUTHORIZED);
+        }
+        Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
+    };
+    let destination = permit.target();
     let lease = match &gateway {
         Some(gateway) => match gateway.acquire((destination.vm.0, destination.generation), control)
         {
@@ -205,7 +228,7 @@ pub async fn handle<P: DataAccessPort>(
         None => return response(StatusCode::UNAUTHORIZED),
     };
     let (returned_permit, mut child) =
-        match launch_data_route(Arc::clone(&port), permit, control).await {
+        match launch_data_route(Arc::clone(&port), permit, control, request_lease).await {
             Ok(value) => value,
             Err(status) => return response(status),
         };
@@ -257,8 +280,10 @@ async fn launch_data_route<P: DataAccessPort>(
     port: Arc<P>,
     permit: P::Permit,
     control: bool,
+    request_lease: Arc<RequestLease>,
 ) -> Result<(P::Permit, drain::RelayProcess), StatusCode> {
     let (permit, launched) = tokio::task::spawn_blocking(move || {
+        let _lease = request_lease;
         let result = port.spawn_data_relay(&permit, control);
         (permit, result)
     })
