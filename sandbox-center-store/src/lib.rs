@@ -2,8 +2,8 @@
 
 //! Center authority-block storage, NOT a second local lifecycle controller.
 //!
-//! This component is not connected to the public service. The authority
-//! assembly connects the pure center type and durable detached dispatch boundary.
+//! The sole center entry uses this component to connect the pure center type
+//! and durable detached dispatch boundary. Storage never decides VM success.
 //! The generic primitive returns only `Observed` from reads, including restart:
 //! seeing a value is not evidence of an earlier unknown write's durability.
 //! Redis is co-located with the single center writer, on literal loopback with
@@ -33,7 +33,8 @@ pub const REDIS_VERSION: &str = "7.2.16";
 /// Implement in the center's assembly adapter, not in an I/O-dependent core.
 /// The type must reject unknown/duplicate fields and validate all domain
 /// invariants, identity frontiers, object limits and future cleanup reserves.
-/// This trait does not claim that any center state machine already exists.
+/// Implementing this trait is an engineering contract, not a proof that the
+/// state machine or its persistence adapter has been formally verified.
 pub trait ControlState: Serialize + DeserializeOwned {
     const FORMAT_VERSION: u32;
     fn is_valid(&self) -> bool;
