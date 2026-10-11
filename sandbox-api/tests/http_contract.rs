@@ -14,9 +14,150 @@ use tower::ServiceExt;
 const ALICE_KEY: &str = "alice-local-test-key-only-0000000000000001";
 const BOB_KEY: &str = "bob-local-test-key-only-00000000000000002";
 
+const ORDINARY_REQUESTS: &[(&str, &str, Option<&str>)] = &[
+    ("POST", "/v2/sandboxes", Some(r#"{"templateID":"base"}"#)),
+    ("GET", "/v2/sandboxes", None),
+    ("GET", "/sandboxes/sand-a", None),
+    (
+        "POST",
+        "/sandproof/template-publications",
+        Some(r#"{"candidateID":"candidate-a"}"#),
+    ),
+    ("GET", "/sandproof/template-publications/candidate-a", None),
+    ("GET", "/sandproof/templates", None),
+    ("GET", "/sandproof/templates/template-a", None),
+    (
+        "PUT",
+        "/sandproof/template-aliases/alias-a",
+        Some(r#"{"templateID":"template-a"}"#),
+    ),
+    ("DELETE", "/sandproof/template-aliases/alias-a", None),
+    ("GET", "/sandproof/internal-build-vms/build-a", None),
+    (
+        "POST",
+        "/sandproof/internal-build-vms/build-a",
+        Some(r#"{"timeout":60,"allowInternetAccess":false}"#),
+    ),
+    ("POST", "/sandproof/internal-build-windows", None),
+];
+
+#[tokio::test]
+async fn all_management_surfaces_share_pre_dispatch_admission_without_sdk_parameter_changes() {
+    use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits, RequestClass};
+    let port = Arc::new(FakePort::default());
+    let admission = RequestAdmission::new(RequestAdmissionLimits {
+        max_pending_requests: 2,
+        control_reserve: 1,
+    })
+    .unwrap();
+    let app = sandproof_api::router_with_admission(
+        port.clone(),
+        vec![ApiCredential {
+            tenant: "alice".into(),
+            secret: ALICE_KEY.into(),
+        }],
+        admission.clone(),
+    )
+    .unwrap();
+    let ordinary = admission.try_acquire(RequestClass::Ordinary).unwrap();
+    for &(method, path, body) in ORDINARY_REQUESTS {
+        assert_eq!(
+            send(app.clone(), method, path, Some(ALICE_KEY), body)
+                .await
+                .status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "{method} {path}"
+        );
+    }
+    assert!(port.calls.lock().unwrap().is_empty());
+    assert_eq!(
+        send(
+            app.clone(),
+            "GET",
+            "/v2/sandboxes",
+            Some("invalid-key"),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    // Cleanup/renewal use the reserve, still after the same authentication.
+    for (method, path, body, status) in control_requests() {
+        assert_eq!(
+            send(app.clone(), method, path, Some(ALICE_KEY), body)
+                .await
+                .status(),
+            status,
+            "{method} {path}"
+        );
+    }
+    // Saturating reserved work remains bounded, not another waiter queue.
+    let control = admission.try_acquire(RequestClass::Control).unwrap();
+    let before = port.calls.lock().unwrap().len();
+    assert_eq!(
+        send(
+            app.clone(),
+            "DELETE",
+            "/sandboxes/sand-a",
+            Some(ALICE_KEY),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(port.calls.lock().unwrap().len(), before);
+    assert!(admission.try_acquire(RequestClass::Background).is_some());
+    drop((ordinary, control));
+    assert_eq!(
+        send(
+            app,
+            "POST",
+            "/v2/sandboxes",
+            Some(ALICE_KEY),
+            Some(r#"{"templateID":"base"}"#)
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+}
+
 #[derive(Default)]
 struct FakePort {
     calls: Mutex<Vec<String>>,
+}
+
+fn control_requests()
+-> impl IntoIterator<Item = (&'static str, &'static str, Option<&'static str>, StatusCode)> {
+    [
+        (
+            "POST",
+            "/v2/sandboxes/sand-a/connect",
+            Some("{}"),
+            StatusCode::OK,
+        ),
+        (
+            "POST",
+            "/sandboxes/sand-a/timeout",
+            Some(r#"{"timeout":60}"#),
+            StatusCode::NO_CONTENT,
+        ),
+        ("DELETE", "/sandboxes/sand-a", None, StatusCode::NO_CONTENT),
+        (
+            "POST",
+            "/sandproof/internal-build-windows/window-a/close",
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "POST",
+            "/sandproof/internal-build-vms/build-a/settle",
+            Some(r#"{"requestWindow":"window-a"}"#),
+            StatusCode::OK,
+        ),
+    ]
 }
 
 impl FakePort {

@@ -32,6 +32,8 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+#[path = "managed_port/admission.rs"]
+mod admission;
 #[path = "managed_port/allocators.rs"]
 mod allocators;
 #[path = "managed_port/bounded_slots.rs"]

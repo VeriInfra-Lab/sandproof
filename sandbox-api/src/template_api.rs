@@ -48,7 +48,12 @@ async fn publish<P: ControllerPort>(
     let tenant = authenticate(&state, &headers)?;
     let Json(input) = input.map_err(|_| ApiFailure::BadRequest)?;
     Ok(Json(
-        blocking(move || state.port.publish_template(&tenant, &input.candidate_id)).await?,
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || state.port.publish_template(&tenant, &input.candidate_id),
+        )
+        .await?,
     ))
 }
 async fn publication<P: ControllerPort>(
@@ -58,7 +63,12 @@ async fn publication<P: ControllerPort>(
 ) -> Result<Json<PublicationView>, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     Ok(Json(
-        blocking(move || state.port.publication(&tenant, &id)).await?,
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || state.port.publication(&tenant, &id),
+        )
+        .await?,
     ))
 }
 async fn template<P: ControllerPort>(
@@ -68,7 +78,12 @@ async fn template<P: ControllerPort>(
 ) -> Result<Json<TemplateView>, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
     Ok(Json(
-        blocking(move || state.port.template(&tenant, &id)).await?,
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || state.port.template(&tenant, &id),
+        )
+        .await?,
     ))
 }
 async fn templates<P: ControllerPort>(
@@ -79,11 +94,15 @@ async fn templates<P: ControllerPort>(
     let tenant = authenticate(&state, &headers)?;
     let Query(query) = query.map_err(|_| ApiFailure::BadRequest)?;
     Ok(Json(
-        blocking(move || {
-            state
-                .port
-                .templates(&tenant, query.limit, query.cursor.as_deref())
-        })
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || {
+                state
+                    .port
+                    .templates(&tenant, query.limit, query.cursor.as_deref())
+            },
+        )
         .await?,
     ))
 }
@@ -96,14 +115,18 @@ async fn set_alias<P: ControllerPort>(
     let tenant = authenticate(&state, &headers)?;
     let Json(input) = input.map_err(|_| ApiFailure::BadRequest)?;
     Ok(Json(
-        blocking(move || {
-            state.port.set_template_alias(
-                &tenant,
-                &name,
-                &input.template_id,
-                input.expected.as_deref(),
-            )
-        })
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || {
+                state.port.set_template_alias(
+                    &tenant,
+                    &name,
+                    &input.template_id,
+                    input.expected.as_deref(),
+                )
+            },
+        )
         .await?,
     ))
 }
@@ -113,7 +136,12 @@ async fn delete_alias<P: ControllerPort>(
     Path(name): Path<String>,
 ) -> Result<StatusCode, ApiFailure> {
     let tenant = authenticate(&state, &headers)?;
-    blocking(move || state.port.delete_template_alias(&tenant, &name)).await?;
+    blocking(
+        state.admission.clone(),
+        super::RequestClass::Ordinary,
+        move || state.port.delete_template_alias(&tenant, &name),
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 pub(super) fn routes<P: ControllerPort>() -> Router<ApiState<P>> {
