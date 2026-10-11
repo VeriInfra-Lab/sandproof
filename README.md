@@ -13,9 +13,9 @@
 - 私有可写系统盘、通用 Dockerfile/OCI 模板、鉴权、资源限额和受控网络。
 - 持久记录、提交后派发、未知结果处理、精确资源身份和重启恢复。
 
-暂停恢复在后续阶段实现；多节点、共享卷、完整云平台复制和自动部署不在 V1。后续评测目标为 Terminal-Bench 2.1，版本冻结与工具接入尚待完成；[评测说明](benchmarks/README.md)保留历史 2.0 结果与迁移边界。兼容性与评测不能替代安全证明。
+暂停恢复在后续阶段实现；多节点、共享卷、完整云平台复制和自动部署不在 V1。当前使用冻结的 Terminal-Bench 2.0 兼容回归；两题预装晋升回归与 2.1 原题 89 题全量待办分别见[验收清单](docs/testing-plan.md#4-通用模板与-terminal-bench)，版本锁与工具入口见[评测说明](benchmarks/README.md)。兼容性与评测不能替代安全证明。
 
-通用模板链已接通显式部署的自助 Dockerfile/公开 OCI 构建、转换、发布和原 SDK 创建；[自助链实机证据](https://github.com/ningZhang-cs/sandproof/pull/135)与[Harbor 原题诊断](docs/testing-plan.md)分别绑定各自提交。完整题集与统一资源压力验收仍待完成，任务见 [#123](https://github.com/ningZhang-cs/sandproof/issues/123)。模板构建/转换及其自有编排、登记/发布整体以测试验收，不做形式化证明；核心控制流程的外部前提和准确证明范围见[覆盖记录](docs/proof-coverage.md)。
+通用模板链已接通显式部署的自助 Dockerfile/公开 OCI 构建、转换、发布和原 SDK 创建；[自助链实机证据](https://github.com/ningZhang-cs/sandproof/pull/135)与[Harbor 原题诊断](docs/testing-plan.md)分别绑定各自提交。完整题集与统一资源压力验收仍待完成，任务见 [#13](https://github.com/ningZhang-cs/sandproof/issues/13)、[#14](https://github.com/ningZhang-cs/sandproof/issues/14)。模板构建/转换及其自有编排、登记/发布整体以测试验收，不做形式化证明；核心控制流程的外部前提和准确证明范围见[覆盖记录](docs/proof-coverage.md)。
 
 ## 现在有什么
 
