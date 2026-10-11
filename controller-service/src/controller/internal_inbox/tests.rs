@@ -12,6 +12,8 @@ use sandbox_controller_core as core;
 mod capacity_rejection;
 #[path = "tests/renewal.rs"]
 mod renewal;
+#[path = "tests/starting_destroy.rs"]
+mod starting_destroy;
 #[path = "tests/validation.rs"]
 mod validation;
 #[path = "tests/window.rs"]
@@ -678,7 +680,7 @@ fn internal_inbox_destroy_and_native_terminal_commit_together_even_during_uncert
         );
         assert_eq!(
             j.next_operation_id(local.sandbox).unwrap(),
-            core::OperationId(3)
+            core::OperationId(2)
         );
         assert!(
             crate::finish_admitted_create_v1_timed(

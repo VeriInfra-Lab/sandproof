@@ -365,6 +365,31 @@ pub(super) fn attach_terminal(
     if record.terminal || record.phase == core::Phase::Destroyed {
         return Ok(());
     }
+    if record.phase == core::Phase::Starting
+        && record.current_operation.is_some_and(|operation| {
+            operation.kind == core::OperationKind::Create
+                && matches!(
+                    operation.status,
+                    core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown
+                )
+        })
+    {
+        // A dispatched PrepareVm can own a live process before its success
+        // creates a logical VM record. Retain the original sealed create plan:
+        // its established compensation protocol alone may dispatch AbortPrepare
+        // alongside that exact unknown prepare. Replacing it with a new Kill
+        // loses this binding and permanently blocks the ordinary drain.
+        super::super::storage::apply(
+            tx,
+            namespace,
+            core::ControllerInput::Request(core::Request::Compensate(core::CompensationRequest {
+                sandbox: local.sandbox,
+                failure: core::FailureKind::Cancelled,
+                evidence: None,
+            })),
+        )?;
+        return Ok(());
+    }
     let operation = super::super::allocators::read(tx, "operation", &local.sandbox.0.to_string())?
         .checked_add(1)
         .map(core::OperationId)

@@ -76,13 +76,23 @@ fn finish(
     journal
         .record_internal_intent(&destroy, &mut NeverCrash)
         .unwrap();
-    crate::finish_accepted_kill_v1(
-        journal,
-        local.sandbox,
-        core::OperationId(2),
-        &mut workflow_fixture::worker,
-    )
-    .unwrap();
+    if activate {
+        crate::finish_accepted_kill_v1(
+            journal,
+            local.sandbox,
+            core::OperationId(2),
+            &mut workflow_fixture::worker,
+        )
+        .unwrap();
+    } else {
+        crate::finish_compensating_create_v1(
+            journal,
+            local.sandbox,
+            local.operation,
+            &mut workflow_fixture::worker,
+        )
+        .unwrap();
+    }
     assert_eq!(
         journal
             .capture_internal_progress(&destroy, &mut NeverCrash)
