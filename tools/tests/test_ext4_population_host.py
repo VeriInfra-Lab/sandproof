@@ -1,5 +1,6 @@
 """Supervisor contracts only: no HTTP server, VM, mount or privileged cleanup."""
 import copy
+from contextlib import ExitStack
 import importlib.util
 import json
 from pathlib import Path
@@ -510,25 +511,31 @@ class OwnedFixtureControlFlowTests(unittest.TestCase):
                 deployment = SimpleNamespace(services=services, settings=[{}, dict(
                     kernel='original-kernel', rootfs='original-rootfs')], build_config=root/'generated.json')
                 report = dict(passed=cleanup, guest_passed=True, cleanup={'passed': cleanup})
-                with patch.dict(probe.sys.modules, {'template_build': SimpleNamespace(BUILDKIT_HASHES={})}), \
-                        patch.object(probe.sys, 'platform', 'linux'), \
-                        patch.object(probe.os, 'geteuid', return_value=0), \
-                        patch.object(probe.importlib.metadata, 'version', return_value='2.51.0'), \
-                        patch.object(probe.host, 'source_revision', return_value={'revision': 'b'*40}), \
-                        patch.object(probe.host, 'trusted_path', side_effect=lambda value: value), \
-                        patch.object(probe, 'digest', return_value='8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd'), \
-                        patch.object(probe, 'private_json', return_value={}), \
-                        patch.object(original_fixture, 'prepare_registry_runtime', return_value=deployment) as prepared, \
-                        patch('server_process_crash.free_loopback_port', side_effect=[4100, 4101, 4102]), \
-                        patch.object(probe, 'configuration', return_value={}), \
-                        patch.object(probe, 'validate_configuration'), \
-                        patch.object(probe, 'fixed_artifacts', return_value={'kernel': probe.digest('kernel'),
-                                                                             'rootfs': probe.digest('rootfs')}), \
-                        patch.object(probe, 'host_uid_range', return_value=range(1000, 1002)), \
-                        patch('sdk_c02_acceptance.processes_in_uid_range', return_value=[]), \
-                        patch.object(probe, 'Backend'), patch.object(probe, 'Observations'), \
-                        patch.object(probe, 'supervise', side_effect=KeyboardInterrupt() if cancellation else None,
-                                     return_value=report) as supervise:
+                with ExitStack() as stack:
+                    stack.enter_context(patch.dict(probe.sys.modules, {
+                        'template_build': SimpleNamespace(BUILDKIT_HASHES={})}))
+                    stack.enter_context(patch.object(probe.sys, 'platform', 'linux'))
+                    stack.enter_context(patch.object(probe.os, 'geteuid', return_value=0))
+                    stack.enter_context(patch.object(probe.importlib.metadata, 'version', return_value='2.51.0'))
+                    stack.enter_context(patch.object(probe.host, 'source_revision', return_value={'revision': 'b'*40}))
+                    stack.enter_context(patch.object(probe.host, 'trusted_path', side_effect=lambda value: value))
+                    stack.enter_context(patch.object(probe, 'digest', return_value=
+                        '8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd'))
+                    stack.enter_context(patch.object(probe, 'private_json', return_value={}))
+                    prepared = stack.enter_context(patch.object(original_fixture,
+                        'prepare_registry_runtime', return_value=deployment))
+                    stack.enter_context(patch('server_process_crash.free_loopback_port',
+                        side_effect=[4100, 4101, 4102]))
+                    stack.enter_context(patch.object(probe, 'configuration', return_value={}))
+                    stack.enter_context(patch.object(probe, 'validate_configuration'))
+                    stack.enter_context(patch.object(probe, 'fixed_artifacts', return_value={
+                        'kernel': probe.digest('kernel'), 'rootfs': probe.digest('rootfs')}))
+                    stack.enter_context(patch.object(probe, 'host_uid_range', return_value=range(1000, 1002)))
+                    stack.enter_context(patch('sdk_c02_acceptance.processes_in_uid_range', return_value=[]))
+                    stack.enter_context(patch.object(probe, 'Backend'))
+                    stack.enter_context(patch.object(probe, 'Observations'))
+                    supervise = stack.enter_context(patch.object(probe, 'supervise',
+                        side_effect=KeyboardInterrupt() if cancellation else None, return_value=report))
                     observed = probe.exercise(args)
                 self.assertEqual(services.start.call_count, 1, observed)
                 services.start.assert_called_once_with()
