@@ -14,9 +14,14 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests/system'))
 import center_host_faults as runner
 import _center_fault_harness as harness
+import _runtime_services as services
 
 
 class CenterHostFaultsTests(unittest.TestCase):
+    def test_fault_harness_imports_the_original_service_activation_ceiling(self):
+        self.assertEqual(harness.MAX_ACTIVATION_BYTES, services.MAX_ACTIVATION_BYTES)
+        self.assertEqual(harness.MAX_ACTIVATION_BYTES, 200 * 1024**3)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

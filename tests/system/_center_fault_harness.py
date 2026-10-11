@@ -26,10 +26,12 @@ from tools.runtime_create_recovery import find_runtime_create, terminal_result
 from tools.system_acceptance import digest, json_file, private_path, write_once
 from _center_host_services import local_binding, process_facts
 from _internal_fault_relay import InternalFaultRelay, RelayMaterials
+from _runtime_services import MAX_ACTIVATION_BYTES
 from server_process_crash import fetch, free_loopback_port, prepare_fault_services, process_start_ticks
 from server_unready_abort import wait_for
 from server_vm_id_capacity import check_no_resources
 from server_bounded_churn import assert_budget, database_snapshot, tree_records
+from tools.template_physical_storage import envelope
 
 MIB = 1024**2
 CASE_BYTES = 512 * 1024
@@ -113,7 +115,6 @@ class Harness:
         if len(services)!=1 or services[0]['owner_uid']!=0:
             raise ValueError('original declared private host-control evidence budget missing')
         self.evidence_budget=services[0]
-        from tools.template_physical_storage import envelope, MAX_ACTIVATION_BYTES
         peak, inodes = envelope(profile)
         assert 2*peak <= MAX_ACTIVATION_BYTES == 200*1024**3
         self.policy = dict(schema_version=1,rounds=args.rounds,case_wait_seconds=args.wait_seconds,
