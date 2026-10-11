@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 //! Bounded, mutually authenticated center/host transport.
-//! This initial boundary exposes ONLY a read-only identity probe; it is not a
-//! lifecycle dispatcher. Existing public service wiring remains unchanged.
+//! Shared authenticated transport for identity probes and high-level lifecycle
+//! intents. Existing public service wiring remains unchanged.
 //! TLS material, registered endpoint and peer pins come from trusted assembly,
 //! never from a user/template or an HTTP header. File loading belongs to the
 //! protected deployment entrypoints, not this transport library.
@@ -11,8 +11,8 @@ mod client;
 mod server;
 mod tls;
 
-pub use client::{ProbeClient, RegisteredEndpoint};
-pub use server::ProbeServer;
+pub use client::{InternalClient, RegisteredEndpoint};
+pub use server::{InternalServer, LifecycleReceiver, ReceiveError, RejectLifecycle};
 pub use tls::{CertificatePin, ClientTls, ServerTls, TlsIdentity};
 
 use std::{error::Error, fmt, time::Duration};

@@ -11,6 +11,8 @@ pub const INTERNAL_PROTOCOL_VERSION: u16 = 1;
 pub const PROBE_PATH: &str = "/internal/v1/probe";
 pub const PROBE_BODY_BYTES: usize = 4096;
 
+pub mod lifecycle;
+
 /// Independent of the local core's epoch/generation and Redis revision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u64", into = "u64")]
