@@ -173,40 +173,16 @@ pub async fn handle<P: DataAccessPort>(
         Ok(token) => token,
         Err(status) => return response(status),
     };
-    // Even a syntactically valid but unknown token consumes a pre-auth slot.
-    // The standalone test path is finite too; production always supplies the
-    // gateway sharing its budget with management and reconciliation.
-    static TEST_REQUESTS: std::sync::OnceLock<Arc<RequestAdmission>> = std::sync::OnceLock::new();
-    let requests = gateway.as_ref().map_or_else(
-        || {
-            TEST_REQUESTS
-                .get_or_init(|| RequestAdmission::new(Default::default()).expect("valid defaults"))
-        },
-        |gateway| &gateway.requests,
-    );
     let control = control_request(&request);
-    let class = if control {
-        RequestClass::Control
-    } else {
-        RequestClass::Ordinary
+    let request_lease = match admit_request(gateway.as_deref(), control) {
+        Ok(lease) => lease,
+        Err(status) => return response(status),
     };
-    let Some(request_lease) = requests.try_acquire(class) else {
-        return response(StatusCode::TOO_MANY_REQUESTS);
-    };
-    let authorization_port = Arc::clone(&port);
-    let authorization_lease = Arc::clone(&request_lease);
-    let mut permit = match tokio::task::spawn_blocking(move || {
-        let _lease = authorization_lease;
-        authorization_port.data_permit(&token, kind)
-    })
-    .await
-    {
-        Ok(Ok(value)) => value,
-        Ok(Err(PortError::NotFound | PortError::Invalid)) => {
-            return response(StatusCode::UNAUTHORIZED);
-        }
-        Ok(Err(_)) | Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE),
-    };
+    let mut permit =
+        match authorize_data(Arc::clone(&port), Arc::clone(&request_lease), token, kind).await {
+            Ok(permit) => permit,
+            Err(status) => return response(status),
+        };
     let destination = permit.target();
     let lease = match &gateway {
         Some(gateway) => match gateway.acquire((destination.vm.0, destination.generation), control)
@@ -273,6 +249,47 @@ pub async fn handle<P: DataAccessPort>(
     match lease {
         Some(lease) => LeasedBody::wrap(response, lease),
         None => response,
+    }
+}
+
+fn admit_request(
+    gateway: Option<&Gateway>,
+    control: bool,
+) -> Result<Arc<RequestLease>, StatusCode> {
+    // Even a syntactically valid unknown token consumes a pre-auth slot.
+    // Production shares this budget with management and reconciliation;
+    // standalone transport fixtures are finite too.
+    static STANDALONE_REQUESTS: std::sync::OnceLock<Arc<RequestAdmission>> =
+        std::sync::OnceLock::new();
+    let requests = gateway.map_or_else(
+        || STANDALONE_REQUESTS.get_or_init(|| Arc::new(RequestAdmission::default())),
+        |gateway| &gateway.requests,
+    );
+    let class = if control {
+        RequestClass::Control
+    } else {
+        RequestClass::Ordinary
+    };
+    requests
+        .try_acquire(class)
+        .ok_or(StatusCode::TOO_MANY_REQUESTS)
+}
+
+async fn authorize_data<P: DataAccessPort>(
+    port: Arc<P>,
+    lease: Arc<RequestLease>,
+    token: String,
+    kind: DataKind,
+) -> Result<P::Permit, StatusCode> {
+    match tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        port.data_permit(&token, kind)
+    })
+    .await
+    {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(PortError::NotFound | PortError::Invalid)) => Err(StatusCode::UNAUTHORIZED),
+        Ok(Err(_)) | Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE),
     }
 }
 

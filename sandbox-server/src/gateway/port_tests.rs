@@ -133,7 +133,7 @@ async fn locked_authorization_is_bounded_before_dispatch_for_good_and_bad_tokens
         Arc::new(Gateway::with_admission(TransferLimits::fixture(), requests.clone()).unwrap());
     let lock = Arc::new(std::sync::Mutex::new(()));
     let (locked, held) = tokio::sync::oneshot::channel();
-    let (release, released) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel::<()>();
     let holder_lock = Arc::clone(&lock);
     let holder = std::thread::spawn(move || {
         let _held = holder_lock.lock().unwrap();
