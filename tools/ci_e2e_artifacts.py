@@ -205,7 +205,7 @@ def require_boundary(observed):
 
 
 def require_service_boundary(report, manifest):
-    """Unwired prerequisite for the atomic fixture/reducer cutover.
+    """Shared prerequisite for the sole center/host fixture and reducer.
 
     This returns an allowlisted identity, NEVER a pass result. Original grading,
     DK cases, persisted identities and exact process/network/storage cleanup
@@ -273,14 +273,15 @@ def _roles(value):
 
 def execution_manifest(manifest, *, run_id, candidate_manifest_sha256, roles,
                        redis, tls_sha256, budget_sha256):
-    """Unwired run binding, NOT execution, scoring or cleanup evidence.
+    """Original run binding, NOT execution, scoring or cleanup evidence.
 
     The trusted supervisor must first collect actual protected directory/owner
     facts and approved configuration/material digests. This pure contract does
     not touch the filesystem, launch a service, inspect secrets, allocate a fresh
     run identity or attest that those facts were observed. Instance-UID-pool
     disjointness belongs to the final validated configuration assembly, not a
-    second configuration parser here. The installed gate remains unchanged.
+    second configuration parser here. This helper never installs a supervisor
+    or changes the promotion gate.
     """
     identity = public_identity(manifest)  # The sole candidate/version validator.
     checked_roles = _roles(roles)
