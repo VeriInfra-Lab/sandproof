@@ -1,5 +1,4 @@
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
-use sandbox_controller_core as core;
 use sandproof_center_core::{
     AvailableTemplate, Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget,
 };
@@ -195,7 +194,7 @@ async fn host(path: &Path) -> Result<()> {
             if tokio::time::Instant::now() >= until {
                 return Err("host acceptance deadline; resources may remain".into());
             }
-            for request in app.internal_pending(&cfg.identity)? {
+            for request in checked(app.internal_pending(&cfg.identity))? {
                 let template = (request.intent == Intent::Create).then(|| InternalTemplate {
                     revision: cfg.template_revision.clone(),
                     digest: cfg.template_digest,

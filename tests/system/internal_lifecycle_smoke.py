@@ -4,14 +4,17 @@ Requires an independently reviewed exact commit and root-protected artifacts.
 Uses the installed CI host lease; unknown cleanup retains the exclusive marker.
 No global process killing, network changes, image downloads or fixture rewrites.
 """
-import runpy
-from pathlib import Path
-
-runpy.run_path(str(Path(__file__).with_name("_assertions_required.py")))["require_assertions"]()
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
 
 import argparse
 import json
 import os
+import runpy
 import secrets
 import shutil
 import socket
@@ -176,12 +179,17 @@ def run(args):
     control = trusted_path(Path(installed["control_checkout"]))
     sys.path.insert(0, str(control))
     lease_module = runpy.run_path(str(control / "tools/ci_e2e_supervisor.py"))
-    lease = lease_module["HostLease"](installed["ci_state_root"], secrets.token_hex(16))
+    lease_identity = secrets.token_hex(16)
+    lease = lease_module["HostLease"](installed["ci_state_root"], lease_identity)
     root = Path(tempfile.mkdtemp(prefix="m.", dir=installed["scratch_parent"]))
-    shared = Path(tempfile.mkdtemp(prefix="sandproof-min-", dir="/var/tmp"))
+    shared_parent = Path("/opt/sandproof-e2e/min-runs")
+    shared_parent.mkdir(mode=0o755, exist_ok=True)
+    trusted_path(shared_parent)
+    shared = Path(tempfile.mkdtemp(prefix="run-", dir=shared_parent))
     shared.chmod(0o711)
     report = {"commit": args.expected_commit, "scope": "real Redis + mTLS + original host create/destroy",
-              "cleanup": "unknown", "result": "failed", "resources": "unknown"}
+              "cleanup": "unknown", "result": "failed", "resources": "unknown",
+              "host_lease_identity": lease_identity}
     children = []
     paused = False
     safe = False
