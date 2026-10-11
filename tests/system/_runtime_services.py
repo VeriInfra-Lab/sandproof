@@ -353,16 +353,42 @@ class RuntimeServices:
             raise ValueError('explicit test readiness purpose required')
         deadline=time.monotonic()+timeout
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        required={node['registration']['identity']['node_id']:node for node in self.center_config['nodes']}
+        catalog=(required,self.expected_templates)
+        # This hint schedules diagnostics only. A prior successful ORIGINAL
+        # audit saw these fixed caches, so later restarts need an observation
+        # interval, not another initial download interval. Every call must still
+        # obtain a fresh audit, validate nodes_ready and observe the real roles.
+        hydrated=getattr(self,'_readiness_catalog_observed',None)==catalog
+        quiet_ms=self.center_config['expiry_scan_ms']+self.center_config[
+            'poll_interval_ms' if hydrated else 'reply_timeout_ms']
+        quiet_seconds=quiet_ms/1000
+        public_since=None
         while time.monotonic()<deadline:
             if any(process.poll() is not None for process in self.processes.children.values()):
                 raise RuntimeError('original service exited before authenticated readiness')
             try:
-                if fetch(opener,self.sdk_url,'GET','/v2/sandboxes',self.key)[0]!=200:
-                    time.sleep(.1)
-                    continue
+                listening=fetch(opener,self.sdk_url,'GET','/v2/sandboxes',self.key)[0]==200
+            except (OSError,ValueError):
+                listening=False
+            if not listening:
+                public_since=None
+                time.sleep(min(.1,max(0,deadline-time.monotonic())))
+                continue
+            now=time.monotonic()
+            if public_since is None:
+                public_since=now
+            if now<public_since+quiet_seconds:
+                # HTTP 200 is only a listener observation. Leave the original
+                # coordinator/artifact server running continuously before a
+                # planned writer-lease audit can interrupt their first work.
+                time.sleep(min(.2,max(0,deadline-now)))
+                continue
+            if now>=deadline:
+                break
+            try:
                 self.processes.stop('center')
                 audit=self.processes.audit('center')
-                required={node['registration']['identity']['node_id']:node for node in self.center_config['nodes']}
                 ready=nodes_ready(audit,required,self.expected_templates,
                                  now_ms=int(time.time()*1000),for_admission=for_admission)
             except (OSError,ValueError):
@@ -371,16 +397,23 @@ class RuntimeServices:
                 center=self.processes.children.get('center')
                 if center is not None and center.poll() is not None:
                     self.processes.start('center')
+                # A restart cancels any uncommitted preparation. Never reuse a
+                # preceding process's elapsed background window for its audit.
+                public_since=None
             if ready:
+                self._readiness_catalog_observed=copy.deepcopy(catalog)
+                quiet_seconds=(self.center_config['expiry_scan_ms']+
+                               self.center_config['poll_interval_ms'])/1000
                 # Restart is real exec/privilege drop, not an immediately true
                 # Popen PID. Observe the original roles within this same bound.
                 try:
                     self.processes.observe()
-                    if fetch(opener,self.sdk_url,'GET','/v2/sandboxes',self.key)[0]==200:
+                    if (fetch(opener,self.sdk_url,'GET','/v2/sandboxes',self.key)[0]==200
+                            and time.monotonic()<deadline):
                         return audit
                 except (OSError,ValueError):
                     pass
-            time.sleep(.2)
+            time.sleep(min(.2,max(0,deadline-time.monotonic())))
         raise RuntimeError('authenticated host/cache readiness unobserved; no sandbox creation attempted')
 
     def planned_audit(self,name):

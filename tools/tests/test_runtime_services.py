@@ -1,6 +1,7 @@
 """Shared assembly contracts only: no product process, TLS, Redis or KVM."""
 import argparse
 import copy
+from contextlib import ExitStack
 import os
 from pathlib import Path
 import shutil
@@ -15,6 +16,88 @@ sys.path.insert(0,str(ROOT/'tests/system'))
 import _runtime_services as services
 from _complete_runtime import complete_runtime
 from tools.benchmark_ci import remove_private_tree
+
+
+class ReadinessSimulation:
+    """Fake time and canceled worker progress, not a product health authority."""
+    def __init__(self,node,*,commit_after=0,missing_audits=0,never_ready=False,host_exit_at=None):
+        self.now=0.0
+        self.center_started_at=0.0
+        self.center_running=True
+        self.committed=False
+        self.commit_after=commit_after
+        self.missing_audits=missing_audits
+        self.never_ready=never_ready
+        self.host_exit_at=host_exit_at
+        self.node=copy.deepcopy(node)
+        self.stops=[]
+        self.starts=[]
+        self.audits=[]
+        self.canceled=0
+        self.requests=[]
+        self.instance=services.RuntimeServices()
+        self.instance.center_config=dict(reply_timeout_ms=5000,expiry_scan_ms=1000,poll_interval_ms=100,
+            nodes=[dict(registration=copy.deepcopy(node))])
+        self.instance.expected_templates={node['identity']['node_id']:{'base-r1'}}
+        self.instance.sdk_url='http://fixed-component.invalid'
+        self.instance.key='component-only-key'
+        self.processes=Mock(children={})
+        for name in ('center','host-0','redis'):
+            self.processes.children[name]=Mock()
+            self.processes.children[name].poll.side_effect=lambda name=name:self.poll(name)
+        self.processes.stop.side_effect=self.stop
+        self.processes.start.side_effect=self.start
+        self.processes.audit.side_effect=self.audit
+        self.instance.processes=self.processes
+
+    def poll(self,name):
+        if name=='center' and not self.center_running:
+            return 0
+        if name=='host-0' and self.host_exit_at is not None and self.now>=self.host_exit_at:
+            return 93
+        return None
+
+    def sleep(self,seconds):
+        self.now+=seconds
+
+    def stop(self,name):
+        if name!='center':
+            raise ValueError('readiness must not stop another role')
+        if self.now-self.center_started_at>=self.commit_after:
+            self.committed=True
+        elif not self.committed:
+            self.canceled+=1
+        self.center_running=False
+        self.stops.append(self.now)
+
+    def start(self,name):
+        if name!='center':
+            raise ValueError('readiness must not restart another role')
+        self.center_running=True
+        self.center_started_at=self.now
+        self.starts.append(self.now)
+
+    def audit(self,name):
+        if name!='center' or self.center_running:
+            raise ValueError('only the original offline center audit is allowed')
+        self.audits.append(self.now)
+        node=copy.deepcopy(self.node)
+        node['healthy_until_ms']=int((1000+self.now)*1000)+10000
+        if not self.committed or self.never_ready or len(self.audits)<=self.missing_audits:
+            node['templates']=[]
+        return dict(nodes=[node])
+
+    def fetch(self,_opener,_url,method,path,_key,*args,**kwargs):
+        self.requests.append((method,path,args,kwargs))
+        return 200,b'[]'
+
+    def run(self,**kwargs):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(services.time,'monotonic',side_effect=lambda:self.now))
+            stack.enter_context(patch.object(services.time,'time',side_effect=lambda:1000+self.now))
+            stack.enter_context(patch.object(services.time,'sleep',side_effect=self.sleep))
+            stack.enter_context(patch.object(services,'fetch',side_effect=self.fetch))
+            return self.instance.wait_ready(**kwargs)
 
 
 class RuntimeServicesTests(unittest.TestCase):
@@ -110,6 +193,97 @@ class RuntimeServicesTests(unittest.TestCase):
             self.assertFalse(services.nodes_ready(dict(nodes=[malformed]),registered,templates,
                 now_ms=1000,for_admission=False),field)
         self.assertFalse(services.nodes_ready(dict(nodes=[node,node]),registered,templates,now_ms=1000))
+
+    def test_readiness_leaves_initial_preparation_running_instead_of_canceling_it_on_http_200(self):
+        fixture=ReadinessSimulation(self.node(),commit_after=5.5)
+        audit=fixture.run(timeout=10)
+        self.assertEqual(audit['nodes'][0]['templates'][0]['revision'],'base-r1')
+        self.assertEqual(fixture.canceled,0)
+        self.assertEqual(len(fixture.stops),1)
+        self.assertGreaterEqual(fixture.stops[0],6)
+        self.assertLess(fixture.stops[0],6.3)
+        fixture.processes.observe.assert_called_once()
+        self.assertTrue(all(request==('GET','/v2/sandboxes',(),{}) for request in fixture.requests))
+
+    def test_public_http_200_never_substitutes_for_original_persisted_cache_readiness(self):
+        fixture=ReadinessSimulation(self.node(),never_ready=True)
+        fixture.instance.center_config['reply_timeout_ms']=1000
+        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
+            fixture.run(timeout=6)
+        self.assertEqual(fixture.now,6)
+        self.assertGreaterEqual(len(fixture.audits),1)
+        self.assertTrue(all(right-left>=2 for left,right in zip(fixture.starts,fixture.stops[1:])))
+        fixture.processes.observe.assert_not_called()
+        self.assertFalse(hasattr(fixture.instance,'_readiness_catalog_observed'))
+
+    def test_host_exit_is_observed_during_the_uninterrupted_preparation_window(self):
+        fixture=ReadinessSimulation(self.node(),commit_after=5.5,host_exit_at=2)
+        with self.assertRaisesRegex(RuntimeError,'original service exited'):
+            fixture.run(timeout=10)
+        self.assertLess(fixture.now,2.3)
+        self.assertEqual(fixture.stops,[])
+        fixture.processes.audit.assert_not_called()
+        fixture.processes.observe.assert_not_called()
+
+    def test_failed_offline_audit_restarts_with_a_new_continuous_background_window(self):
+        fixture=ReadinessSimulation(self.node(),missing_audits=1)
+        fixture.instance.center_config['reply_timeout_ms']=1000
+        fixture.run(timeout=6)
+        self.assertEqual(len(fixture.audits),2)
+        self.assertGreaterEqual(fixture.stops[1]-fixture.starts[0],2)
+        fixture.processes.observe.assert_called_once()
+
+    def test_successful_original_cache_observation_only_shortens_later_diagnostic_schedule(self):
+        fixture=ReadinessSimulation(self.node())
+        fixture.run(timeout=10)
+        began=fixture.now
+        fixture.run(timeout=3,for_admission=False)
+        self.assertGreaterEqual(fixture.stops[1]-began,1.1)
+        self.assertLess(fixture.stops[1]-began,1.4)
+        self.assertEqual(len(fixture.audits),2)
+        self.assertEqual(fixture.processes.observe.call_count,2)
+        # The hint is not health/cache evidence. A fresh failed ORIGINAL audit
+        # still fails even though the previous fixed catalog was accepted.
+        fixture.never_ready=True
+        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
+            fixture.run(timeout=3,for_admission=False)
+        self.assertEqual(fixture.processes.observe.call_count,2)
+
+    def test_original_cache_hint_does_not_hide_a_failed_actual_role_observation(self):
+        fixture=ReadinessSimulation(self.node())
+        fixture.processes.observe.side_effect=[ValueError('role exec not observed yet'),{}]
+        fixture.run(timeout=8)
+        self.assertEqual(len(fixture.audits),2)
+        self.assertGreaterEqual(fixture.stops[1]-fixture.starts[0],1.1)
+        # Existing 0.2s polling can occur once before the first public probe
+        # and once when the 1.1s diagnostic interval is crossed.
+        self.assertLess(fixture.stops[1]-fixture.starts[0],1.5)
+        self.assertEqual(fixture.processes.observe.call_count,2)
+        refused=ReadinessSimulation(self.node())
+        refused.processes.observe.side_effect=ValueError('role exec never observed')
+        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
+            refused.run(timeout=8)
+        self.assertGreaterEqual(refused.processes.observe.call_count,1)
+
+    def test_diagnostic_hint_is_invalidated_when_the_fixed_registered_catalog_changes(self):
+        fixture=ReadinessSimulation(self.node())
+        fixture.run(timeout=10)
+        fixture.instance.expected_templates['host-runtime'].add('different-r1')
+        began=fixture.now
+        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
+            fixture.run(timeout=3)
+        self.assertAlmostEqual(fixture.now-began,3)
+        self.assertEqual(len(fixture.audits),1)
+
+    def test_default_readiness_deadline_does_not_shorten_an_unfinished_background_window(self):
+        fixture=ReadinessSimulation(self.node())
+        fixture.instance.center_config['reply_timeout_ms']=60000
+        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
+            fixture.run()
+        self.assertEqual(fixture.now,60)
+        self.assertEqual(fixture.stops,[])
+        fixture.processes.audit.assert_not_called()
+        fixture.processes.observe.assert_not_called()
 
     def test_common_cli_has_two_products_and_no_old_server_option(self):
         parser=argparse.ArgumentParser()
