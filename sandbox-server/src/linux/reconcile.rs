@@ -292,14 +292,14 @@ fn audit_launch_credential_binding(
 fn reconciliation_pass(
     mut maintain: impl FnMut() -> Result<MaintenanceReport, PortError>,
     recover: impl FnOnce() -> Result<RecoveryReport, PortError>,
-    expire: impl FnOnce() -> Result<ExpiryReport, PortError>,
+    process_due: impl FnOnce() -> Result<ExpiryReport, PortError>,
 ) -> Result<(RecoveryReport, ExpiryReport, MaintenanceReport), FaultRecord> {
     let failure =
         |stage, error: PortError| FaultRecord::application(stage, &error, FaultContext::default());
     // Preserve the original capacity/recovery/expiry/retirement order exactly.
     maintain().map_err(|error| failure(FaultStage::MaintenanceBefore, error))?;
     let recovery = recover().map_err(|error| failure(FaultStage::Recovery, error))?;
-    let expiry = expire().map_err(|error| failure(FaultStage::Expiry, error))?;
+    let expiry = process_due().map_err(|error| failure(FaultStage::Expiry, error))?;
     let maintenance = maintain().map_err(|error| failure(FaultStage::MaintenanceAfter, error))?;
     Ok((recovery, expiry, maintenance))
 }
