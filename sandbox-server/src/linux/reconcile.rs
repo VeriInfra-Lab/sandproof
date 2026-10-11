@@ -2,8 +2,12 @@
 
 use core::maintenance::slots::HostSlotPhase;
 use sandbox_controller_core as core;
+use sandproof_controller_service::application::fault::{
+    FaultContext, FaultKind, FaultRecord, FaultStage,
+};
 use sandproof_controller_service::application::{
-    ApplicationError as PortError, ControllerApplication, can_install_host_slot_binding,
+    ApplicationError as PortError, ControllerApplication, ExpiryReport, MaintenanceReport,
+    RecoveryReport, can_install_host_slot_binding,
 };
 use sandproof_controller_service::{ControllerJournal, HostSlotContext};
 use sandproof_node::NodeHost;
@@ -285,6 +289,21 @@ fn audit_launch_credential_binding(
     }
 }
 
+fn reconciliation_pass(
+    mut maintain: impl FnMut() -> Result<MaintenanceReport, PortError>,
+    recover: impl FnOnce() -> Result<RecoveryReport, PortError>,
+    process_due: impl FnOnce() -> Result<ExpiryReport, PortError>,
+) -> Result<(RecoveryReport, ExpiryReport, MaintenanceReport), FaultRecord> {
+    let failure =
+        |stage, error: PortError| FaultRecord::application(stage, &error, FaultContext::default());
+    // Preserve the original capacity/recovery/expiry/retirement order exactly.
+    maintain().map_err(|error| failure(FaultStage::MaintenanceBefore, error))?;
+    let recovery = recover().map_err(|error| failure(FaultStage::Recovery, error))?;
+    let expiry = process_due().map_err(|error| failure(FaultStage::Expiry, error))?;
+    let maintenance = maintain().map_err(|error| failure(FaultStage::MaintenanceAfter, error))?;
+    Ok((recovery, expiry, maintenance))
+}
+
 pub(super) fn spawn_reconciliation_scanner(
     port: Arc<ControllerApplication<NodeHost>>,
     seconds: u64,
@@ -303,12 +322,11 @@ pub(super) fn spawn_reconciliation_scanner(
             let port = Arc::clone(&port);
             match tokio::task::spawn_blocking(move || {
                 let _lease = lease;
-                // Free tail capacity before recovery/expiry append inputs.
-                port.maintain()?;
-                let recovery = port.recover_on_startup()?;
-                let expiry = port.expire_due_report()?;
-                let maintenance = port.maintain()?;
-                Ok::<_, PortError>((recovery, expiry, maintenance))
+                reconciliation_pass(
+                    || port.maintain(),
+                    || port.recover_on_startup(),
+                    || port.expire_due_report(),
+                )
             })
             .await
             {
@@ -328,13 +346,29 @@ pub(super) fn spawn_reconciliation_scanner(
                             maintenance.pending_sandboxes
                         );
                         last_failure_log = Some(Instant::now());
+                        if let Some(fault) = recovery.first_fault {
+                            fault.emit();
+                        }
                     }
                 }
                 Ok(Ok(_)) => last_failure_log = None,
-                Ok(Err(_)) => {
-                    eprintln!("reconciliation, expiry or maintenance worker needs attention");
+                Ok(Err(fault)) => {
+                    if last_failure_log
+                        .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
+                    {
+                        fault.emit();
+                        last_failure_log = Some(Instant::now());
+                    }
                 }
-                Err(error) => eprintln!("reconciliation worker join failure: {error}"),
+                Err(error) => {
+                    // JoinError may contain an arbitrary panic payload.
+                    let kind = if error.is_panic() {
+                        FaultKind::TaskPanicked
+                    } else {
+                        FaultKind::TaskCancelled
+                    };
+                    FaultRecord::host(FaultStage::Join, kind, FaultContext::default()).emit();
+                }
             }
         }
     }));
@@ -353,6 +387,9 @@ pub(super) fn recover_before_serving(
             "startup recovery left {} sandboxes unresolved ({} after host or receipt errors); no uncertain host action was repeated",
             recovery.unresolved_sandboxes, recovery.failed_sandboxes
         );
+        if let Some(fault) = recovery.first_fault {
+            fault.emit();
+        }
     }
     Ok(())
 }

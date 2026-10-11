@@ -289,6 +289,12 @@ SQLite 提交本身若报告结果不确定，调用方必须按操作编号重�
 
 ## 生命周期和撤销
 
+### 内部故障诊断（#290 R6）
+
+应用层的七类业务错误及公开 HTTP 状态/脱敏消息保持原合同。节点在映射错误前，只投影固定故障类别、OS errno/I/O 类别、SQLite 数值错误码或 Firecracker HTTP 状态；不保存或输出底层消息、命令/策略内容、令牌、环境变量、宿主路径和任意 panic 文本。关联字段只包含已有的数值沙箱/操作/代数/尝试/VM 编号；未知字段省略，不用诊断解析结果授予权限。尚未类型化的宿主错误归为 `HostInvariant`，不伪称已保留完整原文或因果链。
+
+恢复继续使用原 `is_local_recovery_failure` 判断，不使用诊断故障域决定能否恢复。单实例失败仍只停放该实例，共享存储损坏仍中止恢复，共享凭据索引故障仍保持原拒绝与清理语义；`CommitUncertain` 和已接受工作的 `OutcomeUnknown` 不改成可安全重试或成功。后台维护前、恢复、到期和维护后的次序不变，日志指出具体失败阶段。每轮恢复报告最多保存一个固定大小的故障样本，节点最后错误也只有一个脱敏样本；其余通过原 stderr 运维出口记录，不建立数据库、消息队列或可观测存储平台。诊断输出失败不改变业务返回值；诊断不提供无条件墙钟期限或持久交付保证。
+
 ### 请求派发预算（#290 R1）
 
 前置入口可从[独立 Nginx 示例](../tests/system/tls-front.example.conf)制备：替换域名、证书、监听和固定环回目标后，运行 `nginx -t -c /绝对路径/配置.conf`，部署验收再检查慢请求头、连接上限及固定 SDK 流式调用。该示例未自动部署；实际部署必须记录配置与结果。`limit_conn` 只统计已读完请求头的请求，所以还需要固定 worker 数及 `worker_connections` 约束前期连接（也计入上游连接），不能只按 IP 限流或只依赖 TLS。语义见 [Nginx 连接限制](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html)及 [worker_connections](https://nginx.org/en/docs/ngx_core_module.html#worker_connections)。

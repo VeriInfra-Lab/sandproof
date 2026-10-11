@@ -1,7 +1,9 @@
 //! Host worker adaptation and deterministic debug-only fault boundaries.
 
+use crate::fault::{busy, project};
 use crate::{HostObservation, LinuxWorker, PhysicalProfileLease};
 use sandbox_controller_core as core;
+use sandproof_controller_service::application::fault::{FaultContext, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError, DataRelay, HostCapacity, HostSlots, LaunchConfiguration, TemplateArtifacts,
     WorkEvidence, WorkExecution, WorkRecovery,
@@ -58,20 +60,12 @@ impl WorkRecovery for NodeHost {
         match self.worker.observe_action(action) {
             Ok(receipt) => Some(receipt),
             Err(error) => {
-                let kind = match action.command.command() {
-                    core::Command::InstallFence {
-                        terminal: false, ..
-                    } => "open fence",
-                    core::Command::InstallFence { terminal: true, .. } => "terminal fence",
-                    core::Command::PrepareVm { .. } => "prepare VM",
-                    core::Command::ActivateVm { .. } => "activate VM",
-                    core::Command::ConfigureNetwork { .. } => "configure network",
-                    core::Command::StopVm { .. } => "stop VM",
-                    core::Command::AbortPrepare { .. } => "abort prepare",
-                    core::Command::CleanupVm { .. } => "cleanup VM",
-                    _ => "other host action",
-                };
-                eprintln!("host {kind} observation remains unknown: {error}");
+                project(
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
                 None
             }
         }
@@ -89,7 +83,13 @@ impl WorkRecovery for NodeHost {
         }
         self.worker
             .reclaim_incomplete_prepare(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 
     fn reclaim_incomplete_network(
@@ -98,7 +98,13 @@ impl WorkRecovery for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .reclaim_incomplete_network(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 
     fn reclaim_incomplete_activation(
@@ -107,7 +113,13 @@ impl WorkRecovery for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .reclaim_incomplete_activation(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 
     fn reclaim_incomplete_terminal_fence(
@@ -116,7 +128,13 @@ impl WorkRecovery for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .reclaim_incomplete_terminal_fence(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 
     fn reclaim_incomplete_open_fence(
@@ -125,7 +143,13 @@ impl WorkRecovery for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .reclaim_incomplete_open_fence(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 
     fn reclaim_incomplete_stop(
@@ -140,7 +164,13 @@ impl WorkRecovery for NodeHost {
         }
         self.worker
             .reclaim_incomplete_stop(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 
     fn reclaim_incomplete_abort_prepare(
@@ -149,7 +179,13 @@ impl WorkRecovery for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .reclaim_incomplete_abort_prepare(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 
     fn reclaim_incomplete_cleanup(
@@ -158,7 +194,13 @@ impl WorkRecovery for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .reclaim_incomplete_cleanup(action)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Reclaim,
+                    FaultContext::action(action),
+                )
+            })
     }
 }
 
@@ -170,13 +212,23 @@ impl HostSlots for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .bind_host_slot(context, allow_install)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::BindSlot,
+                    FaultContext::slot(context),
+                )
+            })
     }
 
     fn release_host_slot(&mut self, context: &HostSlotContext) -> Result<(), ApplicationError> {
-        self.worker
-            .release_host_slot(context)
-            .map_err(|_| ApplicationError::Busy)
+        self.worker.release_host_slot(context).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::ReleaseSlot,
+                FaultContext::slot(context),
+            )
+        })
     }
 }
 
@@ -190,7 +242,17 @@ impl DataRelay for NodeHost {
         self.worker
             .acquire_data_gate(sandbox, vm, generation)
             .map(Some)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::DataGate,
+                    FaultContext {
+                        vm: Some(vm.0),
+                        generation: Some(generation),
+                        ..FaultContext::instance(sandbox, None)
+                    },
+                )
+            })
     }
 
     fn spawn_data_relay(
@@ -203,6 +265,16 @@ impl DataRelay for NodeHost {
         self.worker
             .spawn_data_relay(sandbox, vm, generation, control, &self.relay_executable)
             .map_err(|error| {
+                project(
+                    FaultStage::Relay,
+                    FaultContext {
+                        vm: Some(vm.0),
+                        generation: Some(generation),
+                        ..FaultContext::instance(sandbox, None)
+                    },
+                    error.as_ref(),
+                )
+                .emit();
                 if error
                     .downcast_ref::<crate::RouteCapacityExceeded>()
                     .is_some()
@@ -215,17 +287,25 @@ impl DataRelay for NodeHost {
     }
 
     fn data_gate_drained(&self, context: &HostSlotContext) -> Result<bool, ApplicationError> {
-        self.worker
-            .data_gate_drained(context)
-            .map_err(|_| ApplicationError::Busy)
+        self.worker.data_gate_drained(context).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::DataGate,
+                FaultContext::slot(context),
+            )
+        })
     }
 }
 
 impl HostCapacity for NodeHost {
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
-        self.worker
-            .available_disk_bytes()
-            .map_err(|_| ApplicationError::Busy)
+        self.worker.available_disk_bytes().map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::DiskCapacity,
+                FaultContext::default(),
+            )
+        })
     }
 
     fn validate_physical_storage(
@@ -235,13 +315,19 @@ impl HostCapacity for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.physical_storage
             .validate_admission(profile, pool)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::PhysicalStorage,
+                    FaultContext::default(),
+                )
+            })
     }
 
     fn public_ipv4_ready(&self) -> Result<bool, ApplicationError> {
         std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
             .map(|value| value.trim() == "1")
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| busy(&error, FaultStage::PublicIpv4, FaultContext::default()))
     }
 }
 
@@ -251,21 +337,33 @@ impl LaunchConfiguration for NodeHost {
         sandbox: core::SandboxId,
         token: &str,
     ) -> Result<(), ApplicationError> {
-        self.worker
-            .put_secret(sandbox, token)
-            .map_err(|_| ApplicationError::Busy)
+        self.worker.put_secret(sandbox, token).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::PutCredential,
+                FaultContext::instance(sandbox, None),
+            )
+        })
     }
 
     fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
-        self.worker
-            .has_secret(sandbox)
-            .map_err(|_| ApplicationError::Busy)
+        self.worker.has_secret(sandbox).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::CheckCredential,
+                FaultContext::instance(sandbox, None),
+            )
+        })
     }
 
     fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
-        self.worker
-            .token_for(sandbox)
-            .map_err(|_| ApplicationError::Busy)
+        self.worker.token_for(sandbox).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::ReadCredential,
+                FaultContext::instance(sandbox, None),
+            )
+        })
     }
 
     fn put_launch_config(
@@ -276,7 +374,13 @@ impl LaunchConfiguration for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .put_launch_secret(sandbox, token, env_vars)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::PutCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 
     fn has_launch_config(
@@ -286,7 +390,13 @@ impl LaunchConfiguration for NodeHost {
     ) -> Result<bool, ApplicationError> {
         self.worker
             .has_launch_secret(sandbox, env_vars)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::CheckCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 
     fn put_bound_launch_config(
@@ -297,7 +407,13 @@ impl LaunchConfiguration for NodeHost {
     ) -> Result<(), ApplicationError> {
         self.worker
             .put_bound_launch_secret(sandbox, token, options)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::PutCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 
     fn has_bound_launch_config(
@@ -307,15 +423,25 @@ impl LaunchConfiguration for NodeHost {
     ) -> Result<bool, ApplicationError> {
         self.worker
             .has_bound_launch_secret(sandbox, options)
-            .map_err(|_| ApplicationError::Busy)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::CheckCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 }
 
 impl TemplateArtifacts for NodeHost {
     fn validate_template(&self, template: &TemplateBinding) -> Result<(), ApplicationError> {
-        self.worker
-            .validate_template(template)
-            .map_err(|_| ApplicationError::Busy)
+        self.worker.validate_template(template).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::TemplateValidation,
+                FaultContext::default(),
+            )
+        })
     }
 
     fn cache_candidate_verification(

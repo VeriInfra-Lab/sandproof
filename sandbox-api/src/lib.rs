@@ -56,7 +56,7 @@ pub enum ConfigurationError {
 // Application owns failure semantics; only this boundary maps them to HTTP.
 pub use sandproof_controller_service::application::ApplicationError as PortError;
 
-fn port_error_status(error: &PortError) -> StatusCode {
+fn port_error_status(error: PortError) -> StatusCode {
     match error {
         PortError::Invalid => StatusCode::BAD_REQUEST,
         PortError::NotFound => StatusCode::NOT_FOUND,
@@ -368,7 +368,7 @@ impl IntoResponse for ApiFailure {
         let status = match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::BadRequest => StatusCode::BAD_REQUEST,
-            Self::Port(error) => port_error_status(&error),
+            Self::Port(error) => port_error_status(error),
         };
         (status, Json(serde_json::json!({"code": status.as_u16(), "message": status.canonical_reason().unwrap_or("error")}))).into_response()
     }
@@ -604,6 +604,30 @@ mod lifecycle_deadline_tests {
     use super::*;
     use crate::admission::RequestAdmissionLimits;
     use std::sync::mpsc;
+
+    #[tokio::test]
+    async fn public_failures_remain_status_only_without_internal_diagnostics() {
+        for (error, status) in [
+            (PortError::Invalid, StatusCode::BAD_REQUEST),
+            (PortError::NotFound, StatusCode::NOT_FOUND),
+            (PortError::Conflict, StatusCode::CONFLICT),
+            (PortError::QuotaExceeded, StatusCode::TOO_MANY_REQUESTS),
+            (PortError::Busy, StatusCode::SERVICE_UNAVAILABLE),
+            (PortError::OutcomeUnknown, StatusCode::INTERNAL_SERVER_ERROR),
+            (PortError::Failed, StatusCode::INTERNAL_SERVER_ERROR),
+        ] {
+            let response = ApiFailure::Port(error).into_response();
+            assert_eq!(response.status(), status);
+            let bytes = axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(
+                body,
+                serde_json::json!({ "code": status.as_u16(), "message": status.canonical_reason().unwrap() })
+            );
+        }
+    }
 
     fn budget() -> Arc<RequestAdmission> {
         RequestAdmission::new(RequestAdmissionLimits {

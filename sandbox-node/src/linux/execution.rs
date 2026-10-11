@@ -23,7 +23,13 @@ impl LinuxWorker {
                 WorkOutcome::ObservedSuccess(evidence)
             }
             Err(error) => {
-                self.last_error = Some(error.to_string());
+                let fault = crate::fault::project(
+                    sandproof_controller_service::application::fault::FaultStage::Execute,
+                    sandproof_controller_service::application::fault::FaultContext::action(action),
+                    error.as_ref(),
+                );
+                self.last_error = Some(fault.to_string());
+                fault.emit();
                 WorkOutcome::Unknown {
                     reason: UnknownReason::ObservationUnavailable,
                     last_observation: None,
