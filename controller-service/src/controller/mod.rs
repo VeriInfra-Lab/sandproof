@@ -32,17 +32,18 @@ pub use checkpoint::{
     CheckpointInfo, CheckpointProgress, HostReleaseWitness, MaintenanceConfig, RetirementCandidate,
 };
 
-pub use admission::{
-    AdmissionError, AdmissionLimits, CreateAdmission, CreateNetwork, CreateNetworking,
-    CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS, Lifetime,
-};
+#[cfg(test)]
+use crate::{AdmissionError, AdmissionLimits};
+pub use admission::{CreateAdmission, CreateOptions, Lifetime};
+#[cfg(test)]
+use sandproof_protocol::ResourceEvidence;
 
 use crate::{
     CrashInjector, CrashPoint, DispatchResult, Journal, JournalError, WorkerTransportError,
 };
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use sandbox_controller_core as core;
-use sandproof_protocol::{FailureCode, ResourceEvidence, WorkAction, WorkOutcome, WorkReceipt};
+use sandproof_protocol::{FailureCode, WorkAction, WorkOutcome, WorkReceipt};
 use serde::{Serialize, de::DeserializeOwned};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -87,11 +88,7 @@ fn lease_controller_store(path: &Path) -> Result<(PathBuf, ControllerLease), Jou
 }
 
 /// Implemented by the trusted host adapter, never by a guest/API response.
-/// The adapter must establish the command-specific physical result, including
-/// exact identity and readiness. The pure reducer cannot inspect host I/O.
-pub trait HostEvidence: ResourceEvidence {
-    fn validates(&self, command: &core::Command) -> bool;
-}
+pub use crate::host_contract::HostEvidence;
 
 /// One process owns a controller database. Dispatch holds the mutable service
 /// borrow across host I/O and receipt commit, so accepted lifecycle decisions

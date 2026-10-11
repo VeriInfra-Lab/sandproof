@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
-sandproof-controller-service = { path = "../controller-service" }
+sandproof-controller-service = { path = "../controller-service", default-features = false }
 sandproof-protocol = { path = "../sandbox-protocol" }
 sandbox-runtime = { path = "../sandbox-runtime" }
 serde = { version = "=1.0.228", features = ["derive"] }

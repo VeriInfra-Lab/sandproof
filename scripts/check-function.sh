@@ -5,6 +5,16 @@ set -euo pipefail
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Standalone node contracts must not pull in the journal/C toolchain. Feature
+# unification in the complete server is expected and is checked separately.
+node_dependencies="$(cargo tree --locked -p sandproof-node --edges normal,build --prefix none --format '{p}')"
+if printf '%s\n' "$node_dependencies" | rg -q '^(rusqlite|libsqlite3-sys) '; then
+  echo 'standalone node unexpectedly depends on SQLite' >&2
+  exit 1
+fi
+cargo clippy --locked -p sandproof-node --lib -- -D warnings
+cargo test --locked -p sandproof-controller-service --no-default-features --lib
+
 # Build the real reducer once outside the component-test timeout. Fresh CI
 # machines have no Rust cache; compilation is preparation, not a window step.
 # The enclosing CI job deadline remains unchanged and a build failure is fatal.
