@@ -17,10 +17,12 @@ bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode" 
 # Standalone node contracts must not pull in the journal/C toolchain. Feature
 # unification in the complete server is expected and is checked separately.
 node_dependencies="$(cargo tree --locked -p sandproof-node --edges normal,build --prefix none --format '{p}')"
-if printf '%s\n' "$node_dependencies" | rg -q '^(rusqlite|libsqlite3-sys) '; then
-  echo 'standalone node unexpectedly depends on SQLite' >&2
-  exit 1
-fi
+case "$node_dependencies" in
+  *'rusqlite '*|*'libsqlite3-sys '*)
+    echo 'standalone node unexpectedly depends on SQLite' >&2
+    exit 1
+    ;;
+esac
 cargo clippy --locked -p sandproof-node --lib -- -D warnings
 cargo test --locked -p sandproof-controller-service --no-default-features --lib
 
