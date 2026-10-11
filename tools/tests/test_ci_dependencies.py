@@ -106,6 +106,24 @@ class CiDependencyInputsTests(unittest.TestCase):
             with self.subTest(section=section), self.assertRaises(ValueError):
                 deps.validate_input(self.resign(bundle))
 
+    def test_center_store_fetches_only_registered_fixed_dependency_metadata(self):
+        path = 'sandbox-center-store/Cargo.toml'
+        self.assertIn('sandbox-center-store', deps.MEMBERS)
+        files = deps.validate_input(self.bundle)
+        self.assertEqual(files[path], (ROOT / path).read_bytes())
+        self.assertNotIn('sandbox-center-store/src/store.rs', files)
+        manifest = files[path]
+        for data in (manifest.replace(b'../sandbox-protocol', b'../../private'),
+                     manifest.replace(b'../sandbox-protocol', b'../unregistered-member'),
+                     manifest + b'\n[dependencies.unregistered]\ngit = "https://example.invalid/code"\n'):
+            with self.subTest(data=data[-80:]), self.assertRaises(ValueError):
+                deps.validate_input(self.replace_file(self.damaged(), path, data))
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            deps.write_workspace(directory, files)
+            self.assertEqual((directory / path).read_bytes(), manifest)
+            self.assertFalse((directory / 'sandbox-center-store/src/store.rs').exists())
+
     def test_prepare_rejects_wrong_approval_dirty_blob_or_existing_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / 'input.json'
