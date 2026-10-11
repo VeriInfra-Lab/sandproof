@@ -50,13 +50,33 @@ struct Pending {
     /// Only this process can own a download while holding the cache lease.
     downloading: bool,
 }
+enum CacheState {
+    Ready(State),
+    /// Original inventory is not trustworthy. Retain all disk responsibility,
+    /// refuse template work, and do not stop the independent lifecycle driver.
+    Unavailable,
+}
+impl CacheState {
+    fn ready(&self) -> Result<&State, ReceiveError> {
+        match self {
+            Self::Ready(state) => Ok(state),
+            Self::Unavailable => Err(ReceiveError::Unavailable),
+        }
+    }
+    fn ready_mut(&mut self) -> Result<&mut State, ReceiveError> {
+        match self {
+            Self::Ready(state) => Ok(state),
+            Self::Unavailable => Err(ReceiveError::Unavailable),
+        }
+    }
+}
 pub(super) struct TemplateCache<H: ControllerHost = NodeHost> {
     config: PhysicalTemplateCache,
     node: NodeIdentity,
     client: ArtifactClient,
     store: CandidateStore,
     lifecycle: HostLifecycle<H>,
-    state: Mutex<State>,
+    state: Mutex<CacheState>,
     downloads: Arc<Semaphore>,
     lease: CacheLease,
 }
@@ -293,7 +313,11 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
             },
             0,
         )?;
-        let state = State::restore(&config, &node, &store)?;
+        let state = State::restore(&config, &node, &store)
+            .map_or(CacheState::Unavailable, CacheState::Ready);
+        // Root/lock identity failures remain shared startup failures. Only the
+        // separately checked inventory can fence this material component.
+        lease.validate()?;
         let downloads = Arc::new(Semaphore::new(usize::try_from(config.max_downloads)?));
         let value = Self {
             config,
@@ -308,9 +332,10 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         // The lease excludes every original worker. Validate the whole restored
         // inventory before changing anything, then discard only exact partial
         // files; the durable manifest and original directory identity remain.
-        value
-            .reclaim_interrupted_downloads()
-            .map_err(|_| "interrupted cache identity could not be reclaimed")?;
+        if value.reclaim_interrupted_downloads().is_err() {
+            *value.state.lock().map_err(|_| "cache state lock failed")? = CacheState::Unavailable;
+        }
+        value.lease.validate()?;
         Ok(value)
     }
 
@@ -350,7 +375,8 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
             // Do not release an uncertain directory after an identity change.
             // Only these exact private files were ever permitted before seal.
             if self.cleanup_partial(&manifest, &staging).is_ok() {
-                let mut state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+                let mut cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+                let state = cache.ready_mut()?;
                 let pending = state
                     .pending
                     .get_mut(&key(&request))
@@ -373,6 +399,7 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
             .state
             .lock()
             .map_err(|_| ReceiveError::Unavailable)?
+            .ready()?
             .ready
             .get(request.revision.as_str())
             .cloned();
@@ -385,7 +412,8 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         self.store
             .verify_binding(&value.local)
             .map_err(|_| ReceiveError::Unavailable)?;
-        let state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let state = cache.ready()?;
         if !state
             .ready
             .get(request.revision.as_str())
@@ -404,7 +432,8 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         }))
     }
     fn prepare(&self, request: CacheRequest) -> Result<Manifest, ReceiveError> {
-        let mut state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let mut cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let state = cache.ready_mut()?;
         if state
             .pending
             .values()
@@ -557,7 +586,8 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         self.store
             .verify_binding(&manifest.local)
             .map_err(|_| ReceiveError::Unavailable)?;
-        let mut state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let mut cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let state = cache.ready_mut()?;
         state.ready_bytes = state
             .ready_bytes
             .checked_add(bytes(&manifest.local)?)
@@ -575,10 +605,8 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
         Ok(())
     }
     fn reclaim_interrupted_downloads(&self) -> Result<(), ReceiveError> {
-        self.lease
-            .validate()
-            .map_err(|_| ReceiveError::Unavailable)?;
-        let state = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let cache = self.state.lock().map_err(|_| ReceiveError::Unavailable)?;
+        let state = cache.ready()?;
         for entry in state.pending.values() {
             if entry.downloading {
                 return Err(ReceiveError::Unavailable);
@@ -612,7 +640,8 @@ impl<H: ControllerHost + Send + 'static> TemplateCache<H> {
 }
 impl<H: ControllerHost + Send + 'static> TemplateSource for TemplateCache<H> {
     fn bound(&self, binding: &CreateBinding) -> Result<InternalTemplate, ApplicationError> {
-        let state = self.state.lock().map_err(|_| ApplicationError::Busy)?;
+        let cache = self.state.lock().map_err(|_| ApplicationError::Busy)?;
+        let state = cache.ready().map_err(|_| ApplicationError::Busy)?;
         state
             .ready
             .get(binding.template_revision.as_str())
