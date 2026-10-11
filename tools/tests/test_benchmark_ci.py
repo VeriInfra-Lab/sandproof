@@ -277,7 +277,9 @@ class BenchmarkCITests(unittest.TestCase):
         report.update(dataset='terminal-bench@2.0', source_kind='prepared-ci', fixture_sha256='e'*64,
             task_source=dict(repository=PIN.repository, commit=PIN.commit),
             original_environment=False, original_verifier=False, original_oracle_verifier=False,
-            original_test_assertions=True, original_oracle=True)
+            original_test_assertions=True, original_oracle=True,
+            prepared_ci_physical={'disk_budget_bytes':200 * 1024**3, 'activation_bytes':100 * 1024**3,
+                'pool_roles':['runtime'], 'builder_dispatched':False, 'public_build':False})
         for row in report['tasks']:
             row.update(guest_preflight='passed', verifier_mode=bench.CI_VERIFIER_MODE,
                 verifier_variant=dict(mode=bench.CI_VERIFIER_MODE, source_launcher_sha256=bench.BOOTSTRAP_SHA256,
@@ -299,6 +301,20 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(result['fixture_sha256'], 'e'*64)
         self.assertFalse(result['original_oracle_verifier'])
         self.assertFalse(result['original_environment'])
+        for field, value in (('disk_budget_bytes', 201 * 1024**3), ('activation_bytes', 200 * 1024**3 + 1),
+                             ('activation_bytes', True), ('pool_roles', ['runtime','builder']),
+                             ('builder_dispatched', True), ('public_build', True)):
+            changed = copy.deepcopy(original)
+            changed['prepared_ci_physical'][field] = value
+            (self.root / 'report.json').write_text(json.dumps(changed))
+            with self.subTest(physical_field=field), self.assertRaises(ValueError):
+                bench.batch_result(self.root, **args)
+        changed = copy.deepcopy(original)
+        del changed['prepared_ci_physical']
+        (self.root / 'report.json').write_text(json.dumps(changed))
+        with self.assertRaises(ValueError):
+            bench.batch_result(self.root, **args)
+        (self.root / 'report.json').write_text(json.dumps(original))
         for field, value in (('fixture_sha256','f'*64), ('original_environment',True),
                              ('original_verifier',True), ('original_oracle_verifier',True),
                              ('original_test_assertions',False), ('original_oracle',False),
@@ -420,6 +436,7 @@ class BenchmarkCITests(unittest.TestCase):
             task_source='/fixed-task-source', tools='/fixed-tools', uid_base=3100000,
             cgroup_parent='/sys/fs/cgroup/runtime', build_cgroup_parent='/sys/fs/cgroup/builder',
             service_cgroup_parent='/sys/fs/cgroup/control', server='/fixed-server')
+        config['prepared_ci_disk_budget_bytes'] = 200 * 1024**3
         for key in ('kernel','rootfs','firecracker','jailer','policy_template','budget_profile','ci_fixtures'):
             path = self.root / (key + '.json')
             path.write_text('{}')
@@ -433,6 +450,9 @@ class BenchmarkCITests(unittest.TestCase):
         with patch.object(ci, 'trusted_path', side_effect=lambda path:path):
             ci.validate_host_inputs(config)  # Prepared mode needs no proxy binary.
             for changed in (dict(config, ci_fixtures=None), dict(config, source_kind='oci'),
+                            dict(config, prepared_ci_disk_budget_bytes=None),
+                            dict(config, prepared_ci_disk_budget_bytes=True),
+                            dict(config, prepared_ci_disk_budget_bytes=201 * 1024**3),
                             dict(config, dataset='terminal-bench@2.1'),
                             dict(config, check_name='E2E / terminal-bench-2.0-compat'),
                             dict(config, host_assets={k:v for k,v in config['host_assets'].items()
@@ -496,6 +516,7 @@ class BenchmarkCITests(unittest.TestCase):
         args = batch['command']
         self.assertEqual(args[args.index('--ci-fixtures') + 1], config['ci_fixtures'])
         self.assertEqual(args[args.index('--source-kind') + 1], 'prepared-ci')
+        self.assertEqual(args[args.index('--prepared-ci-disk-budget-bytes') + 1], str(200 * 1024**3))
         self.assertNotIn('--proxy-binary', args)
         self.assertNotIn('--proxy-sha256', args)
         self.assertNotIn('--docker-hub-mirror', args)
@@ -511,6 +532,7 @@ class BenchmarkCITests(unittest.TestCase):
         with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'instantiate_policy', return_value={}):
             supervisor.prepare(old_batch, 0)
         self.assertNotIn('--ci-fixtures', old_batch['command'])
+        self.assertNotIn('--prepared-ci-disk-budget-bytes', old_batch['command'])
         self.assertIn('--proxy-binary', old_batch['command'])
         self.assertIn('--proxy-sha256', old_batch['command'])
         self.assertIn('--docker-hub-mirror', old_batch['command'])
@@ -528,11 +550,13 @@ class BenchmarkCITests(unittest.TestCase):
         def git(*args, **kwargs):
             return 'a'*40 if args[:2] == ('rev-parse','HEAD') else ''
         with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'git', side_effect=git), \
-                patch.object(ci, 'verify', return_value=lock), patch.object(ci, 'cohort_policy'):
+                patch.object(ci, 'verify', return_value=lock), patch.object(ci, 'cohort_policy'), \
+                patch.object(ci, 'prepared_ci_physical_profile') as physical:
             supervisor = ci.Supervisor(config)
             supervisor.begin('a'*40, 'b'*40)
             self.assertEqual(supervisor.state['expected'], ['polyglot-c-py','db-wal-recovery'])
             self.assertEqual(supervisor.state['check_name'], 'E2E / terminal-bench-ci')
+            self.assertEqual(physical.call_args.kwargs['disk_budget_bytes'], 200 * 1024**3)
             original_identity = supervisor.state['id']
             changed = copy.deepcopy(config)
             changed['host_assets'][config['ci_fixtures']] = 'e'*64

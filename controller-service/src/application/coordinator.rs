@@ -29,6 +29,7 @@ use sandbox_controller_core as core;
 use sandproof_protocol::{WorkAction, WorkReceipt};
 use tokio::sync::watch;
 
+use super::fault::{FaultContext, FaultRecord, FaultStage};
 use super::listing::{InstancePage, ListSelection};
 use super::models::{
     BuildCommand, BuildSettlement, BuildSettlementCommand, BuildStatus, BuildWindowClosed,
@@ -54,6 +55,9 @@ pub struct RecoveryReport {
     /// Sandboxes whose recovery hit a host error or rejected observation.
     /// Their current operation stays incomplete until exact evidence arrives.
     pub failed_sandboxes: usize,
+    /// One bounded diagnostic sample from this pass, not a durable failure log.
+    /// Does not determine whether recovery may continue.
+    pub first_fault: Option<FaultRecord>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -134,7 +138,16 @@ pub struct ControllerApplication<H: ControllerHost> {
 fn token() -> Result<String, ApplicationError> {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut bytes = [0_u8; 32];
-    getrandom::fill(&mut bytes).map_err(|_| ApplicationError::Busy)?;
+    getrandom::fill(&mut bytes).map_err(|error| {
+        let mut fault = FaultRecord::host(
+            FaultStage::PutCredential,
+            super::fault::FaultKind::EntropyUnavailable,
+            FaultContext::default(),
+        );
+        fault.code = error.raw_os_error();
+        fault.emit();
+        ApplicationError::Busy
+    })?;
     let mut result = String::with_capacity(64);
     for byte in bytes {
         result.push(char::from(HEX[usize::from(byte >> 4)]));
@@ -188,6 +201,24 @@ fn next_operation(
 }
 
 fn map_journal(error: JournalError) -> ApplicationError {
+    map_journal_at(error, FaultStage::Journal, FaultContext::default())
+}
+
+fn map_journal_at(
+    error: JournalError,
+    stage: FaultStage,
+    context: FaultContext,
+) -> ApplicationError {
+    // Expected public refusals do not become operator failure logs.
+    if !matches!(
+        error,
+        JournalError::ControllerRejected(_)
+            | JournalError::Conflict
+            | JournalError::RevisionConflict
+            | JournalError::IdentifierExhausted
+    ) {
+        FaultRecord::journal(stage, &error, context).emit();
+    }
     let result = match &error {
         JournalError::ControllerRejected(core::controller::ControllerReject::Request(
             core::request::Reject::Unauthorized | core::request::Reject::SandboxNotFound,
@@ -204,6 +235,25 @@ fn map_journal(error: JournalError) -> ApplicationError {
     };
     drop(error);
     result
+}
+
+fn map_unknown_journal(
+    error: JournalError,
+    stage: FaultStage,
+    context: FaultContext,
+) -> ApplicationError {
+    FaultRecord::journal(stage, &error, context).emit();
+    drop(error);
+    ApplicationError::OutcomeUnknown
+}
+
+fn map_unknown_application(
+    error: ApplicationError,
+    stage: FaultStage,
+    context: FaultContext,
+) -> ApplicationError {
+    FaultRecord::application(stage, &error, context).emit();
+    ApplicationError::OutcomeUnknown
 }
 
 fn map_admission(error: AdmissionError) -> ApplicationError {

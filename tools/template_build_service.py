@@ -167,8 +167,6 @@ def configuration(path, *, require_physical_lease=True):
     limits["runtime_cleanup_reserve_bytes"] = runtime["cleanup_reserve_bytes"] + builder["cleanup_reserve_bytes"]
     limits["artifact_margin_bytes"] = Path(runtime["kernel"]).stat().st_size + limits["max_log_bytes"] + 64 * MIB
     physical = validate_physical_configuration(runtime, builder, config)
-    if physical is None:
-        raise ValueError("complete bounded capacity and physical profile required")
     profile, peak, inodes = physical
     # Only Rust may activate a fresh profile. Static acceptance preflight
     # must not open/lock/fsync an unactivated coordination file; a later

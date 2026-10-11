@@ -79,6 +79,9 @@ pub(super) struct ConfigFile {
     /// Explicit deployment budgets, never SDK request parameters or inferred defaults.
     #[serde(default)]
     pub(super) data_transfer: Option<gateway::TransferLimits>,
+    /// Finite HTTP blocking-work envelope, independent of active transfers.
+    #[serde(default)]
+    pub(super) request_admission: sandproof_api::admission::RequestAdmissionLimits,
     /// Explicit opt-in: trusted prebuilt descriptors, not a build service.
     #[serde(default)]
     pub(super) templates: Option<TemplateCatalog>,
@@ -105,10 +108,12 @@ pub(super) struct DeploymentContract {
     pub(super) bounded: BoundedHostConfig,
     pub(super) maintenance: MaintenanceConfig,
     pub(super) transfers: gateway::TransferLimits,
+    pub(super) requests: sandproof_api::admission::RequestAdmissionLimits,
 }
 
 impl DeploymentContract {
     pub(super) fn validate(config: &ConfigFile) -> Result<Self, Box<dyn Error>> {
+        config.request_admission.validate()?;
         let bounded = resolve_bounded_host_config(
             config.uid_base,
             config.bounded_host.as_ref(),
@@ -149,6 +154,7 @@ impl DeploymentContract {
             bounded,
             maintenance,
             transfers,
+            requests: config.request_admission,
         })
     }
 }

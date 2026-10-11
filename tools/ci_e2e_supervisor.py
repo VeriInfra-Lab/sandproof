@@ -25,6 +25,7 @@ from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, SOURCE_PERMISSIONS
 from tools.ci_runner_supervisor import atomic_json
 from tools.system_acceptance import json_file, write_once
 from tools.check_kvm_host import trusted_path
+from tools.bounded_acceptance import prepared_ci_physical_profile
 
 PREFIX = '/repos/' + REPOSITORY + '/'
 REPO = 'https://github.com/' + REPOSITORY + '.git'
@@ -55,6 +56,9 @@ def validate_host_inputs(config):
             raise ValueError('prepackaged CI fixture manifest required')
         private_path(config['ci_fixtures'])
         required.add(config['ci_fixtures'])
+        ceiling = config.get('prepared_ci_disk_budget_bytes')
+        if type(ceiling) is not int or not 0 < ceiling <= 200 * 1024**3:
+            raise ValueError('explicit prepared CI total disk ceiling at most 200 GiB required')
     else:
         if config.get('ci_fixtures') is not None:
             raise ValueError('CI fixtures require the explicit prepared-ci mode')
@@ -348,6 +352,9 @@ class Supervisor:
         if self.config['source_kind'] == 'prepared-ci':
             if dataset != 'terminal-bench@2.0' or any(modes[n] != 'original' for b in batches for n in b):
                 raise ValueError('prepackaged CI requires the fixed original 2.0 solutions')
+            prepared_ci_physical_profile(template, kernel_bytes=Path(self.config['kernel']).stat().st_size,
+                runtime_bytes=Path(self.config['firecracker']).stat().st_size,
+                disk_budget_bytes=self.config['prepared_ci_disk_budget_bytes'])
         elif self.config['source_kind'] != manifest['source_kind']:
             raise ValueError('environment preparation differs from the frozen subset policy')
         identity = run_identity(candidate, base, self.config, manifest, lock)
@@ -395,7 +402,8 @@ class Supervisor:
                      'uid_base', 'budget_profile'):
             args.extend(['--' + flag.replace('_', '-'), str(config[flag])])
         if config.get('source_kind') == 'prepared-ci':
-            args.extend(['--ci-fixtures', config['ci_fixtures']])
+            args.extend(['--ci-fixtures', config['ci_fixtures'],
+                         '--prepared-ci-disk-budget-bytes', str(config['prepared_ci_disk_budget_bytes'])])
         else:
             for flag in ('proxy_binary', 'proxy_sha256'):
                 args.extend(['--' + flag.replace('_', '-'), str(config[flag])])

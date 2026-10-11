@@ -87,6 +87,7 @@ PR 标题与正文使用中文，保留必要的代码标识；提交主题可�
 
 ```sh
 bash scripts/check-function.sh
+bash scripts/check-function.sh --portable  # macOS 开发检查，不能代替上一条 Linux 完整检查
 bash scripts/check-compat.sh  # 修改 E2B 客户端合同或接入时运行；使用锁定依赖
 python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任务'
 ```
@@ -94,6 +95,10 @@ python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任�
 开发者仍须执行上面的本地基础检查并在 PR 记录结果。普通 PR 不再自动运行完整 Rust 检查；[独立工作流](.github/workflows/rust-ci.yml)在合入 main/test 后或手动触发时运行同一基础检查，不作为 PR 必需状态。普通 PR 保留 SDK 合同、Harbor 工具、标题与分支规则四项自动检查。测试脚本不启动产品 VM，不访问 E2B 云服务，不使用付费模型，也不执行完整 Lean 验收。独立的 SDK 合同任务从固定公开提交安装 E2B Python SDK，只向本机回环服务发送合成请求；在 Linux 上还运行 SDK 经实际 Rust 网关体处理/转发代码访问合成 envd 的组合测试，不涉及管理鉴权或宿主 relay，不能代替真实控制器或虚拟机验收。规则检查只验证 issue 编号的格式，任务是否真实存在及关联准确仍需核对。
 
 ### 测试编写和结果纪律
+
+基础工具统一通过 `scripts/python-entry.sh` 选择 Python `>=3.12,<3.14`；可用 `SANDPROOF_PYTHON` 指定解释器，显式指定后不静默回退。版本或平台不满足时在 Cargo 构建和测试前报错。SDK/Harbor 仍用各自锁定的 uv 项目，不混用工具环境。
+
+无参数 `check-function.sh` 是必需的 Linux 完整检查，发现全部工具测试；缺失依赖引起跳过也不能算完整通过。macOS 只能显式执行 `--portable`：执行同一套 Rust 非 Linux 目标检查、文档与可移植工具测试，并逐组报告未运行的 Linux ELF、稀疏盘、物理租约和真实请求窗口场景；划分只在 [测试入口](tools/check_function_tests.py) 维护，不改弱原测试或生产检查。新增未分类测试默认执行，失败不能自动转成平台豁免。macOS 结果不代表 Linux 条件模块、KVM、SDK 组合或完整基础验收通过。
 
 - 覆盖成功、顺序拒绝、边界值、未知结果、重复/迟到回执和部分失败；修复缺陷必须加对应回归。
 - 并发用屏障和明确故障点控制，时钟用可推进的假时钟；不靠随机 sleep 碰运气。随机交错保存 seed 和最小失败历史。
@@ -105,7 +110,7 @@ python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任�
 
 ### 高权限系统测试
 
-KVM 系统 CI 尚待 C04 实现。它必须使用固定、隔离、可回收的 Linux 主机，只运行已确认的精确提交；不让未复核的外部 PR 自动进入长期高权限执行机，不用 `pull_request_target` 检出并执行外部代码。
+专用两题 KVM 晋升检查已接通；完整故障、隔离和资源压力矩阵仍由 C04（#14）推进，不能把两题通过视为整套验收。高权限执行必须使用固定、隔离、可回收的 Linux 主机，只运行已确认的精确提交；不让未复核的外部 PR 自动进入长期高权限执行机，不用 `pull_request_target` 检出并执行外部代码。
 
 运行前检查 KVM、工具、镜像指纹及资源。失败先保留脱敏证据，再按本轮精确资源 ID 清理；禁止全局停止 Firecracker 或删除宽泛目录。冲突场景串行执行，报告过程、结果和进程/网络/磁盘残留。真实流水线未接通前，可附同一提交的手动实机证据。
 
@@ -126,4 +131,4 @@ KVM 系统 CI 尚待 C04 实现。它必须使用固定、隔离、可回收的 
 
 普通 PR 自动检查 `sdk-contract`、`harbor-inputs`、`pr-title`、`pr-policy`；完整 Rust 基础检查在 main/test 推送或手动触发时运行，本地基础检查仍必做。具体隔离设计、通用宿主要求和安装步骤见[CI 运行环境](docs/ci.md)，不在公共文档保存实际机器名称、地址或凭据。
 
-三个长期分支要求 PR、当前必需检查和未解决讨论清零，禁止强推/删除，审批人数为 0；管理员同样受约束。integration 保留普通任务检查；integration→test 和 test→main 要求专用 App 发布的端到端检查。owner 已选择 `E2E / terminal-bench-ci` 两题预装环境回归作为稳定晋升方案，具体题集、判据与启用条件见[验收清单](docs/testing-plan.md)。部署前仍执行原四题检查，只有新检查真实成功并核对 App 身份后才能替换必需检查，不能先移除旧门槛。门槛缺失、运行中或失败均不能合入；成功结果绑定精确源提交与目标基线，严格保护防止目标更新竞态。特殊豁免只能在对应晋升 PR 记录授权、范围和未运行项，不能改为永久取消检查。没有配置 CD。
+三个长期分支要求 PR、当前必需检查和未解决讨论清零，禁止强推/删除，审批人数为 0；管理员同样受约束。integration 保留普通任务检查；integration→test 和 test→main 当前要求专用 App 发布的 `E2E / terminal-bench-ci` 两题预装环境检查，具体题集和判据见[验收清单](docs/testing-plan.md)。后续更换门槛仍须先实测成功、真实失败和干净恢复并核对 App 身份，不能先移除现有门槛。门槛缺失、运行中或失败均不能合入；成功结果绑定精确源提交与目标基线，严格保护防止目标更新竞态。特殊豁免只能在对应晋升 PR 记录授权、范围和未运行项，不能改为永久取消检查。没有配置 CD。

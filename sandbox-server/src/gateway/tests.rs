@@ -258,7 +258,15 @@ async fn synthetic_envd(
         }
         assert!(headers.len() < 8192);
     }
-    assert!(headers.starts_with("POST /process.Process/Start HTTP/1.1\r\n"));
+    assert!(
+        [
+            "/process.Process/Start",
+            "/process.Process/Connect",
+            "/process.Process/List"
+        ]
+        .iter()
+        .any(|path| headers.starts_with(&format!("POST {path} HTTP/1.1\r\n")))
+    );
     assert!(!headers.to_lowercase().contains("x-api-key"));
     starts.fetch_add(1, Ordering::SeqCst);
     let stream = reader.get_mut();
@@ -311,6 +319,10 @@ struct Observed {
 }
 
 async fn exchange(reply: Reply, starts: Arc<AtomicUsize>) -> Observed {
+    exchange_at(reply, starts, "/process.Process/Start").await
+}
+
+async fn exchange_at(reply: Reply, starts: Arc<AtomicUsize>, path: &str) -> Observed {
     timeout(Duration::from_secs(10), async {
         let (gateway_io, envd_io) = tokio::io::duplex(CHUNK);
         let (release, gate) = oneshot::channel();
@@ -319,11 +331,15 @@ async fn exchange(reply: Reply, starts: Arc<AtomicUsize>) -> Observed {
         let upstream_driver = tokio::spawn(connection);
         let request = Request::builder()
             .method(Method::POST)
-            .uri("/process.Process/Start")
+            .uri(path)
             .header("x-api-key", "must-not-reach-guest")
             .body(Body::empty())
             .unwrap();
-        let response = forward_request(&mut sender, request, None).await;
+        let limits = TransferLimits {
+            rpc_response_bytes: RESPONSE_LIMIT,
+            ..TransferLimits::fixture()
+        };
+        let response = forward_request(&mut sender, request, Some(&limits)).await;
         drop(sender);
 
         // Serialize the actual bounded gateway body through HTTP again. Merely
@@ -390,7 +406,7 @@ async fn response_limit_is_exact_for_fixed_chunked_and_close_delimited_upstreams
     for framing in [Framing::Fixed, Framing::Chunked, Framing::CloseDelimited] {
         for size in [RESPONSE_LIMIT - 1, RESPONSE_LIMIT, RESPONSE_LIMIT + 1] {
             let before = starts.load(Ordering::SeqCst);
-            let observed = exchange(
+            let observed = exchange_at(
                 Reply {
                     size,
                     framing,
@@ -398,6 +414,7 @@ async fn response_limit_is_exact_for_fixed_chunked_and_close_delimited_upstreams
                     gated: false,
                 },
                 starts.clone(),
+                "/process.Process/List",
             )
             .await;
             assert_eq!(observed.status, StatusCode::OK);
@@ -451,7 +468,7 @@ async fn upstream_disconnect_is_not_a_success_or_replay_and_next_request_works()
 }
 
 #[tokio::test]
-async fn response_flows_before_upstream_finishes_and_overflow_does_not_poison_next_request() {
+async fn command_output_exceeds_former_cap_and_flows_before_upstream_finishes() {
     let starts = Arc::new(AtomicUsize::new(0));
     let reply = Reply {
         size: RESPONSE_LIMIT + 1,
@@ -459,9 +476,9 @@ async fn response_flows_before_upstream_finishes_and_overflow_does_not_poison_ne
         truncated: false,
         gated: true,
     };
-    let overflow = exchange(reply, starts.clone()).await;
-    assert!(!overflow.complete);
-    assert!(overflow.bytes > 0);
+    let large = exchange(reply, starts.clone()).await;
+    assert!(large.complete);
+    assert_eq!(large.bytes, reply.size);
     assert_eq!(starts.load(Ordering::SeqCst), 1);
     let healthy = exchange(
         Reply {
@@ -474,4 +491,24 @@ async fn response_flows_before_upstream_finishes_and_overflow_does_not_poison_ne
     assert!(healthy.complete);
     assert_eq!(healthy.bytes, CHUNK * 2);
     assert_eq!(starts.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn start_and_connect_output_remain_uncapped_for_all_supported_framing() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    for path in ["/process.Process/Start", "/process.Process/Connect"] {
+        for framing in [Framing::Fixed, Framing::Chunked, Framing::CloseDelimited] {
+            let reply = Reply {
+                size: RESPONSE_LIMIT + CHUNK,
+                framing,
+                truncated: false,
+                gated: true,
+            };
+            let before = calls.load(Ordering::SeqCst);
+            let observed = exchange_at(reply, calls.clone(), path).await;
+            assert!(observed.complete);
+            assert_eq!(observed.bytes, reply.size);
+            assert_eq!(calls.load(Ordering::SeqCst), before + 1);
+        }
+    }
 }

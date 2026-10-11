@@ -132,6 +132,16 @@ def exercise(args: argparse.Namespace) -> None:
         process = start_server(binary, config, log, None, fail_reclaim_prepare_sandbox=2)
         wait_ready(opener, base_url, key, process)
         assert "startup recovery left 1 sandboxes unresolved (1 after host or receipt errors)" in log.read_text()
+        fault_lines = [line for line in log.read_text().splitlines()
+                       if line.startswith("controller_fault ")]
+        assert any("scope=Instance " in line and "stage=Reclaim " in line
+                   and "sandbox=Some(2) " in line and "operation=Some(1) " in line
+                   and "attempt=Some(0) " in line and "command=Some(PrepareVm)" in line
+                   for line in fault_lines), "missing exact recovery diagnostic"
+        assert all(len(line) < 640 for line in fault_lines)
+        assert key not in "\n".join(fault_lines)
+        for secret in (root / "state/secrets").glob("*"):
+            assert json.loads(secret.read_text())["token"] not in "\n".join(fault_lines)
         assert process_start_ticks(first_claim["pid"]) == first_claim["start_time_ticks"]
         if second_claim is not None:
             assert process_start_ticks(second_claim["pid"]) == second_claim["start_time_ticks"]

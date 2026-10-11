@@ -193,6 +193,13 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
             and report.get('original_test_assertions') is True
             and report.get('original_oracle') is True
             and report.get('fixture_sha256') == expected_fixture_sha256)
+        physical = report.get('prepared_ci_physical', {})
+        if (not isinstance(physical, dict) or physical.get('pool_roles') != ['runtime']
+                or physical.get('builder_dispatched') is not False or physical.get('public_build') is not False
+                or type(physical.get('disk_budget_bytes')) is not int
+                or type(physical.get('activation_bytes')) is not int
+                or not 0 < physical['activation_bytes'] <= physical['disk_budget_bytes'] <= 200 * 1024**3):
+            raise ValueError('prepared CI runtime-only physical budget evidence is incomplete')
     if (report.get('commit') != candidate or report.get('dataset') != dataset
             or report.get('task_source') != {'repository': pin.repository, 'commit': pin.commit}
             or report.get('fixed_task_count') != full_task_count or len(observed) != len(names)
@@ -255,7 +262,8 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     if prepared:
         result.update(fixture_sha256=expected_fixture_sha256, original_environment=False,
                       original_verifier=False, original_oracle_verifier=False,
-                      original_test_assertions=True, original_oracle=True)
+                      original_test_assertions=True, original_oracle=True,
+                      prepared_ci_physical=physical)
     return result
 
 

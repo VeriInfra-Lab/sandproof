@@ -2,7 +2,7 @@
 use super::{
     Duration, ENVD_URL, Fence, File, HostObservation, Instant, LinuxWorker, NodeResult,
     Observation, ObservedResult, RuntimeError, SlotBinding, Stdio, UnknownReason, VmState,
-    WorkAction, WorkOutcome, WorkReceipt, WorkerTransportError, Write, check_trusted_path, core,
+    WorkAction, WorkOutcome, WorkReceipt, WorkerTransportError, check_trusted_path, core,
     decisions, fence_can_advance, fs, node_staging, thread,
 };
 
@@ -23,7 +23,13 @@ impl LinuxWorker {
                 WorkOutcome::ObservedSuccess(evidence)
             }
             Err(error) => {
-                self.last_error = Some(error.to_string());
+                let fault = crate::fault::project(
+                    sandproof_controller_service::application::fault::FaultStage::Execute,
+                    sandproof_controller_service::application::fault::FaultContext::action(action),
+                    error.as_ref(),
+                );
+                self.last_error = Some(fault.to_string());
+                fault.emit();
                 WorkOutcome::Unknown {
                     reason: UnknownReason::ObservationUnavailable,
                     last_observation: None,
@@ -381,21 +387,19 @@ impl LinuxWorker {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
         let mut child = self.spawn_namespace_command(name, &gate, &mut command)?;
-        let result = (|| {
-            child
-                .stdin
-                .take()
-                .ok_or("curl stdin unavailable")?
-                .write_all(format!("header = \"X-Access-Token: {token}\"\n").as_bytes())?;
-            crate::startup::read_started(child.stdout.take().ok_or("curl stdout unavailable")?)
-        })();
+        let output = child.exchange_until(
+            format!("header = \"X-Access-Token: {token}\"\n").as_bytes(),
+            sandbox_runtime::HelperLimits {
+                stdout_bytes: 64 * 1024,
+                ..sandbox_runtime::HelperLimits::CONTROL
+            },
+            crate::startup::first_frame_complete,
+        )?;
         // envd deliberately detaches child lifetime from the HTTP stream.
         // Close the observation stream; never send a guest termination here.
         // Tracked launch execs curl in the recorded SAME PID; stopping this
         // exact child cannot orphan a supervisor's separate descendant.
-        let _ = child.kill();
-        child.wait()?;
         gate.finish_tracked()?;
-        result
+        crate::startup::read_started(std::io::Cursor::new(output.stdout))
     }
 }

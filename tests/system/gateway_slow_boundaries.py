@@ -51,7 +51,7 @@ CHUNK_COUNT = 6
 HTTP_TIMEOUT = 90
 IDLE_MAXIMUM_SECONDS = 45
 FINAL_TRANSFER = dict(file_upload_bytes=64 * MIB, file_download_bytes=96 * MIB,
-                      command_input_bytes=MIB, command_output_bytes=32 * MIB,
+                      command_input_bytes=MIB,
                       rpc_request_bytes=65536, rpc_response_bytes=MIB,
                       max_transfers=16, max_transfers_per_vm=8, control_reserve=1,
                       request_idle_seconds=13000, file_idle_seconds=30,
@@ -396,16 +396,31 @@ async def exercise(args, report):
         report['sandbox_ids'] = [instance.sandbox_id for instance in instances]
         report['guest_directory'] = directory
         observer.sample('before-cases')
-        report['cases']['file_idle_and_progress'] = await idle_and_progress(target, control, directory, url, helpers)
-        report['cases']['paused_download_memory'] = await paused_downloads(
-            target, control, directory, url, helpers, observer, cleanup_errors=report['transfer_cleanup_errors'])
+        if args.command_output_only:
+            from e2b import AsyncSandbox
+            from gateway_stream_limits import command_large_output
+            from gateway_async_stream_limits import command_large_output as async_large_output
+            report['cases']['command_output_sync'] = await helpers.call(command_large_output, target, directory)
+            async_target = await AsyncSandbox.connect(args.target_sandbox_id, **options(keys[0], api, url))
+            # Separate marker verifies each SDK dispatches exactly once.
+            report['cases']['command_output_async'] = await async_large_output(async_target, directory, 33 * MIB)
+            report['cases']['template_start_once'] = []
+            for instance in instances:
+                assert await helpers.call(instance.files.read, '/tmp/template-starts') == 'once\n'
+                assert (await helpers.call(instance.commands.run,
+                    "pgrep -f '^sleep 600$'", timeout=10)).exit_code == 0
+                report['cases']['template_start_once'].append({'sandbox_id': instance.sandbox_id, 'starts': 1})
+        else:
+            report['cases']['file_idle_and_progress'] = await idle_and_progress(target, control, directory, url, helpers)
+            report['cases']['paused_download_memory'] = await paused_downloads(
+                target, control, directory, url, helpers, observer, cleanup_errors=report['transfer_cleanup_errors'])
         if digest(config) != report['config_sha256'] or process_binding(args.server_pid, args.server_start_ticks, config) != report['server']:
             raise ValueError('original server/config identity changed during probe')
         observer.sample('after-cases')
     finally:
         for instance in created:
             try:
-                names = ('idle-upload', 'fifo', 'progress', 'large.bin', 'quiet', 'control')
+                names = ('idle-upload', 'fifo', 'progress', 'large.bin', 'quiet', 'control', 'large-output-starts', 'async-large-output-starts')
                 exact = ' '.join(shlex.quote(directory + '/' + name) for name in names)
                 result = await helpers.call(instance.commands.run,
                                             f'rm -f -- {exact}; rmdir -- {shlex.quote(directory)}', timeout=15)
@@ -425,6 +440,7 @@ def main(argv=None):
         parser.add_argument('--' + field, type=Path, required=True)
     parser.add_argument('--server-pid', type=int, required=True)
     parser.add_argument('--server-start-ticks', type=int, required=True)
+    parser.add_argument('--command-output-only', action='store_true')
     args = parser.parse_args(argv)
     if os.geteuid() != 0 or sys.platform != 'linux':
         parser.error('root Linux with an outer approved host supervisor required')
@@ -436,6 +452,10 @@ def main(argv=None):
                   result='incomplete', cases={}, client_cleanup_errors=[], transfer_cleanup_errors=[],
                   host_cleanup='not_checked_here_outer_supervisor_required',
                   not_tested=['async_sdk', '13000_second_idle_expiry', 'final_host_reclamation'])
+    if args.command_output_only:
+        report['scope'] = 'finite_sync_async_large_output_and_template_start_prefix'
+        report['not_tested'].remove('async_sdk')
+        report['not_tested'].append('slow_file_cases')
     code = 1
     try:
         if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT).strip():

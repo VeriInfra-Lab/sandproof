@@ -4,6 +4,7 @@ use sandproof_controller_service::{
     template_registry::{CandidateManifest, CandidateStore, RegistryConfig},
     templates::ResourceShape,
 };
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 
 fn worker(path: &Path) -> LinuxWorker {

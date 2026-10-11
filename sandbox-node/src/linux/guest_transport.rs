@@ -1,5 +1,6 @@
 //! Synchronous guest transports with exact-child ownership.
-use super::{ENVD_URL, LinuxWorker, NodeResult, Process, Stdio, Write, core};
+use super::{ENVD_URL, LinuxWorker, NodeResult, Process, Stdio, core};
+use sandbox_runtime::HelperLimits;
 
 impl LinuxWorker {
     pub(super) fn namespace_command(
@@ -40,11 +41,7 @@ impl LinuxWorker {
             .get_args()
             .map(|arg| arg.to_str().ok_or("non-UTF8 namespace helper argument"))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(sandbox_runtime::OwnedChild::new(guard.spawn_tracked(
-            &context,
-            "/usr/bin/ip",
-            &args,
-        )?))
+        Ok(guard.spawn_tracked(&context, "/usr/bin/ip", &args)?)
     }
 
     pub(super) fn guest_status(
@@ -84,14 +81,7 @@ impl LinuxWorker {
         command.arg(format!("{ENVD_URL}{path}"));
         command.stdin(Stdio::piped()).stdout(Stdio::piped());
         let mut child = self.spawn_namespace_command(name, &gate, &mut command)?;
-        if let Some(input) = input {
-            child
-                .stdin
-                .take()
-                .ok_or("curl stdin unavailable")?
-                .write_all(input)?;
-        }
-        let output = child.wait_output()?;
+        let output = child.exchange(input.unwrap_or_default(), HelperLimits::CONTROL)?;
         gate.finish_tracked()?;
         if !output.status.success() {
             return Ok(String::new());
@@ -126,12 +116,7 @@ impl LinuxWorker {
         let config = format!(
             "url = \"{ENVD_URL}/files?path=%2Fetc%2Fpasswd\"\nheader = \"X-Access-Token: {token}\"\n"
         );
-        child
-            .stdin
-            .take()
-            .ok_or("curl stdin unavailable")?
-            .write_all(config.as_bytes())?;
-        let output = child.wait_output()?;
+        let output = child.exchange(config.as_bytes(), HelperLimits::CONTROL)?;
         gate.finish_tracked()?;
         if !output.status.success() {
             return Err("envd file observation failed".into());

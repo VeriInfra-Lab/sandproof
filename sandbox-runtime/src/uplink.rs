@@ -8,7 +8,6 @@ use std::{
     fs,
     net::Ipv4Addr,
     os::unix::fs::MetadataExt,
-    process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -177,44 +176,20 @@ pub enum UplinkState {
 }
 
 fn output(operation: &'static str, program: &str, args: &[&str]) -> Result<Vec<u8>, RuntimeError> {
-    let result = Command::new(program)
-        .args(args)
-        .env_clear()
-        .stdin(Stdio::null())
-        .output()?;
-    if !result.status.success() {
-        return Err(RuntimeError::HostCommand {
-            operation,
-            stderr: String::from_utf8_lossy(&result.stderr[..result.stderr.len().min(4096)])
-                .into_owned(),
-        });
-    }
-    Ok(result.stdout)
+    crate::linux::helper_gate::helper_output(None, None, operation, program, args, None)
 }
 
 #[cfg(test)]
 fn root_nft_script(operation: &'static str, script: &str) -> Result<(), RuntimeError> {
-    use std::io::Write as _;
-    let mut child = Command::new("/usr/sbin/nft")
-        .args(["-f", "-"])
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    child
-        .stdin
-        .take()
-        .ok_or(RuntimeError::Protocol("nft stdin"))?
-        .write_all(script.as_bytes())?;
-    let result = child.wait_with_output()?;
-    if !result.status.success() {
-        return Err(RuntimeError::HostCommand {
-            operation,
-            stderr: String::from_utf8_lossy(&result.stderr).into_owned(),
-        });
-    }
-    Ok(())
+    crate::linux::helper_gate::helper_output(
+        None,
+        None,
+        operation,
+        "/usr/sbin/nft",
+        &["-f", "-"],
+        Some(script),
+    )
+    .map(|_| ())
 }
 
 fn nft_table(

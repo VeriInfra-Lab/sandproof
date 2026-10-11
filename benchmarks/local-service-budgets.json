@@ -12,7 +12,6 @@
     "file_upload_bytes": 67108864,
     "file_download_bytes": 100663296,
     "command_input_bytes": 1048576,
-    "command_output_bytes": 33554432,
     "rpc_request_bytes": 65536,
     "rpc_response_bytes": 1048576,
     "max_transfers": 16,

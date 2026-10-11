@@ -11,32 +11,46 @@
 extern crate self as sandproof_controller_service;
 
 pub mod application;
+#[cfg(feature = "durable")]
 mod controller;
+#[cfg(feature = "durable")]
 mod dispatch;
+mod host_contract;
+#[cfg(feature = "durable")]
 mod journal;
 pub mod physical_storage;
 pub mod template_registry;
 pub mod templates;
+#[cfg(feature = "durable")]
 mod workflow;
 
-pub use controller::{
-    AdmissionError, AdmissionLimits, BoundedHostConfig, BuildAnchor, BuildRetryConfig, BuildWindow,
-    CapacityConfig, CheckpointInfo, CheckpointProgress, ConsolePolicy, ControllerJournal,
-    CreateAdmission, CreateNetwork, CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS,
-    DEFAULT_TIMEOUT_SECS, HostEvidence, HostReleaseWitness, HostSlotContext, Lifetime,
-    MaintenanceConfig, RetirementCandidate,
+pub use host_contract::{
+    AdmissionError, AdmissionLimits, BoundedHostConfig, ConsolePolicy, CreateNetwork,
+    CreateNetworking, CreateOptions, DEFAULT_STARTUP_TIMEOUT_SECS, DEFAULT_TIMEOUT_SECS,
+    HostEvidence, HostSlotContext, WorkerTransportError,
 };
 
-pub use dispatch::{DispatchResult, WorkerTransportError};
+#[cfg(feature = "durable")]
+pub use controller::{
+    BuildAnchor, BuildRetryConfig, BuildWindow, CapacityConfig, CheckpointInfo, CheckpointProgress,
+    ControllerJournal, CreateAdmission, HostReleaseWitness, Lifetime, MaintenanceConfig,
+    RetirementCandidate,
+};
+
+#[cfg(feature = "durable")]
+pub use dispatch::DispatchResult;
+#[cfg(feature = "durable")]
 pub use journal::{
     AcceptedWrite, DispatchState, Journal, RecordedReceipt, StorageSettings, StoredOperation,
     StoredSandbox,
 };
+#[cfg(feature = "durable")]
 pub use workflow::{
     finish_accepted_kill_v1, finish_admitted_create_v1, finish_admitted_create_v1_timed,
     finish_compensating_create_v1, kill_v1,
 };
 
+#[cfg(feature = "durable")]
 use rusqlite::Error as SqliteError;
 use sandproof_protocol::ContractError;
 use std::error::Error;
@@ -70,7 +84,9 @@ impl CrashInjector for NeverCrash {
 #[derive(Debug)]
 pub enum JournalError {
     Io(std::io::Error),
+    #[cfg(feature = "durable")]
     Sqlite(SqliteError),
+    #[cfg(feature = "durable")]
     CommitUncertain(SqliteError),
     Json(serde_json::Error),
     Contract(ContractError),
@@ -124,7 +140,9 @@ impl Display for JournalError {
                 formatter.write_str("controller identifier space exhausted")
             }
             Self::Io(error) => write!(formatter, "controller filesystem error: {error}"),
+            #[cfg(feature = "durable")]
             Self::Sqlite(error) => write!(formatter, "sqlite journal error: {error}"),
+            #[cfg(feature = "durable")]
             Self::CommitUncertain(error) => {
                 write!(
                     formatter,
@@ -170,6 +188,7 @@ impl Error for JournalError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
+            #[cfg(feature = "durable")]
             Self::Sqlite(error) | Self::CommitUncertain(error) => Some(error),
             Self::Json(error) => Some(error),
             Self::Contract(error) => Some(error),
@@ -184,6 +203,7 @@ impl From<std::io::Error> for JournalError {
     }
 }
 
+#[cfg(feature = "durable")]
 impl From<SqliteError> for JournalError {
     fn from(error: SqliteError) -> Self {
         Self::Sqlite(error)

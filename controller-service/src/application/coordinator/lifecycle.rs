@@ -1,11 +1,12 @@
 //! Lifecycle commands and queries, separate from template publication.
 use super::{
     AdmissionError, ApplicationError, ConnectCommand, ControllerApplication, ControllerHost,
-    CreateAdmission, CreateCommand, CreateOptions, ExpiryReport, Inner, InstanceDetail,
-    InstanceInfo, InstancePage, JournalError, ListSelection, NeverCrash, Session, core,
-    data_credentials, finish_accepted_kill_v1, finish_admitted_create_v1_timed, map_admission,
-    map_journal, next_operation, next_sandbox, recover_locked, release_reclaimed_slots, sandbox_id,
-    tenant_id, token,
+    CreateAdmission, CreateCommand, CreateOptions, ExpiryReport, FaultContext, FaultRecord,
+    FaultStage, Inner, InstanceDetail, InstanceInfo, InstancePage, JournalError, ListSelection,
+    NeverCrash, Session, core, data_credentials, finish_accepted_kill_v1,
+    finish_admitted_create_v1_timed, map_admission, map_journal, map_unknown_application,
+    map_unknown_journal, next_operation, next_sandbox, recover_locked, release_reclaimed_slots,
+    sandbox_id, tenant_id, token,
 };
 
 impl<H: ControllerHost> ControllerApplication<H> {
@@ -47,6 +48,12 @@ impl<H: ControllerHost> ControllerApplication<H> {
             match accepted {
                 Ok(_) => {}
                 Err(AdmissionError::Journal(error)) if error.is_local_recovery_failure() => {
+                    FaultRecord::journal(
+                        FaultStage::Expiry,
+                        &error,
+                        FaultContext::instance(sandbox, Some(operation)),
+                    )
+                    .emit();
                     report.unresolved_sandboxes += 1;
                     continue;
                 }
@@ -60,6 +67,12 @@ impl<H: ControllerHost> ControllerApplication<H> {
             {
                 Ok(()) => report.completed += 1,
                 Err(error) if error.is_local_recovery_failure() => {
+                    FaultRecord::journal(
+                        FaultStage::Expiry,
+                        &error,
+                        FaultContext::instance(sandbox, Some(operation)),
+                    )
+                    .emit();
                     report.unresolved_sandboxes += 1;
                 }
                 Err(error) => return Err(map_journal(error)),
@@ -175,10 +188,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
         tenant: core::TenantId,
         sandbox: core::SandboxId,
     ) -> Result<(), ApplicationError> {
+        let context = FaultContext::instance(sandbox, None);
         let world = inner
             .journal
             .world()
-            .map_err(|_| ApplicationError::OutcomeUnknown)?;
+            .map_err(|error| map_unknown_journal(error, FaultStage::AcceptedState, context))?;
         let record = world
             .sandbox_record(sandbox)
             .ok_or(ApplicationError::NotFound)?;
@@ -195,11 +209,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
             // lost receipt, but it cannot allocate a new operation or VM.
             inner.revoke_data(sandbox);
             recover_locked(inner, Some(sandbox), self.clock.as_ref())
-                .map_err(|_| ApplicationError::OutcomeUnknown)?;
+                .map_err(|error| map_unknown_application(error, FaultStage::Recovery, context))?;
             let recovered = inner
                 .journal
                 .world()
-                .map_err(|_| ApplicationError::OutcomeUnknown)?;
+                .map_err(|error| map_unknown_journal(error, FaultStage::AcceptedState, context))?;
             return if recovered
                 .sandbox_record(sandbox)
                 .is_some_and(|record| record.phase == core::Phase::Destroyed)
@@ -213,6 +227,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             return Err(ApplicationError::OutcomeUnknown);
         }
         let operation = next_operation(&inner.journal, sandbox)?;
+        let context = FaultContext::instance(sandbox, Some(operation));
         let accepted = inner.journal.apply(
             core::ControllerInput::Request(core::Request::Kill(core::KillRequest {
                 actor: core::Actor::Tenant(tenant),
@@ -227,12 +242,15 @@ impl<H: ControllerHost> ControllerApplication<H> {
         if accepted.is_ok() || matches!(accepted, Err(JournalError::CommitUncertain(_))) {
             inner.revoke_data(sandbox);
         }
-        accepted.map_err(map_journal)?;
+        accepted.map_err(|error| {
+            FaultRecord::journal(FaultStage::KillWorkflow, &error, context).emit();
+            map_journal(error)
+        })?;
         let Inner { journal, host, .. } = &mut *inner;
         let world = journal
             .world()
-            .map_err(|_| ApplicationError::OutcomeUnknown)?;
-        if super::recovery::bind_recovery_slots(journal, host, &world, Some(sandbox))?
+            .map_err(|error| map_unknown_journal(error, FaultStage::AcceptedState, context))?;
+        if super::recovery::bind_recovery_slots(journal, host, &world, Some(sandbox), &mut None)?
             .contains(&sandbox)
         {
             return Err(ApplicationError::OutcomeUnknown);
@@ -240,7 +258,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         finish_accepted_kill_v1(journal, sandbox, operation, &mut |action| {
             host.execute(action)
         })
-        .map_err(|_| ApplicationError::OutcomeUnknown)?;
+        .map_err(|error| map_unknown_journal(error, FaultStage::KillWorkflow, context))?;
         release_reclaimed_slots(inner)?;
         Ok(())
     }
@@ -315,23 +333,24 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .admit_create_with_options(create_request, admission, &mut NeverCrash)
         }
         .map_err(map_admission)?;
+        let context = FaultContext::instance(sandbox, Some(core::OperationId(1)));
         if let Some(context) = inner
             .journal
             .host_slot_context(sandbox)
-            .map_err(|_| ApplicationError::OutcomeUnknown)?
+            .map_err(|error| map_unknown_journal(error, FaultStage::AcceptedState, context))?
         {
-            inner
-                .host
-                .bind_host_slot(&context, true)
-                .map_err(|_| ApplicationError::OutcomeUnknown)?;
+            inner.host.bind_host_slot(&context, true).map_err(|error| {
+                map_unknown_application(error, FaultStage::BindSlot, FaultContext::slot(&context))
+            })?;
         }
         // Admission is durable. A later failure cannot be reported as a
         // refused request (503), which the SDK treats as safe to retry.
-        let secret = token().map_err(|_| ApplicationError::OutcomeUnknown)?;
+        let secret = token()
+            .map_err(|error| map_unknown_application(error, FaultStage::PutCredential, context))?;
         inner
             .host
             .put_bound_launch_config(sandbox, &secret, options)
-            .map_err(|_| ApplicationError::OutcomeUnknown)?;
+            .map_err(|error| map_unknown_application(error, FaultStage::PutCredential, context))?;
         data_credentials::register_original(&mut inner.journal, sandbox, &secret)?;
         let Inner { journal, host, .. } = &mut *inner;
         finish_admitted_create_v1_timed(
@@ -341,12 +360,15 @@ impl<H: ControllerHost> ControllerApplication<H> {
             &mut |action| host.execute(action),
             &mut || self.clock.publication_ms(),
         )
-        .map_err(|error| match error {
-            JournalError::OperationFailed => ApplicationError::Failed,
-            _ => ApplicationError::OutcomeUnknown,
+        .map_err(|error| {
+            FaultRecord::journal(FaultStage::CreateWorkflow, &error, context).emit();
+            match error {
+                JournalError::OperationFailed => ApplicationError::Failed,
+                _ => ApplicationError::OutcomeUnknown,
+            }
         })?;
         self.session(inner, tenant, sandbox)
-            .map_err(|_| ApplicationError::OutcomeUnknown)
+            .map_err(|error| map_unknown_application(error, FaultStage::Session, context))
     }
 }
 

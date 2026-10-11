@@ -27,7 +27,7 @@ from gateway_pressure import (
     cleanup_handles, end_input, health, healthy, limited, start_input, wait_capacity,
 )
 from gateway_stream_limits import (
-    command_overflow, disconnect_and_reconnect, download_boundary, upload_boundary,
+    command_large_output, disconnect_and_reconnect, download_boundary, upload_boundary,
 )
 from sdk_command_input import call
 from sdk_server_smoke import options
@@ -97,8 +97,7 @@ async def exercise(args):
                                             transfer['file_upload_bytes'])
                 row['downloads'] = await call(download_boundary, sandbox, directory,
                                               transfer['file_download_bytes'])
-                row['command_overflow'] = await call(command_overflow, sandbox, directory,
-                                                     transfer['command_output_bytes'])
+                row['command_large_output'] = await call(command_large_output, sandbox, directory)
                 row['disconnect'] = await call(disconnect_and_reconnect, sandbox, directory)
             row['admission'] = await admission(sandbox, args.sandbox_url, transfer)
         finally:
