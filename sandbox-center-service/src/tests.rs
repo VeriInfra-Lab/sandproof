@@ -1,5 +1,6 @@
 //! The storage/host substitutes inject faults around the SAME pure center
 //! transitions. These tests do not claim Redis, TLS or KVM acceptance.
+mod session_wait;
 #[test]
 fn physical_observation_has_bounded_freshness_and_clock_skew() {
     let policy = super::NodeObservationPolicy {
@@ -196,6 +197,20 @@ struct MemoryAuthority {
     hidden_sandboxes: Vec<SandboxId>,
     unreadable: Arc<AtomicBool>,
     unknown_create: Arc<AtomicBool>,
+    projection_steps: std::collections::VecDeque<ProjectionStep>,
+    projection_reads: u64,
+}
+enum ProjectionStep {
+    Health(u64),
+    SharedFault,
+    CompleteAt(std::time::Instant),
+}
+fn consume_reply_budget(budget: Duration) {
+    let (_sender, receiver) = std::sync::mpsc::sync_channel::<()>(0);
+    assert_eq!(
+        receiver.recv_timeout(budget),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    );
 }
 impl AuthorityPort for MemoryAuthority {
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
@@ -205,6 +220,20 @@ impl AuthorityPort for MemoryAuthority {
         Ok(self.state.clone())
     }
     fn public_snapshot(&mut self) -> Result<PublicSnapshot, AuthorityError> {
+        self.projection_reads += 1;
+        match self.projection_steps.pop_front() {
+            Some(ProjectionStep::Health(healthy_until)) => {
+                let node = &self.state.nodes()[0];
+                self.state = self
+                    .state
+                    .refresh_node(&node.identity, healthy_until, node.free)?;
+            }
+            Some(ProjectionStep::SharedFault) => self.unreadable.store(true, Ordering::SeqCst),
+            Some(ProjectionStep::CompleteAt(deadline)) => {
+                consume_reply_budget(deadline.saturating_duration_since(std::time::Instant::now()));
+            }
+            None => {}
+        }
         Ok(PublicSnapshot {
             state: self.snapshot()?,
             hidden_sandboxes: self.hidden_sandboxes.clone(),
@@ -295,6 +324,7 @@ struct Host {
     observations: Arc<AtomicU64>,
     unknown: Arc<AtomicBool>,
     transient_unknown: Arc<AtomicU64>,
+    consume_reply_budget: Arc<AtomicBool>,
     unknown_confirmation: Arc<AtomicBool>,
     unknown_close: Arc<AtomicBool>,
     close_requests: Arc<Mutex<Vec<WindowCloseRequest>>>,
@@ -317,6 +347,7 @@ impl Default for Host {
             observations: Arc::new(AtomicU64::new(0)),
             unknown: Arc::new(AtomicBool::new(false)),
             transient_unknown: Arc::new(AtomicU64::new(0)),
+            consume_reply_budget: Arc::new(AtomicBool::new(false)),
             unknown_confirmation: Arc::new(AtomicBool::new(false)),
             unknown_close: Arc::new(AtomicBool::new(false)),
             close_requests: Arc::new(Mutex::new(Vec::new())),
@@ -369,7 +400,7 @@ impl HostPort for Host {
     fn send(
         &self,
         request: &LifecycleRequest,
-        _: Duration,
+        budget: Duration,
     ) -> Result<LifecycleResponse, PortError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.last.lock().unwrap() = Some(request.clone());
@@ -377,6 +408,9 @@ impl HostPort for Host {
         if let Some(gate) = gate {
             gate.entered.send(()).unwrap();
             gate.release.recv().unwrap();
+        }
+        if self.consume_reply_budget.load(Ordering::SeqCst) {
+            consume_reply_budget(budget);
         }
         if self.unknown.load(Ordering::SeqCst)
             || self
@@ -731,6 +765,8 @@ fn fixture() -> Fixture {
                 hidden_sandboxes: Vec::new(),
                 unreadable: Arc::clone(&unreadable),
                 unknown_create: Arc::clone(&unknown_create),
+                projection_steps: std::collections::VecDeque::new(),
+                projection_reads: 0,
             },
             host.clone(),
             Templates,
@@ -775,7 +811,7 @@ fn private_validation_cannot_issue_public_tokens_or_receive_user_management() {
     let calls = f.host.calls.load(Ordering::SeqCst);
     assert_eq!(f.app.get("1", &hidden.sandbox_id), Err(PortError::NotFound));
     assert_eq!(
-        f.app.session("1", &hidden.sandbox_id),
+        f.app.session_attempt("1", &hidden.sandbox_id),
         Err(PortError::NotFound)
     );
     assert_eq!(

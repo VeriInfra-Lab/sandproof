@@ -140,9 +140,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .map_err(|_| PortError::Busy)?
             .create(&tenant, binding, now)
             .map_err(authority_error)?;
-        self.wait(&request)?;
-        self.session(tenant.as_str(), request.identity.sandbox_id.as_str())
-            .map_err(|_| PortError::OutcomeUnknown)
+        self.wait_session(&request)
     }
     /// # Errors
     /// Connect only extends the original lifetime; no original-now reset.
@@ -168,9 +166,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .renew(&tenant, &sandbox, end, now)
                 .map_err(authority_error)?
         };
-        self.wait(&request)?;
-        self.session(tenant.as_str(), sandbox.as_str())
-            .map_err(|_| PortError::OutcomeUnknown)
+        self.wait_session(&request)
     }
     /// # Errors
     /// Ordinary lifetime changes succeed only after the host commits them.
@@ -221,9 +217,56 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         self.wait(&request).map(|_| ())
     }
     pub(crate) fn wait(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError> {
-        let deadline = Instant::now()
+        self.wait_until(request, self.reply_deadline()?)
+    }
+    fn reply_deadline(&self) -> Result<Instant, PortError> {
+        Instant::now()
             .checked_add(self.config.reply_timeout)
-            .ok_or(PortError::OutcomeUnknown)?;
+            .ok_or(PortError::OutcomeUnknown)
+    }
+    fn wait_session(
+        &self,
+        request: &LifecycleRequest,
+    ) -> Result<sandproof_controller_service::application::Session, PortError> {
+        let deadline = self.reply_deadline()?;
+        self.wait_until(request, deadline)?;
+        self.session_until(request, deadline)
+    }
+    pub(crate) fn session_until(
+        &self,
+        request: &LifecycleRequest,
+        deadline: Instant,
+    ) -> Result<sandproof_controller_service::application::Session, PortError> {
+        loop {
+            if remaining(deadline).is_none() {
+                return Err(PortError::OutcomeUnknown);
+            }
+            // Ready is not a fresh host observation. Only the original health
+            // veto is retryable here; shared reads, ownership, lifetime and
+            // immutable-template failures return immediately. No host command
+            // or new identity is issued while waiting for the background scan.
+            if let Some(session) = self
+                .session_attempt(
+                    request.identity.tenant_id.as_str(),
+                    request.identity.sandbox_id.as_str(),
+                )
+                .map_err(|_| PortError::OutcomeUnknown)?
+            {
+                // A valid projection may itself block on the bounded external
+                // authority/provider. Its completion cannot reset or cross the
+                // original public reply budget and then report success.
+                return remaining(deadline)
+                    .map(|_| session)
+                    .ok_or(PortError::OutcomeUnknown);
+            }
+            self.poll_pause(deadline);
+        }
+    }
+    fn wait_until(
+        &self,
+        request: &LifecycleRequest,
+        deadline: Instant,
+    ) -> Result<LifecycleResponse, PortError> {
         loop {
             if remaining(deadline).is_none() {
                 return Err(PortError::OutcomeUnknown);
@@ -254,12 +297,15 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     return Err(PortError::OutcomeUnknown);
                 }
             }
-            std::thread::sleep(
-                self.config
-                    .poll_interval
-                    .min(deadline.saturating_duration_since(Instant::now())),
-            );
+            self.poll_pause(deadline);
         }
+    }
+    fn poll_pause(&self, deadline: Instant) {
+        std::thread::sleep(
+            self.config
+                .poll_interval
+                .min(deadline.saturating_duration_since(Instant::now())),
+        );
     }
     /// One durable-current attempt. The mutex is released before networking,
     /// and a newer destroy is allowed to overtake this package.

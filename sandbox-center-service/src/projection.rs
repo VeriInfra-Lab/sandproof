@@ -70,21 +70,33 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .map_err(|_| PortError::Busy)?,
         })
     }
-    pub(crate) fn session(&self, tenant: &str, sandbox: &str) -> Result<Session, PortError> {
-        let detail = self.get(tenant, sandbox)?;
-        Ok(Session {
+    /// None means ONLY an expired original node observation. It is not a
+    /// cached success, an absent sandbox, or an unknown shared authority read.
+    pub(crate) fn session_attempt(
+        &self,
+        tenant: &str,
+        sandbox: &str,
+    ) -> Result<Option<Session>, PortError> {
+        Ok(self.detail_attempt(tenant, sandbox)?.map(|detail| Session {
             template_id: detail.info.template_id,
             sandbox_id: detail.info.sandbox_id,
             owner: detail.info.owner,
             envd_version: detail.info.envd_version,
             envd_access_token: detail.envd_access_token,
             domain: detail.domain,
-        })
+        }))
     }
     /// # Errors
     /// Owner, original immutable template and current lifetime are checked
     /// before issuing a token. A recent Ready is not physical health evidence.
     pub fn get(&self, tenant: &str, sandbox: &str) -> Result<InstanceDetail, PortError> {
+        self.detail_attempt(tenant, sandbox)?.ok_or(PortError::Busy)
+    }
+    fn detail_attempt(
+        &self,
+        tenant: &str,
+        sandbox: &str,
+    ) -> Result<Option<InstanceDetail>, PortError> {
         let tenant = tenant_id(tenant)?;
         let sandbox: SandboxId = sandbox.try_into().map_err(|_| PortError::NotFound)?;
         let view = self.public_snapshot()?;
@@ -100,9 +112,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .identity
             .node;
         if !view.state.node_is_reachable(node, self.now()?) {
-            return Err(PortError::Busy);
+            return Ok(None);
         }
-        self.detail_for_record(&tenant, record)
+        self.detail_for_record(&tenant, record).map(Some)
     }
     /// Caller must first authorize this record in the SAME fresh envelope.
     /// Public and protected build projections share the original DTO/token code.
