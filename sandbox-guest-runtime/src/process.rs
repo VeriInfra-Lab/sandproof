@@ -1,0 +1,557 @@
+use std::io;
+use std::os::fd::OwnedFd;
+use std::os::unix::process::ExitStatusExt;
+use std::path::Path;
+use std::process::{ExitStatus, Stdio};
+
+use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
+use sandproof_guest_core::{Channel, CommandIdentity, CommandOutcome, CommandStream, OutputMode};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+
+use crate::{LaunchSpec, ProcessLimits};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProcessSignal {
+    Terminate,
+    Kill,
+}
+
+/// The gate reports exec errors via its close-on-exec socket. EOF is only an
+/// absence of an observed exec error: it is not a proof against helper crashes.
+/// The service must preserve Unknown and never retry a released launch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LaunchObservation {
+    NoExecErrorObserved,
+    ExecFailed(i32),
+    Unknown,
+}
+
+#[derive(Clone, Copy)]
+enum LaunchState {
+    Prepared,
+    AbortRequested,
+    Released(LaunchObservation),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CommandEvent {
+    Output {
+        channel: Channel,
+        bytes: Vec<u8>,
+    },
+    /// Actual main-child wait plus both pipe EOFs and consumed output. This
+    /// does not claim descendants stopped, or that a VM has been destroyed.
+    End {
+        code: i32,
+        signal: Option<i32>,
+    },
+}
+
+/// The single stdin writer, optionally separated from the output/wait owner.
+/// Keeping this handle in the command owner allows input and output to make
+/// progress concurrently. Dropping it closes stdin, so a request must borrow
+/// it rather than own it if disconnecting should leave stdin open.
+pub struct CommandInput {
+    identity: CommandIdentity,
+    stdin: Option<ChildStdin>,
+}
+
+impl CommandInput {
+    /// # Errors
+    /// Rejects stale identity, closed stdin and actual write errors. A failed
+    /// or cancelled write may already have delivered a prefix; never replay it.
+    pub async fn write_input(&mut self, identity: CommandIdentity, bytes: &[u8]) -> io::Result<()> {
+        check_identity(self.identity, identity)?;
+        self.stdin
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "closed stdin"))?
+            .write_all(bytes)
+            .await
+    }
+
+    /// # Errors
+    /// Rejects stale identity. Repeated close of this original handle is safe.
+    pub fn close_input(&mut self, identity: CommandIdentity) -> io::Result<()> {
+        check_identity(self.identity, identity)?;
+        self.stdin.take();
+        Ok(())
+    }
+}
+
+struct PendingChild(Option<Child>);
+
+impl Drop for PendingChild {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            // Cancellation before gate release cannot execute user code. Tokio
+            // owns orphan reaping; this drop is not a cleanup-success receipt.
+            let _ = child.start_kill();
+        }
+    }
+}
+
+/// One owned process and pipe consumer, independent of an HTTP connection.
+/// All control calls use the retained pidfd; there is no lookup by raw PID.
+/// Drop stops an UNRELEASED helper. A released/unknown command is not killed by
+/// drop; the future service must retain this owner while requests disconnect.
+pub struct CommandProcess {
+    child: Child,
+    pidfd: OwnedFd,
+    stdout: ChildStdout,
+    stderr: ChildStderr,
+    stdin: Option<CommandInput>,
+    gate: Option<UnixStream>,
+    _gate_directory: tempfile::TempDir,
+    identity: CommandIdentity,
+    limits: ProcessLimits,
+    stream: CommandStream,
+    launch: LaunchState,
+    stdout_eof: bool,
+    stderr_eof: bool,
+    waited: Option<ExitStatus>,
+    end_delivered: bool,
+}
+
+impl Drop for CommandProcess {
+    fn drop(&mut self) {
+        if !matches!(self.launch, LaunchState::Released(_)) {
+            let _ = pidfd_send_signal(&self.pidfd, Signal::KILL);
+        }
+    }
+}
+
+impl CommandProcess {
+    /// Start only the trusted worker and bind its pidfd/creation evidence. User
+    /// code remains behind a private gate until `release` is called. The owner
+    /// must reserve capacity before prepare and public selector identity before
+    /// release; these obligations are not implemented by this low-level port.
+    /// # Errors
+    /// Rejects invalid context/budgets, helper/pipe failures and gate timeout.
+    /// A cancelled preparation kills its unreleased helper, without claiming a
+    /// synchronous cleanup receipt. Explicit `abort_prepared` observes reaping.
+    pub async fn prepare(
+        worker: &Path,
+        private_directory: &Path,
+        session: u64,
+        command: u64,
+        spec: &LaunchSpec,
+        limits: ProcessLimits,
+    ) -> io::Result<Self> {
+        let limits = limits.validate()?;
+        spec.validate()?;
+        if session == 0 || command == 0 || !worker.is_absolute() {
+            return Err(invalid("missing command or worker identity"));
+        }
+        let payload = encode(spec, limits.launch_bytes)?;
+        let directory = tempfile::Builder::new()
+            .prefix("guest-gate-")
+            .tempdir_in(private_directory)?;
+        let socket = directory.path().join("launch");
+        let listener = UnixListener::bind(&socket)?;
+        let child = Command::new(worker)
+            .arg("--gate")
+            .arg(&socket)
+            .arg("--limit")
+            .arg(limits.launch_bytes.to_string())
+            .env_clear()
+            .stdin(if spec.stdin {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let mut pending = PendingChild(Some(child));
+        let child = pending.0.as_mut().ok_or_else(|| invalid("missing child"))?;
+        let pid = child.id().ok_or_else(|| invalid("missing live PID"))?;
+        let kernel_pid = Pid::from_raw(i32::try_from(pid).map_err(|_| invalid("PID range"))?)
+            .ok_or_else(|| invalid("zero PID"))?;
+        let pidfd = pidfd_open(kernel_pid, PidfdFlags::empty())?;
+        let start_ticks = start_ticks(pid)?;
+        let identity = CommandIdentity {
+            session,
+            command,
+            pid,
+            start_ticks,
+        };
+        let gate = tokio::time::timeout(limits.handshake_timeout, async {
+            let (mut stream, _) = listener.accept().await?;
+            let peer = rustix::net::sockopt::socket_peercred(&stream)?;
+            if peer.pid != kernel_pid || peer.uid != rustix::process::geteuid() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "wrong worker peer",
+                ));
+            }
+            let mut hello = [0; 4];
+            stream.read_exact(&mut hello).await?;
+            if &hello != crate::worker::HELLO || start_ticks != self::start_ticks(pid)? {
+                return Err(invalid("worker identity or protocol changed"));
+            }
+            let length = u32::try_from(payload.len()).map_err(|_| invalid("launch length"))?;
+            stream.write_all(&length.to_be_bytes()).await?;
+            stream.write_all(&payload).await?;
+            let mut ready = [0; 4];
+            stream.read_exact(&mut ready).await?;
+            if &ready != crate::worker::READY {
+                return Err(invalid("worker refused context"));
+            }
+            Ok(stream)
+        })
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "worker handshake"))??;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| invalid("missing stdout"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| invalid("missing stderr"))?;
+        // Child::wait closes a stdin still stored in Child. Retain it separately
+        // so observing exit never silently closes a user's interactive input.
+        let stdin = Some(CommandInput {
+            identity,
+            stdin: child.stdin.take(),
+        });
+        let stream = CommandStream::new(identity, OutputMode::Pipes, limits.chunk_bytes as u64)
+            .map_err(accounting)?;
+        Ok(Self {
+            child: pending.0.take().ok_or_else(|| invalid("missing child"))?,
+            pidfd,
+            stdout,
+            stderr,
+            stdin,
+            gate: Some(gate),
+            _gate_directory: directory,
+            identity,
+            limits,
+            stream,
+            launch: LaunchState::Prepared,
+            stdout_eof: false,
+            stderr_eof: false,
+            waited: None,
+            end_delivered: false,
+        })
+    }
+
+    #[must_use]
+    pub const fn identity(&self) -> CommandIdentity {
+        self.identity
+    }
+
+    #[must_use]
+    pub const fn launch_observation(&self) -> Option<LaunchObservation> {
+        match self.launch {
+            LaunchState::Released(observation) => Some(observation),
+            LaunchState::Prepared | LaunchState::AbortRequested => None,
+        }
+    }
+
+    /// Release this exact prepared process at most once. The caller must have
+    /// recorded public-selector ownership before this call. Cancellation after
+    /// its first poll leaves Unknown in this object; it never reopens the gate.
+    /// # Errors
+    /// A duplicate release is refused even if its prior response was lost.
+    pub async fn release(&mut self) -> io::Result<LaunchObservation> {
+        if !matches!(self.launch, LaunchState::Prepared) || self.waited.is_some() {
+            return Err(invalid("launch already attempted or aborted"));
+        }
+        self.launch = LaunchState::Released(LaunchObservation::Unknown);
+        let mut gate = self
+            .gate
+            .take()
+            .ok_or_else(|| invalid("missing launch gate"))?;
+        let observed = tokio::time::timeout(self.limits.handshake_timeout, async {
+            gate.write_all(&[1]).await?;
+            gate.shutdown().await?;
+            let mut diagnostic = [0; 4];
+            let first = gate.read(&mut diagnostic[..1]).await?;
+            if first == 0 {
+                return Ok(LaunchObservation::NoExecErrorObserved);
+            }
+            gate.read_exact(&mut diagnostic[1..]).await?;
+            if &diagnostic != crate::worker::ERROR {
+                return Ok(LaunchObservation::Unknown);
+            }
+            gate.read_exact(&mut diagnostic).await?;
+            Ok::<_, io::Error>(LaunchObservation::ExecFailed(i32::from_be_bytes(
+                diagnostic,
+            )))
+        })
+        .await;
+        let observation = observed
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or(LaunchObservation::Unknown);
+        self.launch = LaunchState::Released(observation);
+        Ok(observation)
+    }
+
+    /// # Errors
+    /// Rejects a released helper or failures to observe its actual termination.
+    pub async fn abort_prepared(&mut self) -> io::Result<ExitStatus> {
+        if matches!(self.launch, LaunchState::Released(_)) {
+            return Err(invalid("cannot abort a released helper"));
+        }
+        self.launch = LaunchState::AbortRequested;
+        if let Some(status) = self.waited {
+            return Ok(status);
+        }
+        if let Err(error) = self.signal(self.identity, ProcessSignal::Kill)
+            && error.raw_os_error() != Some(rustix::io::Errno::SRCH.raw_os_error())
+        {
+            return Err(error);
+        }
+        self.wait_main().await
+    }
+
+    /// # Errors
+    /// Rejects stale identity or a kernel signal failure. Signal delivery is
+    /// not evidence of exit and does not kill an entire descendant tree.
+    pub fn signal(&self, identity: CommandIdentity, signal: ProcessSignal) -> io::Result<()> {
+        self.check_identity(identity)?;
+        let signal = match signal {
+            ProcessSignal::Terminate => Signal::TERM,
+            ProcessSignal::Kill => Signal::KILL,
+        };
+        pidfd_send_signal(&self.pidfd, signal)?;
+        Ok(())
+    }
+
+    /// Move the single stdin writer out so it can run concurrently with
+    /// `next_event`, `wait_main`, or signalling. No duplicate writer is created.
+    /// # Errors
+    /// Rejects stale identity, an unreleased process, or closed/taken stdin.
+    pub fn take_input(&mut self, identity: CommandIdentity) -> io::Result<CommandInput> {
+        self.check_identity(identity)?;
+        if !matches!(self.launch, LaunchState::Released(_)) {
+            return Err(invalid("unreleased process"));
+        }
+        if self
+            .stdin
+            .as_ref()
+            .is_none_or(|input| input.stdin.is_none())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "closed or taken stdin",
+            ));
+        }
+        self.stdin.take().ok_or_else(|| invalid("taken stdin"))
+    }
+
+    /// # Errors
+    /// Rejects stale identity, unreleased/closed stdin, or actual write errors.
+    /// A cancelled/failed write may already have delivered a prefix.
+    pub async fn write_input(&mut self, identity: CommandIdentity, bytes: &[u8]) -> io::Result<()> {
+        self.check_identity(identity)?;
+        if !matches!(self.launch, LaunchState::Released(_)) {
+            return Err(invalid("unreleased process"));
+        }
+        let input = self
+            .stdin
+            .as_mut()
+            .ok_or_else(|| invalid("stdin writer was transferred"))?;
+        input.write_input(identity, bytes).await
+    }
+
+    /// # Errors
+    /// Rejects stale identity, an unreleased process, or a transferred writer.
+    /// Repeated close is safe while this object still owns the input handle.
+    pub fn close_input(&mut self, identity: CommandIdentity) -> io::Result<()> {
+        self.check_identity(identity)?;
+        if !matches!(self.launch, LaunchState::Released(_)) {
+            return Err(invalid("unreleased process"));
+        }
+        self.stdin
+            .as_mut()
+            .ok_or_else(|| invalid("stdin writer was transferred"))?
+            .close_input(identity)
+    }
+
+    /// Observe the main child only; callers must also drain its pipes. This
+    /// method remains usable after a stream error or unknown launch response.
+    /// # Errors
+    /// Returns an actual wait failure, without inferring the process vanished.
+    pub async fn wait_main(&mut self) -> io::Result<ExitStatus> {
+        if let Some(status) = self.waited {
+            return Ok(status);
+        }
+        let status = self.child.wait().await?;
+        self.observe_wait(status)?;
+        Ok(status)
+    }
+
+    /// Release only bytes actually consumed by this port's bounded consumer.
+    /// # Errors
+    /// Rejects stale/wrong-channel acknowledgements or unobserved bytes.
+    pub fn consume_output(
+        &mut self,
+        identity: CommandIdentity,
+        channel: Channel,
+        bytes: usize,
+    ) -> io::Result<()> {
+        self.stream
+            .sent_output(identity, channel, bytes as u64)
+            .map_err(accounting)
+    }
+
+    /// Read one bounded chunk or a complete End. The consumer must acknowledge
+    /// its outstanding chunk before requesting more; no cumulative output cap.
+    /// # Errors
+    /// Refuses unattempted/failed/unknown launch, unconsumed output, and actual
+    /// pipe/wait errors. A read error never becomes an ordinary End.
+    pub async fn next_event(&mut self) -> io::Result<Option<CommandEvent>> {
+        match self.launch {
+            LaunchState::Released(LaunchObservation::NoExecErrorObserved) => {}
+            LaunchState::Released(LaunchObservation::ExecFailed(code)) => {
+                return Err(io::Error::from_raw_os_error(code));
+            }
+            _ => return Err(io::Error::other("command launch not observed")),
+        }
+        if self.end_delivered {
+            return Ok(None);
+        }
+        if self.stream.pending_bytes() != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "output not consumed",
+            ));
+        }
+        loop {
+            match self.stream.outcome() {
+                CommandOutcome::Exited(code) => {
+                    self.end_delivered = true;
+                    return Ok(Some(CommandEvent::End {
+                        code,
+                        signal: self.waited.and_then(|s| s.signal()),
+                    }));
+                }
+                CommandOutcome::Failed(_) => return Err(io::Error::other("output stream failed")),
+                CommandOutcome::Pending => {}
+            }
+            let mut stdout = vec![0; self.limits.chunk_bytes];
+            let mut stderr = vec![0; self.limits.chunk_bytes];
+            tokio::select! {
+                result = self.stdout.read(&mut stdout), if !self.stdout_eof => {
+                    if let Some(event) = self.observe_read(Channel::Stdout, stdout, result)? { return Ok(Some(event)); }
+                }
+                result = self.stderr.read(&mut stderr), if !self.stderr_eof => {
+                    if let Some(event) = self.observe_read(Channel::Stderr, stderr, result)? { return Ok(Some(event)); }
+                }
+                result = self.child.wait(), if self.waited.is_none() => { self.observe_wait(result?)?; }
+            }
+        }
+    }
+
+    fn observe_read(
+        &mut self,
+        channel: Channel,
+        mut data: Vec<u8>,
+        result: io::Result<usize>,
+    ) -> io::Result<Option<CommandEvent>> {
+        let count = match result {
+            Ok(count) => count,
+            Err(error) => {
+                self.stream
+                    .fail(self.identity, sandproof_guest_core::StreamFailure::Read)
+                    .map_err(accounting)?;
+                return Err(error);
+            }
+        };
+        if count == 0 {
+            match channel {
+                Channel::Stdout => self.stdout_eof = true,
+                Channel::Stderr => self.stderr_eof = true,
+                Channel::Pty => return Err(invalid("not a PTY")),
+            }
+            self.stream
+                .observe_eof(self.identity, channel)
+                .map_err(accounting)?;
+            Ok(None)
+        } else {
+            data.truncate(count);
+            self.stream
+                .queue_output(self.identity, channel, count as u64)
+                .map_err(accounting)?;
+            Ok(Some(CommandEvent::Output {
+                channel,
+                bytes: data,
+            }))
+        }
+    }
+
+    fn observe_wait(&mut self, status: ExitStatus) -> io::Result<()> {
+        self.waited = Some(status);
+        if self.stream.outcome() == CommandOutcome::Pending {
+            self.stream
+                .observe_exit(self.identity, status.code().unwrap_or(-1))
+                .map_err(accounting)?;
+        }
+        Ok(())
+    }
+
+    fn check_identity(&self, identity: CommandIdentity) -> io::Result<()> {
+        check_identity(self.identity, identity)
+    }
+}
+
+fn check_identity(expected: CommandIdentity, actual: CommandIdentity) -> io::Result<()> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "stale command identity",
+        ))
+    }
+}
+
+fn start_ticks(pid: u32) -> io::Result<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    let end = stat
+        .rfind(')')
+        .ok_or_else(|| invalid("invalid process stat"))?;
+    stat[end + 1..]
+        .split_whitespace()
+        .nth(19)
+        .ok_or_else(|| invalid("missing process birth"))?
+        .parse()
+        .map_err(|_| invalid("invalid process birth"))
+}
+
+fn invalid(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message)
+}
+fn accounting(error: sandproof_guest_core::CommandError) -> io::Error {
+    io::Error::other(format!("guest stream accounting: {error:?}"))
+}
+
+fn encode(spec: &LaunchSpec, maximum: usize) -> io::Result<Vec<u8>> {
+    struct Bounded {
+        bytes: Vec<u8>,
+        maximum: usize,
+    }
+    impl io::Write for Bounded {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if bytes.len() > self.maximum - self.bytes.len() {
+                return Err(invalid("launch bytes exceeded"));
+            }
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut output = Bounded {
+        bytes: Vec::with_capacity(maximum),
+        maximum,
+    };
+    serde_json::to_writer(&mut output, spec)?;
+    Ok(output.bytes)
+}

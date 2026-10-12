@@ -1077,6 +1077,18 @@ name = "sandproof-guest-core"
 version = "0.1.0"
 
 [[package]]
+name = "sandproof-guest-runtime"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "sandproof-guest-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "sandproof-host-service"
 version = "0.1.0"
 dependencies = [
