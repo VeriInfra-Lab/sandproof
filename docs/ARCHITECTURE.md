@@ -67,6 +67,8 @@ E2B 对照使用其 [runtime 架构文档](https://github.com/e2b-dev/runtime/bl
 
 envd 在 VM 内执行用户进程、信号与文件操作；来宾及来宾 root 不可信，来宾文件路径不是宿主路径。我们不重新实现完整 POSIX/ACL，也不证明来宾系统或虚拟化逃逸不存在。
 
+现役模板复用固定 envd；自主替换由 [#311](https://github.com/ningZhang-cs/sandproof/issues/311) 推进，不作为当前 V1 发布前置。首个 [sandproof-guest-core](../sandbox-guest-core/src/lib.rs) 仅实现命令订阅完成判定和文件传输计费，不含服务监听、进程启动或文件 I/O，不能部署为 envd。后续协议/执行适配使用这些原函数，保持纯决定与系统调用边界；公开路线仍经中心与宿主网关。尚待冻结的 PID 复用策略见[模块合同](module-contracts.md)，抽取试验及未证明范围见[覆盖记录](proof-coverage.md)。
+
 持续命令输出使用有界在途缓冲、分块、并发和背压，不设累计字节上限；执行期限不等于字节上限。文件、一元回复和宿主辅助命令各有有限预算。取消、撤销、实际退出与排空责任见[模块合同](module-contracts.md)。
 
 宿主通过 Linux 网络空间、TAP 和防火墙强制禁网及静态 IPv4 规则，不依赖来宾自觉。公网需部署显式开启，平台禁区始终生效。DNS 也是出站通道，固定 DNS 地址不等于查询内容过滤。域名策略、IPv6 放行、运行时网络切换、任意服务端口公开不在当前版本。

@@ -1073,6 +1073,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandproof-guest-core"
+version = "0.1.0"
+
+[[package]]
 name = "sandproof-host-service"
 version = "0.1.0"
 dependencies = [

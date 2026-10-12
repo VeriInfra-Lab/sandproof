@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "sdk": {
+    "version": "2.51.0",
+    "revision": "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b"
+  },
+  "runtime_revision": "f455fd58fa3f289e78ce1de690c35968d8d29322",
+  "evidence": "Shared pinned-protocol fixtures only; these are not Rust guest-service, upstream runtime, or KVM execution results.",
+  "rpcs": [
+    {
+      "id": "command-start",
+      "service": "process",
+      "method": "Start",
+      "transport": "server_stream",
+      "request": {
+        "process": {
+          "cmd": "/bin/sh",
+          "args": [
+            "-c",
+            "printf out; printf err >&2; exit 17"
+          ],
+          "envs": {
+            "SAMPLE": "value"
+          },
+          "cwd": "/tmp"
+        },
+        "stdin": false
+      },
+      "responses": [
+        {
+          "event": {
+            "start": {
+              "pid": 4321
+            }
+          }
+        },
+        {
+          "event": {
+            "data": {
+              "stdout": "b3V0"
+            }
+          }
+        },
+        {
+          "event": {
+            "data": {
+              "stderr": "ZXJy"
+            }
+          }
+        },
+        {
+          "event": {
+            "end": {
+              "exitCode": 17,
+              "exited": true,
+              "status": "exit status 17"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "command-connect",
+      "service": "process",
+      "method": "Connect",
+      "transport": "server_stream",
+      "request": {
+        "process": {
+          "pid": 4321
+        }
+      },
+      "responses": [
+        {
+          "event": {
+            "start": {
+              "pid": 4321
+            }
+          }
+        },
+        {
+          "event": {
+            "end": {
+              "exitCode": 17,
+              "exited": true,
+              "status": "exit status 17"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "command-input",
+      "service": "process",
+      "method": "SendInput",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4321
+        },
+        "input": {
+          "stdin": "AP9BCg=="
+        }
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "command-close-input",
+      "service": "process",
+      "method": "CloseStdin",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4321
+        }
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "command-signal",
+      "service": "process",
+      "method": "SendSignal",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4321
+        },
+        "signal": "SIGNAL_SIGKILL"
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "command-list",
+      "service": "process",
+      "method": "List",
+      "transport": "unary",
+      "request": {},
+      "responses": [
+        {
+          "processes": [
+            {
+              "config": {
+                "cmd": "/bin/cat"
+              },
+              "pid": 4321
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pty-start",
+      "service": "process",
+      "method": "Start",
+      "transport": "server_stream",
+      "request": {
+        "process": {
+          "cmd": "/bin/sh"
+        },
+        "pty": {
+          "size": {
+            "cols": 80,
+            "rows": 24
+          }
+        },
+        "stdin": true
+      },
+      "responses": [
+        {
+          "event": {
+            "start": {
+              "pid": 4322
+            }
+          }
+        },
+        {
+          "event": {
+            "data": {
+              "pty": "AP9BCg=="
+            }
+          }
+        },
+        {
+          "event": {
+            "end": {
+              "exited": true,
+              "status": "exit status 0"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "pty-resize",
+      "service": "process",
+      "method": "Update",
+      "transport": "unary",
+      "request": {
+        "process": {
+          "pid": 4322
+        },
+        "pty": {
+          "size": {
+            "cols": 120,
+            "rows": 40
+          }
+        }
+      },
+      "responses": [
+        {}
+      ]
+    },
+    {
+      "id": "file-stat",
+      "service": "filesystem",
+      "method": "Stat",
+      "transport": "unary",
+      "request": {
+        "path": "/tmp/sample.bin"
+      },
+      "responses": [
+        {
+          "entry": {
+            "name": "sample.bin",
+            "type": "FILE_TYPE_FILE",
+            "path": "/tmp/sample.bin",
+            "size": "4",
+            "mode": 420,
+            "permissions": "-rw-r--r--",
+            "owner": "ubuntu",
+            "group": "ubuntu",
+            "modifiedTime": "2026-10-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "file-mkdir",
+      "service": "filesystem",
+      "method": "MakeDir",
+      "transport": "unary",
+      "request": {
+        "path": "~/new/nested"
+      },
+      "responses": [
+        {
+          "entry": {
+            "name": "nested",
+            "type": "FILE_TYPE_DIRECTORY",
+            "path": "/home/ubuntu/new/nested",
+            "mode": 493
+          }
+        }
+      ]
+    },
+    {
+      "id": "file-list",
+      "service": "filesystem",
+      "method": "ListDir",
+      "transport": "unary",
+      "request": {
+        "path": "/tmp",
+        "depth": 2
+      },
+      "responses": [
+        {
+          "entries": [
+            {
+              "name": "sample.bin",
+              "type": "FILE_TYPE_FILE",
+              "path": "/tmp/sample.bin",
+              "size": "4"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "file-move",
+      "service": "filesystem",
+      "method": "Move",
+      "transport": "unary",
+      "request": {
+        "source": "/tmp/sample.bin",
+        "destination": "/tmp/moved.bin"
+      },
+      "responses": [
+        {
+          "entry": {
+            "name": "moved.bin",
+            "type": "FILE_TYPE_FILE",
+            "path": "/tmp/moved.bin",
+            "size": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "file-remove",
+      "service": "filesystem",
+      "method": "Remove",
+      "transport": "unary",
+      "request": {
+        "path": "/tmp/moved.bin"
+      },
+      "responses": [
+        {}
+      ]
+    }
+  ],
+  "http": [
+    {
+      "id": "file-upload",
+      "method": "POST",
+      "path": "/files?path=%2Ftmp%2Fsample.bin&user=ubuntu",
+      "content_type": "application/octet-stream",
+      "body_base64": "AP9BCg==",
+      "status": 200
+    },
+    {
+      "id": "file-download",
+      "method": "GET",
+      "path": "/files?path=%2Ftmp%2Fsample.bin&user=ubuntu",
+      "status": 200,
+      "body_base64": "AP9BCg=="
+    },
+    {
+      "id": "health",
+      "method": "GET",
+      "path": "/health",
+      "status": 204
+    },
+    {
+      "id": "initialize",
+      "method": "POST",
+      "path": "/init",
+      "visibility": "host_only",
+      "body": {
+        "accessToken": "fixture-only-token",
+        "defaultUser": "root",
+        "envVars": {
+          "SAMPLE": "value"
+        },
+        "defaultWorkdir": "/tmp"
+      },
+      "status": 204
+    }
+  ],
+  "errors": [
+    {
+      "code": "not_found",
+      "http_status": 404,
+      "meaning": "unknown command selector or missing file; no replay"
+    },
+    {
+      "code": "invalid_argument",
+      "http_status": 400,
+      "meaning": "invalid fields/path; never fall back to a different user"
+    },
+    {
+      "code": "permission_denied",
+      "http_status": 403,
+      "meaning": "operation refused; preserve already observed partial file effects"
+    },
+    {
+      "code": "unauthenticated",
+      "http_status": 401,
+      "meaning": "no valid instance credential or requested user"
+    },
+    {
+      "code": "resource_exhausted",
+      "http_status": 429,
+      "meaning": "declared local capacity exhausted; not a successful start"
+    },
+    {
+      "code": "deadline_exceeded",
+      "http_status": 504,
+      "meaning": "requested result not observed in time; effects may have happened"
+    }
+  ],
+  "current_gateway_rejections": [
+    "WatchDir",
+    "CreateWatcher",
+    "GetWatcherEvents",
+    "RemoveWatcher"
+  ],
+  "open_contract_decisions": [
+    "Public PID reuse and service restart need an explicit reviewed policy; internal full identity alone is insufficient.",
+    "File watcher routes are rejected by the current gateway; exposing them requires an explicit scope decision."
+  ]
+}
