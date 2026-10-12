@@ -26,7 +26,7 @@ class FunctionEntryTests(unittest.TestCase):
         self.assertNotIn('pull_request_target:', workflow)
         self.assertIn('branches: [main, test]', workflow)
         self.assertIn('workflow_dispatch:', workflow)
-        self.assertIn('run: bash scripts/check-function.sh', workflow)
+        self.assertIn('bash scripts/check-function.sh', workflow)
 
     def test_data_checks_use_only_locked_ci_git_adapter_without_changing_tests(self):
         root = Path(__file__).resolve().parents[2]

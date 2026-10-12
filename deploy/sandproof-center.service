@@ -1,0 +1,33 @@
+# Example: material/account/resource approval and explicit initialize precede
+# installation. No ExecStartPre may initialize or repair the authority.
+[Unit]
+Description=Sandproof public center
+Wants=sandproof-redis.service sandproof-host.service
+After=sandproof-redis.service sandproof-host.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=sandproof-center
+Group=sandproof-center
+UMask=0077
+ExecStart=/var/lib/sandproof-services/center/control/bin/sandproof-center serve --config /var/lib/sandproof-services/center/control/center.json
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=60
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sandproof-services/center
+InaccessiblePaths=/var/lib/sandproof-host /var/lib/sandproof-services/redis
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

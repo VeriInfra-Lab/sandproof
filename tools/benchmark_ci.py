@@ -105,7 +105,7 @@ def run_identity(candidate, base, configuration, manifest, lock):
         config=configuration, subset=manifest, lock=digest(canonical(lock)))))
 
 
-def authorize(candidate, *, approved_commits, observed_test=None, observed_promotion=None):
+def authorize(candidate, *, approved_commits, observed_promotion=None):
     if re.fullmatch('[0-9a-f]{40}', candidate or '') is None:
         raise ValueError('invalid candidate identity')
     if observed_promotion is not None:
@@ -113,7 +113,7 @@ def authorize(candidate, *, approved_commits, observed_test=None, observed_promo
                 or observed_promotion[:2] not in (('integration', 'test'), ('test', 'main'), ('main', 'test'))
                 or observed_promotion[2] != candidate):
             raise ValueError('invalid protected promotion authority')
-    if candidate not in approved_commits and candidate != observed_test and observed_promotion is None:
+    if candidate not in approved_commits and observed_promotion is None:
         raise ValueError('candidate is not an approved commit or trusted test head')
 
 
@@ -145,8 +145,12 @@ def instantiate_policy(template, root, namespaces, *, job_count):
     profile['coordination_file'] = str(root / 'coordination')
     for index, role in enumerate(('runtime', 'builder')):
         pool = next(p for p in profile['pools'] if p['role'] == role)
+        original_namespace = pool['namespace']
         pool.update(namespace=namespaces[index], database=str(root / str(index) / 'db/controller.db'),
                     node_state_dir=str(root / str(index) / 'state'), chroot_base=str(root / str(index) / 'jails'))
+        for cache in profile['host_template_caches']:
+            if cache['namespace'] == original_namespace:
+                cache.update(namespace=namespaces[index], root=str(root / str(index) / 'template-cache'))
     profile['public_build'].update(root=str(root / 'builds'), registry_root=str(root / 'registry'))
     for role in ('runtime', 'builder'):
         policy[role]['bounded_host']['physical_storage'] = copy.deepcopy(profile)
@@ -156,7 +160,11 @@ def instantiate_policy(template, root, namespaces, *, job_count):
 
 def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expected_hashes=None,
                  full_task_count, dataset='terminal-bench@2.1', source_kind='dockerfile', oracle_mode='original',
-                 expected_fixture_sha256=None):
+                 expected_fixture_sha256=None, service_manifest, dk_evidence,
+                 expected_run_id, expected_candidate_manifest_sha256):
+    from tools.ci_e2e_artifacts import (require_service_boundary, require_execution_manifest,
+        require_process_evidence,require_dk)
+    from tools.service_storage_observation import require_storage_observation
     pin = pin_for({'dataset': dataset})
     prepared = source_kind == 'prepared-ci'
     if prepared:
@@ -169,6 +177,23 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     if oracle_mode not in ('original', 'repaired') or (pin.version != '2.0' and oracle_mode != 'original'):
         raise ValueError('unreviewed batch oracle mode')
     report = json_file(root / 'report.json', limit=4 * 1024 * 1024)
+    boundary = require_service_boundary(report, service_manifest)
+    if boundary['services']['candidate'] != candidate:
+        raise ValueError('runtime service candidate differs from the requested commit')
+    # DK is the already checked root-owned result of its separate fresh cohort.
+    dk=require_dk(dk_evidence,candidate=candidate,
+        expected_service_data=dk_evidence.get('service_data') if isinstance(dk_evidence,dict) else None)
+    execution_path=private_path(root/'execution-manifest.json')
+    execution=require_execution_manifest(report.get('execution_manifest'),service_manifest,
+        expected=json_file(execution_path,limit=32768))
+    # Agreement between the two incoming files is insufficient: another cohort
+    # can use the same candidate and binaries. Only the supervisor's durable
+    # original intent and sealed candidate receipt may supply these expectations.
+    if (execution['run_id']!=expected_run_id
+            or execution['candidate_manifest_sha256']!=expected_candidate_manifest_sha256):
+        raise ValueError('batch execution differs from the original supervised run')
+    storage=require_storage_observation(report.get('service_storage'),expected=execution['service_data'])
+    processes=require_process_evidence(report.get('service_processes'),execution)
     service = json_file(root / 'service-cleanup.json')
     rows = report.get('tasks', [])
     observed = [r.get('name') for r in rows]
@@ -203,7 +228,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
         raise ValueError('incomplete, mismatched or unknown batch cleanup evidence')
     if proxy_required and not prepared and json_file(root / 'proxy-cleanup.json').get('phase') != 'removed':
         raise ValueError('proxy cleanup is unknown')
-    fingerprint_fields = ('server_sha256', 'kernel_sha256', 'builder_base_sha256')
+    fingerprint_fields = ('kernel_sha256', 'builder_base_sha256')
     if (any(not isinstance(report.get(key), str) or re.fullmatch('[0-9a-f]{64}', report[key]) is None
             for key in fingerprint_fields)
             or (expected_hashes is not None and any(report.get(key) != value
@@ -243,11 +268,15 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
     passed = exit_code == 0 and all(r['status'] == r['oracle'] == r['verifier'] == 'passed'
         and r['rewards'] == {'reward': 1} for r in safe)
     hashes = {key: value for key, value in report.items() if key in
-              ('server_sha256', 'kernel_sha256', 'builder_base_sha256')
+              fingerprint_fields
               and isinstance(value, str) and re.fullmatch('[0-9a-f]{64}', value)}
-    result = dict(tasks=safe, dataset=dataset, source_kind=source_kind, oracle_mode=oracle_mode,
+    result = dict(candidate=candidate, tasks=safe, dataset=dataset, source_kind=source_kind, oracle_mode=oracle_mode,
                 passed=passed, cleanup='passed', exit_code=exit_code, artifact_hashes=hashes,
-                report_sha256=hashlib.sha256((root / 'report.json').read_bytes()).hexdigest())
+                report_sha256=hashlib.sha256((root / 'report.json').read_bytes()).hexdigest(),
+                execution_manifest_sha256=hashlib.sha256(execution_path.read_bytes()).hexdigest(),
+                service_roles=sorted(processes),dk=dk,service_storage=storage,
+                service_data=execution['service_data'],
+                **boundary)
     if prepared:
         result.update(fixture_sha256=expected_fixture_sha256, original_environment=False,
                       original_verifier=False, original_oracle_verifier=False,
@@ -258,6 +287,34 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
 
 def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal-bench@2.1',
               source_kind=None, expected_fixture_sha256=None):
+    from tools.ci_e2e_artifacts import require_public_identity, require_boundary,require_dk
+    from tools.service_storage_observation import require_storage_declaration, require_storage_observation
+    service_identity = None
+    boundary = None
+    dk = None
+    storage = []
+    declarations = []
+    for batch in batches:
+        identity = require_public_identity(batch.get('services'), candidate=candidate)
+        observed = require_boundary(batch.get('service_boundary'))
+        retained_dk=batch.get('dk')
+        faults=require_dk(retained_dk,candidate=candidate,
+            expected_service_data=retained_dk.get('service_data') if isinstance(retained_dk,dict) else None)
+        # This declaration was retained from the checked original receipt by
+        # batch_result, before the original root was removed. It is not derived
+        # from the summary being checked and is kept separately for each batch.
+        declaration=require_storage_declaration(batch.get('service_data'))
+        storage.append(require_storage_observation(batch.get('service_storage'),expected=declaration))
+        declarations.append(declaration)
+        if dk is not None and faults!=dk:
+            raise ValueError('cannot combine different exact-candidate DK cohorts')
+        dk=faults
+        if (not isinstance(batch.get('execution_manifest_sha256'),str)
+                or re.fullmatch('[0-9a-f]{64}',batch['execution_manifest_sha256']) is None):
+            raise ValueError('original dual-service execution receipt missing from durable batch')
+        if batch.get('candidate') != candidate or (service_identity is not None and identity != service_identity):
+            raise ValueError('cannot combine different center/host candidates or service contracts')
+        service_identity, boundary = identity, observed
     pin_for({'dataset': dataset})
     if any(b.get('dataset', dataset) != dataset for b in batches):
         raise ValueError('cannot combine different dataset versions')
@@ -298,6 +355,11 @@ def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal
         scope='full fixed dataset' if full else 'configured regression subset; not full-suite acceptance',
         required_tasks=list(expected), tasks=rows, complete=complete, passed=passed,
         executed_task_count=len(rows), full_suite_passed=bool(full and passed), paid_model_used=False)
+    if service_identity is not None:
+        # Preserve each validated cohort's original summary in batch order;
+        # different role roots cannot be merged into a synthetic peak.
+        result.update(services=service_identity, service_boundary=boundary,dk=dk,
+                      service_data=declarations,service_storage=storage)
     if prepared:
         result.update(source_kind='prepared-ci', fixture_sha256=fixture_sha256,
             baseline='prepackaged CI regression; original solution and test assertions',
@@ -307,14 +369,27 @@ def aggregate(candidate, batches, expected, *, all_tasks=None, dataset='terminal
     return result
 
 
-def remove_private_tree(root, expected_identity):
+def remove_private_tree(root, expected_identity, *, owner_uid=None):
     """Delete only an audited run root, never follow links or mount crossings.
 
     Caller MUST first establish process/network/cgroup absence. Pre-scan every
     object before unlinking anything. Unknown types or owners retain evidence.
     This is ephemeral CI fixture cleanup, not product template/history GC.
     """
-    root = private_path(root, directory=True)
+    if owner_uid is None:
+        owner_uid=os.geteuid()
+        root = private_path(root, directory=True)
+    else:
+        # Explicit generated service-role cleanup only. The general private
+        # path policy remains unchanged; no old deploy/adoption mode is added.
+        root=Path(root)
+        if (type(owner_uid) is not int or not 0<=owner_uid<2**32
+                or not root.is_absolute() or root.resolve(strict=True)!=root):
+            raise ValueError('exact canonical generated role and owner required')
+        details=root.lstat()
+        if (not stat.S_ISDIR(details.st_mode) or details.st_uid!=owner_uid
+                or details.st_mode&0o7777!=0o700):
+            raise ValueError('exact protected generated role root required')
     info = root.lstat()
     if [info.st_dev, info.st_ino] != expected_identity or root.parent == Path('/'):
         raise ValueError('run root identity changed')
@@ -322,7 +397,7 @@ def remove_private_tree(root, expected_identity):
     def scan(fd, parts=()):
         for name in os.listdir(fd):
             item = os.stat(name, dir_fd=fd, follow_symlinks=False)
-            if item.st_dev != info.st_dev or item.st_uid != os.geteuid():
+            if item.st_dev != info.st_dev or item.st_uid != owner_uid:
                 raise ValueError('unknown owner or mount in run root')
             if stat.S_ISDIR(item.st_mode):
                 child = os.open(name, os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)

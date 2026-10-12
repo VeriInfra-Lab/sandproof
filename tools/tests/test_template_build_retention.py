@@ -10,12 +10,13 @@ import threading
 import unittest
 from unittest.mock import Mock, patch
 
-from tools.template_build_client import BuildClient, saved_intent
+from tools.template_build_client import saved_intent
 from tools.template_build_service import Backend, BuildHTTP, Supervisor
 from tools.template_build_store import BuildError, BuildStore, MIB
 from tools.template_stage import file_hash, stage_delete, stage_inventory
 from tools.tests.test_template_build_service import limits, PowerLoss, FakeBackend
-from tools.tests.template_build_fixture import bounded_config, compiled_helper, synthetic_helper
+from tools.tests.template_build_fixture import (bounded_config, compiled_helper, synthetic_helper,
+                                               PRIVATE_TEST_KEY, PrivateBuildClient as BuildClient)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -139,7 +140,7 @@ class RetentionTests(unittest.TestCase):
         self.store.change(job, 'Failed', failure='Synthetic', release=True)
 
     def test_build_ids_never_reuse_after_gc_even_when_randomness_collides(self):
-        server = BuildHTTP(('127.0.0.1', 0), self.store, [{'tenant': 1, 'secret': 'synthetic'}])
+        server = BuildHTTP(('127.0.0.1', 0), self.store, PRIVATE_TEST_KEY)
         thread = threading.Thread(target=server.serve_forever)
         thread.start()
         try:
@@ -530,7 +531,7 @@ class RetentionTests(unittest.TestCase):
             (staged / '.build-owner.json').write_text(json.dumps({'id': job, 'nonce': row['fs_nonce']}, sort_keys=True))
             (staged / 'kernel').write_bytes(b'kernel')
             backend = object.__new__(Backend)
-            backend.config = {'runtime': {'template_registry': {'root': str(registry)}}}
+            backend.config = {'registry': {'root': str(registry)}, 'registry_owner_uid': os.geteuid()}
             backend.request = Mock(side_effect=BuildError(404, 'NotFound'))
             self.fault_once('after_staging_delete_fsync')
             with self.assertRaises(PowerLoss):
@@ -570,7 +571,8 @@ class RetentionTests(unittest.TestCase):
         self.store.private_checkpoint(job, builder_settled={'sandboxID': 'sb-original'}, private_ack=1)
         self.store.change(job, 'Publishing', candidate=status)
         backend = object.__new__(Backend)
-        backend.config = {'runtime': {'template_registry': {'root': str(registry)}, 'kernel': str(kernel)}}
+        backend.config = {'registry': {'root': str(registry)}, 'registry_owner_uid': os.geteuid(),
+                          'runtime': {'kernel': str(kernel)}}
         return job, backend, registry, disk
 
     def test_bounded_handoff_keeps_original_inode_and_unknown_publication_after_restart(self):
@@ -711,7 +713,7 @@ class RetentionTests(unittest.TestCase):
         self.assertEqual(accepted, [])
 
     def test_http_client_persists_original_window_key_before_uncertain_post(self):
-        server = BuildHTTP(('127.0.0.1', 0), self.store, [{'tenant': 1, 'secret': 'synthetic'}])
+        server = BuildHTTP(('127.0.0.1', 0), self.store, PRIVATE_TEST_KEY)
         thread = threading.Thread(target=server.serve_forever)
         thread.start()
         try:

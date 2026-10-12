@@ -200,7 +200,15 @@ fn host_release_never_runs_before_committed_intent_and_lost_ack_is_replayable() 
         0,
     )
     .unwrap();
+    assert_eq!(
+        bounded::available_positions(&j.world().unwrap(), &config(1)).unwrap(),
+        1
+    );
     create(&mut j, 1);
+    assert_eq!(
+        bounded::available_positions(&j.world().unwrap(), &config(1)).unwrap(),
+        0
+    );
     let context = j.host_slot_context(core::SandboxId(1)).unwrap().unwrap();
     assert!(
         j.release_host_slot(
@@ -223,6 +231,10 @@ fn host_release_never_runs_before_committed_intent_and_lost_ack_is_replayable() 
         j.host_slot_inventory().unwrap()[0].1,
         HostSlotPhase::Occupied
     );
+    assert_eq!(
+        bounded::available_positions(&j.world().unwrap(), &config(1)).unwrap(),
+        0
+    );
     assert!(
         j.release_host_slot(
             context,
@@ -234,6 +246,10 @@ fn host_release_never_runs_before_committed_intent_and_lost_ack_is_replayable() 
     assert_eq!(
         j.host_slot_inventory().unwrap()[0].1,
         HostSlotPhase::Releasing
+    );
+    assert_eq!(
+        bounded::available_positions(&j.world().unwrap(), &config(1)).unwrap(),
+        0
     );
     drop(j);
     let mut j = ControllerJournal::open_complete(
@@ -248,9 +264,17 @@ fn host_release_never_runs_before_committed_intent_and_lost_ack_is_replayable() 
         j.host_slot_inventory().unwrap()[0].1,
         HostSlotPhase::Releasing
     );
+    assert_eq!(
+        bounded::available_positions(&j.world().unwrap(), &config(1)).unwrap(),
+        0
+    );
     j.release_host_slot(context, |_| Ok(()), &mut NeverCrash)
         .unwrap();
     assert_eq!(j.host_slot_inventory().unwrap()[0].1, HostSlotPhase::Free);
+    assert_eq!(
+        bounded::available_positions(&j.world().unwrap(), &config(1)).unwrap(),
+        1
+    );
 }
 
 #[test]

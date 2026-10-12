@@ -8,9 +8,29 @@ use crate::{CreateOptions, InternalAdmission, InternalTemplate, templates::Compu
 use sandproof_protocol::internal::{
     NodeIdentity,
     lifecycle::{Intent, LifecycleFact, LifecycleRequest, LifecycleResponse},
+    window::{WindowCloseAck, WindowCloseRequest},
 };
 
+/// A definitive original capacity decision, not an adapter error category.
+enum InternalAdmissionDecision {
+    Admitted,
+    CapacityVeto,
+}
+
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Original exclusive writer/host lock, with no alternate cleanup algorithm.
+    /// # Errors
+    /// Unknown/active/unconfirmed/pinned responsibilities cannot close a window.
+    pub fn close_internal_window(
+        &self,
+        request: &WindowCloseRequest,
+    ) -> Result<WindowCloseAck, JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?
+            .journal
+            .close_internal_window(request, &mut NeverCrash)
+    }
     /// Exact result acknowledgement shares the original writer and lock.
     /// # Errors
     /// Result mismatches/storage errors never erase unknown responsibility.
@@ -125,12 +145,21 @@ impl<H: ControllerHost> ControllerApplication<H> {
             return result.map_err(map_admission);
         }
         if request.intent == Intent::Create && state.local.is_none() {
-            self.admit_internal_locked(
+            let decision = self.admit_internal_locked(
                 &mut inner,
                 request,
                 template.ok_or(ApplicationError::Busy)?,
                 compute,
             )?;
+            if matches!(decision, InternalAdmissionDecision::CapacityVeto) {
+                // Only the original definitive pre-admission capacity veto is
+                // final. Missing material, host I/O and uncertain commits still
+                // retain Recorded/unknown responsibility and never use this path.
+                return inner
+                    .journal
+                    .reject_internal_capacity(request, &mut NeverCrash)
+                    .map_err(map_journal);
+            }
         }
         let local = inner
             .journal
@@ -161,7 +190,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         request: &LifecycleRequest,
         template: InternalTemplate,
         compute: ComputeLimits,
-    ) -> Result<(), ApplicationError> {
+    ) -> Result<InternalAdmissionDecision, ApplicationError> {
         let mut options: CreateOptions = serde_json::from_slice(&request.create.options)
             .map_err(|_| ApplicationError::Invalid)?;
         // The original journal admission validates the full canonical request,
@@ -186,25 +215,39 @@ impl<H: ControllerHost> ControllerApplication<H> {
         }
         inner.host.validate_template(&template.local)?;
         release_reclaimed_slots(inner)?;
-        let required =
-            self.physical_admission_bytes(inner, &options, template.local.resources.disk_bytes)?;
-        if inner.host.available_disk_bytes()? < required {
-            return Err(ApplicationError::QuotaExceeded);
-        }
-        inner
-            .journal
-            .admit_internal_create(
-                request,
-                InternalAdmission {
-                    now_ms: self.clock.now_ms()?,
-                    limits: self.config.limits,
-                    compute,
-                    template,
-                    file_policy_digest: self.config.file_policy_digest,
-                },
-                &mut NeverCrash,
-            )
+        let required = self.internal_physical_admission_bytes(
+            inner,
+            &options,
+            template.local.resources.disk_bytes,
+        )?;
+        let mut admission = InternalAdmission {
+            now_ms: self.clock.now_ms()?,
+            limits: self.config.limits,
+            compute,
+            template,
+            file_policy_digest: self.config.file_policy_digest,
+        };
+        // A physical veto is definitive only for this valid original immutable
+        // attachment. Bad material cannot turn into a successful quota release
+        // merely because the same host currently has little free space.
+        admission
+            .validate_attachment(request)
             .map_err(map_admission)?;
-        Ok(())
+        if inner.host.available_disk_bytes()? < required {
+            return Ok(InternalAdmissionDecision::CapacityVeto);
+        }
+        // Preserve the original journal's fresh clock/rejection checks after
+        // the potentially slow host observation, rather than reusing its time.
+        admission.now_ms = self.clock.now_ms()?;
+        let decision = inner
+            .journal
+            .admit_internal_create(request, admission, &mut NeverCrash);
+        match decision {
+            Ok(_) => Ok(InternalAdmissionDecision::Admitted),
+            Err(crate::AdmissionError::QuotaExceeded) => {
+                Ok(InternalAdmissionDecision::CapacityVeto)
+            }
+            Err(error) => Err(map_admission(error)),
+        }
     }
 }

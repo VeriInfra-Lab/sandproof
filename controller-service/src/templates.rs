@@ -2,6 +2,7 @@
 //! The descriptor is frozen with admission; aliases are never used for recovery.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     path::{Component, PathBuf},
@@ -136,6 +137,22 @@ fn valid_name(name: &str) -> bool {
 }
 
 impl TemplateBinding {
+    /// The original canonical descriptor binding shared by center and host.
+    /// Protected paths and GLOBAL owner are included; callers must not hash a
+    /// local owner/path projection and present it as the global descriptor.
+    /// # Errors
+    /// Rejects invalid or oversized original descriptions before admission.
+    pub fn canonical_digest(&self) -> Result<[u8; 32], TemplateError> {
+        if !self.is_valid() {
+            return Err(TemplateError::Invalid);
+        }
+        let bytes = serde_json::to_vec(self).map_err(|_| TemplateError::Invalid)?;
+        if bytes.len() > crate::CreateOptions::MAX_ENCODED_BYTES {
+            return Err(TemplateError::Invalid);
+        }
+        Ok(Sha256::digest(&bytes).into())
+    }
+
     #[must_use]
     pub fn is_valid(&self) -> bool {
         valid_name(&self.template_id)

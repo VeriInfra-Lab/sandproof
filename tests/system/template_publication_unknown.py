@@ -30,13 +30,11 @@ from tools.template_build_store import BuildStore
 
 def exercise(config_path, context, request):
     config = configuration(config_path)
-    if config.get('bounded_builds'):
-        raise ValueError('controlled build clock probe requires the explicit legacy fixture; not bounded-retention acceptance')
     now = [time.time()]
     store = None
     gate, received, dispatched = threading.Event(), threading.Event(), threading.Event()
     posts, failures = [], []
-    origin = 'http://' + config['runtime']['bind']
+    origin = 'http://' + config['center']['private_address']
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     class Barrier(BaseHTTPRequestHandler):
@@ -57,7 +55,9 @@ def exercise(config_path, context, request):
                 else:
                     assert self.command == 'GET' and self.path.startswith('/sandproof/template-publications/')
                 upstream = urllib.request.Request(origin + self.path, data=body, method=self.command,
-                    headers={'X-API-Key': self.headers['X-API-Key'], 'Content-Type': 'application/json'})
+                    headers={'x-sandproof-build-key': self.headers['x-sandproof-build-key'],
+                             'x-sandproof-build-owner': self.headers['x-sandproof-build-owner'],
+                             'Content-Type': 'application/json'})
                 try:
                     response = opener.open(upstream, timeout=120)
                 except urllib.error.HTTPError as error:
@@ -88,12 +88,20 @@ def exercise(config_path, context, request):
 
     class DelayedBackend(Backend):
         def request(self, pool, method, path, body=None, **kwargs):
-            if pool == 'runtime' and method == 'POST':
+            if path == '/sandproof/template-publications' and method == 'POST':
                 kwargs['timeout'] = min(kwargs.get('timeout', 60), 0.2)
+            # The barrier controls publication delivery only, not VM/window
+            # admission or another configurable backend destination.
+            if path.startswith('/sandproof/template-publications'):
+                original = self.config['center']['private_address']
+                self.config['center']['private_address'] = f'127.0.0.1:{proxy.server_port}'
+                try:
+                    return super().request(pool, method, path, body, **kwargs)
+                finally:
+                    self.config['center']['private_address'] = original
             return super().request(pool, method, path, body, **kwargs)
 
     proxied = copy.deepcopy(config)
-    proxied['runtime']['bind'] = f'127.0.0.1:{proxy.server_port}'
     backend = DelayedBackend(proxied)
 
     def reopen():
@@ -103,7 +111,8 @@ def exercise(config_path, context, request):
 
     try:
         store = reopen()
-        job = store.submit(1, request, secrets.token_hex(16))['buildID']
+        opened = store.open_window(1, min(600_000, config['bounded_builds']['windows']['max_duration_ms']))
+        job = store.submit(1, request, secrets.token_hex(16), opened['requestWindow'])['buildID']
         with context.open('rb') as source:
             store.upload(job, 1, iter(lambda: source.read(65536), b''), context.stat().st_size)
         supervisor = Supervisor(store, backend)
@@ -118,7 +127,7 @@ def exercise(config_path, context, request):
         now[0] = store.get(job)['deadline'] + 1
         supervisor.tick()  # Real runtime 404 after expiry must not delete input.
         assert store.get(job)['state'] == 'Publishing' and store.get(job)['reserved'] == charged
-        staged = Path(config['runtime']['template_registry']['root']) / 'inbox' / job
+        staged = Path(config['registry']['root']) / 'inbox' / job
         assert staged.is_dir()
         store.close()
         store = reopen()  # Actual SQLite close/reopen before a second 404.

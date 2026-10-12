@@ -22,6 +22,7 @@ class SdkEnvironment(E2BEnvironment):
         self.events = []
         self.sandbox_id = None
         self.kill_confirmed = False  # SDK acknowledgment, NOT exact host reclaim.
+        self.kill_dispatched = False  # Lost reply must not cause a second DELETE.
         self.create_dispatched = False
         super().__init__(**kwargs)
 
@@ -31,6 +32,7 @@ class SdkEnvironment(E2BEnvironment):
 
     async def stop(self, delete=True):
         if self._sandbox is not None:
+            self.kill_dispatched = True
             self.kill_confirmed = await self._sandbox.kill()
             if not self.kill_confirmed:
                 raise RuntimeError('sandbox deletion was not acknowledged')

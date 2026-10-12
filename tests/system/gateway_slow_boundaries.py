@@ -103,7 +103,7 @@ def process_binding(pid, ticks, config):
     if start_ticks(pid) != ticks:
         raise ValueError('server PID/start identity changed')
     arguments = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
-    if arguments[1:] != [os.fsencode(config), b'']:
+    if arguments[1:] != [b'serve', b'--config', os.fsencode(config), b'']:
         raise ValueError('server argv does not bind the exact supplied configuration')
     executable = Path(f'/proc/{pid}/exe')
     meta = executable.stat()
@@ -354,12 +354,16 @@ async def exercise(args, report):
     from sdk_server_smoke import options
 
     api, url = loopback_url(args.api_url), loopback_url(args.sandbox_url)
-    config = host.trusted_path(args.config)
-    settings = private_json(config)
+    from _center_host_services import role_facts
+    from tools.system_acceptance import json_file
+    config = Path(args.config)
+    original_role = role_facts(config.parent, config, uid=args.center_uid, gid=args.center_gid)
+    settings = private_json(args.host_config)['native']
     report['data_transfer'] = validate_configuration(settings)
-    if api != url or settings.get('bind') != url.removeprefix('http://'):
-        raise ValueError('both client origins must bind the supplied server listener')
-    report['config_sha256'] = digest(config)
+    if api != url or json_file(config)['bind'] != url.removeprefix('http://'):
+        raise ValueError('both client origins must bind the supplied center listener')
+    report['config_sha256'] = original_role['config_sha256']
+    report['host_config_sha256'] = digest(args.host_config)
     report['server'] = process_binding(args.server_pid, args.server_start_ticks, config)
     observer = ServiceObserver(args.service_cgroup_record, args.server_pid, args.server_start_ticks)
     report['service_baseline'] = observer.baseline
@@ -414,7 +418,9 @@ async def exercise(args, report):
             report['cases']['file_idle_and_progress'] = await idle_and_progress(target, control, directory, url, helpers)
             report['cases']['paused_download_memory'] = await paused_downloads(
                 target, control, directory, url, helpers, observer, cleanup_errors=report['transfer_cleanup_errors'])
-        if digest(config) != report['config_sha256'] or process_binding(args.server_pid, args.server_start_ticks, config) != report['server']:
+        if (role_facts(config.parent,config,uid=args.center_uid,gid=args.center_gid)!=original_role
+                or digest(args.host_config)!=report['host_config_sha256']
+                or process_binding(args.server_pid,args.server_start_ticks,config)!=report['server']):
             raise ValueError('original server/config identity changed during probe')
         observer.sample('after-cases')
     finally:
@@ -436,8 +442,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for field in ('api-url', 'sandbox-url', 'target-sandbox-id', 'control-sandbox-id'):
         parser.add_argument('--' + field, required=True)
-    for field in ('config', 'service-cgroup-record', 'report'):
+    for field in ('config', 'host-config', 'service-cgroup-record', 'report'):
         parser.add_argument('--' + field, type=Path, required=True)
+    for field in ('center-uid', 'center-gid'):
+        parser.add_argument('--' + field, type=int, required=True)
     parser.add_argument('--server-pid', type=int, required=True)
     parser.add_argument('--server-start-ticks', type=int, required=True)
     parser.add_argument('--command-output-only', action='store_true')

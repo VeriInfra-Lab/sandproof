@@ -118,11 +118,7 @@ pub(super) fn reserve_host_slot(
         .ok_or(JournalError::CorruptStore)?;
     let position = (0..config.maintenance.max_host_slots)
         .map(HostSlotId)
-        .find(|position| {
-            state
-                .host_slot(*position)
-                .is_none_or(|row| row.phase == HostSlotPhase::Free)
-        })
+        .find(|position| position_available(state, *position))
         .ok_or(AdmissionError::QuotaExceeded)?;
     let record = world
         .sandbox_record(sandbox)
@@ -155,6 +151,31 @@ pub(super) fn reserve_host_slot(
     )?;
     tx.execute("INSERT INTO controller_host_slots(position,context_json) VALUES(?1,?2) ON CONFLICT(position) DO UPDATE SET context_json=excluded.context_json", params![i64::try_from(position.0).map_err(|_| JournalError::CorruptStore)?,serde_json::to_vec(&context).map_err(JournalError::Json)?])?;
     Ok(())
+}
+
+fn position_available(state: &core::maintenance::MaintenanceState, position: HostSlotId) -> bool {
+    state
+        .host_slot(position)
+        .is_none_or(|row| row.phase == HostSlotPhase::Free)
+}
+
+/// The same complete physical-position domain used by original admission.
+/// A never-bound position has no audit row but is available; an occupied or
+/// releasing position remains unavailable, including unknown physical release.
+pub(super) fn available_positions(
+    world: &core::World,
+    config: &BoundedHostConfig,
+) -> Result<u64, JournalError> {
+    let state = world
+        .maintenance_state()
+        .ok_or(JournalError::CorruptStore)?;
+    u64::try_from(
+        (0..config.maintenance.max_host_slots)
+            .map(HostSlotId)
+            .filter(|position| position_available(state, *position))
+            .count(),
+    )
+    .map_err(|_| JournalError::CorruptStore)
 }
 
 impl ControllerJournal {

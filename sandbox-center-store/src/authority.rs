@@ -4,8 +4,10 @@ use sandproof_center_core::{CenterState, DecisionError, NodeRegistration};
 use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleRequest, LifecycleResponse};
 use sandproof_protocol::{SandboxId, TenantId};
 
+mod window;
+
 impl ControlState for CenterState {
-    const FORMAT_VERSION: u32 = 2;
+    const FORMAT_VERSION: u32 = 4;
     fn is_valid(&self) -> bool {
         self.is_valid()
     }
@@ -79,18 +81,37 @@ impl Dispatch {
         Ok(response)
     }
 }
-pub struct CenterAuthority {
-    ledger: RedisLedger<CenterState>,
-    observed: Option<Observed<CenterState>>,
+/// A single authoritative envelope. The default keeps the existing pure
+/// center interface; business envelopes replace only its center projection.
+pub trait AuthorityState: ControlState + Clone {
+    fn center(&self) -> &CenterState;
+    #[must_use]
+    fn with_center(&self, center: CenterState) -> Self;
+    fn required_block_bytes(&self) -> usize;
 }
-impl CenterAuthority {
+impl AuthorityState for CenterState {
+    fn center(&self) -> &CenterState {
+        self
+    }
+    fn with_center(&self, center: CenterState) -> Self {
+        center
+    }
+    fn required_block_bytes(&self) -> usize {
+        self.bounds().required_block_bytes()
+    }
+}
+pub struct CenterAuthority<S = CenterState> {
+    ledger: RedisLedger<S>,
+    observed: Option<Observed<S>>,
+}
+impl<S: AuthorityState> CenterAuthority<S> {
     /// Attaches an EXISTING block, never initializes from missing storage.
     /// # Errors
     /// Refuses insufficient full-future capacity or deployment mismatch.
-    pub fn attach(mut ledger: RedisLedger<CenterState>) -> Result<Self, AuthorityError> {
+    pub fn attach(mut ledger: RedisLedger<S>) -> Result<Self, AuthorityError> {
         let observed = ledger.read()?;
-        if observed.state().bounds().required_block_bytes() > ledger.max_block_bytes()
-            || observed.state().deployment() != ledger.deployment()
+        if observed.state().required_block_bytes() > ledger.max_block_bytes()
+            || observed.state().center().deployment() != ledger.deployment()
         {
             return Err(StoreError::Configuration.into());
         }
@@ -105,7 +126,7 @@ impl CenterAuthority {
     pub fn state(&self) -> Result<&CenterState, AuthorityError> {
         self.observed
             .as_ref()
-            .map(Observed::state)
+            .map(|value| value.state().center())
             .ok_or(AuthorityError::RecoveryRequired)
     }
     /// A public read/authorization view must be confirmed during this call,
@@ -114,6 +135,13 @@ impl CenterAuthority {
     /// # Errors
     /// Storage failures invalidate even the previously observed view.
     pub fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
+        Ok(self.snapshot_envelope()?.center().clone())
+    }
+    /// Fresh durable view of both lifecycle and business metadata, never a
+    /// business-only cache or a second Redis key.
+    /// # Errors
+    /// Any shared storage fault fences every projection of this authority.
+    pub fn snapshot_envelope(&mut self) -> Result<S, AuthorityError> {
         let observed = self
             .observed
             .as_ref()
@@ -130,7 +158,10 @@ impl CenterAuthority {
             }
         }
     }
-    fn commit(&mut self, next: &CenterState) -> Result<(), AuthorityError> {
+    fn commit(&mut self, next: &S) -> Result<(), AuthorityError> {
+        if next.required_block_bytes() > self.ledger.max_block_bytes() {
+            return Err(DecisionError::Capacity.into());
+        }
         let previous = self
             .observed
             .as_ref()
@@ -146,6 +177,31 @@ impl CenterAuthority {
             }
         }
     }
+    /// Apply one pure whole-envelope decision with the original CAS/unknown
+    /// boundary. Callers must not perform external I/O in the decision.
+    /// # Errors
+    /// A rejected decision writes nothing; any commit error fences all views.
+    pub fn decide<R>(
+        &mut self,
+        decision: impl FnOnce(&S) -> Result<(S, R), AuthorityError>,
+    ) -> Result<R, AuthorityError> {
+        let current = self
+            .observed
+            .as_ref()
+            .ok_or(AuthorityError::RecoveryRequired)?
+            .state();
+        let (next, result) = decision(current)?;
+        self.commit(&next)?;
+        Ok(result)
+    }
+    fn commit_center(&mut self, center: CenterState) -> Result<(), AuthorityError> {
+        let current = self
+            .observed
+            .as_ref()
+            .ok_or(AuthorityError::RecoveryRequired)?
+            .state();
+        self.commit(&current.with_center(center))
+    }
     /// # Errors
     /// On unknown commit reconcile pending ORIGINAL request, never re-create.
     pub fn create(
@@ -155,7 +211,7 @@ impl CenterAuthority {
         now_ms: u64,
     ) -> Result<LifecycleRequest, AuthorityError> {
         let (next, request) = self.state()?.create(tenant, binding, now_ms)?;
-        self.commit(&next)?;
+        self.commit_center(next)?;
         Ok(request)
     }
     /// # Errors
@@ -168,7 +224,7 @@ impl CenterAuthority {
         now_ms: u64,
     ) -> Result<LifecycleRequest, AuthorityError> {
         let (next, request) = self.state()?.renew(tenant, sandbox, end_at_ms, now_ms)?;
-        self.commit(&next)?;
+        self.commit_center(next)?;
         Ok(request)
     }
     /// # Errors
@@ -179,14 +235,14 @@ impl CenterAuthority {
         sandbox: &SandboxId,
     ) -> Result<LifecycleRequest, AuthorityError> {
         let (next, request) = self.state()?.destroy(tenant, sandbox)?;
-        self.commit(&next)?;
+        self.commit_center(next)?;
         Ok(request)
     }
     /// # Errors
     /// Old/wrong observations cannot update a newer intent.
     pub fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
         let next = self.state()?.apply_response(response)?;
-        self.commit(&next)
+        self.commit_center(next)
     }
     /// Called only after the host confirms the EXACT already committed result.
     /// # Errors
@@ -196,13 +252,13 @@ impl CenterAuthority {
         response: &LifecycleResponse,
     ) -> Result<(), AuthorityError> {
         let next = self.state()?.compact_confirmed(response)?;
-        self.commit(&next)
+        self.commit_center(next)
     }
     /// # Errors
     /// Trusted observation cannot change fixed identity or capacity.
     pub fn observe_node(&mut self, observation: NodeRegistration) -> Result<(), AuthorityError> {
         let next = self.state()?.observe_node(observation)?;
-        self.commit(&next)
+        self.commit_center(next)
     }
     /// # Errors
     /// Read/reconnect alone cannot lift an unknown-write fence: reaffirm durably.
@@ -227,6 +283,7 @@ impl CenterAuthority {
             Ok(committed) => {
                 let batch = committed
                     .state()
+                    .center()
                     .pending()
                     .into_iter()
                     .map(|request| Dispatch { request })

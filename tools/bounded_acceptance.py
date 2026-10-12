@@ -169,7 +169,9 @@ def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_bu
         if type(actual) is not int or not 0 < actual <= pool[field]:
             raise ValueError("prepared CI artifact exceeds approved physical copy ceiling")
         pool[field] = actual
-    profile.update(pools=[pool], public_build=None)
+    profile.update(pools=[pool], public_build=None,
+        host_template_caches=[cache for cache in profile['host_template_caches']
+                              if cache['namespace'] == pool['namespace']])
     peak, _ = envelope(profile)
     if 2 * peak > disk_budget_bytes:
         raise ValueError("prepared CI complete physical activation exceeds disk ceiling")
@@ -178,6 +180,9 @@ def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_bu
 
 def prepared_ci_runtime_configuration(settings, policy, profile):
     """Bind only prevalidated static CI descriptors; expose no build registry."""
+    if any(name in settings for name in ('bind', 'domain', 'credentials', 'request_admission',
+                                        'template_registry', 'internal_build_vms', 'build_retry_windows')):
+        raise ValueError('prepared CI requires new native inputs, not retired host public settings')
     result = copy.deepcopy(settings)
     catalog = result["templates"]["templates"]
     if not catalog or any(not item["template_id"].startswith("ci-") for item in catalog):
@@ -191,7 +196,6 @@ def prepared_ci_runtime_configuration(settings, policy, profile):
         if (item["rootfs"]["size_bytes"] > pool["rootfs_budget_bytes"]
                 or item["kernel"]["size_bytes"] > pool["kernel_copy_bytes"]):
             raise ValueError("prepared CI template exceeds runtime physical quota")
-    result.pop("template_registry", None)
     result.update(rootfs=base["rootfs"]["path"], kernel=base["kernel"]["path"],
                   vcpu_count=base["resources"]["cpu_count"], memory_mib=base["resources"]["memory_mib"],
                   bounded_host=copy.deepcopy(policy["runtime"]["bounded_host"]),

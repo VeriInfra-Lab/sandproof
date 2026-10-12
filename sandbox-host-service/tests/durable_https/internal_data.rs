@@ -31,10 +31,10 @@ async fn original_internal_data_permit_rejects_every_foreign_identity_and_unadmi
         let permit = app.internal_data_permit(&create.identity, kind).unwrap();
         assert!(!*permit.revocation.borrow());
     }
-    for variant in 0..9 {
+    for variant in 0..10 {
         let mut bad = create.identity.clone();
         match variant {
-            0 => bad.protocol_version = 2,
+            0 => bad.protocol_version = 3,
             1 => bad.node.deployment_id = "other-deployment".try_into().unwrap(),
             2 => bad.node.node_id = "other-host".try_into().unwrap(),
             3 => bad.node.node_generation = 2.try_into().unwrap(),
@@ -42,7 +42,8 @@ async fn original_internal_data_permit_rejects_every_foreign_identity_and_unadmi
             5 => bad.sandbox_id = "other-sandbox".try_into().unwrap(),
             6 => bad.operation_id = "other-operation".try_into().unwrap(),
             7 => bad.intent_version = 2.try_into().unwrap(),
-            _ => bad.request_window = 2.try_into().unwrap(),
+            8 => bad.request_window = 2.try_into().unwrap(),
+            _ => bad.retention_slot = 2,
         }
         assert!(
             app.internal_data_permit(&bad, DataKind::Exec).is_err(),
@@ -158,6 +159,7 @@ async fn one_broken_credential_or_launch_config_cannot_block_another_internal_bi
     other.identity.sandbox_id = "sandbox-2".try_into().unwrap();
     other.identity.operation_id = "operation-2".try_into().unwrap();
     other.identity.tenant_id = "2".try_into().unwrap();
+    other.identity.retention_slot = 2;
     for create in [&first, &other] {
         host.receive(create.clone()).await.unwrap();
         host.advance(create.clone(), Some(local::template()), local::compute())

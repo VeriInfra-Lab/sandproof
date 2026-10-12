@@ -42,6 +42,9 @@ pub struct PhysicalPool {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PhysicalBuildStorage {
+    /// Separate trusted helper and center owners, never request parameters.
+    pub workspace_owner_uid: u32,
+    pub registry_owner_uid: u32,
     pub root: PathBuf,
     pub registry_root: PathBuf,
     /// Existing public workspace quota already includes its journal envelope.
@@ -50,6 +53,106 @@ pub struct PhysicalBuildStorage {
     pub max_jobs: u64,
     pub max_templates: u64,
     pub inode_budget: u64,
+}
+
+/// Bounded immutable copies and incomplete downloads, charged separately from
+/// the center's build registry and each VM's private writable disk.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PhysicalTemplateCache {
+    /// Exact original pool namespace. A cache has one host-process writer.
+    pub namespace: String,
+    pub root: PathBuf,
+    pub max_entries: u64,
+    pub max_downloads: u64,
+    pub max_entry_bytes: u64,
+    pub artifact_bytes: u64,
+    pub temporary_bytes: u64,
+    pub metadata_bytes: u64,
+    pub inode_budget: u64,
+}
+
+impl PhysicalTemplateCache {
+    /// # Errors
+    /// Rejects unreserved copies, downloads or exact descriptor metadata.
+    pub fn validate(&self) -> Result<(), JournalError> {
+        let temporary = self
+            .max_downloads
+            .checked_mul(self.max_entry_bytes)
+            .ok_or(JournalError::UnsupportedStore)?;
+        let metadata = add(
+            4096,
+            self.max_entries
+                .checked_mul(2 * (64 * 1024 + 4096))
+                .ok_or(JournalError::UnsupportedStore)?,
+        )?;
+        let inodes = add(
+            add(
+                4, // root, inbox, artifacts, and pre-provisioned cache lock
+                self.max_entries
+                    .checked_mul(5)
+                    .ok_or(JournalError::UnsupportedStore)?,
+            )?,
+            self.max_downloads
+                .checked_mul(5)
+                .ok_or(JournalError::UnsupportedStore)?,
+        )?;
+        if !namespace_valid(&self.namespace)
+            || !absolute(&self.root)
+            || [
+                self.max_entries,
+                self.max_downloads,
+                self.max_entry_bytes,
+                self.artifact_bytes,
+                self.temporary_bytes,
+                self.metadata_bytes,
+                self.inode_budget,
+            ]
+            .into_iter()
+            .any(|value| value == 0 || i64::try_from(value).is_err())
+            || self.max_downloads > self.max_entries
+            || self.max_entry_bytes > self.artifact_bytes
+            || self.temporary_bytes < temporary
+            || self.metadata_bytes < metadata
+            || self.inode_budget < inodes
+        {
+            return Err(JournalError::UnsupportedStore);
+        }
+        self.peak_bytes()?;
+        Ok(())
+    }
+    /// # Errors
+    /// Complete and unknown temporary copies both retain their full provision.
+    pub fn peak_bytes(&self) -> Result<u64, JournalError> {
+        add(
+            add(self.artifact_bytes, self.temporary_bytes)?,
+            self.metadata_bytes,
+        )
+    }
+}
+
+/// Explicit service material (for example protected binaries, TLS, Redis and
+/// retained evidence). Its full logical provision is charged, never `du` credit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PhysicalServiceData {
+    pub root: PathBuf,
+    pub owner_uid: u32,
+    pub peak_bytes: u64,
+    pub inode_budget: u64,
+}
+impl PhysicalServiceData {
+    fn validate(&self) -> Result<(), JournalError> {
+        if !absolute(&self.root)
+            || self.peak_bytes == 0
+            || self.inode_budget == 0
+            || i64::try_from(self.peak_bytes).is_err()
+            || i64::try_from(self.inode_budget).is_err()
+        {
+            return Err(JournalError::UnsupportedStore);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +164,10 @@ pub struct PhysicalStorageProfile {
     pub coordination_file: PathBuf,
     pub pools: Vec<PhysicalPool>,
     pub public_build: Option<PhysicalBuildStorage>,
+    /// Finite independent caches, each bound to exactly one registered pool.
+    /// Components without artifact caching explicitly register an empty list.
+    pub host_template_caches: Vec<PhysicalTemplateCache>,
+    pub service_data: Vec<PhysicalServiceData>,
     /// Explicit filesystem-specific block/extent/directory overhead provision.
     pub filesystem_overhead_bytes: u64,
     /// Full inode provision, including temporary files and directories.
@@ -85,6 +192,45 @@ fn absolute(path: &Path) -> bool {
         && path
             .components()
             .all(|p| matches!(p, Component::RootDir | Component::Normal(_)))
+}
+
+fn namespace_valid(namespace: &str) -> bool {
+    namespace.len() == 16
+        && namespace
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+}
+
+impl PhysicalBuildStorage {
+    fn validate(&self) -> Result<(), JournalError> {
+        if [
+            self.workspace_bytes,
+            self.registry_bytes,
+            self.inode_budget,
+            self.max_jobs,
+            self.max_templates,
+        ]
+        .contains(&0)
+        {
+            return Err(JournalError::UnsupportedStore);
+        }
+        // Existing workspace/journal, preparing jobs, candidate staging and registry trees.
+        let known = add(
+            add(
+                8,
+                self.max_jobs
+                    .checked_mul(19)
+                    .ok_or(JournalError::UnsupportedStore)?,
+            )?,
+            self.max_templates
+                .checked_mul(5)
+                .ok_or(JournalError::UnsupportedStore)?,
+        )?;
+        if self.inode_budget < known {
+            return Err(JournalError::UnsupportedStore);
+        }
+        Ok(())
+    }
 }
 
 impl PhysicalPool {
@@ -126,10 +272,7 @@ impl PhysicalStorageProfile {
         add(peak, peak)
     }
 
-    /// # Errors
-    /// Only one runtime pool, optionally its one private builder, is supported.
-    /// All paths are distinct allocation roots; no defaults or migration exist.
-    pub fn validate(&self) -> Result<(), JournalError> {
+    fn validate_roles(&self) -> Result<(), JournalError> {
         if self.version != 1
             || self.pools.is_empty()
             || self.pools.len() > 2
@@ -151,14 +294,18 @@ impl PhysicalStorageProfile {
         {
             return Err(JournalError::UnsupportedStore);
         }
+        Ok(())
+    }
+
+    /// # Errors
+    /// Only one runtime pool, optionally its one private builder, is supported.
+    /// All paths are distinct allocation roots; no defaults or migration exist.
+    pub fn validate(&self) -> Result<(), JournalError> {
+        self.validate_roles()?;
         let mut namespaces = BTreeSet::new();
         let mut roots = vec![self.coordination_file.as_path()];
         for pool in &self.pools {
-            if pool.namespace.len() != 16
-                || !pool
-                    .namespace
-                    .bytes()
-                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            if !namespace_valid(&pool.namespace)
                 || !namespaces.insert(&pool.namespace)
                 || [
                     pool.rootfs_budget_bytes,
@@ -184,33 +331,24 @@ impl PhysicalStorageProfile {
             ]);
         }
         if let Some(public) = &self.public_build {
-            if public.workspace_bytes == 0
-                || public.registry_bytes == 0
-                || public.inode_budget == 0
-                || public.max_jobs == 0
-                || public.max_templates == 0
+            public.validate()?;
+            roots.extend([public.root.as_path(), public.registry_root.as_path()]);
+        }
+        let mut cache_namespaces = BTreeSet::new();
+        if self.host_template_caches.len() > self.pools.len() || self.service_data.len() > 8 {
+            return Err(JournalError::UnsupportedStore);
+        }
+        for cache in &self.host_template_caches {
+            cache.validate()?;
+            if !namespaces.contains(&cache.namespace) || !cache_namespaces.insert(&cache.namespace)
             {
                 return Err(JournalError::UnsupportedStore);
             }
-            // Workspace root/journal files, final and preparing job names,
-            // fixed candidate staging, and retained registry trees.
-            let known_inodes = add(
-                add(
-                    8,
-                    public
-                        .max_jobs
-                        .checked_mul(19)
-                        .ok_or(JournalError::UnsupportedStore)?,
-                )?,
-                public
-                    .max_templates
-                    .checked_mul(5)
-                    .ok_or(JournalError::UnsupportedStore)?,
-            )?;
-            if public.inode_budget < known_inodes {
-                return Err(JournalError::UnsupportedStore);
-            }
-            roots.extend([public.root.as_path(), public.registry_root.as_path()]);
+            roots.push(cache.root.as_path());
+        }
+        for service in &self.service_data {
+            service.validate()?;
+            roots.push(service.root.as_path());
         }
         for (index, path) in roots.iter().enumerate() {
             if !absolute(path)
@@ -249,6 +387,12 @@ impl PhysicalStorageProfile {
         if let Some(public) = &self.public_build {
             count = add(count, public.inode_budget)?;
         }
+        for cache in &self.host_template_caches {
+            count = add(count, cache.inode_budget)?;
+        }
+        for service in &self.service_data {
+            count = add(count, service.inode_budget)?;
+        }
         Ok(count)
     }
 
@@ -262,6 +406,12 @@ impl PhysicalStorageProfile {
         if let Some(public) = &self.public_build {
             peak = add(add(peak, public.workspace_bytes)?, public.registry_bytes)?;
         }
+        for cache in &self.host_template_caches {
+            peak = add(peak, cache.peak_bytes()?)?;
+        }
+        for service in &self.service_data {
+            peak = add(peak, service.peak_bytes)?;
+        }
         Ok(peak)
     }
 
@@ -272,6 +422,15 @@ impl PhysicalStorageProfile {
         self.pools
             .iter()
             .find(|pool| pool.namespace == namespace)
+            .ok_or(JournalError::UnsupportedStore)
+    }
+    /// # Errors
+    /// Each production host must select its one exact, independently owned cache.
+    pub fn template_cache(&self, namespace: &str) -> Result<&PhysicalTemplateCache, JournalError> {
+        self.validate()?;
+        self.host_template_caches
+            .iter()
+            .find(|cache| cache.namespace == namespace)
             .ok_or(JournalError::UnsupportedStore)
     }
     /// # Errors
@@ -334,6 +493,8 @@ mod tests {
                 pool(PoolRole::Builder, "1123456789abcdef"),
             ],
             public_build: Some(PhysicalBuildStorage {
+                workspace_owner_uid: 0,
+                registry_owner_uid: 0,
                 root: "/host/build".into(),
                 registry_root: "/host/registry".into(),
                 workspace_bytes: 500,
@@ -342,6 +503,8 @@ mod tests {
                 max_templates: 1,
                 inode_budget: 32,
             }),
+            host_template_caches: vec![],
+            service_data: vec![],
             filesystem_overhead_bytes: 50,
             filesystem_overhead_inodes: 100,
         }
@@ -432,5 +595,70 @@ mod tests {
             profile.pools[0].node_state_dir = path.into();
             assert!(profile.validate().is_err());
         }
+    }
+
+    #[test]
+    fn cache_copies_unknown_downloads_and_metadata_extend_the_original_peak() {
+        let mut profile = profile();
+        let cache = PhysicalTemplateCache {
+            namespace: "0123456789abcdef".into(),
+            root: "/host/cache".into(),
+            max_entries: 2,
+            max_downloads: 1,
+            max_entry_bytes: 1000,
+            artifact_bytes: 2000,
+            temporary_bytes: 1000,
+            metadata_bytes: 4096 + 2 * 2 * (64 * 1024 + 4096),
+            inode_budget: 19,
+        };
+        cache.validate().unwrap();
+        let extra = cache.peak_bytes().unwrap();
+        profile.filesystem_overhead_inodes += cache.inode_budget;
+        profile.host_template_caches = vec![cache.clone()];
+        profile.validate().unwrap();
+        assert_eq!(profile.peak_bytes().unwrap(), 3850 + extra);
+        assert_eq!(profile.activation_bytes().unwrap(), 2 * (3850 + extra));
+        for field in ["temporary", "metadata", "inode", "overlap", "namespace"] {
+            let mut changed = profile.clone();
+            let cache = &mut changed.host_template_caches[0];
+            match field {
+                "temporary" => cache.temporary_bytes -= 1,
+                "metadata" => cache.metadata_bytes -= 1,
+                "inode" => cache.inode_budget -= 1,
+                "overlap" => cache.root = "/host/registry/cache".into(),
+                "namespace" => cache.namespace = "2123456789abcdef".into(),
+                _ => unreachable!(),
+            }
+            assert!(changed.validate().is_err(), "{field}");
+        }
+        let mut builder_cache = cache;
+        builder_cache.namespace = "1123456789abcdef".into();
+        builder_cache.root = "/host/builder-cache".into();
+        profile.filesystem_overhead_inodes += builder_cache.inode_budget;
+        profile.host_template_caches.push(builder_cache);
+        profile.validate().unwrap();
+        assert_eq!(profile.peak_bytes().unwrap(), 3850 + 2 * extra);
+        profile.host_template_caches[1].namespace =
+            profile.host_template_caches[0].namespace.clone();
+        assert!(profile.validate().is_err());
+    }
+    #[test]
+    fn service_material_has_explicit_peak_and_inodes_not_filesystem_overhead_credit() {
+        let mut profile = profile();
+        profile.service_data = vec![PhysicalServiceData {
+            root: "/host/center-service".into(),
+            owner_uid: 64001,
+            peak_bytes: 4096,
+            inode_budget: 4,
+        }];
+        profile.filesystem_overhead_inodes += 4;
+        profile.validate().unwrap();
+        assert_eq!(profile.peak_bytes().unwrap(), 3850 + 4096);
+        assert_eq!(profile.activation_bytes().unwrap(), 2 * (3850 + 4096));
+        profile.service_data[0].root = "/host/registry/nested".into();
+        assert!(profile.validate().is_err());
+        profile.service_data[0].root = "/host/center-service".into();
+        profile.service_data[0].peak_bytes = 0;
+        assert!(profile.validate().is_err());
     }
 }

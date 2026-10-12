@@ -104,7 +104,12 @@ impl TemplateProvider for Templates {
             Err(PortError::NotFound)
         }
     }
-    fn publish(&self, _: &str, _: &str) -> Result<sandproof_api::PublicationView, PortError> {
+    fn publish(
+        &self,
+        _: &dyn sandproof_center_service::CommittedDriver,
+        _: &str,
+        _: &str,
+    ) -> Result<sandproof_api::PublicationView, PortError> {
         Err(PortError::NotFound)
     }
     fn publication(&self, _: &str, _: &str) -> Result<sandproof_api::PublicationView, PortError> {
@@ -173,6 +178,20 @@ impl LifecycleReceiver for Reception {
     async fn confirm(&self, result: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
         self.host.confirm(result).await
     }
+    async fn close(
+        &self,
+        request: sandproof_protocol::internal::window::WindowCloseRequest,
+    ) -> Result<sandproof_protocol::internal::window::WindowCloseAck, ReceiveError> {
+        self.host.close(request).await
+    }
+}
+impl sandproof_internal::ValidationReceiver for Reception {
+    async fn validation_evidence(
+        &self,
+        request: sandproof_internal::template::ValidationRequest,
+    ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
+        self.host.validation_evidence(request).await
+    }
 }
 impl DataReceiver for Reception {
     async fn receive_data(
@@ -225,6 +244,8 @@ fn initial_state(templates: &Templates) -> CenterState {
             platform: capacity,
         },
         vec![NodeRegistration {
+            retention_slots: 2,
+            role: sandproof_center_core::NodeRole::Runtime,
             identity: local::wire::node("host-a"),
             limit: capacity,
             mode: NodeMode::Accepting,
@@ -234,7 +255,7 @@ fn initial_state(templates: &Templates) -> CenterState {
                 revision: templates.host.revision.clone(),
                 digest: templates.host.digest,
             }],
-            protocol_version: 1,
+            protocol_version: 2,
         }],
         vec![
             TenantBudget {
@@ -294,13 +315,13 @@ impl Fixture {
             .unwrap(),
             local::wire::node("host-a"),
             limits,
-            Reception {
+            sandproof_internal::diagnostic::RejectTemplateCache::new(Reception {
                 host: host.clone(),
                 wake: Arc::clone(&wake),
                 reply_loss: Arc::clone(&reply_loss),
                 loss_observed: Arc::clone(&loss_observed),
                 capacity_observed: Arc::clone(&capacity_observed),
-            },
+            }),
         );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = listener.local_addr().unwrap();

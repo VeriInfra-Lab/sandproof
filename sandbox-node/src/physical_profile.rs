@@ -1,4 +1,5 @@
 //! Immutable physical-profile lease owned by the node adapter.
+mod service_data;
 use std::{error::Error, fs, os::unix::fs::MetadataExt, path::Path};
 
 use sandproof_controller_service::physical_storage::{PhysicalPool, PhysicalStorageProfile};
@@ -106,6 +107,18 @@ fn quiescent(profile: &PhysicalStorageProfile) -> Result<(), Box<dyn Error>> {
         empty(&public.registry_root.join("inbox"))?;
         empty(&public.registry_root.join("artifacts"))?;
     }
+    for cache in &profile.host_template_caches {
+        for entry in fs::read_dir(&cache.root)? {
+            if !matches!(
+                entry?.file_name().to_str(),
+                Some("inbox" | "artifacts" | ".cache.lock")
+            ) {
+                return Err("physical profile activation cannot adopt cache history".into());
+            }
+        }
+        empty(&cache.root.join("inbox"))?;
+        empty(&cache.root.join("artifacts"))?;
+    }
     Ok(())
 }
 
@@ -123,6 +136,15 @@ fn allocation_paths(profile: &PhysicalStorageProfile) -> Vec<&Path> {
     if let Some(public) = &profile.public_build {
         paths.extend([public.root.as_path(), public.registry_root.as_path()]);
     }
+    for cache in &profile.host_template_caches {
+        paths.push(cache.root.as_path());
+    }
+    paths.extend(
+        profile
+            .service_data
+            .iter()
+            .map(|service| service.root.as_path()),
+    );
     paths
 }
 
@@ -143,14 +165,39 @@ fn validate_placement(
             public.registry_root.join("artifacts"),
         ]);
     }
+    for cache in &profile.host_template_caches {
+        paths.extend([
+            cache.root.join("inbox"),
+            cache.root.join("artifacts"),
+            cache.root.join(".cache.lock"),
+        ]);
+    }
     for path in &paths {
+        let expected_owner = profile
+            .public_build
+            .as_ref()
+            .filter(|public| {
+                path.starts_with(&public.root) || path.starts_with(&public.registry_root)
+            })
+            .map_or(owner, |public| {
+                if path.starts_with(&public.root) {
+                    public.workspace_owner_uid
+                } else {
+                    public.registry_owner_uid
+                }
+            });
+        let expected_owner = profile
+            .service_data
+            .iter()
+            .find(|service| path.starts_with(&service.root))
+            .map_or(expected_owner, |service| service.owner_uid);
         if trusted {
-            sandbox_runtime::check_trusted_path(path)?;
+            sandbox_runtime::check_trusted_path_for_owner(path, expected_owner)?;
         }
         let metadata = fs::symlink_metadata(path)?;
         if metadata.file_type().is_symlink()
             || metadata.dev() != device
-            || metadata.uid() != owner
+            || metadata.uid() != expected_owner
             || metadata.mode() & 0o077 != 0
         {
             return Err("physical profile paths must be private and share one filesystem".into());
@@ -164,6 +211,10 @@ fn validate_placement(
     if let Some(public) = &profile.public_build {
         roots.extend([&public.root, &public.registry_root]);
     }
+    for cache in &profile.host_template_caches {
+        roots.push(&cache.root);
+    }
+    roots.extend(profile.service_data.iter().map(|service| &service.root));
     let identities = roots
         .iter()
         .map(|path| fs::metadata(path).map(|meta| (meta.dev(), meta.ino())))
@@ -195,13 +246,41 @@ fn validate_placement(
             return Err("physical database moved off the shared filesystem".into());
         }
     }
-    if let Some(public) = &profile.public_build {
-        let registry = fs::metadata(&public.registry_root)?;
+    validate_registry_children(profile, &identities)?;
+    validate_cache_locks(profile, owner)?;
+    service_data::validate(profile, device, trusted)?;
+    Ok(())
+}
+fn validate_cache_locks(
+    profile: &PhysicalStorageProfile,
+    owner: u32,
+) -> Result<(), Box<dyn Error>> {
+    for cache in &profile.host_template_caches {
+        let metadata = fs::symlink_metadata(cache.root.join(".cache.lock"))?;
+        if !metadata.is_file()
+            || metadata.uid() != owner
+            || metadata.nlink() != 1
+            || metadata.len() != 0
+            || metadata.mode() & 0o7777 != 0o600
+        {
+            return Err("physical cache requires its pre-provisioned private empty lock".into());
+        }
+    }
+    Ok(())
+}
+fn validate_registry_children(
+    profile: &PhysicalStorageProfile,
+    identities: &[(u64, u64)],
+) -> Result<(), Box<dyn Error>> {
+    for registry_root in profile
+        .public_build
+        .iter()
+        .map(|public| &public.registry_root)
+        .chain(profile.host_template_caches.iter().map(|cache| &cache.root))
+    {
+        let registry = fs::metadata(registry_root)?;
         let own_registry = (registry.dev(), registry.ino());
-        for child in [
-            public.registry_root.join("inbox"),
-            public.registry_root.join("artifacts"),
-        ] {
+        for child in [registry_root.join("inbox"), registry_root.join("artifacts")] {
             for ancestor in child.ancestors() {
                 let meta = fs::metadata(ancestor)?;
                 let identity = (meta.dev(), meta.ino());
@@ -210,8 +289,8 @@ fn validate_placement(
                 }
             }
         }
-        let inbox = fs::metadata(public.registry_root.join("inbox"))?;
-        let artifacts = fs::metadata(public.registry_root.join("artifacts"))?;
+        let inbox = fs::metadata(registry_root.join("inbox"))?;
+        let artifacts = fs::metadata(registry_root.join("artifacts"))?;
         if (inbox.dev(), inbox.ino()) == (artifacts.dev(), artifacts.ino()) {
             return Err("physical registry inbox/artifact roots alias".into());
         }
@@ -399,7 +478,7 @@ impl PhysicalProfileLease {
 mod physical_tests {
     use super::*;
     use sandproof_controller_service::physical_storage::{PhysicalPool, PoolRole};
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -451,6 +530,8 @@ mod physical_tests {
                     jail_inodes_per_slot: 10,
                 }],
                 public_build: None,
+                host_template_caches: vec![],
+                service_data: vec![],
                 filesystem_overhead_bytes: 1024 * 1024,
                 filesystem_overhead_inodes: 100,
             };
@@ -556,6 +637,116 @@ mod physical_tests {
         let mut fixture = Fixture::new();
         fixture.profile.pools[0].node_state_dir = PathBuf::from("/proc");
         assert!(fixture.activate().is_err());
+    }
+    #[test]
+    fn cache_allocation_roots_are_distinct_private_and_in_the_original_activation() {
+        use sandproof_controller_service::physical_storage::PhysicalTemplateCache;
+        let mut fixture = Fixture::new();
+        let root = fixture.root.join("cache");
+        for directory in [&root, &root.join("inbox"), &root.join("artifacts")] {
+            fs::create_dir(directory).unwrap();
+            fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(root.join(".cache.lock"))
+            .unwrap();
+        fixture.profile.host_template_caches = vec![PhysicalTemplateCache {
+            namespace: fixture.profile.pools[0].namespace.clone(),
+            root: root.clone(),
+            max_entries: 1,
+            max_downloads: 1,
+            max_entry_bytes: 1000,
+            artifact_bytes: 1000,
+            temporary_bytes: 1000,
+            metadata_bytes: 4096 + 2 * (64 * 1024 + 4096),
+            inode_budget: 14,
+        }];
+        fixture.profile.filesystem_overhead_inodes += 14;
+        fs::set_permissions(root.join("inbox"), fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(fixture.activate().is_err());
+        fs::set_permissions(root.join("inbox"), fs::Permissions::from_mode(0o700)).unwrap();
+        drop(fixture.activate().unwrap());
+        fs::rename(root.join("inbox"), root.join("saved-inbox")).unwrap();
+        std::os::unix::fs::symlink("saved-inbox", root.join("inbox")).unwrap();
+        assert!(fixture.activate().is_err());
+    }
+    #[test]
+    fn service_material_can_be_preprovisioned_but_must_fit_exact_logical_and_inode_bounds() {
+        use sandproof_controller_service::physical_storage::PhysicalServiceData;
+        let mut fixture = Fixture::new();
+        let root = fixture.root.join("service-data");
+        fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
+        let file = root.join("binary");
+        fs::write(&file, b"bytes").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+        fixture.profile.service_data = vec![PhysicalServiceData {
+            root: root.clone(),
+            owner_uid: fixture.owner,
+            peak_bytes: 5,
+            inode_budget: 2,
+        }];
+        fixture.profile.filesystem_overhead_inodes += 2;
+        let device = fs::metadata(&fixture.profile.coordination_file)
+            .unwrap()
+            .dev();
+        service_data::validate(&fixture.profile, device, false).unwrap();
+        fixture.profile.service_data[0].peak_bytes = 4;
+        assert!(service_data::validate(&fixture.profile, device, false).is_err());
+        fixture.profile.service_data[0].peak_bytes = 5;
+        fixture.profile.service_data[0].inode_budget = 1;
+        assert!(service_data::validate(&fixture.profile, device, false).is_err());
+        fixture.profile.service_data[0].inode_budget = 3;
+        fs::hard_link(&file, root.join("alias")).unwrap();
+        assert!(service_data::validate(&fixture.profile, device, false).is_err());
+    }
+    #[test]
+    #[ignore = "requires root to replace the registered center service leaf owner"]
+    fn physical_public_storage_checks_exact_registered_leaf_owner() {
+        use sandproof_controller_service::physical_storage::PhysicalBuildStorage;
+        let mut fixture = Fixture::new();
+        let mut builder = fixture.profile.pools[0].clone();
+        builder.role = PoolRole::Builder;
+        builder.namespace = "1123456789abcdef".into();
+        builder.database = fixture.root.join("builder-db/controller.db");
+        builder.node_state_dir = fixture.root.join("builder-node");
+        builder.chroot_base = fixture.root.join("builder-jails");
+        for path in [
+            builder.database.parent().unwrap(),
+            &builder.node_state_dir,
+            &builder.chroot_base,
+        ] {
+            fs::DirBuilder::new().mode(0o700).create(path).unwrap();
+        }
+        let root = fixture.root.join("public");
+        let registry = fixture.root.join("registry");
+        for path in [
+            &root,
+            &registry,
+            &registry.join("inbox"),
+            &registry.join("artifacts"),
+        ] {
+            fs::DirBuilder::new().mode(0o700).create(path).unwrap();
+            std::os::unix::fs::chown(path, Some(64001), None).unwrap();
+        }
+        fixture.profile.pools.push(builder);
+        fixture.profile.public_build = Some(PhysicalBuildStorage {
+            workspace_owner_uid: 64001,
+            registry_owner_uid: 64001,
+            root,
+            registry_root: registry.clone(),
+            workspace_bytes: 500,
+            registry_bytes: 700,
+            max_jobs: 1,
+            max_templates: 1,
+            inode_budget: 32,
+        });
+        fixture.profile.filesystem_overhead_inodes = 256;
+        validate_placement(&fixture.profile, fixture.owner, false).unwrap();
+        std::os::unix::fs::chown(registry.join("artifacts"), Some(0), None).unwrap();
+        assert!(validate_placement(&fixture.profile, fixture.owner, false).is_err());
     }
     #[test]
     fn rust_utf8_marker_is_read_by_python_and_every_partial_prefix_recovers() {

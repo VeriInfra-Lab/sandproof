@@ -6,6 +6,7 @@ use sandproof_center_store::{REDIS_VERSION, RedisEndpoint, StoreConfig, WriterLe
 use sandproof_protocol::DeploymentId;
 use std::{
     fs,
+    io::Read,
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     os::unix::fs::PermissionsExt,
     process::{Child, Command, Stdio},
@@ -64,7 +65,6 @@ impl Engine {
         );
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
-        drop(listener);
         let root = tempfile::tempdir().unwrap();
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir(root.path().join("writer")).unwrap();
@@ -90,6 +90,9 @@ impl Engine {
             address: SocketAddrV4::new(Ipv4Addr::LOCALHOST, port),
             binary,
         };
+        // Reserve the selected endpoint during filesystem preparation. A
+        // released ephemeral port is not an ownership claim on a later Redis.
+        drop(listener);
         fixture.start();
         fixture
     }
@@ -109,10 +112,18 @@ impl Engine {
         self.spawn();
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            assert!(
-                self.child.as_mut().unwrap().try_wait().unwrap().is_none(),
-                "fixture Redis exited before ready"
-            );
+            if let Some(status) = self.child.as_mut().unwrap().try_wait().unwrap() {
+                // Synthetic fixture logs only, bounded before TempDir cleanup.
+                // Keep the actual startup cause; never retry an unknown engine
+                // or mistake a different process's open port for readiness.
+                let mut diagnostic = String::new();
+                fs::File::open(self.root.path().join("redis.log"))
+                    .unwrap()
+                    .take(4096)
+                    .read_to_string(&mut diagnostic)
+                    .unwrap();
+                panic!("fixture Redis exited before ready ({status}): {diagnostic}");
+            }
             if let Ok(stream) =
                 TcpStream::connect_timeout(&self.address.into(), Duration::from_millis(30))
             {

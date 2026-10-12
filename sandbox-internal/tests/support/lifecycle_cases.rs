@@ -9,6 +9,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 mod fixture;
 
 struct Counted(Arc<AtomicUsize>);
+impl sandproof_internal::ValidationReceiver for Counted {
+    async fn validation_evidence(
+        &self,
+        _: sandproof_internal::template::ValidationRequest,
+    ) -> Result<sandproof_internal::template::ValidationEvidence, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl sandproof_internal::DataReceiver for Counted {
     async fn receive_data(
         &self,
@@ -29,6 +37,12 @@ impl LifecycleReceiver for Counted {
     async fn confirm(&self, _: LifecycleResponse) -> Result<LifecycleResponse, ReceiveError> {
         Err(ReceiveError::Unavailable)
     }
+    async fn close(
+        &self,
+        _: sandproof_protocol::internal::window::WindowCloseRequest,
+    ) -> Result<sandproof_protocol::internal::window::WindowCloseAck, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
 }
 
 #[tokio::test]
@@ -44,7 +58,7 @@ async fn lifecycle_rejects_untrusted_binding_and_bounded_wire_before_receiver() 
         .unwrap(),
         fixture::node("host-a"),
         limits(),
-        Counted(Arc::clone(&count)),
+        sandproof_internal::diagnostic::RejectTemplateCache::new(Counted(Arc::clone(&count))),
     );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Opt-in self-service template builds; execute on the isolated Linux host.
 
-Two disjoint sandproof-server pools are required: private builder and runtime.
+Two disjoint host pools are required: private builder and runtime. All VM and
+publication requests go through the one protected center helper boundary.
 Only the guest executes BuildKit/umoci/user input. No host container socket,
 archive unpack, mount or user command. Exposes Sandproof extension endpoints,
 not the native E2B template-build API. See docs/module-contracts.md.
@@ -29,7 +30,8 @@ if __package__:
     from .template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
     from .template_fetch import mirror_registry
     from .template_build_config import (validate_capacity, HOST_MEMORY_OVERHEAD_MIB, protected_json,
-                                       bounded_data_route_limits, host_uid_range, validate_pool_resource_ranges)
+                                       bounded_data_route_limits, host_uid_range, validate_pool_resource_ranges,
+                                       host_native, owned_registry_directory, private_center_configuration, loopback_address)
     from .template_physical_storage import validate_configuration as validate_physical_configuration, PhysicalProfileLease
 else:
     from template_build_store import BuildError, BuildStore, MIB, TERMINAL, durable_write, bounded_configuration, fsync_directory
@@ -37,7 +39,8 @@ else:
     from template_inputs import MAX_INPUT_BYTES, platform_dns_servers, validate_tool_names
     from template_fetch import mirror_registry
     from template_build_config import (validate_capacity, HOST_MEMORY_OVERHEAD_MIB, protected_json,
-                                       bounded_data_route_limits, host_uid_range, validate_pool_resource_ranges)
+                                       bounded_data_route_limits, host_uid_range, validate_pool_resource_ranges,
+                                       host_native, owned_registry_directory, private_center_configuration, loopback_address)
     from template_physical_storage import validate_configuration as validate_physical_configuration, PhysicalProfileLease
 
 
@@ -80,21 +83,18 @@ def configuration(path, *, require_physical_lease=True):
     if type(require_physical_lease) is not bool:
         raise ValueError("explicit physical lease validation flag required")
     config = protected_json(path)
-    if set(config) - {"docker_hub_mirror"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers", "bounded_builds"}:
+    if set(config) - {"docker_hub_mirror"} != {"root", "bind", "runtime_config", "builder_config", "tools", "limits", "dns_servers", "bounded_builds", "registry", "registry_owner_uid", "center", "builder_template"}:
         raise ValueError("invalid build service config")
     if "docker_hub_mirror" in config:
         mirror_registry(config["docker_hub_mirror"])
-    runtime, builder = protected_json(config["runtime_config"]), protected_json(config["builder_config"])
-    if (not runtime.get("template_registry") or runtime.get("internal_build_vms")
-            or not builder.get("internal_build_vms") or builder.get("template_registry")
-            or not builder.get("host_resources") or not builder.get("templates")
-            or not builder.get("public_ipv4_enabled") or len(builder["credentials"]) != 1):
-        raise ValueError("explicit runtime registry and private bounded builder pool required")
-    for field in ("namespace", "database", "node_state_dir", "chroot_base", "bind"):
+    runtime, builder = host_native(config["runtime_config"]), host_native(config["builder_config"])
+    if (not builder.get("host_resources") or not builder.get("templates")
+            or not builder.get("public_ipv4_enabled")):
+        raise ValueError("explicit bounded builder pool required")
+    private_center_configuration(config["center"])
+    for field in ("namespace", "database", "node_state_dir", "chroot_base"):
         if runtime[field] == builder[field]:
             raise ValueError("runtime/build pools overlap: " + field)
-    if builder["credentials"][0]["secret"] in {c["secret"] for c in runtime["credentials"]}:
-        raise ValueError("private builder credential must not be a runtime user credential")
     validate_pool_resource_ranges(runtime, builder)
     r_cgroup = Path(runtime["host_resources"]["cgroup_parent"]).resolve(strict=True)
     b_cgroup = Path(builder["host_resources"]["cgroup_parent"]).resolve(strict=True)
@@ -102,9 +102,9 @@ def configuration(path, *, require_physical_lease=True):
         raise ValueError("runtime/build cgroup pools overlap")
     root = Path(config["root"])
     private_directory(root)
-    registry = Path(runtime["template_registry"]["root"])
+    registry = Path(config["registry"]["root"])
     for directory in (registry, registry / "inbox", registry / "artifacts"):
-        private_directory(directory)
+        owned_registry_directory(directory, config["registry_owner_uid"])
     if root == registry or root in registry.parents or registry in root.parents:
         raise ValueError("build journal and registry must be disjoint")
     # Budget protection applies to the shared disk on which VM copies and
@@ -114,12 +114,12 @@ def configuration(path, *, require_physical_lease=True):
     bounded_configuration(config["bounded_builds"])
     if config["bounded_builds"]["helper"]["owner_uid"] != os.geteuid():
         raise ValueError("window helper owner must match trusted supervisor UID")
-    private_windows = builder.get("build_retry_windows")
+    private_windows = config["center"]["private_windows"]
     if (type(private_windows) is not dict or set(private_windows) != {"window_duration_ms", "max_anchors"}
             or not builder.get("maintenance")
             or any(type(v) is not int or v <= 0 for v in private_windows.values())
             or private_windows["window_duration_ms"] > builder["bounded_host"]["maintenance"]["windows"]["max_duration_ms"]
-            or private_windows["max_anchors"] > 1048576):
+            or private_windows["max_anchors"] > 4096):
         raise ValueError("bounded builds require explicit bounded private retry windows")
     limits = config["limits"]
     required = {"max_cpu", "max_memory_mib", "max_disk_mib", "timeout_seconds", "max_jobs", "max_jobs_per_tenant",
@@ -146,24 +146,23 @@ def configuration(path, *, require_physical_lease=True):
         if path.resolve(strict=True) != path or not path.is_file() or file_hash(path) != spec["sha256"]:
             raise ValueError("tool fingerprint mismatch")
     platform_dns_servers(config["dns_servers"])
-    if not re.fullmatch(r"127\.0\.0\.1:[0-9]{1,5}", config["bind"]):
-        raise ValueError("loopback build listener required")
-    for settings in (runtime, builder):
-        if not settings["bind"].startswith("127.0.0.1:"):
-            raise ValueError("loopback controllers required")
-    if config["bind"] in (runtime["bind"], builder["bind"]):
+    loopback_address(config["bind"])
+    if config["bind"] == config["center"]["private_address"]:
         raise ValueError("build listener conflicts with a controller")
-    catalog = builder["templates"]
-    base_id = catalog["aliases"].get("base", "base")
-    bases = [entry for entry in catalog["templates"] if entry["template_id"] == base_id]
-    if len(bases) != 1 or bases[0]["owner"] not in (None, builder["credentials"][0]["tenant"]):
-        raise ValueError("builder base must resolve to an authorized immutable template")
-    base = bases[0]
+    # This is a necessary shape check, not template selection. The Rust center
+    # independently binds its protected revision to the original registration;
+    # no descriptor or digest from this helper is sent as admission authority.
+    base = config["builder_template"]
+    if type(base) is not dict or base.get("owner") is not None:
+        raise ValueError("protected ownerless builder base required")
+    lifetime_required = limits["timeout_seconds"] + 60
+    from_center = config["center"]
+    if min(from_center["max_timeout_secs"], from_center["max_lifetime_secs"] or from_center["max_timeout_secs"]) < lifetime_required:
+        raise ValueError("center lifetime cannot cover builder request")
     limits["builder_disk_bytes"] = validate_capacity(runtime, builder, limits, base,
+        registry=config["registry"],
         kernel_bytes=Path(runtime["kernel"]).stat().st_size,
         largest_tool_bytes=max(Path(spec["path"]).stat().st_size for spec in tools.values()))
-    if Path(base["rootfs"]["path"]).stat().st_size != limits["builder_disk_bytes"]:
-        raise ValueError("builder base disk size differs from its immutable descriptor")
     limits["runtime_cleanup_reserve_bytes"] = runtime["cleanup_reserve_bytes"] + builder["cleanup_reserve_bytes"]
     limits["artifact_margin_bytes"] = Path(runtime["kernel"]).stat().st_size + limits["max_log_bytes"] + 64 * MIB
     physical = validate_physical_configuration(runtime, builder, config)
@@ -189,14 +188,17 @@ class Backend:
             raise ValueError("fixed E2B SDK 2.51.0 required")
         self.config = config
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        self.runtime_keys = {c["tenant"]: c["secret"] for c in config["runtime"]["credentials"]}
-        self.builder_key = config["builder"]["credentials"][0]["secret"]
+        self.backend_key = private_center_configuration(config["center"])
 
     def request(self, pool, method, path, body=None, *, owner=None, timeout=60):
-        key = self.builder_key if pool == "builder" else self.runtime_keys[owner]
+        # The labels identify original business operations, not destinations.
+        # Both now use one fixed protected center; no host public API remains.
+        if pool not in {"builder", "runtime"} or type(owner) is not int or not 0 < owner < 2**64:
+            raise BuildError(400, "InvalidBackendOwner")
         encoded = json.dumps(body).encode() if body is not None else None
-        request = urllib.request.Request("http://" + self.config[pool]["bind"] + path, data=encoded, method=method,
-            headers={"X-API-Key": key, "Content-Type": "application/json"})
+        request = urllib.request.Request("http://" + self.config["center"]["private_address"] + path,
+            data=encoded, method=method, headers={"x-sandproof-build-key": self.backend_key,
+                "x-sandproof-build-owner": str(owner), "Content-Type": "application/json"})
         try:
             with self.opener.open(request, timeout=timeout) as response:
                 data = response.read(65537)
@@ -226,7 +228,7 @@ class Backend:
             body["requestWindow"] = window
         else:
             path += "?" + urllib.parse.urlencode({"requestWindow": window})
-        return self.request("builder", "POST" if create else "GET", path, body, timeout=timeout)
+        return self.request("builder", "POST" if create else "GET", path, body, owner=row["owner"], timeout=timeout)
 
     def cleanup(self, row, store):
         row = store.get(row["id"])
@@ -240,7 +242,7 @@ class Backend:
         if row["builder_settled"]:
             settled = json.loads(row["builder_settled"])
         else:
-            fenced = self.request("builder", "POST", "/sandproof/internal-build-windows/" + urllib.parse.quote(window, safe="") + "/close", {})
+            fenced = self.request("builder", "POST", "/sandproof/internal-build-windows/" + urllib.parse.quote(window, safe="") + "/close", {}, owner=row["owner"])
             if fenced != {"requestWindow": window, "closed": True}:
                 raise BuildError(502, "PrivateBuildFenceUnknown")
             try:
@@ -251,7 +253,7 @@ class Backend:
                 vm = None  # Only the preceding durable fence proves absence.
             if vm is not None and not vm["cleanupComplete"]:
                 try:
-                    self.request("builder", "DELETE", "/sandboxes/" + vm["sandboxID"])
+                    self.request("builder", "DELETE", "/sandboxes/" + vm["sandboxID"], owner=row["owner"])
                 except BuildError:
                     pass
                 vm = self.vm(row)
@@ -260,7 +262,7 @@ class Backend:
             settled = {"requestWindow": window, "sandboxID": vm["sandboxID"] if vm else None}
             # This commit must precede releasing the private retry anchor.
             store.private_checkpoint(row["id"], builder_settled=settled)
-        acknowledged = self.request("builder", "POST", "/sandproof/internal-build-vms/" + row["id"] + "/settle", settled)
+        acknowledged = self.request("builder", "POST", "/sandproof/internal-build-vms/" + row["id"] + "/settle", settled, owner=row["owner"])
         if acknowledged != {"requestWindow": window, "settled": True}:
             raise BuildError(502, "PrivateBuildSettlementUnknown")
         store.private_checkpoint(row["id"], private_ack=1)
@@ -271,7 +273,7 @@ class Backend:
         from e2b.connection_config import ConnectionConfig
         from packaging.version import Version
         if not row.get("private_window"):
-            opened = self.request("builder", "POST", "/sandproof/internal-build-windows", {})
+            opened = self.request("builder", "POST", "/sandproof/internal-build-windows", {}, owner=row["owner"])
             if (type(opened) is not dict or not isinstance(opened.get("requestWindow"), str)
                     or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", opened["requestWindow"])
                     or type(opened.get("expiresAtMs")) is not int):
@@ -282,11 +284,13 @@ class Backend:
         session = vm.get("session")
         if session is None:
             raise BuildError(502, "BuildVmLaunchUnknown")
-        url = "http://" + self.config["builder"]["bind"]
+        url = "http://" + self.config["center"]["private_address"]
+        headers = {"x-sandproof-build-key": self.backend_key,
+                   "x-sandproof-build-owner": str(row["owner"])}
         connection = ConnectionConfig(api_url=url, sandbox_url=url,
-            domain=self.config["builder"]["domain"], api_key=self.builder_key, retries=0, request_timeout=30,
-            extra_sandbox_headers={"X-Access-Token": session["envdAccessToken"]})
-        sandbox = Sandbox(sandbox_id=session["sandboxID"], sandbox_domain=self.config["builder"]["domain"],
+            domain=self.config["center"]["domain"], api_key=self.backend_key, retries=0, request_timeout=30,
+            extra_sandbox_headers=headers | {"X-Access-Token": session["envdAccessToken"]})
+        sandbox = Sandbox(sandbox_id=session["sandboxID"], sandbox_domain=self.config["center"]["domain"],
             envd_version=Version(session["envdVersion"]), envd_access_token=session["envdAccessToken"], connection_config=connection)
         request = json.loads(row["request"])
         directory = store.directory(row["id"])
@@ -436,15 +440,16 @@ class Backend:
             raise BuildError(503, "PublicationOutcomeUnknown")
         if store.clock() >= row["deadline"]:
             raise BuildError(408, "BuildDeadlineExceeded")
-        config = self.config["runtime"]
+        config = self.config
         request = json.loads(row["request"])
         status = json.loads(row["candidate"])
         resources = request["resources"]
         try:
-            candidate = stage(Path(config["template_registry"]["root"]), Path(config["kernel"]),
+            candidate = stage(Path(config["registry"]["root"]), Path(config["runtime"]["kernel"]),
                 store.directory(row["id"]) / "candidate.ext4", status, row["owner"],
                 resources["cpuCount"], resources["memoryMiB"], resources["memoryMiB"] + HOST_MEMORY_OVERHEAD_MIB,
-                candidate_id=row["id"], ownership={"id": row["id"], "nonce": row["fs_nonce"]})
+                candidate_id=row["id"], ownership={"id": row["id"], "nonce": row["fs_nonce"]},
+                registry_owner_uid=config["registry_owner_uid"])
         except ValueError:
             raise BuildError(400, "CandidateStagingRejected") from None
         remaining = row["deadline"] - store.clock()
@@ -479,20 +484,20 @@ class Backend:
         except BuildError as error:
             if error.code != 404:
                 return False
-        inbox = Path(self.config["runtime"]["template_registry"]["root"]) / "inbox"
+        inbox = Path(self.config["registry"]["root"]) / "inbox"
         manifest = json.loads(row["staging_cleanup"]) if row["staging_cleanup"] else {}
         if not row["staging_cleanup"]:
             for name in (row["id"], ".stage-" + row["id"]):
                 path = inbox / name
                 if path.exists() or path.is_symlink():
                     manifest[name] = stage_inventory(path, {"id": row["id"], "nonce": row["fs_nonce"]},
-                        initialize=name == ".stage-" + row["id"])
+                        initialize=name == ".stage-" + row["id"], registry_owner_uid=self.config["registry_owner_uid"])
             store.staging_cleanup_checkpoint(row["id"], manifest)
         store.fault("after_staging_delete_intent")
         for name, exact in manifest.items():
             if name not in (row["id"], ".stage-" + row["id"]):
                 raise BuildError(503, "UnknownStagingCleanup")
-            stage_delete(inbox / name, exact)
+            stage_delete(inbox / name, exact, registry_owner_uid=self.config["registry_owner_uid"])
             store.fault("after_staging_delete_fsync")
         store.staging_cleanup_checkpoint(row["id"], None)
         return True
@@ -606,8 +611,11 @@ class Supervisor:
 
 class BuildHTTP(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, store, credentials):
-        self.store, self.credentials = store, credentials
+    def __init__(self, address, store, backend_key):
+        if (not isinstance(backend_key, str) or not 32 <= len(backend_key) <= 256
+                or any(not 0x21 <= ord(c) <= 0x7e for c in backend_key)):
+            raise ValueError("explicit private backend credential required")
+        self.store, self.backend_key = store, backend_key
         self.slots = threading.BoundedSemaphore(8)
         super().__init__(address, Handler)
 
@@ -638,10 +646,13 @@ class Handler(BaseHTTPRequestHandler):
         super().handle()
 
     def operation(self):
-        key = self.headers.get("X-API-Key", "")
-        owner = next((c["tenant"] for c in self.server.credentials if hmac.compare_digest(key, c["secret"])), None)
-        if owner is None:
+        keys = self.headers.get_all("x-sandproof-build-key", [])
+        owners = self.headers.get_all("x-sandproof-build-owner", [])
+        if (len(keys) != 1 or len(owners) != 1 or not keys[0].isascii()
+                or not hmac.compare_digest(keys[0], self.server.backend_key)
+                or not re.fullmatch(r"[1-9][0-9]{0,19}", owners[0]) or int(owners[0]) >= 2**64):
             raise BuildError(401, "Unauthorized")
+        owner = int(owners[0])
         parsed = urllib.parse.urlsplit(self.path)
         parts = parsed.path.split("/")
         store = self.server.store
@@ -745,7 +756,7 @@ def main():
     supervisor = Supervisor(store, Backend(config))
     supervisor.recover()
     host, port = config["bind"].split(":")
-    server = BuildHTTP((host, int(port)), store, config["runtime"]["credentials"])
+    server = BuildHTTP((host, int(port)), store, private_center_configuration(config["center"]))
     stop = threading.Event()
     def work():
         while not stop.is_set():

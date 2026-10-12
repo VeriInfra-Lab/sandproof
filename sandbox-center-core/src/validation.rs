@@ -3,7 +3,7 @@ use sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION;
 use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
 use std::collections::BTreeSet;
 
-fn number(value: &str, prefix: &str, highwater: u64) -> Option<u64> {
+pub(crate) fn number(value: &str, prefix: &str, highwater: u64) -> Option<u64> {
     let suffix = value.strip_prefix(prefix)?;
     let value = suffix.parse::<u64>().ok()?;
     (value > 0 && value <= highwater && value.to_string() == suffix).then_some(value)
@@ -29,6 +29,7 @@ impl CenterState {
             || self.tenants.len() > usize::from(b.max_sandboxes)
             || self.sandboxes.len() > usize::from(b.max_sandboxes)
             || b.required_block_bytes() > 16 * 1024 * 1024
+            || !self.valid_lanes()
         {
             return false;
         }
@@ -37,6 +38,8 @@ impl CenterState {
             if node.identity.deployment_id != self.deployment
                 || !nodes.insert(node.identity.node_id.as_str())
                 || !node.limit.positive()
+                || node.retention_slots == 0
+                || node.retention_slots > b.max_sandboxes
                 || node.templates.len() > usize::from(b.max_templates_per_node)
                 || node
                     .templates
@@ -81,6 +84,17 @@ impl CenterState {
         }
         let mut sandboxes = BTreeSet::new();
         let mut operations = BTreeSet::new();
+        for stamp in self
+            .retention_lanes
+            .iter()
+            .filter_map(|lane| lane.last_retired.as_ref())
+        {
+            if !sandboxes.insert(stamp.identity.sandbox_id.as_str())
+                || !operations.insert(stamp.identity.operation_id.as_str())
+            {
+                return false;
+            }
+        }
         for sandbox in &self.sandboxes {
             let Some(first) = sandbox.operations.first() else {
                 return false;
@@ -103,6 +117,12 @@ impl CenterState {
                 || sandbox.released
                     != last.response.as_ref().is_some_and(|r| {
                         matches!(r.fact, LifecycleFact::Cleaned | LifecycleFact::NotAccepted)
+                    })
+                || sandbox
+                    .terminal_confirmation
+                    .as_ref()
+                    .is_some_and(|confirmed| {
+                        !sandbox.released || last.response.as_ref() != Some(confirmed)
                     })
             {
                 return false;
@@ -127,7 +147,12 @@ impl CenterState {
                     || n <= prior_operation
                     || (index == 0 && id.intent_version.get() != 1)
                     || id.intent_version.get() <= prior_intent
-                    || id.request_window.get() != 1
+                    || id.request_window != first.request.identity.request_window
+                    || id.retention_slot != first.request.identity.retention_slot
+                    || self
+                        .lane(&id.node, id.retention_slot)
+                        .and_then(crate::RetentionLane::current)
+                        != Some(id.request_window)
                     || id.node != first.request.identity.node
                     || id.tenant_id != first.request.identity.tenant_id
                     || id.sandbox_id != first.request.identity.sandbox_id

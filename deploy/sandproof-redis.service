@@ -1,0 +1,30 @@
+# A dedicated authority engine; no host files, VM devices or user API.
+[Unit]
+Description=Sandproof dedicated durable Redis
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=sandproof-redis
+Group=sandproof-redis
+UMask=0077
+ExecStart=/var/lib/sandproof-services/redis/control/bin/redis-server /var/lib/sandproof-services/redis/control/redis.conf
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=60
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sandproof-services/redis
+InaccessiblePaths=/var/lib/sandproof-host /var/lib/sandproof-services/center
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

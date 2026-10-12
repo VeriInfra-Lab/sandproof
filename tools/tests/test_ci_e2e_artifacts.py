@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from tools import ci_e2e_artifacts as artifacts
+from tools.tests.storage_observation_fixture import declaration, observation
 
 
 class CandidateArtifactsTests(unittest.TestCase):
@@ -17,7 +18,7 @@ class CandidateArtifactsTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.root.chmod(0o700)
         self.candidate = "a" * 40
-        self.versions = dict(internal_protocol=1, center_store=1, host_store=5)
+        self.versions = dict(internal_protocol=2, center_store=6, host_store=16)
         self.paths = {}
         for role, name in artifacts.BINARIES.items():
             path = self.root / name
@@ -38,6 +39,63 @@ class CandidateArtifactsTests(unittest.TestCase):
         return artifacts.validate(value, candidate=self.candidate,
                                   paths=self.paths, versions=self.versions)
 
+    def execution_inputs(self):
+        roles = {}
+        for index, (role, uid) in enumerate((("center", 1001), ("host", 0), ("redis", 1002)), 1):
+            roles[role] = dict(uid=uid, gid=uid, config_sha256=str(index) * 64,
+                               directory=dict(device=1, inode=index, uid=uid, gid=uid, mode=0o700))
+        roles['host'] = [roles['host']]
+        return dict(run_id="b" * 64, candidate_manifest_sha256="c" * 64, roles=roles,
+                    redis=dict(artifacts.REDIS_PIN, binary_sha256="d" * 64, binary_bytes=1024),
+                    tls_sha256="e" * 64, budget_sha256="f" * 64, service_data=declaration())
+
+    def execution(self):
+        return artifacts.execution_manifest(self.record(), **self.execution_inputs())
+
+    def process_evidence(self):
+        return {name:dict(pid=index+10,start_time_ticks=100,uid=uid,gid=uid,
+            executable=dict(device=1,inode=index+20)) for index,(name,uid) in
+            enumerate((('center',1001),('redis',1002),('host-0',0)))}
+
+    def test_actual_process_receipt_requires_complete_bounded_exact_role_set(self):
+        execution=self.execution()
+        facts=self.process_evidence()
+        self.assertEqual(artifacts.require_process_evidence(facts,execution),facts)
+        for field,value in (('pid',True),('pid',0),('start_time_ticks',0),('uid',0),('gid',1002)):
+            changed=copy.deepcopy(facts)
+            changed['center'][field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):
+                artifacts.require_process_evidence(changed,execution)
+        for changed in ({},dict(facts,server=facts['host-0']),dict(facts,**{'host-1':facts['host-0']})):
+            with self.assertRaises(ValueError):
+                artifacts.require_process_evidence(changed,execution)
+        changed=copy.deepcopy(facts)
+        changed['redis']['pid']=changed['center']['pid']
+        with self.assertRaises(ValueError):
+            artifacts.require_process_evidence(changed,execution)
+
+    def test_all_six_dk_cases_are_mandatory_same_candidate_and_same_group_execution(self):
+        evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
+            service_storage=observation(),service_data=declaration(),
+            cases=[dict(id='DK'+str(number).zfill(2),status='pass',exact_cleanup='passed',
+                execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
+        self.assertEqual(artifacts.require_dk(evidence,candidate=self.candidate,
+            expected_service_data=declaration()),evidence)
+        for missing in range(6):
+            changed=copy.deepcopy(evidence)
+            del changed['cases'][missing]
+            with self.assertRaises(ValueError):
+                artifacts.require_dk(changed,candidate=self.candidate,expected_service_data=declaration())
+        for field,value in (('id','DK05'),('status','not_run'),('status','failed'),
+                ('exact_cleanup','unknown'),('execution_manifest_sha256','b'*64),('evidence_sha256','x')):
+            changed=copy.deepcopy(evidence)
+            changed['cases'][-1][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                artifacts.require_dk(changed,candidate=self.candidate,expected_service_data=declaration())
+        with self.assertRaises(ValueError):
+            artifacts.require_dk(dict(evidence,candidate='f'*40),candidate=self.candidate,
+                expected_service_data=declaration())
+
     def test_manifest_binds_exact_two_products_versions_and_private_paths(self):
         manifest = self.record()
         self.assertIs(self.validate(manifest), manifest)
@@ -48,6 +106,34 @@ class CandidateArtifactsTests(unittest.TestCase):
         for role, path in self.paths.items():
             self.assertEqual(manifest["artifacts"][role]["path"], path)
             self.assertEqual(len(manifest["artifacts"][role]["sha256"]), 64)
+
+    def test_dk_retains_validated_storage_and_rejects_missing_or_unknown_final_inventory(self):
+        evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
+            service_storage=observation(),service_data=declaration(),
+            cases=[dict(id='DK0'+str(number),status='pass',exact_cleanup='passed',
+                execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
+        persisted=json.loads(json.dumps(evidence))
+        self.assertEqual(artifacts.require_dk(persisted,candidate=self.candidate,
+            expected_service_data=declaration())['service_storage'],observation())
+        for value in (None,dict(observation(),sampler_exited=False),dict(observation(),roots=[])):
+            with self.assertRaises(ValueError):
+                artifacts.require_dk(dict(persisted,service_storage=value),candidate=self.candidate,
+                    expected_service_data=declaration())
+        del persisted['service_storage']
+        with self.assertRaises(ValueError):
+            artifacts.require_dk(persisted,candidate=self.candidate,expected_service_data=declaration())
+
+    def test_dk_rejects_another_cohort_even_when_its_storage_summary_is_self_consistent(self):
+        evidence=dict(schema_version=1,candidate=self.candidate,execution_manifest_sha256='a'*64,
+            service_storage=observation(),service_data=declaration(),
+            cases=[dict(id='DK0'+str(number),status='pass',exact_cleanup='passed',
+                execution_manifest_sha256='a'*64,evidence_sha256=str(number)*64) for number in range(1,7)])
+        # A valid summary from a different root cannot substitute for this
+        # original execution, even when its own declaration was also copied.
+        evidence['service_data'][0]['identity'][1] += 1
+        evidence['service_storage']['roots'][0]['identity'][1] += 1
+        with self.assertRaisesRegex(ValueError, 'original execution receipt'):
+            artifacts.require_dk(evidence,candidate=self.candidate,expected_service_data=declaration())
 
     def test_old_single_server_and_additional_roles_cannot_be_new_candidates(self):
         old = dict(schema_version=1, candidate=self.candidate,
@@ -65,7 +151,7 @@ class CandidateArtifactsTests(unittest.TestCase):
         original = self.record()
         for field, value in (("candidate", "b" * 40), ("candidate", "test"),
                              ("architecture", "single-host"), ("schema_version", True),
-                             ("schema_version", 2), ("versions", dict(self.versions, host_store=6)),
+                             ("schema_version", 2), ("versions", dict(self.versions, host_store=15)),
                              ("versions", dict(self.versions, host_store=True)),
                              ("versions", dict(self.versions, extra=1))):
             with self.subTest(field=field, value=value), self.assertRaises(ValueError):
@@ -76,7 +162,7 @@ class CandidateArtifactsTests(unittest.TestCase):
     def test_implicit_or_unbounded_versions_are_rejected_before_artifact_access(self):
         for invalid in (None, {}, dict(self.versions, internal_protocol=0),
                         dict(self.versions, center_store=-1), dict(self.versions, host_store=2**32),
-                        dict(self.versions, host_store=1.0), dict(self.versions, host_store="5")):
+                        dict(self.versions, host_store=1.0), dict(self.versions, host_store="16")):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError), \
                     patch.object(artifacts, "_fingerprint") as fingerprint:
                 artifacts.record(self.candidate, self.paths, invalid)
@@ -185,6 +271,169 @@ class CandidateArtifactsTests(unittest.TestCase):
                         dict(report, service_boundary=dict(report["service_boundary"], host_transport="plaintext"))):
             with self.subTest(report=changed), self.assertRaises(ValueError):
                 artifacts.require_service_boundary(changed, manifest)
+
+    def test_execution_manifest_binds_roles_material_and_run_without_io_or_verdict(self):
+        manifest = self.record()
+        inputs = self.execution_inputs()
+        with patch.object(artifacts, "_fingerprint") as fingerprint, \
+                patch.object(artifacts, "private_path") as private_path:
+            execution = artifacts.execution_manifest(manifest, **inputs)
+            observed = artifacts.require_execution_manifest(execution, manifest, expected=execution)
+        fingerprint.assert_not_called()
+        private_path.assert_not_called()
+        self.assertEqual(observed, execution)
+        self.assertEqual(execution['service_data'], declaration())
+        self.assertEqual(execution["services"], artifacts.public_identity(manifest))
+        self.assertEqual(execution["roles"], inputs["roles"])
+        self.assertEqual(execution["redis"], inputs["redis"])
+        self.assertNotIn(str(self.root), json.dumps(execution))
+        for field in ("passed", "Cleaned", "private_key", "config_path", "server_sha256"):
+            self.assertNotIn(field, execution)
+        # The returned facts are a copy, not references to mutable caller input.
+        inputs["roles"]["host"][0]["directory"]["inode"] = 10
+        inputs["redis"]["binary_sha256"] = "0" * 64
+        inputs['service_data'][0]['identity'][1] += 1
+        manifest["versions"]["host_store"] = 100
+        self.assertEqual(execution["roles"]["host"][0]["directory"]["inode"], 2)
+        self.assertEqual(execution["redis"]["binary_sha256"], "d" * 64)
+        self.assertEqual(execution['service_data'], declaration())
+        self.assertEqual(execution["services"]["versions"], self.versions)
+
+    def test_execution_storage_projection_changes_and_missing_original_declaration_reject(self):
+        expected=self.execution()
+        for key,value in (('identity',[1,3]),('owner_uid',1),
+                          ('budget',dict(logical_file_bytes=2048,entries=4))):
+            evidence=copy.deepcopy(expected)
+            evidence['service_data'][0][key]=value
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'approved run staging'):
+                artifacts.require_execution_manifest(evidence,self.record(),expected=expected)
+        for declaration_value in (None,[],declaration()*9,
+                                 [dict(declaration()[0],path='/private/another-root')]):
+            evidence=dict(expected,service_data=declaration_value)
+            with self.subTest(declaration=declaration_value),self.assertRaises(ValueError):
+                artifacts.require_execution_manifest(evidence,self.record(),expected=evidence)
+        del expected['service_data']
+        with self.assertRaises(ValueError):
+            artifacts.require_execution_manifest(expected,self.record(),expected=expected)
+
+    def test_execution_refuses_missing_legacy_or_additional_roles_and_secrets(self):
+        inputs = self.execution_inputs()
+        invalid_roles = [None, {}, {"host": inputs["roles"]["host"]},
+                         dict(inputs["roles"], server=inputs["roles"]["host"])]
+        for field in ("config", "private_key", "path", "passed"):
+            changed = copy.deepcopy(inputs["roles"])
+            changed["center"][field] = "must-not-be-recorded"
+            invalid_roles.append(changed)
+        changed = copy.deepcopy(inputs["roles"])
+        changed["center"]["directory"]["path"] = "/protected/center"
+        invalid_roles.append(changed)
+        for roles in invalid_roles:
+            with self.subTest(roles=roles), self.assertRaises(ValueError):
+                artifacts.execution_manifest(self.record(), **dict(inputs, roles=roles))
+        valid = self.execution()
+        for evidence in (dict(server_sha256="b" * 64), dict(valid, server_sha256="b" * 64),
+                         dict(valid, passed=True), dict(valid, Cleaned=True),
+                         dict(valid, schema_version=True), dict(valid, schema_version=2)):
+            with self.subTest(evidence=evidence), self.assertRaises(ValueError):
+                artifacts.require_execution_manifest(evidence, self.record(), expected=valid)
+
+    def test_role_process_identities_are_explicit_disjoint_and_strictly_numeric(self):
+        for role, pair in (("center", (0, 0)), ("redis", (0, 0)), ("host", (1000, 1000)),
+                           ("host", (False, 0)), ("host", (0, False)),
+                           ("center", (None, None)), ("center", (1001, None)),
+                           ("center", (True, 1001)), ("center", (999, 1001)),
+                           ("redis", (1001, 1002)), ("redis", (2**32 - 1, 1002))):
+            inputs = self.execution_inputs()
+            facts = inputs['roles'][role][0] if role == 'host' else inputs['roles'][role]
+            facts.update(zip(("uid", "gid"), pair))
+            facts["directory"].update(zip(("uid", "gid"), pair))
+            with self.subTest(role=role, pair=pair), self.assertRaises(ValueError):
+                artifacts.execution_manifest(self.record(), **inputs)
+
+    def test_role_directories_require_original_inode_owner_and_private_mode(self):
+        for field, value in (("device", True), ("device", -1), ("device", 2**64),
+                             ("inode", 0), ("inode", 2**64), ("inode", "1"),
+                             ("uid", 0), ("uid", 1001.0), ("gid", 0),
+                             ("mode", 0o755), ("mode", 0o1700), ("mode", 448.0)):
+            inputs = self.execution_inputs()
+            inputs["roles"]["center"]["directory"][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                artifacts.execution_manifest(self.record(), **inputs)
+        inputs = self.execution_inputs()
+        inputs["roles"]["redis"]["directory"].update(device=1, inode=1)
+        with self.assertRaisesRegex(ValueError, "independent protected directory"):
+            artifacts.execution_manifest(self.record(), **inputs)
+
+    def test_execution_uses_original_fixed_redis_receipt_and_bounded_material(self):
+        for field, value in (("version", "wrong"), ("archive_sha256", "0" * 64),
+                             ("binary_sha256", "A" * 64), ("binary_sha256", None),
+                             ("binary_bytes", 0), ("binary_bytes", True),
+                             ("binary_bytes", artifacts.REDIS_BINARY_LIMIT + 1),
+                             ("path", "/private/redis")):
+            inputs = self.execution_inputs()
+            inputs["redis"][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                artifacts.execution_manifest(self.record(), **inputs)
+        inputs = self.execution_inputs()
+        inputs["redis"].pop("binary_bytes")
+        with self.assertRaises(ValueError):
+            artifacts.execution_manifest(self.record(), **inputs)
+
+    def test_all_run_material_bindings_require_sha256_and_exact_expected_facts(self):
+        fields = ("run_id", "candidate_manifest_sha256", "tls_sha256", "budget_sha256")
+        for field in fields:
+            for bad in (None, "c" * 63, "C" * 64, True):
+                inputs = self.execution_inputs()
+                inputs[field] = bad
+                with self.subTest(field=field, value=bad), self.assertRaises(ValueError):
+                    artifacts.execution_manifest(self.record(), **inputs)
+        inputs = self.execution_inputs()
+        inputs["roles"]["host"][0]["config_sha256"] = "0" * 63
+        with self.assertRaises(ValueError):
+            artifacts.execution_manifest(self.record(), **inputs)
+        expected = self.execution()
+        changed = []
+        for field in fields:
+            changed.append(dict(expected, **{field: "0" * 64}))
+        for role in ("center", "host", "redis"):
+            value = copy.deepcopy(expected)
+            facts = value['roles'][role][0] if role == 'host' else value['roles'][role]
+            facts["config_sha256"] = "0" * 64
+            changed.append(value)
+        value = copy.deepcopy(expected)
+        value["roles"]["center"]["directory"]["inode"] = 100
+        changed.append(value)
+        value = copy.deepcopy(expected)
+        value["redis"]["binary_sha256"] = "0" * 64
+        changed.append(value)
+        for evidence in changed:
+            with self.subTest(evidence=evidence), self.assertRaisesRegex(ValueError, "approved run staging"):
+                artifacts.require_execution_manifest(evidence, self.record(), expected=expected)
+
+    def test_all_host_pool_and_private_helper_configurations_are_explicit_bounded_and_distinct(self):
+        inputs = self.execution_inputs()
+        host = inputs['roles']['host'][0]
+        second = dict(host, config_sha256='6'*64, directory=dict(host['directory'], inode=6))
+        helper = dict(host, config_sha256='7'*64, directory=dict(host['directory'], inode=7))
+        inputs['roles']['host'] = [host, second, helper]
+        self.assertEqual(len(artifacts.execution_manifest(self.record(), **inputs)['roles']['host']), 3)
+        for invalid in ([], host, [host]*2, [host, second, helper, helper],
+                        [host, dict(second, config_sha256=host['config_sha256'])]):
+            with self.subTest(host=invalid), self.assertRaises(ValueError):
+                artifacts.execution_manifest(self.record(), **dict(inputs, roles=dict(inputs['roles'], host=invalid)))
+
+    def test_execution_cannot_attest_mixed_candidates_versions_or_invalid_expectations(self):
+        expected = self.execution()
+        for identity in (dict(expected["services"], candidate="0" * 40),
+                         dict(expected["services"], host_sha256="0" * 64),
+                         dict(expected["services"], versions=dict(self.versions, host_store=15))):
+            evidence = dict(expected, services=identity)
+            with self.subTest(identity=identity), self.assertRaises(ValueError):
+                artifacts.require_execution_manifest(evidence, self.record(), expected=expected)
+        for invalid in (dict(expected, schema_version=True), dict(expected, private_key="secret"),
+                        dict(expected, services=dict(expected["services"], candidate="0" * 40))):
+            with self.subTest(expected=invalid), self.assertRaises(ValueError):
+                artifacts.require_execution_manifest(expected, self.record(), expected=invalid)
 
 
 if __name__ == "__main__":

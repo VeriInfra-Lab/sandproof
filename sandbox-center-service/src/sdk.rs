@@ -58,7 +58,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> ControllerPort for Cent
         tenant: &str,
         candidate: &str,
     ) -> Result<PublicationView, PortError> {
-        self.0.templates.publish(tenant, candidate)
+        self.0.templates.publish(self.0.as_ref(), tenant, candidate)
     }
     fn publication(&self, tenant: &str, candidate: &str) -> Result<PublicationView, PortError> {
         self.0.templates.publication(tenant, candidate)

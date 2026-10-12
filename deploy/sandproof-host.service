@@ -1,0 +1,25 @@
+# VM resources belong to the ORIGINAL protected journal/profile, not systemd's
+# service lifetime. Never use control-group or mixed killing for this role.
+[Unit]
+Description=Sandproof private KVM host
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+ExecStart=/var/lib/sandproof-host/control/bin/sandproof-host serve --config /var/lib/sandproof-host/control/host.json
+Restart=on-failure
+RestartSec=5
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=60
+SendSIGKILL=yes
+Delegate=yes
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

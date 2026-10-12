@@ -9,8 +9,9 @@ use sandproof_controller_service::application::{
 };
 use sandproof_controller_service::{CreateNetworking, CreateOptions};
 use sandproof_protocol::internal::lifecycle::{
-    CreateBinding, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
+    Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
 };
+use sandproof_protocol::internal::{NodeIdentity, window::WindowCloseRequest};
 use sandproof_protocol::{SandboxId, TenantId};
 use std::{
     sync::{Arc, Mutex},
@@ -71,6 +72,15 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .map_err(authority_error)
     }
     /// # Errors
+    /// Visibility and lifetime are read from the SAME durable business view.
+    pub fn public_snapshot(&self) -> Result<crate::PublicSnapshot, PortError> {
+        self.authority
+            .lock()
+            .map_err(|_| PortError::Busy)?
+            .public_snapshot()
+            .map_err(authority_error)
+    }
+    /// # Errors
     /// Reads or reconnection alone do not permit dispatch after an unknown write.
     pub fn recover_authority(&self) -> Result<(), PortError> {
         self.authority
@@ -119,41 +129,20 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         };
         options.validate().map_err(|_| PortError::Invalid)?;
         let now = self.now()?;
-        let shape = template.resources;
-        let binding = CreateBinding {
-            template_revision: template.revision,
-            template_digest: template.digest,
-            resources: Resources {
-                instances: 1,
-                cpu: u64::from(shape.cpu_count),
-                memory_bytes: shape.host_memory_bytes,
-                disk_bytes: shape.disk_bytes,
-            },
-            options: serde_json::to_vec(&options).map_err(|_| PortError::Invalid)?,
-            startup_deadline_ms: now
-                .checked_add(
-                    self.config
-                        .startup_timeout_secs
-                        .checked_mul(1000)
-                        .ok_or(PortError::Invalid)?,
-                )
-                .ok_or(PortError::Invalid)?,
-            timeout_ms: timeout.checked_mul(1000).ok_or(PortError::Invalid)?,
-            max_lifetime_ms: self
-                .config
-                .max_lifetime_secs
-                .checked_mul(1000)
-                .ok_or(PortError::Invalid)?,
-        };
+        let binding = crate::create_binding::create_binding(
+            &template,
+            &options,
+            timeout,
+            now,
+            (&self.config).into(),
+        )?;
         let request = self
             .authority
             .lock()
             .map_err(|_| PortError::Busy)?
             .create(&tenant, binding, now)
             .map_err(authority_error)?;
-        self.wait(&request)?;
-        self.session(tenant.as_str(), request.identity.sandbox_id.as_str())
-            .map_err(|_| PortError::OutcomeUnknown)
+        self.wait_session(&request)
     }
     /// # Errors
     /// Connect only extends the original lifetime; no original-now reset.
@@ -169,8 +158,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let now = self.now()?;
         let request = {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
-            let state = authority.snapshot().map_err(authority_error)?;
-            let record = find(&state, &tenant, &sandbox)?;
+            let view = authority.public_snapshot().map_err(authority_error)?;
+            let record = view.find(&tenant, &sandbox)?;
             mutable_lifetime(record, now)?;
             let original = record.end_at_ms.ok_or(PortError::Busy)?;
             let end = original.max(capped_deadline(record, now, i128::from(duration) * 1000)?);
@@ -179,9 +168,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .renew(&tenant, &sandbox, end, now)
                 .map_err(authority_error)?
         };
-        self.wait(&request)?;
-        self.session(tenant.as_str(), sandbox.as_str())
-            .map_err(|_| PortError::OutcomeUnknown)
+        self.wait_session(&request)
     }
     /// # Errors
     /// Ordinary lifetime changes succeed only after the host commits them.
@@ -192,8 +179,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let now = self.now()?;
         let request = {
             let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
-            let state = authority.snapshot().map_err(authority_error)?;
-            let record = find(&state, &tenant, &sandbox)?;
+            let view = authority.public_snapshot().map_err(authority_error)?;
+            let record = view.find(&tenant, &sandbox)?;
             mutable_lifetime(record, now)?;
             if seconds <= 0 {
                 authority
@@ -221,8 +208,8 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .authority
                 .lock()
                 .map_err(|_| PortError::OutcomeUnknown)?;
-            let state = authority.snapshot().map_err(authority_error)?;
-            if find(&state, &tenant, &sandbox)?.released {
+            let view = authority.public_snapshot().map_err(authority_error)?;
+            if view.find(&tenant, &sandbox)?.released {
                 return Err(PortError::NotFound);
             }
             authority
@@ -231,16 +218,55 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         };
         self.wait(&request).map(|_| ())
     }
-    fn wait(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError> {
-        let deadline = Instant::now()
+    pub(crate) fn wait(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError> {
+        self.wait_until(request, self.reply_deadline()?)
+    }
+    fn reply_deadline(&self) -> Result<Instant, PortError> {
+        Instant::now()
             .checked_add(self.config.reply_timeout)
-            .ok_or(PortError::OutcomeUnknown)?;
+            .ok_or(PortError::OutcomeUnknown)
+    }
+    fn wait_session(
+        &self,
+        request: &LifecycleRequest,
+    ) -> Result<sandproof_controller_service::application::Session, PortError> {
+        let deadline = self.reply_deadline()?;
+        self.wait_until(request, deadline)?;
         loop {
-            let remaining = deadline
-                .checked_duration_since(Instant::now())
-                .filter(|d| !d.is_zero())
-                .ok_or(PortError::OutcomeUnknown)?;
-            match self.send_current(request, remaining) {
+            if remaining(deadline).is_none() {
+                return Err(PortError::OutcomeUnknown);
+            }
+            // Ready is not a fresh host observation. Only the original health
+            // veto is retryable here; shared reads, ownership, lifetime and
+            // immutable-template failures return immediately. No host command
+            // or new identity is issued while waiting for the background scan.
+            if let Some(session) = self
+                .session_attempt(
+                    request.identity.tenant_id.as_str(),
+                    request.identity.sandbox_id.as_str(),
+                )
+                .map_err(|_| PortError::OutcomeUnknown)?
+            {
+                // A valid projection may itself block on the bounded external
+                // authority/provider. Its completion cannot reset or cross the
+                // original public reply budget and then report success.
+                return remaining(deadline)
+                    .map(|_| session)
+                    .ok_or(PortError::OutcomeUnknown);
+            }
+            self.poll_pause(deadline);
+        }
+    }
+    fn wait_until(
+        &self,
+        request: &LifecycleRequest,
+        deadline: Instant,
+    ) -> Result<LifecycleResponse, PortError> {
+        loop {
+            if remaining(deadline).is_none() {
+                return Err(PortError::OutcomeUnknown);
+            }
+            match self.send_current(request, deadline) {
                 Ok(response) => {
                     if matches!(
                         response.fact,
@@ -251,7 +277,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                         return Ok(response);
                     }
                     if response.fact == LifecycleFact::NotAccepted {
-                        return Err(PortError::Failed);
+                        // The sole production producer is a durable, original
+                        // no-side-effect capacity refusal. Unknown template/
+                        // execution/transport failures never use this fact.
+                        return Err(PortError::QuotaExceeded);
                     }
                 }
                 // Reception shares the original host worker's finite budget.
@@ -259,23 +288,51 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 // the SAME durable intent again within the original deadline;
                 // never allocate a replacement or reset that deadline.
                 Err(AttemptError::UnknownHost) => {}
-                Err(AttemptError::SharedAuthority | AttemptError::Superseded) => {
+                Err(AttemptError::SharedAuthority) => {
                     return Err(PortError::OutcomeUnknown);
                 }
+                Err(AttemptError::Superseded) => {
+                    return self.retired_destroy_result(request, deadline);
+                }
             }
-            std::thread::sleep(
-                self.config
-                    .poll_interval
-                    .min(deadline.saturating_duration_since(Instant::now())),
-            );
+            self.poll_pause(deadline);
         }
+    }
+    /// Retirement can overtake any detached send/confirmation of this SAME
+    /// destroy already durably accepted by this application's authority. The
+    /// receipt matches its full control identity, not its canonical create body;
+    /// callers still supply the original committed request. Neither absence nor
+    /// a slot frontier or another intent proves success.
+    fn retired_destroy_result(
+        &self,
+        request: &LifecycleRequest,
+        deadline: Instant,
+    ) -> Result<LifecycleResponse, PortError> {
+        let state = self.snapshot().map_err(|_| PortError::OutcomeUnknown)?;
+        remaining(deadline).ok_or(PortError::OutcomeUnknown)?;
+        let result = state
+            .lane(&request.identity.node, request.identity.retention_slot)
+            .and_then(sandproof_center_core::RetentionLane::last_retired)
+            .filter(|result| {
+                request.intent == Intent::Destroy
+                    && result.fact == LifecycleFact::Cleaned
+                    && result.validate_for(request).is_ok()
+            });
+        result.cloned().ok_or(PortError::OutcomeUnknown)
+    }
+    fn poll_pause(&self, deadline: Instant) {
+        std::thread::sleep(
+            self.config
+                .poll_interval
+                .min(deadline.saturating_duration_since(Instant::now())),
+        );
     }
     /// One durable-current attempt. The mutex is released before networking,
     /// and a newer destroy is allowed to overtake this package.
     fn send_current(
         &self,
         request: &LifecycleRequest,
-        deadline: Duration,
+        deadline: Instant,
     ) -> Result<LifecycleResponse, AttemptError> {
         let state = self.snapshot().map_err(|_| AttemptError::SharedAuthority)?;
         let record = find(
@@ -294,32 +351,68 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         // No guard from above survives the network call.
         let response = self
             .hosts
-            .send(request, deadline)
+            .send(
+                request,
+                remaining(deadline).ok_or(AttemptError::UnknownHost)?,
+            )
             .map_err(|_| AttemptError::UnknownHost)?;
         response
             .validate_for(request)
             .map_err(|_| AttemptError::UnknownHost)?;
-        self.authority
+        let applied = self
+            .authority
             .lock()
             .map_err(|_| AttemptError::SharedAuthority)?
-            .apply_response(&response)
-            .map_err(|error| match error {
-                AuthorityError::Decision(DecisionError::Stale | DecisionError::NotFound) => {
-                    AttemptError::Superseded
+            .apply_response(&response);
+        match applied {
+            Ok(()) => {}
+            Err(AuthorityError::Decision(DecisionError::Stale)) => {
+                // A detached reply can lag a background observation of the
+                // SAME request. Reconfirm the original authority after releasing
+                // the apply lock; do not accept the old packet or a cached view.
+                let state = self.snapshot().map_err(|_| AttemptError::SharedAuthority)?;
+                let current = find(
+                    &state,
+                    &request.identity.tenant_id,
+                    &request.identity.sandbox_id,
+                )
+                .map_err(|_| AttemptError::Superseded)?
+                .operations
+                .last()
+                .ok_or(AttemptError::Superseded)?;
+                if current.request == *request
+                    && current.response.as_ref().is_some_and(|saved| {
+                        saved.identity == response.identity
+                            && saved.observation_version.get() > response.observation_version.get()
+                    })
+                {
+                    // The existing wait may only requery this original intent
+                    // within its original deadline. Ready/health still receive
+                    // their normal checks; this old reply is never success.
+                    return Err(AttemptError::UnknownHost);
                 }
-                _ => AttemptError::SharedAuthority,
-            })?;
+                return Err(AttemptError::Superseded);
+            }
+            Err(AuthorityError::Decision(DecisionError::NotFound)) => {
+                return Err(AttemptError::Superseded);
+            }
+            Err(_) => return Err(AttemptError::SharedAuthority),
+        }
         if !matches!(
             response.fact,
             LifecycleFact::Recorded | LifecycleFact::Stopped
         ) {
-            self.confirm_saved(&response)?;
+            self.confirm_saved(&response, deadline)?;
         }
         Ok(response)
     }
     /// The result is committed FIRST, networking is detached, and compaction
     /// commits only after exact host acknowledgement. Lost acks retain history.
-    fn confirm_saved(&self, result: &LifecycleResponse) -> Result<(), AttemptError> {
+    fn confirm_saved(
+        &self,
+        result: &LifecycleResponse,
+        deadline: Instant,
+    ) -> Result<(), AttemptError> {
         let state = self.snapshot().map_err(|_| AttemptError::SharedAuthority)?;
         let record = find(
             &state,
@@ -330,24 +423,115 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         if record.operations.last().and_then(|op| op.response.as_ref()) != Some(result) {
             return Err(AttemptError::Superseded);
         }
-        // No discarded ordinary history: neither side needs a bookkeeping RPC.
-        if !record.has_compaction_work() {
+        let terminal = matches!(
+            result.fact,
+            LifecycleFact::Cleaned | LifecycleFact::NotAccepted
+        );
+        let needs_terminal = terminal && record.terminal_confirmation.as_ref() != Some(result);
+        let compact = record.has_compaction_work();
+        // Terminal confirmation is independently required for window retirement,
+        // including Create+Destroy and a one-operation NotAccepted history.
+        if !needs_terminal && !compact {
             return Ok(());
         }
-        match self.hosts.confirm(result, self.config.reply_timeout) {
+        // Confirmation is retirement work, not a second public wait budget.
+        // If the original attempt's time has elapsed, retain the saved result
+        // for the next bounded reconciliation instead of resetting its clock.
+        let Some(budget) = remaining(deadline) else {
+            return Ok(());
+        };
+        match self.hosts.confirm(result, budget) {
             Ok(answer) if answer == *result => {}
             Ok(_) | Err(_) => return Ok(()), // exact original result remains durable
         }
+        let mut authority = self
+            .authority
+            .lock()
+            .map_err(|_| AttemptError::SharedAuthority)?;
+        let map_error = |error| match error {
+            AuthorityError::Decision(DecisionError::Stale | DecisionError::NotFound) => {
+                AttemptError::Superseded
+            }
+            _ => AttemptError::SharedAuthority,
+        };
+        if needs_terminal {
+            authority.confirm_terminal(result).map_err(map_error)?;
+        }
+        if compact {
+            authority.compact_confirmed(result).map_err(map_error)?;
+        }
+        Ok(())
+    }
+    /// Trusted assembly explicitly stops new creates; public callers never
+    /// choose a host or issue a retention lane.
+    /// # Errors
+    /// Unknown nodes and uncertain authority writes remain fenced.
+    pub fn begin_drain(&self, node: &NodeIdentity) -> Result<(), PortError> {
         self.authority
             .lock()
-            .map_err(|_| AttemptError::SharedAuthority)?
-            .compact_confirmed(result)
-            .map_err(|error| match error {
-                AuthorityError::Decision(DecisionError::Stale | DecisionError::NotFound) => {
-                    AttemptError::Superseded
-                }
-                _ => AttemptError::SharedAuthority,
-            })
+            .map_err(|_| PortError::Busy)?
+            .begin_drain(node)
+            .map_err(authority_error)
+    }
+    /// Commit a close responsibility through the full business authority before
+    /// detached dispatch in reconciliation. This is NOT a close acknowledgement.
+    /// # Errors
+    /// Active/unconfirmed lanes or unsettled business pins cannot dispatch.
+    pub fn begin_close(
+        &self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, PortError> {
+        self.authority
+            .lock()
+            .map_err(|_| PortError::Busy)?
+            .begin_close(terminal)
+            .map_err(authority_error)
+    }
+    /// Retire only individual histories with exact durable terminal
+    /// confirmations. A live sibling never needs to stop. Template/build
+    /// references are checked by the SAME business authority before closing.
+    /// Call after publication reconciliation so its evidence has been settled.
+    /// There is no time-based deletion or separately retained retry queue.
+    /// # Errors
+    /// Shared authority failures stop this scan; a known business pin keeps
+    /// only its own lane while other confirmed lanes may close safely.
+    pub fn retire_terminal_history_once(&self) -> Result<(), PortError> {
+        let candidates = self.snapshot()?.retirement_candidates();
+        for terminal in candidates {
+            let mut authority = self.authority.lock().map_err(|_| PortError::Busy)?;
+            match authority.begin_close(&terminal) {
+                Ok(_)
+                | Err(AuthorityError::Decision(
+                    DecisionError::Conflict | DecisionError::Stale | DecisionError::NotFound,
+                )) => {}
+                Err(error) => return Err(authority_error(error)),
+            }
+        }
+        self.reconcile_closes()
+    }
+    fn reconcile_closes(&self) -> Result<(), PortError> {
+        let requests = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::Busy)?
+            .close_batch()
+            .map_err(authority_error)?;
+        for request in requests {
+            // No authority guard survives network I/O. Lost/wrong replies leave
+            // the same durable ClosePending package available after restart.
+            let Ok(ack) = self.hosts.close(&request, self.config.reply_timeout) else {
+                continue;
+            };
+            if ack.validate_for(&request).is_err() {
+                continue;
+            }
+            self.authority
+                .lock()
+                .map_err(|_| PortError::Busy)?
+                .apply_close_ack(&ack)
+                .map_err(authority_error)?;
+        }
+        Ok(())
     }
     /// Bounded background reconciliation. A bad node does not prevent attempts
     /// for another record; storage faults invalidate the next snapshot/attempt.
@@ -376,7 +560,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         };
         let mut completed = 0;
         for request in pending {
-            match self.send_current(&request, self.config.reply_timeout) {
+            let deadline = Instant::now()
+                .checked_add(self.config.reply_timeout)
+                .ok_or(PortError::OutcomeUnknown)?;
+            match self.send_current(&request, deadline) {
                 Ok(_) => completed += 1,
                 Err(AttemptError::SharedAuthority) => return Err(PortError::OutcomeUnknown),
                 Err(AttemptError::UnknownHost | AttemptError::Superseded) => {}
@@ -389,7 +576,19 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         for result in state
             .sandboxes()
             .iter()
-            .filter(|record| record.has_compaction_work())
+            .filter(|record| {
+                record.has_compaction_work()
+                    || record
+                        .operations
+                        .last()
+                        .and_then(|op| op.response.as_ref())
+                        .is_some_and(|result| {
+                            matches!(
+                                result.fact,
+                                LifecycleFact::Cleaned | LifecycleFact::NotAccepted
+                            ) && record.terminal_confirmation.as_ref() != Some(result)
+                        })
+            })
             .filter_map(|record| record.operations.last()?.response.as_ref())
             .filter(|result| {
                 !matches!(
@@ -398,13 +597,22 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 )
             })
         {
-            match self.confirm_saved(result) {
+            let deadline = Instant::now()
+                .checked_add(self.config.reply_timeout)
+                .ok_or(PortError::OutcomeUnknown)?;
+            match self.confirm_saved(result, deadline) {
                 Ok(()) | Err(AttemptError::Superseded | AttemptError::UnknownHost) => {}
                 Err(AttemptError::SharedAuthority) => return Err(PortError::OutcomeUnknown),
             }
         }
+        self.reconcile_closes()?;
         Ok(completed)
     }
+}
+fn remaining(deadline: Instant) -> Option<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
 }
 pub(crate) fn tenant_id(value: &str) -> Result<TenantId, PortError> {
     // Preserve the existing positive numeric public tenant configuration.
@@ -470,6 +678,7 @@ pub(crate) fn authority_error(error: AuthorityError) -> PortError {
     match error {
         AuthorityError::Decision(DecisionError::Invalid) => PortError::Invalid,
         AuthorityError::Decision(DecisionError::NotFound) => PortError::NotFound,
+        AuthorityError::Decision(DecisionError::Unavailable) => PortError::Busy,
         AuthorityError::Decision(DecisionError::Conflict | DecisionError::Stale) => {
             PortError::Conflict
         }

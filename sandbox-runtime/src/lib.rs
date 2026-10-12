@@ -25,5 +25,5 @@ pub use linux::{
     MAX_HELPER_MARKER_BYTES, Observation, RetirementManifest, Runtime, RuntimeConfig, RuntimeError,
     RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig,
     RuntimePhysicalObserver, RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState,
-    VmState, check_trusted_path,
+    VmState, check_trusted_path, check_trusted_path_for_owner,
 };

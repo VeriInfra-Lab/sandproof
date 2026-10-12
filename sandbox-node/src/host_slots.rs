@@ -1,5 +1,5 @@
 //! Durable host-side half of the core physical-position protocol. Callers keep
-//! these checks and all worker I/O inside the existing `ManagedPort` boundary.
+//! these checks and all worker I/O inside the original application boundary.
 use super::{
     BoundedHostConfig, DirBuilder, File, HostSlotContext, LinuxWorker, NodeConfig, NodeResult,
     Path, PathBuf, Runtime, RuntimeConfig, RuntimeError, SlotBinding, WorkAction, artifact_digest,

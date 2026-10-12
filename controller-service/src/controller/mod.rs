@@ -16,13 +16,15 @@ mod capacity;
 mod data_credentials;
 pub use capacity::CapacityConfig;
 mod admission;
+mod admission_usage;
 mod allocators;
 mod bounded;
 mod checkpoint;
 mod identity;
 mod internal_inbox;
 pub use internal_inbox::{
-    InternalAdmission, InternalCreateResult, InternalInboxConfig, InternalLocalBinding,
+    InternalAdmission, InternalAudit, InternalAuditOperation, InternalCreateResult,
+    InternalInboxConfig, InternalLocalBinding, InternalNativeAudit, InternalRetentionLane,
     InternalTemplate, InternalWorkState,
 };
 mod private_build;
@@ -30,7 +32,7 @@ mod registry;
 mod storage;
 mod transaction;
 
-pub use private_build::{BuildAnchor, BuildRetryConfig, BuildWindow};
+pub use private_build::{BuildAnchor, BuildRetryConfig};
 
 pub use bounded::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
 pub use checkpoint::{

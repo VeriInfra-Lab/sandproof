@@ -211,7 +211,7 @@ async fn host(path: &Path) -> Result<()> {
         )?,
         cfg.identity.clone(),
         limits()?,
-        facade,
+        sandproof_internal::diagnostic::RejectTemplateCache::new(facade),
     );
     let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
     write(&cfg.tls.join("listening"), b"authenticated host listening")?;
@@ -227,6 +227,7 @@ async fn host(path: &Path) -> Result<()> {
                 let template = (request.intent == Intent::Create).then(|| InternalTemplate {
                     revision: cfg.template_revision.clone(),
                     digest: cfg.template_digest,
+                    registered: cfg.template.clone(),
                     local: cfg.template.clone(),
                 });
                 match inbox.advance(request.clone(), template, compute).await {
@@ -369,6 +370,8 @@ async fn center(path: &Path) -> Result<()> {
             platform: resources,
         },
         vec![NodeRegistration {
+            retention_slots: 1,
+            role: sandproof_center_core::NodeRole::Runtime,
             identity: cfg.identity.clone(),
             limit: resources,
             mode: NodeMode::Accepting,
@@ -378,7 +381,7 @@ async fn center(path: &Path) -> Result<()> {
                 revision: cfg.binding.template_revision.clone(),
                 digest: cfg.binding.template_digest,
             }],
-            protocol_version: 1,
+            protocol_version: 2,
         }],
         vec![TenantBudget {
             tenant: "1".try_into()?,

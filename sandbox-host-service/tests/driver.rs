@@ -4,7 +4,10 @@
 mod local;
 use sandproof_controller_service::{InternalTemplate, application::ApplicationError};
 use sandproof_host_service::{DriverConfig, HostLifecycle, TemplateSource};
-use sandproof_internal::LifecycleReceiver;
+use sandproof_internal::{
+    LifecycleReceiver,
+    status::{HostStatus, StatusRequest},
+};
 use sandproof_protocol::internal::lifecycle::{CreateBinding, Intent, LifecycleFact};
 use std::{
     sync::{
@@ -66,6 +69,7 @@ async fn authority_fault_during_advance_halts_before_another_healthy_request() {
     let mut healthy = local::request();
     healthy.identity.sandbox_id = "sandbox-2".try_into().unwrap();
     healthy.identity.operation_id = "operation-2".try_into().unwrap();
+    healthy.identity.retention_slot = 2;
     host.receive(healthy).await.unwrap();
     assert_eq!(
         host.drive_once(config(), Arc::new(CorruptAuthority(database)))
@@ -94,8 +98,39 @@ async fn durable_scan_advances_original_create_then_destroy_without_manual_reque
         true,
     );
     let host = HostLifecycle::new(app);
+    let (observed_at_ms, free) = host
+        .free_resources(config().node.clone(), config().compute)
+        .await
+        .unwrap();
+    // Exactly the production StatusReceiver projection, sourced from the
+    // original application and shared non-waiting worker gate, not audit rows.
+    let status = HostStatus {
+        node: config().node,
+        retention_slots: 2,
+        observed_at_ms,
+        free,
+    };
+    status
+        .validate_for(&StatusRequest {
+            node: config().node,
+        })
+        .unwrap();
+    assert_eq!(status.observed_at_ms, 10);
+    assert_eq!(status.free.instances, 2);
+    assert_eq!(
+        serde_json::from_slice::<HostStatus>(&serde_json::to_vec(&status).unwrap()).unwrap(),
+        status
+    );
     let create = local::request();
     host.receive(create.clone()).await.unwrap();
+    assert_eq!(
+        host.free_resources(config().node, config().compute)
+            .await
+            .unwrap()
+            .1
+            .instances,
+        1
+    );
     assert!(state.lock().unwrap().actions.is_empty());
     let report = host
         .drive_once(config(), Arc::new(Templates))
@@ -109,6 +144,14 @@ async fn durable_scan_advances_original_create_then_destroy_without_manual_reque
         host.receive(create.clone()).await.unwrap().fact,
         LifecycleFact::Ready { .. }
     ));
+    assert_eq!(
+        host.free_resources(config().node, config().compute)
+            .await
+            .unwrap()
+            .1
+            .instances,
+        1
+    );
     let launches = state.lock().unwrap().actions.len();
     let idle = host.drive_once(config(), Arc::new(Missing)).await.unwrap();
     assert_eq!(idle, sandproof_host_service::DriveReport::default());
@@ -119,9 +162,27 @@ async fn durable_scan_advances_original_create_then_destroy_without_manual_reque
     destroy.identity.intent_version = 2.try_into().unwrap();
     host.receive(destroy.clone()).await.unwrap();
     host.drive_once(config(), Arc::new(Missing)).await.unwrap();
+    let cleaned = host.receive(destroy).await.unwrap();
+    assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
     assert_eq!(
-        host.receive(destroy).await.unwrap().fact,
-        LifecycleFact::Cleaned
+        host.free_resources(config().node, config().compute)
+            .await
+            .unwrap()
+            .1
+            .instances,
+        1
+    );
+    host.confirm(cleaned.clone()).await.unwrap();
+    host.close(sandproof_protocol::internal::window::WindowCloseRequest::new(cleaned))
+        .await
+        .unwrap();
+    assert_eq!(
+        host.free_resources(config().node, config().compute)
+            .await
+            .unwrap()
+            .1
+            .instances,
+        2
     );
     assert_eq!(host.active_work(), 0);
 }
@@ -143,6 +204,7 @@ async fn missing_material_does_not_start_vm_or_suppress_another_durable_request(
     let mut healthy = local::request();
     healthy.identity.operation_id = "operation-2".try_into().unwrap();
     healthy.identity.sandbox_id = "sandbox-2".try_into().unwrap();
+    healthy.identity.retention_slot = 2;
     host.receive(healthy.clone()).await.unwrap();
     let report = host
         .drive_once(config(), Arc::new(Templates))

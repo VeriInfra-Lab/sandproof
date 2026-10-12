@@ -83,6 +83,58 @@ fn full_mode_rejects_unusable_atomic_tail_and_missing_discard() {
 }
 
 #[test]
+fn declared_tail_reserve_boundary_rotates_only_after_the_original_trigger() {
+    fn generation(journal: &ControllerJournal) -> i64 {
+        journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT generation FROM controller_checkpoint WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+    fn advance_clock(journal: &mut ControllerJournal, now_ms: u64) {
+        let tx = crate::controller::transaction::WorldTransaction::begin(
+            &mut journal.journal.connection,
+            &journal.committed_world,
+        )
+        .unwrap();
+        crate::controller::storage::apply_maintenance(
+            &tx,
+            core::maintenance::MaintenanceInput::Window(
+                core::maintenance::windows::WindowInput::AdvanceTime { now_ms },
+            ),
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+    let dir = TempDir::new().unwrap();
+    let mut policy = full_config();
+    policy.max_tail_inputs = 128;
+    let mut journal =
+        ControllerJournal::open_complete(dir.path().join("db"), NS, host(), policy, 1000).unwrap();
+    let initial = journal.checkpoint_progress().unwrap().unwrap();
+    let initial_generation = generation(&journal);
+    for now_ms in 1001..=1124 {
+        advance_clock(&mut journal, now_ms);
+    }
+    // The actual writer permits tail 124 plus its four-input atomic reserve.
+    journal.expire_retained(1124, &mut NeverCrash).unwrap();
+    let boundary = journal.checkpoint_progress().unwrap().unwrap();
+    assert_eq!(generation(&journal), initial_generation);
+    assert_eq!(boundary.input_cut, initial.input_cut);
+    assert_eq!(boundary.input_high_water - boundary.input_cut, 124);
+    advance_clock(&mut journal, 1125);
+    journal.expire_retained(1125, &mut NeverCrash).unwrap();
+    let rotated = journal.checkpoint_progress().unwrap().unwrap();
+    assert!(generation(&journal) > initial_generation);
+    assert_eq!(rotated.input_cut, boundary.input_high_water + 1);
+    assert_eq!(rotated.deleted_through, rotated.input_cut);
+}
+
+#[test]
 fn saturation_cannot_spend_accepted_cleanup_or_result_retention() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("db");

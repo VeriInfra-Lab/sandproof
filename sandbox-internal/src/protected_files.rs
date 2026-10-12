@@ -59,7 +59,14 @@ fn open_checked(path: &Path, owner: u32, leaf_directory: bool) -> Result<File, P
     if names.is_empty() || names.len() > 128 {
         return Err(ProtectedFileError::Invalid);
     }
-    let dir_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    // Directory handles are only traversed and inspected, never read. Linux
+    // O_PATH preserves search-only root-owned ancestors such as mode 0711;
+    // DIRECTORY and NOFOLLOW still reject symlinks before the metadata checks.
+    #[cfg(target_os = "linux")]
+    let directory_access = OFlags::PATH;
+    #[cfg(not(target_os = "linux"))]
+    let directory_access = OFlags::RDONLY;
+    let dir_flags = directory_access | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let mut current = File::from(
         open("/", dir_flags, Mode::empty()).map_err(|_| ProtectedFileError::Unavailable)?,
     );
@@ -158,6 +165,80 @@ mod tests {
     fn secret(path: &Path) {
         fs::write(path, b"fixture-only").unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn check_search_only_ancestor(path: &Path, owner: u32) {
+        // Root bypasses directory DAC and therefore cannot prove this case.
+        assert_ne!(
+            owner, 0,
+            "permission probe must run without root privileges"
+        );
+        assert_eq!(
+            fs::read_dir(path).unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        let child = path.join("private");
+        assert_eq!(
+            read_protected(&child.join("secret"), owner, 64).unwrap(),
+            b"fixture-only"
+        );
+        check_protected_directory(&child, owner).unwrap();
+        // Search permission does not relax the final directory's private mode.
+        assert!(check_protected_directory(path, owner).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn search_only_ancestors_do_not_require_directory_read_permission() {
+        use std::os::unix::{fs::chown, process::CommandExt};
+
+        const CHILD_ROOT: &str = "SANDPROOF_PROTECTED_SEARCH_ONLY_TEST_ROOT";
+        if let Some(path) = std::env::var_os(CHILD_ROOT) {
+            let path = std::path::PathBuf::from(path);
+            let owner = fs::metadata(path.join("private/secret")).unwrap().uid();
+            check_search_only_ancestor(&path, owner);
+            return;
+        }
+        let (dir, owner) = fixture();
+        let ancestor = dir.path().join("search-only");
+        let child = ancestor.join("private");
+        fs::create_dir(&ancestor).unwrap();
+        fs::create_dir(&child).unwrap();
+        fs::set_permissions(&child, fs::Permissions::from_mode(0o700)).unwrap();
+        secret(&child.join("secret"));
+        if owner == 0 {
+            const SERVICE_UID: u32 = 65534;
+            chown(&child, Some(SERVICE_UID), Some(SERVICE_UID)).unwrap();
+            chown(child.join("secret"), Some(SERVICE_UID), Some(SERVICE_UID)).unwrap();
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o711)).unwrap();
+            fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o711)).unwrap();
+            // The original test executable may live below a private root target.
+            // Copy only this test binary into the scoped fixture for the real
+            // unprivileged child; no source/configuration permission is changed.
+            let binary = dir.path().join("permission-test");
+            fs::copy(std::env::current_exe().unwrap(), &binary).unwrap();
+            fs::set_permissions(&binary, fs::Permissions::from_mode(0o555)).unwrap();
+            let status = std::process::Command::new(binary)
+                .args([
+                    "--exact",
+                    "protected_files::tests::search_only_ancestors_do_not_require_directory_read_permission",
+                    "--nocapture",
+                ])
+                .env(CHILD_ROOT, &ancestor)
+                .uid(SERVICE_UID)
+                .gid(SERVICE_UID)
+                .status()
+                .unwrap();
+            assert!(status.success(), "unprivileged directory probe failed");
+        } else {
+            // A user's own 0711 directory remains readable by that owner. Mode
+            // 0111 models the same search-only DAC without requiring chown.
+            fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o111)).unwrap();
+            let result = std::panic::catch_unwind(|| check_search_only_ancestor(&ancestor, owner));
+            fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o700)).unwrap();
+            result.unwrap();
+        }
     }
 
     #[test]

@@ -1,0 +1,196 @@
+{
+  "deployment_id": "example-deployment",
+  "bind": "127.0.0.1:3000",
+  "domain": "example.invalid",
+  "credentials": [
+    {
+      "tenant": 1,
+      "secret": ""
+    }
+  ],
+  "data_token_key": "/var/lib/sandproof-services/center/control/token.key",
+  "max_timeout_secs": 300,
+  "max_lifetime_secs": 3600,
+  "startup_timeout_secs": 300,
+  "reply_timeout_ms": 25000,
+  "poll_interval_ms": 100,
+  "expiry_scan_ms": 1000,
+  "node_observation": {
+    "health_window_ms": 6000,
+    "max_clock_skew_ms": 100
+  },
+  "public_ipv4_enabled": false,
+  "request_admission": {
+    "max_pending_requests": 12,
+    "control_reserve": 4
+  },
+  "data_transfer": {
+    "file_upload_bytes": 67108864,
+    "file_download_bytes": 100663296,
+    "command_input_bytes": 8388608,
+    "rpc_request_bytes": 65536,
+    "rpc_response_bytes": 1048576,
+    "max_transfers": 8,
+    "max_transfers_per_vm": 4,
+    "control_reserve": 1,
+    "request_idle_seconds": 30,
+    "file_idle_seconds": 30,
+    "write_idle_seconds": 30
+  },
+  "redis": {
+    "address": "127.0.0.1:6379",
+    "username": "sandproof-center",
+    "password": "",
+    "max_block_bytes": 16777216,
+    "memory_bytes": 134217728,
+    "operation_timeout_ms": 1000,
+    "writer_root": "/var/lib/sandproof-services/center/writer"
+  },
+  "tls": {
+    "certificate_chain_der": [
+      "/var/lib/sandproof-services/center/control/tls/center.der"
+    ],
+    "private_key_der": "/var/lib/sandproof-services/center/control/tls/center-key.der",
+    "trusted_roots_der": [
+      "/var/lib/sandproof-services/center/control/tls/ca.der"
+    ],
+    "max_connections": 12,
+    "handshake_timeout_ms": 2000,
+    "request_timeout_ms": 10000
+  },
+  "bounds": {
+    "max_nodes": 1,
+    "max_templates_per_node": 2,
+    "max_sandboxes": 4,
+    "operations_per_sandbox": 4,
+    "max_options_bytes": 4096,
+    "platform": {
+      "instances": 2,
+      "cpu": 2,
+      "memory_bytes": 270532608,
+      "disk_bytes": 2147483648
+    }
+  },
+  "tenants": [
+    {
+      "tenant": "1",
+      "limit": {
+        "instances": 2,
+        "cpu": 2,
+        "memory_bytes": 270532608,
+        "disk_bytes": 2147483648
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "registration": {
+        "identity": {
+          "deployment_id": "example-deployment",
+          "node_id": "host-runtime",
+          "node_generation": 1
+        },
+        "role": "runtime",
+        "limit": {
+          "instances": 2,
+          "cpu": 2,
+          "memory_bytes": 270532608,
+          "disk_bytes": 2147483648
+        },
+        "mode": "accepting",
+        "healthy_until_ms": 0,
+        "free": {
+          "instances": 0,
+          "cpu": 0,
+          "memory_bytes": 0,
+          "disk_bytes": 0
+        },
+        "templates": [],
+        "protocol_version": 2,
+        "retention_slots": 4
+      },
+      "address": "127.0.0.1:9000",
+      "server_name": "host.test",
+      "peer_certificates_der": [
+        "/var/lib/sandproof-services/center/control/tls/host.der"
+      ]
+    }
+  ],
+  "template_registry": {
+    "root": "/var/lib/sandproof-services/center/registry",
+    "max_templates_global": 2,
+    "max_templates_per_tenant": 2,
+    "max_artifact_bytes_global": 8589934592,
+    "max_artifact_bytes_per_tenant": 8589934592,
+    "validation_timeout_secs": 300
+  },
+  "metadata_budget": {
+    "max_certificate_bytes": 65536
+  },
+  "private_builds": null,
+  "private_build_boundary": null,
+  "templates": {
+    "templates": [
+      {
+        "template_id": "base",
+        "revision": "r1",
+        "owner": null,
+        "kernel": {
+          "path": "/var/lib/sandproof-services/center/assets/kernel",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size_bytes": 67108864
+        },
+        "rootfs": {
+          "path": "/var/lib/sandproof-services/center/assets/rootfs.ext4",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size_bytes": 1073741824
+        },
+        "resources": {
+          "cpu_count": 1,
+          "memory_mib": 128,
+          "host_memory_bytes": 135266304,
+          "disk_bytes": 1073741824
+        },
+        "envd_version": "0.9.0",
+        "startup": {
+          "workdir": "/home/user",
+          "argv": [],
+          "env_vars": {},
+          "user": "user"
+        }
+      }
+    ],
+    "aliases": {
+      "default": "base"
+    },
+    "compute_limits": {
+      "max_vcpus_global": 2,
+      "max_vcpus_per_tenant": 2,
+      "max_memory_bytes_global": 270532608,
+      "max_memory_bytes_per_tenant": 270532608
+    }
+  },
+  "template_registrations": [
+    {
+      "revision": "base-r1",
+      "template_id": "base"
+    }
+  ],
+  "artifact_service": {
+    "bind": "127.0.0.1:9100",
+    "server_name": "center.test",
+    "tls": {
+      "certificate_chain_der": [
+        "/var/lib/sandproof-services/center/control/tls/center.der"
+      ],
+      "private_key_der": "/var/lib/sandproof-services/center/control/tls/center-key.der",
+      "trusted_roots_der": [
+        "/var/lib/sandproof-services/center/control/tls/ca.der"
+      ]
+    },
+    "max_connections": 4,
+    "handshake_timeout_ms": 2000,
+    "request_timeout_ms": 10000,
+    "stream_timeout_ms": 900000
+  }
+}

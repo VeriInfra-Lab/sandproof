@@ -132,21 +132,65 @@ impl ControllerJournal {
             }
             Ok(_) => {}
         }
-        let connection =
-            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        connection.execute_batch("PRAGMA trusted_schema=OFF;")?;
-        let tx = connection.unchecked_transaction()?;
-        crate::journal::require_current_controller_store(&tx)?;
-        if read(&tx)?.as_ref() != Some(maintenance)
-            || bounded::config(&tx)?.as_ref() != Some(host)
-            || super::namespace(&tx)? != namespace
-        {
-            return Err(JournalError::UnsupportedStore);
-        }
-        recovery::load(&tx)?;
-        tx.commit()?;
-        Ok(())
+        read_complete_snapshot(path, namespace, host, maintenance, |_, _| Ok(()))
     }
+
+    /// Inspect an existing complete store without creating a database, acquiring
+    /// a writer lease, checkpointing or running application/host recovery.
+    /// `SQLite` may create/update its bounded WAL-reader coordination files; this
+    /// does not promise zero filesystem writes and never ignores a live WAL.
+    /// # Errors
+    /// Missing, corrupt, old, foreign or incompletely provisioned stores fail.
+    pub fn audit_complete(
+        path: impl AsRef<std::path::Path>,
+        namespace: &str,
+        host: &super::super::BoundedHostConfig,
+        maintenance: &MaintenanceConfig,
+        inbox: &crate::InternalInboxConfig,
+    ) -> Result<crate::InternalAudit, JournalError> {
+        read_complete_snapshot(
+            path.as_ref(),
+            namespace,
+            host,
+            maintenance,
+            |connection, world| {
+                let stored = super::super::internal_inbox::configuration_snapshot(connection)?;
+                if stored.as_ref() != Some(inbox) {
+                    return Err(JournalError::UnsupportedStore);
+                }
+                super::super::internal_inbox::audit_snapshot(connection, world)
+            },
+        )
+    }
+}
+
+fn read_complete_snapshot<T>(
+    path: &std::path::Path,
+    namespace: &str,
+    host: &super::super::BoundedHostConfig,
+    maintenance: &MaintenanceConfig,
+    project: impl FnOnce(&Connection, &core::World) -> Result<T, JournalError>,
+) -> Result<T, JournalError> {
+    validate_complete(host, maintenance)?;
+    super::super::validate_namespace(namespace)?;
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(JournalError::UnsupportedStore);
+    }
+    let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    connection.execute_batch("PRAGMA trusted_schema=OFF;")?;
+    let tx = connection.unchecked_transaction()?;
+    crate::journal::require_current_controller_store(&tx)?;
+    if read(&tx)?.as_ref() != Some(maintenance)
+        || bounded::config(&tx)?.as_ref() != Some(host)
+        || super::namespace(&tx)? != namespace
+    {
+        return Err(JournalError::UnsupportedStore);
+    }
+    let (world, _) = recovery::load(&tx)?;
+    let result = project(&tx, &world)?;
+    tx.commit()?;
+    Ok(result)
 }
 
 fn validate_complete(

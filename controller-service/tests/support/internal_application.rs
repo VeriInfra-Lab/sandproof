@@ -47,6 +47,8 @@ pub struct State {
     pub lose_activation: bool,
     pub block_prepare: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
     pub release_unknown: bool,
+    pub disk_available: Option<u64>,
+    pub template_error: Option<ApplicationError>,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -132,7 +134,10 @@ impl DataRelay for TestHost {
 }
 impl HostCapacity for TestHost {
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
-        Ok(u64::MAX)
+        Ok(self.0.lock().unwrap().disk_available.unwrap_or(u64::MAX))
+    }
+    fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
+        Ok((2, 512 * 1024 * 1024))
     }
     fn validate_physical_storage(
         &self,
@@ -193,6 +198,9 @@ impl LaunchConfiguration for TestHost {
 }
 impl TemplateArtifacts for TestHost {
     fn validate_template(&self, template: &TemplateBinding) -> Result<(), ApplicationError> {
+        if let Some(error) = self.0.lock().unwrap().template_error {
+            return Err(error);
+        }
         if template.is_valid() {
             Ok(())
         } else {
@@ -201,32 +209,34 @@ impl TemplateArtifacts for TestHost {
     }
 }
 pub fn template() -> InternalTemplate {
+    let local = TemplateBinding {
+        template_id: "base-fixed".into(),
+        revision: "r1".into(),
+        owner: None,
+        kernel: TemplateArtifact {
+            path: "/protected-cache/kernel".into(),
+            sha256: "a".repeat(64),
+            size_bytes: 40,
+        },
+        rootfs: TemplateArtifact {
+            path: "/protected-cache/rootfs".into(),
+            sha256: "b".repeat(64),
+            size_bytes: 4096,
+        },
+        resources: ResourceShape {
+            cpu_count: 1,
+            memory_mib: 128,
+            host_memory_bytes: 129 * 1024 * 1024,
+            disk_bytes: 4096,
+        },
+        envd_version: "fixed-envd".into(),
+        startup: None,
+    };
     InternalTemplate {
         revision: "template-revision".try_into().unwrap(),
-        digest: [1; 32],
-        local: TemplateBinding {
-            template_id: "base-fixed".into(),
-            revision: "r1".into(),
-            owner: None,
-            kernel: TemplateArtifact {
-                path: "/protected-cache/kernel".into(),
-                sha256: "a".repeat(64),
-                size_bytes: 40,
-            },
-            rootfs: TemplateArtifact {
-                path: "/protected-cache/rootfs".into(),
-                sha256: "b".repeat(64),
-                size_bytes: 4096,
-            },
-            resources: ResourceShape {
-                cpu_count: 1,
-                memory_mib: 128,
-                host_memory_bytes: 129 * 1024 * 1024,
-                disk_bytes: 4096,
-            },
-            envd_version: "fixed-envd".into(),
-            startup: None,
-        },
+        digest: local.canonical_digest().unwrap(),
+        registered: local.clone(),
+        local,
     }
 }
 pub fn compute() -> ComputeLimits {
@@ -241,6 +251,7 @@ pub fn request() -> LifecycleRequest {
     let mut r = wire::request(1, 1, Intent::Create);
     r.create.timeout_ms = 60_000;
     r.create.max_lifetime_ms = 300_000;
+    r.create.template_digest = template().digest;
     r.create.resources.memory_bytes = template().local.resources.host_memory_bytes;
     r.create.options = serde_json::to_vec(&CreateOptions {
         networking: Some(sandproof_controller_service::CreateNetworking {
@@ -281,11 +292,40 @@ pub fn application_with_inbox_config(
     provision: bool,
     inbox: InternalInboxConfig,
 ) -> Arc<ControllerApplication<TestHost>> {
+    application_with_cache_config(path, state, clock, provision, inbox, None)
+}
+pub fn application_with_cache_config(
+    path: &Path,
+    state: Arc<Mutex<State>>,
+    clock: Arc<TestClock>,
+    provision: bool,
+    inbox: InternalInboxConfig,
+    cache: Option<sandproof_controller_service::physical_storage::PhysicalTemplateCache>,
+) -> Arc<ControllerApplication<TestHost>> {
+    let reserve = workflow::CLEANUP_BYTES + 1000;
+    let mut host = complete_fixture::host(path, workflow::NAMESPACE, 64, 2 * 1024 * 1024, reserve);
+    if let Some(cache) = cache {
+        let profile = host.physical_storage.as_mut().unwrap();
+        profile.filesystem_overhead_inodes += cache.inode_budget;
+        profile.host_template_caches = vec![cache];
+    }
+    application_with_host_config(path, state, clock, provision, inbox, host)
+}
+
+/// Real original `SQLite` authority with an explicitly selected registered pool.
+pub fn application_with_host_config(
+    path: &Path,
+    state: Arc<Mutex<State>>,
+    clock: Arc<TestClock>,
+    provision: bool,
+    inbox: InternalInboxConfig,
+    host: sandproof_controller_service::BoundedHostConfig,
+) -> Arc<ControllerApplication<TestHost>> {
     let reserve = workflow::CLEANUP_BYTES + 1000;
     let mut journal = sandproof_controller_service::ControllerJournal::open_complete(
         path,
         workflow::NAMESPACE,
-        complete_fixture::host(path, workflow::NAMESPACE, 64, 2 * 1024 * 1024, reserve),
+        host,
         complete_fixture::maintenance(),
         0,
     )

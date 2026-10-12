@@ -3,6 +3,8 @@ mod fixture;
 use crate::*;
 use fixture::*;
 use sandproof_protocol::internal::lifecycle::{LifecycleFact, Resources};
+#[path = "window_tests.rs"]
+mod windows;
 fn state() -> CenterState {
     CenterState::new(
         node("host-a").deployment_id,
@@ -16,6 +18,8 @@ fn state() -> CenterState {
         },
         vec![NodeRegistration {
             identity: node("host-a"),
+            retention_slots: 2,
+            role: NodeRole::Runtime,
             limit: resources(2),
             mode: NodeMode::Accepting,
             healthy_until_ms: 2000,
@@ -24,7 +28,7 @@ fn state() -> CenterState {
                 revision: binding().template_revision,
                 digest: binding().template_digest,
             }],
-            protocol_version: 1,
+            protocol_version: sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION,
         }],
         vec![TenantBudget {
             tenant: "1".try_into().unwrap(),
@@ -33,6 +37,104 @@ fn state() -> CenterState {
     )
     .unwrap()
 }
+#[test]
+fn registration_checks_static_subset_without_resetting_dynamic_facts() {
+    let configured = state();
+    let mut current = configured.clone();
+    current.nodes[0].templates.push(AvailableTemplate {
+        revision: "other-revision".try_into().unwrap(),
+        digest: [8; 32],
+    });
+    current.nodes[0].healthy_until_ms = 0;
+    current.nodes[0].free = Resources::ZERO;
+    assert!(current.registration_matches(&configured));
+    current.nodes[0].templates.remove(0);
+    assert!(!current.registration_matches(&configured));
+    let mut changed = configured.clone();
+    changed.nodes[0].identity.node_generation = 2.try_into().unwrap();
+    assert!(!current.registration_matches(&changed));
+}
+
+#[test]
+fn physical_refresh_cannot_forget_unknown_responsibility_or_change_policy() {
+    let (original, request) = state()
+        .create(&"1".try_into().unwrap(), binding(), 0)
+        .unwrap();
+    let refreshed = original
+        .refresh_node(&node("host-a"), 0, Resources::ZERO)
+        .unwrap();
+    assert!(refreshed.is_valid());
+    assert_eq!(refreshed.pending(), vec![request]);
+    assert_eq!(
+        refreshed.reserved(None, None),
+        original.reserved(None, None)
+    );
+    assert_eq!(refreshed.retention_lanes, original.retention_lanes);
+    assert_eq!(refreshed.nodes[0].templates, original.nodes[0].templates);
+    assert_eq!(refreshed.nodes[0].mode, original.nodes[0].mode);
+    assert_eq!(
+        refreshed.create(&"1".try_into().unwrap(), binding(), 0),
+        Err(DecisionError::Unavailable)
+    );
+    assert_eq!(
+        refreshed.identity_frontiers(),
+        original.identity_frontiers()
+    );
+    assert_eq!(
+        original.refresh_node(&node("host-a"), 3000, resources(3)),
+        Err(DecisionError::Invalid)
+    );
+    assert_eq!(
+        original.refresh_node(&node("host-b"), 3000, Resources::ZERO),
+        Err(DecisionError::NotFound)
+    );
+}
+#[test]
+fn stale_or_vetoed_health_blocks_new_renewals_but_not_original_destroy() {
+    let tenant = "1".try_into().unwrap();
+    let (created, request) = state().create(&tenant, binding(), 0).unwrap();
+    let running = created
+        .apply_response(&response(
+            &request,
+            1,
+            LifecycleFact::Ready {
+                started_at_ms: 100,
+                end_at_ms: 200,
+                max_end_at_ms: 600,
+            },
+        ))
+        .unwrap();
+    for healthy_until in [0, 149, 150] {
+        let stale = running
+            .refresh_node(&node("host-a"), healthy_until, Resources::ZERO)
+            .unwrap();
+        assert_eq!(
+            stale.renew(&tenant, &request.identity.sandbox_id, 400, 150),
+            Err(DecisionError::Unavailable)
+        );
+        assert_eq!(stale.identity_frontiers(), running.identity_frontiers());
+        assert_eq!(stale.pending(), running.pending());
+        let (terminating, destroy) = stale
+            .destroy(&tenant, &request.identity.sandbox_id)
+            .unwrap();
+        assert_eq!(
+            destroy.intent,
+            sandproof_protocol::internal::lifecycle::Intent::Destroy
+        );
+        assert!(terminating.sandboxes()[0].terminating);
+    }
+    let fresh = running
+        .refresh_node(&node("host-a"), 151, Resources::ZERO)
+        .unwrap()
+        .begin_drain(&node("host-a"))
+        .unwrap();
+    assert!(
+        fresh
+            .renew(&tenant, &request.identity.sandbox_id, 400, 150)
+            .is_ok()
+    );
+}
+
 #[test]
 fn identity_exhaustion_reserves_the_final_destroy_id() {
     let mut s = state();

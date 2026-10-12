@@ -73,6 +73,7 @@ impl ControllerJournal {
             .map_err(|_| JournalError::CorruptStore)?;
         inbox.observation = response.observation_version;
         inbox.entries[index].response = response.clone();
+        inbox.entries[index].confirmed = None;
         codec::save(&tx, &inbox)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;

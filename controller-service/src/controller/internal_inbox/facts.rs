@@ -118,6 +118,7 @@ impl ControllerJournal {
             .map_err(|_| JournalError::CorruptStore)?;
         inbox.observation = response.observation_version;
         inbox.entries[index].response = response.clone();
+        inbox.entries[index].confirmed = None;
         codec::save(&tx, &inbox)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;
@@ -126,9 +127,9 @@ impl ControllerJournal {
     }
 }
 
-// Until the confirmation/window retirement protocol is implemented, keep
-// all mapped native details. Existing maintenance may not erase an unknown
-// or unconfirmed distributed responsibility behind this inbox's back.
+// Every retained mapping pins native details until the explicit durable window
+// close removes its confirmed terminal history. Ordinary maintenance may not
+// erase an unknown or unconfirmed distributed responsibility behind this inbox.
 pub(in crate::controller) fn pinned(
     connection: &rusqlite::Connection,
     sandbox: core::SandboxId,

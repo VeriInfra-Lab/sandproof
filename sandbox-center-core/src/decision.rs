@@ -1,4 +1,4 @@
-use crate::{CenterState, DecisionError, NodeMode, Operation, Sandbox};
+use crate::{CenterState, DecisionError, NodeMode, NodeRole, Operation, Sandbox};
 use sandproof_protocol::internal::lifecycle::{
     CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
 };
@@ -26,18 +26,24 @@ impl CenterState {
         &self,
         create: &CreateBinding,
         now_ms: u64,
+        role: NodeRole,
     ) -> Result<sandproof_protocol::internal::NodeIdentity, DecisionError> {
+        let mut available = false;
         let mut candidates = self
             .nodes
             .iter()
             .filter_map(|n| {
                 let used = self.reserved(None, Some(&n.identity))?;
-                (n.mode == NodeMode::Accepting
+                let registered_ready = n.role == role
+                    && n.mode == NodeMode::Accepting
                     && n.healthy_until_ms > now_ms
                     && n.protocol_version == INTERNAL_PROTOCOL_VERSION
                     && n.templates.iter().any(|t| {
                         t.revision == create.template_revision && t.digest == create.template_digest
-                    })
+                    });
+                available |= registered_ready;
+                (registered_ready
+                    && self.available_lane(&n.identity).is_some()
                     && create.resources.fits(n.free)
                     && used.checked_add(create.resources)?.fits(n.limit))
                 .then_some((n, ratio(used, n.limit)))
@@ -50,7 +56,11 @@ impl CenterState {
         });
         let node = candidates
             .first()
-            .ok_or(DecisionError::Capacity)?
+            .ok_or(if available {
+                DecisionError::Capacity
+            } else {
+                DecisionError::Unavailable
+            })?
             .0
             .identity
             .clone();
@@ -63,6 +73,27 @@ impl CenterState {
         tenant: &TenantId,
         create: CreateBinding,
         now_ms: u64,
+    ) -> Result<(Self, LifecycleRequest), DecisionError> {
+        self.create_for_role(tenant, create, now_ms, NodeRole::Runtime)
+    }
+    /// Trusted private build acceptance uses the SAME allocation, outbox and
+    /// lifetime algorithm, but cannot consume a runtime node's resource pool.
+    /// # Errors
+    /// All ordinary admission checks apply; a builder must be registered/fresh.
+    pub fn create_builder(
+        &self,
+        tenant: &TenantId,
+        create: CreateBinding,
+        now_ms: u64,
+    ) -> Result<(Self, LifecycleRequest), DecisionError> {
+        self.create_for_role(tenant, create, now_ms, NodeRole::Builder)
+    }
+    fn create_for_role(
+        &self,
+        tenant: &TenantId,
+        create: CreateBinding,
+        now_ms: u64,
+        role: NodeRole,
     ) -> Result<(Self, LifecycleRequest), DecisionError> {
         if !self.is_valid()
             || !create.is_valid()
@@ -91,7 +122,10 @@ impl CenterState {
         {
             return Err(DecisionError::Capacity);
         }
-        let node = self.select_node(&create, now_ms)?;
+        let node = self.select_node(&create, now_ms, role)?;
+        let lane = self.available_lane(&node).ok_or(DecisionError::Capacity)?;
+        let retention_slot = lane.retention_slot();
+        let request_window = lane.current().ok_or(DecisionError::Capacity)?;
         let sandbox_number = self
             .sandbox_highwater
             .checked_add(1)
@@ -122,7 +156,8 @@ impl CenterState {
                     .try_into()
                     .map_err(|_| DecisionError::Exhausted)?,
                 intent_version: 1.try_into().map_err(|_| DecisionError::Exhausted)?,
-                request_window: 1.try_into().map_err(|_| DecisionError::Exhausted)?,
+                retention_slot,
+                request_window,
             },
             create,
             intent: Intent::Create,
@@ -141,11 +176,13 @@ impl CenterState {
             end_at_ms: None,
             max_end_at_ms: None,
             observation_version: None,
+            terminal_confirmation: None,
         });
         Ok((next, request))
     }
     /// # Errors
-    /// Requires original owner, live confirmed lifetime and one free ordinary slot.
+    /// Requires original owner, live confirmed lifetime, fresh registered node
+    /// health and one free ordinary slot. Destroy remains independent of health.
     pub fn renew(
         &self,
         tenant: &TenantId,
@@ -173,6 +210,16 @@ impl CenterState {
             })
         {
             return Err(DecisionError::Conflict);
+        }
+        let node = &record
+            .operations
+            .first()
+            .ok_or(DecisionError::Invalid)?
+            .request
+            .identity
+            .node;
+        if !self.node_is_reachable(node, now_ms) {
+            return Err(DecisionError::Unavailable);
         }
         // Keep the last slot for termination even when ordinary history is full.
         if record.operations.len() + 1 >= usize::from(self.bounds.operations_per_sandbox) {
@@ -208,7 +255,11 @@ impl CenterState {
         }
         self.append(index, Intent::Destroy)
     }
-    fn index(&self, tenant: &TenantId, sandbox: &SandboxId) -> Result<usize, DecisionError> {
+    pub(crate) fn index(
+        &self,
+        tenant: &TenantId,
+        sandbox: &SandboxId,
+    ) -> Result<usize, DecisionError> {
         self.sandboxes
             .iter()
             .position(|s| {
@@ -247,6 +298,7 @@ impl CenterState {
         next.operation_highwater = number;
         let record = &mut next.sandboxes[index];
         record.terminating = intent == Intent::Destroy;
+        record.terminal_confirmation = None;
         record.operations.push(Operation {
             request: request.clone(),
             response: None,
@@ -300,6 +352,7 @@ impl CenterState {
             LifecycleFact::Recorded | LifecycleFact::Stopped => {}
         }
         record.observation_version = Some(response.observation_version);
+        record.terminal_confirmation = None;
         record
             .operations
             .last_mut()

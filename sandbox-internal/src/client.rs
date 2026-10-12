@@ -1,3 +1,7 @@
+use crate::template::{
+    VALIDATION_PATH, VALIDATION_REQUEST_BODY_BYTES, VALIDATION_RESPONSE_BODY_BYTES,
+    ValidationEvidence, ValidationRequest,
+};
 use crate::{ClientTls, HTTP_HEADER_BUFFER_BYTES, HTTP_MAX_HEADERS, Limits, TransportError};
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Request, body::Bytes, client::conn::http1};
@@ -7,6 +11,9 @@ use sandproof_protocol::internal::lifecycle::{
     LIFECYCLE_BODY_BYTES, LIFECYCLE_PATH, LifecycleRequest, LifecycleResponse,
     RESULT_CONFIRMATION_BODY_BYTES, RESULT_CONFIRMATION_PATH,
 };
+use sandproof_protocol::internal::window::{
+    WINDOW_CLOSE_BODY_BYTES, WINDOW_CLOSE_PATH, WindowCloseAck, WindowCloseRequest,
+};
 use sandproof_protocol::internal::{
     NodeIdentity, PROBE_BODY_BYTES, PROBE_PATH, ProbeRequest, ProbeResponse,
 };
@@ -14,7 +21,9 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
 use tokio_rustls::TlsConnector;
 
+mod cache;
 mod data;
+mod status;
 
 /// Fixed protected registration; no URL, redirect, resolver or user target.
 #[derive(Clone)]
@@ -116,7 +125,12 @@ impl InternalClient {
         let work = async {
             let encoded = serde_json::to_vec(request).map_err(|_| TransportError::Rejected)?;
             let body = self
-                .exchange_bytes(LIFECYCLE_PATH, encoded, LIFECYCLE_BODY_BYTES)
+                .exchange_bytes(
+                    LIFECYCLE_PATH,
+                    encoded,
+                    LIFECYCLE_BODY_BYTES,
+                    LIFECYCLE_BODY_BYTES,
+                )
                 .await?;
             let response: LifecycleResponse =
                 serde_json::from_slice(&body).map_err(|_| TransportError::InvalidResponse)?;
@@ -153,6 +167,7 @@ impl InternalClient {
                     RESULT_CONFIRMATION_PATH,
                     encoded,
                     RESULT_CONFIRMATION_BODY_BYTES,
+                    RESULT_CONFIRMATION_BODY_BYTES,
                 )
                 .await?;
             let answer: LifecycleResponse =
@@ -167,10 +182,48 @@ impl InternalClient {
             .map_err(|_| TransportError::Deadline)?
     }
 
+    /// One exact window-close attempt; a timeout or rejection does not erase
+    /// history or open a successor. Only the same durable close may be retried.
+    /// # Errors
+    /// Foreign node, authentication/capacity/deadline faults and altered replies
+    /// return unknown/rejected transport results rather than an optimistic ack.
+    pub async fn close_window(
+        &self,
+        request: &WindowCloseRequest,
+    ) -> Result<WindowCloseAck, TransportError> {
+        request
+            .validate(&self.endpoint.node)
+            .map_err(|_| TransportError::Rejected)?;
+        let _permit = self
+            .calls
+            .try_acquire()
+            .map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded = serde_json::to_vec(request).map_err(|_| TransportError::Rejected)?;
+            let body = self
+                .exchange_bytes(
+                    WINDOW_CLOSE_PATH,
+                    encoded,
+                    WINDOW_CLOSE_BODY_BYTES,
+                    WINDOW_CLOSE_BODY_BYTES,
+                )
+                .await?;
+            let answer: WindowCloseAck =
+                serde_json::from_slice(&body).map_err(|_| TransportError::InvalidResponse)?;
+            answer
+                .validate_for(request)
+                .map_err(|_| TransportError::InvalidResponse)?;
+            Ok(answer)
+        };
+        timeout(self.limits.request_timeout, work)
+            .await
+            .map_err(|_| TransportError::Deadline)?
+    }
+
     async fn exchange(&self, request: &ProbeRequest) -> Result<ProbeResponse, TransportError> {
         let encoded = serde_json::to_vec(request).map_err(|_| TransportError::Rejected)?;
         let body = self
-            .exchange_bytes(PROBE_PATH, encoded, PROBE_BODY_BYTES)
+            .exchange_bytes(PROBE_PATH, encoded, PROBE_BODY_BYTES, PROBE_BODY_BYTES)
             .await?;
         let response: ProbeResponse =
             serde_json::from_slice(&body).map_err(|_| TransportError::InvalidResponse)?;
@@ -184,9 +237,10 @@ impl InternalClient {
         &self,
         path: &'static str,
         encoded: Vec<u8>,
-        limit: usize,
+        request_limit: usize,
+        response_limit: usize,
     ) -> Result<Bytes, TransportError> {
-        if encoded.len() > limit {
+        if encoded.len() > request_limit {
             return Err(TransportError::Rejected);
         }
         let socket = TcpStream::connect(self.endpoint.address)
@@ -239,7 +293,7 @@ impl InternalClient {
             {
                 return Err(TransportError::InvalidResponse);
             }
-            let body = Limited::new(response.into_body(), limit)
+            let body = Limited::new(response.into_body(), response_limit)
                 .collect()
                 .await
                 .map_err(|_| TransportError::InvalidResponse)?;
@@ -256,5 +310,41 @@ impl InternalClient {
             }
         }
         // Both futures and original TLS stream are dropped before permit return.
+    }
+
+    /// Obtain exact original engineering evidence, never a guest success report.
+    /// # Errors
+    /// Unknown/rejected/oversized responses leave publication unsettled.
+    pub async fn validation_evidence(
+        &self,
+        request: &ValidationRequest,
+    ) -> Result<ValidationEvidence, TransportError> {
+        request
+            .validate(&self.endpoint.node)
+            .map_err(|_| TransportError::Rejected)?;
+        let _permit = self
+            .calls
+            .try_acquire()
+            .map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded = request.encoded().map_err(|_| TransportError::Rejected)?;
+            let body = self
+                .exchange_bytes(
+                    VALIDATION_PATH,
+                    encoded,
+                    VALIDATION_REQUEST_BODY_BYTES,
+                    VALIDATION_RESPONSE_BODY_BYTES,
+                )
+                .await?;
+            let result: ValidationEvidence =
+                serde_json::from_slice(&body).map_err(|_| TransportError::InvalidResponse)?;
+            result
+                .validate_for(&request.create, &request.terminal, &request.publication)
+                .map_err(|_| TransportError::InvalidResponse)?;
+            Ok(result)
+        };
+        timeout(self.limits.request_timeout, work)
+            .await
+            .map_err(|_| TransportError::Deadline)?
     }
 }

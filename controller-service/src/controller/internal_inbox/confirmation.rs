@@ -29,6 +29,12 @@ impl ControllerJournal {
         {
             return Err(JournalError::Conflict);
         }
+        let entry = inbox
+            .entries
+            .iter_mut()
+            .find(|entry| entry.response == *result)
+            .ok_or(JournalError::Conflict)?;
+        entry.confirmed = Some(result.clone());
         inbox.entries.retain(|entry| {
             entry.request.identity.sandbox_id != result.identity.sandbox_id
                 || entry.request.intent == Intent::Create

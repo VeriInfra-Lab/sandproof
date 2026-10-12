@@ -1,12 +1,65 @@
-//! Private, opt-in build pool API; not a tenant-controlled VM allocator.
-use super::{ApiFailure, ApiState, ControllerPort, authenticate, blocking};
+//! Protected build-helper API, separate from every public management router.
+use super::{ApiFailure, ApiState, PortError, authenticate, blocking};
 use axum::{
     Json, Router,
     extract::{Path, Query, State, rejection::JsonRejection},
     http::HeaderMap,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
+
+/// Required private capabilities only. Implementations authorize a currently
+/// registered owner and exact retained anchor against the original ledger.
+pub trait BuildPort: Send + Sync + 'static {
+    /// # Errors
+    /// Missing/foreign anchors are hidden; unknown outcomes are not re-created.
+    fn build_vm_in_window(
+        &self,
+        tenant: &str,
+        id: &str,
+        window: Option<&str>,
+        create: Option<BuildVmRequest>,
+    ) -> Result<BuildVmView, PortError>;
+    /// # Errors
+    /// A finite window must be committed before its identifier is returned.
+    fn issue_build_window(
+        &self,
+        tenant: &str,
+    ) -> Result<sandproof_controller_service::BuildWindow, PortError>;
+    /// # Errors
+    /// An uncertain close never establishes a completed admission fence.
+    fn close_build_window(
+        &self,
+        tenant: &str,
+        window: &str,
+    ) -> Result<BuildWindowClosed, PortError>;
+    /// # Errors
+    /// Settlement requires the exact closed tuple and confirmed original cleanup.
+    fn settle_build_vm(
+        &self,
+        tenant: &str,
+        id: &str,
+        request: BuildSettlementRequest,
+    ) -> Result<BuildSettlementView, PortError>;
+    /// # Errors
+    /// Only the owner's retained private anchor can authorize destruction.
+    fn kill_build_vm(&self, tenant: &str, sandbox_id: &str) -> Result<(), PortError>;
+
+    /// Convenience projection onto the same required window-aware operation.
+    /// # Errors
+    /// The implementation rejects omitted windows; there is no fallback path.
+    fn build_vm(
+        &self,
+        tenant: &str,
+        id: &str,
+        create: Option<BuildVmRequest>,
+    ) -> Result<BuildVmView, PortError> {
+        let window = create
+            .as_ref()
+            .and_then(|value| value.request_window.clone());
+        self.build_vm_in_window(tenant, id, window.as_deref(), create)
+    }
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -27,7 +80,7 @@ pub struct BuildVmView {
     pub session: Option<super::SandboxSession>,
 }
 
-async fn query<P: ControllerPort>(
+async fn query<P: BuildPort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
     Path(id): Path<String>,
@@ -47,7 +100,7 @@ async fn query<P: ControllerPort>(
         .await?,
     ))
 }
-async fn create<P: ControllerPort>(
+async fn create<P: BuildPort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
     Path(id): Path<String>,
@@ -92,7 +145,7 @@ pub struct BuildSettlementView {
     pub settled: bool,
 }
 
-async fn issue<P: ControllerPort>(
+async fn issue<P: BuildPort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
 ) -> Result<Json<sandproof_controller_service::BuildWindow>, ApiFailure> {
@@ -106,7 +159,7 @@ async fn issue<P: ControllerPort>(
         .await?,
     ))
 }
-async fn close<P: ControllerPort>(
+async fn close<P: BuildPort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
     Path(window): Path<String>,
@@ -121,7 +174,7 @@ async fn close<P: ControllerPort>(
         .await?,
     ))
 }
-async fn settle<P: ControllerPort>(
+async fn settle<P: BuildPort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
     Path(id): Path<String>,
@@ -139,8 +192,24 @@ async fn settle<P: ControllerPort>(
     ))
 }
 
-pub(super) fn routes<P: ControllerPort>() -> Router<ApiState<P>> {
+async fn kill<P: BuildPort>(
+    State(state): State<ApiState<P>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<axum::http::StatusCode, ApiFailure> {
+    let tenant = authenticate(&state, &headers)?;
+    super::bounded_kill(
+        state.admission.clone(),
+        move || state.port.kill_build_vm(&tenant, &id),
+        super::KILL_REPLY_DEADLINE,
+    )
+    .await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+pub(super) fn routes<P: BuildPort>() -> Router<ApiState<P>> {
     Router::new()
+        .route("/sandboxes/{id}", delete(kill::<P>))
         .route(
             "/sandproof/internal-build-vms/{id}",
             get(query::<P>).post(create::<P>),

@@ -23,6 +23,9 @@ use sandproof_protocol::{
 pub struct InternalTemplate {
     pub revision: ResourceId,
     pub digest: [u8; 32],
+    /// Exact GLOBAL immutable registration. Its canonical digest is the wire
+    /// binding; global paths are metadata, never local execution targets.
+    pub registered: TemplateBinding,
     /// Before admission, owner is the registered GLOBAL numeric user identity.
     /// Admission authenticates that exact decimal ID, then projects it into
     /// the host's private tenant mapping for the original local algorithm.
@@ -51,6 +54,8 @@ pub struct InternalCreateResult {
 pub(in crate::controller) struct AdmissionAttachment {
     pub request: LifecycleRequest,
     pub local: InternalLocalBinding,
+    /// Original protected cache descriptor before GLOBAL-to-LOCAL owner mapping.
+    pub registered_template: TemplateBinding,
 }
 
 fn policy(options: &CreateOptions) -> Result<core::NetworkPolicy, AdmissionError> {
@@ -79,7 +84,18 @@ fn validate_template_and_time(
     let now = u64::try_from(*now_ms).map_err(|_| AdmissionError::InvalidClock)?;
     let binding = &request.create;
     let shape = template.local.resources;
+    let mut projected = template.registered.clone();
+    projected
+        .kernel
+        .path
+        .clone_from(&template.local.kernel.path);
+    projected
+        .rootfs
+        .path
+        .clone_from(&template.local.rootfs.path);
     if !template.local.is_valid()
+        || projected != template.local
+        || template.registered.canonical_digest().ok() != Some(template.digest)
         || template.revision != binding.template_revision
         || template.digest != binding.template_digest
         || binding.resources.instances != 1
@@ -103,6 +119,51 @@ fn validate_template_and_time(
         return Err(AdmissionError::InvalidCreateOptions);
     }
     Ok(())
+}
+
+fn validate_owner(
+    request: &LifecycleRequest,
+    template: &InternalTemplate,
+) -> Result<(), AdmissionError> {
+    if template
+        .local
+        .owner
+        .is_some_and(|expected| expected.to_string() != request.identity.tenant_id.as_str())
+    {
+        return Err(AdmissionError::Unauthorized);
+    }
+    Ok(())
+}
+
+fn checked_options(
+    request: &LifecycleRequest,
+) -> Result<(CreateOptions, core::NetworkPolicy), AdmissionError> {
+    let options: CreateOptions = serde_json::from_slice(&request.create.options)
+        .map_err(|_| AdmissionError::InvalidCreateOptions)?;
+    if options.template.is_some()
+        || options
+            .metadata
+            .keys()
+            .any(|key| key.starts_with("_sandproof_"))
+    {
+        return Err(AdmissionError::InvalidCreateOptions);
+    }
+    let policy = policy(&options)?;
+    Ok((options, policy))
+}
+
+impl InternalAdmission {
+    /// The original pure binding checks, before a numeric physical-capacity
+    /// veto may become definitive. No mapping, allocation or host I/O occurs.
+    pub(crate) fn validate_attachment(
+        &self,
+        request: &LifecycleRequest,
+    ) -> Result<(), AdmissionError> {
+        validate_template_and_time(request, self)?;
+        validate_owner(request, &self.template)?;
+        checked_options(request)?;
+        Ok(())
+    }
 }
 
 fn local_owner(
@@ -172,14 +233,9 @@ impl ControllerJournal {
         } = admission;
         let binding = &request.create;
         let shape = template.local.resources;
-        if template
-            .local
-            .owner
-            .is_some_and(|expected| expected.to_string() != request.identity.tenant_id.as_str())
-        {
-            return Err(AdmissionError::Unauthorized);
-        }
+        validate_owner(request, &template)?;
         let owner = local_owner(self, &inbox, &request.identity.tenant_id)?;
+        let registered_template = template.registered;
         // Do not confuse global identity with allocation order on this host.
         // None stays explicitly shared; private descriptions retain the SAME
         // authenticated owner through the original local admission checks.
@@ -191,17 +247,7 @@ impl ControllerJournal {
             owner,
             operation: core::OperationId(1),
         };
-        let mut options: CreateOptions = serde_json::from_slice(&binding.options)
-            .map_err(|_| AdmissionError::InvalidCreateOptions)?;
-        if options.template.is_some()
-            || options
-                .metadata
-                .keys()
-                .any(|key| key.starts_with("_sandproof_"))
-        {
-            return Err(AdmissionError::InvalidCreateOptions);
-        }
-        let policy = policy(&options)?;
+        let (mut options, policy) = checked_options(request)?;
         options.template = Some(template.local);
         let response = entry.response.clone();
         self.admit_with_compute(
@@ -231,6 +277,7 @@ impl ControllerJournal {
             Some(&AdmissionAttachment {
                 request: request.clone(),
                 local,
+                registered_template,
             }),
             crashes,
         )?;
@@ -316,6 +363,31 @@ pub(super) fn attach_terminal(
     // Expiry/compensation or a previously accepted destroy already owns
     // termination. Reuse it; no second kill operation or stop is admitted.
     if record.terminal || record.phase == core::Phase::Destroyed {
+        return Ok(());
+    }
+    if record.phase == core::Phase::Starting
+        && record.current_operation.is_some_and(|operation| {
+            operation.kind == core::OperationKind::Create
+                && matches!(
+                    operation.status,
+                    core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown
+                )
+        })
+    {
+        // A dispatched PrepareVm can own a live process before its success
+        // creates a logical VM record. Retain the original sealed create plan:
+        // its established compensation protocol alone may dispatch AbortPrepare
+        // alongside that exact unknown prepare. Replacing it with a new Kill
+        // loses this binding and permanently blocks the ordinary drain.
+        super::super::storage::apply(
+            tx,
+            namespace,
+            core::ControllerInput::Request(core::Request::Compensate(core::CompensationRequest {
+                sandbox: local.sandbox,
+                failure: core::FailureKind::Cancelled,
+                evidence: None,
+            })),
+        )?;
         return Ok(());
     }
     let operation = super::super::allocators::read(tx, "operation", &local.sandbox.0.to_string())?

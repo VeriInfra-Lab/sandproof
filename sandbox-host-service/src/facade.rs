@@ -10,10 +10,12 @@ use axum::{
 };
 use sandproof_api::admission::RequestAdmission;
 use sandproof_controller_service::application::{ControllerApplication, ControllerHost};
+use sandproof_internal::template::{ValidationEvidence, ValidationReceiver, ValidationRequest};
 use sandproof_internal::{DataReceiver, LifecycleReceiver, ReceiveError};
 use sandproof_protocol::internal::{
     ControlIdentity,
     lifecycle::{LifecycleRequest, LifecycleResponse},
+    window::{WindowCloseAck, WindowCloseRequest},
 };
 use std::sync::Arc;
 
@@ -66,6 +68,9 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostFacade<H> {
     ) -> Result<LifecycleResponse, ReceiveError> {
         self.lifecycle.confirm(response).await
     }
+    async fn close(&self, request: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
+        self.lifecycle.close(request).await
+    }
 }
 impl<H: ControllerHost + Send + 'static> DataReceiver for HostFacade<H> {
     async fn receive_data(
@@ -80,5 +85,13 @@ impl<H: ControllerHost + Send + 'static> DataReceiver for HostFacade<H> {
             request,
         )
         .await
+    }
+}
+impl<H: ControllerHost + Send + 'static> ValidationReceiver for HostFacade<H> {
+    async fn validation_evidence(
+        &self,
+        request: ValidationRequest,
+    ) -> Result<ValidationEvidence, ReceiveError> {
+        self.lifecycle.validation_evidence(request).await
     }
 }

@@ -5,8 +5,50 @@ use sandproof_center_core::CenterState;
 use sandproof_center_store::authority::{AuthorityError, CenterAuthority};
 use sandproof_controller_service::templates::{ResourceShape, TemplateBinding};
 use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleRequest, LifecycleResponse};
+use sandproof_protocol::internal::{
+    NodeIdentity,
+    window::{WindowCloseAck, WindowCloseRequest},
+};
 use sandproof_protocol::{ResourceId, SandboxId, TenantId};
+use serde::Deserialize;
 use std::time::Duration;
+
+/// Protected engineering time policy, separate from lifecycle completion.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodeObservationPolicy {
+    pub health_window_ms: u64,
+    pub max_clock_skew_ms: u64,
+}
+impl NodeObservationPolicy {
+    /// # Errors
+    /// Zero/unbounded freshness or a clock allowance longer than freshness reject.
+    pub fn validate(&self, scan_interval: Duration) -> Result<(), PortError> {
+        if self.health_window_ms == 0
+            || self.health_window_ms > 86_400_000
+            || self.max_clock_skew_ms > self.health_window_ms
+            || u128::from(self.health_window_ms) <= scan_interval.as_millis()
+        {
+            return Err(PortError::Invalid);
+        }
+        Ok(())
+    }
+    /// A received timestamp must fall within the bounded local call interval,
+    /// with the explicit deployment skew. This does not validate a VM result.
+    #[must_use]
+    pub fn healthy_until(&self, before_ms: u64, after_ms: u64, host_ms: u64) -> Option<u64> {
+        if after_ms < before_ms
+            || host_ms < before_ms.saturating_sub(self.max_clock_skew_ms)
+            || host_ms > after_ms.checked_add(self.max_clock_skew_ms)?
+        {
+            return None;
+        }
+        // Expire relative to send time, not delayed receipt: stalled calls
+        // cannot extend a stale physical observation's usable interval.
+        let deadline = before_ms.checked_add(self.health_window_ms)?;
+        (deadline > after_ms).then_some(deadline)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct CenterConfig {
@@ -66,16 +108,8 @@ impl PublicTemplate {
         descriptor: TemplateBinding,
         revision: ResourceId,
     ) -> Result<Self, PortError> {
-        if !descriptor.is_valid() {
-            return Err(PortError::Invalid);
-        }
-        let bytes = serde_json::to_vec(&descriptor).map_err(|_| PortError::Invalid)?;
-        if bytes.len() > sandproof_controller_service::CreateOptions::MAX_ENCODED_BYTES {
-            return Err(PortError::Invalid);
-        }
-        let digest = ring::digest::digest(&ring::digest::SHA256, &bytes)
-            .as_ref()
-            .try_into()
+        let digest = descriptor
+            .canonical_digest()
             .map_err(|_| PortError::Invalid)?;
         Ok(Self {
             template_id: descriptor.template_id.clone(),
@@ -112,10 +146,10 @@ impl PublicTemplate {
             && self.template_id == self.descriptor.template_id
             && self.envd_version == self.descriptor.envd_version
             && self.resources == self.descriptor.resources
-            && serde_json::to_vec(&self.descriptor).is_ok_and(|bytes| {
-                bytes.len() <= sandproof_controller_service::CreateOptions::MAX_ENCODED_BYTES
-                    && ring::digest::digest(&ring::digest::SHA256, &bytes).as_ref() == self.digest
-            })
+            && self
+                .descriptor
+                .canonical_digest()
+                .is_ok_and(|digest| digest == self.digest)
             && !self.template_id.is_empty()
             && self.template_id.len() <= 64
             && self
@@ -140,7 +174,12 @@ pub trait TemplateProvider: Send + Sync + 'static {
     fn bound(&self, revision: &ResourceId, digest: &[u8; 32]) -> Result<PublicTemplate, PortError>;
     /// # Errors
     /// The provider enforces the existing publication acceptance/cleanup contract.
-    fn publish(&self, tenant: &str, candidate: &str) -> Result<PublicationView, PortError>;
+    fn publish(
+        &self,
+        driver: &dyn CommittedDriver,
+        tenant: &str,
+        candidate: &str,
+    ) -> Result<PublicationView, PortError>;
     /// # Errors
     /// Missing/foreign publications are indistinguishable.
     fn publication(&self, tenant: &str, candidate: &str) -> Result<PublicationView, PortError>;
@@ -169,6 +208,32 @@ pub trait TemplateProvider: Send + Sync + 'static {
     fn delete_alias(&self, tenant: &str, name: &str) -> Result<(), PortError>;
 }
 
+/// A borrowed view of the ORIGINAL center lifecycle coordinator. Publication
+/// never owns a second application, queue, decision mutex or backreference.
+pub trait CommittedDriver: Send + Sync {
+    /// # Errors
+    /// Invalid/unavailable trusted service time cannot authorize new work.
+    fn now_ms(&self) -> Result<u64, PortError>;
+    fn validation_config(&self) -> &CenterConfig;
+    /// # Errors
+    /// Returns a fresh durable INTERNAL view, including validation instances.
+    fn snapshot(&self) -> Result<CenterState, PortError>;
+    /// # Errors
+    /// Only an already committed exact request is driven. Unknown preserves it.
+    /// Trusted assembly supplies the exact original request already accepted
+    /// by this application's authority, not a caller-constructed lookalike.
+    /// A retired terminal receipt rechecks its complete control identity; it
+    /// does not retain/revalidate the canonical create body or reopen a window.
+    fn drive_committed(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError>;
+    /// # Errors
+    /// Commits/reuses the original Destroy through the original authority.
+    fn destroy_exact(
+        &self,
+        tenant: &TenantId,
+        sandbox: &SandboxId,
+    ) -> Result<LifecycleRequest, PortError>;
+}
+
 /// One high-level network attempt; no automatic new operation/VM allocation.
 /// Called from bounded blocking work, with NO center decision lock held.
 pub trait HostPort: Send + Sync + 'static {
@@ -186,6 +251,13 @@ pub trait HostPort: Send + Sync + 'static {
         result: &LifecycleResponse,
         deadline: Duration,
     ) -> Result<LifecycleResponse, PortError>;
+    /// # Errors
+    /// Only an exact authenticated durable close acknowledgement permits retirement.
+    fn close(
+        &self,
+        request: &WindowCloseRequest,
+        deadline: Duration,
+    ) -> Result<WindowCloseAck, PortError>;
 }
 
 /// Only `CenterAuthority` implements this in production. Tests inject storage
@@ -194,6 +266,10 @@ pub trait AuthorityPort: Send + 'static {
     /// # Errors
     /// Must confirm an authority view within this call; cached-only reads fail.
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError>;
+    /// # Errors
+    /// Public visibility and lifecycle facts MUST share one freshly confirmed
+    /// envelope. A business authority cannot silently omit its private objects.
+    fn public_snapshot(&mut self) -> Result<crate::PublicSnapshot, AuthorityError>;
     /// # Errors
     /// Acceptance and the original outbox commit together.
     fn create(
@@ -225,12 +301,39 @@ pub trait AuthorityPort: Send + 'static {
     /// Requires the exact current final result and actual durable host ack.
     fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
     /// # Errors
+    /// Requires the exact host-confirmed terminal result, not an absent record.
+    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError>;
+    /// # Errors
+    /// Stops new creates only after the original authority commit succeeds.
+    fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError>;
+    /// # Errors
+    /// Requires ONE exact terminal confirmation and its business pin veto.
+    fn begin_close(
+        &mut self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, AuthorityError>;
+    /// # Errors
+    /// Returns only committed close responsibilities from the original authority.
+    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError>;
+    /// # Errors
+    /// Wrong acknowledgements or unresolved business pins retain responsibility.
+    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError>;
+    /// # Errors
     /// Unknown commits require explicit durable reconciliation.
     fn recover(&mut self) -> Result<(), AuthorityError>;
 }
-impl AuthorityPort for CenterAuthority {
+// A bare lifecycle authority has no internal template-validation objects.
+// Business envelopes use SharedBusinessAuthority's SAME-envelope projection;
+// a blanket implementation would silently leak their hidden sandboxes.
+impl AuthorityPort for CenterAuthority<CenterState> {
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
         Self::snapshot(self)
+    }
+    fn public_snapshot(&mut self) -> Result<crate::PublicSnapshot, AuthorityError> {
+        Ok(crate::PublicSnapshot {
+            state: Self::snapshot(self)?,
+            hidden_sandboxes: Vec::new(),
+        })
     }
     fn create(
         &mut self,
@@ -261,6 +364,24 @@ impl AuthorityPort for CenterAuthority {
     }
     fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
         Self::compact_confirmed(self, response)
+    }
+    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+        Self::confirm_terminal(self, response)
+    }
+    fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError> {
+        Self::begin_drain(self, node)
+    }
+    fn begin_close(
+        &mut self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, AuthorityError> {
+        Self::begin_close(self, terminal)
+    }
+    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
+        Self::close_batch(self)
+    }
+    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError> {
+        Self::apply_close_ack(self, ack)
     }
     fn recover(&mut self) -> Result<(), AuthorityError> {
         Self::recover(self)

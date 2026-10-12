@@ -1,4 +1,3 @@
-use super::super::preflight::ValidatedDeployment;
 use super::super::test_support::{
     check, full_capacity_settings, maintained_settings, partial_settings, resolve, settings,
 };
@@ -6,26 +5,29 @@ use super::*;
 use serde_json::{Value, json};
 
 #[test]
-fn request_admission_has_finite_defaults_and_rejects_invalid_overrides() {
-    let config: ConfigFile = serde_json::from_value(settings()).unwrap();
-    let contract = DeploymentContract::validate(&config).unwrap();
-    assert_eq!(contract.requests.max_pending_requests, 64);
-    assert_eq!(contract.requests.control_reserve, 8);
-    for policy in [
-        json!({"max_pending_requests": 2, "control_reserve": 0}),
-        json!({"max_pending_requests": 2, "control_reserve": 2}),
-        json!({"max_pending_requests": 8193, "control_reserve": 1}),
-        json!({"max_pending_requests": 2}),
-        json!({"max_pending_requests": 2, "control_reserve": 1, "typo": true}),
-        Value::Null,
+fn native_configuration_has_no_public_listener_credentials_or_request_budget() {
+    for (field, value) in [
+        ("bind", json!("127.0.0.1:3000")),
+        ("domain", json!("localhost")),
+        (
+            "credentials",
+            json!([{ "tenant": 1, "secret": "test-only" }]),
+        ),
+        (
+            "request_admission",
+            json!({ "max_pending_requests": 2, "control_reserve": 1 }),
+        ),
+        ("template_registry", json!({})),
+        ("internal_build_vms", json!(true)),
+        (
+            "build_retry_windows",
+            json!({"window_duration_ms":100,"max_anchors":2}),
+        ),
     ] {
         let mut changed = settings();
-        changed["request_admission"] = policy;
+        changed[field] = value;
         assert!(check(changed).is_err());
     }
-    let mut valid = settings();
-    valid["request_admission"] = json!({"max_pending_requests": 2, "control_reserve": 1});
-    assert!(check(valid).is_ok());
 }
 
 #[test]
@@ -53,7 +55,7 @@ fn formal_contract_rejects_every_partial_mode_without_filesystem_effects() {
             }
             let config = serde_json::from_value(value).unwrap();
             assert!(
-                ValidatedDeployment::validate(config).is_err(),
+                DeploymentContract::validate(&config).is_err(),
                 "accepted {path}, null={null}"
             );
         }
@@ -66,15 +68,12 @@ fn formal_contract_rejects_every_partial_mode_without_filesystem_effects() {
 
 #[test]
 fn valid_omissions_keep_lifetime_defaults_and_prebuilt_only_capability() {
-    let config: ConfigFile = serde_json::from_value(settings()).unwrap();
-    assert!(!config.internal_build_vms);
-    assert!(config.build_retry_windows.is_none());
-    assert!(config.template_registry.is_none());
+    let config: NativeSettings = serde_json::from_value(settings()).unwrap();
     assert!(DeploymentContract::validate(&config).is_ok());
     assert_eq!(config.default_timeout_secs, 300);
     assert_eq!(config.startup_timeout_secs, 300);
     assert_eq!(
-        managed_config(&config, 1024)
+        application_config(&config, 1024)
             .unwrap()
             .limits
             .max_lifetime_secs,
@@ -151,41 +150,6 @@ fn explicit_console_policy_is_strict_and_not_inferred() {
         Some(sandproof_controller_service::ConsolePolicy::Discard)
     );
     value["bounded_host"]["console_policy"] = json!("file");
-    assert!(check(value).is_err());
-}
-
-#[test]
-fn full_private_capacity_never_falls_back_to_legacy_retry_anchors() {
-    let mut value = full_capacity_settings();
-    value["internal_build_vms"] = json!(true);
-    assert!(check(value.clone()).is_err());
-    value["build_retry_windows"] = json!({"window_duration_ms": 100, "max_anchors": 2});
-    assert!(check(value).is_ok());
-}
-
-#[test]
-fn private_retry_policy_requires_explicit_maintained_private_pool() {
-    let mut value = full_capacity_settings();
-    value["internal_build_vms"] = json!(true);
-    value["build_retry_windows"] = json!({"window_duration_ms": 100, "max_anchors": 2});
-    assert!(check(value.clone()).is_ok());
-    for field in ["internal_build_vms", "maintenance", "bounded_host"] {
-        let mut invalid = value.clone();
-        invalid.as_object_mut().unwrap().remove(field);
-        assert!(check(invalid).is_err(), "missing {field}");
-    }
-    for field in ["window_duration_ms", "max_anchors"] {
-        let mut invalid = value.clone();
-        invalid["build_retry_windows"][field] = json!(0);
-        assert!(check(invalid).is_err());
-        invalid = value.clone();
-        invalid["build_retry_windows"]
-            .as_object_mut()
-            .unwrap()
-            .remove(field);
-        assert!(check(invalid).is_err());
-    }
-    value["build_retry_windows"]["unknown"] = json!(1);
     assert!(check(value).is_err());
 }
 

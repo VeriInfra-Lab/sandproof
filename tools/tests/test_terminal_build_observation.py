@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock
 
 from tools.bounded_acceptance import completion_build_observation
-from tools.template_build_client import BuildClient
+from tools.tests.template_build_fixture import PRIVATE_TEST_KEY, PrivateBuildClient as BuildClient
 from tools.template_build_service import BuildHTTP
 from tools.tests import test_template_build_retention as retention_fixtures
 
@@ -20,7 +20,7 @@ class TerminalBuildObservationTests(unittest.TestCase):
         self.addCleanup(self.fixture.doCleanups)
         self.fixture.setUp()
         self.store = self.fixture.store
-        server = BuildHTTP(('127.0.0.1', 0), self.store, [{'tenant': 1, 'secret': 'synthetic'}])
+        server = BuildHTTP(('127.0.0.1', 0), self.store, PRIVATE_TEST_KEY)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         def cleanup():

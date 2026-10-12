@@ -35,11 +35,13 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
         calls = [node for node in ast.walk(FUNCTIONS["exercise"]) if isinstance(node, ast.Call)]
         complete = next(node for node in calls if isinstance(node.func, ast.Name) and node.func.id == "complete_runtime")
         self.assertEqual({value.arg: ast.literal_eval(value.value) for value in complete.keywords}, {"slots": 1})
-        positions = {name: next(node.lineno for node in calls if isinstance(node.func, ast.Name) and node.func.id == name)
-                     for name in ("complete_runtime", "provision_runtime", "start_server")}
-        self.assertLess(positions["complete_runtime"], positions["provision_runtime"])
-        self.assertLess(positions["provision_runtime"], positions["start_server"])
-        self.assertIn('wait_destroyed(root / "db/controller.db", result["sandbox_id"])', source)
+        positions = {name: next(node.lineno for node in calls if ast.unparse(node.func) == name)
+                     for name in ("complete_runtime", "RuntimeServices.prepare", "services.start")}
+        self.assertLess(positions["complete_runtime"], positions["RuntimeServices.prepare"])
+        self.assertLess(positions["RuntimeServices.prepare"], positions["services.start"])
+        self.assertNotIn('start_server', source)
+        self.assertNotIn('args.server', source)
+        self.assertIn('wait_destroyed(root / "db/controller.db", result["native_id"])', source)
         self.assertIn('"cgroup-parent"', source)
 
     def test_original_public_sdk_create_immediately_saves_identity_before_assertions(self):
@@ -64,15 +66,22 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
             claim = root / "jails/.claims" / name
             claim.mkdir(parents=True)
             (claim / "network.json").write_text(json.dumps({"resource_id": name, "namespace_inode": 31}))
-            sandbox = SimpleNamespace(sandbox_id="sb-" + "a" * 16 + "-17")
+            sandbox = SimpleNamespace(sandbox_id="sandbox-17")
+            native = "sb-" + "a" * 16 + "-5"
+            services = SimpleNamespace(processes=SimpleNamespace(stop=Mock(), start=Mock()),
+                native_id_for=Mock(return_value=native), wait_ready=Mock())
             record = {"resource_id": name, "pid": 47, "start_time_ticks": 59}
             functions = observation_functions(record_for=Mock(return_value=({"secret": "never-save"}, name, record)))
             identities = []
-            saved = functions["save_identity"](root, sandbox, identities)
+            saved = functions["save_identity"](root, sandbox, identities, services)
             evidence = root / (name + ".identity.json")
             self.assertEqual(evidence.stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads(evidence.read_text()), saved)
-            self.assertEqual(saved, record | {"network_inode": 31, "sandbox_id": sandbox.sandbox_id})
+            self.assertEqual(saved, record | {"network_inode": 31, "sandbox_id": sandbox.sandbox_id, "native_id": native})
+            functions['record_for'].assert_called_once_with(root, native_id=native)
+            services.native_id_for.assert_called_once_with(sandbox.sandbox_id)
+            services.processes.stop.assert_called_once_with('host-0')
+            services.processes.start.assert_called_once_with('host-0')
             self.assertEqual(identities, [saved])
             self.assertNotIn("never-save", evidence.read_text())
             (claim / "network.json").unlink()
@@ -82,7 +91,7 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
             claim.mkdir()
             (claim / "network.json").write_text(json.dumps({"resource_id": name, "namespace_inode": 32}))
             with self.assertRaises(FileExistsError):
-                functions["save_identity"](root, sandbox, identities)
+                functions["save_identity"](root, sandbox, identities, services)
             self.assertEqual(json.loads(evidence.read_text())["network_inode"], 31)
 
     def test_saved_identity_reaches_exact_audit_and_only_one_physical_uid(self):
@@ -135,7 +144,7 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
         functions["save_identity"] = save
         with self.assertRaises(AssertionError):
             functions["run_original_task"]({"name": "regex-log", "source_path": "regex-log"}, {},
-                                            Path("/task"), "http://loopback", "key", Path("/evidence"), Path("/python"), identities)
+                                            Path("/task"), "http://loopback", "key", Path("/evidence"), Path("/python"), identities, object())
         self.assertEqual(events, ["saved", "delete"])
         sdk.kill.assert_called_once_with(sandbox.sandbox_id)
 
@@ -146,7 +155,7 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
         functions["save_identity"] = Mock(side_effect=OSError("evidence fsync failed"))
         with self.assertRaisesRegex(OSError, "evidence fsync"):
             functions["run_original_task"]({"name": "regex-log", "source_path": "regex-log"}, {},
-                                            Path("/task"), "http://loopback", "key", Path("/evidence"), Path("/python"), [])
+                                            Path("/task"), "http://loopback", "key", Path("/evidence"), Path("/python"), [], object())
         sdk.kill.assert_not_called()
         retained_message = "".join(call.args[0] for call in functions["sys"].stderr.write.call_args_list)
         self.assertIn(sandbox.sandbox_id, retained_message)

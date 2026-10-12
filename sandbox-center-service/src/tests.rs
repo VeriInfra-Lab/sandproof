@@ -1,5 +1,28 @@
 //! The storage/host substitutes inject faults around the SAME pure center
 //! transitions. These tests do not claim Redis, TLS or KVM acceptance.
+mod late_observation;
+mod retired_destroy;
+mod session_wait;
+#[test]
+fn physical_observation_has_bounded_freshness_and_clock_skew() {
+    let policy = super::NodeObservationPolicy {
+        health_window_ms: 1000,
+        max_clock_skew_ms: 10,
+    };
+    assert!(
+        policy
+            .validate(std::time::Duration::from_millis(100))
+            .is_ok()
+    );
+    assert_eq!(policy.healthy_until(100, 200, 90), Some(1100));
+    assert_eq!(policy.healthy_until(100, 200, 210), Some(1100));
+    assert_eq!(policy.healthy_until(100, 200, 89), None);
+    assert_eq!(policy.healthy_until(100, 200, 211), None);
+    assert_eq!(policy.healthy_until(100, 1100, 1100), None);
+    assert_eq!(policy.healthy_until(200, 100, 150), None);
+    assert_eq!(policy.healthy_until(u64::MAX - 5, u64::MAX, u64::MAX), None);
+    assert!(policy.validate(std::time::Duration::from_secs(1)).is_err());
+}
 use super::*;
 use sandproof_api::{ControllerPort, CreateRequest, ListQuery, PortError};
 use sandproof_center_core::{
@@ -15,6 +38,7 @@ use sandproof_protocol::internal::{
     lifecycle::{
         CreateBinding, Intent, LifecycleFact, LifecycleRequest, LifecycleResponse, Resources,
     },
+    window::{WindowCloseAck, WindowCloseRequest},
 };
 use sandproof_protocol::{SandboxId, TenantId};
 use std::{
@@ -83,7 +107,12 @@ impl TemplateProvider for Templates {
             Err(PortError::Busy)
         }
     }
-    fn publish(&self, _: &str, _: &str) -> Result<sandproof_api::PublicationView, PortError> {
+    fn publish(
+        &self,
+        _: &dyn crate::CommittedDriver,
+        _: &str,
+        _: &str,
+    ) -> Result<sandproof_api::PublicationView, PortError> {
         Err(PortError::NotFound)
     }
     fn publication(&self, _: &str, _: &str) -> Result<sandproof_api::PublicationView, PortError> {
@@ -139,6 +168,8 @@ fn state() -> CenterState {
             platform: resources(8),
         },
         vec![NodeRegistration {
+            retention_slots: 8,
+            role: sandproof_center_core::NodeRole::Runtime,
             identity,
             limit: resources(8),
             mode: NodeMode::Accepting,
@@ -148,7 +179,7 @@ fn state() -> CenterState {
                 revision: template().revision,
                 digest: template().digest,
             }],
-            protocol_version: 1,
+            protocol_version: 2,
         }],
         vec![
             TenantBudget {
@@ -165,15 +196,52 @@ fn state() -> CenterState {
 }
 struct MemoryAuthority {
     state: CenterState,
+    hidden_sandboxes: Vec<SandboxId>,
     unreadable: Arc<AtomicBool>,
     unknown_create: Arc<AtomicBool>,
+    projection_steps: std::collections::VecDeque<ProjectionStep>,
+    projection_reads: u64,
+    fence_after_stale: bool,
+    retirement_step: Option<retired_destroy::RetirementStep>,
+}
+enum ProjectionStep {
+    Health(u64),
+    SharedFault,
+    CompleteAfter(Duration),
+}
+fn consume_reply_budget(budget: Duration) {
+    let (_sender, receiver) = std::sync::mpsc::sync_channel::<()>(0);
+    assert_eq!(
+        receiver.recv_timeout(budget),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    );
 }
 impl AuthorityPort for MemoryAuthority {
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::BeforeConfirmationSnapshot)?;
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::RetiredSnapshot)?;
         if self.unreadable.load(Ordering::SeqCst) {
             return Err(AuthorityError::RecoveryRequired);
         }
         Ok(self.state.clone())
+    }
+    fn public_snapshot(&mut self) -> Result<PublicSnapshot, AuthorityError> {
+        self.projection_reads += 1;
+        match self.projection_steps.pop_front() {
+            Some(ProjectionStep::Health(healthy_until)) => {
+                let node = &self.state.nodes()[0];
+                self.state = self
+                    .state
+                    .refresh_node(&node.identity, healthy_until, node.free)?;
+            }
+            Some(ProjectionStep::SharedFault) => self.unreadable.store(true, Ordering::SeqCst),
+            Some(ProjectionStep::CompleteAfter(budget)) => consume_reply_budget(budget),
+            None => {}
+        }
+        Ok(PublicSnapshot {
+            state: self.snapshot()?,
+            hidden_sandboxes: self.hidden_sandboxes.clone(),
+        })
     }
     fn create(
         &mut self,
@@ -210,16 +278,55 @@ impl AuthorityPort for MemoryAuthority {
         self.snapshot()?;
         let (state, request) = self.state.destroy(tenant, sandbox)?;
         self.state = state;
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterDestroyAccepted)?;
         Ok(request)
     }
     fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
         self.snapshot()?;
-        self.state = self.state.apply_response(response)?;
+        match self.state.apply_response(response) {
+            Ok(next) => self.state = next,
+            Err(error) => {
+                if error == sandproof_center_core::DecisionError::Stale {
+                    self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterStaleApply)?;
+                }
+                if self.fence_after_stale && error == sandproof_center_core::DecisionError::Stale {
+                    self.unreadable.store(true, Ordering::SeqCst);
+                }
+                return Err(error.into());
+            }
+        }
         Ok(())
     }
     fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
         self.snapshot()?;
         self.state = self.state.compact_confirmed(response)?;
+        Ok(())
+    }
+    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        self.state = self.state.confirm_terminal(response)?;
+        Ok(())
+    }
+    fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        self.state = self.state.begin_drain(node)?;
+        Ok(())
+    }
+    fn begin_close(
+        &mut self,
+        terminal: &LifecycleResponse,
+    ) -> Result<WindowCloseRequest, AuthorityError> {
+        self.snapshot()?;
+        let (state, request) = self.state.begin_close(terminal)?;
+        self.state = state;
+        Ok(request)
+    }
+    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
+        Ok(self.snapshot()?.pending_closes())
+    }
+    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        self.state = self.state.apply_close_ack(ack)?;
         Ok(())
     }
     fn recover(&mut self) -> Result<(), AuthorityError> {
@@ -233,12 +340,19 @@ struct Host {
     observations: Arc<AtomicU64>,
     unknown: Arc<AtomicBool>,
     transient_unknown: Arc<AtomicU64>,
+    consume_reply_budget: Arc<AtomicBool>,
     unknown_confirmation: Arc<AtomicBool>,
+    unknown_close: Arc<AtomicBool>,
+    close_requests: Arc<Mutex<Vec<WindowCloseRequest>>>,
+    confirmation_budgets: Arc<Mutex<Vec<Duration>>>,
+    confirmation_gate: Arc<Mutex<Option<NetworkGate>>>,
     recorded: Arc<AtomicBool>,
+    capacity_refusal: Arc<AtomicBool>,
     last: Arc<Mutex<Option<LifecycleRequest>>>,
     responses: Arc<Mutex<std::collections::BTreeMap<String, LifecycleResponse>>>,
     fence_after_send: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     gate: Arc<Mutex<Option<NetworkGate>>>,
+    late_response: Arc<Mutex<Option<LifecycleResponse>>>,
 }
 struct NetworkGate {
     entered: std::sync::mpsc::SyncSender<()>,
@@ -251,21 +365,44 @@ impl Default for Host {
             observations: Arc::new(AtomicU64::new(0)),
             unknown: Arc::new(AtomicBool::new(false)),
             transient_unknown: Arc::new(AtomicU64::new(0)),
+            consume_reply_budget: Arc::new(AtomicBool::new(false)),
             unknown_confirmation: Arc::new(AtomicBool::new(false)),
+            unknown_close: Arc::new(AtomicBool::new(false)),
+            close_requests: Arc::new(Mutex::new(Vec::new())),
+            confirmation_budgets: Arc::new(Mutex::new(Vec::new())),
+            confirmation_gate: Arc::new(Mutex::new(None)),
             recorded: Arc::new(AtomicBool::new(false)),
+            capacity_refusal: Arc::new(AtomicBool::new(false)),
             last: Arc::new(Mutex::new(None)),
             responses: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             fence_after_send: Arc::new(Mutex::new(None)),
             gate: Arc::new(Mutex::new(None)),
+            late_response: Arc::new(Mutex::new(None)),
         }
     }
 }
 impl HostPort for Host {
+    fn close(
+        &self,
+        request: &WindowCloseRequest,
+        _: Duration,
+    ) -> Result<WindowCloseAck, PortError> {
+        self.close_requests.lock().unwrap().push(request.clone());
+        if self.unknown_close.load(Ordering::SeqCst) {
+            return Err(PortError::OutcomeUnknown);
+        }
+        // This controlled unit port does NOT attest host persistence. A separate
+        // real mTLS + original SQLite test exercises actual host-close storage.
+        Ok(WindowCloseAck {
+            terminal: request.terminal.clone(),
+        })
+    }
     fn confirm(
         &self,
         result: &LifecycleResponse,
-        _: Duration,
+        budget: Duration,
     ) -> Result<LifecycleResponse, PortError> {
+        self.confirmation_budgets.lock().unwrap().push(budget);
         if self.unknown_confirmation.load(Ordering::SeqCst) {
             return Err(PortError::OutcomeUnknown);
         }
@@ -278,12 +415,17 @@ impl HostPort for Host {
         {
             return Err(PortError::Conflict);
         }
+        let gate = self.confirmation_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            gate.entered.send(()).unwrap();
+            gate.release.recv().unwrap();
+        }
         Ok(result.clone())
     }
     fn send(
         &self,
         request: &LifecycleRequest,
-        _: Duration,
+        budget: Duration,
     ) -> Result<LifecycleResponse, PortError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.last.lock().unwrap() = Some(request.clone());
@@ -291,6 +433,12 @@ impl HostPort for Host {
         if let Some(gate) = gate {
             gate.entered.send(()).unwrap();
             gate.release.recv().unwrap();
+        }
+        if let Some(response) = self.late_response.lock().unwrap().take() {
+            return Ok(response);
+        }
+        if self.consume_reply_budget.load(Ordering::SeqCst) {
+            consume_reply_budget(budget);
         }
         if self.unknown.load(Ordering::SeqCst)
             || self
@@ -302,19 +450,22 @@ impl HostPort for Host {
         {
             return Err(PortError::Busy);
         }
-        let fact = if self.recorded.load(Ordering::SeqCst) {
-            LifecycleFact::Recorded
-        } else {
-            match request.intent {
-                Intent::Create => LifecycleFact::Ready {
-                    started_at_ms: 1000,
-                    end_at_ms: 1000 + request.create.timeout_ms,
-                    max_end_at_ms: 1000 + request.create.max_lifetime_ms,
-                },
-                Intent::Renew { end_at_ms } => LifecycleFact::Renewed { end_at_ms },
-                Intent::Destroy => LifecycleFact::Cleaned,
-            }
-        };
+        let fact =
+            if self.capacity_refusal.load(Ordering::SeqCst) && request.intent == Intent::Create {
+                LifecycleFact::NotAccepted
+            } else if self.recorded.load(Ordering::SeqCst) {
+                LifecycleFact::Recorded
+            } else {
+                match request.intent {
+                    Intent::Create => LifecycleFact::Ready {
+                        started_at_ms: 1000,
+                        end_at_ms: 1000 + request.create.timeout_ms,
+                        max_end_at_ms: 1000 + request.create.max_lifetime_ms,
+                    },
+                    Intent::Renew { end_at_ms } => LifecycleFact::Renewed { end_at_ms },
+                    Intent::Destroy => LifecycleFact::Cleaned,
+                }
+            };
         let mut responses = self.responses.lock().unwrap();
         let key = request.identity.operation_id.as_str().to_owned();
         if let Some(previous) = responses.get(&key)
@@ -335,6 +486,42 @@ impl HostPort for Host {
         }
         Ok(response)
     }
+}
+#[test]
+fn confirmation_uses_remaining_attempt_budget_without_resetting_original_wait() {
+    let f = fixture();
+    let session = f.app.create("1", command()).unwrap();
+    f.host.unknown_confirmation.store(true, Ordering::SeqCst);
+    f.app.kill("1", &session.sandbox_id).unwrap();
+    let state = f.app.snapshot().unwrap();
+    let result = state.sandboxes()[0]
+        .operations
+        .last()
+        .unwrap()
+        .response
+        .as_ref()
+        .unwrap();
+    assert!(
+        f.app.snapshot().unwrap().sandboxes()[0]
+            .terminal_confirmation
+            .is_none()
+    );
+    f.host.unknown_confirmation.store(false, Ordering::SeqCst);
+    f.app.reconcile_once().unwrap();
+    assert_eq!(
+        f.app.snapshot().unwrap().sandboxes()[0]
+            .terminal_confirmation
+            .as_ref(),
+        Some(result)
+    );
+    assert!(
+        f.host
+            .confirmation_budgets
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|budget| *budget < f.app.config.reply_timeout)
+    );
 }
 fn config() -> CenterConfig {
     CenterConfig {
@@ -370,6 +557,222 @@ fn durable_confirmation_keeps_repeated_renewals_bounded_and_lost_ack_is_retried(
     assert!(f.app.resolve_data_route(&session.envd_access_token).is_ok());
     f.app.kill("1", &session.sandbox_id).unwrap();
 }
+
+#[test]
+fn terminal_confirmation_without_compaction_retries_before_close_dispatch() {
+    let f = fixture();
+    let session = f.app.create("1", command()).unwrap();
+    let node = f
+        .host
+        .last
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .identity
+        .node
+        .clone();
+    f.host.unknown_confirmation.store(true, Ordering::SeqCst);
+    f.app.kill("1", &session.sandbox_id).unwrap();
+    let terminal = f.app.snapshot().unwrap();
+    let record = &terminal.sandboxes()[0];
+    assert_eq!(record.operations.len(), 2);
+    assert!(!record.has_compaction_work());
+    assert!(record.terminal_confirmation.is_none());
+    let cleaned = record.operations.last().unwrap().response.clone().unwrap();
+    assert_eq!(f.app.begin_close(&cleaned), Err(PortError::Conflict));
+    assert!(f.host.close_requests.lock().unwrap().is_empty());
+    f.host.unknown_confirmation.store(false, Ordering::SeqCst);
+    f.app.reconcile_once().unwrap();
+    let confirmed = f.app.snapshot().unwrap();
+    assert_eq!(
+        confirmed.sandboxes()[0].terminal_confirmation.as_ref(),
+        confirmed.sandboxes()[0]
+            .operations
+            .last()
+            .unwrap()
+            .response
+            .as_ref()
+    );
+    f.host.unknown_close.store(true, Ordering::SeqCst);
+    let close = f.app.begin_close(&cleaned).unwrap();
+    assert!(f.host.close_requests.lock().unwrap().is_empty()); // decision committed before detached I/O
+    f.app.reconcile_once().unwrap();
+    assert_eq!(
+        f.app.snapshot().unwrap().pending_closes(),
+        vec![close.clone()]
+    );
+    f.host.unknown_close.store(false, Ordering::SeqCst);
+    f.app.reconcile_once().unwrap();
+    let reopened = f.app.snapshot().unwrap();
+    assert!(reopened.sandboxes().is_empty());
+    assert_eq!(
+        reopened
+            .lane(&node, cleaned.identity.retention_slot)
+            .unwrap()
+            .current()
+            .unwrap()
+            .get(),
+        2
+    );
+    assert_eq!(
+        *f.host.close_requests.lock().unwrap(),
+        vec![close.clone(), close]
+    );
+}
+
+#[test]
+fn one_operation_not_accepted_requires_exact_terminal_confirmation() {
+    let f = fixture();
+    f.host.unknown.store(true, Ordering::SeqCst);
+    assert!(f.app.create("1", command()).is_err());
+    let request = f.host.last.lock().unwrap().clone().unwrap();
+    let terminal = LifecycleResponse {
+        identity: request.identity.clone(),
+        observation_version: 1.try_into().unwrap(),
+        fact: LifecycleFact::NotAccepted,
+    };
+    f.app
+        .authority
+        .lock()
+        .unwrap()
+        .apply_response(&terminal)
+        .unwrap();
+    f.host.responses.lock().unwrap().insert(
+        request.identity.operation_id.as_str().to_owned(),
+        terminal.clone(),
+    );
+    f.host.unknown_confirmation.store(true, Ordering::SeqCst);
+    f.app.reconcile_once().unwrap();
+    assert!(
+        f.app.snapshot().unwrap().sandboxes()[0]
+            .terminal_confirmation
+            .is_none()
+    );
+    assert_eq!(f.app.begin_close(&terminal), Err(PortError::Conflict));
+    f.host.unknown_confirmation.store(false, Ordering::SeqCst);
+    f.app.reconcile_once().unwrap();
+    let state = f.app.snapshot().unwrap();
+    assert_eq!(state.sandboxes()[0].operations.len(), 1);
+    assert_eq!(
+        state.sandboxes()[0].terminal_confirmation,
+        Some(terminal.clone())
+    );
+    assert!(f.app.begin_close(&terminal).is_ok());
+}
+
+#[test]
+fn terminal_lane_retirement_retries_exact_close_without_rotating_empty_successors() {
+    let f = fixture();
+    let session = f.app.create("1", command()).unwrap();
+    let original = f.host.last.lock().unwrap().clone().unwrap();
+    f.app.retire_terminal_history_once().unwrap();
+    assert!(f.host.close_requests.lock().unwrap().is_empty());
+    f.host.unknown_confirmation.store(true, Ordering::SeqCst);
+    f.app.kill("1", &session.sandbox_id).unwrap();
+    f.app.retire_terminal_history_once().unwrap();
+    assert!(f.host.close_requests.lock().unwrap().is_empty());
+    f.host.unknown_confirmation.store(false, Ordering::SeqCst);
+    f.app.reconcile_once().unwrap();
+    f.host.unknown_close.store(true, Ordering::SeqCst);
+    f.app.retire_terminal_history_once().unwrap();
+    let pending = f.app.snapshot().unwrap().pending_closes();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].terminal.identity.node, original.identity.node);
+    assert_eq!(
+        pending[0].terminal.identity.request_window,
+        original.identity.request_window
+    );
+    f.host.unknown_close.store(false, Ordering::SeqCst);
+    f.app.reconcile_once().unwrap();
+    let successor = f.app.snapshot().unwrap();
+    assert!(successor.sandboxes().is_empty());
+    assert_eq!(
+        successor
+            .lane(&original.identity.node, original.identity.retention_slot)
+            .unwrap()
+            .current()
+            .unwrap()
+            .get(),
+        2
+    );
+    let requests = f.host.close_requests.lock().unwrap().clone();
+    assert_eq!(requests, vec![pending[0].clone(), pending[0].clone()]);
+    f.app.retire_terminal_history_once().unwrap();
+    assert_eq!(*f.host.close_requests.lock().unwrap(), requests);
+    let next = f.app.create("1", command()).unwrap();
+    assert_ne!(next.sandbox_id, session.sandbox_id);
+    assert_eq!(
+        f.host
+            .last
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .identity
+            .request_window
+            .get(),
+        2
+    );
+}
+
+#[test]
+fn background_retirement_keeps_a_live_sibling_and_its_original_data_token() {
+    let f = fixture();
+    let survivor = f.app.create("1", command()).unwrap();
+    let original = f.app.snapshot().unwrap().sandboxes()[0].clone();
+    let original_view = f.app.get("1", &survivor.sandbox_id).unwrap();
+    for round in 1..=8 {
+        let peer = f.app.create("1", command()).unwrap();
+        let request = f.host.last.lock().unwrap().clone().unwrap();
+        assert_eq!(request.identity.request_window.get(), round);
+        assert_ne!(
+            request.identity.retention_slot,
+            original.operations[0].request.identity.retention_slot
+        );
+        f.app.kill("1", &peer.sandbox_id).unwrap();
+        f.host.unknown_close.store(true, Ordering::SeqCst);
+        f.app.retire_terminal_history_once().unwrap();
+        let pending = f.app.snapshot().unwrap().pending_closes();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            pending[0].terminal.identity.sandbox_id.as_str(),
+            peer.sandbox_id
+        );
+        assert!(
+            f.app
+                .resolve_data_route(&survivor.envd_access_token)
+                .is_ok()
+        );
+        f.host.unknown_close.store(false, Ordering::SeqCst);
+        f.app.reconcile_once().unwrap();
+        let snapshot = f.app.snapshot().unwrap();
+        assert_eq!(snapshot.sandboxes(), std::slice::from_ref(&original));
+        assert_eq!(f.app.get("1", &survivor.sandbox_id).unwrap(), original_view);
+        assert!(
+            f.app
+                .resolve_data_route(&survivor.envd_access_token)
+                .is_ok()
+        );
+    }
+}
+
+#[test]
+fn durable_original_capacity_refusal_is_429_and_never_waits_for_a_fake_destroy() {
+    let f = fixture();
+    f.host.capacity_refusal.store(true, Ordering::SeqCst);
+    assert_eq!(f.app.create("1", command()), Err(PortError::QuotaExceeded));
+    let snapshot = f.app.snapshot().unwrap();
+    let record = &snapshot.sandboxes()[0];
+    assert_eq!(record.operations.len(), 1);
+    let terminal = record.operations[0].response.as_ref().unwrap();
+    assert_eq!(terminal.fact, LifecycleFact::NotAccepted);
+    assert_eq!(record.terminal_confirmation.as_ref(), Some(terminal));
+    assert_eq!(snapshot.reserved(None, None), Some(Resources::ZERO));
+    f.app.retire_terminal_history_once().unwrap();
+    assert!(f.app.snapshot().unwrap().sandboxes().is_empty());
+    assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
+}
 type App = CenterApplication<MemoryAuthority, Host, Templates>;
 struct Fixture {
     app: Arc<App>,
@@ -387,8 +790,13 @@ fn fixture() -> Fixture {
         CenterApplication::new(
             MemoryAuthority {
                 state: state(),
+                hidden_sandboxes: Vec::new(),
                 unreadable: Arc::clone(&unreadable),
                 unknown_create: Arc::clone(&unknown_create),
+                projection_steps: std::collections::VecDeque::new(),
+                projection_reads: 0,
+                fence_after_stale: false,
+                retirement_step: None,
             },
             host.clone(),
             Templates,
@@ -421,6 +829,72 @@ fn command() -> CreateCommand {
             "x".into(),
         )])),
     }
+}
+
+#[test]
+fn private_validation_cannot_issue_public_tokens_or_receive_user_management() {
+    let f = fixture();
+    let hidden = f.app.create("1", command()).unwrap();
+    let visible = f.app.create("1", command()).unwrap();
+    f.app.authority.lock().unwrap().hidden_sandboxes =
+        vec![hidden.sandbox_id.as_str().try_into().unwrap()];
+    let calls = f.host.calls.load(Ordering::SeqCst);
+    assert_eq!(f.app.get("1", &hidden.sandbox_id), Err(PortError::NotFound));
+    assert_eq!(
+        f.app.session_attempt("1", &hidden.sandbox_id),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(
+        f.app.resolve_data_route(&hidden.envd_access_token),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(
+        f.app
+            .connect("1", &hidden.sandbox_id, ConnectCommand { timeout: None }),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(
+        f.app.set_timeout("1", &hidden.sandbox_id, 10),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(
+        f.app.kill("1", &hidden.sandbox_id),
+        Err(PortError::NotFound)
+    );
+    assert_eq!(f.host.calls.load(Ordering::SeqCst), calls);
+    let page = f
+        .app
+        .list(
+            "1",
+            sandproof_controller_service::application::ListSelection::default(),
+        )
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].sandbox_id, visible.sandbox_id);
+    assert_eq!(page.total_running, Some(1));
+    assert!(f.app.resolve_data_route(&visible.envd_access_token).is_ok());
+    assert_eq!(f.app.snapshot().unwrap().sandboxes().len(), 2);
+    assert_eq!(
+        f.app.snapshot().unwrap().reserved(None, None),
+        Some(resources(2))
+    );
+    // Hiding is NOT cleanup. The trusted internal driver still sees the SAME
+    // record and can commit its original Destroy; no public bypass is added.
+    let destroy = f
+        .app
+        .authority
+        .lock()
+        .unwrap()
+        .destroy(
+            &"1".try_into().unwrap(),
+            &hidden.sandbox_id.as_str().try_into().unwrap(),
+        )
+        .unwrap();
+    assert!(f.app.wait(&destroy).is_ok());
+    assert_eq!(
+        f.app.snapshot().unwrap().reserved(None, None),
+        Some(resources(1))
+    );
 }
 
 #[test]
@@ -500,6 +974,71 @@ fn connect_defaults_extend_only_after_host_confirmation_and_keep_public_token() 
             .get(),
         3
     );
+}
+
+#[test]
+fn stale_node_health_refuses_connect_and_positive_timeout_before_new_intent_or_dispatch() {
+    for healthy_until in [0, 999, 1000] {
+        let f = fixture();
+        let session = f.app.create("1", command()).unwrap();
+        {
+            let mut authority = f.app.authority.lock().unwrap();
+            let node = authority.state.nodes()[0].identity.clone();
+            authority.state = authority
+                .state
+                .refresh_node(&node, healthy_until, Resources::ZERO)
+                .unwrap();
+        }
+        let original = f.app.snapshot().unwrap();
+        assert_eq!(
+            f.app
+                .connect("1", &session.sandbox_id, ConnectCommand::default()),
+            Err(PortError::Busy)
+        );
+        assert_eq!(
+            f.app.set_timeout("1", &session.sandbox_id, 100),
+            Err(PortError::Busy)
+        );
+        assert_eq!(f.app.snapshot().unwrap(), original);
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
+        // A failed time/health observation must not prevent exact cleanup.
+        f.app.kill("1", &session.sandbox_id).unwrap();
+        assert_eq!(
+            f.app.snapshot().unwrap().reserved(None, None),
+            Some(Resources::ZERO)
+        );
+    }
+}
+
+#[test]
+fn unhealthy_node_still_accepts_nonpositive_expiry_and_reconciles_original_destroy() {
+    for seconds in [0, -1, i64::MIN] {
+        let f = fixture();
+        let session = f.app.create("1", command()).unwrap();
+        {
+            let mut authority = f.app.authority.lock().unwrap();
+            let node = authority.state.nodes()[0].identity.clone();
+            authority.state = authority
+                .state
+                .refresh_node(&node, 0, Resources::ZERO)
+                .unwrap();
+        }
+        f.app
+            .set_timeout("1", &session.sandbox_id, seconds)
+            .unwrap();
+        assert!(f.app.snapshot().unwrap().sandboxes()[0].terminating);
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            f.app.snapshot().unwrap().reserved(None, None),
+            Some(resources(1))
+        );
+        f.app.reconcile_once().unwrap();
+        assert_eq!(
+            f.app.snapshot().unwrap().reserved(None, None),
+            Some(Resources::ZERO)
+        );
+        assert_eq!(f.host.calls.load(Ordering::SeqCst), 2);
+    }
 }
 
 #[test]

@@ -2,21 +2,31 @@
 
 //! Bounded, mutually authenticated center/host transport.
 //! Shared authenticated transport for identity probes and high-level lifecycle
-//! intents. Existing public service wiring remains unchanged.
+//! intents. The center is the sole public product entrance.
 //! TLS material, registered endpoint and peer pins come from trusted assembly,
 //! never from a user/template or an HTTP header. Entrypoints explicitly choose
 //! paths/owners/bounds; a shared protected-file primitive avoids two loaders.
 
+mod artifact_client;
+pub mod cache;
 mod client;
+pub mod diagnostic;
 #[cfg(unix)]
 mod protected_files;
+mod protected_server;
 mod server;
+pub mod status;
+pub mod template;
 mod tls;
 
+pub use artifact_client::ArtifactClient;
+pub use cache::CacheReceiver;
 pub use client::{InternalClient, RegisteredEndpoint};
 #[cfg(unix)]
 pub use protected_files::{ProtectedFileError, check_protected_directory, read_protected};
+pub use protected_server::{ProtectedHttp, ProtectedServer};
 pub use server::{DataReceiver, InternalServer, LifecycleReceiver, ReceiveError, RejectLifecycle};
+pub use template::ValidationReceiver;
 pub use tls::{CertificatePin, ClientTls, ServerTls, TlsIdentity};
 
 use std::{error::Error, fmt, time::Duration};
@@ -34,6 +44,10 @@ pub struct Limits {
 }
 
 impl Limits {
+    #[must_use]
+    pub const fn max_connections(&self) -> usize {
+        self.max_connections
+    }
     /// # Errors
     /// Rejects zero/oversized budgets and handshake deadlines beyond the call.
     pub fn new(

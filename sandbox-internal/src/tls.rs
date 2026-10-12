@@ -40,7 +40,26 @@ impl ServerTls {
         roots: Vec<CertificateDer<'static>>,
         peer_pins: Vec<CertificatePin>,
     ) -> Result<Self, TransportError> {
-        validate_material(&identity, &peer_pins)?;
+        Self::with_pin_limit(identity, roots, peer_pins, 2)
+    }
+    /// Protected artifact role with a finite set of registered host pins.
+    /// The HTTP handler still binds each TLS pin to the exact registered node.
+    /// # Errors
+    /// Rejects empty/duplicate/oversized registration or invalid TLS identity.
+    pub fn for_registered_hosts(
+        identity: TlsIdentity,
+        roots: Vec<CertificateDer<'static>>,
+        peer_pins: Vec<CertificatePin>,
+    ) -> Result<Self, TransportError> {
+        Self::with_pin_limit(identity, roots, peer_pins, 512)
+    }
+    fn with_pin_limit(
+        identity: TlsIdentity,
+        roots: Vec<CertificateDer<'static>>,
+        peer_pins: Vec<CertificatePin>,
+        maximum: usize,
+    ) -> Result<Self, TransportError> {
+        validate_material(&identity, &peer_pins, maximum)?;
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let verifier = WebPkiClientVerifier::builder_with_provider(
             Arc::new(root_store(roots)?),
@@ -71,6 +90,16 @@ impl ServerTls {
     ) -> Result<(), TransportError> {
         verify_pin(certificates, &self.peer_pins)
     }
+    pub(crate) fn peer_pin(
+        &self,
+        certificates: Option<&[CertificateDer<'_>]>,
+    ) -> Result<CertificatePin, TransportError> {
+        self.verify_peer(certificates)?;
+        certificates
+            .and_then(|chain| chain.first())
+            .map(CertificatePin::from_certificate)
+            .ok_or(TransportError::Authentication)
+    }
 }
 
 #[derive(Clone)]
@@ -88,7 +117,7 @@ impl ClientTls {
         roots: Vec<CertificateDer<'static>>,
         peer_pins: Vec<CertificatePin>,
     ) -> Result<Self, TransportError> {
-        validate_material(&identity, &peer_pins)?;
+        validate_material(&identity, &peer_pins, 2)?;
         let mut config =
             ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
                 .with_protocol_versions(&[&rustls::version::TLS13])
@@ -116,11 +145,15 @@ impl ClientTls {
 fn validate_material(
     identity: &TlsIdentity,
     pins: &[CertificatePin],
+    maximum: usize,
 ) -> Result<(), TransportError> {
     if identity.chain.is_empty()
         || identity.chain.len() > 8
-        || !(1..=2).contains(&pins.len())
-        || (pins.len() == 2 && pins[0] == pins[1])
+        || !(1..=maximum).contains(&pins.len())
+        || pins
+            .iter()
+            .enumerate()
+            .any(|(i, pin)| pins[..i].contains(pin))
         || identity.chain.iter().any(|cert| cert.len() > 64 * 1024)
         || identity.private_key.secret_der().len() > 64 * 1024
     {

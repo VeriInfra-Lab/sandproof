@@ -1,21 +1,14 @@
 //! Parsed deployment settings and pure configuration obligations.
 
-use crate::gateway;
 use sandbox_controller_core as core;
 use sandproof_controller_service::application::ApplicationConfig;
 use sandproof_controller_service::{
     AdmissionLimits, BoundedHostConfig, MaintenanceConfig, templates::TemplateCatalog,
 };
+use sandproof_data_transport::TransferLimits;
 use sandproof_node::NodeConfig;
 use serde::Deserialize;
-use std::{error::Error, net::SocketAddr, path::PathBuf};
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct CredentialFile {
-    pub(super) tenant: u64,
-    pub(super) secret: String,
-}
+use std::{error::Error, path::PathBuf};
 
 /// User settings exclude derived durable limits to avoid two competing
 /// sources of truth for the gateway's physical route-cell capacity.
@@ -34,7 +27,7 @@ pub(super) struct BoundedHostSettings {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ConfigFile {
+pub(super) struct NativeSettings {
     pub(super) namespace: String,
     pub(super) database: PathBuf,
     pub(super) node_state_dir: PathBuf,
@@ -50,17 +43,11 @@ pub(super) struct ConfigFile {
     /// Complete formal deployment policy; absence is rejected before activation.
     #[serde(default)]
     pub(super) maintenance: Option<MaintenanceConfig>,
-    /// Explicit private-pool retry-window policy; cannot be disabled once persisted.
-    #[serde(default)]
-    pub(super) build_retry_windows: Option<sandproof_controller_service::BuildRetryConfig>,
     pub(super) vcpu_count: u8,
     pub(super) memory_mib: u32,
     #[serde(default)]
     pub(super) host_resources: Option<sandbox_runtime::HostResources>,
     pub(super) file_policy_digest: u64,
-    pub(super) bind: SocketAddr,
-    pub(super) domain: String,
-    pub(super) credentials: Vec<CredentialFile>,
     pub(super) max_active_global: u64,
     pub(super) max_active_per_tenant: u64,
     pub(super) max_disk_bytes_global: u64,
@@ -78,19 +65,10 @@ pub(super) struct ConfigFile {
     pub(super) expiry_scan_seconds: u64,
     /// Explicit deployment budgets, never SDK request parameters or inferred defaults.
     #[serde(default)]
-    pub(super) data_transfer: Option<gateway::TransferLimits>,
-    /// Finite HTTP blocking-work envelope, independent of active transfers.
-    #[serde(default)]
-    pub(super) request_admission: sandproof_api::admission::RequestAdmissionLimits,
+    pub(super) data_transfer: Option<TransferLimits>,
     /// Explicit opt-in: trusted prebuilt descriptors, not a build service.
     #[serde(default)]
     pub(super) templates: Option<TemplateCatalog>,
-    #[serde(default)]
-    pub(super) template_registry:
-        Option<sandproof_controller_service::template_registry::RegistryConfig>,
-    /// Private, separate build pool only; never enable on the runtime endpoint.
-    #[serde(default)]
-    pub(super) internal_build_vms: bool,
 }
 
 fn default_timeout_secs() -> u64 {
@@ -107,13 +85,11 @@ fn default_startup_timeout_secs() -> u64 {
 pub(super) struct DeploymentContract {
     pub(super) bounded: BoundedHostConfig,
     pub(super) maintenance: MaintenanceConfig,
-    pub(super) transfers: gateway::TransferLimits,
-    pub(super) requests: sandproof_api::admission::RequestAdmissionLimits,
+    pub(super) transfers: TransferLimits,
 }
 
 impl DeploymentContract {
-    pub(super) fn validate(config: &ConfigFile) -> Result<Self, Box<dyn Error>> {
-        config.request_admission.validate()?;
+    pub(super) fn validate(config: &NativeSettings) -> Result<Self, Box<dyn Error>> {
         let bounded = resolve_bounded_host_config(
             config.uid_base,
             config.bounded_host.as_ref(),
@@ -132,7 +108,6 @@ impl DeploymentContract {
             return Err("formal service requires explicit physical_storage".into());
         }
         validate_maintenance_config(Some(&bounded), Some(&maintenance))?;
-        validate_build_retry_config(config, Some(&bounded))?;
         validate_controller_storage_reserve(config)?;
         validate_lifetime_settings(config)?;
         if [
@@ -147,20 +122,16 @@ impl DeploymentContract {
         {
             return Err("invalid deployment admission limits".into());
         }
-        if config.internal_build_vms && config.template_registry.is_some() {
-            return Err("internal build pool cannot also publish templates".into());
-        }
         Ok(Self {
             bounded,
             maintenance,
             transfers,
-            requests: config.request_admission,
         })
     }
 }
 
 pub(super) fn node_configuration(
-    config: &ConfigFile,
+    config: &NativeSettings,
     bounded_host: BoundedHostConfig,
 ) -> NodeConfig {
     NodeConfig {
@@ -179,7 +150,7 @@ pub(super) fn node_configuration(
     }
 }
 
-fn validate_lifetime_settings(config: &ConfigFile) -> Result<(), Box<dyn Error>> {
+fn validate_lifetime_settings(config: &NativeSettings) -> Result<(), Box<dyn Error>> {
     if config.expiry_scan_seconds == 0
         || config.startup_timeout_secs == 0
         || config.default_timeout_secs != default_timeout_secs()
@@ -194,7 +165,7 @@ fn validate_lifetime_settings(config: &ConfigFile) -> Result<(), Box<dyn Error>>
 pub(super) fn resolve_bounded_host_config(
     uid_base: u32,
     bounded: Option<&BoundedHostSettings>,
-    data_transfer: Option<&gateway::TransferLimits>,
+    data_transfer: Option<&TransferLimits>,
 ) -> Result<Option<BoundedHostConfig>, Box<dyn Error>> {
     let Some(settings) = bounded else {
         return Ok(None);
@@ -245,7 +216,7 @@ fn validate_maintenance_config(
     Ok(())
 }
 
-fn validate_controller_storage_reserve(config: &ConfigFile) -> Result<(), Box<dyn Error>> {
+fn validate_controller_storage_reserve(config: &NativeSettings) -> Result<(), Box<dyn Error>> {
     if let Some(capacity) = config
         .maintenance
         .as_ref()
@@ -260,36 +231,8 @@ fn validate_controller_storage_reserve(config: &ConfigFile) -> Result<(), Box<dy
     Ok(())
 }
 
-fn validate_build_retry_config(
-    config: &ConfigFile,
-    bounded: Option<&BoundedHostConfig>,
-) -> Result<(), Box<dyn Error>> {
-    if config.internal_build_vms
-        && config
-            .maintenance
-            .as_ref()
-            .is_some_and(|policy| policy.capacity.is_some())
-        && config.build_retry_windows.is_none()
-    {
-        return Err("full private capacity requires explicit build_retry_windows".into());
-    }
-    if let Some(retry) = config.build_retry_windows {
-        if !config.internal_build_vms
-            || config.maintenance.is_none()
-            || config.template_registry.is_some()
-        {
-            return Err(
-                "build_retry_windows requires an explicitly maintained private build pool".into(),
-            );
-        }
-        let bounded = bounded.ok_or("build_retry_windows requires bounded_host")?;
-        retry.validate(bounded.maintenance.windows.max_duration_ms())?;
-    }
-    Ok(())
-}
-
-pub(super) fn managed_config(
-    config: &ConfigFile,
+pub(super) fn application_config(
+    config: &NativeSettings,
     disk_bytes: u64,
 ) -> Result<ApplicationConfig, Box<dyn Error>> {
     Ok(ApplicationConfig {
@@ -310,7 +253,9 @@ pub(super) fn managed_config(
         memory_mb: config.memory_mib,
         disk_size_mb: u32::try_from(disk_bytes.div_ceil(1024 * 1024))?,
         envd_version: "0.9.0".into(),
-        domain: config.domain.clone(),
+        // Original application DTO field is not a routing or authorization
+        // source. Only the center publishes external SDK session addresses.
+        domain: "internal.invalid".into(),
     })
 }
 

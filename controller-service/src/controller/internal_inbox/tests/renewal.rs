@@ -246,11 +246,14 @@ fn authenticated_global_private_owner_is_projected_not_compared_to_local_allocat
             .unwrap();
         let mut create = local_request();
         create.identity.tenant_id = tenant.try_into().unwrap();
+        let mut admission = local_admission();
+        admission.template.local.owner = Some(private_owner);
+        admission.template.registered = admission.template.local.clone();
+        admission.template.digest = admission.template.registered.canonical_digest().unwrap();
+        create.create.template_digest = admission.template.digest;
         journal
             .record_internal_intent(&create, &mut NeverCrash)
             .unwrap();
-        let mut admission = local_admission();
-        admission.template.local.owner = Some(private_owner);
         let result = journal.admit_internal_create(&create, admission, &mut NeverCrash);
         if tenant == "2" {
             let local = result.unwrap().local.unwrap();

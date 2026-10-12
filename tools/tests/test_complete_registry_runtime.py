@@ -18,6 +18,8 @@ from tools.template_build_service import configuration
 from tools.template_build_store import BuildError
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tests/system'))
+from _center_host_services import test_credentials
 SPEC = importlib.util.spec_from_file_location("complete_registry_fixture", ROOT / "tests/system/_complete_registry_runtime.py")
 FIXTURE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = FIXTURE
@@ -36,8 +38,7 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
             limits.update(max_cpu=2, max_memory_mib=1024, max_disk_mib=2048, timeout_seconds=600,
                 max_input_bytes=256 * 1024 * 1024, max_expanded_bytes=512 * 1024 * 1024,
                 max_log_bytes=2 * 1024 * 1024)
-            runtime = json.loads(Path(prior["runtime_config"]).read_text())
-            registry = {key: value for key, value in runtime["template_registry"].items() if key != "root"}
+            registry = {key: value for key, value in prior["registry"].items() if key != "root"}
             root = parent / "fresh"
             for role in ("runtime", "builder"):
                 profile = policy[role]["bounded_host"]["physical_storage"]
@@ -57,26 +58,55 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                 (tools / name).write_bytes(kernel.read_bytes())
             args = SimpleNamespace(bounded_policy=policy_path, run_root=root,
                 namespace=namespaces[0], build_namespace=namespaces[1], scratch_parent=parent,
-                firecracker=kernel, jailer=kernel, server=kernel, kernel=kernel,
+                firecracker=kernel, jailer=kernel, kernel=kernel,
                 rootfs=source / "builder.ext4", builder_rootfs=None, tools=tools, uid_base=1000,
-                cgroup_parent=source / "0/cgroup", build_cgroup_parent=source / "1/cgroup")
+                cgroup_parent=source / "0/cgroup", build_cgroup_parent=source / "1/cgroup",
+                service_cgroup_record=source / 'cgroup-record', center_uid=os.geteuid())
             untouched = copy.deepcopy(policy)
+            def assembled(_args, _root, settings, catalogs, key, sdk_address, _record, **kwargs):
+                # A controlled assembly port checks the real new DTO contract;
+                # this static test does not claim TLS/Redis or KVM startup.
+                credentials = test_credentials(key, kwargs['extra_credentials'])
+                self.assertEqual([entry['tenant'] for entry in credentials], [1, 2])
+                for suffix in ('registry','registry/inbox','registry/artifacts'):
+                    (root / suffix).mkdir(mode=0o700)
+                for index, native in enumerate(settings):
+                    self.assertFalse({'bind','credentials','internal_build_vms','build_retry_windows'} & native.keys())
+                    path=root / str(index) / 'host.json'
+                    path.write_text(json.dumps(dict(native=native,inbox={},internal={},
+                                                    template_cache={},artifact_source={})))
+                    path.chmod(0o600)
+                private=kwargs['private_builds']
+                self.assertEqual(private['policy'], {field:settings[1][field] for field in
+                    ('public_ipv4_enabled','max_timeout_secs','max_lifetime_secs','startup_timeout_secs')})
+                return SimpleNamespace(native_pools=settings,
+                    processes=SimpleNamespace(bindings={f'host-{index}':dict(config=root / str(index) / 'host.json')
+                                                          for index in range(2)}),
+                    layout=dict(helper_backend_address='127.0.0.1:3102',private_address='127.0.0.1:3101',
+                                build_key_file=Path(prior['center']['credential_file'])),
+                    sdk_url='http://' + sdk_address,
+                    center_config=dict(domain='center.invalid',templates={'templates':[entry for catalog in catalogs
+                        for entry in catalog['templates']]},template_registry=dict(root=str(root/'registry'),**registry),
+                        private_builds=private))
             with patch.object(FIXTURE, "require_bounded_host_tools"), \
-                    patch.object(FIXTURE, "file_hash", return_value=digest):
+                    patch.object(FIXTURE, "file_hash", return_value=digest), \
+                    patch.object(FIXTURE.RuntimeServices, 'prepare', side_effect=assembled):
                 deployment = FIXTURE.prepare_registry_runtime(args,
                     tool_hashes={name: digest for name in prior["tools"]}, registry_limits=registry,
                     build_limits=limits, ports=[3100, 3101, 3102])
             checked = configuration(deployment.build_config, require_physical_lease=False)
             self.assertEqual(checked["physical_storage_profile"], policy["runtime"]["bounded_host"]["physical_storage"])
-            self.assertTrue(checked["builder"]["internal_build_vms"])
-            self.assertIn("build_retry_windows", checked["builder"])
+            self.assertNotIn("internal_build_vms", checked["builder"])
+            self.assertNotIn("build_retry_windows", checked["builder"])
             self.assertNotIn("max_vm_id", checked["runtime"])
             self.assertNotIn("max_vm_id", checked["builder"])
             self.assertEqual((root / "physical-profile").read_bytes(), b"")
             self.assertEqual(json.loads(policy_path.read_text()), untouched)
-            self.assertEqual(deployment.keys[0], checked["runtime"]["credentials"][0]["secret"])
-            self.assertNotEqual(deployment.keys[0], deployment.keys[1])
-            self.assertEqual(checked["runtime"]["bind"], "127.0.0.1:3100")
+            self.assertNotEqual(deployment.key, deployment.foreign_key)
+            self.assertEqual(deployment.services.sdk_url, "http://127.0.0.1:3100")
+            self.assertEqual(checked['center']['private_address'], '127.0.0.1:3101')
+            self.assertEqual(checked['center']['max_lifetime_secs'], checked['builder']['max_lifetime_secs'])
+            self.assertNotIn('credentials', checked['runtime'])
             with patch.object(FIXTURE, "require_bounded_host_tools"):
                 with self.assertRaises(FileExistsError):
                     FIXTURE.prepare_registry_runtime(args,
@@ -123,14 +153,14 @@ class PrivateBuilderProtocolTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
         self.deployment = FIXTURE.RegistryDeployment(self.root, ["a" * 16, "b" * 16],
-            [{}, {"domain": "example.invalid"}], ["http://127.0.0.1:1", "http://127.0.0.1:2"],
-            ["runtime-key", "private-key"], self.root / "server", self.root / "build.json")
+            [{}, {}], "runtime-key", "foreign-key", Mock(), self.root / "build.json")
         self.calls = []
         self.reclaimed = False
         self.unknown_post = False
         self.unknown_settlement = False
         self.absent = False
-        self.backend = Mock(request=self.request)
+        self.backend = Mock(request=self.request, backend_key='private-key',
+                            config={'center':{'private_address':'127.0.0.1:2','domain':'center.invalid'}})
         self.addCleanup(patch.stopall)
         patch.object(FIXTURE, "configuration", return_value={}).start()
         patch.object(FIXTURE, "Backend", return_value=self.backend).start()
@@ -144,6 +174,7 @@ class PrivateBuilderProtocolTests(unittest.TestCase):
 
     def request(self, pool, method, path, body=None, **kwargs):
         self.assertEqual(pool, "builder")
+        self.assertEqual(kwargs['owner'], 1)
         self.calls.append((method, path, body))
         if path == "/sandproof/internal-build-windows":
             return {"requestWindow": "original-window", "expiresAtMs": 1234}
@@ -178,6 +209,9 @@ class PrivateBuilderProtocolTests(unittest.TestCase):
                          ["POST", "POST", "POST", "GET", "DELETE", "GET", "POST"])
         self.assertEqual(self.calls[1][2], {"timeout": 600, "allowInternetAccess": False, "requestWindow": "original-window"})
         self.connection.assert_called_once()
+        self.assertEqual(self.connection.call_args.kwargs['api_url'], 'http://127.0.0.1:2')
+        self.assertEqual(self.connection.call_args.kwargs['extra_sandbox_headers'],
+            {'X-Access-Token':'private-session','x-sandproof-build-key':'private-key','x-sandproof-build-owner':'1'})
         self.sandbox.create.assert_not_called()
         count = len(self.calls)
         self.deployment.close_builders()

@@ -68,15 +68,14 @@ def service_groups(runtime, services):
         raise ValueError('runtime and service cgroup parents must be disjoint')
 
 
-def configuration(budgets, root, namespace, artifacts, *, uid, port, cgroup, keys, base, file_size=None):
+def configuration(budgets, root, namespace, artifacts, *, uid, cgroup, base, file_size=None):
     settings = dict(budgets)
     settings.update(namespace=namespace, database=str(root / 'db/controller.db'),
         node_state_dir=str(root / 'state'), chroot_base=str(root / 'jails'),
         **{key: spec['path'] for key, spec in artifacts.items()},
         uid_base=uid, vcpu_count=1, memory_mib=512,
         host_resources={'cgroup_parent': str(cgroup), 'memory_max_bytes': VMM_MEMORY},
-        file_policy_digest=1, bind=f'127.0.0.1:{port}', domain='example.invalid',
-        credentials=[{'tenant': index + 1, 'secret': key} for index, key in enumerate(keys)],
+        file_policy_digest=1,
         max_active_global=2, max_active_per_tenant=1, startup_timeout_secs=120,
         public_ipv4_enabled=False,
         templates={'templates': [base], 'aliases': {'base': base['template_id']},
@@ -135,10 +134,10 @@ def wait_service_empty(record, baseline, *, timeout=10, clock=time.monotonic, sl
         sleep(0.05)  # Wait for the exact observed leaf, never kill guessed PIDs.
 
 
-def live_identity(root, args, sandbox):
+def live_identity(root, args, sandbox, *, native_id, local_number):
     from server_process_crash import process_start_ticks
     from server_templates import record_for
-    _secret, name, claim = record_for(root, sandbox)
+    _secret, name, claim = record_for(root, native_id=native_id)
     if process_start_ticks(claim['pid']) != claim['start_time_ticks']:
         raise AssertionError('original VMM PID/start identity changed')
     status = Path(f'/proc/{claim["pid"]}/status').read_text().splitlines()
@@ -147,7 +146,7 @@ def live_identity(root, args, sandbox):
         contexts = [json.loads(blob) for (blob,) in connection.execute(
             'SELECT context_json FROM controller_host_slots')]
     context = next(value for value in contexts
-                   if value['binding']['sandbox'] == int(sandbox.sandbox_id.rsplit('-', 1)[1]))
+                   if value['binding']['sandbox'] == local_number)
     if context['binding']['owner'] not in (1, 2) or context['binding']['vm'] != int(name.rsplit('-', 1)[1]):
         raise AssertionError('original sandbox physical binding differs')
     expected_uid = args.uid_base + context['position']
@@ -191,7 +190,7 @@ def live_identity(root, args, sandbox):
     info = sandbox.get_info()
     if (info.cpu_count, info.memory_mb) != (1, 512):
         raise AssertionError('SDK shape differs from real Firecracker')
-    return {'sandbox_id': sandbox.sandbox_id, 'resource_id': name, 'pid': claim['pid'],
+    return {'sandbox_id': sandbox.sandbox_id, 'native_id': native_id, 'resource_id': name, 'pid': claim['pid'],
             'start_ticks': claim['start_time_ticks'], 'uid': expected_uid,
             'network_device': namespace.st_dev, 'network_inode': namespace.st_ino,
             'cgroup_device': cgroup['device'], 'cgroup_inode': cgroup['inode'], 'limits': limits,
@@ -219,10 +218,12 @@ def namespace_holders(device, inode):
     return sorted(holders)
 
 
-def check_child_report(path, code, settings_sha, server_sha, identities, *, command_output_only=False):
+def check_child_report(path, code, settings_sha, server_sha, identities, *, host_config_sha,
+                       command_output_only=False):
     value = json.loads(path.read_bytes(), object_pairs_hook=host.unique_keys)
     if (code != 0 or value.get('result') != 'passed' or value.get('config_sha256') != settings_sha
             or value.get('server', {}).get('executable_sha256') != server_sha
+            or value.get('host_config_sha256') != host_config_sha
             or value.get('sandbox_ids') != identities
             or set(value.get('cases', {})) != (
                 {'command_output_sync', 'command_output_async', 'template_start_once'}
@@ -235,7 +236,8 @@ def exercise(args, report):
     from e2b import Sandbox
     from sdk_c02_acceptance import processes_in_uid_range
     from sdk_server_smoke import options
-    from server_process_crash import free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready
+    from server_process_crash import free_loopback_port, process_start_ticks, terminal_cleanup_confirmed
+    from _runtime_services import RuntimeServices
     from server_task_pressure import audit_gone, network_state
     from server_templates import descriptor
     if importlib.metadata.version('e2b') != '2.51.0':
@@ -244,12 +246,16 @@ def exercise(args, report):
     report['probe_sha256'] = digest(__file__)
     report['gateway_probe_sha256'] = digest(ROOT / 'tests/system/gateway_slow_boundaries.py')
     report['host_kernel'] = os.uname().release
-    host.trusted_path(args.server)
-    if not args.server.is_file() or digest(args.server) != args.server_sha256:
-        raise ValueError('approved server SHA differs')
+    for role in ('center', 'host'):
+        host.trusted_path(getattr(args, role))
+        if not getattr(args, role).is_file():
+            raise ValueError('approved product binary required')
     parent = host.trusted_path(args.scratch_parent)
     service_cgroup.private(parent)
-    service_groups(args.cgroup_parent, args.service_cgroup_parent)
+    host.trusted_path(args.cgroup_parent)
+    service_cgroup.filesystem(args.cgroup_parent)
+    if any(child.is_dir() for child in args.cgroup_parent.iterdir()):
+        raise ValueError('exclusive empty runtime cgroup parent required')
     if not 1000 <= args.uid_base < 2**32 - VM_COUNT or processes_in_uid_range(args.uid_base, args.uid_base + VM_COUNT - 1):
         raise ValueError('exclusive usable UID range required')
     approved, approved_sha = host.load_config(host.trusted_path(args.host_config))
@@ -260,7 +266,7 @@ def exercise(args, report):
     report['final_budget_sha256'] = digest(budgets_path)
     report['data_transfer'] = budgets['data_transfer']
     inputs = {key: {'sha256': digest(getattr(args, key)), 'bytes': getattr(args, key).stat().st_size}
-              for key in (*host.ARTIFACTS, 'server')}
+              for key in (*host.ARTIFACTS, 'center', 'host')}
     report['inputs'] = inputs
     before_network = network_state()
     root = Path(tempfile.mkdtemp(prefix='gs-', dir=parent))
@@ -280,11 +286,6 @@ def exercise(args, report):
     report['host_preflight'] = host.inspect_host(preflight, digest(preflight_path))
     if not report['host_preflight']['prerequisites_passed']:
         raise ValueError('exact reviewed host preflight incomplete')
-    binary = root / 'server'
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
-    if digest(binary) != args.server_sha256:
-        raise ValueError('owned server copy SHA differs')
     keys = [secrets.token_hex(32), secrets.token_hex(32)]
     url = f'http://127.0.0.1:{free_loopback_port()}'
     base = descriptor('slow-boundary-base', args.kernel, args.rootfs, 1, 512)
@@ -294,31 +295,46 @@ def exercise(args, report):
         base['startup'] = {'user': 'root', 'workdir': '/', 'env_vars': {},
                            'argv': ['/bin/sh', '-c', "printf 'once\\n' >> /tmp/template-starts; exec sleep 600"]}
     settings = configuration(budgets, root, namespace, approved['artifacts'], uid=args.uid_base,
-                             port=int(url.rsplit(':', 1)[1]), cgroup=args.cgroup_parent, keys=keys, base=base)
-    config, cgroup_record = root / 'config.json', root / 'service-cgroup.json'
-    from server_process_crash import provision_runtime, terminal_cleanup_confirmed
-    provision_runtime(settings)
-    write_new(config, settings)
-    report['config_sha256'] = digest(config)
-    report['service_limits'] = {'cpu_quota_us': 100000, 'memory_bytes': SERVICE_MEMORY}
-    service_cgroup.prepare(args.service_cgroup_parent, 'svc-slow-' + namespace, cgroup_record,
-                           cpu_quota_us=100000, memory_bytes=SERVICE_MEMORY)
+                             cgroup=args.cgroup_parent, base=base)
+    registry = {'root': str(root / 'registry'), 'max_templates_global': 1,
+        'max_templates_per_tenant': 1, 'max_artifact_bytes_global': sum(inputs[k]['bytes'] for k in ('kernel','rootfs')),
+        'max_artifact_bytes_per_tenant': sum(inputs[k]['bytes'] for k in ('kernel','rootfs')),
+        'validation_timeout_secs': 60}
+    services = RuntimeServices.prepare(args, root=root, native_pools=[settings],
+        registered_catalogs=[settings['templates']], key=keys[0], public_address=url.removeprefix('http://'),
+        record=args.service_cgroup_record, job_count=4, registry_config=registry,
+        extra_credentials=[{'tenant': 2, 'secret': keys[1]}])
+    settings = services.native_pools[0]
+    config = services.processes.bindings['center']['config']
+    host_config = services.processes.bindings['host-0']['config']
+    cgroup_record = args.service_cgroup_record
+    report['config_sha256'], report['host_config_sha256'] = digest(config), digest(host_config)
     baseline = service_cgroup.observe(cgroup_record)
+    if baseline['pids'] or baseline['populated'] or int(baseline['limits']['memory.max']) != SERVICE_MEMORY:
+        raise ValueError('exclusive unchanged one-GiB service leaf required')
+    report['service_limits'] = baseline['limits']
     report['service_before'] = baseline
     known, rows, process, ticks = [], [], None, None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        process = start_server(binary, config, root / 'server.log', None,
-                               command_prefix=service_cgroup.prefix(cgroup_record))
-        wait_ready(opener, url, keys[0], process)
-        ticks = process_start_ticks(process.pid)
-        report['server_identity'] = {'pid': process.pid, 'start_ticks': ticks}
-        report['service_started'] = service_cgroup.observe(cgroup_record, pids=[process.pid])
+        services.start()
+        services.wait_ready()
         for key in keys:
             sandbox = Sandbox.create(template='base', timeout=600, allow_internet_access=False,
                                      **(options(key, url, url) | {'request_timeout': 120}))
             known.append(sandbox)  # Own the successful identity before any further inspection.
-            rows.append(live_identity(root, args, sandbox))
+        services.processes.stop('host-0')
+        native_ids = [services.native_id_for(sandbox.sandbox_id) for sandbox in known]
+        local_numbers = [services.local_for(sandbox.sandbox_id) for sandbox in known]
+        services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
+        process = services.processes.children['center']
+        ticks = process_start_ticks(process.pid)
+        report['server_identity'] = {'pid': process.pid, 'start_ticks': ticks}
+        report['service_started'] = service_cgroup.observe(cgroup_record,
+            pids=[child.pid for child in services.processes.children.values()])
+        rows = [live_identity(root, args, sandbox, native_id=native_id, local_number=number)
+                for sandbox, native_id, number in zip(known,native_ids,local_numbers,strict=True)]
         if len({(row['disk']['device'], row['disk']['inode']) for row in rows}) != VM_COUNT:
             raise AssertionError('the two VM disks share an identity')
         report['vms_before'] = rows
@@ -326,7 +342,9 @@ def exercise(args, report):
         command = [sys.executable, str(ROOT / 'tests/system/gateway_slow_boundaries.py'),
                    '--api-url', url, '--sandbox-url', url,
                    '--target-sandbox-id', known[0].sandbox_id, '--control-sandbox-id', known[1].sandbox_id,
-                   '--config', str(config), '--service-cgroup-record', str(cgroup_record),
+                   '--config', str(config), '--host-config', str(host_config),
+                   '--center-uid', str(args.center_uid), '--center-gid', str(args.center_gid),
+                   '--service-cgroup-record', str(cgroup_record),
                    '--server-pid', str(process.pid), '--server-start-ticks', str(ticks), '--report', str(child_report)]
         if args.command_output_only:
             command.append('--command-output-only')
@@ -339,13 +357,16 @@ def exercise(args, report):
             child = subprocess.run(command, env=environment, stdout=out, stderr=err, timeout=420)
         report['gateway_returncode'] = child.returncode
         child_value = check_child_report(child_report, child.returncode, report['config_sha256'],
-                                         args.server_sha256, [s.sandbox_id for s in known],
+                                         inputs['center']['sha256'], [s.sandbox_id for s in known],
+                                         host_config_sha=report['host_config_sha256'],
                                          command_output_only=args.command_output_only)
         report['gateway'] = {'report_sha256': digest(child_report), 'result': child_value['result'],
                              'cases': child_value['cases']}
-        if [live_identity(root, args, sandbox) for sandbox in known] != rows:
+        if [live_identity(root, args, sandbox, native_id=native_id, local_number=number)
+            for sandbox,native_id,number in zip(known,native_ids,local_numbers,strict=True)] != rows:
             raise AssertionError('a VM identity changed during accepted gateway work')
-        if process_start_ticks(process.pid) != ticks or digest(config) != report['config_sha256']:
+        if (process_start_ticks(process.pid) != ticks or digest(config) != report['config_sha256']
+                or digest(host_config) != report['host_config_sha256']):
             raise AssertionError('original server/config changed')
         snapshot = service_cgroup.observe(cgroup_record, pids=[process.pid])
         assert_no_oom(baseline, snapshot)
@@ -361,13 +382,13 @@ def exercise(args, report):
             except Exception as error:
                 errors.append(type(error).__name__)
         try:
-            stop_server(process)
+            services.stop_all()
         except Exception as error:
             errors.append(type(error).__name__)
         try:
             report['service_after_exit'] = {}
             wait_service_empty(cgroup_record, baseline, evidence=report['service_after_exit'])
-            report['service_removed'] = service_cgroup.remove(cgroup_record)
+            report['service_removed'] = 'operator-owned leaf preserved; all owned roles observed empty'
         except Exception as error:
             errors.append(type(error).__name__)
         report['cleanup_errors'] = errors
@@ -377,7 +398,7 @@ def exercise(args, report):
         raise AssertionError('owned UID range retained a process')
     if any(p.is_dir() for p in args.cgroup_parent.iterdir()):
         raise AssertionError('owned runtime cgroup parent retained a VM group')
-    if not all(terminal_cleanup_confirmed(settings['database'], row['sandbox_id']) for row in rows):
+    if not all(terminal_cleanup_confirmed(settings['database'], row['native_id']) for row in rows):
         raise AssertionError('not all accepted VM records are terminal or exactly retired')
     if network_state() != before_network:
         raise AssertionError('shared host network changed after exact cleanup')
@@ -390,9 +411,10 @@ def exercise(args, report):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    for field in ('server', 'host-config', 'scratch-parent', 'cgroup-parent', 'service-cgroup-parent'):
+    from _runtime_services import add_arguments
+    add_arguments(parser)
+    for field in ('host-config', 'scratch-parent', 'cgroup-parent'):
         parser.add_argument('--' + field, required=True, type=Path)
-    parser.add_argument('--server-sha256', required=True)
     parser.add_argument('--uid-base', required=True, type=int)
     parser.add_argument('--command-output-only', action='store_true',
                         help='finite sync/async large output and template Start-prefix check instead of slow files')

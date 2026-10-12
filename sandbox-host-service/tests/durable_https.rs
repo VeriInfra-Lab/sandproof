@@ -8,6 +8,10 @@ mod internal_data;
 )]
 #[path = "../../controller-service/tests/support/internal_application.rs"]
 mod local;
+#[path = "durable_https/validation.rs"]
+mod validation;
+#[path = "durable_https/window.rs"]
+mod window;
 use local::wire as fixture;
 #[path = "../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
@@ -79,7 +83,7 @@ async fn actual_https_records_original_journal_and_replays_after_reopen() {
             .unwrap(),
             fixture::node("host-a"),
             limits,
-            facade,
+            sandproof_internal::diagnostic::RejectTemplateCache::new(facade),
         );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let foreign_client = InternalClient::new(

@@ -8,10 +8,12 @@ use sandproof_controller_service::{
     },
     templates::ComputeLimits,
 };
+use sandproof_internal::template::{ValidationEvidence, ValidationReceiver, ValidationRequest};
 use sandproof_internal::{LifecycleReceiver, ReceiveError};
 use sandproof_protocol::internal::{
     NodeIdentity,
     lifecycle::{LifecycleRequest, LifecycleResponse},
+    window::{WindowCloseAck, WindowCloseRequest},
 };
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -76,6 +78,29 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         self.blocking(move |app| app.internal_pending(&node)).await
     }
 
+    /// Original read-only health sampling shares the SAME non-waiting work gate.
+    /// # Errors
+    /// Unknown observations never refresh a node as healthy.
+    pub async fn free_resources(
+        &self,
+        node: NodeIdentity,
+        compute: ComputeLimits,
+    ) -> Result<(u64, sandproof_protocol::internal::lifecycle::Resources), ApplicationError> {
+        self.blocking(move |app| app.internal_free_resources(&node, compute))
+            .await
+    }
+    /// Original physical lease/peak validation before managed cache writes.
+    /// # Errors
+    /// A busy original worker, changed registration or low reserve refuses.
+    pub async fn cache_storage_ready(
+        &self,
+        node: NodeIdentity,
+        cache: sandproof_controller_service::physical_storage::PhysicalTemplateCache,
+    ) -> Result<(), ApplicationError> {
+        self.blocking(move |app| app.validate_internal_cache_storage(&node, &cache))
+            .await
+    }
+
     /// Startup/periodic reconciliation even if the center is disconnected.
     /// Preserve independent local expiry; never reset a lifetime on restart.
     /// # Errors
@@ -136,6 +161,51 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
                     JournalError::MaintenanceCapacity => ReceiveError::Capacity,
                     _ => ReceiveError::Unavailable,
                 })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+    async fn close(&self, request: WindowCloseRequest) -> Result<WindowCloseAck, ReceiveError> {
+        let permit = Arc::clone(&self.work)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.close_internal_window(&request)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+}
+
+impl<H: ControllerHost + Send + 'static> ValidationReceiver for HostLifecycle<H> {
+    async fn validation_evidence(
+        &self,
+        request: ValidationRequest,
+    ) -> Result<ValidationEvidence, ReceiveError> {
+        let permit = Arc::clone(&self.work)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.internal_validation_evidence(
+                &request.create,
+                &request.terminal,
+                &request.revision,
+                &request.publication,
+            )
+            .map_err(|error| match error {
+                JournalError::Conflict => ReceiveError::Conflict,
+                JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                _ => ReceiveError::Unavailable,
+            })
         })
         .await
         .map_err(|_| ReceiveError::Unavailable)?

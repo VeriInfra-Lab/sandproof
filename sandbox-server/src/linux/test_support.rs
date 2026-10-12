@@ -1,6 +1,6 @@
 //! Explicit synthetic settings shared by server responsibility tests.
 
-use super::config::{ConfigFile, DeploymentContract, resolve_bounded_host_config};
+use super::config::{DeploymentContract, NativeSettings, resolve_bounded_host_config};
 use sandproof_controller_service::BoundedHostConfig;
 use serde_json::{Value, json};
 use std::error::Error;
@@ -12,8 +12,7 @@ pub(super) fn partial_settings() -> Value {
         "firecracker": "/bin/firecracker", "chroot_base": "/state/jails",
         "kernel": "/images/kernel", "rootfs": "/images/rootfs",
         "uid_base": 1000, "vcpu_count": 1,
-        "memory_mib": 128, "file_policy_digest": 1, "bind": "127.0.0.1:3000",
-        "domain": "localhost", "credentials": [{"tenant": 1, "secret": "test-only"}],
+        "memory_mib": 128, "file_policy_digest": 1,
         "max_active_global": 2, "max_active_per_tenant": 2,
         "max_disk_bytes_global": 4096, "max_disk_bytes_per_tenant": 4096,
         "cleanup_reserve_bytes": 1024, "max_timeout_secs": 300,
@@ -37,7 +36,7 @@ pub(super) fn settings() -> Value {
 }
 
 pub(super) fn resolve(value: Value) -> BoundedHostConfig {
-    let config: ConfigFile = serde_json::from_value(value).unwrap();
+    let config: NativeSettings = serde_json::from_value(value).unwrap();
     resolve_bounded_host_config(
         config.uid_base,
         config.bounded_host.as_ref(),
@@ -88,14 +87,14 @@ pub(super) fn full_capacity_settings() -> Value {
             "max_host_slots": 2, "kernel_copy_bytes": 50, "runtime_copy_bytes": 50,
             "cleanup_reserve_bytes": 1042_u64 * 1024 * 1024,
             "host_metadata_bytes": 1, "host_metadata_inodes": 20, "jail_inodes_per_slot": 12}],
-        "public_build": null, "filesystem_overhead_bytes": 1024 * 1024,
+        "public_build": null, "host_template_caches": [], "service_data": [], "filesystem_overhead_bytes": 1024 * 1024,
         "filesystem_overhead_inodes": 100
     });
     value
 }
 
 pub(super) fn check(value: Value) -> Result<(), Box<dyn Error>> {
-    let config: ConfigFile = serde_json::from_value(value)?;
+    let config: NativeSettings = serde_json::from_value(value)?;
     DeploymentContract::validate(&config)?;
     Ok(())
 }
