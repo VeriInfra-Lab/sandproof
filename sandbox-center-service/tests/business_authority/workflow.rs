@@ -208,7 +208,7 @@ fn actual_publication_uses_original_driver_and_queries_aliases_exact_bindings() 
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let authority = authority(&fixture, &proxy);
-    let (templates, app, _) = application(&authority, true);
+    let (templates, app, clock) = application(&authority, true);
     let value = templates
         .publish(&app, "8", &candidate().candidate_id)
         .unwrap();
@@ -282,6 +282,46 @@ fn actual_publication_uses_original_driver_and_queries_aliases_exact_bindings() 
         ),
         Err(PortError::NotFound)
     ));
+    assert_ready_instance_projection(&fixture, &authority, &app, &clock, &tenant, &immutable);
+}
+
+fn assert_ready_instance_projection(
+    fixture: &Engine,
+    authority: &SharedBusinessAuthority,
+    app: &Application,
+    clock: &Time,
+    tenant: &TenantId,
+    immutable: &str,
+) {
+    // A public instance using a newly Ready publication resolves its original
+    // binding from the same view too, even after its mutable alias is deleted.
+    let mut lifecycle = authority.clone();
+    let request = sandproof_center_service::AuthorityPort::create(
+        &mut lifecycle,
+        tenant,
+        super::binding(),
+        0,
+    )
+    .unwrap();
+    let ready = wire::response(
+        &request,
+        1,
+        LifecycleFact::Ready {
+            started_at_ms: 1,
+            end_at_ms: 1 + request.create.timeout_ms,
+            max_end_at_ms: 1 + request.create.max_lifetime_ms,
+        },
+    );
+    sandproof_center_service::AuthorityPort::apply_response(&mut lifecycle, &ready).unwrap();
+    clock.0.store(2, Ordering::SeqCst);
+    let before: u64 = fixture.revision().parse().unwrap();
+    let detail = app.get("8", request.identity.sandbox_id.as_str()).unwrap();
+    assert_eq!(detail.info.template_id, immutable);
+    assert_eq!(fixture.revision().parse::<u64>().unwrap() - before, 1);
+    assert_eq!(
+        app.get("9", request.identity.sandbox_id.as_str()),
+        Err(PortError::NotFound)
+    );
 }
 
 #[test]

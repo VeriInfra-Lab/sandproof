@@ -28,11 +28,10 @@ pub(crate) fn live(record: &Sandbox, now: u64) -> bool {
         && record.max_end_at_ms.is_some_and(|end| now < end)
 }
 impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H, T> {
-    fn template(&self, request: &LifecycleRequest) -> Result<PublicTemplate, PortError> {
-        let template = self.templates.bound(
-            &request.create.template_revision,
-            &request.create.template_digest,
-        )?;
+    fn check_template(
+        request: &LifecycleRequest,
+        template: &PublicTemplate,
+    ) -> Result<(), PortError> {
         let shape = template.resources;
         if !template.is_valid()
             || template.revision != request.create.template_revision
@@ -44,18 +43,22 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         {
             return Err(PortError::Busy);
         }
-        Ok(template)
+        Ok(())
     }
-    fn info(&self, tenant: &TenantId, record: &Sandbox) -> Result<InstanceInfo, PortError> {
+    fn info(
+        tenant: &TenantId,
+        record: &Sandbox,
+        template: &PublicTemplate,
+    ) -> Result<InstanceInfo, PortError> {
         let request = &record.operations.first().ok_or(PortError::Busy)?.request;
-        let template = self.template(request)?;
+        Self::check_template(request, template)?;
         let options: CreateOptions =
             serde_json::from_slice(&request.create.options).map_err(|_| PortError::Busy)?;
         if options.template.is_some() || options.validate().is_err() {
             return Err(PortError::Busy);
         }
         Ok(InstanceInfo {
-            template_id: template.template_id,
+            template_id: template.template_id.clone(),
             sandbox_id: request.identity.sandbox_id.as_str().to_owned(),
             owner: tenant.as_str().parse().map_err(|_| PortError::Busy)?,
             metadata: options.metadata,
@@ -63,7 +66,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 .map_err(|_| PortError::Busy)?,
             end_at_ms: i64::try_from(record.end_at_ms.ok_or(PortError::Busy)?)
                 .map_err(|_| PortError::Busy)?,
-            envd_version: template.envd_version,
+            envd_version: template.envd_version.clone(),
             cpu_count: u32::from(template.resources.cpu_count),
             memory_mb: template.resources.memory_mib,
             disk_size_mb: u32::try_from(template.resources.disk_bytes.div_ceil(1024 * 1024))
@@ -114,7 +117,12 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         if !view.state.node_is_reachable(node, self.now()?) {
             return Ok(None);
         }
-        self.detail_for_record(&tenant, record).map(Some)
+        let request = &record.operations.first().ok_or(PortError::Busy)?.request;
+        let template = view.bound_template(
+            &request.create.template_revision,
+            &request.create.template_digest,
+        )?;
+        self.detail_for_record(&tenant, record, template).map(Some)
     }
     /// Caller must first authorize this record in the SAME fresh envelope.
     /// Public and protected build projections share the original DTO/token code.
@@ -122,12 +130,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         &self,
         tenant: &TenantId,
         record: &Sandbox,
+        template: &PublicTemplate,
     ) -> Result<InstanceDetail, PortError> {
         let request = &record.operations.first().ok_or(PortError::Busy)?.request;
         let options: CreateOptions =
             serde_json::from_slice(&request.create.options).map_err(|_| PortError::Busy)?;
         Ok(InstanceDetail {
-            info: self.info(tenant, record)?,
+            info: Self::info(tenant, record, template)?,
             envd_access_token: self.tokens.issue(&request.identity)?,
             domain: self.config.domain.clone(),
             allow_internet_access: options.networking.as_ref().map(|n| n.allow_internet_access),
@@ -153,7 +162,14 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                         .first()
                         .is_some_and(|op| op.request.identity.tenant_id == tenant)
             })
-            .map(|record| self.info(&tenant, record))
+            .map(|record| {
+                let request = &record.operations.first().ok_or(PortError::Busy)?.request;
+                let template = view.bound_template(
+                    &request.create.template_revision,
+                    &request.create.template_digest,
+                )?;
+                Self::info(&tenant, record, template)
+            })
             .collect::<Result<_, _>>()?;
         selection.page(items)
     }

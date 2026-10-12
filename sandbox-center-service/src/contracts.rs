@@ -2,7 +2,7 @@
 //! certificate, local path, success flag or replacement storage authority.
 use sandproof_api::{PortError, PublicationView, TemplatePage, TemplateView};
 use sandproof_center_core::CenterState;
-use sandproof_center_store::authority::{AuthorityError, CenterAuthority};
+use sandproof_center_store::authority::AuthorityError;
 use sandproof_controller_service::templates::{ResourceShape, TemplateBinding};
 use sandproof_protocol::internal::lifecycle::{CreateBinding, LifecycleRequest, LifecycleResponse};
 use sandproof_protocol::internal::{
@@ -260,15 +260,16 @@ pub trait HostPort: Send + Sync + 'static {
     ) -> Result<WindowCloseAck, PortError>;
 }
 
-/// Only `CenterAuthority` implements this in production. Tests inject storage
-/// faults while using the same pure `CenterState` decisions, not a second model.
+/// The production business authority owns the coupled lifecycle/metadata view.
+/// Tests inject storage faults while using the same pure `CenterState`
+/// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
     /// # Errors
     /// Must confirm an authority view within this call; cached-only reads fail.
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError>;
     /// # Errors
-    /// Public visibility and lifecycle facts MUST share one freshly confirmed
-    /// envelope. A business authority cannot silently omit its private objects.
+    /// Public visibility, lifecycle facts and immutable query bindings MUST
+    /// share one freshly confirmed envelope. No second template read/fallback.
     fn public_snapshot(&mut self) -> Result<crate::PublicSnapshot, AuthorityError>;
     /// # Errors
     /// Acceptance and the original outbox commit together.
@@ -321,69 +322,4 @@ pub trait AuthorityPort: Send + 'static {
     /// # Errors
     /// Unknown commits require explicit durable reconciliation.
     fn recover(&mut self) -> Result<(), AuthorityError>;
-}
-// A bare lifecycle authority has no internal template-validation objects.
-// Business envelopes use SharedBusinessAuthority's SAME-envelope projection;
-// a blanket implementation would silently leak their hidden sandboxes.
-impl AuthorityPort for CenterAuthority<CenterState> {
-    fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
-        Self::snapshot(self)
-    }
-    fn public_snapshot(&mut self) -> Result<crate::PublicSnapshot, AuthorityError> {
-        Ok(crate::PublicSnapshot {
-            state: Self::snapshot(self)?,
-            hidden_sandboxes: Vec::new(),
-        })
-    }
-    fn create(
-        &mut self,
-        tenant: &TenantId,
-        binding: CreateBinding,
-        now_ms: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        Self::create(self, tenant, binding, now_ms)
-    }
-    fn renew(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-        end_at_ms: u64,
-        now_ms: u64,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        Self::renew(self, tenant, sandbox, end_at_ms, now_ms)
-    }
-    fn destroy(
-        &mut self,
-        tenant: &TenantId,
-        sandbox: &SandboxId,
-    ) -> Result<LifecycleRequest, AuthorityError> {
-        Self::destroy(self, tenant, sandbox)
-    }
-    fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        Self::apply_response(self, response)
-    }
-    fn compact_confirmed(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        Self::compact_confirmed(self, response)
-    }
-    fn confirm_terminal(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
-        Self::confirm_terminal(self, response)
-    }
-    fn begin_drain(&mut self, node: &NodeIdentity) -> Result<(), AuthorityError> {
-        Self::begin_drain(self, node)
-    }
-    fn begin_close(
-        &mut self,
-        terminal: &LifecycleResponse,
-    ) -> Result<WindowCloseRequest, AuthorityError> {
-        Self::begin_close(self, terminal)
-    }
-    fn close_batch(&mut self) -> Result<Vec<WindowCloseRequest>, AuthorityError> {
-        Self::close_batch(self)
-    }
-    fn apply_close_ack(&mut self, ack: &WindowCloseAck) -> Result<(), AuthorityError> {
-        Self::apply_close_ack(self, ack)
-    }
-    fn recover(&mut self) -> Result<(), AuthorityError> {
-        Self::recover(self)
-    }
 }
