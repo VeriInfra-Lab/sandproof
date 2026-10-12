@@ -15,7 +15,7 @@
 | [协议样例](../../sandbox-protocol/tests/contract_examples.rs)、[依赖锁](../../Cargo.lock) | 编解码/数值边界的固定输入，库模型版本登记 |
 | [抽取入口](../../scripts/regenerate-rust-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前本地入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
 
-代码定位基线为总览指定提交；证明开始时重新冻结真实候选。文中的定理名是**拟建立的接口名**，不是已有 Lean 定理。具体 Lean 文件在首批任务中确定；生成文件只由工具生成。
+代码定位基线为总览指定提交；证明开始时重新冻结真实候选。文中的定理名是接口义务，不自动表示已经证明；实际名称、版本、条件及剩余项见[覆盖记录](../proof-coverage.md)。公共规范及表示关系分别位于 [Model](../../SandboxModel/Foundations/Model.lean) 与 [Representation](../../SandboxModel/Foundations/Representation.lean)，具体定理从[公共证明入口](../../SandboxModel/Foundations.lean)导入；生成文件只由工具生成。
 
 ## 2 共有对象与合同形式
 
@@ -50,7 +50,7 @@
 
 每批分别交付模型定义及可实现初态、性质证明、指定 Rust 对应、成功与首个拒绝/未知分支、邻接义务、最小正常/禁止轨迹及完整检查。禁止把“拒绝所有输入”当安全实现；完备性须证明满足全部前提的可表示输入确实被接受。
 
-证明源码组织按模块责任：新增独立系统规范/局部性质/表示关系/邻接组合分别放在 `SandboxModel` 下清晰命名的模块；历史本地模型与 `RustRefinement` 保留其适用版本，不强行混入中心类型。具体文件名由首批PR确定并登记导入/审计根；一个公共定义只有一个来源。当前计划不提前创建未解Lean定理库，也不手改生成目录。
+证明源码组织按模块责任：新增独立系统规范/局部性质/表示关系/邻接组合分别放在 `SandboxModel` 下清晰命名的模块；历史本地模型与 `RustRefinement` 保留其适用版本，不强行混入中心类型。公共基础使用 `SandboxModel/Foundations/`，抽取根使用 `verification/extract-foundations/`，生成物使用 `verification/aeneas/foundations/`，审计根为 `SandboxModel/Foundations/Audit.lean`；一个公共定义只有一个来源。未解义务保持在issue/覆盖记录中，不提前创建占位定理库，也不手改生成目录。
 
 每批issue至少填写以下表；前提提供方填具体模块/定理或外部合同编号，不能只填“系统保证”。未冻结源码可以开展可行性试验，但不能报告指定实现证明完成。
 

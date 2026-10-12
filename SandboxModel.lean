@@ -24,5 +24,6 @@ import SandboxModel.Persistence
 import SandboxModel.PersistenceShell
 import SandboxModel.AllocationProofs
 import SandboxModel.RustRefinement
+import SandboxModel.Foundations
 
 /-! Public entry point for the verified sandbox state machine. -/
