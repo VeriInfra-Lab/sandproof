@@ -206,10 +206,20 @@ def pool_shape(settings, cpu, memory, disk, name):
     positive(settings, "max_active_per_tenant")
 
 
+def validate_runtime_capacity(runtime, limits, *, registry, kernel_bytes):
+    """Necessary runtime/publication conditions, also for prebuilt artifacts."""
+    lifetime(runtime, positive(registry, "validation_timeout_secs"), "publication")
+    target = limits["max_disk_mib"] * MIB
+    pool_shape(runtime, limits["max_cpu"], (limits["max_memory_mib"] + HOST_MEMORY_OVERHEAD_MIB) * MIB, target, "runtime")
+    for field in ("max_artifact_bytes_global", "max_artifact_bytes_per_tenant"):
+        if positive(registry, field) < target + kernel_bytes:
+            raise ValueError("publication artifact budget cannot contain one maximum candidate")
+
+
 def validate_capacity(runtime, builder, limits, base, *, registry, kernel_bytes, largest_tool_bytes):
     """Checks static necessary conditions; returns the actual bound builder disk."""
     lifetime(builder, limits["timeout_seconds"] + 60, "builder")
-    lifetime(runtime, positive(registry, "validation_timeout_secs"), "publication")
+    validate_runtime_capacity(runtime, limits, registry=registry, kernel_bytes=kernel_bytes)
     shape = base["resources"]
     disk = positive(shape, "disk_bytes")
     if base["rootfs"]["size_bytes"] != disk:
@@ -227,10 +237,6 @@ def validate_capacity(runtime, builder, limits, base, *, registry, kernel_bytes,
         raise ValueError("builder upload budget must cover input/tools and HTTP envelope")
     if positive(transfer, "file_download_bytes") < max(target, limits["max_log_bytes"], 128 * 1024):
         raise ValueError("builder download budget must cover a complete candidate and logs")
-    pool_shape(runtime, limits["max_cpu"], (limits["max_memory_mib"] + HOST_MEMORY_OVERHEAD_MIB) * MIB, target, "runtime")
-    for field in ("max_artifact_bytes_global", "max_artifact_bytes_per_tenant"):
-        if positive(registry, field) < target + kernel_bytes:
-            raise ValueError("publication artifact budget cannot contain one maximum candidate")
     return disk
 
 

@@ -252,13 +252,11 @@ def exercise(args):
                     input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes,
                     job_limit=job_limit)
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
-                         profile=load(args.budget_profile))
+                         profile=load(args.budget_profile), build_required=ci_fixtures is None)
     deployment = acceptance_disk_budgets(deployment, bounded_policy)
     if prepared_profile is not None:
         from tools.template_physical_storage import envelope
         deployment['host']['minimum_free_disk_bytes'] = 2 * envelope(prepared_profile)[0]
-        deployment['host']['minimum_cpus'] -= deployment['builder_shape']['cpu_count']
-        deployment['host']['minimum_available_memory_bytes'] -= deployment['host']['builder_vmm_memory_bytes']
         deployment['prepared_ci_disk_budget_bytes'] = disk_ceiling
         deployment['builder_dispatched'] = False
     proxy_binary = getattr(args, 'proxy_binary', None)

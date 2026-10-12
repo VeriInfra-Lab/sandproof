@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 
 from tools.generic_capacity import MIB
-from tools.template_build_config import HOST_MEMORY_OVERHEAD_MIB, UPLOAD_ENVELOPE_BYTES, validate_capacity
+from tools.template_build_config import (HOST_MEMORY_OVERHEAD_MIB, UPLOAD_ENVELOPE_BYTES,
+                                        validate_capacity, validate_runtime_capacity)
 from tools.service_cgroup import limits as service_limits
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +31,14 @@ def positive(values, name):
     return value
 
 
-def budgets(capacity, builder_bytes, kernel_bytes, *, profile=None):
+def budgets(capacity, builder_bytes, kernel_bytes, *, profile=None, build_required=True):
+    """Plan the existing runner; prebuilt CI does not admit a builder VM.
+
+    Callers select runtime-only validation only after verifying prebuilt fixture
+    provenance. This is not a deployment option or a build-service bypass.
+    """
+    if type(build_required) is not bool:
+        raise ValueError('explicit build requirement must be boolean')
     profile = copy.deepcopy(load() if profile is None else profile)
     if type(profile.get('schema_version')) is not int or profile['schema_version'] != 1:
         raise ValueError('unsupported acceptance profile')
@@ -92,18 +100,23 @@ def budgets(capacity, builder_bytes, kernel_bytes, *, profile=None):
                           'disk_bytes': builder_bytes}, 'rootfs': {'size_bytes': builder_bytes}}
     # Reuse the service's actual cross-pool contract rather than a parallel
     # model of what its publication and transport layers will accept.
-    validate_capacity(runtime | {'templates': {'compute_limits': runtime_compute}},
-                      builder | {'templates': {'compute_limits': builder_compute}}, limits, base,
-                      registry=registry, kernel_bytes=kernel_bytes, largest_tool_bytes=capacity['input_bytes'])
-    host = {'minimum_cpus': r['max_vcpus'] + b['cpu_count'] + h['control_cpu_allowance'] + h['cpu_headroom'],
-            'minimum_available_memory_bytes': r['max_host_memory_bytes'] + builder_memory
+    runtime_config = runtime | {'templates': {'compute_limits': runtime_compute}}
+    if build_required:
+        validate_capacity(runtime_config,
+                          builder | {'templates': {'compute_limits': builder_compute}}, limits, base,
+                          registry=registry, kernel_bytes=kernel_bytes, largest_tool_bytes=capacity['input_bytes'])
+    else:
+        validate_runtime_capacity(runtime_config, limits, registry=registry, kernel_bytes=kernel_bytes)
+    admitted_builder_memory = builder_memory if build_required else 0
+    host = {'minimum_cpus': r['max_vcpus'] + (b['cpu_count'] if build_required else 0) + h['control_cpu_allowance'] + h['cpu_headroom'],
+            'minimum_available_memory_bytes': r['max_host_memory_bytes'] + admitted_builder_memory
                 + h['control_memory_allowance_bytes'] + h['memory_headroom_bytes'],
             # The former serial estimate omitted extra live runtime disks.
             # Builder/candidate copies are already charged in workspace.
             'minimum_free_disk_bytes': capacity['required_free_bytes'] + runtime_disk
                 + workspace - capacity['workspace_bytes'],
             'runtime_disk_bytes': runtime_disk, 'runtime_vmm_memory_bytes': r['max_host_memory_bytes'],
-            'builder_vmm_memory_bytes': builder_memory, **h,
+            'builder_vmm_memory_bytes': admitted_builder_memory, **h,
             'control_allowance_enforced_by_cgroup': False}
     return {'runtime': runtime, 'builder': builder, 'runtime_compute': runtime_compute,
             'builder_compute': builder_compute, 'builder_shape': {'cpu_count': b['cpu_count'],

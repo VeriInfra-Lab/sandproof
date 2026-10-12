@@ -82,6 +82,38 @@ def configured(root, deployment, *, builder_bytes=32 * GIB, **extra_config):
 
 
 class AcceptanceConfigTests(unittest.TestCase):
+    def test_prebuilt_runtime_does_not_require_a_builder_sized_fallback_disk(self):
+        capacity = plan([{'name': 'prebuilt', 'requirements': {'cpus': 1,
+            'memory_mib': 2048, 'disk_mib': 10240, 'build_timeout_sec': 600}}], 1, GIB, 64 * MIB)
+        before = copy.deepcopy(capacity)
+        profile = load(PROFILE.with_name('template-service-budgets-16g.json'))
+        runtime_only = budgets(capacity, GIB, 64 * MIB, profile=profile, build_required=False)
+        self.assertEqual(runtime_only['host']['builder_vmm_memory_bytes'], 0)
+        self.assertEqual(runtime_only['runtime']['max_disk_bytes_per_tenant'], 40 * GIB)
+        self.assertEqual(runtime_only['limits']['max_disk_mib'], 10240)
+        self.assertEqual(runtime_only['runtime']['data_transfer'], json.loads(RUNTIME_PROFILE.read_text())['data_transfer'])
+        self.assertEqual(capacity, before)
+        with self.assertRaisesRegex(ValueError, 'builder disk'):
+            budgets(capacity, GIB, 64 * MIB, profile=profile)
+        full = budgets(capacity, 32 * GIB, 64 * MIB, profile=profile)
+        self.assertEqual(runtime_only['host']['minimum_cpus'],
+                         full['host']['minimum_cpus'] - full['builder_shape']['cpu_count'])
+        self.assertEqual(runtime_only['host']['minimum_available_memory_bytes'],
+                         full['host']['minimum_available_memory_bytes'] - full['host']['builder_vmm_memory_bytes'])
+        for field in ('runtime_compute', 'registry', 'limits', 'service_cgroup'):
+            self.assertEqual(runtime_only[field], full[field])
+
+    def test_prebuilt_runtime_keeps_shape_validation_and_rejects_ambiguous_build_flags(self):
+        capacity = inputs(1)
+        for field, value in (('max_vcpus', 3), ('max_host_memory_bytes', 8192 * MIB)):
+            profile = load()
+            profile['runtime'][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                budgets(capacity, GIB, 64 * MIB, profile=profile, build_required=False)
+        for value in (0, 1, None, 'false'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                budgets(capacity, GIB, 64 * MIB, build_required=value)
+
     def test_above_eight_gib_input_reaches_service_and_worker_with_matching_reserves(self):
         entries = [{'name': 'large-public-image', 'requirements': {'cpus': 1, 'memory_mib': 2048,
                     'disk_mib': 10240, 'build_timeout_sec': 600}}]
