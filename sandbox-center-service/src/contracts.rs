@@ -220,6 +220,10 @@ pub trait CommittedDriver: Send + Sync {
     fn snapshot(&self) -> Result<CenterState, PortError>;
     /// # Errors
     /// Only an already committed exact request is driven. Unknown preserves it.
+    /// Trusted assembly supplies the exact original request already accepted
+    /// by this application's authority, not a caller-constructed lookalike.
+    /// A retired terminal receipt rechecks its complete control identity; it
+    /// does not retain/revalidate the canonical create body or reopen a window.
     fn drive_committed(&self, request: &LifecycleRequest) -> Result<LifecycleResponse, PortError>;
     /// # Errors
     /// Commits/reuses the original Destroy through the original authority.

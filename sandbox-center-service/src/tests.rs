@@ -1,6 +1,7 @@
 //! The storage/host substitutes inject faults around the SAME pure center
 //! transitions. These tests do not claim Redis, TLS or KVM acceptance.
 mod late_observation;
+mod retired_destroy;
 mod session_wait;
 #[test]
 fn physical_observation_has_bounded_freshness_and_clock_skew() {
@@ -201,6 +202,7 @@ struct MemoryAuthority {
     projection_steps: std::collections::VecDeque<ProjectionStep>,
     projection_reads: u64,
     fence_after_stale: bool,
+    retirement_step: Option<retired_destroy::RetirementStep>,
 }
 enum ProjectionStep {
     Health(u64),
@@ -216,6 +218,8 @@ fn consume_reply_budget(budget: Duration) {
 }
 impl AuthorityPort for MemoryAuthority {
     fn snapshot(&mut self) -> Result<CenterState, AuthorityError> {
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::BeforeConfirmationSnapshot)?;
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::RetiredSnapshot)?;
         if self.unreadable.load(Ordering::SeqCst) {
             return Err(AuthorityError::RecoveryRequired);
         }
@@ -274,6 +278,7 @@ impl AuthorityPort for MemoryAuthority {
         self.snapshot()?;
         let (state, request) = self.state.destroy(tenant, sandbox)?;
         self.state = state;
+        self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterDestroyAccepted)?;
         Ok(request)
     }
     fn apply_response(&mut self, response: &LifecycleResponse) -> Result<(), AuthorityError> {
@@ -281,6 +286,9 @@ impl AuthorityPort for MemoryAuthority {
         match self.state.apply_response(response) {
             Ok(next) => self.state = next,
             Err(error) => {
+                if error == sandproof_center_core::DecisionError::Stale {
+                    self.retire_at_checkpoint(retired_destroy::Checkpoint::AfterStaleApply)?;
+                }
                 if self.fence_after_stale && error == sandproof_center_core::DecisionError::Stale {
                     self.unreadable.store(true, Ordering::SeqCst);
                 }
@@ -337,6 +345,7 @@ struct Host {
     unknown_close: Arc<AtomicBool>,
     close_requests: Arc<Mutex<Vec<WindowCloseRequest>>>,
     confirmation_budgets: Arc<Mutex<Vec<Duration>>>,
+    confirmation_gate: Arc<Mutex<Option<NetworkGate>>>,
     recorded: Arc<AtomicBool>,
     capacity_refusal: Arc<AtomicBool>,
     last: Arc<Mutex<Option<LifecycleRequest>>>,
@@ -361,6 +370,7 @@ impl Default for Host {
             unknown_close: Arc::new(AtomicBool::new(false)),
             close_requests: Arc::new(Mutex::new(Vec::new())),
             confirmation_budgets: Arc::new(Mutex::new(Vec::new())),
+            confirmation_gate: Arc::new(Mutex::new(None)),
             recorded: Arc::new(AtomicBool::new(false)),
             capacity_refusal: Arc::new(AtomicBool::new(false)),
             last: Arc::new(Mutex::new(None)),
@@ -404,6 +414,11 @@ impl HostPort for Host {
             != Some(result)
         {
             return Err(PortError::Conflict);
+        }
+        let gate = self.confirmation_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            gate.entered.send(()).unwrap();
+            gate.release.recv().unwrap();
         }
         Ok(result.clone())
     }
@@ -781,6 +796,7 @@ fn fixture() -> Fixture {
                 projection_steps: std::collections::VecDeque::new(),
                 projection_reads: 0,
                 fence_after_stale: false,
+                retirement_step: None,
             },
             host.clone(),
             Templates,

@@ -8,7 +8,9 @@ use sandproof_controller_service::application::{
     Clock, ConnectCommand, CreateCommand, SystemClock,
 };
 use sandproof_controller_service::{CreateNetworking, CreateOptions};
-use sandproof_protocol::internal::lifecycle::{LifecycleFact, LifecycleRequest, LifecycleResponse};
+use sandproof_protocol::internal::lifecycle::{
+    Intent, LifecycleFact, LifecycleRequest, LifecycleResponse,
+};
 use sandproof_protocol::internal::{NodeIdentity, window::WindowCloseRequest};
 use sandproof_protocol::{SandboxId, TenantId};
 use std::{
@@ -286,12 +288,37 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 // the SAME durable intent again within the original deadline;
                 // never allocate a replacement or reset that deadline.
                 Err(AttemptError::UnknownHost) => {}
-                Err(AttemptError::SharedAuthority | AttemptError::Superseded) => {
+                Err(AttemptError::SharedAuthority) => {
                     return Err(PortError::OutcomeUnknown);
+                }
+                Err(AttemptError::Superseded) => {
+                    return self.retired_destroy_result(request, deadline);
                 }
             }
             self.poll_pause(deadline);
         }
+    }
+    /// Retirement can overtake any detached send/confirmation of this SAME
+    /// destroy already durably accepted by this application's authority. The
+    /// receipt matches its full control identity, not its canonical create body;
+    /// callers still supply the original committed request. Neither absence nor
+    /// a slot frontier or another intent proves success.
+    fn retired_destroy_result(
+        &self,
+        request: &LifecycleRequest,
+        deadline: Instant,
+    ) -> Result<LifecycleResponse, PortError> {
+        let state = self.snapshot().map_err(|_| PortError::OutcomeUnknown)?;
+        remaining(deadline).ok_or(PortError::OutcomeUnknown)?;
+        let result = state
+            .lane(&request.identity.node, request.identity.retention_slot)
+            .and_then(sandproof_center_core::RetentionLane::last_retired)
+            .filter(|result| {
+                request.intent == Intent::Destroy
+                    && result.fact == LifecycleFact::Cleaned
+                    && result.validate_for(request).is_ok()
+            });
+        result.cloned().ok_or(PortError::OutcomeUnknown)
     }
     fn poll_pause(&self, deadline: Instant) {
         std::thread::sleep(
