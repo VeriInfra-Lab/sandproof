@@ -9,7 +9,7 @@ rust-version.workspace = true
 base64 = "=0.22.1"
 percent-encoding = "=2.3.2"
 sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
-sandproof-controller-service = { path = "../controller-service" }
+sandproof-controller-service = { path = "../controller-service", default-features = false }
 sandproof-protocol = { path = "../sandbox-protocol" }
 axum = { version = "=0.8.9", features = ["json", "tokio", "http1"] }
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -19,6 +19,7 @@ time = { version = "=0.3.44", features = ["formatting", "parsing"] }
 tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 
 [dev-dependencies]
+sandproof-controller-service = { path = "../controller-service", features = ["durable"] }
 rusqlite = "=0.40.2"
 tempfile = "=3.23.0"
 tower = { version = "=0.5.2", features = ["util"] }

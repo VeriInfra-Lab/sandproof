@@ -1,0 +1,239 @@
+{
+  "native": {
+    "namespace": "0123456789abcdef",
+    "database": "/var/lib/sandproof-host/db/controller.db",
+    "node_state_dir": "/var/lib/sandproof-host/state",
+    "jailer": "/var/lib/sandproof-host/control/bin/jailer",
+    "firecracker": "/var/lib/sandproof-host/control/bin/firecracker",
+    "chroot_base": "/var/lib/sandproof-host/jails",
+    "kernel": "/var/lib/sandproof-host/control/bootstrap/kernel",
+    "rootfs": "/var/lib/sandproof-host/control/bootstrap/rootfs.ext4",
+    "uid_base": 3200000,
+    "bounded_host": {
+      "physical_storage": {
+        "version": 1,
+        "coordination_file": "/var/lib/sandproof-host/physical-profile",
+        "pools": [
+          {
+            "role": "runtime",
+            "namespace": "0123456789abcdef",
+            "database": "/var/lib/sandproof-host/db/controller.db",
+            "node_state_dir": "/var/lib/sandproof-host/state",
+            "chroot_base": "/var/lib/sandproof-host/jails",
+            "rootfs_budget_bytes": 2147483648,
+            "max_host_slots": 2,
+            "kernel_copy_bytes": 67108864,
+            "runtime_copy_bytes": 16777216,
+            "cleanup_reserve_bytes": 1897922560,
+            "host_metadata_bytes": 805306368,
+            "host_metadata_inodes": 2048,
+            "jail_inodes_per_slot": 12
+          }
+        ],
+        "public_build": null,
+        "host_template_caches": [
+          {
+            "namespace": "0123456789abcdef",
+            "root": "/var/lib/sandproof-host/template-cache",
+            "max_entries": 2,
+            "max_downloads": 1,
+            "max_entry_bytes": 2147483648,
+            "artifact_bytes": 4294967296,
+            "temporary_bytes": 2147483648,
+            "metadata_bytes": 282624,
+            "inode_budget": 19
+          }
+        ],
+        "service_data": [
+          {
+            "root": "/var/lib/sandproof-services/center",
+            "owner_uid": 1001,
+            "peak_bytes": 12884901888,
+            "inode_budget": 4096
+          },
+          {
+            "root": "/var/lib/sandproof-services/redis",
+            "owner_uid": 1002,
+            "peak_bytes": 1073741824,
+            "inode_budget": 4096
+          },
+          {
+            "root": "/var/lib/sandproof-host/control",
+            "owner_uid": 0,
+            "peak_bytes": 2147483648,
+            "inode_budget": 1024
+          }
+        ],
+        "filesystem_overhead_bytes": 33554432,
+        "filesystem_overhead_inodes": 16384
+      },
+      "console_policy": "discard",
+      "maintenance": {
+        "max_retained_results": 128,
+        "max_host_slots": 2,
+        "windows": {
+          "max_open_windows": 2,
+          "max_duration_ms": 1000
+        }
+      },
+      "uid_base": 3200000,
+      "uplink_base": 0
+    },
+    "maintenance": {
+      "capacity": {
+        "max_live_sandboxes": 64,
+        "max_sql_rows": 4096,
+        "max_sql_bytes": 16777216,
+        "max_sql_value_bytes": 16777216,
+        "max_receipt_bytes": 16384,
+        "max_transaction_inputs": 4,
+        "max_transaction_bytes": 32768,
+        "max_database_bytes": 536870912,
+        "max_wal_bytes": 545259520,
+        "max_shm_bytes": 2097152,
+        "checkpoint_scratch_bytes": 8388608,
+        "max_online_storage_bytes": 1092616192
+      },
+      "retention_ms": 60000,
+      "max_checkpoint_bytes": 4194304,
+      "max_records": 10000,
+      "max_references": 1000000,
+      "max_tail_inputs": 1000,
+      "max_tail_bytes": 4194304,
+      "max_input_bytes": 8192,
+      "prune_batch_rows": 7
+    },
+    "vcpu_count": 1,
+    "memory_mib": 128,
+    "host_resources": {
+      "cgroup_parent": "/sys/fs/cgroup/sandproof-vms",
+      "memory_max_bytes": 135266304
+    },
+    "file_policy_digest": 1,
+    "max_active_global": 2,
+    "max_active_per_tenant": 2,
+    "max_disk_bytes_global": 4045406208,
+    "max_disk_bytes_per_tenant": 2147483648,
+    "cleanup_reserve_bytes": 1897922560,
+    "max_timeout_secs": 300,
+    "max_lifetime_secs": 3600,
+    "startup_timeout_secs": 300,
+    "default_timeout_secs": 300,
+    "public_ipv4_enabled": false,
+    "expiry_scan_seconds": 1,
+    "data_transfer": {
+      "file_upload_bytes": 67108864,
+      "file_download_bytes": 100663296,
+      "command_input_bytes": 8388608,
+      "rpc_request_bytes": 65536,
+      "rpc_response_bytes": 1048576,
+      "max_transfers": 8,
+      "max_transfers_per_vm": 4,
+      "control_reserve": 1,
+      "request_idle_seconds": 30,
+      "file_idle_seconds": 30,
+      "write_idle_seconds": 30
+    },
+    "templates": {
+      "templates": [
+        {
+          "template_id": "base",
+          "revision": "r1",
+          "owner": null,
+          "kernel": {
+            "path": "/var/lib/sandproof-host/control/bootstrap/kernel",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "size_bytes": 67108864
+          },
+          "rootfs": {
+            "path": "/var/lib/sandproof-host/control/bootstrap/rootfs.ext4",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "size_bytes": 1073741824
+          },
+          "resources": {
+            "cpu_count": 1,
+            "memory_mib": 128,
+            "host_memory_bytes": 135266304,
+            "disk_bytes": 1073741824
+          },
+          "envd_version": "0.9.0",
+          "startup": {
+            "workdir": "/home/user",
+            "argv": [],
+            "env_vars": {},
+            "user": "user"
+          }
+        }
+      ],
+      "aliases": {
+        "default": "base"
+      },
+      "compute_limits": {
+        "max_vcpus_global": 2,
+        "max_vcpus_per_tenant": 2,
+        "max_memory_bytes_global": 270532608,
+        "max_memory_bytes_per_tenant": 270532608
+      }
+    }
+  },
+  "inbox": {
+    "node": {
+      "deployment_id": "example-deployment",
+      "node_id": "host-runtime",
+      "node_generation": 1
+    },
+    "max_sandboxes": 4,
+    "operations_per_sandbox": 4,
+    "max_options_bytes": 4096
+  },
+  "internal": {
+    "bind": "127.0.0.1:9000",
+    "max_connections": 12,
+    "handshake_timeout_ms": 2000,
+    "request_timeout_ms": 10000,
+    "tls": {
+      "identity_chain": [
+        "/var/lib/sandproof-host/control/tls/host.der"
+      ],
+      "private_key": "/var/lib/sandproof-host/control/tls/host-key.der",
+      "roots": [
+        "/var/lib/sandproof-host/control/tls/ca.der"
+      ],
+      "center_leaves": [
+        "/var/lib/sandproof-host/control/tls/center.der"
+      ]
+    }
+  },
+  "template_cache": {
+    "namespace": "0123456789abcdef",
+    "root": "/var/lib/sandproof-host/template-cache",
+    "max_entries": 2,
+    "max_downloads": 1,
+    "max_entry_bytes": 2147483648,
+    "artifact_bytes": 4294967296,
+    "temporary_bytes": 2147483648,
+    "metadata_bytes": 282624,
+    "inode_budget": 19
+  },
+  "artifact_source": {
+    "address": "127.0.0.1:9100",
+    "server_name": "center.test",
+    "tls": {
+      "identity_chain": [
+        "/var/lib/sandproof-host/control/tls/host.der"
+      ],
+      "private_key": "/var/lib/sandproof-host/control/tls/host-key.der",
+      "roots": [
+        "/var/lib/sandproof-host/control/tls/ca.der"
+      ],
+      "artifact_leaves": [
+        "/var/lib/sandproof-host/control/tls/center.der"
+      ]
+    },
+    "max_connections": 1,
+    "handshake_timeout_ms": 2000,
+    "request_timeout_ms": 10000,
+    "download_timeout_ms": 900000,
+    "idle_timeout_ms": 30000
+  }
+}

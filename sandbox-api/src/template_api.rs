@@ -15,6 +15,26 @@ use axum::{
 };
 use serde::Deserialize;
 
+/// Only the protected build supervisor may call these two operations. They
+/// reuse the original template publication authority, not a second registry.
+pub trait BuildPublicationPort: Send + Sync + 'static {
+    /// # Errors
+    /// Only an owned candidate from the mandatory trusted artifact port is
+    /// accepted; an unknown committed publication retains its original ID.
+    fn publish_build_candidate(
+        &self,
+        tenant: &str,
+        candidate: &str,
+    ) -> Result<PublicationView, super::PortError>;
+    /// # Errors
+    /// Missing and foreign publications are indistinguishable.
+    fn build_publication(
+        &self,
+        tenant: &str,
+        candidate: &str,
+    ) -> Result<PublicationView, super::PortError>;
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PublishRequest {
@@ -67,6 +87,42 @@ async fn publication<P: ControllerPort>(
             state.admission.clone(),
             super::RequestClass::Ordinary,
             move || state.port.publication(&tenant, &id),
+        )
+        .await?,
+    ))
+}
+
+async fn publish_build<P: BuildPublicationPort>(
+    State(state): State<ApiState<P>>,
+    headers: HeaderMap,
+    input: Result<Json<PublishRequest>, JsonRejection>,
+) -> Result<Json<PublicationView>, ApiFailure> {
+    let tenant = authenticate(&state, &headers)?;
+    let Json(input) = input.map_err(|_| ApiFailure::BadRequest)?;
+    Ok(Json(
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || {
+                state
+                    .port
+                    .publish_build_candidate(&tenant, &input.candidate_id)
+            },
+        )
+        .await?,
+    ))
+}
+async fn publication_build<P: BuildPublicationPort>(
+    State(state): State<ApiState<P>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<PublicationView>, ApiFailure> {
+    let tenant = authenticate(&state, &headers)?;
+    Ok(Json(
+        blocking(
+            state.admission.clone(),
+            super::RequestClass::Ordinary,
+            move || state.port.build_publication(&tenant, &id),
         )
         .await?,
     ))
@@ -156,5 +212,14 @@ pub(super) fn routes<P: ControllerPort>() -> Router<ApiState<P>> {
         .route(
             "/sandproof/template-aliases/{name}",
             put(set_alias::<P>).delete(delete_alias::<P>),
+        )
+}
+
+pub(super) fn build_publication_routes<P: BuildPublicationPort>() -> Router<ApiState<P>> {
+    Router::new()
+        .route("/sandproof/template-publications", post(publish_build::<P>))
+        .route(
+            "/sandproof/template-publications/{id}",
+            get(publication_build::<P>),
         )
 }

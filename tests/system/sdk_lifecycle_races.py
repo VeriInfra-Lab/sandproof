@@ -34,9 +34,11 @@ import urllib.request
 from e2b import Sandbox
 
 from server_process_crash import (
-    complete_runtime, fetch, free_loopback_port, process_start_ticks, provision_runtime,
-    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
+    fetch, free_loopback_port, original_center_audit, original_create_identity,
+    prepare_fault_services, process_start_ticks, registered_cache_kernel,
+    terminal_cleanup_confirmed,
 )
+from _runtime_services import add_arguments
 
 
 def second_delete(port: int, key: str, sandbox_id: str, sent: threading.Event) -> int:
@@ -88,9 +90,6 @@ def exercise(args: argparse.Namespace) -> None:
     port = free_loopback_port()
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
-    binary = root / "sandproof-server"
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
     shutil.copyfile(args.kernel, kernel)
@@ -98,7 +97,6 @@ def exercise(args: argparse.Namespace) -> None:
     kernel.chmod(0o644)
     rootfs.chmod(0o644)
     base_digest = sha256_file(rootfs)
-    config = root / "config.json"
     settings = {
         "namespace": namespace,
         "database": str(root / "db/controller.db"),
@@ -112,9 +110,6 @@ def exercise(args: argparse.Namespace) -> None:
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
-        "bind": f"127.0.0.1:{port}",
-        "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": key}],
         "max_active_global": 2,
         "max_active_per_tenant": 2,
         "max_disk_bytes_global": disk_bytes * 4,
@@ -126,19 +121,17 @@ def exercise(args: argparse.Namespace) -> None:
         # the dedicated expiry tests exercise the periodic scanner separately.
         "expiry_scan_seconds": 3600,
     }
-    settings = complete_runtime(settings, slots=2)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
+    services = prepare_fault_services(args, root, settings, slots=2, key=key, port=port)
     gate = root / "stop-gate.sock"
-    log = root / "server.log"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     base_url = f"http://127.0.0.1:{port}"
     process = None
     completed = False
     try:
-        process = start_server(binary, config, log, None, gate)
-        wait_ready(opener, base_url, key, process)
+        gate_env = {"SANDPROOF_TEST_STOP_GATE": str(gate)}
+        services.start(host_envs={"host-0": gate_env})
+        services.wait_ready()
+        process = services.processes.children["host-0"]
         sdk = {
             "api_url": base_url,
             "sandbox_url": base_url,
@@ -157,6 +150,11 @@ def exercise(args: argparse.Namespace) -> None:
         listed = Sandbox.list(**sdk).next_items()
         assert len(listed) == 1 and listed[0].metadata == {"job": "issue-7"}
 
+        services.processes.stop("host-0")
+        native_id = services.native_id_for(sandbox.sandbox_id)
+        process = services.processes.start("host-0", env=gate_env)
+        services.wait_ready(for_admission=False)
+
         record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
         pid, ticks = record["pid"], record["start_time_ticks"]
         assert process_start_ticks(pid) == ticks
@@ -169,13 +167,23 @@ def exercise(args: argparse.Namespace) -> None:
             sent = threading.Event()
             second = pool.submit(second_delete, port, key, sandbox.sandbox_id, sent)
             assert sent.wait(timeout=10), "second kill never sent its HTTP request"
+            assert not first.done() and not second.done(), "cleanup was reported before the physical stop"
             with socket.socket(socket.AF_UNIX) as release:
                 release.connect(str(gate))
                 release.sendall(b"g")
             assert first.result(timeout=40)[0] == 204
-            assert second.result(timeout=40) == 404
+            # 两个真正重叠请求可等待同一回执；中心不持远程执行锁。
+            # 完全释放后的后置请求仍必须404，绝不能生成第二个Destroy。
+            assert second.result(timeout=40) in (204, 404)
 
         assert fetch(opener, base_url, "GET", f"/sandboxes/{sandbox.sandbox_id}", key)[0] == 404
+        assert fetch(opener, base_url, "DELETE", f"/sandboxes/{sandbox.sandbox_id}", key)[0] == 404
+        center = original_center_audit(services)
+        saved = [row for row in center["sandboxes"]
+                 if row["create"]["identity"]["sandbox_id"] == sandbox.sandbox_id]
+        assert len(saved) == 1 and saved[0]["released"] is True
+        destroys = [operation for operation in saved[0]["operations"] if operation["intent"] == "Destroy"]
+        assert len(destroys) == 1 and destroys[0]["response"]["fact"] == "Cleaned"
         with sqlite3.connect(root / "db/controller.db") as database:
             inputs = [row[0] for row in database.execute("SELECT input_json FROM controller_inputs")]
         assert sum(b'"Kill"' in row for row in inputs) == 1, "second kill was accepted"
@@ -195,47 +203,58 @@ def exercise(args: argparse.Namespace) -> None:
         with sqlite3.connect(root / "db/controller.db") as database:
             assert database.execute("SELECT count(*) FROM sandboxes").fetchone()[0] == before_reject
 
-        # Remove only this run's private kernel copy before the next create.
-        # No VMM can start; the uncertain PrepareVm is reconciled against an
-        # absent exact resource after the kernel is restored and service restarts.
-        held_kernel = root / "kernel-held"
-        kernel.rename(held_kernel)
+        # 新入口在本地准入前验证真实缓存。精确移走登记的缓存inode，
+        # 不删除无关bootstrap文件，也不伪造一个原本没有准入的native2。
+        cache_kernel, kernel_identity = registered_cache_kernel(services)
+        held_kernel = cache_kernel.with_name("kernel-held")
+        with sqlite3.connect(root / "db/controller.db") as database:
+            before_missing = database.execute(
+                "SELECT high_water FROM controller_id_highwaters WHERE kind='sandbox' AND scope=''"
+            ).fetchone()[0]
+        marker = {"missing_cache_intent": secrets.token_hex(16)}
+        cache_kernel.rename(held_kernel)
         try:
-            Sandbox.create(template="base", timeout=180, allow_internet_access=False, **sdk)
-        except Exception as failure:
-            assert "timeout" not in type(failure).__name__.lower(), failure
-        else:
-            raise AssertionError("missing private kernel was published as Running")
-        assert process.poll() is None, "controller crashed during failed create"
-        held_kernel.rename(kernel)
-        stop_server(process)
-        process = start_server(binary, config, log, None)
-        wait_ready(opener, base_url, key, process)
+            status, _ = fetch(opener, base_url, "POST", "/v2/sandboxes", key,
+                {"templateID": "base", "timeout": 180, "allow_internet_access": False, "metadata": marker})
+            assert status >= 500, "missing cache kernel was published as Running"
+            assert process.poll() is None, "host crashed during an unavailable template"
+            original = original_create_identity(services, marker)
+            # Cleaned来自同一真实全局请求和原宿主持久终止围栏，不能从SQL缺席推断。
+            assert fetch(opener, base_url, "DELETE", "/sandboxes/" + original["sandbox_id"], key)[0] == 204
+            with sqlite3.connect(root / "db/controller.db") as database:
+                assert database.execute(
+                    "SELECT high_water FROM controller_id_highwaters WHERE kind='sandbox' AND scope=''"
+                ).fetchone()[0] == before_missing
+                assert not database.execute("SELECT state_blob FROM sandboxes WHERE sandbox_id=?",
+                                            (f"sb-{namespace}-2",)).fetchall()
+        finally:
+            held_kernel.rename(cache_kernel)
+            restored = cache_kernel.stat()
+            assert (restored.st_dev, restored.st_ino) == kernel_identity
+        services.processes.stop("host-0")
+        process = services.processes.start("host-0")
+        services.wait_ready(for_admission=False)
         assert Sandbox.list(**sdk).next_items() == []
         failed_vm = f"vm-{namespace}-1"
         assert not Path(f"/run/netns/{failed_vm}").exists()
         assert not (root / "jails" / args.firecracker.name / failed_vm).exists()
-        with sqlite3.connect(root / "db/controller.db") as database:
-            failed = [json.loads(row[0]) for row in database.execute(
-                "SELECT state_blob FROM sandboxes WHERE sandbox_id=?", (f"sb-{namespace}-2",))]
-        assert len(failed) == 1
-        assert failed[0]["phase"] == "Destroyed"
-        assert "Failed" in failed[0]["current_operation"]["status"]
-        assert terminal_cleanup_confirmed(root / "db/controller.db", sandbox.sandbox_id)
+        assert fetch(opener, base_url, "GET", "/sandboxes/" + original["sandbox_id"], key)[0] == 404
+        assert terminal_cleanup_confirmed(root / "db/controller.db", native_id)
         assert sha256_file(rootfs) == base_digest
         completed = True
         print(json.dumps({
             "commit_scope": "real SDK/server/VM, fixed base and explicit no-internet",
-            "binary_sha256": sha256_file(binary),
+            "host_sha256": sha256_file(args.host), "center_sha256": sha256_file(args.center),
             "create_env_and_metadata": "observed in guest and management responses",
-            "concurrent_kill": "204/404; one durable Kill; original VM stopped",
+            "concurrent_kill": "overlapping204/204-or404; later404; one globalDestroy/nativeKill; original VM stopped",
             "rejected_create": "400; no admission",
-            "failed_create": "missing private kernel; recovery publishes failed operation and Destroyed; no live VM",
+            "failed_create": "exact missing cache inode rejected before native admission; original globalDestroy Cleaned; no VM",
             "residual": "no exact process, netns, jail or stop gate; base unchanged",
         }))
     finally:
-        stop_server(process)
+        services.stop_all()
         if completed:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f"Exact failed-run artifacts retained: {root}", file=sys.stderr)
@@ -243,7 +262,7 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", required=True, type=Path)
+    add_arguments(parser)
     parser.add_argument("--jailer", required=True, type=Path)
     parser.add_argument("--firecracker", required=True, type=Path)
     parser.add_argument("--kernel", required=True, type=Path)

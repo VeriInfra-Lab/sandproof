@@ -4,12 +4,47 @@
 use super::{ControllerJournal, identity, storage, transaction::WorldTransaction};
 use crate::templates::ComputeLimits;
 use crate::{CrashInjector, CrashPoint, JournalError};
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sandbox_controller_core as core;
 
 pub use crate::host_contract::{
     AdmissionError, AdmissionLimits, CreateOptions, DEFAULT_TIMEOUT_SECS,
 };
+
+// The same canonical read is also used inside an already validated original
+// read transaction. It does not consult/re-enter the autocommit cache guard.
+pub(in crate::controller) fn read_create_options(
+    connection: &Connection,
+    namespace: &str,
+    sandbox: core::SandboxId,
+) -> Result<CreateOptions, AdmissionError> {
+    let id = identity::sandbox_id(namespace, sandbox)?;
+    let encoded: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
+            [id.as_str()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(bytes) = encoded {
+        let options: CreateOptions =
+            serde_json::from_slice(&bytes).map_err(|_| AdmissionError::InvalidCreateOptions)?;
+        if options.encoded()? != bytes {
+            return Err(AdmissionError::InvalidCreateOptions);
+        }
+        Ok(options)
+    } else {
+        let admitted: i64 = connection.query_row(
+            "SELECT count(*) FROM sandbox_lifetimes WHERE sandbox_id=?1",
+            [id.as_str()],
+            |row| row.get(0),
+        )?;
+        if admitted != 0 {
+            return Err(AdmissionError::MissingCreateOptions);
+        }
+        Ok(CreateOptions::default())
+    }
+}
 
 fn reserve_startup_in_admission(
     tx: &WorldTransaction<'_>,
@@ -84,7 +119,7 @@ fn checked_deadline(now_ms: i64, seconds: u64) -> Result<i64, AdmissionError> {
         .ok_or(AdmissionError::TimeOverflow)
 }
 
-fn read_lifetime(
+pub(super) fn read_lifetime(
     tx: &Transaction<'_>,
     namespace: &str,
     sandbox: core::SandboxId,
@@ -126,6 +161,72 @@ fn read_lifetime(
             }))
         },
     )
+}
+
+/// The original update preconditions, shared by local API normalization and
+/// authenticated fixed-deadline internal intents. Keep their rejection order.
+pub(super) fn lifetime_for_update(
+    tx: &WorldTransaction<'_>,
+    namespace: &str,
+    actor: &core::Actor,
+    sandbox: core::SandboxId,
+    now_ms: i64,
+) -> Result<Lifetime, AdmissionError> {
+    if now_ms < 0 {
+        return Err(AdmissionError::InvalidClock);
+    }
+    let world = tx.world();
+    let record = world
+        .sandbox_record(sandbox)
+        .ok_or(AdmissionError::NotRunning)?;
+    if actor != &core::Actor::Tenant(record.owner) {
+        return Err(AdmissionError::Unauthorized);
+    }
+    if record.phase == core::Phase::Revoking {
+        return Err(AdmissionError::ChangingState);
+    }
+    if record.phase != core::Phase::Running {
+        return Err(AdmissionError::NotRunning);
+    }
+    let lifetime = read_lifetime(tx, namespace, sandbox, record.owner)?
+        .ok_or(AdmissionError::MissingLifetime)?;
+    if lifetime.started_at_ms.is_some_and(|start| now_ms < start) {
+        return Err(AdmissionError::InvalidClock);
+    }
+    if now_ms > lifetime.max_deadline_ms {
+        return Err(AdmissionError::MaxLifetimeExceeded);
+    }
+    if lifetime.deadline_ms <= now_ms {
+        return Err(AdmissionError::Expired);
+    }
+    Ok(lifetime)
+}
+
+/// Write only a legal exact deadline. The caller owns the same transaction as
+/// its accepted operation/result; this does not renormalize a replay from now.
+pub(super) fn write_lifetime_deadline(
+    tx: &WorldTransaction<'_>,
+    namespace: &str,
+    sandbox: core::SandboxId,
+    mut lifetime: Lifetime,
+    end_ms: i64,
+) -> Result<Lifetime, AdmissionError> {
+    if end_ms < 0
+        || lifetime.started_at_ms.is_some_and(|start| end_ms < start)
+        || end_ms > lifetime.max_deadline_ms
+    {
+        return Err(AdmissionError::InvalidTimeout);
+    }
+    let id = identity::sandbox_id(namespace, sandbox)?;
+    if tx.execute(
+        "UPDATE sandbox_lifetimes SET deadline_ms=?1 WHERE sandbox_id=?2",
+        params![end_ms, id.as_str()],
+    )? != 1
+    {
+        return Err(AdmissionError::MissingLifetime);
+    }
+    lifetime.deadline_ms = end_ms;
+    Ok(lifetime)
 }
 
 fn active(record: &core::SandboxRecord) -> bool {
@@ -256,7 +357,7 @@ impl ControllerJournal {
         admission: CreateAdmission,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
-        self.admit_with_compute(request, admission, None, None, crashes)
+        self.admit_with_compute(request, admission, None, None, None, crashes)
     }
 
     /// Atomically bind a prebuilt template and charge its actual resource shape.
@@ -269,7 +370,7 @@ impl ControllerJournal {
         compute: ComputeLimits,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
-        self.admit_with_compute(request, admission, Some(compute), None, crashes)
+        self.admit_with_compute(request, admission, Some(compute), None, None, crashes)
     }
 
     /// The validation VM identity and create intent commit together, before host work.
@@ -288,6 +389,7 @@ impl ControllerJournal {
             admission,
             Some(compute),
             Some(publication),
+            None,
             crashes,
         )
     }
@@ -296,12 +398,13 @@ impl ControllerJournal {
         clippy::too_many_lines,
         reason = "all resource charges and the reducer intent must share one transaction"
     )]
-    fn admit_with_compute(
+    pub(super) fn admit_with_compute(
         &mut self,
         request: core::CreateRequest,
         admission: CreateAdmission,
         compute: Option<ComputeLimits>,
         publication: Option<&str>,
+        internal: Option<&super::internal_inbox::AdmissionAttachment>,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::ControllerDecision, AdmissionError> {
         let CreateAdmission {
@@ -371,63 +474,17 @@ impl ControllerJournal {
         if storage::unresolved(&world, request.sandbox) {
             return Err(JournalError::UnresolvedAction.into());
         }
-        let mut global = 0_u64;
-        let mut tenant = 0_u64;
-        let mut global_disk = 0_u64;
-        let mut tenant_disk = 0_u64;
-        let mut global_cpu = 0_u64;
-        let mut tenant_cpu = 0_u64;
-        let mut global_memory = 0_u64;
-        let mut tenant_memory = 0_u64;
-        for (id, record) in world.sandbox_records() {
-            if !accounted(&world, *id, record) {
-                continue;
-            }
-            let lifetime = read_lifetime(&tx, &self.namespace, *id, record.owner)?
-                .ok_or(AdmissionError::UnmanagedActive)?;
-            if compute.is_some() {
-                let bytes: Vec<u8> = tx.query_row(
-                    "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
-                    [identity::sandbox_id(&self.namespace, *id)?.as_str()],
-                    |row| row.get(0),
-                )?;
-                let stored: CreateOptions = serde_json::from_slice(&bytes)
-                    .map_err(|_| AdmissionError::InvalidCreateOptions)?;
-                if stored.encoded()? != bytes {
-                    return Err(AdmissionError::InvalidCreateOptions);
-                }
-                let template = stored.template.ok_or(AdmissionError::UnmanagedActive)?;
-                if template.resources.disk_bytes != lifetime.disk_bytes
-                    || template.owner.is_some_and(|owner| owner != record.owner.0)
-                {
-                    return Err(AdmissionError::CorruptLifetime);
-                }
-                global_cpu = global_cpu
-                    .checked_add(u64::from(template.resources.cpu_count))
-                    .ok_or(AdmissionError::QuotaExceeded)?;
-                global_memory = global_memory
-                    .checked_add(template.resources.host_memory_bytes)
-                    .ok_or(AdmissionError::QuotaExceeded)?;
-                if record.owner == request.owner {
-                    tenant_cpu = tenant_cpu
-                        .checked_add(u64::from(template.resources.cpu_count))
-                        .ok_or(AdmissionError::QuotaExceeded)?;
-                    tenant_memory = tenant_memory
-                        .checked_add(template.resources.host_memory_bytes)
-                        .ok_or(AdmissionError::QuotaExceeded)?;
-                }
-            }
-            global = global.checked_add(1).ok_or(AdmissionError::QuotaExceeded)?;
-            global_disk = global_disk
-                .checked_add(lifetime.disk_bytes)
-                .ok_or(AdmissionError::QuotaExceeded)?;
-            if record.owner == request.owner {
-                tenant = tenant.checked_add(1).ok_or(AdmissionError::QuotaExceeded)?;
-                tenant_disk = tenant_disk
-                    .checked_add(lifetime.disk_bytes)
-                    .ok_or(AdmissionError::QuotaExceeded)?;
-            }
-        }
+        let (global, tenant) = super::admission_usage::usage(
+            &tx,
+            &self.namespace,
+            &world,
+            request.owner,
+            compute.is_some(),
+        )?;
+        let (global_cpu, tenant_cpu) = (global.cpu, tenant.cpu);
+        let (global_memory, tenant_memory) = (global.memory_bytes, tenant.memory_bytes);
+        let (global_disk, tenant_disk) = (global.disk_bytes, tenant.disk_bytes);
+        let (global, tenant) = (global.instances, tenant.instances);
         if global >= limits.max_active_global
             || tenant >= limits.max_active_per_tenant
             || global_disk
@@ -461,8 +518,36 @@ impl ControllerJournal {
             // Template IDs are immutable after their first accepted use, even
             // across catalog replacement. Aliases may point at another ID.
             tx.execute("CREATE TABLE IF NOT EXISTS admitted_templates (template_id TEXT PRIMARY KEY, binding_json BLOB NOT NULL)", [])?;
+            // Distributed admission keeps GLOBAL cache authorization immutable
+            // across native tenant retirement. Native options remain the exact
+            // LOCAL owner projection used by the original core/worker rules.
+            let immutable = if let Some(attachment) = internal {
+                let registered = &attachment.registered_template;
+                let mut projected = registered.clone();
+                if projected.owner.is_some() {
+                    projected.owner = Some(request.owner.0);
+                }
+                // Global artifact paths are metadata only. Execution uses the
+                // checked host cache's exact local immutable paths.
+                projected.kernel.path.clone_from(&template.kernel.path);
+                projected.rootfs.path.clone_from(&template.rootfs.path);
+                if !registered.is_valid()
+                    || registered.owner.is_some_and(|owner| {
+                        owner.to_string() != attachment.request.identity.tenant_id.as_str()
+                    })
+                    || projected != *template
+                    || attachment.local.owner != request.owner
+                    || attachment.local.sandbox != request.sandbox
+                    || attachment.local.operation != request.operation
+                {
+                    return Err(AdmissionError::InvalidCreateOptions);
+                }
+                registered
+            } else {
+                template
+            };
             let binding =
-                serde_json::to_vec(template).map_err(|_| AdmissionError::InvalidCreateOptions)?;
+                serde_json::to_vec(immutable).map_err(|_| AdmissionError::InvalidCreateOptions)?;
             let previous: Option<Vec<u8>> = tx
                 .query_row(
                     "SELECT binding_json FROM admitted_templates WHERE template_id=?1",
@@ -526,6 +611,9 @@ impl ControllerJournal {
                     .ok_or(AdmissionError::InvalidCreateOptions)?,
             )?;
         }
+        if let Some(attachment) = internal {
+            super::internal_inbox::attach_admission(&tx, &self.namespace, attachment)?;
+        }
         reserved.next = tx.world();
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;
@@ -543,34 +631,7 @@ impl ControllerJournal {
     ) -> Result<CreateOptions, AdmissionError> {
         self.committed_world
             .ensure_ready(&self.journal.connection)?;
-        let id = identity::sandbox_id(&self.namespace, sandbox)?;
-        let encoded: Option<Vec<u8>> = self
-            .journal
-            .connection
-            .query_row(
-                "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
-                [id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(bytes) = encoded {
-            let options: CreateOptions =
-                serde_json::from_slice(&bytes).map_err(|_| AdmissionError::InvalidCreateOptions)?;
-            if options.encoded()? != bytes {
-                return Err(AdmissionError::InvalidCreateOptions);
-            }
-            Ok(options)
-        } else {
-            let admitted: i64 = self.journal.connection.query_row(
-                "SELECT count(*) FROM sandbox_lifetimes WHERE sandbox_id=?1",
-                [id.as_str()],
-                |row| row.get(0),
-            )?;
-            if admitted != 0 {
-                return Err(AdmissionError::MissingCreateOptions);
-            }
-            Ok(CreateOptions::default())
-        }
+        read_create_options(&self.journal.connection, &self.namespace, sandbox)
     }
 
     /// Verify owner, Running authority and unexpired lifetime. API data-plane
@@ -657,41 +718,13 @@ impl ControllerJournal {
             return Err(AdmissionError::InvalidClock);
         }
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        let world = tx.world();
-        let record = world
-            .sandbox_record(sandbox)
-            .ok_or(AdmissionError::NotRunning)?;
-        if actor != &core::Actor::Tenant(record.owner) {
-            return Err(AdmissionError::Unauthorized);
-        }
-        if record.phase == core::Phase::Revoking {
-            return Err(AdmissionError::ChangingState);
-        }
-        if record.phase != core::Phase::Running {
-            return Err(AdmissionError::NotRunning);
-        }
-        let mut lifetime = read_lifetime(&tx, &self.namespace, sandbox, record.owner)?
-            .ok_or(AdmissionError::MissingLifetime)?;
-        if lifetime.started_at_ms.is_some_and(|start| now_ms < start) {
-            return Err(AdmissionError::InvalidClock);
-        }
-        if now_ms > lifetime.max_deadline_ms {
-            return Err(AdmissionError::MaxLifetimeExceeded);
-        }
-        if lifetime.deadline_ms <= now_ms {
-            return Err(AdmissionError::Expired);
-        }
+        let mut lifetime = lifetime_for_update(&tx, &self.namespace, actor, sandbox, now_ms)?;
         // Widen before multiplying: even i64::MAX seconds clamps correctly.
         let capped =
             (i128::from(now_ms) + seconds * 1000).min(i128::from(lifetime.max_deadline_ms));
         let end = i64::try_from(capped).map_err(|_| AdmissionError::TimeOverflow)?;
         if allow_shorter || end > lifetime.deadline_ms {
-            let id = identity::sandbox_id(&self.namespace, sandbox)?;
-            tx.execute(
-                "UPDATE sandbox_lifetimes SET deadline_ms=?1 WHERE sandbox_id=?2",
-                params![end, id.as_str()],
-            )?;
-            lifetime.deadline_ms = end;
+            lifetime = write_lifetime_deadline(&tx, &self.namespace, sandbox, lifetime, end)?;
         }
         tx.commit()?;
         Ok(lifetime)

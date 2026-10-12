@@ -12,18 +12,15 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import argparse
-from contextlib import closing
 from io import BytesIO
 import importlib.metadata
 import ipaddress
 import json
 import os
 from pathlib import Path
-import re
 import secrets
 import shutil
 import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -36,10 +33,7 @@ if str(ROOT) not in sys.path:
 
 from tools.benchmark_proxy import BenchmarkProxy, save, trusted
 from tools import service_cgroup
-
-_retired_sandboxes = _runpy.run_path(
-    str(Path(__file__).with_name('_complete_runtime.py'))
-)['retired_sandboxes']
+from tools.runtime_create_recovery import recover_original_create, find_runtime_create
 
 
 def probe_result(result):
@@ -48,63 +42,13 @@ def probe_result(result):
     return result.stdout.strip() == 'allowed'
 
 
-def journal(database, intents, namespace, template, *, known=None):
-    """All requests to this fresh private deployment have durable correlations."""
-    with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
-        db.execute('BEGIN')
-        states = dict(db.execute('SELECT sandbox_id,state_blob FROM sandboxes'))
-        options_by_id = dict(db.execute('SELECT sandbox_id,options_json FROM sandbox_create_options'))
-        if states.keys() != options_by_id.keys():
-            raise RuntimeError('private probe journal rows incomplete')
-        rows = [(key, blob, options_by_id[key]) for key, blob in states.items()]
-        pending = db.execute("SELECT count(*) FROM outbox WHERE dispatch_state!='receipted'").fetchone()[0]
-        retired = _retired_sandboxes(db, namespace) if known is not None else set()
-    found = {}
-    for identity, blob, raw in rows:
-        state, options = json.loads(blob), json.loads(raw)
-        metadata = options.get('metadata')
-        attempt = metadata.get('attempt') if isinstance(metadata, dict) else None
-        if (attempt not in intents or metadata != intents[attempt] or attempt in found
-                or state['owner'] != 1 or options['template'] != template
-                or not re.fullmatch('sb-' + namespace + '-[1-9][0-9]*', identity)):
-            raise RuntimeError('private probe journal identity changed')
-        found[attempt] = {'id': identity, 'phase': state['phase']}
-        if known is not None:
-            if attempt in known and known[attempt] != identity:
-                raise RuntimeError('private probe original identity replaced')
-            known[attempt] = identity
-    if known is not None:
-        for attempt, identity in known.items():
-            if attempt not in intents or not re.fullmatch('sb-' + namespace + '-[1-9][0-9]*', identity):
-                raise RuntimeError('private probe saved identity invalid')
-            if attempt not in found and identity in retired:
-                found[attempt] = {'id': identity, 'phase': 'Retired'}
-    return found, pending
-
-
-def settle(database, intents, namespace, template, delete, *, deadline, dispatched=None, known=None):
-    if dispatched is None:
-        dispatched = set()
-    while time.monotonic() < deadline:
-        found, pending = journal(database, intents, namespace, template, known=known)
-        if set(found) == set(intents) and not pending and all(x['phase'] in ('Destroyed', 'Retired') for x in found.values()):
-            return found
-        for item in found.values():
-            if item['phase'] not in ('Starting', 'Destroyed', 'Retired') and item['id'] not in dispatched:
-                dispatched.add(item['id'])
-                try:
-                    delete(item['id'])  # A lost receipt is observed, never replayed.
-                except OSError:
-                    pass
-        time.sleep(.2)
-    raise TimeoutError('original create/destruction unknown; retain exact deployment')
-
-
 def exercise(args):
     from e2b import Sandbox
     from sdk_c02_acceptance import processes_in_uid_range, sha256_file
-    from server_process_crash import (complete_runtime, fetch, free_loopback_port,
-                                      provision_runtime, start_server, stop_server, wait_ready)
+    from server_process_crash import fetch, free_loopback_port
+    from _complete_runtime import complete_runtime
+    from _runtime_services import RuntimeServices
+    from _center_host_services import local_binding
     from server_template_isolation import audit_gone
     from server_templates import descriptor, MIB, record_for
     if sys.platform != 'linux' or os.geteuid() != 0:
@@ -117,10 +61,10 @@ def exercise(args):
     commit = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip()
     parent = args.scratch_parent.resolve(strict=True)
     trusted(parent, directory=True)
-    for name in ('server', 'kernel', 'rootfs', 'firecracker', 'jailer', 'probe', 'proxy_binary'):
+    for name in ('center', 'host', 'kernel', 'rootfs', 'firecracker', 'jailer', 'probe', 'proxy_binary'):
         setattr(args, name, getattr(args, name).resolve(strict=True))
     inputs = {name: {'sha256': sha256_file(getattr(args, name)), 'bytes': getattr(args, name).stat().st_size}
-              for name in ('server', 'kernel', 'rootfs', 'firecracker', 'jailer', 'probe', 'proxy_binary')}
+              for name in ('center', 'host', 'kernel', 'rootfs', 'firecracker', 'jailer', 'probe', 'proxy_binary')}
     if inputs['probe']['sha256'] != args.probe_sha256:
         raise ValueError('approved static probe digest required')
     if not 1000 <= args.uid_base < 2**32 - 1 or processes_in_uid_range(args.uid_base, args.uid_base):
@@ -162,27 +106,32 @@ def exercise(args):
         'kernel': template['kernel']['path'], 'rootfs': template['rootfs']['path'],
         'uid_base': args.uid_base, 'vcpu_count': 1, 'memory_mib': args.memory_mib,
         'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': (args.memory_mib + 256) * MIB},
-        'file_policy_digest': 1, 'bind': f'127.0.0.1:{port}', 'domain': 'example.invalid',
-        'credentials': [{'tenant': 1, 'secret': key}], 'public_ipv4_enabled': True,
+        'file_policy_digest': 1, 'public_ipv4_enabled': True,
         'max_active_global': 1, 'max_active_per_tenant': 1,
         'max_disk_bytes_global': 2 * inputs['rootfs']['bytes'], 'max_disk_bytes_per_tenant': 2 * inputs['rootfs']['bytes'],
         'cleanup_reserve_bytes': inputs['rootfs']['bytes'], 'max_timeout_secs': 600,
-        'default_timeout_secs': 300, 'expiry_scan_seconds': 1,
+        'default_timeout_secs': 300, 'max_lifetime_secs': 600,
+        'startup_timeout_secs': 300, 'expiry_scan_seconds': 1,
         'templates': {'templates': [template], 'aliases': {'base': 'proxy-policy'},
             'compute_limits': {'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
                 'max_memory_bytes_global': (args.memory_mib + 256) * MIB,
                 'max_memory_bytes_per_tenant': (args.memory_mib + 256) * MIB}}}
     cfg = complete_runtime(cfg, slots=1)
-    provision_runtime(cfg)
-    save(root / 'config.json', cfg)
     url = f'http://127.0.0.1:{port}'
     options = dict(api_url=url, sandbox_url=url, api_key=key, domain='example.invalid', retries=0, request_timeout=90)
     proxy = BenchmarkProxy(root / 'proxy', namespaces, args.proxy_binary, args.proxy_sha256, port=args.proxy_socks_port)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process, failure, quiescent = None, None, False
+    failure, quiescent = None, False
     intents, rows, cleanup_errors, dispatched = {}, [], [], set()
     known, identities = {}, {}
-    service_record = root / 'service.json'
+    service_record = args.service_cgroup_record
+    registry = dict(root=str(root/'unused-registry'),max_templates_global=1,
+        max_templates_per_tenant=1,max_artifact_bytes_global=inputs['rootfs']['bytes']*2,
+        max_artifact_bytes_per_tenant=inputs['rootfs']['bytes']*2,
+        max_template_disk_bytes=inputs['rootfs']['bytes'],validation_timeout_secs=120)
+    services = RuntimeServices.prepare(args,root,[cfg],[cfg['templates']],key,
+        url.removeprefix('http://'),service_record,job_count=4,registry_config=registry)
+    create_identities = {}
     helper = args.probe.read_bytes()
 
     def command(sb, text):
@@ -194,6 +143,37 @@ def exercise(args):
             raise AssertionError('network policy differs: ' + protocol + ' ' + address)
         rows.append({'protocol': protocol, 'address': address, 'port': port, 'allowed': actual})
 
+    def capture(attempt, identity, center, host):
+        if attempt in known and known[attempt] != identity['sandbox_id']:
+            raise RuntimeError('saved original global identity changed')
+        known[attempt] = identity['sandbox_id']
+        save(root/'original-identities.json',known)
+        create_identities[attempt] = identity
+        save(root/'original-create-identities.json',create_identities)
+        local = local_binding(host,identity['sandbox_id'],expected_node=identity['node'])
+        original = [row for row in host['native'] if row['sandbox']==local['sandbox']]
+        if len(original)!=1:
+            raise RuntimeError('original native observation unknown')
+        if original[0]['phase']=='Starting':
+            return False
+        services.processes.stop('host-0')
+        try:
+            native_id=services.native_id_for(identity['sandbox_id'])
+            secret,name,record=record_for(root,native_id=native_id)
+            bound=secret['template']
+            for field in ('template_id','revision','resources','envd_version'):
+                if bound[field]!=template[field]:
+                    raise RuntimeError('original immutable template changed')
+            for field in ('kernel','rootfs'):
+                if bound[field]['sha256']!=template[field]['sha256']:
+                    raise RuntimeError('original template fingerprint changed')
+            record['network_inode']=json.loads((root/'jails/.claims'/name/'network.json').read_text())['namespace_inode']
+            identities[name]=record
+            save(root/'resource-evidence.json',identities)
+        finally:
+            services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
+
     def create(label, **policy):
         attempt = secrets.token_hex(16)
         intents[attempt] = {'proxy_policy_probe': namespaces[0], 'attempt': attempt, 'case': label}
@@ -201,24 +181,41 @@ def exercise(args):
         sb = Sandbox.create(template='base', timeout=600, metadata=intents[attempt], **policy, **options)
         known[attempt] = sb.sandbox_id
         save(root / 'original-identities.json', known)
-        _, name, record = record_for(root, sb)
-        record['network_inode'] = json.loads((root / 'jails/.claims' / name / 'network.json').read_text())['namespace_inode']
-        identities[name] = record
-        save(root / 'resource-evidence.json', identities)
+        center=services.planned_audit('center')
+        identity=find_runtime_create(center,intents[attempt],deployment=services.center_config['deployment_id'])
+        if identity['sandbox_id']!=sb.sandbox_id:
+            raise RuntimeError('original SDK identity changed')
+        if capture(attempt,identity,center,services.planned_audit('host-0')) is False:
+            raise RuntimeError('successful SDK create lacks its original running VM')
         sb.files.write('/tmp/network-probe', BytesIO(helper), user='root')
         if command(sb, 'chmod 700 /tmp/network-probe').exit_code != 0:
             raise RuntimeError('static probe installation failed')
         return sb
 
     def delete(identity):
+        dispatched.add(identity)
         save(root / 'destroy-dispatched.json', sorted(dispatched))
         status, _ = fetch(opener, url, 'DELETE', '/sandboxes/' + identity, key)
         if status not in (200, 204, 404):
             raise RuntimeError('original destruction rejected')
+        return status
+
+    def settle(deadline):
+        expected=dict(instances=1,cpu=template['resources']['cpu_count'],
+            memory_bytes=template['resources']['host_memory_bytes'],disk_bytes=template['resources']['disk_bytes'])
+        result={}
+        for attempt,metadata in intents.items():
+            result[attempt]=recover_original_create(metadata,expected_resources=expected,
+                read_center=lambda:services.planned_audit('center'),
+                read_host=lambda node:services.planned_audit('host-0'),
+                deployment=services.center_config['deployment_id'],owner=1,delete=delete,
+                deadline=deadline,sandbox_id=known.get(attempt),create_identity=create_identities.get(attempt),
+                delete_dispatched=known.get(attempt) in dispatched,
+                before_delete=lambda identity,center,host:capture(attempt,identity,center,host))
+        return result
 
     def finish_vm(sb):
-        settle(Path(cfg['database']), intents, namespaces[0], template, delete,
-               deadline=time.monotonic() + 60, dispatched=dispatched, known=known)
+        settle(time.monotonic()+60)
 
     with socket.socket() as sentinel:
         sentinel.bind((host, 0))
@@ -226,11 +223,8 @@ def exercise(args):
         sentinel_port = sentinel.getsockname()[1]
         try:
             proxy.start()
-            service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
-                                  cpu_quota_us=100000, memory_bytes=1024 * MIB)
-            process = start_server(args.server, root / 'config.json', root / 'server.log', None,
-                                   command_prefix=service_cgroup.prefix(service_record))
-            wait_ready(opener, url, key, process)
+            services.start()
+            services.wait_ready()
             public = create('public', allow_internet_access=True)
             for protocol, address, port in [('dns', '1.1.1.1', 53), ('dns', '8.8.8.8', 53),
                                             ('tcp', '1.1.1.1', 443), ('tcp', '8.8.8.8', 53)]:
@@ -268,11 +262,8 @@ def exercise(args):
             failure = error
         finally:
             try:
-                if process is not None and intents:
-                    settle(Path(cfg['database']), intents, namespaces[0], template, delete,
-                           deadline=time.monotonic() + 90, dispatched=dispatched, known=known)
-                if intents and process is None:
-                    raise RuntimeError('creation exists without controller')
+                if intents:
+                    settle(time.monotonic()+90)
                 audits = [audit_gone(root, args.firecracker, args.cgroup_parent, name, record)
                           for name, record in identities.items()]
                 if len(audits) != len(intents) or processes_in_uid_range(args.uid_base, args.uid_base):
@@ -289,9 +280,8 @@ def exercise(args):
             transport = None
             if quiescent:
                 try:
-                    stop_server(process)
-                    if service_record.exists():
-                        service_cgroup.remove(service_record)
+                    services.processes.stop_all()
+                    services.cleanup_staging()
                     if proxy.state['phase'] != 'new':
                         transport = proxy.finish(quiescent=True)
                 except Exception as error:
@@ -319,7 +309,7 @@ def exercise(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('server', 'kernel', 'rootfs', 'jailer', 'firecracker', 'probe', 'proxy-binary',
+    for name in ('kernel', 'rootfs', 'jailer', 'firecracker', 'probe', 'proxy-binary',
                  'scratch-parent', 'cgroup-parent', 'service-cgroup-parent'):
         parser.add_argument('--' + name, required=True, type=Path)
     for name in ('probe-sha256', 'proxy-sha256', 'host-address'):
@@ -327,4 +317,6 @@ if __name__ == '__main__':
     parser.add_argument('--uid-base', type=int, required=True)
     parser.add_argument('--memory-mib', type=int, default=2048)
     parser.add_argument('--proxy-socks-port', type=int, default=7897)
+    from _runtime_services import add_arguments
+    add_arguments(parser)
     exercise(parser.parse_args())

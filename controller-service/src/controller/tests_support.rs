@@ -2,6 +2,39 @@
 #[path = "../../tests/support/complete_fixture.rs"]
 pub(super) mod fixture;
 use super::*;
+use serde::{Deserialize, Serialize};
+
+/// Command-specific component evidence; never used as production observation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct TestHostEvidence {
+    resource: sandproof_protocol::ResourceRef,
+    command: core::Command,
+}
+impl ResourceEvidence for TestHostEvidence {
+    fn resource(&self) -> &sandproof_protocol::ResourceRef {
+        &self.resource
+    }
+}
+impl HostEvidence for TestHostEvidence {
+    fn validates(&self, command: &core::Command) -> bool {
+        &self.command == command
+    }
+}
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "same worker signature as original workflow"
+)]
+pub(super) fn worker(
+    action: &WorkAction<core::EffectId>,
+) -> Result<WorkReceipt<TestHostEvidence>, WorkerTransportError> {
+    Ok(WorkReceipt {
+        identity: action.identity.clone(),
+        outcome: WorkOutcome::ObservedSuccess(TestHostEvidence {
+            resource: action.identity.resource.clone(),
+            command: action.command.command().clone(),
+        }),
+    })
+}
 
 pub(super) fn open(
     path: impl AsRef<Path>,

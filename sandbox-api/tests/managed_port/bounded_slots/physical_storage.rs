@@ -53,6 +53,8 @@ fn profile(path: &std::path::Path) -> PhysicalStorageProfile {
             jail_inodes_per_slot: 12,
         }],
         public_build: None,
+        host_template_caches: vec![],
+        service_data: vec![],
         filesystem_overhead_bytes: 4096 * 64,
         filesystem_overhead_inodes: 64,
     }
@@ -276,6 +278,8 @@ fn first_publication_requires_host_activation_before_intent_or_candidate_lookup(
     builder.chroot_base = "/deployment/builder-jails".into();
     physical.pools.push(builder);
     physical.public_build = Some(PhysicalBuildStorage {
+        workspace_owner_uid: 0,
+        registry_owner_uid: 0,
         root: "/deployment/build-root".into(),
         registry_root: registry.clone(),
         workspace_bytes: 1000,

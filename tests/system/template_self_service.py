@@ -12,6 +12,9 @@ _require_assertions = _runpy.run_path(
 )["require_assertions"]
 _require_assertions()
 
+import sys
+sys.path.insert(0, str(_GuardPath(__file__).resolve().parents[2]))
+
 from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
 from tools.bounded_acceptance import (
     bounded_acceptance_layout, acceptance_pool_disk_budget, provision_acceptance_coordination,
@@ -34,7 +37,8 @@ import urllib.request
 from e2b import Sandbox
 from sdk_server_smoke import options
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
-from server_process_crash import fetch, free_loopback_port, start_server, stop_server, wait_ready
+from server_process_crash import fetch, free_loopback_port
+from _process_utils import stop_child
 from server_templates import descriptor
 from server_vm_id_capacity import check_no_resources
 from template_build import BUILDKIT_HASHES, FIXTURE, IGZIP_HASHES
@@ -68,91 +72,28 @@ def exercise(args):
     for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError("fixed tool fingerprint mismatch: " + name)
-    root, namespaces = bounded_acceptance_layout(bounded_policy,
-        run_root=getattr(args, "run_root", None), namespace=getattr(args, "namespace", None),
-        build_namespace=getattr(args, "build_namespace", None))
-    if root.parent != args.scratch_parent.resolve(strict=True):
-        raise ValueError("bounded run root must be directly inside the approved scratch parent")
-    validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-)
-    root.mkdir(mode=0o700)  # Existing deployments are never overwritten.
-    provision_acceptance_coordination(bounded_policy, run_root=root,
-        namespace=namespaces[0], build_namespace=namespaces[1])
-    binary = root / "server"
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
-    print(f"root={root} commit={commit}", flush=True)
-    firecracker = args.firecracker.resolve(strict=True)
-    validate_acceptance_socket_paths(root, namespaces, firecracker,
-)
-    settings = []
-    ports = [free_loopback_port() for _ in range(3)]
-    urls = [f"http://127.0.0.1:{port}" for port in ports]
-    keys = [secrets.token_hex(32) for _ in range(3)]
-    builder_rootfs = getattr(args, "builder_rootfs", None) or args.rootfs
-    original_paths = (args.kernel, args.rootfs, builder_rootfs)
-    original = [sha256_file(path) for path in original_paths]
-    for i in range(2):
-        pool = root / str(i)
-        pool.mkdir(mode=0o700)
-        for name in ("db", "state", "jails"):
-            (pool / name).mkdir(mode=0o700)
-        cpu, memory = (2, 2048) if i else (1, 256)
-        rootfs = builder_rootfs if i else args.rootfs
-        base = descriptor("builder-base" if i else "runtime-base", args.kernel, rootfs, cpu, memory)
-        disk_limits = acceptance_pool_disk_budget(bounded_policy, "builder" if i else "runtime",
-            rootfs.stat().st_size)
-        config = {"namespace": namespaces[i], "database": str(pool / "db/controller.db"),
-            "node_state_dir": str(pool / "state"), "jailer": str(args.jailer), "firecracker": str(firecracker),
-            "chroot_base": str(pool / "jails"), "kernel": str(args.kernel), "rootfs": str(rootfs),
-            "uid_base": args.uid_base + i * 100, "vcpu_count": cpu, "memory_mib": memory,
-            "host_resources": {"cgroup_parent": str(args.build_cgroup_parent if i else args.cgroup_parent), "memory_max_bytes": (memory + 256) * MIB},
-            "file_policy_digest": 1, "bind": f"127.0.0.1:{ports[i]}", "domain": "example.invalid",
-            "credentials": [{"tenant": 1, "secret": keys[i]}], "max_active_global": 2,
-            "max_active_per_tenant": 2, **disk_limits, "max_timeout_secs": 1300,
-            "startup_timeout_secs": 40, "expiry_scan_seconds": 2, "public_ipv4_enabled": bool(i and args.public),
-            "templates": {"templates": [base], "aliases": {"base": base["template_id"]},
-                "compute_limits": {"max_vcpus_global": 4, "max_vcpus_per_tenant": 4,
-                    "max_memory_bytes_global": 4608 * MIB, "max_memory_bytes_per_tenant": 4608 * MIB}},
-            "data_transfer": {"file_upload_bytes": 256 * MIB, "file_download_bytes": 2048 * MIB,
-                "command_input_bytes": MIB, "rpc_request_bytes": MIB,
-                "rpc_response_bytes": MIB, "max_transfers": 8, "max_transfers_per_vm": 4, "control_reserve": 1,
-                "request_idle_seconds": 60, "file_idle_seconds": 60, "write_idle_seconds": 60}}
-        if i:
-            config["internal_build_vms"] = True
-        else:
-            for path in (root / "registry", root / "registry/inbox", root / "registry/artifacts"):
-                path.mkdir(mode=0o700)
-            config["credentials"].append({"tenant": 2, "secret": keys[2]})
-            config["template_registry"] = {"root": str(root / "registry"), "max_templates_global": 8,
-                "max_templates_per_tenant": 8, "max_artifact_bytes_global": 12 * 1024 * MIB,
-                "max_artifact_bytes_per_tenant": 12 * 1024 * MIB, "validation_timeout_secs": 30}
-        settings.append(config)
-        (pool / "config.json").write_text(json.dumps(config))
-        (pool / "config.json").chmod(0o600)
-    (root / "builds").mkdir(mode=0o700)
-    build = {"root": str(root / "builds"), "bind": f"127.0.0.1:{ports[2]}",
-        "runtime_config": str(root / "0/config.json"), "builder_config": str(root / "1/config.json"),
-        "tools": {name: {"path": str(args.tools / name), "sha256": digest} for name, digest in build_tools.items()},
-        "dns_servers": ["1.1.1.1", "8.8.8.8"],
-        "limits": {"max_cpu": 2, "max_memory_mib": 1024, "max_disk_mib": 2048, "timeout_seconds": 600,
+    from _complete_registry_runtime import prepare_registry_runtime
+    from tools.template_build_service import Backend, configuration
+    deployment = prepare_registry_runtime(args, tool_hashes=build_tools,
+        registry_limits={"max_templates_global": 8, "max_templates_per_tenant": 8,
+            "max_artifact_bytes_global": 12 * 1024 * MIB,
+            "max_artifact_bytes_per_tenant": 12 * 1024 * MIB, "validation_timeout_secs": 30},
+        build_limits={"max_cpu": 2, "max_memory_mib": 1024, "max_disk_mib": 2048, "timeout_seconds": 600,
             "max_jobs": 20, "max_jobs_per_tenant": 10, "max_pending": 3, "max_pending_per_tenant": 2,
             "workspace_bytes": 80 * 1024 * MIB, "workspace_bytes_per_tenant": 60 * 1024 * MIB,
-            "max_input_bytes": 64 * MIB, "max_expanded_bytes": 512 * MIB, "max_entries": 10000, "max_log_bytes": 2 * MIB}}
-    # Offline mode still has an explicit configured IPv4 build policy, but all
-    # submitted Dockerfile jobs select deny-all; no public packets are sent.
-    if not args.public:
-        settings[1]["public_ipv4_enabled"] = True
-        (root / "1/config.json").write_text(json.dumps(settings[1]))
-    build_mode = apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy)
-    for i, config in enumerate(settings):
-        (root / str(i) / "config.json").write_text(json.dumps(config))
-    (root / "build-mode.json").write_text(json.dumps({"build_mode": build_mode}))
-    build_config = root / "build.json"
-    build_config.write_text(json.dumps(build))
-    build_config.chmod(0o600)
-    from tools.template_build_service import configuration
-    configuration(build_config, require_physical_lease=False)
+            "max_input_bytes": 64 * MIB, "max_expanded_bytes": 512 * MIB,
+            "max_entries": 10000, "max_log_bytes": 2 * MIB},
+        ports=[free_loopback_port() for _ in range(3)])
+    root, namespaces, services = deployment.root, deployment.namespaces, deployment.services
+    key, foreign_key, url = deployment.key, deployment.foreign_key, services.sdk_url
+    build_config = deployment.build_config
+    build = json.loads(build_config.read_text())
+    build_mode = "windowed"
+    backend = Backend(configuration(build_config, require_physical_lease=False))
+    print(f"root={root} commit={commit}", flush=True)
+    firecracker = args.firecracker.resolve(strict=True)
+    original_paths = (args.kernel, args.rootfs, args.builder_rootfs or args.rootfs)
+    original = [sha256_file(path) for path in original_paths]
     fixture_root = root / "fixture"
     fixture_root.mkdir(mode=0o700)
     (fixture_root / "tools").mkdir()
@@ -163,21 +104,21 @@ def exercise(args):
     subprocess.run([sys.executable, "-c", fixture], check=True)
     context = fixture_root / "context.tar"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    controllers, process, log = [], None, None
+    process, log = None, None
     complete, evidence = False, []
     def start_builds():
         nonlocal log
         log = (root / "build-service.log").open("ab")
         return subprocess.Popen([sys.executable, str(checkout / "tools/template_build_service.py"), "--config", str(build_config)], stdout=log, stderr=subprocess.STDOUT)
-    def request(method, path, body=None, key=keys[0]):
-        code, data = fetch(opener, urls[2], method, path, key, body)
+    def request(method, path, body=None, key=key):
+        code, data = fetch(opener, url, method, path, key, body)
         return code, json.loads(data)
     def wait_builds():
         # A child PID is not a listening endpoint. Observe readiness with GET;
         # never repair a startup race by retrying a mutating build submission.
         for _ in range(60):
             try:
-                if request("GET", "/missing")[0] == 404:
+                if request("GET", "/sandproof/template-builds/" + "0" * 31 + "1")[0] == 404:
                     return
             except OSError:
                 assert process.poll() is None, "build service exited before readiness"
@@ -185,7 +126,7 @@ def exercise(args):
         raise AssertionError("build endpoint did not become ready")
     def submit(body, source=None):
         from tools.template_build_client import BuildClient, saved_intent
-        client = BuildClient(urls[2], keys[0])
+        client = BuildClient(url, key)
         intent_path = root / ("build-intent-" + secrets.token_hex(16) + ".json")
         intent = saved_intent(intent_path, client, body | {"timeoutSeconds": body.get("timeoutSeconds", build["limits"]["timeout_seconds"])},
                               context=source)
@@ -193,8 +134,8 @@ def exercise(args):
         job = result["buildID"]
         if source:
             with source.open("rb") as incoming:
-                upload = urllib.request.Request(urls[2] + "/sandproof/template-builds/" + job + "/context",
-                    data=incoming, method="PUT", headers={"X-API-Key": keys[0], "Content-Length": str(source.stat().st_size)})
+                upload = urllib.request.Request(url + "/sandproof/template-builds/" + job + "/context",
+                    data=incoming, method="PUT", headers={"X-API-Key": key, "Content-Length": str(source.stat().st_size)})
                 with opener.open(upload, timeout=60) as response:
                     assert response.status == 200
         return job
@@ -215,10 +156,8 @@ def exercise(args):
             time.sleep(0.5)
         raise AssertionError("build deadline exceeded: " + job)
     try:
-        for i in range(2):
-            server = start_server(binary, root / str(i) / "config.json", root / str(i) / "server.log", None)
-            controllers.append(server)
-            wait_ready(opener, urls[i], keys[i], server)
+        services.start()
+        services.wait_ready()
         # Only Rust activates the unchanged physical profile. Joining before
         # either server exists would turn a valid fresh deployment into a
         # missing-file error; skipping this check at service start is unsafe.
@@ -230,9 +169,9 @@ def exercise(args):
         job = submit(basic, context)
         result = wait_job(job)
         assert result["state"] == "Ready", result
-        assert request("GET", "/sandproof/template-builds/" + job, key=keys[2])[0] == 404
+        assert request("GET", "/sandproof/template-builds/" + job, key=foreign_key)[0] == 404
         template = result["template"]["templateId"]
-        sandbox = Sandbox.create(template, timeout=120, allow_internet_access=False, **options(keys[0], urls[0], urls[0]))
+        sandbox = Sandbox.create(template, timeout=120, allow_internet_access=False, **options(key, url, url))
         try:
             assert sandbox.commands.run("/bin/busybox cat /workspace/payload", user="app").stdout == "copied-standard-context"
             assert "literal space" in sandbox.commands.run("/bin/busybox cat /workspace/startup-result", user="app").stdout
@@ -245,7 +184,7 @@ def exercise(args):
         if getattr(args, "publication_unknown", False):
             # One exclusive store lease: stop the background supervisor before
             # driving the actual production functions through the HTTP barrier.
-            stop_server(process)
+            stop_child(process)
             log.close()
             from template_publication_unknown import exercise as publication_unknown
             evidence.append(publication_unknown(build_config, context, basic))
@@ -274,9 +213,9 @@ def exercise(args):
         private_window = wait_private_build_window(root / "builds/builds.db", job)
         query = "?" + urllib.parse.urlencode({"requestWindow": private_window})
         for _ in range(120):
-            code, data = fetch(opener, urls[1], "GET", "/sandproof/internal-build-vms/" + job + query, keys[1])
-            if code == 200 and json.loads(data).get("session"):
-                vm = json.loads(data)
+            observed = backend.request('builder', 'GET', '/sandproof/internal-build-vms/' + job + query, owner=1)
+            if observed.get("session"):
+                vm = observed
                 break
             time.sleep(0.5)
         else:
@@ -289,14 +228,13 @@ def exercise(args):
         result = wait_job(job)
         assert result["state"] == "Failed" and result["failure"] == "InterruptedBuild", result
         retry = {"timeout": 660, "allowInternetAccess": False, "requestWindow": private_window}
-        code, body = fetch(opener, urls[1], "POST", "/sandproof/internal-build-vms/" + job, keys[1], retry)
-        if private_window:
-            # The supervisor has closed and settled this exact old window.
-            # A retired retry must be refused, not interpreted as a new VM.
-            assert code == 409, (code, body)
+        from tools.template_build_store import BuildError
+        try:
+            backend.request('builder', 'POST', '/sandproof/internal-build-vms/' + job, retry, owner=1)
+        except BuildError as error:
+            assert error.code == 409, error.code
         else:
-            after = json.loads(body)
-            assert code == 200 and after["sandboxID"] == vm["sandboxID"] and after["cleanupComplete"]
+            raise AssertionError('retired private tuple admitted a new builder')
         evidence.append({"scenario": "service_sigkill_after_vm_started", "build": job, "sandbox": vm["sandboxID"], "result": "passed"})
         print(json.dumps(evidence[-1]), flush=True)
         if args.public:
@@ -310,7 +248,7 @@ def exercise(args):
             assert provenance["selected_digest"] == result["template"]["imageDigest"]
             assert provenance["regctl_sha256"] == REGCTL_SHA256
             assert provenance["download_bytes"] <= build["limits"]["max_input_bytes"]
-            sandbox = Sandbox.create(result["template"]["templateId"], timeout=120, allow_internet_access=False, **options(keys[0], urls[0], urls[0]))
+            sandbox = Sandbox.create(result["template"]["templateId"], timeout=120, allow_internet_access=False, **options(key, url, url))
             try:
                 assert "ubuntu" in sandbox.commands.run("cat /etc/os-release", user="root").stdout.lower()
                 sandbox.files.write("/tmp/public-image", "public-oci", user="root")
@@ -329,25 +267,26 @@ def exercise(args):
             assert database.execute("SELECT COALESCE(SUM(reserved), 0) FROM jobs").fetchone()[0] == 0
         complete = True
         (root / "report.json").write_text(json.dumps({"commit": commit, "scenarios": evidence,
-            "server_sha256": sha256_file(binary),
+            "service_artifacts": services.manifest,
             "kernel_sha256": original[0], "base_sha256": original[1], "builder_base_sha256": original[2],
             "build_mode": build_mode, "physical_profile": True, "tools": build_tools,
             "no_process_network_cgroup_jail_residue": True, "public": args.public}, indent=2))
         print("self-service acceptance passed; report=" + str(root / "report.json"), flush=True)
     finally:
         if process:
-            stop_server(process)
+            stop_child(process)
         if log:
             log.close()
-        for server in reversed(controllers):
-            stop_server(server)
+        services.stop_all()
         if not complete:
             print("failure evidence retained at " + str(root), flush=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("server", "firecracker", "jailer", "kernel", "rootfs", "tools", "scratch-parent", "cgroup-parent", "build-cgroup-parent"):
+    from _runtime_services import add_arguments
+    add_arguments(parser)
+    for name in ("firecracker", "jailer", "kernel", "rootfs", "tools", "scratch-parent", "cgroup-parent", "build-cgroup-parent"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--builder-rootfs", type=Path, help="fixed builder base; defaults to --rootfs")

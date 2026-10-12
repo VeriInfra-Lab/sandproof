@@ -6,9 +6,12 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-# The server uses the durable coordinator; standalone host contracts do not link SQLite.
+# Compile host artifact capabilities independently of the SQLite coordinator.
+# This is a capability boundary, not an alternative runtime or storage mode.
+host-artifacts = []
+# The host uses the durable coordinator; pure API/center contracts do not link SQLite.
 default = ["durable"]
-durable = ["dep:rusqlite", "dep:tokio", "dep:getrandom"]
+durable = ["host-artifacts", "dep:rusqlite", "dep:tokio", "dep:getrandom"]
 # Local bounded diagnostics only; not enabled by the deployed service.
 contention-diagnostics = ["durable"]
 

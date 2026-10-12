@@ -193,6 +193,7 @@ class LocalFinalizationTests(unittest.TestCase):
             env.build_result, env.template, env.submission_key = {'state': 'Ready'}, {}, 'c' * 32
             env.environment_repair = {'kind': PRUNED_SOURCE, 'original_environment': False}
             env.runtime_attempt = 'd' * 32
+            env.kill_dispatched = True
             env.template = {'templateId': 'tpl-' + env.build_id, 'revision': 'r1',
                 'kernelSha256': 'e' * 64, 'rootfsSha256': 'f' * 64,
                 'cpuCount': 1, 'memoryMib': 4096, 'diskBytes': 10 * 1024**3,
@@ -591,6 +592,7 @@ class LocalFinalizationTests(unittest.TestCase):
             args.all, args.task, args.source_kind = True, None, 'oci'
             args.build_url = 'http://127.0.0.1:1'
             env.sandbox_id, env.kill_confirmed = None, False
+            env.kill_dispatched = False
             env.build_id, env.runtime_attempt = 'a' * 32, 'e' * 32
             env.build_result, env.build_dispatched = {'state': 'Ready'}, True
             env.submission_key = 'c' * 32

@@ -1,6 +1,7 @@
 //! Ephemeral evidence from the registry's own reads, never from a guest or journal.
 
-use super::{CandidateStore, JournalError};
+use super::CandidateStore;
+use crate::JournalError;
 use crate::templates::{TemplateArtifact, TemplateBinding};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read};

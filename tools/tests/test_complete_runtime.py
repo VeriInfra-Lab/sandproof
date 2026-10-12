@@ -56,6 +56,9 @@ class CompleteFixtureTests(unittest.TestCase):
         self.assertEqual(result["cleanup_reserve_bytes"], pool["host_metadata_bytes"] + cap["max_online_storage_bytes"])
         self.assertEqual(cap["max_online_storage_bytes"], sum(cap[key] for key in (
             "max_database_bytes", "max_wal_bytes", "max_shm_bytes", "checkpoint_scratch_bytes")))
+        self.assertEqual(cap["max_sql_value_bytes"],cap["max_sql_bytes"])
+        self.assertEqual(cap["max_sql_bytes"],16*fixture.MIB)
+        self.assertEqual(cap["max_online_storage_bytes"],fixture.ONLINE_BYTES)
         self.assertEqual(result["max_disk_bytes_global"], pool["rootfs_budget_bytes"] + result["cleanup_reserve_bytes"])
         self.assertEqual(pool["node_state_dir"], result["node_state_dir"])
         self.assertEqual(host["console_policy"], "discard")
@@ -85,6 +88,20 @@ class CompleteFixtureTests(unittest.TestCase):
         self.assertIsNot(result["data_transfer"], budgets)
         with self.assertRaises(ValueError):
             fixture.complete_runtime(self.settings | {"data_transfer": budgets | {"max_transfers_per_vm": 129}}, slots=2)
+
+    def test_explicit_checkpoint_tail_only_changes_the_fresh_declared_trigger(self):
+        ordinary = self.complete()
+        self.assertEqual(ordinary["maintenance"]["max_tail_inputs"], 1000)
+        for inputs in (16, 128, 1000):
+            with self.subTest(inputs=inputs):
+                selected = fixture.complete_runtime(self.settings, slots=2, checkpoint_tail_inputs=inputs)
+                expected = copy.deepcopy(ordinary)
+                expected["maintenance"]["max_tail_inputs"] = inputs
+                self.assertEqual(selected, expected)
+                self.assertGreaterEqual(inputs, selected["maintenance"]["capacity"]["max_transaction_inputs"])
+        for inputs in (None, True, 0, 15, 1001, "128", 128.0):
+            with self.subTest(inputs=inputs), self.assertRaises(ValueError):
+                fixture.complete_runtime(self.settings, slots=2, checkpoint_tail_inputs=inputs)
 
     def test_provision_is_once_only_and_keeps_exact_coordination_identity(self):
         result = self.complete()

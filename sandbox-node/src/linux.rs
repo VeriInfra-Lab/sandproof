@@ -36,8 +36,10 @@ mod guest_transport;
 mod identity;
 mod inventory;
 mod observation;
+mod readonly;
 mod recovery;
 use decisions::fence_can_advance;
+pub use readonly::LinuxObservation;
 #[path = "host_lease.rs"]
 mod host_lease;
 #[path = "host_slots.rs"]
@@ -340,51 +342,7 @@ impl LinuxWorker {
     /// # Errors
     /// Rejects unsafe deployment paths and an unavailable host runtime.
     pub fn new(config: NodeConfig) -> NodeResult<Self> {
-        if geteuid().as_raw() != 0 {
-            return Err("node worker requires root on the isolated KVM host".into());
-        }
-        if config.namespace.len() != 16
-            || !config
-                .namespace
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err("invalid deployment namespace".into());
-        }
-        for path in [
-            &config.state_dir,
-            &config.jailer,
-            &config.firecracker,
-            &config.chroot_base,
-            &config.kernel,
-            &config.rootfs,
-        ] {
-            check_trusted_path(path)?;
-        }
-        let metadata = fs::metadata(&config.state_dir)?;
-        if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
-            return Err("node state directory must be root-only".into());
-        }
-        config.validate_deployment()?;
-        if config.vcpu_count == 0 || config.memory_mib < 128 {
-            return Err("invalid node resource limits".into());
-        }
-        if let Some(settings) = &config.host_resources {
-            settings.validate(config.memory_mib)?;
-        }
-        let longest_socket = config
-            .chroot_base
-            .join(
-                config
-                    .firecracker
-                    .file_name()
-                    .ok_or("invalid firecracker name")?,
-            )
-            .join(format!("vm-{}-{}", config.namespace, u64::MAX))
-            .join("root/api.socket");
-        if longest_socket.as_os_str().as_bytes().len() >= 108 {
-            return Err("Firecracker API socket path exceeds Linux limit".into());
-        }
+        validate_worker_configuration(&config)?;
         let expected = host_slots::stored_lease_identity(&config)?;
         let host_lease = host_lease::HostLease::acquire(&config, expected.as_ref())?;
         for subdir in NODE_STATE_DIRECTORIES {
@@ -397,9 +355,6 @@ impl LinuxWorker {
             if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
                 return Err("node state subdirectory must be root-only".into());
             }
-        }
-        for binary in ["/usr/bin/ip", "/usr/bin/curl"] {
-            check_trusted_path(Path::new(binary))?;
         }
         let worker = Self {
             config,
@@ -429,6 +384,60 @@ impl LinuxWorker {
     fn replace_node_json<T: Serialize>(&self, path: &Path, value: &T) -> NodeResult<()> {
         node_staging::write(&self.config, path, &serde_json::to_vec(value)?, true)
     }
+}
+
+// One immutable deployment validator for activating and observation-only
+// construction. Auditing never bypasses the original physical constraints.
+fn validate_worker_configuration(config: &NodeConfig) -> NodeResult<()> {
+    if geteuid().as_raw() != 0 {
+        return Err("node worker requires root on the isolated KVM host".into());
+    }
+    if config.namespace.len() != 16
+        || !config
+            .namespace
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("invalid deployment namespace".into());
+    }
+    for path in [
+        &config.state_dir,
+        &config.jailer,
+        &config.firecracker,
+        &config.chroot_base,
+        &config.kernel,
+        &config.rootfs,
+    ] {
+        check_trusted_path(path)?;
+    }
+    let metadata = fs::metadata(&config.state_dir)?;
+    if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
+        return Err("node state directory must be root-only".into());
+    }
+    config.validate_deployment()?;
+    if config.vcpu_count == 0 || config.memory_mib < 128 {
+        return Err("invalid node resource limits".into());
+    }
+    if let Some(settings) = &config.host_resources {
+        settings.validate(config.memory_mib)?;
+    }
+    let longest_socket = config
+        .chroot_base
+        .join(
+            config
+                .firecracker
+                .file_name()
+                .ok_or("invalid firecracker name")?,
+        )
+        .join(format!("vm-{}-{}", config.namespace, u64::MAX))
+        .join("root/api.socket");
+    if longest_socket.as_os_str().as_bytes().len() >= 108 {
+        return Err("Firecracker API socket path exceeds Linux limit".into());
+    }
+    for binary in ["/usr/bin/ip", "/usr/bin/curl"] {
+        check_trusted_path(Path::new(binary))?;
+    }
+    Ok(())
 }
 
 fn helper_observation_pending(result: Result<(), RuntimeError>) -> NodeResult<bool> {

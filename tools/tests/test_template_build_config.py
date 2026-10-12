@@ -253,11 +253,10 @@ def inputs():
                'max_disk_bytes_global': 80 * GIB, 'max_disk_bytes_per_tenant': 80 * GIB,
                'cleanup_reserve_bytes': 10 * GIB, 'max_active_global': 2,
                'max_active_per_tenant': 2,
-               'templates': {'compute_limits': compute},
-               'template_registry': {'validation_timeout_secs': 45,
-                   'max_artifact_bytes_global': 300 * GIB, 'max_artifact_bytes_per_tenant': 300 * GIB}}
+               'templates': {'compute_limits': compute}}
+    registry = {'validation_timeout_secs': 45,
+                'max_artifact_bytes_global': 300 * GIB, 'max_artifact_bytes_per_tenant': 300 * GIB}
     builder = copy.deepcopy(runtime)
-    builder.pop('template_registry')
     builder.update(max_timeout_secs=660, max_lifetime_secs=660, public_ipv4_enabled=True,
                    data_transfer={'file_upload_bytes': GIB, 'file_download_bytes': 10 * GIB})
     limits = {'max_cpu': 4, 'max_memory_mib': 8192, 'max_disk_mib': 10240,
@@ -267,13 +266,13 @@ def inputs():
               'max_expanded_bytes': 4 * GIB, 'max_entries': 200000, 'max_log_bytes': 2 * MIB}
     base = {'rootfs': {'size_bytes': 32 * GIB}, 'resources': {
         'cpu_count': 2, 'host_memory_bytes': 2304 * MIB, 'disk_bytes': 32 * GIB}}
-    return runtime, builder, limits, base
+    return runtime, builder, limits, base, registry
 
 
 
 class CapacityTests(unittest.TestCase):
     def check(self, args):
-        return validate_capacity(*args, kernel_bytes=64 * MIB, largest_tool_bytes=128 * MIB)
+        return validate_capacity(*args[:4], registry=args[4], kernel_bytes=64 * MIB, largest_tool_bytes=128 * MIB)
 
     def test_capacity_covers_one_maximum_candidate_and_actual_builder(self):
         self.assertEqual(self.check(inputs()), 32 * GIB)
@@ -293,7 +292,7 @@ class CapacityTests(unittest.TestCase):
 
     def test_disk_and_transfer_exact_boundaries(self):
         args = inputs()
-        runtime, builder, limits, base = args
+        runtime, builder, limits, base, _ = args
         required = limits['max_disk_mib'] * MIB + limits['max_expanded_bytes'] + 2 * limits['max_input_bytes'] + 64 * MIB
         base['resources']['disk_bytes'] = base['rootfs']['size_bytes'] = required
         builder['data_transfer']['file_upload_bytes'] = limits['max_input_bytes'] + UPLOAD_ENVELOPE_BYTES
@@ -313,9 +312,9 @@ class CapacityTests(unittest.TestCase):
         for path, value in ((('templates', 'compute_limits', 'max_vcpus_per_tenant'), 3),
                             (('templates', 'compute_limits', 'max_memory_bytes_global'), 8192 * MIB),
                             (('max_disk_bytes_global',), 10 * GIB),
-                            (('template_registry', 'max_artifact_bytes_per_tenant'), 10 * GIB)):
+                            (('max_artifact_bytes_per_tenant',), 10 * GIB)):
             args = inputs()
-            target = args[0]
+            target = args[4] if path[0] == 'max_artifact_bytes_per_tenant' else args[0]
             for part in path[:-1]:
                 target = target[part]
             target[path[-1]] = value
@@ -332,22 +331,23 @@ class CapacityTests(unittest.TestCase):
             activate_for_test(profile)
             cfg = json.loads(path.read_text())
             builder_path = Path(cfg['builder_config'])
-            builder = json.loads(builder_path.read_text())
+            host = json.loads(builder_path.read_text())
+            builder = host['native']
             builder['rootfs'] = str(root / 'kernel')  # Never undercharge its bound base.
-            builder_path.write_text(json.dumps(builder))
+            builder_path.write_text(json.dumps(host))
             self.assertEqual(configuration(path)['limits']['builder_disk_bytes'], 32 * GIB)
             for old in (None, 0, 2**64 - 1):
                 builder['max_vm_id'] = old
-                builder_path.write_text(json.dumps(builder))
+                builder_path.write_text(json.dumps(host))
                 with self.subTest(old=old), self.assertRaisesRegex(ValueError, 'retired max_vm_id'):
                     configuration(path)
             builder.pop('max_vm_id')
             builder['bounded_host']['uplink_base'] = 0
-            builder_path.write_text(json.dumps(builder))
+            builder_path.write_text(json.dumps(host))
             with self.assertRaisesRegex(ValueError, 'uplink pools overlap'):
                 configuration(path)
             builder['bounded_host']['uplink_base'] = 2
-            builder_path.write_text(json.dumps(builder))
+            builder_path.write_text(json.dumps(host))
             original_tools = dict(cfg['tools'])
             for names, accepted in ((('igzip', 'libisal.so.2'), True), (('igzip',), False),
                                     (('libisal.so.2',), False), (('unpigz',), False)):
@@ -476,7 +476,7 @@ class ExplicitAcceptanceModeTests(unittest.TestCase):
             physical.assert_called_once_with(runtime, builder, build)
         self.assertEqual(runtime['namespace'], 'runtime')
         self.assertEqual(builder['database'], '/builder/db')
-        self.assertEqual(builder['build_retry_windows'], policy['builder']['build_retry_windows'])
+        self.assertNotIn('build_retry_windows', builder)
         self.assertEqual(build['limits']['workspace_bytes'], 200)
         self.assertEqual(build['bounded_builds'], {'namespace': 17})
 

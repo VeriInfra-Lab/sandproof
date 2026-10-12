@@ -10,7 +10,18 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display};
 
+pub mod internal;
+
 pub const PROTOCOL_VERSION: u16 = 1;
+
+/// Requested data capability only. A value grants no authority: the original
+/// host application must check its current VM, owner, lifetime and permissions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataKind {
+    Exec,
+    FileRead,
+    FileWrite,
+}
 
 /// Reject malformed opaque identifiers before they reach logs or resource lookup.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,6 +106,8 @@ opaque_id!(OperationId);
 opaque_id!(LogicalActionId);
 opaque_id!(ResourceId);
 opaque_id!(ClientRequestId);
+opaque_id!(DeploymentId);
+opaque_id!(NodeId);
 
 /// Built only after C authenticates the caller. It cannot be deserialized
 /// directly from an untrusted HTTP body. A still checks ownership.

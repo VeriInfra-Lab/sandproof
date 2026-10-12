@@ -30,10 +30,11 @@ import time
 import urllib.request
 
 from server_process_crash import (
-    assert_idle_reopen, complete_runtime, fetch, free_loopback_port, idle_snapshot,
-    interrupted_request, process_start_ticks, provision_runtime, start_server,
-    stop_server, terminal_cleanup_confirmed, wait_ready,
+    assert_idle_reopen, fetch, free_loopback_port, idle_snapshot,
+    interrupted_host_request, original_create_identity, prepare_fault_services,
+    process_start_ticks, terminal_cleanup_confirmed,
 )
+from _runtime_services import add_arguments
 from server_unready_abort import wait_for
 from sdk_c02_acceptance import processes_in_uid_range
 
@@ -82,23 +83,20 @@ def exercise(args: argparse.Namespace) -> None:
         raise RuntimeError("test path too long for Firecracker socket")
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
-    binary, kernel, rootfs = (root / name for name in ("sandproof-server", "vmlinux", "rootfs.ext4"))
-    for source, destination in ((args.server, binary), (args.kernel, kernel), (args.rootfs, rootfs)):
+    kernel, rootfs = (root / name for name in ("vmlinux", "rootfs.ext4"))
+    for source, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
         shutil.copyfile(source, destination)
-    binary.chmod(0o700)
     kernel.chmod(0o644)
     rootfs.chmod(0o644)
     key = secrets.token_hex(32)
     port = free_loopback_port()
-    config = root / "config.json"
     database = root / "db/controller.db"
     values = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(args.firecracker.resolve(strict=True)),
         "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
         "uid_base": args.uid_base, "vcpu_count": 1, "memory_mib": 512,
-        "file_policy_digest": 1, "bind": f"127.0.0.1:{port}", "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": key}],
+        "file_policy_digest": 1,
         "max_active_global": 1, "max_active_per_tenant": 1,
         "max_disk_bytes_global": disk_bytes * 3, "max_disk_bytes_per_tenant": disk_bytes * 3,
         "cleanup_reserve_bytes": disk_bytes, "max_timeout_secs": 600, "default_timeout_secs": 300,
@@ -109,21 +107,22 @@ def exercise(args: argparse.Namespace) -> None:
     if args.cgroup_parent is not None:
         values["host_resources"] = {"cgroup_parent": str(args.cgroup_parent.resolve(strict=True)),
                                    "memory_max_bytes": 768 * 1024 * 1024}
-    values = complete_runtime(values, slots=1)
-    provision_runtime(values)
-    config.write_text(json.dumps(values))
-    config.chmod(0o600)
-    log = root / "server.log"
+    services = prepare_fault_services(args, root, values, slots=1, key=key, port=port)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     base_url = f"http://127.0.0.1:{port}"
     process = None
+    metadata = {"activation_abort_intent": secrets.token_hex(16)}
     completed = False
     try:
-        process = start_server(binary, config, log, None, before_target="activate_vm")
-        wait_ready(opener, base_url, key, process)
-        interrupted_request(lambda: fetch(opener, base_url, "POST", "/v2/sandboxes", key, {
+        services.start(host_envs={"host-0": {"SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION": "activate_vm"}})
+        services.wait_ready(for_admission=False)
+        process = services.processes.children["host-0"]
+        interrupted_host_request(lambda: fetch(opener, base_url, "POST", "/v2/sandboxes", key, {
             "templateID": "base", "allow_internet_access": False, "envVars": {"ABORT_TEST": "original"},
+            "metadata": metadata,
         }), process, 87)
+        identity = original_create_identity(services, metadata)
+        native_id = services.native_id_for(identity["sandbox_id"])
         claim = root / "jails/.claims" / vm_name
         record = json.loads((claim / "record.json").read_text())
         pid, ticks = record["pid"], record["start_time_ticks"]
@@ -145,8 +144,8 @@ def exercise(args: argparse.Namespace) -> None:
             deadline = connection.execute("SELECT startup_deadline_ms FROM sandbox_lifetimes").fetchone()[0]
         wait_for(lambda: time.time_ns() // 1_000_000 >= deadline, 15, "persisted startup deadline")
         target = {"before-stop": None, "after-stop": "stop_vm", "after-cleanup": "cleanup_vm"}[args.window]
-        process = start_server(binary, config, log, target,
-                               before_target="stop_vm" if args.window == "before-stop" else None)
+        fault = "SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION" if args.window == "before-stop" else "SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION"
+        process = services.processes.start("host-0", env={fault: target or "stop_vm"})
         expected_exit = 87 if args.window == "before-stop" else 86
         assert process.wait(timeout=40) == expected_exit
         first = database_snapshot(database)
@@ -154,9 +153,9 @@ def exercise(args: argparse.Namespace) -> None:
         activation = [entry for entry in first["actions"] if "ActivateVm" in entry[0]["command"]["logical"]["command"]]
         assert len(activation) == 1 and activation[0][1:] == ("dispatched", None)
         assert (process_start_ticks(pid) == ticks) == (args.window == "before-stop")
-        process = start_server(binary, config, log, None)
-        wait_ready(opener, base_url, key, process)
-        wait_for(lambda: terminal_cleanup_confirmed(database, f"sb-{namespace}-1"), 15, "failed terminal state")
+        process = services.processes.start("host-0")
+        services.wait_ready(for_admission=False)
+        wait_for(lambda: terminal_cleanup_confirmed(database, native_id), 15, "failed terminal state")
         final = database_snapshot(database)
         retirements = [item["Effect"]["RetireActivation"] for item in final["inputs"]
                        if isinstance(item.get("Effect"), dict) and "RetireActivation" in item["Effect"]]
@@ -175,11 +174,11 @@ def exercise(args: argparse.Namespace) -> None:
         if args.cgroup_parent is not None:
             assert not (args.cgroup_parent / vm_name).exists()
         reopened = idle_snapshot(database)
-        stop_server(process)
-        process = start_server(binary, config, log, None)
-        wait_ready(opener, base_url, key, process)
+        services.processes.stop("host-0")
+        process = services.processes.start("host-0")
+        services.wait_ready(for_admission=False)
         assert_idle_reopen(reopened, idle_snapshot(database))
-        assert terminal_cleanup_confirmed(database, f"sb-{namespace}-1")
+        assert terminal_cleanup_confirmed(database, native_id)
         # With max_active=1, a new successful create proves the aborted VM no
         # longer occupies quota. Never resubmit the original unknown create.
         status, body = fetch(opener, base_url, "POST", "/v2/sandboxes", key,
@@ -207,15 +206,17 @@ def exercise(args: argparse.Namespace) -> None:
         assert not holders
         assert digest(args.rootfs) == digest(rootfs) == base_digest
         completed = True
-        print(json.dumps({"source_commit": commit, "server_sha256": digest(binary), "window": args.window,
+        print(json.dumps({"source_commit": commit, "host_sha256": digest(args.host),
+                          "center_sha256": digest(args.center), "window": args.window,
                           "scope": "unknown activation; exact frozen VMM; lost terminal receipt; idle restart and quota reuse",
                           "vm": vm_name, "pid": pid, "start_time_ticks": ticks, "guest_health": "timed out",
                           "retirement_count": len(retirements), "activation_receipt": "still absent; not fabricated",
                           "base_sha256": base_digest, "cgroup_enabled": args.cgroup_parent is not None,
                           "residual": "no exact processes, jails, network namespaces or enabled cgroups"}))
     finally:
-        stop_server(process)
+        services.stop_all()
         if completed and not args.keep_artifacts:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f"Exact-run artifacts retained: {root}", file=sys.stderr)
@@ -223,7 +224,8 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
+    add_arguments(parser)
+    for name in ("jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
         parser.add_argument(f"--{name}", required=True, type=Path)
     parser.add_argument("--uid-base", required=True, type=int)
     parser.add_argument("--window", required=True, choices=("before-stop", "after-stop", "after-cleanup"))

@@ -149,7 +149,11 @@ class BuildSdkSession(unittest.TestCase):
     def exercise(self, kind, early_failure=False, failure=None, bad_digest=False, command_timeout=None,
                  download_deadline=None):
         with tempfile.TemporaryDirectory() as temporary:
-            directory = Path(temporary)
+            directory = Path(temporary).resolve()
+            backend_key = "private-builder-key-opaque-credential-123456"
+            credential = directory / "private.key"
+            credential.write_text(backend_key)
+            credential.chmod(0o600)
             source = directory / "source.tar"
             source.write_bytes(b"opaque input")
             candidate = b"\0" * (1024 * 1024)
@@ -158,13 +162,15 @@ class BuildSdkSession(unittest.TestCase):
                 status['rootfs_sha256'] = 'f' * 64
             if failure is not None:
                 status.update(state=failure.get('state', 'failed'), error_type='InvalidTemplate')
-            profile = {"runtime": {"credentials": [{"tenant": 1, "secret": "runtime-key"}]},
-                "builder": {"bind": "127.0.0.1:1", "domain": "example.invalid", "credentials": [{"secret": "builder-key"}]},
+            profile = {"center": {"private_address": "127.0.0.1:1", "domain": "example.invalid",
+                    "credential_file": str(credential),
+                    "private_windows": {"window_duration_ms": 1000000, "max_anchors": 2},
+                    "max_timeout_secs": 3600, "max_lifetime_secs": 3600},
                 "tools": {name: {"path": str(source), "sha256": "a" * 64} for name in
                     ("buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl")},
                 "dns_servers": ["1.1.1.1", "8.8.8.8"]}
             backend = Backend(profile)
-            row = {"id": "a" * 32, "input_hash": hashlib.sha256(source.read_bytes()).hexdigest(), "deadline": 1000,
+            row = {"id": "a" * 32, "owner": 1, "input_hash": hashlib.sha256(source.read_bytes()).hexdigest(), "deadline": 1000,
                 "request": json.dumps({"kind": kind, "image": "docker.io/library/ubuntu:24.04",
                     "resources": {"diskMiB": 1, "minFreeMiB": 16}})}
             now = [0]
@@ -235,7 +241,7 @@ class BuildSdkSession(unittest.TestCase):
             def existing_session(selected, *, create):
                 self.assertIs(selected, row)
                 self.assertTrue(create)
-                window_http.assert_called_once_with('builder', 'POST', '/sandproof/internal-build-windows', {})
+                window_http.assert_called_once_with('builder', 'POST', '/sandproof/internal-build-windows', {}, owner=1)
                 store.private_checkpoint.assert_called_once_with(row['id'], private_window=opened['requestWindow'])
                 store.get.assert_called_once_with(row['id'])
                 return {"session": session}
@@ -312,6 +318,9 @@ class BuildSdkSession(unittest.TestCase):
                 identity.assert_called_once_with(row, create=True)
                 config = files.call_args.args[2]
                 self.assertEqual(config.sandbox_headers["X-Access-Token"], "private-token")
+                self.assertEqual(config.sandbox_headers["x-sandproof-build-key"], backend_key)
+                self.assertEqual(config.sandbox_headers["x-sandproof-build-owner"], "1")
+                self.assertEqual(config.api_url, "http://127.0.0.1:1")
                 self.assertEqual((directory / "candidate.ext4").stat().st_size, len(candidate))
                 self.assertEqual((directory / "candidate.ext4").read_bytes(), candidate)
                 if hasattr((directory / "candidate.ext4").stat(), 'st_blocks'):

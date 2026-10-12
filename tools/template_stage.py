@@ -19,12 +19,13 @@ import tempfile
 ZERO_BLOCK = bytes(64 * 1024)
 
 
-def private_directory(path):
+def private_directory(path, *, allowed_owners=None):
     path = Path(path)
     if not path.is_absolute() or path.resolve(strict=True) != path:
         raise ValueError("absolute nonsymlink directory required")
     meta = path.stat()
-    if not stat.S_ISDIR(meta.st_mode) or meta.st_uid != os.geteuid() or meta.st_mode & 0o077:
+    owners = (os.geteuid(),) if allowed_owners is None else allowed_owners
+    if not stat.S_ISDIR(meta.st_mode) or meta.st_uid not in owners or meta.st_mode & 0o077:
         raise ValueError("private operator directory required")
 
 
@@ -55,7 +56,7 @@ def copy_sparse(source, target):
     with source.open("rb", buffering=0) as incoming, target.open("xb") as output:
         size = os.fstat(incoming.fileno()).st_size
         try:
-            if not all(hasattr(os, name) for name in ("SEEK_DATA", "SEEK_HOLE", "sendfile")):
+            if sys.platform != "linux" or not all(hasattr(os, name) for name in ("SEEK_DATA", "SEEK_HOLE", "sendfile")):
                 raise OSError(errno.ENOSYS, "extent copy unavailable")
             position = 0
             while position < size:
@@ -104,14 +105,15 @@ def sync_directory(path):
         os.close(descriptor)
 
 
-def owned_candidate(path):
+def owned_candidate(path, *, allowed_owners=None):
     meta = path.lstat()
-    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid()
+    owners = (os.geteuid(),) if allowed_owners is None else allowed_owners
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid not in owners
             or meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) not in (0o600, 0o400, 0o444)):
         raise ValueError("private single-link downloaded candidate required")
 
 
-def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id, ownership=None):
+def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id, ownership=None, registry_owner_uid=None):
     """Consume one supervisor-owned download after its builder was reclaimed.
 
     Same-filesystem rename transfers the inode; it never shares a writable
@@ -124,30 +126,37 @@ def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_me
             or any(c not in "0123456789abcdef" for c in candidate_id)
             or disk.name != "candidate.ext4" or disk.parent.name != candidate_id):
         raise ValueError("fixed supervisor candidate slot required")
-    for path in (root, root / "inbox", root / "artifacts", disk.parent):
-        private_directory(path)
+    registry_owner_uid = os.geteuid() if registry_owner_uid is None else registry_owner_uid
+    if type(registry_owner_uid) is not int or not 0 <= registry_owner_uid <= 2**32 - 2:
+        raise ValueError("explicit registry owner required")
+    owners = (os.geteuid(), registry_owner_uid)
+    for path in (root, root / "inbox", root / "artifacts"):
+        private_directory(path, allowed_owners=(registry_owner_uid,))
+    private_directory(disk.parent)
     final = root / "inbox" / candidate_id
     pending = root / "inbox" / (".stage-" + candidate_id)
     if not disk.exists() and not disk.is_symlink():
         if final.exists():
             if ownership is not None:
-                stage_inventory(final, ownership)
-            private_directory(final)
-            owned_candidate(final / "rootfs.ext4")
+                stage_inventory(final, ownership, registry_owner_uid=registry_owner_uid)
+            private_directory(final, allowed_owners=(registry_owner_uid,))
+            owned_candidate(final / "rootfs.ext4", allowed_owners=(registry_owner_uid,))
             # A completed handoff has no source name. The same immutable
             # manifest/status/kernel must still match on every retry.
             return stage(root, kernel, final / "rootfs.ext4", status, owner, cpu,
-                         memory_mib, host_memory_mib, candidate_id=candidate_id, ownership=ownership)
+                         memory_mib, host_memory_mib, candidate_id=candidate_id, ownership=ownership,
+                         registry_owner_uid=registry_owner_uid)
         if pending.exists():
             if ownership is not None:
                 # Resume in the nonce-bound directory without deleting any
                 # inode. An incomplete/unrecognized file fails closed and is
                 # handled only by the supervisor's journaled cleanup protocol.
-                stage_inventory(pending, ownership)
-                owned_candidate(pending / "rootfs.ext4")
+                stage_inventory(pending, ownership, registry_owner_uid=registry_owner_uid)
+                owned_candidate(pending / "rootfs.ext4", allowed_owners=owners)
                 return _stage(root, kernel, pending / "rootfs.ext4", status, owner, cpu,
                               memory_mib, host_memory_mib, candidate_id=candidate_id,
-                              move_disk=False, ownership=ownership, resume_download=True)
+                              move_disk=False, ownership=ownership, resume_download=True,
+                              registry_owner_uid=registry_owner_uid)
             private_directory(pending)
             owned_candidate(pending / "rootfs.ext4")
             os.rename(pending / "rootfs.ext4", disk)
@@ -155,12 +164,14 @@ def stage_downloaded(root, kernel, disk, status, owner, cpu, memory_mib, host_me
             sync_directory(pending)
     owned_candidate(disk)
     return _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib,
-                  candidate_id=candidate_id, move_disk=True, ownership=ownership, resume_download=True)
+                  candidate_id=candidate_id, move_disk=True, ownership=ownership, resume_download=True,
+                  registry_owner_uid=registry_owner_uid)
 
 
-def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id=None, ownership=None):
+def stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id=None, ownership=None, registry_owner_uid=None):
     return _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib,
-                  candidate_id=candidate_id, move_disk=False, ownership=ownership)
+                  candidate_id=candidate_id, move_disk=False, ownership=ownership,
+                  registry_owner_uid=registry_owner_uid)
 
 
 def stage_sync(path):
@@ -171,9 +182,9 @@ def stage_sync(path):
         os.close(fd)
 
 
-def stage_owner(path, ownership):
+def stage_owner(path, ownership, *, allowed_owners=None):
     """Recover only the journal-reserved unpublished marker staging cut."""
-    private_directory(path)
+    private_directory(path, allowed_owners=allowed_owners)
     encoded = json.dumps(ownership, sort_keys=True).encode()
     marker, partial = path / ".build-owner.json", path / ".build-owner.partial"
     if marker.exists():
@@ -199,11 +210,12 @@ def stage_owner(path, ownership):
     stage_sync(path.parent)
 
 
-def stage_inventory(path, ownership, *, initialize=False):
+def stage_inventory(path, ownership, *, initialize=False, registry_owner_uid=None):
     """Exact bounded staging inventory; never recurse through guest output."""
-    private_directory(path)
+    owners = (os.geteuid(),) if registry_owner_uid is None else (os.geteuid(), registry_owner_uid)
+    private_directory(path, allowed_owners=owners)
     if initialize:
-        stage_owner(path, ownership)
+        stage_owner(path, ownership, allowed_owners=owners)
     marker = path / ".build-owner.json"
     encoded = json.dumps(ownership, sort_keys=True).encode()
     if marker.is_symlink() or marker.stat().st_size != len(encoded) or marker.read_bytes() != encoded:
@@ -214,17 +226,18 @@ def stage_inventory(path, ownership, *, initialize=False):
             if entry.name not in {"kernel", "rootfs.ext4", "manifest.json", ".build-owner.json"} or len(files) >= 4:
                 raise ValueError("unknown staging entry")
             meta = entry.stat(follow_symlinks=False)
-            if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or meta.st_uid != os.geteuid():
+            if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or meta.st_uid not in owners:
                 raise ValueError("unknown staging inode")
             files.append([entry.name, meta.st_dev, meta.st_ino])
     meta = path.stat()
     return {"directory": [meta.st_dev, meta.st_ino], "files": files}
 
 
-def stage_delete(path, manifest):
+def stage_delete(path, manifest, *, registry_owner_uid=None):
     """Idempotent unlink of a previously committed exact manifest only."""
     if path.exists() or path.is_symlink():
-        private_directory(path)
+        owners = (os.geteuid(),) if registry_owner_uid is None else (os.geteuid(), registry_owner_uid)
+        private_directory(path, allowed_owners=owners)
         meta = path.stat()
         if manifest["directory"] != [meta.st_dev, meta.st_ino]:
             raise ValueError("staging directory identity changed")
@@ -244,10 +257,12 @@ def stage_delete(path, manifest):
 
 
 def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, *, candidate_id,
-           move_disk, ownership=None, resume_download=False):
+           move_disk, ownership=None, resume_download=False, registry_owner_uid=None):
     root, kernel, disk = map(Path, (root, kernel, disk))
+    registry_owner_uid = os.geteuid() if registry_owner_uid is None else registry_owner_uid
+    owners = (os.geteuid(), registry_owner_uid)
     for path in (root, root / "inbox", root / "artifacts"):
-        private_directory(path)
+        private_directory(path, allowed_owners=(registry_owner_uid,))
     if (type(owner) is not int or not 0 < owner < 2**64 or type(cpu) is not int or not 1 <= cpu <= 255
             or type(memory_mib) is not int or not 128 <= memory_mib <= 2**32 - 1
             or type(host_memory_mib) is not int or not memory_mib < host_memory_mib <= 2**32 - 1):
@@ -275,10 +290,10 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
     final = root / "inbox" / candidate
     if final.exists() or final.is_symlink():
         if ownership is not None:
-            stage_inventory(final, ownership)
+            stage_inventory(final, ownership, registry_owner_uid=registry_owner_uid)
         if file_hash(disk) != rootfs_digest:
             raise ValueError("candidate disk mismatch")
-        private_directory(final)
+        private_directory(final, allowed_owners=(registry_owner_uid,))
         manifest = json.loads((final / "manifest.json").read_text())
         binding = manifest["binding"]
         if (binding["owner"] != owner or binding["template_id"] != "tpl-" + candidate
@@ -293,11 +308,11 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
     if candidate_id:
         pending = root / "inbox" / (".stage-" + candidate)
         if pending.exists() or pending.is_symlink():
-            private_directory(pending)
+            private_directory(pending, allowed_owners=owners)
             if ownership is not None:
                 # The journal must commit an exact deletion manifest first.
                 # Never adopt or broadly remove interrupted/unrecognized data.
-                stage_inventory(pending, ownership, initialize=True)
+                stage_inventory(pending, ownership, initialize=True, registry_owner_uid=registry_owner_uid)
                 if not resume_download:
                     raise ValueError("interrupted bounded staging requires journaled cleanup")
             else:
@@ -309,14 +324,14 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
     moved = False
     try:
         if ownership is not None:
-            stage_owner(pending, ownership)
+            stage_owner(pending, ownership, allowed_owners=owners)
         artifacts = {}
         for name, source in (("kernel", kernel), ("rootfs.ext4", disk)):
             target = pending / name
             if ownership is not None and resume_download and target.exists():
                 # A crash may leave a complete copied kernel or transferred
                 # disk. Never overwrite/recopy it or adopt mismatching bytes.
-                owned_candidate(target)
+                owned_candidate(target, allowed_owners=owners)
                 expected_hash = rootfs_digest if name == "rootfs.ext4" else file_hash(source)
                 if target.stat().st_size != source.stat().st_size or file_hash(target) != expected_hash:
                     raise ValueError("interrupted staging artifact mismatch")
@@ -363,6 +378,19 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
                 output.flush()
                 os.fsync(output.fileno())
         (pending / "manifest.json").chmod(0o444)
+        # All copying, writable handles, hash readback and fsync precede the
+        # ownership handoff. Only this nonce-bound sealed directory is handed
+        # to the center. A crash during chown remains the same pending slot,
+        # never an accepted candidate inferred from missing source bytes.
+        if registry_owner_uid != os.geteuid():
+            if os.geteuid() != 0 or ownership is None:
+                raise ValueError("root nonce-bound registry handoff required")
+            stage_inventory(pending, ownership, registry_owner_uid=registry_owner_uid)
+            for name in ("kernel", "rootfs.ext4", "manifest.json", ".build-owner.json"):
+                os.chown(pending / name, registry_owner_uid, -1, follow_symlinks=False)
+                with (pending / name).open("rb") as saved:
+                    os.fsync(saved.fileno())
+            os.chown(pending, registry_owner_uid, -1, follow_symlinks=False)
         descriptor = os.open(pending, os.O_RDONLY)
         try:
             os.fsync(descriptor)
@@ -383,6 +411,8 @@ def _stage(root, kernel, disk, status, owner, cpu, memory_mib, host_memory_mib, 
             if disk.exists() or disk.is_symlink():
                 raise RuntimeError("download slot reappeared during handoff")
             os.rename(pending / "rootfs.ext4", disk)
+            if disk.stat().st_uid != os.geteuid():
+                os.chown(disk, os.geteuid(), -1, follow_symlinks=False)
             sync_directory(disk.parent)
             sync_directory(pending)
         # Only this newly allocated staging directory; never a caller-selected target.

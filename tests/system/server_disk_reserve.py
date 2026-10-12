@@ -1,4 +1,4 @@
-"""Real VM admission/cleanup under low space on a private 4 GiB host filesystem.
+"""Real dual-service VM admission/cleanup on one private bounded filesystem.
 
 Uses the pinned SDK and a reviewed root-only service/configuration. By default
 this tests admission reserve; --exhaustion selects real block/inode ENOSPC.
@@ -16,6 +16,7 @@ _require_assertions()
 
 
 import argparse
+import copy
 from contextlib import closing
 import http.client
 import importlib.metadata
@@ -29,20 +30,23 @@ import sqlite3
 import subprocess
 import sys
 import traceback
-import urllib.request
+import time
 
 from e2b import Sandbox
 from e2b.exceptions import RateLimitException
 
 from sdk_server_smoke import options
 from server_process_crash import (
-    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
+    free_loopback_port, process_start_ticks,
 )
-from server_storage_filesystems import command, digest, git, trusted
+from _storage_probe_utils import command, digest, git, trusted
+from _complete_runtime import complete_runtime
+from _runtime_services import RuntimeServices, add_arguments
 
 
 MIB = 1024**2
-SCRATCH_BYTES = 4096 * MIB
+SCRATCH_BYTES = 64 * 1024 * MIB
+SCRATCH_INODES = 65536
 RESERVE = 256 * MIB
 
 
@@ -130,7 +134,14 @@ def healthy(sandbox, marker, payload):
     assert sandbox.files.read(marker, format="bytes") == payload
 
 
-def exercise(args, mounted, template):
+def prepare_services(args, mounted, template):
+    """One fresh approved native pool, not a legacy config upgrader.
+
+    All center, Redis, cache and local allocations share this private filesystem.
+    The caller's exact bind-mounted 0711 staging parent lets distinct service
+    accounts traverse their OWN 0700 role roots, not the private evidence root.
+    """
+    from server_templates import descriptor
     config = dict(template)
     for name in ("db", "state", "jails"):
         (mounted / name).mkdir(mode=0o700)
@@ -139,24 +150,55 @@ def exercise(args, mounted, template):
     config.update(
         namespace=secrets.token_hex(8), database=str(mounted / "db/controller.db"),
         node_state_dir=str(mounted / "state"), chroot_base=str(mounted / "jails"),
-        bind=f"127.0.0.1:{port}", credentials=[dict(tenant=1, secret=key)],
         max_active_global=4, max_active_per_tenant=4,
         max_disk_bytes_global=8192 * MIB, max_disk_bytes_per_tenant=4096 * MIB,
         cleanup_reserve_bytes=RESERVE, public_ipv4_enabled=False,
+        max_timeout_secs=600,max_lifetime_secs=600,startup_timeout_secs=300,
+        expiry_scan_seconds=1,
     )
-    config_path = args.root / "config.json"
-    config_path.write_text(json.dumps(config))
-    config_path.chmod(0o600)
+    bound=descriptor('storage-runtime',Path(config['kernel']),Path(config['rootfs']),1,512)
+    catalog=dict(templates=[bound],aliases=dict(base=bound['template_id']),compute_limits=dict(
+        max_vcpus_global=4,max_vcpus_per_tenant=4,
+        max_memory_bytes_global=4*768*MIB,max_memory_bytes_per_tenant=4*768*MIB))
+    config['templates']=catalog
+    config=complete_runtime(config,slots=4)
+    registry=dict(root=str(mounted/'unused-registry'),max_templates_global=1,max_templates_per_tenant=1,
+        max_artifact_bytes_global=2*1024*MIB,max_artifact_bytes_per_tenant=2*1024*MIB,
+        max_template_disk_bytes=1024*MIB,validation_timeout_secs=120)
+    services=RuntimeServices.prepare(args,mounted,[config],[catalog],key,f'127.0.0.1:{port}',
+        args.service_cgroup_record,job_count=4,registry_config=registry)
+    return services,services.native_pools[0],key,services.sdk_url
+
+
+def wait_disk_veto(services):
+    """Observe the authenticated original host's physical veto, not a sleep.
+
+    This preserves the pre-admission 429 scenario. A stale positive observation
+    followed by an accepted-but-unanswered request is a DIFFERENT unknown case,
+    never evidence of rejection without side effects.
+    """
+    deadline=time.monotonic()+30
+    while time.monotonic()<deadline:
+        audit=services.planned_audit('center')
+        nodes=[node for node in audit['nodes']
+               if node['identity']==services.host_configs[0]['inbox']['node']]
+        assert len(nodes)==1
+        if nodes[0]['free']['disk_bytes']==0:
+            return audit
+        time.sleep(.1)
+    raise TimeoutError('original physical veto not observed; no creation replay')
+
+
+def exercise(args, mounted, template):
+    services,config,key,url=prepare_services(args,mounted,template)
     resources = Resources(config)
-    url = f"http://127.0.0.1:{port}"
     sdk = options(key, url, url)
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process = start_server(args.server, config_path, args.root / "server.log", None)
     live = []
     filler = mounted / "own-filler"
     completed = False
     try:
-        wait_ready(opener, url, key, process)
+        services.start()
+        services.wait_ready()
         assert Sandbox.list(**sdk).next_items() == []
         for _ in range(2):
             live.append(Sandbox.create(template="base", timeout=300,
@@ -180,6 +222,7 @@ def exercise(args, mounted, template):
             os.fsync(stream.fileno())
         pressured = free_bytes(mounted)
         assert RESERVE <= pressured < disk_bytes + RESERVE
+        original_global=wait_disk_veto(services)
         try:
             Sandbox.create(template="base", timeout=300, allow_internet_access=False, **sdk)
         except RateLimitException as error:
@@ -188,6 +231,9 @@ def exercise(args, mounted, template):
             raise AssertionError("low physical space admitted a new sandbox")
         assert database_count(config["database"]) == before_count
         assert {path.name for path in resources.claims.iterdir()} == before_claims
+        after_global=services.planned_audit('center')
+        assert after_global['sandbox_highwater']==original_global['sandbox_highwater']
+        assert after_global['operation_highwater']==original_global['operation_highwater']
         for sandbox in live:
             healthy(sandbox, marker, payload)
         # Keep the filler in place through physical destruction.
@@ -205,6 +251,7 @@ def exercise(args, mounted, template):
         filler.unlink()
         recovered = free_bytes(mounted)
         assert recovered > after_kill and recovered >= disk_bytes + RESERVE
+        services.wait_ready()
         fresh = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **sdk)
         live.append(fresh)
         resources.sample()
@@ -217,6 +264,8 @@ def exercise(args, mounted, template):
         assert Sandbox.list(**sdk).next_items() == []
         resources.audit()
         assert len(resources.samples) == 3
+        services.processes.stop_all()
+        services.cleanup_staging()
         completed = True
         return dict(
             available_before=initial, allocated_filler_bytes=allocated,
@@ -236,7 +285,7 @@ def exercise(args, mounted, template):
                 except Exception:
                     pass  # Physical audit below remains the acceptance gate.
             resources.audit()
-        stop_server(process)
+        services.processes.stop_all()
 
 
 def child(args):
@@ -251,7 +300,10 @@ def child(args):
     image = args.root / "scratch.ext4"
     with image.open("xb") as stream:
         stream.truncate(SCRATCH_BYTES)
-    template = json.loads(args.config.read_text())
+    template=dict(jailer=str(args.jailer),firecracker=str(args.firecracker),
+        kernel=str(args.kernel),rootfs=str(args.rootfs),uid_base=args.uid_base,
+        vcpu_count=1,memory_mib=512,file_policy_digest=1,
+        host_resources=dict(cgroup_parent=str(args.cgroup_parent),memory_max_bytes=768*MIB))
     assert Path(template["rootfs"]).stat().st_size == 1024 * MIB
     assert template["vcpu_count"] == 1 and template["memory_mib"] == 512
     assert template["host_resources"]["memory_max_bytes"] == 805306368
@@ -262,7 +314,7 @@ def child(args):
     assert Path(backing.read_text().strip()).samefile(image)
     mounted_ok = False
     try:
-        inode_options = ["-N", "1024"] if args.exhaustion == "inodes" else []
+        inode_options = ["-N", str(SCRATCH_INODES)]
         command("mkfs.ext4", "-q", "-F", "-m", "0", *inode_options, str(loop))
         # Jailer creates its private KVM/TUN device nodes and executable inside
         # this filesystem; nodev/noexec would invalidate the runtime fixture.
@@ -277,20 +329,38 @@ def child(args):
         assert Path(backing.read_text().strip()).samefile(image)
         command("losetup", "--detach", str(loop))
         raise
+    staging=args.service_staging_parent / ('storage-'+secrets.token_hex(16))
+    staging.mkdir(mode=0o711)
+    staging.chmod(0o711)
+    inner_staging=mounted/'services'
+    inner_staging.mkdir(mode=0o711)
+    inner_staging.chmod(0o711)
+    stage_identity=(staging.stat().st_dev,staging.stat().st_ino)
     try:
+        command('mount','--bind',str(inner_staging),str(staging))
+        assert staging.stat().st_dev==mounted.stat().st_dev
+        fixture_args=copy.copy(args)
+        fixture_args.service_staging_parent=staging
         if args.exhaustion:
             from host_enospc import exercise_enospc
-            report = exercise_enospc(args, mounted, template)
+            report = exercise_enospc(fixture_args, mounted, template)
         else:
-            report = exercise(args, mounted, template)
+            report = exercise(fixture_args, mounted, template)
         assert digest(Path(template["rootfs"])) == base_hash
         assert git("rev-parse", "HEAD") == revision and not git("status", "--porcelain")
         (args.root / "observations.json").write_text(json.dumps(report, indent=2))
+        assert not any(staging.iterdir()), 'exact service staging cleanup incomplete'
+        command('umount',str(staging))
+        assert (staging.stat().st_dev,staging.stat().st_ino)==stage_identity
+        staging.rmdir()
         command("umount", str(mounted))
         assert mounted.stat().st_dev == args.root.stat().st_dev
         assert Path(backing.read_text().strip()).samefile(image)
         command("losetup", "--detach", str(loop))
         assert not backing.exists()
+        # Successful evidence is small; the run's exact detached backing image
+        # is not a reusable template and must not retain pressure-test blocks.
+        image.unlink()
     except BaseException:
         (args.root / "failure.log").write_text(traceback.format_exc())
         print(json.dumps(dict(failed=True, recovery_supervisor_pid=os.getpid(),
@@ -300,8 +370,9 @@ def child(args):
             signal.pause()
     report.update(
         revision=revision, script_sha256=digest(Path(__file__)), kernel=os.uname().release,
-        server_sha256=args.server_sha256, base_sha256=base_hash,
+        center_sha256=digest(args.center),host_sha256=digest(args.host),base_sha256=base_hash,
         scratch_bytes=SCRATCH_BYTES, unmounted=True, loop_detached=True,
+        scratch_image_removed=True,
         scope=("selected host ENOSPC and recovery; not final budgets or protection from arbitrary host writes"
                if args.exhaustion else
                "selected physical admission reserve and cleanup; not ENOSPC or final budgets"),
@@ -314,21 +385,25 @@ def child(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", type=Path, required=True)
-    parser.add_argument("--server-sha256", required=True)
-    parser.add_argument("--config", type=Path, required=True)
+    for name in ('jailer','firecracker','kernel','rootfs','cgroup-parent'):
+        parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--uid-base',type=int,required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--exhaustion", choices=("blocks", "inodes"))
-    parser.add_argument("--expected-inode-status", type=int, choices=(500, 503), default=500,
-                        help="503 only reproduces the old unsafe busy reply; acceptance requires 500")
     parser.add_argument("--parent-mount-inode", type=int, help=argparse.SUPPRESS)
+    add_arguments(parser)
     args = parser.parse_args()
     assert os.geteuid() == 0 and sys.platform == "linux"
     assert importlib.metadata.version("e2b") == "2.51.0"
     os.umask(0o077)
-    trusted(args.server, private=True)
-    trusted(args.config, private=True)
-    assert digest(args.server) == args.server_sha256
+    for name in ('center','host','jailer','firecracker','kernel','rootfs','candidate_manifest'):
+        source=getattr(args,name).resolve(strict=True)
+        trusted(source,private=True)
+        setattr(args,name,source)
+    parent=args.service_staging_parent.resolve(strict=True)
+    trusted(parent)
+    assert parent.stat().st_uid==0 and parent.stat().st_mode&0o7777==0o711
+    args.service_staging_parent=parent
     assert args.root.is_absolute() and not args.root.exists()
     if args.parent_mount_inode is None:
         inode = os.stat("/proc/self/ns/mnt").st_ino

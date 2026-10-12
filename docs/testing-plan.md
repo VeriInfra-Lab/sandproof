@@ -42,7 +42,7 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 ### 持久化、身份与有界运行
 
-请求入口（#290 R1）用[管理路由合同](../sandbox-api/tests/http_contract.rs)、[真实应用锁夹具](../sandbox-api/tests/managed_port/admission.rs)、[取消/回应期限测试](../sandbox-api/src/lib.rs)及 [Linux 网关端口夹具](../sandbox-server/src/gateway/port_tests.rs)验收：受控宿主持锁时请求满额即 429，不新增后端调用；有效/无效数据令牌均受派发预算限制；控制及后台名额保留；HTTP 取消、回应期限耗尽后阻塞工作继续占额，实际结束/异常退出才释放。固定 SDK 的既有 429 映射与重试检查仍须通过，重试不意味着客户端具备幂等键。以上为真实 SQLite/HTTP 加受控宿主的组件证据，不是 KVM 性能或完整拒绝服务防护证明；远程部署还须验收模块合同列出的 TLS 前端约束。
+请求入口（#290 R1）用[管理路由合同](../sandbox-api/tests/http_contract.rs)、[真实应用锁夹具](../sandbox-api/tests/managed_port/admission.rs)、[取消/回应期限测试](../sandbox-api/src/lib.rs)及 [Linux 网关端口夹具](../sandbox-host-service/src/data_gateway/port_tests.rs)验收：受控宿主持锁时请求满额即 429，不新增后端调用；有效/无效数据令牌均受派发预算限制；控制及后台名额保留；HTTP 取消、回应期限耗尽后阻塞工作继续占额，实际结束/异常退出才释放。固定 SDK 的既有 429 映射与重试检查仍须通过，重试不意味着客户端具备幂等键。以上为真实 SQLite/HTTP 加受控宿主的组件证据，不是 KVM 性能或完整拒绝服务防护证明；远程部署还须验收模块合同列出的 TLS 前端约束。
 
 - 接受意图及 outbox 先提交，再执行外部动作；提交前故障不得产生 VM。启动成功而回执未落盘时，重启认出原 VM，不创建替代身份。
 - 启动期限不冒充运行寿命；运行起点与 Running 同事务发布。续期、到期和终止竞争不能由旧定时工作复活或误销毁实例。
@@ -54,6 +54,11 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 - 按完整部署配置核对 DB/WAL/temp、各表、claim/fence/secret、登记、日志、模板缓存和稀疏盘未来增长。条数下降不等于真实字节有界。
 
 组件入口包括[缓存差分](../controller-service/src/controller/cache_tests.rs)、[身份分配](../controller-service/src/controller/allocator_tests.rs)、[API 耗尽](../sandbox-api/tests/managed_port/allocators.rs)、[有界位置与维护](../sandbox-api/tests/managed_port/bounded_slots.rs)及[模板发布](../sandbox-api/tests/managed_port/publication.rs)。实际宿主观察不能仅由这些测试替身代替。
+
+#292 的[原子本地映射与事实组件](../controller-service/src/controller/internal_inbox/tests.rs)纳入 `scripts/check-distributed-contract.sh` 的原收件测试步骤：准入提交前后与两种未知提交结果均重开真实 SQLite，检查实例/租户映射、原配额、固定位置和编号同进退；模板修订/摘要/形状/owner、期限及配额拒绝不产生本地责任；多租户映射单射且重复请求不重分配。销毁收件与原核心终止同事务，准备动作回执丢失时也不得继续旧创建。原工作流的受控证据只用于组件测试：Ready 使用原发布时刻，事实提交前后故障可重建原结果；Destroyed/逻辑回收还不是 Cleaned，必须核对原 ConfirmRelease；该实例的终局确认及保留位置退休完成前，本地维护不能删掉映射依赖。旧收件格式明确拒绝且不修复。这些不是原应用执行组装、KVM 或两题通过的证据，实机仍按 DK 场景验收。
+
+
+[宿主应用执行组件](../sandbox-host-service/tests/durable_https/execution.rs)在原 ControllerApplication 和真实 SQLite 上验收创建/重复/重开、丢激活回执恢复、销毁先到、原数据许可即时撤销及排空、物理释放未知保留 Stopped、中心断线后的原到期处理；取消由明确宿主屏障控制，实际工作结束前入口许可不归还。[真实 Redis/HTTPS 组合](../sandbox-center-store/tests/redis_ledger.rs)再检查原本地执行事实已持久而中心丢回执/重启，重发原请求得到同一 VM/寿命，只有收到原 Cleaned 才释放中心额度。宿主物理动作在这些组件中受控，不能记为 KVM、SDK 生产入口或 DK 用例通过。
 
 凭据隔离另以[同库索引故障](../controller-service/src/controller/data_credentials/tests.rs)、[管理层恢复与授权](../sandbox-api/tests/managed_port/credential_isolation.rs)及[两台真实虚拟机](../tests/system/server_credential_isolation.py)分层验收：单个宿主凭据缺失、损坏或有效内容改变只拒绝该对象；健康对象仍可执行命令、读写文件。共享索引缺失、损坏或重复绑定须拒绝数据授权，不自动补造登记；原管理清理仍按生命周期合同进行。实机入口保留原凭据 inode，故障后恢复它并逐台核对精确资源，不代表恶意宿主存储已验证。
 
@@ -67,14 +72,14 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 | 实机入口 | 必查内容 |
 |---|---|
-| [C02 固定监督](../tests/system/sdk_c02_acceptance.py) | 批准的精确提交、server 摘要、宿主/探针配置；单轮私有身份，失败收尾和原资源审计 |
+| [C02 固定监督](../tests/system/sdk_c02_acceptance.py) | 批准的精确提交、中心/宿主双产物与固定 Redis/TLS 清单、宿主/探针配置；单轮私有身份、实际角色进程回执、失败收尾和原资源审计 |
 | [基础 SDK 服务](../tests/system/sdk_server_smoke.py)、[查询列表](../tests/system/sdk_list_queries.py)、[详情](../tests/system/sdk_sandbox_details.py) | create/connect/get/list/kill、字段默认值及归属；真实启停，不以接口成功冒充资源消失 |
 | [寿命参数](../tests/system/sdk_lifetime_values.py)、[运行起点](../tests/system/sdk_running_start.py) | 同步/异步默认与显式参数、延长/缩短、总上限、到期及同库重启 |
 | [进程崩溃](../tests/system/server_process_crash.py)、[未就绪中止](../tests/system/server_unready_abort.py)、[启动恢复隔离](../tests/system/server_prepare_recovery_isolation.py) | 宿主动作前后退出、回执丢失、恢复同一 VM、单实例故障不阻塞其他实例 |
 | [私有系统盘](../tests/system/sdk_private_root.py)、[文件权限](../tests/system/sdk_file_permissions.py) | root/普通用户、两实例隔离、基础镜像不变、失败初始化不污染新实例 |
 | [公网规则](../tests/system/sdk_public_network.py)、[网络回执崩溃](../tests/system/sdk_network_receipt_crash.py) | 禁网/公网/静态 IPv4 的真实 TCP/UDP；宿主管理、私有目标及其他沙箱拒绝；丢回执恢复原规则 |
 | [网关慢流](../tests/system/gateway_slow_boundaries.py)、[上传中断](../tests/system/transfer_interruption.py) | 命令/文件超时、断线、大输出、迟到拒绝响应、撤销后中继停止并回收 |
-| [磁盘预留](../tests/system/server_disk_reserve.py)、[物理文件系统](../tests/system/server_storage_filesystems.py)、[有界轮转](../tests/system/server_bounded_churn.py) | 空间不足仍能收尾、部署 profile 与真实字节、位置复用及旧动作拒绝 |
+| [磁盘预留与耗尽](../tests/system/server_disk_reserve.py)、[物理文件系统组件](../sandbox-server/src/storage.rs)、[固定物理配置](../sandbox-node/src/physical_profile.rs)、[有界轮转](../tests/system/server_bounded_churn.py) | 空间不足仍能收尾、同文件系统要求与跨文件系统拒绝、部署 profile 与真实字节、位置复用及旧动作拒绝；组件通过不代替新入口的实机压力验收 |
 
 网络测试须按当前合同报告 IPv6 与 DNS 边界，不把来宾配置或仅拦 TCP/53 当作完整 DNS 防绕过。静态规则使用合同中的部署配置，不虚构固定 SDK 没有的创建字段。DNS 域名过滤/严格转发控制等未交付能力不能计入通过。
 
@@ -108,17 +113,35 @@ C02 原始目录含凭据、配置及完整日志，只在私有目录保存；`
 - 实测真实成功、失败和随后干净恢复，并验证原单元接管、管理凭据不进入准备/批次/来宾、外来资源不被清理。组件故障夹具不能代替这些宿主验收。
 - App 授权、受控安装和两级晋升门槛部署以对应 issue/PR 实测为准；保护要求专用 App 的精确检查名称，手动 `/ diagnostic` 或其他 App 同名检查不能代替。未返回成功不得晋升，不配置空绿色工作流。安装、私有配置与安全边界见[CI 运行环境](ci.md)。
 
-## 5. 中心与宿主验收（待实现）
+## 5. 中心与宿主验收（组合验收待完成）
 
-本节定义 #292 的必需验收，不表示已有脚本或已通过。合同依据见[中心与宿主高级操作](module-contracts.md#中心与宿主的高级操作合同)，性质与外部条件见[验证设计](formal-verification-design.md)。首先在同一物理 KVM 主机运行中心、Redis 和一个真实节点，各自独立进程/账号/目录，经版本化双向认证 HTTPS 通信；不使用同进程调用、免鉴权或免持久化替身冒充真实闭环。多台真实宿主另立后续任务，关单范围见蓝图。
+本节定义 #292 的必需验收；下方区分已接入的组件检查和仍需实测的完整链路，脚本存在不表示场景已通过。合同依据见[中心与宿主高级操作](module-contracts.md#中心与宿主的高级操作合同)，性质与外部条件见[验证设计](formal-verification-design.md)。首先在同一物理 KVM 主机运行中心、Redis 和一个真实节点，各自独立进程/账号/目录，经版本化双向认证 HTTPS 通信；不使用同进程调用、免鉴权或免持久化替身冒充真实闭环。多台真实宿主另立后续任务，关单范围见蓝图。
 
-普通隔离 CI 在现有 SDK 合同任务内增加计划中的 `scripts/check-distributed-contract.sh` 步骤：固定真实 Redis、专用回环数据目录、受控节点/时钟/证书，运行下列 DC 组件用例；不增加任务检查名称，不访问 KVM 或生产凭据，Redis 不能全由假库替代。脚本与依赖尚未交付，具体版本在实现批次锁定。
+普通隔离 CI 已在现有 SDK 合同任务内接入 [check-distributed-contract.sh](../scripts/check-distributed-contract.sh)，使用固定真实 Redis、专用回环数据目录和受控节点/时钟/证书运行下列组件检查；不增加任务检查名称，不访问 KVM 或生产凭据，Redis 不能全由假库替代。脚本包含共享身份、真实 TLS、Redis/SQLite、中心服务与唯一产品入口的定向检查，并明确输出未验收项；固定依赖制备与普通执行环境见[CI 运行环境](ci.md)。这些组件检查不能代替下列 DK 故障组和两题的候选实机验收。
 
-KVM 继续使用可信外部监督器，候选同一提交构建中心和节点，绑定二进制/协议/存储格式、Redis、证书配置、模板和宿主预算摘要。每轮独立 Redis/SQLite/登记/证书/端口/实例身份，两题的 SDK/Harbor 指向中心，经真实节点启动运行。下列 DK 故障组在两题前执行；只有故障组、两题原定判据、精确收尾与报告均通过才发布 `E2E / terminal-bench-ci` 成功。新监督链安装并完成真实正负例前，当前两题门槛保持；本节是待实现计划，不表示工作流、监督器或保护规则已经改变。
+KVM 继续使用可信外部监督器，候选同一提交离线构建 `sandproof-center` 与 `sandproof-host`，实际核对两个 `contract-versions`，绑定二进制/协议/业务信封/宿主格式、固定 Redis、证书配置、模板和完整宿主预算摘要。每轮独立 Redis/SQLite/登记/端口/实例身份；固定受保护测试证书须核对摘要、双方用途与名称，不能关闭证书验证。中心与 Redis 分别为不同非 root 身份，宿主为 root；SDK/Harbor 只指向中心，经真实双向认证宿主启动运行。下列 DK 故障组在两题前执行；只有故障组、两题原定判据、精确收尾与报告均通过才发布 `E2E / terminal-bench-ci` 成功。工具合同源码和自测不代表整条链已安装/验收；新监督链完成真实正负例及取消收尾前，当前已安装门槛保持，不以旧链绿灯替代新架构结果。
 
 两层预算计入原受控准入/独占，不取消他人任务或清空全局资源。故障/缺材料/超时/未知与未运行不能绿灯；结果留 CI 附件和 issue，不每次回写文档。
 
+### 已实现的通信基础检查
+
+独立通信基础的组件入口为 `bash scripts/check-distributed-contract.sh`：同一脚本运行 `cargo test --locked -p sandproof-protocol --test internal_contract` 和 `cargo test --locked -p sandproof-internal --all-targets`，对应测试也随工作区基础检查执行。它们使用独立回环端口和临时测试 CA/证书（仅测试依赖 rcgen 0.14.10），实际交换 TLS/HTTP 字节，不使用生产凭据；核对完整身份/计数器拒绝、双向证书链与登记摘要、证书名/用途、只读路由、两端头/正文边界（含错误响应和分块超额）、握手/完整请求期限、超额即拒及调用方取消后的原连接回收。定向运行不代替开发指南的完整基础检查，实际结果绑定 PR 提交。
+
+本段传输测试只覆盖 DC02 的认证/身份基础与传输预算；高级操作、持久映射和真实 Redis 的组合检查见下一节，不表示 DC02 整体、S1 或任何 DK 用例通过。只读探测也不作为节点健康/可接单证据；双服务实机部署及新 KVM 监督链的正例、负例与取消收尾仍须独立验收。
+
+### 已实现的存储基础检查
+
+同一组件脚本还执行 `sandbox-center-store` 的默认检查和 `redis-tests` 真实引擎用例。运行前把输入锁中的官方 Redis 归档下载至独立临时目录、核对 SHA-256，再编译 `make MALLOC=libc BUILD_TLS=no`；通过 `SANDPROOF_REDIS_SERVER` 提供该构建的绝对可执行路径。版本不符或缺失立即失败，不自动联网安装、使用系统版本、mock 或 skip。此测试 feature 只控制夹具，不提供产品运行模式。测试创建私有目录、独立回环端口和非生产凭据，仅停止/回收本轮子进程及目录。
+
+存储用例覆盖单块 CAS/旧修订冲突、原字节替换拒绝、缺账本不初始化、格式/部署/TTL/损坏/超额拒绝、超过 Lua 整数精度的修订及耗尽、必需持久化配置、实际 noeviction 拒绝、访问凭据/写者身份、引擎卡住时的期限、Redis 崩溃恢复、截断 AOF 拒绝且不修复，以及实际提交后丢失回执时的围栏和耐久重确认。单独的存储测试不宣称无半额度/无重复 VM 的组合结论；实际结果绑定 PR 提交。
+
+同一脚本也运行中心纯决策与原 SQLite 持久收件：多节点确定性负载选择、租户/平台额度、健康/物理空闲/模板否决、未知保留绑定、销毁超越迟到就绪、停止不释额、固定寿命、续期与销毁槽边界；收件包含全文/摘要去重、错身份/窗口/非规范化参数、销毁先到、提交前回滚/后重启以及 SQLite 提交结果未知的两种耐久结果。真实 Redis 与真实 SQLite 既使用明确标注的组件传输替身，也通过真实双向认证 HTTPS 组合，验证提交→异步派发→持久收件、写库后丢回执保留原身份/额度、原请求重放与迟到隔离；HTTPS/SQLite 另验证重开原库及 HTTP 取消不提前返还实际阻塞工作名额。它们不是已部署双服务或 KVM 验收。DC01–DC06/DC08–DC09 的组件覆盖不是整条链路完成；唯一产品入口、本地执行映射、确认/退休与容量仍须在同一候选上通过对应实机矩阵，全部 DK 和监督器受控安装验收不得省略。
+
 ### 5.1 组件用例（DC01–DC11）
+
+最小真实创建／销毁的组件证据可通过[独立实机入口](../tests/system/internal_lifecycle_smoke.py)手动验收：普通用户以 `cargo build --release --locked -p sandproof-center-store --example kvm_lifecycle` 构建[组件装配](../sandbox-center-store/examples/kvm_lifecycle.rs)，配合同源码 `sandproof-host relay`；保护精确提交/固定产物后按 `--help` 提供批准配置。它沿用原独占、真实 Redis/mTLS/SQLite/VM 及精确资源审计，不下载镜像、不接付费模型、不改全局网络；仅为组件装配，不是另一生产入口或旧公开服务降级。
+
+正式 SDK、Harbor 与晋升必须使用唯一中心/宿主 `initialize|serve|audit --config` 入口及[共同角色夹具](../tests/system/_center_host_services.py)，不能用组件示例代替。故障明确作用于中心、某个宿主或 Redis，重启保持原受保护配置与账本；公开客户端只访问中心。全局实例与本地 VM 编号通过原已校验宿主收件审计映射，不解析编号后缀。只读中心审计须停止该中心并取得原写者租约；无法观察原请求是否提交时保留未知责任，不将缺记录猜成 Cleaned。成功要求同一 Ready/Cleaned 身份、正确寿命与额度、实际进程账号/目录/cgroup、原 VM PID/时钟/网络/磁盘以及最终残留核对。缺角色、故障组、两题或精确收尾不能通过，安装与结果绑定 issue/PR 精确提交，不仅凭源码关闭 #292。
 
 | 编号 | 注入/输入 | 必需结果 |
 |---|---|---|
@@ -150,6 +173,15 @@ KVM 继续使用可信外部监督器，候选同一提交构建中心和节点�
 DK06 的循环次数、采样点、数据规模、期限及预算在验收配置中固定并纳入摘要，不写死为生产上限；不得只跑一次创建销毁就记作长期容量验收。采样包含两层受管驻留键/订阅/池/关联及队列规模，报告内存/条数/字节与预算的对应；库/内核剩余开销单列，不以计数稳定宣称整进程内存已证明。进程、网络、磁盘、数据库/Redis/AOF和日志残留按原身份观察，失败保留有限脱敏证据再精确清理。清理未知保留占用，不宽泛停机/删目录。
 
 两台真机后续任务至少覆盖：同一用户跨节点、两节点全局额度竞争、真实模板传输、节点整机关闭而中心存活、网络分区/恢复、时钟与资源差异。其结果另记，不能由 DK 用例替代。
+
+### 5.3 旧公开入口退出验收
+
+以下是 #292 公开链路切换及关单的必需检查，不表示已经完成。新链路通过对应验收时，同批清除被替代的生产组装和工具引用；在新链路未接通前不提前删除仍在使用的服务。只保留一种生产架构，不提供开发阶段旧库升级或双模式部署。
+
+- 公开 SDK 生命周期、命令/文件及模板用户入口均指向中心；宿主不安装公开用户鉴权表，不接受用户 SDK 管理请求。复用 DC02/DC10、DK01 的身份和端到端场景增加直连宿主拒绝断言，不新建重复故障矩阵。
+- 中心或 Redis 不可用时，沿用 DC05/DK05 的失败关闭、固定绑定及本地收尾检查，并确认没有旧公开入口回退；不把节点可独立执行到期/恢复误当降级公开服务。
+- 查清并删除原公开 SDK→本地应用组装、宿主全量用户密钥字段、旧模式开关/别名、被替代的配置样例和启动夹具引用。模板构建工具也迁移；保留唯一的本地状态机、SQLite、执行/恢复算法及其组件故障测试，不以清理旧入口为由删掉覆盖。文档/脚本/依赖引用与真实服务产物一致。
+- SDK/Harbor 正式验收和两级晋升均运行同候选中心、Redis、真实宿主，经中心进入，报告绑定全部实际产物与协议；不能用旧链路的绿灯代替。普通组件 CI 与可信监督器的分批切换、固定材料制备及安装门槛只在[CI 运行环境](ci.md#中心与宿主拆分的-ci-扩展)维护。
 
 ## 6. 证明验收
 

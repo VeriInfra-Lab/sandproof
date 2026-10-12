@@ -66,15 +66,8 @@ def invoke(mode, arguments, *, cwd=ROOT):
 
 
 def complete_report():
-    value = reports.new_report("sp12-abcdefgh")
-    value.update(status="pass", kvm="executed", commit="a" * 40,
-                 cleanup="confirmed", known_sandboxes=4, known_claims=4, staged_copies="removed")
-    value["staged_files"] = {name: "removed" for name in reports.STAGED_FILES}
-    value["hashes"] = {name: "b" * 64 for name in reports.HASH_NAMES}
-    value["preflight"] = {name: "pass" for name in reports.PREFLIGHT_NAMES}
-    value["phases"] = {name: "pass" for name in reports.PHASES}
-    value["probes"] = {name: {"status": "pass"} for name in reports.PROBES}
-    return value
+    from tools.tests.test_system_acceptance import complete_report as fixture
+    return fixture()
 
 
 class SystemAssertionsTests(unittest.TestCase):
@@ -204,10 +197,13 @@ print("all_c02_actions_rejected")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             arguments = [str(SYSTEM / "sdk_c02_acceptance.py")]
-            for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "host-config"):
+            for name in ('center','host','candidate-manifest','redis-material','tls-material',
+                         'service-staging-parent','service-cgroup-record',"jailer", "firecracker", "kernel", "rootfs", "host-config"):
                 arguments.extend(["--" + name, str(root / name)])
             arguments.extend(["--scratch-parent", str(root), "--uid-base", "1000",
-                              "--expected-commit", "a" * 40, "--server-sha256", "b" * 64])
+                              "--expected-commit", "a" * 40])
+            for name in ('center-uid','center-gid','redis-uid','redis-gid'):
+                arguments.extend(['--'+name,'1001'])
             for mode in MODES:
                 with self.subTest(mode=mode):
                     result = invoke(mode, arguments)

@@ -5,11 +5,21 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "sandproof-host"
+path = "src/main.rs"
+
 [features]
 # Compiles only the test harness; never exposes an unauthenticated server mode.
-sdk-contract-tests = []
+sdk-contract-tests = ["sandproof-host-service/sdk-contract-tests"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
+sandproof-host-service = { path = "../sandbox-host-service" }
+sandproof-internal = { path = "../sandbox-internal" }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
+rustix = { version = "=1.1.5", features = ["fs"] }
+sha2 = "=0.10.9"
+sandproof-data-transport = { path = "../sandbox-data-transport" }
 sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
 sandproof-api = { path = "../sandbox-api" }
 sandproof-controller-service = { path = "../controller-service" }
@@ -17,16 +27,16 @@ sandproof-node = { path = "../sandbox-node" }
 sandproof-protocol = { path = "../sandbox-protocol" }
 sandbox-runtime = { path = "../sandbox-runtime" }
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
-hyper = { version = "=1.11.1", features = ["client", "http1"] }
-hyper-util = { version = "=0.1.21", features = ["tokio"] }
-http-body-util = "=0.1.5"
-percent-encoding = "=2.3.2"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.142"
-tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "time", "process", "io-std", "io-util"] }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "time", "signal", "process", "io-std", "io-util"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+hyper = { version = "=1.11.1", features = ["client", "http1"] }
+http-body-util = "=0.1.5"
 tokio = { version = "=1.49.0", features = ["test-util"] }
+tempfile = "=3.23.0"
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
 
 [lints]
 workspace = true

@@ -4,8 +4,8 @@ No public registry, host Docker, paid model or production server is used.
 Synthetic Debian-compatible fixture only: not public OCI acceptance. Each
 build job gets a new VM; candidate health probes are separate new VMs. This
 operator-only harness is NOT a public build API. Both pools use an explicit
-complete physical profile; builders use private request windows. --registry
-also exercises the publication gate, immutable registry and owner-scoped aliases.
+complete physical profile; builders use private request windows. Every candidate
+uses the real center publication gate, immutable registry and owner-scoped aliases.
 The server must include debug fault-injection hooks. For a CPU-limited service,
 use an optimized build with CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true.
 """
@@ -20,6 +20,7 @@ _require_assertions()
 
 import argparse
 import gzip
+import http.client
 import importlib.metadata
 import json
 import os
@@ -31,6 +32,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
 
 # Operator staging consumes bytes only; all untrusted build/unpack stays in VMs.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
@@ -40,8 +42,7 @@ from e2b import Sandbox, CommandExitException
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
-from server_process_crash import fetch, free_loopback_port, interrupted_request, process_start_ticks, start_server, stop_server, wait_ready
-from server_templates import descriptor
+from server_process_crash import fetch, free_loopback_port, interrupted_host_request, process_start_ticks
 from server_vm_id_capacity import check_no_resources
 from _complete_registry_runtime import (
     add_registry_arguments, prepare_registry_runtime, sandbox_highwater, assert_terminal_rows,
@@ -155,21 +156,25 @@ def exercise(args):
             "max_input_bytes": 256 * MIB, "max_expanded_bytes": 512 * MIB,
             "max_entries": 10000, "max_log_bytes": 2 * MIB},
         ports=[free_loopback_port() for _ in range(3)])
-    root, namespace, key = deployment.root, deployment.namespaces[0], deployment.keys[0]
+    root, namespace, key = deployment.root, deployment.namespaces[0], deployment.key
     print(f"test root={root} namespace={namespace} commit={commit}", flush=True)
-    binary = deployment.binary
+    services = deployment.services
     firecracker = args.firecracker.resolve(strict=True)
     original_paths = (args.kernel, args.rootfs, args.builder_rootfs or args.rootfs)
     original = [sha256_file(path) for path in original_paths]
-    url, settings, foreign_key = deployment.urls[0], deployment.settings[0], deployment.keys[2]
-    config = root / "0/config.json"
-    def save():
-        config.write_text(json.dumps(settings))
-        config.chmod(0o600)
-    save()
+    url, foreign_key = services.sdk_url, deployment.foreign_key
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     owner = options(key, url, url)
-    process, builder_process, active, complete, evidence = None, None, [], False, []
+    process, active, complete, evidence = None, [], False, []
+    def restart_host(**faults):
+        services.processes.stop('host-0')
+        child = services.processes.start('host-0', env=faults)
+        services.wait_ready(for_admission=False)
+        return child
+    def restart_center():
+        services.processes.stop('center')
+        services.processes.start('center')
+        services.wait_ready(for_admission=False)
     def no_resources():
         for index, pool_namespace in enumerate(deployment.namespaces):
             pool = root / str(index)
@@ -189,13 +194,29 @@ def exercise(args):
         code, body = fetch(opener, url, "POST", "/sandproof/template-publications", key, {"candidateID": candidate})
         assert code == 200, (code, body)
         return json.loads(body)
+    def publication_status(candidate):
+        code, body = fetch(opener, url, "GET", "/sandproof/template-publications/" + candidate, key)
+        assert code == 200, (code, body)
+        return json.loads(body)
+    def interrupted_publication(candidate, child):
+        # Publication is an asynchronous status resource, unlike public create.
+        # A bounded Checking reply is valid when the private host exits; Ready
+        # without its durable validation/cleanup evidence is never valid.
+        try:
+            code, body = fetch(opener, url, "POST", "/sandproof/template-publications", key,
+                               {"candidateID": candidate})
+        except (urllib.error.URLError, http.client.HTTPException, OSError):
+            pass
+        else:
+            assert code >= 500 or (code == 200 and json.loads(body)['state'] == 'checking'), (code, body)
+        assert child.wait(timeout=30) == 86, child.returncode
     def staging(kernel=args.kernel):
-        return stage(root / "registry", kernel, disk, status, 1, 1, 256, 512)
+        return stage(services.layout['registry'], kernel, disk, status, 1, 1, 256, 512,
+                     registry_owner_uid=args.center_uid)
     try:
-        process = start_server(binary, config, root / "server.log", None)
-        wait_ready(opener, url, key, process)
-        builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
-        wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
+        services.start()
+        services.wait_ready()
+        process = services.processes.children['host-0']
         for kind in ("dockerfile", "oci", "failure", "timeout"):
             builder, builder_identity = deployment.open_builder(timeout=600, internet=False)
             checked(builder, "mkdir -p /input/tools /output")
@@ -292,32 +313,23 @@ def exercise(args):
             deployment.close_builder(builder_identity)
             no_resources()
             if kind in ("dockerfile", "oci"):
-                if args.registry:
-                    candidate_id = staging()
-                    result = publication(candidate_id)
-                    assert result["state"] == "ready", result
-                    assert result["template"]["diskBytes"] == status["disk_bytes"]
-                    assert result["template"]["minFreeBytes"] == status["min_free_bytes"]
-                    published[kind] = result["template"]["templateId"]
-                    count = sandbox_highwater(root / "0/db/controller.db")
-                    assert publication(candidate_id) == result
-                    assert sandbox_highwater(root / "0/db/controller.db") == count
-                    assert fetch(opener,url,"GET","/sandproof/template-publications/" + candidate_id,foreign_key)[0] == 404
-                    assert fetch(opener,url,"GET","/sandproof/templates/" + published[kind],foreign_key)[0] == 404
-                    code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-" + kind,key,
-                                    {"templateID": published[kind]})
-                    assert code == 200
-                    no_resources()
-                    evidence.append({"kind": "published-" + kind, "template_id": published[kind],
-                                     "cleanup_before_ready": True, "duplicate_no_vm": True, "foreign_hidden": True})
-                else:
-                    stop_server(process)
-                    candidate = descriptor("candidate-" + kind, args.kernel, disk, 1, 256)
-                    candidate["startup"] = status["runtime_defaults"]
-                    settings["templates"]["templates"].append(candidate)
-                    save()
-                    process = start_server(binary, config, root / "server.log", None)
-                    wait_ready(opener, url, key, process)
+                candidate_id = staging()
+                result = publication(candidate_id)
+                assert result["state"] == "ready", result
+                assert result["template"]["diskBytes"] == status["disk_bytes"]
+                assert result["template"]["minFreeBytes"] == status["min_free_bytes"]
+                published[kind] = result["template"]["templateId"]
+                count = sandbox_highwater(root / "0/db/controller.db")
+                assert publication(candidate_id) == result
+                assert sandbox_highwater(root / "0/db/controller.db") == count
+                assert fetch(opener,url,"GET","/sandproof/template-publications/" + candidate_id,foreign_key)[0] == 404
+                assert fetch(opener,url,"GET","/sandproof/templates/" + published[kind],foreign_key)[0] == 404
+                code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-" + kind,key,
+                                {"templateID": published[kind]})
+                assert code == 200
+                no_resources()
+                evidence.append({"kind": "published-" + kind, "template_id": published[kind],
+                                 "cleanup_before_ready": True, "duplicate_no_vm": True, "foreign_hidden": True})
                 guest = Sandbox.create(template="candidate-" + kind, envs={"FIXTURE_VALUE": "create-value"},
                                        timeout=120, allow_internet_access=False, **owner)
                 active.append(guest.sandbox_id)
@@ -340,68 +352,61 @@ def exercise(args):
                 assert guest.files.read("/workspace/built").strip() == "build-ok"
                 assert not guest.files.exists("/workspace/removed")
                 guest.files.write("/workspace/private", "not-in-template")
-                if args.registry and kind == "oci":
+                if kind == "oci":
                     code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-oci",key,
                                     {"templateID": published["dockerfile"], "expectedTemplateID": published["oci"]})
                     assert code == 200
                     assert Sandbox.get_info(guest.sandbox_id, **owner).template_id == published["oci"]
-                stop_server(process)
-                process = start_server(binary, config, root / "server.log", None)
-                wait_ready(opener, url, key, process)
+                restart_center()
                 assert guest.files.read("/workspace/start-count") == "started\n"
-                if args.registry:
-                    assert Sandbox.get_info(guest.sandbox_id, **owner).template_id == published[kind]
-                    code, body = fetch(opener,url,"GET","/sandproof/templates/candidate-" + kind,key)
-                    assert code == 200
-                    assert json.loads(body)["templateId"] == published["dockerfile"]
-                    code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-" + kind,key,
-                                    {"templateID": published[kind]})
-                    assert code == 200
+                assert Sandbox.get_info(guest.sandbox_id, **owner).template_id == published[kind]
+                code, body = fetch(opener,url,"GET","/sandproof/templates/candidate-" + kind,key)
+                assert code == 200
+                assert json.loads(body)["templateId"] == published["dockerfile"]
+                code, _ = fetch(opener,url,"PUT","/sandproof/template-aliases/candidate-" + kind,key,
+                                {"templateID": published[kind]})
+                assert code == 200
                 _kill_confirmed = (Sandbox.kill(guest.sandbox_id, **owner))
                 assert _kill_confirmed
                 active.remove(guest.sandbox_id)
                 no_resources()
                 assert sha256_file(disk) == status["rootfs_sha256"]
-        if args.registry:
-            # A kernel can match its own hash yet still fail a real VM launch.
-            bad_kernel = root / "images/bad-kernel"
-            bad_kernel.write_bytes(b"not-a-linux-kernel")
-            bad_kernel.chmod(0o444)
-            # Last loop statuses are failures; reuse the successful OCI evidence.
-            status = next(v["status"] for v in evidence if v["kind"] == "oci")
-            disk = root / "images/oci.ext4"
-            bad = staging(bad_kernel)
+        # A kernel can match its own hash yet still fail a real VM launch.
+        bad_kernel = root / "images/bad-kernel"
+        bad_kernel.write_bytes(b"not-a-linux-kernel")
+        bad_kernel.chmod(0o444)
+        # Last loop statuses are failures; reuse the successful OCI evidence.
+        status = next(v["status"] for v in evidence if v["kind"] == "oci")
+        disk = root / "images/oci.ext4"
+        bad = staging(bad_kernel)
+        rejected = publication(bad)
+        deadline = time.monotonic() + 60
+        while rejected["state"] == "checking":
+            assert time.monotonic() < deadline, "failed validation was not reclaimed"
+            time.sleep(0.2)
             rejected = publication(bad)
-            deadline = time.monotonic() + 60
-            while rejected["state"] == "checking":
-                assert time.monotonic() < deadline, "failed validation was not reclaimed"
-                time.sleep(0.2)
-                rejected = publication(bad)
-            assert rejected["state"] == "failed" and rejected["template"] is None, rejected
-            no_resources()
-            assert fetch(opener,url,"POST","/v2/sandboxes",key,
-                         {"templateID": "tpl-" + bad, "allow_internet_access": False})[0] == 404
-            # Exit after successful validation, during cleanup, before its receipt commits.
-            pending = staging()
-            stop_server(process)
-            process = start_server(binary, config, root / "server.log", "cleanup_vm")
-            wait_ready(opener,url,key,process)
-            interrupted_request(lambda: publication(pending),process)
-            with sqlite3.connect(root / "0/db/controller.db") as database:
-                saved = json.loads(database.execute("SELECT record_json FROM template_publications WHERE candidate_id=?",(pending,)).fetchone()[0])
-            identities = sandbox_highwater(root / "0/db/controller.db")
-            assert saved["state"] == "checking" and saved["checked"] is True
-            process = start_server(binary,config,root / "server.log",None)
-            wait_ready(opener,url,key,process)
-            deadline = time.monotonic() + 20
-            while publication(pending)["state"] == "checking":
-                assert time.monotonic() < deadline
-                time.sleep(0.2)
-            assert publication(pending)["state"] == "ready"
-            assert sandbox_highwater(root / "0/db/controller.db") == identities
-            no_resources()
-            evidence.append({"kind": "publication-restart", "cleanup_receipt_lost": True,
-                             "no_reprobe": True, "failed_kernel_not_ready": True, "alias_binding_persisted": True})
+        assert rejected["state"] == "failed" and rejected["template"] is None, rejected
+        no_resources()
+        assert fetch(opener,url,"POST","/v2/sandboxes",key,
+                     {"templateID": "tpl-" + bad, "allow_internet_access": False})[0] == 404
+        # Exit after successful validation, during cleanup, before its receipt commits.
+        pending = staging()
+        process = restart_host(SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION='cleanup_vm')
+        interrupted_publication(pending, process)
+        saved = deployment.validation_snapshot(pending)
+        identities = deployment.center_snapshot()['sandbox_highwater']
+        assert publication_status(pending)['state'] == 'checking'
+        assert saved['started_at_ms'] is not None, 'original Ready fact was never committed'
+        process = restart_host()
+        deadline = time.monotonic() + 20
+        while publication_status(pending)["state"] == "checking":
+            assert time.monotonic() < deadline
+            time.sleep(0.2)
+        assert publication_status(pending)["state"] == "ready"
+        assert deployment.center_snapshot()['sandbox_highwater'] == identities
+        no_resources()
+        evidence.append({"kind": "publication-restart", "cleanup_receipt_lost": True,
+                         "no_reprobe": True, "failed_kernel_not_ready": True, "alias_binding_persisted": True})
         # Two finite activation crash windows: confirmed guest Start but lost
         # controller receipt, and Start accepted but host confirmation lost.
         # This is not arbitrary application readiness or crash-site coverage.
@@ -430,56 +435,60 @@ def exercise(args):
                         return
                     assert time.monotonic() < deadline, "startup witness missing"
                 time.sleep(0.05)
-        if args.registry:
-            # Activation succeeded physically, but the publisher never durably
-            # confirmed validation. Recovery may NOT turn that into Ready.
-            pending = staging()
-            stop_server(process)
-            process = start_server(binary,config,root / "server.log","activate_vm")
-            wait_ready(opener,url,key,process)
-            interrupted_request(lambda: publication(pending),process)
-            with sqlite3.connect(root / "0/db/controller.db") as database:
-                saved = json.loads(database.execute("SELECT record_json FROM template_publications WHERE candidate_id=?",(pending,)).fetchone()[0])
-            identities = sandbox_highwater(root / "0/db/controller.db")
-            assert saved["state"] == "checking" and saved["checked"] is False
-            sandbox_id = f'sb-{namespace}-{saved["validation_sandbox"]}'
-            record = next(
-                json.loads(p.read_text()) for p in (root / "0/state/startup").glob("*.json")
-                if json.loads(p.read_text())["sandbox"] == saved["validation_sandbox"])
-            name = f'vm-{namespace}-{record["vm"]}'
-            wait_started(name, sandbox_id)
-            process = start_server(binary,config,root / "server.log",None)
-            wait_ready(opener,url,key,process)
-            assert fetch(opener,url,"GET","/sandboxes/" + sandbox_id,key)[0] == 404
-            assert startup_count(name,sandbox_id) == "started\n", "validation startup replayed"
-            deadline = time.monotonic() + 60
-            state = publication(pending)["state"]
-            while state == "checking":
-                assert time.monotonic() < deadline
-                time.sleep(0.2)
-                state = publication(pending)["state"]
-            assert state == "failed", "unconfirmed validation became Ready"
-            assert sandbox_highwater(root / "0/db/controller.db") == identities
-            no_resources()
-            evidence.append({"kind": "publication-unconfirmed", "never_ready": True,
-                             "internal_session_hidden": True, "no_reprobe": True, "exact_cleanup": True})
+        # Activation succeeded physically, but the publisher never durably
+        # confirmed validation. Recovery may NOT turn that into Ready.
+        pending = staging()
+        process = restart_host(SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION='activate_vm')
+        interrupted_publication(pending, process)
+        saved = deployment.validation_snapshot(pending)
+        identities = deployment.center_snapshot()['sandbox_highwater']
+        assert publication_status(pending)['state'] == 'checking'
+        assert saved['started_at_ms'] is None, 'unconfirmed activation became an original Ready fact'
+        sandbox_id = saved['create']['identity']['sandbox_id']
+        native_id = deployment.native_id(sandbox_id)
+        local = int(native_id.rsplit('-',1)[1])
+        record = next(
+            json.loads(p.read_text()) for p in (root / "0/state/startup").glob("*.json")
+            if json.loads(p.read_text())["sandbox"] == local)
+        name = f'vm-{namespace}-{record["vm"]}'
+        wait_started(name, native_id)
+        process = restart_host()
+        assert fetch(opener,url,"GET","/sandboxes/" + sandbox_id,key)[0] == 404
+        assert startup_count(name,native_id) == "started\n", "validation startup replayed"
+        deadline = time.monotonic() + 60
+        state = publication_status(pending)["state"]
+        while state == "checking":
+            assert time.monotonic() < deadline
+            time.sleep(0.2)
+            state = publication_status(pending)["state"]
+        assert state == "failed", "unconfirmed validation became Ready"
+        assert deployment.center_snapshot()['sandbox_highwater'] == identities
+        no_resources()
+        evidence.append({"kind": "publication-unconfirmed", "never_ready": True,
+                         "internal_session_hidden": True, "no_reprobe": True, "exact_cleanup": True})
         for window in ("confirmed", "unknown"):
-            stop_server(process)
-            process = start_server(binary, config, root / "server.log", "activate_vm" if window == "confirmed" else None,
-                                   template_start_target="activate_vm" if window == "unknown" else None)
-            wait_ready(opener, url, key, process)
-            interrupted_request(lambda: fetch(opener, url, "POST", "/v2/sandboxes", key,
-                {"templateID": "candidate-oci", "timeout": 120, "allow_internet_access": False}),
+            faults = {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION':'activate_vm'} if window == 'confirmed' else {
+                'SANDPROOF_TEST_EXIT_AFTER_TEMPLATE_START':'activate_vm'}
+            process = restart_host(**faults)
+            correlation = {'runtime_attempt':'activation-' + window}
+            interrupted_host_request(lambda: fetch(opener, url, "POST", "/v2/sandboxes", key,
+                {"templateID": "candidate-oci", "timeout": 120, "allow_internet_access": False,
+                 'metadata':correlation}),
                 process, 86 if window == "confirmed" else 88)
+            from _center_host_services import find_runtime_create
+            identity = find_runtime_create(deployment.center_snapshot(),correlation,
+                                           deployment=services.center_config['deployment_id'])
+            sandbox_id = identity['sandbox_id']
+            native_id = deployment.native_id(sandbox_id)
+            local = int(native_id.rsplit('-',1)[1])
             records = [json.loads(path.read_text()) for path in (root / "0/state/startup").glob("*.json")]
-            record = max(records, key=lambda value: value["vm"])
-            sandbox_id, name = f'sb-{namespace}-{record["sandbox"]}', f'vm-{namespace}-{record["vm"]}'
+            record = next(value for value in records if value['sandbox']==local)
+            name = f'vm-{namespace}-{record["vm"]}'
             assert (record["guest_pid"] is not None) == (window == "confirmed")
             assert process_start_ticks(record["vmm_pid"]) == record["start_ticks"]
-            wait_started(name, sandbox_id)
-            process = start_server(binary, config, root / "server.log", None)
-            wait_ready(opener, url, key, process)
-            assert startup_count(name, sandbox_id) == "started\n", "startup was replayed"
+            wait_started(name, native_id)
+            process = restart_host()
+            assert startup_count(name, native_id) == "started\n", "startup was replayed"
             if window == "confirmed":
                 guest = Sandbox.connect(sandbox_id, **owner)
                 assert guest.files.read("/workspace/start-count") == "started\n"
@@ -492,12 +501,12 @@ def exercise(args):
                 assert code == 404, (code, body)
                 with sqlite3.connect(root / "0/db/controller.db") as database:
                     saved = json.loads(database.execute("SELECT state_blob FROM sandboxes WHERE sandbox_id=?",
-                                                        (sandbox_id,)).fetchone()[0])
+                                                        (native_id,)).fetchone()[0])
                 assert saved["phase"] == "Starting", saved["phase"]
                 deadline = time.monotonic() + 50
                 while process_start_ticks(record["vmm_pid"]) == record["start_ticks"]:
                     try:
-                        assert startup_count(name, sandbox_id) == "started\n"
+                        assert startup_count(name, native_id) == "started\n"
                     except AssertionError:
                         # Exact stop can win between the liveness check and
                         # this read; a live guest must still answer exactly once.
@@ -517,12 +526,11 @@ def exercise(args):
             evidence.append({"kind": "activation-" + window, "no_startup_replay": True, "exact_cleanup": True})
         assert original == [sha256_file(path) for path in original_paths]
         allocated = sum(sandbox_highwater(root / str(index) / "db/controller.db") for index in range(2))
-        assert allocated == (13 if args.registry else 8), "unexpected replacement or validation VM"
+        assert allocated == 13, "unexpected replacement or validation VM"
         complete = True
-        print(json.dumps({"source_commit": commit, "server_sha256": sha256_file(binary), "namespace": namespace,
+        print(json.dumps({"source_commit": commit, "service_artifacts": services.manifest, "namespace": namespace,
                           "probe_sha256": sha256_file(Path(__file__)), "vms_destroyed": allocated, "evidence": evidence,
-                          "scope": "formal publication/registry with offline synthetic builder fixture" if args.registry else
-                          "offline synthetic fixture with defaults and argv dispatch; no public OCI, user API or production Ready gate"}))
+                          "scope": "formal center publication/registry with offline synthetic builder fixture"}))
     finally:
         if not complete:
             print("Exact failed-run artifacts retained: " + str(root), file=sys.stderr)
@@ -530,24 +538,19 @@ def exercise(args):
         # Recover only identities in this fresh private journal, not global VM
         # names or a Running-only list. Never allocate a replacement create.
         try:
+            # Restart only the original service roles/configurations, with no
+            # injected faults. Their original journals own all reconciliation.
+            for role in ('host-0','host-1','center'):
+                child = services.processes.children.get(role)
+                if child is None or child.poll() is not None:
+                    services.processes.start(role)
+            services.wait_ready(for_admission=False)
             if list(root.glob("builder-intent-*.json")):
-                if builder_process is None or builder_process.poll() is not None:
-                    builder_process = start_server(binary, root / "1/config.json", root / "builder.log", None)
-                    wait_ready(opener, deployment.urls[1], deployment.keys[1], builder_process)
                 deployment.close_builders()
-            identities = []
-            if (root / "0/db/controller.db").is_file():
-                with sqlite3.connect("file:" + str(root / "0/db/controller.db") + "?mode=ro",uri=True) as database:
-                    if database.execute("SELECT count(*) FROM sqlite_master WHERE name='sandboxes'").fetchone()[0]:
-                        identities = [row[0] for row in database.execute("SELECT sandbox_id FROM sandboxes")]
-            if identities and (process is None or process.poll() is not None):
-                # A failed observation can happen after the intentional service
-                # crash. Resume its original journal without injection so exact
-                # cleanup can reconcile; never replace the pending sandbox.
-                process = start_server(binary, config, root / "server.log", None)
-                wait_ready(opener, url, key, process)
+            identities = [record['create']['identity']['sandbox_id']
+                          for record in deployment.center_snapshot()['sandboxes']
+                          if record['private'] is False and record['released'] is False]
             for identity in identities:
-                assert identity.startswith("sb-" + namespace + "-")
                 try:
                     status, _ = fetch(opener, url, "DELETE", "/sandboxes/" + identity, key)
                     if status not in (200, 204, 404):
@@ -567,18 +570,17 @@ def exercise(args):
                         raise
                     time.sleep(0.2)
         finally:
-            stop_server(process)
-            stop_server(builder_process)
+            services.stop_all()
         if complete:
+            services.cleanup_staging()
             shutil.rmtree(root)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "cgroup-parent", "tools"):
+    for name in ("jailer", "firecracker", "kernel", "rootfs", "scratch-parent", "cgroup-parent", "tools"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
-    parser.add_argument("--registry", action="store_true")
     parser.add_argument("--igzip", action="store_true", help="check and use the fixed optional ISA-L decoder pair")
     add_registry_arguments(parser)
     exercise(parser.parse_args())

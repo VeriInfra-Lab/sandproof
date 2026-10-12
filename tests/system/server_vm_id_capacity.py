@@ -27,14 +27,11 @@ import sys
 import tempfile
 import urllib.request
 
-from e2b import Sandbox
-
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
-from sdk_server_smoke import options
+from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
+from _runtime_services import RuntimeServices, add_arguments
 from server_process_crash import (
-    assert_idle_reopen, complete_runtime, fetch, free_loopback_port, idle_snapshot,
-    process_start_ticks, provision_runtime, start_server, stop_server,
-    terminal_cleanup_confirmed, wait_ready,
+    assert_idle_reopen, fetch, free_loopback_port, idle_snapshot, process_start_ticks,
 )
 from server_unready_abort import wait_for
 
@@ -54,7 +51,19 @@ def check_rejection(opener, url, key, database, root):
     assert sorted((root / "jails/.claims").iterdir()) == claims, "refusal claimed a new VM"
 
 
-def check_no_resources(root, namespace, firecracker, uid_base, identities=()):
+def check_no_resources(root, namespace, firecracker, uid_base, identities=(), *, native):
+    """Audit the original physical pool using its explicit current native config.
+
+    A public/global sandbox ID is deliberately not used to infer this pool's
+    slot budget. Callers must supply the native configuration associated with
+    the exact host audit mapping; there is no old flat configuration reader.
+    """
+    if (not isinstance(native, dict) or native.get("namespace") != namespace
+            or native.get("uid_base") != uid_base):
+        raise ValueError("resource audit requires the exact native pool configuration")
+    slots = native["bounded_host"]["maintenance"]["max_host_slots"]
+    if type(slots) is not int or slots < 1 or uid_base + slots > 2**32:
+        raise ValueError("invalid native physical UID range")
     remaining = [json.loads((claim / "record.json").read_text())
                  for claim in (root / "jails/.claims").iterdir() if (claim / "record.json").exists()]
     for record in [*identities, *remaining]:
@@ -62,12 +71,13 @@ def check_no_resources(root, namespace, firecracker, uid_base, identities=()):
         assert process_start_ticks(record["pid"]) != record["start_time_ticks"]
     for parent in (root / "jails" / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
         assert not list(parent.rglob(f"vm-{namespace}-*")), f"resource remains under {parent}"
-    configured = json.loads((root / "config.json").read_text())
-    slots = configured["bounded_host"]["maintenance"]["max_host_slots"]
     assert not processes_in_uid_range(uid_base, uid_base + slots - 1)
 
 
 def exercise(args):
+    from e2b import Sandbox
+    from sdk_server_smoke import options
+    from server_templates import descriptor
     if sys.platform != "linux" or os.geteuid() != 0:
         raise RuntimeError("requires root on the isolated Linux/KVM host")
     assert importlib.metadata.version("e2b") == "2.51.0"
@@ -95,40 +105,56 @@ def exercise(args):
         raise RuntimeError("test path too long for Firecracker socket")
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
-    binary, kernel, rootfs = (root / name for name in ("sandproof-server", "vmlinux", "rootfs.ext4"))
-    for source, destination in ((args.server, binary), (args.kernel, kernel), (args.rootfs, rootfs)):
+    kernel, rootfs = (root / name for name in ("vmlinux", "rootfs.ext4"))
+    for source, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
         shutil.copyfile(source.resolve(strict=True), destination)
-    binary.chmod(0o700)
     kernel.chmod(0o644)
     rootfs.chmod(0o644)
     assert sha256_file(rootfs) == base_digest
     key = secrets.token_hex(32)
     port = free_loopback_port()
     database = root / "db/controller.db"
-    config = root / "config.json"
+    template = descriptor("runtime-base", kernel, rootfs, 1, 512)
+    catalog = {"templates": [template], "aliases": {"base": template["template_id"]},
+        "compute_limits": {"max_vcpus_global": 1, "max_vcpus_per_tenant": 1,
+            "max_memory_bytes_global": 1024 * 1024**2,
+            "max_memory_bytes_per_tenant": 1024 * 1024**2}}
     settings = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(firecracker),
         "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
         "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 512,
-        "file_policy_digest": 1, "bind": f"127.0.0.1:{port}", "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": key}],
+        "file_policy_digest": 1, "templates": catalog,
         "max_active_global": 1, "max_active_per_tenant": 1,
         "max_disk_bytes_global": disk_bytes * 4, "max_disk_bytes_per_tenant": disk_bytes * 4,
-        "cleanup_reserve_bytes": disk_bytes, "max_timeout_secs": 600,
+        "cleanup_reserve_bytes": disk_bytes, "max_timeout_secs": 600, "max_lifetime_secs": 600,
+        "startup_timeout_secs": 300, "public_ipv4_enabled": False,
         "default_timeout_secs": 300, "expiry_scan_seconds": 1,
     }
     settings = complete_runtime(settings, slots=1)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
+    registry = dict(root=str(root / "registry"), max_templates_global=1, max_templates_per_tenant=1,
+        max_artifact_bytes_global=disk_bytes + kernel.stat().st_size,
+        max_artifact_bytes_per_tenant=disk_bytes + kernel.stat().st_size, validation_timeout_secs=60)
+    services = RuntimeServices.prepare(args, root, [settings], [catalog], key,
+        f"127.0.0.1:{port}", args.service_cgroup_record, job_count=8, registry_config=registry)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     url = f"http://127.0.0.1:{port}"
     owner = options(key, url, url)
-    process = None
     completed = False
     claims = []
+    native_ids = []
+
+    def map_identity(sandbox, number):
+        # The global ID is opaque. Read the original host inbox under its
+        # exclusive OFFLINE audit lease; never infer a local ID from its suffix.
+        services.processes.stop("host-0")
+        native_id = services.native_id_for(sandbox.sandbox_id)
+        assert native_id == f"sb-{namespace}-{number}"
+        native_ids.append(native_id)
+        services.processes.start("host-0")
+        services.wait_ready(for_admission=False)
+        return native_id
 
     def record_identity(number):
         record = json.loads((root / "jails/.claims" / names[number] / "record.json").read_text())
@@ -146,17 +172,19 @@ def exercise(args):
         return not present and terminal_cleanup_confirmed(database, ident)
 
     try:
-        process = start_server(binary, config, root / "server.log", None)
-        wait_ready(opener, url, key, process)
+        services.start()
+        services.wait_ready()
         for index in range(2):
             sandbox = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
-            assert sandbox.sandbox_id == f"sb-{namespace}-{index + 1}"
+            assert sandbox.sandbox_id == f"sandbox-{index + 1}"
             record_identity(index)
+            native_id = map_identity(sandbox, index + 1)
             _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **owner))
             assert _kill_confirmed
-            wait_for(lambda: retired(sandbox.sandbox_id), 20, "exact terminal retirement before slot reuse")
+            wait_for(lambda: retired(native_id), 20, "exact terminal retirement before slot reuse")
         survivor = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
-        assert survivor.sandbox_id == f"sb-{namespace}-3"
+        assert survivor.sandbox_id == "sandbox-3"
+        survivor_native = map_identity(survivor, 3)
         survivor.files.write("/tmp/capacity.txt", "original-vm")
         live = record_identity(2)
         assert process_start_ticks(live["pid"]) == live["start_time_ticks"]
@@ -164,9 +192,11 @@ def exercise(args):
         assert survivor.commands.run("printf capacity-ok", user="ubuntu").stdout == "capacity-ok"
         assert survivor.files.read("/tmp/capacity.txt") == "original-vm"
 
-        stop_server(process)
-        process = start_server(binary, config, root / "server.log", None)
-        wait_ready(opener, url, key, process)
+        services.processes.stop("center")
+        services.processes.stop("host-0")
+        services.processes.start("host-0")
+        services.processes.start("center")
+        services.wait_ready(for_admission=False)
         check_rejection(opener, url, key, database, root)
         assert process_start_ticks(live["pid"]) == live["start_time_ticks"], "VM replaced during restart"
         assert survivor.get_info().state == "running"
@@ -174,32 +204,34 @@ def exercise(args):
         assert survivor.files.read("/tmp/capacity.txt") == "original-vm"
         _kill_confirmed = (Sandbox.kill(survivor.sandbox_id, **owner))
         assert _kill_confirmed
-        wait_for(lambda: retired(survivor.sandbox_id), 20, "exact survivor retirement")
+        wait_for(lambda: retired(survivor_native), 20, "exact survivor retirement")
         fourth = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **owner)
-        assert fourth.sandbox_id == f"sb-{namespace}-4", "permanent identity reset or remained exhausted"
+        assert fourth.sandbox_id == "sandbox-4", "permanent identity reset or remained exhausted"
+        fourth_native = map_identity(fourth, 4)
         record_identity(3)
         assert fourth.commands.run("printf slot-reused", user="ubuntu").stdout == "slot-reused"
         _kill_confirmed = Sandbox.kill(fourth.sandbox_id, **owner)
         assert _kill_confirmed
-        wait_for(lambda: retired(fourth.sandbox_id), 20, "exact fourth retirement")
+        wait_for(lambda: retired(fourth_native), 20, "exact fourth retirement")
         with sqlite3.connect(database) as connection:
             phases = [json.loads(row[0])["phase"] for row in connection.execute("SELECT state_blob FROM sandboxes")]
         assert phases == [], phases
         assert len(claims) == 4
-        check_no_resources(root, namespace, firecracker, args.uid_base, claims)
+        check_no_resources(root, namespace, firecracker, args.uid_base, claims, native=services.native_pools[0])
         assert sha256_file(rootfs) == sha256_file(args.rootfs) == base_digest
         completed = True
         print(json.dumps({
-            "source_commit": commit, "server_sha256": sha256_file(binary),
+            "source_commit": commit, "center_sha256": sha256_file(args.center), "host_sha256": sha256_file(args.host),
             "probe_sha256": sha256_file(Path(__file__)), "base_sha256": base_digest,
             "host_kernel": os.uname().release, "sdk": "2.51.0", "namespace": namespace,
-            "physical_slots": 1, "permanent_sandbox_ids": [1, 2, 3, 4], "vms_destroyed": 4,
+            "physical_slots": 1, "permanent_sandbox_ids": [1, 2, 3, 4], "native_ids": native_ids, "vms_destroyed": 4,
             "result": "one physical UID reused; live capacity refused before/after restart without allocating identities; original SDK command/file access preserved; fourth admitted after cleanup",
             "residual": "no exact VMM process, jail, netns, cgroup or test UID process",
         }))
     finally:
-        stop_server(process)
+        services.stop_all()
         if completed:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f"Exact failed-run artifacts retained: {root}", file=sys.stderr)
@@ -207,7 +239,8 @@ def exercise(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for argument in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
+    add_arguments(parser)
+    for argument in ("jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
         parser.add_argument(f"--{argument}", type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     exercise(parser.parse_args())

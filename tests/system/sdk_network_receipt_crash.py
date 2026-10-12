@@ -27,8 +27,9 @@ import urllib.request
 from e2b import Sandbox
 
 from sdk_public_network import Outside, clean_vm, guest_ping, vm_identity
-from server_process_crash import (complete_runtime, fetch, free_loopback_port, interrupted_request,
-                                  process_start_ticks, provision_runtime, start_server, stop_server, wait_ready)
+from server_process_crash import (fetch, free_loopback_port, interrupted_host_request,
+                                  original_create_identity, prepare_fault_services, process_start_ticks)
+from _runtime_services import add_arguments
 
 
 def exercise(args: argparse.Namespace) -> None:
@@ -46,17 +47,13 @@ def exercise(args: argparse.Namespace) -> None:
     api_key = secrets.token_hex(32)
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
-    binary = root / "sandproof-server"
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
-    shutil.copyfile(args.server, binary)
     shutil.copyfile(args.kernel, kernel)
     shutil.copyfile(args.rootfs, rootfs)
-    binary.chmod(0o700)
     kernel.chmod(0o644)
     rootfs.chmod(0o644)
     port = free_loopback_port()
-    config = root / "config.json"
     settings = {
         "namespace": namespace,
         "database": str(root / "db/controller.db"),
@@ -70,9 +67,6 @@ def exercise(args: argparse.Namespace) -> None:
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
-        "bind": f"127.0.0.1:{port}",
-        "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": api_key}],
         "max_active_global": 1,
         "max_active_per_tenant": 1,
         "max_disk_bytes_global": disk_bytes * 3,
@@ -83,26 +77,26 @@ def exercise(args: argparse.Namespace) -> None:
         "expiry_scan_seconds": 1,
         "public_ipv4_enabled": True,
     }
-    settings = complete_runtime(settings, slots=1)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
+    services = prepare_fault_services(args, root, settings, slots=1, key=api_key, port=port)
     api_url = f"http://127.0.0.1:{port}"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     options = dict(api_url=api_url, sandbox_url=api_url, api_key=api_key,
                    domain="example.invalid", retries=0, request_timeout=45)
     process = None
+    metadata = {"network_receipt_intent": secrets.token_hex(16)}
     completed = False
     try:
         with Outside(namespace[:6]):
-            process = start_server(binary, config, root / "server.log", "configure_network")
-            wait_ready(opener, api_url, api_key, process)
-            interrupted_request(
+            services.start(host_envs={"host-0": {"SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION": "configure_network"}})
+            services.wait_ready(for_admission=False)
+            process = services.processes.children["host-0"]
+            interrupted_host_request(
                 lambda: fetch(opener, api_url, "POST", "/v2/sandboxes", api_key, {
                     "templateID": "base", "timeout": 180,
                     "allow_internet_access": False,
                     "network": {"allowOut": ["11.22.33.1"],
                                 "denyOut": ["0.0.0.0/0"]},
+                    "metadata": metadata,
                 }),
                 process,
             )
@@ -110,28 +104,32 @@ def exercise(args: argparse.Namespace) -> None:
             assert process_start_ticks(identity[0]) == identity[1]
             claim = root / "jails/.claims" / f"vm-{namespace}-0"
             assert (claim / "uplink-prepared.json").is_file()
+            create_identity = original_create_identity(services, metadata)
+            native_id = services.native_id_for(create_identity["sandbox_id"])
+            assert native_id == f"sb-{namespace}-1"
 
-            process = start_server(binary, config, root / "server.log", None)
-            wait_ready(opener, api_url, api_key, process)
+            process = services.processes.start("host-0")
+            services.wait_ready(for_admission=False)
             status, body = fetch(opener, api_url, "GET", "/v2/sandboxes", api_key)
             items = json.loads(body)
             assert status == 200 and len(items) == 1 and items[0]["state"] == "running", items
+            assert items[0]["sandboxID"] == create_identity["sandbox_id"]
             assert vm_identity(root, namespace, 0) == identity, "recovery created a second VM"
             sandbox = Sandbox.connect(items[0]["sandboxID"], **options)
             assert guest_ping(sandbox, "11.22.33.1"), "allowed route lost on recovery"
             assert not guest_ping(sandbox, "11.22.34.1"), "static restriction widened"
             assert not guest_ping(sandbox, "11.22.33.2"), "host became reachable"
-            stop_server(process)
-            process = start_server(binary, config, root / "server.log", "stop_vm")
-            wait_ready(opener, api_url, api_key, process)
-            interrupted_request(
+            services.processes.stop("host-0")
+            process = services.processes.start("host-0", env={"SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION": "stop_vm"})
+            services.wait_ready(for_admission=False)
+            interrupted_host_request(
                 lambda: fetch(opener, api_url, "DELETE",
                               f"/sandboxes/{sandbox.sandbox_id}", api_key),
                 process,
             )
             assert process_start_ticks(identity[0]) != identity[1], "exact VM survived StopVm"
-            process = start_server(binary, config, root / "server.log", None)
-            wait_ready(opener, api_url, api_key, process)
+            process = services.processes.start("host-0")
+            services.wait_ready(for_admission=False)
             status, body = fetch(opener, api_url, "GET", "/v2/sandboxes", api_key)
             assert status == 200 and json.loads(body) == [], "stopped VM was republished"
             clean_vm(root, args.firecracker, namespace, 0, identity)
@@ -146,8 +144,9 @@ def exercise(args: argparse.Namespace) -> None:
             "scope": "debug-only service exits after real ConfigureNetwork and StopVm; one VM",
         }))
     finally:
-        stop_server(process)
+        services.stop_all()
         if completed:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f"Exact failed-run artifacts retained: {root}", file=sys.stderr)
@@ -155,7 +154,8 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
+    add_arguments(parser)
+    for name in ("jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
         parser.add_argument(f"--{name}", required=True, type=Path)
     parser.add_argument("--uid-base", required=True, type=int)
     exercise(parser.parse_args())

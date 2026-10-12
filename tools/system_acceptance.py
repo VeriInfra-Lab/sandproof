@@ -15,7 +15,7 @@ import tempfile
 
 from tools.check_kvm_host import unique_keys
 
-STAGED_FILES = ("server", "kernel", "rootfs")
+STAGED_FILES = ("center", "host", "kernel", "rootfs")
 PROBES = ("sdk_server_smoke.py", "sdk_data_contract.py")
 PHASES = ("preflight", "prepare", "server_start", *PROBES, "terminal_state",
           "resource_audit", "source_unchanged", "cleanup", "server_stop", "artifact_cleanup", "report")
@@ -26,9 +26,11 @@ CODES = {"invalid_configuration", "preflight_failed", "source_mismatch", "hash_m
          "terminal_state_invalid", "resource_unknown", "resource_residual", "server_exited",
          "cleanup_failed", "report_write_failed", "unexpected_error", "unresolved_intent",
          "export_write_failed"}
-HASH_NAMES = ("host_config", "service_config", "server", "firecracker", "jailer", "kernel",
+HASH_NAMES = ("host_config", "service_config", "center", "host", "candidate_manifest", "execution_manifest", "firecracker", "jailer", "kernel",
               "rootfs", "python", "runner", "assertions_guard", "report_helper", "preflight_helper", "server_helper",
-              "complete_runtime_helper", "resource_evidence_helper", "physical_profile_helper",
+              "complete_runtime_helper", "resource_evidence_helper", "physical_profile_helper", "runtime_services_helper", "role_fixture_helper",
+              "artifact_helper","recovery_helper","service_cgroup_helper","template_helper",
+              "process_helper",
               "sdk_server_smoke.py", "sdk_data_contract.py", "sdk_data_samples.py")
 PREFLIGHT_NAMES = ("source", "host", "identity", "kvm", "tun", "cgroup_v2", "host_tools",
                    "disk", "memory", "firecracker", "firecracker_version", "jailer",
@@ -51,6 +53,18 @@ def require(condition, code):
 def digest(path):
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def private_path(path, *, directory=False):
+    """Canonical, owner-only evidence/config path shared by trusted runners."""
+    path = Path(path)
+    if not path.is_absolute() or path.resolve(strict=True) != path:
+        raise ValueError("canonical private path required")
+    details = path.lstat()
+    kind = stat.S_ISDIR if directory else stat.S_ISREG
+    if not kind(details.st_mode) or details.st_uid != os.geteuid() or details.st_mode & 0o077:
+        raise ValueError("owner-only regular file or directory required")
+    return path
 
 
 def json_file(path, limit=1024 * 1024):
@@ -104,7 +118,7 @@ def write_once(path, value):
 
 
 def new_report(run_id):
-    return {"schema_version": 1, "profile": "c02", "run_id": run_id,
+    return {"schema_version": 2, "profile": "c02", "run_id": run_id,
             "status": "interrupted", "kvm": "not_run", "commit": None, "hashes": {},
             "preflight": {}, "phases": {name: "not_run" for name in PHASES},
             "probes": {}, "failures": [], "cleanup_errors": [], "cleanup": "not_created",
@@ -180,7 +194,25 @@ def safe_export(report):
         if value in ("not_created", "retained", "removed", "unknown"):
             result["staged_files"][name] = value
     result["kvm"] = report.get("kvm") if report.get("kvm") in ("executed", "attempted") else "not_run"
-    complete = (type(report.get("schema_version")) is int and report["schema_version"] == 1
+    from tools.ci_e2e_artifacts import (require_public_identity, require_boundary,
+        require_execution_manifest,require_process_evidence)
+    execution_checked=False
+    try:
+        result['services']=require_public_identity(report.get('services'),candidate=result['commit'])
+        result['service_boundary']=require_boundary(report.get('service_boundary'))
+        execution=report.get('execution_manifest')
+        require_execution_manifest(execution,report.get('private_candidate_manifest'),expected=execution)
+        require_process_evidence(report.get('service_processes'),execution)
+        if (execution['services']!=result['services']
+                or execution['candidate_manifest_sha256']!=result['hashes'].get('candidate_manifest')
+                or execution['run_id']!=hashlib.sha256((result['run_id']+result['commit']).encode()).hexdigest()
+                or hashlib.sha256((json.dumps(execution,sort_keys=True,indent=2)+'\n').encode()).hexdigest()
+                    !=result['hashes'].get('execution_manifest')):
+            raise ValueError('C02 execution receipt does not bind the original run/materials')
+        execution_checked=True
+    except (ValueError,TypeError,KeyError):
+        pass
+    complete = (type(report.get("schema_version")) is int and report["schema_version"] == 2
                 and report.get("profile") == "c02" and result["run_id"] != "unknown"
                 and all(value == "pass" for value in result["phases"].values())
                 and all(item["status"] == "pass" for item in result["probes"].values())
@@ -190,6 +222,8 @@ def safe_export(report):
                 and result["cleanup"] == "confirmed" and result["kvm"] == "executed"
                 and result["staged_copies"] == "removed"
                 and all(value == "removed" for value in result["staged_files"].values())
+                and 'services' in result and 'service_boundary' in result
+                and execution_checked
                 and not result["failures"] and not result["cleanup_errors"])
     result["status"] = "pass" if report.get("status") == "pass" and complete else (
         "interrupted" if report.get("status") == "interrupted" else "fail")
@@ -238,7 +272,6 @@ def _read_report(root, terminal_available):
         report["status"] = "interrupted"
         report["cleanup"] = "unknown"
         record_failure(report, "report", Failure("unresolved_intent"))
-    report = safe_export(report)
     if (root / "publication-unknown.json").exists():
         record_failure(report, "report", Failure("report_write_failed"))
         report["status"] = "fail"
@@ -270,7 +303,7 @@ def validate_probe(name, value, namespace):
         for kind in ("sync", "async"):
             item = value[kind]
             require(isinstance(item, dict) and set(item) == {"sandbox_id", "cases"}, "probe_output_invalid")
-            require(valid_sandbox_id(item["sandbox_id"], namespace), "probe_output_invalid")
+            require(valid_global_sandbox_id(item["sandbox_id"]), "probe_output_invalid")
             identities.append(item["sandbox_id"])
             require(isinstance(item["cases"], list) and len(item["cases"]) == 2, "probe_output_invalid")
             for user, case in zip(("root", "ubuntu"), item["cases"]):
@@ -290,3 +323,9 @@ def valid_sandbox_id(value, namespace):
             and re.fullmatch(r"[0-9a-f]{16}", namespace) is not None
             and re.fullmatch(r"sb-" + namespace + r"-(0|[1-9][0-9]*)", value) is not None
             and int(value.rsplit("-", 1)[1]) < 2**64)
+
+
+def valid_global_sandbox_id(value):
+    """Syntax only, never used to derive local VM/owner/node identities."""
+    return (type(value) is str and re.fullmatch(r'sandbox-[1-9][0-9]{0,19}',value) is not None
+            and int(value.removeprefix('sandbox-'))<2**64)

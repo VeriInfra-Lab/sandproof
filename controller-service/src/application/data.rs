@@ -3,12 +3,7 @@ use super::{ApplicationError, DataLease, TrackedRelayChild};
 use sandbox_controller_core as core;
 use tokio::sync::watch;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DataKind {
-    Exec,
-    FileRead,
-    FileWrite,
-}
+pub use sandproof_protocol::DataKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DataTarget {

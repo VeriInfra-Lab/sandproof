@@ -1,0 +1,111 @@
+#![allow(
+    dead_code,
+    reason = "shared certificate fixture; suites choose peer cases"
+)]
+use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa,
+    Issuer, KeyPair, KeyUsagePurpose,
+};
+use rustls::pki_types::PrivatePkcs8KeyDer;
+use sandproof_internal::{CertificatePin, TlsIdentity};
+
+pub struct Identity {
+    pub certificate: Certificate,
+    pub key: KeyPair,
+}
+
+impl Identity {
+    pub fn material(&self) -> TlsIdentity {
+        TlsIdentity {
+            chain: vec![self.certificate.der().clone()],
+            private_key: PrivatePkcs8KeyDer::from(self.key.serialize_der()).into(),
+        }
+    }
+
+    pub fn pin(&self) -> CertificatePin {
+        CertificatePin::from_certificate(self.certificate.der())
+    }
+}
+
+pub struct Certificates {
+    pub ca: Certificate,
+    pub center: Identity,
+    pub host: Identity,
+    pub other: Identity,
+}
+
+// OpenSSL must distinguish the issued leaf from its CA: rcgen's shared
+// default CN plus an absent AKI can classify the leaf as self-signed. Keep
+// explicit names and the issuer's AKI for both Rust and Python verification;
+// never compensate by changing trust roots, EKU, SAN or leaf-pin checks.
+pub fn certificates() -> Certificates {
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "Sandproof test CA");
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::DigitalSignature,
+    ];
+    let ca_key = KeyPair::generate().unwrap();
+    let ca = params.self_signed(&ca_key).unwrap();
+    let issuer = Issuer::new(params, ca_key);
+    Certificates {
+        ca,
+        center: leaf(&issuer, "center.test", ExtendedKeyUsagePurpose::ClientAuth),
+        host: leaf(&issuer, "host.test", ExtendedKeyUsagePurpose::ServerAuth),
+        other: leaf(&issuer, "other.test", ExtendedKeyUsagePurpose::ClientAuth),
+    }
+}
+
+/// The production host and artifact listener are mutually authenticated in
+/// both directions. Keep one-role fixtures above for negative EKU tests.
+pub fn certificates_with_dual_roles() -> Certificates {
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "Sandproof test CA");
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::DigitalSignature,
+    ];
+    let ca_key = KeyPair::generate().unwrap();
+    let ca = params.self_signed(&ca_key).unwrap();
+    let issuer = Issuer::new(params, ca_key);
+    let dual = |name: &str| {
+        let mut params = CertificateParams::new(vec![name.to_owned()]).unwrap();
+        params.distinguished_name.push(DnType::CommonName, name);
+        params.use_authority_key_identifier_extension = true;
+        params.extended_key_usages = vec![
+            ExtendedKeyUsagePurpose::ClientAuth,
+            ExtendedKeyUsagePurpose::ServerAuth,
+        ];
+        params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        let key = KeyPair::generate().unwrap();
+        Identity {
+            certificate: params.signed_by(&key, &issuer).unwrap(),
+            key,
+        }
+    };
+    Certificates {
+        ca,
+        center: dual("center.test"),
+        host: dual("host.test"),
+        other: leaf(&issuer, "other.test", ExtendedKeyUsagePurpose::ClientAuth),
+    }
+}
+
+fn leaf(issuer: &Issuer<'_, KeyPair>, name: &str, purpose: ExtendedKeyUsagePurpose) -> Identity {
+    let mut params = CertificateParams::new(vec![name.to_owned()]).unwrap();
+    params.distinguished_name.push(DnType::CommonName, name);
+    params.use_authority_key_identifier_extension = true;
+    params.extended_key_usages = vec![purpose];
+    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    let key = KeyPair::generate().unwrap();
+    Identity {
+        certificate: params.signed_by(&key, issuer).unwrap(),
+        key,
+    }
+}

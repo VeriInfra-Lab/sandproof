@@ -191,6 +191,14 @@ pub trait HostCapacity {
     /// Rejects an unavailable physical disk observation.
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError>;
 
+    /// Fresh trusted host CPU and available memory observation. Diagnostic
+    /// adapters without this capability explicitly refuse node-health reports.
+    /// # Errors
+    /// Missing or malformed host observations do not become free capacity.
+    fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
+        Err(ApplicationError::Busy)
+    }
+
     /// Validate the immutable deployment-wide activation lease and current
     /// inode capacity. A local free-space observation alone is insufficient.
     /// # Errors

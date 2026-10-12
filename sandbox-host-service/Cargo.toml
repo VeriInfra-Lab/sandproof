@@ -1,0 +1,34 @@
+[package]
+name = "sandproof-host-service"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+sdk-contract-tests = []
+
+[dependencies]
+sandproof-api = { path = "../sandbox-api" }
+sandproof-data-transport = { path = "../sandbox-data-transport" }
+axum = { version = "=0.8.9", features = ["tokio", "http1"] }
+hyper = { version = "=1.11.1", features = ["client", "http1"] }
+hyper-util = { version = "=0.1.21", features = ["tokio"] }
+http-body-util = "=0.1.5"
+sandproof-controller-service = { path = "../controller-service", features = ["durable"] }
+sandproof-internal = { path = "../sandbox-internal" }
+sandproof-protocol = { path = "../sandbox-protocol" }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "sync", "macros", "time", "process", "io-std", "io-util"] }
+
+[dev-dependencies]
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.142"
+tempfile = "=3.23.0"
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
+tokio = { version = "=1.49.0", features = ["macros", "net", "time"] }
+sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
+
+[lints]
+workspace = true
