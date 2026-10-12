@@ -363,6 +363,10 @@ class RuntimeServices:
         if isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or not 0<timeout<=86400:
             raise ValueError('finite positive readiness observation deadline required')
         deadline=time.monotonic()+timeout
+        # The old finite health lease survives a role restart. Require one
+        # ORIGINAL authenticated status round begun after this observation;
+        # healthy_until is the original round's before + fixed health window.
+        fresh_until_ms=int(time.time()*1000)+self.center_config['node_observation']['health_window_ms']
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
         required={node['registration']['identity']['node_id']:node for node in self.center_config['nodes']}
         while time.monotonic()<deadline:
@@ -374,7 +378,8 @@ class RuntimeServices:
                     timeout=min(5,max(.001,deadline-time.monotonic())))[0]==200
                 view=self.processes.center_readiness(timeout=min(10,max(.001,deadline-time.monotonic())))
                 ready=nodes_ready(view,required,self.expected_templates,
-                                 now_ms=int(time.time()*1000),for_admission=for_admission)
+                                 now_ms=int(time.time()*1000),for_admission=for_admission,
+                                 min_healthy_until_ms=fresh_until_ms)
                 if listening and ready:
                     self.processes.observe()
                     if time.monotonic()<deadline:
@@ -475,7 +480,7 @@ class RuntimeServices:
         common.rmdir()
 
 
-def nodes_ready(audit,registered,templates,*,now_ms,for_admission=True):
+def nodes_ready(audit,registered,templates,*,now_ms,for_admission=True,min_healthy_until_ms=0):
     """A bounded check of ORIGINAL persisted observations, not a health setter."""
     observed=audit.get('nodes')
     if type(observed) is not list or len(observed)!=len(registered):
@@ -510,7 +515,7 @@ def nodes_ready(audit,registered,templates,*,now_ms,for_admission=True):
                 or node['protocol_version']!=original['registration']['protocol_version']
                 or type(node.get('retention_slots')) is not int
                 or node['retention_slots']!=original['registration']['retention_slots']
-                or node['healthy_until_ms']<=now_ms or set(free)!=set(bounds)
+                or node['healthy_until_ms']<=max(now_ms,min_healthy_until_ms) or set(free)!=set(bounds)
                 or any(type(value) is not int or not 0<=value<=bounds[name]
                        or (for_admission and value==0) for name,value in free.items())
                 ):

@@ -20,7 +20,8 @@ from tools.benchmark_ci import remove_private_tree
 
 class ReadinessSimulation:
     """Fake time and canceled worker progress, not a product health authority."""
-    def __init__(self,node,*,commit_after=0,missing_observations=0,never_ready=False,host_exit_at=None):
+    def __init__(self,node,*,commit_after=0,missing_observations=0,never_ready=False,host_exit_at=None,
+                 health_fresh_after=0):
         self.now=0.0
         self.center_started_at=0.0
         self.center_running=True
@@ -29,6 +30,7 @@ class ReadinessSimulation:
         self.missing_observations=missing_observations
         self.never_ready=never_ready
         self.host_exit_at=host_exit_at
+        self.health_fresh_after=health_fresh_after
         self.node=copy.deepcopy(node)
         self.stops=[]
         self.starts=[]
@@ -38,6 +40,7 @@ class ReadinessSimulation:
         self.requests=[]
         self.instance=services.RuntimeServices()
         self.instance.center_config=dict(reply_timeout_ms=5000,expiry_scan_ms=1000,poll_interval_ms=100,
+            node_observation=dict(health_window_ms=10000),
             nodes=[dict(registration=copy.deepcopy(node))])
         self.instance.expected_templates={node['identity']['node_id']:{'base-r1'}}
         self.instance.host_configs=[dict(artifact_source=dict(download_timeout_ms=900000))]
@@ -89,7 +92,8 @@ class ReadinessSimulation:
         if self.now-self.center_started_at>=self.commit_after:
             self.committed=True
         node=copy.deepcopy(self.node)
-        node['healthy_until_ms']=int((1000+self.now)*1000)+10000
+        observed=self.now if self.now>=self.health_fresh_after else 0
+        node['healthy_until_ms']=int((1000+observed)*1000)+10000
         if not self.committed or self.never_ready:
             node['templates']=[]
         return dict(nodes=[node],catalogs={node['identity']['node_id']:[dict(revision='base-r1',digest=[1]*32)]})
@@ -277,8 +281,8 @@ class RuntimeServicesTests(unittest.TestCase):
         fixture.run(timeout=10)
         began=fixture.now
         fixture.run(timeout=3,for_admission=False)
-        self.assertEqual(fixture.now,began)
-        self.assertEqual(len(fixture.observations),2)
+        self.assertGreater(fixture.now,began)
+        self.assertEqual(len(fixture.observations),4)
         self.assertEqual(fixture.processes.observe.call_count,2)
         # Earlier success is never health/cache evidence for a later call.
         fixture.never_ready=True
@@ -290,7 +294,7 @@ class RuntimeServicesTests(unittest.TestCase):
         fixture=ReadinessSimulation(self.node())
         fixture.processes.observe.side_effect=[ValueError('role exec not observed yet'),{}]
         fixture.run(timeout=8)
-        self.assertEqual(len(fixture.observations),2)
+        self.assertEqual(len(fixture.observations),3)
         self.assertEqual(fixture.stops,[])
         self.assertEqual(fixture.processes.observe.call_count,2)
         refused=ReadinessSimulation(self.node())
@@ -298,6 +302,20 @@ class RuntimeServicesTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
             refused.run(timeout=8)
         self.assertGreaterEqual(refused.processes.observe.call_count,1)
+
+    def test_unexpired_pre_restart_health_cannot_substitute_for_a_new_host_status_round(self):
+        fixture=ReadinessSimulation(self.node(),health_fresh_after=2)
+        # The protected catalog and old health lease are valid throughout this
+        # interval, but the original host has not yet answered a fresh status.
+        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
+            fixture.run(timeout=1)
+        fixture.processes.observe.assert_not_called()
+        fixture.run(timeout=3,for_admission=False)
+        self.assertGreaterEqual(fixture.now,2)
+        self.assertLess(fixture.now,2.5)
+        self.assertEqual(fixture.stops,[])
+        fixture.processes.audit.assert_not_called()
+        fixture.processes.observe.assert_called_once()
 
     def test_changed_expected_catalog_cannot_reuse_previous_ready_result(self):
         fixture=ReadinessSimulation(self.node())
