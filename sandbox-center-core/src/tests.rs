@@ -202,6 +202,80 @@ fn recovery_rejects_corrupt_projection_binding_and_capacity() {
     assert!(!bad.is_valid());
     assert!(s.pending().contains(&create));
 }
+
+#[test]
+fn recovery_keeps_operation_ids_unique_across_live_sandbox_histories() {
+    let tenant = "1".try_into().unwrap();
+    let (first, first_request) = state().create(&tenant, binding(), 0).unwrap();
+    let (valid, second_request) = first.create(&tenant, binding(), 0).unwrap();
+    assert_ne!(
+        first_request.identity.retention_slot,
+        second_request.identity.retention_slot
+    );
+    assert!(valid.is_valid());
+
+    let mut duplicate = valid.clone();
+    duplicate.sandboxes[1].operations[0]
+        .request
+        .identity
+        .operation_id = first_request.identity.operation_id;
+    let before = duplicate.clone();
+    assert!(!duplicate.is_valid());
+    assert_eq!(duplicate, before);
+    assert_eq!(
+        duplicate.create(&tenant, binding(), 0),
+        Err(DecisionError::Invalid)
+    );
+    assert_eq!(duplicate, before);
+}
+
+#[test]
+fn create_keeps_first_rejection_when_multiple_checks_would_fail() {
+    let tenant = "1".try_into().unwrap();
+    let missing_tenant = "missing".try_into().unwrap();
+    let (one, _) = state().create(&tenant, binding(), 0).unwrap();
+    let (full, _) = one.create(&tenant, binding(), 0).unwrap();
+    let mut invalid_full = full.clone();
+    invalid_full.sandboxes[0].operations.clear();
+
+    let mut unavailable = state();
+    unavailable.nodes[0].mode = NodeMode::Draining;
+    unavailable.sandbox_highwater = u64::MAX;
+    let mut too_large = binding();
+    too_large.resources.cpu = 3;
+    assert!(too_large.is_valid());
+
+    let mut exhausted = state();
+    exhausted.sandbox_highwater = u64::MAX;
+    for (image, owner, create, expected) in [
+        (
+            invalid_full,
+            &missing_tenant,
+            binding(),
+            DecisionError::Invalid,
+        ),
+        (full, &missing_tenant, binding(), DecisionError::Capacity),
+        (
+            unavailable.clone(),
+            &missing_tenant,
+            too_large.clone(),
+            DecisionError::NotFound,
+        ),
+        (
+            unavailable.clone(),
+            &tenant,
+            too_large,
+            DecisionError::Capacity,
+        ),
+        (unavailable, &tenant, binding(), DecisionError::Unavailable),
+        (exhausted, &tenant, binding(), DecisionError::Exhausted),
+    ] {
+        let before = image.clone();
+        assert_eq!(image.create(owner, create, 0), Err(expected));
+        assert_eq!(image, before);
+    }
+}
+
 #[test]
 fn retained_history_is_bounded_without_forgetting_old_identities() {
     let tenant = "1".try_into().unwrap();
