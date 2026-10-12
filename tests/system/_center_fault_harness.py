@@ -141,6 +141,38 @@ class Harness:
         self._seal_fresh_center_config()
         self._instrument_original_starts()
 
+    def operator_checkpoint(self, report):
+        """Opt-in root-private fault barrier, never a normal PASS or VM action.
+
+        Normal DK runs have no control file and never wait. An independently
+        armed negative cohort captures its first two original identities before
+        a reviewed operator signals the original host or cancels its launcher.
+        The existing case deadline remains in force; no resume/success shortcut.
+        """
+        control = self.root/'operator-dk06-control.json'
+        if not control.exists() and not control.is_symlink():
+            return
+        request = json_file(private_path(control), limit=16384)
+        expected = dict(schema_version=1, candidate=self.manifest['services']['candidate'],
+            run_id=self.args.run_identity, execution_manifest_sha256=self.execution_sha,
+            action=request.get('action'))
+        if (request != expected or type(request.get('schema_version')) is not int
+                or request['action'] not in ('host-failure', 'cancel')):
+            raise ValueError('operator fault control does not bind this original cohort')
+        if len(report['mappings']) != 2 or len(report['identities']) != 2:
+            raise ValueError('fault barrier requires two fully captured original instances')
+        self.services.processes.observe()
+        write_once(self.root/'operator-dk06-stage.json', dict(expected,
+            stage='original_pair_ready', mappings=copy.deepcopy(report['mappings']),
+            identities=copy.deepcopy(report['identities']),
+            producer_sha256=digest(Path(__file__).with_name('server_bounded_churn.py'))))
+        deadline = time.monotonic()+self.args.wait_seconds
+        while self.services.processes.children['host-0'].poll() is None:
+            if time.monotonic() >= deadline:
+                raise TimeoutError('armed operator fault was not observed before the original deadline')
+            time.sleep(.1)  # Poll original process exit; never guess a fault time.
+        raise RuntimeError('original host exited at the armed test barrier')
+
     def _seal_fresh_center_config(self):
         path = Path(self.services.processes.bindings['center']['config'])
         old = path.stat()

@@ -381,7 +381,7 @@ def exercise(args):
 
 
 def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
-                         stale_probe_sha256,rounds=6,wait_seconds=30):
+                         stale_probe_sha256,rounds=6,wait_seconds=30,first_pair_observed=None):
     """Run the ORIGINAL churn assertions on one already started DK assembly.
 
     The caller owns provisioning, the sole execution manifest and final service
@@ -549,6 +549,10 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
             if index == 0:
                 old, old_actions = context, capture_actions(settings['database'], victim_native)
                 assert len(old_actions) >= 4, 'capture real accepted host actions before retirement'
+                if first_pair_observed is not None:
+                    # Test-only coordination after BOTH original mappings and
+                    # physical identities have been captured. Not a VM action.
+                    first_pair_observed(copy.deepcopy(report))
             elif index == 1:
                 assert context['position'] == old['position'] and context['binding']['vm'] != old['binding']['vm']
                 services.processes.stop('host-0')

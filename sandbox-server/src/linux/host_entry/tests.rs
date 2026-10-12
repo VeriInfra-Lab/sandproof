@@ -103,6 +103,26 @@ fn cache_is_one_reserved_source_not_a_static_availability_fallback() {
 }
 
 #[test]
+fn full_retained_inbox_requires_its_original_single_value_reservation() {
+    let mut value = host_settings();
+    value["inbox"]["max_sandboxes"] = json!(5);
+    value["inbox"]["max_options_bytes"] = json!(4096);
+    let config: HostConfig = serde_json::from_value(value.clone()).unwrap();
+    let required = config.inbox.required_bytes();
+    // The former single-host fixture's row cap is not a distributed inbox cap.
+    assert!(required > 192 * 1024 && required <= 1024 * 1024);
+    let original_total = value["native"]["maintenance"]["capacity"]["max_sql_bytes"].clone();
+    for cap in [192 * 1024, required - 1, required, 1024 * 1024] {
+        value["native"]["maintenance"]["capacity"]["max_sql_value_bytes"] = json!(cap);
+        assert_eq!(check(value.clone()), cap >= required);
+        assert_eq!(
+            value["native"]["maintenance"]["capacity"]["max_sql_bytes"],
+            original_total
+        );
+    }
+}
+
+#[test]
 fn documented_host_example_uses_the_original_validator_and_rejects_missing_or_old_inputs() {
     let value: Value =
         serde_json::from_str(include_str!("../../../../deploy/host.example.json")).unwrap();

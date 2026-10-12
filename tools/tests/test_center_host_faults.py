@@ -182,6 +182,91 @@ class CenterHostFaultsTests(unittest.TestCase):
                 patch.object(runner,'digest',return_value='a'*64):
             return runner.validate(self.args)
 
+    def operator_barrier(self, action='host-failure'):
+        value=harness.Harness.__new__(harness.Harness)
+        value.root=self.root
+        value.args=self.args
+        value.manifest=dict(services=dict(candidate='b'*40))
+        value.execution_sha='c'*64
+        value.services=Mock()
+        report=dict(mappings=[{'original':1},{'original':2}],identities=[{'pid':11},{'pid':12}])
+        control=dict(schema_version=1,candidate='b'*40,run_id=self.args.run_identity,
+                     execution_manifest_sha256='c'*64,action=action)
+        return value,report,control
+
+    def write_operator_control(self, control):
+        path=self.root/'operator-dk06-control.json'
+        path.write_text(json.dumps(control))
+        path.chmod(0o600)
+        return path
+
+    def test_normal_fault_group_does_not_wait_or_create_an_operator_stage(self):
+        value,report,_=self.operator_barrier()
+        with patch.object(harness.time,'sleep') as sleep,patch.object(harness,'write_once') as write:
+            value.operator_checkpoint(report)
+        sleep.assert_not_called()
+        write.assert_not_called()
+        value.services.processes.observe.assert_not_called()
+
+    def test_fault_barrier_captures_both_original_identities_before_observing_host_exit(self):
+        value,report,control=self.operator_barrier()
+        self.write_operator_control(control)
+        value.services.processes.children={'host-0':Mock()}
+        value.services.processes.children['host-0'].poll.side_effect=[None,93]
+        with patch.object(harness,'private_path',side_effect=lambda path:Path(path)), \
+                patch.object(harness,'digest',return_value='d'*64), \
+                patch.object(harness.time,'monotonic',side_effect=[0,1]), \
+                patch.object(harness.time,'sleep') as sleep, \
+                self.assertRaisesRegex(RuntimeError,'original host exited'):
+            value.operator_checkpoint(report)
+        saved=json.loads((self.root/'operator-dk06-stage.json').read_text())
+        self.assertEqual(saved,dict(control,stage='original_pair_ready',
+            mappings=report['mappings'],identities=report['identities'],producer_sha256='d'*64))
+        value.services.processes.observe.assert_called_once()
+        value.services.processes.start.assert_not_called()
+        value.services.processes.stop.assert_not_called()
+        sleep.assert_called_once_with(.1)
+
+    def test_barrier_deadline_is_the_original_case_deadline_and_cannot_be_resumed_as_pass(self):
+        value,report,control=self.operator_barrier()
+        self.write_operator_control(control)
+        value.services.processes.children={'host-0':Mock(poll=Mock(return_value=None))}
+        with patch.object(harness,'private_path',side_effect=lambda path:Path(path)), \
+                patch.object(harness,'digest',return_value='d'*64), \
+                patch.object(harness.time,'monotonic',side_effect=[0,self.args.wait_seconds]), \
+                patch.object(harness.time,'sleep') as sleep, \
+                self.assertRaises(TimeoutError):
+            value.operator_checkpoint(report)
+        sleep.assert_not_called()
+        self.assertTrue((self.root/'operator-dk06-stage.json').exists())
+
+    def test_cancel_at_barrier_propagates_without_starting_or_stopping_a_vm(self):
+        value,report,control=self.operator_barrier('cancel')
+        self.write_operator_control(control)
+        value.services.processes.children={'host-0':Mock(poll=Mock(return_value=None))}
+        with patch.object(harness,'private_path',side_effect=lambda path:Path(path)), \
+                patch.object(harness,'digest',return_value='d'*64), \
+                patch.object(harness.time,'sleep',side_effect=KeyboardInterrupt()), \
+                self.assertRaises(KeyboardInterrupt):
+            value.operator_checkpoint(report)
+        value.services.processes.start.assert_not_called()
+        value.services.processes.stop.assert_not_called()
+
+    def test_wrong_operator_cohort_action_or_incomplete_pair_cannot_publish_stage(self):
+        value,report,control=self.operator_barrier()
+        variants=[dict(control,**{field:'wrong'}) for field in
+                  ('candidate','run_id','execution_manifest_sha256','action')]
+        variants += [dict(control,extra=True),dict(control,schema_version=True),control]
+        for number,changed in enumerate(variants):
+            with self.subTest(number=number):
+                path=self.write_operator_control(changed)
+                current=report if changed is not control else dict(report,identities=report['identities'][:1])
+                with patch.object(harness,'private_path',side_effect=lambda path:Path(path)), \
+                        patch.object(harness,'write_once') as write,self.assertRaises(ValueError):
+                    value.operator_checkpoint(current)
+                write.assert_not_called()
+                path.unlink()
+
     def test_only_original_finite_service_budget_is_forwarded_not_a_second_capacity_policy(self):
         self.assertEqual(self.validate(),dict(cpu_quota_us=100000,memory_bytes=2*1024**3))
         for name,value in (('rounds',True),('rounds',5),('rounds',7),('rounds',17),('wait_seconds',1),

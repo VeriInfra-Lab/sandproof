@@ -169,7 +169,8 @@ def worker(args):
             case(harness)
         details=exercise_on_services(harness.services,harness.key,harness.foreign_key,
             evidence_root=harness.evidence_root,rounds=args.rounds,wait_seconds=args.wait_seconds,
-            stale_probe=args.stale_probe,stale_probe_sha256=args.stale_probe_sha256)
+            stale_probe=args.stale_probe,stale_probe_sha256=args.stale_probe_sha256,
+            first_pair_observed=harness.operator_checkpoint)
         harness.complete_case('DK06',details)
         report=harness.finish()
         successful=True
