@@ -105,11 +105,12 @@ impl CenterState {
         if self.sandboxes.len() >= usize::from(self.bounds.max_sandboxes) {
             return Err(DecisionError::Capacity);
         }
-        let budget = self
+        let budget_index = self
             .tenants
             .iter()
-            .find(|b| &b.tenant == tenant)
+            .position(|b| &b.tenant == tenant)
             .ok_or(DecisionError::NotFound)?;
+        let budget = &self.tenants[budget_index];
         let shape = create.resources;
         if self
             .reserved(None, None)

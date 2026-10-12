@@ -175,6 +175,10 @@ impl CenterState {
         clippy::too_many_lines,
         reason = "ordered checks and projection of one bounded operation history"
     )]
+    #[expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "fixed Aeneas cannot translate higher-ranked borrowed function items"
+    )]
     fn valid_operation_history<'a>(
         &self,
         sandbox: &'a Sandbox,
@@ -207,7 +211,7 @@ impl CenterState {
                 || id.retention_slot != first.request.identity.retention_slot
                 || self
                     .lane(&id.node, id.retention_slot)
-                    .and_then(crate::RetentionLane::current)
+                    .and_then(|lane| lane.current())
                     != Some(id.request_window)
                 || id.node != first.request.identity.node
                 || id.tenant_id != first.request.identity.tenant_id
@@ -260,10 +264,7 @@ impl CenterState {
         if sandbox.started_at_ms != started
             || sandbox.end_at_ms != end
             || sandbox.max_end_at_ms != max_end
-            || sandbox
-                .observation_version
-                .map(sandproof_protocol::internal::PositiveCounter::get)
-                != observed
+            || sandbox.observation_version.map(|version| version.get()) != observed
         {
             return false;
         }
