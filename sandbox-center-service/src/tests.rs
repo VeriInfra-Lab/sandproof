@@ -1,6 +1,7 @@
 //! The storage/host substitutes inject faults around the SAME pure center
 //! transitions. These tests do not claim Redis, TLS or KVM acceptance.
 mod late_observation;
+mod query_snapshot;
 mod retired_destroy;
 mod session_wait;
 #[test]
@@ -57,7 +58,9 @@ impl Clock for TestClock {
     }
 }
 #[derive(Clone)]
-struct Templates;
+struct Templates {
+    bound_reads: Arc<AtomicU64>,
+}
 fn template() -> PublicTemplate {
     PublicTemplate::from_binding(
         sandproof_controller_service::templates::TemplateBinding {
@@ -100,6 +103,7 @@ impl TemplateProvider for Templates {
         revision: &sandproof_protocol::ResourceId,
         digest: &[u8; 32],
     ) -> Result<PublicTemplate, PortError> {
+        self.bound_reads.fetch_add(1, Ordering::SeqCst);
         let value = template();
         if value.revision == *revision && value.digest == *digest {
             Ok(value)
@@ -197,6 +201,7 @@ fn state() -> CenterState {
 struct MemoryAuthority {
     state: CenterState,
     hidden_sandboxes: Vec<SandboxId>,
+    query_templates: Vec<PublicTemplate>,
     unreadable: Arc<AtomicBool>,
     unknown_create: Arc<AtomicBool>,
     projection_steps: std::collections::VecDeque<ProjectionStep>,
@@ -241,6 +246,7 @@ impl AuthorityPort for MemoryAuthority {
         Ok(PublicSnapshot {
             state: self.snapshot()?,
             hidden_sandboxes: self.hidden_sandboxes.clone(),
+            templates: self.query_templates.clone(),
         })
     }
     fn create(
@@ -791,6 +797,7 @@ fn fixture() -> Fixture {
             MemoryAuthority {
                 state: state(),
                 hidden_sandboxes: Vec::new(),
+                query_templates: vec![template()],
                 unreadable: Arc::clone(&unreadable),
                 unknown_create: Arc::clone(&unknown_create),
                 projection_steps: std::collections::VecDeque::new(),
@@ -799,7 +806,9 @@ fn fixture() -> Fixture {
                 retirement_step: None,
             },
             host.clone(),
-            Templates,
+            Templates {
+                bound_reads: Arc::new(AtomicU64::new(0)),
+            },
             config(),
             &[13; 32],
         )

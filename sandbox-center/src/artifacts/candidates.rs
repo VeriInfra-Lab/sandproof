@@ -8,7 +8,7 @@ use sandproof_controller_service::{template_registry::CandidateStore, templates:
 use sandproof_internal::cache::CacheRequest;
 use sandproof_protocol::{ResourceId, TenantId};
 use std::{
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -17,6 +17,37 @@ pub struct ProtectedCandidates {
     authority: SharedBusinessAuthority,
     hosts: RegisteredHosts,
     store: Arc<CandidateStore>,
+    /// Scheduling hints only: one bounded cursor per currently registered
+    /// immutable artifact, shared by clones. Never an availability authority.
+    cache_starts: Arc<Mutex<Vec<CacheStart>>>,
+}
+struct CacheStart {
+    revision: ResourceId,
+    digest: [u8; 32],
+    next_host: usize,
+}
+
+fn rotate_start(
+    cursors: &mut Vec<CacheStart>,
+    revision: &ResourceId,
+    digest: [u8; 32],
+    nodes: std::num::NonZeroUsize,
+) -> usize {
+    let index = cursors
+        .iter()
+        .position(|cursor| cursor.revision == *revision && cursor.digest == digest)
+        .unwrap_or_else(|| {
+            cursors.push(CacheStart {
+                revision: revision.clone(),
+                digest,
+                next_host: 0,
+            });
+            cursors.len() - 1
+        });
+    let cursor = &mut cursors[index];
+    let start = cursor.next_host % nodes.get();
+    cursor.next_host = (start + 1) % nodes.get();
+    start
 }
 impl ProtectedCandidates {
     pub(super) fn new(
@@ -28,6 +59,7 @@ impl ProtectedCandidates {
             authority,
             hosts,
             store,
+            cache_starts: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -80,8 +112,30 @@ impl ProtectedCandidates {
         if current.metadata.artifact_binding(revision, &digest)? != *binding {
             return Err(PortError::Conflict);
         }
+        let nodes = current.center.nodes();
+        let node_count =
+            std::num::NonZeroUsize::new(nodes.len()).ok_or(PortError::OutcomeUnknown)?;
+        let start = {
+            let mut cursors = self
+                .cache_starts
+                .lock()
+                .map_err(|_| PortError::OutcomeUnknown)?;
+            // Registry/catalog limits bound these hints. Retired artifacts do not
+            // leave an ever-growing history, and new revisions start afresh.
+            cursors.retain(|cursor| {
+                current
+                    .metadata
+                    .artifact_binding(&cursor.revision, &cursor.digest)
+                    .is_ok()
+            });
+            rotate_start(&mut cursors, revision, digest, node_count)
+        };
         let mut available = false;
-        for node in current.center.nodes() {
+        // Keep the original total deadline and serial transport. Even if the
+        // first RPC consumes it, this artifact starts at another node next
+        // time; independent artifacts cannot reset each other's progress.
+        for offset in 0..nodes.len() {
+            let node = &nodes[(start + offset) % nodes.len()];
             if node.role != current.metadata.artifact_role(revision) {
                 continue;
             }
@@ -119,6 +173,7 @@ impl ProtectedCandidates {
         }
     }
 }
+
 impl CandidatePort for ProtectedCandidates {
     fn verified(
         &self,
@@ -169,3 +224,7 @@ impl CandidatePort for ProtectedCandidates {
         .map_err(|_| PreparationError::Unknown)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/cursors.rs"]
+mod cursor_tests;
