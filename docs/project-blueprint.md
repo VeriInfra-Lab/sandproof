@@ -72,11 +72,11 @@ DNS 本身也是出站通道：禁网不得通过宿主解析器间接查询外�
 
 A/B/C 是岗位占位符，不是 GitHub 用户名。实际认领后，在任务板和本表填写人员；不生成含无效用户名的 CODEOWNERS。
 
-| 负责人 | 模块与建议目录 | 自己交付的内容 | 主要复核者 |
+| 负责人 | 模块与实现目录 | 自己交付的内容 | 主要复核者 |
 |---|---|---|---|
-| A：控制与恢复 | 现有 `controller-core/`、`controller-service/`；中心核心/Redis 适配目录由合同批次定稿 | 中心全局身份、绑定、准入、调度与持久协调；本地控制、事务、寿命、容量及恢复；不复制本地算法 | B；接口变化另请 C |
+| A：控制与恢复 | `sandbox-center-core/`、`sandbox-center-store/`、`controller-core/`、`controller-service/` | 中心全局身份、绑定、准入、调度与持久协调；本地控制、事务、寿命、容量及恢复；不复制本地算法 | B；接口变化另请 C |
 | B：节点执行与隔离 | `sandbox-node/`、`sandbox-runtime/` 及镜像/部署工具 | 节点内部入口、本地身份映射、执行资格、jailer 启停、观察与精确清理、网络、模板落地及隔离构建 | A；客户端行为另请 C |
-| C：接口与集成 | `sandbox-api/`、`sandbox-center/`、`sandbox-server/`、`tests/compat/`、`tests/system/`、`.github/`、`benchmarks/` | 统一公开入口、两端网关、模板用户入口、共享协议/组装、SDK 与 Harbor 兼容、双服务部署和 CI | A；运行环境另请 B |
+| C：接口与集成 | `sandbox-api/`、`sandbox-center-service/`、`sandbox-host-service/`、`sandbox-internal/`、`sandbox-data-transport/`、服务组装与测试目录 | 统一公开入口、两端网关、模板用户入口、共享协议/组装、SDK 与 Harbor 兼容、双服务部署和 CI | A；运行环境另请 B |
 
 目录存在不代表工作包已完整交付。共享消息位于 `sandbox-protocol/`；`sandbox-center/` 组装公开中心，`sandbox-server/` 仅构建受保护的 `sandproof-host`，跨模块组装由 C 集成、A/B 复核各自语义。不存在旧公开宿主模式；新增 crate 只在对应任务中加入 workspace。
 
@@ -87,7 +87,7 @@ A/B/C 是岗位占位符，不是 GitHub 用户名。实际认领后，在任务
 - C 在中心公开入口解析请求并验证用户凭据，A 检查全局授权和准入；节点验证中心证书、完整身份与本地映射，B 在实际执行前再次检查当前资格、寿命、围栏和资源。
 - 中心是全局身份、固定绑定、意图与预留的唯一决定者；每个节点的本地控制器是其本机业务阶段的唯一决定者。执行层返回观察与回执，不能自行发布 Running/Destroyed；查询缓存和网关不是新的状态权威。
 - A 负责两层恢复决策，B 提供原资源证据，C 验证组合。两层独立持久化，不假设 Redis 与 SQLite 有跨库原子事务；失联和心跳过期不释放未知责任。
-- A/B/C 分别为后续控制证明、执行合同证明、接口授权与对应验证负责；形式化阶段沿用模块归属，不另建一套脱离运行代码的实现。
+- A/B/C 分别为后续控制证明、执行合同证明、接口授权与对应验证负责；形式化阶段按[验证总览](formal-verification-design.md#2-按真实模块划分证明责任)的V0–V9在真实代码上细分，可按中心、本地控制/执行、公开/数据三线认领。工程M0–M5与证明V0–V9不是同一编号；组合负责人持续核对邻接合同，不另建一套脱离运行代码的实现。
 
 ## 4. 开发里程碑
 
