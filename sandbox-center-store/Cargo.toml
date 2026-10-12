@@ -1,0 +1,39 @@
+[package]
+name = "sandproof-center-store"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Integration fixture only, never a runtime/legacy storage mode. Explicit entry
+# fails when the pinned engine is absent; ordinary unit tests need no daemon.
+redis-tests = []
+
+[[test]]
+name = "redis_ledger"
+required-features = ["redis-tests"]
+
+[dependencies]
+sandproof-protocol = { path = "../sandbox-protocol" }
+sandproof-center-core = { path = "../sandbox-center-core" }
+redis = { version = "=1.7.1", default-features = false }
+rustix = { version = "=1.1.5", features = ["fs"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.142"
+
+[dev-dependencies]
+sandproof-api = { path = "../sandbox-api" }
+axum = { version = "=0.8.9", features = ["http1", "tokio"] }
+tempfile = "=3.23.0"
+sandproof-controller-service = { path = "../controller-service" }
+sandbox-controller-core = { path = "../controller-core" }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+sandproof-internal = { path = "../sandbox-internal" }
+sandproof-host-service = { path = "../sandbox-host-service" }
+sandproof-node = { path = "../sandbox-node" }
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }
+
+[lints]
+workspace = true

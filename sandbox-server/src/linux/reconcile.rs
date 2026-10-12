@@ -2,22 +2,14 @@
 
 use core::maintenance::slots::HostSlotPhase;
 use sandbox_controller_core as core;
-use sandproof_controller_service::application::fault::{
-    FaultContext, FaultKind, FaultRecord, FaultStage,
-};
 use sandproof_controller_service::application::{
-    ApplicationError as PortError, ControllerApplication, ExpiryReport, MaintenanceReport,
-    RecoveryReport, can_install_host_slot_binding,
+    ControllerApplication, can_install_host_slot_binding,
 };
 use sandproof_controller_service::{ControllerJournal, HostSlotContext};
 use sandproof_node::NodeHost;
 use sandproof_node::{CredentialFault, LaunchCredentialStatus, LinuxWorker, ObservedSlot};
 use sandproof_protocol::WorkAction;
-use std::{
-    error::Error,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::error::Error;
 
 fn has_current_uncertain_prepare(
     journal: &ControllerJournal,
@@ -287,91 +279,6 @@ fn audit_launch_credential_binding(
         LaunchCredentialStatus::Intact => Ok(None),
         LaunchCredentialStatus::Unavailable(fault) => Ok(Some(fault)),
     }
-}
-
-fn reconciliation_pass(
-    mut maintain: impl FnMut() -> Result<MaintenanceReport, PortError>,
-    recover: impl FnOnce() -> Result<RecoveryReport, PortError>,
-    process_due: impl FnOnce() -> Result<ExpiryReport, PortError>,
-) -> Result<(RecoveryReport, ExpiryReport, MaintenanceReport), FaultRecord> {
-    let failure =
-        |stage, error: PortError| FaultRecord::application(stage, &error, FaultContext::default());
-    // Preserve the original capacity/recovery/expiry/retirement order exactly.
-    maintain().map_err(|error| failure(FaultStage::MaintenanceBefore, error))?;
-    let recovery = recover().map_err(|error| failure(FaultStage::Recovery, error))?;
-    let expiry = process_due().map_err(|error| failure(FaultStage::Expiry, error))?;
-    let maintenance = maintain().map_err(|error| failure(FaultStage::MaintenanceAfter, error))?;
-    Ok((recovery, expiry, maintenance))
-}
-
-pub(super) fn spawn_reconciliation_scanner(
-    port: Arc<ControllerApplication<NodeHost>>,
-    seconds: u64,
-    admission: Arc<sandproof_api::admission::RequestAdmission>,
-) {
-    drop(tokio::spawn(async move {
-        let mut timer = tokio::time::interval(Duration::from_secs(seconds));
-        let mut last_failure_log: Option<Instant> = None;
-        loop {
-            timer.tick().await;
-            let Some(lease) =
-                admission.try_acquire(sandproof_api::admission::RequestClass::Background)
-            else {
-                continue;
-            };
-            let port = Arc::clone(&port);
-            match tokio::task::spawn_blocking(move || {
-                let _lease = lease;
-                reconciliation_pass(
-                    || port.maintain(),
-                    || port.recover_on_startup(),
-                    || port.expire_due_report(),
-                )
-            })
-            .await
-            {
-                Ok(Ok((recovery, expiry, maintenance)))
-                    if recovery.unresolved_sandboxes > 0
-                        || expiry.unresolved_sandboxes > 0
-                        || maintenance.pending_sandboxes > 0 =>
-                {
-                    if last_failure_log
-                        .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
-                    {
-                        eprintln!(
-                            "reconciliation left {} sandboxes or physical-slot releases unresolved ({} after host or receipt errors); {} due expiries and {} metadata retirements remain unresolved; manual inspection may be required",
-                            recovery.unresolved_sandboxes,
-                            recovery.failed_sandboxes,
-                            expiry.unresolved_sandboxes,
-                            maintenance.pending_sandboxes
-                        );
-                        last_failure_log = Some(Instant::now());
-                        if let Some(fault) = recovery.first_fault {
-                            fault.emit();
-                        }
-                    }
-                }
-                Ok(Ok(_)) => last_failure_log = None,
-                Ok(Err(fault)) => {
-                    if last_failure_log
-                        .is_none_or(|instant| instant.elapsed() >= Duration::from_mins(1))
-                    {
-                        fault.emit();
-                        last_failure_log = Some(Instant::now());
-                    }
-                }
-                Err(error) => {
-                    // JoinError may contain an arbitrary panic payload.
-                    let kind = if error.is_panic() {
-                        FaultKind::TaskPanicked
-                    } else {
-                        FaultKind::TaskCancelled
-                    };
-                    FaultRecord::host(FaultStage::Join, kind, FaultContext::default()).emit();
-                }
-            }
-        }
-    }));
 }
 
 pub(super) fn recover_before_serving(

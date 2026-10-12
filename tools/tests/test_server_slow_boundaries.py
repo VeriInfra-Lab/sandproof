@@ -21,8 +21,8 @@ class ConfigurationTests(unittest.TestCase):
         artifacts = {key: {'path': '/trusted/' + key, 'sha256': 'a' * 64} for key in probe.host.ARTIFACTS}
         base = {'template_id': 'base-id', 'owner': None, 'kernel': {'path': '/trusted/kernel'}}
         config = probe.configuration(budgets, Path('/root/run'), '0123456789abcdef', artifacts,
-                                     uid=10000, port=3000, cgroup=Path('/sys/fs/cgroup/runtime'),
-                                     keys=['one', 'two'], base=base, file_size=lambda path: 100)
+                                     uid=10000, cgroup=Path('/sys/fs/cgroup/runtime'),
+                                     base=base, file_size=lambda path: 100)
         self.assertEqual(budgets, original)
         self.assertEqual(config['data_transfer'], budgets['data_transfer'])
         self.assertEqual(config['max_active_global'], 2)
@@ -30,12 +30,13 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(config['memory_mib'], 512)
         self.assertEqual(config['host_resources']['memory_max_bytes'], 768 * probe.MIB)
         self.assertFalse(config['public_ipv4_enabled'])
-        self.assertEqual([row['tenant'] for row in config['credentials']], [1, 2])
+        self.assertFalse({'bind','domain','credentials','request_admission','template_registry',
+                          'internal_build_vms','build_retry_windows'} & config.keys())
         self.assertEqual(config['templates']['compute_limits']['max_memory_bytes_global'], 2 * 768 * probe.MIB)
         artifacts['firecracker']['path'] = '/trusted/' + 'long' * 32
         with self.assertRaises(ValueError):
             probe.configuration(budgets, Path('/root/run'), '0123456789abcdef', artifacts,
-                                uid=10000, port=3000, cgroup=Path('/sys/fs/cgroup/runtime'), keys=['one', 'two'], base=base,
+                                uid=10000, cgroup=Path('/sys/fs/cgroup/runtime'), base=base,
                                 file_size=lambda path: 100)
 
     def test_service_oom_hard_ceiling_and_identity_cannot_be_ignored(self):
@@ -60,35 +61,40 @@ class ConfigurationTests(unittest.TestCase):
                 probe.service_groups(Path('/sys/fs/cgroup/outer'), Path('/sys/fs/cgroup/outer/inner'))
 
     def test_child_green_report_must_match_actual_inputs_and_both_cases(self):
-        report = {'result': 'passed', 'config_sha256': 'a' * 64,
+        report = {'result': 'passed', 'config_sha256': 'a' * 64, 'host_config_sha256': 'd' * 64,
                   'server': {'executable_sha256': 'b' * 64}, 'sandbox_ids': ['one', 'two'],
                   'cases': {'file_idle_and_progress': {}, 'paused_download_memory': {}}}
         with patch.object(Path, 'read_bytes', return_value=json.dumps(report).encode()):
-            self.assertEqual(probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64, ['one', 'two']), report)
+            self.assertEqual(probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64,
+                ['one','two'],host_config_sha='d'*64), report)
             with self.assertRaises(AssertionError):
-                probe.check_child_report(Path('/private/report'), 1, 'a' * 64, 'b' * 64, ['one', 'two'])
+                probe.check_child_report(Path('/private/report'), 1, 'a' * 64, 'b' * 64,
+                    ['one','two'],host_config_sha='d'*64)
         variants = [{'config_sha256': 'c' * 64}, {'sandbox_ids': ['two', 'one']},
-                    {'server': {'executable_sha256': 'c' * 64}}, {'cases': {'file_idle_and_progress': {}}}]
+                    {'server': {'executable_sha256': 'c' * 64}}, {'host_config_sha256':'e'*64},
+                    {'cases': {'file_idle_and_progress': {}}}]
         for altered in variants:
             with self.subTest(altered=altered), patch.object(Path, 'read_bytes', return_value=json.dumps(report | altered).encode()):
                 with self.assertRaises(AssertionError):
-                    probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64, ['one', 'two'])
+                    probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64,
+                        ['one','two'],host_config_sha='d'*64)
 
 
 class CleanupTests(unittest.TestCase):
     def test_output_variant_requires_both_sdks_and_real_start_prefix_case(self):
-        report = {'result': 'passed', 'config_sha256': 'a' * 64,
+        report = {'result': 'passed', 'config_sha256': 'a' * 64, 'host_config_sha256': 'd' * 64,
                   'server': {'executable_sha256': 'b' * 64}, 'sandbox_ids': ['one', 'two'],
                   'cases': {'command_output_sync': {}, 'command_output_async': {}, 'template_start_once': []}}
         with patch.object(Path, 'read_bytes', return_value=json.dumps(report).encode()):
             self.assertEqual(probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64,
-                ['one', 'two'], command_output_only=True), report)
+                ['one', 'two'], host_config_sha='d'*64,command_output_only=True), report)
             with self.assertRaises(AssertionError):
-                probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64, ['one', 'two'])
+                probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64,
+                    ['one','two'],host_config_sha='d'*64)
         del report['cases']['template_start_once']
         with patch.object(Path, 'read_bytes', return_value=json.dumps(report).encode()), self.assertRaises(AssertionError):
             probe.check_child_report(Path('/private/report'), 0, 'a' * 64, 'b' * 64,
-                ['one', 'two'], command_output_only=True)
+                ['one', 'two'], host_config_sha='d'*64,command_output_only=True)
 
     def test_namespace_scan_sees_fd_only_holder_and_compares_device_and_inode(self):
         with tempfile.TemporaryDirectory() as temporary:

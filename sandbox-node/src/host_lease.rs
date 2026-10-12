@@ -3,7 +3,7 @@ use super::{NodeConfig, NodeResult, check_trusted_path};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
 };
@@ -36,6 +36,14 @@ impl HostLease {
         let path = config.state_dir.join("bounded-host.lock");
         let marker = serde_json::to_vec(&(1_u32, config))?;
         let lease = acquire(&path, &marker, required, 0)?;
+        check_trusted_path(&path)?;
+        Ok(lease)
+    }
+    pub fn inspect_existing(config: &NodeConfig, required: &LeaseIdentity) -> NodeResult<Self> {
+        super::storage_envelope::validate_configuration(config)?;
+        let path = config.state_dir.join("bounded-host.lock");
+        let marker = serde_json::to_vec(&(1_u32, config))?;
+        let lease = inspect_existing(&path, &marker, required, 0)?;
         check_trusted_path(&path)?;
         Ok(lease)
     }
@@ -76,6 +84,68 @@ fn acquire(
     };
     // No content mutation or stage recovery precedes this acquisition.
     file.try_lock()?;
+    let identity = verify_open_file(&file, path, marker, required, owner)?;
+    let content = read_marker(&mut file, marker.len())?;
+    if !marker.starts_with(&content) || (required.is_some() && content != marker) {
+        return Err("bounded host lease mapping changed".into());
+    }
+    if content != marker {
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(marker)?;
+    }
+    file.sync_all()?;
+    File::open(path.parent().ok_or("host lease parent")?)?.sync_all()?;
+    Ok(HostLease {
+        file,
+        identity,
+        path: path.to_owned(),
+    })
+}
+
+// This descriptor has no write capability. A failed audit cannot create a
+// marker, complete an initialization prefix, fsync or recover staged records.
+fn inspect_existing(
+    path: &Path,
+    marker: &[u8],
+    required: &LeaseIdentity,
+    owner: u32,
+) -> NodeResult<HostLease> {
+    let flags = rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(i32::try_from(flags.bits())?)
+        .open(path)?;
+    file.try_lock()?;
+    let identity = verify_open_file(&file, path, marker, Some(required), owner)?;
+    if read_marker(&mut file, marker.len())? != marker {
+        return Err("bounded host lease mapping changed".into());
+    }
+    Ok(HostLease {
+        file,
+        identity,
+        path: path.to_owned(),
+    })
+}
+
+fn read_marker(file: &mut File, limit: usize) -> NodeResult<Vec<u8>> {
+    let mut bytes = Vec::new();
+    file.seek(SeekFrom::Start(0))?;
+    file.take(
+        u64::try_from(limit)?
+            .checked_add(1)
+            .ok_or("lease marker limit")?,
+    )
+    .read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn verify_open_file(
+    file: &File,
+    path: &Path,
+    marker: &[u8],
+    required: Option<&LeaseIdentity>,
+    owner: u32,
+) -> NodeResult<LeaseIdentity> {
     let metadata = file.metadata()?;
     let current = fs::symlink_metadata(path)?;
     let identity = LeaseIdentity {
@@ -93,21 +163,7 @@ fn acquire(
     {
         return Err("untrusted or replaced bounded host lease".into());
     }
-    let content = fs::read(path)?;
-    if !marker.starts_with(&content) || (required.is_some() && content != marker) {
-        return Err("bounded host lease mapping changed".into());
-    }
-    if content != marker {
-        file.seek(SeekFrom::Start(0))?;
-        file.write_all(marker)?;
-    }
-    file.sync_all()?;
-    File::open(path.parent().ok_or("host lease parent")?)?.sync_all()?;
-    Ok(HostLease {
-        file,
-        identity,
-        path: path.to_owned(),
-    })
+    Ok(identity)
 }
 
 #[cfg(test)]
@@ -115,6 +171,45 @@ mod tests {
     use super::*;
     fn owner() -> u32 {
         rustix::process::geteuid().as_raw()
+    }
+    #[test]
+    fn readonly_inspection_keeps_exact_identity_and_has_no_write_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lease");
+        let first = acquire(&path, b"mapping", None, owner()).unwrap();
+        let identity = first.identity.clone();
+        assert!(inspect_existing(&path, b"mapping", &identity, owner()).is_err());
+        drop(first);
+        let before = fs::metadata(&path).unwrap();
+        let mut inspection = inspect_existing(&path, b"mapping", &identity, owner()).unwrap();
+        assert_eq!(inspection.identity, identity);
+        assert!(inspection.file.write_all(b"cannot-write").is_err());
+        let after = fs::metadata(&path).unwrap();
+        assert_eq!(
+            (before.dev(), before.ino(), before.mtime(), before.ctime()),
+            (after.dev(), after.ino(), after.mtime(), after.ctime())
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"mapping");
+    }
+    #[test]
+    fn readonly_inspection_never_creates_or_repairs_a_missing_or_partial_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lease");
+        let dummy = LeaseIdentity {
+            device: 0,
+            inode: 0,
+        };
+        assert!(inspect_existing(&path, b"mapping", &dummy, owner()).is_err());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+        let first = acquire(&path, b"mapping", None, owner()).unwrap();
+        let identity = first.identity.clone();
+        drop(first);
+        fs::write(&path, b"map").unwrap();
+        assert!(inspect_existing(&path, b"mapping", &identity, owner()).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"map");
+        fs::write(&path, b"invalid").unwrap();
+        assert!(inspect_existing(&path, b"mapping", &identity, owner()).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"invalid");
     }
     #[test]
     fn independent_second_open_cannot_recover_or_mutate_live_host() {

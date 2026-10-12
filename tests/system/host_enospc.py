@@ -2,7 +2,7 @@
 
 Only the run's own bounded fillers are released. Creation is never replayed
 after an unknown reply; an admitted inode-failed create recovers its original
-durable identity. The optional old-503 mode is bug reproduction, not acceptance.
+durable global identity. No legacy public-host or old-error reproduction mode.
 """
 
 import runpy as _runpy
@@ -21,7 +21,6 @@ from pathlib import Path
 import secrets
 import sqlite3
 import time
-import urllib.request
 
 from e2b import Sandbox
 from e2b.exceptions import (
@@ -30,9 +29,8 @@ from e2b.exceptions import (
 
 from sdk_server_smoke import options
 from server_disk_reserve import MIB, RESERVE, SCRATCH_BYTES, Resources, free_bytes, healthy
-from server_process_crash import (
-    free_loopback_port, process_start_ticks, start_server, stop_server, wait_ready,
-)
+from server_disk_reserve import SCRATCH_INODES,prepare_services,wait_disk_veto
+from tools.runtime_create_recovery import recover_original_create,find_runtime_create
 
 
 def rows(config):
@@ -80,10 +78,10 @@ class Filler:
                         raise AssertionError("allocation cap reached without ENOSPC")
                 os.fsync(stream.fileno())
         else:
-            assert 0 < before.f_favail <= before.f_files <= 2048
+            assert 0 < before.f_favail <= before.f_files <= SCRATCH_INODES
             self.path.mkdir(mode=0o700)
             self.created = True
-            for index in range(2048):
+            for index in range(SCRATCH_INODES):
                 name = str(index)
                 try:
                     with (self.path / name).open("xb"):
@@ -104,7 +102,7 @@ class Filler:
                     remaining_bytes=after.f_bavail * after.f_frsize)
 
 
-def inode_case(args, config, mounted, resources, sdk, live, filler, marker, payload):
+def inode_case(args, services, config, mounted, resources, sdk, live, filler, marker, payload):
     before = rows(config)
     claims = {p.name for p in resources.claims.iterdir()}
     filled = filler.fill("inodes")
@@ -119,14 +117,22 @@ def inode_case(args, config, mounted, resources, sdk, live, filler, marker, payl
         raise AssertionError("inode exhaustion returned successful create")
     after = rows(config)
     new_ids = set(after) - set(before)
-    assert len(new_ids) == 1 and len(after) == len(before) + 1
-    ident = new_ids.pop()
-    assert after[ident]["phase"] == "Starting"
+    # The new authoritative admission is the center CAS. Depending on the exact
+    # inode failure boundary, the original local admission may not yet exist.
+    # Neither absence nor HTTP500 implies the accepted global Create vanished.
+    assert len(new_ids) <= 1
+    if new_ids:
+        assert after[next(iter(new_ids))]['phase']=='Starting'
+    global_audit=services.planned_audit('center')
+    create=find_runtime_create(global_audit,{'enospc':'original'},
+        deployment=services.center_config['deployment_id'])
+    ident=create['sandbox_id']
     assert {p.name for p in resources.claims.iterdir()} == claims
     # The unknown create already consumes admission; it has not booted a VM.
     for sandbox in live:
         healthy(sandbox, marker, payload)
     filler.release()
+    services.wait_ready(for_admission=False)
     deadline = time.monotonic() + 60
     while True:
         try:
@@ -139,21 +145,29 @@ def inode_case(args, config, mounted, resources, sdk, live, filler, marker, payl
     recovered = Sandbox.connect(ident, **sdk)
     live.append(recovered)
     resources.sample()
-    assert set(rows(config)) == set(after), "recovery admitted a second create"
+    recovered_native=set(rows(config))-set(before)
+    assert len(recovered_native)==1, 'original recovery admitted more than one native instance'
+    if new_ids:
+        assert recovered_native==new_ids, 'original admitted native identity changed'
+    center_after=services.planned_audit('center')
+    assert find_runtime_create(center_after,{'enospc':'original'},
+        deployment=services.center_config['deployment_id'])==create, 'global Create was replaced'
     assert not recovered.files.exists(marker)
     healthy(recovered, marker, payload)
     return dict(scenario="inodes", fill=filled, create_http_status=status,
-                expected_create_http_status=args.expected_inode_status,
                 durable_create_before_error=True, no_vm_before_inode_release=True,
-                original_create_recovered_without_replay=True,
-                old_busy_bug_reproduced=status == 503)
+                original_create_identity=create,native_admitted_before_error=bool(new_ids),
+                original_create_recovered_without_replay=True)
 
 
-def block_case(config, mounted, resources, sdk, live, filler, marker, payload, vm_ids):
+def block_case(services, config, mounted, resources, sdk, live, filler, marker, payload, vm_ids):
     before = rows(config)
     claims = {p.name for p in resources.claims.iterdir()}
     filled = filler.fill("blocks")
     assert free_bytes(mounted) < Path(config["rootfs"]).stat().st_size + RESERVE
+    global_before=wait_disk_veto(services)
+    victim_create=find_runtime_create(global_before,
+        dict(enospc_probe=config['namespace'],instance='0'),deployment=services.center_config['deployment_id'])
     try:
         Sandbox.create(template="base", timeout=300, allow_internet_access=False, **sdk)
     except RateLimitException as error:
@@ -162,6 +176,9 @@ def block_case(config, mounted, resources, sdk, live, filler, marker, payload, v
         raise AssertionError("full block filesystem admitted a create")
     assert set(rows(config)) == set(before)
     assert {p.name for p in resources.claims.iterdir()} == claims
+    global_after=services.planned_audit('center')
+    assert global_after['sandbox_highwater']==global_before['sandbox_highwater']
+    assert global_after['operation_highwater']==global_before['operation_highwater']
     victim, control = live
     # Check guest data and liveness before requesting a known identity's kill.
     for sandbox in live:
@@ -174,17 +191,28 @@ def block_case(config, mounted, resources, sdk, live, filler, marker, payload, v
     except (SandboxException, ServiceBusyException) as error:
         kill_status = error.status_code
         assert kill_status in (500, 503), "unrelated kill error"
-        if kill_status == 503:
-            # A genuine refused call must not already have revoked/stopped it.
-            assert rows(config)[victim.sandbox_id]["phase"] == "Running"
-            sample = resources.samples[vm_ids[victim.sandbox_id]]
-            assert process_start_ticks(sample["pid"]) == sample["ticks"]
+        # An accepted destroy and a failed reply are not a definite refusal.
+        # Never derive native identity or Running from the public ID/503 alone.
     filler.release()
-    # This is explicit cleanup of a known ID, never replay of Create/Start.
-    Sandbox.kill(victim.sandbox_id, **sdk)
+    center_after=services.planned_audit('center')
+    original=[record for record in center_after['sandboxes']
+              if record['create']['identity']==victim_create]
+    already_terminating=(not original or original[0]['terminating'] or original[0]['released'])
+    expected=dict(instances=1,cpu=1,memory_bytes=768*MIB,disk_bytes=1024*MIB)
+    # If the original center retained Destroy, only observe it. A second DELETE
+    # is permitted solely when the stopped original writer's checked authority
+    # proves no Destroy was accepted, never on a lost/503 reply by itself.
+    recovery=recover_original_create(dict(enospc_probe=config['namespace'],instance='0'),
+        expected_resources=expected,read_center=lambda:services.planned_audit('center'),
+        read_host=lambda node:services.planned_audit('host-0'),
+        deployment=services.center_config['deployment_id'],owner=1,
+        create_identity=victim_create,sandbox_id=victim.sandbox_id,
+        delete_dispatched=already_terminating,deadline=time.monotonic()+120,
+        delete=lambda identity:204 if Sandbox.kill(identity,**sdk) else 404)
     resources.audit(vm_ids[victim.sandbox_id])
     live.remove(victim)
     healthy(control, marker, payload)
+    services.wait_ready(for_admission=True)
     fresh = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **sdk)
     live.append(fresh)
     resources.sample()
@@ -192,40 +220,24 @@ def block_case(config, mounted, resources, sdk, live, filler, marker, payload, v
     healthy(fresh, marker, payload)
     return dict(scenario="blocks", fill=filled, create_http_status=429,
                 no_new_admission=True, full_disk_kill_http_status=kill_status,
-                explicit_cleanup_after_release=True, fresh_vm_clean=True)
+                original_destroy_recovery=recovery,explicit_cleanup_after_release=True,fresh_vm_clean=True)
 
 
 def exercise_enospc(args, mounted, template):
-    config = dict(template)
-    for name in ("db", "state", "jails"):
-        (mounted / name).mkdir(mode=0o700)
-    key = secrets.token_hex(32)
-    port = free_loopback_port()
-    config.update(
-        namespace=secrets.token_hex(8), database=str(mounted / "db/controller.db"),
-        node_state_dir=str(mounted / "state"), chroot_base=str(mounted / "jails"),
-        bind=f"127.0.0.1:{port}", credentials=[dict(tenant=1, secret=key)],
-        max_active_global=4, max_active_per_tenant=4,
-        max_disk_bytes_global=8192 * MIB, max_disk_bytes_per_tenant=4096 * MIB,
-        cleanup_reserve_bytes=RESERVE, public_ipv4_enabled=False,
-    )
-    config_path = args.root / "config.json"
-    config_path.write_text(json.dumps(config))
-    config_path.chmod(0o600)
+    services,config,key,url=prepare_services(args,mounted,template)
     resources = Resources(config)
-    url = f"http://127.0.0.1:{port}"
     sdk = options(key, url, url)
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process = start_server(args.server, config_path, args.root / "server.log", None)
     live, vm_ids = [], {}
     filler = Filler(mounted)
     completed = False
     try:
-        wait_ready(opener, url, key, process)
+        services.start()
+        services.wait_ready()
         assert Sandbox.list(**sdk).next_items() == []
         for _ in range(2):
             previous = set(resources.samples)
-            sandbox = Sandbox.create(template="base", timeout=300, allow_internet_access=False, **sdk)
+            sandbox = Sandbox.create(template="base",timeout=300,allow_internet_access=False,
+                metadata=dict(enospc_probe=config['namespace'],instance=str(len(live))),**sdk)
             live.append(sandbox)
             resources.sample()
             added = set(resources.samples) - previous
@@ -236,9 +248,9 @@ def exercise_enospc(args, mounted, template):
         for sandbox in live:
             healthy(sandbox, marker, payload)
         if args.exhaustion == "inodes":
-            report = inode_case(args, config, mounted, resources, sdk, live, filler, marker, payload)
+            report = inode_case(args,services,config,mounted,resources,sdk,live,filler,marker,payload)
         else:
-            report = block_case(config, mounted, resources, sdk, live, filler, marker, payload, vm_ids)
+            report = block_case(services,config,mounted,resources,sdk,live,filler,marker,payload,vm_ids)
         for sandbox in list(live):
             _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk))
             assert _kill_confirmed
@@ -247,8 +259,9 @@ def exercise_enospc(args, mounted, template):
         resources.audit()
         assert len(resources.samples) == 3
         (args.root / "enospc-observations.json").write_text(json.dumps(report, indent=2))
-        if args.exhaustion == "inodes":
-            assert report["create_http_status"] == args.expected_inode_status
+        assert report['create_http_status']==(500 if args.exhaustion=='inodes' else 429)
+        services.processes.stop_all()
+        services.cleanup_staging()
         completed = True
         report.update(resources=resources.samples, audited_before_service_exit=True)
         return report
@@ -261,4 +274,4 @@ def exercise_enospc(args, mounted, template):
                 except Exception:
                     pass  # Physical audit, not the API response, gates teardown.
             resources.audit()
-        stop_server(process)
+        services.processes.stop_all()

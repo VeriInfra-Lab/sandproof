@@ -298,6 +298,15 @@ impl DataRelay for NodeHost {
 }
 
 impl HostCapacity for NodeHost {
+    fn available_compute(&self) -> Result<(u64, u64), ApplicationError> {
+        crate::host_capacity::available_compute().map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::PhysicalStorage,
+                FaultContext::default(),
+            )
+        })
+    }
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError> {
         self.worker.available_disk_bytes().map_err(|error| {
             busy(

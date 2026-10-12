@@ -83,12 +83,13 @@ PR 标题与正文使用中文，保留必要的代码标识；提交主题可�
 | Terminal-Bench | V1 阶段验收及相关评测变更 | 当前使用冻结的 2.0 兼容回归，原始/修补结果分开；2.1 原题全量验收为发布前待办；[范围与入口](benchmarks/README.md)；不要求每个文档 PR 跑评测 |
 | 完整证明验收 | 证明批次、改变规范/抽取/对应证明，或宣称某版已验证 | [证明工作流](docs/proof-workflow.md)及整套验收；局部通过不代替全部检查 |
 
-普通修改先运行：
+普通修改先运行；本地基础检查须显式设置 `SANDPROOF_REDIS_SERVER`，指向按[CI 运行环境](docs/ci.md)固定并校验的真实 Redis 二进制，缺失不得跳过相关用例：
 
 ```sh
 bash scripts/check-function.sh
 bash scripts/check-function.sh --portable  # macOS 开发检查，不能代替上一条 Linux 完整检查
 bash scripts/check-compat.sh  # 修改 E2B 客户端合同或接入时运行；使用锁定依赖
+bash scripts/check-bench.sh   # Linux：修改 Harbor/评测消费者或其夹具时运行；包含 benchmarks/tests
 python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任务'
 ```
 

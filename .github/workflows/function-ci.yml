@@ -36,8 +36,17 @@ jobs:
           fi
           mkdir "$RUNNER_TEMP/ci-git"
           ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
+          export UV_OFFLINE=1 CARGO_NET_OFFLINE=true
           CI_GIT_LOCK="$GITHUB_WORKSPACE/tests/compat/uv.lock" \
             PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-compat.sh
+      - name: Check distributed components against sealed Redis
+        # Ordinary disposable guest only: no KVM, host credentials or cloud.
+        # Missing fixed material is a failure; never download/fallback/skip.
+        run: |
+          redis_server="$(python3 tools/ci_redis.py check)"
+          export SANDPROOF_REDIS_SERVER="$redis_server"
+          export CARGO_NET_OFFLINE=true
+          bash scripts/check-distributed-contract.sh
 
   harbor-inputs:
     runs-on: [self-hosted, Linux, X64, sandproof-ci-harbor]
@@ -57,6 +66,7 @@ jobs:
           fi
           mkdir "$RUNNER_TEMP/ci-git"
           ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
+          export UV_OFFLINE=1 CARGO_NET_OFFLINE=true
           CI_GIT_LOCK="$GITHUB_WORKSPACE/benchmarks/uv.lock" \
             PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-bench.sh
 

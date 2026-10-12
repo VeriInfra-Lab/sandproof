@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import socket
@@ -12,9 +13,9 @@ import urllib.request
 from unittest.mock import Mock, patch
 
 from tools.template_build_store import BuildError, BuildStore, MIB, public_image
-from tools.tests.template_build_fixture import new_store
+from tools.tests.template_build_fixture import new_store, PRIVATE_TEST_KEY, PrivateBuildClient as BuildClient
 from tools.template_build_service import Backend, BuildHTTP, Handler, Supervisor
-from tools.template_build_client import BuildClient, LOG_RESPONSE_BYTES, saved_intent
+from tools.template_build_client import LOG_RESPONSE_BYTES, saved_intent
 from tools.template_stage import stage_owner
 
 
@@ -85,7 +86,7 @@ class BuildTests(unittest.TestCase):
     def test_private_create_uses_remaining_original_deadline_without_replacement(self):
         backend = object.__new__(Backend)
         backend.request = Mock()
-        row = {'id': 'a' * 32, 'deadline': 1500,
+        row = {'id': 'a' * 32, 'deadline': 1500, 'owner': 1,
                'request': json.dumps({'timeoutSeconds': 600, 'allowInternetAccess': True}),
                'private_window': json.dumps('bw-original')}
         with patch('tools.template_build_service.time.time', return_value=1000):
@@ -149,8 +150,8 @@ class BuildTests(unittest.TestCase):
         registry = self.auxiliary / 'registry'
         (registry / 'inbox').mkdir(parents=True, mode=0o700)
         backend = object.__new__(Backend)
-        backend.config = {'runtime': {'template_registry': {'root': str(registry)},
-                                      'kernel': str(self.auxiliary / 'kernel')}}
+        backend.config = {'registry': {'root': str(registry)}, 'registry_owner_uid': os.geteuid(),
+                          'runtime': {'kernel': str(self.auxiliary / 'kernel')}}
         backend.request = Mock(side_effect=BuildError(404, 'NotFound'))
         return job, backend, registry
 
@@ -463,8 +464,7 @@ class BuildTests(unittest.TestCase):
         self.assertEqual([call.args[1] for call in backend.request.call_args_list], ['GET', 'GET'])
 
     def client(self, key="owner"):
-        server = BuildHTTP(("127.0.0.1", 0), self.store,
-                           [{"tenant": 1, "secret": "owner"}, {"tenant": 2, "secret": "other"}])
+        server = BuildHTTP(("127.0.0.1", 0), self.store, PRIVATE_TEST_KEY)
         self.server = server
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -654,14 +654,14 @@ class BuildTests(unittest.TestCase):
                     def __getattr__(self, name):
                         return getattr(incoming, name)
                 self.rfile = Fragments()
-        server = BuildHTTP(("127.0.0.1", 0), self.store, [{"tenant": 1, "secret": "owner"}])
+        server = BuildHTTP(("127.0.0.1", 0), self.store, PRIVATE_TEST_KEY)
         server.RequestHandlerClass = FragmentHandler
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             with socket.create_connection(server.server_address, timeout=2) as connection:
                 connection.sendall(("PUT /sandproof/template-builds/" + job + "/context HTTP/1.0\r\n"
-                    "X-API-Key: owner\r\nContent-Length: 2\r\n\r\n").encode() + b"a")
+                    f"x-sandproof-build-key: {PRIVATE_TEST_KEY}\r\nx-sandproof-build-owner: 1\r\nContent-Length: 2\r\n\r\n").encode() + b"a")
                 self.assertTrue(first_fragment.wait(1), "buffered read hid the first fragment")
                 connection.sendall(b"b")
                 from http.client import HTTPResponse
@@ -685,13 +685,13 @@ class BuildTests(unittest.TestCase):
         deadline = time.monotonic() + .2
         self.store.db.execute("UPDATE jobs SET deadline=? WHERE id=?", (deadline, job))
         self.store.db.commit()
-        server = BuildHTTP(("127.0.0.1", 0), self.store, [{"tenant": 1, "secret": "owner"}])
+        server = BuildHTTP(("127.0.0.1", 0), self.store, PRIVATE_TEST_KEY)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             with socket.create_connection(server.server_address, timeout=2) as connection:
                 connection.sendall(("PUT /sandproof/template-builds/" + job + "/context HTTP/1.0\r\n"
-                    "X-API-Key: owner\r\nContent-Length: 2\r\n\r\n").encode() + b"a")
+                    f"x-sandproof-build-key: {PRIVATE_TEST_KEY}\r\nx-sandproof-build-owner: 1\r\nContent-Length: 2\r\n\r\n").encode() + b"a")
                 from http.client import HTTPResponse
                 with HTTPResponse(connection) as response:
                     response.begin()
@@ -809,13 +809,13 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(self.store.query(job, 1)["state"], "Ready")
 
     def test_http_contract_upload_owner_and_no_host_path_input(self):
-        server = BuildHTTP(("127.0.0.1", 0), self.store, [{"tenant": 1, "secret": "owner"}, {"tenant": 2, "secret": "other"}])
+        server = BuildHTTP(("127.0.0.1", 0), self.store, PRIVATE_TEST_KEY)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             url = "http://127.0.0.1:" + str(server.server_port)
             def fetch(method, path, body=None, key="owner", token=None):
-                headers = {"X-API-Key": key}
+                headers = BuildClient(url, key).headers()
                 if token is not None:
                     headers["Idempotency-Key"] = token
                 request = urllib.request.Request(url + path, data=body, method=method, headers=headers)

@@ -159,9 +159,52 @@ def remove(record):
     return snapshot | {'removed': True}
 
 
-def join_exec(record, command):
+def service_identity(uid, gid):
+    """Optional explicit trusted-service identity, never an inherited default.
+
+    Only the protected operator launcher supplies these numeric IDs. Existing
+    root host/relay commands omit both; a center supplies both and may not use
+    root, system IDs, booleans or a partially configured identity.
+    """
+    if uid is None and gid is None:
+        return None
+    if any(type(value) is not int or not 1000 <= value < 2**32 - 1 for value in (uid, gid)):
+        raise ValueError('explicit non-system service UID and GID required together')
+    return uid, gid
+
+
+def _drop_identity(uid, gid, membership):
+    """Drop this single-threaded launcher's privilege; NEVER recover or retry.
+
+    The root-owned cgroup record is fully checked and all inspection handles
+    closed before this point. Linux saved/filesystem IDs and capabilities must
+    agree before exec; a failure exits this child, not a root fallback.
+    """
+    if service_identity(uid, gid) is None:
+        raise ValueError('explicit non-system service UID and GID required together')
+    os.setgroups([])
+    os.setgid(gid)
+    os.setuid(uid)
+    status = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines()
+                  if ':' in line)
+    if (os.getresuid() != (uid, uid, uid) or os.getresgid() != (gid, gid, gid)
+            or os.getgroups()
+            or status.get('Uid', '').split() != [str(uid)] * 4
+            or status.get('Gid', '').split() != [str(gid)] * 4
+            or status.get('Groups', '').split()
+            or any(status.get(key, '').strip() != '0000000000000000'
+                   for key in ('CapInh', 'CapPrm', 'CapEff', 'CapAmb'))
+            or Path('/proc/self/cgroup').read_text().strip() != membership):
+        raise ValueError('service identity, capabilities or original cgroup changed after privilege drop')
+
+
+def join_exec(record, command, *, uid=None, gid=None):
+    service = service_identity(uid, gid)  # All numeric refusals precede I/O/mutation.
     if not command or not Path(command[0]).is_absolute():
         raise ValueError('explicit absolute service executable required')
+    if service is not None and (os.getuid() != 0 or os.geteuid() != 0
+                                or len(os.listdir('/proc/self/task')) != 1):
+        raise ValueError('privilege drop requires the original single-threaded root launcher')
     value = checked(record)
     path = Path(value['path'])
     if os.sched_getscheduler(0) != os.SCHED_OTHER or Path('/proc/self/oom_score_adj').read_text().strip() == '-1000':
@@ -170,11 +213,17 @@ def join_exec(record, command):
     # Children inherit membership; no preexec_fn or racy external PID migration.
     (path / 'cgroup.procs').write_text('0')
     observe(record, pids=[os.getpid()])
+    if service is not None:
+        _drop_identity(*service, '0::/' + str(path.relative_to(ROOT)))
     os.execv(command[0], command)
 
 
-def prefix(record):
-    return [sys.executable, str(Path(__file__).resolve()), 'exec', '--record', str(record), '--']
+def prefix(record, *, uid=None, gid=None):
+    service = service_identity(uid, gid)
+    result = [sys.executable, str(Path(__file__).resolve()), 'exec', '--record', str(record)]
+    if service is not None:
+        result.extend(['--uid', str(uid), '--gid', str(gid)])
+    return [*result, '--']
 
 
 if __name__ == '__main__':
@@ -188,6 +237,8 @@ if __name__ == '__main__':
     for command in (create, commands.add_parser('check'), commands.add_parser('remove'), commands.add_parser('exec')):
         command.add_argument('--record', type=Path, required=True)
     command.add_argument('command', nargs=argparse.REMAINDER)
+    command.add_argument('--uid', type=int)
+    command.add_argument('--gid', type=int)
     args = parser.parse_args()
     if args.action == 'prepare':
         result = prepare(args.parent, args.name, args.record, cpu_quota_us=args.cpu_quota_us, memory_bytes=args.memory_bytes)
@@ -196,6 +247,7 @@ if __name__ == '__main__':
     elif args.action == 'remove':
         result = remove(args.record)
     else:
-        join_exec(args.record, args.command[1:] if args.command[:1] == ['--'] else args.command)
+        join_exec(args.record, args.command[1:] if args.command[:1] == ['--'] else args.command,
+                  uid=args.uid, gid=args.gid)
         raise AssertionError('exec returned')
     print(json.dumps(result))

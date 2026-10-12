@@ -30,9 +30,10 @@ import tempfile
 
 from e2b import Sandbox
 
-from server_process_crash import (free_loopback_port, process_start_ticks,
-                                  start_server, stop_server, wait_ready)
-import urllib.request
+from server_process_crash import free_loopback_port, process_start_ticks
+from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
+from _runtime_services import RuntimeServices, add_arguments
+from server_templates import descriptor
 
 
 OUTSIDE_ECHO = r'''
@@ -254,9 +255,6 @@ def exercise(args: argparse.Namespace) -> None:
     api_key = secrets.token_hex(32)
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
-    binary = root / "sandproof-server"
-    shutil.copyfile(args.server, binary)
-    binary.chmod(0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
     shutil.copyfile(args.kernel, kernel)
@@ -264,6 +262,11 @@ def exercise(args: argparse.Namespace) -> None:
     kernel.chmod(0o644)
     rootfs.chmod(0o644)
     port = free_loopback_port()
+    template = descriptor('runtime-base', kernel, rootfs, 1, 256)
+    catalog = {'templates': [template], 'aliases': {'base': template['template_id']},
+        'compute_limits': {'max_vcpus_global': 2, 'max_vcpus_per_tenant': 2,
+            'max_memory_bytes_global': 1024 * 1024**2,
+            'max_memory_bytes_per_tenant': 1024 * 1024**2}}
     settings = {
         "namespace": namespace,
         "database": str(root / "db/controller.db"),
@@ -277,36 +280,35 @@ def exercise(args: argparse.Namespace) -> None:
         "vcpu_count": 1,
         "memory_mib": 256,
         "file_policy_digest": 1,
-        "bind": f"127.0.0.1:{port}",
-        "domain": "example.invalid",
-        "credentials": [{"tenant": 1, "secret": api_key}],
         "max_active_global": 2,
         "max_active_per_tenant": 2,
         "max_disk_bytes_global": disk_bytes * 4,
         "max_disk_bytes_per_tenant": disk_bytes * 4,
         "cleanup_reserve_bytes": disk_bytes,
         "max_timeout_secs": 600,
+        "max_lifetime_secs": 600,
+        "startup_timeout_secs": 300,
         "default_timeout_secs": 300,
         "expiry_scan_seconds": 1,
         "public_ipv4_enabled": True,
+        "templates": catalog,
     }
-    config = root / "config.json"
-    from server_process_crash import complete_runtime, provision_runtime
     settings = complete_runtime(settings, slots=2)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
     api_url = f"http://127.0.0.1:{port}"
     options = dict(api_url=api_url, sandbox_url=api_url, api_key=api_key,
                    domain="example.invalid", retries=0, request_timeout=45)
-    process = None
+    registry = {'root': str(root / 'registry'), 'max_templates_global': 1,
+        'max_templates_per_tenant': 1, 'max_artifact_bytes_global': disk_bytes + kernel.stat().st_size,
+        'max_artifact_bytes_per_tenant': disk_bytes + kernel.stat().st_size, 'validation_timeout_secs': 60}
+    services = RuntimeServices.prepare(args, root=root, native_pools=[settings],
+        registered_catalogs=[catalog], key=api_key, public_address=f'127.0.0.1:{port}',
+        record=args.service_cgroup_record, job_count=4, private_builds=None, registry_config=registry)
     completed = False
     sandboxes = []
     try:
         with Outside(namespace[:6]):
-            process = start_server(binary, config, root / "server.log", None)
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            wait_ready(opener, api_url, api_key, process)
+            services.start()
+            services.wait_ready()
             static = Sandbox.create(template="base", timeout=180,
                                     allow_internet_access=False,
                                     network={"allow_out": ["11.22.33.1"],
@@ -352,9 +354,11 @@ def exercise(args: argparse.Namespace) -> None:
             assert not guest_ping(static, "100.64.0.6"), "static mode reached another VM link"
             assert not guest_ping(public, "100.64.0.2"), "public mode reached another VM link"
             identities = [vm_identity(root, namespace, number) for number in (0, 1)]
-            stop_server(process)
-            process = start_server(binary, config, root / "server.log", None)
-            wait_ready(opener, api_url, api_key, process)
+            services.processes.stop('host-0')
+            assert services.native_id_for(static.sandbox_id) == f'sb-{namespace}-1'
+            assert services.native_id_for(public.sandbox_id) == f'sb-{namespace}-2'
+            services.processes.start('host-0')
+            services.wait_ready(for_admission=False)
             assert [vm_identity(root, namespace, number) for number in (0, 1)] == identities
             assert all(process_start_ticks(pid) == ticks for pid, ticks in identities)
             assert guest_ping(static, "11.22.33.1"), "static policy lost after restart"
@@ -369,6 +373,10 @@ def exercise(args: argparse.Namespace) -> None:
             closed = Sandbox.create(template="base", timeout=180,
                                     allow_internet_access=False, **options)
             sandboxes.append(closed)
+            services.processes.stop('host-0')
+            assert services.native_id_for(closed.sandbox_id) == f'sb-{namespace}-3'
+            services.processes.start('host-0')
+            services.wait_ready(for_admission=False)
             closed_identity = vm_identity(root, namespace, 2)
             assert not guest_ping(closed, "11.22.33.1"), "closed mode escaped"
             probe_ports(closed, "11.22.33.1", False)
@@ -387,6 +395,10 @@ def exercise(args: argparse.Namespace) -> None:
                                       allow_internet_access=True,
                                       network={"deny_out": ["11.22.34.1"]}, **options)
             sandboxes.append(explicit)
+            services.processes.stop('host-0')
+            assert services.native_id_for(explicit.sandbox_id) == f'sb-{namespace}-4'
+            services.processes.start('host-0')
+            services.wait_ready(for_admission=False)
             explicit_identity = vm_identity(root, namespace, 3)
             probe_ports(explicit, "11.22.33.1", True)
             probe_ports(explicit, "11.22.34.1", False)
@@ -402,6 +414,8 @@ def exercise(args: argparse.Namespace) -> None:
             assert _kill_confirmed
             sandboxes.clear()
             clean_vm(root, args.firecracker, namespace, 1, identities[1])
+            for number in range(1, 5):
+                assert terminal_cleanup_confirmed(root / 'db/controller.db', f'sb-{namespace}-{number}')
         completed = True
         with rootfs.open("rb") as stream:
             image_hash = hashlib.file_digest(stream, "sha256").hexdigest()
@@ -426,8 +440,9 @@ def exercise(args: argparse.Namespace) -> None:
                 Sandbox.kill(sandbox.sandbox_id, **options)
             except Exception:
                 pass
-        stop_server(process)
+        services.stop_all()
         if completed:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f"Exact failed-run artifacts retained: {root}", file=sys.stderr)
@@ -435,7 +450,8 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("server", "jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
+    add_arguments(parser)
+    for name in ("jailer", "firecracker", "kernel", "rootfs", "scratch-parent"):
         parser.add_argument(f"--{name}", required=True, type=Path)
     parser.add_argument("--uid-base", required=True, type=int)
     parser.add_argument("--public-probe-ip", help="optional preflighted real public IPv4 target")

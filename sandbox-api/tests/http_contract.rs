@@ -5,7 +5,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use sandproof_api::{
-    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError,
+    ApiCredential, BuildPort, ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError,
     SandboxDetail, SandboxInfo, SandboxLifecycle, SandboxOnTimeout, SandboxPage, SandboxSession,
     router,
 };
@@ -13,6 +13,17 @@ use tower::ServiceExt;
 
 const ALICE_KEY: &str = "alice-local-test-key-only-0000000000000001";
 const BOB_KEY: &str = "bob-local-test-key-only-00000000000000002";
+const BUILD_KEY: &str = "private-build-backend-test-only-00000001";
+
+const PRIVATE_ORDINARY_REQUESTS: &[(&str, &str, Option<&str>)] = &[
+    ("GET", "/sandproof/internal-build-vms/build-a", None),
+    (
+        "POST",
+        "/sandproof/internal-build-vms/build-a",
+        Some(r#"{"timeout":60,"allowInternetAccess":false}"#),
+    ),
+    ("POST", "/sandproof/internal-build-windows", None),
+];
 
 const ORDINARY_REQUESTS: &[(&str, &str, Option<&str>)] = &[
     ("POST", "/v2/sandboxes", Some(r#"{"templateID":"base"}"#)),
@@ -32,13 +43,6 @@ const ORDINARY_REQUESTS: &[(&str, &str, Option<&str>)] = &[
         Some(r#"{"templateID":"template-a"}"#),
     ),
     ("DELETE", "/sandproof/template-aliases/alias-a", None),
-    ("GET", "/sandproof/internal-build-vms/build-a", None),
-    (
-        "POST",
-        "/sandproof/internal-build-vms/build-a",
-        Some(r#"{"timeout":60,"allowInternetAccess":false}"#),
-    ),
-    ("POST", "/sandproof/internal-build-windows", None),
 ];
 
 #[tokio::test]
@@ -145,18 +149,6 @@ fn control_requests()
             StatusCode::NO_CONTENT,
         ),
         ("DELETE", "/sandboxes/sand-a", None, StatusCode::NO_CONTENT),
-        (
-            "POST",
-            "/sandproof/internal-build-windows/window-a/close",
-            None,
-            StatusCode::OK,
-        ),
-        (
-            "POST",
-            "/sandproof/internal-build-vms/build-a/settle",
-            Some(r#"{"requestWindow":"window-a"}"#),
-            StatusCode::OK,
-        ),
     ]
 }
 
@@ -194,7 +186,7 @@ fn info() -> SandboxInfo {
     }
 }
 
-impl ControllerPort for FakePort {
+impl BuildPort for FakePort {
     fn issue_build_window(
         &self,
         tenant: &str,
@@ -215,17 +207,6 @@ impl ControllerPort for FakePort {
             request_window: window.into(),
             closed: true,
         })
-    }
-    fn build_vm(
-        &self,
-        tenant: &str,
-        id: &str,
-        create: Option<sandproof_api::BuildVmRequest>,
-    ) -> Result<sandproof_api::BuildVmView, PortError> {
-        let window = create
-            .as_ref()
-            .and_then(|value| value.request_window.clone());
-        self.build_vm_in_window(tenant, id, window.as_deref(), create)
     }
     fn build_vm_in_window(
         &self,
@@ -260,6 +241,48 @@ impl ControllerPort for FakePort {
             settled: true,
         })
     }
+    fn kill_build_vm(&self, tenant: &str, sandbox_id: &str) -> Result<(), PortError> {
+        self.record(format!("kill-build:{tenant}:{sandbox_id}"));
+        Ok(())
+    }
+}
+
+impl sandproof_api::BuildPublicationPort for FakePort {
+    fn publish_build_candidate(
+        &self,
+        tenant: &str,
+        candidate: &str,
+    ) -> Result<sandproof_api::PublicationView, PortError> {
+        if tenant != "1" || candidate != "known-candidate" {
+            return Err(PortError::NotFound);
+        }
+        self.record(format!("build-publish:{tenant}:{candidate}"));
+        Ok(sandproof_api::PublicationView {
+            candidate_id: candidate.into(),
+            state: sandproof_controller_service::template_registry::PublicationState::Checking,
+            failure: None,
+            template: None,
+        })
+    }
+    fn build_publication(
+        &self,
+        tenant: &str,
+        candidate: &str,
+    ) -> Result<sandproof_api::PublicationView, PortError> {
+        if tenant != "1" || candidate != "known-candidate" {
+            return Err(PortError::NotFound);
+        }
+        self.record(format!("build-publication:{tenant}:{candidate}"));
+        Ok(sandproof_api::PublicationView {
+            candidate_id: candidate.into(),
+            state: sandproof_controller_service::template_registry::PublicationState::Checking,
+            failure: None,
+            template: None,
+        })
+    }
+}
+
+impl ControllerPort for FakePort {
     fn create(&self, tenant: &str, request: CreateRequest) -> Result<SandboxSession, PortError> {
         if request.template_id != "base" {
             return Err(PortError::Invalid);
@@ -344,6 +367,206 @@ fn app(port: Arc<FakePort>) -> axum::Router {
         ],
     )
     .unwrap()
+}
+
+fn private_app(
+    port: Arc<FakePort>,
+    admission: Arc<sandproof_api::admission::RequestAdmission>,
+) -> axum::Router {
+    sandproof_api::private_build_router_with_admission(
+        port,
+        sandproof_api::PrivateBuildCredential::new(BUILD_KEY.into()).unwrap(),
+        admission,
+    )
+}
+
+async fn send_private(
+    app: axum::Router,
+    method: &str,
+    uri: &str,
+    body: Option<&str>,
+) -> axum::response::Response {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(sandproof_api::PRIVATE_BUILD_CREDENTIAL_HEADER, BUILD_KEY)
+        .header(sandproof_api::PRIVATE_BUILD_TENANT_HEADER, "1");
+    if body.is_some() {
+        request = request.header("content-type", "application/json");
+    }
+    app.oneshot(
+        request
+            .body(Body::from(body.unwrap_or_default().to_owned()))
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn protected_publication_reuses_original_dto_and_never_accepts_a_client_descriptor() {
+    let port = Arc::new(FakePort::default());
+    let app = private_app(
+        port.clone(),
+        Arc::new(sandproof_api::admission::RequestAdmission::default()),
+    );
+    let path = "/sandproof/template-publications";
+    assert_eq!(
+        send(
+            app.clone(),
+            "POST",
+            path,
+            Some(ALICE_KEY),
+            Some(r#"{"candidateID":"known-candidate"}"#)
+        )
+        .await
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        send_private(
+            app.clone(),
+            "POST",
+            path,
+            Some(r#"{"candidateID":"known-candidate","descriptor":{}}"#)
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert!(port.calls.lock().unwrap().is_empty());
+    let accepted = send_private(
+        app.clone(),
+        "POST",
+        path,
+        Some(r#"{"candidateID":"known-candidate"}"#),
+    )
+    .await;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    assert_eq!(
+        send_private(
+            app.clone(),
+            "GET",
+            "/sandproof/template-publications/known-candidate",
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        send_private(app, "GET", "/sandproof/templates", None)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        port.calls.lock().unwrap().as_slice(),
+        [
+            "build-publish:1:known-candidate",
+            "build-publication:1:known-candidate"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn public_and_private_routes_cannot_switch_authority_by_headers() {
+    let port = Arc::new(FakePort::default());
+    let public = app(port.clone());
+    let private = private_app(
+        port.clone(),
+        Arc::new(sandproof_api::admission::RequestAdmission::default()),
+    );
+    for &(method, path, body) in PRIVATE_ORDINARY_REQUESTS {
+        assert_eq!(
+            send(public.clone(), method, path, Some(ALICE_KEY), body)
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            send_private(public.clone(), method, path, body)
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            send(private.clone(), method, path, Some(ALICE_KEY), body)
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    for &(method, path, body) in ORDINARY_REQUESTS {
+        assert_eq!(
+            send_private(private.clone(), method, path, body)
+                .await
+                .status(),
+            if path == "/sandboxes/sand-a" {
+                StatusCode::METHOD_NOT_ALLOWED
+            } else {
+                StatusCode::NOT_FOUND
+            }
+        );
+    }
+    assert!(port.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn private_work_uses_the_same_bounded_admission_and_cleanup_reserve() {
+    use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits, RequestClass};
+    let port = Arc::new(FakePort::default());
+    let admission = RequestAdmission::new(RequestAdmissionLimits {
+        max_pending_requests: 2,
+        control_reserve: 1,
+    })
+    .unwrap();
+    let app = private_app(port.clone(), admission.clone());
+    let ordinary = admission.try_acquire(RequestClass::Ordinary).unwrap();
+    for &(method, path, body) in PRIVATE_ORDINARY_REQUESTS {
+        assert_eq!(
+            send_private(app.clone(), method, path, body).await.status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+    assert!(port.calls.lock().unwrap().is_empty());
+    let requests = [
+        (
+            "POST",
+            "/sandproof/internal-build-windows/window-a/close",
+            None,
+            StatusCode::OK,
+        ),
+        (
+            "POST",
+            "/sandproof/internal-build-vms/build-a/settle",
+            Some(r#"{"requestWindow":"window-a"}"#),
+            StatusCode::OK,
+        ),
+        (
+            "DELETE",
+            "/sandboxes/private-a",
+            None,
+            StatusCode::NO_CONTENT,
+        ),
+    ];
+    for (method, path, body, status) in requests {
+        assert_eq!(
+            send_private(app.clone(), method, path, body).await.status(),
+            status
+        );
+    }
+    let control = admission.try_acquire(RequestClass::Control).unwrap();
+    let before = port.calls.lock().unwrap().len();
+    for (method, path, body, _) in requests {
+        assert_eq!(
+            send_private(app.clone(), method, path, body).await.status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+    assert_eq!(port.calls.lock().unwrap().len(), before);
+    assert!(admission.try_acquire(RequestClass::Background).is_some());
+    drop((ordinary, control));
 }
 
 #[tokio::test]
@@ -769,7 +992,10 @@ async fn set_timeout_preserves_signed_values_for_controller_clamping() {
 #[tokio::test]
 async fn private_build_retry_wire_authenticates_and_preserves_exact_window_tuple() {
     let port = Arc::new(FakePort::default());
-    let app = app(port.clone());
+    let app = private_app(
+        port.clone(),
+        Arc::new(sandproof_api::admission::RequestAdmission::default()),
+    );
     let window = "bw-0123456789abcdef-1-0";
     let id = "11111111111111111111111111111111";
     let issue = "/sandproof/internal-build-windows";
@@ -784,12 +1010,14 @@ async fn private_build_retry_wire_authenticates_and_preserves_exact_window_tuple
         ("POST", settle.as_str(), Some("{}")),
     ] {
         assert_eq!(
-            send(app.clone(), method, path, None, body).await.status(),
+            send(app.clone(), method, path, Some(ALICE_KEY), body)
+                .await
+                .status(),
             StatusCode::UNAUTHORIZED
         );
     }
     assert!(port.calls.lock().unwrap().is_empty());
-    let response = send(app.clone(), "POST", issue, Some(ALICE_KEY), Some("{}")).await;
+    let response = send_private(app.clone(), "POST", issue, Some("{}")).await;
     assert_eq!(response.status(), StatusCode::OK);
     let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
     let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -798,25 +1026,25 @@ async fn private_build_retry_wire_authenticates_and_preserves_exact_window_tuple
     let body =
         format!("{{\"requestWindow\":\"{window}\",\"timeout\":60,\"allowInternetAccess\":false}}");
     assert_eq!(
-        send(app.clone(), "POST", &create, Some(ALICE_KEY), Some(&body))
+        send_private(app.clone(), "POST", &create, Some(&body))
             .await
             .status(),
         StatusCode::OK
     );
     assert_eq!(
-        send(app.clone(), "GET", &query, Some(ALICE_KEY), None)
+        send_private(app.clone(), "GET", &query, None)
             .await
             .status(),
         StatusCode::OK
     );
     assert_eq!(
-        send(app.clone(), "POST", &close, Some(ALICE_KEY), Some("{}"))
+        send_private(app.clone(), "POST", &close, Some("{}"))
             .await
             .status(),
         StatusCode::OK
     );
     let body = format!("{{\"requestWindow\":\"{window}\",\"sandboxID\":null}}");
-    let response = send(app.clone(), "POST", &settle, Some(ALICE_KEY), Some(&body)).await;
+    let response = send_private(app.clone(), "POST", &settle, Some(&body)).await;
     assert_eq!(response.status(), StatusCode::OK);
     let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
     let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -825,31 +1053,24 @@ async fn private_build_retry_wire_authenticates_and_preserves_exact_window_tuple
     assert_eq!(
         calls,
         vec![
-            "issue-build:alice".to_owned(),
-            format!("build:alice:{id}:Some(\"{window}\"):true"),
-            format!("build:alice:{id}:Some(\"{window}\"):false"),
-            format!("close-build:alice:{window}"),
-            format!("settle-build:alice:{id}:{window}:None")
+            "issue-build:1".to_owned(),
+            format!("build:1:{id}:Some(\"{window}\"):true"),
+            format!("build:1:{id}:Some(\"{window}\"):false"),
+            format!("close-build:1:{window}"),
+            format!("settle-build:1:{id}:{window}:None")
         ]
     );
     assert_eq!(
-        send(
-            app.clone(),
-            "GET",
-            &format!("{query}&unknown=true"),
-            Some(ALICE_KEY),
-            None
-        )
-        .await
-        .status(),
+        send_private(app.clone(), "GET", &format!("{query}&unknown=true"), None)
+            .await
+            .status(),
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        send(
+        send_private(
             app,
             "POST",
             &settle,
-            Some(ALICE_KEY),
             Some("{\"requestWindow\":\"x\",\"sandboxID\":null,\"checked\":true}")
         )
         .await

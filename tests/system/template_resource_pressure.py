@@ -31,6 +31,8 @@ from gateway_pressure import health, limited, wait_capacity
 from sdk_private_root import clean, install, installed, CONFIG
 from sdk_server_smoke import options
 from tools.template_build_client import BuildClient, saved_intent
+from tools.template_build_service import Backend, configuration
+from tools.template_build_store import BuildError
 from tools.bounded_acceptance import wait_private_build_window
 
 MIB = 1024**2
@@ -115,8 +117,10 @@ async def submit_build(root, client, request, build_mode, label, checkpoint):
 
 
 def private_vm_path(job, window):
+    if type(window) is not str or not window:
+        raise ValueError('the original private window is mandatory')
     path = '/sandproof/internal-build-vms/' + job
-    return path + ('?' + urllib.parse.urlencode({'requestWindow': window}) if window else '')
+    return path + '?' + urllib.parse.urlencode({'requestWindow': window})
 
 
 def private_settlement(database, job, window, sandbox):
@@ -160,7 +164,7 @@ async def wait_builder_session(read_vm, read_build, deadline, supervisor):
         await asyncio.sleep(0.2)
 
 
-async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor,
+async def exercise(*, root, services, key, build_config, rows, deployment, supervisor,
                    restart, source_entry, audit_shape, completion_audit, build_mode, service_audit=None):
     if build_mode != 'windowed':
         raise ValueError('only windowed builds are supported')
@@ -168,9 +172,9 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
     assert len({t['templateId'] for t in templates}) == 2
     validate_cohort([{'cpus': t['cpuCount'], 'memory_mib': t['memoryMib'],
                      'disk_mib': t['diskBytes'] // MIB} for t in templates], deployment)
-    owner = options(key, urls[0], urls[0]) | {'request_timeout': 600, 'retries': 0}
-    client = BuildClient(urls[2], key)
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    owner = options(key, services.sdk_url, services.sdk_url) | {'request_timeout': 600, 'retries': 0}
+    client = BuildClient(services.sdk_url, key)
+    backend = Backend(configuration(build_config))
     live, tracked, identities, cases = [], [], [], []
     build_id, build_view, private_window = None, None, None
     stopped = False
@@ -199,13 +203,11 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
     async def build_get(path):
         return await asyncio.to_thread(client.request, 'GET', path)
     async def build_vm():
-        request = urllib.request.Request(urls[1] + private_vm_path(build_id, private_window),
-                                         headers={'X-API-Key': builder_key})
         def read():
             try:
-                with opener.open(request, timeout=10) as response:
-                    return json.loads(response.read(65536))
-            except urllib.error.HTTPError as error:
+                return backend.request('builder', 'GET', private_vm_path(build_id, private_window),
+                                       owner=1, timeout=10)
+            except BuildError as error:
                 if error.code == 404:
                     return None
                 raise
@@ -286,7 +288,7 @@ async def exercise(*, root, urls, key, builder_key, rows, deployment, supervisor
                 service_audit, transfer['max_transfers'] - transfer['control_reserve'])
             checkpoint()
         await limited(cohort[2].files.write, '/tmp/refused-pressure-file', b'must-not-arrive')
-        await health(cohort[2], urls[0])
+        await health(cohort[2], services.sdk_url)
         # The fourth VM is independent of the 15 blocked data streams. Its
         # management stop must work while both pools still own their quotas.
         _kill_confirmed = (await cohort[3].kill(request_timeout=60))

@@ -2,7 +2,7 @@
 
 E2B 核心兼容的沙箱控制系统，采用轻中心、重宿主的目标架构，对声明边界内的安全关键 Rust 实现进行形式化验证。
 
-先完成中心/宿主合同与功能拆分、故障及实机验收，再冻结真实组合提交推进证明。**当前本地服务已有实现与分批实测；中心服务和分布式组合仍待实现、验证，不能称为完整验证的系统。** 当前范围以[项目蓝图](docs/project-blueprint.md)为准，任务进度见[总计划 #1](https://github.com/ningZhang-cs/sandproof/issues/1)。
+先完成中心/宿主合同与功能拆分、故障及实机验收，再冻结真实组合提交推进证明。**中心、Redis 协调与宿主组件已有实现和分批实测；公开入口、模板及 CI 正在按 #292 统一迁移，整套候选验收和新增证明不能由这些局部结果代替。** 当前范围以[项目蓝图](docs/project-blueprint.md)为准，任务进度见[总计划 #1](https://github.com/ningZhang-cs/sandproof/issues/1)。
 
 ## 我们要做什么
 
@@ -25,15 +25,15 @@ E2B 核心兼容的沙箱控制系统，采用轻中心、重宿主的目标架�
 | Lean 规范与对应证明 | 已有旧版纯控制核心的协议安全和 Rust 对应证明，带明确容量前提；当前 Rust 新增输入尚未同步证明，适用版本见[覆盖记录](docs/proof-coverage.md) |
 | 最终完成性与长期容量 | 仍有未闭合义务，见[证明覆盖记录](docs/proof-coverage.md) |
 | E2B 兼容服务与运行层 | 本地 SDK 管理/数据、网络、恢复、多模板隔离、自助构建及通用题目链已有分批实机证据；支持范围按候选验收，不自动覆盖新增中心/双服务 |
-| 中心/宿主拆分 | 待实现：中心控制与 Redis、内部协议、两端网关及其工程验收，见 [#292](https://github.com/ningZhang-cs/sandproof/issues/292) |
-| CI | 普通隔离检查和两题 KVM 晋升已接通；分布式组件/双服务故障组为待实现扩展；规则见开发指南 |
+| 中心/宿主拆分 | 纯中心决策、Redis 权威块、内部协议、两端网关已有组件；交付唯一中心/宿主入口及完整模板、故障、晋升验收由 [#292](https://github.com/ningZhang-cs/sandproof/issues/292) 跟踪 |
+| CI | 普通检查及原两题晋升机制保持；中心/宿主候选必须使用迁移后的双产物、故障组及同一 App 检查，不沿用旧入口成绩；规则见开发指南 |
 
 ## 开发入口
 
 - [总计划与任务](https://github.com/ningZhang-cs/sandproof/issues/1)、[阶段里程碑](https://github.com/ningZhang-cs/sandproof/milestones)
 - [开发指南](CONTRIBUTING.md)：分支、提交、issue、PR、测试和文档维护规则的统一入口
 - [文档目录](docs/README.md)：蓝图、合同、验收清单与模型／证明说明的总分索引
-- [系统架构](docs/ARCHITECTURE.md)：目标组件、当前本地实现、运行路径、存储与 E2B 对照
+- [系统架构](docs/ARCHITECTURE.md)：统一入口、组件责任、运行路径、存储与 E2B 对照
 - [形式化验证设计](docs/formal-verification-design.md)：目标性质、状态与故障模型、精化和系统组合
 - [CI 运行记录](https://github.com/ningZhang-cs/sandproof/actions)
 

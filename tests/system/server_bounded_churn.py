@@ -24,6 +24,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import sqlite3
 import stat
 import subprocess
@@ -79,7 +80,8 @@ def node_configuration(settings):
     return result
 
 
-def validate_configuration(settings, host_config, rounds, wait_seconds):
+def validate_runtime_configuration(settings, rounds, wait_seconds):
+    """The same fixed runtime limits for standalone and shared DK acceptance."""
     if type(rounds) is not int or not 4 <= rounds <= 16:
         raise ValueError('use a finite four-to-sixteen-round experiment')
     if type(wait_seconds) is not int or not 5 <= wait_seconds <= 120:
@@ -91,7 +93,8 @@ def validate_configuration(settings, host_config, rounds, wait_seconds):
             or bounded.get('maintenance', {}).get('max_host_slots') != 2
             or settings.get('max_active_global') != 2
             or settings.get('max_active_per_tenant') != 2
-            or settings.get('internal_build_vms') or settings.get('template_registry')):
+            or {'bind','domain','credentials','request_admission','internal_build_vms',
+                'build_retry_windows','template_registry'} & settings.keys()):
         raise ValueError('fresh complete two-position runtime-only configuration required')
     if settings.get('max_timeout_secs', 0) < 600 or settings.get('max_lifetime_secs', 600) < 600:
         raise ValueError('explicit probe lifetime must fit both unchanged deployment limits')
@@ -110,6 +113,12 @@ def validate_configuration(settings, host_config, rounds, wait_seconds):
             or pool['cleanup_reserve_bytes'] != settings['cleanup_reserve_bytes']
             or pool['host_metadata_bytes'] + capacity['max_online_storage_bytes'] > settings['cleanup_reserve_bytes']):
         raise ValueError('physical pool does not match the exact accepted paths and quotas')
+    node_configuration(settings)  # Reject incomplete route projection before launch.
+    return pool, peak, inodes
+
+
+def validate_configuration(settings, host_config, rounds, wait_seconds):
+    pool, peak, inodes = validate_runtime_configuration(settings, rounds, wait_seconds)
     if host_config['chroot_base'] != settings['chroot_base']:
         raise ValueError('preflight must inspect the exact runtime chroot')
     for name in host.ARTIFACTS:
@@ -117,8 +126,18 @@ def validate_configuration(settings, host_config, rounds, wait_seconds):
             raise ValueError('preflight artifact differs from runtime: ' + name)
     if host_config['min_free_disk_bytes'] < 2 * peak:
         raise ValueError('preflight omits the complete fresh physical activation peak')
-    node_configuration(settings)  # Reject incomplete route projection before launch.
     return pool, peak, inodes
+
+
+def retention_slots(services, rounds):
+    """Use only the original protected lane budget; never enlarge it for churn."""
+    retained = services.host_configs[0]['inbox']['max_sandboxes']
+    registration = services.center_config['nodes'][0]['registration']
+    if (type(retained) is not int or retained <= 0
+            or type(registration['retention_slots']) is not int
+            or retained != registration['retention_slots'] or rounds <= retained):
+        raise ValueError('original fixed retention slots must match and churn must exceed their count')
+    return retained
 
 
 def file_usage(database):
@@ -221,9 +240,10 @@ def assert_reopen_frontiers(before, after):
             assert after[kind] == value, 'reopen changed permanent allocator frontier: ' + kind
 
 
-def context_for(snapshot, ident):
-    sandbox = int(ident.rsplit('-', 1)[1])
-    matches = [value for value in snapshot['contexts'] if value['binding']['sandbox'] == sandbox]
+def context_for(snapshot, local_number):
+    if type(local_number) is not int or local_number <= 0:
+        raise ValueError('exact original audit local mapping required')
+    matches = [value for value in snapshot['contexts'] if value['binding']['sandbox'] == local_number]
     assert len(matches) == 1, 'sandbox has no unique current physical position'
     return matches[0]
 
@@ -309,15 +329,14 @@ def validate_stale_report(report, count):
 
 
 def exercise(args):
-    from server_process_crash import fetch, process_start_ticks, start_server, stop_server, wait_ready
+    from server_process_crash import free_loopback_port
+    from _runtime_services import RuntimeServices
     from sdk_c02_acceptance import processes_in_uid_range
-    from sdk_server_smoke import options
-    from e2b import Sandbox
 
     assert sys.platform == 'linux' and os.geteuid() == 0
     assert importlib.metadata.version('e2b') == '2.51.0'
     require_bounded_host_tools()
-    settings = private_json(args.config)
+    settings = private_json(args.native_config)
     host_config, host_digest = host.load_config(args.host_config)
     pool, peak, inodes = validate_configuration(settings, host_config, args.rounds, args.wait_seconds)
     output = host.trusted_path(args.output_dir)
@@ -327,29 +346,88 @@ def exercise(args):
         assert output != root and root not in output.parents and output not in root.parents
     assert not Path(settings['database']).exists(), 'requires a fresh reviewed deployment; never deletes an old DB'
     assert not processes_in_uid_range(settings['uid_base'], settings['uid_base'] + 1)
-    for name, sha in ((args.server, args.server_sha256), (args.stale_probe, args.stale_probe_sha256)):
+    for name, sha in ((args.stale_probe, args.stale_probe_sha256),):
         host.artifact_fingerprint({'path': str(name), 'sha256': sha}, executable=True)
     preflight = host.inspect_host(host_config, host_digest)
     write_private(output / 'preflight.json', preflight)
     assert preflight['prerequisites_passed'], 'fixed host preflight failed'
     filesystem = os.statvfs(settings['chroot_base'])
     assert filesystem.f_favail >= 2 * inodes, 'fresh physical inode peak unavailable'
-    node_file = output / 'node-config.json'
-    write_private(node_file, node_configuration(settings))
-    credentials = settings['credentials']
-    assert len(credentials) == 1, 'dedicated single-tenant test credential required'
-    key = credentials[0]['secret']
-    url = 'http://' + settings['bind']
-    assert re.fullmatch(r'http://127\.0\.0\.1:[0-9]+', url)
+    catalog = settings['templates']
+    assert catalog['aliases'].get('base') in {
+        binding['template_id'] for binding in catalog['templates'] if binding['owner'] is None
+    }, 'the two-user probe requires its explicit original shared base template'
+    key, foreign_key = secrets.token_hex(32), secrets.token_hex(32)
+    url = 'http://127.0.0.1:' + str(free_loopback_port())
+    root = Path(settings['database']).parent.parent
+    sizes = [binding['kernel']['size_bytes']+binding['rootfs']['size_bytes'] for binding in catalog['templates']]
+    registry = dict(root=str(root/'registry'),max_templates_global=len(sizes),max_templates_per_tenant=len(sizes),
+        max_artifact_bytes_global=sum(sizes),max_artifact_bytes_per_tenant=sum(sizes),validation_timeout_secs=60)
+    services = RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[catalog],
+        key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
+        job_count=2,registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
+    try:
+        services.start()
+        services.wait_ready()
+        report = exercise_on_services(services,key,foreign_key,output,
+            stale_probe=args.stale_probe,stale_probe_sha256=args.stale_probe_sha256,
+            rounds=args.rounds,wait_seconds=args.wait_seconds)
+        for name in host.ARTIFACTS:
+            host.artifact_fingerprint(host_config['artifacts'][name], executable=name in ('firecracker', 'jailer'))
+        print(json.dumps(dict(result=report['result'],evidence_root=str(output),
+            report_sha256=digest(output/'report.json'))),flush=True)
+    finally:
+        services.stop_all()
+
+
+def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
+                         stale_probe_sha256,rounds=6,wait_seconds=30,first_pair_observed=None):
+    """Run the ORIGINAL churn assertions on one already started DK assembly.
+
+    The caller owns provisioning, the sole execution manifest and final service
+    cleanup. Planned offline audits/restarts keep the original configurations;
+    there is no second RuntimeServices or synthetic successful host action.
+    """
+    from server_process_crash import fetch, process_start_ticks
+    from _center_host_services import local_binding
+    from sdk_c02_acceptance import processes_in_uid_range
+    from sdk_server_smoke import options
+    from tools.runtime_create_recovery import terminal_result
+    from e2b import Sandbox
+
+    assert sys.platform == 'linux' and os.geteuid() == 0
+    assert importlib.metadata.version('e2b') == '2.51.0'
+    require_bounded_host_tools()
+    if len(services.native_pools) != 1 or key == foreign_key:
+        raise ValueError('one original runtime and two distinct tested tenants required')
+    settings = services.native_pools[0]
+    pool,peak,inodes = validate_runtime_configuration(settings,rounds,wait_seconds)
+    retained_slots = retention_slots(services,rounds)
+    output = host.trusted_path(evidence_root)
+    assert output.is_dir() and not output.stat().st_mode & 0o077
+    assert not any((output/name).exists() for name in ('node-config.json','old-actions.json','report.json'))
+    for root in (Path(settings['database']).parent,Path(settings['node_state_dir']),Path(settings['chroot_base'])):
+        assert output != root and root not in output.parents and output not in root.parents
+    host.artifact_fingerprint({'path':str(stale_probe),'sha256':stale_probe_sha256},executable=True)
+    services.processes.observe()  # Actual same-role identities, not stale Popen handles.
+    node_file = output/'node-config.json'
+    write_private(node_file,node_configuration(settings))
+    url = services.sdk_url
     owner = options(key, url, url)
     owner['request_timeout'] = 180
+    victim_owner = options(foreign_key,url,url) | {'request_timeout':180}
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process, sampler, live = None, FilePeaks(settings['database']), []
-    report = dict(schema_version=1, scope='finite_single_runtime_bounded_churn',
-                  source=host.source_revision(), config_sha256=digest(args.config),
-                  server_sha256=args.server_sha256, stale_probe_sha256=args.stale_probe_sha256,
+    sampler, live = FilePeaks(settings['database']), []
+    report = dict(schema_version=2, scope='finite_single_runtime_bounded_churn',
+                  source=host.source_revision(),
+                  center_sha256=digest(services.processes.bindings['center']['binary']),
+                  host_sha256=digest(services.processes.bindings['host-0']['binary']),
+                  center_config_sha256=digest(services.processes.bindings['center']['config']),
+                  host_config_sha256=digest(services.processes.bindings['host-0']['config']),
+                  stale_probe_sha256=stale_probe_sha256,
                   probe_sha256=digest(__file__), physical_peak_bytes=peak, physical_peak_inodes=inodes,
-                  rounds=args.rounds, observations=[], identities=[], stale_actions=None, result='incomplete',
+                  rounds=rounds, observations=[], identities=[], mappings=[], authority_observations=[],
+                  stale_actions=None, result='incomplete',
                   limits='No old namespace-FD holder injection, unknown-work experiment, two-pool builds, power loss, or formal proof.')
     started, retired, old, old_actions, positions = [], [], None, [], []
 
@@ -359,11 +437,12 @@ def exercise(args):
         value['host_metadata'] = metadata_usage(settings)
         assert value['host_metadata']['entries'] <= pool['host_metadata_inodes']
         assert value['host_metadata']['logical_file_bytes'] <= pool['host_metadata_bytes']
+        value['service_storage'] = services.storage_peaks()
         report['observations'].append(dict(label=label, **value))
         return value
 
     def wait_retired(ident):
-        deadline = time.monotonic() + args.wait_seconds
+        deadline = time.monotonic() + wait_seconds
         while True:
             snapshot = database_snapshot(settings['database'])
             assert_budget(snapshot, settings)
@@ -377,40 +456,110 @@ def exercise(args):
         assert sandbox.commands.run('printf bounded-survivor', user='ubuntu').stdout == 'bounded-survivor'
         assert sandbox.files.read('/tmp/sandproof-bounded-survivor') == 'original'
 
+    def audit_pair(label):
+        # The two checked authorities remain diagnostic sources, never release
+        # decisions. VMM processes are independent of these service restarts.
+        services.processes.stop('center')
+        services.processes.stop('host-0')
+        try:
+            center, native = services.processes.audit('center'), services.processes.audit('host-0')
+        finally:
+            services.processes.start('host-0')
+            services.processes.start('center')
+            services.wait_ready(for_admission=False)
+        bounds = services.center_config['bounds']
+        assert len(center['sandboxes']) <= bounds['max_sandboxes']
+        assert all(len(record['operations']) <= bounds['operations_per_sandbox']
+                   for record in center['sandboxes'])
+        assert len(center['retention_lanes']) == len(native['lanes']) == retained_slots
+        report['authority_observations'].append(dict(label=label,
+            center_retention_lanes=center['retention_lanes'],host_retention_lanes=native['lanes'],
+            center_records=len(center['sandboxes']),host_operations=len(native['operations']),
+            sandbox_highwater=center['sandbox_highwater'],operation_highwater=center['operation_highwater']))
+        return center,native
+
+    def original_mapping(sandbox):
+        center,native = audit_pair('mapped-'+sandbox.sandbox_id)
+        rows = [record for record in center['sandboxes']
+                if record['create']['identity']['sandbox_id'] == sandbox.sandbox_id]
+        assert len(rows) == 1 and not rows[0]['released']
+        identity = rows[0]['create']['identity']
+        binding = local_binding(native,sandbox.sandbox_id,expected_node=services.host_configs[0]['inbox']['node'])
+        report['mappings'].append(dict(create=identity,local=binding))
+        return 'sb-'+settings['namespace']+'-'+str(binding['sandbox']),binding['sandbox'],identity
+
+    def exact_retired(identity, survivor_identity=None):
+        deadline = time.monotonic()+wait_seconds
+        while True:
+            center,native = audit_pair('terminal-'+identity['sandbox_id'])
+            terminal = terminal_result(center,native,identity)
+            if terminal and terminal['status'] == 'retired_terminal_slot':
+                assert terminal['center_retired_through'] == terminal['host_retired_through'] == identity['request_window']
+                if survivor_identity is not None:
+                    # A live peer must retain its exact original incarnation,
+                    # never get retired merely to recycle the victim's slot.
+                    peers = [row for row in center['sandboxes']
+                             if row['create']['identity'] == survivor_identity]
+                    assert len(peers) == 1 and not peers[0]['released']
+                    assert survivor_identity['retention_slot'] != identity['retention_slot']
+                    for lanes in (center['retention_lanes'],native['lanes']):
+                        lane = next(row for row in lanes if row['retention_slot'] == survivor_identity['retention_slot'])
+                        assert lane['retired_through'] == survivor_identity['request_window']-1
+                return terminal
+            assert time.monotonic()<deadline,'original exact terminal slot did not retire on both authorities'
+            # Give the ORIGINAL instances a complete background scan between
+            # offline audits. Repeated short restarts can starve retirement.
+            time.sleep(max(settings['expiry_scan_seconds'],
+                services.center_config['expiry_scan_ms']/1000,
+                services.center_config['poll_interval_ms']/1000)+.1)
+
     try:
-        process = start_server(args.server, args.config, output / 'server.log', None)
-        wait_ready(opener, url, key, process)
         sampler.thread.start()
         initial = sample('fresh')
+        assert initial['counts']['sandboxes'] == 0,'shared DK predecessors did not reclaim original native records'
         survivor = Sandbox.create(template='base', timeout=600, allow_internet_access=False, **owner)
         live.append(survivor)
+        survivor_native,survivor_local,survivor_create = original_mapping(survivor)
         survivor.files.write('/tmp/sandproof-bounded-survivor', 'original')
         snapshot = sample('survivor')
-        survivor_context = context_for(snapshot, survivor.sandbox_id)
+        survivor_context = context_for(snapshot, survivor_local)
         survivor_identity = live_identity(settings, survivor_context, process_start_ticks)
         report['identities'].append(survivor_identity)
         started.append(survivor.sandbox_id)
-        for index in range(args.rounds):
-            victim = Sandbox.create(template='base', timeout=600, allow_internet_access=False, **owner)
+        victim_slot,previous_window = None,None
+        for index in range(rounds):
+            victim = Sandbox.create(template='base', timeout=600, allow_internet_access=False, **victim_owner)
             live.append(victim)
+            victim_native,victim_local,victim_create = original_mapping(victim)
+            if index == 0:
+                victim_slot = victim_create['retention_slot']
+            else:
+                assert victim_create['retention_slot'] == victim_slot
+                assert victim_create['request_window'] == previous_window+1
+            previous_window = victim_create['request_window']
+            assert fetch(opener,url,'GET','/sandboxes/'+survivor.sandbox_id,foreign_key)[0] == 404
+            assert fetch(opener,url,'GET','/sandboxes/'+victim.sandbox_id,key)[0] == 404
             snapshot = sample('created-' + str(index))
-            context = context_for(snapshot, victim.sandbox_id)
+            context = context_for(snapshot, victim_local)
             identity = live_identity(settings, context, process_start_ticks)
             report['identities'].append(identity)
             assert context['position'] != survivor_context['position']
             positions.append(context['position'])
             started.append(victim.sandbox_id)
             if index == 0:
-                old, old_actions = context, capture_actions(settings['database'], victim.sandbox_id)
+                old, old_actions = context, capture_actions(settings['database'], victim_native)
                 assert len(old_actions) >= 4, 'capture real accepted host actions before retirement'
+                if first_pair_observed is not None:
+                    # Test-only coordination after BOTH original mappings and
+                    # physical identities have been captured. Not a VM action.
+                    first_pair_observed(copy.deepcopy(report))
             elif index == 1:
                 assert context['position'] == old['position'] and context['binding']['vm'] != old['binding']['vm']
-                stop_server(process)
-                process = None
+                services.processes.stop('host-0')
                 before = tree_records((settings['node_state_dir'], Path(settings['chroot_base']) / '.claims'))
                 action_file = output / 'old-actions.json'
                 write_private(action_file, dict(version=1, old_context=old, actions=old_actions))
-                result = subprocess.run([str(args.stale_probe), str(node_file), str(action_file)],
+                result = subprocess.run([str(stale_probe), str(node_file), str(action_file)],
                                         capture_output=True, timeout=30, check=False,
                                         env={'PATH': '/usr/bin:/bin', 'LANG': 'C'})
                 assert result.returncode == 0 and len(result.stdout) <= 65536, 'late host-action driver failed'
@@ -420,31 +569,33 @@ def exercise(args):
                 assert live_identity(settings, context, process_start_ticks) == identity
                 assert live_identity(settings, survivor_context, process_start_ticks) == survivor_identity
                 report['stale_actions'] = stale
-                process = start_server(args.server, args.config, output / 'server.log', None)
-                wait_ready(opener, url, key, process)
+                services.processes.start('host-0')
+                services.wait_ready(for_admission=False)
                 survivor_ok(survivor, survivor_context, survivor_identity)
                 assert victim.commands.run('printf new-incarnation').stdout == 'new-incarnation'
                 sample('same-config-restart-and-late-actions')
-            victim_killed = Sandbox.kill(victim.sandbox_id, **owner)
+            victim_killed = Sandbox.kill(victim.sandbox_id, **victim_owner)
             assert victim_killed
             live.remove(victim)
             if index == 0:
-                extra = capture_actions(settings['database'], victim.sandbox_id)
+                extra = capture_actions(settings['database'], victim_native)
                 if extra:
                     old_actions = extra
-            wait_retired(victim.sandbox_id)
+            wait_retired(victim_native)
+            exact_retired(victim_create,survivor_create)
             sample('retired-' + str(index))
             audit_absent(settings, identity, process_start_ticks)
             retired.append(victim.sandbox_id)
-            assert fetch(opener, url, 'GET', '/sandboxes/' + victim.sandbox_id, key)[0] == 404
-            assert fetch(opener, url, 'DELETE', '/sandboxes/' + victim.sandbox_id, key)[0] == 404
+            assert fetch(opener, url, 'GET', '/sandboxes/' + victim.sandbox_id, foreign_key)[0] == 404
+            assert fetch(opener, url, 'DELETE', '/sandboxes/' + victim.sandbox_id, foreign_key)[0] == 404
             survivor_ok(survivor, survivor_context, survivor_identity)
         assert len(set(positions)) == 1, 'churn did not actually reuse the same physical position'
         assert context['binding']['vm'] > 2, 'permanent VM identity never crossed the physical position count'
         survivor_killed = Sandbox.kill(survivor.sandbox_id, **owner)
         assert survivor_killed
         live.remove(survivor)
-        wait_retired(survivor.sandbox_id)
+        wait_retired(survivor_native)
+        exact_retired(survivor_create)
         retired.append(survivor.sandbox_id)
         audit_absent(settings, survivor_identity, process_start_ticks)
         final = sample('all-retired')
@@ -452,16 +603,16 @@ def exercise(args):
         assert final['checkpoint']['generation'] > initial['checkpoint']['generation']
         assert final['checkpoint']['input_cut'] > initial['checkpoint']['input_cut']
         assert final['checkpoint']['deleted_through'] > initial['checkpoint']['deleted_through']
-        stop_server(process)
-        process = None
+        services.processes.stop('host-0')
+        services.processes.stop('center')
         records_before = tree_records((settings['node_state_dir'], Path(settings['chroot_base']) / '.claims'))
-        process = start_server(args.server, args.config, output / 'server.log', None)
-        wait_ready(opener, url, key, process)
+        services.processes.start('host-0')
+        services.processes.start('center')
+        services.wait_ready(for_admission=False)
         reopened = sample('all-retired-reopen')
         assert reopened['counts']['sandboxes'] == 0
         assert_reopen_frontiers(final['highwaters'], reopened['highwaters'])
-        stop_server(process)
-        process = None
+        services.processes.stop('host-0')
         assert tree_records((settings['node_state_dir'], Path(settings['chroot_base']) / '.claims')) == records_before
         assert not processes_in_uid_range(settings['uid_base'], settings['uid_base'] + 1)
         sampler.stop()
@@ -479,14 +630,15 @@ def exercise(args):
             for key in ('entries', 'logical_file_bytes', 'allocated_bytes')}
         assert report['final_host_metadata_files'] <= pool['host_metadata_inodes']
         assert report['final_host_metadata_logical_bytes'] <= pool['host_metadata_bytes']
-        for name in host.ARTIFACTS:
-            host.artifact_fingerprint(host_config['artifacts'][name], executable=name in ('firecracker', 'jailer'))
+        services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
+        services.processes.observe()
+        report['service_storage'] = services.storage_peaks()
         report['result'] = 'passed'
     except BaseException as error:
         report['failure_type'] = type(error).__name__
         raise
     finally:
-        stop_server(process)
         if sampler.thread.ident is not None and not sampler.stopped.is_set():
             try:
                 sampler.stop()
@@ -496,16 +648,17 @@ def exercise(args):
                 report['result'] = 'incomplete'
         report['unreclaimed_known_sandboxes'] = [sandbox.sandbox_id for sandbox in live]
         write_private(output / 'report.json', report)
-        print(json.dumps(dict(result=report['result'], evidence_root=str(output),
-                              report_sha256=digest(output / 'report.json'))), flush=True)
+    return report
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('config', 'host-config', 'server', 'stale-probe', 'output-dir'):
+    from _runtime_services import add_arguments
+    add_arguments(parser)
+    for name in ('native-config', 'host-config', 'stale-probe', 'output-dir'):
         parser.add_argument('--' + name, required=True, type=Path)
-    for name in ('server-sha256', 'stale-probe-sha256'):
+    for name in ('stale-probe-sha256',):
         parser.add_argument('--' + name, required=True)
-    parser.add_argument('--rounds', type=int, default=4)
+    parser.add_argument('--rounds', type=int, default=6)
     parser.add_argument('--wait-seconds', type=int, default=30)
     exercise(parser.parse_args())

@@ -20,9 +20,12 @@ use axum::{
 };
 use sandbox_controller_core as core;
 use sandproof_api::{
-    ApiCredential, ConnectRequest, ControllerPort, CreateRequest, ListOrder, ListQuery, PortError,
-    managed::ManagedPort, router,
+    ApiCredential, BuildPort, ConnectRequest, ControllerPort, CreateRequest, ListOrder, ListQuery,
+    PortError, router,
 };
+#[path = "support/managed.rs"]
+mod managed;
+use managed::ManagedPort;
 use sandproof_controller_service::{
     AdmissionLimits, ControllerJournal, CreateAdmission, HostEvidence, NeverCrash,
     WorkerTransportError, finish_admitted_create_v1, kill_v1,

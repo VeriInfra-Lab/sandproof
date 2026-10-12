@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -39,6 +40,8 @@ def settings():
                 host_metadata_bytes=1024 * 1024, host_metadata_inodes=20, jail_inodes_per_slot=10)
     result['bounded_host']['physical_storage'] = dict(
         version=1, coordination_file='/run/accept/coordination', pools=[pool], public_build=None,
+        host_template_caches=[],
+        service_data=[],
         filesystem_overhead_bytes=1024, filesystem_overhead_inodes=100)
     return result
 
@@ -49,6 +52,35 @@ def host_settings(value):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_shared_churn_exceeds_original_matching_retention_slots_without_raising_them(self):
+        services = SimpleNamespace(host_configs=[dict(inbox=dict(max_sandboxes=4))],
+            center_config=dict(nodes=[dict(registration=dict(retention_slots=4))]))
+        original = copy.deepcopy(services)
+        self.assertEqual(probe.retention_slots(services,6),4)
+        self.assertEqual(vars(services),vars(original))
+        with self.assertRaises(ValueError):
+            probe.retention_slots(services,4)
+        for slots in (0,3,True,'4'):
+            changed = copy.deepcopy(services)
+            changed.center_config['nodes'][0]['registration']['retention_slots'] = slots
+            with self.subTest(slots=slots),self.assertRaises(ValueError):
+                probe.retention_slots(changed,6)
+
+    def test_standalone_and_shared_entry_reuse_one_churn_body(self):
+        import ast
+        tree = ast.parse(SOURCE.read_text())
+        functions = {node.name:node for node in tree.body if isinstance(node,ast.FunctionDef)}
+        wrapper, shared = functions['exercise'],functions['exercise_on_services']
+        shared_calls = [node for node in ast.walk(wrapper) if isinstance(node,ast.Call)
+                        and isinstance(node.func,ast.Name) and node.func.id == 'exercise_on_services']
+        self.assertEqual(len(shared_calls),1)
+        self.assertFalse(any(isinstance(node,ast.Attribute) and node.attr in ('prepare','initialize','stop_all')
+                             for node in ast.walk(shared)))
+        self.assertTrue(any(isinstance(node,ast.Attribute) and node.attr == 'kill'
+                            for node in ast.walk(shared)))
+        self.assertTrue(any(isinstance(node,ast.Name) and node.id == 'validate_stale_report'
+                            for node in ast.walk(shared)))
+
     def test_fixed_paths_and_full_profile_are_required(self):
         valid = settings()
         pool, peak, inodes = probe.validate_configuration(valid, host_settings(valid), 4, 30)
@@ -181,7 +213,9 @@ class ObservationTests(unittest.TestCase):
             self.assertEqual(snapshot['tail'], {'rows': 1, 'bytes': 4})
             self.assertEqual(snapshot['checkpoint']['deleted_through'], 2)
             self.assertEqual(snapshot['highwaters'], {'sandbox:': 9})
-            self.assertEqual(probe.context_for(snapshot, 'sb-x-9'), context)
+            self.assertEqual(probe.context_for(snapshot, 9), context)
+            with self.assertRaises(ValueError):
+                probe.context_for(snapshot,'sp-global-id-not-a-native-number')
             self.assertEqual(actions, [{'accepted': 'real'}])
             # The observation does not keep an external reader pinned.
             self.assertEqual(writer.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0], 0)

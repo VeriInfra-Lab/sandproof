@@ -6,7 +6,6 @@ import sqlite3
 from pathlib import Path
 import sys
 import tempfile
-import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -26,6 +25,8 @@ from tools.template_build_service import BuildHTTP
 from tools.template_build_store import BuildStore
 from tools.tests.test_template_build_service import limits as store_limits
 from tools.tests import test_template_build_retention as retention_fixtures
+from tools.tests.template_build_fixture import PRIVATE_TEST_KEY
+from benchmarks.tests.build_http_fixture import PublicBuildHTTP, serve_http
 
 
 def deployment():
@@ -53,16 +54,10 @@ class PressureBuildWindowTests(unittest.TestCase):
                                    'max_pending': 1, 'max_pending_per_tenant': 1}
         store = BuildStore(directory, limits, bounded=config,
                            free_bytes=lambda: 1000000 * MIB)
-        server = BuildHTTP(('127.0.0.1', 0), store, [{'tenant': 1, 'secret': 'synthetic'}])
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        def cleanup():
-            server.shutdown()
-            server.server_close()
-            thread.join()
-            store.close()
-        self.addCleanup(cleanup)
-        return store, BuildClient('http://127.0.0.1:' + str(server.server_port), 'synthetic')
+        self.addCleanup(store.close)
+        backend = serve_http(self, BuildHTTP(('127.0.0.1', 0), store, PRIVATE_TEST_KEY))
+        public = serve_http(self, PublicBuildHTTP(backend, {'synthetic': 1}))
+        return store, BuildClient('http://127.0.0.1:' + str(public.server_port), 'synthetic')
 
     def temporary_root(self):
         temporary = tempfile.TemporaryDirectory()
@@ -123,7 +118,8 @@ class PressureBuildWindowTests(unittest.TestCase):
         self.assertEqual(posts[0][1]['token'], saved['idempotency_key'])
 
     def test_private_lookup_and_retired_anchor_settlement_stay_bound_to_original(self):
-        self.assertEqual(pressure.private_vm_path('job', None), '/sandproof/internal-build-vms/job')
+        with self.assertRaisesRegex(ValueError, 'original private window is mandatory'):
+            pressure.private_vm_path('job', None)
         self.assertEqual(pressure.private_vm_path('job', 'original-window'),
                          '/sandproof/internal-build-vms/job?requestWindow=original-window')
         database = self.temporary_root() / 'builds.db'
@@ -267,19 +263,31 @@ class PressureFailureTests(unittest.TestCase):
                 pressure.validate_cohort([shape, shape | {field: value}], deployment())
 
     def invoke(self, root, creates, *, install_error=None, audit=None):
+        services = Mock(spec=['sdk_url'], sdk_url='http://127.0.0.1:1')
+        build_config = root / 'build-config.json'
+        parsed_config = object()
         async def run():
             with patch.object(pressure.AsyncSandbox, 'create', AsyncMock(side_effect=creates)) as create, \
                  patch.object(pressure, 'clean', AsyncMock()), \
-                 patch.object(pressure, 'install', AsyncMock(side_effect=install_error)):
+                 patch.object(pressure, 'install', AsyncMock(side_effect=install_error)), \
+                 patch.object(pressure, 'configuration', return_value=parsed_config) as configuration, \
+                 patch.object(pressure, 'Backend', return_value=Mock(spec=['request'])) as backend:
                 try:
-                    await pressure.exercise(root=root, urls=['http://127.0.0.1:1'] * 3,
-                        key='synthetic', builder_key='private-synthetic', rows=templates(), deployment=deployment(),
+                    await pressure.exercise(root=root, services=services,
+                        key='synthetic', build_config=build_config, rows=templates(), deployment=deployment(),
                         supervisor=Mock(), restart=Mock(), source_entry={},
                         build_mode='windowed',
                         audit_shape=lambda env: {'disk_inode': int(env.sandbox_id)},
                         completion_audit=audit or Mock(return_value={'exact_cleanup': 'passed'}))
                 finally:
                     self.calls = create.await_count
+                    configuration.assert_called_once_with(build_config)
+                    backend.assert_called_once_with(parsed_config)
+                    for call in create.await_args_list:
+                        self.assertEqual(call.kwargs['api_url'], services.sdk_url)
+                        self.assertEqual(call.kwargs['sandbox_url'], services.sdk_url)
+                        self.assertEqual(call.kwargs['api_key'], 'synthetic')
+                        self.assertEqual(call.kwargs['retries'], 0)
         return asyncio.run(run())
 
     def sandbox(self, index, kill_error=None):

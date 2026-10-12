@@ -1,5 +1,5 @@
 use super::super::{
-    config::{ConfigFile, managed_config},
+    config::{NativeSettings, application_config},
     test_support::{resolve, settings},
 };
 use super::*;
@@ -7,61 +7,6 @@ use sandbox_controller_core::maintenance::slots::{HostBinding, HostSlotId};
 use sandproof_controller_service::WorkerTransportError;
 use sandproof_node::HostObservation;
 use std::{fs, path::PathBuf};
-
-#[test]
-fn reconciliation_fault_identifies_the_failed_stage_without_running_later_steps() {
-    use std::cell::RefCell;
-    let stages = [
-        FaultStage::MaintenanceBefore,
-        FaultStage::Recovery,
-        FaultStage::Expiry,
-        FaultStage::MaintenanceAfter,
-    ];
-    for failing in 0..=stages.len() {
-        let calls = RefCell::new(Vec::new());
-        let step = |stage| {
-            let mut calls = calls.borrow_mut();
-            calls.push(stage);
-            if calls.len() - 1 == failing {
-                Err(PortError::OutcomeUnknown)
-            } else {
-                Ok(())
-            }
-        };
-        let mut maintenance_count = 0;
-        let result = reconciliation_pass(
-            || {
-                let stage = if maintenance_count == 0 {
-                    FaultStage::MaintenanceBefore
-                } else {
-                    FaultStage::MaintenanceAfter
-                };
-                maintenance_count += 1;
-                step(stage).map(|()| MaintenanceReport::default())
-            },
-            || step(FaultStage::Recovery).map(|()| RecoveryReport::default()),
-            || step(FaultStage::Expiry).map(|()| ExpiryReport::default()),
-        );
-        if failing == stages.len() {
-            assert!(result.is_ok());
-        } else {
-            let fault = result.unwrap_err();
-            assert_eq!(fault.stage, stages[failing]);
-            assert_eq!(
-                fault.kind,
-                FaultKind::Application(PortError::OutcomeUnknown)
-            );
-            assert_eq!(
-                fault.scope,
-                sandproof_controller_service::application::fault::FaultScope::Unclassified
-            );
-        }
-        assert_eq!(
-            calls.into_inner(),
-            stages[..(failing + 1).min(stages.len())]
-        );
-    }
-}
 
 struct CredentialScratch(PathBuf);
 
@@ -124,7 +69,7 @@ fn startup_reopens_only_terminal_fence_without_any_launch_dispatch() {
     ));
     fs::create_dir(&directory).unwrap();
     let scratch = Scratch(directory);
-    let config: ConfigFile = serde_json::from_value(settings()).unwrap();
+    let config: NativeSettings = serde_json::from_value(settings()).unwrap();
     let bounded = resolve(settings());
     for claimed_opening_fence in [false, true] {
         let database = scratch.0.join(format!("{claimed_opening_fence}.db"));
@@ -152,7 +97,7 @@ fn startup_reopens_only_terminal_fence_without_any_launch_dispatch() {
                 0,
                 60,
                 1024,
-                managed_config(&config, 1024).unwrap().limits,
+                application_config(&config, 1024).unwrap().limits,
                 &mut NeverCrash,
             )
             .unwrap();
@@ -377,7 +322,7 @@ fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupa
     use sandproof_controller_service::NeverCrash;
     let directory = credential_scratch();
     let database = directory.0.join("controller.db");
-    let config: ConfigFile = serde_json::from_value(settings()).unwrap();
+    let config: NativeSettings = serde_json::from_value(settings()).unwrap();
     let bounded = resolve(settings());
     let mut journal = ControllerJournal::open_complete(
         &database,
@@ -404,7 +349,7 @@ fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupa
                 0,
                 60,
                 1024,
-                managed_config(&config, 1024).unwrap().limits,
+                application_config(&config, 1024).unwrap().limits,
                 &mut NeverCrash,
             )
             .unwrap();

@@ -31,12 +31,11 @@ from e2b import Sandbox
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
 from sdk_server_smoke import options
-from server_process_crash import (
-    complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
-    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
-)
+from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
+from _runtime_services import RuntimeServices, add_arguments
+from server_process_crash import free_loopback_port, process_start_ticks
 from server_template_isolation import audit_gone
-from server_templates import record_for
+from server_templates import descriptor, record_for
 
 
 MIB = 1024 ** 2
@@ -98,13 +97,17 @@ def selected_inputs(checkout: Path, source: Path, names: list[str]) -> list[tupl
     return result
 
 
-def save_identity(root: Path, sandbox: Sandbox, identities: list[dict]) -> dict:
+def save_identity(root: Path, sandbox: Sandbox, identities: list[dict], services) -> dict:
     # Observe the original live claim before any SDK assertion or DELETE. These
     # private test observations survive retirement; they are not worker receipts.
-    _, name, record = record_for(root, sandbox)
+    services.processes.stop('host-0')
+    native_id = services.native_id_for(sandbox.sandbox_id)
+    services.processes.start('host-0')
+    services.wait_ready(for_admission=False)
+    _, name, record = record_for(root, native_id=native_id)
     network = json.loads((root / "jails/.claims" / name / "network.json").read_text())
     identity = {**record, "network_inode": network["namespace_inode"],
-                "sandbox_id": sandbox.sandbox_id}
+                "sandbox_id": sandbox.sandbox_id, "native_id": native_id}
     path = root / f"{name}.identity.json"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "w") as output:
@@ -165,7 +168,7 @@ def stage_verifier_python(sandbox: Sandbox, archive: Path) -> None:
 
 
 def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_key: str,
-                      root: Path, verifier_python: Path, identities: list[dict]) -> dict:
+                      root: Path, verifier_python: Path, identities: list[dict], services) -> dict:
     name = entry["name"]
     directory = source / entry["source_path"]
     sdk_options = options(api_key, base_url, base_url)
@@ -173,7 +176,7 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
     identity = None
     try:
         sandbox = Sandbox.create(template="base", timeout=86400, allow_internet_access=True, **sdk_options)
-        identity = save_identity(root, sandbox, identities)
+        identity = save_identity(root, sandbox, identities, services)
         assert process_start_ticks(identity["pid"]) == identity["start_time_ticks"]
         assert Sandbox.connect(sandbox.sandbox_id, **sdk_options).sandbox_id == sandbox.sandbox_id
         assert sandbox.get_info().state == "running"
@@ -210,6 +213,7 @@ def run_original_task(entry: dict, pin: dict, source: Path, base_url: str, api_k
         assert sandbox.files.read("/logs/verifier/ctrf.json"), "original CTRF report missing"
         return {"name": name, "source_files_sha256": entry["files_sha256"], "reward": reward,
                 "guest_versions": version, "guest_profile": profile, "sandbox_id": sandbox.sandbox_id,
+                "native_id": identity['native_id'],
                 "original_verifier_sha256": next(item["sha256"] for item in entry["files"] if item["path"] == "tests/test.sh")}
     finally:
         if sandbox is not None and identity is not None:
@@ -255,16 +259,19 @@ def exercise(args: argparse.Namespace) -> None:
         raise RuntimeError("Firecracker socket path too long")
     for name in ("db", "state", "jails"):
         (root / name).mkdir(mode=0o700)
-    binary, kernel, rootfs = root / "sandproof-server", root / "vmlinux", root / "rootfs.ext4"
-    for source_file, destination in ((args.server, binary), (args.kernel, kernel), (args.rootfs, rootfs)):
+    kernel, rootfs = root / "vmlinux", root / "rootfs.ext4"
+    for source_file, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
         shutil.copyfile(source_file.resolve(strict=True), destination)
-    binary.chmod(0o700)
     kernel.chmod(0o644)
     rootfs.chmod(0o644)
     assert sha256_file(rootfs) == source_base_sha
     key = secrets.token_hex(32)
     port = free_loopback_port()
-    config = root / "config.json"
+    template = descriptor('runtime-base', kernel, rootfs, 1, 2048)
+    template['resources']['host_memory_bytes'] = 2304 * MIB
+    catalog = dict(templates=[template], aliases={'base': template['template_id']}, compute_limits=dict(
+        max_vcpus_global=1, max_vcpus_per_tenant=1,
+        max_memory_bytes_global=2304*MIB, max_memory_bytes_per_tenant=2304*MIB))
     settings = complete_runtime({
         "namespace": namespace, "database": str(root / "db/controller.db"),
         "node_state_dir": str(root / "state"), "jailer": str(args.jailer.resolve(strict=True)),
@@ -272,36 +279,37 @@ def exercise(args: argparse.Namespace) -> None:
         "kernel": str(kernel), "rootfs": str(rootfs), "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 2048,
         "host_resources": {"cgroup_parent": str(cgroup_parent), "memory_max_bytes": 2304 * MIB},
-        "file_policy_digest": 1, "bind": f"127.0.0.1:{port}",
-        "domain": "example.invalid", "credentials": [{"tenant": 1, "secret": key}],
+        "file_policy_digest": 1, "templates": catalog,
         "max_active_global": 1, "max_active_per_tenant": 1,
         "max_disk_bytes_global": 2 * rootfs.stat().st_size,
         "max_disk_bytes_per_tenant": rootfs.stat().st_size,
         "cleanup_reserve_bytes": rootfs.stat().st_size, "max_timeout_secs": 86400,
         "max_lifetime_secs": 86400, "default_timeout_secs": 300,
-        "expiry_scan_seconds": 1, "public_ipv4_enabled": True,
+        "expiry_scan_seconds": 1, "public_ipv4_enabled": True, "startup_timeout_secs": 300,
     }, slots=1)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
-    process = None
+    registry = dict(root=str(root / 'registry'), max_templates_global=1, max_templates_per_tenant=1,
+        max_artifact_bytes_global=rootfs.stat().st_size+kernel.stat().st_size,
+        max_artifact_bytes_per_tenant=rootfs.stat().st_size+kernel.stat().st_size, validation_timeout_secs=60)
+    services = RuntimeServices.prepare(args, root, [settings], [catalog], key,
+        f'127.0.0.1:{port}', args.service_cgroup_record, job_count=len(selection)+2, registry_config=registry)
     completed = False
     results = []
     identities = []
     try:
-        process = start_server(binary, config, root / "server.log", None)
+        services.start()
         base_url = f"http://127.0.0.1:{port}"
-        wait_ready(urllib.request.build_opener(urllib.request.ProxyHandler({})), base_url, key, process)
+        services.wait_ready()
         for entry, pin in selection:
-            result = run_original_task(entry, pin, args.source, base_url, key, root, verifier_python, identities)
+            result = run_original_task(entry, pin, args.source, base_url, key, root, verifier_python, identities, services)
             results.append(result)
-            wait_destroyed(root / "db/controller.db", result["sandbox_id"])
+            wait_destroyed(root / "db/controller.db", result["native_id"])
             no_exact_residual(root, namespace, args.uid_base, identities, firecracker, cgroup_parent)
             assert sha256_file(rootfs) == source_base_sha, "private base changed"
         assert sha256_file(args.rootfs) == source_base_sha, "source base changed"
         completed = True
         print(json.dumps({"commit": commit, "host_kernel": os.uname().release,
-                          "server_sha256": sha256_file(binary), "base_sha256": source_base_sha,
+                          "center_sha256": sha256_file(args.center), "host_sha256": sha256_file(args.host),
+                          "base_sha256": source_base_sha,
                           "source_commit": json.loads((checkout / "benchmarks/diagnostic-tasks.json").read_text())["source_commit"],
                           "memory_mib": 2048, "disk_mib": 10240, "vcpu_count": 1,
                           "verifier_python_sha256": VERIFIER_PYTHON_SHA256,
@@ -309,8 +317,9 @@ def exercise(args: argparse.Namespace) -> None:
                           "residual": "each exact VM terminal cleanup confirmed; saved PID/start/netns inode gone; no jail, netns, cgroup, physical-slot UID; base unchanged",
                           "scope": "selected original oracle/verifier chain, not full E2B equivalence or 89-task score"}))
     finally:
-        stop_server(process)
+        services.stop_all()
         if completed:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f"Exact failed-run artifacts retained: {root}", file=sys.stderr)
@@ -318,7 +327,8 @@ def exercise(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for field in ("server", "jailer", "firecracker", "kernel", "rootfs", "source", "scratch-parent", "verifier-python", "cgroup-parent"):
+    add_arguments(parser)
+    for field in ("jailer", "firecracker", "kernel", "rootfs", "source", "scratch-parent", "verifier-python", "cgroup-parent"):
         parser.add_argument("--" + field, type=Path, required=True)
     parser.add_argument("--uid-base", type=int, required=True)
     parser.add_argument("--task", action="append", choices=("regex-log", "polyglot-c-py"), required=True)

@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Deployment-only limits. The control reserve is included in the request
-/// maximum; the single background slot is additional and never public.
+/// maximum; lifecycle and material background slots are additional and private.
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestAdmissionLimits {
@@ -43,6 +43,7 @@ pub enum RequestClass {
     Ordinary,
     Control,
     Background,
+    Material,
 }
 
 /// A shared service-wide budget. All acquisition is non-waiting: overload
@@ -51,6 +52,7 @@ pub struct RequestAdmission {
     ordinary: Arc<Semaphore>,
     control: Arc<Semaphore>,
     background: Arc<Semaphore>,
+    material: Arc<Semaphore>,
 }
 
 /// Clone the Arc into blocking work before dispatch. Dropping an HTTP future
@@ -80,6 +82,7 @@ impl RequestAdmission {
             )),
             control: Arc::new(Semaphore::new(limits.control_reserve)),
             background: Arc::new(Semaphore::new(1)),
+            material: Arc::new(Semaphore::new(1)),
         }
     }
 
@@ -92,6 +95,7 @@ impl RequestAdmission {
             RequestClass::Ordinary => acquire(&self.ordinary),
             RequestClass::Control => acquire(&self.ordinary).or_else(|| acquire(&self.control)),
             RequestClass::Background => acquire(&self.background),
+            RequestClass::Material => acquire(&self.material),
         }?;
         Some(Arc::new(RequestLease { _permit: permit }))
     }
@@ -116,13 +120,15 @@ mod tests {
         let control = budget.try_acquire(RequestClass::Control).unwrap();
         assert!(budget.try_acquire(RequestClass::Control).is_none());
         let background = budget.try_acquire(RequestClass::Background).unwrap();
+        let material = budget.try_acquire(RequestClass::Material).unwrap();
+        assert!(budget.try_acquire(RequestClass::Material).is_none());
         assert!(budget.try_acquire(RequestClass::Background).is_none());
         let worker = Arc::clone(&a);
         drop(a);
         assert!(budget.try_acquire(RequestClass::Ordinary).is_none());
         drop(worker);
         assert!(budget.try_acquire(RequestClass::Ordinary).is_some());
-        drop((b, control, background));
+        drop((b, control, background, material));
     }
 
     #[test]

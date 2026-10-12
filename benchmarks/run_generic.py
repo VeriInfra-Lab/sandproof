@@ -114,6 +114,7 @@ async def run_selected(args, lock):
                 row.setdefault('create_dispatched', True)
                 row.setdefault('sandbox_id', environment.sandbox_id)
                 row.setdefault('kill_confirmed', environment.kill_confirmed)
+                row.setdefault('kill_dispatched', environment.kill_dispatched)
                 row.setdefault('build_dispatched', environment.build_dispatched)
                 row.setdefault('build_id', environment.build_id)
                 row.setdefault('build', environment.build_result)

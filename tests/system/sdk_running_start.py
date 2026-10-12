@@ -21,18 +21,16 @@ import os
 from pathlib import Path
 import secrets
 import shutil
-import sqlite3
 import sys
 import tempfile
-import urllib.request
 
 from e2b import Sandbox
 
 from sdk_server_smoke import options
-from server_process_crash import (
-    complete_runtime, free_loopback_port, process_start_ticks, provision_runtime,
-    start_server, stop_server, terminal_cleanup_confirmed, wait_ready,
-)
+from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
+from _runtime_services import RuntimeServices, add_arguments
+from server_process_crash import free_loopback_port, process_start_ticks
+from server_templates import descriptor
 
 
 def digest(path):
@@ -60,16 +58,18 @@ def main(args):
     port = free_loopback_port()
     for name in ('db', 'state', 'jails'):
         (root / name).mkdir(mode=0o700)
-    binary = root / 'sandproof-server'
     kernel = root / 'vmlinux'
     rootfs = root / 'rootfs.ext4'
-    for source, target in ((args.server, binary), (args.kernel, kernel), (args.rootfs, rootfs)):
+    for source, target in ((args.kernel, kernel), (args.rootfs, rootfs)):
         shutil.copyfile(source, target)
-    binary.chmod(0o700)
     kernel.chmod(0o644)
     rootfs.chmod(0o644)
     base_digest = digest(rootfs)
-    config = root / 'config.json'
+    template = descriptor('runtime-base', kernel, rootfs, 1, 256)
+    catalog = {'templates': [template], 'aliases': {'base': template['template_id']},
+               'compute_limits': {'max_vcpus_global': 2, 'max_vcpus_per_tenant': 1,
+                                  'max_memory_bytes_global': 1024 * 1024**2,
+                                  'max_memory_bytes_per_tenant': 512 * 1024**2}}
     settings = {
         'namespace': namespace,
         'database': str(root / 'db/controller.db'),
@@ -83,9 +83,6 @@ def main(args):
         'vcpu_count': 1,
         'memory_mib': 256,
         'file_policy_digest': 1,
-        'bind': f'127.0.0.1:{port}',
-        'domain': 'example.invalid',
-        'credentials': [{'tenant': 1, 'secret': key}],
         'max_active_global': 2,
         'max_active_per_tenant': 1,
         'max_disk_bytes_global': disk_bytes * 3,
@@ -93,20 +90,24 @@ def main(args):
         'cleanup_reserve_bytes': disk_bytes,
         'max_timeout_secs': 600,
         'max_lifetime_secs': 600,
+        'startup_timeout_secs': 300,
+        'public_ipv4_enabled': False,
+        'templates': catalog,
         'default_timeout_secs': 300,
         'expiry_scan_seconds': 1,
     }
     settings = complete_runtime(settings, slots=2)
-    provision_runtime(settings)
-    config.write_text(json.dumps(settings))
-    config.chmod(0o600)
     base_url = f'http://127.0.0.1:{port}'
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process = None
+    registry = {'root': str(root / 'registry'), 'max_templates_global': 1,
+        'max_templates_per_tenant': 1, 'max_artifact_bytes_global': disk_bytes + kernel.stat().st_size,
+        'max_artifact_bytes_per_tenant': disk_bytes + kernel.stat().st_size, 'validation_timeout_secs': 60}
+    services = RuntimeServices.prepare(args, root=root, native_pools=[settings],
+        registered_catalogs=[catalog], key=key, public_address=f'127.0.0.1:{port}',
+        record=args.service_cgroup_record, job_count=4, private_builds=None, registry_config=registry)
     completed = False
     try:
-        process = start_server(binary, config, root / 'server.log', None)
-        wait_ready(opener, base_url, key, process)
+        services.start()
+        services.wait_ready()
         sdk = options(key, base_url, base_url)
         before_request = datetime.now(timezone.utc)
         sandbox = Sandbox.create(template='base', timeout=60,
@@ -118,30 +119,42 @@ def main(args):
         record = json.loads((root / 'jails/.claims' / vm_name / 'record.json').read_text())
         assert record['resource_id'] == vm_name
         assert process_start_ticks(record['pid']) == record['start_time_ticks']
-        stop_server(process)
-        process = start_server(binary, config, root / 'server.log', None)
-        wait_ready(opener, base_url, key, process)
+        services.processes.stop('center')
+        assert process_start_ticks(record['pid']) == record['start_time_ticks']
+        services.processes.start('center')
+        services.wait_ready(for_admission=False)
         resumed = Sandbox.connect(sandbox.sandbox_id, **sdk)
         renewed = resumed.get_info()
         assert renewed.started_at == initial.started_at
         assert renewed.end_at > initial.end_at
+        services.processes.stop('host-0')
+        assert process_start_ticks(record['pid']) == record['start_time_ticks']
+        native_id = services.native_id_for(sandbox.sandbox_id)
+        assert native_id == f'sb-{namespace}-1'
+        services.processes.start('host-0')
+        services.wait_ready(for_admission=False)
+        resumed = Sandbox.connect(sandbox.sandbox_id, **sdk)
+        assert resumed.get_info().started_at == initial.started_at
         resumed.set_timeout(1200)
         assert resumed.get_info().end_at == initial.started_at + timedelta(seconds=600)
         _kill_confirmed = (Sandbox.kill(sandbox.sandbox_id, **sdk))
         assert _kill_confirmed
-        assert terminal_cleanup_confirmed(root / 'db/controller.db', sandbox.sandbox_id)
+        assert terminal_cleanup_confirmed(root / 'db/controller.db', native_id)
         assert process_start_ticks(record['pid']) != record['start_time_ticks']
         assert not Path('/run/netns', vm_name).exists()
         assert not (root / 'jails' / firecracker_name / vm_name).exists()
         assert digest(rootfs) == base_digest
         completed = True
-        print(json.dumps({'server_sha256': digest(binary), 'base_sha256': base_digest,
+        print(json.dumps({'center_sha256': digest(args.center), 'host_sha256': digest(args.host),
+                          'base_sha256': base_digest,
                           'sdk_version': '2.51.0', 'durable_destroyed': 1,
-                          'same_vm_restart': True, 'original_process_stopped': True,
+                          'same_vm_center_restart': True, 'same_vm_host_restart': True,
+                          'original_process_stopped': True,
                           'private_netns_jail': 'absent'}))
     finally:
-        stop_server(process)
+        services.stop_all()
         if completed:
+            services.cleanup_staging()
             shutil.rmtree(root)
         else:
             print(f'Exact failed-run artifacts retained: {root}', file=sys.stderr)
@@ -149,7 +162,8 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('server', 'jailer', 'firecracker', 'kernel', 'rootfs', 'scratch-parent'):
+    add_arguments(parser)
+    for name in ('jailer', 'firecracker', 'kernel', 'rootfs', 'scratch-parent'):
         parser.add_argument(f'--{name}', required=True, type=Path)
     parser.add_argument('--uid-base', required=True, type=int)
     main(parser.parse_args())

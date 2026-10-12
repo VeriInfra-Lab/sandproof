@@ -66,7 +66,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_actual_pid_start_and_exact_server_config_argv_are_required(self):
         meta = SimpleNamespace(st_dev=4, st_ino=5)
         with patch.object(probe, 'start_ticks', return_value=12), \
-                patch.object(Path, 'read_bytes', return_value=b'/opt/server\0/private/config.json\0'), \
+                patch.object(Path, 'read_bytes', return_value=b'/opt/center\0serve\0--config\0/private/config.json\0'), \
                 patch.object(Path, 'stat', return_value=meta), \
                 patch.object(probe, 'digest', return_value='a' * 64):
             binding = probe.process_binding(10, 12, Path('/private/config.json'))
@@ -76,6 +76,10 @@ class ConfigurationTests(unittest.TestCase):
                 probe.process_binding(10, 13, Path('/private/config.json'))
             with self.assertRaises(ValueError):
                 probe.process_binding(10, 12, Path('/other/config.json'))
+        with patch.object(probe,'start_ticks',return_value=12), \
+                patch.object(Path,'read_bytes',return_value=b'/opt/server\0/private/config.json\0'):
+            with self.assertRaises(ValueError):
+                probe.process_binding(10,12,Path('/private/config.json'))
 
     def test_observer_checks_membership_and_original_process_each_time(self):
         baseline = memory_snapshot() | dict(pids=[10, 11], path='/sys/fs/cgroup/accept/svc-test',

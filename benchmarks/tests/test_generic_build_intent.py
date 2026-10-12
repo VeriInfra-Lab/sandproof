@@ -4,7 +4,6 @@ import hashlib
 import http.client
 import json
 from pathlib import Path
-import socket
 import tempfile
 import threading
 import unittest
@@ -16,11 +15,15 @@ from benchmarks.generic_environment import GenericEnvironment
 from tools.benchmark_tasks import InvalidInput
 from tools.template_build_service import BuildHTTP, Handler
 from tools.template_build_store import BuildStore, MIB
+from tools.template_build_client import BuildClient
+from tools.tests.template_build_fixture import PRIVATE_TEST_KEY
 from tools.tests import test_template_build_retention as retention_fixtures
+from benchmarks.tests.build_http_fixture import PublicBuildHTTP, serve_http
 
 
 class RecordedHandler(Handler):
     def operation(self):
+        self.server.requests.append((self.command, self.path))
         code, result = super().operation()
         if self.command == 'POST' and self.path == '/sandproof/template-builds':
             row = self.server.store.get(result['buildID'])
@@ -37,15 +40,6 @@ class RecordedHandler(Handler):
             result = self.server.store.query(job, row['owner'])
             self.server.uploaded.set()
         return code, result
-
-    def do_POST(self):
-        if self.server.drop_first_post and self.path == '/sandproof/template-builds':
-            self.server.drop_first_post = False
-            self.operation()  # Real durable admission precedes the lost reply.
-            self.close_connection = True
-            self.request.shutdown(socket.SHUT_RDWR)
-            return
-        self.respond()
 
 
 class GenericBuildIntentTests(unittest.TestCase):
@@ -83,26 +77,21 @@ class GenericBuildIntentTests(unittest.TestCase):
         store = BuildStore(root, limits, bounded=retention_fixtures.bounded_config(self.helper),
                            free_bytes=lambda: 1000000 * MIB)
         self.addCleanup(store.close)
-        server = BuildHTTP(('127.0.0.1', 0), store,
-            [{'tenant': 1, 'secret': 'synthetic-owner-1'}, {'tenant': 2, 'secret': 'synthetic-owner-2'}])
+        server = BuildHTTP(('127.0.0.1', 0), store, PRIVATE_TEST_KEY)
         server.RequestHandlerClass = RecordedHandler
-        server.drop_first_post, server.posts, server.uploads = drop, [], []
+        server.posts, server.uploads, server.requests = [], [], []
         server.accepted, server.uploaded = threading.Event(), threading.Event()
-        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.01}, daemon=True)
-        thread.start()
-        def close():
-            server.shutdown()
-            thread.join(2)
-            server.server_close()
-            self.assertFalse(thread.is_alive())
-        self.addCleanup(close)
+        serve_http(self, server)
+        public = serve_http(self, PublicBuildHTTP(server,
+            {'synthetic-owner-1': 1, 'synthetic-owner-2': 2}, drop_first_post=drop))
+        server.public_url = 'http://127.0.0.1:' + str(public.server_port)
         return server
 
     def environment(self, server, key='synthetic-owner-1'):
         # Exercise the same constructor/start path as the normal runner, while
         # explicitly reusing its trial to invoke the adapter's recovery branch.
         return GenericEnvironment(entry=self.entry, source=self.root, source_kind='dockerfile',
-            build_url='http://127.0.0.1:' + str(server.server_port),
+            build_url=server.public_url,
             sdk_options={'api_key': key, 'retries': 0},
             environment_dir=self.root / 'sample/environment', environment_name='sample',
             session_id='sample', trial_paths=TrialPaths(self.root / 'trial'),
@@ -165,3 +154,35 @@ class GenericBuildIntentTests(unittest.TestCase):
 
     def test_lost_reply_reentry_with_changed_credential_never_posts_or_uploads(self):
         self.rejected_reentry(self.first, 'synthetic-owner-2')
+
+    def public_request(self, headers):
+        connection = http.client.HTTPConnection('127.0.0.1',
+            BuildClient(self.first.public_url, '').url.port, timeout=5)
+        try:
+            connection.request('POST', '/sandproof/template-build-windows',
+                               b'{"durationMs":30000}', headers)
+            response = connection.getresponse()
+            return response.status, response.read(65537)
+        finally:
+            connection.close()
+
+    def test_public_user_key_cannot_authenticate_to_private_backend(self):
+        private = BuildClient('http://127.0.0.1:' + str(self.first.server_port), 'synthetic-owner-1')
+        with self.assertRaisesRegex(RuntimeError, '^Unauthorized$'):
+            private.request('POST', '/sandproof/template-build-windows', {'durationMs': 30000})
+        self.assertEqual(self.first.store.rows(), [])
+        self.assertEqual(self.first.requests, [('POST', '/sandproof/template-build-windows')])
+        self.assertEqual(self.public_request({'X-API-Key': PRIVATE_TEST_KEY}), (401, b''))
+        self.assertEqual(self.first.store.rows(), [])
+        self.assertEqual(self.first.requests, [('POST', '/sandproof/template-build-windows')])
+
+    def test_public_boundary_rejects_private_key_or_tenant_override_before_dispatch(self):
+        for extra, expected in (({'x-sandproof-build-key': PRIVATE_TEST_KEY}, 400),
+                                ({'x-sandproof-build-owner': '2'}, 400),
+                                ({'X-API-Key': 'wrong-user-key'}, 401)):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.public_request({'X-API-Key': 'synthetic-owner-1'} | extra),
+                                 (expected, b''))
+                self.assertEqual(self.first.requests, [])
+                self.assertEqual(self.first.posts, [])
+                self.assertEqual(self.first.store.rows(), [])

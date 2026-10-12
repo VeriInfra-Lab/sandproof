@@ -28,7 +28,7 @@ _envelope = _runpy.run_path(
 )["envelope"]
 
 
-def complete_runtime(settings, *, slots, file_size=None):
+def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=1000):
     """Construct a single-runtime test DTO from explicit artifact/path inputs.
 
     The caller already owns the fresh private roots. No files are changed here;
@@ -37,6 +37,8 @@ def complete_runtime(settings, *, slots, file_size=None):
     """
     if type(slots) is not int or not 1 <= slots <= 64:
         raise ValueError("explicit finite test slot count required")
+    if type(checkpoint_tail_inputs) is not int or not 16 <= checkpoint_tail_inputs <= 1000:
+        raise ValueError("explicit finite test checkpoint tail budget required")
     if any(key in settings for key in ("max_vm_id", "bounded_host", "maintenance")):
         raise ValueError("fresh test configuration required, not legacy or existing deployment")
     if (settings.get("internal_build_vms") or settings.get("template_registry")
@@ -89,7 +91,11 @@ def complete_runtime(settings, *, slots, file_size=None):
     result["maintenance"] = {
         "capacity": {
             "max_live_sandboxes": 64, "max_sql_rows": 4096, "max_sql_bytes": 16 * MIB,
-            "max_sql_value_bytes": 256 * 1024, "max_receipt_bytes": 16 * 1024,
+            # The retained inbox is ONE original SQL row. Let it use the
+            # existing 16 MiB aggregate ceiling; Rust derives/reserves its
+            # exact future row size and still refuses insufficient TOTAL SQL.
+            # Neither aggregate SQL nor physical online storage is increased.
+            "max_sql_value_bytes": 16 * MIB, "max_receipt_bytes": 16 * 1024,
             "max_transaction_inputs": 4, "max_transaction_bytes": 32 * 1024,
             "max_database_bytes": 512 * MIB, "max_wal_bytes": 520 * MIB,
             "max_shm_bytes": 2 * MIB, "checkpoint_scratch_bytes": 8 * MIB,
@@ -97,7 +103,7 @@ def complete_runtime(settings, *, slots, file_size=None):
         },
         "retention_ms": 60_000, "max_checkpoint_bytes": 4 * MIB,
         "max_records": 10_000, "max_references": 1_000_000,
-        "max_tail_inputs": 1000, "max_tail_bytes": 4 * MIB,
+        "max_tail_inputs": checkpoint_tail_inputs, "max_tail_bytes": 4 * MIB,
         "max_input_bytes": 8192, "prune_batch_rows": 7,
     }
     result["bounded_host"] = {
@@ -115,6 +121,8 @@ def complete_runtime(settings, *, slots, file_size=None):
                 "host_metadata_inodes": metadata_inodes, "jail_inodes_per_slot": 12,
             }],
             "public_build": None,
+            "host_template_caches": [],
+            "service_data": [],
             "filesystem_overhead_bytes": 16 * MIB * slots,
             "filesystem_overhead_inodes": 2048 * slots,
         },

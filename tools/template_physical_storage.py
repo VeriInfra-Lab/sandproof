@@ -13,10 +13,13 @@ from pathlib import Path
 import stat
 
 MAXIMUM = 2**63 - 1
-PROFILE_FIELDS = {"version", "coordination_file", "pools", "public_build", "filesystem_overhead_bytes", "filesystem_overhead_inodes"}
+PROFILE_FIELDS = {"version", "coordination_file", "pools", "public_build", "host_template_caches", "service_data", "filesystem_overhead_bytes", "filesystem_overhead_inodes"}
 POOL_FIELDS = {"role", "namespace", "database", "node_state_dir", "chroot_base", "rootfs_budget_bytes", "max_host_slots",
                "kernel_copy_bytes", "runtime_copy_bytes", "cleanup_reserve_bytes", "host_metadata_bytes", "host_metadata_inodes", "jail_inodes_per_slot"}
-PUBLIC_FIELDS = {"root", "registry_root", "workspace_bytes", "registry_bytes", "max_jobs", "max_templates", "inode_budget"}
+PUBLIC_FIELDS = {"workspace_owner_uid", "registry_owner_uid", "root", "registry_root", "workspace_bytes", "registry_bytes", "max_jobs", "max_templates", "inode_budget"}
+CACHE_FIELDS = {"namespace", "root", "max_entries", "max_downloads", "max_entry_bytes", "artifact_bytes",
+                "temporary_bytes", "metadata_bytes", "inode_budget"}
+SERVICE_FIELDS = {'root','owner_uid','peak_bytes','inode_budget'}
 
 
 def positive(value):
@@ -53,11 +56,46 @@ def envelope(profile):
     if public is not None:
         if type(public) is not dict or set(public) != PUBLIC_FIELDS:
             raise ValueError("invalid physical public build profile")
+        if any(type(public[name]) is not int or not 0 <= public[name] <= 2**32-1
+                for name in ('workspace_owner_uid','registry_owner_uid')):
+            raise ValueError('explicit representable public build owner required')
         peak += positive(public["workspace_bytes"]) + positive(public["registry_bytes"])
         inodes += positive(public["inode_budget"])
         if public["inode_budget"] < 8 + 19 * positive(public["max_jobs"]) + 5 * positive(public["max_templates"]):
             raise ValueError("physical public inode provision is insufficient")
         roots.extend((public["root"], public["registry_root"]))
+    caches = profile['host_template_caches']
+    if type(caches) is not list or len(caches) > 2:
+        raise ValueError('explicit finite physical host template caches required')
+    cache_namespaces = set()
+    for cache in caches:
+        if type(cache) is not dict or set(cache) != CACHE_FIELDS:
+            raise ValueError('invalid physical host template cache profile')
+        namespace = cache['namespace']
+        if not isinstance(namespace, str) or namespace not in namespaces or namespace in cache_namespaces:
+            raise ValueError('physical cache must name one distinct original pool')
+        cache_namespaces.add(namespace)
+        for name in CACHE_FIELDS - {'root', 'namespace'}:
+            positive(cache[name])
+        if (cache['max_downloads'] > cache['max_entries']
+                or cache['max_entry_bytes'] > cache['artifact_bytes']
+                or cache['temporary_bytes'] < cache['max_downloads'] * cache['max_entry_bytes']
+                or cache['metadata_bytes'] < 4096 + cache['max_entries'] * 2 * (64 * 1024 + 4096)
+                or cache['inode_budget'] < 4 + 5 * cache['max_entries'] + 5 * cache['max_downloads']):
+            raise ValueError('host template cache omits retained, unknown-download or metadata provision')
+        peak += cache['artifact_bytes'] + cache['temporary_bytes'] + cache['metadata_bytes']
+        inodes += cache['inode_budget']
+        roots.append(cache['root'])
+    services = profile['service_data']
+    if type(services) is not list or len(services) > 8:
+        raise ValueError('explicit finite physical service data required')
+    for service in services:
+        if (type(service) is not dict or set(service) != SERVICE_FIELDS
+                or type(service['owner_uid']) is not int or not 0 <= service['owner_uid'] <= 2**32-1):
+            raise ValueError('invalid fixed physical service data owner or fields')
+        peak += positive(service['peak_bytes'])
+        inodes += positive(service['inode_budget'])
+        roots.append(service['root'])
     paths = []
     for value in roots:
         if not isinstance(value, str) or not value.startswith("/") or "\0" in value or any(p in ("", ".", "..") for p in value.split("/")[1:]):
@@ -104,7 +142,7 @@ def validate_configuration(runtime, builder, build, *, file_size=None):
         pool = matches[0]
         host = settings["bounded_host"]
         capacity = settings["maintenance"]["capacity"]
-        if (pool["role"] != role or bool(settings.get("internal_build_vms")) != (role == "builder")
+        if (pool["role"] != role
                 or any(pool[field] != settings[field] for field in ("database", "node_state_dir", "chroot_base"))
                 or pool["rootfs_budget_bytes"] != settings["max_disk_bytes_global"] - settings["cleanup_reserve_bytes"]
                 or pool["cleanup_reserve_bytes"] != settings["cleanup_reserve_bytes"]
@@ -112,11 +150,11 @@ def validate_configuration(runtime, builder, build, *, file_size=None):
                 or pool["host_metadata_bytes"] + capacity["max_online_storage_bytes"] > pool["cleanup_reserve_bytes"]):
             raise ValueError("physical profile differs from a configured pool budget")
         kernel = max([size(settings["kernel"])] + [item["kernel"]["size_bytes"] for item in settings["templates"]["templates"]])
-        if settings.get("template_registry"):
-            kernel = max(kernel, settings["template_registry"]["max_artifact_bytes_per_tenant"])
+        if role == 'runtime':
+            kernel = max(kernel, build['registry']['max_artifact_bytes_per_tenant'])
         if pool["kernel_copy_bytes"] < kernel or pool["runtime_copy_bytes"] < size(settings["firecracker"]):
             raise ValueError("physical profile omits a kernel/runtime copy maximum")
-    public, registry = profile["public_build"], runtime["template_registry"]
+    public, registry = profile["public_build"], build["registry"]
     # Registry artifact quota excludes the retained manifest and owner marker.
     registry_peak = registry["max_artifact_bytes_global"] + registry["max_templates_global"] * (64 * 1024 + 87)
     # Workspace: root + lease/DB/WAL/SHM, final (directory + nine files)
@@ -125,6 +163,8 @@ def validate_configuration(runtime, builder, build, *, file_size=None):
     # registry/inbox/artifacts + directory/kernel/rootfs/manifest/owner per row.
     inode_minimum = 8 + 19 * build["limits"]["max_jobs"] + 5 * registry["max_templates_global"]
     if (public["root"] != build["root"] or public["registry_root"] != registry["root"]
+            or public['workspace_owner_uid'] != os.geteuid()
+            or public['registry_owner_uid'] != build['registry_owner_uid']
             or public["workspace_bytes"] != build["limits"]["workspace_bytes"]
             or public["max_jobs"] != build["limits"]["max_jobs"] or public["max_templates"] != registry["max_templates_global"]
             or public["registry_bytes"] < registry_peak or public["inode_budget"] < inode_minimum):
@@ -173,11 +213,33 @@ class PhysicalProfileLease:
         paths += [Path(pool[field]) for pool in self.profile["pools"] for field in ("node_state_dir", "chroot_base")]
         if self.profile["public_build"]:
             paths += [Path(self.profile["public_build"][field]) for field in ("root", "registry_root")]
+        paths += [Path(cache['root']) for cache in self.profile['host_template_caches']]
+        paths += [Path(service['root']) for service in self.profile['service_data']]
         for path in paths:
             metadata = path.lstat()
-            if (not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077
+            public = self.profile['public_build']
+            owner = os.geteuid()
+            if public is not None:
+                for field,owner_field in (('root','workspace_owner_uid'),('registry_root','registry_owner_uid')):
+                    if path==Path(public[field]):
+                        owner=public[owner_field]
+            services = [service for service in self.profile['service_data'] if Path(service['root']) == path]
+            if services:
+                owner = services[0]['owner_uid']
+            if (not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != owner or metadata.st_mode & 0o077
                     or metadata.st_dev != meta.st_dev or path.resolve(strict=True) != path):
                 raise ValueError("physical profile paths must be private on the shared filesystem")
+        # The host's cache owns its exclusive lifetime lock. This helper only
+        # checks the provisioned original inode; it never takes a second cache
+        # lock or creates/repairs a missing one behind the host's authority.
+        for cache in self.profile['host_template_caches']:
+            lock = Path(cache['root']) / '.cache.lock'
+            metadata = lock.lstat()
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
+                    or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o7777 != 0o600
+                    or metadata.st_size != 0 or metadata.st_dev != meta.st_dev
+                    or lock.resolve(strict=True) != lock):
+                raise ValueError('physical cache lock must retain its exact private provision')
         space = os.statvfs(self.file.fileno())
         if self.inodes * space.f_frsize + len(encoded) > self.profile["filesystem_overhead_bytes"]:
             raise ValueError("physical overhead does not cover block rounding")

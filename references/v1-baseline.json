@@ -3,11 +3,23 @@
   "purpose": "固定开发依赖和源码阅读依据；不是部署机器台账、测试结果或形式化验收报告",
   "code_baseline": {
     "rust_toolchain": "1.97.0",
-    "cargo_lock_sha256": "b5ee905843ddf726f011db1df8ab20eadc6c61a1ed4c7fbbc8d1371270ae907b",
+    "cargo_lock_sha256": "67b07c2d0cc5afc8851d362ea20d272b6c7686c820d988ae91eb1c225331303d",
     "sdk_python": "e2b==2.51.0",
-    "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef"
+    "sdk_lock_sha256": "1bf9721fce35273e67da6d87b275aa411538536dc3ef881e3e13c1a5f4ee6aef",
+    "center_storage": {
+      "redis_server": "7.2.16",
+      "archive_url": "https://download.redis.io/releases/redis-7.2.16.tar.gz",
+      "archive_sha256": "960a8ec15e34ff40e57ff16837b26b33bd81f2da6d24497bb63de532a323a18e",
+      "redis_client": "1.7.1"
+    },
+    "internal_transport": {
+      "rustls": "0.23.45",
+      "tokio_rustls": "0.26.6",
+      "test_rcgen": "0.14.10"
+    }
   },
   "source_revisions": {
+    "redis_server": "335554f18caf7bbf6b0ac2b3548133d750f00a1b",
     "e2b_sdk": "ccaf9fc0ffe6ac39c7ec786af7608ab1de19467b",
     "e2b_runtime_behavior_reference": "f455fd58fa3f289e78ce1de690c35968d8d29322",
     "harbor_adapter_reference": "31668af15560fb50a9d0584816d12726036656cf",

@@ -27,7 +27,7 @@ from tools.tests.test_template_physical_storage import activate_for_test
 
 def service_fixture(root):
     """Build an explicit synthetic full profile, not a deployment default."""
-    runtime, builder, limits, base = inputs()
+    runtime, builder, limits, base, registry_config = inputs()
     limits.update(max_jobs=4, max_jobs_per_tenant=4)
     kernel = root / "kernel"
     kernel.write_bytes(b"synthetic kernel")
@@ -43,8 +43,7 @@ def service_fixture(root):
             (parent / name).mkdir(mode=0o700)
         settings.update(namespace=namespaces[index], database=str(parent / "db/controller.db"),
                         node_state_dir=str(parent / "state"), chroot_base=str(parent / "jails"),
-                        bind=f"127.0.0.1:{3100 + index}", uid_base=1000 + index * 100,
-                        credentials=[{"tenant": 1, "secret": str(index)}],
+                        uid_base=1000 + index * 100,
                         kernel=str(kernel), firecracker=str(kernel),
                         host_resources={"cgroup_parent": str(parent / "cgroup")})
         settings["data_transfer"] = transfer_settings() | settings.get("data_transfer", {})
@@ -62,10 +61,9 @@ def service_fixture(root):
     for directory in (registry, registry / "inbox", registry / "artifacts", root / "builds"):
         directory.mkdir(mode=0o700)
     runtime["templates"]["templates"] = []
-    runtime["template_registry"].update(root=str(registry), max_templates_global=2,
+    registry_config.update(root=str(registry), max_templates_global=2,max_templates_per_tenant=2,
         max_artifact_bytes_global=32 * GIB, max_artifact_bytes_per_tenant=20 * GIB)
-    builder["internal_build_vms"] = True
-    builder["build_retry_windows"] = {"window_duration_ms": 600000, "max_anchors": 4}
+    private_windows = {"window_duration_ms": 600000, "max_anchors": 4}
     base.update(template_id="actual-base", owner=None)
     base["rootfs"]["path"] = str(disk)
     base["kernel"] = {"size_bytes": kernel.stat().st_size}
@@ -78,10 +76,13 @@ def service_fixture(root):
                           "owner_uid": os.geteuid(), "max_input_bytes": 65536,
                           "max_output_bytes": 65536, "timeout_seconds": 5}}
     profile = {"version": 1, "coordination_file": str(root / "physical-profile"), "pools": pools,
-               "public_build": {"root": str(root / "builds"), "registry_root": str(registry),
+               "public_build": {"workspace_owner_uid": os.geteuid(), "registry_owner_uid": os.geteuid(),
+                                "root": str(root / "builds"), "registry_root": str(registry),
                                 "workspace_bytes": limits["workspace_bytes"],
                                 "registry_bytes": 32 * GIB + 2 * (65536 + 87), "max_jobs": 4,
                                 "max_templates": 2, "inode_budget": 128},
+               "host_template_caches": [],
+               "service_data": [],
                "filesystem_overhead_bytes": 4 * MIB, "filesystem_overhead_inodes": 512}
     for settings in (runtime, builder):
         settings["bounded_host"]["physical_storage"] = copy.deepcopy(profile)
@@ -89,13 +90,24 @@ def service_fixture(root):
               "runtime_config": str(root / "runtime.json"), "builder_config": str(root / "builder.json"),
               "tools": {name: {"path": str(kernel), "sha256": hashlib.sha256(kernel.read_bytes()).hexdigest()}
                         for name in ("buildctl", "buildkitd", "buildkit-runc", "umoci", "envd", "busybox", "regctl")},
-              "limits": limits, "dns_servers": ["1.1.1.1"], "bounded_builds": bounded}
-    for path, value in ((Path(config["runtime_config"]), runtime), (Path(config["builder_config"]), builder),
+              "limits": limits, "dns_servers": ["1.1.1.1"], "bounded_builds": bounded,
+              "registry":registry_config,"registry_owner_uid":os.geteuid(),"builder_template":copy.deepcopy(base),
+              "center":{"private_address":"127.0.0.1:3103","domain":"example.invalid",
+                        "credential_file":str(root/'private-build.key'),"private_windows":private_windows,
+                        "max_timeout_secs":runtime['max_timeout_secs'],"max_lifetime_secs":runtime['max_lifetime_secs']}}
+    (root/'private-build.key').write_text('private-test-helper-key-0000000001')
+    (root/'private-build.key').chmod(0o600)
+    def host_file(native):
+        # Explicit typed shape for static Python preflight only. No TLS, cache
+        # or native activation is claimed by these component placeholders.
+        return dict(native=native,inbox={},internal={},template_cache={},artifact_source={})
+    for path, value in ((Path(config["runtime_config"]), host_file(runtime)), (Path(config["builder_config"]), host_file(builder)),
                         (root / "service.json", config)):
         path.write_text(json.dumps(value))
         path.chmod(0o600)
     policy = {"runtime": {key: copy.deepcopy(runtime[key]) for key in ("bounded_host", "maintenance")},
-              "builder": {key: copy.deepcopy(builder[key]) for key in ("bounded_host", "maintenance", "build_retry_windows")},
+              "builder": {key: copy.deepcopy(builder[key]) for key in ("bounded_host", "maintenance")}
+                         | {'build_retry_windows':copy.deepcopy(private_windows)},
               "public": {"bounded_builds": copy.deepcopy(bounded),
                          "workspace_bytes": limits["workspace_bytes"],
                          "workspace_bytes_per_tenant": limits["workspace_bytes_per_tenant"]}}
@@ -159,8 +171,8 @@ class AcceptanceDiskBudgetTests(unittest.TestCase):
     def test_larger_profile_passes_real_service_preflight_only_with_matching_quotas(self):
         self.grow_profile()
         service = json.loads(self.service.read_text())
-        runtime = json.loads(Path(service['runtime_config']).read_text())
-        builder = json.loads(Path(service['builder_config']).read_text())
+        host_files={role:json.loads(Path(service[role+'_config']).read_text()) for role in ('runtime','builder')}
+        runtime, builder = [host_files[role]['native'] for role in ('runtime','builder')]
         # Generic acceptance assigns the usable pool quota to its one tenant.
         for settings in (runtime, builder):
             settings['max_disk_bytes_per_tenant'] = (
@@ -173,7 +185,8 @@ class AcceptanceDiskBudgetTests(unittest.TestCase):
         self.assertEqual(apply_acceptance_build_policy(
             deployment['runtime'], deployment['builder'], service, self.policy), 'windowed')
         for role in ('runtime', 'builder'):
-            Path(service[role + '_config']).write_text(json.dumps(deployment[role]))
+            host_files[role]['native']=deployment[role]
+            Path(service[role + '_config']).write_text(json.dumps(host_files[role]))
         self.service.write_text(json.dumps(service))
         configuration(self.service, require_physical_lease=False)
 
@@ -185,7 +198,7 @@ class PreparedCIDiskBudgetTests(unittest.TestCase):
         self.root = Path(temporary.name).resolve()
         self.service, self.policy, self.original, _ = service_fixture(self.root)
         cfg = json.loads(self.service.read_text())
-        self.runtime = json.loads(Path(cfg['runtime_config']).read_text())
+        self.runtime = json.loads(Path(cfg['runtime_config']).read_text())['native']
         self.runtime['templates']['templates'] = [{
             'template_id': 'ci-fixed', 'kernel': {'path': str(self.root / 'kernel'), 'size_bytes': 64 * MIB},
             'rootfs': {'path': str(self.root / 'ci.ext4'), 'size_bytes': 10 * GIB},
@@ -374,7 +387,7 @@ class StaticConfigurationTests(unittest.TestCase):
     def test_static_preflight_still_refuses_mismatched_profile(self):
         builder_path = self.root / "builder.json"
         builder = json.loads(builder_path.read_text())
-        builder["bounded_host"]["physical_storage"]["pools"][1]["rootfs_budget_bytes"] += 1
+        builder["native"]["bounded_host"]["physical_storage"]["pools"][1]["rootfs_budget_bytes"] += 1
         builder_path.write_text(json.dumps(builder))
         with self.assertRaisesRegex(ValueError, "identical explicit"):
             configuration(self.path, require_physical_lease=False)
