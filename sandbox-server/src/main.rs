@@ -24,6 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Initialize(path) => linux::host_entry::initialize(&path),
         Command::Serve(path) => linux::host_entry::serve(&path).await,
         Command::Audit(path) => linux::host_entry::audit(&path),
+        Command::ObserveCenter(path) => linux::host_entry::observe_center(&path).await,
         Command::Relay => sandproof_host_service::data_gateway::relay().await,
         Command::ContractVersions => {
             use std::io::Write;

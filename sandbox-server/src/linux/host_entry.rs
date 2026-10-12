@@ -44,6 +44,22 @@ fn read_configuration(path: &Path) -> Result<HostConfig, Box<dyn Error>> {
     )?)?)
 }
 
+/// Non-mutating online observation. No SQLite/VM lease, initialization,
+/// recovery or local template material is opened by this command.
+pub(crate) async fn observe_center(path: &Path) -> Result<(), Box<dyn Error>> {
+    let config = read_configuration(path)?;
+    config.validate_static()?;
+    let view = config
+        .artifact_source
+        .client(config.inbox.node)?
+        .readiness()
+        .await?;
+    let mut output = std::io::stdout().lock();
+    serde_json::to_writer(&mut output, &view)?;
+    writeln!(output)?;
+    Ok(())
+}
+
 /// Explicit provisioning; neither normal service startup nor audit may create
 /// missing authority or replace an older experimental format.
 pub(crate) fn initialize(path: &Path) -> Result<(), Box<dyn Error>> {

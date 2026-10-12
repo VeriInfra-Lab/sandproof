@@ -351,71 +351,36 @@ class RuntimeServices:
         self.processes.initialize('center')
         self.processes.start('center')
 
-    def wait_ready(self, *, timeout=60, for_admission=True):
+    def wait_ready(self, *, timeout=None, for_admission=True):
         if type(for_admission) is not bool:
             raise ValueError('explicit test readiness purpose required')
+        if timeout is None:
+            # Only template observation uses the original deployment's download
+            # budget. VM startup, lifetime, grading and supervisor bounds stay
+            # unchanged. Polling never resets this absolute observation bound.
+            timeout=max(config['artifact_source']['download_timeout_ms']
+                        for config in self.host_configs)/1000
+        if isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or not 0<timeout<=86400:
+            raise ValueError('finite positive readiness observation deadline required')
         deadline=time.monotonic()+timeout
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
         required={node['registration']['identity']['node_id']:node for node in self.center_config['nodes']}
-        catalog=(required,self.expected_templates)
-        # This hint schedules diagnostics only. A prior successful ORIGINAL
-        # audit saw these fixed caches, so later restarts need an observation
-        # interval, not another initial download interval. Every call must still
-        # obtain a fresh audit, validate nodes_ready and observe the real roles.
-        hydrated=getattr(self,'_readiness_catalog_observed',None)==catalog
-        quiet_ms=self.center_config['expiry_scan_ms']+self.center_config[
-            'poll_interval_ms' if hydrated else 'reply_timeout_ms']
-        quiet_seconds=quiet_ms/1000
-        public_since=None
         while time.monotonic()<deadline:
             if any(process.poll() is not None for process in self.processes.children.values()):
                 raise RuntimeError('original service exited before authenticated readiness')
             try:
-                listening=fetch(opener,self.sdk_url,'GET','/v2/sandboxes',self.key)[0]==200
-            except (OSError,ValueError):
-                listening=False
-            if not listening:
-                public_since=None
-                time.sleep(min(.1,max(0,deadline-time.monotonic())))
-                continue
-            now=time.monotonic()
-            if public_since is None:
-                public_since=now
-            if now<public_since+quiet_seconds:
-                # HTTP 200 is only a listener observation. Leave the original
-                # coordinator/artifact server running continuously before a
-                # planned writer-lease audit can interrupt their first work.
-                time.sleep(min(.2,max(0,deadline-now)))
-                continue
-            if now>=deadline:
-                break
-            try:
-                self.processes.stop('center')
-                audit=self.processes.audit('center')
-                ready=nodes_ready(audit,required,self.expected_templates,
+                # A public response alone proves neither cache nor host health.
+                listening=fetch(opener,self.sdk_url,'GET','/v2/sandboxes',self.key,
+                    timeout=min(5,max(.001,deadline-time.monotonic())))[0]==200
+                view=self.processes.center_readiness(timeout=min(10,max(.001,deadline-time.monotonic())))
+                ready=nodes_ready(view,required,self.expected_templates,
                                  now_ms=int(time.time()*1000),for_admission=for_admission)
-            except (OSError,ValueError):
-                ready=False
-            finally:
-                center=self.processes.children.get('center')
-                if center is not None and center.poll() is not None:
-                    self.processes.start('center')
-                # A restart cancels any uncommitted preparation. Never reuse a
-                # preceding process's elapsed background window for its audit.
-                public_since=None
-            if ready:
-                self._readiness_catalog_observed=copy.deepcopy(catalog)
-                quiet_seconds=(self.center_config['expiry_scan_ms']+
-                               self.center_config['poll_interval_ms'])/1000
-                # Restart is real exec/privilege drop, not an immediately true
-                # Popen PID. Observe the original roles within this same bound.
-                try:
+                if listening and ready:
                     self.processes.observe()
-                    if (fetch(opener,self.sdk_url,'GET','/v2/sandboxes',self.key)[0]==200
-                            and time.monotonic()<deadline):
-                        return audit
-                except (OSError,ValueError):
-                    pass
+                    if time.monotonic()<deadline:
+                        return view
+            except (OSError,ValueError,RuntimeError,KeyError,TypeError,subprocess.SubprocessError):
+                pass  # Missing/unknown observations cannot authorize a create.
             time.sleep(min(.2,max(0,deadline-time.monotonic())))
         raise RuntimeError('authenticated host/cache readiness unobserved; no sandbox creation attempted')
 
@@ -523,6 +488,19 @@ def nodes_ready(audit,registered,templates,*,now_ms,for_admission=True):
             return False
         seen.add(node_id)
         wanted=templates[node_id] if node_id in templates else set()
+        catalog=audit.get('catalogs',{}).get(node_id)
+        if type(catalog) is not list:
+            return False
+        expected={item['revision']:item['digest'] for item in catalog}
+        available={item['revision']:item['digest'] for item in node['templates']}
+        if any(type(value) is not list or len(value)!=32
+               or any(type(byte) is not int or not 0<=byte<=255 for byte in value)
+               for value in [*expected.values(),*available.values()]):
+            return False
+        if (len(expected)!=len(catalog) or len(available)!=len(node['templates'])
+                or not wanted or not wanted<=expected.keys()
+                or any(available.get(revision)!=expected[revision] for revision in wanted)):
+            return False
         if original is None:
             return False
         bounds=original['registration']['limit']
@@ -535,6 +513,6 @@ def nodes_ready(audit,registered,templates,*,now_ms,for_admission=True):
                 or node['healthy_until_ms']<=now_ms or set(free)!=set(bounds)
                 or any(type(value) is not int or not 0<=value<=bounds[name]
                        or (for_admission and value==0) for name,value in free.items())
-                or not wanted or not wanted<={entry['revision'] for entry in node['templates']}):
+                ):
             return False
     return True

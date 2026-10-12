@@ -1,5 +1,5 @@
 //! One center product: shared authority, original SDK parser, registered mTLS
-//! hosts and a single bounded background coordinator. No local VM assembly.
+//! hosts and separate finite lifecycle/material workers. No local VM assembly.
 use crate::{
     artifacts,
     entry::{Envelope, registration_matches},
@@ -51,11 +51,10 @@ pub async fn serve(inputs: CenterAssemblyInputs) -> Result<(), &'static str> {
     let observation = ObservationWork {
         authority: authority.clone(),
         hosts: hosts.clone(),
-        candidates: background_candidates,
         policy: inputs.node_observation,
         handle: tokio::runtime::Handle::current(),
-        reply_timeout: inputs.application.reply_timeout,
     };
+    let material_deadline = inputs.application.reply_timeout;
     let application = Arc::new(
         CenterApplication::new(
             authority,
@@ -99,19 +98,63 @@ pub async fn serve(inputs: CenterAssemblyInputs) -> Result<(), &'static str> {
             "private center listener failed",
         ));
     }
+    spawn_backgrounds(
+        &mut tasks,
+        BackgroundWork {
+            application,
+            templates: background_templates,
+            candidates: background_candidates,
+            admission: inputs.admission,
+            deadline: material_deadline,
+            interval: inputs.expiry_scan_interval,
+        },
+        observation,
+        &shutdown,
+    );
+    supervise(tasks, shutdown).await
+}
+
+struct BackgroundWork {
+    application: Arc<Application>,
+    templates: Templates,
+    candidates: artifacts::ProtectedCandidates,
+    admission: Arc<RequestAdmission>,
+    deadline: Duration,
+    interval: Duration,
+}
+
+fn spawn_backgrounds(
+    tasks: &mut JoinSet<Result<(), &'static str>>,
+    work: BackgroundWork,
+    observation: ObservationWork,
+    shutdown: &watch::Sender<bool>,
+) {
     let mut background_shutdown = shutdown.subscribe();
+    let mut material_shutdown = shutdown.subscribe();
+    let material_application = Arc::clone(&work.application);
+    let material_admission = Arc::clone(&work.admission);
+    tasks.spawn(async move {
+        coordinate_material(
+            material_application,
+            work.templates,
+            work.candidates,
+            material_admission,
+            work.deadline,
+            work.interval,
+            &mut material_shutdown,
+        )
+        .await
+    });
     tasks.spawn(async move {
         coordinate(
-            application,
-            background_templates,
+            work.application,
             observation,
-            inputs.admission,
-            inputs.expiry_scan_interval,
+            work.admission,
+            work.interval,
             &mut background_shutdown,
         )
         .await
     });
-    supervise(tasks, shutdown).await
 }
 
 async fn supervise(
@@ -159,29 +202,21 @@ async fn serve_listener(
 struct ObservationWork {
     authority: SharedBusinessAuthority,
     hosts: RegisteredHosts,
-    candidates: artifacts::ProtectedCandidates,
     policy: sandproof_center_service::NodeObservationPolicy,
     handle: tokio::runtime::Handle,
-    reply_timeout: Duration,
 }
 
 async fn coordinate(
     application: Arc<Application>,
-    templates: Templates,
     observation: ObservationWork,
     admission: Arc<RequestAdmission>,
     interval: Duration,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), &'static str> {
     while !*shutdown.borrow() {
-        let Some(lease) = admission.try_acquire(RequestClass::Background) else {
-            return Err("center coordinator budget unavailable");
-        };
         let app = Arc::clone(&application);
-        let templates = templates.clone();
         let observation = observation.clone();
-        tokio::task::spawn_blocking(move || {
-            let _lease = lease;
+        blocking_round(&admission, RequestClass::Background, move || {
             if observation::refresh(
                 &observation.authority,
                 &observation.hosts,
@@ -193,29 +228,66 @@ async fn coordinate(
                 let _ = app.recover_authority();
                 return;
             }
-            // Cache work is derived from the finite original catalog. Unknown
-            // local I/O never fabricates availability or drops a lifecycle.
-            let _ = observation
-                .candidates
-                .prepare_static(observation.reply_timeout);
             if app.reconcile_once().is_err() {
                 // Only the original durable authority is recovered. An absent
                 // or corrupt block is never reinitialized or cached away.
                 let _ = app.recover_authority();
                 return;
             }
-            if templates.reconcile_once(app.as_ref()).is_ok() {
-                let _ = app.retire_terminal_history_once();
-            }
+            let _ = app.retire_terminal_history_once();
         })
-        .await
-        .map_err(|_| "center coordinator worker failed")?;
+        .await?;
         tokio::select! {
             () = wait_shutdown(shutdown) => break,
             () = tokio::time::sleep(interval) => {},
         }
     }
     Ok(())
+}
+
+/// Material I/O is serial and finite within its own reserved slot. Work is
+/// derived from the original catalog/Checking records, never another queue.
+/// Cancellation retains the worker's slot until its actual work completes.
+async fn coordinate_material(
+    application: Arc<Application>,
+    templates: Templates,
+    candidates: artifacts::ProtectedCandidates,
+    admission: Arc<RequestAdmission>,
+    deadline: Duration,
+    interval: Duration,
+    shutdown: &mut watch::Receiver<bool>,
+) -> Result<(), &'static str> {
+    while !*shutdown.borrow() {
+        let app = Arc::clone(&application);
+        let templates = templates.clone();
+        let candidates = candidates.clone();
+        blocking_round(&admission, RequestClass::Material, move || {
+            let _ = candidates.prepare_static(deadline);
+            let _ = templates.reconcile_once(app.as_ref());
+        })
+        .await?;
+        tokio::select! {
+            () = wait_shutdown(shutdown) => break,
+            () = tokio::time::sleep(interval) => {},
+        }
+    }
+    Ok(())
+}
+
+async fn blocking_round(
+    admission: &RequestAdmission,
+    class: RequestClass,
+    work: impl FnOnce() + Send + 'static,
+) -> Result<(), &'static str> {
+    let lease = admission
+        .try_acquire(class)
+        .ok_or("center background budget unavailable")?;
+    tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        work();
+    })
+    .await
+    .map_err(|_| "center background worker failed")
 }
 
 async fn wait_shutdown(shutdown: &mut watch::Receiver<bool>) {
@@ -232,5 +304,38 @@ async fn termination_signal() -> Result<(), &'static str> {
     tokio::select! {
         result = tokio::signal::ctrl_c() => result.map_err(|_| "center shutdown signal unavailable"),
         _ = terminate.recv() => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn blocked_material_does_not_block_lifecycle_and_cancel_does_not_release_its_slot() {
+        let admission = Arc::new(RequestAdmission::default());
+        let (started, observed) = tokio::sync::oneshot::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let (finished, completion) = tokio::sync::oneshot::channel();
+        let budget = Arc::clone(&admission);
+        let material = tokio::spawn(async move {
+            blocking_round(&budget, RequestClass::Material, move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+                finished.send(()).unwrap();
+            })
+            .await
+        });
+        observed.await.unwrap();
+        material.abort();
+        let _ = material.await;
+        assert!(admission.try_acquire(RequestClass::Material).is_none());
+        // Exact production dispatch helper while material is still running.
+        blocking_round(&admission, RequestClass::Background, || {})
+            .await
+            .unwrap();
+        assert!(admission.try_acquire(RequestClass::Control).is_some());
+        release.send(()).unwrap();
+        completion.await.unwrap();
     }
 }

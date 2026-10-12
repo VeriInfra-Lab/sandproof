@@ -9,6 +9,15 @@ pub const CACHE_REQUEST_BYTES: usize = 64 * 1024 + 4096;
 pub const CACHE_RESPONSE_BYTES: usize = 4096;
 pub const ARTIFACT_PATH: &str = "/internal/v2/template-artifact";
 pub const ARTIFACT_REQUEST_BYTES: usize = 4096;
+/// Protected observation only; never a cache/health setter or SDK route.
+pub const READINESS_PATH: &str = "/internal/v2/template-readiness";
+pub const READINESS_RESPONSE_BYTES: usize = 256 * 1024;
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReadinessRequest {
+    pub node: NodeIdentity,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

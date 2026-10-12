@@ -241,6 +241,7 @@ async fn actual_artifact_https_binds_registered_node_revision_hash_and_immutable
     )
     .unwrap();
     let client = artifact_client(material.clone(), address, node(), limits);
+    assert_online_readiness(&client, &binding).await;
     let request = ArtifactRequest {
         node: node(),
         revision: "base-r1".try_into().unwrap(),
@@ -276,6 +277,7 @@ async fn actual_artifact_https_binds_registered_node_revision_hash_and_immutable
     let mut wrong_node = node();
     wrong_node.node_generation = 2.try_into().unwrap();
     let other = artifact_client(material, address, wrong_node.clone(), limits);
+    assert_eq!(other.readiness().await, Err(TransportError::Rejected));
     let mut crossed = request;
     crossed.node = wrong_node;
     assert_eq!(
@@ -290,6 +292,29 @@ async fn actual_artifact_https_binds_registered_node_revision_hash_and_immutable
     );
     let _ = stop.send(true);
     serving.await.unwrap().unwrap();
+}
+
+async fn assert_online_readiness(client: &ArtifactClient, binding: &TemplateBinding) {
+    // Live observation cannot populate zero original availability or expose
+    // paths merely because artifact files exist.
+    let view = client.readiness().await.unwrap();
+    assert_eq!(
+        view["node"]["identity"],
+        serde_json::to_value(node()).unwrap()
+    );
+    assert_eq!(view["node"]["templates"], serde_json::json!([]));
+    assert_eq!(
+        view["catalog"][0]["digest"],
+        serde_json::json!(binding.canonical_digest().unwrap())
+    );
+    assert!(!serde_json::to_string(&view).unwrap().contains("path"));
+    // No artifact body or hash scan belongs to this observation.
+    fs::set_permissions(&binding.rootfs.path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(
+        client.readiness().await.unwrap()["node"]["templates"],
+        serde_json::json!([])
+    );
+    fs::set_permissions(&binding.rootfs.path, fs::Permissions::from_mode(0o400)).unwrap();
 }
 
 fn artifact_client(

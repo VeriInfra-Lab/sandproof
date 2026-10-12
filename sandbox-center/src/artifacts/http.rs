@@ -24,6 +24,7 @@ pub(super) struct ArtifactHttp {
     owner: u32,
     deadline: Duration,
     reads: Arc<Semaphore>,
+    observations: Arc<Semaphore>,
     runtime: Handle,
 }
 impl ArtifactHttp {
@@ -43,8 +44,93 @@ impl ArtifactHttp {
             owner,
             deadline,
             reads: Arc::new(Semaphore::new(max_reads)),
+            observations: Arc::new(Semaphore::new(1)),
             runtime,
         }
+    }
+    async fn readiness(
+        &self,
+        peer: CertificatePin,
+        request: Request<Incoming>,
+    ) -> Result<Response<Body>, StatusCode> {
+        use sandproof_internal::cache::{READINESS_RESPONSE_BYTES, ReadinessRequest};
+        if request.method() != Method::POST
+            || request.uri().query().is_some()
+            || request.headers().contains_key(header::CONTENT_ENCODING)
+            || request
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .map(hyper::header::HeaderValue::as_bytes)
+                != Some(b"application/json")
+        {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        let known = self
+            .peers
+            .iter()
+            .find(|known| known.pins.contains(&peer))
+            .ok_or(StatusCode::FORBIDDEN)?;
+        let bytes = Limited::new(request.into_body(), ARTIFACT_REQUEST_BYTES)
+            .collect()
+            .await
+            .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?
+            .to_bytes();
+        let request: ReadinessRequest =
+            serde_json::from_slice(&bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
+        if request.node != known.node {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        let permit = Arc::clone(&self.observations)
+            .try_acquire_owned()
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        let authority = self.authority.clone();
+        let bytes = self
+            .runtime
+            .spawn_blocking(move || {
+                let _permit = permit;
+                let original = authority
+                    .snapshot()
+                    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+                let node = original
+                    .center
+                    .nodes()
+                    .iter()
+                    .find(|node| node.identity == request.node)
+                    .ok_or(StatusCode::FORBIDDEN)?;
+                let mut catalog = Vec::new();
+                for (revision, binding) in original
+                    .metadata
+                    .static_artifacts()
+                    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
+                {
+                    if original.metadata.artifact_role(&revision) == node.role {
+                        catalog.push(sandproof_center_core::AvailableTemplate {
+                            revision,
+                            digest: binding
+                                .canonical_digest()
+                                .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?,
+                        });
+                    }
+                }
+                // One confirmed original snapshot, no disk scans or state setters.
+                // No paths, API keys, tokens or other tenants' lifecycle records.
+                let encoded = serde_json::to_vec(&serde_json::json!({
+                    "schema_version": 1, "node": node, "catalog": catalog,
+                }))
+                .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+                if encoded.len() > READINESS_RESPONSE_BYTES {
+                    return Err(StatusCode::SERVICE_UNAVAILABLE);
+                }
+                Ok::<_, StatusCode>(encoded)
+            })
+            .await
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)??;
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_LENGTH, bytes.len())
+            .body(Body::from(bytes))
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
     }
     async fn artifact(
         &self,
@@ -146,7 +232,12 @@ impl ProtectedHttp for ArtifactHttp {
         request: Request<Incoming>,
         streaming: watch::Sender<bool>,
     ) -> Result<Response<Body>, Infallible> {
-        Ok(match self.artifact(peer, request, streaming).await {
+        let result = if request.uri().path() == sandproof_internal::cache::READINESS_PATH {
+            self.readiness(peer, request).await
+        } else {
+            self.artifact(peer, request, streaming).await
+        };
+        Ok(match result {
             Ok(response) => response,
             Err(status) => sandproof_data_transport::response(status),
         })

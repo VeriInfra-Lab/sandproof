@@ -20,25 +20,27 @@ from tools.benchmark_ci import remove_private_tree
 
 class ReadinessSimulation:
     """Fake time and canceled worker progress, not a product health authority."""
-    def __init__(self,node,*,commit_after=0,missing_audits=0,never_ready=False,host_exit_at=None):
+    def __init__(self,node,*,commit_after=0,missing_observations=0,never_ready=False,host_exit_at=None):
         self.now=0.0
         self.center_started_at=0.0
         self.center_running=True
         self.committed=False
         self.commit_after=commit_after
-        self.missing_audits=missing_audits
+        self.missing_observations=missing_observations
         self.never_ready=never_ready
         self.host_exit_at=host_exit_at
         self.node=copy.deepcopy(node)
         self.stops=[]
         self.starts=[]
         self.audits=[]
+        self.observations=[]
         self.canceled=0
         self.requests=[]
         self.instance=services.RuntimeServices()
         self.instance.center_config=dict(reply_timeout_ms=5000,expiry_scan_ms=1000,poll_interval_ms=100,
             nodes=[dict(registration=copy.deepcopy(node))])
         self.instance.expected_templates={node['identity']['node_id']:{'base-r1'}}
+        self.instance.host_configs=[dict(artifact_source=dict(download_timeout_ms=900000))]
         self.instance.sdk_url='http://fixed-component.invalid'
         self.instance.key='component-only-key'
         self.processes=Mock(children={})
@@ -47,7 +49,8 @@ class ReadinessSimulation:
             self.processes.children[name].poll.side_effect=lambda name=name:self.poll(name)
         self.processes.stop.side_effect=self.stop
         self.processes.start.side_effect=self.start
-        self.processes.audit.side_effect=self.audit
+        self.processes.audit.side_effect=AssertionError('readiness must never offline-audit')
+        self.processes.center_readiness.side_effect=self.readiness
         self.instance.processes=self.processes
 
     def poll(self,name):
@@ -77,15 +80,19 @@ class ReadinessSimulation:
         self.center_started_at=self.now
         self.starts.append(self.now)
 
-    def audit(self,name):
-        if name!='center' or self.center_running:
-            raise ValueError('only the original offline center audit is allowed')
-        self.audits.append(self.now)
+    def readiness(self,*,timeout):
+        if not self.center_running:
+            raise ValueError('online original center required')
+        self.observations.append(self.now)
+        if len(self.observations)<=self.missing_observations:
+            raise ValueError('authenticated response lost')
+        if self.now-self.center_started_at>=self.commit_after:
+            self.committed=True
         node=copy.deepcopy(self.node)
         node['healthy_until_ms']=int((1000+self.now)*1000)+10000
-        if not self.committed or self.never_ready or len(self.audits)<=self.missing_audits:
+        if not self.committed or self.never_ready:
             node['templates']=[]
-        return dict(nodes=[node])
+        return dict(nodes=[node],catalogs={node['identity']['node_id']:[dict(revision='base-r1',digest=[1]*32)]})
 
     def fetch(self,_opener,_url,method,path,_key,*args,**kwargs):
         self.requests.append((method,path,args,kwargs))
@@ -200,37 +207,40 @@ class RuntimeServicesTests(unittest.TestCase):
         node=self.node()
         registered={node['identity']['node_id']:dict(registration=copy.deepcopy(node))}
         templates={'host-runtime':{'base-r1'}}
-        self.assertTrue(services.nodes_ready(dict(nodes=[node]),registered,templates,now_ms=1000))
+        view=dict(nodes=[node],catalogs={'host-runtime':[dict(revision='base-r1',digest=[1]*32)]})
+        self.assertTrue(services.nodes_ready(view,registered,templates,now_ms=1000))
         node['templates'].append(dict(revision='later-ready',digest=[2]*32))
-        self.assertTrue(services.nodes_ready(dict(nodes=[node]),registered,templates,now_ms=1000))
+        self.assertTrue(services.nodes_ready(view,registered,templates,now_ms=1000))
         node['free']['instances']=0
-        self.assertFalse(services.nodes_ready(dict(nodes=[node]),registered,templates,now_ms=1000))
-        self.assertTrue(services.nodes_ready(dict(nodes=[node]),registered,templates,now_ms=1000,for_admission=False))
+        self.assertFalse(services.nodes_ready(view,registered,templates,now_ms=1000))
+        self.assertTrue(services.nodes_ready(view,registered,templates,now_ms=1000,for_admission=False))
         for key,value in (('instances',True),('cpu',-1),('disk_bytes',8001)):
             malformed=copy.deepcopy(node)
             malformed['free'][key]=value
             with self.subTest(key=key):
-                self.assertFalse(services.nodes_ready(dict(nodes=[malformed]),registered,templates,
+                self.assertFalse(services.nodes_ready(dict(view,nodes=[malformed]),registered,templates,
                     now_ms=1000,for_admission=False))
         for field,value in (('healthy_until_ms',999),('protocol_version',1),('retention_slots',3),
                             ('retention_slots',True),('retention_slots',None),('role','builder'),
                             ('templates',[]),('mode','draining')):
             malformed=copy.deepcopy(node)
             malformed[field]=value
-            self.assertFalse(services.nodes_ready(dict(nodes=[malformed]),registered,templates,
+            self.assertFalse(services.nodes_ready(dict(view,nodes=[malformed]),registered,templates,
                 now_ms=1000,for_admission=False),field)
-        self.assertFalse(services.nodes_ready(dict(nodes=[node,node]),registered,templates,now_ms=1000))
+        self.assertFalse(services.nodes_ready(dict(view,nodes=[node,node]),registered,templates,now_ms=1000))
+        node['templates'][0]['digest']=[3]*32
+        self.assertFalse(services.nodes_ready(view,registered,templates,now_ms=1000,for_admission=False))
 
     def test_readiness_leaves_initial_preparation_running_instead_of_canceling_it_on_http_200(self):
         fixture=ReadinessSimulation(self.node(),commit_after=5.5)
-        audit=fixture.run(timeout=10)
-        self.assertEqual(audit['nodes'][0]['templates'][0]['revision'],'base-r1')
+        view=fixture.run(timeout=10)
+        self.assertEqual(view['nodes'][0]['templates'][0]['revision'],'base-r1')
         self.assertEqual(fixture.canceled,0)
-        self.assertEqual(len(fixture.stops),1)
-        self.assertGreaterEqual(fixture.stops[0],6)
-        self.assertLess(fixture.stops[0],6.3)
+        self.assertEqual(fixture.stops,[])
+        self.assertEqual(fixture.starts,[])
+        fixture.processes.audit.assert_not_called()
         fixture.processes.observe.assert_called_once()
-        self.assertTrue(all(request==('GET','/v2/sandboxes',(),{}) for request in fixture.requests))
+        self.assertTrue(all(request[:3]==('GET','/v2/sandboxes',()) for request in fixture.requests))
 
     def test_public_http_200_never_substitutes_for_original_persisted_cache_readiness(self):
         fixture=ReadinessSimulation(self.node(),never_ready=True)
@@ -238,8 +248,9 @@ class RuntimeServicesTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
             fixture.run(timeout=6)
         self.assertEqual(fixture.now,6)
-        self.assertGreaterEqual(len(fixture.audits),1)
-        self.assertTrue(all(right-left>=2 for left,right in zip(fixture.starts,fixture.stops[1:])))
+        self.assertGreaterEqual(len(fixture.observations),1)
+        fixture.processes.audit.assert_not_called()
+        self.assertEqual(fixture.stops,[])
         fixture.processes.observe.assert_not_called()
         self.assertFalse(hasattr(fixture.instance,'_readiness_catalog_observed'))
 
@@ -252,39 +263,35 @@ class RuntimeServicesTests(unittest.TestCase):
         fixture.processes.audit.assert_not_called()
         fixture.processes.observe.assert_not_called()
 
-    def test_failed_offline_audit_restarts_with_a_new_continuous_background_window(self):
-        fixture=ReadinessSimulation(self.node(),missing_audits=1)
+    def test_lost_online_observation_does_not_restart_original_services(self):
+        fixture=ReadinessSimulation(self.node(),missing_observations=1)
         fixture.instance.center_config['reply_timeout_ms']=1000
         fixture.run(timeout=6)
-        self.assertEqual(len(fixture.audits),2)
-        self.assertGreaterEqual(fixture.stops[1]-fixture.starts[0],2)
+        self.assertEqual(len(fixture.observations),2)
+        self.assertEqual(fixture.stops,[])
+        fixture.processes.audit.assert_not_called()
         fixture.processes.observe.assert_called_once()
 
-    def test_successful_original_cache_observation_only_shortens_later_diagnostic_schedule(self):
+    def test_each_call_requires_fresh_online_observation_without_a_readiness_hint(self):
         fixture=ReadinessSimulation(self.node())
         fixture.run(timeout=10)
         began=fixture.now
         fixture.run(timeout=3,for_admission=False)
-        self.assertGreaterEqual(fixture.stops[1]-began,1.1)
-        self.assertLess(fixture.stops[1]-began,1.4)
-        self.assertEqual(len(fixture.audits),2)
+        self.assertEqual(fixture.now,began)
+        self.assertEqual(len(fixture.observations),2)
         self.assertEqual(fixture.processes.observe.call_count,2)
-        # The hint is not health/cache evidence. A fresh failed ORIGINAL audit
-        # still fails even though the previous fixed catalog was accepted.
+        # Earlier success is never health/cache evidence for a later call.
         fixture.never_ready=True
         with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
             fixture.run(timeout=3,for_admission=False)
         self.assertEqual(fixture.processes.observe.call_count,2)
 
-    def test_original_cache_hint_does_not_hide_a_failed_actual_role_observation(self):
+    def test_cache_observation_does_not_hide_a_failed_actual_role_observation(self):
         fixture=ReadinessSimulation(self.node())
         fixture.processes.observe.side_effect=[ValueError('role exec not observed yet'),{}]
         fixture.run(timeout=8)
-        self.assertEqual(len(fixture.audits),2)
-        self.assertGreaterEqual(fixture.stops[1]-fixture.starts[0],1.1)
-        # Existing 0.2s polling can occur once before the first public probe
-        # and once when the 1.1s diagnostic interval is crossed.
-        self.assertLess(fixture.stops[1]-fixture.starts[0],1.5)
+        self.assertEqual(len(fixture.observations),2)
+        self.assertEqual(fixture.stops,[])
         self.assertEqual(fixture.processes.observe.call_count,2)
         refused=ReadinessSimulation(self.node())
         refused.processes.observe.side_effect=ValueError('role exec never observed')
@@ -292,7 +299,7 @@ class RuntimeServicesTests(unittest.TestCase):
             refused.run(timeout=8)
         self.assertGreaterEqual(refused.processes.observe.call_count,1)
 
-    def test_diagnostic_hint_is_invalidated_when_the_fixed_registered_catalog_changes(self):
+    def test_changed_expected_catalog_cannot_reuse_previous_ready_result(self):
         fixture=ReadinessSimulation(self.node())
         fixture.run(timeout=10)
         fixture.instance.expected_templates['host-runtime'].add('different-r1')
@@ -300,17 +307,25 @@ class RuntimeServicesTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
             fixture.run(timeout=3)
         self.assertAlmostEqual(fixture.now-began,3)
-        self.assertEqual(len(fixture.audits),1)
+        self.assertGreater(len(fixture.observations),1)
+        self.assertEqual(fixture.stops,[])
 
-    def test_default_readiness_deadline_does_not_shorten_an_unfinished_background_window(self):
-        fixture=ReadinessSimulation(self.node())
-        fixture.instance.center_config['reply_timeout_ms']=60000
-        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
-            fixture.run()
-        self.assertEqual(fixture.now,60)
+    def test_default_readiness_uses_download_budget_without_canceling_slow_preparation(self):
+        fixture=ReadinessSimulation(self.node(),commit_after=75)
+        fixture.run()
+        self.assertGreaterEqual(fixture.now,75)
+        self.assertLess(fixture.now,76)
         self.assertEqual(fixture.stops,[])
         fixture.processes.audit.assert_not_called()
-        fixture.processes.observe.assert_not_called()
+        fixture.processes.observe.assert_called_once()
+
+    def test_default_download_bound_is_not_reset_by_failed_polls(self):
+        fixture=ReadinessSimulation(self.node(),never_ready=True)
+        fixture.instance.host_configs[0]['artifact_source']['download_timeout_ms']=3000
+        with self.assertRaisesRegex(RuntimeError,'no sandbox creation attempted'):
+            fixture.run()
+        self.assertEqual(fixture.now,3)
+        self.assertEqual(fixture.stops,[])
 
     def test_common_cli_has_two_products_and_no_old_server_option(self):
         parser=argparse.ArgumentParser()

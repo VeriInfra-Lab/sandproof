@@ -65,6 +65,7 @@ def fetch(
     path: str,
     key: str | None = None,
     body: dict | None = None,
+    *, timeout: float = 40,
 ) -> tuple[int, bytes]:
     headers = {"X-API-Key": key} if key is not None else {}
     if body is not None:
@@ -76,7 +77,7 @@ def fetch(
         method=method,
     )
     try:
-        with opener.open(request, timeout=40) as response:
+        with opener.open(request, timeout=timeout) as response:
             return response.status, response.read()
     except urllib.error.HTTPError as error:
         return error.code, error.read()

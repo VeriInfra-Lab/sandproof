@@ -17,6 +17,14 @@ pub struct ArtifactClient {
     idle_timeout: Duration,
 }
 impl ArtifactClient {
+    /// Observe the running center through the SAME fixed, pinned source.
+    /// This bounded diagnostic JSON is not lifecycle or cache evidence. It
+    /// contains only the requested registered node and its protected catalog.
+    /// # Errors
+    /// Refuses an uncorrelated, oversized or unavailable observation.
+    pub async fn readiness(&self) -> Result<serde_json::Value, TransportError> {
+        self.transport.template_readiness().await
+    }
     /// # Errors
     /// Rejects invalid fixed endpoints and zero/unrepresentable time budgets.
     pub fn new(

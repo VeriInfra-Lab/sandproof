@@ -130,6 +130,8 @@ sudo systemctl start sandproof-center.service
 
 宿主收到 SIGTERM 后，原入口停止接入并等待 HTTP 连接、持久工作驱动和缓存工作排空。[systemd 的 process 停止语义](https://github.com/systemd/systemd/blob/main/man/systemd.kill.xml)只终止主进程，因此宿主单元刻意使用 `KillMode=process`，不采用 `mixed/control-group`、`ExecStop` 杀 VM 或删除资源；示例 60 秒控制服务停止期限到达后也只杀主进程。残留实例/助手仍占原身份和责任，不能把单元 stopped 当 Cleaned。该方式不让 systemd 管理全部子进程，必须由原持久观察/恢复核对它们；计划维护先走正常销毁并核精确清理，不依赖停服务清场。
 
+在线就绪检查通过宿主的 `observe-center --config` 读取中心保护的实时投影，不停启服务；中心生命周期与模板慢工作使用独立有限名额。接口和期限的唯一合同见[模块合同](module-contracts.md)。
+
 离线审计时显式停止对应写者，保留 Redis 运行；审计不修改状态、不初始化，也不代替 VM 物理清理：
 
 ```sh

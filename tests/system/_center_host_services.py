@@ -386,10 +386,11 @@ def local_binding(audit, sandbox, *, expected_node):
 
 def command(binary, config, record, *, uid=0, gid=0, action='audit', timeout=30):
     """Explicit unique read-only audit or provisioning, never a legacy parser."""
-    if action == 'audit':
+    if action in ('audit', 'observe-center'):
         prefix = service_cgroup.prefix(record, **({} if uid == gid == 0 else dict(uid=uid, gid=gid)))
-        return bounded_json_command([*prefix, str(binary), 'audit', '--config', str(config)],
-            {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}, timeout=timeout, max_bytes=16 * 1024**2)
+        return bounded_json_command([*prefix, str(binary), action, '--config', str(config)],
+            {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}, timeout=timeout,
+            max_bytes=256 * 1024 if action == 'observe-center' else 16 * 1024**2)
     if action != 'initialize':
         raise ValueError('only explicit provisioning or checked original audit is allowed')
     process = launch(binary, config, Path(record).parent / 'initialize.log', record,
@@ -525,6 +526,33 @@ class Processes:
             observed[name] = process_facts(self.children[name], role['binary'], role['config'],
                 self.record, uid=role['uid'], gid=role['gid'], argv=argv)
         return observed
+
+    def center_readiness(self, *, timeout):
+        """Read live center state over each original host's pinned TLS source.
+
+        No stop, audit, initialize, cache dispatch or local-store bypass.
+        """
+        import time
+        deadline = time.monotonic() + timeout
+        nodes, catalogs = [], {}
+        for name, role in self.bindings.items():
+            if not name.startswith('host-'):
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('bounded center readiness observation expired')
+            view = command(role['binary'], role['config'], self.record,
+                           action='observe-center', timeout=remaining)
+            if (set(view) != {'schema_version','node','catalog'} or view['schema_version'] != 1
+                    or type(view['node']) is not dict or type(view['catalog']) is not list):
+                raise ValueError('invalid protected center readiness projection')
+            node = view['node']
+            identity = node['identity']['node_id']
+            if identity in catalogs:
+                raise ValueError('duplicate protected node observation')
+            nodes.append(node)
+            catalogs[identity] = view['catalog']
+        return dict(nodes=nodes, catalogs=catalogs)
 
     def stop_all(self):
         errors = []
