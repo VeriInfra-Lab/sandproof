@@ -4,9 +4,11 @@ The Rust harness owns all paths. This is not complete envd or KVM
 acceptance; no production/cloud endpoint or credential is used.
 """
 import asyncio
+import gzip
 from io import BytesIO, StringIO
 import json
 import sys
+import httpx
 
 from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import FileNotFoundException, InvalidArgumentException
@@ -21,6 +23,58 @@ def arguments(url):
 def payloads():
     return [('empty', b''), ('binary', b'\x00\xffA\r\n'),
             ('large', bytes(range(256)) * 12289)]
+
+
+def compressed_requests(root):
+    """Fixed SDK has no upload-compression option; construct HTTP cases explicitly.
+
+    Original sync/async SDK reads verify each resulting file. This does not
+    pretend the compressed POSTs are unmodified SDK write calls.
+    """
+    raw = f'{root}/gzip-raw'
+    large = bytes(range(256)) * 4097
+    form = b''.join(
+        b'--G\r\nContent-Disposition: form-data; name="file"; filename="'
+        + path.encode() + b'"\r\n\r\n' + data + b'\r\n'
+        for path, data in [(f'{root}/gzip-a', b'\x00\xff'),
+                           (f'{root}/gzip-\u96ea', b'snow')]) + b'--G--\r\n'
+    damaged = bytearray(gzip.compress(b'written-prefix', mtime=0))
+    damaged[-8] ^= 1
+    headers = {'x-access-token': 'fixture-token', 'content-encoding': 'gzip',
+               'content-type': 'application/octet-stream', 'x-metadata-note': 'gzip'}
+    return [
+        (raw, headers, gzip.compress(large, mtime=0), 200, [(raw, large)]),
+        (None, {**headers, 'content-type': 'multipart/form-data; boundary=G'},
+         gzip.compress(form, mtime=0), 200,
+         [(f'{root}/gzip-a', b'\x00\xff'), (f'{root}/gzip-\u96ea', b'snow')]),
+        (raw, headers, b'invalid gzip header', 400, [(raw, large)]),
+        (f'{root}/gzip-partial', headers, bytes(damaged), 500,
+         [(f'{root}/gzip-partial', b'written-prefix')]),
+    ]
+
+
+def compressed_sync(sandbox, url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for path, headers, data, status, expected in compressed_requests(root):
+            response = client.post(f'{url}/files', params={} if path is None else {'path': path},
+                                   headers=headers, content=data)
+            assert response.status_code == status, response.text
+            if status == 200:
+                assert all(entry['metadata'] == {'note': 'gzip'} for entry in response.json())
+            for filename, value in expected:
+                assert bytes(sandbox.files.read(filename, format='bytes')) == value
+
+
+async def compressed_async(sandbox, url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for path, headers, data, status, expected in compressed_requests(root):
+            response = await client.post(f'{url}/files', params={} if path is None else {'path': path},
+                                         headers=headers, content=data)
+            assert response.status_code == status, response.text
+            if status == 200:
+                assert all(entry['metadata'] == {'note': 'gzip'} for entry in response.json())
+            for filename, value in expected:
+                assert bytes(await sandbox.files.read(filename, format='bytes')) == value
 
 
 def form_payloads(root):
@@ -142,6 +196,7 @@ def run_sync(url, root):
     else:
         raise AssertionError('directory download succeeded')
     multipart_sync(sandbox, root)
+    compressed_sync(sandbox, url, root)
 
 
 async def run_async(url, root):
@@ -185,6 +240,7 @@ async def run_async(url, root):
     else:
         raise AssertionError('directory download succeeded')
     await multipart_async(sandbox, root)
+    await compressed_async(sandbox, url, root)
 
 
 if __name__ == '__main__':
@@ -192,4 +248,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings['url'], settings['root'] + '/sync')
         asyncio.run(run_async(settings['url'], settings['root'] + '/async'))
-    print('Pinned sync/async SDK raw and multipart transfer scenarios passed (test routes only).')
+    print('Pinned sync/async SDK raw/multipart and synthetic gzip upload with SDK readback passed (test routes only).')

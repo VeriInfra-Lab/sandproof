@@ -6,8 +6,8 @@ use sandproof_guest_runtime::multipart::{Error, Limits};
 use std::{fmt::Write as _, sync::atomic::Ordering};
 use tokio::sync::{mpsc, oneshot};
 
-const CONTENT_TYPE: &str = "multipart/form-data; boundary=B";
-fn wire_limits() -> MultipartLimits {
+pub(super) const CONTENT_TYPE: &str = "multipart/form-data; boundary=B";
+pub(super) fn wire_limits() -> MultipartLimits {
     MultipartLimits {
         wire: Limits {
             chunk_bytes: 7,
@@ -24,7 +24,7 @@ fn wire_limits() -> MultipartLimits {
         trailer_fields: 8,
     }
 }
-fn field(name: &str, filename: Option<&str>, data: &[u8], encoding: bool) -> Vec<u8> {
+pub(super) fn field(name: &str, filename: Option<&str>, data: &[u8], encoding: bool) -> Vec<u8> {
     let mut header = format!("--B\r\nContent-Disposition: form-data; name=\"{name}\"");
     if let Some(filename) = filename {
         write!(header, "; filename=\"{filename}\"").unwrap();
@@ -34,14 +34,14 @@ fn field(name: &str, filename: Option<&str>, data: &[u8], encoding: bool) -> Vec
     }
     [header.as_bytes(), b"\r\n\r\n", data, b"\r\n"].concat()
 }
-fn body(bytes: &[u8], chunk: usize) -> Body {
+pub(super) fn body(bytes: &[u8], chunk: usize) -> Body {
     let chunks: Vec<_> = bytes
         .chunks(chunk)
         .map(|s| Ok::<_, std::io::Error>(Bytes::copy_from_slice(s)))
         .collect();
     Body::from_stream(stream::iter(chunks))
 }
-async fn quiesce(fixture: &Fixture) {
+pub(super) async fn quiesce(fixture: &Fixture) {
     drop(fixture.streams.slots.acquire().await.unwrap());
 }
 
@@ -282,7 +282,7 @@ async fn known_and_observed_body_limits_reject_without_false_success() {
 
 // Explicit signal fires when the next body poll observes an empty channel.
 // It establishes that all preceding frames/file writes have been consumed.
-fn gated_body() -> (
+pub(super) fn gated_body() -> (
     mpsc::Sender<Result<Bytes, std::io::Error>>,
     Body,
     oneshot::Receiver<()>,

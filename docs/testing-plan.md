@@ -64,7 +64,7 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 新增[流式文件端口检查](../sandbox-guest-runtime/tests/file_transfer.rs)覆盖二进制/空文件、父目录/链接、长度和元数据预校验、截断/超额后保留前缀、元数据替换/清空及打开后路径替换、文件增长和缩短。[传输所有权检查](../sandbox-guest-service/src/file_transfer/tests.rs)覆盖原授权阻止初始化、上传结果/下载块及传输引用占额、消费前不预读、取消后不可重用、显式 EOF 与工作者丢失、空闲期限和过期就绪回复。可推进时钟和明确块释放建立顺序；未模拟内核永久阻塞、真实磁盘满或整机峰值。
 
-[原 SDK 文件传输组合](../sandbox-guest-runtime/tests/sdk_file_transfer.rs)与[同步/异步调用集](../tests/compat/guest_file_transfer_sdk.py)经一次性回环路由连接原授权、真实账号/路径解析和传输池，检查原始字节上传、普通/流式下载、大于块预算的内容、元数据替换、目录/缺失错误及先前成功写入不回滚；新增单文件/多文件 multipart、字节/二进制流/文本流、Unicode 完整文件名、批次元数据、重复路径/目录失败后的前缀及后项不处理。Linux `check-compat.sh` 已登记以上入口，已有原提交的 Linux 组件检查；可定向执行 `cargo test -p sandproof-guest-runtime --locked --test file_transfer`、`cargo test -p sandproof-guest-service --locked file_transfer::tests` 和 `cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_transfer -- --nocapture`。后续改动须重跑，交叉类型检查不能算运行通过。测试适配现支持 raw/multipart POST 和 identity GET；multipart 已有原提交 Linux 组件证据，后续候选仍须重跑；不代表正式路由、gzip、range/conditional、固定 Go HTTP 双端对照、E03 或 KVM 验收。
+[原 SDK 文件传输组合](../sandbox-guest-runtime/tests/sdk_file_transfer.rs)与[同步/异步调用集](../tests/compat/guest_file_transfer_sdk.py)经一次性回环路由连接原授权、真实账号/路径解析和传输池，检查原始字节上传、普通/流式下载、大于块预算的内容、元数据替换、目录/缺失错误及先前成功写入不回滚；新增单文件/多文件 multipart、字节/二进制流/文本流、Unicode 完整文件名、批次元数据、重复路径/目录失败后的前缀及后项不处理。Linux `check-compat.sh` 已登记以上入口，已有原提交的 Linux 组件检查；可定向执行 `cargo test -p sandproof-guest-runtime --locked --test file_transfer`、`cargo test -p sandproof-guest-service --locked file_transfer::tests` 和 `cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_transfer -- --nocapture`。后续改动须重跑，交叉类型检查不能算运行通过。测试适配现支持 raw/multipart POST 和 identity GET；multipart 已有原提交 Linux 组件证据，后续候选仍须重跑；不代表正式路由、下述新增 gzip 组合、range/conditional、固定 Go HTTP 双端对照、E03 或 KVM 验收。
 
 新增[批量上传检查](../sandbox-guest-service/src/file_transfer/batch/tests.rs)覆盖单槽位顺序多文件、一次账户查询、元数据/结果保留、相对路径判重、查询空路径覆盖、合法空批次、取消中间文件、总量/数量/结果预算、后续文件失败与整批绝对期限。结果预算拒绝可发生在实际写完之后，测试要求文件保留而整批失败。Linux 基础及兼容入口中的 service 全测试会执行该组，也可定向 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests`；该组已有原提交的 Linux CI 运行验证，后续改动须重跑。此处直接向组件交入已解码文件名和正文块，没有执行 multipart MIME 解析、网络请求或固定 Go HTTP 对照。
 
@@ -83,6 +83,10 @@ SANDPROOF_GUEST_GZIP_REFERENCE=/absolute/path/to/gzip-reference \
   cargo test -p sandproof-guest-runtime --locked --lib \
   gzip::tests::fixed_go_gzip_reference -- --ignored --nocapture
 ```
+
+[HTTP gzip 所有权检查](../sandbox-guest-service/src/upload_body/tests.rs)可在 macOS/Linux 执行：`cargo test -p sandproof-guest-service --locked --lib upload_body`。原库代码直接接受受控 HTTP Body，测试首个头部之后按需读取、`Bytes` 副本背压、头部/正文等待取消、同步源轮询阻塞期间保留守卫、原绝对期限、真实 HTTP EOF/尾部错误、编码/展开/帧预算与错误穿过 Body 包装。同步通道和明确轮询信号控制交错；可推进时钟只在等待点确认后使用。该组已有本地运行，只验证传输/守卫连接，不替代 Linux AuthPermit/文件实际副作用。
+
+[gzip 文件组合](../sandbox-guest-service/src/file_transfer/batch/tests/gzip.rs)覆盖一批多段 raw/压缩 multipart、无效头部不打开目标、文件内容前缀与旧 metadata、MIME 结束后 CRC 错误、后续 gzip 段失败、真实 EOF 前授权/容量保留，以及取消/期限/展开预算。入口为 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::gzip`，Linux 基础与兼容入口包含该组；本候选实际运行待补。固定 SDK 文件测试路由另加合成 gzip POST、同步/异步原 SDK 回读、首头错误 400 及校验失败后的数据保留。固定 SDK 没有上传压缩选项，压缩 POST 由测试 HTTP 客户端构造，不能记作原 SDK 自动 gzip 上传或完整 E03；扩展组合仍待 Linux 实跑。
 
 gzip 新增固定 Cargo 依赖须按[CI 可信预热](ci.md)制备，普通任务仍离线且缺料失败。源码/本地缓存更新不表示黄金盘完成制备；不临时联网、改弱检查或切换现役模板。
 

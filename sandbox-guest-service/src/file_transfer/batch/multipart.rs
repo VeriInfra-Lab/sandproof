@@ -1,11 +1,11 @@
 //! Admitted identity-encoded HTTP body -> MIME decoder -> sequential files.
-//! No request router, gzip decoder or production defaults. The batch keeps its
+//! No request router or production defaults. The batch keeps its
 //! original authorization/capacity/deadline through ignored parts and HTTP EOF.
 use super::{BatchFile, BatchReply, FileStreamError, UploadBatch, timely};
+use crate::upload_body::{GzipError, HttpBodyLimits, Input as HttpInput};
 use axum::body::{Body, Bytes};
-use http_body_util::BodyExt;
 use sandproof_guest_runtime::multipart::{self, Decoder, Event, QuotedPrintable};
-use tokio::time::{Instant, timeout_at};
+use tokio::time::Instant;
 
 /// Limits for owned HTTP frames, in addition to MIME/file/result budgets.
 /// These bound accepted frame payloads; the HTTP implementation must separately
@@ -20,12 +20,27 @@ pub struct MultipartLimits {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MultipartError {
+pub enum UploadBodyError {
     Transfer(FileStreamError),
     Decode(multipart::Error),
     Transport,
     InputLimit,
     InvalidConfiguration,
+    Gzip(GzipError),
+    GzipPreflight(GzipError),
+}
+/// Compatibility name for the original multipart-only entry point.
+pub type MultipartError = UploadBodyError;
+impl From<GzipError> for UploadBodyError {
+    fn from(error: GzipError) -> Self {
+        match error {
+            GzipError::Transport => Self::Transport,
+            GzipError::InputLimit => Self::InputLimit,
+            GzipError::InvalidConfiguration => Self::InvalidConfiguration,
+            GzipError::DeadlineExceeded => Self::Transfer(FileStreamError::DeadlineExceeded),
+            other => Self::Gzip(other),
+        }
+    }
 }
 impl From<FileStreamError> for MultipartError {
     fn from(error: FileStreamError) -> Self {
@@ -161,15 +176,11 @@ async fn drain_field(input: &mut Input) -> Result<(), MultipartError> {
 }
 
 struct Input {
-    body: Body,
+    body: HttpInput,
     decoder: Decoder,
     pending: Bytes,
     limits: MultipartLimits,
     deadline: Instant,
-    expected: Option<u64>,
-    received: u64,
-    frames_left: usize,
-    trailers: bool,
     eof: bool,
 }
 impl Input {
@@ -180,20 +191,18 @@ impl Input {
         limits: MultipartLimits,
         deadline: Instant,
     ) -> Result<Self, MultipartError> {
-        if [
-            limits.frame_bytes,
-            limits.frames,
-            limits.trailer_bytes,
-            limits.trailer_fields,
-        ]
-        .into_iter()
-        .any(|n| n == 0 || n > isize::MAX as usize / 16)
-        {
-            return Err(MultipartError::InvalidConfiguration);
-        }
-        if expected.is_some_and(|n| n > limits.wire.total_bytes) {
-            return Err(MultipartError::InputLimit);
-        }
+        let body = HttpInput::new(
+            body,
+            expected,
+            HttpBodyLimits {
+                total_bytes: limits.wire.total_bytes,
+                frame_bytes: limits.frame_bytes,
+                frames: limits.frames,
+                trailer_bytes: limits.trailer_bytes,
+                trailer_fields: limits.trailer_fields,
+            },
+            deadline,
+        )?;
         timely(deadline, Ok(()))?;
         let boundary = multipart::boundary(content_type, limits.wire.header_bytes)?;
         let decoder = Decoder::new(&boundary, limits.wire)?;
@@ -203,10 +212,6 @@ impl Input {
             pending: Bytes::new(),
             limits,
             deadline,
-            expected,
-            received: 0,
-            frames_left: limits.frames,
-            trailers: false,
             eof: false,
         })
     }
@@ -226,57 +231,12 @@ impl Input {
                 self.decoder.feed(&chunk)?;
                 continue;
             }
-            let result = timeout_at(self.deadline, self.body.frame())
-                .await
-                .map_err(|_| FileStreamError::DeadlineExceeded)?;
-            timely(self.deadline, Ok(()))?;
-            let Some(frame) = result else {
-                if self.expected.is_some_and(|n| n != self.received) {
-                    return Err(MultipartError::Transport);
-                }
+            let Some(bytes) = self.body.next().await? else {
                 self.eof = true;
                 self.decoder.end_input();
                 continue;
             };
-            self.frames_left = self
-                .frames_left
-                .checked_sub(1)
-                .ok_or(MultipartError::InputLimit)?;
-            let frame = frame.map_err(|_| MultipartError::Transport)?;
-            match frame.into_data() {
-                Ok(bytes) => {
-                    if self.trailers {
-                        return Err(MultipartError::Transport);
-                    }
-                    if bytes.len() > self.limits.frame_bytes
-                        || bytes.len() as u64 > self.limits.wire.total_bytes - self.received
-                    {
-                        return Err(MultipartError::InputLimit);
-                    }
-                    self.received += bytes.len() as u64;
-                    if self.expected.is_some_and(|n| self.received > n) {
-                        return Err(MultipartError::Transport);
-                    }
-                    self.pending = bytes;
-                }
-                Err(frame) => {
-                    let headers = frame
-                        .into_trailers()
-                        .map_err(|_| MultipartError::Transport)?;
-                    if self.trailers {
-                        return Err(MultipartError::Transport);
-                    }
-                    self.trailers = true;
-                    let length = headers.iter().try_fold(0_usize, |n, (k, v)| {
-                        n.checked_add(k.as_str().len())?.checked_add(v.len())
-                    });
-                    if headers.len() > self.limits.trailer_fields
-                        || length.is_none_or(|n| n > self.limits.trailer_bytes)
-                    {
-                        return Err(MultipartError::InputLimit);
-                    }
-                }
-            }
+            self.pending = bytes;
         }
     }
 }

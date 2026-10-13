@@ -256,7 +256,9 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [multipart 到上传批次的连接](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)已实现，真实文件/固定 SDK 组合已有原提交 Linux 组件证据，后续候选仍须重跑。它增加原授权/容量/期限跨 parser、HTTP frame 和实际 I/O 的所有权链；End 与 HTTP EOF/长度的联合判据、QP 错误前缀、未知字段/尾部预算以及取消后的资源保留均是新的自有义务。该组合未抽取或证明，之前解码器/单文件/批次测试和 `Transfer` 抽取不能代为背书；HTTP 库的先行分配和响应序列化/发送仍须最小外部合同及独立计费。
 
-[gzip 编解码组件](../sandbox-guest-runtime/src/gzip/mod.rs)新增头部预检、DEFLATE/CRC32 外部库连接、逐段结束与真实源 EOF、编码/展开预算及失败前缀义务。已有本地组件和固定 Go 对照，未接 HTTP/文件 worker、未抽取或证明；`flate2`/`zlib-rs`/`crc32fast` 及调用者缓冲/期限/授权所有权仍须外部合同和组合连接。原纯来宾核心及历史已证明 Rust 未改变，旧定理不覆盖本模块或依赖实现。
+[gzip 编解码组件](../sandbox-guest-runtime/src/gzip/mod.rs)新增头部预检、DEFLATE/CRC32 外部库连接、逐段结束与真实源 EOF、编码/展开预算及失败前缀义务。已有本地组件和固定 Go 对照，现已连接下述 HTTP/文件批次，未抽取或证明；`flate2`/`zlib-rs`/`crc32fast` 及调用者缓冲/期限/授权所有权仍须外部合同和组合连接。原纯来宾核心及历史已证明 Rust 未改变，旧定理不覆盖本模块或依赖实现。
+
+[HTTP gzip worker](../sandbox-guest-service/src/upload_body/mod.rs)与[文件连接](../sandbox-guest-service/src/file_transfer/batch/gzip.rs)复用原批次，新增压缩头到文件打开的先后关系、压缩长度/展开预算、阻塞解压/实际文件两个任务的原授权守卫、Bytes 最后副本释放到下一读取、取消后的实际退出以及 raw/multipart 不同 metadata 完成点。共享 HTTP 帧校验重构和该所有权连接均未抽取/证明；可移植测试已有本地运行，Linux 授权/文件和合成压缩 POST＋固定 SDK 回读待验证，不能用组件测试或纯 `Transfer` 定理代替组合义务。
 
 ### 当前串行实现的模块交接
 

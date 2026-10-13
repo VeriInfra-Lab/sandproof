@@ -1,4 +1,5 @@
 use super::*;
+mod gzip;
 mod multipart;
 use crate::file_transfer::FileStreams;
 use crate::files::{FileContextLimits, FileSettings};

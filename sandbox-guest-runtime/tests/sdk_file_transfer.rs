@@ -1,5 +1,6 @@
 //! Pinned SDK -> test-only HTTP adapter -> authorized real file streams.
-//! Identity GET and raw/multipart POST; not production routes or E03.
+//! Identity GET and raw/multipart POST; synthetic gzip uploads with SDK reads.
+//! This is not a production router or E03.
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 use axum::{
     Json, Router,
@@ -20,7 +21,10 @@ use sandproof_guest_runtime::{
 use sandproof_guest_service::{
     AccountPool, AuthPermit, InitLimits, Metadata, MetadataSource, ServiceError, Session,
     SystemAccounts,
-    file_transfer::{BatchLimits, FileStreamError, FileStreams, MultipartError, MultipartLimits},
+    file_transfer::{
+        BatchLimits, BatchReply, FileStreamError, FileStreams, GzipLimits, HttpBodyLimits,
+        MultipartError, MultipartLimits,
+    },
     files::{FileContextLimits, FileSettings, HttpFileContext},
 };
 use serde::Deserialize;
@@ -54,6 +58,7 @@ struct Fixture {
     root: PathBuf,
     seen: AtomicUsize,
     multipart_seen: AtomicUsize,
+    gzip_seen: AtomicUsize,
 }
 #[derive(Deserialize)]
 struct Params {
@@ -123,7 +128,14 @@ async fn files(
         return download(&fixture, auth, context).await;
     }
     let (parts, body) = request.into_parts();
-    assert!(!parts.headers.contains_key("content-encoding"));
+    let gzip = parts
+        .headers
+        .get("content-encoding")
+        .map(|value| {
+            assert_eq!(value, "gzip");
+            fixture.gzip_seen.fetch_add(1, Ordering::SeqCst);
+        })
+        .is_some();
     let content_type = parts.headers.get("content-type").unwrap().to_str().unwrap();
     let expected = parts
         .headers
@@ -137,12 +149,14 @@ async fn files(
                 .or_insert_with(|| value.to_str().unwrap().to_owned());
         }
     }
-    if content_type == "application/octet-stream" {
+    if content_type == "application/octet-stream" && !gzip {
         let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
         return raw_upload(&fixture, auth, context, metadata, expected, body).await;
     }
-    assert!(content_type.starts_with("multipart/form-data;"));
-    fixture.multipart_seen.fetch_add(1, Ordering::SeqCst);
+    if content_type != "application/octet-stream" {
+        assert!(content_type.starts_with("multipart/form-data;"));
+        fixture.multipart_seen.fetch_add(1, Ordering::SeqCst);
+    }
     let batch = fixture
         .files
         .upload_batch(
@@ -157,12 +171,38 @@ async fn files(
             },
         )
         .unwrap();
-    match batch
-        .receive_multipart(content_type, body, expected, multipart_limits())
-        .await
-    {
+    let result = if gzip && content_type == "application/octet-stream" {
+        batch.receive_gzip_raw(body, expected, gzip_limits()).await
+    } else if gzip {
+        batch
+            .receive_gzip_multipart(
+                content_type,
+                body,
+                expected,
+                gzip_limits(),
+                multipart_limits(),
+            )
+            .await
+    } else {
+        batch
+            .receive_multipart(content_type, body, expected, multipart_limits())
+            .await
+    };
+    upload_response(result)
+}
+
+fn upload_response(result: Result<BatchReply, MultipartError>) -> Response {
+    match result {
         Ok(reply) => Json(reply.results().iter().map(entry).collect::<Vec<_>>()).into_response(),
         Err(MultipartError::Transfer(error)) => failure(error),
+        Err(MultipartError::GzipPreflight(
+            sandproof_guest_service::upload_body::GzipError::Header
+            | sandproof_guest_service::upload_body::GzipError::Truncated,
+        )) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"message":"invalid gzip header"})),
+        )
+            .into_response(),
         Err(error) => {
             let status = if matches!(
                 error,
@@ -199,6 +239,24 @@ fn multipart_limits() -> MultipartLimits {
         frames: 65536,
         trailer_bytes: 8192,
         trailer_fields: 32,
+    }
+}
+fn gzip_limits() -> GzipLimits {
+    GzipLimits {
+        http: HttpBodyLimits {
+            total_bytes: 10 << 20,
+            frame_bytes: 1 << 20,
+            frames: 65536,
+            trailer_bytes: 8192,
+            trailer_fields: 32,
+        },
+        decode: sandproof_guest_runtime::gzip::DecodeLimits {
+            chunk_bytes: 4096,
+            encoded_bytes: 10 << 20,
+            decoded_bytes: 9 << 20,
+            header_bytes: 65536,
+            members: 32,
+        },
     }
 }
 fn entry(result: &UploadResult) -> serde_json::Value {
@@ -319,6 +377,7 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         root,
         seen: AtomicUsize::new(0),
         multipart_seen: AtomicUsize::new(0),
+        gzip_seen: AtomicUsize::new(0),
     })
 }
 
@@ -378,8 +437,9 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 66);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 10);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 84);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 12);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 8);
     for mode in ["sync", "async"] {
         assert_eq!(
             std::fs::read(directory.path().join(mode).join("form/binary")).unwrap(),

@@ -16,7 +16,11 @@ use tokio::time::{Instant, timeout_at};
 use crate::{AuthPermit, files::HttpFileContext};
 
 mod batch;
-pub use batch::{BatchFile, BatchLimits, BatchReply, MultipartError, MultipartLimits, UploadBatch};
+pub use crate::upload_body::{GzipError, GzipLimits, HttpBodyLimits};
+pub use batch::{
+    BatchFile, BatchLimits, BatchReply, MultipartError, MultipartLimits, UploadBatch,
+    UploadBodyError,
+};
 
 #[cfg(test)]
 mod tests;
