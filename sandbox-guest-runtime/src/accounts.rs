@@ -200,9 +200,15 @@ fn add_groups(
         {
             continue;
         }
-        let Some(gid) = identity(fields[2]) else {
+        let Some(gid) = unsigned(fields[2]) else {
             continue;
         };
+        // ParseUint accepts this value in the fixed handler, but the kernel
+        // cannot install it. Do not turn that failure into a successful launch
+        // with a silently shortened group list.
+        if gid == u32::MAX {
+            return Err(AccountError::Unavailable);
+        }
         if gid == account.credentials.gid {
             continue;
         }
@@ -215,14 +221,14 @@ fn add_groups(
 }
 
 fn identity(value: &[u8]) -> Option<u32> {
+    unsigned(value).filter(|id| *id != u32::MAX)
+}
+
+fn unsigned(value: &[u8]) -> Option<u32> {
     if value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    std::str::from_utf8(value)
-        .ok()?
-        .parse()
-        .ok()
-        .filter(|id| *id != u32::MAX)
+    std::str::from_utf8(value).ok()?.parse().ok()
 }
 
 #[cfg(test)]
@@ -335,6 +341,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(read_regular(&fifo, 4), Err(AccountError::Unavailable));
+    }
+
+    #[test]
+    fn sentinel_supplementary_gid_is_rejected_instead_of_omitted() {
+        let passwd = b"u:x:1:2::/:/bin/sh\n";
+        assert_eq!(
+            account_from_files("u", passwd, b"group:x:4294967295:u\n", limits()),
+            Err(AccountError::Unavailable)
+        );
+        assert_eq!(
+            account_from_files("u", passwd, b"group:x:4294967296:u\n", limits())
+                .unwrap()
+                .credentials
+                .groups,
+            vec![2, 2]
+        );
     }
 
     #[test]
