@@ -151,13 +151,7 @@ fn indexed_stops_succeeded(world: &World, sandbox: SandboxId) -> bool {
     true
 }
 
-// Reservations are recorded before `PrepareVm` reaches the host. An empty
-// resource index therefore cannot prove that the reserved VM was stopped.
-fn planned_resources_closed(
-    world: &World,
-    sandbox: SandboxId,
-    plan: &crate::OperationPlan,
-) -> bool {
+fn planned_vms_stopped(world: &World, sandbox: SandboxId, plan: &crate::OperationPlan) -> bool {
     for vm_id in &plan.stop_vms {
         let Some(vm) = world.vms.get(vm_id) else {
             return false;
@@ -170,6 +164,10 @@ fn planned_resources_closed(
             return false;
         }
     }
+    true
+}
+
+fn planned_slots_inactive(world: &World, sandbox: SandboxId, plan: &crate::OperationPlan) -> bool {
     for slot_id in &plan.close_slots {
         let Some(slot) = world.net_slots.get(slot_id) else {
             return false;
@@ -179,6 +177,18 @@ fn planned_resources_closed(
         }
     }
     true
+}
+
+// Reservations are recorded before `PrepareVm` reaches the host. An empty
+// resource index therefore cannot prove that the reserved VM was stopped.
+// Keep the original VM-first, short-circuit order. Separate loop functions
+// avoid the fixed extractor's normalization of sequential early-return loops.
+fn planned_resources_closed(
+    world: &World,
+    sandbox: SandboxId,
+    plan: &crate::OperationPlan,
+) -> bool {
+    planned_vms_stopped(world, sandbox, plan) && planned_slots_inactive(world, sandbox, plan)
 }
 
 fn update_operation_result(
@@ -1133,6 +1143,150 @@ mod tests {
         assert_eq!(
             handle_publish_failure(&world, SID, failure),
             Err(PublicationReject::ResourcesNotClosed)
+        );
+    }
+
+    // Frozen pre-refactor predicate used only as a regression oracle. This is
+    // not a production implementation or a substitute for Lean refinement.
+    fn original_planned_resources_closed(
+        world: &World,
+        sandbox: SandboxId,
+        plan: &OperationPlan,
+    ) -> bool {
+        for vm_id in &plan.stop_vms {
+            let Some(vm) = world.vms.get(vm_id) else {
+                return false;
+            };
+            if vm.sandbox != sandbox
+                || vm.generation != plan.generation
+                || !matches!(vm.status, VmStatus::Stopped | VmStatus::Reclaimed)
+                || !super::vm_has_stop_receipt(world, sandbox, plan.generation, *vm_id)
+            {
+                return false;
+            }
+        }
+        for slot_id in &plan.close_slots {
+            let Some(slot) = world.net_slots.get(slot_id) else {
+                return false;
+            };
+            if slot.sandbox != sandbox || slot.generation != plan.generation || slot.active {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[test]
+    fn planned_resource_split_matches_original_guards_and_empty_lists() {
+        let failure = crate::FailureKind::DeadlineExceeded;
+        let original = terminal_ready_world(
+            OperationKind::Create,
+            OperationStatus::Compensating(failure),
+        );
+        let key = operation_key(SID, OPERATION);
+        let original_plan = original.operation_plans.get(&key).expect("plan");
+        // Every VM guard, both accepted statuses, both receipt sources and every
+        // slot guard. Include simultaneous faults and faults at either position.
+        for vm_case in 0..10 {
+            for slot_case in 0..5 {
+                let mut world = original.clone();
+                let mut vm = *world.vms.get(&VM).expect("vm");
+                match vm_case {
+                    1 => vm.sandbox = SandboxId(99),
+                    2 => vm.generation = 4,
+                    3 => vm.status = VmStatus::Prepared,
+                    4 => vm.status = VmStatus::Executing,
+                    5 => vm.status = VmStatus::Frozen,
+                    6 => vm.status = VmStatus::Reclaimed,
+                    7 => world.effect_keys.clear(),
+                    8 => {
+                        world.effect_keys.clear();
+                        acknowledge(
+                            &mut world,
+                            Command::AbortPrepare {
+                                sandbox: SID,
+                                epoch: 5,
+                                generation: 3,
+                                vm: VM,
+                                slot: SLOT,
+                            },
+                            3,
+                        );
+                    }
+                    _ => {}
+                }
+                world.vms.put(VM, vm);
+                if vm_case == 9 {
+                    world.vms = crate::Store::default();
+                }
+                let mut slot = world.net_slots.get(&SLOT).expect("slot").clone();
+                match slot_case {
+                    1 => slot.sandbox = SandboxId(99),
+                    2 => slot.generation = 4,
+                    3 => slot.active = true,
+                    _ => {}
+                }
+                world.net_slots.put(SLOT, slot);
+                if slot_case == 4 {
+                    world.net_slots = crate::Store::default();
+                }
+                for vms in [vec![], vec![VM], vec![VM, VmId(99)], vec![VmId(99), VM]] {
+                    for slots in [
+                        vec![],
+                        vec![SLOT],
+                        vec![SLOT, NetSlotId(99)],
+                        vec![NetSlotId(99), SLOT],
+                    ] {
+                        let mut plan = original_plan.clone();
+                        plan.stop_vms = vms.clone();
+                        plan.close_slots = slots;
+                        let before = world.clone();
+                        assert_eq!(
+                            super::planned_resources_closed(&world, SID, &plan),
+                            original_planned_resources_closed(&world, SID, &plan),
+                            "vm={vm_case}, slot={slot_case}, plan={plan:?}"
+                        );
+                        assert_eq!(world, before);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn planned_resource_rejection_still_precedes_ledger_check() {
+        let failure = crate::FailureKind::DeadlineExceeded;
+        let mut world = terminal_ready_world(
+            OperationKind::Create,
+            OperationStatus::Compensating(failure),
+        );
+        let key = operation_key(SID, OPERATION);
+        // No registered resources to fail the earlier index checks. The plan
+        // still owns reservations, so its guard must precede a missing ledger.
+        world.resource_indexes.put(SID, ResourceIndex::default());
+        world.operations = crate::Store::default();
+        let before = world.clone();
+        assert_eq!(
+            handle_publish_failure(&world, SID, failure),
+            Err(PublicationReject::OperationUnavailable)
+        );
+        assert_eq!(world, before);
+        world.vms = crate::Store::default();
+        assert_eq!(
+            handle_publish_failure(&world, SID, failure),
+            Err(PublicationReject::ResourcesNotClosed)
+        );
+        let mut plan = world.operation_plans.get(&key).expect("plan").clone();
+        plan.stop_vms.clear();
+        world.operation_plans.put(key, plan);
+        world.net_slots = crate::Store::default();
+        assert_eq!(
+            handle_publish_failure(&world, SID, failure),
+            Err(PublicationReject::ResourcesNotClosed)
+        );
+        assert_eq!(
+            handle_publish_failure(&world, SID, crate::FailureKind::InternalFailure),
+            Err(PublicationReject::WrongOperationStatus)
         );
     }
 

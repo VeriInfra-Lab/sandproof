@@ -2,8 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-CHARON="$ROOT_DIR/.tools/aeneas/charon/bin/charon"
-AENEAS="$ROOT_DIR/.tools/aeneas/bin/aeneas"
+TOOL_ROOT="${SANDPROOF_PROOF_TOOL_ROOT:-$ROOT_DIR/.tools}"
+CHARON="$TOOL_ROOT/aeneas/charon/bin/charon"
+AENEAS="$TOOL_ROOT/aeneas/bin/aeneas"
 LLBC_DIR="$ROOT_DIR/verification/aeneas/llbc"
 LEAN_DIR="$ROOT_DIR/verification/aeneas/generated"
 LLBC_FILE="$LLBC_DIR/sandbox_controller_core.llbc"
@@ -16,8 +17,8 @@ if [ ! -x "$CHARON" ] || [ ! -x "$AENEAS" ]; then
   exit 1
 fi
 
-test "$(git -C "$ROOT_DIR/.tools/aeneas" rev-parse HEAD)" = "$AENEAS_REV"
-test "$(git -C "$ROOT_DIR/.tools/aeneas/charon" rev-parse HEAD)" = "$CHARON_REV"
+test "$(git -C "$TOOL_ROOT/aeneas" rev-parse HEAD)" = "$AENEAS_REV"
+test "$(git -C "$TOOL_ROOT/aeneas/charon" rev-parse HEAD)" = "$CHARON_REV"
 
 mkdir -p "$LLBC_DIR" "$LEAN_DIR"
 

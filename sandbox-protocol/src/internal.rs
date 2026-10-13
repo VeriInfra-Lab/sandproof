@@ -5,7 +5,7 @@
 
 use crate::{DeploymentId, NodeId, OperationId, SandboxId, TenantId};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, num::NonZeroU64};
+use std::{error::Error, fmt};
 
 pub const INTERNAL_PROTOCOL_VERSION: u16 = 2;
 /// Formats deployed by the sole center/host products. Kept alongside the wire
@@ -43,22 +43,25 @@ pub mod window;
 /// Independent of the local core's epoch/generation and Redis revision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u64", into = "u64")]
-pub struct PositiveCounter(NonZeroU64);
+// The field remains private: every public construction and deserialization
+// goes through TryFrom. A plain integer avoids the fixed extractor's unsupported
+// NonZero associated-type representation without changing the wire contract.
+pub struct PositiveCounter(u64);
 
 impl PositiveCounter {
     #[must_use]
     pub const fn get(self) -> u64 {
-        self.0.get()
+        self.0
     }
 
     /// Never wrap an exhausted identity or version back to an old value.
     /// # Errors
     /// Returns `InvalidCounter` at exhaustion.
     pub fn checked_next(self) -> Result<Self, InternalError> {
-        self.get()
-            .checked_add(1)
-            .ok_or(InternalError::InvalidCounter)?
-            .try_into()
+        match self.get().checked_add(1) {
+            Some(value) => Self::try_from(value),
+            None => Err(InternalError::InvalidCounter),
+        }
     }
 }
 
@@ -66,9 +69,11 @@ impl TryFrom<u64> for PositiveCounter {
     type Error = InternalError;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        NonZeroU64::new(value)
-            .map(Self)
-            .ok_or(InternalError::InvalidCounter)
+        if value == 0 {
+            Err(InternalError::InvalidCounter)
+        } else {
+            Ok(Self(value))
+        }
     }
 }
 
