@@ -533,3 +533,64 @@ fn fixed_go_multipart_reference() {
         cases.len()
     );
 }
+
+#[test]
+fn detailed_framing_preserves_stage_bounded_line_and_legacy_errors() {
+    use super::{FramingError, ReadError};
+    let head = wire(FILE, b"", b"");
+    for (input, expected) in [
+        (b"preamble".to_vec(), FramingError::NextPartEof),
+        (head.clone(), FramingError::BodyTruncated),
+        (
+            [head.clone(), b"--BOUNDARY bad\r\n".to_vec()].concat(),
+            FramingError::Boundary {
+                line: b"--BOUNDARY bad\r\n".to_vec(),
+                after_separator: false,
+            },
+        ),
+        (
+            [head, b"data\r\n--BOUNDARY bad\r\n".to_vec()].concat(),
+            FramingError::Boundary {
+                line: b"--BOUNDARY bad\r\n".to_vec(),
+                after_separator: true,
+            },
+        ),
+    ] {
+        for chunk in [1, 7, 128] {
+            let mut decoder = Decoder::new("BOUNDARY", limits()).unwrap();
+            let mut source = input.chunks(chunk);
+            let error = loop {
+                match decoder.next_event_detailed() {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        if let Some(bytes) = source.next() {
+                            decoder.feed(bytes).unwrap();
+                        } else {
+                            decoder.end_input();
+                        }
+                    }
+                    Err(error) => break error,
+                }
+            };
+            assert_eq!(error, ReadError::Framing(expected.clone()));
+            assert_eq!(
+                decoder.next_event_detailed(),
+                Err(ReadError::Decode(Error::Poisoned))
+            );
+            assert_eq!(
+                observe(&input.chunks(chunk).collect::<Vec<_>>(), limits()).error,
+                Some(expected.coarse())
+            );
+        }
+    }
+    let mut budget = limits();
+    budget.line_bytes = 3;
+    let input = b"too long\r\n";
+    let mut decoder = Decoder::new("B", budget).unwrap();
+    decoder.feed(input).unwrap();
+    assert_eq!(
+        decoder.next_event_detailed(),
+        Err(ReadError::Decode(Error::ResourceExhausted))
+    );
+    assert!(decoder.framing_error.is_none());
+}

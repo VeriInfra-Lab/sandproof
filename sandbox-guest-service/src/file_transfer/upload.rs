@@ -68,6 +68,9 @@ impl Failure {
                 Rejection::RawPathRequired => UploadRequestError::RawPathRequired,
                 Rejection::Metadata(_) => UploadRequestError::Headers(wire::Error::InvalidMetadata),
                 Rejection::GzipHeader(error) => UploadRequestError::GzipPreflight(error.into()),
+                Rejection::MultipartRead(error) => {
+                    UploadRequestError::Body(UploadBodyError::Decode(error.coarse()))
+                }
                 Rejection::RawGzipBody(error) => {
                     UploadRequestError::Body(UploadBodyError::Gzip(error.into()))
                 }
@@ -93,6 +96,9 @@ impl Failure {
 
     fn body(error: UploadBodyError) -> Self {
         match error {
+            UploadBodyError::MultipartRead(error) => {
+                Self::Rejected(Rejection::MultipartRead(error))
+            }
             UploadBodyError::MultipartSetup(error) => {
                 Self::Rejected(Rejection::MultipartSetup(error))
             }

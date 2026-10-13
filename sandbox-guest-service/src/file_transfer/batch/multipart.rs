@@ -21,6 +21,7 @@ pub struct MultipartLimits {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
+    MultipartRead(multipart::FramingError),
     MultipartSetup(multipart::BoundaryRejection),
     MissingFilename,
     Transfer(FileStreamError),
@@ -52,6 +53,14 @@ impl From<FileStreamError> for MultipartError {
 impl From<multipart::Error> for MultipartError {
     fn from(error: multipart::Error) -> Self {
         Self::Decode(error)
+    }
+}
+impl From<multipart::ReadError> for MultipartError {
+    fn from(error: multipart::ReadError) -> Self {
+        match error {
+            multipart::ReadError::Decode(error) => Self::Decode(error),
+            multipart::ReadError::Framing(error) => Self::MultipartRead(error),
+        }
     }
 }
 impl From<multipart::BoundaryError> for MultipartError {
@@ -135,6 +144,12 @@ async fn receive_file(
                 if let Some(qp) = &mut qp {
                     let prefix = qp.abort(multipart::Error::Truncated);
                     write_bytes(&mut file, &prefix.bytes).await?;
+                    // The quoted-printable reader can fail before observing its
+                    // upstream EOF. Preserve that precedence, not a false MIME
+                    // truncation response for a malformed encoded line.
+                    if prefix.error == Some(multipart::Error::Malformed) {
+                        return Err(multipart::Error::Malformed.into());
+                    }
                 }
                 return Err(error);
             }
@@ -177,7 +192,17 @@ async fn drain_field(input: &mut Input) -> Result<(), MultipartError> {
     // Only file fields have decoding/file effects. Unknown fields are discarded
     // as raw bytes, still covered by all wire/part budgets and the same deadline.
     loop {
-        match input.next().await? {
+        let event = match input.next().await {
+            Err(MultipartError::MultipartRead(multipart::FramingError::BodyTruncated)) => {
+                // Go NextPart closes/discards the previous ignored part and
+                // ignores its Read error; its subsequent line read reaches EOF.
+                return Err(MultipartError::MultipartRead(
+                    multipart::FramingError::NextPartEof,
+                ));
+            }
+            result => result?,
+        };
+        match event {
             Some(Event::Data(_)) => {}
             Some(Event::PartEnd) => return Ok(()),
             _ => return Err(multipart::Error::Malformed.into()),
@@ -229,7 +254,7 @@ impl Input {
     async fn next(&mut self) -> Result<Option<Event>, MultipartError> {
         loop {
             timely(self.deadline, Ok(()))?;
-            if let Some(event) = self.decoder.next_event()? {
+            if let Some(event) = self.decoder.next_event_detailed()? {
                 return Ok(Some(event));
             }
             if self.eof {

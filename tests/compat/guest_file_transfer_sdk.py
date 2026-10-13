@@ -132,6 +132,44 @@ async def header_rejections_async(url, root):
             assert_header_rejection(response, message, 500)
 
 
+def framing_cases(root):
+    # Synthetic malformed MIME; original SDK parses the errors and reads prefixes.
+    for compressed in [False, True]:
+        def field(name):
+            return (f'--B\r\nContent-Disposition: form-data; name="{name}"; '
+                    f'filename="{root}/framing-file"\r\n\r\n').encode()
+        for data, message, expected in [
+            (b'preamble', 'error reading form: multipart: NextPart: EOF', None),
+            (field('ignored') + b'discard', 'error reading form: multipart: NextPart: EOF', None),
+            (field('file') + b'prefix', 'error writing file: unexpected EOF', b'prefix'),
+            (field('file') + b'done\r\n--B bad\r\n',
+             'error reading form: multipart: expecting a new Part; got line "--B bad\\r\\n"', b'done'),
+            (field('file') + b'--B bad\r\n',
+             'error reading form: multipart: unexpected line in Next(): "--B bad\\r\\n"', b''),
+        ]:
+            yield ({'x-access-token': 'fixture-token', 'content-type': 'multipart/form-data; boundary=B',
+                    'content-encoding': 'gzip' if compressed else 'identity'},
+                   gzip.compress(data) if compressed else data, message, expected)
+
+
+def framing_sync(sandbox, url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for headers, data, message, expected in framing_cases(root):
+            response = client.post(f'{url}/files', headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
+            if expected is not None:
+                assert bytes(sandbox.files.read(f'{root}/framing-file', format='bytes')) == expected
+
+
+async def framing_async(sandbox, url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for headers, data, message, expected in framing_cases(root):
+            response = await client.post(f'{url}/files', headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
+            if expected is not None:
+                assert bytes(await sandbox.files.read(f'{root}/framing-file', format='bytes')) == expected
+
+
 def payloads():
     return [('empty', b''), ('binary', b'\x00\xffA\r\n'),
             ('large', bytes(range(256)) * 12289)]
@@ -608,6 +646,7 @@ def run_sync(url, root):
     compressed_sync(sandbox, url, root)
     sdk_compressed_upload_sync(sandbox, root)
     header_rejections_sync(url, root)
+    framing_sync(sandbox, url, root)
     upload_reply_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
     range_sync(url, root)
@@ -658,6 +697,7 @@ async def run_async(url, root):
     await compressed_async(sandbox, url, root)
     await sdk_compressed_upload_async(sandbox, root)
     await header_rejections_async(url, root)
+    await framing_async(sandbox, url, root)
     await upload_reply_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
     await range_async(url, root)

@@ -264,6 +264,9 @@ func (e oracleErrno) Is(target error) bool {
 
 type oracleLogger struct{}
 
+func (l oracleLogger) With() oracleLogger   { return l }
+func (l oracleLogger) Logger() oracleLogger { return l }
+
 func (l oracleLogger) Debug() oracleLogger             { return l }
 func (l oracleLogger) Warn() oracleLogger              { return l }
 func (l oracleLogger) Str(string, string) oracleLogger { return l }
@@ -345,6 +348,12 @@ func (*oracleFile) Chown(int, int) error {
 	return nil
 }
 func (*oracleFile) ReadFrom(reader io.Reader) (int64, error) {
+	if oracleStage == "Multipart" {
+		var target bytes.Buffer
+		n, err := target.ReadFrom(reader)
+		oracleMIMEWrites = append(oracleMIMEWrites, mimeWrite{data: target.Bytes()})
+		return n, err
+	}
 	if oracleStage == "RawGzip" {
 		return oracleCopied.ReadFrom(reader)
 	}
@@ -441,6 +450,8 @@ type EntryInfo struct {
 	Type     EntryInfoType      `json:"type"`
 }
 type EntryInfoType string
+
+const File EntryInfoType = "file"
 
 func uploadSuccess(fields []string, server *httptest.Server) {
 	entries := []EntryInfo{}
@@ -618,6 +629,123 @@ func multipartSetup(fields []string) error {
 	return fmt.Errorf("error reading form: %w", err)
 }
 
+// Original handleMultipartUpload / handlePart, fixed upload.go blob above.
+// Only logger/metadata namespaces are replaced; path resolution uses the
+// existing controlled identity shim. Actual readers and original error branches
+// run unchanged. Retained writes/completion are in-memory observations only.
+type API struct {
+	defaults struct{ Workdir *string }
+	logger   oracleLogger
+}
+type mimeWrite struct {
+	data     []byte
+	complete bool
+}
+
+var oracleMIMEWrites []mimeWrite
+
+func oracleReadMetadata(_ string) (map[string]string, error) {
+	oracleMIMEWrites[len(oracleMIMEWrites)-1].complete = true
+	return nil, nil
+}
+func (a *API) handleMultipartUpload(r *http.Request, u *user.User, uid, gid int, metadata map[string]string, operationID string, params PostFilesParams) (UploadSuccess, int, error) {
+	f, err := r.MultipartReader()
+	if err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("error parsing multipart form: %w", err)
+	}
+
+	paths := UploadSuccess{}
+
+	for {
+		part, partErr := f.NextPart()
+
+		if partErr == io.EOF {
+			break
+		} else if partErr != nil {
+			return nil, http.StatusInternalServerError, fmt.Errorf("error reading form: %w", partErr)
+		}
+
+		entry, status, err := a.handlePart(r, part, paths, u, uid, gid, metadata, operationID, params)
+		if err != nil {
+			return nil, status, err
+		}
+
+		if entry != nil {
+			paths = append(paths, *entry)
+		}
+	}
+
+	return paths, http.StatusOK, nil
+}
+
+func (a *API) handlePart(r *http.Request, part *multipart.Part, paths UploadSuccess, u *user.User, uid, gid int, metadata map[string]string, operationID string, params PostFilesParams) (*EntryInfo, int, error) {
+	defer part.Close()
+
+	if part.FormName() != "file" {
+		return nil, http.StatusOK, nil
+	}
+
+	filePath, err := resolvePath(part, &paths, u, a.defaults.Workdir, params)
+	if err != nil {
+		return nil, http.StatusBadRequest, err
+	}
+
+	logger := a.logger.
+		With().
+		Str("operation_id", operationID).
+		Str("event_type", "file_processing").
+		Logger()
+
+	status, err := processFile(r, filePath, part, uid, gid, metadata, logger)
+	if err != nil {
+		return nil, status, err
+	}
+
+	entry := &EntryInfo{
+		Path: filePath,
+		Name: filepath.Base(filePath),
+		Type: File,
+	}
+	persisted, err := oracleReadMetadata(filePath)
+	if err != nil {
+		logger.Warn().Str("path", filePath).Err(err).Msg("failed to read back file metadata for upload response")
+	}
+	if len(persisted) > 0 {
+		entry.Metadata = &persisted
+	}
+
+	return entry, http.StatusOK, nil
+}
+
+func multipartBody(encoded string, server *httptest.Server) {
+	data := unhex(encoded)
+	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data)), ContentLength: int64(len(data))}
+	r.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+	oracleStage, oraclePath = "Multipart", "/file"
+	oracleMIMEWrites = nil
+	_, status, err := (&API{}).handleMultipartUpload(r, &user.User{}, 0, 0, nil, "", PostFilesParams{})
+	for _, w := range oracleMIMEWrites {
+		fmt.Printf("W:%x:%t;", w.data, w.complete)
+	}
+	fmt.Print("\t")
+	if err == nil {
+		fmt.Println("END")
+		return
+	}
+	request, failure := http.NewRequest("POST", server.URL, strings.NewReader(err.Error()))
+	if failure != nil {
+		panic(failure)
+	}
+	request.Header.Set("X-Reference-Code", strconv.Itoa(status))
+	client := server.Client()
+	client.Timeout = 5 * time.Second
+	response, failure := client.Do(request)
+	if failure != nil {
+		panic(failure)
+	}
+	dumpUpload(response)
+}
+
 func main() {
 	if runtime.Version() != "go1.26.8" {
 		panic("requires go1.26.8")
@@ -633,6 +761,13 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "Q":
+			fmt.Printf("%x\n", strconv.Quote(string(unhex(f[1]))))
+		case "N":
+			if server == nil {
+				server = referenceServer()
+			}
+			multipartBody(f[1], server)
 		case "D":
 			if server == nil {
 				server = referenceServer()

@@ -14,6 +14,7 @@ mod tests;
 
 mod errors;
 pub use errors::io_failure;
+mod multipart_read;
 mod rejection;
 pub use rejection::{Rejection, rejected};
 mod gzip_header;

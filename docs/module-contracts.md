@@ -461,6 +461,12 @@ HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检
 
 已交出的解压前缀继续留在文件中，错误前不执行 metadata 完成，所以原 metadata 保留；文件关闭与原实际阻塞任务按原责任退出，响应仍持有原槽位/期限至最后字节副本释放。响应失败不回滚或重放。Rejection 新增 RawGzipBody(GzipReadError)，穷尽匹配须补该分支；旧 upload_request 保留原 UploadBodyError::Gzip 分类。固定原 getDecompressedBody/processFile 使用实际 Go gzip reader 与内存复制目标的前缀/HTTP 对照已本地运行，Linux 文件/metadata/SDK 组合待实跑；不代表真实磁盘故障、全部 gzip 错误或完整上传端点验收。
 
+[multipart framing 错误](../sandbox-guest-runtime/src/multipart/framing.rs)通过新增 next_event_detailed() 保留正文截断、NextPart 行读取 EOF 及无效边界行。旧 next_event() 仍返回原粗 Error 且保持 Copy 接口；诊断只在行预算检查后复制实际行，额外观察最多 line_bytes。service UploadBodyError/Rejection 新增 MultipartRead(FramingError)，调用方须补穷尽匹配；旧 upload_request 将其还原为 Decode(Truncated/Malformed)，直接批次入口返回新细分类。quoted-printable abort 若先遇到坏编码行，保留其 Malformed 优先级，不误报 MIME 截断。
+
+[公开 framing 响应](../sandbox-guest-service/src/upload_response/multipart_read.rs)按原读取阶段返回 500：文件正文截断用 `error writing file: unexpected EOF`，前导/后续 part 行读取 EOF 用 `error reading form: multipart: NextPart: EOF`；被忽略字段排空中的原始正文 EOF 按 Go Close 忽略原 Read 错误后的 NextPart EOF 包装。无效边界行按是否消费分隔换行保留两种原诊断，Go %q 再经 JSON 转义；固定 Go 1.26.8 的 IsPrint 表与非法 UTF-8 规则在两遍计长/输出中使用，不提前拼接转义消息。PartEnd 已完成文件及其 metadata，之后边界失败不回滚；当前正文截断保留前缀与旧 metadata。原响应槽位/期限/最后副本责任沿用。
+
+MIME 头解析/截断、quoted-printable 诊断、HTTP 源/预算、multipart 内的 gzip 失败和 MIME End 后的传输/校验故障仍保持显式分类，不能仅凭粗 Malformed/Truncated 伪造 Go 500；畸形未知 QP 字段仍不声明全等价。固定原 handleMultipartUpload/handlePart/processFile 与内存文件观察、真实 HTTP 输出对照已本地运行；Linux 文件/metadata/SDK 组合待实跑，组件与模板未启用。
+
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 
 [阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)与上传共用按需消费、Bytes 最后副本释放和取消通道。打开成功不预读正文；每个请求只有一个编码 worker、一个显式块大小的源缓冲和一个交付块，压缩库工作区及 HTTP 分配另计。原始/压缩字节预算独立，缓冲可预读至一个源块，超出累计消费预算不能成功。每次源填充前后及缓冲消费时均检查原期限/取消；已进入的 open/read/destructor 不能被超时强制终止，其原守卫保留至真正返回。句柄、worker 与已交出块分别保留原容量，Bytes 副本还保留原授权；没有 Content-Length 或重新准入。

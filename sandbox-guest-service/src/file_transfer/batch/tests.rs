@@ -4,6 +4,7 @@ mod multipart;
 mod response;
 mod upload;
 mod upload_errors;
+mod upload_framing;
 mod upload_gzip_header;
 mod upload_gzip_read;
 mod upload_headers;

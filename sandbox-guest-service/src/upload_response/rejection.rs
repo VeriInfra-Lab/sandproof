@@ -10,6 +10,7 @@ use tokio::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
+    MultipartRead(sandproof_guest_runtime::multipart::FramingError),
     RawGzipBody(GzipReadError),
     MultipartSetup(BoundaryRejection),
     DuplicatePath(DuplicatePath),
@@ -22,7 +23,10 @@ pub enum Rejection {
 }
 impl Rejection {
     fn status(&self) -> StatusCode {
-        if matches!(self, Self::MultipartSetup(_) | Self::RawGzipBody(_)) {
+        if matches!(
+            self,
+            Self::MultipartSetup(_) | Self::RawGzipBody(_) | Self::MultipartRead(_)
+        ) {
             StatusCode::INTERNAL_SERVER_ERROR
         } else {
             StatusCode::BAD_REQUEST
@@ -53,6 +57,7 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::MultipartRead(error) => return super::multipart_read::payload(error, limit),
         Rejection::RawGzipBody(error) => parts.extend([b"error writing file: ".as_slice(), error.message()]),
         Rejection::MultipartSetup(error) => parts.push(match error {
             BoundaryRejection::NotMultipart => b"error parsing multipart form: request Content-Type isn't multipart/form-data",

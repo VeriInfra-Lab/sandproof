@@ -2,7 +2,7 @@ use super::{Fixture, limits};
 use crate::file_transfer::{FileStreamError, MultipartError, MultipartLimits};
 use axum::body::{Body, Bytes};
 use futures_util::stream;
-use sandproof_guest_runtime::multipart::{Error, Limits};
+use sandproof_guest_runtime::multipart::{Error, FramingError, Limits};
 use std::{fmt::Write as _, sync::atomic::Ordering};
 use tokio::sync::{mpsc, oneshot};
 
@@ -151,11 +151,34 @@ async fn query_override_missing_filename_empty_forms_and_duplicate_effects() {
 
 #[tokio::test]
 async fn decoding_or_final_boundary_failure_keeps_previous_and_partial_files() {
-    for (suffix, expected, encoded) in [
-        (b"prefix".as_slice(), b"prefix".as_slice(), false),
-        (b"A=00=ff", b"A\0\xff", true),
-        (b"prefix\x7fbad\r\n--B--", b"prefix", true),
-        (b"prefix\r\n--B broken\r\n", b"prefix", false),
+    for (suffix, expected, encoded, failure) in [
+        (
+            b"prefix".as_slice(),
+            b"prefix".as_slice(),
+            false,
+            MultipartError::MultipartRead(FramingError::BodyTruncated),
+        ),
+        (
+            b"A=00=ff",
+            b"A\0\xff",
+            true,
+            MultipartError::MultipartRead(FramingError::BodyTruncated),
+        ),
+        (
+            b"prefix\x7fbad\r\n--B--",
+            b"prefix",
+            true,
+            MultipartError::Decode(Error::Malformed),
+        ),
+        (
+            b"prefix\r\n--B broken\r\n",
+            b"prefix",
+            false,
+            MultipartError::MultipartRead(FramingError::Boundary {
+                line: b"--B broken\r\n".to_vec(),
+                after_separator: true,
+            }),
+        ),
     ] {
         let root = tempfile::tempdir().unwrap();
         let fixture = Fixture::new(root.path()).await;
@@ -169,7 +192,7 @@ async fn decoding_or_final_boundary_failure_keeps_previous_and_partial_files() {
                 .await
                 .receive_multipart(CONTENT_TYPE, body(&input, 1), None, wire_limits())
                 .await,
-            Err(MultipartError::Decode(_))
+            Err(error) if error == failure
         ));
         quiesce(&fixture).await;
         assert_eq!(
@@ -436,7 +459,7 @@ async fn header_truncation_and_missing_closing_marker_are_explicit_failures() {
             .await
             .receive_multipart(CONTENT_TYPE, body(b"", 1), None, wire_limits())
             .await,
-        Err(MultipartError::Decode(Error::Truncated))
+        Err(MultipartError::MultipartRead(FramingError::NextPartEof))
     ));
 }
 
