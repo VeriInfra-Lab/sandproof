@@ -733,17 +733,52 @@ func (r limitedMIMEReader) Read(p []byte) (int, error) {
 	}
 	return r.reader.Read(p)
 }
-func multipartBody(encoded string, server *httptest.Server, sourceFailure bool, sourceChunk int, compressed bool) {
+
+// Preserve the actual decoded chunks observed from Rust GzipBody. ReadFull
+// only controls source delivery; gzip and MIME methods remain the originals.
+// A final zero requests the real underlying error, never an injected message.
+type scheduledMIMEReader struct {
+	reader  io.Reader
+	sizes   []int
+	index   int
+	pending []byte
+}
+
+func (r *scheduledMIMEReader) Read(p []byte) (int, error) {
+	if len(r.pending) == 0 {
+		if r.index == len(r.sizes) {
+			panic("Go read beyond observed gzip schedule")
+		}
+		size := r.sizes[r.index]
+		r.index++
+		if size == 0 {
+			n, err := r.reader.Read(p)
+			if n != 0 || err == nil {
+				panic("expected actual terminal gzip error")
+			}
+			return n, err
+		}
+		r.pending = make([]byte, size)
+		if _, err := io.ReadFull(r.reader, r.pending); err != nil {
+			panic(err)
+		}
+	}
+	n := copy(p, r.pending)
+	r.pending = r.pending[n:]
+	return n, nil
+}
+func multipartBody(encoded string, server *httptest.Server, sourceFailure bool, sourceChunk int, compressed bool, sourceReads []int) {
 	data := unhex(encoded)
 	var reader io.Reader = bytes.NewReader(data)
 	if sourceFailure {
 		reader = io.MultiReader(reader, failedMIMEReader{})
 	}
-	if sourceChunk > 0 {
+	if sourceChunk > 0 && !compressed {
 		reader = limitedMIMEReader{reader, sourceChunk}
 	}
 	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(reader), ContentLength: int64(len(data))}
 	r.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+	var scheduled *scheduledMIMEReader
 	if compressed {
 		r.Header.Set("Content-Encoding", "gzip")
 		body, err := getDecompressedBody(r)
@@ -752,10 +787,17 @@ func multipartBody(encoded string, server *httptest.Server, sourceFailure bool, 
 		}
 		defer body.Close()
 		r.Body = body
+		if len(sourceReads) > 0 {
+			scheduled = &scheduledMIMEReader{reader: body, sizes: sourceReads}
+			r.Body = io.NopCloser(scheduled)
+		}
 	}
 	oracleStage, oraclePath = "Multipart", "/file"
 	oracleMIMEWrites = nil
 	_, status, err := (&API{}).handleMultipartUpload(r, &user.User{}, 0, 0, nil, "", PostFilesParams{})
+	if scheduled != nil && scheduled.index != len(scheduled.sizes) {
+		panic("Go left observed gzip reads unconsumed")
+	}
 	for _, w := range oracleMIMEWrites {
 		fmt.Printf("W:%x:%t;", w.data, w.complete)
 	}
@@ -795,7 +837,7 @@ func main() {
 		switch f[0] {
 		case "Q":
 			fmt.Printf("%x\n", strconv.Quote(string(unhex(f[1]))))
-		case "N", "V", "L", "K", "Z":
+		case "N", "V", "L", "K", "Z", "Y":
 			if server == nil {
 				server = referenceServer()
 			}
@@ -807,7 +849,17 @@ func main() {
 					panic("invalid source chunk")
 				}
 			}
-			multipartBody(f[1], server, f[0] == "V" || f[0] == "K", sourceChunk, f[0] == "Z")
+			var sourceReads []int
+			if f[0] == "Y" {
+				for _, value := range strings.Split(f[2], ",") {
+					n, err := strconv.Atoi(value)
+					if err != nil || n < 0 || n > 4096 {
+						panic("invalid observed source read")
+					}
+					sourceReads = append(sourceReads, n)
+				}
+			}
+			multipartBody(f[1], server, f[0] == "V" || f[0] == "K", sourceChunk, f[0] == "Z" || f[0] == "Y", sourceReads)
 		case "D":
 			if server == nil {
 				server = referenceServer()

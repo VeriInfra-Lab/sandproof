@@ -514,9 +514,9 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 374);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 132);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 102);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 386);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 140);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 106);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     check_files(directory.path());
 }
@@ -524,6 +524,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
 fn check_files(directory: &Path) {
     for mode in ["sync", "async"] {
         for name in [
+            "ignored-qp-rejected",
             "multipart-setup-rejected",
             "mime-header-rejected",
             "header-rejected",
@@ -536,6 +537,7 @@ fn check_files(directory: &Path) {
             b"replace"
         );
         for (name, expected) in [
+            ("ignored-qp-next", b"next".as_slice()),
             ("qp-file", b"prefix".as_slice()),
             ("framing-file", b"prefix\r\n--B-"),
         ] {

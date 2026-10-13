@@ -253,6 +253,45 @@ async def qp_async(sandbox, url, root):
             assert bytes(await sandbox.files.read(f'{root}/qp-file', format='bytes')) == b'prefix'
 
 
+def ignored_qp_cases(root):
+    # The long bad field leaves at least a full NextPart line after any QP
+    # prefetch, so this result does not depend on network frame alignment.
+    for compressed in [False, True]:
+        for bad in [False, True]:
+            name = 'ignored-qp-rejected' if bad else 'ignored-qp-next'
+            path = f'{root}/{name}'
+            ignored = (b'--B\r\nContent-Disposition: form-data; name="ignored"\r\n'
+                       b'Content-Transfer-Encoding: quoted-printable\r\n\r\n')
+            wire = (ignored + b'bad\x00\n' + (b'x' * 8192 + b'\n' if bad else b'') +
+                    f'\r\n--B\r\nContent-Disposition: form-data; name="file"; filename="{path}"\r\n\r\n'.encode() +
+                    b'next\r\n--B--\r\n')
+            yield ({'x-access-token': 'fixture-token', 'content-type': 'multipart/form-data; boundary=B',
+                    'content-encoding': 'gzip' if compressed else 'identity'},
+                   gzip.compress(wire, mtime=0) if compressed else wire, bad, path)
+
+
+def ignored_qp_sync(sandbox, url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for headers, data, bad, path in ignored_qp_cases(root):
+            response = client.post(f'{url}/files', headers=headers, content=data)
+            if bad:
+                assert_header_rejection(response, 'error reading form: multipart: NextPart: bufio: buffer full', 500)
+            else:
+                assert response.status_code == 200 and len(response.json()) == 1
+                assert bytes(sandbox.files.read(path, format='bytes')) == b'next'
+
+
+async def ignored_qp_async(sandbox, url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for headers, data, bad, path in ignored_qp_cases(root):
+            response = await client.post(f'{url}/files', headers=headers, content=data)
+            if bad:
+                assert_header_rejection(response, 'error reading form: multipart: NextPart: bufio: buffer full', 500)
+            else:
+                assert response.status_code == 200 and len(response.json()) == 1
+                assert bytes(await sandbox.files.read(path, format='bytes')) == b'next'
+
+
 def payloads():
     return [('empty', b''), ('binary', b'\x00\xffA\r\n'),
             ('large', bytes(range(256)) * 12289)]
@@ -731,6 +770,7 @@ def run_sync(url, root):
     header_rejections_sync(url, root)
     framing_sync(sandbox, url, root)
     qp_sync(sandbox, url, root)
+    ignored_qp_sync(sandbox, url, root)
     upload_reply_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
     range_sync(url, root)
@@ -783,6 +823,7 @@ async def run_async(url, root):
     await header_rejections_async(url, root)
     await framing_async(sandbox, url, root)
     await qp_async(sandbox, url, root)
+    await ignored_qp_async(sandbox, url, root)
     await upload_reply_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
     await range_async(url, root)

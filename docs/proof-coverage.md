@@ -298,6 +298,10 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [QP 诊断与前缀](../sandbox-guest-runtime/src/multipart/quoted_printable.rs)新增详细编码错误、固定物理行/后缀预算、源失败与本地检查事实分离、写入先于诊断、旧粗分类迁移及原响应责任的对应义务。新增固定源读窗口、物理行/折叠缩进/末尾 CR 游标、分段读取提交、最后片段终态和满行错误时机的对应义务。原满行缓冲对齐差异已通过保留实际读取事实消除并转为一致回归；相同源读取事实上的原方法对照不是通用精化关系或全端点证明。Linux 文件/metadata/SDK 连接待实跑；来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该行为。
 
+[multipart 源失败阶段](../sandbox-guest-runtime/src/multipart/framing.rs)及 gzip 错误连接新增 Open/EOF/失败互斥、来源原因与阶段关联、失败后缓冲字节排出、歧义边界的完成点、近似边界最后字节才携带错误、QP/头/写入优先级和 MIME End 后严格排空的对应义务。原内容编码门控、忽略字段的粘滞错误包装、旧粗入口与原响应责任延续均须保留。固定 Go gzip/MIME/QP 与内存文件观察的有限对照只属工程证据；Linux 文件/metadata/SDK 组合待补。来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧结论不能背书本候选。
+
+[忽略字段的 Close](../sandbox-guest-runtime/src/multipart/discard.rs)新增原始读取预留、事件分片与消费位置的对应、固定 QP 预读/物理行预算、编码错误后只丢弃已预读字节、Close 完成与原始 part/请求成功分离、下一 part 阶段及原授权/期限延续义务。有限对照使用 identity 受控读大小或 gzip 实际记录的读取序列，不是全网络分块等价或通用精化证明。Linux 文件/metadata/SDK 与取消组合待实跑；来宾适配未抽取或证明，纯核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新路径。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。
@@ -341,5 +345,3 @@ R3/R5 的结构整理不新增定理：共享宿主合同只是原声明的唯�
 `scripts/verify-controller.sh` 检查 Rust、重新抽取一致性、所有项目证明文件和未完成证明；`verification/ProofAudit.lean` 审查真实定理传递依赖，只允许 Lean 标准逻辑基础。编译文件数、抽取函数数、局部成功或 CI 绿灯都不是全输入证明覆盖。
 
 `controller-service` 已接入纯控制核心的创建、销毁、状态发布与真实宿主回执；`sandbox-api`、`sandbox-node` 和 `sandbox-server` 新增持久寿命/配额、鉴权、网关、实际磁盘余量检查和实机测试。这些新增服务代码**没有** Rust→Lean 对应证明；现有定理只覆盖原先明确列出的纯核心输入，不自动扩展到 SQLite、时钟、令牌、Linux 网络空间、HTTP 转发或 Firecracker。特别是自有授权、持久化决策、worker 资格和恢复逻辑不能整体放入“适配器正确”假设；需要逐项列出外部原语合同并继续做对应证明。未知回执对账、重启恢复、完整容量保证和长期完成性仍是开放义务。
-
-[multipart 源失败阶段](../sandbox-guest-runtime/src/multipart/framing.rs)及 gzip 错误连接新增 Open/EOF/失败互斥、来源原因与阶段关联、失败后缓冲字节排出、歧义边界的完成点、近似边界最后字节才携带错误、QP/头/写入优先级和 MIME End 后严格排空的对应义务。原内容编码门控、忽略字段的粘滞错误包装、旧粗入口与原响应责任延续均须保留。固定 Go gzip/MIME/QP 与内存文件观察的有限对照只属工程证据；Linux 文件/metadata/SDK 组合待补。来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧结论不能背书本候选。

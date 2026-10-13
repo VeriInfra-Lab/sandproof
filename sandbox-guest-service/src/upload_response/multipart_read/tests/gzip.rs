@@ -73,19 +73,26 @@ fn forms() -> Vec<Vec<u8>> {
 // Real GzipBody -> bounded MIME/QP readers; in-memory file observations only.
 // This stops at MIME End like the original Go method. Linux batch tests also
 // check our separate strict gzip/HTTP drain after that point.
-async fn observe_gzip(input: &[u8], chunk: usize) -> (String, Option<Rejection>) {
-    let mut body = gzip_source(input, chunk).await;
+async fn observe_gzip(
+    input: &[u8],
+    chunk: usize,
+    source_chunk: usize,
+) -> (String, Option<Rejection>, Vec<usize>) {
+    let mut body = gzip_source(input, source_chunk).await;
     let mut decoder = Decoder::new_read_buffered("B", limits(chunk)).unwrap();
     let mut pending = Bytes::new();
+    let mut reads = Vec::new();
     let mut cause = None;
     let mut writes: Vec<(Vec<u8>, bool)> = vec![];
     let mut file = false;
     let mut qp: Option<QuotedPrintable> = None;
+    let mut discard: Option<Discard> = None;
     let failure = loop {
-        match decoder.next_event_detailed() {
+        match next_event(&mut decoder, &mut discard) {
             Ok(Some(Event::Part(part))) => {
                 file = part.name.as_deref() == Some("file");
                 qp = (file && part.quoted_printable).then(|| QuotedPrintable::new(chunk).unwrap());
+                discard = (!file).then(|| Discard::new(part.quoted_printable, chunk).unwrap());
                 if file {
                     writes.push((vec![], false));
                 }
@@ -117,6 +124,7 @@ async fn observe_gzip(input: &[u8], chunk: usize) -> (String, Option<Rejection>)
                 }
             }
             Ok(Some(Event::PartEnd)) => {
+                discard = None;
                 if let Some(mut reader) = qp.take() {
                     let output = reader.finish_detailed();
                     writes.last_mut().unwrap().0.extend(output.bytes);
@@ -135,7 +143,7 @@ async fn observe_gzip(input: &[u8], chunk: usize) -> (String, Option<Rejection>)
                     cause.is_none(),
                     "parser asked for input after source failure"
                 );
-                cause = feed_gzip(&mut body, &mut pending, &mut decoder, chunk).await;
+                cause = feed_gzip(&mut body, &mut pending, &mut decoder, chunk, &mut reads).await;
             }
             Err(ReadError::Source(mut stage)) => {
                 if let Some(reader) = &mut qp {
@@ -160,7 +168,7 @@ async fn observe_gzip(input: &[u8], chunk: usize) -> (String, Option<Rejection>)
     for (bytes, complete) in writes {
         write!(effects, "W:{}:{complete};", hex(&bytes)).unwrap();
     }
-    (effects, failure)
+    (effects, failure, reads)
 }
 
 async fn gzip_source(input: &[u8], chunk: usize) -> GzipBody {
@@ -184,12 +192,17 @@ async fn feed_gzip(
     pending: &mut Bytes,
     decoder: &mut Decoder,
     chunk: usize,
+    reads: &mut Vec<usize>,
 ) -> Option<GzipReadError> {
     if pending.is_empty() {
         match body.next().await {
-            Ok(Some(bytes)) => *pending = Bytes::from_owner(bytes),
+            Ok(Some(bytes)) => {
+                reads.push(bytes.as_ref().len());
+                *pending = Bytes::from_owner(bytes);
+            }
             Ok(None) => panic!("damaged gzip returned EOF"),
             Err(error) => {
+                reads.push(0);
                 decoder.fail_source().unwrap();
                 return Some(GzipReadError::try_from(error).unwrap());
             }
@@ -213,7 +226,7 @@ async fn gzip_source_stage_prefix_completion_and_precedence_match_original_go() 
     for form in &forms {
         for encoded in damaged(form) {
             for chunk in [1, 7, 128] {
-                let (effects, error) = observe_gzip(&encoded, chunk).await;
+                let (effects, error, _) = observe_gzip(&encoded, chunk, chunk).await;
                 let suffix = if let Some(error) = error {
                     wire(
                         rejected(
@@ -242,6 +255,54 @@ async fn gzip_source_stage_prefix_completion_and_precedence_match_original_go() 
     reference.finish();
     eprintln!(
         "Fixed Go gzip/MIME: {} forms x 3 source failures x 3 chunks; exact prefixes, completion and HTTP.",
+        forms.len()
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires explicit fixed Go upload reference and local loopback HTTP"]
+async fn ignored_qp_with_gzip_keeps_decoded_source_reads_and_error_stages() {
+    let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
+    let forms = super::ignored::forms();
+    for form in &forms {
+        for encoded in damaged(form) {
+            for source in [1, 7, 128, 4096] {
+                for chunk in [1, 128] {
+                    let (effects, error, reads) = observe_gzip(&encoded, chunk, source).await;
+                    let suffix = if let Some(error) = error {
+                        wire(
+                            rejected(
+                                error,
+                                Limits {
+                                    wire_bytes: 65536,
+                                    chunk_bytes: 37,
+                                },
+                                Instant::now() + Duration::from_secs(30),
+                                Arc::new(()),
+                            )
+                            .await
+                            .unwrap(),
+                        )
+                        .await
+                    } else {
+                        "END".into()
+                    };
+                    let schedule = reads
+                        .iter()
+                        .map(usize::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    reference.check(
+                        &format!("Y\t{}\t{schedule}", hex(&encoded)),
+                        &format!("{effects}\t{suffix}"),
+                    );
+                }
+            }
+        }
+    }
+    reference.finish();
+    eprintln!(
+        "Fixed Go ignored QP/gzip: {} forms x 3 failures x 4 decoded reads x 2 event fragments.",
         forms.len()
     );
 }

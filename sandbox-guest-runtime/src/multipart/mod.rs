@@ -5,7 +5,9 @@
 // Framing follows Go 1.26.8 mime/multipart (Copyright 2010 The Go Authors).
 // All rights reserved.
 // Adaptations are distributed under the BSD terms in GO-LICENSE.
+mod discard;
 mod framing;
+pub use discard::{Discard, DiscardStatus};
 mod header_error;
 mod headers;
 pub use framing::{FramingError, ReadError, SourceStage};
@@ -113,6 +115,8 @@ pub struct Decoder {
     source: Source,
     read_buffer: Option<read_buffer::ReadBuffer>,
     data_read_end: PartReadEnd,
+    body_read_remaining: usize,
+    body_read_end: PartReadEnd,
 }
 
 impl Decoder {
@@ -160,6 +164,8 @@ impl Decoder {
             source: Source::Open,
             read_buffer: read_buffered.then(read_buffer::ReadBuffer::default),
             data_read_end: PartReadEnd::More,
+            body_read_remaining: 0,
+            body_read_end: PartReadEnd::More,
         })
     }
 
@@ -304,6 +310,10 @@ impl Decoder {
     /// # Errors
     /// Invalid framing/headers, budgets, early EOF or a failed decoder.
     pub fn next_event_detailed(&mut self) -> Result<Option<Event>, ReadError> {
+        self.next_event_read(usize::MAX)
+    }
+
+    fn next_event_read(&mut self, capacity: usize) -> Result<Option<Event>, ReadError> {
         self.data_read_end = PartReadEnd::More;
         if self.phase != Phase::Failed
             && self
@@ -314,7 +324,7 @@ impl Decoder {
             self.phase = Phase::Failed;
             return Err(ReadError::Decode(Error::InputPending));
         }
-        let result = self.advance();
+        let result = self.advance(capacity);
         match &result {
             Ok(None) => {
                 self.wants_input = true;
@@ -326,7 +336,7 @@ impl Decoder {
         result.map_err(|error| self.read_error.take().unwrap_or(ReadError::Decode(error)))
     }
 
-    fn advance(&mut self) -> Result<Option<Event>, Error> {
+    fn advance(&mut self, capacity: usize) -> Result<Option<Event>, Error> {
         loop {
             let bytes = &self.buffer[self.offset..];
             match self.phase {
@@ -382,6 +392,9 @@ impl Decoder {
                     return Ok(Some(Event::Part(part)));
                 }
                 Phase::Body => {
+                    if self.body_read_remaining != 0 {
+                        return Ok(Some(self.body_data()));
+                    }
                     let scan = scan_body(
                         bytes,
                         &self.dash,
@@ -390,18 +403,16 @@ impl Decoder {
                         self.source != Source::Open,
                     );
                     if scan.bytes != 0 {
-                        let n = scan.bytes.min(self.limits.chunk_bytes);
-                        let data = bytes[..n].to_vec();
-                        self.offset += n;
-                        self.body_start = false;
-                        self.data_read_end = if n == scan.bytes && scan.boundary {
+                        let n = scan.bytes.min(capacity);
+                        self.body_read_remaining = n;
+                        self.body_read_end = if n == scan.bytes && scan.boundary {
                             PartReadEnd::Eof
                         } else if n == bytes.len() && self.source != Source::Open {
                             PartReadEnd::Failed(Error::Truncated)
                         } else {
                             PartReadEnd::More
                         };
-                        return Ok(Some(Event::Data(data)));
+                        return Ok(Some(self.body_data()));
                     }
                     if scan.boundary {
                         let after_separator = bytes.starts_with(&self.delimiter);
@@ -422,6 +433,18 @@ impl Decoder {
                 }
             }
         }
+    }
+
+    fn body_data(&mut self) -> Event {
+        let n = self.body_read_remaining.min(self.limits.chunk_bytes);
+        let data = self.buffer[self.offset..self.offset + n].to_vec();
+        self.offset += n;
+        self.body_start = false;
+        self.body_read_remaining -= n;
+        if self.body_read_remaining == 0 {
+            self.data_read_end = self.body_read_end;
+        }
+        Event::Data(data)
     }
     fn read_boundary(&mut self) -> Result<Option<Phase>, Error> {
         loop {
@@ -452,6 +475,18 @@ impl Decoder {
                 if self.source == Source::Eof && !line.ends_with(b"\n") {
                     self.read_error = Some(ReadError::Framing(FramingError::NextPartEof));
                     return Err(Error::Truncated);
+                }
+                if self.phase
+                    == (Phase::Boundary {
+                        after_separator: false,
+                    })
+                    && line == &self.delimiter[..self.delimiter.len() - self.dash.len()]
+                {
+                    self.offset += end;
+                    self.phase = Phase::Boundary {
+                        after_separator: true,
+                    };
+                    continue;
                 }
                 if let Phase::Boundary { after_separator } = self.phase {
                     self.read_error = Some(ReadError::Framing(FramingError::Boundary {

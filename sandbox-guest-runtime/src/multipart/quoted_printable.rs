@@ -62,6 +62,9 @@ pub struct QuotedPrintable {
     ended: bool,
 }
 impl QuotedPrintable {
+    pub(super) fn read_capacity(&self) -> usize {
+        4096 - self.line.len()
+    }
     /// # Errors
     /// Invalid input-chunk budget.
     pub fn new(chunk_bytes: usize) -> Result<Self, Error> {

@@ -141,7 +141,7 @@ impl UploadBatch {
                     let file = self.start_file(filename, None).await?;
                     receive_file(&mut input, file, part.quoted_printable).await?;
                 }
-                Event::Part(_) => drain_field(&mut input).await?,
+                Event::Part(part) => drain_field(&mut input, part.quoted_printable).await?,
                 Event::End => ended = true,
                 _ => return Err(multipart::Error::Malformed.into()),
             }
@@ -243,36 +243,11 @@ async fn write_bytes(file: &mut BatchFile<'_>, bytes: &[u8]) -> Result<(), Multi
     Ok(())
 }
 
-async fn drain_field(input: &mut Input) -> Result<(), MultipartError> {
-    // Only file fields have decoding/file effects. Unknown fields are discarded
-    // as raw bytes, still covered by all wire/part budgets and the same deadline.
-    loop {
-        let event = match input.next().await {
-            Err(MultipartError::MultipartGzip {
-                stage: SourceStage::Body,
-                error,
-            }) => {
-                // Part.Close discards the read failure. The sticky gzip error
-                // is then observed by NextPart's line read.
-                return Err(MultipartError::MultipartGzip {
-                    stage: SourceStage::NextPart,
-                    error,
-                });
-            }
-            Err(MultipartError::MultipartRead(multipart::FramingError::BodyTruncated)) => {
-                // Go NextPart closes/discards the previous ignored part and
-                // ignores its Read error; its subsequent line read reaches EOF.
-                return Err(MultipartError::MultipartRead(
-                    multipart::FramingError::NextPartEof,
-                ));
-            }
-            result => result?,
-        };
-        match event {
-            Some(Event::Data(_)) => {}
-            Some(Event::PartEnd) => return Ok(()),
-            _ => return Err(multipart::Error::Malformed.into()),
-        }
+async fn drain_field(input: &mut Input, encoded: bool) -> Result<(), MultipartError> {
+    let mut discard = multipart::Discard::new(encoded, input.limits.wire.chunk_bytes)?;
+    match input.next_with(Some(&mut discard)).await? {
+        Some(Event::PartEnd) => Ok(()),
+        _ => Err(multipart::Error::Malformed.into()),
     }
 }
 
@@ -323,9 +298,28 @@ impl Input {
     }
 
     async fn next(&mut self) -> Result<Option<Event>, MultipartError> {
+        self.next_with(None).await
+    }
+
+    async fn next_with(
+        &mut self,
+        mut discard: Option<&mut multipart::Discard>,
+    ) -> Result<Option<Event>, MultipartError> {
         loop {
             timely(self.deadline, Ok(()))?;
-            match self.decoder.next_event_detailed() {
+            let event = if let Some(discard) = &mut discard {
+                discard
+                    .advance(&mut self.decoder)
+                    .map(|status| match status {
+                        multipart::DiscardStatus::NeedInput => None,
+                        // Internal completion of Close only; never used to finish
+                        // a file or publish successful raw-part completion.
+                        multipart::DiscardStatus::Complete => Some(Event::PartEnd),
+                    })
+            } else {
+                self.decoder.next_event_detailed()
+            };
+            match event {
                 Err(multipart::ReadError::Source(stage)) => return Err(self.source_failure(stage)),
                 Ok(Some(event)) => return Ok(Some(event)),
                 Err(error) => return Err(error.into()),

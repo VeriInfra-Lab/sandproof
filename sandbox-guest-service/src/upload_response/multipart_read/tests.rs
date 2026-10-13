@@ -1,6 +1,7 @@
 use super::*;
 mod gzip;
 mod headers;
+mod ignored;
 mod quoted_printable;
 use crate::{
     file_download::tests::reference::{Reference, hex},
@@ -9,8 +10,8 @@ use crate::{
 use axum::http::HeaderValue;
 use http_body_util::BodyExt;
 use sandproof_guest_runtime::multipart::{
-    Decoder, Error as DecodeError, Event, Limits as WireLimits, PartReadEnd, QuotedPrintable,
-    QuotedPrintableReadError, ReadError,
+    Decoder, Discard, DiscardStatus, Error as DecodeError, Event, Limits as WireLimits,
+    PartReadEnd, QuotedPrintable, QuotedPrintableReadError, ReadError,
 };
 use std::{fmt::Write, sync::Arc, time::Duration};
 use tokio::time::Instant;
@@ -124,11 +125,13 @@ fn observe_reads(
     let mut file = false;
     let mut eof = false;
     let mut qp: Option<QuotedPrintable> = None;
+    let mut discard: Option<Discard> = None;
     let error = loop {
-        match decoder.next_event_detailed() {
+        match next_event(&mut decoder, &mut discard) {
             Ok(Some(Event::Part(part))) => {
                 file = part.name.as_deref() == Some("file");
                 qp = (file && part.quoted_printable).then(|| QuotedPrintable::new(chunk).unwrap());
+                discard = (!file).then(|| Discard::new(part.quoted_printable, chunk).unwrap());
                 if file {
                     writes.push((Vec::new(), false));
                 }
@@ -159,6 +162,7 @@ fn observe_reads(
                 }
             }
             Ok(Some(Event::PartEnd)) => {
+                discard = None;
                 if let Some(mut qp) = qp.take() {
                     let output = qp.finish_detailed();
                     writes.last_mut().unwrap().0.extend(output.bytes);
@@ -213,6 +217,20 @@ fn observe_reads(
         write!(effects, "W:{}:{complete};", hex(&bytes)).unwrap();
     }
     (effects, error)
+}
+
+fn next_event(
+    decoder: &mut Decoder,
+    discard: &mut Option<Discard>,
+) -> Result<Option<Event>, ReadError> {
+    if let Some(discard) = discard {
+        discard.advance(decoder).map(|status| match status {
+            DiscardStatus::NeedInput => None,
+            DiscardStatus::Complete => Some(Event::PartEnd),
+        })
+    } else {
+        decoder.next_event_detailed()
+    }
 }
 
 fn feed_source(decoder: &mut Decoder, source: &mut &[u8], chunk: usize, source_chunk: usize) {

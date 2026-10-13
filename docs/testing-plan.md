@@ -156,6 +156,10 @@ SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
 
 [Linux multipart gzip 连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_multipart_gzip.rs)检查三个错误阶段、已完成前项/当前文件前缀和 metadata、QP/头/忽略字段优先级、原编码门控、直接批次/旧入口迁移、长度/展开预算和原响应槽位/期限/字节副本。已交叉检查，执行待补。固定同步/异步 SDK 驱动增加合成压缩错误，使用原异常解析器和 SDK 回读核对文本/前缀；Rust 夹具的 QP 文件检查路径按驱动的实际创建目录修正。这些输入不来自原 SDK 压缩器，Linux 组合仍待实跑，不能计作完整 E03。
 
+[忽略 QP 字段对照](../sandbox-guest-service/src/upload_response/multipart_read/tests/ignored.rs)核对 Close 遇编码错误后保留的原始预读位置、后续文件打开/完成及原边界诊断。固定 Go L 操作独立限制源读取，Rust 内部事件分片另设；包含短/非法转义、软换行、裸控制字节、满行及后续内容，并保留前一个完成文件。gzip 组使用原上传参考 Y：Rust 记录实际解压块序列，Go 在原 gzip reader 外以 ReadFull 按序提供同样字节，末尾零项必须读到真实 gzip 错误，不注入诊断；两端必须消费同一来源序列。仅设相同块上限不足以建立该事实。入口 `SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference cargo test -p sandproof-guest-service --locked --lib ignored_qp -- --include-ignored --nocapture`，已有本地运行。
+
+[Discard 普通组件检查](../sandbox-guest-runtime/src/multipart/discard.rs)覆盖有界预读而非全字段排空、错误/顺序/来源/预算、不可复用和 4 MiB 忽略 QP 流中的固定解析容量。[Linux 忽略字段连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_ignored.rs)核对 identity/gzip 固定源读取及内部块下的后继文件/旧 metadata、先前文件保留、原错误与响应预算、旧入口和等待中的授权/取消/原期限。已交叉检查，执行待补。SDK 驱动另加入对网络分块稳定的合成成功/满行失败，核对原异常解析和后继文件回读/未创建；Linux HTTP/文件/SDK 组合未实跑，不记作原 SDK write 生成或完整 E03。
+
 [上传顺序检查](../sandbox-guest-service/src/file_transfer/batch/tests/upload.rs)连接原授权、实际账户池与临时文件，覆盖编码/首头/用户名/metadata/媒体类型/path 的拒绝优先级，raw/multipart × identity/gzip 四种组合的一次准入/一次账户查询、首 metadata 值和 raw 短正文前缀。条件变量屏障与可推进时钟核对账户查询取消/超时后原授权和上传槽位仍保留，实际查询退出后才允许初始化及容量复用。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload`；Linux service 全测试包含该组，已交叉检查，实际运行待补。固定 SDK 文件夹具所有 POST 已改接同一组件，原 raw/multipart 与合成 gzip 回读组合须在此候选重跑；无正式监听器、签名/完整上传错误 JSON、特权身份切换或 KVM 通过声明。
 
 [上传回执检查](../sandbox-guest-service/src/upload_response/tests.rs)纳入可移植 service lib，覆盖空批次、空 metadata 省略、字段/键顺序、Go 转义、精确响应线长、无效预算、原期限、逐块背压和响应丢弃后最后 Bytes 副本占额，已有本地运行。原上传 Go 参考适配器新增生成类型的成功数组与固定 PostFiles 的写头/正文调用，通过真实本机 HTTP/1.1 服务核对状态、Content-Type、Content-Length、nosniff 缺省和完整正文；含 2047/2048/2049 字节边界、控制/HTML/Unicode 字符及多文件。参考仅发送合成内存响应，不访问实际文件或启动完整 envd；运行后关闭自己的回环服务。显式入口为：

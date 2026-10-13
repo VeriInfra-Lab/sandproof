@@ -415,7 +415,7 @@ identity 下载持有原 FD 与打开后 seek 得到的初始长度，按块读�
 
 解码预算显式覆盖输入块、边界、每个 part 的全部原始 MIME 头/字段数、前导/分隔符行、全部 part 数以及整个输入字节（含未知字段、framing 和尾随内容），没有生产默认值。解析缓冲容量由配置预先确定且不增长，数据事件至多一个输入块；quoted-printable 另留固定 4096 字节物理行和至多输入块加一行的解码结果。调用者必须及时释放事件/头部/结果副本，HTTP 帧、请求准入和实际写入仍由后续组合另行占额。显式 PartEnd 仅说明原文件正文已结束，之后的边界行仍可能无效；只有显式 End 才允许 multipart 请求完成，实际 HTTP EOF/传输错误还须分别处理。为维持完整输入合同，MIME 头中截断一律失败；这是比 Go 某些 io.EOF 成功路径更严格的已记录差异。组件预算、UTF-8 拒绝和该差异不等于固定 Go 全协议兼容。
 
-[multipart 上传连接](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)消费一个新批次和 identity 编码的 HTTP Body，保持原授权、账号快照、容量与绝对期限。接受固定 Go MultipartReader 所用的 multipart/form-data 或 multipart/mixed；仅 name=file 的字段打开文件，查询 path 存在时覆盖文件名，缺少文件名在无查询覆盖时拒绝。未知字段按原始正文排空，没有文件/QP 解码效果，但仍消耗 MIME part、头、总量和期限预算；不声明畸形未知字段的 Go 全协议等价。文件字段的 quoted-printable 前缀按实际文件块大小顺序写入，错误不清除先前效果。
+[multipart 上传连接](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)消费一个新批次和 identity 编码的 HTTP Body，保持原授权、账号快照、容量与绝对期限。接受固定 Go MultipartReader 所用的 multipart/form-data 或 multipart/mixed；仅 name=file 的字段打开文件，查询 path 存在时覆盖文件名，缺少文件名在无查询覆盖时拒绝。未知字段通过下述 Discard 消费原始或 QP reader，不打开文件；仍消耗 MIME part、头、总量和期限预算。文件字段的 quoted-printable 前缀按实际文件块大小顺序写入，错误不清除先前效果。
 
 HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再切入固定解码块；声明 Content-Length 超额在当前文件打开前拒绝，观测长度不符也不能成功。尾随内容仍计入总量，HTTP trailers 另有字段/字节预算，重复 trailers 或其后的数据拒绝。必须同时取得 MIME End、实际 HTTP EOF 和声明长度一致才允许批次回执；仅看到结束标记仍持有原批次，随后断流、超额或原期限到达使整批失败。取消持有中的 future 不使已经派发的 I/O 提前归还授权/容量。该连接不新增监听器、不解析原请求认证/metadata 头、不处理 gzip，也不把已接受帧的长度上限当作 HTTP 库之前分配的内存证明；传输库、响应序列化/发送仍另行计费。实现和真实文件/SDK 组合入口已有原提交 Linux 组件证据，后续候选仍须重跑，完整基础和系统验收分别报告。
 
@@ -465,7 +465,7 @@ HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检
 
 [公开 framing 响应](../sandbox-guest-service/src/upload_response/multipart_read.rs)按原读取阶段返回 500：文件正文截断用 `error writing file: unexpected EOF`，前导/后续 part 行读取 EOF 用 `error reading form: multipart: NextPart: EOF`；被忽略字段排空中的原始正文 EOF 按 Go Close 忽略原 Read 错误后的 NextPart EOF 包装。无效边界行按是否消费分隔换行保留两种原诊断，Go %q 再经 JSON 转义；固定 Go 1.26.8 的 IsPrint 表与非法 UTF-8 规则在两遍计长/输出中使用，不提前拼接转义消息。PartEnd 已完成文件及其 metadata，之后边界失败不回滚；当前正文截断保留前缀与旧 metadata。原响应槽位/期限/最后副本责任沿用。
 
-有效 MIME 头中截断、HTTP 源/预算和 MIME End 后的传输/校验故障仍保持显式分类，不能仅凭粗 Malformed/Truncated 伪造 Go 500；畸形未知 QP 字段仍不声明全等价。固定原 handleMultipartUpload/handlePart/processFile 与内存文件观察、真实 HTTP 输出对照已本地运行；Linux 文件/metadata/SDK 组合待实跑，组件与模板未启用。
+有效 MIME 头中截断、HTTP 源/预算和 MIME End 后的传输/校验故障仍保持显式分类，不能仅凭粗 Malformed/Truncated 伪造 Go 500。固定原 handleMultipartUpload/handlePart/processFile 与内存文件观察、真实 HTTP 输出对照已本地运行；Linux 文件/metadata/SDK 组合待实跑，组件与模板未启用。
 
 [MIME 头错误](../sandbox-guest-runtime/src/multipart/header_error.rs)按固定 Go textproto 的顺序保留首行缩进、物理行缺少冒号、逻辑行字段名/值非法三类诊断；首行缩进的源行超过原 80 字节诊断限额时返回原 `multipart: message too large`。其他诊断行分别使用原物理行或去掉行尾/折叠缩进后的逻辑行。合法 token 字段名在值验证前按 Go 规范化大小写；含空格的字段名不规范化。公开响应加原 `error reading form` 包装并返回 500，沿用固定 Go Quote/JSON 两遍预算和原发送责任。
 
@@ -481,7 +481,7 @@ UploadBodyError / Rejection 新增 QuotedPrintable，穷尽匹配须更新。文
 
 Data 后的 data_read_end 保留同次原始 part 读取是否已携带 EOF/失败，终态只随最后一个数据片段交付。QP feed_reader 在物理行满 4096 字节且同次读取未带 EOF/失败时立即报告 buffer full，不再轮询下一次源读取；同次 EOF 或错误按原 ReadSlice 顺序参与解码。service 已连接这些入口；此前正文起始偏移 4095/4096 处的满行差异已改为固定 Go 的一致回归。来源读取大小与内部事件分块分别对照，不能用扩大内部块大小掩盖时机差异。旧 Decoder::new 和 QP feed/finish 仍保留原事件式 API；需要原读取边界时须成组迁移到新入口，旧 upload_request 的粗错误形状不变，但沿用新文件连接的实际满行失败时机。
 
-FramingError 新增 ReadBufferFull，穷尽匹配须更新；原 NextPart 的 4096 字节 ReadSlice 满行失败映射为 error reading form: multipart: NextPart: bufio: buffer full 的 500，粗分类为 Malformed，独立于调用者的行/输入预算。实际源失败中的歧义边界尾部按下述来源终态处理；畸形未知 QP 字段仍不在全等价承诺内。固定原方法对照以相同的源读取事实为前提，不证明真实 HTTP/gzip 两端底层分块节奏相同；E03 完整端点对照仍待执行。Linux 实际文件/metadata/所有权/SDK 回读待实跑，模块与模板未启用。
+FramingError 新增 ReadBufferFull，穷尽匹配须更新；原 NextPart 的 4096 字节 ReadSlice 满行失败映射为 error reading form: multipart: NextPart: bufio: buffer full 的 500，粗分类为 Malformed，独立于调用者的行/输入预算。实际源失败中的歧义边界尾部按下述来源终态处理。固定原方法对照以相同的源读取事实为前提，不证明真实 HTTP/gzip 两端底层分块节奏相同；E03 完整端点对照仍待执行。Linux 实际文件/metadata/所有权/SDK 回读待实跑，模块与模板未启用。
 
 [multipart 内 gzip 读取失败](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)保留原内容编码和实际 Body 读取失败，截断、校验及后续成员坏头按 MIME 所处阶段生成固定 500：NextPart 使用 error reading form: multipart: NextPart 包装，头读取使用 error reading form，文件复制使用 error writing file。忽略字段的 Close 丢弃读取错误后，粘滞 gzip 错误按 NextPart 报告。已有坏 MIME 头或 QP 诊断按原顺序优先；写入失败又先于编码诊断。identity 输入即使携带同型错误也不能套用 gzip 包装；未知 DEFLATE 细节、传输/长度/预算/期限保持独立分类。
 
@@ -489,6 +489,9 @@ Decoder::fail_source 只接受等待输入且无未提交片段、EOF 或此前�
 
 ReadError 新增 Source，UploadBodyError/Rejection 新增 MultipartGzip，穷尽匹配须迁移。详细 parser 调用方须保留并关联来源原因；单独把 Source 转为 UploadBodyError 会报告 Poisoned，不能构造虚假的 EOF 原因。旧 next_event 将 Source 降为 Truncated，旧 fail_input 保留立即 poison 接口；旧 upload_request 将新 gzip 拒绝降回 Body(Gzip)，直接批次入口则返回新增详细变体。相同读取事实的固定 Go 对照已有本地运行，Linux 文件/metadata/所有权及 SDK 组合仍待实跑。
 
+[忽略字段的读取收尾](../sandbox-guest-runtime/src/multipart/discard.rs)按固定 Part.Close 消费原 reader。QP 编码错误在 Close 中被忽略，但仅丢弃同次原始读取已预读的剩余字节，不额外排空整个字段；下一 part 从该真实位置读取，可能报告原 unexpected line / expecting a new Part / buffer full，也可能继续处理后续文件。解析器保留同次 part 读取的剩余字节及终态，QP 预读量受 4096 字节物理行剩余空间约束；内部 Data 分片大小不改变原始读取位置，预读字节不重复计费，也不能绕过原总量/头/part/期限预算。
+
+Discard 只用于 new_read_buffered 解码器，接收已有 Part 后推进；NeedInput 才能继续 feed，Complete 仅表示忽略 reader 的 Close 停止，不表示原始 part 成功结束。无效顺序、复用、预算和源失败仍使解码器不可复用；忽略字段的实际正文 EOF/来源错误按下一 part 阶段报告。service 已连接，原文件字段处理接口和错误变体不变。identity 固定读大小及 gzip 实际解压读取序列的原方法对照本地通过；块上限不等于真实读取大小，此证据不证明真实 HTTP/gzip 两端分块节奏一致。Linux 实际文件/metadata/取消/SDK 组合待实跑。
 
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 
