@@ -1,4 +1,5 @@
 use super::*;
+mod setup;
 use crate::{
     file_download::tests::reference::{Reference, hex},
     file_encoding, file_upload,
@@ -18,6 +19,9 @@ fn rejection_wire_size_is_checked_after_escaping_before_allocation() {
     for error in [
         Rejection::RawPathRequired,
         Rejection::MissingFilename,
+        Rejection::MultipartSetup(BoundaryRejection::NotMultipart),
+        Rejection::MultipartSetup(BoundaryRejection::MissingBoundary),
+        Rejection::MultipartSetup(BoundaryRejection::EmptyBoundary),
         Rejection::DuplicatePath(DuplicatePath {
             path: "雪'\"<&>\u{2028}".into(),
             previous: vec!["/two\n".into(), "/three\t".into()],

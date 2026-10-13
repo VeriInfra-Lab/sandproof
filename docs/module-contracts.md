@@ -453,6 +453,10 @@ HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检
 
 仅 name=file、没有查询 path 且缺少 filename 的 part 返回原 CustomPart 的缺失文件名 400；未知字段仍忽略，显式查询 path（包括空串）仍覆盖 filename。FileStreamError 新增 DuplicatePath，UploadBodyError 新增 MissingFilename，Rejection 新增对应两种分支；旧 upload_request 也返回这两个细分类，调用方须更新穷尽匹配，不再将它们全部视为 InvalidArgument。其他解析/传输/预算错误保持明确分类。固定原 resolvePath/CustomPart 与 HTTP 输出对照已有本地运行；Linux 文件效果、槽位/期限与原 SDK 批次/合成缺失文件名解析组合待实跑，不能记作完整 multipart 或端点验收。
 
+[multipart 准备拒绝](../sandbox-guest-runtime/src/multipart/headers.rs)另保留固定 Request.MultipartReader 的非接受类型/坏参数、缺少 boundary 与首次 NextPart 的显式空 boundary 三种分类；前两种使用原 `error parsing multipart form` 包装，空 boundary 使用 `error reading form`，均经原发送器返回 500。空 boundary 在 Go reader 建立后、首个 part 前失败，但不读取正文；本组件在同一零正文读取阶段返回。完整请求的编码/首头、账户、metadata、类型选择及显式 HTTP/MIME 预算优先级不变，重复 Content-Type 仍选首值；合法 boundary 才进入原解码器。
+
+旧 runtime boundary() 继续返回粗 Malformed，新增 boundary_detailed() 区分 BoundaryRejection 与 Decode(Error)，非 UTF-8 解码参数和资源拒绝不伪造为 Go 500。service UploadBodyError/Rejection 新增 MultipartSetup，旧 upload_request 的准备错误也返回该细分类，调用方须更新穷尽匹配。原请求槽位、绝对期限、最后字节副本和初始化规则沿用；解析准备不打开文件。固定 Go 原标准库方法与真实 HTTP 输出已本地对照，Linux 请求连接及合成坏 Content-Type 经固定 SDK 解析为 SandboxException 的组合待实跑，正文 MIME/传输错误不在此次公开映射内。
+
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 
 [阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)与上传共用按需消费、Bytes 最后副本释放和取消通道。打开成功不预读正文；每个请求只有一个编码 worker、一个显式块大小的源缓冲和一个交付块，压缩库工作区及 HTTP 分配另计。原始/压缩字节预算独立，缓冲可预读至一个源块，超出累计消费预算不能成功。每次源填充前后及缓冲消费时均检查原期限/取消；已进入的 open/read/destructor 不能被超时强制终止，其原守卫保留至真正返回。句柄、worker 与已交出块分别保留原容量，Bytes 副本还保留原授权；没有 Content-Length 或重新准入。

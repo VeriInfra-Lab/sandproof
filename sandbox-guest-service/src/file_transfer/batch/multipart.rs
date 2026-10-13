@@ -21,6 +21,7 @@ pub struct MultipartLimits {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
+    MultipartSetup(multipart::BoundaryRejection),
     MissingFilename,
     Transfer(FileStreamError),
     Decode(multipart::Error),
@@ -51,6 +52,14 @@ impl From<FileStreamError> for MultipartError {
 impl From<multipart::Error> for MultipartError {
     fn from(error: multipart::Error) -> Self {
         Self::Decode(error)
+    }
+}
+impl From<multipart::BoundaryError> for MultipartError {
+    fn from(error: multipart::BoundaryError) -> Self {
+        match error {
+            multipart::BoundaryError::Rejected(error) => Self::MultipartSetup(error),
+            multipart::BoundaryError::Decode(error) => Self::Decode(error),
+        }
     }
 }
 
@@ -205,7 +214,7 @@ impl Input {
             deadline,
         )?;
         timely(deadline, Ok(()))?;
-        let boundary = multipart::boundary(content_type, limits.wire.header_bytes)?;
+        let boundary = multipart::boundary_detailed(content_type, limits.wire.header_bytes)?;
         let decoder = Decoder::new(&boundary, limits.wire)?;
         Ok(Self {
             body,

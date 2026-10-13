@@ -9,8 +9,8 @@ mod headers;
 mod quoted_printable;
 #[cfg(test)]
 mod tests;
+pub use headers::{BoundaryError, BoundaryRejection, Part, boundary, boundary_detailed};
 pub(crate) use headers::{MediaError, media_type};
-pub use headers::{Part, boundary};
 pub use quoted_printable::{Decoded, QuotedPrintable};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -579,6 +579,40 @@ func multipartRejection(fields []string) error {
 	return err
 }
 
+// Exercise fixed Go request/reader preparation without reading a real body.
+// Reaching the supplied reader means setup succeeded; its synthetic failure is
+// never published as a server error. Empty boundary fails before this point.
+type setupProbe struct{ reads int }
+
+func (p *setupProbe) Read([]byte) (int, error) {
+	p.reads++
+	return 0, errors.New("reference reached body input")
+}
+func multipartSetup(fields []string) error {
+	probe := &setupProbe{}
+	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(probe)}
+	for _, field := range fields {
+		r.Header.Add("Content-Type", string(unhex(field)))
+	}
+	f, err := r.MultipartReader()
+	if err != nil {
+		if probe.reads != 0 {
+			panic("setup rejection read body")
+		}
+		// Original handleMultipartUpload wrapper and status 500.
+		return fmt.Errorf("error parsing multipart form: %w", err)
+	}
+	_, err = f.NextPart()
+	if probe.reads != 0 {
+		return nil
+	}
+	if err == nil {
+		panic("part without input")
+	}
+	// Original handleMultipartUpload NextPart failure wrapper and status 500.
+	return fmt.Errorf("error reading form: %w", err)
+}
+
 func main() {
 	if runtime.Version() != "go1.26.8" {
 		panic("requires go1.26.8")
@@ -594,15 +628,23 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
-		case "P", "G", "B":
+		case "P", "G", "B", "T":
 			if server == nil {
 				server = referenceServer()
 			}
 			var err error
+			status := 400
 			if f[0] == "P" {
 				err = headerRejection(f[1:])
 			} else if f[0] == "B" {
 				err = multipartRejection(f[1:])
+			} else if f[0] == "T" {
+				err = multipartSetup(f[1:])
+				if err == nil {
+					fmt.Println("READY")
+					continue
+				}
+				status = 500
 			} else {
 				r := &http.Request{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(unhex(f[1])))}
 				r.Header.Set("Content-Encoding", "gzip")
@@ -619,7 +661,7 @@ func main() {
 			if failure != nil {
 				panic(failure)
 			}
-			request.Header.Set("X-Reference-Code", "400")
+			request.Header.Set("X-Reference-Code", strconv.Itoa(status))
 			client := server.Client()
 			client.Timeout = 5 * time.Second
 			response, failure := client.Do(request)

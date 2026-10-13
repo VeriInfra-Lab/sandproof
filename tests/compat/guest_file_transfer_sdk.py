@@ -13,7 +13,7 @@ import sys
 import httpx
 
 from e2b import AsyncSandbox, Sandbox
-from e2b.exceptions import FileNotFoundException, InvalidArgumentException
+from e2b.exceptions import FileNotFoundException, InvalidArgumentException, SandboxException
 from e2b.sandbox_sync.filesystem.filesystem import _handle_filesystem_envd_api_exception
 from sdk_support import isolated_sdk_environment
 
@@ -68,15 +68,34 @@ def duplicate_message(path, previous=()):
     return message
 
 
-def assert_header_rejection(response, message):
-    assert response.status_code == 400, response.text
-    assert response.json() == {'code': 400, 'message': message}
+def multipart_setup_cases(root):
+    # The original SDK supplies valid multipart framing; malformed setup is synthetic.
+    for compressed in [False, True]:
+        for content_type, message in [
+            ('multipart/related; boundary=B', "error parsing multipart form: request Content-Type isn't multipart/form-data"),
+            ('multipart/form-data', 'error parsing multipart form: no multipart boundary param in Content-Type'),
+            ('multipart/form-data; boundary=""', 'error reading form: multipart: boundary is empty'),
+        ]:
+            yield ({'path': f'{root}/multipart-setup-rejected'},
+                   {'x-access-token': 'fixture-token', 'content-type': content_type,
+                    'content-encoding': 'gzip' if compressed else 'identity'},
+                   gzip.compress(b'never') if compressed else b'never', message)
+
+
+def assert_header_rejection(response, message, status=400):
+    assert response.status_code == status, response.text
+    assert response.json() == {'code': status, 'message': message}
     assert response.content.endswith(b'\n')
     assert response.headers['content-type'] == 'application/json; charset=utf-8'
     assert response.headers['x-content-type-options'] == 'nosniff'
     error = _handle_filesystem_envd_api_exception(response)
-    assert isinstance(error, InvalidArgumentException), error
-    assert str(error) == message
+    if status == 400:
+        assert isinstance(error, InvalidArgumentException), error
+        assert str(error) == message
+    else:
+        assert status == 500
+        assert type(error) is SandboxException, error
+        assert str(error) == f'500: {message}'
 
 
 def header_rejections_sync(url, root):
@@ -91,6 +110,9 @@ def header_rejections_sync(url, root):
             response = client.post(f'{url}/files', headers=headers, content=data)
             assert_header_rejection(response, 'error getting multipart custom part file name: '
                                     'filename not found in Content-Disposition header')
+        for params, headers, data, message in multipart_setup_cases(root):
+            response = client.post(f'{url}/files', params=params, headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
 
 
 async def header_rejections_async(url, root):
@@ -105,6 +127,9 @@ async def header_rejections_async(url, root):
             response = await client.post(f'{url}/files', headers=headers, content=data)
             assert_header_rejection(response, 'error getting multipart custom part file name: '
                                     'filename not found in Content-Disposition header')
+        for params, headers, data, message in multipart_setup_cases(root):
+            response = await client.post(f'{url}/files', params=params, headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
 
 
 def payloads():

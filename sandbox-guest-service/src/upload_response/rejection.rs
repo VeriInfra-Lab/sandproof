@@ -5,10 +5,12 @@ use super::{Error, GzipHeaderError, Limits, Owner, Response, errors};
 use crate::file_upload::{DuplicatePath, MetadataFault, MetadataReason};
 use axum::http::StatusCode;
 use sandproof_guest_runtime::file_upload::MetadataViolation;
+use sandproof_guest_runtime::multipart::BoundaryRejection;
 use tokio::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
+    MultipartSetup(BoundaryRejection),
     DuplicatePath(DuplicatePath),
     MissingFilename,
     UnsupportedEncoding(Vec<u8>),
@@ -16,6 +18,15 @@ pub enum Rejection {
     RawPathRequired,
     Metadata(MetadataFault),
     GzipHeader(GzipHeaderError),
+}
+impl Rejection {
+    fn status(&self) -> StatusCode {
+        if matches!(self, Self::MultipartSetup(_)) {
+            StatusCode::INTERNAL_SERVER_ERROR
+        } else {
+            StatusCode::BAD_REQUEST
+        }
+    }
 }
 
 /// Source bytes were retained under admitted header/part/result budgets.
@@ -29,13 +40,9 @@ pub async fn rejected(
     deadline: Instant,
     owner: Owner,
 ) -> Result<Response, Error> {
-    errors::send_error(
-        StatusCode::BAD_REQUEST,
-        limits,
-        deadline,
-        owner,
-        move || payload(&error, limits.wire_bytes),
-    )
+    errors::send_error(error.status(), limits, deadline, owner, move || {
+        payload(&error, limits.wire_bytes)
+    })
     .await
 }
 
@@ -45,6 +52,11 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::MultipartSetup(error) => parts.push(match error {
+            BoundaryRejection::NotMultipart => b"error parsing multipart form: request Content-Type isn't multipart/form-data",
+            BoundaryRejection::MissingBoundary => b"error parsing multipart form: no multipart boundary param in Content-Type",
+            BoundaryRejection::EmptyBoundary => b"error reading form: multipart: boundary is empty",
+        }),
         Rejection::DuplicatePath(error) => return duplicate_payload(error, limit),
         Rejection::MissingFilename => parts.push(b"error getting multipart custom part file name: filename not found in Content-Disposition header"),
         Rejection::GzipHeader(error) => parts.extend([
@@ -99,7 +111,7 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
             }
         }
     }
-    errors::envelope(&parts.iter().copied(), 400, limit)
+    errors::envelope(&parts.iter().copied(), error.status().as_u16(), limit)
 }
 
 fn duplicate_payload(error: &DuplicatePath, limit: usize) -> Result<Vec<u8>, Error> {

@@ -11,23 +11,56 @@ pub struct Part {
     pub quoted_printable: bool,
 }
 
+/// Fixed `Request.MultipartReader` / empty-boundary `NextPart` rejections. None of
+/// these reads the request body. Resource and text limitations stay separate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoundaryRejection {
+    NotMultipart,
+    MissingBoundary,
+    EmptyBoundary,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoundaryError {
+    Rejected(BoundaryRejection),
+    Decode(Error),
+}
+
 /// Parse a bounded Content-Type value. `Decoder::new` separately limits boundary
 /// bytes. Parameter quoting/continuations follow the fixed Go MIME contract.
 /// # Errors
 /// Oversized header, non-multipart type, bad parameters or missing boundary.
 pub fn boundary(content_type: &str, header_bytes: usize) -> Result<String, Error> {
+    boundary_detailed(content_type, header_bytes).map_err(|error| match error {
+        BoundaryError::Rejected(_) => Error::Malformed,
+        BoundaryError::Decode(error) => error,
+    })
+}
+
+/// Preserve the original public failure stage before body polling. An explicit
+/// empty boundary passes Go `MultipartReader` but fails its first `NextPart`; both
+/// happen before any body read. This component still rejects non-UTF-8 decoded
+/// parameters without inventing a corresponding Go public error.
+/// # Errors
+/// Oversized header, unsupported text, invalid type/parameters, absent/empty boundary.
+pub fn boundary_detailed(content_type: &str, header_bytes: usize) -> Result<String, BoundaryError> {
     if content_type.len() > header_bytes {
-        return Err(Error::ResourceExhausted);
+        return Err(BoundaryError::Decode(Error::ResourceExhausted));
     }
-    let (kind, mut params) = media_type(content_type).map_err(|_| Error::Malformed)?;
+    let (kind, mut params) = media_type(content_type).map_err(|error| match error {
+        MediaError::Invalid => BoundaryError::Rejected(BoundaryRejection::NotMultipart),
+        MediaError::NonUtf8 => BoundaryError::Decode(Error::Malformed),
+    })?;
     // Request.MultipartReader in the fixed Go HTTP handler accepts both.
     if kind != "multipart/form-data" && kind != "multipart/mixed" {
-        return Err(Error::Malformed);
+        return Err(BoundaryError::Rejected(BoundaryRejection::NotMultipart));
     }
-    params
+    let value = params
         .remove("boundary")
-        .filter(|s| !s.is_empty())
-        .ok_or(Error::Malformed)
+        .ok_or(BoundaryError::Rejected(BoundaryRejection::MissingBoundary))?;
+    if value.is_empty() {
+        return Err(BoundaryError::Rejected(BoundaryRejection::EmptyBoundary));
+    }
+    Ok(value)
 }
 
 pub(super) fn parse(raw: &[u8], limit: usize) -> Result<Part, Error> {

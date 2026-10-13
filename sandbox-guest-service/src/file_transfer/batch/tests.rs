@@ -7,6 +7,7 @@ mod upload_errors;
 mod upload_gzip_header;
 mod upload_headers;
 mod upload_multipart;
+mod upload_multipart_setup;
 use crate::file_transfer::FileStreams;
 use crate::files::{FileContextLimits, FileSettings};
 use crate::{

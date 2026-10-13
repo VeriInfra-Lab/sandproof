@@ -15,7 +15,7 @@ use axum::{
 use http_body_util::BodyExt;
 use std::{sync::atomic::Ordering, time::Duration};
 
-fn unread_body() -> Body {
+pub(super) fn unread_body() -> Body {
     Body::from_stream(futures_util::stream::poll_fn(
         |_| -> std::task::Poll<Option<Result<Bytes, std::io::Error>>> {
             panic!("rejected identity request must not poll its body")

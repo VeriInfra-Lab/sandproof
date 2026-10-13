@@ -71,6 +71,9 @@ impl Failure {
                 Rejection::MissingFilename => {
                     UploadRequestError::Body(UploadBodyError::MissingFilename)
                 }
+                Rejection::MultipartSetup(error) => {
+                    UploadRequestError::Body(UploadBodyError::MultipartSetup(error))
+                }
                 Rejection::DuplicatePath(error) => UploadRequestError::Body(
                     UploadBodyError::Transfer(FileStreamError::DuplicatePath(error)),
                 ),
@@ -87,6 +90,9 @@ impl Failure {
 
     fn body(error: UploadBodyError) -> Self {
         match error {
+            UploadBodyError::MultipartSetup(error) => {
+                Self::Rejected(Rejection::MultipartSetup(error))
+            }
             UploadBodyError::MissingFilename => Self::Rejected(Rejection::MissingFilename),
             UploadBodyError::Transfer(FileStreamError::DuplicatePath(error)) => {
                 Self::Rejected(Rejection::DuplicatePath(error))
