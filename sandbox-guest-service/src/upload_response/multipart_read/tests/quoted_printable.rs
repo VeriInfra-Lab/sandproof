@@ -86,6 +86,17 @@ async fn qp_diagnostic_precedes_actual_source_failure() {
             for chunk in [1, 7, 128] {
                 check_source(&mut reference, &field(data, false, prior), chunk, true).await;
                 count += 1;
+                for source_chunk in [1, 7, 4096] {
+                    check_reads(
+                        &mut reference,
+                        &field(data, false, prior),
+                        chunk,
+                        true,
+                        Some(source_chunk),
+                    )
+                    .await;
+                    count += 1;
+                }
             }
         }
     }
@@ -112,13 +123,10 @@ fn qp_response_budget_counts_quoted_suffix_and_hex_diagnostics() {
 
 #[tokio::test]
 #[ignore = "requires explicit fixed Go upload reference and local loopback HTTP"]
-async fn full_line_go_read_buffer_alignment_difference_is_explicit() {
-    // Existing event decoding receives PartEnd separately from Data; it cannot
-    // reproduce Go's simultaneous (n, EOF) observation at every source-buffer
-    // offset. Preserve this known difference rather than claiming full parity.
+async fn full_line_go_read_buffer_alignment_matches() {
     let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
     let head = field(b"", false, false).len();
-    for offset in [4095, 4096] {
+    for offset in [4094, 4095, 4096, 4097, 4098] {
         let data = vec![b'x'; 4096];
         let input = [
             vec![b'p'; offset - head - 2],
@@ -127,22 +135,79 @@ async fn full_line_go_read_buffer_alignment_difference_is_explicit() {
         ]
         .concat();
         for chunk in [1, 7, 128] {
-            let (effects, error) = observe(&input, chunk, false);
-            assert!(error.is_none());
-            assert_eq!(effects, format!("W:{}:true;", hex(&data)));
+            check(&mut reference, &input, chunk).await;
         }
-        let payload = qp_payload(&Qp::LineTooLong, 65536).unwrap();
-        reference.check(
-            &format!("N\t{}", hex(&input)),
-            &format!(
-                "W:{}:false;\t500\t{}\t{}\t{}\t{}",
-                hex(&data),
-                hex(b"application/json; charset=utf-8"),
-                hex(payload.len().to_string().as_bytes()),
-                hex(b"nosniff"),
-                hex(&payload)
-            ),
-        );
     }
     reference.finish();
+}
+
+#[tokio::test]
+#[ignore = "requires explicit fixed Go upload reference and local loopback HTTP"]
+async fn source_reads_and_event_fragments_are_independent() {
+    let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
+    let head = field(b"", false, false).len();
+    let mut count = 0;
+    for offset in [head, 4094, 4095, 4096, 4097] {
+        for length in [4095, 4096, 4097] {
+            for tail in [b"".as_slice(), b"=", b"\r\n", b"\0", b"=\r\r"] {
+                for leading_line in [b"".as_slice(), b"decoded=00\r\n"] {
+                    let data = [leading_line.to_vec(), vec![b'x'; length], tail.to_vec()].concat();
+                    let input = [
+                        if offset == head {
+                            vec![]
+                        } else {
+                            [vec![b'p'; offset - head - 2], b"\r\n".to_vec()].concat()
+                        },
+                        field(&data, true, false),
+                    ]
+                    .concat();
+                    for source_chunk in [1, 7, 128, 4095, 4096, 65536] {
+                        for chunk in [1, 7, 128] {
+                            check_reads(&mut reference, &input, chunk, false, Some(source_chunk))
+                                .await;
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    reference.finish();
+    eprintln!("Fixed Go source reads vs event fragments: {count} file/HTTP observations.");
+}
+
+#[tokio::test]
+#[ignore = "requires explicit fixed Go upload reference and local loopback HTTP"]
+async fn physical_header_fragments_and_folded_indent_preserve_read_alignment() {
+    let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
+    let mut count = 0;
+    for size in [3968, 3975, 3976, 4093, 4094, 4095, 4096, 8190] {
+        for folded in [false, true] {
+            let extra = if folded {
+                [
+                    b"X: first\r\n".to_vec(),
+                    vec![b' '; size],
+                    b"continued\r\n".to_vec(),
+                ]
+                .concat()
+            } else {
+                [b"X:".to_vec(), vec![b'x'; size], b"\r\n".to_vec()].concat()
+            };
+            let mut input = field(&vec![b'x'; 4096], true, false);
+            input.splice(5..5, extra);
+            for source_chunk in [128, 4096, 65536] {
+                for chunk in [1, 7, 128] {
+                    check_reads(&mut reference, &input, chunk, false, Some(source_chunk)).await;
+                    count += 1;
+                }
+            }
+        }
+    }
+    for source_chunk in [1, 7, 4096] {
+        let input = vec![b'x'; 4096];
+        check_reads(&mut reference, &input, 7, false, Some(source_chunk)).await;
+        count += 1;
+    }
+    reference.finish();
+    eprintln!("Fixed Go header read windows and full framing line: {count} observations.");
 }

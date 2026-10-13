@@ -477,7 +477,12 @@ HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检
 
 UploadBodyError / Rejection 新增 QuotedPrintable，穷尽匹配须更新。文件连接先写已解码前缀，再报告诊断，实际写入失败优先；当前文件不 finish、不更新 metadata，之前完成文件保留。实际源失败或 MIME 正文截断可通过 abort 触发已有坏 QP 行诊断；本地长度/预算/期限不作为 Go 读取失败，保留自身分类。已完成的坏行不再轮询正文。旧 QP feed/finish/abort 与 upload_request 仍使用粗 Error，编码诊断降为 Malformed；恰好满 4096 字节后才报告源失败时现在按 buffer full 分类，旧粗入口由 Truncated 变为 Malformed。
 
-**已知兼容差异：**当前事件接口独立交出 Data 与 PartEnd，不能复现固定 Go 在全部源缓冲位置同时返回 (n, EOF) 的时机。有效的 4096 字节整行在当前组件的显式 PartEnd 下仍成功；原 Go 在正文起始偏移恰好为 4095/4096 字节的已测输入会先报 bufio: buffer full，文件未完成。该差异有固定原方法和当前行为的明确对照，须在 E03 完整端点兼容验收处理；不能把普通分块对照外推为全协议一致。实际源失败中的歧义边界尾部及畸形未知 QP 字段也不在这批全等价承诺内。已匹配样例的 Go 文件前缀/完成状态/HTTP 与 SDK 原错误解析器已有本地运行；Linux 实际文件/metadata/所有权/SDK 回读待实跑，模块与模板未启用。
+[按源读取保留边界](../sandbox-guest-runtime/src/multipart/read_buffer.rs)通过 new_read_buffered / source_read_capacity / feed_read 表示固定 Go MIME 的 4096 字节读窗口；它复用原解析缓冲并增加固定 4096 字节预读额度，不缓存完整文件。每个输入片段和输出事件仍不超过 chunk_bytes，一次实际读取可以跨多个片段，最后片段 complete 后才允许推进解析；提前解析、超过请求读取量/输入总额或失败后复用均拒绝。物理头行、折叠缩进和满行末尾 CR 的消费位置单独记录，不拿尚未形成完整 Part 的原始头长度冒充 Go 缓冲游标。原头字节/字段数、分隔行、part 数、总输入与 HTTP 帧预算继续执行；预读字节同样计入总输入。
+
+Data 后的 data_read_end 保留同次原始 part 读取是否已携带 EOF/失败，终态只随最后一个数据片段交付。QP feed_reader 在物理行满 4096 字节且同次读取未带 EOF/失败时立即报告 buffer full，不再轮询下一次源读取；同次 EOF 或错误按原 ReadSlice 顺序参与解码。service 已连接这些入口；此前正文起始偏移 4095/4096 处的满行差异已改为固定 Go 的一致回归。来源读取大小与内部事件分块分别对照，不能用扩大内部块大小掩盖时机差异。旧 Decoder::new 和 QP feed/finish 仍保留原事件式 API；需要原读取边界时须成组迁移到新入口，旧 upload_request 的粗错误形状不变，但沿用新文件连接的实际满行失败时机。
+
+FramingError 新增 ReadBufferFull，穷尽匹配须更新；原 NextPart 的 4096 字节 ReadSlice 满行失败映射为 error reading form: multipart: NextPart: bufio: buffer full 的 500，粗分类为 Malformed，独立于调用者的行/输入预算。实际源失败中的歧义边界尾部及畸形未知 QP 字段仍不在全等价承诺内。固定原方法对照以相同的源读取事实为前提，不证明真实 HTTP/gzip 两端底层分块节奏相同；E03 完整端点对照仍待执行。Linux 实际文件/metadata/所有权/SDK 回读待实跑，模块与模板未启用。
+
 
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 

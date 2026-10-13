@@ -721,11 +721,26 @@ func (a *API) handlePart(r *http.Request, part *multipart.Part, paths UploadSucc
 type failedMIMEReader struct{}
 
 func (failedMIMEReader) Read([]byte) (int, error) { return 0, io.ErrClosedPipe }
-func multipartBody(encoded string, server *httptest.Server, sourceFailure bool) {
+
+type limitedMIMEReader struct {
+	reader io.Reader
+	chunk  int
+}
+
+func (r limitedMIMEReader) Read(p []byte) (int, error) {
+	if len(p) > r.chunk {
+		p = p[:r.chunk]
+	}
+	return r.reader.Read(p)
+}
+func multipartBody(encoded string, server *httptest.Server, sourceFailure bool, sourceChunk int) {
 	data := unhex(encoded)
 	var reader io.Reader = bytes.NewReader(data)
 	if sourceFailure {
 		reader = io.MultiReader(reader, failedMIMEReader{})
+	}
+	if sourceChunk > 0 {
+		reader = limitedMIMEReader{reader, sourceChunk}
 	}
 	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(reader), ContentLength: int64(len(data))}
 	r.Header.Set("Content-Type", "multipart/form-data; boundary=B")
@@ -771,11 +786,19 @@ func main() {
 		switch f[0] {
 		case "Q":
 			fmt.Printf("%x\n", strconv.Quote(string(unhex(f[1]))))
-		case "N", "V":
+		case "N", "V", "L", "K":
 			if server == nil {
 				server = referenceServer()
 			}
-			multipartBody(f[1], server, f[0] == "V")
+			sourceChunk := 0
+			if f[0] == "L" || f[0] == "K" {
+				var err error
+				sourceChunk, err = strconv.Atoi(f[2])
+				if err != nil || sourceChunk <= 0 {
+					panic("invalid source chunk")
+				}
+			}
+			multipartBody(f[1], server, f[0] == "V" || f[0] == "K", sourceChunk)
 		case "D":
 			if server == nil {
 				server = referenceServer()

@@ -296,7 +296,7 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [MIME 头观察](../sandbox-guest-runtime/src/multipart/header_error.rs)新增完整物理/逻辑行确定时机、原验证顺序/折叠/键规范化、诊断源字节预算、真实源失败后已有头验证与本地长度/预算/期限事实分离、当前 Part 未创建及旧粗入口分类迁移的对应义务。原 Go/内存文件观察/HTTP 对照仅为工程证据，Linux 文件/SDK 与原响应责任连接待实跑。来宾适配未抽取或证明；纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新诊断。
 
-[QP 诊断与前缀](../sandbox-guest-runtime/src/multipart/quoted_printable.rs)新增详细编码错误、固定物理行/后缀预算、源失败与本地检查事实分离、写入先于诊断、旧粗分类迁移及原响应责任的对应义务。Data/PartEnd 与 Go 同时返回字节/EOF 在满行读缓冲对齐处仍有明确差异，原方法对照不是通用精化关系或全端点证明。Linux 文件/metadata/SDK 连接待实跑；来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该行为。
+[QP 诊断与前缀](../sandbox-guest-runtime/src/multipart/quoted_printable.rs)新增详细编码错误、固定物理行/后缀预算、源失败与本地检查事实分离、写入先于诊断、旧粗分类迁移及原响应责任的对应义务。新增固定源读窗口、物理行/折叠缩进/末尾 CR 游标、分段读取提交、最后片段终态和满行错误时机的对应义务。原满行缓冲对齐差异已通过保留实际读取事实消除并转为一致回归；相同源读取事实上的原方法对照不是通用精化关系或全端点证明。Linux 文件/metadata/SDK 连接待实跑；来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该行为。
 
 ### 当前串行实现的模块交接
 

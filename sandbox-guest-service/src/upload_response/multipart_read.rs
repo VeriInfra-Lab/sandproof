@@ -10,6 +10,9 @@ mod tests;
 pub(super) fn payload(error: &FramingError, limit: usize) -> Result<Vec<u8>, Error> {
     let prefix: &[u8] = match error {
         FramingError::BodyTruncated => b"error writing file: unexpected EOF",
+        FramingError::ReadBufferFull => {
+            b"error reading form: multipart: NextPart: bufio: buffer full"
+        }
         FramingError::NextPartEof => b"error reading form: multipart: NextPart: EOF",
         FramingError::Boundary {
             after_separator: true,

@@ -5,6 +5,8 @@ use super::{Error, HeaderError};
 pub enum FramingError {
     BodyTruncated,
     NextPartEof,
+    /// The original `NextPart` `ReadSlice` reached its fixed 4096-byte buffer.
+    ReadBufferFull,
     /// Includes the line ending, retained only after the line budget check.
     Boundary {
         line: Vec<u8>,
@@ -16,7 +18,7 @@ impl FramingError {
     pub fn coarse(&self) -> Error {
         match self {
             Self::BodyTruncated | Self::NextPartEof => Error::Truncated,
-            Self::Boundary { .. } => Error::Malformed,
+            Self::Boundary { .. } | Self::ReadBufferFull => Error::Malformed,
         }
     }
 }

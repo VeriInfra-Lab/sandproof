@@ -11,12 +11,14 @@ mod headers;
 pub use framing::{FramingError, ReadError};
 pub use header_error::HeaderError;
 mod quoted_printable;
+mod read_buffer;
 #[cfg(test)]
 mod tests;
 pub use headers::{BoundaryError, BoundaryRejection, Part, boundary, boundary_detailed};
 pub(crate) use headers::{MediaError, media_type};
 pub use quoted_printable::{
-    Decoded, DecodedDetailed, QuotedPrintable, QuotedPrintableError, QuotedPrintableReadError,
+    Decoded, DecodedDetailed, PartReadEnd, QuotedPrintable, QuotedPrintableError,
+    QuotedPrintableReadError,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,13 +104,32 @@ pub struct Decoder {
     phase: Phase,
     wants_input: bool,
     eof: bool,
+    read_buffer: Option<read_buffer::ReadBuffer>,
+    data_read_end: PartReadEnd,
 }
 
 impl Decoder {
     /// # Errors
     /// Invalid/unrepresentable budgets or empty/oversized boundary.
     pub fn new(boundary: &str, limits: Limits) -> Result<Self, Error> {
-        let capacity = limits.capacity()?;
+        Self::create(boundary, limits, false)
+    }
+
+    /// Preserve the fixed Go MIME reader's 4096-byte source read window.
+    /// Feed each actual source read with `feed_read`, in bounded fragments, and
+    /// use `data_read_end` with the QP reader. Adds a fixed 4096-byte lookahead
+    /// allowance to the ordinary parsing buffer; no complete file is retained.
+    /// # Errors
+    /// Invalid budgets or boundary, as for `new`.
+    pub fn new_read_buffered(boundary: &str, limits: Limits) -> Result<Self, Error> {
+        Self::create(boundary, limits, true)
+    }
+    fn create(boundary: &str, limits: Limits, read_buffered: bool) -> Result<Self, Error> {
+        let capacity = limits
+            .capacity()?
+            .checked_add(if read_buffered { 4096 } else { 0 })
+            .filter(|n| *n <= isize::MAX as usize / 8)
+            .ok_or(Error::InvalidConfiguration)?;
         if boundary.is_empty() {
             return Err(Error::Malformed);
         }
@@ -130,6 +151,8 @@ impl Decoder {
             phase: Phase::Preamble,
             wants_input: true,
             eof: false,
+            read_buffer: read_buffered.then(read_buffer::ReadBuffer::default),
+            data_read_end: PartReadEnd::More,
         })
     }
 
@@ -138,6 +161,9 @@ impl Decoder {
     /// # Errors
     /// Misuse, failed parser, size exhaustion or input after transport EOF.
     pub fn feed(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        if self.read_buffer.is_some() {
+            return self.feed_read(bytes, true);
+        }
         let result = self.feed_inner(bytes);
         if result.is_err() {
             self.phase = Phase::Failed;
@@ -184,7 +210,12 @@ impl Decoder {
     pub fn fail_input(&mut self) -> Option<ReadError> {
         let error = if self.phase == Phase::Failed {
             Some(ReadError::Decode(Error::Poisoned))
-        } else if !self.wants_input {
+        } else if !self.wants_input
+            || self
+                .read_buffer
+                .as_ref()
+                .is_some_and(|read| read.remaining.is_some())
+        {
             Some(ReadError::Decode(Error::InputPending))
         } else {
             match self.phase {
@@ -219,9 +250,22 @@ impl Decoder {
     /// # Errors
     /// Invalid framing/headers, budgets, early EOF or a failed decoder.
     pub fn next_event_detailed(&mut self) -> Result<Option<Event>, ReadError> {
+        self.data_read_end = PartReadEnd::More;
+        if self.phase != Phase::Failed
+            && self
+                .read_buffer
+                .as_ref()
+                .is_some_and(|read| read.remaining.is_some())
+        {
+            self.phase = Phase::Failed;
+            return Err(ReadError::Decode(Error::InputPending));
+        }
         let result = self.advance();
         match &result {
-            Ok(None) => self.wants_input = true,
+            Ok(None) => {
+                self.wants_input = true;
+                self.prepare_read();
+            }
             Err(_) => self.phase = Phase::Failed,
             Ok(Some(_)) => {}
         }
@@ -297,6 +341,13 @@ impl Decoder {
                         let data = bytes[..n].to_vec();
                         self.offset += n;
                         self.body_start = false;
+                        self.data_read_end = if n == scan.bytes && scan.boundary {
+                            PartReadEnd::Eof
+                        } else if n == scan.bytes && self.eof {
+                            PartReadEnd::Failed(Error::Truncated)
+                        } else {
+                            PartReadEnd::More
+                        };
                         return Ok(Some(Event::Data(data)));
                     }
                     if scan.boundary {
@@ -323,6 +374,13 @@ impl Decoder {
             let end = match bytes.iter().position(|b| *b == b'\n') {
                 Some(n) => n + 1,
                 None if self.eof => bytes.len(),
+                None if self.read_buffer.is_some()
+                    && bytes.len() >= 4096
+                    && self.limits.line_bytes >= 4096 =>
+                {
+                    self.read_error = Some(ReadError::Framing(FramingError::ReadBufferFull));
+                    return Err(Error::Malformed);
+                }
                 None if bytes.len() > self.limits.line_bytes => {
                     return Err(Error::ResourceExhausted);
                 }

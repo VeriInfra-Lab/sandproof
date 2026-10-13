@@ -8,7 +8,8 @@ use crate::{
 use axum::http::HeaderValue;
 use http_body_util::BodyExt;
 use sandproof_guest_runtime::multipart::{
-    Decoder, Event, Limits as WireLimits, QuotedPrintable, QuotedPrintableReadError, ReadError,
+    Decoder, Error as DecodeError, Event, Limits as WireLimits, PartReadEnd, QuotedPrintable,
+    QuotedPrintableReadError, ReadError,
 };
 use std::{fmt::Write, sync::Arc, time::Duration};
 use tokio::time::Instant;
@@ -17,7 +18,7 @@ fn limits(chunk: usize) -> WireLimits {
     WireLimits {
         chunk_bytes: chunk,
         boundary_bytes: 64,
-        header_bytes: 4096,
+        header_bytes: 16384,
         header_count: 32,
         line_bytes: 4096,
         parts: 32,
@@ -108,8 +109,16 @@ fn cases() -> Vec<Vec<u8>> {
 // Portable decoder consumer records only file-reader observations. Linux tests
 // separately exercise the actual batch, metadata and original admission.
 fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<Rejection>) {
-    let mut decoder = Decoder::new("B", limits(chunk)).unwrap();
-    let mut source = input.chunks(chunk);
+    observe_reads(input, chunk, source_failure, usize::MAX)
+}
+fn observe_reads(
+    input: &[u8],
+    chunk: usize,
+    source_failure: bool,
+    source_chunk: usize,
+) -> (String, Option<Rejection>) {
+    let mut decoder = Decoder::new_read_buffered("B", limits(chunk)).unwrap();
+    let mut source = input;
     let mut writes: Vec<(Vec<u8>, bool)> = Vec::new();
     let mut file = false;
     let mut eof = false;
@@ -125,11 +134,23 @@ fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<
             }
             Ok(Some(Event::Data(bytes))) => {
                 if file {
-                    if let Some(qp) = &mut qp {
-                        let output = qp.feed_detailed(&bytes);
+                    if let Some(reader) = &mut qp {
+                        let end = decoder.data_read_end();
+                        let output = reader.feed_reader(&bytes, end);
                         writes.last_mut().unwrap().0.extend(output.bytes);
                         if let Some(error) = output.error {
-                            break Some(qp_rejection(error));
+                            break Some(
+                                if error == QuotedPrintableReadError::Decode(DecodeError::Truncated)
+                                    && end == PartReadEnd::Failed(DecodeError::Truncated)
+                                {
+                                    Rejection::MultipartRead(FramingError::BodyTruncated)
+                                } else {
+                                    qp_rejection(error)
+                                },
+                            );
+                        }
+                        if end == PartReadEnd::Eof {
+                            qp = None;
                         }
                     } else {
                         writes.last_mut().unwrap().0.extend(bytes);
@@ -152,8 +173,8 @@ fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<
             Ok(Some(Event::End)) => break None,
             Ok(None) => {
                 assert!(!eof, "EOF without End");
-                if let Some(bytes) = source.next() {
-                    decoder.feed(bytes).unwrap();
+                if !source.is_empty() {
+                    feed_source(&mut decoder, &mut source, chunk, source_chunk);
                 } else if source_failure {
                     if let Some(error) = decoder.fail_input() {
                         break Some(mime_rejection(error));
@@ -161,7 +182,7 @@ fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<
                     let output = qp
                         .as_mut()
                         .expect("QP source-failure case")
-                        .abort_detailed(sandproof_guest_runtime::multipart::Error::Truncated);
+                        .abort_detailed(DecodeError::Truncated);
                     writes.last_mut().unwrap().0.extend(output.bytes);
                     break Some(qp_rejection(output.error.unwrap()));
                 } else {
@@ -171,8 +192,7 @@ fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<
             }
             Err(ReadError::Framing(error)) => {
                 if let Some(qp) = &mut qp {
-                    let output =
-                        qp.abort_detailed(sandproof_guest_runtime::multipart::Error::Truncated);
+                    let output = qp.abort_detailed(DecodeError::Truncated);
                     writes.last_mut().unwrap().0.extend(output.bytes);
                     if let Some(error @ QuotedPrintableReadError::Encoding(_)) = output.error {
                         break Some(qp_rejection(error));
@@ -194,6 +214,20 @@ fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<
     (effects, error)
 }
 
+fn feed_source(decoder: &mut Decoder, source: &mut &[u8], chunk: usize, source_chunk: usize) {
+    let count = source
+        .len()
+        .min(source_chunk)
+        .min(decoder.source_read_capacity().unwrap());
+    let (bytes, rest) = source.split_at(count);
+    *source = rest;
+    let chunks = bytes.chunks(chunk);
+    let length = chunks.len();
+    for (index, bytes) in chunks.enumerate() {
+        decoder.feed_read(bytes, index + 1 == length).unwrap();
+    }
+}
+
 fn qp_rejection(error: QuotedPrintableReadError) -> Rejection {
     match error {
         QuotedPrintableReadError::Encoding(error) => Rejection::QuotedPrintable(error),
@@ -213,6 +247,7 @@ fn error_budget_includes_go_quote_then_json_escaping() {
     for error in [
         FramingError::BodyTruncated,
         FramingError::NextPartEof,
+        FramingError::ReadBufferFull,
         FramingError::Boundary {
             line: b"--B \"\xff\x07\r\n".to_vec(),
             after_separator: true,
@@ -276,7 +311,20 @@ async fn check(reference: &mut Reference, input: &[u8], chunk: usize) {
     check_source(reference, input, chunk, false).await;
 }
 async fn check_source(reference: &mut Reference, input: &[u8], chunk: usize, source_failure: bool) {
-    let (effects, error) = observe(input, chunk, source_failure);
+    check_reads(reference, input, chunk, source_failure, None).await;
+}
+async fn check_reads(
+    reference: &mut Reference,
+    input: &[u8],
+    chunk: usize,
+    source_failure: bool,
+    source_chunk: Option<usize>,
+) {
+    let (effects, error) = if let Some(source_chunk) = source_chunk {
+        observe_reads(input, chunk, source_failure, source_chunk)
+    } else {
+        observe(input, chunk, source_failure)
+    };
     let suffix = if let Some(error) = error {
         let response = rejected(
             error,
@@ -312,7 +360,15 @@ async fn check_source(reference: &mut Reference, input: &[u8], chunk: usize, sou
         "END".into()
     };
     reference.check(
-        &format!("{}\t{}", if source_failure { "V" } else { "N" }, hex(input)),
+        &if let Some(source_chunk) = source_chunk {
+            format!(
+                "{}\t{}\t{source_chunk}",
+                if source_failure { "K" } else { "L" },
+                hex(input)
+            )
+        } else {
+            format!("{}\t{}", if source_failure { "V" } else { "N" }, hex(input))
+        },
         &format!("{effects}\t{suffix}"),
     );
 }

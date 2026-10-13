@@ -174,11 +174,29 @@ async fn receive_file(
         };
         match event {
             Event::Data(bytes) => {
-                if let Some(qp) = &mut qp {
-                    let output = qp.feed_detailed(&bytes);
+                if let Some(reader) = &mut qp {
+                    let end = input.decoder.data_read_end();
+                    let output = reader.feed_reader(&bytes, end);
                     write_bytes(&mut file, &output.bytes).await?;
                     if let Some(error) = output.error {
-                        return Err(error.into());
+                        return Err(
+                            if error
+                                == multipart::QuotedPrintableReadError::Decode(
+                                    multipart::Error::Truncated,
+                                )
+                                && end
+                                    == multipart::PartReadEnd::Failed(multipart::Error::Truncated)
+                            {
+                                MultipartError::MultipartRead(
+                                    multipart::FramingError::BodyTruncated,
+                                )
+                            } else {
+                                error.into()
+                            },
+                        );
+                    }
+                    if end == multipart::PartReadEnd::Eof {
+                        qp = None;
                     }
                 } else {
                     write_bytes(&mut file, &bytes).await?;
@@ -259,7 +277,7 @@ impl Input {
         )?;
         timely(deadline, Ok(()))?;
         let boundary = multipart::boundary_detailed(content_type, limits.wire.header_bytes)?;
-        let decoder = Decoder::new(&boundary, limits.wire)?;
+        let decoder = Decoder::new_read_buffered(&boundary, limits.wire)?;
         Ok(Self {
             body,
             decoder,
@@ -282,9 +300,13 @@ impl Input {
                 return Ok(None);
             }
             if !self.pending.is_empty() {
-                let count = self.pending.len().min(self.limits.wire.chunk_bytes);
-                let chunk = self.pending.split_to(count);
-                self.decoder.feed(&chunk)?;
+                let count = self.pending.len().min(self.decoder.source_read_capacity()?);
+                let bytes = self.pending.split_to(count);
+                let chunks = bytes.chunks(self.limits.wire.chunk_bytes);
+                let length = chunks.len();
+                for (index, chunk) in chunks.enumerate() {
+                    self.decoder.feed_read(chunk, index + 1 == length)?;
+                }
                 continue;
             }
             let next = match self.body.next().await {

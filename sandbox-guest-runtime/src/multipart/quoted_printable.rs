@@ -4,6 +4,14 @@
 // Copyright 2012 The Go Authors. All rights reserved. BSD terms are in GO-LICENSE.
 use super::Error;
 
+/// Terminal observation accompanying the last raw bytes of a part read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartReadEnd {
+    More,
+    Eof,
+    Failed(Error),
+}
+
 /// Observed fixed-Go reader failures, distinct from caller budgets or misuse.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QuotedPrintableError {
@@ -111,6 +119,42 @@ impl QuotedPrintable {
         }
         output
     }
+    /// Decode raw part bytes with the terminal fact from that same read. Unlike
+    /// the legacy event-only API, a full physical line cannot wait for another
+    /// read to discover EOF. Feed artificial fragments with More, except that
+    /// the final fragment must carry any observed EOF/failure.
+    pub fn feed_reader(&mut self, input: &[u8], end: PartReadEnd) -> DecodedDetailed {
+        let mut output = self.feed_detailed(input);
+        if output.error.is_some() {
+            return output;
+        }
+        match end {
+            PartReadEnd::More if self.line.len() == 4096 => {
+                output.error = Some(QuotedPrintableReadError::Encoding(
+                    decode_line(&self.line, false, &mut output.bytes)
+                        .unwrap_or(QuotedPrintableError::LineTooLong),
+                ));
+                self.line.clear();
+                self.failed = true;
+            }
+            PartReadEnd::More => {}
+            PartReadEnd::Eof | PartReadEnd::Failed(_) => {
+                let upstream = if let PartReadEnd::Failed(error) = end {
+                    Some(error)
+                } else {
+                    None
+                };
+                output.error = decode_line(&self.line, upstream.is_none(), &mut output.bytes)
+                    .map(QuotedPrintableReadError::Encoding)
+                    .or(upstream.map(QuotedPrintableReadError::Decode));
+                self.line.clear();
+                self.ended = true;
+                self.failed = output.error.is_some();
+            }
+        }
+        output
+    }
+
     /// Call at a valid part end. A raw transport error is not a valid end.
     pub fn finish(&mut self) -> Decoded {
         self.finish_detailed().coarse()
@@ -223,6 +267,32 @@ fn decode_line(line: &[u8], eof: bool, output: &mut Vec<u8>) -> Option<QuotedPri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn same_read_eof_and_failure_are_distinct_from_a_later_terminal_read() {
+        for end in [
+            PartReadEnd::More,
+            PartReadEnd::Eof,
+            PartReadEnd::Failed(Error::Truncated),
+        ] {
+            let mut qp = QuotedPrintable::new(4096).unwrap();
+            let output = qp.feed_reader(&vec![b'x'; 4096], end);
+            assert_eq!(output.bytes.len(), 4096);
+            assert_eq!(
+                output.error,
+                match end {
+                    PartReadEnd::More => Some(QuotedPrintableReadError::Encoding(
+                        QuotedPrintableError::LineTooLong
+                    )),
+                    PartReadEnd::Eof => None,
+                    PartReadEnd::Failed(error) => Some(QuotedPrintableReadError::Decode(error)),
+                }
+            );
+            assert_eq!(
+                qp.feed_reader(b"late", PartReadEnd::More).error,
+                Some(QuotedPrintableReadError::Decode(Error::Poisoned))
+            );
+        }
+    }
     #[test]
     fn detailed_errors_keep_prefix_precedence_and_poison_legacy_entry() {
         for (data, expected, prefix) in [

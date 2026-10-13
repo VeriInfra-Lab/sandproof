@@ -396,33 +396,46 @@ fn quotas_include_ignored_headers_parts_framing_and_epilogue() {
 
 #[test]
 fn a_large_stream_keeps_decoder_allocation_fixed() {
-    let mut decoder = Decoder::new(
-        "BOUNDARY",
-        Limits {
+    for buffered in [false, true] {
+        let limits = Limits {
             total_bytes: 8 << 20,
             ..limits()
-        },
-    )
-    .unwrap();
-    let capacity = decoder.buffer.capacity();
-    decoder.feed(b"--BOUNDARY\r\n\r\n").unwrap();
-    assert!(matches!(decoder.next_event(), Ok(Some(Event::Part(_)))));
-    assert_eq!(decoder.next_event(), Ok(None));
-    let chunk = vec![b'x'; limits().chunk_bytes];
-    let mut emitted = 0;
-    for _ in 0..32768 {
-        decoder.feed(&chunk).unwrap();
-        while let Some(event) = decoder.next_event().unwrap() {
-            if let Event::Data(bytes) = event {
-                emitted += bytes.len();
-            }
+        };
+        let mut decoder = if buffered {
+            Decoder::new_read_buffered("BOUNDARY", limits)
+        } else {
+            Decoder::new("BOUNDARY", limits)
         }
-        assert_eq!(decoder.buffer.capacity(), capacity);
+        .unwrap();
+        let capacity = decoder.buffer.capacity();
+        decoder.feed(b"--BOUNDARY\r\n\r\n").unwrap();
+        assert!(matches!(decoder.next_event(), Ok(Some(Event::Part(_)))));
+        assert_eq!(decoder.next_event(), Ok(None));
+        let read_bytes = if buffered { 4096 } else { limits.chunk_bytes };
+        let bytes = vec![b'x'; read_bytes];
+        let mut emitted = 0;
+        for _ in 0..(4 << 20) / read_bytes {
+            let chunks = bytes.chunks(limits.chunk_bytes);
+            let length = chunks.len();
+            for (index, chunk) in chunks.enumerate() {
+                if buffered {
+                    decoder.feed_read(chunk, index + 1 == length).unwrap();
+                } else {
+                    decoder.feed(chunk).unwrap();
+                }
+            }
+            while let Some(event) = decoder.next_event().unwrap() {
+                if let Event::Data(bytes) = event {
+                    emitted += bytes.len();
+                }
+            }
+            assert_eq!(decoder.buffer.capacity(), capacity);
+        }
+        assert_eq!(emitted, 4 << 20);
+        decoder.feed(END).unwrap();
+        assert_eq!(decoder.next_event(), Ok(Some(Event::PartEnd)));
+        assert_eq!(decoder.next_event(), Ok(Some(Event::End)));
     }
-    assert_eq!(emitted, 4 << 20);
-    decoder.feed(END).unwrap();
-    assert_eq!(decoder.next_event(), Ok(Some(Event::PartEnd)));
-    assert_eq!(decoder.next_event(), Ok(Some(Event::End)));
 }
 
 #[test]
