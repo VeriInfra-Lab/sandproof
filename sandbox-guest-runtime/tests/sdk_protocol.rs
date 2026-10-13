@@ -202,6 +202,7 @@ async fn probe(asynchronous: bool, mode: &str) {
             cwd: "/tmp".into(),
             env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
             stdin: mode == "signal",
+            credentials: None,
         },
         signal: mode == "signal",
         truncate: mode == "truncated",

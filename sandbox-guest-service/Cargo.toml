@@ -6,6 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+base64 = "=0.22.1"
+sandproof-guest-runtime = { path = "../sandbox-guest-runtime" }
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
 bytes = "=1.12.1"
 http-body-util = "=0.1.5"

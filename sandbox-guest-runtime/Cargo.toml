@@ -11,13 +11,15 @@ sdk-contract-tests = []
 [target.'cfg(target_os = "linux")'.dependencies]
 base64 = "=0.22.1"
 sandproof-guest-core = { path = "../sandbox-guest-core" }
-rustix = { version = "=1.1.5", features = ["process", "net"] }
+rustix = { version = "=1.1.5", features = ["process", "net", "thread", "fs"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.142"
 tempfile = "=3.23.0"
 tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+sandproof-guest-service = { path = "../sandbox-guest-service" }
+sha2 = "=0.10.9"
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
 

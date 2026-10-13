@@ -57,6 +57,9 @@ fn execute(gate: &mut UnixStream, maximum: usize) -> io::Result<()> {
             "extra launch bytes",
         ));
     }
+    if let Some(credentials) = &spec.credentials {
+        switch_account(credentials)?;
+    }
     let error = Command::new(spec.program)
         .args(spec.args)
         .current_dir(spec.cwd)
@@ -64,4 +67,32 @@ fn execute(gate: &mut UnixStream, maximum: usize) -> io::Result<()> {
         .envs(spec.env)
         .exec();
     Err(error)
+}
+
+// Only called inside this private, single-threaded worker, after release and
+// before any user exec or cwd/PATH lookup. A partial failure terminates this
+// worker through the private diagnostic; it never falls back to daemon root.
+fn switch_account(credentials: &crate::Credentials) -> io::Result<()> {
+    use rustix::process::{Gid, Uid};
+    use rustix::thread::{set_thread_groups, set_thread_res_gid, set_thread_res_uid};
+    credentials.validate()?;
+    let mut groups: Vec<_> = credentials
+        .groups
+        .iter()
+        .copied()
+        .map(Gid::from_raw)
+        .collect();
+    groups.sort_unstable_by_key(|gid| gid.as_raw());
+    let mut current = rustix::process::getgroups()?;
+    current.sort_unstable_by_key(|gid| gid.as_raw());
+    // Equal groups need no privilege. A failed DIFFERENT group set never
+    // silently inherits the daemon's supplementary groups.
+    if current != groups {
+        set_thread_groups(&groups)?;
+    }
+    let gid = Gid::from_raw(credentials.gid);
+    let uid = Uid::from_raw(credentials.uid);
+    set_thread_res_gid(gid, gid, gid)?;
+    set_thread_res_uid(uid, uid, uid)?;
+    Ok(())
 }

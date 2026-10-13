@@ -1085,8 +1085,10 @@ dependencies = [
  "futures-util",
  "rustix",
  "sandproof-guest-core",
+ "sandproof-guest-service",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
 ]
@@ -1096,11 +1098,13 @@ name = "sandproof-guest-service"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "bytes",
  "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "sandproof-guest-runtime",
  "serde",
  "serde_json",
  "sha2",
