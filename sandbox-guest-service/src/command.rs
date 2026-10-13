@@ -13,13 +13,18 @@ use tokio::time::Instant;
 use crate::AuthPermit;
 
 mod driver;
+mod preparation;
 mod streams;
+pub use preparation::{
+    AdmissionLimits, AdmissionObserver, AdmissionStatus, PendingCommand, PreparationSpec,
+};
 #[cfg(test)]
 mod tests;
 pub use streams::{CommandOutput, CommandSubscription, OutputEvent};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandError {
+    Cancelled,
     InvalidArgument,
     StaleIdentity,
     ResourceExhausted,

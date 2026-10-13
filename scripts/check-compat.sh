@@ -17,7 +17,7 @@ if [[ "$(uname -s)" == Linux ]]; then
   echo "SDK/gateway composition checks passed; authorization, host relay and VM are not tested."
   cargo clippy -p sandproof-guest-runtime --all-targets --features sdk-contract-tests --locked -- -D warnings
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_protocol -- --nocapture
-  cargo test -p sandproof-guest-runtime --locked --lib --test context --test owner
+  cargo test -p sandproof-guest-runtime --locked --lib --test context --test owner --test preparation
   echo "SDK/guest codec with real commands passed through a test router; this is not a complete guest service or Go envd/KVM comparison."
   cargo clippy -p sandproof-guest-service --all-targets --locked -- -D warnings
   cargo test -p sandproof-guest-service --all-targets --locked
