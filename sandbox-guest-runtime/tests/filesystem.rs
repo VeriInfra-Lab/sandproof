@@ -323,6 +323,18 @@ fn remove_unlinks_links_and_tolerates_absent_but_not_non_directory_parent() {
 }
 
 #[test]
+fn removal_can_delete_an_unreadable_empty_child_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let tree = root.path().join("tree");
+    let child = tree.join("unreadable");
+    fs::create_dir_all(&child).unwrap();
+    fs::set_permissions(&child, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::write(tree.join("sibling"), b"content").unwrap();
+    run(Request::Remove(p(&tree))).unwrap();
+    assert!(!tree.exists());
+}
+
+#[test]
 fn remove_reopens_after_large_batches_and_budget_failure_is_partial() {
     let dir = tempfile::tempdir().unwrap();
     let tree = dir.path().join("tree");

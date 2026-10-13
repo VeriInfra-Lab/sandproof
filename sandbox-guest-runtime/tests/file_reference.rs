@@ -95,6 +95,17 @@ fn prepare(root: &Path) {
     }
 }
 
+fn prepare_case(root: &Path, request: &Request) {
+    prepare(root);
+    if let Request::Remove(path) = request
+        && path.ends_with("/unreadable")
+    {
+        let child = Path::new(path).join("empty");
+        fs::create_dir_all(&child).unwrap();
+        fs::set_permissions(child, fs::Permissions::from_mode(0o000)).unwrap();
+    }
+}
+
 fn normalize(value: &mut Value, mutation: bool) {
     match value {
         Value::Object(fields) => {
@@ -267,6 +278,7 @@ fn cases(root: &Path) -> Vec<(String, Value, Request, bool)> {
     }
     for name in [
         "dir",
+        "unreadable",
         "alias",
         "broken",
         "missing",
@@ -298,10 +310,10 @@ fn original_go_and_rust_unary_file_operations() {
     let cases = cases(&root);
     let count = cases.len();
     for (name, input, request, mutation) in cases {
-        prepare(&root);
+        prepare_case(&root, &request);
         let mut expected = go(binary, &input);
         let effects = observe_effects(&root);
-        prepare(&root);
+        prepare_case(&root, &request);
         let mut actual = rust(&request);
         let actual_effects = observe_effects(&root);
         normalize(&mut expected, mutation);

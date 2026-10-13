@@ -31,7 +31,16 @@ fn enter(parent: BorrowedFd<'_>, name: &OsStr) -> Result<Option<Frame>, FileErro
     let fd = match openat(parent, name, OPEN_DIR, Mode::empty()) {
         Ok(fd) => fd,
         Err(Errno::NOENT) => return Ok(None),
-        Err(_) => return Err(FileError::Internal),
+        Err(Errno::NOTDIR) => return Err(FileError::Internal),
+        Err(_) => {
+            // RemoveAll still tries rmdir when opening the directory fails.
+            // Removing an empty child requires parent write/search access,
+            // not read permission on that child (e.g. mode 000).
+            return match unlinkat(parent, name, AtFlags::REMOVEDIR) {
+                Ok(()) | Err(Errno::NOENT) => Ok(None),
+                Err(_) => Err(FileError::Internal),
+            };
+        }
     };
     Ok(Some(Frame {
         directory: internal(Dir::new(fd))?,
