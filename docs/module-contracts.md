@@ -439,6 +439,14 @@ Accept-Encoding 默认 q=1，重复 q 参数取最后一个可解析值，非法
 
 参数显式限制首字段原始字节和逗号项数，先计数后分配固定容量的项数组；q 临时规范化至多一个原字段大小，排序只保留有界递归，不保留整个 HTTP 请求。所有重复字段/其他请求头、传输库先行分配、全请求授权/期限仍由调用者约束。完整顺序仍须由正式路由连接：上传编码/首 gzip 头先于账号/metadata；下载在 stat/目录拒绝之后、open 之前选编码。当前组件不实现实际 Range/conditional 响应、Content-Disposition、MIME 查表或文件打开，也不把局部选择一致当作 E01/E03 全端点验收。
 
+[下载条件/范围决策](../sandbox-guest-runtime/src/file_download/mod.rs)及[分阶段响应计划](../sandbox-guest-service/src/file_download.rs)另实现固定 Go 1.26.8 `http.ServeContent` 的局部 identity 行为。`prepare` 的调用前提是原 stat/编码选择/open 已成功；它按 If-Match → If-Unmodified-Since → If-None-Match → If-Modified-Since 顺序决定 304/412，非空 If-Match/If-None-Match 各自抑制对应日期检查。标签保留弱/强比较、畸形值、逗号及通配符的原语义。只有返回 Continue 才允许调用者嗅探/回绕和探测长度；随后 `finish` 才解析 Range。计划不执行文件 I/O，也不证明调用方已保持该顺序。
+
+HTTP 日期接受固定 Go 的三种布局、小数秒、大小写和旧两位年份规则。Last-Modified 使用 UTC，精确 year-1 零值和 Unix epoch 零纳秒不设置该头；带纳秒的 epoch 仍设置。旧格式的命名时区依赖显式可信 `LocalZone` 快照，未知名字沿 Go 保留 nominal UTC 秒值，不能直接当作固定数字偏移；正式 daemon 本地时区解析尚待连接，不得默认以 UTC 冒充部署环境。日期转换限现有 `time` 库的 -9999..9999 年，超出范围明确组件错误；该限制须列入 E01 差异。
+
+Range 保留区间顺序、重叠、重复、后缀零长度、空列表、空文件的无交集例外和超过文件大小的区间总量回退。If-Range 只在 GET/HEAD 的非空 Range 下检查，失败忽略 Range；单段 206 在发送任何头之前仍要求成功 seek（HEAD 也一样）。多段使用调用者提供的 Go 形状、60 字节小写十六进制随机边界，逐段计划 MIME 头/文件区间及结尾，线长包含全部 MIME 字节；边界必须由可信熵产生，不接收用户字段。正文执行者必须在 seek/read 失败或短读时立即结束错误，不能继续生成后续段或成功结尾；该执行连接尚未实现。
+
+响应计划保留 200/206/304/412/416 头的差异，以及 416 对 Cache-Control、Content-Encoding、ETag、Last-Modified 的默认清除，保留 Vary/Disposition。这里只实现 `httpservecontentkeepheaders=0` 的固定默认行为；不声称支持 Go 环境开关。错误正文计划仍包含 HEAD 时原 writer 尝试写入的字节，传输层的 HEAD 正文抑制尚由 HTTP 连接承担。显式预算覆盖选中请求字段总字节、扫描项数、响应头及含 MIME 的线长（HEAD 也检查所声明长度）；超额或 int64 长度溢出明确拒绝，不复现 Go 整数回绕。全头解析分配、响应库自动头、原授权/期限/容量、MIME 查表/嗅探、Content-Disposition 及 seek 错误映射仍需正式连接；这些局部预算拒绝尚未冻结为端点状态码。
+
 [本地账户端口](../sandbox-guest-runtime/src/accounts.rs)读取固定 `/etc/passwd`、`/etc/group`，对应固定 envd 的无 CGO 构建，不新增 NSS/网络查询或数字用户名回退。普通文件按打开的 inode 核对，符号链接至普通文件保留；非阻塞打开后拒绝 FIFO/设备等类型。未知账号和选中记录的坏 UID/GID 拒绝，`u32::MAX` 不得成为“保留原身份”。组文件不可读时按固定端点只保留已解析的主组，不继承 daemon 附加组；成功组查询保留固定实现的重复主组项，超过 Go 组扫描行界限则丢弃附加结果。文件字节和组数量另有显式预算，超额拒绝而非截断。非 UTF-8 home 无法进入当前 JSON 执行上下文，明确失败；不是完整 NSS/POSIX 账号数据库的兼容声明。
 
 账户查询池在提交阻塞工作前占额；请求取消或回复期限耗尽后，实际查询仍占原槽位直至返回/异常退出，不无限新建阻塞工作。查询只读，不在背景任务执行命令；调用者仍须持有原授权许可到真正派发，并先保留进程和公开选择器容量。上下文字节、环境项、参数数、用户名/头部长度与查询并发/期限没有生产默认值。这些组件未安装到模板，也未补齐公开 PID/tag 归属、完整请求期限、进程优先级/全部 envd 行为或 KVM 验收。
