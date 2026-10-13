@@ -47,7 +47,7 @@ scripts/verify-controller.sh
 
 公共基础可独立执行 `bash scripts/verify-foundations.sh`：检查输入指纹、固定工具与平台、重新抽取一致性、真实入口/全部自有函数体、库模型范围、定理编译和实际依赖。冻结环境见 [foundations-environment.json](foundations-environment.json)，源码/模型/脚本/生成输入摘要见 [foundations-inputs.sha256](foundations-inputs.sha256)。独立模块检查不替代完整验收；完整入口仍执行原本地控制核心检查，不跳过其失败。独立工作区可用 `SANDPROOF_PROOF_TOOL_ROOT` 指向已有固定工具，修订和二进制摘要仍需匹配，不改变工具版本。
 
-公共基础及共享状态的 Charon 输出参数使用项目内固定相对路径，保留该参数在完整 LLBC 摘要中的检查；源码位置仍由原 `--remap-path-prefix` 绑定。换工作目录不应只因输出路径而产生差异，错误或绝对输出路径仍拒绝。摘要仅规范化无序 `short_names` 表，不删除路径或其它有序输入字段。
+公共基础及共享状态的 Charon 输出参数使用抽取 crate 内的固定相对路径 `../aeneas/llbc/...`，因为 Cargo 的编译进程在 crate 目录执行；脚本随后用绝对路径读取同一输出。该参数仍在完整 LLBC 摘要中检查，源码位置仍由原 `--remap-path-prefix` 绑定。换工作目录不应只因输出路径而产生差异，错误或绝对输出参数仍拒绝。摘要仅规范化无序 `short_names` 表，不删除路径或其它有序输入字段。
 
 模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；完整入口被历史控制器迁移阻断也不使历史业务证明成为 V0 的完成条件。完整入口始终保留，局部/整套结果分别登记。
 

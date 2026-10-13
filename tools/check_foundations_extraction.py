@@ -46,7 +46,7 @@ def check(root, llbc, inventory):
     crate = 'sandproof_foundations_extract'
     if inventory.get('crate') != crate:
         raise ValueError('unexpected extraction crate')
-    if llbc['translated']['options']['dest_file'] != 'verification/aeneas/llbc/sandproof_foundations.llbc':
+    if llbc['translated']['options']['dest_file'] != '../aeneas/llbc/sandproof_foundations.llbc':
         raise ValueError('LLBC destination must be the fixed project-relative path')
     environment = json.loads((root / 'verification/foundations-environment.json').read_text())
     targets = {target['key'] for target in llbc['translated']['target_information']}

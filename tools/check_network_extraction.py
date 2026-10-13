@@ -206,7 +206,7 @@ def check(root, llbc, inventory):
         raise ValueError('Charon reported errors or missing status')
     if inventory.get('crate') != CRATE or llbc['translated']['crate_name'] != CRATE:
         raise ValueError('unexpected extraction crate')
-    if llbc['translated']['options']['dest_file'] != 'verification/aeneas/llbc/sandproof_network.llbc':
+    if llbc['translated']['options']['dest_file'] != '../aeneas/llbc/sandproof_network.llbc':
         raise ValueError('LLBC destination must be the fixed project-relative path')
     environment = json.loads((root / 'verification/network-environment.json').read_text())
     if set(environment.get('erased_compiler_glue', {}).get('types', [])) != DROP_GLUE_TYPES:

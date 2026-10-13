@@ -7,12 +7,12 @@ AENEAS="$TOOL_ROOT/aeneas/bin/aeneas"
 test "$(git -C "$TOOL_ROOT/aeneas" rev-parse HEAD)" = 505b6ca35217e7be5c96c3e2f8045edfbdf47291
 test "$(git -C "$TOOL_ROOT/aeneas/charon" rev-parse HEAD)" = b104e24fea7d721b71e6c39fd70f26ff20bc0980
 cd "$ROOT_DIR"
-# Charon records this option in the LLBC. Keep it project-relative so moving
-# the checkout does not change the source-bound digest; retain the field.
-LLBC="verification/aeneas/llbc/sandproof_network.llbc"
+LLBC="$ROOT_DIR/verification/aeneas/llbc/sandproof_network.llbc"
 DEST="$ROOT_DIR/verification/aeneas/network"
 mkdir -p "$(dirname "$LLBC")" "$DEST"
 test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
+# Cargo's driver runs in verification/extract-network. The relative
+# --dest-file below reaches the same LLBC and is portable across checkouts.
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
   --start-from crate::cidr_contains \
@@ -26,7 +26,7 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::runtime_crash \
   --start-from crate::runtime_recover \
   --start-from crate::slot_transition \
-  --include sandbox_controller_core --dest-file "$LLBC" \
+  --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_network.llbc \
   -- --manifest-path verification/extract-network/Cargo.toml --lib --locked --offline
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \
   -emit-json -namespace SandproofNetworkRust -subdir SandproofNetwork \
