@@ -6,7 +6,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
-struct Meta;
+pub(super) struct Meta;
 impl MetadataSource for Meta {
     async fn fetch(&self) -> Result<Metadata, ServiceError> {
         Ok(Metadata {
@@ -16,7 +16,7 @@ impl MetadataSource for Meta {
         })
     }
 }
-async fn session() -> Session<Meta> {
+pub(super) async fn session() -> Session<Meta> {
     let session = Session::new(
         Meta,
         InitLimits {
@@ -35,7 +35,7 @@ async fn session() -> Session<Meta> {
         .unwrap();
     session
 }
-fn pool() -> FileStreams {
+pub(super) fn pool() -> FileStreams {
     FileStreams::new(
         1,
         TransferLimits {
@@ -54,7 +54,7 @@ fn pool() -> FileStreams {
     )
     .unwrap()
 }
-fn context(path: &Path, root: &Path) -> HttpFileContext {
+pub(super) fn context(path: &Path, root: &Path) -> HttpFileContext {
     let info = std::fs::metadata(root).unwrap();
     HttpFileContext {
         owner: FileOwner {

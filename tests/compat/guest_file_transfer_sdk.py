@@ -77,6 +77,56 @@ async def compressed_async(sandbox, url, root):
                 assert bytes(await sandbox.files.read(filename, format='bytes')) == value
 
 
+def download_headers(response):
+    assert response.status_code == 200
+    assert response.headers['content-encoding'] == 'gzip'
+    assert response.headers['vary'] == 'Accept-Encoding'
+    assert 'content-length' not in response.headers
+
+
+def gzip_download_sync(sandbox, url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for name, data in payloads():
+            path = f'{root}/{name}'
+            assert bytes(sandbox.files.read(path, format='bytes', gzip=True)) == data
+            with sandbox.files.read(path, format='stream', gzip=True, request_timeout=10) as stream:
+                assert b''.join(stream) == data
+            with client.stream('GET', f'{url}/files', params={'path': path},
+                               headers={'x-access-token': 'fixture-token', 'accept-encoding': 'gzip'}) as response:
+                download_headers(response)
+                assert gzip.decompress(b''.join(response.iter_raw())) == data
+    assert sandbox.files.read(f'{root}/form/nested/雪.txt', gzip=True) == '你好\n'
+    for name, exception in [('missing', FileNotFoundException), ('directory', InvalidArgumentException)]:
+        try:
+            sandbox.files.read(f'{root}/{name}', gzip=True)
+        except exception:
+            pass
+        else:
+            raise AssertionError('gzip download error was reported as success')
+
+
+async def gzip_download_async(sandbox, url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for name, data in payloads():
+            path = f'{root}/{name}'
+            assert bytes(await sandbox.files.read(path, format='bytes', gzip=True)) == data
+            stream = await sandbox.files.read(path, format='stream', gzip=True, request_timeout=10)
+            async with stream:
+                assert b''.join([chunk async for chunk in stream]) == data
+            async with client.stream('GET', f'{url}/files', params={'path': path},
+                                     headers={'x-access-token': 'fixture-token', 'accept-encoding': 'gzip'}) as response:
+                download_headers(response)
+                assert gzip.decompress(b''.join([chunk async for chunk in response.aiter_raw()])) == data
+    assert await sandbox.files.read(f'{root}/form/nested/雪.txt', gzip=True) == '你好\n'
+    for name, exception in [('missing', FileNotFoundException), ('directory', InvalidArgumentException)]:
+        try:
+            await sandbox.files.read(f'{root}/{name}', gzip=True)
+        except exception:
+            pass
+        else:
+            raise AssertionError('gzip download error was reported as success')
+
+
 def form_payloads(root):
     large = payloads()[-1][1]
     expected = {'empty': b'', 'binary': b'\x00\xffbinary',
@@ -197,6 +247,7 @@ def run_sync(url, root):
         raise AssertionError('directory download succeeded')
     multipart_sync(sandbox, root)
     compressed_sync(sandbox, url, root)
+    gzip_download_sync(sandbox, url, root)
 
 
 async def run_async(url, root):
@@ -241,6 +292,7 @@ async def run_async(url, root):
         raise AssertionError('directory download succeeded')
     await multipart_async(sandbox, root)
     await compressed_async(sandbox, url, root)
+    await gzip_download_async(sandbox, url, root)
 
 
 if __name__ == '__main__':
@@ -248,4 +300,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings['url'], settings['root'] + '/sync')
         asyncio.run(run_async(settings['url'], settings['root'] + '/async'))
-    print('Pinned sync/async SDK raw/multipart and synthetic gzip upload with SDK readback passed (test routes only).')
+    print('Pinned sync/async SDK raw/multipart, gzip download and synthetic gzip upload with SDK readback passed (test routes only).')

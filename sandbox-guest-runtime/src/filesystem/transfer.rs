@@ -231,6 +231,39 @@ impl UploadFile {
     }
 }
 
+/// Original descriptor read to observed EOF, as in the fixed gzip endpoint's
+/// `io.Copy`. No seek or stat-length cap: growth before EOF may be included,
+/// and shrinkage is ordinary EOF. This is not a filesystem snapshot.
+/// Callers must bound reads/total bytes with the codec and retain admission.
+pub struct DownloadSource(File);
+
+impl DownloadSource {
+    /// # Errors
+    /// Path/budget checks, missing/directory paths or an open failure.
+    pub fn open(value: &str, limits: TransferLimits) -> Result<Self, TransferIoError> {
+        let limits = limits.validate()?;
+        limits.check_path(value)?;
+        let info = fs::metadata(value).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                TransferIoError::NotFound
+            } else {
+                TransferIoError::Internal
+            }
+        })?;
+        if info.is_dir() {
+            return Err(TransferIoError::InvalidArgument);
+        }
+        File::open(value)
+            .map(Self)
+            .map_err(|_| TransferIoError::Internal)
+    }
+}
+impl Read for DownloadSource {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(output)
+    }
+}
+
 /// Open descriptor and advertised length. Like identity `ServeContent`, the
 /// transfer is the original length: later growth is not appended, shrinkage
 /// is an error. This is not a consistent snapshot of concurrent modifications.
@@ -246,19 +279,7 @@ impl DownloadFile {
     /// # Errors
     /// Missing/directory paths, unseekable files, length budget or I/O failure.
     pub fn open(value: &str, limits: TransferLimits) -> Result<Self, TransferIoError> {
-        let limits = limits.validate()?;
-        limits.check_path(value)?;
-        let info = fs::metadata(value).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                TransferIoError::NotFound
-            } else {
-                TransferIoError::Internal
-            }
-        })?;
-        if info.is_dir() {
-            return Err(TransferIoError::InvalidArgument);
-        }
-        let mut file = File::open(value).map_err(|_| TransferIoError::Internal)?;
+        let DownloadSource(mut file) = DownloadSource::open(value, limits)?;
         let length = file
             .seek(SeekFrom::End(0))
             .map_err(|_| TransferIoError::Internal)?;

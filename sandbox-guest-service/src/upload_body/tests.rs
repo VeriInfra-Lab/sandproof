@@ -52,7 +52,7 @@ fn body(bytes: &[u8], chunk: usize) -> Body {
         .collect();
     Body::from_stream(stream::iter(chunks))
 }
-fn deadline() -> Instant {
+pub(super) fn deadline() -> Instant {
     Instant::now() + Duration::from_secs(30)
 }
 async fn drain(mut input: GzipBody) -> (Vec<u8>, Option<GzipError>) {
@@ -68,7 +68,7 @@ async fn drain(mut input: GzipBody) -> (Vec<u8>, Option<GzipError>) {
         }
     }
 }
-async fn signal<T>(receiver: oneshot::Receiver<T>) -> T {
+pub(super) async fn signal<T>(receiver: oneshot::Receiver<T>) -> T {
     tokio::time::timeout(Duration::from_secs(5), receiver)
         .await
         .expect("barrier timed out")
@@ -82,7 +82,7 @@ impl Drop for OwnerDrop {
         }
     }
 }
-fn owner() -> (Owner, oneshot::Receiver<()>) {
+pub(super) fn owner() -> (Owner, oneshot::Receiver<()>) {
     let (send, receive) = oneshot::channel();
     (Arc::new(OwnerDrop(Some(send))), receive)
 }

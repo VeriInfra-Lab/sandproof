@@ -260,6 +260,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [HTTP gzip worker](../sandbox-guest-service/src/upload_body/mod.rs)与[文件连接](../sandbox-guest-service/src/file_transfer/batch/gzip.rs)复用原批次，新增压缩头到文件打开的先后关系、压缩长度/展开预算、阻塞解压/实际文件两个任务的原授权守卫、Bytes 最后副本释放到下一读取、取消后的实际退出以及 raw/multipart 不同 metadata 完成点。共享 HTTP 帧校验重构和该所有权连接均未抽取/证明；可移植测试已有本地运行，Linux 授权/文件和合成压缩 POST＋固定 SDK 回读待验证，不能用组件测试或纯 `Transfer` 定理代替组合义务。
 
+[gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)和[阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)增加同一原授权/容量到实际 open/read/销毁、实际 EOF 而非初始长度、源缓冲与编解码预算、响应 Bytes 最后副本释放及错误不伪装成功的义务。与上传共用的 worker/取消重构及 FD 打开辅助也未抽取或证明。原纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不背书这些连接；可移植测试与 Linux 交叉检查不等于 Linux 组合或系统证明通过。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。

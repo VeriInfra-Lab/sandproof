@@ -1,7 +1,8 @@
-//! Owned HTTP gzip decoding. This does not admit or authenticate requests.
+//! Owned gzip body work. This does not admit or authenticate requests.
 //! Callers supply the original admission/authorization guard and deadline.
-//! One blocking decoder, one accepted input frame and one output chunk remain
+//! One blocking codec, one accepted input buffer and one output chunk remain
 //! bounded separately from the source transport and fixed codec workspace.
+mod encode;
 mod http;
 #[cfg(test)]
 mod tests;
@@ -41,12 +42,14 @@ pub enum GzipError {
     Checksum,
     Truncated,
     Transport,
+    SourceNotFound,
+    SourceInvalid,
     DeadlineExceeded,
     Unavailable,
 }
 impl fmt::Display for GzipError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "gzip upload: {self:?}")
+        write!(f, "gzip body: {self:?}")
     }
 }
 impl std::error::Error for GzipError {}
@@ -135,6 +138,27 @@ impl GzipBody {
         }
         limits.http.total_bytes = limits.http.total_bytes.min(limits.decode.encoded_bytes);
         let input = Input::new(body, expected, limits.http, deadline)?;
+        Self::start(deadline, owner, move |runtime, cancelled| {
+            let reader = Reader {
+                input,
+                pending: Bytes::new(),
+                runtime,
+                cancelled,
+                deadline,
+            };
+            gzip::Decoder::new(reader, limits.decode).map_err(GzipError::from)
+        })
+        .await
+    }
+
+    async fn start<C: Codec, F>(
+        deadline: Instant,
+        owner: Owner,
+        prepare: F,
+    ) -> Result<Self, GzipError>
+    where
+        F: FnOnce(Handle, watch::Receiver<bool>) -> Result<C, GzipError> + Send + 'static,
+    {
         let (cancel, cancelled) = watch::channel(false);
         let (request, requests) = mpsc::channel(1);
         let (ready, opened) = oneshot::channel();
@@ -147,14 +171,13 @@ impl GzipBody {
             ended: false,
         };
         tokio::task::spawn_blocking(move || {
-            let reader = Reader {
-                input,
-                pending: Bytes::new(),
-                runtime: runtime.clone(),
-                cancelled: cancelled.clone(),
-                deadline,
+            let result = match check_active(deadline, &cancelled) {
+                Ok(()) => prepare(runtime.clone(), cancelled.clone()),
+                Err(error) => {
+                    drop(prepare);
+                    Err(error)
+                }
             };
-            let result = gzip::Decoder::new(reader, limits.decode).map_err(GzipError::from);
             match result {
                 Ok(decoder) => {
                     if ready.send(Ok(())).is_ok() {
@@ -165,7 +188,7 @@ impl GzipBody {
                     let _ = ready.send(Err(error));
                 }
             }
-            // All decoder/source destruction precedes returning the guard.
+            // All codec/source destruction precedes returning the guard.
             drop(owner);
         });
         receive(deadline, opened).await??;
@@ -215,7 +238,7 @@ impl GzipBody {
     }
 
     /// The returned HTTP body preserves chunk ownership through all Bytes
-    /// clones. Only validated gzip plus actual HTTP EOF becomes body EOF.
+    /// clones. Only complete codec work and actual source EOF become body EOF.
     pub fn into_body(self) -> Body {
         Body::from_stream(stream::unfold(Some(self), |state| async move {
             let mut stream = state?;
@@ -257,6 +280,14 @@ async fn cancelled(receiver: &mut watch::Receiver<bool>) {
     let _ = receiver.changed().await; // true, or the final sender was dropped
 }
 
+fn check_active(deadline: Instant, cancel: &watch::Receiver<bool>) -> Result<(), GzipError> {
+    http::check_deadline(deadline)?;
+    if *cancel.borrow() || cancel.has_changed().is_err() {
+        return Err(GzipError::Unavailable);
+    }
+    Ok(())
+}
+
 struct Reader {
     input: Input,
     pending: Bytes,
@@ -267,10 +298,7 @@ struct Reader {
 impl BufRead for Reader {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         loop {
-            http::check_deadline(self.deadline).map_err(io::Error::other)?;
-            if *self.cancelled.borrow() || self.cancelled.has_changed().is_err() {
-                return Err(io::Error::other(GzipError::Unavailable));
-            }
+            check_active(self.deadline, &self.cancelled).map_err(io::Error::other)?;
             if !self.pending.is_empty() {
                 return Ok(&self.pending);
             }
@@ -307,8 +335,22 @@ impl Read for Reader {
     }
 }
 
-fn run(
-    mut decoder: gzip::Decoder<Reader>,
+trait Codec {
+    fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, gzip::Error>;
+}
+impl<R: BufRead> Codec for gzip::Decoder<R> {
+    fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, gzip::Error> {
+        self.next_chunk()
+    }
+}
+impl<R: BufRead> Codec for gzip::Encoder<R> {
+    fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, gzip::Error> {
+        self.next_chunk()
+    }
+}
+
+fn run<C: Codec>(
+    mut decoder: C,
     mut requests: mpsc::Receiver<Reply>,
     mut cancel: watch::Receiver<bool>,
     runtime: &Handle,
@@ -329,10 +371,10 @@ fn run(
         if reply.is_closed() {
             return;
         }
-        let result = http::check_deadline(deadline)
+        let result = check_active(deadline, &cancel)
             .and_then(|()| decoder.next_chunk().map_err(GzipError::from))
             .and_then(|chunk| {
-                http::check_deadline(deadline)?;
+                check_active(deadline, &cancel)?;
                 Ok(chunk)
             });
         let bytes = match result {

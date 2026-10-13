@@ -2,10 +2,14 @@
 #![cfg(target_os = "linux")]
 use sandproof_guest_runtime::filesystem::{
     FileLimits, Ownership,
-    transfer::{DownloadFile, TransferIoError, TransferLimits, UploadFile, validate_metadata},
+    transfer::{
+        DownloadFile, DownloadSource, TransferIoError, TransferLimits, UploadFile,
+        validate_metadata,
+    },
 };
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{Read, Write};
 
 fn limits() -> TransferLimits {
     TransferLimits {
@@ -245,4 +249,56 @@ fn download_shrink_is_incomplete_growth_is_not_appended_and_replacement_is_not_a
     fs::write(&path, b"new-tail").unwrap();
     assert_eq!(read.read_chunk().unwrap().unwrap(), b"new");
     assert_eq!(read.read_chunk().unwrap(), None);
+}
+
+#[test]
+fn gzip_source_observes_growth_shrink_and_original_descriptor_without_length_seek() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("file");
+    fs::write(&path, b"abc").unwrap();
+    let mut source = DownloadSource::open(path.to_str().unwrap(), limits()).unwrap();
+    let mut first = [0; 3];
+    source.read_exact(&mut first).unwrap();
+    assert_eq!(&first, b"abc");
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap()
+        .write_all(b"tail")
+        .unwrap();
+    let mut rest = Vec::new();
+    source.read_to_end(&mut rest).unwrap();
+    assert_eq!(rest, b"tail");
+
+    let mut source = DownloadSource::open(path.to_str().unwrap(), limits()).unwrap();
+    source.read_exact(&mut first).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(3)
+        .unwrap();
+    assert_eq!(source.read(&mut first).unwrap(), 0);
+
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&path, &link).unwrap();
+    let mut source = DownloadSource::open(link.to_str().unwrap(), limits()).unwrap();
+    fs::rename(&path, root.path().join("old")).unwrap();
+    fs::write(&path, b"replacement").unwrap();
+    let mut bytes = Vec::new();
+    source.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"abc");
+
+    // procfs advertises zero bytes yet has a readable body; gzip does not seek
+    // or pre-reject by stat length. The service codec owns the body budget.
+    let mut source = DownloadSource::open("/proc/self/status", limits()).unwrap();
+    assert!(source.read(&mut first).unwrap() > 0);
+    assert!(matches!(
+        DownloadSource::open(root.path().to_str().unwrap(), limits()),
+        Err(TransferIoError::InvalidArgument)
+    ));
+    assert!(matches!(
+        DownloadSource::open(root.path().join("missing").to_str().unwrap(), limits()),
+        Err(TransferIoError::NotFound)
+    ));
 }

@@ -1,5 +1,5 @@
 //! Pinned SDK -> test-only HTTP adapter -> authorized real file streams.
-//! Identity GET and raw/multipart POST; synthetic gzip uploads with SDK reads.
+//! Identity/gzip GET and raw/multipart POST; synthetic gzip uploads with SDK reads.
 //! This is not a production router or E03.
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 use axum::{
@@ -59,6 +59,7 @@ struct Fixture {
     seen: AtomicUsize,
     multipart_seen: AtomicUsize,
     gzip_seen: AtomicUsize,
+    gzip_download_seen: AtomicUsize,
 }
 #[derive(Deserialize)]
 struct Params {
@@ -125,6 +126,16 @@ async fn files(
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     if request.method() == axum::http::Method::GET {
         let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
+        // Test-only selection for the SDK's explicit gzip=true option. The
+        // complete Go Accept-Encoding/range/conditional parser is separate.
+        if request
+            .headers()
+            .get("accept-encoding")
+            .is_some_and(|value| value == "gzip")
+        {
+            fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
+            return gzip_download(&fixture, auth, context).await;
+        }
         return download(&fixture, auth, context).await;
     }
     let (parts, body) = request.into_parts();
@@ -262,6 +273,18 @@ fn gzip_limits() -> GzipLimits {
 fn entry(result: &UploadResult) -> serde_json::Value {
     serde_json::json!({"path":result.path,"name":Path::new(&result.path).file_name().unwrap().to_str().unwrap(),"type":"file","metadata":result.metadata})
 }
+async fn gzip_download(fixture: &Fixture, auth: AuthPermit, context: HttpFileContext) -> Response {
+    match fixture.files.download_gzip(auth, context, 10 << 20).await {
+        Ok(download) => Response::builder()
+            .status(200)
+            .header("content-encoding", "gzip")
+            .header("content-type", "application/octet-stream")
+            .header("vary", "Accept-Encoding")
+            .body(download.into_body())
+            .unwrap(),
+        Err(error) => failure(error),
+    }
+}
 async fn download(fixture: &Fixture, auth: AuthPermit, context: HttpFileContext) -> Response {
     let download = match fixture.files.download(auth, context).await {
         Ok(download) => download,
@@ -378,6 +401,7 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         seen: AtomicUsize::new(0),
         multipart_seen: AtomicUsize::new(0),
         gzip_seen: AtomicUsize::new(0),
+        gzip_download_seen: AtomicUsize::new(0),
     })
 }
 
@@ -437,9 +461,10 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 84);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 108);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 12);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 8);
+    assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 24);
     for mode in ["sync", "async"] {
         assert_eq!(
             std::fs::read(directory.path().join(mode).join("form/binary")).unwrap(),
