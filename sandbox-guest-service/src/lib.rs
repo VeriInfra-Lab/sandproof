@@ -4,6 +4,7 @@
 //! integration, listener admission and immutable-template integration remain
 //! separate obligations; health does not certify authorization or readiness.
 
+pub mod file_encoding;
 pub mod upload_body;
 
 #[cfg(target_os = "linux")]

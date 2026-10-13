@@ -92,6 +92,18 @@ SANDPROOF_GUEST_GZIP_REFERENCE=/absolute/path/to/gzip-reference \
 
 [Linux gzip 下载检查](../sandbox-guest-service/src/file_transfer/gzip_download/tests.rs)和原 [FD 检查](../sandbox-guest-runtime/tests/file_transfer.rs)增加增长/缩短、路径替换、链接、procfs 非 stat 长度读取、真实 AuthPermit/响应 Bytes 持有、容量/期限及原始/压缩预算。定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::gzip_download::tests`，基础和兼容入口会发现该组；当前候选待 Linux 实跑。固定 SDK 文件路由另以原 `files.read(..., gzip=True)` 检查同步/异步 bytes、stream、Unicode text、空/二进制/大文件与缺失/目录错误，合成 HTTP 客户端检查未自动解码的 gzip 正文、无 Content-Length 及 Vary；该扩展也待 Linux 实跑。路由只接受测试中的精确 gzip 选择，完整编码协商和 E03 双端验收仍待补。
 
+[内容编码测试](../sandbox-guest-runtime/src/file_encoding/tests.rs)和[HTTP 字段测试](../sandbox-guest-service/src/file_encoding.rs)可在 macOS/Linux 原库运行，覆盖 q/大小写/Unicode 空白/不透明字节、重复参数、identity/wildcard、原始字节/项预算、第一重复头、条件字段非空规则和 Vary 设置阶段。13 项同权重列表回归要求保留原 Go 选择，不能稳定排序后误选 gzip。定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_encoding`；普通 runtime/service 库检查会发现这两组。组件没有 stat/open/实际范围响应或 HTTP 错误顺序的执行证据。
+
+[编码 Go 参考适配](../tests/compat/guest_encoding_reference.go)复制固定 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322` 的原选择函数，仅改变 package/import 和输入输出驱动，固定 Go 1.26.8。显式组比较浮点 bits/错误、Content-Encoding、Accept-Encoding 和条件 identity 选择，包括种子 0x311 的十进制/十六进制/畸形数值与长列表；本地已运行，默认 ignored，普通 CI 不代为执行，也未启动完整 Go envd。原样函数及 Apache/BSD 许可证随源码保留：
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/encoding-reference tests/compat/guest_encoding_reference.go
+SANDPROOF_GUEST_ENCODING_REFERENCE=/absolute/path/to/encoding-reference \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  file_encoding::tests::fixed_go_encoding_reference -- --ignored --nocapture
+```
+
 gzip 新增固定 Cargo 依赖须按[CI 可信预热](ci.md)制备，普通任务仍离线且缺料失败。源码/本地缓存更新不表示黄金盘完成制备；不临时联网、改弱检查或切换现役模板。
 
 [Go MIME 参考适配器](../tests/compat/guest_multipart_reference.go)仅调用固定 Go 1.26.8 标准库，不调用 envd HTTP/文件端点。它无需外部模块，必须使用经过校验的固定工具链；程序会拒绝其他版本。显式对照保存种子 0x311，以相同输入比较四种 Rust 分块下的文件名、正文前缀、part 完成与请求终态；MIME 头 EOF 的严格拒绝单独核对，其余差异使测试失败。普通 CI 不制备 Go，此参考组默认 ignored，不能把普通绿灯记为已运行；本地已显式运行该组。入口为：

@@ -431,6 +431,14 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 只有实际 EOF、编码尾部及预算检查全部完成才返回成功。源错误、超额、取消或过期传播为正文错误，不补成功尾部；这比固定 Go 下载在 `io.Copy` 失败后仍 defer `gzip.Close` 更严格，须在 E01 全端点对照保留差异。SDK 测试路由只按精确 `Accept-Encoding: gzip` 选择该组件并设置 gzip 响应头，无压缩长度；它不是正式协商、MIME 类型、Content-Disposition、range/conditional 或完整错误顺序实现。可移植编码所有权检查已有本地运行；Linux 实际 FD/授权和固定 SDK `gzip=True` 组合仍待验证，未启用到模板。
 
+[文件内容编码选择](../sandbox-guest-runtime/src/file_encoding/mod.rs)和[HTTP 头连接](../sandbox-guest-service/src/file_encoding.rs)已实现固定 Go 的 Content-Encoding / Accept-Encoding 局部规则，尚未接正式文件入口。只取每个字段的第一值（即使它为空），不合并重复值；保留非 UTF-8 字节，按 Go Unicode 空白及大小写识别编码名。Content-Encoding 缺失/精确空值为 identity，否则去掉分号参数后只接受 identity/gzip，不把逗号编码链拆开或按 q=0 拒绝 gzip。
+
+Accept-Encoding 默认 q=1，重复 q 参数取最后一个可解析值，非法参数保留此前值；沿固定 `strconv.ParseFloat` 接受十六进制/下划线、NaN/Inf、负值及大于 1 的值，溢出参数作为无效值忽略。只跳过精确零；identity 显式拒绝、wildcard 与重复项仍各按固定算法处理。长列表同权重选择会受 Go 不稳定排序影响，已移植固定 Go 1.26.8 排序及十六进制舍入辅助，并用原函数显式对照，不能擅自改成稳定排序或新的严格 RFC q 校验器。
+
+下载先选可接受编码，随后仅当第一值非空的 Range / If-Modified-Since / If-None-Match / If-Range 存在时强制 identity；仅空白或畸形条件值也进入此分支。If-Match / If-Unmodified-Since 不参与这个预选。若 identity 被拒绝则返回 NotAcceptable；HTTP 连接保留 Vary 的阶段区别：初次编码选择失败前还未设置 Vary，之后的条件回退失败保留 Vary。原端点相应错误为 406，上传不支持编码为 400；预算错误的正式映射另须冻结。
+
+参数显式限制首字段原始字节和逗号项数，先计数后分配固定容量的项数组；q 临时规范化至多一个原字段大小，排序只保留有界递归，不保留整个 HTTP 请求。所有重复字段/其他请求头、传输库先行分配、全请求授权/期限仍由调用者约束。完整顺序仍须由正式路由连接：上传编码/首 gzip 头先于账号/metadata；下载在 stat/目录拒绝之后、open 之前选编码。当前组件不实现实际 Range/conditional 响应、Content-Disposition、MIME 查表或文件打开，也不把局部选择一致当作 E01/E03 全端点验收。
+
 [本地账户端口](../sandbox-guest-runtime/src/accounts.rs)读取固定 `/etc/passwd`、`/etc/group`，对应固定 envd 的无 CGO 构建，不新增 NSS/网络查询或数字用户名回退。普通文件按打开的 inode 核对，符号链接至普通文件保留；非阻塞打开后拒绝 FIFO/设备等类型。未知账号和选中记录的坏 UID/GID 拒绝，`u32::MAX` 不得成为“保留原身份”。组文件不可读时按固定端点只保留已解析的主组，不继承 daemon 附加组；成功组查询保留固定实现的重复主组项，超过 Go 组扫描行界限则丢弃附加结果。文件字节和组数量另有显式预算，超额拒绝而非截断。非 UTF-8 home 无法进入当前 JSON 执行上下文，明确失败；不是完整 NSS/POSIX 账号数据库的兼容声明。
 
 账户查询池在提交阻塞工作前占额；请求取消或回复期限耗尽后，实际查询仍占原槽位直至返回/异常退出，不无限新建阻塞工作。查询只读，不在背景任务执行命令；调用者仍须持有原授权许可到真正派发，并先保留进程和公开选择器容量。上下文字节、环境项、参数数、用户名/头部长度与查询并发/期限没有生产默认值。这些组件未安装到模板，也未补齐公开 PID/tag 归属、完整请求期限、进程优先级/全部 envd 行为或 KVM 验收。
