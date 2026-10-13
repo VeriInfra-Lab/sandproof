@@ -427,7 +427,11 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 [上传请求组件](../sandbox-guest-service/src/file_transfer/upload.rs)接受原 AuthPermit、已解码的可选 username/path、HTTP HeaderMap 与带原始声明长度的 Body。完整头字段/字节预算包含重复和忽略字段，在复制前检查；随后一次准入，在同一原绝对期限内依次执行第一 Content-Encoding 选择、gzip 首头预检、账户查询、metadata 验证、Content-Type 选择和原上传批次。初始化已保证默认用户名非空；显式空用户名在 gzip 预检后拒绝。阻塞账户查询另占自身工作槽位，并持有原上传授权/容量直到实际退出；取消或等待超时不能提前归还，后续批次不二次准入、不重置期限。
 
-[上传头决策](../sandbox-guest-runtime/src/file_upload.rs)保留固定 Go ParseMediaType 的返回类型：普通畸形可选参数可保留 raw/multipart 类型，冲突的重复参数使类型无效。metadata 取规范化同名头的首值，忽略空后缀，复用真实写入的可打印 ASCII、键长和总量验证；原始头预算与保存后的 metadata 预算分开计算。raw 需要查询 path，multipart 继续用原边界解析器及完整文件名规则；非 UTF-8 multipart 参数仍明确拒绝。identity raw 也使用共用 HTTP 帧/长度/EOF 校验，失败保留已写前缀且不完成 metadata。固定 Go 有限头部对照已本地运行；实际 Linux 四种正文组合和账户阻塞取消待实跑。组件不承担查询解码、请求签名、完整上传错误 JSON 或响应序列化/发送，SDK 夹具的通用拒绝响应不代表正式错误合同。
+[上传头决策](../sandbox-guest-runtime/src/file_upload.rs)保留固定 Go ParseMediaType 的返回类型：普通畸形可选参数可保留 raw/multipart 类型，冲突的重复参数使类型无效。metadata 取规范化同名头的首值，忽略空后缀，复用真实写入的可打印 ASCII、键长和总量验证；原始头预算与保存后的 metadata 预算分开计算。raw 需要查询 path，multipart 继续用原边界解析器及完整文件名规则；非 UTF-8 multipart 参数仍明确拒绝。identity raw 也使用共用 HTTP 帧/长度/EOF 校验，失败保留已写前缀且不完成 metadata。固定 Go 有限头部对照已本地运行；实际 Linux 四种正文组合和账户阻塞取消待实跑。组件不承担查询解码、请求签名或完整上传错误 JSON；成功回执的序列化/发送接下述组件，SDK 夹具的通用拒绝响应不代表正式错误合同。
+
+[上传成功回执](../sandbox-guest-service/src/upload_response.rs)消费已完成的原 BatchReply，在原槽位与绝对期限内序列化并按需发送。保留固定 Go 的数组顺序、metadata/name/path/type 字段顺序、metadata 键排序、空 metadata 省略、空批次 `[]` 及无尾随换行；name 来自原解析路径的 Linux basename，不重新访问文件。复用下载错误的 Go JSON 转义，以同一编码器先计算精确线长、检查独立 wire_bytes 后分配。原结果路径/metadata、完整编码载荷及一个输出块分别计费，不能把 chunk_bytes 宣称为全部驻留内存。
+
+固定 HTTP/1.1 成功写入的 JSON 数组由 Go 自动嗅探为 `text/plain; charset=utf-8`；本组件显式保留该头，载荷不超过 2048 字节时带 Content-Length，更大时由 HTTP/1.1 传输分块。未新增错误响应所用的 nosniff。输出块及全部 Bytes 副本释放前不继续发送下一块；取消/过期不能伪造 EOF，原工作槽位保留到实际序列化/销毁和最后字节副本释放。文件 I/O 完成后的原初始化可继续，回执不重新获取授权；序列化预算或发送失败不撤销已完成文件及 metadata，也不自动重放。可移植所有权与固定 Go 真实回环 HTTP 成功头/正文对照已运行；Linux 原文件池连接及 SDK 回读组合待实跑，完整上传错误响应与正式监听器仍待完成。
 
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 

@@ -5,15 +5,21 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 )
 
 const MetadataXattrPrefix = "user.e2b."
@@ -82,15 +88,77 @@ func unhex(v string) []byte {
 	}
 	return b
 }
+
+// Original generated wire fields and pinned upload success construction.
+type EntryInfo struct {
+	Metadata *map[string]string `json:"metadata,omitempty"`
+	Name     string             `json:"name"`
+	Path     string             `json:"path"`
+	Type     EntryInfoType      `json:"type"`
+}
+type EntryInfoType string
+
+func uploadSuccess(fields []string, server *httptest.Server) {
+	entries := []EntryInfo{}
+	for _, field := range fields {
+		values := strings.Split(field, "|")
+		path := string(unhex(values[0]))
+		metadata := make(map[string]string)
+		for _, pair := range values[1:] {
+			kv := strings.SplitN(pair, ":", 2)
+			metadata[string(unhex(kv[0]))] = string(unhex(kv[1]))
+		}
+		entry := EntryInfo{Path: path, Name: filepath.Base(path), Type: "file"}
+		if len(metadata) > 0 {
+			entry.Metadata = &metadata
+		}
+		entries = append(entries, entry)
+	}
+	data, err := json.Marshal(entries)
+	if err != nil {
+		panic(err)
+	}
+	client := server.Client()
+	client.Timeout = 5 * time.Second
+	response, err := client.Post(server.URL, "application/octet-stream", bytes.NewReader(data))
+	if err != nil {
+		panic(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%d\t%x\t%x\t%x\t%x\n", response.StatusCode, response.Header.Get("Content-Type"), response.Header.Get("Content-Length"), response.Header.Get("X-Content-Type-Options"), body)
+}
 func main() {
 	if runtime.Version() != "go1.26.8" {
 		panic("requires go1.26.8")
 	}
+	var server *httptest.Server
+	defer func() {
+		if server != nil {
+			server.Close()
+		}
+	}()
 	input := bufio.NewScanner(os.Stdin)
 	input.Buffer(make([]byte, 4096), 1<<20)
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "R":
+			if server == nil {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					data, err := io.ReadAll(r.Body)
+					if err != nil {
+						panic(err)
+					}
+					// Original PostFiles success writes: no explicit Content-Type.
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write(data)
+				}))
+			}
+			uploadSuccess(f[1:], server)
 		case "C":
 			kind, _, _ := mime.ParseMediaType(string(unhex(f[1])))
 			if kind == "application/octet-stream" {

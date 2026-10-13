@@ -105,7 +105,7 @@ pub(super) fn range(
 // Match encoding/json.Encoder's default escaping, field order and newline.
 // Count with the same emitter first; never allocate an oversized escaped path.
 fn payload(parts: &[&[u8]], json: Option<StatusCode>, limit: u64) -> Result<Vec<u8>, Error> {
-    let emit = |put: &mut dyn FnMut(&[u8]) -> Result<(), Error>| -> Result<(), Error> {
+    let emit = |put: &mut crate::go_json::Sink<'_>| -> Result<(), Error> {
         if let Some(status) = json {
             put(b"{\"code\":")?;
             put(status.as_str().as_bytes())?;
@@ -116,53 +116,12 @@ fn payload(parts: &[&[u8]], json: Option<StatusCode>, limit: u64) -> Result<Vec<
                 put(part)?;
                 continue;
             }
-            for chunk in part.utf8_chunks() {
-                for c in chunk.valid().chars() {
-                    match c {
-                        '"' => put(b"\\\"")?,
-                        '\\' => put(b"\\\\")?,
-                        '\n' => put(b"\\n")?,
-                        '\r' => put(b"\\r")?,
-                        '\t' => put(b"\\t")?,
-                        '\u{8}' => put(b"\\b")?,
-                        '\u{c}' => put(b"\\f")?,
-                        '<' => put(b"\\u003c")?,
-                        '>' => put(b"\\u003e")?,
-                        '&' => put(b"\\u0026")?,
-                        '\u{2028}' => put(b"\\u2028")?,
-                        '\u{2029}' => put(b"\\u2029")?,
-                        c if c < ' ' => {
-                            const HEX: &[u8] = b"0123456789abcdef";
-                            let value = c as usize;
-                            put(&[b'\\', b'u', b'0', b'0', HEX[value >> 4], HEX[value & 15]])?;
-                        }
-                        c => {
-                            put(c.encode_utf8(&mut [0; 4]).as_bytes())?;
-                        }
-                    }
-                }
-                for _ in chunk.invalid() {
-                    put(b"\\ufffd")?;
-                }
-            }
+            crate::go_json::string_content(part, put)?;
         }
         if json.is_some() {
             put(b"\"}\n")?;
         }
         Ok(())
     };
-    let mut length = 0usize;
-    emit(&mut |bytes| {
-        length = length
-            .checked_add(bytes.len())
-            .filter(|n| *n as u64 <= limit && isize::try_from(*n).is_ok())
-            .ok_or(Error::ResponseLimit)?;
-        Ok(())
-    })?;
-    let mut output = Vec::with_capacity(length);
-    emit(&mut |bytes| {
-        output.extend_from_slice(bytes);
-        Ok(())
-    })?;
-    Ok(output)
+    crate::go_json::bounded(limit, emit)
 }

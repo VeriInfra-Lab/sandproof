@@ -63,13 +63,7 @@ pub fn validate_metadata(values: &BTreeMap<String, String>) -> Result<(), Transf
     crate::file_upload::validate_metadata(values).map_err(|_| TransferIoError::InvalidArgument)
 }
 
-/// Completed body/metadata work, not a durability or whole-batch transaction.
-#[derive(Debug, PartialEq, Eq)]
-pub struct UploadResult {
-    pub path: String,
-    pub written: u64,
-    pub metadata: BTreeMap<String, String>,
-}
+pub use crate::file_upload::UploadResult;
 
 pub struct UploadFile {
     file: File,

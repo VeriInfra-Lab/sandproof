@@ -79,6 +79,55 @@ async def compressed_async(sandbox, url, root):
                 assert bytes(await sandbox.files.read(filename, format='bytes')) == value
 
 
+def assert_upload_response(response, entries):
+    assert response.status_code == 200, response.text
+    expected = json.dumps(entries, ensure_ascii=False, sort_keys=True,
+                          separators=(',', ':'))
+    for text, escaped in [('<', r'\u003c'), ('>', r'\u003e'), ('&', r'\u0026'),
+                          ('\u2028', r'\u2028'), ('\u2029', r'\u2029')]:
+        expected = expected.replace(text, escaped)
+    assert response.content == expected.encode(), response.text
+    assert response.headers['content-type'] == 'text/plain; charset=utf-8'
+    assert 'x-content-type-options' not in response.headers
+    if len(response.content) <= 2048:
+        assert response.headers['content-length'] == str(len(response.content))
+    else:
+        assert 'content-length' not in response.headers
+        assert response.headers['transfer-encoding'] == 'chunked'
+
+
+def upload_reply_cases(root):
+    """Synthetic HTTP success-envelope assertions; original SDK reads each file."""
+    for index, metadata in enumerate([{}, {'z': 'last', 'a': '<&>"'},
+                                      {'pad': 'x' * 2100}]):
+        path = f'{root}/reply-{index}-<雪&>.txt'
+        headers = {'x-access-token': 'fixture-token',
+                   'content-type': 'application/octet-stream',
+                   **{f'x-metadata-{key}': value for key, value in metadata.items()}}
+        entry = {'name': path.rsplit('/', 1)[1], 'path': path, 'type': 'file'}
+        if metadata:
+            entry['metadata'] = metadata
+        yield path, headers, entry
+
+
+def upload_reply_sync(sandbox, url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for path, headers, entry in upload_reply_cases(root):
+            response = client.post(f'{url}/files', params={'path': path},
+                                   headers=headers, content=b'ack')
+            assert_upload_response(response, [entry])
+            assert bytes(sandbox.files.read(path, format='bytes')) == b'ack'
+
+
+async def upload_reply_async(sandbox, url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for path, headers, entry in upload_reply_cases(root):
+            response = await client.post(f'{url}/files', params={'path': path},
+                                         headers=headers, content=b'ack')
+            assert_upload_response(response, [entry])
+            assert bytes(await sandbox.files.read(path, format='bytes')) == b'ack'
+
+
 def download_headers(response):
     assert response.status_code == 200
     assert response.headers['content-encoding'] == 'gzip'
@@ -370,6 +419,7 @@ def run_sync(url, root):
         raise AssertionError('directory download succeeded')
     multipart_sync(sandbox, root)
     compressed_sync(sandbox, url, root)
+    upload_reply_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
     range_sync(url, root)
     negotiated_sync(url, root)
@@ -417,6 +467,7 @@ async def run_async(url, root):
         raise AssertionError('directory download succeeded')
     await multipart_async(sandbox, root)
     await compressed_async(sandbox, url, root)
+    await upload_reply_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
     await range_async(url, root)
     await negotiated_async(url, root)

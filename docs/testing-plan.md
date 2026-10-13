@@ -100,6 +100,16 @@ SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
 
 [上传顺序检查](../sandbox-guest-service/src/file_transfer/batch/tests/upload.rs)连接原授权、实际账户池与临时文件，覆盖编码/首头/用户名/metadata/媒体类型/path 的拒绝优先级，raw/multipart × identity/gzip 四种组合的一次准入/一次账户查询、首 metadata 值和 raw 短正文前缀。条件变量屏障与可推进时钟核对账户查询取消/超时后原授权和上传槽位仍保留，实际查询退出后才允许初始化及容量复用。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload`；Linux service 全测试包含该组，已交叉检查，实际运行待补。固定 SDK 文件夹具所有 POST 已改接同一组件，原 raw/multipart 与合成 gzip 回读组合须在此候选重跑；无正式监听器、签名/完整上传错误 JSON、特权身份切换或 KVM 通过声明。
 
+[上传回执检查](../sandbox-guest-service/src/upload_response/tests.rs)纳入可移植 service lib，覆盖空批次、空 metadata 省略、字段/键顺序、Go 转义、精确响应线长、无效预算、原期限、逐块背压和响应丢弃后最后 Bytes 副本占额，已有本地运行。原上传 Go 参考适配器新增生成类型的成功数组与固定 PostFiles 的写头/正文调用，通过真实本机 HTTP/1.1 服务核对状态、Content-Type、Content-Length、nosniff 缺省和完整正文；含 2047/2048/2049 字节边界、控制/HTML/Unicode 字符及多文件。参考仅发送合成内存响应，不访问实际文件或启动完整 envd；运行后关闭自己的回环服务。显式入口为：
+
+```sh
+SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  upload_response::tests::fixed_go_upload_success_bytes_and_actual_http_headers_match -- --ignored --nocapture
+```
+
+[Linux 回执连接检查](../sandbox-guest-service/src/file_transfer/batch/tests/response.rs)验证已完成文件/metadata 在响应预算失败后保留，实际 BatchReply 与响应字节使用同一原槽位，文件 I/O 完成后初始化仍可推进，空批次响应后容量可复用。SDK 文件夹具已移除成功数组的独立 JSON 拼装；同步/异步合成 POST 检查空 metadata、Unicode/HTML 文件名和大 metadata 响应头/精确正文，再用原 SDK 回读实际文件。这些 Linux 组已交叉检查，实际运行待补；可移植响应对照不能替代它们或完整端点验收。
+
 [gzip 编码所有权检查](../sandbox-guest-service/src/upload_body/encode/tests.rs)纳入上述可移植 service lib 入口，覆盖打开后不预读、空/二进制/大文件块、固定源缓冲、Bytes 克隆背压、打开和读取阻塞期间的取消/原期限、两种总量边界及源错误不能变 HTTP EOF。本地已运行；不模拟 Linux 文件权限或授权实现。
 
 [Linux gzip 下载检查](../sandbox-guest-service/src/file_transfer/gzip_download/tests.rs)和原 [FD 检查](../sandbox-guest-runtime/tests/file_transfer.rs)增加增长/缩短、路径替换、链接、procfs 非 stat 长度读取、真实 AuthPermit/响应 Bytes 持有、容量/期限及原始/压缩预算。定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::gzip_download::tests`，基础和兼容入口会发现该组；当前候选待 Linux 实跑。固定 SDK 文件路由另以原 `files.read(..., gzip=True)` 检查同步/异步 bytes、stream、Unicode text、空/二进制/大文件与缺失/目录错误，合成 HTTP 客户端检查未自动解码的 gzip 正文、无 Content-Length 及 Vary；该扩展也待 Linux 实跑。路由已接下述 stat→编码选择→open 组件，完整正式入口与 E03 双端验收仍待补。

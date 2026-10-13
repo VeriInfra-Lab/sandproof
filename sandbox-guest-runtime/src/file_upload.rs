@@ -4,6 +4,14 @@
 // and shared/pkg/filesystem/xattr.go, Apache-2.0: file_encoding/E2B-LICENSE.
 use std::collections::BTreeMap;
 
+/// Completed body/metadata work, not a durability or whole-batch transaction.
+#[derive(Debug, PartialEq, Eq)]
+pub struct UploadResult {
+    pub path: String,
+    pub written: u64,
+    pub metadata: BTreeMap<String, String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Raw,

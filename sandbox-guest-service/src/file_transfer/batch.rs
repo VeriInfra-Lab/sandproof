@@ -175,7 +175,7 @@ impl UploadBatch {
         timely(self.reservation.deadline, Ok(()))?;
         Ok(BatchReply {
             results: self.results,
-            _reservation: self.reservation,
+            reservation: self.reservation,
         })
     }
 }
@@ -229,12 +229,31 @@ impl BatchFile<'_> {
 
 pub struct BatchReply {
     results: Vec<UploadResult>,
-    _reservation: Reservation,
+    reservation: Reservation,
 }
 
 impl BatchReply {
     #[must_use]
     pub fn results(&self) -> &[UploadResult] {
         &self.results
+    }
+
+    /// Serialize and send this completed batch under its original reservation.
+    /// Initialization may already proceed after completed file I/O; retained
+    /// results, body and all byte clones continue to consume the original slot.
+    /// # Errors
+    /// Invalid response budgets, escaped payload limit, original expiry or a
+    /// lost worker. File effects remain completed even if no reply is delivered.
+    pub async fn into_http_response(
+        self,
+        limits: crate::upload_response::Limits,
+    ) -> Result<axum::response::Response, crate::upload_response::Error> {
+        crate::upload_response::success(
+            self.results,
+            limits,
+            self.reservation.deadline,
+            self.reservation.lease,
+        )
+        .await
     }
 }

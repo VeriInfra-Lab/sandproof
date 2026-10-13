@@ -15,7 +15,7 @@ use sandproof_guest_runtime::{
     file_mime::{Catalog, CatalogLimits},
     filesystem::{
         FileLimits,
-        transfer::{TransferIoError, TransferLimits, UploadResult},
+        transfer::{TransferIoError, TransferLimits},
     },
 };
 use sandproof_guest_service::{
@@ -209,11 +209,11 @@ async fn upload(
         )
         .await;
     match result {
-        Ok(reply) => upload_response(Ok(reply)),
-        Err(UploadRequestError::Body(error)) => upload_response(Err(error)),
+        Ok(reply) => upload_response(Ok(reply)).await,
+        Err(UploadRequestError::Body(error)) => upload_response(Err(error)).await,
         Err(UploadRequestError::Transfer(error)) => failure(error),
         Err(UploadRequestError::GzipPreflight(error)) => {
-            upload_response(Err(MultipartError::GzipPreflight(error)))
+            upload_response(Err(MultipartError::GzipPreflight(error))).await
         }
         Err(error) => {
             let status = if matches!(error, UploadRequestError::Context(_)) {
@@ -230,9 +230,22 @@ async fn upload(
     }
 }
 
-fn upload_response(result: Result<BatchReply, MultipartError>) -> Response {
+async fn upload_response(result: Result<BatchReply, MultipartError>) -> Response {
     match result {
-        Ok(reply) => Json(reply.results().iter().map(entry).collect::<Vec<_>>()).into_response(),
+        Ok(reply) => match reply
+            .into_http_response(sandproof_guest_service::upload_response::Limits {
+                wire_bytes: 1 << 20,
+                chunk_bytes: 4096,
+            })
+            .await
+        {
+            Ok(response) => response,
+            Err(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "upload response unavailable",
+            )
+                .into_response(),
+        },
         Err(MultipartError::Transfer(error)) => failure(error),
         Err(MultipartError::GzipPreflight(
             sandproof_guest_service::upload_body::GzipError::Header
@@ -297,9 +310,6 @@ fn gzip_limits() -> GzipLimits {
             members: 32,
         },
     }
-}
-fn entry(result: &UploadResult) -> serde_json::Value {
-    serde_json::json!({"path":result.path,"name":Path::new(&result.path).file_name().unwrap().to_str().unwrap(),"type":"file","metadata":result.metadata})
 }
 async fn download(
     fixture: &Fixture,
@@ -504,7 +514,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 152);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 164);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 12);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 8);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
