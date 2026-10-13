@@ -1,48 +1,40 @@
 import SandboxModel.Network.Contains
+import SandboxModel.Foundations.FiniteScan
 open Aeneas Aeneas.Std Result ControlFlow SandproofNetworkRust
 namespace SandboxModel.Network
+
+theorem ranges_body_agrees
+    (ranges : Slice sandbox_controller_core.model.Ipv4Cidr) (address : U32) (cursor : Usize) :
+    sandbox_controller_core.network.ipv4_list_contains_loop.body ranges address cursor =
+      SandboxModel.Foundations.vectorAnyBody ⟨ranges⟩
+        (fun range => decide ((rangeView range).matches address.val)) cursor := by
+  unfold sandbox_controller_core.network.ipv4_list_contains_loop.body
+    SandboxModel.Foundations.vectorAnyBody
+  by_cases bound : cursor.val < ranges.val.length
+  · have inBounds : cursor < Slice.len ranges := by simpa using bound
+    obtain ⟨value, evaluated, same⟩ := WP.spec_imp_exists (Slice.index_usize_spec ranges cursor bound)
+    subst value
+    simp [inBounds, bound, evaluated, cidr_contains_refines, alloc.vec.Vec.val]
+  · have outside : ¬ cursor < Slice.len ranges := by simpa using bound
+    simp [outside, bound, alloc.vec.Vec.val]
 
 theorem ranges_loop_refines
     (ranges : Slice sandbox_controller_core.model.Ipv4Cidr) (address : U32) (start : Usize) :
     sandbox_controller_core.network.ipv4_list_contains_loop ranges address start
       ⦃ out => out = rangesMatch ((ranges.val.drop start.val).map rangeView) address.val ⦄ := by
   unfold sandbox_controller_core.network.ipv4_list_contains_loop
-  apply Aeneas.Std.loop.spec_decr_nat
-    (fun index => ranges.val.length - index.val)
-    (fun index => rangesMatch ((ranges.val.drop index.val).map rangeView) address.val =
-      rangesMatch ((ranges.val.drop start.val).map rangeView) address.val)
-    (fun out => out = rangesMatch ((ranges.val.drop start.val).map rangeView) address.val)
-  · intro index invariant
-    unfold sandbox_controller_core.network.ipv4_list_contains_loop.body
-    dsimp only
-    split
-    · rename_i inBounds
-      step as ⟨range, rangePost⟩
-      rw [cidr_contains_refines range address]
-      have indexBound : index.val < ranges.val.length := by simpa using inBounds
-      have dropEq : ranges.val.drop index.val = range :: ranges.val.drop (index.val + 1) := by
-        rw [List.drop_eq_getElem_cons indexBound, ← rangePost]
-      by_cases hit : (rangeView range).matches address.val
-      · simp [hit]
-        rw [dropEq] at invariant
-        simpa [rangesMatch, hit] using invariant
-      · simp [hit]
-        have nextInvariant :
-            rangesMatch ((ranges.val.drop (index.val + 1)).map rangeView) address.val =
-              rangesMatch ((ranges.val.drop start.val).map rangeView) address.val := by
-          rw [dropEq] at invariant
-          simpa [rangesMatch, hit] using invariant
-        step as ⟨next, nextPost⟩
-        constructor
-        · rw [nextPost]
-          simpa using nextInvariant
-        · omega
-    · rename_i outside
-      simp only [WP.spec_ok]
-      have lower : ranges.val.length ≤ index.val := by simpa using outside
-      rw [List.drop_eq_nil_of_le lower] at invariant
-      simpa [rangesMatch] using invariant
-  · rfl
+  have bodySame : sandbox_controller_core.network.ipv4_list_contains_loop.body ranges address =
+      SandboxModel.Foundations.vectorAnyBody ⟨ranges⟩
+        (fun range => decide ((rangeView range).matches address.val)) := funext (ranges_body_agrees ranges address)
+  rw [bodySame]
+  by_cases bound : start.val ≤ ranges.val.length
+  · simpa [rangesMatch, List.any_map, ← List.map_drop, alloc.vec.Vec.val, Function.comp_def] using
+      SandboxModel.Foundations.vectorAnyLoop_refines ⟨ranges⟩
+        (fun range => decide ((rangeView range).matches address.val)) start bound
+  · have outside : ¬ start.val < ranges.val.length := by omega
+    rw [loop]
+    simp [SandboxModel.Foundations.vectorAnyBody, outside, rangesMatch,
+      List.drop_eq_nil_of_le (by omega : ranges.val.length ≤ start.val), alloc.vec.Vec.val]
 
 theorem ranges_refines
     (ranges : Slice sandbox_controller_core.model.Ipv4Cidr) (address : U32) :

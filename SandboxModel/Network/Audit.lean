@@ -12,6 +12,7 @@ import SandboxModel.ProofAuditCommand
 #audit_controller_proof SandboxModel.Network.cidr_malformed_prefix_rejected
 #audit_controller_proof SandboxModel.Network.cidr_noncanonical_rejected
 #audit_controller_proof SandboxModel.Network.deref_refines
+#audit_controller_proof SandboxModel.Network.bool_ne_model_exact
 #audit_controller_proof SandboxModel.Network.parse_ipv4_bits_refines
 #audit_controller_proof SandboxModel.Network.parse_failure_is_normal
 #audit_controller_proof SandboxModel.Network.parseOctet_success_spec
@@ -20,6 +21,7 @@ import SandboxModel.ProofAuditCommand
 #audit_controller_proof SandboxModel.Network.static_loop_refines
 #audit_controller_proof SandboxModel.Network.static_policy_refines
 #audit_controller_proof SandboxModel.Network.ranges_loop_refines
+#audit_controller_proof SandboxModel.Network.ranges_body_agrees
 #audit_controller_proof SandboxModel.Network.ranges_refines
 #audit_controller_proof SandboxModel.Network.platform_ranges_refines
 #audit_controller_proof SandboxModel.Network.platform_protected_refines

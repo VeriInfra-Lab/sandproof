@@ -6,3 +6,6 @@ import SandboxModel.Foundations.CreatePlan
 import SandboxModel.Foundations.Identity
 import SandboxModel.Foundations.Evidence
 import SandboxModel.Foundations.Composition
+import SandboxModel.Foundations.Cloning
+import SandboxModel.Foundations.Focused
+import SandboxModel.Foundations.FiniteScan

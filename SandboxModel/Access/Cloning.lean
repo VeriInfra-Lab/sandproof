@@ -1,24 +1,19 @@
 import SandproofNetwork.Funs
+import SandboxModel.Foundations.Cloning
 namespace SandboxModel.Access
 open Aeneas Aeneas.Std SandproofNetworkRust
 
-@[simp] def CloneExact (dictionary : core.clone.Clone T) : Prop :=
-  ∀ value, dictionary.clone value = .ok value
+abbrev CloneExact := @SandboxModel.Foundations.CloneExact
 
 @[simp] theorem vec_clone_exact (dictionary : core.clone.Clone T) (values : alloc.vec.Vec T)
     (exactClone : CloneExact dictionary) :
     alloc.vec.CloneVec.clone dictionary values = .ok values := by
-  obtain ⟨copied, copiedEq, valueEq⟩ := WP.spec_imp_exists
-    (Slice.clone_spec (s := values.slice) (fun value _ => exactClone value))
-  simp only [alloc.vec.CloneVec.clone, copiedEq]
-  cases values
-  cases valueEq
-  simp
+  exact SandboxModel.Foundations.vec_clone_exact dictionary values exactClone
 
 @[simp] theorem option_clone_exact (dictionary : core.clone.Clone T) (value : Option T)
     (exactClone : CloneExact dictionary) :
     core.option.Option.Insts.CoreCloneClone.clone dictionary value = .ok value := by
-  unfold CloneExact at exactClone
+  change ∀ value, dictionary.clone value = .ok value at exactClone
   cases value <;> simp [core.option.Option.Insts.CoreCloneClone.clone, exactClone]
 
 @[simp] theorem store_clone_exact (keyClone : core.clone.Clone K) (valueClone : core.clone.Clone V)

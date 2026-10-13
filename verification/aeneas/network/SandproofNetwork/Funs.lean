@@ -54,11 +54,13 @@ def sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
     Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr, sandbox_controller_core::model::Ipv4Cidr>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr, sandbox_controller_core::model::Ipv4Cidr>"]
-def sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr :
-  core.cmp.PartialEq sandbox_controller_core.model.Ipv4Cidr
+impl_def sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr
+  : core.cmp.PartialEq sandbox_controller_core.model.Ipv4Cidr
   sandbox_controller_core.model.Ipv4Cidr := {
   eq :=
     sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq]:
@@ -107,11 +109,13 @@ def sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq
     Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::Endpoint, sandbox_controller_core::model::Endpoint>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandbox_controller_core::model::Endpoint, sandbox_controller_core::model::Endpoint>"]
-def sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint :
-  core.cmp.PartialEq sandbox_controller_core.model.Endpoint
+impl_def sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint
+  : core.cmp.PartialEq sandbox_controller_core.model.Endpoint
   sandbox_controller_core.model.Endpoint := {
   eq :=
     sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}::eq]:
@@ -169,12 +173,14 @@ def
     Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy, sandbox_controller_core::model::NetworkPolicy>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy, sandbox_controller_core::model::NetworkPolicy>"]
-def
+impl_def
   sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy
   : core.cmp.PartialEq sandbox_controller_core.model.NetworkPolicy
   sandbox_controller_core.model.NetworkPolicy := {
   eq :=
     sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy
 }
 
 /-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}::eq]:
@@ -190,19 +196,6 @@ def sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
   := do
   ok (self = other)
 
-/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}::eq]:
-    Source: './controller-core/src/ids.rs', lines 3:37-3:46
-    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>}::eq]
-    Visibility: public -/
-@[rust_fun
-  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>}::eq"]
-def sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
-  (self : sandbox_controller_core.ids.VmId)
-  (other : sandbox_controller_core.ids.VmId) :
-  Result Bool
-  := do
-  ok (self = other)
-
 /-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq]:
     Source: './controller-core/src/ids.rs', lines 3:37-3:46
     Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>}::eq]
@@ -212,6 +205,19 @@ def sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
 def sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
   (self : sandbox_controller_core.ids.SandboxId)
   (other : sandbox_controller_core.ids.SandboxId) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>}::eq"]
+def sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+  (self : sandbox_controller_core.ids.VmId)
+  (other : sandbox_controller_core.ids.VmId) :
   Result Bool
   := do
   ok (self = other)
@@ -511,10 +517,12 @@ def sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
     Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::TenantId, sandbox_controller_core::ids::TenantId>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandbox_controller_core::ids::TenantId, sandbox_controller_core::ids::TenantId>"]
-def sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId :
+impl_def sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId :
   core.cmp.PartialEq sandbox_controller_core.ids.TenantId
   sandbox_controller_core.ids.TenantId := {
   eq := sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Actor> for sandbox_controller_core::model::Actor}::eq]:
@@ -547,10 +555,12 @@ def sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor.eq
     Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::Actor, sandbox_controller_core::model::Actor>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandbox_controller_core::model::Actor, sandbox_controller_core::model::Actor>"]
-def sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor :
+impl_def sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor :
   core.cmp.PartialEq sandbox_controller_core.model.Actor
   sandbox_controller_core.model.Actor := {
   eq := sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor
 }
 
 /-- [sandbox_controller_core::transition::authorized]:
@@ -2002,11 +2012,13 @@ def sandbox_controller_core.model.World.Insts.CoreCloneClone.clone
     Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>] -/
 @[reducible, rust_trait_impl
   "core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>"]
-def sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId :
-  core.cmp.PartialEq sandbox_controller_core.ids.SandboxId
+impl_def sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+  : core.cmp.PartialEq sandbox_controller_core.ids.SandboxId
   sandbox_controller_core.ids.SandboxId := {
   eq :=
     sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
 }
 
 /-- [sandbox_controller_core::auxiliary::handle_ingress]:
@@ -2107,6 +2119,268 @@ def sandbox_controller_core.auxiliary.handle_egress
       ok (core.result.Result.Err
         sandbox_controller_core.auxiliary.AuxiliaryReject.CapabilityDenied)
 
+/-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}::eq]:
+    Source: './controller-core/src/maintenance/slots.rs', lines 10:29-10:38
+    Name pattern: [sandbox_controller_core::maintenance::slots::{core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding, sandbox_controller_core::maintenance::slots::HostBinding>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::slots::{core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding, sandbox_controller_core::maintenance::slots::HostBinding>}::eq"]
+def
+  sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq
+  (self : sandbox_controller_core.maintenance.slots.HostBinding)
+  (other : sandbox_controller_core.maintenance.slots.HostBinding) :
+  Result Bool
+  := do
+  let b ←
+    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+      self.owner other.owner
+  if b
+  then
+    let b1 ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+        self.sandbox other.sandbox
+    if b1
+    then
+      if self.generation = other.generation
+      then
+        let b2 ←
+          sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+            self.vm other.vm
+        if b2
+        then
+          sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+            self.network other.network
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}]
+    Source: './controller-core/src/maintenance/slots.rs', lines 10:29-10:38
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding, sandbox_controller_core::maintenance::slots::HostBinding>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding, sandbox_controller_core::maintenance::slots::HostBinding>"]
+impl_def
+  sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding
+  : core.cmp.PartialEq sandbox_controller_core.maintenance.slots.HostBinding
+  sandbox_controller_core.maintenance.slots.HostBinding := {
+  eq :=
+    sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding
+}
+
+/-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase> for sandbox_controller_core::maintenance::slots::HostSlotPhase}::eq]:
+    Source: './controller-core/src/maintenance/slots.rs', lines 20:29-20:38
+    Name pattern: [sandbox_controller_core::maintenance::slots::{core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase, sandbox_controller_core::maintenance::slots::HostSlotPhase>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::slots::{core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase, sandbox_controller_core::maintenance::slots::HostSlotPhase>}::eq"]
+def
+  sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq
+  (self : sandbox_controller_core.maintenance.slots.HostSlotPhase)
+  (other : sandbox_controller_core.maintenance.slots.HostSlotPhase) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase> for sandbox_controller_core::maintenance::slots::HostSlotPhase}]
+    Source: './controller-core/src/maintenance/slots.rs', lines 20:29-20:38
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase, sandbox_controller_core::maintenance::slots::HostSlotPhase>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase, sandbox_controller_core::maintenance::slots::HostSlotPhase>"]
+impl_def
+  sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase
+  : core.cmp.PartialEq sandbox_controller_core.maintenance.slots.HostSlotPhase
+  sandbox_controller_core.maintenance.slots.HostSlotPhase := {
+  eq :=
+    sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase
+}
+
+/-- [sandbox_controller_core::maintenance::slots::reduce_slot]:
+    Source: './controller-core/src/maintenance/slots.rs', lines 80:0-83:39
+    Name pattern: [sandbox_controller_core::maintenance::slots::reduce_slot]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::maintenance::slots::reduce_slot"]
+def sandbox_controller_core.maintenance.slots.reduce_slot
+  (previous : Option sandbox_controller_core.maintenance.slots.HostSlotRecord)
+  (input : sandbox_controller_core.maintenance.slots.SlotInput) :
+  Result (core.result.Result
+    sandbox_controller_core.maintenance.slots.HostSlotRecord
+    sandbox_controller_core.maintenance.slots.SlotReject)
+  := do
+  match input with
+  | sandbox_controller_core.maintenance.slots.SlotInput.Bind _
+    expected_previous binding =>
+    let (previous1, expected_matches) ←
+      match previous with
+      | none =>
+        do
+        let b ←
+          match expected_previous with
+          | none => ok true
+          | some _ => ok false
+        ok (none, b)
+      | some row =>
+        do
+        let (hsr, b) ←
+          match expected_previous with
+          | none => ok (row, false)
+          | some expected =>
+            do
+            let expected_matches1 ←
+              sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+                row.binding.vm expected
+            ok (row, expected_matches1)
+        ok (some hsr, b)
+    if expected_matches
+    then
+      match previous1 with
+      | none =>
+        ok (core.result.Result.Ok
+          {
+            binding,
+            phase :=
+              sandbox_controller_core.maintenance.slots.HostSlotPhase.Occupied
+          })
+      | some prior =>
+        let b ←
+          core.cmp.PartialEq.ne.trait_default
+            sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase
+            prior.phase
+            sandbox_controller_core.maintenance.slots.HostSlotPhase.Free
+        if b
+        then
+          ok (core.result.Result.Err
+            sandbox_controller_core.maintenance.slots.SlotReject.NotFree)
+        else
+          let i := binding.vm
+          let i1 := prior.binding.vm
+          if i <= i1
+          then
+            ok (core.result.Result.Err
+              sandbox_controller_core.maintenance.slots.SlotReject.StaleIdentity)
+          else
+            ok (core.result.Result.Ok
+              {
+                binding,
+                phase :=
+                  sandbox_controller_core.maintenance.slots.HostSlotPhase.Occupied
+              })
+    else
+      ok (core.result.Result.Err
+        sandbox_controller_core.maintenance.slots.SlotReject.BindingMismatch)
+  | sandbox_controller_core.maintenance.slots.SlotInput.BeginRelease _ binding
+    =>
+    let r ←
+      core.option.Option.ok_or previous
+        sandbox_controller_core.maintenance.slots.SlotReject.BindingMismatch
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      let b ←
+        core.cmp.PartialEq.ne.trait_default
+          sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding
+          val.binding binding
+      if b
+      then
+        ok (core.result.Result.Err
+          sandbox_controller_core.maintenance.slots.SlotReject.BindingMismatch)
+      else
+        let b1 ←
+          sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq
+            val.phase
+            sandbox_controller_core.maintenance.slots.HostSlotPhase.Free
+        if b1
+        then
+          ok (core.result.Result.Err
+            sandbox_controller_core.maintenance.slots.SlotReject.NotOccupied)
+        else
+          ok (core.result.Result.Ok
+            {
+              binding,
+              phase :=
+                sandbox_controller_core.maintenance.slots.HostSlotPhase.Releasing
+            })
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        sandbox_controller_core.maintenance.slots.HostSlotRecord
+        (core.convert.FromSame
+        sandbox_controller_core.maintenance.slots.SlotReject) residual
+  | sandbox_controller_core.maintenance.slots.SlotInput.ConfirmRelease _
+    binding =>
+    let r ←
+      core.option.Option.ok_or previous
+        sandbox_controller_core.maintenance.slots.SlotReject.BindingMismatch
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      let b ←
+        core.cmp.PartialEq.ne.trait_default
+          sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding
+          val.binding binding
+      if b
+      then
+        ok (core.result.Result.Err
+          sandbox_controller_core.maintenance.slots.SlotReject.BindingMismatch)
+      else
+        let b1 ←
+          sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq
+            val.phase
+            sandbox_controller_core.maintenance.slots.HostSlotPhase.Occupied
+        if b1
+        then
+          ok (core.result.Result.Err
+            sandbox_controller_core.maintenance.slots.SlotReject.NotReleasing)
+        else
+          ok (core.result.Result.Ok
+            {
+              binding,
+              phase :=
+                sandbox_controller_core.maintenance.slots.HostSlotPhase.Free
+            })
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        sandbox_controller_core.maintenance.slots.HostSlotRecord
+        (core.convert.FromSame
+        sandbox_controller_core.maintenance.slots.SlotReject) residual
+  | sandbox_controller_core.maintenance.slots.SlotInput.CheckOccupied _ binding
+    =>
+    let r ←
+      core.option.Option.ok_or previous
+        sandbox_controller_core.maintenance.slots.SlotReject.BindingMismatch
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      let b ←
+        core.cmp.PartialEq.ne.trait_default
+          sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding
+          val.binding binding
+      if b
+      then
+        ok (core.result.Result.Err
+          sandbox_controller_core.maintenance.slots.SlotReject.BindingMismatch)
+      else
+        let b1 ←
+          core.cmp.PartialEq.ne.trait_default
+            sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase
+            val.phase
+            sandbox_controller_core.maintenance.slots.HostSlotPhase.Occupied
+        if b1
+        then
+          ok (core.result.Result.Err
+            sandbox_controller_core.maintenance.slots.SlotReject.NotOccupied)
+        else ok (core.result.Result.Ok val)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        sandbox_controller_core.maintenance.slots.HostSlotRecord
+        (core.convert.FromSame
+        sandbox_controller_core.maintenance.slots.SlotReject) residual
+
 /-- [sandbox_controller_core::store::{impl core::default::Default for sandbox_controller_core::store::Store<K, V>}::default]:
     Source: './controller-core/src/store.rs', lines 11:4-11:24
     Name pattern: [sandbox_controller_core::store::{core::default::Default<sandbox_controller_core::store::Store<@K, @V>>}::default]
@@ -2206,8 +2480,60 @@ def sandbox_controller_core.model.initial_world
   : Result sandbox_controller_core.model.World := do
   sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default
 
+/-- [sandbox_controller_core::recovery_monitor::handle_controller_crash]:
+    Source: './controller-core/src/recovery_monitor.rs', lines 42:0-42:87
+    Name pattern: [sandbox_controller_core::recovery_monitor::handle_controller_crash]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::recovery_monitor::handle_controller_crash"]
+def sandbox_controller_core.recovery_monitor.handle_controller_crash
+  (world : sandbox_controller_core.model.World) :
+  Result (core.result.Result
+    sandbox_controller_core.recovery_monitor.RuntimeDecision
+    sandbox_controller_core.recovery_monitor.RuntimeReject)
+  := do
+  if world.controller_up
+  then
+    let next ←
+      sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
+    ok (core.result.Result.Ok
+      {
+        event :=
+          sandbox_controller_core.recovery_monitor.RuntimeEvent.ControllerCrash,
+        next := { next with controller_up := false }
+      })
+  else
+    ok (core.result.Result.Err
+      sandbox_controller_core.recovery_monitor.RuntimeReject.ControllerAlreadyDown)
+
+/-- [sandbox_controller_core::recovery_monitor::handle_controller_recover]:
+    Source: './controller-core/src/recovery_monitor.rs', lines 61:0-61:89
+    Name pattern: [sandbox_controller_core::recovery_monitor::handle_controller_recover]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::recovery_monitor::handle_controller_recover"]
+def sandbox_controller_core.recovery_monitor.handle_controller_recover
+  (world : sandbox_controller_core.model.World) :
+  Result (core.result.Result
+    sandbox_controller_core.recovery_monitor.RuntimeDecision
+    sandbox_controller_core.recovery_monitor.RuntimeReject)
+  := do
+  if world.controller_up
+  then
+    ok (core.result.Result.Err
+      sandbox_controller_core.recovery_monitor.RuntimeReject.ControllerAlreadyUp)
+  else
+    let next ←
+      sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
+    ok (core.result.Result.Ok
+      {
+        event :=
+          sandbox_controller_core.recovery_monitor.RuntimeEvent.ControllerRecover,
+        next := { next with controller_up := true }
+      })
+
 /-- [sandproof_network_extract::cidr_contains]:
-    Source: 'src/lib.rs', lines 7:0-9:1
+    Source: 'src/lib.rs', lines 9:0-11:1
     Visibility: public -/
 def cidr_contains
   (cidr : sandbox_controller_core.model.Ipv4Cidr) (address : Std.U32) :
@@ -2216,13 +2542,13 @@ def cidr_contains
   sandbox_controller_core.model.Ipv4Cidr.contains cidr address
 
 /-- [sandproof_network_extract::protected_ipv4]:
-    Source: 'src/lib.rs', lines 11:0-13:1
+    Source: 'src/lib.rs', lines 13:0-15:1
     Visibility: public -/
 def protected_ipv4 (address : Std.U32) : Result Bool := do
   sandbox_controller_core.network.platform_protected_ipv4 address
 
 /-- [sandproof_network_extract::destination_allowed]:
-    Source: 'src/lib.rs', lines 15:0-17:1
+    Source: 'src/lib.rs', lines 17:0-19:1
     Visibility: public -/
 def destination_allowed
   (policy : sandbox_controller_core.model.NetworkPolicy)
@@ -2233,7 +2559,7 @@ def destination_allowed
     destination
 
 /-- [sandproof_network_extract::parse_ipv4_bits]:
-    Source: 'src/lib.rs', lines 19:0-24:1
+    Source: 'src/lib.rs', lines 21:0-26:1
     Visibility: public -/
 def parse_ipv4_bits (value : Str) : Result (Option Std.U32) := do
   let r ←
@@ -2246,7 +2572,7 @@ def parse_ipv4_bits (value : Str) : Result (Option Std.U32) := do
   | core.result.Result.Err _ => ok none
 
 /-- [sandproof_network_extract::egress]:
-    Source: 'src/lib.rs', lines 26:0-34:1
+    Source: 'src/lib.rs', lines 28:0-36:1
     Visibility: public -/
 def egress
   (world : sandbox_controller_core.model.World)
@@ -2262,7 +2588,7 @@ def egress
     destination
 
 /-- [sandproof_network_extract::ingress]:
-    Source: 'src/lib.rs', lines 36:0-44:1
+    Source: 'src/lib.rs', lines 38:0-46:1
     Visibility: public -/
 def ingress
   (world : sandbox_controller_core.model.World)
@@ -2277,7 +2603,7 @@ def ingress
   sandbox_controller_core.auxiliary.handle_ingress world actor sandbox vm slot
 
 /-- [sandproof_network_extract::clone_world]:
-    Source: 'src/lib.rs', lines 46:0-48:1
+    Source: 'src/lib.rs', lines 48:0-50:1
     Visibility: public -/
 def clone_world
   (world : sandbox_controller_core.model.World) :
@@ -2286,9 +2612,43 @@ def clone_world
   sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
 
 /-- [sandproof_network_extract::initial_world]:
-    Source: 'src/lib.rs', lines 50:0-52:1
+    Source: 'src/lib.rs', lines 52:0-54:1
     Visibility: public -/
 def initial_world : Result sandbox_controller_core.model.World := do
   sandbox_controller_core.model.initial_world
+
+/-- [sandproof_network_extract::runtime_crash]:
+    Source: 'src/lib.rs', lines 56:0-58:1
+    Visibility: public -/
+def runtime_crash
+  (world : sandbox_controller_core.model.World) :
+  Result (core.result.Result
+    sandbox_controller_core.recovery_monitor.RuntimeDecision
+    sandbox_controller_core.recovery_monitor.RuntimeReject)
+  := do
+  sandbox_controller_core.recovery_monitor.handle_controller_crash world
+
+/-- [sandproof_network_extract::runtime_recover]:
+    Source: 'src/lib.rs', lines 60:0-62:1
+    Visibility: public -/
+def runtime_recover
+  (world : sandbox_controller_core.model.World) :
+  Result (core.result.Result
+    sandbox_controller_core.recovery_monitor.RuntimeDecision
+    sandbox_controller_core.recovery_monitor.RuntimeReject)
+  := do
+  sandbox_controller_core.recovery_monitor.handle_controller_recover world
+
+/-- [sandproof_network_extract::slot_transition]:
+    Source: 'src/lib.rs', lines 64:0-69:1
+    Visibility: public -/
+def slot_transition
+  (previous : Option sandbox_controller_core.maintenance.slots.HostSlotRecord)
+  (input : sandbox_controller_core.maintenance.slots.SlotInput) :
+  Result (core.result.Result
+    sandbox_controller_core.maintenance.slots.HostSlotRecord
+    sandbox_controller_core.maintenance.slots.SlotReject)
+  := do
+  sandbox_controller_core.maintenance.slots.reduce_slot previous input
 
 end SandproofNetworkRust

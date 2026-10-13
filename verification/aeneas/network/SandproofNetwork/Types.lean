@@ -885,4 +885,78 @@ structure sandbox_controller_core.auxiliary.AuxiliaryDecision where
   event : sandbox_controller_core.auxiliary.AuxiliaryEvent
   next : sandbox_controller_core.model.World
 
+/-- [sandbox_controller_core::maintenance::slots::SlotInput]
+    Source: './controller-core/src/maintenance/slots.rs', lines 37:0-37:18
+    Name pattern: [sandbox_controller_core::maintenance::slots::SlotInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::maintenance::slots::SlotInput"]
+inductive sandbox_controller_core.maintenance.slots.SlotInput where
+| Bind :
+  sandbox_controller_core.maintenance.slots.HostSlotId →
+  Option sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.maintenance.slots.HostBinding →
+  sandbox_controller_core.maintenance.slots.SlotInput
+| BeginRelease :
+  sandbox_controller_core.maintenance.slots.HostSlotId →
+  sandbox_controller_core.maintenance.slots.HostBinding →
+  sandbox_controller_core.maintenance.slots.SlotInput
+| ConfirmRelease :
+  sandbox_controller_core.maintenance.slots.HostSlotId →
+  sandbox_controller_core.maintenance.slots.HostBinding →
+  sandbox_controller_core.maintenance.slots.SlotInput
+| CheckOccupied :
+  sandbox_controller_core.maintenance.slots.HostSlotId →
+  sandbox_controller_core.maintenance.slots.HostBinding →
+  sandbox_controller_core.maintenance.slots.SlotInput
+
+/-- [sandbox_controller_core::maintenance::slots::SlotReject]
+    Source: './controller-core/src/maintenance/slots.rs', lines 65:0-65:19
+    Name pattern: [sandbox_controller_core::maintenance::slots::SlotReject]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::maintenance::slots::SlotReject"]
+inductive sandbox_controller_core.maintenance.slots.SlotReject where
+| OutOfRange : sandbox_controller_core.maintenance.slots.SlotReject
+| BindingMismatch : sandbox_controller_core.maintenance.slots.SlotReject
+| NotFree : sandbox_controller_core.maintenance.slots.SlotReject
+| NotOccupied : sandbox_controller_core.maintenance.slots.SlotReject
+| NotReleasing : sandbox_controller_core.maintenance.slots.SlotReject
+| StaleIdentity : sandbox_controller_core.maintenance.slots.SlotReject
+| IdentityAlreadyBound : sandbox_controller_core.maintenance.slots.SlotReject
+
+/-- [sandbox_controller_core::recovery_monitor::RuntimeEvent]
+    Source: './controller-core/src/recovery_monitor.rs', lines 15:0-15:21
+    Name pattern: [sandbox_controller_core::recovery_monitor::RuntimeEvent]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::recovery_monitor::RuntimeEvent"]
+inductive sandbox_controller_core.recovery_monitor.RuntimeEvent where
+| ControllerCrash : sandbox_controller_core.recovery_monitor.RuntimeEvent
+| ControllerRecover : sandbox_controller_core.recovery_monitor.RuntimeEvent
+| DuplicateOrLateDelivery :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.recovery_monitor.RuntimeEvent
+
+/-- [sandbox_controller_core::recovery_monitor::RuntimeReject]
+    Source: './controller-core/src/recovery_monitor.rs', lines 23:0-23:22
+    Name pattern: [sandbox_controller_core::recovery_monitor::RuntimeReject]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::recovery_monitor::RuntimeReject"]
+inductive sandbox_controller_core.recovery_monitor.RuntimeReject where
+| ControllerAlreadyDown :
+  sandbox_controller_core.recovery_monitor.RuntimeReject
+| ControllerAlreadyUp : sandbox_controller_core.recovery_monitor.RuntimeReject
+| EffectNotFound : sandbox_controller_core.recovery_monitor.RuntimeReject
+
+/-- [sandbox_controller_core::recovery_monitor::RuntimeDecision]
+    Source: './controller-core/src/recovery_monitor.rs', lines 31:0-31:26
+    Name pattern: [sandbox_controller_core::recovery_monitor::RuntimeDecision]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::recovery_monitor::RuntimeDecision"]
+structure sandbox_controller_core.recovery_monitor.RuntimeDecision where
+  event : sandbox_controller_core.recovery_monitor.RuntimeEvent
+  next : sandbox_controller_core.model.World
+
 end SandproofNetworkRust

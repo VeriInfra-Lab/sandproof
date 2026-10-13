@@ -6,6 +6,9 @@ Own CIDR and policy algorithms remain real generated definitions. -/
 open Aeneas Aeneas.Std
 namespace SandproofNetworkRust
 
+@[simp, rust_fun "core::cmp::impls::{core::cmp::PartialEq<bool, bool>}::ne"]
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool := .ok (left != right)
+
 namespace Ipv4Library
 
 def decimalValue (bytes : List U8) : Nat :=

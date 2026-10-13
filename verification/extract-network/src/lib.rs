@@ -1,5 +1,7 @@
 //! Real production calls, not a second network algorithm.
 use sandbox_controller_core::auxiliary::{AuxiliaryDecision, AuxiliaryReject};
+use sandbox_controller_core::maintenance::slots::{HostSlotRecord, SlotInput, SlotReject};
+use sandbox_controller_core::recovery_monitor::{RuntimeDecision, RuntimeReject};
 use sandbox_controller_core::{
     Actor, Endpoint, Ipv4Cidr, NetSlotId, NetworkPolicy, SandboxId, VmId, World,
 };
@@ -49,4 +51,19 @@ pub fn clone_world(world: &World) -> World {
 
 pub fn initial_world() -> World {
     sandbox_controller_core::initial_world()
+}
+
+pub fn runtime_crash(world: &World) -> Result<RuntimeDecision, RuntimeReject> {
+    sandbox_controller_core::recovery_monitor::handle_controller_crash(world)
+}
+
+pub fn runtime_recover(world: &World) -> Result<RuntimeDecision, RuntimeReject> {
+    sandbox_controller_core::recovery_monitor::handle_controller_recover(world)
+}
+
+pub fn slot_transition(
+    previous: Option<HostSlotRecord>,
+    input: SlotInput,
+) -> Result<HostSlotRecord, SlotReject> {
+    sandbox_controller_core::maintenance::slots::reduce_slot(previous, input)
 }

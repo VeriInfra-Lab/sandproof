@@ -21,6 +21,9 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::ingress \
   --start-from crate::clone_world \
   --start-from crate::initial_world \
+  --start-from crate::runtime_crash \
+  --start-from crate::runtime_recover \
+  --start-from crate::slot_transition \
   --include sandbox_controller_core --dest-file "$LLBC" \
   -- --manifest-path verification/extract-network/Cargo.toml --lib --locked --offline
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \

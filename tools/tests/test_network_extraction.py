@@ -51,6 +51,15 @@ class NetworkExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'root was not generated'):
             check(ROOT, self.llbc, inventory)
 
+    def test_current_mutating_roots_cannot_disappear(self):
+        for name in ('runtime_crash', 'runtime_recover', 'slot_transition'):
+            with self.subTest(root=name):
+                inventory = copy.deepcopy(self.inventory)
+                inventory['functions'] = [function for function in inventory['functions']
+                    if function['rust_name'] != f'sandproof_network_extract::{name}']
+                with self.assertRaisesRegex(ValueError, 'root was not generated'):
+                    check(ROOT, self.llbc, inventory)
+
     def test_owned_body_missing_and_opacity_are_rejected(self):
         inventory = copy.deepcopy(self.inventory)
         function = next(function for function in inventory['functions']

@@ -3,6 +3,10 @@ import SandboxModel.Network.Model
 open Aeneas Aeneas.Std SandproofNetworkRust
 namespace SandboxModel.Network
 
+theorem bool_ne_model_exact (left right : Bool) :
+    SandproofNetworkRust.Bool.Insts.CoreCmpPartialEqBool.ne left right = .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;> rfl
+
 theorem deref_refines (value : String) (bound : Ipv4Library.StringRepresentable value) :
     alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value =
       .ok (Slice.from (Ipv4Library.stringBytes value) bound) := by
