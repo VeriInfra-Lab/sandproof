@@ -1104,6 +1104,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "sandproof-guest-core",
  "sandproof-guest-runtime",
  "serde",
  "serde_json",

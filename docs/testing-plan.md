@@ -46,6 +46,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 单独的[特权身份组件验收](../tests/guest_credentials.py)要求已复核的精确提交、worker SHA-256，以及新 mount/PID namespace 的 root PID 1 和独立 proc。入口将原二进制核对后复制到本轮 root 独占文件再执行，只创建/清理自己的临时目录与子进程，不修改宿主账号。检查真实/有效/保存/fs UID/GID、附加组、能力、普通账号的组文件访问、root 文件拒绝及不能恢复 root；另以私有用户命名空间制造 setgroups/GID/UID 失败，验证没有用户副作用。它不由普通 CI 自动获取特权执行，结果单独绑定提交和 worker 摘要，不代表 KVM、完整来宾服务或抵抗来宾 root 的隔离证明。
 
+[命令所有权检查](../sandbox-guest-runtime/tests/owner.rs)使用真实 worker、管道和 pidfd，覆盖多线程初始订阅先于输出、二进制/非零退出与 End 顺序、断线/重连不关闭 stdin、阻塞输入与持续输出下的原执行期限、单个慢订阅失败、在途块到实际额度释放、全部客户端句柄丢弃后的继续管理、预过期无副作用、exec 失败和启动结果未知不重执行。SIGSTOP/waitid、实际输出和可推进时钟建立顺序；真实 I/O 段使用正常时钟，避免假时钟抢跑子进程。丢弃未轮询任务验证 `owner_lost` 和未决额度保留；不将它当作真实 envd 服务强制重启/PID 复用验收。普通基础检查和 Linux SDK 脚本执行这些组件，公开注册/错误映射、准备阶段取消额度连接、保留 TTL、整机内存峰值及 KVM 仍单独验收。
+
 #311 来宾替换先复用 S02/S03/S11/S12：固定同步/异步 SDK 对固定 envd 与 Rust 实现执行同一合同样例，区分主进程退出、管道结束、输出排空、请求超时和 VM 停止；保留 stdin/PTY、非零退出、部分文件写入、断线/重启/旧 PID 及预算边界。真实模板切换还须通过 S01/S04/S05/S09/S13 的相关路径和原身份清理，不用组件样例代替实机。
 
 [Rust 命令编解码检查](../sandbox-guest-runtime/tests/protocol.rs)消费原共享样例，覆盖字段存在性、非法/多重选择器、二进制字节、畸形/多余帧及每消息预算。[SDK/真实进程组合](../sandbox-guest-runtime/tests/sdk_protocol.rs)由 Linux `check-compat.sh` 运行：固定同步/异步 SDK 经一次性回环测试路由启动当前账号的真实 worker/命令，检查二进制/非零、大输出、信号退出，以及 End 帧截断后实际 `CommandHandle.wait()` 报错。测试路由只接受各场景预先确定的一条命令，无公开登记/鉴权；检查实际主进程退出、输出排空和私有 socket 回收。它不是正式 Rust HTTP 服务、固定 Go envd 双端对照、全部命令操作、降权/PTY 或 KVM 证据。

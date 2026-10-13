@@ -18,6 +18,7 @@ tempfile = "=3.23.0"
 tokio = { version = "=1.49.0", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "time"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+tokio = { version = "=1.49.0", features = ["test-util"] }
 sandproof-guest-service = { path = "../sandbox-guest-service" }
 sha2 = "=0.10.9"
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
