@@ -9,6 +9,8 @@
 #[cfg(target_os = "linux")]
 mod process;
 #[cfg(target_os = "linux")]
+pub mod protocol;
+#[cfg(target_os = "linux")]
 mod spec;
 #[cfg(target_os = "linux")]
 pub mod worker;
