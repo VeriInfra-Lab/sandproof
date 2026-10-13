@@ -20,7 +20,8 @@ pub fn boundary(content_type: &str, header_bytes: usize) -> Result<String, Error
         return Err(Error::ResourceExhausted);
     }
     let (kind, mut params) = media_type(content_type).map_err(|_| Error::Malformed)?;
-    if kind != "multipart/form-data" {
+    // Request.MultipartReader in the fixed Go HTTP handler accepts both.
+    if kind != "multipart/form-data" && kind != "multipart/mixed" {
         return Err(Error::Malformed);
     }
     params

@@ -5,8 +5,10 @@ use crate::files::HttpFileSelection;
 use sandproof_guest_runtime::filesystem::transfer::{UploadResult, validate_metadata};
 use std::{collections::BTreeMap, sync::Arc};
 
+mod multipart;
 #[cfg(test)]
 mod tests;
+pub use multipart::{MultipartError, MultipartLimits};
 
 /// Explicit per-request limits, in addition to the pool's per-file limits.
 /// `total_bytes` counts file payloads; framing/ignored fields need their own

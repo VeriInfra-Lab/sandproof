@@ -1,5 +1,5 @@
 //! Pinned SDK -> test-only HTTP adapter -> authorized real file streams.
-//! Only GET identity/raw POST are exposed here; not production routes or E03.
+//! Identity GET and raw/multipart POST; not production routes or E03.
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 use axum::{
     Json, Router,
@@ -14,13 +14,14 @@ use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
     filesystem::{
         FileLimits,
-        transfer::{TransferIoError, TransferLimits},
+        transfer::{TransferIoError, TransferLimits, UploadResult},
     },
 };
 use sandproof_guest_service::{
-    AccountPool, InitLimits, Metadata, MetadataSource, ServiceError, Session, SystemAccounts,
-    file_transfer::{FileStreamError, FileStreams},
-    files::{FileContextLimits, FileSettings},
+    AccountPool, AuthPermit, InitLimits, Metadata, MetadataSource, ServiceError, Session,
+    SystemAccounts,
+    file_transfer::{BatchLimits, FileStreamError, FileStreams, MultipartError, MultipartLimits},
+    files::{FileContextLimits, FileSettings, HttpFileContext},
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha512};
@@ -52,10 +53,11 @@ struct Fixture {
     files: FileStreams,
     root: PathBuf,
     seen: AtomicUsize,
+    multipart_seen: AtomicUsize,
 }
 #[derive(Deserialize)]
 struct Params {
-    path: String,
+    path: Option<String>,
     username: Option<String>,
 }
 
@@ -90,17 +92,19 @@ async fn files(
     Query(params): Query<Params>,
     request: Request<Body>,
 ) -> Response {
-    // Paths are test inputs constrained to this independently owned directory.
-    assert!(Path::new(&params.path).starts_with(&fixture.root) && !params.path.contains(".."));
+    // Python constructs every query/full multipart filename under this owned
+    // tree. This loopback fixture is not a production route or path policy.
+    if let Some(path) = &params.path {
+        assert!(Path::new(path).starts_with(&fixture.root) && !path.contains(".."));
+    }
     let auth = fixture
         .session
         .authorize_headers(request.headers())
         .await
         .unwrap();
-    let context = auth
-        .resolve_http_file(
+    let selection = auth
+        .resolve_http_files(
             params.username.as_deref(),
-            Some(&params.path),
             &fixture.accounts,
             &FileSettings {
                 daemon_workdir: fixture.root.to_str().unwrap().into(),
@@ -115,72 +119,145 @@ async fn files(
         .unwrap();
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     if request.method() == axum::http::Method::GET {
-        let download = match fixture.files.download(auth, context).await {
-            Ok(download) => download,
-            Err(e) => return failure(e),
-        };
-        let length = download.length();
-        let body = stream::unfold(Some(download), |state| async move {
-            let mut download = state?;
-            match download.next().await {
-                Ok(Some(chunk)) => Some((
-                    Ok::<_, std::io::Error>(Bytes::from_owner(chunk)),
-                    Some(download),
-                )),
-                Ok(None) => None,
-                Err(_) => Some((Err(std::io::Error::other("incomplete file transfer")), None)),
-            }
-        });
-        return Response::builder()
-            .status(200)
-            .header("content-length", length)
-            .header("content-type", "application/octet-stream")
-            .body(Body::from_stream(body))
-            .unwrap();
+        let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
+        return download(&fixture, auth, context).await;
     }
-    assert_eq!(
-        request.headers().get("content-type").unwrap(),
-        "application/octet-stream"
-    );
-    assert!(!request.headers().contains_key("content-encoding"));
-    let expected = request
-        .headers()
+    let (parts, body) = request.into_parts();
+    assert!(!parts.headers.contains_key("content-encoding"));
+    let content_type = parts.headers.get("content-type").unwrap().to_str().unwrap();
+    let expected = parts
+        .headers
         .get("content-length")
         .map(|v| v.to_str().unwrap().parse::<u64>().unwrap());
-    let metadata: BTreeMap<_, _> = request
-        .headers()
-        .iter()
-        .filter_map(|(k, v)| {
-            k.as_str()
-                .strip_prefix("x-metadata-")
-                .map(|key| (key.to_owned(), v.to_str().unwrap().to_owned()))
-        })
-        .collect();
+    let mut metadata = BTreeMap::new();
+    for (key, value) in &parts.headers {
+        if let Some(key) = key.as_str().strip_prefix("x-metadata-") {
+            metadata
+                .entry(key.to_owned())
+                .or_insert_with(|| value.to_str().unwrap().to_owned());
+        }
+    }
+    if content_type == "application/octet-stream" {
+        let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
+        return raw_upload(&fixture, auth, context, metadata, expected, body).await;
+    }
+    assert!(content_type.starts_with("multipart/form-data;"));
+    fixture.multipart_seen.fetch_add(1, Ordering::SeqCst);
+    let batch = fixture
+        .files
+        .upload_batch(
+            auth,
+            selection,
+            params.path.as_deref(),
+            metadata,
+            BatchLimits {
+                files: 16,
+                total_bytes: 8 << 20,
+                retained_bytes: 65536,
+            },
+        )
+        .unwrap();
+    match batch
+        .receive_multipart(content_type, body, expected, multipart_limits())
+        .await
+    {
+        Ok(reply) => Json(reply.results().iter().map(entry).collect::<Vec<_>>()).into_response(),
+        Err(MultipartError::Transfer(error)) => failure(error),
+        Err(error) => {
+            let status = if matches!(
+                error,
+                MultipartError::InputLimit
+                    | MultipartError::Decode(
+                        sandproof_guest_runtime::multipart::Error::ResourceExhausted
+                    )
+            ) {
+                StatusCode::PAYLOAD_TOO_LARGE
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (
+                status,
+                Json(serde_json::json!({"message":"multipart transfer failed"})),
+            )
+                .into_response()
+        }
+    }
+}
+
+fn multipart_limits() -> MultipartLimits {
+    MultipartLimits {
+        wire: sandproof_guest_runtime::multipart::Limits {
+            chunk_bytes: 4096,
+            boundary_bytes: 256,
+            header_bytes: 8192,
+            header_count: 32,
+            line_bytes: 4096,
+            parts: 32,
+            total_bytes: 9 << 20,
+        },
+        frame_bytes: 1 << 20,
+        frames: 65536,
+        trailer_bytes: 8192,
+        trailer_fields: 32,
+    }
+}
+fn entry(result: &UploadResult) -> serde_json::Value {
+    serde_json::json!({"path":result.path,"name":Path::new(&result.path).file_name().unwrap().to_str().unwrap(),"type":"file","metadata":result.metadata})
+}
+async fn download(fixture: &Fixture, auth: AuthPermit, context: HttpFileContext) -> Response {
+    let download = match fixture.files.download(auth, context).await {
+        Ok(download) => download,
+        Err(error) => return failure(error),
+    };
+    let length = download.length();
+    let body = stream::unfold(Some(download), |state| async move {
+        let mut download = state?;
+        match download.next().await {
+            Ok(Some(chunk)) => Some((
+                Ok::<_, std::io::Error>(Bytes::from_owner(chunk)),
+                Some(download),
+            )),
+            Ok(None) => None,
+            Err(_) => Some((Err(std::io::Error::other("incomplete file transfer")), None)),
+        }
+    });
+    Response::builder()
+        .status(200)
+        .header("content-length", length)
+        .header("content-type", "application/octet-stream")
+        .body(Body::from_stream(body))
+        .unwrap()
+}
+async fn raw_upload(
+    fixture: &Fixture,
+    auth: AuthPermit,
+    context: HttpFileContext,
+    metadata: BTreeMap<String, String>,
+    expected: Option<u64>,
+    body: Body,
+) -> Response {
     let mut upload = match fixture
         .files
         .upload(auth, context, metadata, expected)
         .await
     {
         Ok(upload) => upload,
-        Err(e) => return failure(e),
+        Err(error) => return failure(error),
     };
-    let mut input = request.into_body().into_data_stream();
+    let mut input = body.into_data_stream();
     while let Some(chunk) = input.next().await {
         let Ok(chunk) = chunk else {
             return failure(FileStreamError::Unavailable);
         };
         for part in chunk.chunks(upload.chunk_bytes()) {
-            if let Err(e) = upload.write(part).await {
-                return failure(e);
+            if let Err(error) = upload.write(part).await {
+                return failure(error);
             }
         }
     }
     match upload.finish().await {
-        Ok(reply) => {
-            let result = reply.result();
-            Json(serde_json::json!([{"path":result.path,"name":Path::new(&result.path).file_name().unwrap().to_str().unwrap(),"type":"file","metadata":result.metadata}])).into_response()
-        }
-        Err(e) => failure(e),
+        Ok(reply) => Json(vec![entry(reply.result())]).into_response(),
+        Err(error) => failure(error),
     }
 }
 
@@ -223,7 +300,7 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         )
         .unwrap(),
         files: FileStreams::new(
-            2,
+            1,
             TransferLimits {
                 file: FileLimits {
                     path_bytes: 4096,
@@ -241,11 +318,12 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         .unwrap(),
         root,
         seen: AtomicUsize::new(0),
+        multipart_seen: AtomicUsize::new(0),
     })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pinned_sdk_uses_real_owned_raw_uploads_and_downloads() {
+async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
     let directory = tempfile::tempdir().unwrap();
     for mode in ["sync", "async"] {
         std::fs::create_dir_all(directory.path().join(mode).join("directory")).unwrap();
@@ -300,8 +378,25 @@ async fn pinned_sdk_uses_real_owned_raw_uploads_and_downloads() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 34);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 66);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 10);
     for mode in ["sync", "async"] {
+        assert_eq!(
+            std::fs::read(directory.path().join(mode).join("form/binary")).unwrap(),
+            b"replace"
+        );
+        for (name, expected) in [
+            ("duplicate", b"first".as_slice()),
+            ("before-directory", b"first"),
+        ] {
+            assert_eq!(
+                std::fs::read(directory.path().join(mode).join("form").join(name)).unwrap(),
+                expected
+            );
+        }
+        for name in ["after-duplicate", "after-directory"] {
+            assert!(!directory.path().join(mode).join("form").join(name).exists());
+        }
         assert_eq!(
             std::fs::read(directory.path().join(mode).join("partial")).unwrap(),
             b"first"

@@ -24,7 +24,7 @@ if [[ "$(uname -s)" == Linux ]]; then
   cargo test -p sandproof-guest-runtime --locked --test filesystem
   cargo test -p sandproof-guest-runtime --locked --test file_transfer
   cargo test -p sandproof-guest-runtime --locked --lib --test context --test owner --test preparation --test pty
-  echo "SDK/guest commands and real unary/raw-stream files passed through test routers; this is not a complete guest service or Go envd/KVM comparison."
+  echo "SDK/guest commands and real unary/raw/multipart files passed through test routers; this is not a complete guest service or Go envd/KVM comparison."
   cargo clippy -p sandproof-guest-service --all-targets --locked -- -D warnings
   cargo test -p sandproof-guest-service --all-targets --locked
   echo "Guest init/MMDS, account/context, PTY and owned command lifecycle components passed; production command routes, privileged switching and real Firecracker MMDS remain separate checks."

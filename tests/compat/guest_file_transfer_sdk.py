@@ -1,10 +1,10 @@
-"""Original sync/async SDK against owned Rust raw-upload/download components.
+"""Original sync/async SDK against owned Rust raw/multipart file components.
 
-The Rust harness owns all paths. This is not multipart, complete envd, or KVM
+The Rust harness owns all paths. This is not complete envd or KVM
 acceptance; no production/cloud endpoint or credential is used.
 """
 import asyncio
-from io import BytesIO
+from io import BytesIO, StringIO
 import json
 import sys
 
@@ -21,6 +21,88 @@ def arguments(url):
 def payloads():
     return [('empty', b''), ('binary', b'\x00\xffA\r\n'),
             ('large', bytes(range(256)) * 12289)]
+
+
+def form_payloads(root):
+    large = payloads()[-1][1]
+    expected = {'empty': b'', 'binary': b'\x00\xffbinary',
+                'nested/雪.txt': '你好\n'.encode(), 'large': large,
+                'text-io': 'snow ☃'.encode()}
+    sources = [b'', expected['binary'], '你好\n', BytesIO(large), StringIO('snow ☃')]
+    files = [{'path': f'{root}/{name}', 'data': data}
+             for name, data in zip(expected, sources, strict=True)]
+    return files, expected
+
+
+def multipart_sync(sandbox, root):
+    form = f'{root}/form'
+    assert sandbox.files.write(f'{form}/single', 'hi').path == f'{form}/single'
+    assert bytes(sandbox.files.read(f'{form}/single', format='bytes')) == b'hi'
+    files, expected = form_payloads(form)
+    results = sandbox.files.write_files(files, use_octet_stream=False,
+                                         metadata={'note': 'multipart'})
+    assert [result.path for result in results] == [file['path'] for file in files]
+    assert all(result.metadata == {'note': 'multipart'} for result in results)
+    for name, data in expected.items():
+        assert bytes(sandbox.files.read(f'{form}/{name}', format='bytes')) == data
+    with sandbox.files.read(f'{form}/large', format='stream', request_timeout=10) as stream:
+        assert b''.join(stream) == expected['large']
+    assert not sandbox.files.write(f'{form}/binary', b'replace').metadata
+    for first, second, later in [(f'{form}/duplicate', f'{form}/duplicate', f'{form}/after-duplicate'),
+                                 (f'{form}/before-directory', f'{root}/directory', f'{form}/after-directory')]:
+        try:
+            sandbox.files.write_files([{'path': first, 'data': b'first'},
+                                       {'path': second, 'data': b'second'},
+                                       {'path': later, 'data': b'never'}], use_octet_stream=False)
+        except InvalidArgumentException:
+            pass
+        else:
+            raise AssertionError('failed multipart batch reported success')
+        assert bytes(sandbox.files.read(first, format='bytes')) == b'first'
+        try:
+            sandbox.files.read(later, format='bytes')
+        except FileNotFoundException:
+            pass
+        else:
+            raise AssertionError('multipart processed a later file after failure')
+    assert sandbox.files.write_files([], use_octet_stream=False) == []
+
+
+async def multipart_async(sandbox, root):
+    form = f'{root}/form'
+    result = await sandbox.files.write(f'{form}/single', 'hi')
+    assert result.path == f'{form}/single'
+    assert bytes(await sandbox.files.read(f'{form}/single', format='bytes')) == b'hi'
+    files, expected = form_payloads(form)
+    results = await sandbox.files.write_files(files, use_octet_stream=False,
+                                               metadata={'note': 'multipart'})
+    assert [result.path for result in results] == [file['path'] for file in files]
+    assert all(result.metadata == {'note': 'multipart'} for result in results)
+    for name, data in expected.items():
+        assert bytes(await sandbox.files.read(f'{form}/{name}', format='bytes')) == data
+    stream = await sandbox.files.read(f'{form}/large', format='stream', request_timeout=10)
+    async with stream:
+        assert b''.join([chunk async for chunk in stream]) == expected['large']
+    result = await sandbox.files.write(f'{form}/binary', b'replace')
+    assert not result.metadata
+    for first, second, later in [(f'{form}/duplicate', f'{form}/duplicate', f'{form}/after-duplicate'),
+                                 (f'{form}/before-directory', f'{root}/directory', f'{form}/after-directory')]:
+        try:
+            await sandbox.files.write_files([{'path': first, 'data': b'first'},
+                                             {'path': second, 'data': b'second'},
+                                             {'path': later, 'data': b'never'}], use_octet_stream=False)
+        except InvalidArgumentException:
+            pass
+        else:
+            raise AssertionError('failed multipart batch reported success')
+        assert bytes(await sandbox.files.read(first, format='bytes')) == b'first'
+        try:
+            await sandbox.files.read(later, format='bytes')
+        except FileNotFoundException:
+            pass
+        else:
+            raise AssertionError('multipart processed a later file after failure')
+    assert await sandbox.files.write_files([], use_octet_stream=False) == []
 
 
 def run_sync(url, root):
@@ -59,6 +141,7 @@ def run_sync(url, root):
         pass
     else:
         raise AssertionError('directory download succeeded')
+    multipart_sync(sandbox, root)
 
 
 async def run_async(url, root):
@@ -101,6 +184,7 @@ async def run_async(url, root):
         pass
     else:
         raise AssertionError('directory download succeeded')
+    await multipart_async(sandbox, root)
 
 
 if __name__ == '__main__':
@@ -108,4 +192,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings['url'], settings['root'] + '/sync')
         asyncio.run(run_async(settings['url'], settings['root'] + '/async'))
-    print('Pinned sync/async SDK raw transfer scenarios passed (test routes only).')
+    print('Pinned sync/async SDK raw and multipart transfer scenarios passed (test routes only).')

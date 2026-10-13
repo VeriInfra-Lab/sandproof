@@ -276,6 +276,7 @@ fn folded_headers_first_value_and_full_encoded_filename() {
 
 #[test]
 fn content_type_uses_quoted_boundary_and_rejects_ambiguous_parameters() {
+    assert_eq!(boundary("multipart/mixed; boundary=x", 64), Ok("x".into()));
     assert_eq!(
         boundary("Multipart/Form-Data; boundary=\"a b\"", 64),
         Ok("a b".into())
