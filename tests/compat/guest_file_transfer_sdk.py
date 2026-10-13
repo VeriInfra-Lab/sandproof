@@ -10,6 +10,7 @@ from email.parser import BytesParser
 from io import BytesIO, StringIO
 import json
 import sys
+from urllib.parse import quote
 import httpx
 
 from e2b import AsyncSandbox, Sandbox
@@ -112,6 +113,59 @@ def assert_header_rejection(response, message, status=400):
         assert status == 500
         assert type(error) is SandboxException, error
         assert str(error) == f'500: {message}'
+
+
+def query_rejection_cases(root):
+    prefix = 'path=' + quote(f'{root}/query-rejected', safe='') + '&'
+    def duplicate(parameter):
+        return (f'Invalid format for parameter {parameter}: '
+                f"multiple values for single value parameter '{parameter}'\n")
+    for raw, parameter in [('path=second', 'path'), ('username=a&username=b', 'username'),
+                           ('signature=a&signature=b', 'signature'),
+                           ('signature_expiration=x&signature_expiration=0', 'signature_expiration'),
+                           ('signature_expiration=x&username=a&username=b&path=second', 'path')]:
+        yield prefix + raw, duplicate(parameter)
+    for raw, message in [('', '"": invalid syntax'),
+                         ('9223372036854775808', '"9223372036854775808": value out of range'),
+                         ('%FF%0A', '"\\xff\\n": invalid syntax')]:
+        yield (prefix + 'signature_expiration=' + raw,
+               'Invalid format for parameter signature_expiration: error binding string parameter: '
+               'strconv.ParseInt: parsing ' + message + '\n')
+
+
+def assert_query_rejection(response, message):
+    assert response.status_code == 400, response.text
+    assert response.text == message
+    assert response.headers['content-type'] == 'text/plain; charset=utf-8'
+    assert response.headers['x-content-type-options'] == 'nosniff'
+    error = _handle_filesystem_envd_api_exception(response)
+    assert isinstance(error, InvalidArgumentException), error
+    assert str(error) == message
+
+
+def query_binding_sync(sandbox, url, root):
+    path = f'{root}/query +%.txt'
+    sandbox.files.write(path, b'query', use_octet_stream=True)
+    assert bytes(sandbox.files.read(path, format='bytes')) == b'query'
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for raw, message in query_rejection_cases(root):
+            for method in ['GET', 'POST']:
+                # Binding must fail before authorization or any file effect.
+                response = client.request(method, f'{url}/files?{raw}',
+                                          headers={'x-access-token': 'must-not-be-used'}, content=b'never')
+                assert_query_rejection(response, message)
+
+
+async def query_binding_async(sandbox, url, root):
+    path = f'{root}/query +%.txt'
+    await sandbox.files.write(path, b'query', use_octet_stream=True)
+    assert bytes(await sandbox.files.read(path, format='bytes')) == b'query'
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for raw, message in query_rejection_cases(root):
+            for method in ['GET', 'POST']:
+                response = await client.request(method, f'{url}/files?{raw}',
+                                                headers={'x-access-token': 'must-not-be-used'}, content=b'never')
+                assert_query_rejection(response, message)
 
 
 def header_rejections_sync(url, root):
@@ -767,6 +821,7 @@ def run_sync(url, root):
     multipart_sync(sandbox, root)
     compressed_sync(sandbox, url, root)
     sdk_compressed_upload_sync(sandbox, root)
+    query_binding_sync(sandbox, url, root)
     header_rejections_sync(url, root)
     framing_sync(sandbox, url, root)
     qp_sync(sandbox, url, root)
@@ -820,6 +875,7 @@ async def run_async(url, root):
     await multipart_async(sandbox, root)
     await compressed_async(sandbox, url, root)
     await sdk_compressed_upload_async(sandbox, root)
+    await query_binding_async(sandbox, url, root)
     await header_rejections_async(url, root)
     await framing_async(sandbox, url, root)
     await qp_async(sandbox, url, root)

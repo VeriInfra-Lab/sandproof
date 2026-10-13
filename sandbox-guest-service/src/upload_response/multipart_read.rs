@@ -1,9 +1,7 @@
 //! MIME framing observations, wrapped at the original upload read stage.
 use super::Error;
-use crate::go_json;
+use crate::{go_json, go_quote as quote};
 use sandproof_guest_runtime::multipart::{FramingError, HeaderError, QuotedPrintableError};
-mod quote;
-mod tables;
 #[cfg(test)]
 mod tests;
 

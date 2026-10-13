@@ -1,10 +1,11 @@
 //! Streaming Go 1.26.8 strconv.Quote, including malformed UTF-8 and `IsPrint`.
 // Copyright 2009 The Go Authors. All rights reserved.
-// BSD license: ../../../../sandbox-guest-runtime/src/multipart/GO-LICENSE.
-use super::tables::{NOT_PRINT16, NOT_PRINT32, PRINT16, PRINT32};
+// BSD license: ../../sandbox-guest-runtime/src/multipart/GO-LICENSE.
+mod tables;
 use crate::{file_download::Error, go_json::Sink};
+use tables::{NOT_PRINT16, NOT_PRINT32, PRINT16, PRINT32};
 
-pub(super) fn quoted(bytes: &[u8], put: &mut Sink<'_>) -> Result<(), Error> {
+pub(crate) fn quoted(bytes: &[u8], put: &mut Sink<'_>) -> Result<(), Error> {
     put(b"\"")?;
     for chunk in bytes.utf8_chunks() {
         for c in chunk.valid().chars() {

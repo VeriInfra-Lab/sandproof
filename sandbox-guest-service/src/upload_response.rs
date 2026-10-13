@@ -71,7 +71,7 @@ pub async fn success(
     .await
 }
 
-async fn send(
+pub(crate) async fn send(
     limits: Limits,
     deadline: Instant,
     owner: Owner,

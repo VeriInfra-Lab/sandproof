@@ -1,6 +1,6 @@
 // Go 1.26.8 strconv/isprint.go tables, copied without changing values.
 // Copyright 2009 The Go Authors. All rights reserved.
-// BSD license: ../../../../sandbox-guest-runtime/src/multipart/GO-LICENSE.
+// BSD license: ../../../sandbox-guest-runtime/src/multipart/GO-LICENSE.
 // Source SHA-256: 24114557c2b3cad7b80c8e71683831bfbe1c72eb99e8fd28a3a48eaf77705fb4
 pub(super) const PRINT16: &[u32] = &[
     0x0020, 0x007e, 0x00a1, 0x0377, 0x037a, 0x037f, 0x0384, 0x0556, 0x0559, 0x058a, 0x058d, 0x05c7,

@@ -58,6 +58,19 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [文件协议检查](../sandbox-guest-runtime/tests/file_protocol.rs)消费同一文件共享样例，核对重复/畸形消息、缺省/null、uint32 深度、int64 尺寸、可选链接字段、时间戳精度/边界和编码预算。[文件上下文测试](../sandbox-guest-service/src/files/tests.rs)覆盖 Basic 与 HTTP username 的分离、一次 Move 查询、默认值/环境不改变身份、词法路径、无效 UID 和展开后预算。Linux 兼容入口还运行[固定同步/异步 SDK 组合](../sandbox-guest-runtime/tests/sdk_files.rs)：原会话授权与路径解析接到文件编解码，核对各一元方法、大尺寸/纳秒/元数据/空列表/可选链接及超额错误。该测试只返回预定合成属性，没有实际 stat、目录修改或文件传输；真实文件权限、链接竞争、磁盘满、部分读写、Go 双端对照和 KVM 仍须独立执行。
 
+[查询绑定检查](../sandbox-guest-runtime/src/file_query/tests.rs)及[错误回执检查](../sandbox-guest-service/src/file_query/tests.rs)覆盖原字节/空值、畸形字段局部丢弃、固定字段顺序、int64 边界与 unsigned 溢出优先级、完整原始输入预算、非 UTF-8 显式拒绝、Go Quote 线长预算及原守卫/期限。可移植定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_query`。固定 SDK 文件测试路由也迁移至共用绑定：原 SDK 读写带加号/百分号/空格的文件名，合成 GET/POST 检查重复/非法过期时间先于鉴权和文件效果，plain text 400 经原 SDK 错误解析器核对；Linux 组合待实跑，不能计为完整 E03 或签名验证。
+
+[查询参考适配器](../tests/compat/query-reference/main.go)使用独立锁定的 Go 模块，直接调用 Go 1.26.8 URL.Query 和 oapi runtime v1.6.0 原绑定函数，字段顺序、类型及错误包装来自固定 envd `f455fd58fa3f289e78ce1de690c35968d8d29322` 的 GetFiles/PostFiles 生成代码；main.go 的 HandlerFromMux 使用原默认 ErrorHandler。对照包含种子 0x311、任意百分号字节、非法/Unicode 输入及 2047/2048/2049 字节响应；HTTP 模式只调用 http.Error 的真实自有回环服务，不执行完整 envd 或文件操作。已本地显式运行，默认 ignored，普通 CI 不制备 Go 或下载模块。先按 go.mod/go.sum 准备固定依赖，再执行：
+
+```sh
+cd tests/compat/query-reference
+GOTOOLCHAIN=local /absolute/path/to/fixed-go/bin/go build -mod=readonly -trimpath -buildvcs=false \
+  -o /absolute/path/to/query-reference .
+cd ../../..
+SANDPROOF_GUEST_QUERY_REFERENCE=/absolute/path/to/query-reference \
+  cargo test -p sandproof-guest-service --locked --lib file_query -- --include-ignored --nocapture
+```
+
 [一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。普通 Linux 基础检查与兼容入口执行这些组件。
 
 [真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。

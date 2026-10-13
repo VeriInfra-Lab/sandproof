@@ -5,7 +5,7 @@
 use axum::{
     Json, Router,
     body::Body,
-    extract::{Query, State},
+    extract::State,
     http::{HeaderMap, HeaderValue, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -13,6 +13,7 @@ use axum::{
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
     file_mime::{Catalog, CatalogLimits},
+    file_query::TextQuery as Params,
     filesystem::{
         FileLimits,
         transfer::{TransferIoError, TransferLimits},
@@ -29,7 +30,6 @@ use sandproof_guest_service::{
     },
     files::{FileContextLimits, FileSettings},
 };
-use serde::Deserialize;
 use sha2::{Digest, Sha512};
 use std::{
     path::{Path, PathBuf},
@@ -63,11 +63,6 @@ struct Fixture {
     gzip_seen: AtomicUsize,
     gzip_download_seen: AtomicUsize,
 }
-#[derive(Deserialize)]
-struct Params {
-    path: Option<String>,
-    username: Option<String>,
-}
 
 async fn connect() -> Json<serde_json::Value> {
     Json(
@@ -95,11 +90,32 @@ fn failure(error: &FileStreamError) -> Response {
         .into_response()
 }
 
-async fn files(
-    State(fixture): State<Arc<Fixture>>,
-    Query(params): Query<Params>,
-    request: Request<Body>,
-) -> Response {
+async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> Response {
+    fixture.seen.fetch_add(1, Ordering::SeqCst);
+    // Generated query binding precedes handler authorization and all account/
+    // file effects. This fixture supplies an owner, not production admission.
+    let params = match sandproof_guest_service::file_query::parse(
+        request.uri().query().unwrap_or("").as_bytes(),
+        sandproof_guest_service::file_query::QueryLimits {
+            raw_bytes: 65536,
+            fields: 128,
+        },
+    ) {
+        Ok(params) => params.into_text().unwrap(),
+        Err(error) => {
+            return sandproof_guest_service::file_query::rejected(
+                error,
+                sandproof_guest_service::file_query::ResponseLimits {
+                    wire_bytes: 65536,
+                    chunk_bytes: 4096,
+                },
+                tokio::time::Instant::now() + Duration::from_secs(30),
+                Arc::new(()),
+            )
+            .await
+            .unwrap();
+        }
+    };
     // Python constructs every query/full multipart filename under this owned
     // tree. This loopback fixture is not a production route or path policy.
     if let Some(path) = &params.path {
@@ -110,7 +126,6 @@ async fn files(
         .authorize_headers(request.headers())
         .await
         .unwrap();
-    fixture.seen.fetch_add(1, Ordering::SeqCst);
     if request.method() == Method::GET || request.method() == Method::HEAD {
         // Count the original explicit gzip requests, including rejected files.
         // Selection itself now follows stat inside the admitted download worker.
@@ -515,7 +530,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 386);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 422);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 140);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 106);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
@@ -525,6 +540,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
 fn check_files(directory: &Path) {
     for mode in ["sync", "async"] {
         for name in [
+            "query-rejected",
             "ignored-qp-rejected",
             "multipart-setup-rejected",
             "mime-header-rejected",
@@ -533,6 +549,10 @@ fn check_files(directory: &Path) {
         ] {
             assert!(!directory.join(mode).join(name).exists());
         }
+        assert_eq!(
+            std::fs::read(directory.join(mode).join("query +%.txt")).unwrap(),
+            b"query"
+        );
         assert_eq!(
             std::fs::read(directory.join(mode).join("form/binary")).unwrap(),
             b"replace"

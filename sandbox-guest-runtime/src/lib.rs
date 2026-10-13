@@ -17,6 +17,7 @@ pub mod filesystem;
 pub mod file_download;
 pub mod file_encoding;
 pub mod file_mime;
+pub mod file_query;
 pub mod file_upload;
 pub mod gzip;
 pub mod multipart;

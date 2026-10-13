@@ -6,8 +6,10 @@
 
 pub mod file_download;
 pub mod file_encoding;
+pub mod file_query;
 pub mod file_upload;
 mod go_json;
+mod go_quote;
 mod owned_body;
 pub mod upload_body;
 pub mod upload_response;
