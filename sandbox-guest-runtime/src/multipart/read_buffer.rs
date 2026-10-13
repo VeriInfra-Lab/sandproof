@@ -1,7 +1,7 @@
 //! Source-read window accounting shared with the existing MIME parser.
 //! The parser keeps header/diagnostic bytes under its original budgets; these
 //! cursors separately model bytes consumed by Go's fixed bufio.Reader.
-use super::{Decoder, Error, PartReadEnd, Phase};
+use super::{Decoder, Error, PartReadEnd, Phase, Source};
 const READ_BYTES: usize = 4096;
 #[derive(Default)]
 pub(super) struct ReadBuffer {
@@ -23,7 +23,7 @@ impl Decoder {
         if self.phase == Phase::Failed {
             return Err(Error::Poisoned);
         }
-        if self.eof || !self.wants_input || read.remaining.is_some() {
+        if self.source != Source::Open || !self.wants_input || read.remaining.is_some() {
             return Err(Error::InputPending);
         }
         READ_BYTES
@@ -52,7 +52,7 @@ impl Decoder {
         if self.phase == Phase::Failed {
             return Err(Error::Poisoned);
         }
-        if self.eof || !self.wants_input {
+        if self.source != Source::Open || !self.wants_input {
             return Err(Error::InputPending);
         }
         if bytes.is_empty()
@@ -248,5 +248,87 @@ mod tests {
         feed_read(&mut decoder, b"tail");
         decoder.end_input();
         assert!(decoder.next_event().unwrap().is_none());
+    }
+
+    #[test]
+    fn source_failure_drains_ambiguous_bytes_before_reporting_the_actual_stage() {
+        use crate::multipart::SourceStage;
+        for (tail, expected, complete, stage) in [
+            (
+                b"\r\n--B".as_slice(),
+                b"".as_slice(),
+                true,
+                SourceStage::NextPart,
+            ),
+            (b"\r\n--B-", b"\r\n--B-", false, SourceStage::Body),
+            (b"\r\n--", b"", false, SourceStage::Body),
+            (b"--B", b"", true, SourceStage::NextPart),
+            (b"--B-", b"--B-", false, SourceStage::Body),
+        ] {
+            let mut decoder = Decoder::new_read_buffered("B", limits()).unwrap();
+            feed_read(&mut decoder, &[b"--B\r\n\r\n".as_slice(), tail].concat());
+            assert!(matches!(
+                decoder.next_event().unwrap(),
+                Some(Event::Part(_))
+            ));
+            assert_eq!(decoder.next_event().unwrap(), None);
+            decoder.fail_source().unwrap();
+            assert_eq!(decoder.source_read_capacity(), Err(Error::InputPending));
+            let mut output = Vec::new();
+            let mut finished = false;
+            loop {
+                match decoder.next_event_detailed() {
+                    Ok(Some(Event::Data(bytes))) => {
+                        output.extend(bytes);
+                        assert_eq!(
+                            decoder.data_read_end(),
+                            if output.len() == expected.len() {
+                                PartReadEnd::Failed(Error::Truncated)
+                            } else {
+                                PartReadEnd::More
+                            }
+                        );
+                    }
+                    Ok(Some(Event::PartEnd)) => finished = true,
+                    Err(error) => {
+                        assert_eq!(error, ReadError::Source(stage));
+                        break;
+                    }
+                    other => panic!("unexpected {other:?}"),
+                }
+            }
+            assert_eq!(output, expected);
+            assert_eq!(finished, complete);
+            assert_eq!(decoder.next_event(), Err(Error::Poisoned));
+            assert_eq!(decoder.feed(b"tail"), Err(Error::Poisoned));
+        }
+    }
+
+    #[test]
+    fn source_failure_is_not_eof_and_rejects_invalid_order() {
+        use crate::multipart::SourceStage;
+        for (bytes, stage) in [
+            (b"--B--".as_slice(), SourceStage::NextPart),
+            (b"--B\r\nX: valid", SourceStage::Headers),
+            (b"--B--\r\n", SourceStage::Complete),
+        ] {
+            let mut decoder = Decoder::new_read_buffered("B", limits()).unwrap();
+            feed_read(&mut decoder, bytes);
+            while decoder.next_event().unwrap().is_some() {}
+            decoder.fail_source().unwrap();
+            decoder.end_input(); // Must not overwrite the recorded failure.
+            assert_eq!(decoder.next_event_detailed(), Err(ReadError::Source(stage)));
+        }
+        for staged in [false, true] {
+            let mut decoder = Decoder::new_read_buffered("B", limits()).unwrap();
+            decoder.feed_read(b"--", !staged).unwrap();
+            assert_eq!(decoder.fail_source(), Err(Error::InputPending));
+            assert_eq!(decoder.fail_source(), Err(Error::Poisoned));
+        }
+        let mut decoder = Decoder::new_read_buffered("B", limits()).unwrap();
+        assert_eq!(decoder.next_event(), Ok(None));
+        decoder.fail_source().unwrap();
+        assert_eq!(decoder.feed(b"tail"), Err(Error::InputPending));
+        assert_eq!(decoder.next_event(), Err(Error::Poisoned));
     }
 }

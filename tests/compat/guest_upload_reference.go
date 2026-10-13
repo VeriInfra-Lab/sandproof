@@ -733,7 +733,7 @@ func (r limitedMIMEReader) Read(p []byte) (int, error) {
 	}
 	return r.reader.Read(p)
 }
-func multipartBody(encoded string, server *httptest.Server, sourceFailure bool, sourceChunk int) {
+func multipartBody(encoded string, server *httptest.Server, sourceFailure bool, sourceChunk int, compressed bool) {
 	data := unhex(encoded)
 	var reader io.Reader = bytes.NewReader(data)
 	if sourceFailure {
@@ -744,6 +744,15 @@ func multipartBody(encoded string, server *httptest.Server, sourceFailure bool, 
 	}
 	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(reader), ContentLength: int64(len(data))}
 	r.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+	if compressed {
+		r.Header.Set("Content-Encoding", "gzip")
+		body, err := getDecompressedBody(r)
+		if err != nil {
+			panic("expected completed initial gzip header")
+		}
+		defer body.Close()
+		r.Body = body
+	}
 	oracleStage, oraclePath = "Multipart", "/file"
 	oracleMIMEWrites = nil
 	_, status, err := (&API{}).handleMultipartUpload(r, &user.User{}, 0, 0, nil, "", PostFilesParams{})
@@ -786,7 +795,7 @@ func main() {
 		switch f[0] {
 		case "Q":
 			fmt.Printf("%x\n", strconv.Quote(string(unhex(f[1]))))
-		case "N", "V", "L", "K":
+		case "N", "V", "L", "K", "Z":
 			if server == nil {
 				server = referenceServer()
 			}
@@ -798,7 +807,7 @@ func main() {
 					panic("invalid source chunk")
 				}
 			}
-			multipartBody(f[1], server, f[0] == "V" || f[0] == "K", sourceChunk)
+			multipartBody(f[1], server, f[0] == "V" || f[0] == "K", sourceChunk, f[0] == "Z")
 		case "D":
 			if server == nil {
 				server = referenceServer()

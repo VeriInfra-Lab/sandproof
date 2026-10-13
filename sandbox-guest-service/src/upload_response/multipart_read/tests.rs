@@ -1,4 +1,5 @@
 use super::*;
+mod gzip;
 mod headers;
 mod quoted_printable;
 use crate::{
@@ -238,7 +239,9 @@ fn mime_rejection(error: ReadError) -> Rejection {
     match error {
         ReadError::Framing(error) => Rejection::MultipartRead(error),
         ReadError::Headers(error) => Rejection::MultipartHeaders(error),
-        error @ ReadError::Decode(_) => panic!("unmapped MIME error: {error:?}"),
+        error @ (ReadError::Decode(_) | ReadError::Source(_)) => {
+            panic!("unmapped MIME error: {error:?}")
+        }
     }
 }
 

@@ -14,7 +14,7 @@ use sandproof_guest_runtime::gzip::{DecodeLimits, EncodeLimits, Encoder};
 use std::{fmt::Write, sync::Arc, time::Duration};
 use tokio::time::Instant;
 
-fn limits(chunk: usize) -> GzipLimits {
+pub(crate) fn limits(chunk: usize) -> GzipLimits {
     GzipLimits {
         http: HttpBodyLimits {
             total_bytes: 65536,
@@ -32,7 +32,7 @@ fn limits(chunk: usize) -> GzipLimits {
         },
     }
 }
-fn encode(data: &[u8]) -> Vec<u8> {
+pub(crate) fn encode(data: &[u8]) -> Vec<u8> {
     let mut encoder = Encoder::new(
         data,
         EncodeLimits {
@@ -168,7 +168,7 @@ async fn raw_gzip_decoded_prefix_and_read_failure_response_match_original_go() {
     );
 }
 
-async fn wire(response: axum::response::Response) -> String {
+pub(crate) async fn wire(response: axum::response::Response) -> String {
     let mut output = response.status().as_u16().to_string();
     for name in ["content-type", "content-length", "x-content-type-options"] {
         write!(

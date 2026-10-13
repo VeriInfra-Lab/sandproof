@@ -5,11 +5,15 @@ use super::{Error, GzipHeaderError, GzipReadError, Limits, Owner, Response, erro
 use crate::file_upload::{DuplicatePath, MetadataFault, MetadataReason};
 use axum::http::StatusCode;
 use sandproof_guest_runtime::file_upload::MetadataViolation;
-use sandproof_guest_runtime::multipart::BoundaryRejection;
+use sandproof_guest_runtime::multipart::{BoundaryRejection, SourceStage};
 use tokio::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
+    MultipartGzip {
+        stage: SourceStage,
+        error: GzipReadError,
+    },
     QuotedPrintable(sandproof_guest_runtime::multipart::QuotedPrintableError),
     MultipartHeaders(sandproof_guest_runtime::multipart::HeaderError),
     MultipartRead(sandproof_guest_runtime::multipart::FramingError),
@@ -32,6 +36,7 @@ impl Rejection {
                 | Self::MultipartRead(_)
                 | Self::MultipartHeaders(_)
                 | Self::QuotedPrintable(_)
+                | Self::MultipartGzip { .. }
         ) {
             StatusCode::INTERNAL_SERVER_ERROR
         } else {
@@ -63,6 +68,15 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::MultipartGzip { stage, error } => parts.extend([
+            match stage {
+                SourceStage::NextPart => b"error reading form: multipart: NextPart: ".as_slice(),
+                SourceStage::Headers => b"error reading form: ".as_slice(),
+                SourceStage::Body => b"error writing file: ".as_slice(),
+                SourceStage::Complete => return Err(Error::UnclassifiedFault),
+            },
+            error.message(),
+        ]),
         Rejection::QuotedPrintable(error) => return super::multipart_read::qp_payload(error, limit),
         Rejection::MultipartHeaders(error) => return super::multipart_read::headers_payload(error, limit),
         Rejection::MultipartRead(error) => return super::multipart_read::payload(error, limit),

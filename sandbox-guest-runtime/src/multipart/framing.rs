@@ -27,6 +27,16 @@ pub enum ReadError {
     Decode(Error),
     Framing(FramingError),
     Headers(HeaderError),
+    /// Actual source failure, whose cause is retained by the caller.
+    Source(SourceStage),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceStage {
+    NextPart,
+    Headers,
+    Body,
+    /// The caller is draining the source after MIME End.
+    Complete,
 }
 impl ReadError {
     #[must_use]
@@ -35,6 +45,7 @@ impl ReadError {
             Self::Decode(error) => error,
             Self::Headers(_) => Error::Malformed,
             Self::Framing(error) => error.coarse(),
+            Self::Source(_) => Error::Truncated,
         }
     }
 }

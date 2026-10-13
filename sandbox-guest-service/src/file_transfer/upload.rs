@@ -76,7 +76,7 @@ impl Failure {
                 Rejection::MultipartRead(error) => {
                     UploadRequestError::Body(UploadBodyError::Decode(error.coarse()))
                 }
-                Rejection::RawGzipBody(error) => {
+                Rejection::RawGzipBody(error) | Rejection::MultipartGzip { error, .. } => {
                     UploadRequestError::Body(UploadBodyError::Gzip(error.into()))
                 }
                 Rejection::MissingFilename => {
@@ -101,6 +101,9 @@ impl Failure {
 
     fn body(error: UploadBodyError) -> Self {
         match error {
+            UploadBodyError::MultipartGzip { stage, error } => {
+                Self::Rejected(Rejection::MultipartGzip { stage, error })
+            }
             UploadBodyError::QuotedPrintable(error) => {
                 Self::Rejected(Rejection::QuotedPrintable(error))
             }
@@ -307,12 +310,12 @@ impl FileStreams {
             (Kind::Multipart, input) => {
                 let content_type = std::str::from_utf8(content_type)
                     .map_err(|_| UploadRequestError::UnsupportedText)?;
-                let (body, expected) = match input {
-                    Input::Identity(body, expected) => (body, expected),
-                    Input::Gzip(input) => (input.into_body(), None),
+                let (body, expected, gzip) = match input {
+                    Input::Identity(body, expected) => (body, expected, false),
+                    Input::Gzip(input) => (input.into_body(), None, true),
                 };
                 batch
-                    .receive_multipart(content_type, body, expected, limits.multipart)
+                    .receive_multipart_source(content_type, body, expected, limits.multipart, gzip)
                     .await
             }
             (Kind::Unsupported, _) => unreachable!(),

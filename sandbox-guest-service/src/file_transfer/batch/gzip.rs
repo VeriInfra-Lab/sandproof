@@ -79,7 +79,7 @@ impl UploadBatch {
         multipart: MultipartLimits,
     ) -> Result<BatchReply, UploadBodyError> {
         let input = self.gzip_body(body, expected, gzip).await?;
-        self.receive_multipart(content_type, input.into_body(), None, multipart)
+        self.receive_multipart_source(content_type, input.into_body(), None, multipart, true)
             .await
     }
 }

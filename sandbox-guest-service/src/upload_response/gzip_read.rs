@@ -1,5 +1,5 @@
-//! Known gzip errors while copying a raw upload body into an opened file.
-//! Header preparation and multipart reads have different public wrappers.
+//! Known gzip read errors, separate from first-header preparation.
+//! Raw files and MIME stages have distinct public wrappers.
 use crate::upload_body::GzipError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,4 +39,4 @@ impl GzipReadError {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

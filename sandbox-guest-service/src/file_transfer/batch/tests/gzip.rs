@@ -256,7 +256,10 @@ async fn failed_next_gzip_member_preserves_prior_file_and_partial_current_file()
         .await;
     assert!(matches!(
         result,
-        Err(UploadBodyError::Gzip(GzipError::Header))
+        Err(UploadBodyError::MultipartGzip {
+            stage: sandproof_guest_runtime::multipart::SourceStage::Body,
+            error: crate::upload_response::GzipReadError::InvalidMember,
+        })
     ));
     quiesce(&fixture).await;
     assert_eq!(

@@ -661,7 +661,7 @@ fn actual_source_failure_checks_headers_without_synthesizing_part_or_eof() {
         decoder.feed(input).unwrap();
         assert_eq!(decoder.next_event_detailed(), Ok(None));
         assert_eq!(decoder.fail_input(), expected);
-        assert!(!decoder.eof);
+        assert!(decoder.source != super::Source::Eof);
         assert_eq!(decoder.next_event(), Err(Error::Poisoned));
     }
     let mut decoder = Decoder::new("B", limits()).unwrap();

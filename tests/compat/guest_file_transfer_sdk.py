@@ -174,6 +174,32 @@ def framing_cases(root):
                    gzip.compress(data) if compressed else data, message, expected)
 
 
+    yield from multipart_gzip_cases(root)
+
+
+def multipart_gzip_cases(root):
+    # Synthetic gzip corruption during MIME reads; SDK parses and reads back.
+    def field(name):
+        return (f'--B\r\nContent-Disposition: form-data; name="{name}"; '
+                f'filename="{root}/framing-file"\r\n\r\n').encode()
+    for form, wrapper, expected in [
+        (b'preamble', 'error reading form: multipart: NextPart: ', None),
+        (b'--B\r\nX: valid', 'error reading form: ', None),
+        (field('ignored') + b'discard', 'error reading form: multipart: NextPart: ', None),
+        (field('file') + b'prefix', 'error writing file: ', b'prefix'),
+        (field('file') + b'prefix\r\n--B', 'error reading form: multipart: NextPart: ', b'prefix'),
+        (field('file') + b'prefix\r\n--B-', 'error writing file: ', b'prefix\r\n--B-'),
+    ]:
+        encoded = gzip.compress(form, mtime=0)
+        corrupt = bytearray(encoded)
+        corrupt[-8] ^= 1
+        for data, cause in [(bytes(corrupt), 'gzip: invalid checksum'),
+                            (encoded[:-3], 'unexpected EOF'),
+                            (encoded + b'invalid next member', 'gzip: invalid header')]:
+            yield ({'x-access-token': 'fixture-token', 'content-type': 'multipart/form-data; boundary=B',
+                    'content-encoding': 'gzip'}, data, wrapper + cause, expected)
+
+
 def framing_sync(sandbox, url, root):
     with httpx.Client(trust_env=False, timeout=10) as client:
         for headers, data, message, expected in framing_cases(root):

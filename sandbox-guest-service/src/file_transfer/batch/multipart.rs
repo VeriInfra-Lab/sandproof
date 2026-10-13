@@ -1,10 +1,11 @@
-//! Admitted identity-encoded HTTP body -> MIME decoder -> sequential files.
+//! Admitted decoded HTTP body -> MIME decoder -> sequential files.
 //! No request router or production defaults. The batch keeps its
 //! original authorization/capacity/deadline through ignored parts and HTTP EOF.
 use super::{BatchFile, BatchReply, FileStreamError, UploadBatch, timely};
 use crate::upload_body::{GzipError, HttpBodyLimits, Input as HttpInput};
+use crate::upload_response::GzipReadError;
 use axum::body::{Body, Bytes};
-use sandproof_guest_runtime::multipart::{self, Decoder, Event, QuotedPrintable};
+use sandproof_guest_runtime::multipart::{self, Decoder, Event, QuotedPrintable, SourceStage};
 use tokio::time::Instant;
 
 /// Limits for owned HTTP frames, in addition to MIME/file/result budgets.
@@ -21,6 +22,10 @@ pub struct MultipartLimits {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
+    MultipartGzip {
+        stage: SourceStage,
+        error: GzipReadError,
+    },
     QuotedPrintable(multipart::QuotedPrintableError),
     MultipartHeaders(multipart::HeaderError),
     MultipartRead(multipart::FramingError),
@@ -63,6 +68,8 @@ impl From<multipart::ReadError> for MultipartError {
             multipart::ReadError::Decode(error) => Self::Decode(error),
             multipart::ReadError::Headers(error) => Self::MultipartHeaders(error),
             multipart::ReadError::Framing(error) => Self::MultipartRead(error),
+            // A stage alone cannot stand in for the retained source cause.
+            multipart::ReadError::Source(_) => Self::Decode(multipart::Error::Poisoned),
         }
     }
 }
@@ -91,11 +98,23 @@ impl UploadBatch {
     /// Invalid/truncated input, missing filename, budgets, transport failure,
     /// original absolute deadline or file I/O. Earlier writes never roll back.
     pub async fn receive_multipart(
+        self,
+        content_type: &str,
+        body: Body,
+        expected: Option<u64>,
+        limits: MultipartLimits,
+    ) -> Result<BatchReply, MultipartError> {
+        self.receive_multipart_source(content_type, body, expected, limits, false)
+            .await
+    }
+
+    pub(in crate::file_transfer) async fn receive_multipart_source(
         mut self,
         content_type: &str,
         body: Body,
         expected: Option<u64>,
         limits: MultipartLimits,
+        gzip: bool,
     ) -> Result<BatchReply, MultipartError> {
         if !self.ready || !self.results.is_empty() || self.received != 0 {
             return Err(FileStreamError::InvalidArgument.into());
@@ -106,6 +125,7 @@ impl UploadBatch {
             expected,
             limits,
             self.reservation.deadline,
+            gzip,
         )?;
         let mut ended = false;
         while let Some(event) = input.next().await? {
@@ -158,7 +178,8 @@ async fn receive_file(
                     // Only actual source failure or the MIME reader's body
                     // truncation can finish a QP line as a failed read. Local
                     // length/budget/deadline failures keep their own identity.
-                    if (input.source_failed
+                    if (input.source_error.is_some()
+                        && error == input.source_failure(SourceStage::Body)
                         || matches!(
                             error,
                             MultipartError::MultipartRead(multipart::FramingError::BodyTruncated)
@@ -187,9 +208,7 @@ async fn receive_file(
                                 && end
                                     == multipart::PartReadEnd::Failed(multipart::Error::Truncated)
                             {
-                                MultipartError::MultipartRead(
-                                    multipart::FramingError::BodyTruncated,
-                                )
+                                input.body_failure()
                             } else {
                                 error.into()
                             },
@@ -229,6 +248,17 @@ async fn drain_field(input: &mut Input) -> Result<(), MultipartError> {
     // as raw bytes, still covered by all wire/part budgets and the same deadline.
     loop {
         let event = match input.next().await {
+            Err(MultipartError::MultipartGzip {
+                stage: SourceStage::Body,
+                error,
+            }) => {
+                // Part.Close discards the read failure. The sticky gzip error
+                // is then observed by NextPart's line read.
+                return Err(MultipartError::MultipartGzip {
+                    stage: SourceStage::NextPart,
+                    error,
+                });
+            }
             Err(MultipartError::MultipartRead(multipart::FramingError::BodyTruncated)) => {
                 // Go NextPart closes/discards the previous ignored part and
                 // ignores its Read error; its subsequent line read reaches EOF.
@@ -253,7 +283,8 @@ struct Input {
     limits: MultipartLimits,
     deadline: Instant,
     eof: bool,
-    source_failed: bool,
+    source_error: Option<GzipError>,
+    gzip: bool,
 }
 impl Input {
     fn new(
@@ -262,6 +293,7 @@ impl Input {
         expected: Option<u64>,
         limits: MultipartLimits,
         deadline: Instant,
+        gzip: bool,
     ) -> Result<Self, MultipartError> {
         let body = HttpInput::new(
             body,
@@ -285,16 +317,19 @@ impl Input {
             limits,
             deadline,
             eof: false,
-            source_failed: false,
+            source_error: None,
+            gzip,
         })
     }
 
     async fn next(&mut self) -> Result<Option<Event>, MultipartError> {
-        self.source_failed = false;
         loop {
             timely(self.deadline, Ok(()))?;
-            if let Some(event) = self.decoder.next_event_detailed()? {
-                return Ok(Some(event));
+            match self.decoder.next_event_detailed() {
+                Err(multipart::ReadError::Source(stage)) => return Err(self.source_failure(stage)),
+                Ok(Some(event)) => return Ok(Some(event)),
+                Err(error) => return Err(error.into()),
+                Ok(None) => {}
             }
             if self.eof {
                 return Ok(None);
@@ -321,13 +356,11 @@ impl Input {
                                 | GzipError::Deflate
                         ) =>
                 {
-                    self.source_failed = true;
-                    // An actual reader failure ends the physical/logical header
-                    // in Go. Local HTTP length/limit/deadline failures do not.
-                    if let Some(observed) = self.decoder.fail_input() {
-                        return Err(observed.into());
-                    }
-                    return Err(error.into());
+                    self.source_error = Some(error);
+                    // Drain bytes already read before assigning the failure to
+                    // headers, file contents or NextPart. Never turn it into EOF.
+                    self.decoder.fail_source()?;
+                    continue;
                 }
                 result => result?,
             };
@@ -337,6 +370,27 @@ impl Input {
                 continue;
             };
             self.pending = bytes;
+        }
+    }
+
+    fn source_failure(&self, stage: SourceStage) -> MultipartError {
+        let Some(error) = self.source_error else {
+            return MultipartError::Decode(multipart::Error::Poisoned);
+        };
+        if self.gzip
+            && stage != SourceStage::Complete
+            && let Ok(error) = GzipReadError::try_from(error)
+        {
+            return MultipartError::MultipartGzip { stage, error };
+        }
+        error.into()
+    }
+
+    fn body_failure(&self) -> MultipartError {
+        if self.source_error.is_some() {
+            self.source_failure(SourceStage::Body)
+        } else {
+            MultipartError::MultipartRead(multipart::FramingError::BodyTruncated)
         }
     }
 }

@@ -514,10 +514,14 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 320);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 96);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 66);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 374);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 132);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 102);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
+    check_files(directory.path());
+}
+
+fn check_files(directory: &Path) {
     for mode in ["sync", "async"] {
         for name in [
             "multipart-setup-rejected",
@@ -525,14 +529,22 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
             "header-rejected",
             "gzip-header-rejected",
         ] {
-            assert!(!directory.path().join(mode).join(name).exists());
+            assert!(!directory.join(mode).join(name).exists());
         }
         assert_eq!(
-            std::fs::read(directory.path().join(mode).join("form/binary")).unwrap(),
+            std::fs::read(directory.join(mode).join("form/binary")).unwrap(),
             b"replace"
         );
         for (name, expected) in [
             ("qp-file", b"prefix".as_slice()),
+            ("framing-file", b"prefix\r\n--B-"),
+        ] {
+            assert_eq!(
+                std::fs::read(directory.join(mode).join(name)).unwrap(),
+                expected
+            );
+        }
+        for (name, expected) in [
             ("duplicate", b"first".as_slice()),
             ("before-directory", b"first"),
             ("completed-first", b"done"),
@@ -540,19 +552,19 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
             ("completed-a", b"done"),
         ] {
             assert_eq!(
-                std::fs::read(directory.path().join(mode).join("form").join(name)).unwrap(),
+                std::fs::read(directory.join(mode).join("form").join(name)).unwrap(),
                 expected
             );
         }
         for name in ["after-duplicate", "after-directory", "after-completed"] {
-            assert!(!directory.path().join(mode).join("form").join(name).exists());
+            assert!(!directory.join(mode).join("form").join(name).exists());
         }
         assert_eq!(
-            std::fs::read(directory.path().join(mode).join("partial")).unwrap(),
+            std::fs::read(directory.join(mode).join("partial")).unwrap(),
             b"first"
         );
         assert_eq!(
-            std::fs::read(directory.path().join(mode).join("metadata")).unwrap(),
+            std::fs::read(directory.join(mode).join("metadata")).unwrap(),
             b"new"
         );
     }

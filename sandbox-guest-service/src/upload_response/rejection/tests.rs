@@ -318,3 +318,31 @@ async fn fixed_go_resolve_path_rejection_status_headers_and_text_match() {
     reference.finish();
     eprintln!("Fixed Go multipart resolvePath rejections: {cases} status/header/JSON cases.");
 }
+
+#[test]
+fn multipart_gzip_wrappers_require_a_read_stage_and_exact_response_budget() {
+    for stage in [
+        SourceStage::NextPart,
+        SourceStage::Headers,
+        SourceStage::Body,
+    ] {
+        for error in [
+            GzipReadError::Truncated,
+            GzipReadError::InvalidMember,
+            GzipReadError::Checksum,
+        ] {
+            let rejection = Rejection::MultipartGzip { stage, error };
+            let bytes = payload(&rejection, 4096).unwrap();
+            assert_eq!(payload(&rejection, bytes.len()), Ok(bytes.clone()));
+            assert_eq!(
+                payload(&rejection, bytes.len() - 1),
+                Err(Error::ResponseLimit)
+            );
+        }
+    }
+    let rejection = Rejection::MultipartGzip {
+        stage: SourceStage::Complete,
+        error: GzipReadError::Checksum,
+    };
+    assert_eq!(payload(&rejection, 4096), Err(Error::UnclassifiedFault));
+}

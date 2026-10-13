@@ -8,7 +8,7 @@
 mod framing;
 mod header_error;
 mod headers;
-pub use framing::{FramingError, ReadError};
+pub use framing::{FramingError, ReadError, SourceStage};
 pub use header_error::HeaderError;
 mod quoted_printable;
 mod read_buffer;
@@ -91,6 +91,13 @@ enum Phase {
     Failed,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Source {
+    Open,
+    Eof,
+    Failed,
+}
+
 pub struct Decoder {
     limits: Limits,
     buffer: Vec<u8>,
@@ -103,7 +110,7 @@ pub struct Decoder {
     read_error: Option<ReadError>,
     phase: Phase,
     wants_input: bool,
-    eof: bool,
+    source: Source,
     read_buffer: Option<read_buffer::ReadBuffer>,
     data_read_end: PartReadEnd,
 }
@@ -150,7 +157,7 @@ impl Decoder {
             read_error: None,
             phase: Phase::Preamble,
             wants_input: true,
-            eof: false,
+            source: Source::Open,
             read_buffer: read_buffered.then(read_buffer::ReadBuffer::default),
             data_read_end: PartReadEnd::More,
         })
@@ -174,7 +181,7 @@ impl Decoder {
         if self.phase == Phase::Failed {
             return Err(Error::Poisoned);
         }
-        if self.eof || (!self.wants_input && self.phase != Phase::End) {
+        if self.source != Source::Open || (!self.wants_input && self.phase != Phase::End) {
             return Err(Error::InputPending);
         }
         if bytes.len() > self.limits.chunk_bytes
@@ -198,7 +205,54 @@ impl Decoder {
     /// Report actual transport EOF, then drain `next_event`. This alone never
     /// means a complete multipart request.
     pub fn end_input(&mut self) {
-        self.eof = true;
+        if self.source == Source::Open {
+            self.source = Source::Eof;
+        }
+    }
+
+    /// Report a source read failure, then drain buffered events before the
+    /// terminal `ReadError::Source`. Retain the actual cause outside the parser.
+    /// A buffered boundary may finish a part; this does not manufacture EOF.
+    /// Local budget/deadline errors must not use this method.
+    /// # Errors
+    /// Call only after None, with no staged read, EOF or prior source failure.
+    /// Misuse poisons the decoder.
+    pub fn fail_source(&mut self) -> Result<(), Error> {
+        let error = if self.phase == Phase::Failed {
+            Some(Error::Poisoned)
+        } else if self.source != Source::Open
+            || !self.wants_input
+            || self
+                .read_buffer
+                .as_ref()
+                .is_some_and(|read| read.remaining.is_some())
+        {
+            Some(Error::InputPending)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            self.phase = Phase::Failed;
+            return Err(error);
+        }
+        self.source = Source::Failed;
+        Ok(())
+    }
+
+    fn record_read_error(&mut self, error: ReadError) -> Error {
+        let coarse = match &error {
+            ReadError::Headers(_) => Error::Malformed,
+            ReadError::Decode(error) => *error,
+            ReadError::Framing(error) => error.coarse(),
+            ReadError::Source(_) => Error::Truncated,
+        };
+        self.read_error = Some(error);
+        coarse
+    }
+
+    fn source_failure(&mut self, stage: SourceStage) -> Error {
+        self.read_error = Some(ReadError::Source(stage));
+        Error::Truncated
     }
 
     /// Report an actual source read failure (not a local budget/deadline). Go
@@ -277,6 +331,9 @@ impl Decoder {
             let bytes = &self.buffer[self.offset..];
             match self.phase {
                 Phase::Failed => return Err(Error::Poisoned),
+                Phase::End if self.source == Source::Failed => {
+                    return Err(self.source_failure(SourceStage::Complete));
+                }
                 Phase::End => return Ok(None),
                 Phase::Preamble | Phase::Boundary { .. } => match self.read_boundary()? {
                     Some(Phase::Headers) => self.phase = Phase::Headers,
@@ -305,18 +362,14 @@ impl Decoder {
                     if let Err(error) = header_error::inspect(
                         if complete { &bytes[..end] } else { bytes },
                         self.limits.header_count,
-                        self.eof || complete,
+                        self.source != Source::Open || complete,
                     ) {
-                        let coarse = match &error {
-                            ReadError::Headers(_) => Error::Malformed,
-                            ReadError::Decode(error) => *error,
-                            ReadError::Framing(error) => error.coarse(),
-                        };
-                        self.read_error = Some(error);
-                        return Err(coarse);
+                        return Err(self.record_read_error(error));
                     }
                     if !complete {
-                        return if self.eof {
+                        return if self.source == Source::Failed {
+                            Err(self.source_failure(SourceStage::Headers))
+                        } else if self.source == Source::Eof {
                             Err(Error::TruncatedHeaders)
                         } else {
                             Ok(None)
@@ -334,7 +387,7 @@ impl Decoder {
                         &self.dash,
                         &self.delimiter,
                         self.body_start,
-                        self.eof,
+                        self.source != Source::Open,
                     );
                     if scan.bytes != 0 {
                         let n = scan.bytes.min(self.limits.chunk_bytes);
@@ -343,7 +396,7 @@ impl Decoder {
                         self.body_start = false;
                         self.data_read_end = if n == scan.bytes && scan.boundary {
                             PartReadEnd::Eof
-                        } else if n == scan.bytes && self.eof {
+                        } else if n == bytes.len() && self.source != Source::Open {
                             PartReadEnd::Failed(Error::Truncated)
                         } else {
                             PartReadEnd::More
@@ -358,7 +411,9 @@ impl Decoder {
                         self.phase = Phase::Boundary { after_separator };
                         return Ok(Some(Event::PartEnd));
                     }
-                    return if self.eof {
+                    return if self.source == Source::Failed {
+                        Err(self.source_failure(SourceStage::Body))
+                    } else if self.source == Source::Eof {
                         self.read_error = Some(ReadError::Framing(FramingError::BodyTruncated));
                         Err(Error::Truncated)
                     } else {
@@ -373,7 +428,10 @@ impl Decoder {
             let bytes = &self.buffer[self.offset..];
             let end = match bytes.iter().position(|b| *b == b'\n') {
                 Some(n) => n + 1,
-                None if self.eof => bytes.len(),
+                None if self.source == Source::Failed => {
+                    return Err(self.source_failure(SourceStage::NextPart));
+                }
+                None if self.source == Source::Eof => bytes.len(),
                 None if self.read_buffer.is_some()
                     && bytes.len() >= 4096
                     && self.limits.line_bytes >= 4096 =>
@@ -391,7 +449,7 @@ impl Decoder {
             }
             let line = &bytes[..end];
             let Some(rest) = line.strip_prefix(self.dash.as_slice()) else {
-                if self.eof && !line.ends_with(b"\n") {
+                if self.source == Source::Eof && !line.ends_with(b"\n") {
                     self.read_error = Some(ReadError::Framing(FramingError::NextPartEof));
                     return Err(Error::Truncated);
                 }
@@ -431,7 +489,7 @@ impl Decoder {
                 self.offset += end;
                 return Ok(Some(Phase::Headers));
             }
-            if self.eof && !line.ends_with(b"\n") {
+            if self.source == Source::Eof && !line.ends_with(b"\n") {
                 self.read_error = Some(ReadError::Framing(FramingError::NextPartEof));
                 return Err(Error::Truncated);
             }
