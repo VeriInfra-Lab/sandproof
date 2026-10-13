@@ -89,6 +89,7 @@ impl Fixture {
                 cwd: self.directory.path().into(),
                 env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
                 stdin: true,
+                pty: None,
                 credentials: None,
             },
             process_limits: ProcessLimits {

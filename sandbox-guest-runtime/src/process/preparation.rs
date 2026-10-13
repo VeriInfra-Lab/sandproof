@@ -10,7 +10,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::process::{Child, Command};
 
-use super::{CommandInput, CommandProcess, LaunchState, accounting, encode, invalid, start_ticks};
+use super::{
+    CommandInput, CommandProcess, InputPort, LaunchState, accounting, encode, invalid, start_ticks,
+};
+use crate::pty::PtyMaster;
 use crate::{LaunchSpec, ProcessLimits};
 
 /// Owns a worker before its identity/gate handshake completes. Cancelling a
@@ -18,6 +21,7 @@ use crate::{LaunchSpec, ProcessLimits};
 /// Drop only requests a kill; it is never a cleanup receipt or capacity credit.
 pub struct CommandPreparation {
     child: Option<Child>,
+    pty: Option<Arc<PtyMaster>>,
     pidfd: Option<OwnedFd>,
     kill_attempted: bool,
     directory: Option<tempfile::TempDir>,
@@ -60,22 +64,38 @@ impl CommandPreparation {
             .tempdir_in(private_directory)?;
         let socket = directory.path().join("launch");
         let listener = UnixListener::bind(&socket)?;
-        let child = Command::new(worker)
+        let terminal = spec.pty.map(PtyMaster::open).transpose()?;
+        let mut builder = Command::new(worker);
+        builder
             .arg("--gate")
             .arg(&socket)
             .arg("--limit")
             .arg(limits.launch_bytes.to_string())
-            .env_clear()
-            .stdin(if spec.stdin {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .env_clear();
+        let pty = if let Some((master, slave)) = terminal {
+            builder
+                .stdin(Stdio::from(slave.try_clone()?))
+                .stdout(Stdio::from(slave.try_clone()?))
+                .stderr(Stdio::from(slave));
+            Some(master)
+        } else {
+            builder
+                .stdin(if spec.stdin {
+                    Stdio::piped()
+                } else {
+                    Stdio::null()
+                })
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            None
+        };
+        let child = builder.spawn()?;
+        // Command retains configured Stdio descriptors for possible reuse;
+        // this one-shot builder must not keep the slave open across an await.
+        drop(builder);
         Ok(Self {
             child: Some(child),
+            pty,
             pidfd: None,
             kill_attempted: false,
             directory: Some(directory),
@@ -139,28 +159,46 @@ impl CommandPreparation {
         })
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "worker handshake"))??;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| invalid("missing stdout"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| invalid("missing stderr"))?;
+        let (mode, stdout, stderr, input) = if let Some(pty) = &self.pty {
+            (
+                OutputMode::Pty,
+                None,
+                None,
+                Some(InputPort::Pty(Arc::clone(pty))),
+            )
+        } else {
+            (
+                OutputMode::Pipes,
+                Some(
+                    child
+                        .stdout
+                        .take()
+                        .ok_or_else(|| invalid("missing stdout"))?,
+                ),
+                Some(
+                    child
+                        .stderr
+                        .take()
+                        .ok_or_else(|| invalid("missing stderr"))?,
+                ),
+                child.stdin.take().map(InputPort::Pipe),
+            )
+        };
         // Child::wait closes a stdin still stored in Child. Retain it separately
         // so observing exit never silently closes a user's interactive input.
         let stdin = Some(CommandInput {
             identity,
-            stdin: child.stdin.take(),
+            port: input,
         });
-        let stream =
-            CommandStream::new(identity, OutputMode::Pipes, self.limits.chunk_bytes as u64)
-                .map_err(accounting)?;
+        let stream = CommandStream::new(identity, mode, self.limits.chunk_bytes as u64)
+            .map_err(accounting)?;
         Ok(CommandProcess {
             child: self.child.take().ok_or_else(|| invalid("missing child"))?,
             pidfd: Arc::new(self.pidfd.take().ok_or_else(|| invalid("missing pidfd"))?),
-            stdout: Some(stdout),
-            stderr: Some(stderr),
+            stdout,
+            stderr,
+            mode,
+            pty: self.pty.take(),
             stdin,
             gate: Some(gate),
             _gate_directory: self
@@ -172,7 +210,7 @@ impl CommandPreparation {
             stream,
             launch: LaunchState::Prepared,
             stdout_eof: false,
-            stderr_eof: false,
+            stderr_eof: mode == OutputMode::Pty,
             waited: None,
             end_delivered: false,
         })

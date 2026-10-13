@@ -217,6 +217,7 @@ async fn numeric_identity_is_applied_even_when_environment_claims_root() {
             ("HOME".into(), "/root".into()),
         ]),
         stdin: false,
+        pty: None,
         credentials: Some(credentials.clone()),
     };
     let mut process = Owned(
@@ -265,6 +266,7 @@ async fn sentinel_uid_cannot_mean_keep_daemon_identity() {
         cwd: directory.path().into(),
         env: BTreeMap::new(),
         stdin: false,
+        pty: None,
         credentials: Some(Credentials {
             uid: u32::MAX,
             gid: 0,

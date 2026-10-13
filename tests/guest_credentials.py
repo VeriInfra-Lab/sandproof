@@ -6,15 +6,18 @@ private proc mount. Requires --worker and its SHA-256. No host account changes,
 VM, network configuration or broad process cleanup. This is not KVM acceptance.
 """
 import argparse
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
 import socket
+import select
 import stat
 import struct
 import subprocess
 import tempfile
+import time
 
 
 def require(condition, message):
@@ -63,10 +66,16 @@ def run_worker(worker, directory, spec, *, namespace=False, early_error=False):
         args = [str(worker), '--gate', str(gate_path), '--limit', '16384']
         if namespace:
             args = ['/usr/bin/unshare', '--user', '--map-root-user', '--'] + args
-        child = subprocess.Popen(args, stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 env={'DAEMON_ONLY_SENTINEL': 'must-not-inherit'})
+        master, slave = os.openpty() if spec.get('pty') is not None else (None, None)
+        child = None
         try:
+            child = subprocess.Popen(args, stdin=slave if slave is not None else subprocess.DEVNULL,
+                                     stdout=slave if slave is not None else subprocess.PIPE,
+                                     stderr=slave if slave is not None else subprocess.PIPE,
+                                     env={'DAEMON_ONLY_SENTINEL': 'must-not-inherit'})
+            if slave is not None:
+                os.close(slave)
+                slave = None
             with listener.accept()[0] as stream:
                 stream.settimeout(5)
                 require(read_exact(stream, 4) == b'SG01', 'invalid hello')
@@ -88,13 +97,44 @@ def run_worker(worker, directory, spec, *, namespace=False, early_error=False):
                         if len(diagnostic) == 8:
                             break
                     diagnostic = bytes(diagnostic)
-            stdout, stderr = child.communicate(timeout=5)
+            if master is None:
+                stdout, stderr = child.communicate(timeout=5)
+            else:
+                stdout = read_terminal(master)
+                stderr = b''
+                child.wait(timeout=5)
             return child.returncode, diagnostic, stdout, stderr
         finally:
-            if child.poll() is None:
-                child.kill()
-            child.wait(timeout=5)
+            if child is not None:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+            for fd in (master, slave):
+                if fd is not None:
+                    os.close(fd)
             gate_path.unlink(missing_ok=True)
+
+
+def read_terminal(master):
+    os.set_blocking(master, False)
+    until, data = time.monotonic() + 5, bytearray()
+    while True:
+        remaining = until - time.monotonic()
+        require(remaining > 0 and select.select([master], [], [], remaining)[0],
+                'terminal output deadline exceeded')
+        try:
+            chunk = os.read(master, 4096)
+        except BlockingIOError:
+            continue
+        except OSError as error:
+            if error.errno == errno.EIO:
+                break
+            raise
+        if not chunk:
+            break
+        data.extend(chunk)
+        require(len(data) <= 16384, 'terminal output exceeded fixture budget')
+    return bytes(data)
 
 
 PROBE = r'''
@@ -117,12 +157,13 @@ except PermissionError:
     root_denied = True
 print(json.dumps(dict(uid=os.getuid(), gid=os.getgid(), groups=os.getgroups(),
     cwd=os.getcwd(), env=dict(os.environ), status=status,
+    tty=[os.isatty(fd) for fd in range(3)], sid=os.getsid(0), pid=os.getpid(),
     secret_denied=secret_denied, root_denied=root_denied,
     group_file=Path(sys.argv[2]).read_text())))
 '''
 
 
-def check_positive(worker, directory):
+def check_positive(worker, directory, terminal):
     uid, gid, supplementary = 61001, 61002, 61003
     home = directory / 'home'
     home.mkdir(mode=0o750)
@@ -136,11 +177,14 @@ def check_positive(worker, directory):
     group_file.chmod(0o640)
     env = dict(PATH='/usr/bin:/bin', LC_ALL='C.UTF-8', HOME='/pretend', USER='root')
     spec = dict(program='/usr/bin/python3', args=['-c', PROBE, str(secret), str(group_file)],
-                cwd=str(home), env=env, stdin=False,
+                cwd=str(home), env=env, stdin=False, pty=dict(cols=80, rows=24) if terminal else None,
                 credentials=dict(uid=uid, gid=gid, groups=[gid, gid, supplementary]))
     code, diagnostic, stdout, stderr = run_worker(worker, directory, spec)
     require(code == 0 and not diagnostic and not stderr, 'credential probe did not finish cleanly')
     report = json.loads(stdout)
+    require(report['tty'] == [terminal] * 3, 'terminal descriptor wiring differs')
+    if terminal:
+        require(report['sid'] == report['pid'], 'terminal worker did not own its session')
     require(report['uid'] == uid and report['gid'] == gid, 'wrong numeric identity')
     require(report['status']['Uid'] == [str(uid)] * 4, 'real/effective/saved/fs uid differs')
     require(report['status']['Gid'] == [str(gid)] * 4, 'real/effective/saved/fs gid differs')
@@ -152,7 +196,7 @@ def check_positive(worker, directory):
     return 1
 
 
-def check_failures(worker, directory):
+def check_failures(worker, directory, terminal):
     groups = os.getgroups()
     cases = [
         (dict(uid=0, gid=0, groups=[61003]), True, False),  # setgroups denied
@@ -164,7 +208,8 @@ def check_failures(worker, directory):
     for credentials, namespace, early_error in cases:
         spec = dict(program='/usr/bin/python3',
                     args=['-c', 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_text("ran")', str(marker)],
-                    cwd=str(directory), env={}, stdin=False, credentials=credentials)
+                    cwd=str(directory), env={}, stdin=False, credentials=credentials,
+                    pty=dict(cols=80, rows=24) if terminal else None)
         code, diagnostic, stdout, stderr = run_worker(
             worker, directory, spec, namespace=namespace, early_error=early_error)
         require(code == 125 and len(diagnostic) == 8 and diagnostic[:4] == b'SGE1',
@@ -189,8 +234,13 @@ def main():
         directory = Path(temporary)
         directory.chmod(0o755)
         worker = seal_worker(args.worker, args.sha256, directory)
-        cases = check_positive(worker, directory) + check_failures(worker, directory)
-        require(not (directory / 'gate').exists(), 'private socket remained')
+        cases = 0
+        for terminal in (False, True):
+            case_directory = directory / ('pty' if terminal else 'pipes')
+            case_directory.mkdir(mode=0o755)
+            cases += check_positive(worker, case_directory, terminal)
+            cases += check_failures(worker, case_directory, terminal)
+            require(not (case_directory / 'gate').exists(), 'private socket remained')
         # All children are explicitly waited; PID namespace prevents accidental
         # references to host processes. Only this exact temporary tree is removed.
     print(json.dumps(dict(cases=cases, passed=True, worker_sha256=args.sha256,

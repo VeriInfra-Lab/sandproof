@@ -57,6 +57,12 @@ fn execute(gate: &mut UnixStream, maximum: usize) -> io::Result<()> {
             "extra launch bytes",
         ));
     }
+    if spec.pty.is_some() {
+        // Only this single-thread worker changes session/controlling terminal,
+        // after its gate is released. The daemon never becomes a tty session.
+        rustix::process::setsid()?;
+        rustix::process::ioctl_tiocsctty(std::io::stdin())?;
+    }
     if let Some(credentials) = &spec.credentials {
         switch_account(credentials)?;
     }

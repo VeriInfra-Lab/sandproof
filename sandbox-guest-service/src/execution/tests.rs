@@ -190,18 +190,20 @@ fn directory_expansion_matches_home_default_and_lexical_join_rules() {
 }
 
 #[tokio::test]
-async fn context_limits_and_unsupported_inputs_never_become_partial_launches() {
+async fn context_limits_and_invalid_inputs_never_become_partial_launches() {
     let session = session().await;
     let permit = session.authorize(Some("token")).await.unwrap();
     let pool = AccountPool::new(Source, 1, Duration::from_secs(5)).unwrap();
     let mut req = request();
     req.pty = Some(Pty { size: None });
-    assert!(matches!(
+    assert_eq!(
         permit
             .resolve_command(&req, &HeaderMap::new(), &pool, &settings())
-            .await,
-        Err(ContextError::Unimplemented)
-    ));
+            .await
+            .unwrap()
+            .pty,
+        Some(PtySize::default())
+    );
     req.pty = None;
     let mut settings = settings();
     settings.limits.bytes = 1;
@@ -239,6 +241,46 @@ async fn context_limits_and_unsupported_inputs_never_become_partial_launches() {
             .await,
         Err(ContextError::InvalidArgument)
     ));
+}
+
+#[tokio::test]
+async fn terminal_dimensions_preserve_pinned_uint16_conversion_and_absent_size() {
+    let session = session().await;
+    let permit = session.authorize(Some("token")).await.unwrap();
+    let pool = AccountPool::new(Source, 1, Duration::from_secs(5)).unwrap();
+    let mut req = request();
+    for (cols, rows, expected) in [
+        (0, 0, PtySize::default()),
+        (
+            65535,
+            65535,
+            PtySize {
+                cols: u16::MAX,
+                rows: u16::MAX,
+            },
+        ),
+        (
+            65536,
+            u32::MAX,
+            PtySize {
+                cols: 0,
+                rows: u16::MAX,
+            },
+        ),
+        (65537, 65538, PtySize { cols: 1, rows: 2 }),
+    ] {
+        req.pty = Some(Pty {
+            size: Some(sandproof_guest_runtime::protocol::PtySize { cols, rows }),
+        });
+        req.stdin = Some(false);
+        let spec = permit
+            .resolve_command(&req, &HeaderMap::new(), &pool, &settings())
+            .await
+            .unwrap();
+        assert_eq!(spec.pty, Some(expected));
+        assert!(!spec.stdin);
+        assert_eq!(spec.credentials, Some(account("alice").credentials));
+    }
 }
 
 struct Release(Arc<(Mutex<bool>, Condvar)>);

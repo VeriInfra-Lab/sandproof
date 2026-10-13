@@ -104,6 +104,7 @@ async fn prepare(directory: &Path, script: &str) -> CommandProcess {
             cwd: directory.into(),
             env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
             stdin: true,
+            pty: None,
             credentials: None,
         },
         ProcessLimits {
@@ -700,6 +701,7 @@ async fn private_exec_failure_is_not_a_successful_exit_or_public_output() {
             cwd: directory.path().into(),
             env: BTreeMap::new(),
             stdin: false,
+            pty: None,
             credentials: None,
         },
         ProcessLimits {

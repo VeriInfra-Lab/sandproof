@@ -16,9 +16,33 @@ pub struct LaunchSpec {
     pub cwd: PathBuf,
     pub env: BTreeMap<String, String>,
     pub stdin: bool,
+    /// A terminal joins stdin/stdout/stderr regardless of the pipe stdin flag.
+    pub pty: Option<PtySize>,
     /// Resolved local account. None is the existing current-account component
     /// mode; the authenticated service resolver always supplies Some.
     pub credentials: Option<Credentials>,
+}
+
+/// Kernel terminal dimensions, separate from identities or resource budgets.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PtySize {
+    pub cols: u16,
+    pub rows: u16,
+}
+
+impl PtySize {
+    /// The pinned Go endpoint narrows wire uint32 dimensions to uint16,
+    /// including zero. Keep this explicit; never apply it to identity/budgets.
+    #[must_use]
+    pub fn from_wire(cols: u32, rows: u32) -> Self {
+        let [c0, c1, _, _] = cols.to_le_bytes();
+        let [r0, r1, _, _] = rows.to_le_bytes();
+        Self {
+            cols: u16::from_le_bytes([c0, c1]),
+            rows: u16::from_le_bytes([r0, r1]),
+        }
+    }
 }
 
 /// Numeric kernel identity, never inferred from HOME/USER or other environment
