@@ -50,7 +50,7 @@
 
 ### 首链回执分类子批次
 
-`CenterState::apply_response` 在原状态校验、租户/实例查询及最后原操作选择之后，实际调用 `Operation::classify_response`。这个只读判定按原顺序检查：原请求的生命周期合法性（错误映射为 Stale）→ 完整回执相等时返回 Duplicate → 非重复的旧观察版本拒绝 → 非推进的事实等级拒绝 → Advance。Duplicate 由调用者返回原状态克隆；Advance 才进入原状态更新及后继校验。检查拆分不改变持久化、归属查询或物理证据语义。
+`CenterState::apply_response` 在原状态校验、租户/实例查询及最后原操作选择之后，实际调用 `Operation::classify_response`。这个只读判定按原顺序检查：回执与原请求的身份/事实兼容性（错误映射为 Stale）→ 完整回执相等时返回 Duplicate → 非重复的旧观察版本拒绝 → 非推进的事实等级拒绝 → Advance。Duplicate 由调用者返回原状态克隆；Advance 才进入原状态更新及后继校验。检查拆分不改变持久化、归属查询或物理证据语义，也不代替原请求的准入合法性检查。
 
 独立 [ResponseModel](../../SandboxModel/FirstChainLinux/ResponseModel.lean) 使用自然数观察版本及完整身份/事实载荷；[ResponseClassification](../../SandboxModel/FirstChainLinux/ResponseClassification.lean) 连接真实生成的相等字典和判定结果。Recorded、Stopped 的等级分别为 0、1，其余为 2；等级只用于同一个原操作内的推进，不作为回执相等，也不阻止之后建立新的生命周期意图。是否已经通过原请求检查作为由既有生命周期定理提供的输入，不是额外的可信自有函数。
 
