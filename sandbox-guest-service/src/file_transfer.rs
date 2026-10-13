@@ -17,12 +17,14 @@ use crate::{AuthPermit, files::HttpFileContext};
 
 mod batch;
 mod gzip_download;
+mod identity_download;
 pub use crate::upload_body::{GzipError, GzipLimits, HttpBodyLimits};
 pub use batch::{
     BatchFile, BatchLimits, BatchReply, MultipartError, MultipartLimits, UploadBatch,
     UploadBodyError,
 };
 pub use gzip_download::GzipDownload;
+pub use identity_download::IdentityDownloadError;
 
 #[cfg(test)]
 mod tests;

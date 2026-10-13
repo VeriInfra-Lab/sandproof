@@ -5,6 +5,8 @@ acceptance; no production/cloud endpoint or credential is used.
 """
 import asyncio
 import gzip
+from email import policy
+from email.parser import BytesParser
 from io import BytesIO, StringIO
 import json
 import sys
@@ -209,6 +211,65 @@ async def multipart_async(sandbox, root):
     assert await sandbox.files.write_files([], use_octet_stream=False) == []
 
 
+def range_requests(modified):
+    # Synthetic HTTP conditions, after the original SDK wrote these files.
+    return [
+        ('GET', 'metadata', {'range': 'bytes=0-0'}, 206, b'n'),
+        ('GET', 'metadata', {'range': 'bytes=-1'}, 206, b'w'),
+        ('GET', 'metadata', {'range': 'bytes=0-0,2-2'}, 206, None),
+        ('GET', 'metadata', {'range': 'bytes=99-'}, 416, b'invalid range: failed to overlap\n'),
+        ('GET', 'empty', {'range': 'bytes=99-'}, 200, b''),
+        ('GET', 'metadata', {'if-none-match': '*'}, 304, b''),
+        ('GET', 'metadata', {'if-match': '"missing"'}, 412, b''),
+        ('GET', 'metadata', {'if-modified-since': modified}, 304, b''),
+        ('GET', 'metadata', {'range': 'bytes=0-0', 'if-range': 'bad'}, 200, b'new'),
+        ('HEAD', 'metadata', {'range': 'bytes=1-2'}, 206, b''),
+        ('HEAD', 'metadata', {'range': 'bad'}, 416, b''),
+    ]
+
+
+def check_range(response, method, status, expected):
+    assert response.status_code == status, (response.status_code, response.content)
+    assert 'content-encoding' not in response.headers
+    if expected is not None:
+        assert response.content == expected
+    else:
+        message = BytesParser(policy=policy.default).parsebytes(
+            b'Content-Type: ' + response.headers['content-type'].encode() + b'\r\n\r\n' + response.content)
+        parts = list(message.iter_parts())
+        assert [part['content-range'] for part in parts] == ['bytes 0-0/3', 'bytes 2-2/3']
+        assert [part.get_payload(decode=True) for part in parts] == [b'n', b'w']
+        assert int(response.headers['content-length']) == len(response.content)
+    if method == 'HEAD' and status == 206:
+        assert response.headers['content-length'] == '2'
+    if status == 304:
+        assert 'content-type' not in response.headers
+        assert 'content-length' not in response.headers
+    if status == 416:
+        assert 'last-modified' not in response.headers
+        assert response.headers['x-content-type-options'] == 'nosniff'
+
+
+def range_sync(url, root):
+    with httpx.Client(trust_env=False, timeout=10, headers={
+            'x-access-token': 'fixture-token', 'accept-encoding': 'identity'}) as client:
+        base = client.get(url + '/files', params={'path': f'{root}/metadata'})
+        assert base.status_code == 200 and base.content == b'new'
+        for method, name, headers, status, expected in range_requests(base.headers['last-modified']):
+            response = client.request(method, url + '/files', params={'path': f'{root}/{name}'}, headers=headers)
+            check_range(response, method, status, expected)
+
+
+async def range_async(url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10, headers={
+            'x-access-token': 'fixture-token', 'accept-encoding': 'identity'}) as client:
+        base = await client.get(url + '/files', params={'path': f'{root}/metadata'})
+        assert base.status_code == 200 and base.content == b'new'
+        for method, name, headers, status, expected in range_requests(base.headers['last-modified']):
+            response = await client.request(method, url + '/files', params={'path': f'{root}/{name}'}, headers=headers)
+            check_range(response, method, status, expected)
+
+
 def run_sync(url, root):
     sandbox = Sandbox.connect('probe-sandbox', **arguments(url))
     for name, data in payloads():
@@ -248,6 +309,7 @@ def run_sync(url, root):
     multipart_sync(sandbox, root)
     compressed_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
+    range_sync(url, root)
 
 
 async def run_async(url, root):
@@ -293,6 +355,7 @@ async def run_async(url, root):
     await multipart_async(sandbox, root)
     await compressed_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
+    await range_async(url, root)
 
 
 if __name__ == '__main__':
@@ -300,4 +363,4 @@ if __name__ == '__main__':
     with isolated_sdk_environment():
         run_sync(settings['url'], settings['root'] + '/sync')
         asyncio.run(run_async(settings['url'], settings['root'] + '/async'))
-    print('Pinned sync/async SDK raw/multipart, gzip download and synthetic gzip upload with SDK readback passed (test routes only).')
+    print('Pinned sync/async SDK raw/multipart, gzip download, synthetic range/conditional downloads and gzip upload with SDK readback passed (test routes only).')

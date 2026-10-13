@@ -4,13 +4,13 @@
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
 use axum::{
     Json, Router,
-    body::{Body, Bytes},
+    body::Body,
     extract::{Query, State},
-    http::{Request, StatusCode},
+    http::{HeaderMap, HeaderValue, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use futures_util::{StreamExt, stream};
+use futures_util::StreamExt;
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
     filesystem::{
@@ -21,9 +21,10 @@ use sandproof_guest_runtime::{
 use sandproof_guest_service::{
     AccountPool, AuthPermit, InitLimits, Metadata, MetadataSource, ServiceError, Session,
     SystemAccounts,
+    file_download::{DownloadError, IdentityRequest, Limits as DownloadLimits},
     file_transfer::{
         BatchLimits, BatchReply, FileStreamError, FileStreams, GzipLimits, HttpBodyLimits,
-        MultipartError, MultipartLimits,
+        IdentityDownloadError, MultipartError, MultipartLimits,
     },
     files::{FileContextLimits, FileSettings, HttpFileContext},
 };
@@ -124,7 +125,7 @@ async fn files(
         .await
         .unwrap();
     fixture.seen.fetch_add(1, Ordering::SeqCst);
-    if request.method() == axum::http::Method::GET {
+    if request.method() == Method::GET || request.method() == Method::HEAD {
         let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
         // Test-only selection for the SDK's explicit gzip=true option. The
         // complete Go Accept-Encoding/range/conditional parser is separate.
@@ -136,7 +137,7 @@ async fn files(
             fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
             return gzip_download(&fixture, auth, context).await;
         }
-        return download(&fixture, auth, context).await;
+        return download(&fixture, auth, context, request).await;
     }
     let (parts, body) = request.into_parts();
     let gzip = parts
@@ -285,29 +286,52 @@ async fn gzip_download(fixture: &Fixture, auth: AuthPermit, context: HttpFileCon
         Err(error) => failure(error),
     }
 }
-async fn download(fixture: &Fixture, auth: AuthPermit, context: HttpFileContext) -> Response {
-    let download = match fixture.files.download(auth, context).await {
-        Ok(download) => download,
-        Err(error) => return failure(error),
+async fn download(
+    fixture: &Fixture,
+    auth: AuthPermit,
+    context: HttpFileContext,
+    request: Request<Body>,
+) -> Response {
+    let (parts, _) = request.into_parts();
+    let request = IdentityRequest {
+        method: parts.method,
+        headers: parts.headers,
+        response: HeaderMap::new(),
+        content_type: HeaderValue::from_static("application/octet-stream"),
+        // Fixed only inside this synthetic test route; production must generate entropy.
+        boundary: Some("a".repeat(60)),
     };
-    let length = download.length();
-    let body = stream::unfold(Some(download), |state| async move {
-        let mut download = state?;
-        match download.next().await {
-            Ok(Some(chunk)) => Some((
-                Ok::<_, std::io::Error>(Bytes::from_owner(chunk)),
-                Some(download),
-            )),
-            Ok(None) => None,
-            Err(_) => Some((Err(std::io::Error::other("incomplete file transfer")), None)),
-        }
-    });
-    Response::builder()
-        .status(200)
-        .header("content-length", length)
-        .header("content-type", "application/octet-stream")
-        .body(Body::from_stream(body))
-        .unwrap()
+    let limits = DownloadLimits {
+        request: sandproof_guest_runtime::file_download::Limits {
+            header_bytes: 65536,
+            items: 128,
+        },
+        response_header_bytes: 65536,
+        wire_bytes: 8 << 20,
+    };
+    match fixture
+        .files
+        .download_identity(
+            auth,
+            context,
+            request,
+            limits,
+            sandproof_guest_runtime::file_download::date::Utc,
+        )
+        .await
+    {
+        Ok(download) => download.into_response(),
+        Err(IdentityDownloadError::Admission(error)) => failure(error),
+        Err(IdentityDownloadError::Download(error)) => failure(match error {
+            DownloadError::SourceNotFound => FileStreamError::Operation(TransferIoError::NotFound),
+            DownloadError::SourceInvalid => {
+                FileStreamError::Operation(TransferIoError::InvalidArgument)
+            }
+            DownloadError::ResourceExhausted => FileStreamError::ResourceExhausted,
+            DownloadError::DeadlineExceeded => FileStreamError::DeadlineExceeded,
+            _ => FileStreamError::Operation(TransferIoError::Internal),
+        }),
+    }
 }
 async fn raw_upload(
     fixture: &Fixture,
@@ -461,7 +485,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 108);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 132);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 12);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 8);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 24);

@@ -3,6 +3,7 @@ use futures_util::{FutureExt, Stream, stream};
 use http_body_util::{BodyExt, StreamBody};
 use hyper::body::Frame;
 use sandproof_guest_runtime::gzip::{EncodeLimits, Encoder};
+use std::sync::Arc;
 use std::{
     collections::VecDeque,
     pin::Pin,
@@ -10,6 +11,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
+use tokio::sync::{mpsc, oneshot};
 
 fn limits() -> GzipLimits {
     GzipLimits {

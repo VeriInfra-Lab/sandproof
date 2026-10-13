@@ -241,6 +241,17 @@ impl DownloadSource {
     /// # Errors
     /// Path/budget checks, missing/directory paths or an open failure.
     pub fn open(value: &str, limits: TransferLimits) -> Result<Self, TransferIoError> {
+        Self::open_with_stat(value, limits).map(|(source, _)| source)
+    }
+
+    /// Retain fixed endpoint pre-open stat metadata. This is not metadata of a
+    /// replacement descriptor or a file snapshot; no extra stat follows open.
+    /// # Errors
+    /// Same original path/stat/directory/open checks as `open`.
+    pub fn open_with_stat(
+        value: &str,
+        limits: TransferLimits,
+    ) -> Result<(Self, fs::Metadata), TransferIoError> {
         let limits = limits.validate()?;
         limits.check_path(value)?;
         let info = fs::metadata(value).map_err(|e| {
@@ -254,13 +265,18 @@ impl DownloadSource {
             return Err(TransferIoError::InvalidArgument);
         }
         File::open(value)
-            .map(Self)
+            .map(|file| (Self(file), info))
             .map_err(|_| TransferIoError::Internal)
     }
 }
 impl Read for DownloadSource {
     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
         self.0.read(output)
+    }
+}
+impl Seek for DownloadSource {
+    fn seek(&mut self, offset: SeekFrom) -> std::io::Result<u64> {
+        self.0.seek(offset)
     }
 }
 

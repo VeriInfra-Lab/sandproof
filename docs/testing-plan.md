@@ -106,6 +106,10 @@ SANDPROOF_GUEST_ENCODING_REFERENCE=/absolute/path/to/encoding-reference \
 
 [下载决策检查](../sandbox-guest-runtime/src/file_download/tests.rs)及[响应计划检查](../sandbox-guest-service/src/file_download/tests.rs)纳入可移植库测试，定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_download`。覆盖条件优先级、强弱标签、第一重复字段、旧 HTTP 日期、零时间、Range 解析顺序、空文件/后缀零长度、单段 HEAD seek 要求、多段 MIME 字节/长度、错误头保留及组件预算。已有本地运行；输出为读取计划，不等于真实文件读写、原授权保持、错误收尾或网络 HEAD 行为已验证。
 
+[范围正文执行检查](../sandbox-guest-service/src/file_download/stream/tests.rs)纳入可移植 service lib；定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_download::stream`。覆盖条件拒绝前不 seek/read、完整/单段/多段/零后缀与 HEAD、准备期和正文期的 seek 失败、短读前缀、无伪造结尾、匿名 HTTP 正文错误、原期限以及 Bytes 克隆背压。阻塞 seek/read 用屏障控制，超时用可推进时钟；确认取消后守卫仍保留到实际调用与源析构结束。本地已运行；共享 gzip worker 重构须同时运行原上传/下载所有权回归。
+
+[Linux identity 范围检查](../sandbox-guest-service/src/file_transfer/identity_download/tests.rs)增加真实临时文件、空/二进制、原 FD 替换/增长/缩短、AuthPermit/容量保留及所选文件预算；定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::identity_download::tests`。固定 SDK 文件夹具的 identity GET/HEAD 已接该组件，合成 HTTP 客户端在原 SDK 写入后检查单/多段、无交集、空文件、304/412、If-Range 回退及 HEAD，原同步/异步 SDK 文件回读继续同路执行。测试只固定已知 MIME、UTC 和测试边界，不表示正式 MIME/时区/协商已接通；新增 Linux 组尚未实跑，不计为通过或 E03 全端点对照。
+
 [下载 Go 参考适配](../tests/compat/guest_download_reference.go)直接调用 Go 1.26.8 原 `http.ParseTime` / `http.ServeContent`，使用合成字节、显式本地时区及 httptest writer；默认错误头开关固定为 `httpservecontentkeepheaders=0`。显式组逐项核对日期秒/纳秒，以及状态、选定实体头和完整正文，只把 Go 生成的随机多段边界等长规范化以便比较。覆盖旧日期/时区、条件组合、GET/HEAD/POST、零时间、范围边界和种子 0x311 的畸形输入。本地已运行，默认 ignored；不是完整 envd/SDK 双端、FD 失败、Linux 或 KVM 验收：
 
 ```sh

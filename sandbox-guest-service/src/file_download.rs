@@ -1,6 +1,6 @@
-//! Staged identity download response planning. No file reads or listener.
-//! Invoke prepare after original stat/encoding selection/open; only Continue
-//! permits MIME detection and length seek, then finish plans exact reads.
+//! Staged identity download plans and owned execution; no production listener.
+//! The pure prepare/finish stages plan reads. `IdentityDownload` executes them
+//! for an already-known MIME type under the caller's original guard/deadline.
 // Adapted from Go 1.26.8 net/http/fs.go (Copyright 2009 The Go Authors).
 // BSD license: ../../sandbox-guest-runtime/src/multipart/GO-LICENSE.
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -9,6 +9,8 @@ use sandproof_guest_runtime::file_download::{
     date::{LocalZone, Timestamp},
 };
 
+mod stream;
+pub use stream::{DownloadChunk, DownloadError, IdentityDownload, IdentityLimits, IdentityRequest};
 #[cfg(test)]
 mod tests;
 
@@ -51,6 +53,8 @@ pub struct ResponsePlan {
     /// A single range requires a successful seek even for HEAD, before sending
     /// headers. Seek failure must instead become the original 416 error path.
     pub required_seek: Option<u64>,
+    /// Selected file bytes before HEAD suppression; excludes MIME overhead.
+    pub file_bytes: u64,
 }
 pub enum BodyPlan {
     Empty,
@@ -152,6 +156,7 @@ pub fn prepare(
         headers: response,
         body: BodyPlan::Empty,
         required_seek: None,
+        file_bytes: 0,
     }))
 }
 
@@ -230,6 +235,15 @@ impl AfterConditions {
             RangePlan::Rejected { .. } => unreachable!("handled error"),
         };
         let length = body.wire_length()?;
+        let file_bytes = body
+            .segments()
+            .try_fold(0_u64, |sum, segment| {
+                sum.checked_add(match segment {
+                    Segment::File(range) => range.length,
+                    Segment::Bytes(_) => 0,
+                })
+            })
+            .ok_or(Error::ArithmeticOverflow)?;
         if length > self.limits.wire_bytes {
             return Err(Error::ResponseLimit);
         }
@@ -248,6 +262,7 @@ impl AfterConditions {
             headers: self.headers,
             body: if self.head { BodyPlan::Empty } else { body },
             required_seek,
+            file_bytes,
         })
     }
     fn range_error(mut self, size: u64, no_overlap: bool) -> Result<ResponsePlan, Error> {
@@ -289,6 +304,7 @@ impl AfterConditions {
             headers: self.headers,
             body: BodyPlan::Error(message),
             required_seek: None,
+            file_bytes: 0,
         })
     }
 }
@@ -298,12 +314,20 @@ impl BodyPlan {
     /// Execution MUST stop on a failed/short read before asking for another
     /// segment, including the closing boundary. This iterator does no I/O.
     pub fn segments(&self) -> impl Iterator<Item = Segment> + '_ {
-        let count = match self {
+        (0..self.segment_count()).filter_map(|index| self.segment(index))
+    }
+    fn segment_count(&self) -> usize {
+        match self {
             Self::Empty => 0,
             Self::Multipart { ranges, .. } => ranges.len() * 2 + 1,
             _ => 1,
-        };
-        (0..count).map(|index| match self {
+        }
+    }
+    fn segment(&self, index: usize) -> Option<Segment> {
+        if index >= self.segment_count() {
+            return None;
+        }
+        Some(match self {
             Self::Empty => unreachable!(),
             Self::Error(bytes) => Segment::Bytes(bytes.to_vec()),
             Self::File(range) => Segment::File(*range),
