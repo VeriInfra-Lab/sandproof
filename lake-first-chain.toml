@@ -1,0 +1,23 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["SandboxModel", "SandboxControllerCore"]
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "SandboxControllerCore"
+srcDir = "verification/aeneas/generated"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/foundations"
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+
+[[lean_lib]]
+name = "SandproofFirstChain"
+srcDir = "verification/aeneas/first-chain"

@@ -19,6 +19,7 @@ Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两�
 - `aeneas/generated/SandboxControllerCore/`：Aeneas 生成的 Lean 类型和函数；
 - `extract-foundations/`：仅调用生产函数的公共基础抽取根，不复制业务算法；
 - `aeneas/foundations/`：公共基础的生成语义和独立命名空间的最小库模型；
+- `extract-first-chain/`、`aeneas/first-chain/`：Linux 实际身份/生命周期回执检查根及其自然生成语义；
 - `SandboxModel/RustRefinement/`：生成语义与协议规范之间的表示关系和一致性证明。
 
 `FunsExternal.lean` 是少量 Rust 标准库函数的可计算模型。Aeneas 同时会
@@ -43,6 +44,8 @@ scripts/verify-controller.sh
 
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
 见证明覆盖记录。已有纯核心定理不自动覆盖新增服务或真实持久化与执行。
+
+Linux 回执批次执行 `bash scripts/verify-first-chain-linux.sh`，冻结环境与输入分别见 [first-chain-linux-environment.json](first-chain-linux-environment.json) 和 [first-chain-linux-inputs.sha256](first-chain-linux-inputs.sha256)。固定工具修订相同不意味着不同平台的工具二进制、cfg 或抽取物相同；二者分开登记，不覆盖 [V0 环境](foundations-environment.json)。[Linux Lake 视图](../lake-first-chain.toml) 必须逐字保留原 Lake 配置，只追加新抽取库；检查器拒绝其它差异，避免修改 V0 冻结配置或维护另一套依赖版本。生成的全局枚举实例名称在两个类型集合中可能重名，故通过同一数学 Binding 合同连接、分别编译审计，不把两套名义类型同时导入一个环境或修改生成文件绕过冲突。标准证明客户端的源码指纹包括所有抽取目录。服务器连接、代理、私有工具路径和运行配置放仓库之外，公共清单不保存这些信息。
 
 新增中心/存储/通信/网关等入口的任务按[V0–V9详细计划](../docs/formal-verification-design.md#2-按真实模块划分证明责任)推进。重新抽取已登记历史本地控制核心和公共基础的明确子集，不覆盖整个中心、存储或通信；各模块首次证明批次须增加实际抽取根、外部模型/异步或脚本桥接、版本清单与定理依赖审计，再纳入完整验收。旧生成文件编译成功不是新模块抽取或证明通过。
 

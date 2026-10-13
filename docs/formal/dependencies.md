@@ -61,6 +61,8 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 `Store::get_copy` 另使用同版 Vec 索引、usize 运算和相等字典模型，循环终止及首次匹配是自有证明，不新增外部函数。泛型 `TableLawfulEq` 是调用模块需提供的相等对应，u64 实例已经连接实际内置字典；其他自有键比较不得整体放入 A6。该查询不证明表写入、删除、唯一性或退休许可。
 
+#342 的 Linux 回执检查单独登记 [FunsExternal](../../verification/aeneas/first-chain/SandproofFirstChain/FunsExternal.lean)：字符串比较沿用上述完整字符串相等合同；另提供固定前端的 Option 逻辑枚举标签模型，None 为 0、Some 为 1。标签模型描述编译器中间表示，不承诺原生内存布局。Option 相等函数本身已从同版 Rust 标准库抽取真实函数体，并证明其 u64 实例对应完整可选值相等；不是外部相等公理。库标签/字符串、内置整数及翻译器的剩余可信责任仍显式保留，不能把这一局部定理称为标准库或编译器已验证。版本及摘要见 [Linux 环境清单](../../verification/first-chain-linux-environment.json)与[输入摘要](../../verification/first-chain-linux-inputs.sha256)，不覆盖 V0 的 Mac 清单。
+
 ## 精确条款
 
 以下条款为本模块的规范定义；跨模块条款通过前提提供方连接，不将下游自有义务假定为已证。

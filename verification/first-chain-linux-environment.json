@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "source_anchor": "39c3497c24ce0362e1ce6ab05d2d9fc5f0d4b260",
+  "source_identity": "verification/first-chain-linux-inputs.sha256",
+  "target": "x86_64-unknown-linux-gnu",
+  "features": [],
+  "cfg": [
+    "debug_assertions", "fmt_debug=\"full\"", "overflow_checks", "panic=\"unwind\"",
+    "relocation_model=\"pic\"", "target_abi=\"\"", "target_arch=\"x86_64\"",
+    "target_endian=\"little\"", "target_env=\"gnu\"", "target_family=\"unix\"",
+    "target_feature=\"fxsr\"", "target_feature=\"sse\"", "target_feature=\"sse2\"",
+    "target_feature=\"x87\"", "target_has_atomic", "target_has_atomic=\"16\"",
+    "target_has_atomic=\"32\"", "target_has_atomic=\"64\"", "target_has_atomic=\"8\"",
+    "target_has_atomic=\"ptr\"", "target_has_atomic_load_store",
+    "target_has_atomic_load_store=\"16\"", "target_has_atomic_load_store=\"32\"",
+    "target_has_atomic_load_store=\"64\"", "target_has_atomic_load_store=\"8\"",
+    "target_has_atomic_load_store=\"ptr\"", "target_has_atomic_primitive_alignment=\"16\"",
+    "target_has_atomic_primitive_alignment=\"32\"", "target_has_atomic_primitive_alignment=\"64\"",
+    "target_has_atomic_primitive_alignment=\"8\"", "target_has_atomic_primitive_alignment=\"ptr\"",
+    "target_has_reliable_f128", "target_has_reliable_f16", "target_has_reliable_f16_math",
+    "target_has_threads", "target_object_format=\"elf\"", "target_os=\"linux\"",
+    "target_pointer_width=\"64\"", "target_thread_local", "target_vendor=\"unknown\"",
+    "ub_checks", "unix"
+  ],
+  "rustflags": [
+    "--remap-path-prefix=<checkout>=.",
+    "--remap-path-prefix=<extraction-sysroot>=<extraction-sysroot>",
+    "--remap-path-prefix=<cargo-cache>=<cargo-cache>"
+  ],
+  "production_compiler": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "extraction_frontend": "nightly-2026-08-18",
+  "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)",
+  "charon": {
+    "revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+    "binary_sha256": "732e75e80f113cb7d1a971eea9b97a64cd5742171d37e2fcae320b234dd06ff2",
+    "driver_sha256": "853946886339a191873a80ef1236f0a1874f5e51727053574dc9df558439ed6b"
+  },
+  "aeneas": {
+    "revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+    "binary_sha256": "5157acfd40145cdcc019889349e421800fa0d9a3e780eb4c809a8d0c523bb282"
+  },
+  "ocaml": "5.3.0",
+  "lean": "4.31.0",
+  "compile_mode": ["lib", "not(test)"],
+  "external_contracts": ["A6-foundations-stdlib-string", "A6-option-discriminant", "toolchain-translation"],
+  "excludes": ["wire decoding", "expected durable request selection", "observation rank", "request admission", "physical evidence", "durable commits", "full lifecycle handler", "liveness"]
+}

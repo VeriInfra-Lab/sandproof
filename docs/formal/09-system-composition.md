@@ -125,6 +125,18 @@ V9在V0接口阶段就开始维护Σ、共同不变量和依赖图；不等所�
 
 完整 `CenterState::apply_response` 经 `LifecycleResponse::validate_for` 使用该身份子检查，还检查事实种类、原寿命、观察版本及事实顺序；中心必须从最后一个原持久操作取得预期请求。上述选择与检查、重复回复、Redis 提交/缓存、节点事实的真实性、授权和宿主证据继续由 V1–V8 提供。当前连接只落实 FC-ID 的身份子检查及 FC-IMPLEMENT 的这一条件合同，未闭合这两项或完整首链。验收入口同时核对本节源码摘要与 V0 真实根的重新抽取，不能只编译历史生成物。
 
+### 4.3 生命周期回执的纯检查合同
+
+Linux 批次直接抽取生产 `ControlIdentity::validate_response` 与 `LifecycleResponse::validate_for`，仅调用它们的自由入口不复制业务算法。复用 V0 的数学 `Binding/checkResponse`，Linux 生成类型、工具二进制及目标配置独立冻结，不修改 V0 在途工作或将 Mac 抽取结论直接标为 Linux 对应。
+
+[生命周期规约](../../SandboxModel/FirstChainLinux/Lifecycle.lean) 的 `FactCompatible` 用自然数给出接受条件：收件事实可用于任意意图；未准入只能用于创建；停止/清理只能用于销毁；续期完成必须等于原续期目标。创建就绪则要求启动时间严格早于原启动期限，两项原寿命加法不超过 u64 上限，并精确等于报告的到期与最大到期时间。不接受其余意图/事实组合，也不允许溢出后回绕匹配。
+
+`checkLifecycle` 先执行完整身份检查，身份错误立即返回其原错误；只有身份通过才判断事实与寿命。对应定理必须比较整个结果，包括 UnsupportedVersion/BindingMismatch 和全部拒绝分支，不能只证明成功后时间相等。检查是只读函数，没有持久化、实例选择、授权或宿主动作。
+
+`observation_version` 不参与此纯检查。实际 `CenterState::apply_response` 还选择最后一个原操作，优先处理完全相同的重复回执，并检查观察版本及事实等级后更新状态；恢复校验也核对历史顺序。上述真实选择、更新、提交与物理事实仍由 V1/V2/V3/V5/V6 提供，本批不把它们移为外部假设。Linux 回执合同尚未实例化原 `IdentityDelivery`，不得由纯检查成功推导中心已提交就绪或已释放。
+
+局部验收入口为 `bash scripts/verify-first-chain-linux.sh`；完整入口仍保留原 V0 和历史本地核心检查并接入此入口。目标/生成物不匹配时退出失败，分别报告局部与整套结果；适用版本及完成状态只记[覆盖记录](../proof-coverage.md)。
+
 ## 5 验收与覆盖闭合
 
 定义、实现、提取、版本、前提、邻接和全局定理依赖必须在同一候选闭合。依据 [V0开工表](00-foundations.md#5-开工与完成条件) 和 [证明工作流](../proof-workflow.md) 建立每个实际入口的抽取/编译/定理审计清单；现有 verify-controller 仅有本地抽取根，不能把旧根通过说成新增系统验证通过。

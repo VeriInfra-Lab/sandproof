@@ -28,7 +28,7 @@ def revision(arguments):
     if not path.is_relative_to(ROOT):
         raise ValueError("Proof files must remain inside this project.")
     sources = sorted((ROOT / "SandboxModel").rglob("*.lean"))
-    sources += sorted((ROOT / "verification/aeneas/generated").rglob("*.lean"))
+    sources += sorted((ROOT / "verification/aeneas").rglob("*.lean"))
     fingerprint = hashlib.sha256()
     for source in sources:
         fingerprint.update(str(source.relative_to(ROOT)).encode())

@@ -335,3 +335,26 @@ V0 循环重构原样复用；本批公共身份 Lean 定义、抽取脚本、�
 完整 `verify-controller.sh` 的 Rust 与 V0 检查通过，原嵌套循环障碍已由复用的生产重构解除，固定 Charon/Aeneas 成功重新生成本地控制核心语义；随后因历史提交生成物与当前真实源码生成结果不一致，按原判据退出 1：`generated Rust semantics were stale; regeneration changed checked artifacts`。**整体证明验收仍未通过**，没有进入后续全核心对应证明验收。本工作区的新全核心产物已保留于忽略的实验目录，正式历史产物未覆盖；其迁移及重新对应由 #337 的适用批次负责。该阻碍不同于上节定位旧版本时的循环失败，不能用局部身份结果背书全核心。完整首链的实际处理、提交、宿主/排空、全部分支和最终完成性仍开放，不能由身份子检查推出它们。
 
 首链的真实事件清单与未解提供方统一见 [V9 第一批组合审查](formal/09-system-composition.md#41-342-第一批组合审查与责任投影模型)。FC-ID/COMMIT/EVIDENCE/DRAIN/INIT/EXTEND/IMPLEMENT 均未由本批实例化；有限重试、失败终局、期限、窗口/退休/复用、完整输入拒绝及 Rust/系统精化仍开放。`Safe` 不作为转换守卫，模型性质不是假设“实际实现服从模型”得到的实现结论；类型参数化也不是 V0 交接已完成。本批完成不关闭 #342、V1–V8 或 #101。
+
+## V9 Linux 生命周期回执检查
+
+归 #342/#101，以 `39c3497c24ce0362e1ce6ab05d2d9fc5f0d4b260` 为组合起点，继续使用冻结 V0 `c7d1afd316d825442492c9012baf236def7d5984`。实际新增入口、生产源码、规约、库模型、生成物及验收脚本由 [Linux 输入摘要](../verification/first-chain-linux-inputs.sha256)绑定；目标、编译器、工具二进制和 cfg 见 [Linux 环境](../verification/first-chain-linux-environment.json)。未修改生产 Rust、V0 目录、原 Lake 配置或其输入/环境清单，不将其它窗口在途代码纳入适用范围。
+
+固定 Linux Charon/Aeneas 已编译并实测两个直接生产调用根：`ControlIdentity::validate_response`、`LifecycleResponse::validate_for`。根不复制算法；所有可达自有函数和协议版本常量初始化体都检查 LLBC、翻译清单及真实生成定义。Option 相等使用固定 Rust 标准库的真实函数体，并证明 u64 实例对应可选值相等；字符串和逻辑枚举标签的剩余模型责任按 [A6 登记](formal/dependencies.md#a6-公共基础库模型使用登记)保留，不宣称标准库或翻译器已被证明正确。
+
+| 局部结论 | 范围和限制 |
+|---|---|
+| Linux 完整身份检查 | 全字段表示与 V0 数学 Binding 相同；真实检查的成功及精确错误对应。四项身份引理是 Linux 实现接入，不作为新增业务性质重复计数 |
+| 全生命周期纯回执检查 | `lifecycle_response_refines` 比较完整结果；覆盖三个意图、六类事实的全部组合和按程序顺序的拒绝，身份错误不被后续事实错误覆盖 |
+| 就绪的原寿命与范围 | 启动时间严格早于原期限；到期和最大到期精确等于原起点加原寿命，u64 溢出拒绝而不回绕。输入使用自然数表示，没有截断比较 |
+| 接受条件与字段边界 | `lifecycle_success_iff` 双向连接身份和 `FactCompatible`；已证接受保留完整身份。此函数忽略 observation_version，版本/事实等级由中心实际处理另行检查，不视为整个系统缺陷 |
+
+[Identity](../SandboxModel/FirstChainLinux/Identity.lean)、[Lifecycle](../SandboxModel/FirstChainLinux/Lifecycle.lean) 的 15 条定理通过正式 [Audit](../SandboxModel/FirstChainLinux/Audit.lean)，只依赖标准逻辑基础；`verify-first-chain-linux.sh` 的源码/工具核对、重新抽取逐字节比较、LLBC 全内容规范摘要、Rust 格式/静态检查和定理审计通过。标准服务客户端在服务器读取正式目标并返回完整、非过期、无错误或失败依赖的诊断。规范摘要只复用 V0 对无序 short_names 表的排序规则，不过滤其它 AST 字段。生成文件未手改，无占位证明、自定义公理或关闭内核检查。
+
+本窗口的证明、抽取、编译和测试在隔离 Linux 工作区执行，本机只编辑、检查 Git/元数据和同步文件。工具修订不变；Linux 工具二进制、cfg 与 Mac 不混记。独立 [Lake 视图](../lake-first-chain.toml) 必须保持原配置全文，只追加新库；检查器拒绝其它差异。两个生成类型集合的全局枚举实例可能重名，故分别编译审计并复用同一数学合同，不同时导入或手改生成类型。
+
+完整 Linux 基础检查已通过，包含真实固定 Redis、Rust 工作区和 983 项工具测试；清单完备性最终自查后，全部 985 项 Linux 工具测试及文档/提交检查重新通过，其中 9 项为本批检查器测试。函数、常量或初始化体遗漏、错误目标/不透明体均被拒绝。首次目录权限、构建资源及测试配置失败作为环境证据保留，没有通过改弱原检查解决；私有执行入口统一安全 umask、固定 Redis 和资源上限。未运行真实 SDK/KVM 或题集，不把局部验收替代整套门槛。
+
+**整体证明验收仍未通过**：Linux `verify-controller.sh` 的 Rust 格式、工作区测试和静态检查通过后，原 V0 输入摘要全部通过；随后在工具指纹关卡退出 1，报 `charon differs from the frozen tool binary/revision`。V0 原清单绑定 Mac 目标及工具二进制，未重抽取或覆盖其产物，也未进入后续全本地核心验收。完整入口保留此关卡，并新增本批 Linux 检查；不改指纹凑通过。V0 迁移需复用该窗口后续冻结的成果；历史本地核心生成物与当前源码的迁移仍归 #337，不以此提前宣称全核心对应通过。
+
+完整 `CenterState::apply_response`、原持久预期操作的选择、重复/旧观察/事实顺序、请求参数与初始化、事务提交、宿主事实及排空仍开放。纯回执检查尚未实例化既有 `IdentityDelivery` 或系统实际处理；FC-ID/COMMIT/EVIDENCE/DRAIN/INIT/EXTEND/IMPLEMENT 和条件最终完成性均未闭合，不关闭 #342/#101。

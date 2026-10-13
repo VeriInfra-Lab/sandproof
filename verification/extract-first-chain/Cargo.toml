@@ -1,0 +1,11 @@
+[package]
+name = "sandproof-first-chain-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Isolated extraction roots; production protocol code is the only algorithm.
+[workspace]
+
+[dependencies]
+sandproof-protocol = { path = "../../sandbox-protocol" }
