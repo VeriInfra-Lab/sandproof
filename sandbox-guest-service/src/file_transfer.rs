@@ -15,11 +15,15 @@ use tokio::time::{Instant, timeout_at};
 
 use crate::{AuthPermit, files::HttpFileContext};
 
+mod batch;
+pub use batch::{BatchFile, BatchLimits, BatchReply, UploadBatch};
+
 #[cfg(test)]
 mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileStreamError {
+    Context(crate::ContextError),
     Operation(TransferIoError),
     ResourceExhausted,
     DeadlineExceeded,
@@ -31,7 +35,13 @@ struct Lease {
     _slot: OwnedSemaphorePermit,
 }
 
-/// A pool admits at most `in_flight` blocking workers/retained transfers.
+#[derive(Clone)]
+struct Reservation {
+    lease: Arc<Lease>,
+    deadline: Instant,
+}
+
+/// A pool admits at most `in_flight` requests/retained transfers.
 /// Waiting requests never queue for admission. Each worker uses one body chunk;
 /// download chunks keep the lease until released, even after cancellation.
 #[derive(Clone)]
@@ -87,6 +97,25 @@ impl FileStreams {
         expected: Option<u64>,
     ) -> Result<UploadStream, FileStreamError> {
         let (lease, deadline) = self.admit()?;
+        self.upload_reserved(
+            Arc::new(auth),
+            context,
+            metadata,
+            expected,
+            Reservation { lease, deadline },
+        )
+        .await
+    }
+
+    async fn upload_reserved(
+        &self,
+        auth: Arc<AuthPermit>,
+        context: HttpFileContext,
+        metadata: BTreeMap<String, String>,
+        expected: Option<u64>,
+        reservation: Reservation,
+    ) -> Result<UploadStream, FileStreamError> {
+        let Reservation { lease, deadline } = reservation;
         let (send, receive) = mpsc::channel(1);
         let (opened, ready) = oneshot::channel();
         let worker_lease = Arc::clone(&lease);
@@ -106,19 +135,25 @@ impl FileStreams {
                 expected,
                 limits,
             );
-            match timely(deadline, result.map_err(FileStreamError::Operation)) {
+            let completion = match timely(deadline, result.map_err(FileStreamError::Operation)) {
                 Ok(file) => {
                     if opened.send(Ok(())).is_ok() {
-                        upload_worker(file, receive, &runtime, deadline, &worker_lease);
+                        upload_worker(file, receive, &runtime, deadline, &worker_lease)
+                    } else {
+                        None
                     }
                 }
                 Err(e) => {
                     let _ = opened.send(Err(e));
+                    None
                 }
-            }
+            };
             // Includes file destruction/metadata and any cancelled waiter's I/O.
             drop(auth);
             drop(worker_lease);
+            if let Some((reply, result)) = completion {
+                let _ = reply.send(timely(deadline, result));
+            }
         });
         wait(deadline, ready).await??;
         Ok(UploadStream {
@@ -273,19 +308,24 @@ impl UploadStream {
     }
 }
 
+type UploadCompletion = (
+    oneshot::Sender<Result<UploadReply, FileStreamError>>,
+    Result<UploadReply, FileStreamError>,
+);
+
 fn upload_worker(
     mut file: UploadFile,
     mut messages: mpsc::Receiver<UploadMessage>,
     runtime: &Handle,
     deadline: Instant,
     lease: &Arc<Lease>,
-) {
+) -> Option<UploadCompletion> {
     loop {
         let Ok(Some(message)) = runtime.block_on(timeout_at(deadline, messages.recv())) else {
-            return;
+            return None;
         };
         if Instant::now() >= deadline {
-            return;
+            return None;
         }
         match message {
             UploadMessage::Data(bytes, reply) => {
@@ -294,7 +334,7 @@ fn upload_worker(
                 drop(bytes); // Release this allocation BEFORE accepting the next chunk.
                 let failed = result.is_err();
                 if reply.send(result).is_err() || failed {
-                    return;
+                    return None;
                 }
             }
             UploadMessage::Finish(reply) => {
@@ -306,8 +346,8 @@ fn upload_worker(
                     })
                     .map_err(FileStreamError::Operation);
                 let result = timely(deadline, result);
-                let _ = reply.send(result);
-                return;
+                // Final ack follows actual file/worker-owned resource release.
+                return Some((reply, result));
             }
         }
     }

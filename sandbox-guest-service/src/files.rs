@@ -20,6 +20,7 @@ pub struct FileContextLimits {
     pub authorization_bytes: usize,
 }
 
+#[derive(Clone)]
 pub struct FileSettings {
     pub daemon_workdir: String,
     pub limits: FileContextLimits,
@@ -60,6 +61,34 @@ pub struct FileContext {
 pub struct HttpFileContext {
     pub owner: FileOwner,
     pub path: String,
+}
+
+/// One account/default snapshot for a sequential HTTP upload. The dispatcher
+/// must keep the exact original authorization alive; this is not a credential.
+pub struct HttpFileSelection {
+    account: Account,
+    workdir: Option<String>,
+    settings: FileSettings,
+}
+
+impl HttpFileSelection {
+    pub(crate) fn check_input(&self, path: &str) -> Result<(), ContextError> {
+        check_path_size(path, &self.settings)
+    }
+
+    /// Resolve an already decoded full filename (not its basename).
+    /// # Errors
+    /// Invalid or oversized paths, before any file effect.
+    pub fn resolve(&self, path: &str) -> Result<HttpFileContext, ContextError> {
+        Ok(HttpFileContext {
+            owner: FileOwner {
+                username: self.account.name.clone(),
+                uid: self.account.credentials.uid,
+                gid: self.account.credentials.gid,
+            },
+            path: resolve_file_path(path, self.workdir.as_deref(), &self.account, &self.settings)?,
+        })
+    }
 }
 
 impl AuthPermit {
@@ -134,12 +163,28 @@ impl AuthPermit {
         settings.validate()?;
         let path = path.unwrap_or("");
         check_path_size(path, settings)?;
+        self.resolve_http_files(username, accounts, settings)
+            .await?
+            .resolve(path)
+    }
+
+    /// Resolve the account once for all files in one HTTP request. Initialization
+    /// must remain blocked by the original permit until actual writes settle.
+    /// # Errors
+    /// Invalid settings, unknown/invalid account or query budget/timeout.
+    pub async fn resolve_http_files<S: AccountSource>(
+        &self,
+        username: Option<&str>,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+    ) -> Result<HttpFileSelection, ContextError> {
+        settings.validate()?;
         let name = username.unwrap_or(&self.defaults().user);
         let account = file_account(name, accounts, settings).await?;
-        let path = self.file_path(path, &account, settings)?;
-        Ok(HttpFileContext {
-            owner: owner(account),
-            path,
+        Ok(HttpFileSelection {
+            account,
+            workdir: self.defaults().workdir.clone(),
+            settings: settings.clone(),
         })
     }
 
@@ -149,20 +194,29 @@ impl AuthPermit {
         account: &Account,
         settings: &FileSettings,
     ) -> Result<String, ContextError> {
-        let path = if path.is_empty() {
-            self.defaults().workdir.as_deref().unwrap_or("")
-        } else {
-            path
-        };
-        check_path_size(path, settings)?;
-        // Keep absolute spelling, relative lexical cleaning and ~ expansion.
-        // Do not resolve symlinks or pre-check filesystem existence. NUL also
-        // survives here: fixed envd rejects it at the operation's I/O boundary,
-        // not as an ExpandAndResolve error. No CString/syscall occurs here.
-        let resolved = expand_path(path, &account.home, &settings.daemon_workdir)?;
-        check_path_size(&resolved, settings)?;
-        Ok(resolved)
+        resolve_file_path(path, self.defaults().workdir.as_deref(), account, settings)
     }
+}
+
+fn resolve_file_path(
+    path: &str,
+    workdir: Option<&str>,
+    account: &Account,
+    settings: &FileSettings,
+) -> Result<String, ContextError> {
+    let path = if path.is_empty() {
+        workdir.unwrap_or("")
+    } else {
+        path
+    };
+    check_path_size(path, settings)?;
+    // Keep absolute spelling, relative lexical cleaning and ~ expansion.
+    // Do not resolve symlinks or pre-check filesystem existence. NUL also
+    // survives here: fixed envd rejects it at the operation's I/O boundary,
+    // not as an ExpandAndResolve error. No CString/syscall occurs here.
+    let resolved = expand_path(path, &account.home, &settings.daemon_workdir)?;
+    check_path_size(&resolved, settings)?;
+    Ok(resolved)
 }
 
 fn check_path_size(path: &str, settings: &FileSettings) -> Result<(), ContextError> {
