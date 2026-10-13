@@ -9,6 +9,8 @@
 
 #[cfg(target_os = "linux")]
 pub mod accounts;
+#[cfg(target_os = "linux")]
+pub mod file_protocol;
 
 #[cfg(target_os = "linux")]
 mod process;

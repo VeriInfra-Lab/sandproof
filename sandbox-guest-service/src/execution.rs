@@ -93,7 +93,7 @@ impl<S: AccountSource> AccountPool<S> {
         })
     }
 
-    async fn lookup(&self, username: String) -> Result<Account, ContextError> {
+    pub(crate) async fn lookup(&self, username: String) -> Result<Account, ContextError> {
         let permit = Arc::clone(&self.slots)
             .try_acquire_owned()
             .map_err(|_| ContextError::ResourceExhausted)?;
@@ -235,6 +235,20 @@ fn selected_user(
     fallback: &str,
     limits: ContextLimits,
 ) -> Result<String, ContextError> {
+    selected_user_with_limits(
+        headers,
+        fallback,
+        limits.username_bytes,
+        limits.authorization_bytes,
+    )
+}
+
+pub(crate) fn selected_user_with_limits(
+    headers: &HeaderMap,
+    fallback: &str,
+    username_bytes: usize,
+    authorization_bytes: usize,
+) -> Result<String, ContextError> {
     let mut values = headers.get_all("authorization").iter();
     let value = values.next();
     if values.next().is_some() {
@@ -242,7 +256,7 @@ fn selected_user(
     }
     let mut user = None;
     if let Some(value) = value {
-        if value.as_bytes().len() > limits.authorization_bytes {
+        if value.as_bytes().len() > authorization_bytes {
             return Err(ContextError::ResourceExhausted);
         }
         if let Ok(value) = value.to_str() {
@@ -266,7 +280,7 @@ fn selected_user(
     if user.is_empty() || user.contains(['\0', '\n', '\r', ':']) {
         return Err(ContextError::Unauthenticated);
     }
-    if user.len() > limits.username_bytes {
+    if user.len() > username_bytes {
         return Err(ContextError::ResourceExhausted);
     }
     Ok(user)
@@ -276,6 +290,14 @@ fn resolve_path(path: &str, home: &str, daemon_cwd: &str) -> Result<String, Cont
     if path.contains('\0') || home.contains('\0') {
         return Err(ContextError::InvalidArgument);
     }
+    expand_path(path, home, daemon_cwd)
+}
+
+pub(crate) fn expand_path(
+    path: &str,
+    home: &str,
+    daemon_cwd: &str,
+) -> Result<String, ContextError> {
     let expanded = if let Some(rest) = path.strip_prefix('~') {
         if !rest.is_empty() && !rest.starts_with(['/', '\\']) {
             return Err(ContextError::InvalidArgument);

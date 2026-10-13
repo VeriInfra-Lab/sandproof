@@ -9,6 +9,8 @@ pub mod command;
 #[cfg(target_os = "linux")]
 mod execution;
 #[cfg(target_os = "linux")]
+pub mod files;
+#[cfg(target_os = "linux")]
 mod http;
 #[cfg(target_os = "linux")]
 mod metadata;
