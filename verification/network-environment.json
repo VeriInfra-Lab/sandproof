@@ -4,7 +4,7 @@
   "source_identity": "verification/network-inputs.sha256",
   "target": "x86_64-unknown-linux-gnu",
   "artifact_destination": "verification/aeneas/llbc/sandproof_network.llbc",
-  "driver_destination": "../../verification/aeneas/llbc/sandproof_network.llbc",
+  "driver_destination": "../aeneas/llbc/sandproof_network.llbc",
   "features": [],
   "roots": [
     "cidr_contains",

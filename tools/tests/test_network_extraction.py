@@ -22,11 +22,12 @@ class NetworkExtractionTests(unittest.TestCase):
     def test_real_roots_bodies_loops_globals_and_models_are_present(self):
         self.assertEqual(check(ROOT, self.llbc, self.inventory), len(ROOTS))
 
-    def test_unfrozen_output_destination_is_rejected(self):
-        for destination in ('/different-checkout/output.llbc', 'unreviewed.llbc'):
+    def test_destination_cannot_depend_on_the_checkout_or_another_output(self):
+        for destination in ('/old-checkout/verification/aeneas/llbc/sandproof_network.llbc',
+                            'verification/aeneas/llbc/other.llbc'):
             llbc = copy.deepcopy(self.llbc)
             llbc['translated']['options']['dest_file'] = destination
-            with self.assertRaisesRegex(ValueError, 'artifact destination'):
+            with self.assertRaisesRegex(ValueError, 'project-relative path'):
                 check(ROOT, llbc, self.inventory)
 
     def test_only_unordered_short_name_order_is_normalized(self):

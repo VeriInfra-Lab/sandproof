@@ -14,6 +14,8 @@ mkdir -p artifacts
 PREVIOUS="$(mktemp -d artifacts/network-extraction.XXXXXX)"
 if [[ -f "$LLBC" ]]; then mv "$LLBC" "$PREVIOUS/previous.llbc"; fi
 test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
+# Cargo's driver runs in verification/extract-network. The relative
+# --dest-file below reaches the same LLBC and is portable across checkouts.
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
   --start-from crate::cidr_contains \
@@ -27,7 +29,7 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::runtime_crash \
   --start-from crate::runtime_recover \
   --start-from crate::slot_transition \
-  --include sandbox_controller_core --dest-file "../../$LLBC" \
+  --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_network.llbc \
   -- --manifest-path verification/extract-network/Cargo.toml --lib --locked --offline
 test -s "$LLBC"
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \

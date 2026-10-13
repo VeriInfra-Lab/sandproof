@@ -214,9 +214,9 @@ def check(root, llbc, inventory):
         raise ValueError('extraction target does not match the frozen environment')
     destination = 'verification/aeneas/llbc/sandproof_network.llbc'
     if (environment.get('artifact_destination') != destination
-            or environment.get('driver_destination') != '../../' + destination
-            or llbc['translated']['options']['dest_file'] != '../../' + destination):
-        raise ValueError('extraction artifact destination must be the frozen relative path')
+            or environment.get('driver_destination') != '../aeneas/llbc/sandproof_network.llbc'
+            or llbc['translated']['options']['dest_file'] != environment.get('driver_destination')):
+        raise ValueError('extraction artifact destination must be the frozen project-relative path')
     roots = re.findall(r'--start-from crate::([a-z0-9_]+)',
                        (root / 'scripts/regenerate-network-lean.sh').read_text())
     public = re.findall(r'pub fn ([a-z0-9_]+)\(',

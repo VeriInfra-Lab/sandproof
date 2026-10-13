@@ -10,12 +10,13 @@ cd "$ROOT_DIR"
 LLBC=verification/aeneas/llbc/sandproof_foundations.llbc
 DEST=verification/aeneas/foundations
 mkdir -p "$(dirname "$LLBC")" "$DEST"
-# The single-target driver runs in the isolated Cargo package directory.
-# Keep its relative destination stable and require a newly emitted input.
+# Require a newly emitted input; never translate a leftover from a failed run.
 mkdir -p artifacts
 PREVIOUS="$(mktemp -d artifacts/foundations-extraction.XXXXXX)"
 if [[ -f "$LLBC" ]]; then mv "$LLBC" "$PREVIOUS/previous.llbc"; fi
 test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
+# Cargo's driver runs in verification/extract-foundations. The relative
+# --dest-file below reaches the same LLBC and is portable across checkouts.
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
   --start-from crate::counter_from_u64 \
@@ -32,7 +33,7 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::retry_hint \
   --start-from crate::outcome_observation \
   --include sandproof_protocol --include sandproof_center_core \
-  --include sandbox_controller_core --dest-file "../../$LLBC" \
+  --include sandbox_controller_core --dest-file ../aeneas/llbc/sandproof_foundations.llbc \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline
 test -s "$LLBC"
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \
