@@ -3,8 +3,12 @@
 //!
 //! This is not an envd server. The caller supplies trusted installation paths
 //! and must reserve public selector identity and process capacity BEFORE
-//! releasing a prepared worker. No public PID lookup, authentication, user
-//! switching, PTY, persistent registry, or restart adoption is implemented here.
+//! releasing a prepared worker. No public PID lookup, authentication, PTY,
+//! persistent registry, or restart adoption is implemented here. Numeric
+//! account switching occurs only in the private single-thread worker.
+
+#[cfg(target_os = "linux")]
+pub mod accounts;
 
 #[cfg(target_os = "linux")]
 mod process;
@@ -18,4 +22,4 @@ pub mod worker;
 #[cfg(target_os = "linux")]
 pub use process::{CommandEvent, CommandInput, CommandProcess, LaunchObservation, ProcessSignal};
 #[cfg(target_os = "linux")]
-pub use spec::{LaunchSpec, ProcessLimits};
+pub use spec::{Credentials, LaunchSpec, ProcessLimits};

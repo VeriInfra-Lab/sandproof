@@ -71,9 +71,9 @@ envd 在 VM 内执行用户进程、信号与文件操作；来宾及来宾 root
 
 持续命令输出使用有界在途缓冲、分块、并发和背压，不设累计字节上限；执行期限不等于字节上限。文件、一元回复和宿主辅助命令各有有限预算。取消、撤销、实际退出与排空责任见[模块合同](module-contracts.md)。
 
-[sandproof-guest-runtime](../sandbox-guest-runtime/src/lib.rs) 已增加独立 Linux 进程端口：私有 worker 放行、真实 pidfd/管道/wait 与原纯核心连接。它只有当前账号的组件测试，尚无公开监听、持久 PID 注册、完整 SDK 命令或文件服务，未安装到任何模板；这些端口不承担中心、宿主或 VM 生命周期职责。
+[sandproof-guest-runtime](../sandbox-guest-runtime/src/lib.rs) 已增加独立 Linux 进程端口：私有 worker 放行、真实 pidfd/管道/wait 与原纯核心连接。它已有当前账号的组件测试与独立特权身份验收入口，尚无公开监听、持久 PID 注册、完整 SDK 命令或文件服务，未安装到任何模板；这些端口不承担中心、宿主或 VM 生命周期职责。
 
-[sandproof-guest-service](../sandbox-guest-service/src/lib.rs) 承接来宾 HTTP 编排，当前提供受保护初始化、默认上下文快照及固定 MMDS 客户端。它尚未接到命令/文件操作或生产监听器，不负责中心/宿主权限；认证、预算与真实执行的组合仍须验收，细节维护在[模块合同](module-contracts.md)。
+[sandproof-guest-service](../sandbox-guest-service/src/lib.rs) 承接来宾 HTTP 编排，当前提供受保护初始化、默认上下文快照及固定 MMDS 客户端。授权上下文组件可按本地账户构造完整 worker 上下文，数值身份在单线程 worker 内切换；正式命令/文件路由与生产监听器尚未接通。它不负责中心/宿主权限；完整认证、预算与执行组合仍须验收，细节维护在[模块合同](module-contracts.md)。
 
 宿主通过 Linux 网络空间、TAP 和防火墙强制禁网及静态 IPv4 规则，不依赖来宾自觉。公网需部署显式开启，平台禁区始终生效。DNS 也是出站通道，固定 DNS 地址不等于查询内容过滤。域名策略、IPv6 放行、运行时网络切换、任意服务端口公开不在当前版本。
 

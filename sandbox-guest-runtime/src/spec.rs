@@ -16,10 +16,42 @@ pub struct LaunchSpec {
     pub cwd: PathBuf,
     pub env: BTreeMap<String, String>,
     pub stdin: bool,
+    /// Resolved local account. None is the existing current-account component
+    /// mode; the authenticated service resolver always supplies Some.
+    pub credentials: Option<Credentials>,
+}
+
+/// Numeric kernel identity, never inferred from HOME/USER or other environment
+/// values. This is supplied by a trusted account resolver, not an SDK field.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Credentials {
+    pub uid: u32,
+    pub gid: u32,
+    pub groups: Vec<u32>,
+}
+
+impl Credentials {
+    pub(crate) fn validate(&self) -> io::Result<()> {
+        if self.uid == u32::MAX
+            || self.gid == u32::MAX
+            || self.groups.len() > 65_536
+            || self.groups.contains(&u32::MAX)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid account identity",
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl LaunchSpec {
     pub(crate) fn validate(&self) -> io::Result<()> {
+        if let Some(credentials) = &self.credentials {
+            credentials.validate()?;
+        }
         if self.program.is_empty()
             || !self.cwd.is_absolute()
             || self.cwd.as_os_str().as_bytes().contains(&0)
