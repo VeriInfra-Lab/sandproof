@@ -56,6 +56,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [Rust 命令编解码检查](../sandbox-guest-runtime/tests/protocol.rs)消费原共享样例，覆盖字段存在性、非法/多重选择器、二进制字节、畸形/多余帧及每消息预算。[SDK/真实进程组合](../sandbox-guest-runtime/tests/sdk_protocol.rs)由 Linux `check-compat.sh` 运行：固定同步/异步 SDK 经一次性回环测试路由启动当前账号的真实 worker/命令，检查管道二进制/非零、大输出、信号退出、PTY 原字节/非零及 SDK 终端回调，以及 End 帧截断后实际 `CommandHandle.wait()` 报错。测试路由只接受各场景预先确定的一条命令，无公开登记/鉴权；检查实际主进程退出、输出排空和私有 socket 回收。它不是正式 Rust HTTP 服务、固定 Go envd 双端对照、全部命令操作、PTY 一元操作的 SDK 对照、降权或 KVM 证据。
 
+[文件协议检查](../sandbox-guest-runtime/tests/file_protocol.rs)消费同一文件共享样例，核对重复/畸形消息、缺省/null、uint32 深度、int64 尺寸、可选链接字段、时间戳精度/边界和编码预算。[文件上下文测试](../sandbox-guest-service/src/files/tests.rs)覆盖 Basic 与 HTTP username 的分离、一次 Move 查询、默认值/环境不改变身份、词法路径、无效 UID 和展开后预算。Linux 兼容入口还运行[固定同步/异步 SDK 组合](../sandbox-guest-runtime/tests/sdk_files.rs)：原会话授权与路径解析接到文件编解码，核对各一元方法、大尺寸/纳秒/元数据/空列表/可选链接及超额错误。该测试只返回预定合成属性，没有实际 stat、目录修改或文件传输；真实文件权限、链接竞争、磁盘满、部分读写、Go 双端对照和 KVM 仍须独立执行。
+
 [初始化会话检查](../sandbox-guest-service/tests/session.rs)消费同一宿主初始化样例，检查默认值/环境替换、元数据身份、令牌原子更新、同令牌重试、旧授权拒绝、重启、恰好预算和取消后恢复。[HTTP 路由检查](../sandbox-guest-service/tests/http.rs)覆盖真实回环请求、慢正文、断流、共享槽位、重复鉴权头及错误脱敏；[MMDS 交换检查](../sandbox-guest-service/src/metadata/tests.rs)以实际 TCP 服务核对两次请求并接到初始化路由，拒绝重定向、畸形令牌/元数据及截断。屏障与可推进时钟控制取消/期限，服务端观察原连接 EOF，验证无遗留连接驱动。基础检查和 Linux SDK 合同脚本均运行这些组件；它们不是 Firecracker MMDS 实测、命令鉴权集成、固定 Go envd 双端对照或 KVM 验收。
 
 首批[命令/文件纯核心测试](../sandbox-guest-core/tests/completion.rs)由 workspace 基础检查发现，覆盖退出/双管道 EOF 的全部顺序、未消费输出、旧内部身份、持续输出的有限驻留、短写/截断和关闭失败；不启动真实进程或操作来宾文件。[固定协议样例](../tests/compat/guest-service-contract.json)由 [SDK schema 检查](../tests/compat/test_guest_service_contract.py)读取，核对命令、PTY、二进制输入、文件属性及编码。它们不是完整 Rust 服务的协议对照，尚未核销 #311 的 E01–E10。

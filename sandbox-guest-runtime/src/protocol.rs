@@ -268,7 +268,7 @@ pub fn decode_request(
     }
 }
 
-fn parse<'de, T: Deserialize<'de>>(payload: &'de [u8]) -> Result<T, ProtocolError> {
+pub(crate) fn parse<'de, T: Deserialize<'de>>(payload: &'de [u8]) -> Result<T, ProtocolError> {
     serde_json::from_slice::<Object<T>>(payload)
         .map(|object| object.0)
         .map_err(|_| ProtocolError::InvalidArgument)
@@ -306,7 +306,7 @@ fn optional_object<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     Ok(Option::<Object<T>>::deserialize(deserializer)?.map(|object| object.0))
 }
 
-fn null_default<'de, D: serde::Deserializer<'de>, T: Deserialize<'de> + Default>(
+pub(crate) fn null_default<'de, D: serde::Deserializer<'de>, T: Deserialize<'de> + Default>(
     deserializer: D,
 ) -> Result<T, D::Error> {
     Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
@@ -318,7 +318,7 @@ struct Uint32(#[serde(deserialize_with = "uint32")] u32);
 #[derive(Deserialize)]
 struct Bytes(#[serde(deserialize_with = "bytes")] Vec<u8>);
 
-fn uint32<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+pub(crate) fn uint32<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Number {
@@ -462,6 +462,18 @@ fn encode_frame<T: Serialize>(
 struct BoundedWriter {
     bytes: Vec<u8>,
     remaining: usize,
+}
+
+pub(crate) fn encode_json<T: Serialize>(value: &T, limit: usize) -> Result<Vec<u8>, ProtocolError> {
+    if limit == 0 {
+        return Err(ProtocolError::ResourceExhausted);
+    }
+    let mut writer = BoundedWriter {
+        bytes: Vec::new(),
+        remaining: limit,
+    };
+    serde_json::to_writer(&mut writer, value).map_err(|_| ProtocolError::ResourceExhausted)?;
+    Ok(writer.bytes)
 }
 
 impl Write for BoundedWriter {

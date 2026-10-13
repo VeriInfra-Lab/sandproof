@@ -369,6 +369,8 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 独立的[命令协议编解码](../sandbox-guest-runtime/src/protocol.rs)已覆盖固定 SDK 的 Start/Connect、List、SendInput、CloseStdin、SendSignal、Update 请求，以及 Start/Data/End/keepalive 和 Connect 流终结帧。保留 stdin 缺省为 true、显式 false、空输入、PTY 通道、PID/tag 及未选择的区别；解码不授予 PID 控制资格。Start/Connect 请求须有单个完整未压缩 JSON 帧，拒绝不符长度、额外帧、非法 flags、重复消息字段和数组式消息；未知方法不伪报成功。编码按原字节使用 base64，非零码、信号退出的 `exited=false` 和错误字段分别保留。进程 End 与 Connect 传输终结不同，EOF 不能替代它们。消息字节预算在 JSON 解码前和编码写入中检查；HTTP 层仍须在收集正文前限额，输出传输及实际分配另有预算，不设置流累计上限。
 
+独立的[文件协议编解码](../sandbox-guest-runtime/src/file_protocol.rs)覆盖 Stat/MakeDir/ListDir/Move/Remove 的一元 JSON 请求与属性/列表/空回复。缺省或 null 路径保留为空，ListDir 的零深度留给实际操作应用原默认值；Move 的两个路径分别保留。拒绝重复字段、数组消息、流帧及未知方法，未开放 watcher 不伪造成功。属性 size 用 int64 十进制字符串，时间戳限制 protobuf 年份范围并保留纳秒，以 UTC 和 0/3/6/9 位小数编码；symlinkTarget 的未给出与空值保持区别，元数据按原字符串编码。解码前与编码过程中限制消息字节，不先复制整份属性列表；列表驻留、真实文件属性与部分失败仍归后续 I/O 端口。编解码成功不能代表文件存在、修改已完成或输入来源已授权。
+
 [PTY 端口](../sandbox-guest-runtime/src/pty.rs)通过原 master FD 打开对应 slave，不按可替换的 `/dev/pts` 路径重新查找。worker 的三个标准描述符均接到同一 slave，PTY 模式不使用管道的 stdin 开关；只有放行后，原单线程 worker 才建立独立 session/controlling terminal，再设置数值身份并 exec，同一主 PID 不变。stdout/stderr 合并为 `Pty` 通道，终端 line discipline 可能转换字节；需要原字节模式的用户程序自行配置 raw，服务不擅自改变默认终端模式。
 
 初始及 resize 的行列按固定 Go 端点将 wire uint32 取低 16 位，零与缺省尺寸保留为零；这只用于终端尺寸，不适用于身份或资源预算。`write_pty` 与管道 `write_input` 互斥，错误通道明确拒绝；PTY 拒绝 CloseStdin，Ctrl+D 是普通终端输入，实际 EOF 仍由终端模式决定。独立控制句柄执行 resize，检查原完整身份和实际 ioctl 结果，不等待正在写入的输入锁；内核可向前台进程组发送 SIGWINCH，显式 kill/term 仍只使用原主进程 pidfd。Linux PTY read 的 EIO 按该端口的 EOF 处理，其他错误仍为失败；EOF 不能替代实际 wait/消费确认。写就绪若已挂断/出错立即失败，不在满缓冲的 EAGAIN 上忙转阻塞收尾。终端 FD 随原管理记录/输入/控制引用保留，结束记录及 TTL 仍按下述待接入规则处理。
@@ -386,6 +388,10 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 初始化的正文/令牌字节、保留默认值字节、环境项数、在途正文数和期限均为显式参数，没有生产默认值。正文额度由同一会话的所有路由共享，收集正文前占额；重叠状态更新不排队，超额、超时和畸形请求显式失败，取消释放原槽位。保留字节计数包括两个元数据环境项，但不等于分配器、连接、库缓冲或整机 RAM 上界；正式监听器仍须接入连接/请求头/任务及收尾预算。健康路由不占初始化正文槽位。
 
 [账户与执行上下文](../sandbox-guest-service/src/execution.rs)从原 `AuthPermit` 解析用户名和默认值：Basic 用户名存在时选该账号，否则沿用初始化用户；按固定 Go 行为，非 Basic 或畸形 Basic 选择默认用户，显式空用户名拒绝。重复 Authorization 头、超长用户名/头、无效命令和预算超额明确拒绝；用户名不是数值 UID，HOME/USER 环境覆盖不改变内核身份。环境顺序为受信任 daemon PATH、账号 HOME/USER/LOGNAME → 初始化环境 → 单次 envs；不继承其余 daemon 环境。相对路径按账号 home 连接并作词法清理，`~` 只展开自身 home，已有绝对路径保留；不把词法清理当作符号链接或目录访问证明，实际 chdir/exec 仍须成功。
+
+[文件账户/路径上下文](../sandbox-guest-service/src/files.rs)从同一 `AuthPermit` 快照解析：RPC 沿用 Basic 用户规则，HTTP 文件操作仅从解码后的 `username` 查询选择账号，缺省才使用初始化用户；不把 `user` 别名或 Basic 头当作 HTTP 选择器。显式空/未知账号失败，环境 HOME/USER 不参与账号或 home 选择。Move 的两个路径共用一次账户查询，完整解析后才能交给后续派发；本组件不创建目录、重命名或打开文件。返回的 UID/GID 是创建对象的目标归属，不是文件 worker 的降权凭据，保持既有 daemon/root 文件 I/O 边界。
+
+文件空路径先取初始化工作目录，再按账号 home 展开；已有绝对路径保留原拼写，相对路径只做原词法整理，不提前解析链接或断言权限。NUL 在路径解析阶段保留，由后续实际 I/O 产生该操作的错误，不能冒充已通过路径检查。用户名、Authorization 和输入/展开后每条路径有显式组件预算，Move 至多两条路径；不把这些参数当成正式用户上限或全内存预算。原账户池继续约束取消/超时后仍在运行的查询，实际文件派发仍须持有原授权并另行预留 I/O、结果与收尾容量；HTTP `/files` 路由、流式正文及真实文件操作尚未接通。
 
 [本地账户端口](../sandbox-guest-runtime/src/accounts.rs)读取固定 `/etc/passwd`、`/etc/group`，对应固定 envd 的无 CGO 构建，不新增 NSS/网络查询或数字用户名回退。普通文件按打开的 inode 核对，符号链接至普通文件保留；非阻塞打开后拒绝 FIFO/设备等类型。未知账号和选中记录的坏 UID/GID 拒绝，`u32::MAX` 不得成为“保留原身份”。组文件不可读时按固定端点只保留已解析的主组，不继承 daemon 附加组；成功组查询保留固定实现的重复主组项，超过 Go 组扫描行界限则丢弃附加结果。文件字节和组数量另有显式预算，超额拒绝而非截断。非 UTF-8 home 无法进入当前 JSON 执行上下文，明确失败；不是完整 NSS/POSIX 账号数据库的兼容声明。
 

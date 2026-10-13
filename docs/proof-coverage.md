@@ -244,6 +244,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 来宾 [PTY 内核端口](../sandbox-guest-runtime/src/pty.rs)、worker session/controlling terminal 设置、原身份 resize 和双输入通道连接只有工程测试，尚未抽取或证明。原纯来宾核心的 `OutputMode::Pty` 未改，但旧抽取不能证明新 master/slave FD 所有权、异步就绪与挂断判定、EIO/EOF 到真实 wait 的连接、取消部分效果或数值身份切换顺序。初始/更新尺寸的固定 uint16 转换和实际终端 line discipline 也须在 #101 区分自有判定与外部内核前提；组件及固定 SDK 回调通过不代表正式来宾服务或系统证明通过。
 
+文件[一元编解码](../sandbox-guest-runtime/src/file_protocol.rs)及[授权路径解析](../sandbox-guest-service/src/files.rs)尚未抽取或证明。共享 JSON 解析/有界输出和 Basic/路径辅助函数供命令、文件两端复用，工程回归核对原命令行为；纯来宾核心未修改。字段缺省/精度、编码预算、账号选择、路径展开、授权快照到实际 I/O 的连接均须在 #101 后续证明，固定 SDK 与合成属性通过不证明真实文件操作、DAC、整个服务或系统正确。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。
