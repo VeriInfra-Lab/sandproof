@@ -46,6 +46,8 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [Rust 命令编解码检查](../sandbox-guest-runtime/tests/protocol.rs)消费原共享样例，覆盖字段存在性、非法/多重选择器、二进制字节、畸形/多余帧及每消息预算。[SDK/真实进程组合](../sandbox-guest-runtime/tests/sdk_protocol.rs)由 Linux `check-compat.sh` 运行：固定同步/异步 SDK 经一次性回环测试路由启动当前账号的真实 worker/命令，检查二进制/非零、大输出、信号退出，以及 End 帧截断后实际 `CommandHandle.wait()` 报错。测试路由只接受各场景预先确定的一条命令，无公开登记/鉴权；检查实际主进程退出、输出排空和私有 socket 回收。它不是正式 Rust HTTP 服务、固定 Go envd 双端对照、全部命令操作、降权/PTY 或 KVM 证据。
 
+[初始化会话检查](../sandbox-guest-service/tests/session.rs)消费同一宿主初始化样例，检查默认值/环境替换、元数据身份、令牌原子更新、同令牌重试、旧授权拒绝、重启、恰好预算和取消后恢复。[HTTP 路由检查](../sandbox-guest-service/tests/http.rs)覆盖真实回环请求、慢正文、断流、共享槽位、重复鉴权头及错误脱敏；[MMDS 交换检查](../sandbox-guest-service/src/metadata/tests.rs)以实际 TCP 服务核对两次请求并接到初始化路由，拒绝重定向、畸形令牌/元数据及截断。屏障与可推进时钟控制取消/期限，服务端观察原连接 EOF，验证无遗留连接驱动。基础检查和 Linux SDK 合同脚本均运行这些组件；它们不是 Firecracker MMDS 实测、命令鉴权集成、固定 Go envd 双端对照或 KVM 验收。
+
 首批[命令/文件纯核心测试](../sandbox-guest-core/tests/completion.rs)由 workspace 基础检查发现，覆盖退出/双管道 EOF 的全部顺序、未消费输出、旧内部身份、持续输出的有限驻留、短写/截断和关闭失败；不启动真实进程或操作来宾文件。[固定协议样例](../tests/compat/guest-service-contract.json)由 [SDK schema 检查](../tests/compat/test_guest_service_contract.py)读取，核对命令、PTY、二进制输入、文件属性及编码。它们不是完整 Rust 服务的协议对照，尚未核销 #311 的 E01–E10。
 
 [Linux 进程端口测试](../sandbox-guest-runtime/tests/process.rs)使用真实私有 worker、pidfd、管道和命令，核对放行前无用户副作用、当前主进程 PID、原字节/非零退出、超过单块预算的持续输出、消费前不得 End、stdin 取消与关闭、独立输入句柄的大块双向传输、后代持管道时主进程退出、旧内部身份与 exec 失败。SIGSTOP + waitid 建立已观察的暂停点，验证放行回复取消仍可能执行一次但绝不再次放行，以及取消输入后的实际前缀；不使用随机 sleep 建立顺序。这是普通 Linux 当前账号的组件检查，不是 E2B 对照、账号降权、强制 PID 复用、服务重启、整机资源压力或 KVM 验收。

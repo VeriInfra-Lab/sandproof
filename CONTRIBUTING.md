@@ -97,6 +97,8 @@ python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任�
 
 Linux SDK 合同脚本还检查固定 SDK 经一次性回环测试路由访问 Rust 来宾编解码和当前账号的真实命令；路由仅接受预定测试命令。该组合不涉及正式来宾服务、管理鉴权、Go envd 双端对照或产品 VM，范围以[验收清单](docs/testing-plan.md)为准。
 
+同一脚本另运行来宾初始化/鉴权及 MMDS 交换组件检查，使用真实回环 HTTP 与受控元数据服务。它与上述 SDK 命令检查分别运行，不表示命令鉴权已经接通，也不代替 Firecracker MMDS 或完整来宾服务验收。
+
 ### 测试编写和结果纪律
 
 基础工具统一通过 `scripts/python-entry.sh` 选择 Python `>=3.12,<3.14`；可用 `SANDPROOF_PYTHON` 指定解释器，显式指定后不静默回退。版本或平台不满足时在 Cargo 构建和测试前报错。SDK/Harbor 仍用各自锁定的 uv 项目，不混用工具环境。
