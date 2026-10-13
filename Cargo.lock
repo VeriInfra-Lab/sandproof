@@ -1111,6 +1111,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "subtle",
+ "tempfile",
  "tokio",
  "tower",
  "zeroize",

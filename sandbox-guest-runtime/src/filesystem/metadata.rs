@@ -132,7 +132,7 @@ fn permissions(mode: u32) -> String {
 
 // Ordinary xattr I/O failures discard metadata (fixed Go best-effort policy).
 // Explicit capacity failures must remain observable, never truncated success.
-fn xattrs(path: &Path, limit: usize) -> Result<BTreeMap<String, String>, FileError> {
+pub(super) fn xattrs(path: &Path, limit: usize) -> Result<BTreeMap<String, String>, FileError> {
     let mut names = vec![0; limit];
     let len = match rustix::fs::listxattr(path, names.as_mut_slice()) {
         Ok(len) => len,

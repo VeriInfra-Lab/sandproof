@@ -9,6 +9,7 @@ mod directory;
 mod metadata;
 mod path;
 mod remove;
+pub mod transfer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileError {
