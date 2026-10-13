@@ -401,7 +401,7 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 [流式文件端口](../sandbox-guest-runtime/src/filesystem/transfer.rs)已实现单文件正文的阻塞读写组件，已有 Linux 组件及固定 SDK 测试路由检查。上传先校验已知长度和元数据，再沿固定 envd 的父目录、已有文件 chown、truncate 和必要 fchown 顺序打开；跟随来宾链接，使用 daemon 凭据。按实际短写量推进原 `Transfer`；中断、超额、提前 EOF 或写入错误可留下已创建目录、归属变化和文件前缀，不重试、不回滚，不产生完整成功。完整输入后才通过原 FD 替换 `user.e2b.*`：清除未指定键，保留其他命名空间，元数据键/值遵守固定 printable ASCII 与 4096 字节合同；不支持 xattr 时沿用原忽略行为。回执元数据仍经原路径读取，路径并发替换不构成快照或 inode 身份保证；完成不表示 fsync 耐久提交。
 
-[上传详细 I/O 错误](../sandbox-guest-runtime/src/filesystem/transfer/upload.rs)保留原 open/write/finish 算法，新增 detailed 入口返回预算/输入拒绝或[结构化故障](../sandbox-guest-runtime/src/file_upload/fault.rs)。故障记录实际阶段、失败操作的路径、可选 Linux errno 和 xattr 原始名字节；父目录错误保留父路径，未知错误不编造 errno 或保存任意诊断字符串。路径拷贝受 path_bytes 约束，属性名受原 xattr 暂存或 metadata 键长约束；库分配仍另计。原接口显式降回粗分类，service 暂仍使用它，完整错误 JSON/正文所有权尚未接通。
+[上传详细 I/O 错误](../sandbox-guest-runtime/src/filesystem/transfer/upload.rs)保留原 open/write/finish 算法，新增 detailed 入口返回预算/输入拒绝或[结构化故障](../sandbox-guest-runtime/src/file_upload/fault.rs)。故障记录实际阶段、失败操作的路径、可选 Linux errno 和 xattr 原始名字节；父目录错误保留父路径，未知错误不编造 errno 或保存任意诊断字符串。路径拷贝受 path_bytes 约束，属性名受原 xattr 暂存或 metadata 键长约束；库分配仍另计。runtime 原入口仍可显式降回粗分类；service worker 已改用 detailed 入口，经 FileStreamError::UploadFault 传递原观察，见下述错误回执。
 
 固定 processFile 的状态区分阶段：目标是目录为 400，open/write 的 ENOSPC 为 507，metadata 的 ENOSPC/EDQUOT 为 507，其余记录的 I/O 故障为 500；父目录创建 ENOSPC 和文件 open/write 的 EDQUOT 不升为 507。预算拒绝独立于这些内核错误。metadata 仍忽略不支持 xattr 和删除时已不存在的属性；短写后失败保留前缀并拒绝重放，零写单独记录。固定 Go 原函数受控故障状态对照已有本地运行；真实 Linux 路径/FD 故障检查待实跑，不代表磁盘满或完整 HTTP 端点验收。
 
@@ -435,7 +435,11 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 [上传成功回执](../sandbox-guest-service/src/upload_response.rs)消费已完成的原 BatchReply，在原槽位与绝对期限内序列化并按需发送。保留固定 Go 的数组顺序、metadata/name/path/type 字段顺序、metadata 键排序、空 metadata 省略、空批次 `[]` 及无尾随换行；name 来自原解析路径的 Linux basename，不重新访问文件。复用下载错误的 Go JSON 转义，以同一编码器先计算精确线长、检查独立 wire_bytes 后分配。原结果路径/metadata、完整编码载荷及一个输出块分别计费，不能把 chunk_bytes 宣称为全部驻留内存。
 
-固定 HTTP/1.1 成功写入的 JSON 数组由 Go 自动嗅探为 `text/plain; charset=utf-8`；本组件显式保留该头，载荷不超过 2048 字节时带 Content-Length，更大时由 HTTP/1.1 传输分块。未新增错误响应所用的 nosniff。输出块及全部 Bytes 副本释放前不继续发送下一块；取消/过期不能伪造 EOF，原工作槽位保留到实际序列化/销毁和最后字节副本释放。文件 I/O 完成后的原初始化可继续，回执不重新获取授权；序列化预算或发送失败不撤销已完成文件及 metadata，也不自动重放。可移植所有权与固定 Go 真实回环 HTTP 成功头/正文对照已运行；Linux 原文件池连接及 SDK 回读组合待实跑，完整上传错误响应与正式监听器仍待完成。
+固定 HTTP/1.1 成功写入的 JSON 数组由 Go 自动嗅探为 `text/plain; charset=utf-8`；本组件显式保留该头，载荷不超过 2048 字节时带 Content-Length，更大时由 HTTP/1.1 传输分块。未新增错误响应所用的 nosniff。输出块及全部 Bytes 副本释放前不继续发送下一块；取消/过期不能伪造 EOF，原工作槽位保留到实际序列化/销毁和最后字节副本释放。文件 I/O 完成后的原初始化可继续，回执不重新获取授权；序列化预算或发送失败不撤销已完成文件及 metadata，也不自动重放。可移植所有权与固定 Go 真实回环 HTTP 成功头/正文对照已运行；Linux 原文件池连接及 SDK 回读组合待实跑，文件 I/O 错误响应接下述组件，其余上传拒绝和正式监听器仍待完成。
+
+[上传 I/O 错误回执](../sandbox-guest-service/src/upload_response/errors.rs)将原阶段/路径/errno/属性名按固定 processFile、permissions.EnsureDirs 与 pkg/xattr 0.4.12 错误包装格式生成 JSON。code/message 顺序、Go JSON 转义、末尾换行、application/json; charset=utf-8 和 nosniff 保持原样；HTTP/1.1 完整载荷不超过 2048 字节才带自动 Content-Length。write ENOSPC 的诊断使用原请求声明长度，包括 multipart framing 或 gzip 压缩长度，不使用已写/展开字节数；未声明或零长度不增加 attempted 文本。缺少必要 errno 或属性名返回不可分类错误，不编造公开诊断。
+
+upload_request_response 复用原首头预检与一次准入，将成功数组和实际文件故障交给同一有界发送器；故障在原 worker/batch 中移动，不新增 I/O 或重放。路径/属性的原预算、完整编码线长及输出块预算分别计费；生成错误载荷前先计算精确线长。原槽位/绝对期限覆盖处理与发送，直到最后 Bytes 副本释放；仍在运行的 I/O 自持原授权，实际完成后初始化可继续。编码或发送失败保留所有已发生的文件效果。每个响应至多新增一个阻塞发送任务，可与取消中的解压/文件析构重叠，但始终持有同一原槽位；全服务任务/库分配预算仍待冻结。FileStreamError、UploadBodyError、UploadRequestError 及包含它的 IdentityDownloadError 因拥有详细故障不再 Copy；调用方须借用或显式 clone，上传文件故障匹配 UploadFault，预算拒绝仍匹配 Operation 等原分类。SDK 夹具所有 POST 已连接这一入口；身份/查询/metadata/解码/传输拒绝的完整公开错误仍待连接，未匹配错误仍显式返回，不把夹具通用拒绝当正式合同。可移植原 Go 对照已运行，Linux 文件/SDK 错误组合待实跑。
 
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 

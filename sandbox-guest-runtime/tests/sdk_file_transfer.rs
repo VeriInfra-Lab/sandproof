@@ -23,8 +23,8 @@ use sandproof_guest_service::{
     SystemAccounts,
     file_download::{ContentType, DownloadError, IdentityRequest, Limits as DownloadLimits},
     file_transfer::{
-        BatchLimits, BatchReply, DownloadLimits as NegotiatedLimits, FileStreamError, FileStreams,
-        GzipLimits, HttpBodyLimits, IdentityDownloadError, MultipartError, MultipartLimits,
+        BatchLimits, DownloadLimits as NegotiatedLimits, FileStreamError, FileStreams, GzipLimits,
+        HttpBodyLimits, IdentityDownloadError, MultipartError, MultipartLimits, UploadHttpError,
         UploadLimits, UploadRequest, UploadRequestError,
     },
     files::{FileContextLimits, FileSettings, HttpFileContext},
@@ -75,7 +75,7 @@ async fn connect() -> Json<serde_json::Value> {
     )
 }
 
-fn failure(error: FileStreamError) -> Response {
+fn failure(error: &FileStreamError) -> Response {
     let status = match error {
         FileStreamError::Operation(TransferIoError::NotFound) => StatusCode::NOT_FOUND,
         FileStreamError::Operation(TransferIoError::InvalidArgument)
@@ -171,7 +171,7 @@ async fn upload(
         .map(|v| v.to_str().unwrap().parse::<u64>().unwrap());
     let result = fixture
         .files
-        .upload_request(
+        .upload_request_response(
             auth,
             UploadRequest {
                 username: params.username,
@@ -206,16 +206,30 @@ async fn upload(
                     retained_bytes: 65536,
                 },
             },
+            sandproof_guest_service::upload_response::Limits {
+                wire_bytes: 1 << 20,
+                chunk_bytes: 4096,
+            },
         )
         .await;
-    match result {
-        Ok(reply) => upload_response(Ok(reply)).await,
-        Err(UploadRequestError::Body(error)) => upload_response(Err(error)).await,
-        Err(UploadRequestError::Transfer(error)) => failure(error),
-        Err(UploadRequestError::GzipPreflight(error)) => {
-            upload_response(Err(MultipartError::GzipPreflight(error))).await
+    let error = match result {
+        Ok(response) => return response,
+        Err(UploadHttpError::Request(error)) => error,
+        Err(UploadHttpError::Response(_)) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "upload response unavailable",
+            )
+                .into_response();
         }
-        Err(error) => {
+    };
+    match error {
+        UploadRequestError::Body(error) => upload_response(error),
+        UploadRequestError::Transfer(error) => failure(&error),
+        UploadRequestError::GzipPreflight(error) => {
+            upload_response(MultipartError::GzipPreflight(error))
+        }
+        error => {
             let status = if matches!(error, UploadRequestError::Context(_)) {
                 StatusCode::UNAUTHORIZED
             } else {
@@ -230,32 +244,18 @@ async fn upload(
     }
 }
 
-async fn upload_response(result: Result<BatchReply, MultipartError>) -> Response {
-    match result {
-        Ok(reply) => match reply
-            .into_http_response(sandproof_guest_service::upload_response::Limits {
-                wire_bytes: 1 << 20,
-                chunk_bytes: 4096,
-            })
-            .await
-        {
-            Ok(response) => response,
-            Err(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "upload response unavailable",
-            )
-                .into_response(),
-        },
-        Err(MultipartError::Transfer(error)) => failure(error),
-        Err(MultipartError::GzipPreflight(
+fn upload_response(error: MultipartError) -> Response {
+    match error {
+        MultipartError::Transfer(error) => failure(&error),
+        MultipartError::GzipPreflight(
             sandproof_guest_service::upload_body::GzipError::Header
             | sandproof_guest_service::upload_body::GzipError::Truncated,
-        )) => (
+        ) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"message":"invalid gzip header"})),
         )
             .into_response(),
-        Err(error) => {
+        error => {
             let status = if matches!(
                 error,
                 MultipartError::InputLimit
@@ -358,12 +358,12 @@ async fn download(
         .await
     {
         Ok(download) => download.into_response(),
-        Err(IdentityDownloadError::Admission(error)) => failure(error),
+        Err(IdentityDownloadError::Admission(error)) => failure(&error),
         Err(IdentityDownloadError::Download(error)) => download_failure(error),
     }
 }
 fn download_failure(error: DownloadError) -> Response {
-    let mut response = failure(match error {
+    let mut response = failure(&match error {
         DownloadError::SourceNotFound => FileStreamError::Operation(TransferIoError::NotFound),
         DownloadError::SourceInvalid => {
             FileStreamError::Operation(TransferIoError::InvalidArgument)
@@ -514,9 +514,9 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 164);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 170);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 12);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 8);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 12);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     for mode in ["sync", "async"] {
         assert_eq!(

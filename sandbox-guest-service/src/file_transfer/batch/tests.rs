@@ -3,6 +3,7 @@ mod gzip;
 mod multipart;
 mod response;
 mod upload;
+mod upload_errors;
 use crate::file_transfer::FileStreams;
 use crate::files::{FileContextLimits, FileSettings};
 use crate::{
@@ -11,10 +12,7 @@ use crate::{
 use sandproof_guest_runtime::{
     Credentials,
     accounts::{Account, AccountError},
-    filesystem::{
-        FileLimits,
-        transfer::{TransferIoError, TransferLimits},
-    },
+    filesystem::{FileLimits, transfer::TransferLimits},
 };
 use sha2::{Digest, Sha512};
 use std::{
@@ -359,7 +357,12 @@ async fn later_file_failure_preserves_previous_success_but_no_batch_success() {
     first.finish().await.unwrap();
     assert!(matches!(
         batch.start_file("directory", None).await,
-        Err(FileStreamError::Operation(TransferIoError::InvalidArgument))
+        Err(FileStreamError::UploadFault(
+            sandproof_guest_runtime::file_upload::Fault {
+                stage: sandproof_guest_runtime::file_upload::Stage::Directory,
+                ..
+            }
+        ))
     ));
     assert!(matches!(batch.finish(), Err(FileStreamError::Unavailable)));
     assert_eq!(std::fs::read(root.path().join("first")).unwrap(), b"one");

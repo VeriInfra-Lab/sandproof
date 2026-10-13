@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -136,7 +137,113 @@ func processFile(r *http.Request, path string, part io.Reader, uid, gid int, met
 	return http.StatusNoContent, nil
 }
 
+// pkg/xattr v0.4.12 xattr.go (e34e274d513734a021b7da0ad9f497859fadf639).
+// Original Error type/methods, type name changed only.
+// BSD license: ../../sandbox-guest-service/src/upload_response/XATTR-LICENSE.
+// Error records an error and the operation, file path and attribute that caused it.
+type oracleXattrError struct {
+	Op   string
+	Path string
+	Name string
+	Err  error
+}
+
+func (e *oracleXattrError) Unwrap() error { return e.Err }
+
+func (e *oracleXattrError) Error() (errstr string) {
+	if e.Op != "" {
+		errstr += e.Op
+	}
+	if e.Path != "" {
+		if errstr != "" {
+			errstr += " "
+		}
+		errstr += e.Path
+	}
+	if e.Name != "" {
+		if errstr != "" {
+			errstr += " "
+		}
+		errstr += e.Name
+	}
+	if e.Err != nil {
+		if errstr != "" {
+			errstr += ": "
+		}
+		errstr += e.Err.Error()
+	}
+	return
+}
+
+// Fixed permissions/path.go directory preparation, I/O names changed only.
+func getSubpaths(path string) (subpaths []string) {
+	for {
+		subpaths = append(subpaths, path)
+
+		path = filepath.Dir(path)
+		if path == "/" {
+			break
+		}
+	}
+
+	slices.Reverse(subpaths)
+
+	return subpaths
+}
+
+func oracleEnsureDirs(path string, uid, gid int) error {
+	subpaths := getSubpaths(path)
+	for _, subpath := range subpaths {
+		info, err := oracleParentStat(subpath)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to stat directory: %w", err)
+		}
+
+		if err != nil && os.IsNotExist(err) {
+			err = oracleMkdir(subpath, 0o755)
+			if err != nil && !os.IsExist(err) {
+				return fmt.Errorf("failed to create directory: %w", err)
+			}
+
+			// Chown even if another process created the directory (os.IsExist),
+			// since it may not have called Chown yet. Chown is idempotent.
+			err = oracleParentChown(subpath, uid, gid)
+			if err != nil {
+				return fmt.Errorf("failed to chown directory: %w", err)
+			}
+
+			continue
+		}
+
+		if !info.IsDir() {
+			return fmt.Errorf("path is a file: %s", subpath)
+		}
+	}
+
+	return nil
+}
+
 const MetadataXattrPrefix = "user.e2b."
+
+// Original generated fields and api/error.go jsonError.
+type Error struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func jsonError(w http.ResponseWriter, code int, err error) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	w.WriteHeader(code)
+	encodeErr := json.NewEncoder(w).Encode(Error{
+		Code:    code,
+		Message: err.Error(),
+	})
+	if encodeErr != nil {
+		http.Error(w, errors.Join(encodeErr, err).Error(), http.StatusInternalServerError)
+	}
+}
 
 // Controlled observations only; these shims perform no filesystem mutation.
 // Translate Linux errno identity for a reference built on macOS as well.
@@ -145,7 +252,7 @@ var oracleFailure error
 
 type oracleErrno int
 
-func (e oracleErrno) Error() string { return fmt.Sprintf("injected Linux errno %d", e) }
+func (e oracleErrno) Error() string { return linuxError(int(e)).Error() }
 func (e oracleErrno) Is(target error) bool {
 	return (e == 28 && target == syscall.ENOSPC) ||
 		(e == 122 && target == syscall.EDQUOT)
@@ -158,50 +265,82 @@ func (l oracleLogger) Warn() oracleLogger              { return l }
 func (l oracleLogger) Str(string, string) oracleLogger { return l }
 func (l oracleLogger) Err(error) oracleLogger          { return l }
 func (oracleLogger) Msg(string)                        {}
-func oracleEnsureDirs(string, int, int) error {
-	if strings.HasPrefix(oracleStage, "Parent") {
-		return oracleFailure
+
+var oraclePath = "/file"
+var oracleAttribute string
+
+func oracleParentStat(path string) (os.FileInfo, error) {
+	if path == oraclePath {
+		switch oracleStage {
+		case "ParentStat":
+			return nil, &os.PathError{Op: "stat", Path: path, Err: oracleFailure}
+		case "ParentCreate", "ParentChown":
+			return nil, os.ErrNotExist
+		case "ParentNotDirectory":
+			return oracleInfo{directory: false}, nil
+		}
+	}
+	return oracleInfo{directory: true}, nil
+}
+func oracleMkdir(path string, mode os.FileMode) error {
+	if oracleStage == "ParentCreate" {
+		return &os.PathError{Op: "mkdir", Path: path, Err: oracleFailure}
 	}
 	return nil
 }
+func oracleParentChown(path string, uid, gid int) error {
+	if oracleStage == "ParentChown" {
+		return &os.PathError{Op: "chown", Path: path, Err: oracleFailure}
+	}
+	return nil
+}
+func oracleFilePath() string {
+	if strings.HasPrefix(oracleStage, "Parent") {
+		return oraclePath + "/file"
+	}
+	return oraclePath
+}
 
-type oracleInfo struct{ os.FileInfo }
+type oracleInfo struct {
+	os.FileInfo
+	directory bool
+}
 
-func (oracleInfo) IsDir() bool { return oracleStage == "Directory" }
-func oracleStat(string) (os.FileInfo, error) {
+func (i oracleInfo) IsDir() bool { return i.directory }
+func oracleStat(path string) (os.FileInfo, error) {
 	if oracleStage == "Stat" {
-		return nil, oracleFailure
+		return nil, &os.PathError{Op: "stat", Path: path, Err: oracleFailure}
 	}
 	if oracleStage == "FileChown" {
 		return nil, os.ErrNotExist
 	}
-	return oracleInfo{}, nil
+	return oracleInfo{directory: oracleStage == "Directory"}, nil
 }
-func oracleChown(string, int, int) error {
+func oracleChown(path string, uid, gid int) error {
 	if oracleStage == "Chown" {
-		return oracleFailure
+		return &os.PathError{Op: "chown", Path: path, Err: oracleFailure}
 	}
 	return nil
 }
 
 type oracleFile struct{}
 
-func oracleOpenFile(string, int, os.FileMode) (*oracleFile, error) {
+func oracleOpenFile(path string, flag int, mode os.FileMode) (*oracleFile, error) {
 	if oracleStage == "Open" {
-		return nil, oracleFailure
+		return nil, &os.PathError{Op: "open", Path: path, Err: oracleFailure}
 	}
 	return &oracleFile{}, nil
 }
 func (*oracleFile) Close() error { return nil }
 func (*oracleFile) Chown(int, int) error {
 	if oracleStage == "FileChown" {
-		return oracleFailure
+		return &os.PathError{Op: "chown", Path: oraclePath, Err: oracleFailure}
 	}
 	return nil
 }
 func (*oracleFile) ReadFrom(io.Reader) (int64, error) {
 	if oracleStage == "Write" {
-		return 0, oracleFailure
+		return 0, &os.PathError{Op: "write", Path: oraclePath, Err: oracleFailure}
 	}
 	if oracleStage == "WriteZero" {
 		return 0, io.ErrShortWrite
@@ -210,7 +349,8 @@ func (*oracleFile) ReadFrom(io.Reader) (int64, error) {
 }
 func oracleWriteMetadata(*oracleFile, map[string]string) error {
 	if strings.HasPrefix(oracleStage, "Metadata") {
-		return oracleFailure
+		op := map[string]string{"MetadataList": "xattr.list", "MetadataRemove": "xattr.FRemove", "MetadataSet": "xattr.FSet"}[oracleStage]
+		return &oracleXattrError{Op: op, Path: oraclePath, Name: oracleAttribute, Err: oracleFailure}
 	}
 	return nil
 }
@@ -319,13 +459,9 @@ func uploadSuccess(fields []string, server *httptest.Server) {
 	if err != nil {
 		panic(err)
 	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%d\t%x\t%x\t%x\t%x\n", response.StatusCode, response.Header.Get("Content-Type"), response.Header.Get("Content-Length"), response.Header.Get("X-Content-Type-Options"), body)
+	dumpUpload(response)
 }
+
 func main() {
 	if runtime.Version() != "go1.26.8" {
 		panic("requires go1.26.8")
@@ -341,29 +477,49 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
-		case "F":
+		case "F", "J":
 			oracleStage = f[1]
+			oraclePath, oracleAttribute = "/file", ""
+			length := int64(4)
+			if f[0] == "J" {
+				oraclePath, oracleAttribute = string(unhex(f[3])), string(unhex(f[4]))
+				var err error
+				length, err = strconv.ParseInt(f[5], 10, 64)
+				if err != nil {
+					panic(err)
+				}
+			}
 			n, err := strconv.Atoi(f[2])
 			if err != nil {
 				panic(err)
 			}
 			oracleFailure = oracleErrno(n)
-			status, err := processFile(&http.Request{ContentLength: 4}, "/file", strings.NewReader("body"), 0, 0, nil, oracleLogger{})
+			status, err := processFile(&http.Request{ContentLength: length}, oracleFilePath(), strings.NewReader("body"), 0, 0, nil, oracleLogger{})
 			if err == nil {
 				panic("expected injected failure")
 			}
-			fmt.Println(status)
+			if f[0] == "F" {
+				fmt.Println(status)
+			} else {
+				if server == nil {
+					server = referenceServer()
+				}
+				request, failure := http.NewRequest("POST", server.URL, strings.NewReader(err.Error()))
+				if failure != nil {
+					panic(failure)
+				}
+				request.Header.Set("X-Reference-Code", strconv.Itoa(status))
+				client := server.Client()
+				client.Timeout = 5 * time.Second
+				response, failure := client.Do(request)
+				if failure != nil {
+					panic(failure)
+				}
+				dumpUpload(response)
+			}
 		case "R":
 			if server == nil {
-				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					data, err := io.ReadAll(r.Body)
-					if err != nil {
-						panic(err)
-					}
-					// Original PostFiles success writes: no explicit Content-Type.
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write(data)
-				}))
+				server = referenceServer()
 			}
 			uploadSuccess(f[1:], server)
 		case "C":
@@ -403,4 +559,181 @@ func main() {
 	if input.Err() != nil {
 		panic(input.Err())
 	}
+}
+
+func referenceServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			panic(err)
+		}
+		if code := r.Header.Get("X-Reference-Code"); code != "" {
+			n, err := strconv.Atoi(code)
+			if err != nil {
+				panic(err)
+			}
+			jsonError(w, n, errors.New(string(data)))
+			return
+		}
+		// Original PostFiles success writes: no explicit Content-Type.
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}))
+}
+
+func dumpUpload(response *http.Response) {
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%d\t%x\t%x\t%x\t%x\n", response.StatusCode, response.Header.Get("Content-Type"), response.Header.Get("Content-Length"), response.Header.Get("X-Content-Type-Options"), body)
+}
+
+// Linux syscall text on every test host; native Linux additionally verifies
+// the table through syscall.Errno. macOS comparison is not Linux syscall evidence.
+func linuxError(n int) error {
+	text := "errno " + strconv.Itoa(n)
+	if n >= 0 && n < len(linuxErrors) && linuxErrors[n] != "" {
+		text = linuxErrors[n]
+	}
+	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" && syscall.Errno(n).Error() != text {
+		panic("Linux errno mismatch")
+	}
+	return errors.New(text)
+}
+
+// Unchanged Go 1.26.8 syscall/zerrors_linux_amd64.go error table (only variable renamed).
+// Copyright 2009 The Go Authors. BSD license: ../../sandbox-guest-runtime/src/multipart/GO-LICENSE.
+var linuxErrors = [...]string{
+	1:   "operation not permitted",
+	2:   "no such file or directory",
+	3:   "no such process",
+	4:   "interrupted system call",
+	5:   "input/output error",
+	6:   "no such device or address",
+	7:   "argument list too long",
+	8:   "exec format error",
+	9:   "bad file descriptor",
+	10:  "no child processes",
+	11:  "resource temporarily unavailable",
+	12:  "cannot allocate memory",
+	13:  "permission denied",
+	14:  "bad address",
+	15:  "block device required",
+	16:  "device or resource busy",
+	17:  "file exists",
+	18:  "invalid cross-device link",
+	19:  "no such device",
+	20:  "not a directory",
+	21:  "is a directory",
+	22:  "invalid argument",
+	23:  "too many open files in system",
+	24:  "too many open files",
+	25:  "inappropriate ioctl for device",
+	26:  "text file busy",
+	27:  "file too large",
+	28:  "no space left on device",
+	29:  "illegal seek",
+	30:  "read-only file system",
+	31:  "too many links",
+	32:  "broken pipe",
+	33:  "numerical argument out of domain",
+	34:  "numerical result out of range",
+	35:  "resource deadlock avoided",
+	36:  "file name too long",
+	37:  "no locks available",
+	38:  "function not implemented",
+	39:  "directory not empty",
+	40:  "too many levels of symbolic links",
+	42:  "no message of desired type",
+	43:  "identifier removed",
+	44:  "channel number out of range",
+	45:  "level 2 not synchronized",
+	46:  "level 3 halted",
+	47:  "level 3 reset",
+	48:  "link number out of range",
+	49:  "protocol driver not attached",
+	50:  "no CSI structure available",
+	51:  "level 2 halted",
+	52:  "invalid exchange",
+	53:  "invalid request descriptor",
+	54:  "exchange full",
+	55:  "no anode",
+	56:  "invalid request code",
+	57:  "invalid slot",
+	59:  "bad font file format",
+	60:  "device not a stream",
+	61:  "no data available",
+	62:  "timer expired",
+	63:  "out of streams resources",
+	64:  "machine is not on the network",
+	65:  "package not installed",
+	66:  "object is remote",
+	67:  "link has been severed",
+	68:  "advertise error",
+	69:  "srmount error",
+	70:  "communication error on send",
+	71:  "protocol error",
+	72:  "multihop attempted",
+	73:  "RFS specific error",
+	74:  "bad message",
+	75:  "value too large for defined data type",
+	76:  "name not unique on network",
+	77:  "file descriptor in bad state",
+	78:  "remote address changed",
+	79:  "can not access a needed shared library",
+	80:  "accessing a corrupted shared library",
+	81:  ".lib section in a.out corrupted",
+	82:  "attempting to link in too many shared libraries",
+	83:  "cannot exec a shared library directly",
+	84:  "invalid or incomplete multibyte or wide character",
+	85:  "interrupted system call should be restarted",
+	86:  "streams pipe error",
+	87:  "too many users",
+	88:  "socket operation on non-socket",
+	89:  "destination address required",
+	90:  "message too long",
+	91:  "protocol wrong type for socket",
+	92:  "protocol not available",
+	93:  "protocol not supported",
+	94:  "socket type not supported",
+	95:  "operation not supported",
+	96:  "protocol family not supported",
+	97:  "address family not supported by protocol",
+	98:  "address already in use",
+	99:  "cannot assign requested address",
+	100: "network is down",
+	101: "network is unreachable",
+	102: "network dropped connection on reset",
+	103: "software caused connection abort",
+	104: "connection reset by peer",
+	105: "no buffer space available",
+	106: "transport endpoint is already connected",
+	107: "transport endpoint is not connected",
+	108: "cannot send after transport endpoint shutdown",
+	109: "too many references: cannot splice",
+	110: "connection timed out",
+	111: "connection refused",
+	112: "host is down",
+	113: "no route to host",
+	114: "operation already in progress",
+	115: "operation now in progress",
+	116: "stale file handle",
+	117: "structure needs cleaning",
+	118: "not a XENIX named type file",
+	119: "no XENIX semaphores available",
+	120: "is a named type file",
+	121: "remote I/O error",
+	122: "disk quota exceeded",
+	123: "no medium found",
+	124: "wrong medium type",
+	125: "operation canceled",
+	126: "required key not available",
+	127: "key has expired",
+	128: "key has been revoked",
+	129: "key was rejected by service",
+	130: "owner died",
+	131: "state not recoverable",
+	132: "operation not possible due to RF-kill",
 }

@@ -27,11 +27,37 @@ def payloads():
             ('large', bytes(range(256)) * 12289)]
 
 
-def compressed_requests(root):
-    """Fixed SDK has no upload-compression option; construct HTTP cases explicitly.
+def sdk_compressed_upload_sync(sandbox, root):
+    path, data = f'{root}/sdk-gzip', b'compressed SDK body\x00\xff'
+    result = sandbox.files.write(path, data, gzip=True)
+    assert result.path == path
+    assert bytes(sandbox.files.read(path, format='bytes')) == data
+    try:
+        sandbox.files.write(f'{root}/directory', b'fail', gzip=True)
+    except InvalidArgumentException as error:
+        assert str(error) == f'path is a directory: {root}/directory'
+    else:
+        raise AssertionError('SDK gzip directory upload succeeded')
 
-    Original sync/async SDK reads verify each resulting file. This does not
-    pretend the compressed POSTs are unmodified SDK write calls.
+
+async def sdk_compressed_upload_async(sandbox, root):
+    path, data = f'{root}/sdk-gzip', b'compressed SDK body\x00\xff'
+    result = await sandbox.files.write(path, data, gzip=True)
+    assert result.path == path
+    assert bytes(await sandbox.files.read(path, format='bytes')) == data
+    try:
+        await sandbox.files.write(f'{root}/directory', b'fail', gzip=True)
+    except InvalidArgumentException as error:
+        assert str(error) == f'path is a directory: {root}/directory'
+    else:
+        raise AssertionError('SDK gzip directory upload succeeded')
+
+
+def compressed_requests(root):
+    """Construct malformed/multipart compression cases with a controlled client.
+
+    SDK gzip=True writes are checked separately. These requests cover inputs
+    the normal SDK compressor does not emit, with original SDK readback.
     """
     raw = f'{root}/gzip-raw'
     large = bytes(range(256)) * 4097
@@ -211,8 +237,9 @@ def multipart_sync(sandbox, root):
             sandbox.files.write_files([{'path': first, 'data': b'first'},
                                        {'path': second, 'data': b'second'},
                                        {'path': later, 'data': b'never'}], use_octet_stream=False)
-        except InvalidArgumentException:
-            pass
+        except InvalidArgumentException as error:
+            if second == f'{root}/directory':
+                assert str(error) == f'path is a directory: {second}'
         else:
             raise AssertionError('failed multipart batch reported success')
         assert bytes(sandbox.files.read(first, format='bytes')) == b'first'
@@ -248,8 +275,9 @@ async def multipart_async(sandbox, root):
             await sandbox.files.write_files([{'path': first, 'data': b'first'},
                                              {'path': second, 'data': b'second'},
                                              {'path': later, 'data': b'never'}], use_octet_stream=False)
-        except InvalidArgumentException:
-            pass
+        except InvalidArgumentException as error:
+            if second == f'{root}/directory':
+                assert str(error) == f'path is a directory: {second}'
         else:
             raise AssertionError('failed multipart batch reported success')
         assert bytes(await sandbox.files.read(first, format='bytes')) == b'first'
@@ -400,8 +428,8 @@ def run_sync(url, root):
         sandbox.files.write_files([{'path': f'{root}/partial', 'data': b'first'},
                                    {'path': f'{root}/directory', 'data': b'fail'}],
                                   use_octet_stream=True)
-    except InvalidArgumentException:
-        pass
+    except InvalidArgumentException as error:
+        assert str(error) == f'path is a directory: {root}/directory'
     else:
         raise AssertionError('directory upload succeeded')
     assert bytes(sandbox.files.read(f'{root}/partial', format='bytes')) == b'first'
@@ -419,6 +447,7 @@ def run_sync(url, root):
         raise AssertionError('directory download succeeded')
     multipart_sync(sandbox, root)
     compressed_sync(sandbox, url, root)
+    sdk_compressed_upload_sync(sandbox, root)
     upload_reply_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
     range_sync(url, root)
@@ -448,8 +477,8 @@ async def run_async(url, root):
     await sandbox.files.write(f'{root}/partial', b'first', use_octet_stream=True)
     try:
         await sandbox.files.write(f'{root}/directory', b'fail', use_octet_stream=True)
-    except InvalidArgumentException:
-        pass
+    except InvalidArgumentException as error:
+        assert str(error) == f'path is a directory: {root}/directory'
     else:
         raise AssertionError('directory upload succeeded')
     assert bytes(await sandbox.files.read(f'{root}/partial', format='bytes')) == b'first'
@@ -467,6 +496,7 @@ async def run_async(url, root):
         raise AssertionError('directory download succeeded')
     await multipart_async(sandbox, root)
     await compressed_async(sandbox, url, root)
+    await sdk_compressed_upload_async(sandbox, root)
     await upload_reply_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
     await range_async(url, root)

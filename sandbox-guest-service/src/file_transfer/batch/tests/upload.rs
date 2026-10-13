@@ -12,7 +12,7 @@ use axum::http::{HeaderMap, HeaderValue};
 use sandproof_guest_runtime::file_upload;
 use std::sync::{Condvar, Mutex};
 
-fn settings() -> UploadLimits {
+pub(super) fn settings() -> UploadLimits {
     UploadLimits {
         headers: HeaderLimits {
             bytes: 65536,
@@ -27,7 +27,7 @@ fn settings() -> UploadLimits {
         batch: limits(),
     }
 }
-fn request(
+pub(super) fn request(
     bytes: &[u8],
     compressed: bool,
     content: &'static str,

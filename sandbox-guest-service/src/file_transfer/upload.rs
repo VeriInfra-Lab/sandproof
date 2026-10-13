@@ -28,7 +28,7 @@ pub struct UploadLimits {
     pub multipart: MultipartLimits,
     pub batch: BatchLimits,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadRequestError {
     Headers(wire::Error),
     Encoding(file_encoding::Error),
@@ -39,6 +39,11 @@ pub enum UploadRequestError {
     UnsupportedContentType,
     UnsupportedText,
     RawPathRequired,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UploadHttpError {
+    Request(UploadRequestError),
+    Response(crate::upload_response::Error),
 }
 impl FileStreams {
     /// Caller has authenticated this request. Does not install a route or
@@ -54,10 +59,83 @@ impl FileStreams {
         settings: &FileSettings,
         limits: UploadLimits,
     ) -> Result<BatchReply, UploadRequestError> {
-        file_upload::check_headers(&request.headers, limits.headers)
-            .map_err(UploadRequestError::Headers)?;
+        let reservation = self.upload_admission(&request.headers, limits)?;
+        self.upload_request_reserved(auth, request, accounts, settings, limits, reservation)
+            .await
+    }
+
+    /// Send successes and actual file I/O faults under the original upload slot
+    /// and deadline. Other preflight/transport/component errors remain explicit
+    /// until their complete public contracts are connected; never fake a body.
+    /// # Errors
+    /// Unmapped request rejection, unknown I/O observation, response budget,
+    /// expired original deadline or response delivery failure.
+    pub async fn upload_request_response<S: AccountSource>(
+        &self,
+        auth: AuthPermit,
+        request: UploadRequest,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        limits: UploadLimits,
+        response: crate::upload_response::Limits,
+    ) -> Result<axum::response::Response, UploadHttpError> {
+        let reservation = self
+            .upload_admission(&request.headers, limits)
+            .map_err(UploadHttpError::Request)?;
+        let expected = request.expected;
+        let result = self
+            .upload_request_reserved(
+                auth,
+                request,
+                accounts,
+                settings,
+                limits,
+                reservation.clone(),
+            )
+            .await;
+        match result {
+            Ok(reply) => reply
+                .into_http_response(response)
+                .await
+                .map_err(UploadHttpError::Response),
+            Err(
+                UploadRequestError::Transfer(FileStreamError::UploadFault(fault))
+                | UploadRequestError::Body(UploadBodyError::Transfer(FileStreamError::UploadFault(
+                    fault,
+                ))),
+            ) => crate::upload_response::io_failure(
+                fault,
+                expected,
+                response,
+                reservation.deadline,
+                reservation.lease,
+            )
+            .await
+            .map_err(UploadHttpError::Response),
+            Err(error) => Err(UploadHttpError::Request(error)),
+        }
+    }
+
+    fn upload_admission(
+        &self,
+        headers: &HeaderMap,
+        limits: UploadLimits,
+    ) -> Result<Reservation, UploadRequestError> {
+        file_upload::check_headers(headers, limits.headers).map_err(UploadRequestError::Headers)?;
         let (lease, deadline) = self.admit().map_err(UploadRequestError::Transfer)?;
-        let reservation = Reservation { lease, deadline };
+        Ok(Reservation { lease, deadline })
+    }
+
+    async fn upload_request_reserved<S: AccountSource>(
+        &self,
+        auth: AuthPermit,
+        request: UploadRequest,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        limits: UploadLimits,
+        reservation: Reservation,
+    ) -> Result<BatchReply, UploadRequestError> {
+        let deadline = reservation.deadline;
         let auth = Arc::new(auth);
         let owner = Arc::new((Arc::clone(&auth), reservation.clone()));
         let encoding = file_encoding::content(&request.headers, limits.encoding)

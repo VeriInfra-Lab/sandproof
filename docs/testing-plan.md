@@ -86,7 +86,7 @@ SANDPROOF_GUEST_GZIP_REFERENCE=/absolute/path/to/gzip-reference \
 
 [HTTP gzip 所有权检查](../sandbox-guest-service/src/upload_body/tests.rs)可在 macOS/Linux 执行：`cargo test -p sandproof-guest-service --locked --lib upload_body`。原库代码直接接受受控 HTTP Body，测试首个头部之后按需读取、`Bytes` 副本背压、头部/正文等待取消、同步源轮询阻塞期间保留守卫、原绝对期限、真实 HTTP EOF/尾部错误、编码/展开/帧预算与错误穿过 Body 包装。同步通道和明确轮询信号控制交错；可推进时钟只在等待点确认后使用。该组已有本地运行，只验证传输/守卫连接，不替代 Linux AuthPermit/文件实际副作用。
 
-[gzip 文件组合](../sandbox-guest-service/src/file_transfer/batch/tests/gzip.rs)覆盖一批多段 raw/压缩 multipart、无效头部不打开目标、文件内容前缀与旧 metadata、MIME 结束后 CRC 错误、后续 gzip 段失败、真实 EOF 前授权/容量保留，以及取消/期限/展开预算。入口为 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::gzip`，Linux 基础与兼容入口包含该组；本候选实际运行待补。固定 SDK 文件测试路由另加合成 gzip POST、同步/异步原 SDK 回读、首头错误 400 及校验失败后的数据保留。固定 SDK 没有上传压缩选项，压缩 POST 由测试 HTTP 客户端构造，不能记作原 SDK 自动 gzip 上传或完整 E03；扩展组合仍待 Linux 实跑。
+[gzip 文件组合](../sandbox-guest-service/src/file_transfer/batch/tests/gzip.rs)覆盖一批多段 raw/压缩 multipart、无效头部不打开目标、文件内容前缀与旧 metadata、MIME 结束后 CRC 错误、后续 gzip 段失败、真实 EOF 前授权/容量保留，以及取消/期限/展开预算。入口为 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::gzip`，Linux 基础与兼容入口包含该组；本候选实际运行待补。固定 SDK 文件测试路由另加合成 gzip POST、同步/异步原 SDK 回读、首头错误 400 及校验失败后的数据保留。固定 SDK 支持 gzip=True 上传；此组的压缩 POST 由测试 HTTP 客户端构造，原 SDK 压缩上传在下述错误响应驱动另行检查，不能将合成输入记为原 SDK 上传或完整 E03；扩展组合仍待 Linux 实跑。
 
 [上传头检查](../sandbox-guest-service/src/file_upload/tests.rs)及[共享验证](../sandbox-guest-runtime/src/file_upload/tests.rs)覆盖首字段、忽略空 metadata 后缀、无效/超额值与整个 HeaderMap 的独立预算，已有本地运行。定向入口为 `cargo test -p sandproof-guest-runtime -p sandproof-guest-service --locked --lib file_upload`。显式 [Go 上传头适配器](../tests/compat/guest_upload_reference.go)调用固定 Go 1.26.8 ParseMediaType，复制固定 runtime 的 metadata 提取/验证原函数；比较媒体类型选择及 metadata 接受值，覆盖不透明字节、Unicode 大小写/空白、无效可选参数与冲突重复参数。不比较 Go map 随机迭代下的首条错误文本，不代表完整 Go HTTP 上传端点；默认 ignored，已有本地显式运行：
 
@@ -107,6 +107,16 @@ SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
 ```
 
 [详细上传 FD 检查](../sandbox-guest-runtime/tests/file_transfer.rs)覆盖目标目录、父路径是文件、目标/父链接循环、悬空链接、NUL 路径与遍历预算前置拒绝；[内部写入检查](../sandbox-guest-runtime/src/filesystem/transfer/upload/tests.rs)覆盖真实临时文件短写前缀后注入 ENOSPC、Interrupted 重试、失败后不可重放、零写、只读 FD 的实际 EBADF 和 O_PATH 的 xattr 列表失败。所有真实资源仅位于各用例私有目录，不填满宿主磁盘或改动设备文件。这两组已交叉检查，Linux 执行待补；受控 ENOSPC 不计为真实磁盘满验收。Linux runtime 全测试包含它们，定向入口分别为 `cargo test -p sandproof-guest-runtime --locked --test file_transfer` 和 `cargo test -p sandproof-guest-runtime --locked --lib filesystem::transfer::upload::tests`。
+
+[上传错误回执对照](../sandbox-guest-service/src/upload_response/errors/tests.rs)通过同一 Go 参考的 J 操作，调用原 processFile、EnsureDirs、os.PathError 和 pkg/xattr.Error，再由真实回环 HTTP 执行原 jsonError；只替换实际 I/O 观察，不启动完整 envd。Linux errno 文本固定，核对全部阶段、普通/空间/配额及未知 errno、原请求未知/零/正/最大有符号长度、控制/HTML/Unicode/无效 UTF-8、xattr 单字节与 2047/2048/2049 字节边界；可移植预算、未分类拒绝及原容量/期限检查一起运行，已有本地证据。显式入口为：
+
+```sh
+SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
+  cargo test -p sandproof-guest-service --locked --lib \
+  upload_response::errors::tests -- --include-ignored --nocapture
+```
+
+[Linux 错误响应连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_errors.rs)验证 raw identity/gzip 的真实父路径/目标目录错误穿过 worker、先前 multipart 文件保留且之后文件未打开、Bytes 克隆持有原槽位、实际 I/O 完成后初始化可继续、错误编码预算失败保留文件并归还容量。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_errors`；已交叉检查，实际运行待补。原固定 SDK 驱动另精确检查同步/异步 raw/multipart 目录异常文本，并新增原 SDK gzip=True 的成功写入/回读及目录拒绝，和合成 gzip 场景分别计数；不模拟磁盘满，该 Linux 组合也待实跑。
 
 [上传顺序检查](../sandbox-guest-service/src/file_transfer/batch/tests/upload.rs)连接原授权、实际账户池与临时文件，覆盖编码/首头/用户名/metadata/媒体类型/path 的拒绝优先级，raw/multipart × identity/gzip 四种组合的一次准入/一次账户查询、首 metadata 值和 raw 短正文前缀。条件变量屏障与可推进时钟核对账户查询取消/超时后原授权和上传槽位仍保留，实际查询退出后才允许初始化及容量复用。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload`；Linux service 全测试包含该组，已交叉检查，实际运行待补。固定 SDK 文件夹具所有 POST 已改接同一组件，原 raw/multipart 与合成 gzip 回读组合须在此候选重跑；无正式监听器、签名/完整上传错误 JSON、特权身份切换或 KVM 通过声明。
 

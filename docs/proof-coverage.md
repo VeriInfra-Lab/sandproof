@@ -278,7 +278,9 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [上传成功回执](../sandbox-guest-service/src/upload_response.rs)及原 BatchReply 的响应连接新增完成文件效果与响应交付的分离、原槽位/期限延续、最后字节副本释放、精确编码预算和 Go HTTP 成功头对应义务。下载错误转义/计数抽为共用内部函数，UploadResult 只迁移到可移植类型并保留旧路径重导出；原错误对照须一起重跑。这些来宾实现均未抽取或证明，固定 Go 回环 HTTP 只属有限工程证据；Linux 文件池/SDK 连接待实跑。纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新回执连接。
 
-[上传详细错误](../sandbox-guest-runtime/src/filesystem/transfer/upload.rs)及父目录准备重构新增实际操作阶段/路径/errno/xattr 名的准确记录、粗分类兼容、部分写入计数及失败后不重放的连接义务。原输入/预算拒绝仍独立，固定 processFile 的有限故障状态对照只属工程证据，Linux 真实路径与 FD 错误待实跑；完整错误响应还未连接。这些来宾模块未抽取或证明，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖本候选。
+[上传详细错误](../sandbox-guest-runtime/src/filesystem/transfer/upload.rs)及父目录准备重构新增实际操作阶段/路径/errno/xattr 名的准确记录、粗分类兼容、部分写入计数及失败后不重放的连接义务。原输入/预算拒绝仍独立，固定 processFile 的有限故障状态对照只属工程证据，Linux 真实路径与 FD 错误待实跑；文件 I/O 错误响应现接下述组件，其余拒绝映射仍待补。这些来宾模块未抽取或证明，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖本候选。
+
+[上传错误发送](../sandbox-guest-service/src/upload_response/errors.rs)及请求入口新增实际故障经原 worker/批次传递、阶段/errno/属性名与固定 JSON 对应、原声明长度诊断、编码上界与原槽位/期限延续的义务。错误发送失败不回滚文件，实际 I/O 与响应保留分别持有原责任；这些组合均未抽取或证明，原 Go 受控错误和 HTTP 对照只属工程证据，Linux 文件/SDK 连接待实跑。纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖本候选。
 
 ### 当前串行实现的模块交接
 

@@ -1,5 +1,5 @@
-//! Fixed upload success envelope, under the original retained batch capacity.
-//! It reports completed file effects; delivery failure never rolls them back.
+//! Fixed upload envelopes, under the original retained upload capacity.
+//! It reports observed file outcomes; delivery failure never rolls them back.
 use crate::{
     go_json,
     owned_body::{self, OwnedBody, Owner, Source},
@@ -11,6 +11,9 @@ use tokio::time::Instant;
 
 #[cfg(test)]
 mod tests;
+
+mod errors;
+pub use errors::io_failure;
 
 /// Result entries have their existing path/metadata budget. This separately
 /// bounds the escaped JSON payload and each retained transmission chunk.
@@ -26,6 +29,7 @@ pub enum Error {
     ResponseLimit,
     DeadlineExceeded,
     Unavailable,
+    UnclassifiedFault,
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -54,6 +58,18 @@ pub async fn success(
     deadline: Instant,
     owner: Owner,
 ) -> Result<Response, Error> {
+    send(limits, deadline, owner, move || {
+        encode(&results, limits.wire_bytes)
+    })
+    .await
+}
+
+async fn send(
+    limits: Limits,
+    deadline: Instant,
+    owner: Owner,
+    encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Error> {
     if limits.wire_bytes == 0
         || limits.chunk_bytes == 0
         || limits.wire_bytes > isize::MAX as usize / 16
@@ -62,7 +78,7 @@ pub async fn success(
         return Err(Error::InvalidConfiguration);
     }
     let (length, body) = OwnedBody::start(deadline, owner, move |_, _| {
-        let bytes = encode(&results, limits.wire_bytes)?;
+        let bytes = encode()?;
         Ok((
             bytes.len(),
             Payload {

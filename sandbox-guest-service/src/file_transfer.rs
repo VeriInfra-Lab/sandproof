@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use sandproof_guest_runtime::filesystem::{
     Ownership,
-    transfer::{DownloadFile, TransferIoError, TransferLimits, UploadFile, UploadResult},
+    transfer::{
+        DownloadFile, TransferIoError, TransferLimits, UploadError, UploadFile, UploadResult,
+    },
 };
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
@@ -28,15 +30,16 @@ pub use batch::{
 };
 pub use gzip_download::GzipDownload;
 pub use identity_download::IdentityDownloadError;
-pub use upload::{UploadLimits, UploadRequest, UploadRequestError};
+pub use upload::{UploadHttpError, UploadLimits, UploadRequest, UploadRequestError};
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileStreamError {
     Context(crate::ContextError),
     Operation(TransferIoError),
+    UploadFault(sandproof_guest_runtime::file_upload::Fault),
     ResourceExhausted,
     DeadlineExceeded,
     Unavailable,
@@ -137,7 +140,7 @@ impl FileStreams {
             if opened.is_closed() || Instant::now() >= deadline {
                 return;
             }
-            let result = UploadFile::open(
+            let result = UploadFile::open_detailed(
                 context.path,
                 Ownership {
                     uid: context.owner.uid,
@@ -147,7 +150,7 @@ impl FileStreams {
                 expected,
                 limits,
             );
-            let completion = match timely(deadline, result.map_err(FileStreamError::Operation)) {
+            let completion = match timely(deadline, result.map_err(upload_error)) {
                 Ok(file) => {
                     if opened.send(Ok(())).is_ok() {
                         upload_worker(file, receive, &runtime, deadline, &worker_lease)
@@ -219,6 +222,13 @@ impl FileStreams {
             usable: true,
             ended: false,
         })
+    }
+}
+
+fn upload_error(error: UploadError) -> FileStreamError {
+    match error {
+        UploadError::Rejected(error) => FileStreamError::Operation(error),
+        UploadError::Fault(fault) => FileStreamError::UploadFault(fault),
     }
 }
 
@@ -341,7 +351,7 @@ fn upload_worker(
         }
         match message {
             UploadMessage::Data(bytes, reply) => {
-                let result = file.write_chunk(&bytes).map_err(FileStreamError::Operation);
+                let result = file.write_chunk_detailed(&bytes).map_err(upload_error);
                 let result = timely(deadline, result);
                 drop(bytes); // Release this allocation BEFORE accepting the next chunk.
                 let failed = result.is_err();
@@ -351,12 +361,12 @@ fn upload_worker(
             }
             UploadMessage::Finish(reply) => {
                 let result = file
-                    .finish()
+                    .finish_detailed()
                     .map(|result| UploadReply {
                         result,
                         _lease: Arc::clone(lease),
                     })
-                    .map_err(FileStreamError::Operation);
+                    .map_err(upload_error);
                 let result = timely(deadline, result);
                 // Final ack follows actual file/worker-owned resource release.
                 return Some((reply, result));

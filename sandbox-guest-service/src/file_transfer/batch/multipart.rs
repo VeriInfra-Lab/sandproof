@@ -19,7 +19,7 @@ pub struct MultipartLimits {
     pub trailer_fields: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
     Transfer(FileStreamError),
     Decode(multipart::Error),
