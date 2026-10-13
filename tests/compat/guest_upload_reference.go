@@ -717,9 +717,17 @@ func (a *API) handlePart(r *http.Request, part *multipart.Part, paths UploadSucc
 	return entry, http.StatusOK, nil
 }
 
-func multipartBody(encoded string, server *httptest.Server) {
+// A controlled actual Reader failure, distinct from EOF and local budgets.
+type failedMIMEReader struct{}
+
+func (failedMIMEReader) Read([]byte) (int, error) { return 0, io.ErrClosedPipe }
+func multipartBody(encoded string, server *httptest.Server, sourceFailure bool) {
 	data := unhex(encoded)
-	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data)), ContentLength: int64(len(data))}
+	var reader io.Reader = bytes.NewReader(data)
+	if sourceFailure {
+		reader = io.MultiReader(reader, failedMIMEReader{})
+	}
+	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(reader), ContentLength: int64(len(data))}
 	r.Header.Set("Content-Type", "multipart/form-data; boundary=B")
 	oracleStage, oraclePath = "Multipart", "/file"
 	oracleMIMEWrites = nil
@@ -763,11 +771,11 @@ func main() {
 		switch f[0] {
 		case "Q":
 			fmt.Printf("%x\n", strconv.Quote(string(unhex(f[1]))))
-		case "N":
+		case "N", "V":
 			if server == nil {
 				server = referenceServer()
 			}
-			multipartBody(f[1], server)
+			multipartBody(f[1], server, f[0] == "V")
 		case "D":
 			if server == nil {
 				server = referenceServer()

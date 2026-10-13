@@ -465,7 +465,13 @@ HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检
 
 [公开 framing 响应](../sandbox-guest-service/src/upload_response/multipart_read.rs)按原读取阶段返回 500：文件正文截断用 `error writing file: unexpected EOF`，前导/后续 part 行读取 EOF 用 `error reading form: multipart: NextPart: EOF`；被忽略字段排空中的原始正文 EOF 按 Go Close 忽略原 Read 错误后的 NextPart EOF 包装。无效边界行按是否消费分隔换行保留两种原诊断，Go %q 再经 JSON 转义；固定 Go 1.26.8 的 IsPrint 表与非法 UTF-8 规则在两遍计长/输出中使用，不提前拼接转义消息。PartEnd 已完成文件及其 metadata，之后边界失败不回滚；当前正文截断保留前缀与旧 metadata。原响应槽位/期限/最后副本责任沿用。
 
-MIME 头解析/截断、quoted-printable 诊断、HTTP 源/预算、multipart 内的 gzip 失败和 MIME End 后的传输/校验故障仍保持显式分类，不能仅凭粗 Malformed/Truncated 伪造 Go 500；畸形未知 QP 字段仍不声明全等价。固定原 handleMultipartUpload/handlePart/processFile 与内存文件观察、真实 HTTP 输出对照已本地运行；Linux 文件/metadata/SDK 组合待实跑，组件与模板未启用。
+有效 MIME 头中截断、quoted-printable 诊断、HTTP 源/预算、multipart 内的 gzip 失败和 MIME End 后的传输/校验故障仍保持显式分类，不能仅凭粗 Malformed/Truncated 伪造 Go 500；畸形未知 QP 字段仍不声明全等价。固定原 handleMultipartUpload/handlePart/processFile 与内存文件观察、真实 HTTP 输出对照已本地运行；Linux 文件/metadata/SDK 组合待实跑，组件与模板未启用。
+
+[MIME 头错误](../sandbox-guest-runtime/src/multipart/header_error.rs)按固定 Go textproto 的顺序保留首行缩进、物理行缺少冒号、逻辑行字段名/值非法三类诊断；首行缩进的源行超过原 80 字节诊断限额时返回原 `multipart: message too large`。其他诊断行分别使用原物理行或去掉行尾/折叠缩进后的逻辑行。合法 token 字段名在值验证前按 Go 规范化大小写；含空格的字段名不规范化。公开响应加原 `error reading form` 包装并返回 500，沿用固定 Go Quote/JSON 两遍预算和原发送责任。
+
+原始 header_bytes 先检查；增量检查合法/未完成前缀不分配，失败最多保留该预算内的一条诊断。字段数仍有独立限额，完成块仅在验证后构造 Part。缺少冒号或首行缩进已有完整物理行时立即拒绝；非法字段/值等到逻辑行结束、下一个非折叠字节或实际源结束才确定诊断。真实源读取失败通过 fail_input 完结已有物理/逻辑头的验证，但不产生 Part 或合成 EOF；若无坏头观察，保留原源错误。HTTP 输入另标记实际 frame 读取失败，声明长度/帧/预算/期限检查不能冒充该事实；gzip 的读取错误参与头验证，本地预算错误不参与。新增 ReadError::Headers(HeaderError)、UploadBodyError/Rejection::MultipartHeaders，穷尽匹配须更新。旧 next_event / upload_request 将新诊断降为 Malformed；由于提前识别，不再总是等到头终止空行，部分此前得到 TruncatedHeaders 的坏头现在报告 Malformed。合法但不完整的头仍为严格 TruncatedHeaders 差异，不支持 UTF-8 参数及本地预算保持独立分类，不套用 Go 错误。
+
+头失败不产生当前 Part、不打开其文件，前一个已完成文件/metadata 保留。原 Go 方法/HTTP 对照已有本地运行；Linux 真实文件、提前拒绝后的输入轮询、授权/槽位/期限与固定 SDK 解析组合待实跑。该组件未启用，不代表完整上传端点。
 
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 

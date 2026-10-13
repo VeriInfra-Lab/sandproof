@@ -592,5 +592,69 @@ fn detailed_framing_preserves_stage_bounded_line_and_legacy_errors() {
         decoder.next_event_detailed(),
         Err(ReadError::Decode(Error::ResourceExhausted))
     );
-    assert!(decoder.framing_error.is_none());
+    assert!(decoder.read_error.is_none());
+}
+
+#[test]
+fn headers_reject_before_terminator_without_eof_and_keep_budget_and_valid_eof_distinct() {
+    use super::{HeaderError, ReadError};
+    let input = b"--B\r\nNoColon\r\n";
+    let mut decoder = Decoder::new("B", limits()).unwrap();
+    decoder.feed(input).unwrap();
+    assert_eq!(
+        decoder.next_event_detailed(),
+        Err(ReadError::Headers(HeaderError::MissingColon(
+            b"NoColon".to_vec()
+        )))
+    );
+    assert_eq!(decoder.next_event(), Err(Error::Poisoned));
+    assert!(decoder.read_error.is_none());
+    let mut decoder = Decoder::new(
+        "B",
+        Limits {
+            header_bytes: 4,
+            ..limits()
+        },
+    )
+    .unwrap();
+    decoder.feed(input).unwrap();
+    assert_eq!(
+        decoder.next_event_detailed(),
+        Err(ReadError::Decode(Error::ResourceExhausted))
+    );
+    let mut decoder = Decoder::new("B", limits()).unwrap();
+    decoder.feed(b"--B\r\nX: valid").unwrap();
+    decoder.end_input();
+    assert_eq!(
+        decoder.next_event_detailed(),
+        Err(ReadError::Decode(Error::TruncatedHeaders))
+    );
+}
+
+#[test]
+fn actual_source_failure_checks_headers_without_synthesizing_part_or_eof() {
+    use super::{HeaderError, ReadError};
+    for (input, expected) in [
+        (
+            b"--B\r\nx<: bad\r\n".as_slice(),
+            Some(ReadError::Headers(HeaderError::InvalidLine(
+                b"x<: bad".to_vec(),
+            ))),
+        ),
+        (b"--B\r\nX: valid\r\n", None),
+        (b"preamble", None),
+    ] {
+        let mut decoder = Decoder::new("B", limits()).unwrap();
+        decoder.feed(input).unwrap();
+        assert_eq!(decoder.next_event_detailed(), Ok(None));
+        assert_eq!(decoder.fail_input(), expected);
+        assert!(!decoder.eof);
+        assert_eq!(decoder.next_event(), Err(Error::Poisoned));
+    }
+    let mut decoder = Decoder::new("B", limits()).unwrap();
+    decoder.feed(b"--B\r\nBad").unwrap();
+    assert_eq!(
+        decoder.fail_input(),
+        Some(ReadError::Decode(Error::InputPending))
+    );
 }

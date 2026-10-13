@@ -21,6 +21,7 @@ pub struct MultipartLimits {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
+    MultipartHeaders(multipart::HeaderError),
     MultipartRead(multipart::FramingError),
     MultipartSetup(multipart::BoundaryRejection),
     MissingFilename,
@@ -59,6 +60,7 @@ impl From<multipart::ReadError> for MultipartError {
     fn from(error: multipart::ReadError) -> Self {
         match error {
             multipart::ReadError::Decode(error) => Self::Decode(error),
+            multipart::ReadError::Headers(error) => Self::MultipartHeaders(error),
             multipart::ReadError::Framing(error) => Self::MultipartRead(error),
         }
     }
@@ -266,7 +268,28 @@ impl Input {
                 self.decoder.feed(&chunk)?;
                 continue;
             }
-            let Some(bytes) = self.body.next().await? else {
+            let next = match self.body.next().await {
+                Err(error)
+                    if self.body.read_failed()
+                        && matches!(
+                            error,
+                            GzipError::Transport
+                                | GzipError::Truncated
+                                | GzipError::Header
+                                | GzipError::Checksum
+                                | GzipError::Deflate
+                        ) =>
+                {
+                    // An actual reader failure ends the physical/logical header
+                    // in Go. Local HTTP length/limit/deadline failures do not.
+                    if let Some(observed) = self.decoder.fail_input() {
+                        return Err(observed.into());
+                    }
+                    return Err(error.into());
+                }
+                result => result?,
+            };
+            let Some(bytes) = next else {
                 self.eof = true;
                 self.decoder.end_input();
                 continue;

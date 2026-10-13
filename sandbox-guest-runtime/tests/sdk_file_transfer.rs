@@ -514,13 +514,14 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 256);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 56);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 46);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 272);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 72);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 54);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     for mode in ["sync", "async"] {
         for name in [
             "multipart-setup-rejected",
+            "mime-header-rejected",
             "header-rejected",
             "gzip-header-rejected",
         ] {

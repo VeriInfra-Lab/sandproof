@@ -1,5 +1,5 @@
 //! Failures observed by the MIME framing machine, before request-specific wrapping.
-use super::Error;
+use super::{Error, HeaderError};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FramingError {
@@ -24,12 +24,14 @@ impl FramingError {
 pub enum ReadError {
     Decode(Error),
     Framing(FramingError),
+    Headers(HeaderError),
 }
 impl ReadError {
     #[must_use]
     pub fn coarse(self) -> Error {
         match self {
             Self::Decode(error) => error,
+            Self::Headers(_) => Error::Malformed,
             Self::Framing(error) => error.coarse(),
         }
     }

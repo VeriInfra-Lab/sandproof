@@ -1,4 +1,5 @@
 use super::*;
+mod headers;
 use crate::{
     file_download::tests::reference::{Reference, hex},
     upload_response::{Limits, Rejection, rejected},
@@ -103,7 +104,7 @@ fn cases() -> Vec<Vec<u8>> {
 
 // Portable decoder consumer records only file-reader observations. Linux tests
 // separately exercise the actual batch, metadata and original admission.
-fn observe(input: &[u8], chunk: usize) -> (String, Option<FramingError>) {
+fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<ReadError>) {
     let mut decoder = Decoder::new("B", limits(chunk)).unwrap();
     let mut source = input.chunks(chunk);
     let mut writes: Vec<(Vec<u8>, bool)> = Vec::new();
@@ -134,17 +135,24 @@ fn observe(input: &[u8], chunk: usize) -> (String, Option<FramingError>) {
                 assert!(!eof, "EOF without End");
                 if let Some(bytes) = source.next() {
                     decoder.feed(bytes).unwrap();
+                } else if source_failure {
+                    break Some(
+                        decoder
+                            .fail_input()
+                            .expect("expected header diagnostic on source failure"),
+                    );
                 } else {
                     eof = true;
                     decoder.end_input();
                 }
             }
             Err(ReadError::Framing(error)) => {
-                break Some(match error {
+                break Some(ReadError::Framing(match error {
                     FramingError::BodyTruncated if !file => FramingError::NextPartEof,
                     error => error,
-                });
+                }));
             }
+            Err(error @ ReadError::Headers(_)) => break Some(error),
             Err(error) => panic!("unmapped {error:?} for {}", hex(input)),
         }
     };
@@ -209,50 +217,61 @@ async fn framing_stage_file_prefix_completion_and_http_match_original_go() {
     let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
     for input in &cases {
         for chunk in [1, 7, 128] {
-            let (effects, error) = observe(input, chunk);
-            let suffix = if let Some(error) = error {
-                let response = rejected(
-                    Rejection::MultipartRead(error),
-                    Limits {
-                        wire_bytes: 65536,
-                        chunk_bytes: 37,
-                    },
-                    Instant::now() + Duration::from_secs(30),
-                    Arc::new(()),
-                )
-                .await
-                .unwrap();
-                let mut wire = response.status().as_u16().to_string();
-                for name in ["content-type", "content-length", "x-content-type-options"] {
-                    write!(
-                        wire,
-                        "\t{}",
-                        hex(response
-                            .headers()
-                            .get(name)
-                            .map_or(&[], HeaderValue::as_bytes))
-                    )
-                    .unwrap();
-                }
-                let mut body = response.into_body();
-                let mut bytes = Vec::new();
-                while let Some(frame) = body.frame().await {
-                    bytes.extend_from_slice(&frame.unwrap().into_data().unwrap());
-                }
-                write!(wire, "\t{}", hex(&bytes)).unwrap();
-                wire
-            } else {
-                "END".into()
-            };
-            reference.check(
-                &format!("N\t{}", hex(input)),
-                &format!("{effects}\t{suffix}"),
-            );
+            check(&mut reference, input, chunk).await;
         }
     }
     reference.finish();
     eprintln!(
         "Fixed Go multipart framing: {} cases x 3 chunks, exact file prefixes/completion and terminal HTTP.",
         cases.len()
+    );
+}
+
+async fn check(reference: &mut Reference, input: &[u8], chunk: usize) {
+    check_source(reference, input, chunk, false).await;
+}
+async fn check_source(reference: &mut Reference, input: &[u8], chunk: usize, source_failure: bool) {
+    let (effects, error) = observe(input, chunk, source_failure);
+    let suffix = if let Some(error) = error {
+        let response = rejected(
+            match error {
+                ReadError::Framing(error) => Rejection::MultipartRead(error),
+                ReadError::Headers(error) => Rejection::MultipartHeaders(error),
+                ReadError::Decode(error) => panic!("unexpected component error {error:?}"),
+            },
+            Limits {
+                wire_bytes: 65536,
+                chunk_bytes: 37,
+            },
+            Instant::now() + Duration::from_secs(30),
+            Arc::new(()),
+        )
+        .await
+        .unwrap();
+        let mut wire = response.status().as_u16().to_string();
+        for name in ["content-type", "content-length", "x-content-type-options"] {
+            write!(
+                wire,
+                "\t{}",
+                hex(response
+                    .headers()
+                    .get(name)
+                    .map_or(&[], HeaderValue::as_bytes))
+            )
+            .unwrap();
+        }
+        let mut body = response.into_body();
+        let mut bytes = Vec::new();
+        while let Some(frame) = body.frame().await {
+            bytes.extend_from_slice(&frame.unwrap().into_data().unwrap());
+        }
+        write!(wire, "\t{}", hex(&bytes)).unwrap();
+        wire
+    } else {
+        "END".into()
+    };
+    reference.check(
+        &format!("{}\t{}", if source_failure { "V" } else { "N" }, hex(input)),
+        &format!("{effects}\t{suffix}"),
     );
 }

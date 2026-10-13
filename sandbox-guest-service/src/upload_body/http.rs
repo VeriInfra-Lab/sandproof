@@ -22,6 +22,7 @@ pub(crate) struct Input {
     frames_left: usize,
     trailers: bool,
     ended: bool,
+    read_failed: bool,
     deadline: Instant,
 }
 
@@ -55,11 +56,18 @@ impl Input {
             frames_left: limits.frames,
             trailers: false,
             ended: false,
+            read_failed: false,
             deadline,
         })
     }
 
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn read_failed(&self) -> bool {
+        self.read_failed
+    }
+
     pub(crate) async fn next(&mut self) -> Result<Option<Bytes>, GzipError> {
+        self.read_failed = false;
         loop {
             check_deadline(self.deadline)?;
             if self.ended {
@@ -80,7 +88,13 @@ impl Input {
                 .frames_left
                 .checked_sub(1)
                 .ok_or(GzipError::InputLimit)?;
-            let frame = frame.map_err(body_error)?;
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(error) => {
+                    self.read_failed = true;
+                    return Err(body_error(error));
+                }
+            };
             match frame.into_data() {
                 Ok(bytes) => {
                     if self.trailers {
@@ -139,5 +153,47 @@ pub(super) fn check_deadline(deadline: Instant) -> Result<(), GzipError> {
         Err(GzipError::DeadlineExceeded)
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::stream;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn source_failure_marker_excludes_local_length_frame_and_deadline_failures() {
+        let limits = HttpBodyLimits {
+            total_bytes: 64,
+            frame_bytes: 16,
+            frames: 8,
+            trailer_bytes: 64,
+            trailer_fields: 8,
+        };
+        let deadline = Instant::now() + Duration::from_secs(30);
+        for error in [
+            GzipError::Transport,
+            GzipError::Checksum,
+            GzipError::InputLimit,
+        ] {
+            let body = Body::from_stream(stream::iter([Err::<Bytes, _>(error)]));
+            let mut input = Input::new(body, None, limits, deadline).unwrap();
+            assert_eq!(input.next().await, Err(error));
+            assert!(input.read_failed());
+        }
+        for (body, expected, error) in [
+            (Body::empty(), Some(1), GzipError::Transport),
+            (Body::from(vec![0; 17]), None, GzipError::InputLimit),
+            (Body::from(vec![0; 2]), Some(1), GzipError::Transport),
+        ] {
+            let mut input = Input::new(body, expected, limits, deadline).unwrap();
+            assert_eq!(input.next().await, Err(error));
+            assert!(!input.read_failed());
+        }
+        let mut input = Input::new(Body::empty(), None, limits, deadline).unwrap();
+        input.deadline = Instant::now();
+        assert_eq!(input.next().await, Err(GzipError::DeadlineExceeded));
+        assert!(!input.read_failed());
     }
 }

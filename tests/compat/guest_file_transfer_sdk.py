@@ -82,6 +82,22 @@ def multipart_setup_cases(root):
                    gzip.compress(b'never') if compressed else b'never', message)
 
 
+def mime_header_cases(root):
+    # Invalid part headers are synthetic; the original SDK always emits valid ones.
+    for compressed in [False, True]:
+        for header, message in [
+            (b' Bad: x', 'error reading form: malformed MIME header initial line: " Bad: x"'),
+            (b'NoColon \t', 'error reading form: malformed MIME header: missing colon: "NoColon \\t"'),
+            (b'x-key: good\r\n bad\x00', 'error reading form: malformed MIME header line: "X-Key: good bad\\x00"'),
+            (b' ' + b'x' * 80, 'error reading form: multipart: message too large'),
+        ]:
+            data = (b'--B\r\n' + header + b'\r\nContent-Disposition: form-data; name="file"; filename="'
+                    + f'{root}/mime-header-rejected'.encode() + b'"\r\n\r\nnever\r\n--B--\r\n')
+            yield ({'x-access-token': 'fixture-token', 'content-type': 'multipart/form-data; boundary=B',
+                    'content-encoding': 'gzip' if compressed else 'identity'},
+                   gzip.compress(data) if compressed else data, message)
+
+
 def assert_header_rejection(response, message, status=400):
     assert response.status_code == status, response.text
     assert response.json() == {'code': status, 'message': message}
@@ -113,6 +129,9 @@ def header_rejections_sync(url, root):
         for params, headers, data, message in multipart_setup_cases(root):
             response = client.post(f'{url}/files', params=params, headers=headers, content=data)
             assert_header_rejection(response, message, 500)
+        for headers, data, message in mime_header_cases(root):
+            response = client.post(f'{url}/files', headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
 
 
 async def header_rejections_async(url, root):
@@ -129,6 +148,9 @@ async def header_rejections_async(url, root):
                                     'filename not found in Content-Disposition header')
         for params, headers, data, message in multipart_setup_cases(root):
             response = await client.post(f'{url}/files', params=params, headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
+        for headers, data, message in mime_header_cases(root):
+            response = await client.post(f'{url}/files', headers=headers, content=data)
             assert_header_rejection(response, message, 500)
 
 

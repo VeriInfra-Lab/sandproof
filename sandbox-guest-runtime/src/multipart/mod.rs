@@ -6,8 +6,10 @@
 // All rights reserved.
 // Adaptations are distributed under the BSD terms in GO-LICENSE.
 mod framing;
+mod header_error;
 mod headers;
 pub use framing::{FramingError, ReadError};
+pub use header_error::HeaderError;
 mod quoted_printable;
 #[cfg(test)]
 mod tests;
@@ -94,7 +96,7 @@ pub struct Decoder {
     parts: usize,
     total: u64,
     body_start: bool,
-    framing_error: Option<FramingError>,
+    read_error: Option<ReadError>,
     phase: Phase,
     wants_input: bool,
     eof: bool,
@@ -122,7 +124,7 @@ impl Decoder {
             parts: 0,
             total: 0,
             body_start: true,
-            framing_error: None,
+            read_error: None,
             phase: Phase::Preamble,
             wants_input: true,
             eof: false,
@@ -171,6 +173,32 @@ impl Decoder {
         self.eof = true;
     }
 
+    /// Report an actual source read failure (not a local budget/deadline). Go
+    /// still validates any final physical/logical MIME header bytes. This never
+    /// emits a Part or synthesizes MIME EOF/success. The caller retains the
+    /// source failure if no more specific header diagnostic is observed. Call
+    /// only after `next_event` returned None, before feeding more input.
+    #[must_use]
+    pub fn fail_input(&mut self) -> Option<ReadError> {
+        let error = if self.phase == Phase::Failed {
+            Some(ReadError::Decode(Error::Poisoned))
+        } else if !self.wants_input {
+            Some(ReadError::Decode(Error::InputPending))
+        } else {
+            match self.phase {
+                Phase::Headers => header_error::inspect(
+                    &self.buffer[self.offset..],
+                    self.limits.header_count,
+                    true,
+                )
+                .err(),
+                _ => None,
+            }
+        };
+        self.phase = Phase::Failed;
+        error
+    }
+
     #[must_use]
     pub fn is_complete(&self) -> bool {
         self.phase == Phase::End
@@ -183,9 +211,9 @@ impl Decoder {
         self.next_event_detailed().map_err(ReadError::coarse)
     }
 
-    /// Preserve framing stage and the bounded offending line. Header errors,
-    /// budgets and misuse remain component errors. The legacy method discards
-    /// this observation; both methods poison the decoder on failure.
+    /// Preserve framing/header stage and the bounded offending line. Budgets,
+    /// unsupported text and misuse remain component errors. The legacy method
+    /// discards the observation; both methods poison the decoder on failure.
     /// # Errors
     /// Invalid framing/headers, budgets, early EOF or a failed decoder.
     pub fn next_event_detailed(&mut self) -> Result<Option<Event>, ReadError> {
@@ -195,11 +223,7 @@ impl Decoder {
             Err(_) => self.phase = Phase::Failed,
             Ok(Some(_)) => {}
         }
-        result.map_err(|error| {
-            self.framing_error
-                .take()
-                .map_or(ReadError::Decode(error), ReadError::Framing)
-        })
+        result.map_err(|error| self.read_error.take().unwrap_or(ReadError::Decode(error)))
     }
 
     fn advance(&mut self) -> Result<Option<Event>, Error> {
@@ -232,6 +256,19 @@ impl Decoder {
                     {
                         return Err(Error::ResourceExhausted);
                     }
+                    if let Err(error) = header_error::inspect(
+                        if complete { &bytes[..end] } else { bytes },
+                        self.limits.header_count,
+                        self.eof || complete,
+                    ) {
+                        let coarse = match &error {
+                            ReadError::Headers(_) => Error::Malformed,
+                            ReadError::Decode(error) => *error,
+                            ReadError::Framing(error) => error.coarse(),
+                        };
+                        self.read_error = Some(error);
+                        return Err(coarse);
+                    }
                     if !complete {
                         return if self.eof {
                             Err(Error::TruncatedHeaders)
@@ -239,7 +276,7 @@ impl Decoder {
                             Ok(None)
                         };
                     }
-                    let part = headers::parse(&bytes[..end], self.limits.header_count)?;
+                    let part = headers::parse(&bytes[..end])?;
                     self.offset += end;
                     self.phase = Phase::Body;
                     self.body_start = true;
@@ -269,7 +306,7 @@ impl Decoder {
                         return Ok(Some(Event::PartEnd));
                     }
                     return if self.eof {
-                        self.framing_error = Some(FramingError::BodyTruncated);
+                        self.read_error = Some(ReadError::Framing(FramingError::BodyTruncated));
                         Err(Error::Truncated)
                     } else {
                         Ok(None)
@@ -295,14 +332,14 @@ impl Decoder {
             let line = &bytes[..end];
             let Some(rest) = line.strip_prefix(self.dash.as_slice()) else {
                 if self.eof && !line.ends_with(b"\n") {
-                    self.framing_error = Some(FramingError::NextPartEof);
+                    self.read_error = Some(ReadError::Framing(FramingError::NextPartEof));
                     return Err(Error::Truncated);
                 }
                 if let Phase::Boundary { after_separator } = self.phase {
-                    self.framing_error = Some(FramingError::Boundary {
+                    self.read_error = Some(ReadError::Framing(FramingError::Boundary {
                         line: line.to_vec(),
                         after_separator,
-                    });
+                    }));
                     return Err(Error::Malformed);
                 }
                 self.offset += end;
@@ -335,14 +372,14 @@ impl Decoder {
                 return Ok(Some(Phase::Headers));
             }
             if self.eof && !line.ends_with(b"\n") {
-                self.framing_error = Some(FramingError::NextPartEof);
+                self.read_error = Some(ReadError::Framing(FramingError::NextPartEof));
                 return Err(Error::Truncated);
             }
             if let Phase::Boundary { after_separator } = self.phase {
-                self.framing_error = Some(FramingError::Boundary {
+                self.read_error = Some(ReadError::Framing(FramingError::Boundary {
                     line: line.to_vec(),
                     after_separator,
-                });
+                }));
                 return Err(Error::Malformed);
             }
             self.offset += end;

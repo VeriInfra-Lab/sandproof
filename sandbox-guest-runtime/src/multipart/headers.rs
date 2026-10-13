@@ -63,16 +63,15 @@ pub fn boundary_detailed(content_type: &str, header_bytes: usize) -> Result<Stri
     Ok(value)
 }
 
-pub(super) fn parse(raw: &[u8], limit: usize) -> Result<Part, Error> {
+// Construct semantic fields only after header_error::inspect validates this
+// complete, byte/count-bounded block. UTF-8 parameter limitations remain local.
+pub(super) fn parse(raw: &[u8]) -> Result<Part, Error> {
     let mut headers: Vec<(String, Vec<u8>)> = Vec::new();
     for line in raw.split_inclusive(|b| *b == b'\n') {
         let line = line.strip_suffix(b"\n").ok_or(Error::Truncated)?;
         let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {
             break;
-        }
-        if line.iter().any(|b| (*b < 32 && *b != b'\t') || *b == 127) {
-            return Err(Error::Malformed);
         }
         if matches!(line[0], b' ' | b'\t') {
             let (_, value) = headers.last_mut().ok_or(Error::Malformed)?;
@@ -84,12 +83,6 @@ pub(super) fn parse(raw: &[u8], limit: usize) -> Result<Part, Error> {
             .iter()
             .position(|b| *b == b':')
             .ok_or(Error::Malformed)?;
-        if colon == 0 || !line[..colon].iter().all(|b| header_name(*b)) {
-            return Err(Error::Malformed);
-        }
-        if headers.len() == limit {
-            return Err(Error::ResourceExhausted);
-        }
         let key =
             String::from_utf8(line[..colon].to_ascii_lowercase()).map_err(|_| Error::Malformed)?;
         headers.push((key, trim_space(&line[colon + 1..]).to_vec()));
@@ -124,7 +117,7 @@ pub(super) fn parse(raw: &[u8], limit: usize) -> Result<Part, Error> {
     Ok(part)
 }
 
-fn trim_space(bytes: &[u8]) -> &[u8] {
+pub(super) fn trim_space(bytes: &[u8]) -> &[u8] {
     let start = bytes
         .iter()
         .position(|b| !matches!(b, b' ' | b'\t'))
@@ -135,7 +128,7 @@ fn trim_space(bytes: &[u8]) -> &[u8] {
         .map_or(start, |n| n + 1);
     &bytes[start..end]
 }
-fn header_name(b: u8) -> bool {
+pub(super) fn header_name(b: u8) -> bool {
     // Go's MIME reader also accepts spaces in unknown field names. Such a key
     // cannot match either recognized name, so it remains an ignored field.
     b == b' ' || b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)
