@@ -108,7 +108,7 @@ SANDPROOF_GUEST_ENCODING_REFERENCE=/absolute/path/to/encoding-reference \
 
 [范围正文执行检查](../sandbox-guest-service/src/file_download/stream/tests.rs)纳入可移植 service lib；定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_download::stream`。覆盖条件拒绝前不 seek/read、完整/单段/多段/零后缀与 HEAD、准备期和正文期的 seek 失败、短读前缀、无伪造结尾、匿名 HTTP 正文错误、原期限以及 Bytes 克隆背压。阻塞 seek/read 用屏障控制，超时用可推进时钟；确认取消后守卫仍保留到实际调用与源析构结束。本地已运行；共享 gzip worker 重构须同时运行原上传/下载所有权回归。
 
-[Linux identity 范围检查](../sandbox-guest-service/src/file_transfer/identity_download/tests.rs)增加真实临时文件、空/二进制、原 FD 替换/增长/缩短、AuthPermit/容量保留及所选文件预算；定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::identity_download::tests`。固定 SDK 文件夹具的 identity GET/HEAD 已接该组件，合成 HTTP 客户端在原 SDK 写入后检查单/多段、无交集、空文件、304/412、If-Range 回退及 HEAD，原同步/异步 SDK 文件回读继续同路执行。测试只固定已知 MIME、UTC 和测试边界，不表示正式 MIME/时区/协商已接通；新增 Linux 组尚未实跑，不计为通过或 E03 全端点对照。
+[Linux identity 范围检查](../sandbox-guest-service/src/file_transfer/identity_download/tests.rs)增加真实临时文件、空/二进制、原 FD 替换/增长/缩短、AuthPermit/容量保留及所选文件预算；定向入口为 `cargo test -p sandproof-guest-service --locked file_transfer::identity_download::tests`。固定 SDK 文件夹具的 identity GET/HEAD 已接该组件，合成 HTTP 客户端在原 SDK 写入后检查单/多段、无交集、空文件、304/412、If-Range 回退及 HEAD，原同步/异步 SDK 文件回读继续同路执行。该组还检查原查询扩展名与解析后文件名分离，以及同一 FD 的嗅探/范围读取。测试路由使用受控内建 MIME 表、UTC 和测试边界；identity 自动嗅探，gzip 只查扩展名，合成 HTTP 检查类型/Disposition 和多段各 part 类型，不表示实际模板 MIME/时区/协商已接通；新增 Linux 组尚未实跑，不计为通过或 E03 全端点对照。
 
 [下载 Go 参考适配](../tests/compat/guest_download_reference.go)直接调用 Go 1.26.8 原 `http.ParseTime` / `http.ServeContent`，使用合成字节、显式本地时区及 httptest writer；默认错误头开关固定为 `httpservecontentkeepheaders=0`。显式组逐项核对日期秒/纳秒，以及状态、选定实体头和完整正文，只把 Go 生成的随机多段边界等长规范化以便比较。覆盖旧日期/时区、条件组合、GET/HEAD/POST、零时间、范围边界和种子 0x311 的畸形输入。本地已运行，默认 ignored；不是完整 envd/SDK 双端、FD 失败、Linux 或 KVM 验收：
 
@@ -118,6 +118,18 @@ GOTOOLCHAIN=local /absolute/path/to/go1.26.8/bin/go build -trimpath -buildvcs=fa
 SANDPROOF_GUEST_DOWNLOAD_REFERENCE=/absolute/path/to/download-reference \
   cargo test -p sandproof-guest-service --locked --lib \
   file_download::tests::reference::fixed_go_download_reference -- --ignored --nocapture
+```
+
+[下载 MIME 检查](../sandbox-guest-runtime/src/file_mime/tests.rs)和原[流执行检查](../sandbox-guest-service/src/file_download/stream/tests.rs)覆盖 basename/扩展名、filename 编码与精确头预算、内建/系统表优先级、大小写、空表/错误/超额，以及 304/412 和显式 Content-Type 跳过嗅探、512 字节上限、前缀读取错误、回绕与长度顺序、取消阻塞嗅探时守卫保留。本地可移植检查已运行。Linux 固定路径加载及实际 FD MIME 组已交叉检查，尚未实跑；受控源对照不能代替实际来宾 MIME 数据库证据。
+
+[下载 MIME Go 参考适配](../tests/compat/guest_file_mime_reference.go)直接调用固定 Go 1.26.8 的 DetectContentType、FormatMediaType、filepath.Base/Ext；目录查表复制该版本 mime/type.go 和 type_unix.go 的原函数体，仅变更 package/import 并增加驱动，六个路径指向适配器自己创建的临时文件，运行后仅删除自有目录，不读取宿主 MIME 表。显式组含签名截断/变异、种子 0x311 随机输入、原始文件名字节及受控数据库。已本地运行，默认 ignored，普通 CI 不代为执行；不是完整 envd/SDK 双端或 Linux 实测：
+
+```sh
+GOTOOLCHAIN=local /absolute/path/to/go1.26.8/bin/go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/file-mime-reference tests/compat/guest_file_mime_reference.go
+SANDPROOF_GUEST_FILE_MIME_REFERENCE=/absolute/path/to/file-mime-reference \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  file_mime::tests::fixed_go_file_mime_reference -- --ignored --nocapture
 ```
 
 gzip 新增固定 Cargo 依赖须按[CI 可信预热](ci.md)制备，普通任务仍离线且缺料失败。源码/本地缓存更新不表示黄金盘完成制备；不临时联网、改弱检查或切换现役模板。

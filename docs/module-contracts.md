@@ -429,7 +429,7 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 [阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)与上传共用按需消费、Bytes 最后副本释放和取消通道。打开成功不预读正文；每个请求只有一个编码 worker、一个显式块大小的源缓冲和一个交付块，压缩库工作区及 HTTP 分配另计。原始/压缩字节预算独立，缓冲可预读至一个源块，超出累计消费预算不能成功。每次源填充前后及缓冲消费时均检查原期限/取消；已进入的 open/read/destructor 不能被超时强制终止，其原守卫保留至真正返回。句柄、worker 与已交出块分别保留原容量，Bytes 副本还保留原授权；没有 Content-Length 或重新准入。
 
-只有实际 EOF、编码尾部及预算检查全部完成才返回成功。源错误、超额、取消或过期传播为正文错误，不补成功尾部；这比固定 Go 下载在 `io.Copy` 失败后仍 defer `gzip.Close` 更严格，须在 E01 全端点对照保留差异。SDK 测试路由只按精确 `Accept-Encoding: gzip` 选择该组件并设置 gzip 响应头，无压缩长度；它不是正式协商、MIME 类型、Content-Disposition、range/conditional 或完整错误顺序实现。可移植编码所有权检查已有本地运行；Linux 实际 FD/授权和固定 SDK `gzip=True` 组合仍待验证，未启用到模板。
+只有实际 EOF、编码尾部及预算检查全部完成才返回成功。源错误、超额、取消或过期传播为正文错误，不补成功尾部；这比固定 Go 下载在 `io.Copy` 失败后仍 defer `gzip.Close` 更严格，须在 E01 全端点对照保留差异。SDK 测试路由只按精确 `Accept-Encoding: gzip` 选择该组件并设置 gzip 响应头，无压缩长度；该测试路由已按原查询扩展名使用受控 MIME 表，未知类型回退 application/octet-stream，并在成功 open 后格式化解析路径的 Content-Disposition；gzip 不嗅探正文。它不是正式协商、range/conditional 或完整错误顺序实现。可移植编码所有权检查已有本地运行；Linux 实际 FD/授权和固定 SDK `gzip=True` 组合仍待验证，未启用到模板。
 
 [文件内容编码选择](../sandbox-guest-runtime/src/file_encoding/mod.rs)和[HTTP 头连接](../sandbox-guest-service/src/file_encoding.rs)已实现固定 Go 的 Content-Encoding / Accept-Encoding 局部规则，尚未接正式文件入口。只取每个字段的第一值（即使它为空），不合并重复值；保留非 UTF-8 字节，按 Go Unicode 空白及大小写识别编码名。Content-Encoding 缺失/精确空值为 identity，否则去掉分号参数后只接受 identity/gzip，不把逗号编码链拆开或按 q=0 拒绝 gzip。
 
@@ -451,7 +451,11 @@ Range 保留区间顺序、重叠、重复、后缀零长度、空列表、空�
 
 该执行器把增长限制在计划长度内，提前 EOF、读取或后续 seek 失败成为正文错误，不补后续 MIME 段/结尾。HEAD 在执行必需的单段初始 seek 后抑制全部正文，含 416 错误正文；保留声明线长和所选文件字节的预算检查。响应开始前的长度 seek / range seek 分别保留组件错误，完整 Go 500/416 错误文本与头映射仍待正式路由补齐，不把测试路由统一失败映射视为兼容完成。
 
-[Linux 文件池连接](../sandbox-guest-service/src/file_transfer/identity_download.rs)复用单次准入、原 AuthPermit、绝对期限与解析路径；保留原 pre-open stat 的 mtime，不在打开后重新 stat 替换其时间。路径替换后仍读原 FD，这不是一致快照。池总量限制所选文件字节，MIME 线长另有限额，完整文件过大时合格小范围仍可执行。当前入口只接受预先已知、无需读取文件即可取得的 MIME 类型及可信边界/时区参数，不进行正式协商、MIME 查表或嗅探；不得先嗅探再调用它而颠倒条件拒绝顺序。固定 SDK 测试路由已使用该连接，并有合成 range/conditional/HEAD 请求；可移植故障/所有权测试已有本地运行，Linux 文件/HTTP 扩展待实跑，模板未启用。
+[Linux 文件池连接](../sandbox-guest-service/src/file_transfer/identity_download.rs)复用单次准入、原 AuthPermit、绝对期限与解析路径；保留原 pre-open stat 的 mtime，不在打开后重新 stat 替换其时间。路径替换后仍读原 FD，这不是一致快照。池总量限制所选文件字节，MIME 线长另有限额，完整文件过大时合格小范围仍可执行。当前入口接受预先已知类型或原查询路径与不可变 MIME 表，以及可信边界/时区参数。成功 open 后格式化解析路径的 Content-Disposition，再执行条件判断；304/412 不查表或嗅探。继续响应时，已有 Content-Type（含显式空值）跳过查表/嗅探，否则先查原查询路径最后扩展名，未知/空类型才在原 worker 读取至多 512 字节并回绕，再探测长度。读取错误按固定 Go 使用已有嗅探前缀，回绕失败保留 SniffSeek 错误；后续正文读取错误仍不能成功结束。嗅探每次 read/seek 前后检查原期限/取消，且始终持有原授权/容量，调用方不得提前在守卫外嗅探。固定 SDK 测试路由已使用该连接，并有合成 range/conditional/HEAD 请求；可移植故障/所有权测试已有本地运行，Linux 文件/HTTP 扩展待实跑，模板未启用。
+
+[下载 MIME 组件](../sandbox-guest-runtime/src/file_mime/mod.rs)对齐固定 Go 1.26.8 的扩展名查表、DetectContentType 和 inline filename 格式。查表先精确大小写再 Unicode 小写；内建表之后按固定 Linux 路径顺序取首个成功打开的 globs2（空文件也停止），没有 globs2 才顺序应用全部可打开的 mime.types。globs2 不覆盖已有精确扩展名，mime.types 后项覆盖；文本默认 charset、无效条目和原 Go 格式化边界由显式原函数对照检查。加载结果不可变，不随请求重读或自动刷新；生产须在有准入的阻塞启动任务中加载实际来宾文件，并把来源/指纹绑定模板验收，不能用开发宿主或仅内建表代替。Linux 固定路径加载入口已有实现及交叉检查，实际运行待补。
+
+配置显式限制全部源字节、原始行字节、扩展名/值、两张表的合计条目与键值字节，内建条目也计费。原始行限额至多 65535 字节（含换行），比 Go Scanner 缓冲边界保守；超额、非 UTF-8 数据库/解码参数或打开后的读取失败拒绝加载，不发布部分表。路径和格式化头长度也在分配前检查。filename 取 Linux basename，保留点、反斜线及原始字节，非 ASCII/控制字节按 RFC 2231 编码，不做有损 UTF-8 转换。嗅探无堆分配，只看前 512 字节并保持原签名顺序；这些有限对照与严格预算差异不表示全协议等价。正式下载 stat→编码选择→open 顺序、真实本地时区、准备期 seek 错误的 Go 头/文本映射及全服务预算仍待连接。
 
 [本地账户端口](../sandbox-guest-runtime/src/accounts.rs)读取固定 `/etc/passwd`、`/etc/group`，对应固定 envd 的无 CGO 构建，不新增 NSS/网络查询或数字用户名回退。普通文件按打开的 inode 核对，符号链接至普通文件保留；非阻塞打开后拒绝 FIFO/设备等类型。未知账号和选中记录的坏 UID/GID 拒绝，`u32::MAX` 不得成为“保留原身份”。组文件不可读时按固定端点只保留已解析的主组，不继承 daemon 附加组；成功组查询保留固定实现的重复主组项，超过 Go 组扫描行界限则丢弃附加结果。文件字节和组数量另有显式预算，超额拒绝而非截断。非 UTF-8 home 无法进入当前 JSON 执行上下文，明确失败；不是完整 NSS/POSIX 账号数据库的兼容声明。
 

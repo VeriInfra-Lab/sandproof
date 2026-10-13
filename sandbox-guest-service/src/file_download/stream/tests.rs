@@ -24,6 +24,7 @@ fn limits() -> IdentityLimits {
         },
         chunk_bytes: 3,
         file_bytes: 1 << 20,
+        path_bytes: 4096,
     }
 }
 fn request(range: &'static str) -> IdentityRequest {
@@ -33,7 +34,8 @@ fn request(range: &'static str) -> IdentityRequest {
         method: Method::GET,
         headers,
         response: HeaderMap::new(),
-        content_type: HeaderValue::from_static("application/octet-stream"),
+        content_type: HeaderValue::from_static("application/octet-stream").into(),
+        disposition_path: None,
         boundary: Some("a".repeat(60)),
     }
 }
@@ -93,12 +95,13 @@ struct Traced {
     fail_seek: usize,
     report_extra: u64,
     fail_read: bool,
+    fail_at: Option<u64>,
 }
 impl Read for Traced {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         assert!(bytes.len() <= 3);
         self.log.lock().unwrap().push(Event::Read);
-        if self.fail_read {
+        if self.fail_read || self.fail_at.is_some_and(|n| self.data.position() >= n) {
             return Err(io::Error::other("private path must not leak"));
         }
         self.data.read(bytes)
@@ -135,6 +138,7 @@ fn traced() -> (Traced, Arc<Mutex<Vec<Event>>>) {
             fail_seek: 0,
             report_extra: 0,
             fail_read: false,
+            fail_at: None,
         },
         log,
     )
@@ -444,4 +448,173 @@ async fn file_budget_checks_selected_ranges_and_head_and_wire_budget_checks_mime
     ));
     signal(released).await;
     assert!(!log.lock().unwrap().contains(&Event::Read));
+}
+
+fn automatic(mut req: IdentityRequest, original: &str) -> IdentityRequest {
+    let catalog = sandproof_guest_runtime::file_mime::Catalog::from_sources(
+        [None; 2],
+        [None; 4],
+        sandproof_guest_runtime::file_mime::CatalogLimits {
+            input_bytes: 65536,
+            line_bytes: 1024,
+            entries: 512,
+            retained_bytes: 65536,
+            value_bytes: 1024,
+        },
+    )
+    .unwrap();
+    req.content_type = ContentType::Detect {
+        original_path: original.into(),
+        catalog: Arc::new(catalog),
+    };
+    req.disposition_path = Some("/resolved/雪.jpg".as_bytes().to_vec());
+    req
+}
+
+#[tokio::test]
+async fn mime_lookup_uses_original_name_and_conditions_precede_sniffing() {
+    for condition in [
+        None,
+        Some(("if-none-match", "*")),
+        Some(("if-match", "bad")),
+    ] {
+        let (source, log) = traced();
+        let (guard, released) = owner();
+        let mut req = automatic(
+            request(""),
+            if condition.is_some() {
+                "unknown"
+            } else {
+                "original.CSS"
+            },
+        );
+        if let Some((name, value)) = condition {
+            req.headers.insert(name, HeaderValue::from_static(value));
+        }
+        let download = opened(source, req, guard).await.unwrap();
+        assert_eq!(
+            download.headers()["content-disposition"],
+            "inline; filename*=utf-8''%E9%9B%AA.jpg"
+        );
+        assert!(!log.lock().unwrap().contains(&Event::Read));
+        if condition.is_none() {
+            assert_eq!(
+                download.headers()["content-type"],
+                "text/css; charset=utf-8"
+            );
+        } else {
+            assert!(!download.headers().contains_key("content-type"));
+        }
+        let _ = drain(download).await;
+        signal(released).await;
+    }
+    let (source, log) = traced();
+    let (guard, released) = owner();
+    let mut req = automatic(request(""), "unknown");
+    req.response
+        .insert("content-type", HeaderValue::from_static(""));
+    let download = opened(source, req, guard).await.unwrap();
+    assert_eq!(download.headers()["content-type"], "");
+    assert!(!log.lock().unwrap().contains(&Event::Read));
+    drop(download);
+    signal(released).await;
+}
+
+#[tokio::test]
+async fn sniff_reads_only_512_then_rewinds_before_length_and_body_and_preserves_read_error_prefix()
+{
+    let (mut source, log) = traced();
+    let mut data = vec![b'a'; 512];
+    data.extend(b"\0tail");
+    source.data = Cursor::new(data.clone());
+    let (guard, released) = owner();
+    let download = opened(source, automatic(request(""), "unknown"), guard)
+        .await
+        .unwrap();
+    assert_eq!(
+        download.headers()["content-type"],
+        "text/plain; charset=utf-8"
+    );
+    let events = log.lock().unwrap().clone();
+    assert_eq!(events.iter().filter(|e| **e == Event::Read).count(), 171);
+    assert_eq!(
+        &events[171..],
+        &[
+            Event::Seek(SeekFrom::Start(0)),
+            Event::Seek(SeekFrom::End(0)),
+            Event::Seek(SeekFrom::Start(0))
+        ]
+    );
+    assert_eq!(drain(download).await, (data, None));
+    signal(released).await;
+    let (mut source, _) = traced();
+    source.fail_read = true;
+    let (guard, released) = owner();
+    let download = opened(source, automatic(request(""), "unknown"), guard)
+        .await
+        .unwrap();
+    assert_eq!(
+        download.headers()["content-type"],
+        "text/plain; charset=utf-8"
+    );
+    assert_eq!(drain(download).await, (vec![], Some(DownloadError::Read)));
+    signal(released).await;
+    // A read error after a useful prefix must still classify that prefix.
+    let (mut source, _) = traced();
+    source.data = Cursor::new(b"%PDF-123456789".to_vec());
+    source.fail_at = Some(6);
+    let (guard, released) = owner();
+    let download = opened(source, automatic(request(""), "unknown"), guard)
+        .await
+        .unwrap();
+    assert_eq!(download.headers()["content-type"], "application/pdf");
+    assert_eq!(
+        drain(download).await,
+        (b"%PDF-1".to_vec(), Some(DownloadError::Read))
+    );
+    signal(released).await;
+    let (mut source, _) = traced();
+    source.fail_seek = 1;
+    let (guard, released) = owner();
+    assert!(matches!(
+        opened(source, automatic(request(""), "unknown"), guard).await,
+        Err(DownloadError::SniffSeek)
+    ));
+    signal(released).await;
+}
+
+#[tokio::test]
+async fn cancellation_during_sniff_read_or_rewind_retains_guard_until_source_released() {
+    for on_seek in [false, true] {
+        let (tx, rx) = oneshot::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let source = Blocking {
+            data: Cursor::new(b"abc".to_vec()),
+            on_seek,
+            entered: Some(tx),
+            release: wait,
+            dropped: Arc::clone(&dropped),
+        };
+        let (guard, mut released) = owner();
+        let task = tokio::spawn(IdentityDownload::open(
+            move || Ok((source, Timestamp::new(1, 0).unwrap())),
+            automatic(request(""), "unknown"),
+            limits(),
+            Utc,
+            deadline(),
+            guard,
+        ));
+        signal(rx).await;
+        task.abort();
+        assert!(task.await.is_err());
+        assert!(!dropped.load(Ordering::SeqCst));
+        assert!(matches!(
+            released.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        release.send(()).unwrap();
+        signal(released).await;
+        assert!(dropped.load(Ordering::SeqCst));
+    }
 }

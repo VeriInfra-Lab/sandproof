@@ -10,7 +10,9 @@ use sandproof_guest_runtime::file_download::{
 };
 
 mod stream;
-pub use stream::{DownloadChunk, DownloadError, IdentityDownload, IdentityLimits, IdentityRequest};
+pub use stream::{
+    ContentType, DownloadChunk, DownloadError, IdentityDownload, IdentityLimits, IdentityRequest,
+};
 #[cfg(test)]
 mod tests;
 

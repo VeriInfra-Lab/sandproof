@@ -22,7 +22,8 @@ fn request(range: &'static str) -> IdentityRequest {
         method: Method::GET,
         headers,
         response: HeaderMap::new(),
-        content_type: HeaderValue::from_static("application/octet-stream"),
+        content_type: HeaderValue::from_static("application/octet-stream").into(),
+        disposition_path: None,
         boundary: Some("a".repeat(60)),
     }
 }
@@ -237,4 +238,56 @@ async fn selected_file_budget_and_open_errors_preserve_admission() {
         .await
         .unwrap();
     assert_eq!(collect(download).await.unwrap(), [42, 42]);
+}
+
+#[tokio::test]
+async fn mime_sniffs_original_descriptor_and_formats_resolved_filename() {
+    use crate::file_download::ContentType;
+    use sandproof_guest_runtime::file_mime::{Catalog, CatalogLimits};
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("雪.jpg");
+    fs::write(&path, b"<!DOCTYPE HTML><body>hello</body>").unwrap();
+    let session = session().await;
+    let pool = pool();
+    let catalog = Arc::new(
+        Catalog::from_sources(
+            [None; 2],
+            [None; 4],
+            CatalogLimits {
+                input_bytes: 8192,
+                line_bytes: 1024,
+                entries: 256,
+                retained_bytes: 8192,
+                value_bytes: 1024,
+            },
+        )
+        .unwrap(),
+    );
+    for (original_path, expected_type) in [
+        ("query.CSS", "text/css; charset=utf-8"),
+        ("query.unknown", "text/html; charset=utf-8"),
+    ] {
+        let mut req = request("bytes=0-3");
+        req.content_type = ContentType::Detect {
+            original_path: original_path.into(),
+            catalog: Arc::clone(&catalog),
+        };
+        let download = pool
+            .download_identity(
+                session.authorize(Some("token")).await.unwrap(),
+                context(&path, root.path()),
+                req,
+                limits(),
+                Utc,
+            )
+            .await
+            .unwrap();
+        assert_eq!(download.headers()["content-type"], expected_type);
+        assert_eq!(
+            download.headers()["content-disposition"],
+            "inline; filename*=utf-8''%E9%9B%AA.jpg"
+        );
+        assert_eq!(collect(download).await.unwrap(), b"<!DO");
+        quiesce(&pool).await;
+    }
 }

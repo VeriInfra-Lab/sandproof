@@ -115,7 +115,7 @@ fn token(b: u8) -> bool {
 }
 
 #[derive(Debug)]
-enum MediaError {
+pub(crate) enum MediaError {
     Invalid,
     NonUtf8,
 }
@@ -155,7 +155,7 @@ fn consume_value(input: &str) -> Result<(String, &str), MediaError> {
     Err(MediaError::Invalid)
 }
 
-fn media_type(value: &str) -> Result<(String, BTreeMap<String, String>), MediaError> {
+pub(crate) fn media_type(value: &str) -> Result<(String, BTreeMap<String, String>), MediaError> {
     let (kind, mut rest) = value.find(';').map_or((value, ""), |n| value.split_at(n));
     let kind = kind.trim().to_ascii_lowercase();
     let pieces: Vec<_> = kind.split('/').collect();

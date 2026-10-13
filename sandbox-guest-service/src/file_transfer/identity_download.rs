@@ -15,8 +15,9 @@ mod tests;
 
 impl FileStreams {
     /// Identity/range component under one original authorization and slot.
-    /// MIME must already be known without pre-reading. Formal negotiation and
-    /// MIME discovery remain caller obligations; no production route is added.
+    /// Formats the resolved filename after open. Automatic MIME uses the
+    /// original query path and a caller-owned catalog; sniffing follows
+    /// conditions inside the owned worker. Formal negotiation remains separate.
     /// # Errors
     /// Admission, stat/open, conditional/range plans or initial seek failures.
     /// A later seek/read/short read is an HTTP body error, not a second response.
@@ -24,13 +25,19 @@ impl FileStreams {
         &self,
         auth: AuthPermit,
         context: HttpFileContext,
-        request: IdentityRequest,
+        mut request: IdentityRequest,
         limits: Limits,
         local: Z,
     ) -> Result<IdentityDownload, IdentityDownloadError> {
         let (lease, deadline) = self.admit().map_err(IdentityDownloadError::Admission)?;
         let owner = Arc::new((auth, lease));
         let transfer = self.limits;
+        if context.path.len() > transfer.file.path_bytes {
+            return Err(IdentityDownloadError::Download(
+                DownloadError::ResourceExhausted,
+            ));
+        }
+        request.disposition_path = Some(context.path.as_bytes().to_vec());
         IdentityDownload::open(
             move || {
                 let (source, info) = DownloadSource::open_with_stat(&context.path, transfer)
@@ -51,6 +58,7 @@ impl FileStreams {
                 plan: limits,
                 chunk_bytes: transfer.chunk_bytes,
                 file_bytes: transfer.total_bytes,
+                path_bytes: transfer.file.path_bytes,
             },
             local,
             deadline,

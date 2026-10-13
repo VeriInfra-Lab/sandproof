@@ -9,6 +9,7 @@ use axum::{
 };
 use futures_util::stream;
 use sandproof_guest_runtime::file_download::date::{LocalZone, Timestamp};
+use sandproof_guest_runtime::file_mime::{self, Catalog, SNIFF_BYTES};
 use std::{
     fmt,
     io::{self, Read, Seek, SeekFrom},
@@ -22,12 +23,14 @@ mod tests;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DownloadError {
     Plan(Error),
+    Mime(file_mime::Error),
     InvalidConfiguration,
     SourceNotFound,
     SourceInvalid,
     ResourceExhausted,
     Open,
     LengthSeek,
+    SniffSeek,
     RangeSeek,
     Read,
     Incomplete,
@@ -54,14 +57,14 @@ impl owned_body::Failure for DownloadError {
     }
 }
 
-/// Known MIME type only: extension lookup/sniffing belongs to the caller's
-/// future MIME adapter. It must not pre-read a file to manufacture this value.
 /// The trusted boundary must be generated entropy, never request/path input.
 pub struct IdentityRequest {
     pub method: Method,
     pub headers: HeaderMap,
     pub response: HeaderMap,
-    pub content_type: HeaderValue,
+    pub content_type: ContentType,
+    /// Trusted resolved path. Formatted after successful open, before conditions.
+    pub disposition_path: Option<Vec<u8>>,
     pub boundary: Option<String>,
 }
 #[derive(Clone, Copy)]
@@ -70,6 +73,21 @@ pub struct IdentityLimits {
     pub chunk_bytes: usize,
     /// Selected file bytes, separate from wire bytes including MIME overhead.
     pub file_bytes: u64,
+    pub path_bytes: usize,
+}
+
+pub enum ContentType {
+    Known(HeaderValue),
+    /// Original query path (not resolved path) and daemon MIME-file snapshot.
+    Detect {
+        original_path: String,
+        catalog: Arc<Catalog>,
+    },
+}
+impl From<HeaderValue> for ContentType {
+    fn from(value: HeaderValue) -> Self {
+        Self::Known(value)
+    }
 }
 
 /// Ready headers follow successful preparation and the initial single-range
@@ -83,14 +101,15 @@ pub struct IdentityDownload {
 impl IdentityDownload {
     /// Open and prepare on the same owned worker used for every seek/read.
     /// `open` returns the original descriptor and pre-open stat timestamp.
-    /// Caller already owns admission/auth and the known MIME type; this is not
-    /// encoding negotiation or a production file route. No body read-ahead.
+    /// Caller already owns admission/auth and a MIME-file snapshot; this is not
+    /// encoding negotiation or a production file route. MIME preparation may
+    /// read a 512-byte prefix; response body chunks remain demand-driven.
     /// # Errors
     /// Open/plan/length/single-range seek failure, budgets or original deadline.
     /// Later read/seek/short-read failures stay body errors, never HTTP EOF.
     pub async fn open<R, F, Z>(
         open: F,
-        request: IdentityRequest,
+        mut request: IdentityRequest,
         limits: IdentityLimits,
         local: Z,
         deadline: Instant,
@@ -101,7 +120,11 @@ impl IdentityDownload {
         F: FnOnce() -> Result<(R, Timestamp), DownloadError> + Send + 'static,
         Z: LocalZone + Send + 'static,
     {
-        if limits.chunk_bytes == 0 || limits.chunk_bytes > isize::MAX as usize / 16 {
+        if limits.chunk_bytes == 0
+            || limits.chunk_bytes > isize::MAX as usize / 16
+            || limits.path_bytes == 0
+            || limits.path_bytes > isize::MAX as usize / 16
+        {
             return Err(DownloadError::InvalidConfiguration);
         }
         let ((status, headers), body) =
@@ -109,6 +132,19 @@ impl IdentityDownload {
                 let (mut source, modified) = open()?;
                 let control = Control { deadline, cancel };
                 control.check()?;
+                if let Some(path) = request.disposition_path {
+                    let value = file_mime::disposition(
+                        &path,
+                        limits.path_bytes,
+                        limits.plan.response_header_bytes,
+                    )
+                    .map_err(DownloadError::Mime)?;
+                    request.response.insert(
+                        "content-disposition",
+                        HeaderValue::from_bytes(&value)
+                            .map_err(|_| DownloadError::InvalidConfiguration)?,
+                    );
+                }
                 let head = request.method == Method::HEAD;
                 let plan = match prepare(
                     &request.method,
@@ -120,14 +156,18 @@ impl IdentityDownload {
                 )? {
                     Preparation::Finished(plan) => plan,
                     Preparation::Continue(next) => {
+                        let content_type = if next.headers.contains_key("content-type") {
+                            HeaderValue::from_static("")
+                        } else {
+                            resolve_type(&mut source, request.content_type, &control, limits)?
+                        };
                         let size = control.seek(
                             &mut source,
                             SeekFrom::End(0),
                             DownloadError::LengthSeek,
                         )?;
                         control.seek(&mut source, SeekFrom::Start(0), DownloadError::LengthSeek)?;
-                        let plan =
-                            next.finish(size, request.content_type, request.boundary.as_deref())?;
+                        let plan = next.finish(size, content_type, request.boundary.as_deref())?;
                         if plan.file_bytes > limits.file_bytes {
                             return Err(DownloadError::ResourceExhausted);
                         }
@@ -210,6 +250,53 @@ impl IdentityDownload {
         *response.headers_mut() = headers;
         response
     }
+}
+
+fn resolve_type(
+    source: &mut (impl Read + Seek),
+    content: ContentType,
+    control: &Control,
+    limits: IdentityLimits,
+) -> Result<HeaderValue, DownloadError> {
+    let ContentType::Detect {
+        original_path,
+        catalog,
+    } = content
+    else {
+        let ContentType::Known(value) = content else {
+            unreachable!()
+        };
+        return Ok(value);
+    };
+    if original_path.len() > limits.path_bytes {
+        return Err(DownloadError::ResourceExhausted);
+    }
+    if let Some(kind) = catalog
+        .lookup(file_mime::extension(&original_path))
+        .map_err(DownloadError::Mime)?
+        .filter(|s| !s.is_empty())
+    {
+        return HeaderValue::from_str(kind).map_err(|_| DownloadError::InvalidConfiguration);
+    }
+    let mut bytes = [0_u8; SNIFF_BYTES];
+    let mut length = 0;
+    while length < bytes.len() {
+        control.check()?;
+        let end = (length + limits.chunk_bytes.min(SNIFF_BYTES)).min(bytes.len());
+        let result = source.read(&mut bytes[length..end]);
+        control.check()?;
+        match result {
+            Ok(0) => break,
+            Ok(n) if n <= end - length => length += n,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            // Fixed ServeContent ignores ReadFull's error and uses its prefix.
+            Err(_) => break,
+            _ => return Err(DownloadError::Read),
+        }
+    }
+    let kind = file_mime::detect(&bytes[..length]);
+    control.seek(source, SeekFrom::Start(0), DownloadError::SniffSeek)?;
+    Ok(HeaderValue::from_static(kind))
 }
 
 struct Control {

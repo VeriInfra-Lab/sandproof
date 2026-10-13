@@ -13,6 +13,7 @@ use axum::{
 use futures_util::StreamExt;
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
+    file_mime::{self, Catalog, CatalogLimits},
     filesystem::{
         FileLimits,
         transfer::{TransferIoError, TransferLimits, UploadResult},
@@ -21,7 +22,7 @@ use sandproof_guest_runtime::{
 use sandproof_guest_service::{
     AccountPool, AuthPermit, InitLimits, Metadata, MetadataSource, ServiceError, Session,
     SystemAccounts,
-    file_download::{DownloadError, IdentityRequest, Limits as DownloadLimits},
+    file_download::{ContentType, DownloadError, IdentityRequest, Limits as DownloadLimits},
     file_transfer::{
         BatchLimits, BatchReply, FileStreamError, FileStreams, GzipLimits, HttpBodyLimits,
         IdentityDownloadError, MultipartError, MultipartLimits,
@@ -57,6 +58,7 @@ struct Fixture {
     accounts: AccountPool<SystemAccounts>,
     files: FileStreams,
     root: PathBuf,
+    mime: Arc<Catalog>,
     seen: AtomicUsize,
     multipart_seen: AtomicUsize,
     gzip_seen: AtomicUsize,
@@ -135,9 +137,9 @@ async fn files(
             .is_some_and(|value| value == "gzip")
         {
             fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
-            return gzip_download(&fixture, auth, context).await;
+            return gzip_download(&fixture, auth, context, params.path.unwrap()).await;
         }
-        return download(&fixture, auth, context, request).await;
+        return download(&fixture, auth, context, request, params.path.unwrap()).await;
     }
     let (parts, body) = request.into_parts();
     let gzip = parts
@@ -274,12 +276,34 @@ fn gzip_limits() -> GzipLimits {
 fn entry(result: &UploadResult) -> serde_json::Value {
     serde_json::json!({"path":result.path,"name":Path::new(&result.path).file_name().unwrap().to_str().unwrap(),"type":"file","metadata":result.metadata})
 }
-async fn gzip_download(fixture: &Fixture, auth: AuthPermit, context: HttpFileContext) -> Response {
+async fn gzip_download(
+    fixture: &Fixture,
+    auth: AuthPermit,
+    context: HttpFileContext,
+    original_path: String,
+) -> Response {
+    let resolved_path = context.path.clone();
     match fixture.files.download_gzip(auth, context, 10 << 20).await {
         Ok(download) => Response::builder()
             .status(200)
             .header("content-encoding", "gzip")
-            .header("content-type", "application/octet-stream")
+            // The gzip path never sniffs content, even for unknown extensions.
+            .header(
+                "content-type",
+                fixture
+                    .mime
+                    .lookup(file_mime::extension(&original_path))
+                    .unwrap()
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("application/octet-stream"),
+            )
+            .header(
+                "content-disposition",
+                HeaderValue::from_bytes(
+                    &file_mime::disposition(resolved_path.as_bytes(), 4096, 8192).unwrap(),
+                )
+                .unwrap(),
+            )
             .header("vary", "Accept-Encoding")
             .body(download.into_body())
             .unwrap(),
@@ -291,13 +315,18 @@ async fn download(
     auth: AuthPermit,
     context: HttpFileContext,
     request: Request<Body>,
+    original_path: String,
 ) -> Response {
     let (parts, _) = request.into_parts();
     let request = IdentityRequest {
         method: parts.method,
         headers: parts.headers,
         response: HeaderMap::new(),
-        content_type: HeaderValue::from_static("application/octet-stream"),
+        content_type: ContentType::Detect {
+            original_path,
+            catalog: Arc::clone(&fixture.mime),
+        },
+        disposition_path: None,
         // Fixed only inside this synthetic test route; production must generate entropy.
         boundary: Some("a".repeat(60)),
     };
@@ -422,6 +451,21 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         )
         .unwrap(),
         root,
+        // Controlled synthetic database; this is not the template's MIME state.
+        mime: Arc::new(
+            Catalog::from_sources(
+                [None; 2],
+                [None; 4],
+                CatalogLimits {
+                    input_bytes: 65536,
+                    line_bytes: 4096,
+                    entries: 1024,
+                    retained_bytes: 65536,
+                    value_bytes: 4096,
+                },
+            )
+            .unwrap(),
+        ),
         seen: AtomicUsize::new(0),
         multipart_seen: AtomicUsize::new(0),
         gzip_seen: AtomicUsize::new(0),

@@ -82,6 +82,8 @@ async def compressed_async(sandbox, url, root):
 def download_headers(response):
     assert response.status_code == 200
     assert response.headers['content-encoding'] == 'gzip'
+    assert response.headers['content-type'] == 'application/octet-stream'
+    assert response.headers['content-disposition'].startswith('inline; filename=')
     assert response.headers['vary'] == 'Accept-Encoding'
     assert 'content-length' not in response.headers
 
@@ -237,6 +239,7 @@ def check_range(response, method, status, expected):
         message = BytesParser(policy=policy.default).parsebytes(
             b'Content-Type: ' + response.headers['content-type'].encode() + b'\r\n\r\n' + response.content)
         parts = list(message.iter_parts())
+        assert all(part['content-type'] == 'text/plain; charset=utf-8' for part in parts)
         assert [part['content-range'] for part in parts] == ['bytes 0-0/3', 'bytes 2-2/3']
         assert [part.get_payload(decode=True) for part in parts] == [b'n', b'w']
         assert int(response.headers['content-length']) == len(response.content)
@@ -255,6 +258,8 @@ def range_sync(url, root):
             'x-access-token': 'fixture-token', 'accept-encoding': 'identity'}) as client:
         base = client.get(url + '/files', params={'path': f'{root}/metadata'})
         assert base.status_code == 200 and base.content == b'new'
+        assert base.headers['content-type'] == 'text/plain; charset=utf-8'
+        assert base.headers['content-disposition'] == 'inline; filename=metadata'
         for method, name, headers, status, expected in range_requests(base.headers['last-modified']):
             response = client.request(method, url + '/files', params={'path': f'{root}/{name}'}, headers=headers)
             check_range(response, method, status, expected)
@@ -265,6 +270,8 @@ async def range_async(url, root):
             'x-access-token': 'fixture-token', 'accept-encoding': 'identity'}) as client:
         base = await client.get(url + '/files', params={'path': f'{root}/metadata'})
         assert base.status_code == 200 and base.content == b'new'
+        assert base.headers['content-type'] == 'text/plain; charset=utf-8'
+        assert base.headers['content-disposition'] == 'inline; filename=metadata'
         for method, name, headers, status, expected in range_requests(base.headers['last-modified']):
             response = await client.request(method, url + '/files', params={'path': f'{root}/{name}'}, headers=headers)
             check_range(response, method, status, expected)

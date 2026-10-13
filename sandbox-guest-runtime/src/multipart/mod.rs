@@ -9,6 +9,7 @@ mod headers;
 mod quoted_printable;
 #[cfg(test)]
 mod tests;
+pub(crate) use headers::{MediaError, media_type};
 pub use headers::{Part, boundary};
 pub use quoted_printable::{Decoded, QuotedPrintable};
 
