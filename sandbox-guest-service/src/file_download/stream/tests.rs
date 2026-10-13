@@ -1,4 +1,5 @@
 use super::*;
+mod errors;
 mod negotiation;
 use futures_util::FutureExt;
 use http_body_util::BodyExt;
@@ -96,6 +97,7 @@ struct Traced {
     log: Arc<Mutex<Vec<Event>>>,
     seek_count: usize,
     fail_seek: usize,
+    seek_errno: Option<wire_errno::LinuxErrno>,
     report_extra: u64,
     fail_read: bool,
     fail_at: Option<u64>,
@@ -115,7 +117,10 @@ impl Seek for Traced {
         self.log.lock().unwrap().push(Event::Seek(offset));
         self.seek_count += 1;
         if self.seek_count == self.fail_seek {
-            return Err(io::Error::other("private seek details"));
+            return Err(self.seek_errno.map_or_else(
+                || io::Error::other("private seek details"),
+                io::Error::other,
+            ));
         }
         let value = self.data.seek(offset)?;
         Ok(value
@@ -139,6 +144,7 @@ fn traced() -> (Traced, Arc<Mutex<Vec<Event>>>) {
             log: Arc::clone(&log),
             seek_count: 0,
             fail_seek: 0,
+            seek_errno: None,
             report_extra: 0,
             fail_read: false,
             fail_at: None,

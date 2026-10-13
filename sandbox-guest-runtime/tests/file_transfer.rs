@@ -323,3 +323,51 @@ fn deferred_open_preserves_preopen_metadata_without_restat_or_inode_pinning() {
     fs::remove_file(&path).unwrap();
     assert!(matches!(pending.open(), Err(TransferIoError::Internal)));
 }
+
+#[test]
+fn detailed_download_failures_keep_linux_errno_and_separate_rejections() {
+    use sandproof_guest_runtime::{
+        file_download::LinuxErrno, filesystem::transfer::DownloadPathError,
+    };
+    use std::io::{Seek, SeekFrom};
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("file");
+    fs::write(&file, b"data").unwrap();
+    let loop_path = root.path().join("loop");
+    std::os::unix::fs::symlink(&loop_path, &loop_path).unwrap();
+    for (path, number) in [
+        (root.path().join("missing").to_str().unwrap().to_owned(), 2),
+        (file.join("child").to_str().unwrap().to_owned(), 20),
+        (loop_path.to_str().unwrap().to_owned(), 40),
+        (format!("{}\0suffix", file.display()), 22),
+    ] {
+        assert!(
+            matches!(DownloadPath::inspect_detailed(path, limits()), Err(DownloadPathError::Io(Some(LinuxErrno(n)))) if n == number)
+        );
+    }
+    assert!(matches!(
+        DownloadPath::inspect_detailed(root.path().to_str().unwrap().to_owned(), limits()),
+        Err(DownloadPathError::Directory)
+    ));
+    let mut tiny = limits();
+    tiny.file.path_bytes = 1;
+    assert!(matches!(
+        DownloadPath::inspect_detailed(file.to_str().unwrap().to_owned(), tiny),
+        Err(DownloadPathError::Rejected(
+            TransferIoError::ResourceExhausted
+        ))
+    ));
+    let mut source = DownloadSource::open(file.to_str().unwrap(), limits()).unwrap();
+    let error = source.seek(SeekFrom::Current(-1)).unwrap_err();
+    assert_eq!(
+        error.get_ref().unwrap().downcast_ref::<LinuxErrno>(),
+        Some(&LinuxErrno(22))
+    );
+    let pending =
+        DownloadPath::inspect_detailed(file.to_str().unwrap().to_owned(), limits()).unwrap();
+    fs::remove_file(file).unwrap();
+    assert!(matches!(
+        pending.open_detailed(),
+        Err(DownloadPathError::Io(Some(LinuxErrno(2))))
+    ));
+}

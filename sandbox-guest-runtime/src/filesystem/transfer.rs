@@ -6,6 +6,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
+use crate::file_download::LinuxErrno;
 use sandproof_guest_core::{StreamFailure, Transfer, TransferOutcome};
 
 use super::{Budget, FileError, FileLimits, Ownership, directory, metadata, path};
@@ -267,17 +268,27 @@ impl DownloadPath {
     /// # Errors
     /// Path/budget, stat or directory rejection. Does not open the file body.
     pub fn inspect(path: String, limits: TransferLimits) -> Result<Self, TransferIoError> {
-        let limits = limits.validate()?;
-        limits.check_path(&path)?;
-        let metadata = fs::metadata(&path).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                TransferIoError::NotFound
-            } else {
-                TransferIoError::Internal
-            }
-        })?;
+        Self::inspect_detailed(path, limits).map_err(|error| match error {
+            DownloadPathError::Rejected(error) => error,
+            DownloadPathError::Directory => TransferIoError::InvalidArgument,
+            DownloadPathError::Io(Some(LinuxErrno(2))) => TransferIoError::NotFound,
+            DownloadPathError::Io(_) => TransferIoError::Internal,
+        })
+    }
+    /// Preserve the operation's Linux errno without copying arbitrary I/O text.
+    /// # Errors
+    /// Budget/path rejection, directory, or stat errno (unknown stays unknown).
+    pub fn inspect_detailed(
+        path: String,
+        limits: TransferLimits,
+    ) -> Result<Self, DownloadPathError> {
+        let limits = limits.validate().map_err(DownloadPathError::Rejected)?;
+        limits
+            .check_path(&path)
+            .map_err(DownloadPathError::Rejected)?;
+        let metadata = fs::metadata(&path).map_err(|e| DownloadPathError::Io(linux_errno(&e)))?;
         if metadata.is_dir() {
-            return Err(TransferIoError::InvalidArgument);
+            return Err(DownloadPathError::Directory);
         }
         Ok(Self { path, metadata })
     }
@@ -288,10 +299,28 @@ impl DownloadPath {
     /// # Errors
     /// Original-path open failure. Does not restat even after replacement.
     pub fn open(self) -> Result<(DownloadSource, fs::Metadata), TransferIoError> {
+        self.open_detailed().map_err(|_| TransferIoError::Internal)
+    }
+    /// # Errors
+    /// Original-path open errno, without restat or arbitrary diagnostic text.
+    pub fn open_detailed(self) -> Result<(DownloadSource, fs::Metadata), DownloadPathError> {
         File::open(&self.path)
             .map(|file| (DownloadSource(file), self.metadata))
-            .map_err(|_| TransferIoError::Internal)
+            .map_err(|e| DownloadPathError::Io(linux_errno(&e)))
     }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DownloadPathError {
+    Rejected(TransferIoError),
+    Directory,
+    Io(Option<LinuxErrno>),
+}
+fn linux_errno(error: &std::io::Error) -> Option<LinuxErrno> {
+    // std rejects a NUL path before the syscall; Go's BytePtrFromString returns EINVAL.
+    error
+        .raw_os_error()
+        .map(LinuxErrno)
+        .or_else(|| (error.kind() == std::io::ErrorKind::InvalidInput).then_some(LinuxErrno(22)))
 }
 
 impl Read for DownloadSource {
@@ -301,7 +330,13 @@ impl Read for DownloadSource {
 }
 impl Seek for DownloadSource {
     fn seek(&mut self, offset: SeekFrom) -> std::io::Result<u64> {
-        self.0.seek(offset)
+        self.0.seek(offset).map_err(|error| {
+            if let Some(errno) = error.raw_os_error() {
+                std::io::Error::new(error.kind(), LinuxErrno(errno))
+            } else {
+                error
+            }
+        })
     }
 }
 

@@ -5,6 +5,8 @@
 // BSD license: ../multipart/GO-LICENSE.
 mod conditions;
 pub mod date;
+mod errno;
+pub use errno::LinuxErrno;
 mod ranges;
 pub use conditions::{Conditions, Precondition, precondition};
 pub use ranges::{ByteRange, RangePlan, ranges};

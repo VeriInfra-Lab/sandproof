@@ -23,8 +23,9 @@ impl Download {
     /// not open or read before selection. All closures and source destruction
     /// run on this one worker; there is no second admission or deadline.
     /// # Errors
-    /// Stat, selection (including its Vary stage), open, plan or original
-    /// deadline. Body errors cannot be retried or turned into successful EOF.
+    /// Unmapped I/O, configuration/budgets or original deadline. Known Linux
+    /// filesystem/selection/initial seek failures become bounded HTTP replies.
+    /// Body errors cannot be retried or turned into successful EOF.
     pub async fn open_negotiated<S, F, R, Z>(
         inspect: S,
         mut request: IdentityRequest,
@@ -51,15 +52,41 @@ impl Download {
             OwnedBody::start(deadline, Arc::clone(&owner), move |_, cancel| {
                 let control = Control { deadline, cancel };
                 control.check()?;
-                let (modified, open) = inspect()?;
+                if request
+                    .disposition_path
+                    .as_ref()
+                    .is_some_and(|path| path.len() > identity.path_bytes)
+                {
+                    return Err(DownloadError::ResourceExhausted);
+                }
+                super::super::header_budget(
+                    &request.response,
+                    identity.plan.response_header_bytes,
+                )?;
+                let (modified, open) = match inspect() {
+                    Ok(result) => result,
+                    Err(error) => return failure(error, &request, identity, control),
+                };
                 control.check()?;
-                let encoding = file_encoding::download(&request.headers, limits.encoding)
-                    .map_err(DownloadError::Negotiation)?;
+                let encoding = match file_encoding::download(&request.headers, limits.encoding) {
+                    Ok(encoding) => encoding,
+                    Err(error) => {
+                        return failure(
+                            DownloadError::Negotiation(error),
+                            &request,
+                            identity,
+                            control,
+                        );
+                    }
+                };
                 request
                     .response
                     .insert("vary", HeaderValue::from_static("Accept-Encoding"));
                 control.check()?;
-                let source = open()?;
+                let source = match open() {
+                    Ok(source) => source,
+                    Err(error) => return failure(error, &request, identity, control),
+                };
                 control.check()?;
                 set_disposition(&mut request, identity)?;
                 super::super::header_budget(
@@ -67,32 +94,9 @@ impl Download {
                     identity.plan.response_header_bytes,
                 )?;
                 if encoding == file_encoding::Encoding::Identity {
-                    let head = request.method == Method::HEAD;
-                    let headers = request.response.clone();
-                    let cancel = control.cancel.clone();
-                    let result =
-                        prepare_identity(source, modified, request, identity, &local, control);
-                    return match result {
-                        Ok((metadata, reader)) => Ok((metadata, ReaderKind::Identity(reader))),
-                        Err(DownloadError::SniffSeek | DownloadError::LengthSeek) => {
-                            let plan = super::super::serve_error(
-                                headers,
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                b"seeker can't seek\n",
-                                identity.plan,
-                            )?;
-                            super::response_reader(
-                                std::io::Cursor::new(Vec::new()),
-                                plan,
-                                head,
-                                Control { deadline, cancel },
-                                identity.chunk_bytes,
-                            )
-                            .map(|(metadata, reader)| (metadata, ReaderKind::Error(reader)))
-                        }
-                        Err(error) => Err(error),
-                    };
+                    return identity_reader(source, modified, request, identity, &local, control);
                 }
+
                 let kind = gzip_type(request.content_type, identity.path_bytes)?;
                 request.response.insert("content-type", kind);
                 request
@@ -137,6 +141,64 @@ impl Download {
             _owner: owner,
         })
     }
+}
+fn identity_reader<R: Read + Seek>(
+    source: R,
+    modified: Timestamp,
+    mut request: IdentityRequest,
+    limits: IdentityLimits,
+    local: &impl LocalZone,
+    control: Control,
+) -> Result<((StatusCode, super::HeaderMap), ReaderKind<R>), DownloadError> {
+    let head = request.method == Method::HEAD;
+    let headers = request.response.clone();
+    let error_path = request.disposition_path.take();
+    let deadline = control.deadline;
+    let cancel = control.cancel.clone();
+    let plan = match prepare_identity(source, modified, request, limits, local, control) {
+        Ok((metadata, reader)) => return Ok((metadata, ReaderKind::Identity(reader))),
+        Err(DownloadError::SniffSeek | DownloadError::LengthSeek) => super::super::serve_error(
+            headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            b"seeker can't seek\n".as_slice().into(),
+            limits.plan,
+        )?,
+        Err(DownloadError::RangeSeekIo(errno)) => {
+            super::errors::range(errno, error_path.as_deref(), headers, limits)?
+        }
+        Err(error) => return Err(error),
+    };
+    error_reader(plan, head, Control { deadline, cancel }, limits.chunk_bytes)
+}
+fn failure<R: Read + Seek>(
+    error: DownloadError,
+    request: &IdentityRequest,
+    limits: IdentityLimits,
+    control: Control,
+) -> Result<((StatusCode, super::HeaderMap), ReaderKind<R>), DownloadError> {
+    control.check()?;
+    let plan = super::errors::json(error, request, limits)?;
+    error_reader(
+        plan,
+        request.method == Method::HEAD,
+        control,
+        limits.chunk_bytes,
+    )
+}
+fn error_reader<R: Read + Seek>(
+    plan: super::ResponsePlan,
+    head: bool,
+    control: Control,
+    chunk_bytes: usize,
+) -> Result<((StatusCode, super::HeaderMap), ReaderKind<R>), DownloadError> {
+    super::response_reader(
+        std::io::Cursor::new(Vec::new()),
+        plan,
+        head,
+        control,
+        chunk_bytes,
+    )
+    .map(|(metadata, reader)| (metadata, ReaderKind::Error(reader)))
 }
 fn gzip_type(content: ContentType, path_bytes: usize) -> Result<HeaderValue, DownloadError> {
     match content {

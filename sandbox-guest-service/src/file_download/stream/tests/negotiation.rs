@@ -2,7 +2,7 @@ use super::*;
 use crate::file_encoding;
 use sandproof_guest_runtime::gzip::{DecodeLimits, Decoder};
 
-fn settings() -> NegotiationLimits {
+pub(super) fn settings() -> NegotiationLimits {
     NegotiationLimits {
         identity: limits(),
         encoding: file_encoding::Limits {
@@ -84,10 +84,12 @@ async fn stat_and_directory_errors_win_over_encoding_which_wins_over_open() {
     ] {
         let (source, log) = traced();
         let (guard, released) = owner();
-        assert!(
-            matches!(negotiate(source, request(range), accepted, None, true, guard).await,
-            Err(DownloadError::Negotiation(e)) if e.vary_accept_encoding==vary)
-        );
+        let download = negotiate(source, request(range), accepted, None, true, guard)
+            .await
+            .unwrap();
+        assert_eq!(download.status(), StatusCode::NOT_ACCEPTABLE);
+        assert_eq!(download.headers().contains_key("vary"), vary);
+        assert!(drain(download).await.1.is_none());
         signal(released).await;
         assert_eq!(*log.lock().unwrap(), [Event::Stat, Event::Drop]);
     }

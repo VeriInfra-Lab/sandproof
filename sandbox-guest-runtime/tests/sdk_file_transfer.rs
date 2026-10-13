@@ -327,20 +327,6 @@ async fn download(
     }
 }
 fn download_failure(error: DownloadError) -> Response {
-    if let DownloadError::Negotiation(error) = error
-        && error.cause == sandproof_guest_service::file_encoding::Error::NotAcceptable
-    {
-        let mut response = (StatusCode::NOT_ACCEPTABLE, Json(serde_json::json!({
-                "message": if error.vary_accept_encoding { "identity encoding not acceptable for Range or conditional request" }
-                else { "error parsing Accept-Encoding: no acceptable encoding found, supported: [gzip]" }
-            }))).into_response();
-        if error.vary_accept_encoding {
-            response
-                .headers_mut()
-                .insert("vary", HeaderValue::from_static("Accept-Encoding"));
-        }
-        return response;
-    }
     let mut response = failure(match error {
         DownloadError::SourceNotFound => FileStreamError::Operation(TransferIoError::NotFound),
         DownloadError::SourceInvalid => {

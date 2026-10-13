@@ -8,7 +8,7 @@ use crate::{
 };
 use sandproof_guest_runtime::{
     file_download::date::{LocalZone, Timestamp},
-    filesystem::transfer::DownloadPath,
+    filesystem::transfer::{DownloadPath, DownloadPathError},
 };
 use std::{os::unix::fs::MetadataExt, sync::Arc};
 
@@ -20,7 +20,8 @@ impl FileStreams {
     /// source, gzip/identity worker and response bytes retain original auth.
     /// # Errors
     /// Admission, stat/directory, encoding (with Vary stage), open or preparation.
-    /// This component does not implement authentication/signing or JSON errors.
+    /// Fixed post-resolution filesystem/negotiation errors become owned responses.
+    /// Authentication/signing and context-resolution errors are not implemented here.
     pub async fn download_negotiated<Z: LocalZone + Send + 'static>(
         &self,
         auth: AuthPermit,
@@ -40,21 +41,32 @@ impl FileStreams {
         request.disposition_path = Some(context.path.as_bytes().to_vec());
         Download::open_negotiated(
             move || {
-                let path = DownloadPath::inspect(context.path, transfer).map_err(|e| match e {
-                    TransferIoError::NotFound => DownloadError::SourceNotFound,
-                    TransferIoError::InvalidArgument => DownloadError::SourceInvalid,
-                    TransferIoError::ResourceExhausted => DownloadError::ResourceExhausted,
-                    _ => DownloadError::Stat,
-                })?;
+                let path =
+                    DownloadPath::inspect_detailed(context.path, transfer).map_err(
+                        |e| match e {
+                            DownloadPathError::Io(Some(errno)) => DownloadError::StatIo(errno),
+                            DownloadPathError::Directory => DownloadError::Directory,
+                            DownloadPathError::Rejected(TransferIoError::InvalidArgument) => {
+                                DownloadError::SourceInvalid
+                            }
+                            DownloadPathError::Rejected(TransferIoError::ResourceExhausted) => {
+                                DownloadError::ResourceExhausted
+                            }
+                            _ => DownloadError::Stat,
+                        },
+                    )?;
                 let metadata = path.metadata();
                 let nanos = u32::try_from(metadata.mtime_nsec())
                     .map_err(|_| DownloadError::SourceInvalid)?;
                 let modified = Timestamp::new(metadata.mtime(), nanos)
                     .map_err(|_| DownloadError::SourceInvalid)?;
                 Ok((modified, move || {
-                    path.open()
+                    path.open_detailed()
                         .map(|(source, _)| source)
-                        .map_err(|_| DownloadError::Open)
+                        .map_err(|e| match e {
+                            DownloadPathError::Io(Some(errno)) => DownloadError::OpenIo(errno),
+                            _ => DownloadError::Open,
+                        })
                 }))
             },
             request,

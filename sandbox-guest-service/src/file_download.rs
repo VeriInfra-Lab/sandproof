@@ -8,6 +8,7 @@ use sandproof_guest_runtime::file_download::{
     self as wire, ByteRange, Conditions, Precondition, RangePlan,
     date::{LocalZone, Timestamp},
 };
+use std::borrow::Cow;
 
 mod stream;
 pub use stream::{
@@ -61,7 +62,7 @@ pub struct ResponsePlan {
 }
 pub enum BodyPlan {
     Empty,
-    Error(&'static [u8]),
+    Error(Cow<'static, [u8]>),
     File(ByteRange),
     Multipart {
         ranges: Vec<ByteRange>,
@@ -284,7 +285,7 @@ impl AfterConditions {
         serve_error(
             self.headers,
             StatusCode::RANGE_NOT_SATISFIABLE,
-            message,
+            message.into(),
             self.limits,
         )
     }
@@ -293,7 +294,7 @@ impl AfterConditions {
 fn serve_error(
     mut headers: HeaderMap,
     status: StatusCode,
-    message: &'static [u8],
+    message: Cow<'static, [u8]>,
     limits: Limits,
 ) -> Result<ResponsePlan, Error> {
     for name in [

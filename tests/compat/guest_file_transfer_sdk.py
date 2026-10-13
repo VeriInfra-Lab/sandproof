@@ -305,6 +305,14 @@ def check_negotiated(response, status, compressed, vary, expected):
         assert response.json()['message'] == expected_message
     if status >= 400:
         assert 'content-disposition' not in response.headers
+        assert response.headers['content-type'] == 'application/json; charset=utf-8'
+        assert response.headers['x-content-type-options'] == 'nosniff'
+        assert response.json()['code'] == status
+        assert response.content.endswith(b'\n')
+        if status in (400, 404):
+            path = response.request.url.params['path']
+            ending = 'is a directory' if status == 400 else 'does not exist'
+            assert response.json()['message'] == f"path '{path}' {ending}"
     if compressed:
         assert 'content-length' not in response.headers
         assert response.headers['content-type'] == 'application/octet-stream'

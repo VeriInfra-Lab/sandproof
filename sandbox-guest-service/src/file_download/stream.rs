@@ -8,6 +8,7 @@ use axum::{
     response::Response,
 };
 use futures_util::stream;
+use sandproof_guest_runtime::file_download as wire_errno;
 use sandproof_guest_runtime::file_download::date::{LocalZone, Timestamp};
 use sandproof_guest_runtime::file_mime::{self, Catalog, SNIFF_BYTES};
 use std::{
@@ -17,6 +18,7 @@ use std::{
 };
 use tokio::{sync::watch, time::Instant};
 
+mod errors;
 mod negotiated;
 pub use negotiated::NegotiationLimits;
 pub type IdentityDownload = Download;
@@ -30,6 +32,10 @@ pub enum DownloadError {
     Negotiation(crate::file_encoding::DownloadError),
     Gzip(crate::upload_body::GzipError),
     Stat,
+    StatIo(wire_errno::LinuxErrno),
+    Directory,
+    OpenIo(wire_errno::LinuxErrno),
+    RangeSeekIo(wire_errno::LinuxErrno),
     Mime(file_mime::Error),
     InvalidConfiguration,
     SourceNotFound,
@@ -274,9 +280,9 @@ fn set_disposition(
     request: &mut IdentityRequest,
     limits: IdentityLimits,
 ) -> Result<(), DownloadError> {
-    if let Some(path) = request.disposition_path.take() {
+    if let Some(path) = request.disposition_path.as_ref() {
         let value =
-            file_mime::disposition(&path, limits.path_bytes, limits.plan.response_header_bytes)
+            file_mime::disposition(path, limits.path_bytes, limits.plan.response_header_bytes)
                 .map_err(DownloadError::Mime)?;
         request.response.insert(
             "content-disposition",
@@ -350,7 +356,16 @@ impl Control {
         self.check()?;
         let result = source.seek(offset);
         self.check()?;
-        result.map_err(|_| failure)
+        result.map_err(|error| {
+            if failure == DownloadError::RangeSeek
+                && let Some(errno) = error
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<wire_errno::LinuxErrno>())
+            {
+                return DownloadError::RangeSeekIo(*errno);
+            }
+            failure
+        })
     }
 }
 enum Current {
