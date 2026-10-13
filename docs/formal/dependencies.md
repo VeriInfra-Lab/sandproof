@@ -63,7 +63,7 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 ### A6 网络地址库模型使用登记
 
-`A6-network-stdlib` 是独立于上述六函数的最小 IPv4 标准库合同，仅覆盖本批真实调用的 `String` 精确相等、`String` 到 `str` 借用、`str::parse` 的字典调用、`Ipv4Addr::from_str` 及 `u32::from(Ipv4Addr)`，以及所需的 `Ipv4Addr`、`AddrParseError` 表示。生产编译器为 Rust 1.97.0，抽取前端为 `nightly-2026-08-18`；两版标准库解析器的实现和文件摘要不同，不将抽取版源码等同于生产版源码。精确编译器提交、两版库源码摘要、目标及配置冻结在[网络模型环境清单](../../verification/network-environment.json)，源码/模型/检查脚本摘要见[网络输入清单](../../verification/network-inputs.sha256)，生成物由重新抽取逐字节核对；变更后重新核对依赖闭包。[生产版解析器源码](https://github.com/rust-lang/rust/blob/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/net/parser.rs)、[抽取版解析器源码](https://github.com/rust-lang/rust/blob/8fa1c96cfd489e4c27654c144ae871ce2c4db6c6/library/core/src/net/parser.rs)
+`A6-network-stdlib` 是独立于上述六函数的最小 IPv4 标准库合同，覆盖真实调用的 `String` 精确相等、`String` 到 `str` 借用、`str::parse` 的字典调用、`Ipv4Addr::from_str` 及 `u32::from(Ipv4Addr)`，以及所需的 `Ipv4Addr`、`AddrParseError` 表示；下方克隆与析构登记限定新增的两个接口及内置模型使用条件。生产编译器为 Rust 1.97.0，抽取前端为 `nightly-2026-08-18`；两版标准库解析器的实现和文件摘要不同，不将抽取版源码等同于生产版源码。精确编译器提交、两版库源码摘要、目标及配置冻结在[网络模型环境清单](../../verification/network-environment.json)，源码/模型/检查脚本摘要见[网络输入清单](../../verification/network-inputs.sha256)，生成物由重新抽取逐字节核对；变更后重新核对依赖闭包。[生产版解析器源码](https://github.com/rust-lang/rust/blob/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/net/parser.rs)、[抽取版解析器源码](https://github.com/rust-lang/rust/blob/8fa1c96cfd489e4c27654c144ae871ce2c4db6c6/library/core/src/net/parser.rs)
 
 调用前提是有效、有限的 Rust 字符串和借用；表示关系显式要求字符串字节长度不超过目标 `Usize.max`（`StringRepresentable`）。模型对超出 Rust 可表示域的 Lean 字符串返回外层大小错误，不把它当成正常解析失败。固定 Aeneas 的 `Str` 表示是字节切片，模型保持原始 UTF-8 字节，不先去除空白或替换字符；精确相等不作域名规范化。借用保持完整字符串字节，泛型 `parse` 忠实调用给定的 `FromStr` 字典。IPv4 解析成功恰对应四个非空 ASCII 十进制段、三个 ASCII 点、完整消费输入；每段 1–3 位且数值在 0–255，除单个 `0` 外拒绝前导零。空白、符号、非 ASCII 数字、少段/多段、超范围、端口、CIDR 后缀、IPv6、域名和其他尾随内容均返回解析错误，不隐式规范化成可接受地址。对本前提内的输入，正常语法失败是外层 Aeneas `Result.ok` 中的内层 Rust `Result.Err`，成功是外层 `ok` 中的内层 `Ok`；两者不混同于执行失败、提交未知或物理网络结果。
 
@@ -72,6 +72,16 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 真实标准库符合该可计算模型是显式外部条件，源级审查和边界对照测试不是标准库实现的形式化证明；不以自定义公理或不透明的成功模板消除自有义务。解析器接受 `0.0.0.0` 或私有地址也不意味着允许访问。自有 CIDR 掩码及合法性、固定平台禁止表、解析失败和非单地址请求的拒绝、平台禁止 → 用户允许 → 用户拒绝 → 默认联网值的短路顺序，仍由本批自有实现对应证明提供。真实宿主规则安装、动态宿主地址排除、全部出口覆盖和授权/当前实例绑定属于后续模块连接，不置于本库合同。本合同无 I/O、DNS 查询、规则安装或 Ready/Cleaned/Committed 证据，不扩大为整个标准库或网络实现已验证。
 
 ## 精确条款
+
+### 网络授权所用的克隆与析构边界
+
+同一 `A6-network-stdlib` 登记增加 `String::clone` 与 `Option<T>::clone` 两个接口：在有效 Rust 值的正常返回中，字符串保持完整内容；None 不调用字典，Some 恰调用给定元素克隆并传播其结果。两版 `option.rs`、`clone.rs`、`tuple.rs`、`alloc/vec/mod.rs` 和 `alloc/slice.rs` 源码一并冻结。自有记录、策略、命令、维护状态和完整 World 的克隆均保留真实生成函数体，由 [Cloning](../../SandboxModel/Access/Cloning.lean) 提供逐类型的值保持证明，不把自有克隆算法归为外部函数。
+
+固定后端的元组内置克隆不保留字段克隆字典。因此本批 `Store::clone` 的连接只适用于已分别证明 `CloneExact` 的具体键和值；不宣称对任意有状态、失败或改变值的自定义 Clone 都正确。向量、可选值及嵌套记录所需字典条件由同批具体引理落实。该纯分配模型不覆盖物理分配失败、OOM/abort、缓冲区地址和容量；正常返回的逻辑值相等不能代替物理容量或崩溃恢复证明。
+
+Linux 前端还产生固定类型的自动 `DropGlue`，纯后端不输出这些胶水。审计单列精确类型集合，要求真实结构化体和声明顺序，只接受存活/结束、局部单元返回值、字段析构、枚举分派及编译器异常终止；拒绝普通调用、参数写入、自定义析构和集合外的目标。只有已登记自有胶水或 String/Vec/Option 的库析构可作为目标。其内存回收的擦除属于固定翻译器/库模型边界，不能用此例外遗漏自有业务函数，也不证明物理内存清理；新增自定义 Drop 后必须重新建立对应而非沿用该登记。
+
+单字段编号类型的别名表示逐项核对真实 `_0: u64` 结构及生成定义，只允许已登记的编号类型；别名本身不提供非零、有效窗口或资源归属证明。入口/出口的记录查询、精确实例及策略相等、入口租户判断、顺序拒绝和完整状态保持仍是自有定理，不由这些库合同担保。
 
 以下条款为本模块的规范定义；跨模块条款通过前提提供方连接，不将下游自有义务假定为已证。
 

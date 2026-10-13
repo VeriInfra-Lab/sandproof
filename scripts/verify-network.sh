@@ -25,14 +25,16 @@ if ! cmp -s "$BEFORE" "$AFTER"; then
   exit 1
 fi
 bash scripts/python-entry.sh tools/check_network_extraction.py
-lake build SandproofNetwork SandboxModel.Network.Audit
+lake build SandproofNetwork SandboxModel.Network.Audit SandboxModel.Access.Audit
 lake env lean SandboxModel/Network/Audit.lean
+lake env lean SandboxModel/Access/Audit.lean
 if rg -n --glob '*.lean' '\b(sorry|admit|axiom)\b' \
     SandboxModel/Network.lean SandboxModel/Network SandboxModel/ProofAuditCommand.lean \
+    SandboxModel/Access \
     verification/aeneas/network; then
   echo 'Forbidden proof placeholder or unapproved assumption in IPv4 sources.' >&2
   exit 1
 fi
-echo 'Listed IPv4 proofs passed extraction consistency, compilation and dependency audit.'
+echo 'Listed IPv4 and network-admission proofs passed extraction consistency, compilation and dependency audit.'
 echo 'Standard-library correspondence remains conditional on A6-network-stdlib.'
 echo 'This is a module check, not the complete controller verification gate.'

@@ -34,6 +34,33 @@ def core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError :
     core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError.from_str
 }
 
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}::eq]:
+    Source: './controller-core/src/model.rs', lines 97:29-97:38
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr, sandbox_controller_core::model::Ipv4Cidr>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr, sandbox_controller_core::model::Ipv4Cidr>}::eq"]
+def sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
+  (self : sandbox_controller_core.model.Ipv4Cidr)
+  (other : sandbox_controller_core.model.Ipv4Cidr) :
+  Result Bool
+  := do
+  if self.network = other.network
+  then ok (self.prefix_length = other.prefix_length)
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}]
+    Source: './controller-core/src/model.rs', lines 97:29-97:38
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr, sandbox_controller_core::model::Ipv4Cidr>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr, sandbox_controller_core::model::Ipv4Cidr>"]
+def sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr :
+  core.cmp.PartialEq sandbox_controller_core.model.Ipv4Cidr
+  sandbox_controller_core.model.Ipv4Cidr := {
+  eq :=
+    sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
+}
+
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq]:
     Source: './controller-core/src/model.rs', lines 67:29-67:38
     Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Protocol, sandbox_controller_core::model::Protocol>}::eq]
@@ -87,6 +114,148 @@ def sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint :
     sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq
 }
 
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}::eq]:
+    Source: './controller-core/src/model.rs', lines 83:23-83:32
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy, sandbox_controller_core::model::NetworkPolicy>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy, sandbox_controller_core::model::NetworkPolicy>}::eq"]
+def
+  sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
+  (self : sandbox_controller_core.model.NetworkPolicy)
+  (other : sandbox_controller_core.model.NetworkPolicy) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | sandbox_controller_core.model.NetworkPolicy.DenyAll => ok true
+    | sandbox_controller_core.model.NetworkPolicy.StaticAllowlist __self_0 =>
+      match other with
+      | sandbox_controller_core.model.NetworkPolicy.DenyAll => ok true
+      | sandbox_controller_core.model.NetworkPolicy.StaticAllowlist __arg1_0 =>
+        alloc.vec.partial_eq.PartialEqVec.eq
+          sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint
+          __self_0 __arg1_0
+      | sandbox_controller_core.model.NetworkPolicy.Ipv4 _ _ _ => ok true
+    | sandbox_controller_core.model.NetworkPolicy.Ipv4 __self_0 __self_1
+      __self_2 =>
+      match other with
+      | sandbox_controller_core.model.NetworkPolicy.DenyAll => ok true
+      | sandbox_controller_core.model.NetworkPolicy.StaticAllowlist _ =>
+        ok true
+      | sandbox_controller_core.model.NetworkPolicy.Ipv4 __arg1_0 __arg1_1
+        __arg1_2 =>
+        let b ← core.cmp.impls.PartialEqBool.eq __self_0 __arg1_0
+        if b
+        then
+          let b1 ←
+            alloc.vec.partial_eq.PartialEqVec.eq
+              sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr
+              __self_1 __arg1_1
+          if b1
+          then
+            alloc.vec.partial_eq.PartialEqVec.eq
+              sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr
+              __self_2 __arg1_2
+          else ok false
+        else ok false
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}]
+    Source: './controller-core/src/model.rs', lines 83:23-83:32
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy, sandbox_controller_core::model::NetworkPolicy>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy, sandbox_controller_core::model::NetworkPolicy>"]
+def
+  sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy
+  : core.cmp.PartialEq sandbox_controller_core.model.NetworkPolicy
+  sandbox_controller_core.model.NetworkPolicy := {
+  eq :=
+    sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
+}
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>}::eq"]
+def sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+  (self : sandbox_controller_core.ids.NetSlotId)
+  (other : sandbox_controller_core.ids.NetSlotId) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>}::eq"]
+def sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+  (self : sandbox_controller_core.ids.VmId)
+  (other : sandbox_controller_core.ids.VmId) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>}::eq"]
+def sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+  (self : sandbox_controller_core.ids.SandboxId)
+  (other : sandbox_controller_core.ids.SandboxId) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::auxiliary::allows_network]:
+    Source: './controller-core/src/auxiliary.rs', lines 76:0-76:96
+    Name pattern: [sandbox_controller_core::auxiliary::allows_network] -/
+@[rust_fun "sandbox_controller_core::auxiliary::allows_network"]
+def sandbox_controller_core.auxiliary.allows_network
+  (record : sandbox_controller_core.model.SandboxRecord)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (vm : sandbox_controller_core.ids.VmId)
+  (slot : sandbox_controller_core.ids.NetSlotId) :
+  Result Bool
+  := do
+  match record.effective with
+  | sandbox_controller_core.model.Authority.Closed => ok false
+  | sandbox_controller_core.model.Authority.Running authority_sandbox
+    generation authority_vm _ _ authority_slot policy =>
+    let b ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+        authority_sandbox sandbox
+    if b
+    then
+      if generation = record.generation
+      then
+        let b1 ←
+          sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+            authority_vm vm
+        if b1
+        then
+          let b2 ←
+            sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+              authority_slot slot
+          if b2
+          then
+            sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
+              policy record.policy
+          else ok false
+        else ok false
+      else ok false
+    else ok false
+  | sandbox_controller_core.model.Authority.Paused _ _ => ok false
+
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::Ipv4Cidr}::contains]:
     Source: './controller-core/src/model.rs', lines 107:4-107:47
     Name pattern: [sandbox_controller_core::model::{sandbox_controller_core::model::Ipv4Cidr}::contains]
@@ -115,48 +284,6 @@ def sandbox_controller_core.model.Ipv4Cidr.contains
            ok (i2 = self.network)
       else ok false
     else ok false
-
-/-- [sandbox_controller_core::network::PLATFORM_DENY_IPV4]
-    Source: './controller-core/src/network.rs', lines 9:0-9:41
-    Name pattern: [sandbox_controller_core::network::PLATFORM_DENY_IPV4]
-    Visibility: public -/
-@[global_simps, irreducible, rust_const
-  "sandbox_controller_core::network::PLATFORM_DENY_IPV4"]
-def sandbox_controller_core.network.PLATFORM_DENY_IPV4
-  : Slice sandbox_controller_core.model.Ipv4Cidr :=
-  Array.to_slice
-    (Array.make 15#usize [
-      ({ network := 0#u32, prefix_length := 8#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 167772160#u32, prefix_length := 8#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 1681915904#u32, prefix_length := 10#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 2130706432#u32, prefix_length := 8#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 2851995648#u32, prefix_length := 16#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 2886729728#u32, prefix_length := 12#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3221225472#u32, prefix_length := 24#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3221225984#u32, prefix_length := 24#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3227017984#u32, prefix_length := 24#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3232235520#u32, prefix_length := 16#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3323068416#u32, prefix_length := 15#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3325256704#u32, prefix_length := 24#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3405803776#u32, prefix_length := 24#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 3758096384#u32, prefix_length := 4#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr),
-      ({ network := 4026531840#u32, prefix_length := 4#u8 } :
-      sandbox_controller_core.model.Ipv4Cidr)
-      ])
 
 /-- [sandbox_controller_core::network::ipv4_list_contains]: loop body 0:
     Source: './controller-core/src/network.rs', lines 144:4-151:1
@@ -204,6 +331,48 @@ def sandbox_controller_core.network.ipv4_list_contains
   := do
   sandbox_controller_core.network.ipv4_list_contains_loop ranges address
     0#usize
+
+/-- [sandbox_controller_core::network::PLATFORM_DENY_IPV4]
+    Source: './controller-core/src/network.rs', lines 9:0-9:41
+    Name pattern: [sandbox_controller_core::network::PLATFORM_DENY_IPV4]
+    Visibility: public -/
+@[global_simps, irreducible, rust_const
+  "sandbox_controller_core::network::PLATFORM_DENY_IPV4"]
+def sandbox_controller_core.network.PLATFORM_DENY_IPV4
+  : Slice sandbox_controller_core.model.Ipv4Cidr :=
+  Array.to_slice
+    (Array.make 15#usize [
+      ({ network := 0#u32, prefix_length := 8#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 167772160#u32, prefix_length := 8#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 1681915904#u32, prefix_length := 10#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 2130706432#u32, prefix_length := 8#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 2851995648#u32, prefix_length := 16#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 2886729728#u32, prefix_length := 12#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3221225472#u32, prefix_length := 24#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3221225984#u32, prefix_length := 24#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3227017984#u32, prefix_length := 24#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3232235520#u32, prefix_length := 16#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3323068416#u32, prefix_length := 15#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3325256704#u32, prefix_length := 24#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3405803776#u32, prefix_length := 24#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 3758096384#u32, prefix_length := 4#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr),
+      ({ network := 4026531840#u32, prefix_length := 4#u8 } :
+      sandbox_controller_core.model.Ipv4Cidr)
+      ])
 
 /-- [sandbox_controller_core::network::platform_protected_ipv4]:
     Source: './controller-core/src/network.rs', lines 136:0-136:52
@@ -312,8 +481,1733 @@ def sandbox_controller_core.network.NetworkPolicy.destination_allowed
             else ok internet_access
     | core.result.Result.Err _ => ok false
 
+/-- [sandbox_controller_core::auxiliary::destination_allowed]:
+    Source: './controller-core/src/auxiliary.rs', lines 96:0-96:78
+    Name pattern: [sandbox_controller_core::auxiliary::destination_allowed] -/
+@[rust_fun "sandbox_controller_core::auxiliary::destination_allowed"]
+def sandbox_controller_core.auxiliary.destination_allowed
+  (record : sandbox_controller_core.model.SandboxRecord)
+  (destination : sandbox_controller_core.model.Endpoint) :
+  Result Bool
+  := do
+  sandbox_controller_core.network.NetworkPolicy.destination_allowed
+    record.policy destination
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}::eq]:
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::TenantId, sandbox_controller_core::ids::TenantId>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::TenantId, sandbox_controller_core::ids::TenantId>}::eq"]
+def sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+  (self : sandbox_controller_core.ids.TenantId)
+  (other : sandbox_controller_core.ids.TenantId) :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}]
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::TenantId, sandbox_controller_core::ids::TenantId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::ids::TenantId, sandbox_controller_core::ids::TenantId>"]
+def sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId :
+  core.cmp.PartialEq sandbox_controller_core.ids.TenantId
+  sandbox_controller_core.ids.TenantId := {
+  eq := sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Actor> for sandbox_controller_core::model::Actor}::eq]:
+    Source: './controller-core/src/model.rs', lines 7:23-7:32
+    Name pattern: [sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Actor, sandbox_controller_core::model::Actor>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Actor, sandbox_controller_core::model::Actor>}::eq"]
+def sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor.eq
+  (self : sandbox_controller_core.model.Actor)
+  (other : sandbox_controller_core.model.Actor) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | sandbox_controller_core.model.Actor.Tenant __self_0 =>
+      match other with
+      | sandbox_controller_core.model.Actor.Tenant __arg1_0 =>
+        sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+          __self_0 __arg1_0
+      | sandbox_controller_core.model.Actor.SystemController => ok true
+    | sandbox_controller_core.model.Actor.SystemController => ok true
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Actor> for sandbox_controller_core::model::Actor}]
+    Source: './controller-core/src/model.rs', lines 7:23-7:32
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::model::Actor, sandbox_controller_core::model::Actor>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::model::Actor, sandbox_controller_core::model::Actor>"]
+def sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor :
+  core.cmp.PartialEq sandbox_controller_core.model.Actor
+  sandbox_controller_core.model.Actor := {
+  eq := sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor.eq
+}
+
+/-- [sandbox_controller_core::transition::authorized]:
+    Source: './controller-core/src/transition.rs', lines 20:0-20:57
+    Name pattern: [sandbox_controller_core::transition::authorized]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::transition::authorized"]
+def sandbox_controller_core.transition.authorized
+  (actor : sandbox_controller_core.model.Actor)
+  (owner : sandbox_controller_core.ids.TenantId) :
+  Result Bool
+  := do
+  let b ←
+    sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor.eq actor
+      (sandbox_controller_core.model.Actor.Tenant owner)
+  if b
+  then ok true
+  else
+    sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor.eq actor
+      sandbox_controller_core.model.Actor.SystemController
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]: loop body 0:
+    Source: './controller-core/src/store.rs', lines 22:8-29:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get]
+    Visibility: public -/
+@[rust_loop_body, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get"]
+def sandbox_controller_core.store.Store.get_loop.body
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K)
+  (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (Option V))
+  := do
+  let i := alloc.vec.Vec.len self.entries
+  if index < i
+  then
+    let (t, t1) ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
+        self.entries index
+    let b ← core.cmp.impls.PartialEqShared.eq corecmpPartialEqInst t key
+    if b
+    then ok (done (some t1))
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else ok (done none)
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]: loop 0:
+    Source: './controller-core/src/store.rs', lines 22:8-29:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get]
+    Visibility: public -/
+@[rust_loop, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get"]
+def sandbox_controller_core.store.Store.get_loop
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K)
+  (index : Std.Usize) :
+  Result (Option V)
+  := do
+  loop
+    (fun index1 => sandbox_controller_core.store.Store.get_loop.body
+      corecmpPartialEqInst self key index1)
+    index
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]:
+    Source: './controller-core/src/store.rs', lines 20:4-20:44
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get]
+    Visibility: public -/
+@[reducible, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get"]
+def sandbox_controller_core.store.Store.get
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) :
+  Result (Option V)
+  := do
+  sandbox_controller_core.store.Store.get_loop corecmpPartialEqInst self key
+    0#usize
+
+/-- [sandbox_controller_core::store::{impl core::clone::Clone for sandbox_controller_core::store::Store<K, V>}::clone]:
+    Source: './controller-core/src/store.rs', lines 5:9-5:14
+    Name pattern: [sandbox_controller_core::store::{core::clone::Clone<sandbox_controller_core::store::Store<@K, @V>>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::store::{core::clone::Clone<sandbox_controller_core::store::Store<@K, @V>>}::clone"]
+def sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+  {K : Type} {V : Type} (corecloneCloneInst : core.clone.Clone K)
+  (corecloneCloneInst1 : core.clone.Clone V)
+  (self : sandbox_controller_core.store.Store K V) :
+  Result (sandbox_controller_core.store.Store K V)
+  := do
+  let v ← alloc.vec.CloneVec.clone (BuiltinClone (K × V)) self.entries
+  ok { entries := v }
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}::clone]:
+    Source: './controller-core/src/model.rs', lines 551:9-551:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::WorkerFence>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::WorkerFence>}::clone"]
+def sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.WorkerFence) :
+  Result sandbox_controller_core.model.WorkerFence
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}]
+    Source: './controller-core/src/model.rs', lines 551:9-551:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::WorkerFence>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::WorkerFence>"]
+def sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.WorkerFence := {
+  clone := sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}::clone]:
+    Source: './controller-core/src/model.rs', lines 542:9-542:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::AppliedFilePolicy>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::AppliedFilePolicy>}::clone"]
+def sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.AppliedFilePolicy) :
+  Result sandbox_controller_core.model.AppliedFilePolicy
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}]
+    Source: './controller-core/src/model.rs', lines 542:9-542:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::AppliedFilePolicy>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::AppliedFilePolicy>"]
+def sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.AppliedFilePolicy := {
+  clone :=
+    sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}::clone]:
+    Source: './controller-core/src/model.rs', lines 97:9-97:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Ipv4Cidr>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Ipv4Cidr>}::clone"]
+def sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Ipv4Cidr) :
+  Result sandbox_controller_core.model.Ipv4Cidr
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}]
+    Source: './controller-core/src/model.rs', lines 97:9-97:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::Ipv4Cidr>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::Ipv4Cidr>"]
+def sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.Ipv4Cidr := {
+  clone := sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone]:
+    Source: './controller-core/src/model.rs', lines 67:9-67:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Protocol>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Protocol>}::clone"]
+def sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Protocol) :
+  Result sandbox_controller_core.model.Protocol
+  := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone]:
+    Source: './controller-core/src/model.rs', lines 74:9-74:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Endpoint>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Endpoint>}::clone"]
+def sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Endpoint) :
+  Result sandbox_controller_core.model.Endpoint
+  := do
+  let s ← alloc.string.String.Insts.CoreCloneClone.clone self.address
+  let i ← lift (core.clone.impls.CloneU64.clone self.prefix_length)
+  let p ←
+    sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone
+      self.protocol
+  let i1 ← lift (core.clone.impls.CloneU64.clone self.port)
+  ok { address := s, prefix_length := i, protocol := p, port := i1 }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}]
+    Source: './controller-core/src/model.rs', lines 74:9-74:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::Endpoint>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::Endpoint>"]
+def sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.Endpoint := {
+  clone := sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone]:
+    Source: './controller-core/src/model.rs', lines 83:9-83:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::NetworkPolicy>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::NetworkPolicy>}::clone"]
+def sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.NetworkPolicy) :
+  Result sandbox_controller_core.model.NetworkPolicy
+  := do
+  match self with
+  | sandbox_controller_core.model.NetworkPolicy.DenyAll =>
+    ok sandbox_controller_core.model.NetworkPolicy.DenyAll
+  | sandbox_controller_core.model.NetworkPolicy.StaticAllowlist __self_0 =>
+    let v ←
+      alloc.vec.CloneVec.clone
+        sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone __self_0
+    ok (sandbox_controller_core.model.NetworkPolicy.StaticAllowlist v)
+  | sandbox_controller_core.model.NetworkPolicy.Ipv4 __self_0 __self_1 __self_2
+    =>
+    let b ← lift (core.clone.impls.CloneBool.clone __self_0)
+    let v ←
+      alloc.vec.CloneVec.clone
+        sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone __self_1
+    let v1 ←
+      alloc.vec.CloneVec.clone
+        sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone __self_2
+    ok (sandbox_controller_core.model.NetworkPolicy.Ipv4 b v v1)
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::TenantId}::clone]:
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::TenantId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::TenantId>}::clone"]
+def sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.ids.TenantId) :
+  Result sandbox_controller_core.ids.TenantId
+  := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}::clone]:
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::VmId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::VmId>}::clone"]
+def sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.ids.VmId) :
+  Result sandbox_controller_core.ids.VmId
+  := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}::clone]:
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::SandboxId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::SandboxId>}::clone"]
+def sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.ids.SandboxId) :
+  Result sandbox_controller_core.ids.SandboxId
+  := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}::clone]:
+    Source: './controller-core/src/model.rs', lines 529:9-529:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::NetSlot>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::NetSlot>}::clone"]
+def sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.NetSlot) :
+  Result sandbox_controller_core.model.NetSlot
+  := do
+  let ti ←
+    sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone self.owner
+  let si ←
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone
+      self.sandbox
+  let i ← lift (core.clone.impls.CloneU64.clone self.generation)
+  let vi ←
+    sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone self.vm
+  let np ←
+    sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+      self.policy
+  let b ← lift (core.clone.impls.CloneBool.clone self.configured)
+  let b1 ← lift (core.clone.impls.CloneBool.clone self.active)
+  let b2 ← lift (core.clone.impls.CloneBool.clone self.reclaimed)
+  ok
+    {
+      owner := ti,
+      sandbox := si,
+      generation := i,
+      vm := vi,
+      policy := np,
+      configured := b,
+      active := b1,
+      reclaimed := b2
+    }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}]
+    Source: './controller-core/src/model.rs', lines 529:9-529:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::NetSlot>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::NetSlot>"]
+def sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.NetSlot := {
+  clone := sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}::clone]:
+    Source: './controller-core/src/model.rs', lines 517:9-517:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Snapshot>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Snapshot>}::clone"]
+def sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Snapshot) :
+  Result sandbox_controller_core.model.Snapshot
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}]
+    Source: './controller-core/src/model.rs', lines 517:9-517:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::Snapshot>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::Snapshot>"]
+def sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.Snapshot := {
+  clone := sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}::clone]:
+    Source: './controller-core/src/model.rs', lines 509:9-509:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Filesystem>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Filesystem>}::clone"]
+def sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Filesystem) :
+  Result sandbox_controller_core.model.Filesystem
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}]
+    Source: './controller-core/src/model.rs', lines 509:9-509:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::Filesystem>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::Filesystem>"]
+def sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.Filesystem := {
+  clone := sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}::clone]:
+    Source: './controller-core/src/model.rs', lines 500:9-500:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Vm>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Vm>}::clone"]
+def sandbox_controller_core.model.Vm.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Vm) :
+  Result sandbox_controller_core.model.Vm
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}]
+    Source: './controller-core/src/model.rs', lines 500:9-500:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::Vm>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::Vm>"]
+def sandbox_controller_core.model.Vm.Insts.CoreCloneClone : core.clone.Clone
+  sandbox_controller_core.model.Vm := {
+  clone := sandbox_controller_core.model.Vm.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone]:
+    Source: './controller-core/src/model.rs', lines 60:9-60:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::RestoreSource>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::RestoreSource>}::clone"]
+def sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.RestoreSource) :
+  Result sandbox_controller_core.model.RestoreSource
+  := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone]:
+    Source: './controller-core/src/model.rs', lines 42:9-42:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::WorkspaceApiAccess>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::WorkspaceApiAccess>}::clone"]
+def sandbox_controller_core.model.WorkspaceApiAccess.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.WorkspaceApiAccess) :
+  Result sandbox_controller_core.model.WorkspaceApiAccess
+  := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}::clone]:
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::NetSlotId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::NetSlotId>}::clone"]
+def sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.ids.NetSlotId) :
+  Result sandbox_controller_core.ids.NetSlotId
+  := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}::clone]:
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::FsId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::FsId>}::clone"]
+def sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.ids.FsId) :
+  Result sandbox_controller_core.ids.FsId
+  := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone]:
+    Source: './controller-core/src/model.rs', lines 199:9-199:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Authority>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Authority>}::clone"]
+def sandbox_controller_core.model.Authority.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Authority) :
+  Result sandbox_controller_core.model.Authority
+  := do
+  match self with
+  | sandbox_controller_core.model.Authority.Closed =>
+    ok sandbox_controller_core.model.Authority.Closed
+  | sandbox_controller_core.model.Authority.Running __self_0 __self_1 __self_2
+    __self_3 __self_4 __self_5 __self_6 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_2
+    let fi ←
+      sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone __self_3
+    let waa ←
+      sandbox_controller_core.model.WorkspaceApiAccess.Insts.CoreCloneClone.clone
+        __self_4
+    let nsi ←
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone __self_5
+    let np ←
+      sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+        __self_6
+    ok (sandbox_controller_core.model.Authority.Running si i vi fi waa nsi np)
+  | sandbox_controller_core.model.Authority.Paused __self_0 __self_1 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let rs ←
+      sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone
+        __self_1
+    ok (sandbox_controller_core.model.Authority.Paused si rs)
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone]:
+    Source: './controller-core/src/model.rs', lines 190:9-190:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Operation>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Operation>}::clone"]
+def sandbox_controller_core.model.Operation.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Operation) :
+  Result sandbox_controller_core.model.Operation
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}]
+    Source: './controller-core/src/model.rs', lines 190:9-190:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::Operation>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::Operation>"]
+def sandbox_controller_core.model.Operation.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.Operation := {
+  clone := sandbox_controller_core.model.Operation.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}]
+    Source: './controller-core/src/model.rs', lines 60:9-60:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::RestoreSource>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::RestoreSource>"]
+def sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.RestoreSource := {
+  clone :=
+    sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone]:
+    Source: './controller-core/src/model.rs', lines 48:9-48:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::FilePolicyRef>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::FilePolicyRef>}::clone"]
+def sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.FilePolicyRef) :
+  Result sandbox_controller_core.model.FilePolicyRef
+  := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone]:
+    Source: './controller-core/src/model.rs', lines 14:9-14:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Phase>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Phase>}::clone"]
+def sandbox_controller_core.model.Phase.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Phase) :
+  Result sandbox_controller_core.model.Phase
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}]
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [core::clone::Clone<sandbox_controller_core::ids::NetSlotId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::ids::NetSlotId>"]
+def sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.ids.NetSlotId := {
+  clone := sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}]
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [core::clone::Clone<sandbox_controller_core::ids::VmId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::ids::VmId>"]
+def sandbox_controller_core.ids.VmId.Insts.CoreCloneClone : core.clone.Clone
+  sandbox_controller_core.ids.VmId := {
+  clone := sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}::clone]:
+    Source: './controller-core/src/model.rs', lines 479:9-479:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::SandboxRecord>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::SandboxRecord>}::clone"]
+def sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.SandboxRecord) :
+  Result sandbox_controller_core.model.SandboxRecord
+  := do
+  let ti ←
+    sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone self.owner
+  let p ←
+    sandbox_controller_core.model.Phase.Insts.CoreCloneClone.clone self.phase
+  let b ← lift (core.clone.impls.CloneBool.clone self.terminal)
+  let i ← lift (core.clone.impls.CloneU64.clone self.epoch)
+  let i1 ← lift (core.clone.impls.CloneU64.clone self.generation)
+  let o ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone self.current_vm
+  let fi ←
+    sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone self.workspace
+  let waa ←
+    sandbox_controller_core.model.WorkspaceApiAccess.Insts.CoreCloneClone.clone
+      self.workspace_access
+  let fpr ←
+    sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone
+      self.file_policy
+  let o1 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone
+      self.durable_snapshot
+  let o2 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone
+      self.restore_from
+  let o3 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone self.net_slot
+  let np ←
+    sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+      self.policy
+  let a ←
+    sandbox_controller_core.model.Authority.Insts.CoreCloneClone.clone
+      self.desired
+  let a1 ←
+    sandbox_controller_core.model.Authority.Insts.CoreCloneClone.clone
+      self.effective
+  let o4 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.Operation.Insts.CoreCloneClone
+      self.current_operation
+  ok
+    {
+      owner := ti,
+      phase := p,
+      terminal := b,
+      epoch := i,
+      generation := i1,
+      current_vm := o,
+      workspace := fi,
+      workspace_access := waa,
+      file_policy := fpr,
+      durable_snapshot := o1,
+      restore_from := o2,
+      net_slot := o3,
+      policy := np,
+      desired := a,
+      effective := a1,
+      current_operation := o4
+    }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}]
+    Source: './controller-core/src/model.rs', lines 479:9-479:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::SandboxRecord>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::SandboxRecord>"]
+def sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.SandboxRecord := {
+  clone :=
+    sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone]:
+    Source: './controller-core/src/model.rs', lines 162:9-162:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationResult>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationResult>}::clone"]
+def sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.OperationResult) :
+  Result sandbox_controller_core.model.OperationResult
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}]
+    Source: './controller-core/src/model.rs', lines 162:9-162:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::OperationResult>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::OperationResult>"]
+def sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.OperationResult := {
+  clone :=
+    sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone]:
+    Source: './controller-core/src/model.rs', lines 119:9-119:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationInput>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationInput>}::clone"]
+def sandbox_controller_core.model.OperationInput.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.OperationInput) :
+  Result sandbox_controller_core.model.OperationInput
+  := do
+  match self with
+  | sandbox_controller_core.model.OperationInput.Create __self_0 __self_1
+    __self_2 =>
+    let fi ←
+      sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone __self_0
+    let np ←
+      sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+        __self_1
+    let fpr ←
+      sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone
+        __self_2
+    ok (sandbox_controller_core.model.OperationInput.Create fi np fpr)
+  | sandbox_controller_core.model.OperationInput.Pause __self_0 =>
+    let i ← lift (core.clone.impls.CloneU64.clone __self_0)
+    ok (sandbox_controller_core.model.OperationInput.Pause i)
+  | sandbox_controller_core.model.OperationInput.Resume __self_0 =>
+    let rs ←
+      sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone
+        __self_0
+    ok (sandbox_controller_core.model.OperationInput.Resume rs)
+  | sandbox_controller_core.model.OperationInput.Kill __self_0 =>
+    let i ← lift (core.clone.impls.CloneU64.clone __self_0)
+    ok (sandbox_controller_core.model.OperationInput.Kill i)
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone]:
+    Source: './controller-core/src/model.rs', lines 470:9-470:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationLedgerRecord>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationLedgerRecord>}::clone"]
+def
+  sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.OperationLedgerRecord) :
+  Result sandbox_controller_core.model.OperationLedgerRecord
+  := do
+  let si ←
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone
+      self.sandbox
+  let o ←
+    sandbox_controller_core.model.Operation.Insts.CoreCloneClone.clone
+      self.operation
+  let oi ←
+    sandbox_controller_core.model.OperationInput.Insts.CoreCloneClone.clone
+      self.input
+  let o1 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone
+      self.result
+  ok { sandbox := si, operation := o, input := oi, result := o1 }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}]
+    Source: './controller-core/src/model.rs', lines 470:9-470:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::OperationLedgerRecord>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::OperationLedgerRecord>"]
+def sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.OperationLedgerRecord := {
+  clone :=
+    sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone]:
+    Source: './controller-core/src/model.rs', lines 461:9-461:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::LogicalEffectRecord>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::LogicalEffectRecord>}::clone"]
+def
+  sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.LogicalEffectRecord) :
+  Result sandbox_controller_core.model.LogicalEffectRecord
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}]
+    Source: './controller-core/src/model.rs', lines 461:9-461:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::LogicalEffectRecord>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::LogicalEffectRecord>"]
+def sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.LogicalEffectRecord := {
+  clone :=
+    sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}::clone]:
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::SnapshotId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::ids::{core::clone::Clone<sandbox_controller_core::ids::SnapshotId>}::clone"]
+def sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.ids.SnapshotId) :
+  Result sandbox_controller_core.ids.SnapshotId
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}]
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [core::clone::Clone<sandbox_controller_core::ids::SnapshotId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::ids::SnapshotId>"]
+def sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.ids.SnapshotId := {
+  clone := sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}::clone]:
+    Source: './controller-core/src/model.rs', lines 429:9-429:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::ResourceIndex>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::ResourceIndex>}::clone"]
+def sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.ResourceIndex) :
+  Result sandbox_controller_core.model.ResourceIndex
+  := do
+  let v ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone self.vms
+  let v1 ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone self.slots
+  let v2 ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone
+      self.snapshots
+  ok { vms := v, slots := v1, snapshots := v2 }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}]
+    Source: './controller-core/src/model.rs', lines 429:9-429:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::ResourceIndex>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::ResourceIndex>"]
+def sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.ResourceIndex := {
+  clone :=
+    sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone]:
+    Source: './controller-core/src/model.rs', lines 406:9-406:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationKey>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationKey>}::clone"]
+def sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.OperationKey) :
+  Result sandbox_controller_core.model.OperationKey
+  := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}::clone]:
+    Source: './controller-core/src/model.rs', lines 413:9-413:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationPlan>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::OperationPlan>}::clone"]
+def sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.OperationPlan) :
+  Result sandbox_controller_core.model.OperationPlan
+  := do
+  let ok1 ←
+    sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone.clone
+      self.key
+  let i ← lift (core.clone.impls.CloneU64.clone self.epoch)
+  let i1 ← lift (core.clone.impls.CloneU64.clone self.generation)
+  let o ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone self.vm
+  let o1 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone self.slot
+  let o2 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone
+      self.restore_from
+  let o3 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone
+      self.target_snapshot
+  let v ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone self.stop_vms
+  let v1 ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone
+      self.close_slots
+  let i2 ← lift (core.clone.impls.CloneU64.clone self.retry_limit)
+  let b ← lift (core.clone.impls.CloneBool.clone self.sealed)
+  ok
+    {
+      key := ok1,
+      epoch := i,
+      generation := i1,
+      vm := o,
+      slot := o1,
+      restore_from := o2,
+      target_snapshot := o3,
+      stop_vms := v,
+      close_slots := v1,
+      retry_limit := i2,
+      sealed := b
+    }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}]
+    Source: './controller-core/src/model.rs', lines 413:9-413:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::OperationPlan>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::OperationPlan>"]
+def sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.OperationPlan := {
+  clone :=
+    sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}]
+    Source: './controller-core/src/model.rs', lines 406:9-406:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::OperationKey>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::OperationKey>"]
+def sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.OperationKey := {
+  clone :=
+    sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}::clone]:
+    Source: './controller-core/src/model.rs', lines 384:9-384:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::EffectStatus>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::EffectStatus>}::clone"]
+def sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.EffectStatus) :
+  Result sandbox_controller_core.model.EffectStatus
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}]
+    Source: './controller-core/src/model.rs', lines 384:9-384:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::EffectStatus>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::EffectStatus>"]
+def sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.EffectStatus := {
+  clone :=
+    sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone]:
+    Source: './controller-core/src/model.rs', lines 54:9-54:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::SnapshotManifestRef>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::SnapshotManifestRef>}::clone"]
+def
+  sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.SnapshotManifestRef) :
+  Result sandbox_controller_core.model.SnapshotManifestRef
+  := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone]:
+    Source: './controller-core/src/model.rs', lines 228:9-228:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Command>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::Command>}::clone"]
+def sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.Command) :
+  Result sandbox_controller_core.model.Command
+  := do
+  match self with
+  | sandbox_controller_core.model.Command.InstallFence __self_0 __self_1
+    __self_2 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let b ← lift (core.clone.impls.CloneBool.clone __self_2)
+    ok (sandbox_controller_core.model.Command.InstallFence si i b)
+  | sandbox_controller_core.model.Command.PrepareVm __self_0 __self_1 __self_2
+    __self_3 __self_4 __self_5 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let nsi ←
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
+    let o ←
+      core.option.Option.Insts.CoreCloneClone.clone
+        sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone
+        __self_5
+    ok (sandbox_controller_core.model.Command.PrepareVm si i i1 vi nsi o)
+  | sandbox_controller_core.model.Command.ConfigureNetwork __self_0 __self_1
+    __self_2 __self_3 __self_4 __self_5 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let nsi ←
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
+    let np ←
+      sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+        __self_5
+    ok (sandbox_controller_core.model.Command.ConfigureNetwork si i i1 vi nsi
+      np)
+  | sandbox_controller_core.model.Command.ActivateVm __self_0 __self_1 __self_2
+    __self_3 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_3
+    ok (sandbox_controller_core.model.Command.ActivateVm si i i1 vi)
+  | sandbox_controller_core.model.Command.FreezeVm __self_0 __self_1 __self_2
+    __self_3 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_3
+    ok (sandbox_controller_core.model.Command.FreezeVm si i i1 vi)
+  | sandbox_controller_core.model.Command.ApplyFilePolicy __self_0 __self_1
+    __self_2 __self_3 __self_4 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let fi ←
+      sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone __self_3
+    let fpr ←
+      sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone
+        __self_4
+    ok (sandbox_controller_core.model.Command.ApplyFilePolicy si i i1 fi fpr)
+  | sandbox_controller_core.model.Command.SealSnapshot __self_0 __self_1
+    __self_2 __self_3 __self_4 __self_5 __self_6 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let fi ←
+      sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone __self_4
+    let si1 ←
+      sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone
+        __self_5
+    let smr ←
+      sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone
+        __self_6
+    ok (sandbox_controller_core.model.Command.SealSnapshot si i i1 vi fi si1
+      smr)
+  | sandbox_controller_core.model.Command.CommitSnapshot __self_0 __self_1
+    __self_2 __self_3 __self_4 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let si1 ←
+      sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone
+        __self_3
+    let smr ←
+      sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone
+        __self_4
+    ok (sandbox_controller_core.model.Command.CommitSnapshot si i i1 si1 smr)
+  | sandbox_controller_core.model.Command.StopVm __self_0 __self_1 __self_2
+    __self_3 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_3
+    ok (sandbox_controller_core.model.Command.StopVm si i i1 vi)
+  | sandbox_controller_core.model.Command.AbortPrepare __self_0 __self_1
+    __self_2 __self_3 __self_4 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let nsi ←
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
+    ok (sandbox_controller_core.model.Command.AbortPrepare si i i1 vi nsi)
+  | sandbox_controller_core.model.Command.CleanupVm __self_0 __self_1 __self_2
+    =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let vi ←
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone __self_2
+    ok (sandbox_controller_core.model.Command.CleanupVm si i vi)
+  | sandbox_controller_core.model.Command.CleanupSlot __self_0 __self_1
+    __self_2 =>
+    let si ←
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let nsi ←
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone __self_2
+    ok (sandbox_controller_core.model.Command.CleanupSlot si i nsi)
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}::clone]:
+    Source: './controller-core/src/model.rs', lines 349:9-349:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::LogicalEffectId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::LogicalEffectId>}::clone"]
+def sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.LogicalEffectId) :
+  Result sandbox_controller_core.model.LogicalEffectId
+  := do
+  let c ←
+    sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone
+      self.command
+  ok { command := c }
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}::clone]:
+    Source: './controller-core/src/model.rs', lines 355:9-355:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::EffectId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::EffectId>}::clone"]
+def sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.EffectId) :
+  Result sandbox_controller_core.model.EffectId
+  := do
+  let lei ←
+    sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone
+      self.logical
+  let i ← lift (core.clone.impls.CloneU64.clone self.attempt)
+  ok { logical := lei, attempt := i }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}]
+    Source: './controller-core/src/model.rs', lines 355:9-355:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::EffectId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::EffectId>"]
+def sandbox_controller_core.model.EffectId.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.EffectId := {
+  clone := sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}]
+    Source: './controller-core/src/model.rs', lines 349:9-349:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::model::LogicalEffectId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::model::LogicalEffectId>"]
+def sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.model.LogicalEffectId := {
+  clone :=
+    sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone]:
+    Source: './controller-core/src/maintenance/windows.rs', lines 94:9-94:14
+    Name pattern: [sandbox_controller_core::maintenance::windows::{core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowRecord>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::windows::{core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowRecord>}::clone"]
+def
+  sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.maintenance.windows.WindowRecord) :
+  Result sandbox_controller_core.maintenance.windows.WindowRecord
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}]
+    Source: './controller-core/src/maintenance/windows.rs', lines 94:9-94:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowRecord>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowRecord>"]
+def
+  sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone
+  : core.clone.Clone sandbox_controller_core.maintenance.windows.WindowRecord
+  := {
+  clone :=
+    sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowLimits}::clone]:
+    Source: './controller-core/src/maintenance/windows.rs', lines 44:9-44:14
+    Name pattern: [sandbox_controller_core::maintenance::windows::{core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowLimits>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::windows::{core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowLimits>}::clone"]
+def
+  sandbox_controller_core.maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.maintenance.windows.WindowLimits) :
+  Result sandbox_controller_core.maintenance.windows.WindowLimits
+  := do
+  ok self
+
+/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowState}::clone]:
+    Source: './controller-core/src/maintenance/windows.rs', lines 128:9-128:14
+    Name pattern: [sandbox_controller_core::maintenance::windows::{core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowState>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::windows::{core::clone::Clone<sandbox_controller_core::maintenance::windows::WindowState>}::clone"]
+def
+  sandbox_controller_core.maintenance.windows.WindowState.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.maintenance.windows.WindowState) :
+  Result sandbox_controller_core.maintenance.windows.WindowState
+  := do
+  let wl ←
+    sandbox_controller_core.maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone
+      self.limits
+  let o ←
+    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
+      self.issued_through
+  let i ← lift (core.clone.impls.CloneU64.clone self.time_floor_ms)
+  let v ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone
+      self.open
+  ok { limits := wl, issued_through := o, time_floor_ms := i, «open» := v }
+
+/-- [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}::clone]:
+    Source: './controller-core/src/maintenance/slots.rs', lines 28:9-28:14
+    Name pattern: [sandbox_controller_core::maintenance::slots::{core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotRecord>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::slots::{core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotRecord>}::clone"]
+def
+  sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.maintenance.slots.HostSlotRecord) :
+  Result sandbox_controller_core.maintenance.slots.HostSlotRecord
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}]
+    Source: './controller-core/src/maintenance/slots.rs', lines 28:9-28:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotRecord>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotRecord>"]
+def
+  sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone
+  : core.clone.Clone sandbox_controller_core.maintenance.slots.HostSlotRecord
+  := {
+  clone :=
+    sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}::clone]:
+    Source: './controller-core/src/maintenance/slots.rs', lines 6:9-6:14
+    Name pattern: [sandbox_controller_core::maintenance::slots::{core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotId>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::slots::{core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotId>}::clone"]
+def
+  sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.maintenance.slots.HostSlotId) :
+  Result sandbox_controller_core.maintenance.slots.HostSlotId
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}]
+    Source: './controller-core/src/maintenance/slots.rs', lines 6:9-6:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::maintenance::slots::HostSlotId>"]
+def sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.maintenance.slots.HostSlotId := {
+  clone :=
+    sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}::clone]:
+    Source: './controller-core/src/maintenance/retirement.rs', lines 58:9-58:14
+    Name pattern: [sandbox_controller_core::maintenance::retirement::{core::clone::Clone<sandbox_controller_core::maintenance::retirement::RetainedOperation>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::retirement::{core::clone::Clone<sandbox_controller_core::maintenance::retirement::RetainedOperation>}::clone"]
+def
+  sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.maintenance.retirement.RetainedOperation) :
+  Result sandbox_controller_core.maintenance.retirement.RetainedOperation
+  := do
+  let ti ←
+    sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone self.owner
+  let olr ←
+    sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone.clone
+      self.ledger
+  let i ← lift (core.clone.impls.CloneU64.clone self.expires_at)
+  ok { owner := ti, ledger := olr, expires_at := i }
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}]
+    Source: './controller-core/src/maintenance/retirement.rs', lines 58:9-58:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::maintenance::retirement::RetainedOperation>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::maintenance::retirement::RetainedOperation>"]
+def
+  sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone
+  : core.clone.Clone
+  sandbox_controller_core.maintenance.retirement.RetainedOperation := {
+  clone :=
+    sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}::clone]:
+    Source: './controller-core/src/maintenance.rs', lines 25:9-25:14
+    Name pattern: [sandbox_controller_core::maintenance::{core::clone::Clone<sandbox_controller_core::maintenance::MaintenanceState>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::maintenance::{core::clone::Clone<sandbox_controller_core::maintenance::MaintenanceState>}::clone"]
+def
+  sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.maintenance.MaintenanceState) :
+  Result sandbox_controller_core.maintenance.MaintenanceState
+  := do
+  let o ←
+    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
+      self.sandbox_frontier
+  let o1 ←
+    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
+      self.workspace_frontier
+  let s ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone
+      sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone
+      self.retained
+  let i ← lift (core.clone.impls.CloneU64.clone self.time_floor)
+  let i1 ← lift (core.clone.impls.CloneU64.clone self.max_retained_results)
+  let i2 ← lift (core.clone.impls.CloneU64.clone self.max_host_slots)
+  let s1 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone
+      sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone
+      self.slots
+  let ws ←
+    sandbox_controller_core.maintenance.windows.WindowState.Insts.CoreCloneClone.clone
+      self.windows
+  ok
+    {
+      sandbox_frontier := o,
+      workspace_frontier := o1,
+      retained := s,
+      time_floor := i,
+      max_retained_results := i1,
+      max_host_slots := i2,
+      slots := s1,
+      windows := ws
+    }
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}]
+    Source: './controller-core/src/maintenance.rs', lines 25:9-25:14
+    Name pattern: [core::clone::Clone<sandbox_controller_core::maintenance::MaintenanceState>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::maintenance::MaintenanceState>"]
+def sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.maintenance.MaintenanceState := {
+  clone :=
+    sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}]
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [core::clone::Clone<sandbox_controller_core::ids::FsId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::ids::FsId>"]
+def sandbox_controller_core.ids.FsId.Insts.CoreCloneClone : core.clone.Clone
+  sandbox_controller_core.ids.FsId := {
+  clone := sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}]
+    Source: './controller-core/src/ids.rs', lines 3:17-3:22
+    Name pattern: [core::clone::Clone<sandbox_controller_core::ids::SandboxId>] -/
+@[reducible, rust_trait_impl
+  "core::clone::Clone<sandbox_controller_core::ids::SandboxId>"]
+def sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone :
+  core.clone.Clone sandbox_controller_core.ids.SandboxId := {
+  clone := sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::World}::clone]:
+    Source: './controller-core/src/model.rs', lines 657:9-657:14
+    Name pattern: [sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::World>}::clone]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::World>}::clone"]
+def sandbox_controller_core.model.World.Insts.CoreCloneClone.clone
+  (self : sandbox_controller_core.model.World) :
+  Result sandbox_controller_core.model.World
+  := do
+  let o ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone
+      self.maintenance
+  let s ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone
+      sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone
+      self.sandboxes
+  let s1 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.VmId.Insts.CoreCloneClone
+      sandbox_controller_core.model.Vm.Insts.CoreCloneClone self.vms
+  let s2 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.FsId.Insts.CoreCloneClone
+      sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone
+      self.filesystems
+  let s3 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone
+      sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone
+      self.snapshots
+  let s4 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone
+      sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone self.net_slots
+  let s5 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone
+      sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone
+      self.applied_file_policies
+  let s6 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone
+      sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone
+      self.worker_fences
+  let s7 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone
+      sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone
+      self.operations
+  let s8 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone
+      sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone
+      self.operation_plans
+  let s9 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone
+      sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone
+      self.resource_indexes
+  let s10 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone
+      sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone
+      self.logical_effects
+  let v ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.model.EffectId.Insts.CoreCloneClone
+      self.effect_keys
+  let s11 ←
+    sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone
+      sandbox_controller_core.model.EffectId.Insts.CoreCloneClone
+      sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone
+      self.effects
+  let i ← lift (core.clone.impls.CloneU64.clone self.next_vm_id)
+  let i1 ← lift (core.clone.impls.CloneU64.clone self.next_slot_id)
+  let i2 ← lift (core.clone.impls.CloneU64.clone self.next_snapshot_id)
+  let i3 ← lift (core.clone.impls.CloneU64.clone self.next_manifest_digest)
+  let v1 ←
+    alloc.vec.CloneVec.clone
+      sandbox_controller_core.model.EffectId.Insts.CoreCloneClone self.inflight
+  let b ← lift (core.clone.impls.CloneBool.clone self.controller_up)
+  ok
+    {
+      maintenance := o,
+      sandboxes := s,
+      vms := s1,
+      filesystems := s2,
+      snapshots := s3,
+      net_slots := s4,
+      applied_file_policies := s5,
+      worker_fences := s6,
+      operations := s7,
+      operation_plans := s8,
+      resource_indexes := s9,
+      logical_effects := s10,
+      effect_keys := v,
+      effects := s11,
+      next_vm_id := i,
+      next_slot_id := i1,
+      next_snapshot_id := i2,
+      next_manifest_digest := i3,
+      inflight := v1,
+      controller_up := b
+    }
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}]
+    Source: './controller-core/src/ids.rs', lines 3:37-3:46
+    Name pattern: [core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>"]
+def sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId :
+  core.cmp.PartialEq sandbox_controller_core.ids.SandboxId
+  sandbox_controller_core.ids.SandboxId := {
+  eq :=
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+}
+
+/-- [sandbox_controller_core::auxiliary::handle_ingress]:
+    Source: './controller-core/src/auxiliary.rs', lines 221:0-227:47
+    Name pattern: [sandbox_controller_core::auxiliary::handle_ingress]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::auxiliary::handle_ingress"]
+def sandbox_controller_core.auxiliary.handle_ingress
+  (world : sandbox_controller_core.model.World)
+  (actor : sandbox_controller_core.model.Actor)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (vm : sandbox_controller_core.ids.VmId)
+  (slot : sandbox_controller_core.ids.NetSlotId) :
+  Result (core.result.Result
+    sandbox_controller_core.auxiliary.AuxiliaryDecision
+    sandbox_controller_core.auxiliary.AuxiliaryReject)
+  := do
+  let o ←
+    sandbox_controller_core.store.Store.get
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      world.sandboxes sandbox
+  match o with
+  | none =>
+    ok (core.result.Result.Err
+      sandbox_controller_core.auxiliary.AuxiliaryReject.SandboxNotFound)
+  | some record =>
+    let b ← sandbox_controller_core.transition.authorized actor record.owner
+    if b
+    then
+      let b1 ←
+        sandbox_controller_core.auxiliary.allows_network record sandbox vm slot
+      if b1
+      then
+        let w ←
+          sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
+        ok (core.result.Result.Ok
+          {
+            event :=
+              (sandbox_controller_core.auxiliary.AuxiliaryEvent.Ingress
+                actor
+                sandbox),
+            next := w
+          })
+      else
+        ok (core.result.Result.Err
+          sandbox_controller_core.auxiliary.AuxiliaryReject.CapabilityDenied)
+    else
+      ok (core.result.Result.Err
+        sandbox_controller_core.auxiliary.AuxiliaryReject.Unauthorized)
+
+/-- [sandbox_controller_core::auxiliary::handle_egress]:
+    Source: './controller-core/src/auxiliary.rs', lines 247:0-253:47
+    Name pattern: [sandbox_controller_core::auxiliary::handle_egress]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::auxiliary::handle_egress"]
+def sandbox_controller_core.auxiliary.handle_egress
+  (world : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (vm : sandbox_controller_core.ids.VmId)
+  (slot : sandbox_controller_core.ids.NetSlotId)
+  (destination : sandbox_controller_core.model.Endpoint) :
+  Result (core.result.Result
+    sandbox_controller_core.auxiliary.AuxiliaryDecision
+    sandbox_controller_core.auxiliary.AuxiliaryReject)
+  := do
+  let o ←
+    sandbox_controller_core.store.Store.get
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      world.sandboxes sandbox
+  match o with
+  | none =>
+    ok (core.result.Result.Err
+      sandbox_controller_core.auxiliary.AuxiliaryReject.SandboxNotFound)
+  | some record =>
+    let b ←
+      sandbox_controller_core.auxiliary.allows_network record sandbox vm slot
+    if b
+    then
+      let b1 ←
+        sandbox_controller_core.auxiliary.destination_allowed record
+          destination
+      if b1
+      then
+        let w ←
+          sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
+        ok (core.result.Result.Ok
+          {
+            event :=
+              (sandbox_controller_core.auxiliary.AuxiliaryEvent.Egress
+                sandbox
+                destination),
+            next := w
+          })
+      else
+        ok (core.result.Result.Err
+          sandbox_controller_core.auxiliary.AuxiliaryReject.DestinationDenied)
+    else
+      ok (core.result.Result.Err
+        sandbox_controller_core.auxiliary.AuxiliaryReject.CapabilityDenied)
+
+/-- [sandbox_controller_core::store::{impl core::default::Default for sandbox_controller_core::store::Store<K, V>}::default]:
+    Source: './controller-core/src/store.rs', lines 11:4-11:24
+    Name pattern: [sandbox_controller_core::store::{core::default::Default<sandbox_controller_core::store::Store<@K, @V>>}::default]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::store::{core::default::Default<sandbox_controller_core::store::Store<@K, @V>>}::default"]
+def sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+  (K : Type) (V : Type) :
+  Result (sandbox_controller_core.store.Store K V)
+  := do
+  ok { entries := (alloc.vec.Vec.new (K × V)) }
+
+/-- [sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::World}::default]:
+    Source: './controller-core/src/model.rs', lines 682:4-682:24
+    Name pattern: [sandbox_controller_core::model::{core::default::Default<sandbox_controller_core::model::World>}::default]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::model::{core::default::Default<sandbox_controller_core::model::World>}::default"]
+def sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default
+  : Result sandbox_controller_core.model.World := do
+  let s ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.SandboxId
+      sandbox_controller_core.model.SandboxRecord
+  let s1 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.VmId sandbox_controller_core.model.Vm
+  let s2 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.FsId sandbox_controller_core.model.Filesystem
+  let s3 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.SnapshotId
+      sandbox_controller_core.model.Snapshot
+  let s4 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.NetSlotId
+      sandbox_controller_core.model.NetSlot
+  let s5 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.SandboxId
+      sandbox_controller_core.model.AppliedFilePolicy
+  let s6 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.SandboxId
+      sandbox_controller_core.model.WorkerFence
+  let s7 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.model.OperationKey
+      sandbox_controller_core.model.OperationLedgerRecord
+  let s8 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.model.OperationKey
+      sandbox_controller_core.model.OperationPlan
+  let s9 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.ids.SandboxId
+      sandbox_controller_core.model.ResourceIndex
+  let s10 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.model.LogicalEffectId
+      sandbox_controller_core.model.LogicalEffectRecord
+  let s11 ←
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default
+      sandbox_controller_core.model.EffectId
+      sandbox_controller_core.model.EffectStatus
+  ok
+    {
+      maintenance := none,
+      sandboxes := s,
+      vms := s1,
+      filesystems := s2,
+      snapshots := s3,
+      net_slots := s4,
+      applied_file_policies := s5,
+      worker_fences := s6,
+      operations := s7,
+      operation_plans := s8,
+      resource_indexes := s9,
+      logical_effects := s10,
+      effect_keys := (alloc.vec.Vec.new sandbox_controller_core.model.EffectId),
+      effects := s11,
+      next_vm_id := 0#u64,
+      next_slot_id := 0#u64,
+      next_snapshot_id := 0#u64,
+      next_manifest_digest := 0#u64,
+      inflight := (alloc.vec.Vec.new sandbox_controller_core.model.EffectId),
+      controller_up := true
+    }
+
+/-- [sandbox_controller_core::model::initial_world]:
+    Source: './controller-core/src/model.rs', lines 714:0-714:31
+    Name pattern: [sandbox_controller_core::model::initial_world]
+    Visibility: public -/
+@[rust_fun "sandbox_controller_core::model::initial_world"]
+def sandbox_controller_core.model.initial_world
+  : Result sandbox_controller_core.model.World := do
+  sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default
+
 /-- [sandproof_network_extract::cidr_contains]:
-    Source: 'src/lib.rs', lines 4:0-6:1
+    Source: 'src/lib.rs', lines 7:0-9:1
     Visibility: public -/
 def cidr_contains
   (cidr : sandbox_controller_core.model.Ipv4Cidr) (address : Std.U32) :
@@ -322,13 +2216,13 @@ def cidr_contains
   sandbox_controller_core.model.Ipv4Cidr.contains cidr address
 
 /-- [sandproof_network_extract::protected_ipv4]:
-    Source: 'src/lib.rs', lines 8:0-10:1
+    Source: 'src/lib.rs', lines 11:0-13:1
     Visibility: public -/
 def protected_ipv4 (address : Std.U32) : Result Bool := do
   sandbox_controller_core.network.platform_protected_ipv4 address
 
 /-- [sandproof_network_extract::destination_allowed]:
-    Source: 'src/lib.rs', lines 12:0-14:1
+    Source: 'src/lib.rs', lines 15:0-17:1
     Visibility: public -/
 def destination_allowed
   (policy : sandbox_controller_core.model.NetworkPolicy)
@@ -339,7 +2233,7 @@ def destination_allowed
     destination
 
 /-- [sandproof_network_extract::parse_ipv4_bits]:
-    Source: 'src/lib.rs', lines 16:0-21:1
+    Source: 'src/lib.rs', lines 19:0-24:1
     Visibility: public -/
 def parse_ipv4_bits (value : Str) : Result (Option Std.U32) := do
   let r ←
@@ -350,5 +2244,51 @@ def parse_ipv4_bits (value : Str) : Result (Option Std.U32) := do
     let i ← U32.Insts.CoreConvertFromIpv4Addr.from address
     ok (some i)
   | core.result.Result.Err _ => ok none
+
+/-- [sandproof_network_extract::egress]:
+    Source: 'src/lib.rs', lines 26:0-34:1
+    Visibility: public -/
+def egress
+  (world : sandbox_controller_core.model.World)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (vm : sandbox_controller_core.ids.VmId)
+  (slot : sandbox_controller_core.ids.NetSlotId)
+  (destination : sandbox_controller_core.model.Endpoint) :
+  Result (core.result.Result
+    sandbox_controller_core.auxiliary.AuxiliaryDecision
+    sandbox_controller_core.auxiliary.AuxiliaryReject)
+  := do
+  sandbox_controller_core.auxiliary.handle_egress world sandbox vm slot
+    destination
+
+/-- [sandproof_network_extract::ingress]:
+    Source: 'src/lib.rs', lines 36:0-44:1
+    Visibility: public -/
+def ingress
+  (world : sandbox_controller_core.model.World)
+  (actor : sandbox_controller_core.model.Actor)
+  (sandbox : sandbox_controller_core.ids.SandboxId)
+  (vm : sandbox_controller_core.ids.VmId)
+  (slot : sandbox_controller_core.ids.NetSlotId) :
+  Result (core.result.Result
+    sandbox_controller_core.auxiliary.AuxiliaryDecision
+    sandbox_controller_core.auxiliary.AuxiliaryReject)
+  := do
+  sandbox_controller_core.auxiliary.handle_ingress world actor sandbox vm slot
+
+/-- [sandproof_network_extract::clone_world]:
+    Source: 'src/lib.rs', lines 46:0-48:1
+    Visibility: public -/
+def clone_world
+  (world : sandbox_controller_core.model.World) :
+  Result sandbox_controller_core.model.World
+  := do
+  sandbox_controller_core.model.World.Insts.CoreCloneClone.clone world
+
+/-- [sandproof_network_extract::initial_world]:
+    Source: 'src/lib.rs', lines 50:0-52:1
+    Visibility: public -/
+def initial_world : Result sandbox_controller_core.model.World := do
+  sandbox_controller_core.model.initial_world
 
 end SandproofNetworkRust

@@ -13,7 +13,8 @@ else:
     from check_foundations_extraction import llbc_digest
 
 CRATE = 'sandproof_network_extract'
-ROOTS = ('cidr_contains', 'protected_ipv4', 'destination_allowed', 'parse_ipv4_bits')
+ROOTS = ('cidr_contains', 'protected_ipv4', 'destination_allowed', 'parse_ipv4_bits',
+         'egress', 'ingress', 'clone_world', 'initial_world')
 OWNERS = {'sandbox_controller_core', CRATE}
 FUNCTION_FILE = 'SandproofNetwork/Funs.lean'
 TYPE_FILE = 'SandproofNetwork/Types.lean'
@@ -27,6 +28,10 @@ EXTERNALS = {
         'alloc.string.String.Insts.CoreCmpPartialEqString.eq',
     'alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref':
         'alloc.string.String.Insts.CoreOpsDerefDerefStr.deref',
+    'alloc::string::{impl core::clone::Clone for alloc::string::String}::clone':
+        'alloc.string.String.Insts.CoreCloneClone.clone',
+    'core::option::{impl core::clone::Clone for core::option::Option<T>}::clone':
+        'core.option.Option.Insts.CoreCloneClone.clone',
 }
 EXTERNAL_TYPES = {
     'core::net::ip_addr::Ipv4Addr': 'core.net.ip_addr.Ipv4Addr',
@@ -36,11 +41,95 @@ LOOPS = {
     'sandbox_controller_core::network::ipv4_list_contains': {(0, (0,))},
     'sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed':
         {(0, (0,))},
+    'sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get':
+        {(0, (0,))},
 }
 STANDARD_SOURCES = {
     'core/src/net/parser.rs', 'core/src/net/ip_addr.rs',
     'alloc/src/string.rs', 'core/src/str/mod.rs',
+    'core/src/option.rs', 'core/src/clone.rs',
+    'core/src/tuple.rs', 'alloc/src/vec/mod.rs', 'alloc/src/slice.rs',
 }
+
+# The fixed frontend materializes compiler drop glue; the fixed pure backend
+# erases it. This is NOT permission to omit a project function or custom Drop.
+DROP_GLUE_TYPES = {
+    'model::Endpoint', 'auxiliary::AuxiliaryEvent', 'maintenance::MaintenanceState',
+    'store::Store', 'maintenance::windows::WindowState', 'ids::VmId',
+    'model::RestoreSource', 'ids::NetSlotId', 'model::NetworkPolicy', 'model::Authority',
+    'model::Operation', 'model::OperationResult', 'model::OperationInput',
+    'model::LogicalEffectId', 'model::OperationLedgerRecord', 'model::Command',
+}
+U64_NEWTYPE_ALIASES = {f'sandbox_controller_core::ids::{name}' for name in (
+    'TenantId', 'SandboxId', 'PolicyDigest', 'FsId', 'VmId', 'ManifestDigest',
+    'SnapshotId', 'NetSlotId', 'OperationId', 'ResultDigest')}
+U64_NEWTYPE_ALIASES |= {'sandbox_controller_core::maintenance::windows::WindowId',
+                       'sandbox_controller_core::maintenance::slots::HostSlotId'}
+
+
+def scalar_u64_ids(value):
+    ids = set()
+    if isinstance(value, dict):
+        encoded = value.get('Value')
+        if (isinstance(encoded, list) and len(encoded) == 2
+                and encoded[1] == {'Scalar': {'Integer': {'Unsigned': 'U64'}}}):
+            ids.add(encoded[0])
+        for child in value.values():
+            ids.update(scalar_u64_ids(child))
+    elif isinstance(value, list):
+        for child in value:
+            ids.update(scalar_u64_ids(child))
+    return ids
+
+
+def drop_glue_name(declaration):
+    name = declaration['item_meta']['name']
+    if name[-1] != {'Builtin': ['DropGlue', 0]}:
+        return None
+    return '::'.join(part['Ident'][0] for part in name if 'Ident' in part)
+
+
+def check_drop_glue(declaration, declarations):
+    name = drop_glue_name(declaration)
+    if name is None or name.removeprefix('sandbox_controller_core::') not in DROP_GLUE_TYPES:
+        raise ValueError('unreviewed compiler drop glue')
+    if not structured_body(declaration):
+        raise ValueError('compiler drop glue body missing')
+
+    def walk(value):
+        if isinstance(value, list):
+            for child in value:
+                walk(child)
+        elif isinstance(value, dict):
+            if {'span', 'id', 'kind'}.issubset(value):
+                kind = value['kind']
+                tag = next(iter(kind)) if isinstance(kind, dict) else kind
+                if tag not in {'StorageLive', 'StorageDead', 'Assign', 'Drop',
+                               'Switch', 'Return', 'UnwindResume', 'Abort'}:
+                    raise ValueError('custom operation inside compiler drop glue')
+                if tag == 'Assign':
+                    place, expression = kind['Assign']
+                    if (place['kind'] != {'Local': 0} or set(expression) != {'Aggregate'}
+                            or expression['Aggregate'][1] != []
+                            or expression['Aggregate'][0]['Adt'][0]['builtin'] != 'Tuple'):
+                        raise ValueError('non-unit assignment inside compiler drop glue')
+                if tag == 'Drop':
+                    drop = kind['Drop']
+                    if (drop['kind'] != 'Precise'
+                            or set(drop['fn_ptr']['kind']) != {'Fun'}):
+                        raise ValueError('unreviewed drop dispatch inside compiler drop glue')
+            for child in value.values():
+                walk(child)
+    walk(declaration['body'])
+    for called in called_functions(declaration['body']):
+        target = declarations.get(called)
+        target_name = drop_glue_name(target) if target is not None else None
+        if target_name is None:
+            raise ValueError('custom destructor called by compiler drop glue')
+        if (target_name.removeprefix('sandbox_controller_core::') not in DROP_GLUE_TYPES
+                and target_name not in {'alloc::string::String', 'alloc::vec::Vec',
+                                        'core::option::Option'}):
+            raise ValueError('unreviewed destructor called by compiler drop glue')
 
 
 def owned_name(name):
@@ -114,6 +203,8 @@ def check(root, llbc, inventory):
     if inventory.get('crate') != CRATE or llbc['translated']['crate_name'] != CRATE:
         raise ValueError('unexpected extraction crate')
     environment = json.loads((root / 'verification/network-environment.json').read_text())
+    if set(environment.get('erased_compiler_glue', {}).get('types', [])) != DROP_GLUE_TYPES:
+        raise ValueError('erased compiler glue differs from frozen environment')
     targets = {target['key'] for target in llbc['translated']['target_information']}
     if targets != {environment['target']}:
         raise ValueError('extraction target does not match the frozen environment')
@@ -122,7 +213,7 @@ def check(root, llbc, inventory):
     public = re.findall(r'pub fn ([a-z0-9_]+)\(',
                         (root / 'verification/extract-network/src/lib.rs').read_text())
     if roots != list(ROOTS) or len(public) != len(ROOTS) or set(public) != set(ROOTS):
-        raise ValueError('four frozen production-call roots and script disagree')
+        raise ValueError('frozen production-call roots and script disagree')
     if environment['roots'] != list(ROOTS):
         raise ValueError('environment roots differ from the reviewed roots')
     functions = inventory['functions']
@@ -227,6 +318,16 @@ def check(root, llbc, inventory):
         raise ValueError('owned global omitted or duplicated by inventory')
     own_functions = {index for index, declaration in declarations.items()
                      if owned_declaration(declaration)}
+    erased = {index for index in own_functions
+              if drop_glue_name(declarations[index]) is not None}
+    if {drop_glue_name(declarations[index]).removeprefix('sandbox_controller_core::')
+            for index in erased} != DROP_GLUE_TYPES:
+        raise ValueError('compiler drop glue inventory differs from frozen types')
+    for index in erased:
+        if index not in ordered:
+            raise ValueError('compiler drop glue omitted from declaration order')
+        check_drop_glue(declarations[index], declarations)
+    covered.update(erased)
     if covered != own_functions:
         raise ValueError('owned LLBC body omitted by function/global inventory')
     types = inventory['types']
@@ -240,15 +341,24 @@ def check(root, llbc, inventory):
         raise ValueError('unreviewed external type surface')
     type_declarations = declaration_map(llbc['translated']['type_decls'])
     own_types = set()
+    u64_ids = scalar_u64_ids(llbc)
     for entry in types:
         declaration = type_declarations.get(entry['def_id'])
         if owned_name(entry['rust_name']):
+            alias = entry['rust_name'] in U64_NEWTYPE_ALIASES
+            if alias:
+                fields = (declaration['kind'].get('Struct', [])
+                          if declaration and isinstance(declaration['kind'], dict) else [])
+                if (len(fields) != 1 or fields[0]['name'] != '_0'
+                        or fields[0]['ty'] not in [{'Deduplicated': index} for index in u64_ids]):
+                    raise ValueError('u64 newtype alias shape differs from frozen representation')
             if (declaration is None or not owned_declaration(declaration)
                     or not isinstance(declaration['kind'], dict)
                     or entry['def_id'] not in ordered_ids(llbc, 'Type')
                     or entry['lean_file'] != TYPE_FILE
-                    or not has_definition(root, TYPE_FILE, entry['lean_name'], 'structure|inductive')):
-                raise ValueError('owned type definition missing')
+                    or not has_definition(root, TYPE_FILE, entry['lean_name'],
+                        'def' if alias else 'structure|inductive')):
+                raise ValueError(f'owned type definition missing: {entry["rust_name"]}')
             own_types.add(entry['def_id'])
         elif (declaration is None or declaration['kind'] != 'Opaque'
               or entry['lean_file'] != 'SandproofNetwork/TypesExternal_Template.lean'

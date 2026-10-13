@@ -67,4 +67,16 @@ def core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError.from_str
 def U32.Insts.CoreConvertFromIpv4Addr.from
     (value : core.net.ip_addr.Ipv4Addr) : Result U32 := .ok value.bits
 
+@[simp, rust_fun "alloc::string::{core::clone::Clone<alloc::string::String>}::clone"]
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String := .ok value
+
+@[rust_fun "core::option::{core::clone::Clone<core::option::Option<@T>>}::clone"]
+def core.option.Option.Insts.CoreCloneClone.clone {T : Type} (dictionary : core.clone.Clone T)
+    (value : Option T) : Result (Option T) :=
+  match value with
+  | none => .ok none
+  | some item => do
+      let copied ← dictionary.clone item
+      .ok (some copied)
+
 end SandproofNetworkRust

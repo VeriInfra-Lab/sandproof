@@ -17,6 +17,10 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::protected_ipv4 \
   --start-from crate::destination_allowed \
   --start-from crate::parse_ipv4_bits \
+  --start-from crate::egress \
+  --start-from crate::ingress \
+  --start-from crate::clone_world \
+  --start-from crate::initial_world \
   --include sandbox_controller_core --dest-file "$LLBC" \
   -- --manifest-path verification/extract-network/Cargo.toml --lib --locked --offline
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \

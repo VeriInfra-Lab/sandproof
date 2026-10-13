@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools.check_network_extraction import STANDARD_SOURCES, check, check_standard_sources, llbc_digest
+from tools.check_network_extraction import (ROOTS, STANDARD_SOURCES, check, check_standard_sources,
+                                           drop_glue_name, llbc_digest)
 
 ROOT = Path(__file__).resolve().parents[2]
 FUNCTION = 'sandbox_controller_core::network::ipv4_list_contains'
@@ -19,7 +20,7 @@ class NetworkExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/network/translation.json').read_text())
 
     def test_real_roots_bodies_loops_globals_and_models_are_present(self):
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 4)
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), len(ROOTS))
 
     def test_only_unordered_short_name_order_is_normalized(self):
         reordered = copy.deepcopy(self.llbc)
@@ -177,8 +178,12 @@ class NetworkExtractionTests(unittest.TestCase):
 
     def test_platform_global_initializer_must_have_real_body(self):
         llbc = copy.deepcopy(self.llbc)
+        from tools.check_network_extraction import called_functions, owned_declaration
+        global_decl = next(declaration for declaration in llbc['translated']['global_decls']
+                           if declaration is not None and owned_declaration(declaration))
+        initializer_id, = called_functions(global_decl['value'])
         initializer = next(declaration for declaration in llbc['translated']['fun_decls']
-                           if declaration and declaration['def_id'] == 37)
+                           if declaration and declaration['def_id'] == initializer_id)
         initializer['body'] = 'Opaque'
         with self.assertRaisesRegex(ValueError, 'global initializer body missing'):
             check(ROOT, llbc, self.inventory)
@@ -202,6 +207,37 @@ class NetworkExtractionTests(unittest.TestCase):
     def test_standard_source_inventory_cannot_be_removed(self):
         with self.assertRaisesRegex(ValueError, 'source inventory differs'):
             check_standard_sources(Path('/unused'), {})
+
+    def test_compiler_glue_cannot_hide_calls_or_state_mutation(self):
+        from tools.check_network_extraction import drop_glue_name
+        llbc = copy.deepcopy(self.llbc)
+        glue = next(d for d in llbc['translated']['fun_decls']
+                    if d and drop_glue_name(d) == 'sandbox_controller_core::model::Endpoint')
+        statements = glue['body']['Structured']['body']['statements']
+        statements[0]['kind'] = {'Call': {}}
+        with self.assertRaisesRegex(ValueError, 'custom operation inside compiler drop glue'):
+            check(ROOT, llbc, self.inventory)
+
+    def test_u64_newtype_alias_must_remain_a_single_u64(self):
+        llbc = copy.deepcopy(self.llbc)
+        entry = next(t for t in self.inventory['types']
+                     if t['rust_name'] == 'sandbox_controller_core::ids::TenantId')
+        declaration = next(d for d in llbc['translated']['type_decls']
+                           if d and d['def_id'] == entry['def_id'])
+        declaration['kind']['Struct'].append(copy.deepcopy(declaration['kind']['Struct'][0]))
+        with self.assertRaisesRegex(ValueError, 'u64 newtype alias shape differs'):
+            check(ROOT, llbc, self.inventory)
+
+    def test_compiler_glue_cannot_write_through_argument(self):
+        llbc = copy.deepcopy(self.llbc)
+        glue = next(d for d in llbc['translated']['fun_decls']
+                    if d and drop_glue_name(d) == 'sandbox_controller_core::model::Endpoint')
+        statements = glue['body']['Structured']['body']['statements']
+        assignment = next(s for s in statements if isinstance(s['kind'], dict)
+                          and 'Assign' in s['kind'])
+        assignment['kind']['Assign'][0]['kind'] = {'Local': 1}
+        with self.assertRaisesRegex(ValueError, 'non-unit assignment inside compiler drop glue'):
+            check(ROOT, llbc, self.inventory)
 
 
 if __name__ == '__main__':
