@@ -23,11 +23,11 @@ use sandproof_guest_service::{
     SystemAccounts,
     file_download::{ContentType, DownloadError, IdentityRequest, Limits as DownloadLimits},
     file_transfer::{
-        BatchLimits, DownloadLimits as NegotiatedLimits, FileStreamError, FileStreams, GzipLimits,
-        HttpBodyLimits, IdentityDownloadError, MultipartError, MultipartLimits, UploadHttpError,
-        UploadLimits, UploadRequest, UploadRequestError,
+        BatchLimits, DownloadLimits as NegotiatedLimits, DownloadRequest, DownloadRequestError,
+        FileStreamError, FileStreams, GzipLimits, HttpBodyLimits, MultipartError, MultipartLimits,
+        UploadHttpError, UploadLimits, UploadRequest, UploadRequestError,
     },
-    files::{FileContextLimits, FileSettings, HttpFileContext},
+    files::{FileContextLimits, FileSettings},
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha512};
@@ -112,22 +112,6 @@ async fn files(
         .unwrap();
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     if request.method() == Method::GET || request.method() == Method::HEAD {
-        let selection = auth
-            .resolve_http_files(
-                params.username.as_deref(),
-                &fixture.accounts,
-                &FileSettings {
-                    daemon_workdir: fixture.root.to_str().unwrap().into(),
-                    limits: FileContextLimits {
-                        path_bytes: 4096,
-                        username_bytes: 64,
-                        authorization_bytes: 256,
-                    },
-                },
-            )
-            .await
-            .unwrap();
-        let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
         // Count the original explicit gzip requests, including rejected files.
         // Selection itself now follows stat inside the admitted download worker.
         if request
@@ -137,7 +121,7 @@ async fn files(
         {
             fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
         }
-        return download(&fixture, auth, context, request, params.path.unwrap()).await;
+        return download(&fixture, auth, params, request).await;
     }
     upload(&fixture, auth, params, request).await
 }
@@ -314,9 +298,8 @@ fn gzip_limits() -> GzipLimits {
 async fn download(
     fixture: &Fixture,
     auth: AuthPermit,
-    context: HttpFileContext,
+    params: Params,
     request: Request<Body>,
-    original_path: String,
 ) -> Response {
     let (parts, _) = request.into_parts();
     let request = IdentityRequest {
@@ -324,7 +307,8 @@ async fn download(
         headers: parts.headers,
         response: HeaderMap::new(),
         content_type: ContentType::Detect {
-            original_path,
+            // The admitted request derives this from the actual query path.
+            original_path: String::new(),
             catalog: Arc::clone(&fixture.mime),
         },
         disposition_path: None,
@@ -341,10 +325,22 @@ async fn download(
     };
     match fixture
         .files
-        .download_negotiated(
+        .download_request(
             auth,
-            context,
-            request,
+            DownloadRequest {
+                username: params.username,
+                path: params.path,
+                http: request,
+            },
+            &fixture.accounts,
+            &FileSettings {
+                daemon_workdir: fixture.root.to_str().unwrap().into(),
+                limits: FileContextLimits {
+                    path_bytes: 4096,
+                    username_bytes: 64,
+                    authorization_bytes: 256,
+                },
+            },
             NegotiatedLimits {
                 response: limits,
                 encoding: sandproof_guest_service::file_encoding::Limits {
@@ -358,8 +354,13 @@ async fn download(
         .await
     {
         Ok(download) => download.into_response(),
-        Err(IdentityDownloadError::Admission(error)) => failure(&error),
-        Err(IdentityDownloadError::Download(error)) => download_failure(error),
+        Err(DownloadRequestError::Admission(error)) => failure(&error),
+        Err(DownloadRequestError::Download(error)) => download_failure(error),
+        Err(DownloadRequestError::Context(_)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"message":"download context rejected"})),
+        )
+            .into_response(),
     }
 }
 fn download_failure(error: DownloadError) -> Response {

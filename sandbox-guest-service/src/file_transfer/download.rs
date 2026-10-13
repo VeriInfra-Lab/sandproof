@@ -1,10 +1,12 @@
 use super::{FileStreams, IdentityDownloadError, TransferIoError};
 use crate::{
-    AuthPermit,
+    AccountPool, AccountSource, AuthPermit, ContextError,
     file_download::{
-        Download, DownloadError, IdentityLimits, IdentityRequest, Limits, NegotiationLimits,
+        ContentType, Download, DownloadError, IdentityLimits, IdentityRequest, Limits,
+        NegotiationLimits,
     },
-    files::HttpFileContext,
+    files::{FileSettings, HttpFileContext},
+    owned_body::Owner,
 };
 use sandproof_guest_runtime::{
     file_download::date::{LocalZone, Timestamp},
@@ -15,7 +17,71 @@ use std::{os::unix::fs::MetadataExt, sync::Arc};
 #[cfg(test)]
 mod tests;
 
+/// Query values are already decoded; absent/empty path uses the authenticated
+/// default workdir. MIME detection uses the original query, not the resolved path.
+pub struct DownloadRequest {
+    pub username: Option<String>,
+    pub path: Option<String>,
+    pub http: IdentityRequest,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DownloadRequestError {
+    Admission(super::FileStreamError),
+    Context(ContextError),
+    Download(DownloadError),
+}
+impl From<IdentityDownloadError> for DownloadRequestError {
+    fn from(error: IdentityDownloadError) -> Self {
+        match error {
+            IdentityDownloadError::Admission(error) => Self::Admission(error),
+            IdentityDownloadError::Download(error) => Self::Download(error),
+        }
+    }
+}
+
 impl FileStreams {
+    /// One admission and deadline from account lookup through final response
+    /// byte release. A cancelled/timed-out account lookup retains the original
+    /// authorization and transfer slot until its blocking call actually exits.
+    /// Caller authenticates and decodes the query; this does not install routes.
+    /// # Errors
+    /// Admission, account/path resolution, unmapped I/O, budgets or original
+    /// deadline. Context failures remain explicit, not invented HTTP diagnostics.
+    pub async fn download_request<S: AccountSource, Z: LocalZone + Send + 'static>(
+        &self,
+        auth: AuthPermit,
+        mut request: DownloadRequest,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        limits: DownloadLimits,
+        local: Z,
+    ) -> Result<Download, DownloadRequestError> {
+        let (lease, deadline) = self.admit().map_err(DownloadRequestError::Admission)?;
+        let auth = Arc::new(auth);
+        let owner: Owner = Arc::new((Arc::clone(&auth), lease));
+        let selection = auth
+            .resolve_http_files_admitted(
+                request.username.as_deref(),
+                accounts,
+                settings,
+                deadline,
+                Arc::clone(&owner),
+            )
+            .await
+            .map_err(DownloadRequestError::Context)?;
+        let path = request.path.as_deref().unwrap_or("");
+        let context = selection
+            .resolve(path)
+            .map_err(DownloadRequestError::Context)?;
+        if let ContentType::Detect { original_path, .. } = &mut request.http.content_type {
+            *original_path = request.path.take().unwrap_or_default();
+        }
+        self.download_reserved(context, request.http, limits, local, deadline, owner)
+            .await
+            .map_err(DownloadRequestError::from)
+    }
+
     /// A single admitted stat -> selection -> open -> streaming request. The
     /// source, gzip/identity worker and response bytes retain original auth.
     /// # Errors
@@ -26,12 +92,25 @@ impl FileStreams {
         &self,
         auth: AuthPermit,
         context: HttpFileContext,
-        mut request: IdentityRequest,
+        request: IdentityRequest,
         limits: DownloadLimits,
         local: Z,
     ) -> Result<Download, IdentityDownloadError> {
         let (lease, deadline) = self.admit().map_err(IdentityDownloadError::Admission)?;
         let owner = Arc::new((auth, lease));
+        self.download_reserved(context, request, limits, local, deadline, owner)
+            .await
+    }
+
+    async fn download_reserved<Z: LocalZone + Send + 'static>(
+        &self,
+        context: HttpFileContext,
+        mut request: IdentityRequest,
+        limits: DownloadLimits,
+        local: Z,
+        deadline: tokio::time::Instant,
+        owner: Owner,
+    ) -> Result<Download, IdentityDownloadError> {
         let transfer = self.limits;
         if context.path.len() > transfer.file.path_bytes {
             return Err(IdentityDownloadError::Download(

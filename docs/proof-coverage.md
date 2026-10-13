@@ -272,6 +272,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [协商下载](../sandbox-guest-service/src/file_download/stream/negotiated.rs)与[Linux 延迟打开](../sandbox-guest-runtime/src/filesystem/transfer.rs)新增 stat/选择/open 拒绝顺序、旧 metadata 与后续路径变化、单 worker 身份及期限、Vary 阶段、准备期错误响应和 gzip HEAD 消费/发送时机义务。可移植有限故障对照不代表真实 Linux 或完整端点验收；这些新增及重构代码均未抽取或证明。纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新的文件连接。
 
+[下载账户准入](../sandbox-guest-service/src/file_transfer/download.rs)新增账户查询前预留文件槽位、原授权/期限跨阻塞查询与下载 worker 移交、取消后真实退出才释放、账户耗时不退还和原查询路径到 MIME 选择的对应义务。账户/路径失败仍为显式组件错误；Linux 新连接与 SDK 迁移已交叉检查，执行待补。来宾适配未抽取或证明，纯核心、历史已证明 Rust 与 LLBC/Lean 未改，旧结论不覆盖新增组合。
+
 [下载错误格式化](../sandbox-guest-service/src/file_download/stream/errors.rs)及结构化 Linux errno 新增操作阶段/状态对应、可信解析路径、Go JSON 转义与精确线长、初始范围失败前头部回退，以及错误正文继续持有原授权/容量的义务。有限原 Go 受控错误对照只属工程证据；Linux 真实 errno 与 NUL 适配回归尚待实跑。修改的来宾 runtime/service 均未抽取或证明，纯来宾核心、历史已证明 Rust 和 LLBC/Lean 未改，旧定理不覆盖新增错误响应。
 
 [上传请求连接](../sandbox-guest-service/src/file_transfer/upload.rs)、[可移植头决策](../sandbox-guest-runtime/src/file_upload.rs)及账户池原期限/所有权重构新增编码预检与账户/metadata/类型的拒绝顺序、单次准入、阻塞查询取消后守卫保持和 raw 实际 EOF 的组合义务。共享 metadata 验证已替换真实写入中的相同校验，MIME 大小写辅助仅开放 crate 内复用；这些来宾实现均未抽取或证明。有限固定 Go 头部对照只属工程证据，Linux 文件/账户取消组合待实跑。纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖本候选的新增连接。

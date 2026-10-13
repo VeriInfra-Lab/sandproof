@@ -200,6 +200,8 @@ SANDPROOF_GUEST_ENCODING_REFERENCE=/absolute/path/to/encoding-reference \
 
 [Linux 协商下载检查](../sandbox-guest-service/src/file_transfer/download/tests.rs)检查实际文件/目录错误优先级和 gzip 请求下的范围回退；原[文件端口检查](../sandbox-guest-runtime/tests/file_transfer.rs)检查延迟 open 的路径替换、保留旧 stat 信息及删除后 open 失败。SDK 文件夹具已接统一下载，增加同步/异步合成 HTTP 的大小写/q、范围/条件、重复 Accept-Encoding、HEAD 及 stat/406 优先级；这里只统计固定 SDK 原调用和合成请求分别承担的证据；下载错误 JSON 已由同一组件交付，夹具核对 code/message、UTF-8 Content-Type、nosniff、换行及解析路径。真实 ENOTDIR/ELOOP、NUL→EINVAL、延迟 open 后删除和 File seek errno 另有 Linux 定向回归。以上 Linux 新组已交叉检查，实际运行待补。
 
+[下载账户准入检查](../sandbox-guest-service/src/file_transfer/download/tests/request.rs)覆盖同一槽位内的账户→路径→identity/gzip、range/HEAD，初始化默认值与显式用户名、原查询扩展名与解析路径分离、账户/路径失败先于 stat/编码。条件变量和显式通知确认账户调用已进入，再用取消/可推进时钟核对原授权与文件槽位保留、账户期限与请求期限取早、账户耗时不退还、最后正文副本占额及释放后的正常请求。入口 `cargo test -p sandproof-guest-service --locked file_transfer::download::tests::request`；已交叉检查，Linux 执行待补。固定 SDK 文件路由的全部下载已改用该入口，原调用集和请求计数不变；Linux SDK 组合须在此候选重跑，不借可移植编码检查核销该组。
+
 [下载 Go 参考适配](../tests/compat/guest_download_reference.go)直接调用 Go 1.26.8 原 `http.ParseTime` / `http.ServeContent`，使用合成字节、显式本地时区及 httptest writer；默认错误头开关固定为 `httpservecontentkeepheaders=0`。显式组逐项核对日期秒/纳秒，以及状态、选定实体头和完整正文，只把 Go 生成的随机多段边界等长规范化以便比较。覆盖旧日期/时区、条件组合、GET/HEAD/POST、零时间、范围边界和种子 0x311 的畸形输入。本地已运行，默认 ignored；不是完整 envd/SDK 双端、FD 失败、Linux 或 KVM 验收：
 
 ```sh

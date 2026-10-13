@@ -527,9 +527,13 @@ Range 保留区间顺序、重叠、重复、后缀零长度、空列表、空�
 
 [协商下载](../sandbox-guest-service/src/file_download/stream/negotiated.rs)在同一个原已准入 worker 中执行 stat/目录拒绝→编码选择→open→Disposition→identity/gzip 准备与正文；[Linux 文件池](../sandbox-guest-service/src/file_transfer/download.rs)只取得一次 AuthPermit/容量/绝对期限。stat 返回的原 mtime 与延迟打开的同一路径分别保留，选择失败不 open，open 后不 restat；路径在两阶段间被替换时仍按固定 Go 打开新对象而保留旧 stat 信息，不宣称 inode 固定或一致快照。stat/open 的阻塞取消仍持有原守卫到调用与源销毁结束。
 
+[下载请求连接](../sandbox-guest-service/src/file_transfer/download.rs)的 download_request 在账户查询之前取得文件池槽位和绝对期限，原 AuthPermit 快照、槽位及期限经账户查询、路径解析移交上述同一下载 worker。账户池自己的期限只能缩短原请求等待；取消或超时不停止已派发查询，其阻塞任务继续持有原授权和文件池容量，直到真实退出。账户解析失败不 stat/open，原查询缺省用户及空路径工作目录规则沿用；MIME Detect 的原路径取本次查询，缺省/空串不改用展开后的默认目录扩展名。初始化在这些持有者及最后响应 Bytes 副本释放前等待。
+
+新入口接受已认证、已解码的查询，返回明确的 Admission/Context/Download 分类；账户/预算错误的完整 HTTP 映射、签名与正式路由仍待连接。旧 download_negotiated 继续接受调用方已解析的上下文，只为下载部分准入，调用方须自行保留此前账户查询的授权/预算。固定 SDK 测试路由已迁移到新入口；Linux 账户阻塞/期限/真实文件/SDK 组合仅交叉检查，执行待补。
+
 编码解析失败与四类条件字段强制 identity 失败保留不同的 Vary 阶段；If-Match/If-Unmodified-Since 本身不强制回退。identity 复用原条件/嗅探/范围执行，gzip 复用原有界编码器而不再准入或重新计时。准备期 SniffSeek/LengthSeek 变为固定 `500 seeker can't seek`，清除原实体缓存头、保留 Vary/Disposition 并抑制 HEAD 正文；原单独 identity 入口仍返回组件错误。初始单段 range seek 的已知 Linux errno 变为 `416 seek <解析路径>: <errno 文本>`，不带成功范围计划尚未应设置的 Content-Range/Accept-Ranges/Content-Length；默认清除实体缓存头，保留此前已有头。未知 I/O 错误仍返回组件失败；多段正文开始后的 seek/read 失败仍为正文错误，不能改写已经发送的状态。gzip HEAD 仍消费/压缩至实际 EOF，在同一 worker 丢弃输出后返回空正文，避免 HTTP 不轮询 HEAD body 时完全省略读取；本组件延后交出 HEAD 响应头，编码/源失败仍显式失败，这一发送时机及原 gzip 失败差异须保留在端点验收中，不能称已与 Go 故障路径等价。
 
-协商连接的 identity 响应计划、原文件字节、压缩字节/线长、MIME 表及路径预算分别生效；成功选择后的响应头及一份 identity 准备错误所需头副本受显式头预算约束。完整请求解析前分配、认证/签名、账户默认值及其错误、上传错误、自动 HTTP 头、本地时区及监听器仍为正式入口义务。可移植顺序/取消/seek 错误检查与固定 Go 有限对照已有本地运行，Linux 实际文件和 SDK 扩展待实跑；没有更换模板。
+协商连接的 identity 响应计划、原文件字节、压缩字节/线长、MIME 表及路径预算分别生效；成功选择后的响应头及一份 identity 准备错误所需头副本受显式头预算约束。完整请求解析前分配、认证/签名、账户错误的 HTTP 映射、上传错误、自动 HTTP 头、本地时区及监听器仍为正式入口义务。可移植顺序/取消/seek 错误检查与固定 Go 有限对照已有本地运行，Linux 实际文件和 SDK 扩展待实跑；没有更换模板。
 
 [下载错误响应](../sandbox-guest-service/src/file_download/stream/errors.rs)在原 worker 内构造有界正文并通过同一 OwnedBody 交付，响应和在途 Bytes 副本继续持有授权/容量/绝对期限。stat 的 ENOENT 映射 404，已确认目录映射 400，其他已知 stat errno（含 ENOTDIR）及 open errno 映射 500；编码不可接受映射 406，保留编码解析失败前无新增 Vary、条件回退和 open 失败有 Vary 的阶段区别。上述 JSON 使用固定 envd 的 code/message 顺序、UTF-8 Content-Type、nosniff 和末尾换行，沿 Go 默认转义控制字节、HTML 字符、U+2028/U+2029 及非法 UTF-8；HEAD 仍核对预算后抑制正文。stat/编码/open 失败不提前生成 Disposition。
 

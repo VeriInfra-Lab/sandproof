@@ -19,7 +19,7 @@ use crate::{AuthPermit, files::HttpFileContext};
 
 mod batch;
 mod download;
-pub use download::DownloadLimits;
+pub use download::{DownloadLimits, DownloadRequest, DownloadRequestError};
 mod gzip_download;
 mod identity_download;
 mod upload;

@@ -6,6 +6,7 @@ use sandproof_guest_runtime::{
     file_encoding,
 };
 use std::fs;
+mod request;
 fn request(range: &'static str, encoding: &'static str) -> IdentityRequest {
     let mut headers = HeaderMap::new();
     headers.insert("range", HeaderValue::from_static(range));
