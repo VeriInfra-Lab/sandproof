@@ -1,0 +1,162 @@
+{
+  "schema": 1,
+  "source_anchor": "b7cfc9dc45712223f1dbc9da320481e50890fa9b",
+  "source_identity": "verification/network-inputs.sha256",
+  "target": "x86_64-unknown-linux-gnu",
+  "features": [],
+  "roots": [
+    "cidr_contains",
+    "protected_ipv4",
+    "destination_allowed",
+    "parse_ipv4_bits",
+    "egress",
+    "ingress",
+    "clone_world",
+    "initial_world",
+    "runtime_crash",
+    "runtime_recover",
+    "slot_transition"
+  ],
+  "cfg": [
+    "debug_assertions",
+    "fmt_debug=\"full\"",
+    "overflow_checks",
+    "panic=\"unwind\"",
+    "relocation_model=\"pic\"",
+    "target_abi=\"\"",
+    "target_arch=\"x86_64\"",
+    "target_endian=\"little\"",
+    "target_env=\"gnu\"",
+    "target_family=\"unix\"",
+    "target_feature=\"fxsr\"",
+    "target_feature=\"sse\"",
+    "target_feature=\"sse2\"",
+    "target_feature=\"x87\"",
+    "target_has_atomic",
+    "target_has_atomic=\"16\"",
+    "target_has_atomic=\"32\"",
+    "target_has_atomic=\"64\"",
+    "target_has_atomic=\"8\"",
+    "target_has_atomic=\"ptr\"",
+    "target_has_atomic_load_store",
+    "target_has_atomic_load_store=\"16\"",
+    "target_has_atomic_load_store=\"32\"",
+    "target_has_atomic_load_store=\"64\"",
+    "target_has_atomic_load_store=\"8\"",
+    "target_has_atomic_load_store=\"ptr\"",
+    "target_has_atomic_primitive_alignment=\"16\"",
+    "target_has_atomic_primitive_alignment=\"32\"",
+    "target_has_atomic_primitive_alignment=\"64\"",
+    "target_has_atomic_primitive_alignment=\"8\"",
+    "target_has_atomic_primitive_alignment=\"ptr\"",
+    "target_has_reliable_f128",
+    "target_has_reliable_f16",
+    "target_has_reliable_f16_math",
+    "target_has_threads",
+    "target_object_format=\"elf\"",
+    "target_os=\"linux\"",
+    "target_pointer_width=\"64\"",
+    "target_thread_local",
+    "target_vendor=\"unknown\"",
+    "ub_checks",
+    "unix"
+  ],
+  "rustflags": [
+    "--remap-path-prefix=<checkout>=."
+  ],
+  "production_compiler": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)",
+  "extraction_frontend": "nightly-2026-08-18",
+  "compile_mode": [
+    "lib",
+    "not(test)"
+  ],
+  "charon": {
+    "revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+    "binary_sha256": "2603f720f0d26a4c77ae215485e2457029d69504dbd9d318a497ed866f21d4fd"
+  },
+  "aeneas": {
+    "revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+    "binary_sha256": "22b326476f854e19b52ca5a2acfd953fd186da7694cd10d8d008ed5502f7c46a"
+  },
+  "lean": "4.31.0",
+  "standard_library": {
+    "production": {
+      "compiler_commit": "2d8144b7880597b6e6d3dfd63a9a9efae3f533d3",
+      "sources": {
+        "core/src/net/parser.rs": "49857a0f2d7bdfede62c5a33aef404bdc65ab6cefd7668e9ce52193aab95b600",
+        "core/src/net/ip_addr.rs": "e41b5cbaeeeb7892161d25dcd07cf2deb8a591d55c14ae5f4221db06c4a4cd1f",
+        "alloc/src/string.rs": "68d7464cc83b0064bac9b600b72b4feb7c90eb5efc92def549b7eb586c6537ed",
+        "core/src/str/mod.rs": "2c90ff097999f139148ef065c428c35a07807d8b38535ce5e2b43d65ad0deaae",
+        "core/src/option.rs": "ddba805a572e9cdbae5c1809bec07b36afdabd67a918bbccc7dab4cfe27cf067",
+        "core/src/clone.rs": "578fdf9d7b96897bb99bdb27d92be5d72e6e42bc71b1005fbb7cac2762380185",
+        "core/src/tuple.rs": "b9576a20ceaeb520062360953fde57b33c552d6b9a959fd7c2d4f599320dc34e",
+        "core/src/cmp.rs": "b8ae0403b4787172b39eef6a69cb3676846a956fa8b7d16defefb4a9d86ab195",
+        "alloc/src/vec/mod.rs": "93e3f8bad8de514ccd23c84d9c036405f32cf0b24c40e11f69f012b5264ad08e",
+        "alloc/src/slice.rs": "b1f0a5f6e3d104d6176699cf05efdfe1725095cd984fdf4422ddc3093726361c"
+      }
+    },
+    "extraction": {
+      "compiler_commit": "8fa1c96cfd489e4c27654c144ae871ce2c4db6c6",
+      "sources": {
+        "core/src/net/parser.rs": "e6f6b332a3cf5860c5e193f3496435ed0f1971e6ce0932df15ecd16688b61c3e",
+        "core/src/net/ip_addr.rs": "37ad9ed47863d58e0ce75a9e91c25c7fb104d02ac923c2eb8b9c7081149cc230",
+        "alloc/src/string.rs": "525acea77c51de51eae6457674dd6942adb5aca1580de26d2e25d24d8f0b5bb8",
+        "core/src/str/mod.rs": "f03f33d0e9c37226a2b31b112207b7e430a1e7e73b7d35fb2690b39da57645d5",
+        "core/src/option.rs": "2dab92cdbec51b006307496b24cc757d7b2bc4056eff156d0fff445f66c1d2f5",
+        "core/src/clone.rs": "b546dc7f36cee99f84b5032feb6c6fa182db3d93099702836152ed1a08f60c66",
+        "core/src/tuple.rs": "fb6428078cdef84917282841caac6286d091e481994159723d75937ec99a0162",
+        "core/src/cmp.rs": "99d9443dfc103cf0acffb7a9462cd9723364f7bf072651123bd4910934ee7dbe",
+        "alloc/src/vec/mod.rs": "161d97d3549abee6416787475f3da48780f70a34065b333478e2b1f629fff2e9",
+        "alloc/src/slice.rs": "67228d05babee451c4f29b12fb6e922d1b7be19cf8bdc7efb21edd02c8a69a3e"
+      }
+    }
+  },
+  "external_contracts": [
+    "A6-network-stdlib",
+    "toolchain-translation"
+  ],
+  "library_scope": [
+    "String exact equality and UTF-8 bytes via deref",
+    "FromStr dictionary dispatch for str::parse",
+    "strict four-octet IPv4 parse, ordinary Err is not an outer execution failure",
+    "IPv4 to u32 is big-endian octet packing independent of host endianness",
+    "AddrParseError is an observational quotient only for Err wildcard matching",
+    "String normal-return clone preserves exact value; Option clone invokes given dictionary only for Some",
+    "builtin Vec/tuple clone correspondence restricted to concrete owned value-preserving clone dictionaries; no arbitrary callback claim; physical allocation failure excluded from pure allocation model",
+    "Borrowed Store::get retains first match; u64 tuple-newtype erasure is checked structurally; aliases do not imply validity or nonzero identities",
+    "primitive bool PartialEq::ne returns exact inequality on both fixed compilers"
+  ],
+  "excludes": [
+    "proof of Rust standard library or compiler implementation",
+    "SDK network normalization/sorting/deduplication",
+    "host firewall/network isolation implementation",
+    "IPv6 and DNS policies",
+    "full controller acceptance",
+    "unified controller access dispatch",
+    "full lifecycle/maintenance refinement and reachable fence invariant",
+    "allocation and OOM/abort semantics"
+  ],
+  "erased_compiler_glue": {
+    "scope": "compiler-produced field drop glue; pure allocator/drop boundary, no custom destructor",
+    "types": [
+      "auxiliary::AuxiliaryEvent",
+      "ids::NetSlotId",
+      "ids::VmId",
+      "maintenance::MaintenanceState",
+      "maintenance::slots::SlotReject",
+      "maintenance::windows::WindowState",
+      "model::Authority",
+      "model::Command",
+      "model::Endpoint",
+      "model::LogicalEffectId",
+      "model::NetworkPolicy",
+      "model::Operation",
+      "model::OperationInput",
+      "model::OperationLedgerRecord",
+      "model::OperationResult",
+      "model::RestoreSource",
+      "store::Store"
+    ]
+  }
+}

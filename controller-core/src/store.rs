@@ -86,4 +86,30 @@ mod tests {
         assert_eq!(store.get(&7), Some(&13));
         assert_eq!(store.entries().len(), 1);
     }
+
+    #[test]
+    fn put_preserves_first_match_and_later_duplicate_rows() {
+        let mut store = Store {
+            entries: vec![(1_u64, 10_u64), (7, 11), (7, 12), (2, 20)],
+        };
+        store.put(7, 13);
+        assert_eq!(store.entries(), &[(1, 10), (7, 13), (7, 12), (2, 20)]);
+        assert_eq!(store.get_copy(&7), Some(13));
+        assert_eq!(store.get_copy(&1), Some(10));
+        assert_eq!(store.get_copy(&2), Some(20));
+    }
+
+    #[test]
+    fn put_absent_key_appends_after_scanning_all_rows() {
+        let mut store = Store {
+            entries: vec![(1_u64, 10_u64), (7, 11), (2, 20)],
+        };
+        store.put(u64::MAX, u64::MAX);
+        assert_eq!(
+            store.entries(),
+            &[(1, 10), (7, 11), (2, 20), (u64::MAX, u64::MAX)]
+        );
+        assert_eq!(store.get_copy(&u64::MAX), Some(u64::MAX));
+        assert_eq!(store.get_copy(&7), Some(11));
+    }
 }

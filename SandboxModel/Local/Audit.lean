@@ -1,0 +1,26 @@
+import SandboxModel.Local
+import SandboxModel.ProofAuditCommand
+
+#audit_controller_proof SandboxModel.Local.Runtime.crash_exact
+#audit_controller_proof SandboxModel.Local.Runtime.recover_exact
+#audit_controller_proof SandboxModel.Local.Runtime.update_view
+#audit_controller_proof SandboxModel.Local.Runtime.roots_refine
+#audit_controller_proof SandboxModel.Local.Runtime.model_frame
+#audit_controller_proof SandboxModel.Local.Runtime.execute_frame
+#audit_controller_proof SandboxModel.Local.Runtime.execute_preserves_rest_invariant
+#audit_controller_proof SandboxModel.Local.Runtime.model_roundtrip
+#audit_controller_proof SandboxModel.Local.Slots.binding_eq_refines
+#audit_controller_proof SandboxModel.Local.Slots.phase_eq_refines
+#audit_controller_proof SandboxModel.Local.Slots.reducer_refines
+#audit_controller_proof SandboxModel.Local.Slots.root_refines
+#audit_controller_proof SandboxModel.Local.Slots.bind_accepts_iff
+#audit_controller_proof SandboxModel.Local.Slots.begin_release_accepts_iff
+#audit_controller_proof SandboxModel.Local.Slots.confirm_release_accepts_iff
+#audit_controller_proof SandboxModel.Local.Slots.check_occupied_accepts_iff
+#audit_controller_proof SandboxModel.Local.Slots.lost_release_blocks_rebind
+#audit_controller_proof SandboxModel.Local.Slots.stale_messages_rejected_first
+#audit_controller_proof SandboxModel.Local.Slots.release_retries_idempotent
+#audit_controller_proof SandboxModel.Local.Slots.fresh_bind_realizable
+#audit_controller_proof SandboxModel.Local.Slots.binding_view_injective
+#audit_controller_proof SandboxModel.Local.Slots.result_binding_mismatch_exact
+#audit_controller_proof SandboxModel.Local.Slots.stale_release_root_rejected

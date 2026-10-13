@@ -1,0 +1,3077 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_network_extract",
+  "functions": [
+    {
+      "def_id": 151,
+      "lean_name": "Bool.Insts.CoreCmpPartialEqBool.ne",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/cmp.rs",
+        "begin_line": 2156,
+        "end_line": 2156
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 34,
+      "lean_name": "U32.Insts.CoreConvertFromIpv4Addr.from",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::net::ip_addr::{impl core::convert::From<core::net::ip_addr::Ipv4Addr> for u32}::from",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/ip_addr.rs",
+        "begin_line": 1308,
+        "end_line": 1308
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 49,
+      "lean_name": "core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError.from_str",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::net::parser::{impl core::str::traits::FromStr<core::net::parser::AddrParseError> for core::net::ip_addr::Ipv4Addr}::from_str",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/parser.rs",
+        "begin_line": 340,
+        "end_line": 340
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 55,
+      "lean_name": "core.option.Option.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::option::{impl core::clone::Clone for core::option::Option<T>}::clone",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/option.rs",
+        "begin_line": 2273,
+        "end_line": 2273
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 33,
+      "lean_name": "core.str.Str.parse",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::str::{str}::parse",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/mod.rs",
+        "begin_line": 2782,
+        "end_line": 2782
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 113,
+      "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 157,
+      "lean_name": "alloc.string.String.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2388,
+        "end_line": 2388
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 44,
+      "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2859,
+        "end_line": 2859
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 152,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 97,
+        "end_line": 97
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 114,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 71,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 115,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 83,
+        "end_line": 83
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 73,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 72,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 63,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 51,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.auxiliary.allows_network",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::allows_network",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/auxiliary.rs",
+        "begin_line": 76,
+        "end_line": 76
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 30,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr.contains",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::Ipv4Cidr}::contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 107,
+        "end_line": 107
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 43,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains_loop.body",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::ipv4_list_contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 144,
+        "end_line": 151
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains"
+    },
+    {
+      "def_id": 43,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains_loop",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::ipv4_list_contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 144,
+        "end_line": 151
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains"
+    },
+    {
+      "def_id": 43,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::ipv4_list_contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 142,
+        "end_line": 142
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    },
+    {
+      "def_id": 31,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.platform_protected_ipv4",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::platform_protected_ipv4",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 136,
+        "end_line": 136
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 32,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed_loop.body",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 163,
+        "end_line": 168
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed"
+    },
+    {
+      "def_id": 32,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed_loop",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 163,
+        "end_line": 168
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed"
+    },
+    {
+      "def_id": 32,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 157,
+        "end_line": 157
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 52,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.auxiliary.destination_allowed",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::destination_allowed",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/auxiliary.rs",
+        "begin_line": 96,
+        "end_line": 96
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 129,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 117,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Actor> for sandbox_controller_core::model::Actor}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 7,
+        "end_line": 7
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 54,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.transition.authorized",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::transition::authorized",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/transition.rs",
+        "begin_line": 20,
+        "end_line": 20
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 50,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store.get_loop.body",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 22,
+        "end_line": 29
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store.get"
+    },
+    {
+      "def_id": 50,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store.get_loop",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 22,
+        "end_line": 29
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store.get"
+    },
+    {
+      "def_id": 50,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store.get",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 20,
+        "end_line": 20
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    },
+    {
+      "def_id": 56,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{impl core::clone::Clone for sandbox_controller_core::store::Store<K, V>}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 5,
+        "end_line": 5
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 91,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 551,
+        "end_line": 551
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 90,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 542,
+        "end_line": 542
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 155,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 97,
+        "end_line": 97
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 158,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 154,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 124,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 83,
+        "end_line": 83
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 120,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::TenantId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 81,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 78,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 89,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 529,
+        "end_line": 529
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 87,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 517,
+        "end_line": 517
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 85,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 509,
+        "end_line": 509
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 82,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Vm.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 500,
+        "end_line": 500
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 137,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 60,
+        "end_line": 60
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 122,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.WorkspaceApiAccess.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 42,
+        "end_line": 42
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 88,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 84,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 125,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Authority.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 199,
+        "end_line": 199
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 126,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Operation.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 190,
+        "end_line": 190
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 123,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 48,
+        "end_line": 48
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 121,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Phase.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 14,
+        "end_line": 14
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 79,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 479,
+        "end_line": 479
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 143,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 162,
+        "end_line": 162
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 127,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationInput.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 119,
+        "end_line": 119
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 93,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 470,
+        "end_line": 470
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 97,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 461,
+        "end_line": 461
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 86,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 95,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 429,
+        "end_line": 429
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 92,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 406,
+        "end_line": 406
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 94,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 413,
+        "end_line": 413
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 101,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 384,
+        "end_line": 384
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 146,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 54,
+        "end_line": 54
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 128,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 228,
+        "end_line": 228
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 96,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 349,
+        "end_line": 349
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 99,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 355,
+        "end_line": 355
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 153,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 94,
+        "end_line": 94
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 134,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowLimits}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 44,
+        "end_line": 44
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 119,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowState.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowState}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 128,
+        "end_line": 128
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 133,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 28,
+        "end_line": 28
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 132,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 6,
+        "end_line": 6
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 131,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/retirement.rs",
+        "begin_line": 58,
+        "end_line": 58
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 76,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance.rs",
+        "begin_line": 25,
+        "end_line": 25
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 37,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.World.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::World}::clone",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 657,
+        "end_line": 657
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 36,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.auxiliary.handle_ingress",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::handle_ingress",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/auxiliary.rs",
+        "begin_line": 221,
+        "end_line": 227
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.auxiliary.handle_egress",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::handle_egress",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/auxiliary.rs",
+        "begin_line": 247,
+        "end_line": 253
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 107,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 10,
+        "end_line": 10
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 66,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase> for sandbox_controller_core::maintenance::slots::HostSlotPhase}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 20,
+        "end_line": 20
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.reduce_slot",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::reduce_slot",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 80,
+        "end_line": 83
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 103,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::store::{impl core::default::Default for sandbox_controller_core::store::Store<K, V>}::default",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 11,
+        "end_line": 11
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 60,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::World}::default",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 682,
+        "end_line": 682
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 38,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.initial_world",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::initial_world",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 714,
+        "end_line": 714
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 39,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.recovery_monitor.handle_controller_crash",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::recovery_monitor::handle_controller_crash",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/recovery_monitor.rs",
+        "begin_line": 42,
+        "end_line": 42
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 40,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.recovery_monitor.handle_controller_recover",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::recovery_monitor::handle_controller_recover",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/recovery_monitor.rs",
+        "begin_line": 61,
+        "end_line": 61
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofNetworkRust.cidr_contains",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::cidr_contains",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 9, "end_line": 11 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofNetworkRust.protected_ipv4",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::protected_ipv4",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 13, "end_line": 15 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofNetworkRust.destination_allowed",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::destination_allowed",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 17, "end_line": 19 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofNetworkRust.parse_ipv4_bits",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::parse_ipv4_bits",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 21, "end_line": 26 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 15,
+      "lean_name": "SandproofNetworkRust.egress",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::egress",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 28, "end_line": 36 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 16,
+      "lean_name": "SandproofNetworkRust.ingress",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::ingress",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 38, "end_line": 46 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 17,
+      "lean_name": "SandproofNetworkRust.clone_world",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::clone_world",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 48, "end_line": 50 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofNetworkRust.initial_world",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::initial_world",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 52, "end_line": 54 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 19,
+      "lean_name": "SandproofNetworkRust.runtime_crash",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::runtime_crash",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 56, "end_line": 58 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 20,
+      "lean_name": "SandproofNetworkRust.runtime_recover",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::runtime_recover",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 60, "end_line": 62 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofNetworkRust.slot_transition",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::slot_transition",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 64, "end_line": 69 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 8,
+      "lean_name": "core.net.ip_addr.Ipv4Addr",
+      "lean_file": "SandproofNetwork/TypesExternal_Template.lean",
+      "rust_name": "core::net::ip_addr::Ipv4Addr",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/ip_addr.rs",
+        "begin_line": 74,
+        "end_line": 74
+      }
+    },
+    {
+      "def_id": 9,
+      "lean_name": "core.net.parser.AddrParseError",
+      "lean_file": "SandproofNetwork/TypesExternal_Template.lean",
+      "rust_name": "core::net::parser::AddrParseError",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/parser.rs",
+        "begin_line": 487,
+        "end_line": 487
+      }
+    },
+    {
+      "def_id": 28,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Protocol",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Protocol",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Endpoint",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 76,
+        "end_line": 76
+      }
+    },
+    {
+      "def_id": 49,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.TenantId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::TenantId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Actor",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Actor",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 9,
+        "end_line": 9
+      }
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SandboxId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::SandboxId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 48,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.auxiliary.AuxiliaryEvent",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::AuxiliaryEvent",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/auxiliary.rs",
+        "begin_line": 16,
+        "end_line": 16
+      }
+    },
+    {
+      "def_id": 15,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.auxiliary.AuxiliaryReject",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::AuxiliaryReject",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/auxiliary.rs",
+        "begin_line": 26,
+        "end_line": 26
+      }
+    },
+    {
+      "def_id": 30,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.store.Store",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::store::Store",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/store.rs",
+        "begin_line": 6,
+        "end_line": 6
+      }
+    },
+    {
+      "def_id": 39,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.WorkerFence",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::WorkerFence",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 553,
+        "end_line": 553
+      }
+    },
+    {
+      "def_id": 79,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.PolicyDigest",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::PolicyDigest",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 61,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.FilePolicyRef",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::FilePolicyRef",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 50,
+        "end_line": 50
+      }
+    },
+    {
+      "def_id": 33,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.FsId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::FsId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 38,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.AppliedFilePolicy",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::AppliedFilePolicy",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 544,
+        "end_line": 544
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Ipv4Cidr",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 99,
+        "end_line": 99
+      }
+    },
+    {
+      "def_id": 3,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetworkPolicy",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::NetworkPolicy",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 85,
+        "end_line": 85
+      }
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.VmId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::VmId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 37,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetSlot",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::NetSlot",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 531,
+        "end_line": 531
+      }
+    },
+    {
+      "def_id": 82,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.ManifestDigest",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::ManifestDigest",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 66,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.SnapshotManifestRef",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::SnapshotManifestRef",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 56,
+        "end_line": 56
+      }
+    },
+    {
+      "def_id": 67,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.SnapshotStage",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::SnapshotStage",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 37,
+        "end_line": 37
+      }
+    },
+    {
+      "def_id": 36,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Snapshot",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Snapshot",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 519,
+        "end_line": 519
+      }
+    },
+    {
+      "def_id": 34,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Filesystem",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Filesystem",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 511,
+        "end_line": 511
+      }
+    },
+    {
+      "def_id": 65,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.VmStatus",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::VmStatus",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 27,
+        "end_line": 27
+      }
+    },
+    {
+      "def_id": 32,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Vm",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Vm",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 502,
+        "end_line": 502
+      }
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SnapshotId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::SnapshotId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 62,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.RestoreSource",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::RestoreSource",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 62,
+        "end_line": 62
+      }
+    },
+    {
+      "def_id": 60,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.WorkspaceApiAccess",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::WorkspaceApiAccess",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 44,
+        "end_line": 44
+      }
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.NetSlotId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::NetSlotId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 63,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Authority",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Authority",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 201,
+        "end_line": 201
+      }
+    },
+    {
+      "def_id": 83,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.FailureKind",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::FailureKind",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 140,
+        "end_line": 140
+      }
+    },
+    {
+      "def_id": 81,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationStatus",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::OperationStatus",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 182,
+        "end_line": 182
+      }
+    },
+    {
+      "def_id": 80,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationKind",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::OperationKind",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 173,
+        "end_line": 173
+      }
+    },
+    {
+      "def_id": 68,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.OperationId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::OperationId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 64,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Operation",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Operation",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 192,
+        "end_line": 192
+      }
+    },
+    {
+      "def_id": 59,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Phase",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Phase",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 16,
+        "end_line": 16
+      }
+    },
+    {
+      "def_id": 31,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.SandboxRecord",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::SandboxRecord",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 481,
+        "end_line": 481
+      }
+    },
+    {
+      "def_id": 70,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationResult",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::OperationResult",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 164,
+        "end_line": 164
+      }
+    },
+    {
+      "def_id": 69,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationInput",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::OperationInput",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 121,
+        "end_line": 121
+      }
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationLedgerRecord",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::OperationLedgerRecord",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 472,
+        "end_line": 472
+      }
+    },
+    {
+      "def_id": 40,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationKey",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::OperationKey",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 408,
+        "end_line": 408
+      }
+    },
+    {
+      "def_id": 84,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.ResultDigest",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::ids::ResultDigest",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 5,
+        "end_line": 5
+      }
+    },
+    {
+      "def_id": 75,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.StopCoverage",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::StopCoverage",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 399,
+        "end_line": 399
+      }
+    },
+    {
+      "def_id": 73,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.LogicalEffectResult",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::LogicalEffectResult",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 446,
+        "end_line": 446
+      }
+    },
+    {
+      "def_id": 72,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectOrigin",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::EffectOrigin",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 439,
+        "end_line": 439
+      }
+    },
+    {
+      "def_id": 45,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.LogicalEffectRecord",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::LogicalEffectRecord",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 463,
+        "end_line": 463
+      }
+    },
+    {
+      "def_id": 43,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.ResourceIndex",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::ResourceIndex",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 431,
+        "end_line": 431
+      }
+    },
+    {
+      "def_id": 42,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationPlan",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::OperationPlan",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 415,
+        "end_line": 415
+      }
+    },
+    {
+      "def_id": 74,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectOutcome",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::EffectOutcome",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 379,
+        "end_line": 379
+      }
+    },
+    {
+      "def_id": 47,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectStatus",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::EffectStatus",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 386,
+        "end_line": 386
+      }
+    },
+    {
+      "def_id": 71,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Command",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Command",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 230,
+        "end_line": 230
+      }
+    },
+    {
+      "def_id": 44,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.LogicalEffectId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::LogicalEffectId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 351,
+        "end_line": 351
+      }
+    },
+    {
+      "def_id": 46,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::EffectId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 357,
+        "end_line": 357
+      }
+    },
+    {
+      "def_id": 85,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::WindowId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 28,
+        "end_line": 28
+      }
+    },
+    {
+      "def_id": 78,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowRecord",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::WindowRecord",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 97,
+        "end_line": 97
+      }
+    },
+    {
+      "def_id": 77,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowLimits",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::WindowLimits",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 47,
+        "end_line": 47
+      }
+    },
+    {
+      "def_id": 58,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowState",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::WindowState",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 131,
+        "end_line": 131
+      }
+    },
+    {
+      "def_id": 52,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotPhase",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::HostSlotPhase",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 22,
+        "end_line": 22
+      }
+    },
+    {
+      "def_id": 51,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostBinding",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::HostBinding",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 12,
+        "end_line": 12
+      }
+    },
+    {
+      "def_id": 19,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotRecord",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::HostSlotRecord",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 30,
+        "end_line": 30
+      }
+    },
+    {
+      "def_id": 53,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotId",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::HostSlotId",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 8,
+        "end_line": 8
+      }
+    },
+    {
+      "def_id": 57,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.retirement.RetainedOperation",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::retirement::RetainedOperation",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/retirement.rs",
+        "begin_line": 60,
+        "end_line": 60
+      }
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.MaintenanceState",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::MaintenanceState",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance.rs",
+        "begin_line": 26,
+        "end_line": 26
+      }
+    },
+    {
+      "def_id": 10,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.World",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::World",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 658,
+        "end_line": 658
+      }
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.auxiliary.AuxiliaryDecision",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::AuxiliaryDecision",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/auxiliary.rs",
+        "begin_line": 39,
+        "end_line": 39
+      }
+    },
+    {
+      "def_id": 20,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.SlotInput",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::SlotInput",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 37,
+        "end_line": 37
+      }
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.SlotReject",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::SlotReject",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 65,
+        "end_line": 65
+      }
+    },
+    {
+      "def_id": 50,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.recovery_monitor.RuntimeEvent",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::recovery_monitor::RuntimeEvent",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/recovery_monitor.rs",
+        "begin_line": 15,
+        "end_line": 15
+      }
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.recovery_monitor.RuntimeReject",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::recovery_monitor::RuntimeReject",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/recovery_monitor.rs",
+        "begin_line": 23,
+        "end_line": 23
+      }
+    },
+    {
+      "def_id": 17,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.recovery_monitor.RuntimeDecision",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::recovery_monitor::RuntimeDecision",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/recovery_monitor.rs",
+        "begin_line": 31,
+        "end_line": 31
+      }
+    }
+  ],
+  "globals": [
+    {
+      "def_id": 7,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.PLATFORM_DENY_IPV4",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::PLATFORM_DENY_IPV4",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 9,
+        "end_line": 9
+      },
+      "can_fail": false
+    }
+  ],
+  "trait_decls": [
+    {
+      "def_id": 4,
+      "lean_name": "SandproofNetworkRust.core.str.traits.FromStr",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "core::str::traits::FromStr",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 868,
+        "end_line": 868
+      }
+    }
+  ],
+  "trait_impls": [
+    {
+      "def_id": 6,
+      "lean_name": "SandproofNetworkRust.core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "core::net::parser::{impl core::str::traits::FromStr<core::net::parser::AddrParseError> for core::net::ip_addr::Ipv4Addr}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/parser.rs",
+        "begin_line": 338,
+        "end_line": 338
+      },
+      "impl_trait_def_id": 4,
+      "impl_trait_rust_name": "core::str::traits::FromStr",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 92,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 97,
+        "end_line": 97
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 57,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 83,
+        "end_line": 83
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 89,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 59,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Actor.Insts.CoreCmpPartialEqActor",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Actor> for sandbox_controller_core::model::Actor}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 7,
+        "end_line": 7
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 34,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 551,
+        "end_line": 551
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 33,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 542,
+        "end_line": 542
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 96,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 97,
+        "end_line": 97
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 95,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 32,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 529,
+        "end_line": 529
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 30,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 517,
+        "end_line": 517
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 28,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 509,
+        "end_line": 509
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Vm.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 500,
+        "end_line": 500
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 81,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Operation.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 190,
+        "end_line": 190
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 74,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 60,
+        "end_line": 60
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 31,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.VmId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 22,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 479,
+        "end_line": 479
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 84,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 162,
+        "end_line": 162
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 36,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 470,
+        "end_line": 470
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 40,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 461,
+        "end_line": 461
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 38,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 429,
+        "end_line": 429
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 37,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 413,
+        "end_line": 413
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 406,
+        "end_line": 406
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 44,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 384,
+        "end_line": 384
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 42,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 355,
+        "end_line": 355
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 39,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 349,
+        "end_line": 349
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 94,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/windows.rs",
+        "begin_line": 94,
+        "end_line": 94
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 66,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 28,
+        "end_line": 28
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 65,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 6,
+        "end_line": 6
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 64,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/retirement.rs",
+        "begin_line": 58,
+        "end_line": 58
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance.rs",
+        "begin_line": 25,
+        "end_line": 25
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 27,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "impl_trait_def_id": 0,
+      "impl_trait_rust_name": "core::clone::Clone",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 15,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/ids.rs",
+        "begin_line": 3,
+        "end_line": 3
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 52,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 10,
+        "end_line": 10
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 55,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotPhase> for sandbox_controller_core::maintenance::slots::HostSlotPhase}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/maintenance/slots.rs",
+        "begin_line": 20,
+        "end_line": 20
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    }
+  ]
+}

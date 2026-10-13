@@ -26,6 +26,7 @@ cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 bash scripts/verify-foundations.sh
+bash scripts/verify-network.sh
 bash scripts/verify-first-chain-linux.sh
 scripts/regenerate-rust-lean.sh
 

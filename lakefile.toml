@@ -13,6 +13,10 @@ srcDir = "verification/aeneas/generated"
 name = "SandproofFoundations"
 srcDir = "verification/aeneas/foundations"
 
+[[lean_lib]]
+name = "SandproofNetwork"
+srcDir = "verification/aeneas/network"
+
 [[require]]
 name = "aeneas"
 git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }

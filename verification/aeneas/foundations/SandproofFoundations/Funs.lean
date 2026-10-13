@@ -22,6 +22,70 @@ noncomputable section
 
 namespace SandproofFoundationsRust
 
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop body 0:
+    Source: './controller-core/src/store.rs', lines 38:8-46:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put]
+    Visibility: public -/
+@[rust_loop_body, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put"]
+def sandbox_controller_core.store.Store.put_loop.body
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) (value : V)
+  (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (alloc.vec.Vec (K × V)))
+  := do
+  let i := alloc.vec.Vec.len self.entries
+  if index < i
+  then
+    let (t, _) ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
+        self.entries index
+    let b ← corecmpPartialEqInst.eq t key
+    if b
+    then
+      let ((t1, _), index_mut_back) ←
+        alloc.vec.Vec.index_mut (core.slice.index.SliceIndexUsizeSlice (K ×
+          V)) self.entries index
+      let v := index_mut_back (t1, value)
+      ok (done v)
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else let v ← alloc.vec.Vec.push self.entries (key, value)
+       ok (done v)
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop 0:
+    Source: './controller-core/src/store.rs', lines 38:8-46:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put]
+    Visibility: public -/
+@[rust_loop, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put"]
+def sandbox_controller_core.store.Store.put_loop
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) (value : V)
+  (index : Std.Usize) :
+  Result (alloc.vec.Vec (K × V))
+  := do
+  loop
+    (fun index1 => sandbox_controller_core.store.Store.put_loop.body
+      corecmpPartialEqInst self key value index1)
+    index
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]:
+    Source: './controller-core/src/store.rs', lines 36:4-36:43
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put]
+    Visibility: public -/
+@[rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::put"]
+def sandbox_controller_core.store.Store.put
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K) (value : V) :
+  Result (sandbox_controller_core.store.Store K V)
+  := do
+  let v ←
+    sandbox_controller_core.store.Store.put_loop corecmpPartialEqInst self key
+      value 0#usize
+  ok { entries := v }
+
 /-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop body 0:
     Source: './controller-core/src/store.rs', lines 66:8-73:5
     Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy]
@@ -662,8 +726,18 @@ def store_get_copy
   sandbox_controller_core.store.Store.get_copy core.cmp.PartialEqU64
     core.marker.CopyU64 store key
 
-/-- [sandproof_foundations_extract::resource_add]:
+/-- [sandproof_foundations_extract::store_put]:
     Source: 'src/lib.rs', lines 29:0-31:1
+    Visibility: public -/
+def store_put
+  (store : sandbox_controller_core.store.Store Std.U64 Std.U64) (key : Std.U64)
+  (value : Std.U64) :
+  Result (sandbox_controller_core.store.Store Std.U64 Std.U64)
+  := do
+  sandbox_controller_core.store.Store.put core.cmp.PartialEqU64 store key value
+
+/-- [sandproof_foundations_extract::resource_add]:
+    Source: 'src/lib.rs', lines 33:0-35:1
     Visibility: public -/
 def resource_add
   (left : sandproof_protocol.internal.lifecycle.Resources)
@@ -673,14 +747,14 @@ def resource_add
   sandproof_protocol.internal.lifecycle.Resources.checked_add left right
 
 /-- [sandproof_foundations_extract::resource_positive]:
-    Source: 'src/lib.rs', lines 33:0-35:1
+    Source: 'src/lib.rs', lines 37:0-39:1
     Visibility: public -/
 def resource_positive
   (value : sandproof_protocol.internal.lifecycle.Resources) : Result Bool := do
   sandproof_protocol.internal.lifecycle.Resources.positive value
 
 /-- [sandproof_foundations_extract::resource_fits]:
-    Source: 'src/lib.rs', lines 37:0-39:1
+    Source: 'src/lib.rs', lines 41:0-43:1
     Visibility: public -/
 def resource_fits
   (value : sandproof_protocol.internal.lifecycle.Resources)
@@ -690,7 +764,7 @@ def resource_fits
   sandproof_protocol.internal.lifecycle.Resources.fits value limit
 
 /-- [sandproof_foundations_extract::create_binding_valid]:
-    Source: 'src/lib.rs', lines 41:0-43:1
+    Source: 'src/lib.rs', lines 45:0-47:1
     Visibility: public -/
 def create_binding_valid
   (value : sandproof_protocol.internal.lifecycle.CreateBinding) :
@@ -699,7 +773,7 @@ def create_binding_valid
   sandproof_protocol.internal.lifecycle.CreateBinding.is_valid value
 
 /-- [sandproof_foundations_extract::identity_response]:
-    Source: 'src/lib.rs', lines 45:0-50:1
+    Source: 'src/lib.rs', lines 49:0-54:1
     Visibility: public -/
 def identity_response
   (actual : sandproof_protocol.internal.ControlIdentity)
@@ -709,14 +783,14 @@ def identity_response
   sandproof_protocol.internal.ControlIdentity.validate_response actual expected
 
 /-- [sandproof_foundations_extract::retry_hint]:
-    Source: 'src/lib.rs', lines 52:0-54:1
+    Source: 'src/lib.rs', lines 56:0-58:1
     Visibility: public -/
 def retry_hint
   (outcome : sandproof_protocol.WorkOutcome Std.U64) : Result Bool := do
   sandproof_protocol.WorkOutcome.permits_new_attempt outcome
 
 /-- [sandproof_foundations_extract::outcome_observation]:
-    Source: 'src/lib.rs', lines 56:0-58:1
+    Source: 'src/lib.rs', lines 60:0-62:1
     Visibility: public -/
 def outcome_observation
   (outcome : sandproof_protocol.WorkOutcome Std.U64) :
