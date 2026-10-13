@@ -181,36 +181,45 @@ def compressed_requests(root):
     headers = {'x-access-token': 'fixture-token', 'content-encoding': 'gzip',
                'content-type': 'application/octet-stream', 'x-metadata-note': 'gzip'}
     return [
-        (raw, headers, gzip.compress(large, mtime=0), 200, [(raw, large)]),
+        (raw, headers, gzip.compress(large, mtime=0), 200, [(raw, large)], None),
         (None, {**headers, 'content-type': 'multipart/form-data; boundary=G'},
          gzip.compress(form, mtime=0), 200,
-         [(f'{root}/gzip-a', b'\x00\xff'), (f'{root}/gzip-\u96ea', b'snow')]),
-        (raw, headers, b'invalid gzip header', 400, [(raw, large)]),
+         [(f'{root}/gzip-a', b'\x00\xff'), (f'{root}/gzip-\u96ea', b'snow')], None),
+        (raw, headers, b'invalid gzip header', 400, [(raw, large)],
+         'error decompressing request body: failed to create gzip reader: gzip: invalid header'),
         (f'{root}/gzip-partial', headers, bytes(damaged), 500,
-         [(f'{root}/gzip-partial', b'written-prefix')]),
+         [(f'{root}/gzip-partial', b'written-prefix')], 'error writing file: gzip: invalid checksum'),
+        (f'{root}/gzip-truncated', headers, gzip.compress(b'written-prefix', mtime=0)[:-8], 500,
+         [(f'{root}/gzip-truncated', b'written-prefix')], 'error writing file: unexpected EOF'),
+        (f'{root}/gzip-next-member', headers, gzip.compress(b'written-prefix', mtime=0) + b'invalid next member', 500,
+         [(f'{root}/gzip-next-member', b'written-prefix')], 'error writing file: gzip: invalid header'),
     ]
 
 
 def compressed_sync(sandbox, url, root):
     with httpx.Client(trust_env=False, timeout=10) as client:
-        for path, headers, data, status, expected in compressed_requests(root):
+        for path, headers, data, status, expected, message in compressed_requests(root):
             response = client.post(f'{url}/files', params={} if path is None else {'path': path},
                                    headers=headers, content=data)
             assert response.status_code == status, response.text
             if status == 200:
                 assert all(entry['metadata'] == {'note': 'gzip'} for entry in response.json())
+            else:
+                assert_header_rejection(response, message, status)
             for filename, value in expected:
                 assert bytes(sandbox.files.read(filename, format='bytes')) == value
 
 
 async def compressed_async(sandbox, url, root):
     async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
-        for path, headers, data, status, expected in compressed_requests(root):
+        for path, headers, data, status, expected, message in compressed_requests(root):
             response = await client.post(f'{url}/files', params={} if path is None else {'path': path},
                                          headers=headers, content=data)
             assert response.status_code == status, response.text
             if status == 200:
                 assert all(entry['metadata'] == {'note': 'gzip'} for entry in response.json())
+            else:
+                assert_header_rejection(response, message, status)
             for filename, value in expected:
                 assert bytes(await sandbox.files.read(filename, format='bytes')) == value
 

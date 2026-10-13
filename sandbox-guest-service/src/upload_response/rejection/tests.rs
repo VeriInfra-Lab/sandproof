@@ -19,6 +19,9 @@ fn rejection_wire_size_is_checked_after_escaping_before_allocation() {
     for error in [
         Rejection::RawPathRequired,
         Rejection::MissingFilename,
+        Rejection::RawGzipBody(GzipReadError::Truncated),
+        Rejection::RawGzipBody(GzipReadError::InvalidMember),
+        Rejection::RawGzipBody(GzipReadError::Checksum),
         Rejection::MultipartSetup(BoundaryRejection::NotMultipart),
         Rejection::MultipartSetup(BoundaryRejection::MissingBoundary),
         Rejection::MultipartSetup(BoundaryRejection::EmptyBoundary),

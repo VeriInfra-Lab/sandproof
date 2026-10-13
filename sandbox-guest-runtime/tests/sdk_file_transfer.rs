@@ -514,9 +514,9 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 216);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 224);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 36);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 32);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 36);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     for mode in ["sync", "async"] {
         for name in [

@@ -457,6 +457,10 @@ HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检
 
 旧 runtime boundary() 继续返回粗 Malformed，新增 boundary_detailed() 区分 BoundaryRejection 与 Decode(Error)，非 UTF-8 解码参数和资源拒绝不伪造为 Go 500。service UploadBodyError/Rejection 新增 MultipartSetup，旧 upload_request 的准备错误也返回该细分类，调用方须更新穷尽匹配。原请求槽位、绝对期限、最后字节副本和初始化规则沿用；解析准备不打开文件。固定 Go 原标准库方法与真实 HTTP 输出已本地对照，Linux 请求连接及合成坏 Content-Type 经固定 SDK 解析为 SandboxException 的组合待实跑，正文 MIME/传输错误不在此次公开映射内。
 
+[raw gzip 正文错误](../sandbox-guest-service/src/upload_response/gzip_read.rs)仅在已通过首头准备且已进入 raw gzip 文件复制的失败路径映射：截断、trailer CRC/尺寸校验及后续成员无效头分别生成 `error writing file: unexpected EOF`、`error writing file: gzip: invalid checksum` 和 `error writing file: gzip: invalid header`，状态 500。阶段由请求原内容编码和 raw 模式共同确定；首头、multipart 及 identity 输入不套用该包装。缺少精确损坏位置的 DEFLATE 错误、源/长度/预算/期限仍显式返回原错误，不编造诊断。
+
+已交出的解压前缀继续留在文件中，错误前不执行 metadata 完成，所以原 metadata 保留；文件关闭与原实际阻塞任务按原责任退出，响应仍持有原槽位/期限至最后字节副本释放。响应失败不回滚或重放。Rejection 新增 RawGzipBody(GzipReadError)，穷尽匹配须补该分支；旧 upload_request 保留原 UploadBodyError::Gzip 分类。固定原 getDecompressedBody/processFile 使用实际 Go gzip reader 与内存复制目标的前缀/HTTP 对照已本地运行，Linux 文件/metadata/SDK 组合待实跑；不代表真实磁盘故障、全部 gzip 错误或完整上传端点验收。
+
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 
 [阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)与上传共用按需消费、Bytes 最后副本释放和取消通道。打开成功不预读正文；每个请求只有一个编码 worker、一个显式块大小的源缓冲和一个交付块，压缩库工作区及 HTTP 分配另计。原始/压缩字节预算独立，缓冲可预读至一个源块，超出累计消费预算不能成功。每次源填充前后及缓冲消费时均检查原期限/取消；已进入的 open/read/destructor 不能被超时强制终止，其原守卫保留至真正返回。句柄、worker 与已交出块分别保留原容量，Bytes 副本还保留原授权；没有 Content-Length 或重新准入。

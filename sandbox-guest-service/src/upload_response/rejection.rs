@@ -1,7 +1,7 @@
 //! Bounded public upload header/dispatch/part rejections from the fixed envd.
 //! Source: upload.go, encoding.go and filesystem/xattr.go at runtime
 //! f455fd58fa3f289e78ce1de690c35968d8d29322 (Apache-2.0, E2B-LICENSE).
-use super::{Error, GzipHeaderError, Limits, Owner, Response, errors};
+use super::{Error, GzipHeaderError, GzipReadError, Limits, Owner, Response, errors};
 use crate::file_upload::{DuplicatePath, MetadataFault, MetadataReason};
 use axum::http::StatusCode;
 use sandproof_guest_runtime::file_upload::MetadataViolation;
@@ -10,6 +10,7 @@ use tokio::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
+    RawGzipBody(GzipReadError),
     MultipartSetup(BoundaryRejection),
     DuplicatePath(DuplicatePath),
     MissingFilename,
@@ -21,7 +22,7 @@ pub enum Rejection {
 }
 impl Rejection {
     fn status(&self) -> StatusCode {
-        if matches!(self, Self::MultipartSetup(_)) {
+        if matches!(self, Self::MultipartSetup(_) | Self::RawGzipBody(_)) {
             StatusCode::INTERNAL_SERVER_ERROR
         } else {
             StatusCode::BAD_REQUEST
@@ -52,6 +53,7 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::RawGzipBody(error) => parts.extend([b"error writing file: ".as_slice(), error.message()]),
         Rejection::MultipartSetup(error) => parts.push(match error {
             BoundaryRejection::NotMultipart => b"error parsing multipart form: request Content-Type isn't multipart/form-data",
             BoundaryRejection::MissingBoundary => b"error parsing multipart form: no multipart boundary param in Content-Type",

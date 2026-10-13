@@ -18,6 +18,8 @@ mod rejection;
 pub use rejection::{Rejection, rejected};
 mod gzip_header;
 pub use gzip_header::GzipHeaderError;
+mod gzip_read;
+pub use gzip_read::GzipReadError;
 
 /// Result entries have their existing path/metadata budget. This separately
 /// bounds the escaped JSON payload and each retained transmission chunk.

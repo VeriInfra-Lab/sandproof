@@ -3,7 +3,7 @@ use super::{
     BatchLimits, BatchReply, FileStreamError, FileStreams, GzipLimits, MultipartLimits,
     Reservation, UploadBodyError, timely,
 };
-use crate::upload_response::{GzipHeaderError, Rejection};
+use crate::upload_response::{GzipHeaderError, GzipReadError, Rejection};
 use crate::{
     AccountPool, AccountSource, AuthPermit, ContextError, file_encoding, file_upload,
     files::FileSettings, upload_body::GzipBody,
@@ -68,6 +68,9 @@ impl Failure {
                 Rejection::RawPathRequired => UploadRequestError::RawPathRequired,
                 Rejection::Metadata(_) => UploadRequestError::Headers(wire::Error::InvalidMetadata),
                 Rejection::GzipHeader(error) => UploadRequestError::GzipPreflight(error.into()),
+                Rejection::RawGzipBody(error) => {
+                    UploadRequestError::Body(UploadBodyError::Gzip(error.into()))
+                }
                 Rejection::MissingFilename => {
                     UploadRequestError::Body(UploadBodyError::MissingFilename)
                 }
@@ -98,6 +101,17 @@ impl Failure {
                 Self::Rejected(Rejection::DuplicatePath(error))
             }
             other => Self::Request(UploadRequestError::Body(other)),
+        }
+    }
+
+    fn raw_gzip_body(error: UploadBodyError) -> Self {
+        if let UploadBodyError::Gzip(error) = error {
+            match GzipReadError::try_from(error) {
+                Ok(error) => Self::Rejected(Rejection::RawGzipBody(error)),
+                Err(error) => Self::body(UploadBodyError::Gzip(error)),
+            }
+        } else {
+            Self::body(error)
         }
     }
 }
@@ -286,7 +300,13 @@ impl FileStreams {
             }
             (Kind::Unsupported, _) => unreachable!(),
         }
-        .map_err(Failure::body)
+        .map_err(|error| {
+            if kind == Kind::Raw && encoding == file_encoding::Encoding::Gzip {
+                Failure::raw_gzip_body(error)
+            } else {
+                Failure::body(error)
+            }
+        })
     }
 }
 enum Input {

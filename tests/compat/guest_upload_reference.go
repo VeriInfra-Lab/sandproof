@@ -329,6 +329,8 @@ func oracleChown(path string, uid, gid int) error {
 
 type oracleFile struct{}
 
+var oracleCopied bytes.Buffer
+
 func oracleOpenFile(path string, flag int, mode os.FileMode) (*oracleFile, error) {
 	if oracleStage == "Open" {
 		return nil, &os.PathError{Op: "open", Path: path, Err: oracleFailure}
@@ -342,7 +344,10 @@ func (*oracleFile) Chown(int, int) error {
 	}
 	return nil
 }
-func (*oracleFile) ReadFrom(io.Reader) (int64, error) {
+func (*oracleFile) ReadFrom(reader io.Reader) (int64, error) {
+	if oracleStage == "RawGzip" {
+		return oracleCopied.ReadFrom(reader)
+	}
 	if oracleStage == "Write" {
 		return 0, &os.PathError{Op: "write", Path: oraclePath, Err: oracleFailure}
 	}
@@ -628,6 +633,11 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "D":
+			if server == nil {
+				server = referenceServer()
+			}
+			rawGzipBody(f[1], server)
 		case "P", "G", "B", "T":
 			if server == nil {
 				server = referenceServer()
@@ -751,6 +761,40 @@ func main() {
 	if input.Err() != nil {
 		panic(input.Err())
 	}
+}
+
+// Original getDecompressedBody and processFile consume a real fixed gzip
+// reader. Only filesystem calls are controlled; ReadFrom retains the exact
+// decoded prefix in memory. No Linux disk/full/metadata execution is claimed.
+func rawGzipBody(encoded string, server *httptest.Server) {
+	data := unhex(encoded)
+	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data)), ContentLength: int64(len(data))}
+	r.Header.Set("Content-Encoding", "gzip")
+	body, err := getDecompressedBody(r)
+	if err != nil {
+		panic("expected completed initial gzip header")
+	}
+	defer body.Close()
+	oracleStage, oraclePath = "RawGzip", "/file"
+	oracleCopied.Reset()
+	status, err := processFile(r, oraclePath, body, 0, 0, nil, oracleLogger{})
+	fmt.Printf("%x\t", oracleCopied.Bytes())
+	if err == nil {
+		fmt.Println("END")
+		return
+	}
+	request, failure := http.NewRequest("POST", server.URL, strings.NewReader(err.Error()))
+	if failure != nil {
+		panic(failure)
+	}
+	request.Header.Set("X-Reference-Code", strconv.Itoa(status))
+	client := server.Client()
+	client.Timeout = 5 * time.Second
+	response, failure := client.Do(request)
+	if failure != nil {
+		panic(failure)
+	}
+	dumpUpload(response)
 }
 
 func referenceServer() *httptest.Server {
