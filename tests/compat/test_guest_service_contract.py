@@ -4,12 +4,20 @@ This is protocol input validation, not a running Rust/upstream guest service.
 The same data is intended for the Rust protocol adapter's subsequent tests.
 """
 import base64
+from io import BytesIO
 import json
 from pathlib import Path
+import threading
 import unittest
+from urllib.parse import parse_qs, urlsplit
+from wsgiref.simple_server import make_server
 
+from e2b import Sandbox
 from e2b.envd.filesystem import filesystem_pb
 from e2b.envd.process import process_pb
+
+from sdk_support import isolated_sdk_environment
+from test_sdk_envd_wire import QuietHandler, SyntheticEnvd
 
 
 ROOT = Path(__file__).resolve().parent
@@ -69,6 +77,41 @@ class GuestServiceProtocolContract(unittest.TestCase):
         self.assertEqual(entry.mode, 0o644)
         self.assertEqual(entry.owner, 'ubuntu')
         self.assertIsNotNone(entry.modified_time)
+
+    def test_file_http_samples_match_fixed_sdk_requests(self):
+        cases = {case['id']: case for case in CONTRACT['http']}
+        upload, download = cases['file-upload'], cases['file-download']
+        payload = base64.b64decode(upload['body_base64'], validate=True)
+        app = SyntheticEnvd()
+        # Preset the download response: the shared fixture is not a filesystem.
+        app.file_contents['/tmp/sample.bin'] = base64.b64decode(
+            download['body_base64'], validate=True)
+        with isolated_sdk_environment(), make_server(
+                '127.0.0.1', 0, app, handler_class=QuietHandler) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                url = f'http://127.0.0.1:{server.server_port}'
+                sandbox = Sandbox.connect(
+                    'probe-sandbox', api_url=url, sandbox_url=url,
+                    api_key='synthetic-local-only', domain='example.invalid',
+                    debug=False, request_timeout=5, retries=0)
+                sandbox.files.write('/tmp/sample.bin', BytesIO(payload), user='ubuntu')
+                self.assertEqual(app.records[-1]['body'], payload)
+                self.assertEqual(app.records[-1]['content_type'], upload['content_type'])
+                content = sandbox.files.read('/tmp/sample.bin', format='bytes', user='ubuntu')
+                self.assertEqual(content, app.file_contents['/tmp/sample.bin'])
+                for sample, actual in zip((upload, download), app.records[-2:], strict=True):
+                    with self.subTest(sample=sample['id']):
+                        expected = urlsplit(sample['path'])
+                        self.assertEqual((actual['method'], actual['path']),
+                                         (sample['method'], expected.path))
+                        self.assertEqual(actual['query'], parse_qs(expected.query))
+                        self.assertEqual(actual['access_token'], 'synthetic-token')
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
 
 
 if __name__ == '__main__':
