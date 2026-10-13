@@ -13,20 +13,18 @@ use axum::{
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
     file_mime::{Catalog, CatalogLimits},
-    file_query::TextQuery as Params,
     filesystem::{
         FileLimits,
         transfer::{TransferIoError, TransferLimits},
     },
 };
 use sandproof_guest_service::{
-    AccountPool, AuthPermit, InitLimits, Metadata, MetadataSource, ServiceError, Session,
-    SystemAccounts,
+    AccountPool, InitLimits, Metadata, MetadataSource, ServiceError, Session, SystemAccounts,
     file_download::{ContentType, DownloadError, IdentityRequest, Limits as DownloadLimits},
     file_transfer::{
-        BatchLimits, DownloadLimits as NegotiatedLimits, DownloadRequest, DownloadRequestError,
+        AuthorizedUpload, BatchLimits, DownloadLimits as NegotiatedLimits, DownloadRequestError,
         FileStreamError, FileStreams, GzipLimits, HttpBodyLimits, MultipartError, MultipartLimits,
-        UploadHttpError, UploadLimits, UploadRequest, UploadRequestError,
+        UploadHttpError, UploadLimits, UploadRequestError,
     },
     files::{FileContextLimits, FileSettings},
 };
@@ -91,7 +89,9 @@ fn failure(error: &FileStreamError) -> Response {
 }
 
 async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> Response {
+    use sandproof_guest_service::file_authorization::{Error, Limits, Operation};
     fixture.seen.fetch_add(1, Ordering::SeqCst);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     // Generated query binding precedes handler authorization and all account/
     // file effects. This fixture supplies an owner, not production admission.
     let params = match sandproof_guest_service::file_query::parse(
@@ -101,7 +101,7 @@ async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> R
             fields: 128,
         },
     ) {
-        Ok(params) => params.into_text().unwrap(),
+        Ok(params) => params,
         Err(error) => {
             return sandproof_guest_service::file_query::rejected(
                 error,
@@ -109,7 +109,7 @@ async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> R
                     wire_bytes: 65536,
                     chunk_bytes: 4096,
                 },
-                tokio::time::Instant::now() + Duration::from_secs(30),
+                deadline,
                 Arc::new(()),
             )
             .await
@@ -118,14 +118,51 @@ async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> R
     };
     // Python constructs every query/full multipart filename under this owned
     // tree. This loopback fixture is not a production route or path policy.
-    if let Some(path) = &params.path {
+    if let Some(path) = params
+        .path
+        .as_ref()
+        .map(|p| std::str::from_utf8(p).unwrap())
+    {
         assert!(Path::new(path).starts_with(&fixture.root) && !path.contains(".."));
     }
-    let auth = fixture
+    let operation = if request.method() == Method::POST {
+        Operation::Write
+    } else {
+        Operation::Read
+    };
+    let auth = match fixture
         .session
-        .authorize_headers(request.headers())
+        .authorize_file(
+            request.headers(),
+            params,
+            operation,
+            Limits {
+                headers: sandproof_guest_service::file_upload::HeaderLimits {
+                    bytes: 65536,
+                    fields: 128,
+                },
+                query_bytes: 65536,
+            },
+            deadline,
+        )
         .await
-        .unwrap();
+    {
+        Ok(auth) => auth,
+        Err(Error::Denied(denial)) => {
+            return sandproof_guest_service::file_authorization::rejected(
+                denial,
+                sandproof_guest_service::upload_response::Limits {
+                    wire_bytes: 65536,
+                    chunk_bytes: 4096,
+                },
+                deadline,
+                Arc::new(()),
+            )
+            .await
+            .unwrap();
+        }
+        Err(error) => panic!("unmapped fixture authorization: {error:?}"),
+    };
     if request.method() == Method::GET || request.method() == Method::HEAD {
         // Count the original explicit gzip requests, including rejected files.
         // Selection itself now follows stat inside the admitted download worker.
@@ -136,15 +173,14 @@ async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> R
         {
             fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
         }
-        return download(&fixture, auth, params, request).await;
+        return download(&fixture, auth, request).await;
     }
-    upload(&fixture, auth, params, request).await
+    upload(&fixture, auth, request).await
 }
 
 async fn upload(
     fixture: &Fixture,
-    auth: AuthPermit,
-    params: Params,
+    auth: sandproof_guest_service::file_authorization::Authorization,
     request: Request<Body>,
 ) -> Response {
     let (parts, body) = request.into_parts();
@@ -170,11 +206,9 @@ async fn upload(
         .map(|v| v.to_str().unwrap().parse::<u64>().unwrap());
     let result = fixture
         .files
-        .upload_request_response(
-            auth,
-            UploadRequest {
-                username: params.username,
-                path: params.path,
+        .upload_authorized(
+            AuthorizedUpload {
+                authorization: auth,
                 headers: parts.headers,
                 body,
                 expected,
@@ -312,8 +346,7 @@ fn gzip_limits() -> GzipLimits {
 }
 async fn download(
     fixture: &Fixture,
-    auth: AuthPermit,
-    params: Params,
+    auth: sandproof_guest_service::file_authorization::Authorization,
     request: Request<Body>,
 ) -> Response {
     let (parts, _) = request.into_parts();
@@ -340,13 +373,9 @@ async fn download(
     };
     match fixture
         .files
-        .download_request(
+        .download_authorized(
             auth,
-            DownloadRequest {
-                username: params.username,
-                path: params.path,
-                http: request,
-            },
+            request,
             &fixture.accounts,
             &FileSettings {
                 daemon_workdir: fixture.root.to_str().unwrap().into(),
@@ -371,6 +400,9 @@ async fn download(
         Ok(download) => download.into_response(),
         Err(DownloadRequestError::Admission(error)) => failure(&error),
         Err(DownloadRequestError::Download(error)) => download_failure(error),
+        Err(DownloadRequestError::Authorization(error)) => {
+            panic!("invalid fixture capability: {error:?}")
+        }
         Err(DownloadRequestError::Context(_)) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"message":"download context rejected"})),
@@ -530,8 +562,8 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 422);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 140);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 446);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 142);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 106);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     check_files(directory.path());
@@ -540,6 +572,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
 fn check_files(directory: &Path) {
     for mode in ["sync", "async"] {
         for name in [
+            "signed-rejected",
             "query-rejected",
             "ignored-qp-rejected",
             "multipart-setup-rejected",
@@ -552,6 +585,10 @@ fn check_files(directory: &Path) {
         assert_eq!(
             std::fs::read(directory.join(mode).join("query +%.txt")).unwrap(),
             b"query"
+        );
+        assert_eq!(
+            std::fs::read(directory.join(mode).join("signed-file")).unwrap(),
+            b"multipart"
         );
         assert_eq!(
             std::fs::read(directory.join(mode).join("form/binary")).unwrap(),

@@ -27,6 +27,7 @@ pub struct DownloadRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DownloadRequestError {
+    Authorization(crate::file_authorization::Error),
     Admission(super::FileStreamError),
     Context(ContextError),
     Download(DownloadError),
@@ -51,13 +52,67 @@ impl FileStreams {
     pub async fn download_request<S: AccountSource, Z: LocalZone + Send + 'static>(
         &self,
         auth: AuthPermit,
-        mut request: DownloadRequest,
+        request: DownloadRequest,
         accounts: &AccountPool<S>,
         settings: &FileSettings,
         limits: DownloadLimits,
         local: Z,
     ) -> Result<Download, DownloadRequestError> {
-        let (lease, deadline) = self.admit().map_err(DownloadRequestError::Admission)?;
+        self.download_request_before((auth, request), accounts, settings, limits, local, None)
+            .await
+    }
+
+    /// Consume only a read capability; path and username come exclusively from
+    /// its signed query. Authentication time remains in the original deadline.
+    /// # Errors
+    /// Wrong operation/expiry or the same admitted download errors.
+    pub async fn download_authorized<S: AccountSource, Z: LocalZone + Send + 'static>(
+        &self,
+        authorization: crate::file_authorization::Authorization,
+        http: IdentityRequest,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        limits: DownloadLimits,
+        local: Z,
+    ) -> Result<Download, DownloadRequestError> {
+        use crate::file_authorization::{Error, Operation};
+        if http.method != axum::http::Method::GET && http.method != axum::http::Method::HEAD {
+            return Err(DownloadRequestError::Authorization(Error::WrongOperation));
+        }
+        let (auth, query, deadline) = authorization
+            .take(Operation::Read)
+            .map_err(DownloadRequestError::Authorization)?;
+        self.download_request_before(
+            (
+                auth,
+                DownloadRequest {
+                    path: query.path,
+                    username: query.username,
+                    http,
+                },
+            ),
+            accounts,
+            settings,
+            limits,
+            local,
+            Some(deadline),
+        )
+        .await
+    }
+
+    async fn download_request_before<S: AccountSource, Z: LocalZone + Send + 'static>(
+        &self,
+        start: (AuthPermit, DownloadRequest),
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        limits: DownloadLimits,
+        local: Z,
+        original: Option<tokio::time::Instant>,
+    ) -> Result<Download, DownloadRequestError> {
+        let (auth, mut request) = start;
+        let (lease, deadline) = self
+            .admit_before(original)
+            .map_err(DownloadRequestError::Admission)?;
         let auth = Arc::new(auth);
         let owner: Owner = Arc::new((Arc::clone(&auth), lease));
         let selection = auth

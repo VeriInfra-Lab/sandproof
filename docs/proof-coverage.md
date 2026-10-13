@@ -306,6 +306,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [文件查询绑定](../sandbox-guest-runtime/src/file_query.rs)及[公开错误响应](../sandbox-guest-service/src/file_query.rs)新增完整原始查询/字段预算、部分 URL 解码与固定参数拒绝顺序、字节到文本边界、整数溢出顺序、Go Quote 两遍线长预算及错误字节保留原守卫/期限的对应义务。签名字段解析不构成授权；生产准入/鉴权路由尚未接通。固定 Go 原绑定函数和 http.Error 对照仅属有限工程证据，Linux SDK 组合待补；来宾适配未抽取或证明，纯核心、历史已证明 Rust 与 LLBC/Lean 未改。
 
+[文件专用鉴权](../sandbox-guest-service/src/session/file_authorization.rs)新增私有原令牌与摘要/defaults 同次提交、候选失败清零、头/查询预算、令牌优先和签名参数表示、恒定时间比较及锁后时钟读取义务；SHA-256/base64 为外部密码原语，不因此证明原冒号拼接格式的元组唯一性。专用许可不能由调用方转换为通用命令授权，绑定的 query/操作和原绝对期限须经下载/上传入口一直移交到原账户/文件/响应所有权。会话可移植回归及固定 Go 对照只是工程证据，Linux 新组合待实跑。自有会话与鉴权逻辑未抽取或证明，纯核心、历史已证明 Rust 与 LLBC/Lean 未改；旧定理不覆盖本候选。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。

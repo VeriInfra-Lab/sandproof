@@ -34,7 +34,7 @@ pub async fn io_failure(
     .await
 }
 
-pub(super) async fn send_error(
+pub(crate) async fn send_error(
     status: StatusCode,
     limits: Limits,
     deadline: Instant,

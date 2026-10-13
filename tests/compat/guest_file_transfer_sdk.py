@@ -10,11 +10,11 @@ from email.parser import BytesParser
 from io import BytesIO, StringIO
 import json
 import sys
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, parse_qsl, urlencode
 import httpx
 
 from e2b import AsyncSandbox, Sandbox
-from e2b.exceptions import FileNotFoundException, InvalidArgumentException, SandboxException
+from e2b.exceptions import AuthenticationException, FileNotFoundException, InvalidArgumentException, SandboxException
 from e2b.sandbox_sync.filesystem.filesystem import _handle_filesystem_envd_api_exception
 from sdk_support import isolated_sdk_environment
 
@@ -166,6 +166,60 @@ async def query_binding_async(sandbox, url, root):
                 response = await client.request(method, f'{url}/files?{raw}',
                                                 headers={'x-access-token': 'must-not-be-used'}, content=b'never')
                 assert_query_rejection(response, message)
+
+
+def authorization_cases(sandbox, url, root):
+    # Keep the pinned SDK's generated signature/query; retarget only its origin
+    # to the owned fixture. This does not exercise the center/host gateway.
+    path = f'{root}/signed-file'
+    def local(signed_url):
+        return f'{url}/files?' + urlsplit(signed_url).query
+    read = local(sandbox.download_url(path))
+    write = local(sandbox.upload_url(path))
+    def altered(signed_url, **changes):
+        query = dict(parse_qsl(urlsplit(signed_url).query))
+        query.update(changes)
+        return f'{url}/files?' + urlencode(query)
+    yield 'POST', write, {'headers': {'content-type': 'application/octet-stream'}, 'content': b'authorized'}, None
+    yield 'GET', read, {}, None
+    yield 'GET', local(sandbox.download_url(path, use_signature_expiration=600)), {}, None
+    yield 'GET', local(sandbox.download_url(path, use_signature_expiration=-600)), {}, 'signature is already expired'
+    yield 'GET', altered(read, path=f'{root}/signed-rejected'), {}, 'invalid signature'
+    yield 'POST', read, {'content': b'never'}, 'invalid signature'
+    yield 'GET', write, {}, 'invalid signature'
+    yield 'GET', read, {'headers': {'x-access-token': 'wrong'}}, 'access token present in header but does not match'
+    yield 'GET', f'{url}/files?path=' + quote(path, safe=''), {}, 'missing signature query parameter'
+    yield 'GET', altered(read, signature='bad', signature_expiration='-1'), {'headers': {'x-access-token': 'fixture-token'}}, None
+    yield 'GET', altered(read, username='must-not-be-looked-up'), {}, 'invalid signature'
+    yield 'POST', write, {'files': [('file', ('ignored-name', b'multipart'))]}, None
+
+
+def assert_authorization_response(method, response, message):
+    if message is None:
+        assert response.status_code == 200, response.text
+        if method == 'GET':
+            assert response.content == b'authorized'
+        return
+    assert response.status_code == 401, response.text
+    assert response.json() == {'code': 401, 'message': message}
+    assert response.content.endswith(b'\n')
+    assert response.headers['content-type'] == 'application/json; charset=utf-8'
+    assert response.headers['x-content-type-options'] == 'nosniff'
+    error = _handle_filesystem_envd_api_exception(response)
+    assert isinstance(error, AuthenticationException)
+    assert str(error) == message
+
+
+def authorization_sync(sandbox, url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for method, target, args, message in authorization_cases(sandbox, url, root):
+            assert_authorization_response(method, client.request(method, target, **args), message)
+
+
+async def authorization_async(sandbox, url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for method, target, args, message in authorization_cases(sandbox, url, root):
+            assert_authorization_response(method, await client.request(method, target, **args), message)
 
 
 def header_rejections_sync(url, root):
@@ -822,6 +876,7 @@ def run_sync(url, root):
     compressed_sync(sandbox, url, root)
     sdk_compressed_upload_sync(sandbox, root)
     query_binding_sync(sandbox, url, root)
+    authorization_sync(sandbox, url, root)
     header_rejections_sync(url, root)
     framing_sync(sandbox, url, root)
     qp_sync(sandbox, url, root)
@@ -876,6 +931,7 @@ async def run_async(url, root):
     await compressed_async(sandbox, url, root)
     await sdk_compressed_upload_async(sandbox, root)
     await query_binding_async(sandbox, url, root)
+    await authorization_async(sandbox, url, root)
     await header_rejections_async(url, root)
     await framing_async(sandbox, url, root)
     await qp_async(sandbox, url, root)

@@ -12,7 +12,7 @@ use tokio::time::Instant;
 #[cfg(test)]
 mod tests;
 
-mod errors;
+pub(crate) mod errors;
 pub use errors::io_failure;
 mod multipart_read;
 mod rejection;

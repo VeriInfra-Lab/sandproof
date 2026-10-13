@@ -88,6 +88,9 @@ impl Default for Defaults {
 
 struct Initialized {
     hash: [u8; 64],
+    // Fixed file signing needs the original token, not its MMDS digest.
+    // Move the bounded init secret here; never expose it through AuthPermit.
+    token: Secret,
     instance: String,
     template: String,
     defaults: Defaults,
@@ -199,10 +202,10 @@ impl<M: MetadataSource> Session<M> {
         serde_json::from_slice(body).map_err(|_| ServiceError::InvalidArgument)
     }
 
-    async fn apply(&self, request: InitRequest) -> Result<(), ServiceError> {
+    async fn apply(&self, mut request: InitRequest) -> Result<(), ServiceError> {
         let token = request
             .access_token
-            .as_ref()
+            .take()
             .ok_or(ServiceError::Unauthenticated)?;
         let digest = token_digest(&token.0, self.limits.token_bytes)?;
         let _init = self
@@ -249,6 +252,7 @@ impl<M: MetadataSource> Session<M> {
         apply_defaults(&mut defaults, request, &instance, &template, self.limits)?;
         *current = Some(Initialized {
             hash: digest,
+            token,
             instance,
             template,
             defaults,
@@ -256,6 +260,8 @@ impl<M: MetadataSource> Session<M> {
         Ok(())
     }
 }
+
+mod file_authorization;
 
 struct Secret(Zeroizing<String>);
 

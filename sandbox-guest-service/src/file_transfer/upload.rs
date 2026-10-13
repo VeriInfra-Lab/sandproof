@@ -21,6 +21,13 @@ pub struct UploadRequest {
     pub body: Body,
     pub expected: Option<u64>,
 }
+/// The capability owns the signed path/user; the body cannot replace them.
+pub struct AuthorizedUpload {
+    pub authorization: crate::file_authorization::Authorization,
+    pub headers: HeaderMap,
+    pub body: Body,
+    pub expected: Option<u64>,
+}
 #[derive(Clone, Copy)]
 pub struct UploadLimits {
     pub headers: file_upload::HeaderLimits,
@@ -31,6 +38,7 @@ pub struct UploadLimits {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadRequestError {
+    Authorization(crate::file_authorization::Error),
     Headers(wire::Error),
     Encoding(file_encoding::Error),
     GzipPreflight(crate::upload_body::GzipError),
@@ -149,7 +157,7 @@ impl FileStreams {
         settings: &FileSettings,
         limits: UploadLimits,
     ) -> Result<BatchReply, UploadRequestError> {
-        let reservation = self.upload_admission(&request.headers, limits)?;
+        let reservation = self.upload_admission(&request.headers, limits, None)?;
         self.upload_request_reserved(auth, request, accounts, settings, limits, reservation)
             .await
             .map_err(Failure::legacy)
@@ -170,8 +178,58 @@ impl FileStreams {
         limits: UploadLimits,
         response: crate::upload_response::Limits,
     ) -> Result<axum::response::Response, UploadHttpError> {
+        self.upload_response_before((auth, request), accounts, settings, limits, response, None)
+            .await
+    }
+
+    /// Consume only a write capability and preserve its query and original
+    /// deadline through account lookup, file effects and response bytes.
+    /// # Errors
+    /// Wrong operation/expiry or the existing admitted upload/response errors.
+    pub async fn upload_authorized<S: AccountSource>(
+        &self,
+        request: AuthorizedUpload,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        limits: UploadLimits,
+        response: crate::upload_response::Limits,
+    ) -> Result<axum::response::Response, UploadHttpError> {
+        let (auth, query, deadline) = request
+            .authorization
+            .take(crate::file_authorization::Operation::Write)
+            .map_err(|error| UploadHttpError::Request(UploadRequestError::Authorization(error)))?;
+        self.upload_response_before(
+            (
+                auth,
+                UploadRequest {
+                    username: query.username,
+                    path: query.path,
+                    headers: request.headers,
+                    body: request.body,
+                    expected: request.expected,
+                },
+            ),
+            accounts,
+            settings,
+            limits,
+            response,
+            Some(deadline),
+        )
+        .await
+    }
+
+    async fn upload_response_before<S: AccountSource>(
+        &self,
+        start: (AuthPermit, UploadRequest),
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        limits: UploadLimits,
+        response: crate::upload_response::Limits,
+        original: Option<tokio::time::Instant>,
+    ) -> Result<axum::response::Response, UploadHttpError> {
+        let (auth, request) = start;
         let reservation = self
-            .upload_admission(&request.headers, limits)
+            .upload_admission(&request.headers, limits, original)
             .map_err(UploadHttpError::Request)?;
         let expected = request.expected;
         let result = self
@@ -219,9 +277,12 @@ impl FileStreams {
         &self,
         headers: &HeaderMap,
         limits: UploadLimits,
+        original: Option<tokio::time::Instant>,
     ) -> Result<Reservation, UploadRequestError> {
         file_upload::check_headers(headers, limits.headers).map_err(UploadRequestError::Headers)?;
-        let (lease, deadline) = self.admit().map_err(UploadRequestError::Transfer)?;
+        let (lease, deadline) = self
+            .admit_before(original)
+            .map_err(UploadRequestError::Transfer)?;
         Ok(Reservation { lease, deadline })
     }
 

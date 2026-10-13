@@ -1,4 +1,5 @@
 use super::*;
+mod authorization;
 mod gzip;
 mod multipart;
 mod response;

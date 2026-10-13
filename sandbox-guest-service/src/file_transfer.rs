@@ -30,7 +30,9 @@ pub use batch::{
 };
 pub use gzip_download::GzipDownload;
 pub use identity_download::IdentityDownloadError;
-pub use upload::{UploadHttpError, UploadLimits, UploadRequest, UploadRequestError};
+pub use upload::{
+    AuthorizedUpload, UploadHttpError, UploadLimits, UploadRequest, UploadRequestError,
+};
 
 #[cfg(test)]
 mod tests;
@@ -91,9 +93,18 @@ impl FileStreams {
     }
 
     fn admit(&self) -> Result<(Arc<Lease>, Instant), FileStreamError> {
+        self.admit_before(None)
+    }
+
+    fn admit_before(
+        &self,
+        original: Option<Instant>,
+    ) -> Result<(Arc<Lease>, Instant), FileStreamError> {
         let deadline = Instant::now()
             .checked_add(self.timeout)
             .ok_or(FileStreamError::InvalidArgument)?;
+        let deadline = original.map_or(deadline, |original| original.min(deadline));
+        timely(deadline, Ok(()))?;
         let permit = Arc::clone(&self.slots)
             .try_acquire_owned()
             .map_err(|_| FileStreamError::ResourceExhausted)?;
