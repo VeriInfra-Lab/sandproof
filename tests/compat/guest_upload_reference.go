@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -477,6 +478,23 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "P":
+			if server == nil {
+				server = referenceServer()
+			}
+			err := headerRejection(f[1:])
+			request, failure := http.NewRequest("POST", server.URL, strings.NewReader(err.Error()))
+			if failure != nil {
+				panic(failure)
+			}
+			request.Header.Set("X-Reference-Code", "400")
+			client := server.Client()
+			client.Timeout = 5 * time.Second
+			response, failure := client.Do(request)
+			if failure != nil {
+				panic(failure)
+			}
+			dumpUpload(response)
 		case "F", "J":
 			oracleStage = f[1]
 			oraclePath, oracleAttribute = "/file", ""
@@ -736,4 +754,147 @@ var linuxErrors = [...]string{
 	130: "owner died",
 	131: "state not recoverable",
 	132: "operation not possible due to RF-kill",
+}
+
+// Original encoding.go methods, blob df8d54f70f1b685a7b77032bbb3d6eb762e4fc13.
+const (
+	// EncodingGzip is the gzip content encoding.
+	EncodingGzip = "gzip"
+	// EncodingIdentity means no encoding (passthrough).
+	EncodingIdentity = "identity"
+	// EncodingWildcard means any encoding is acceptable.
+	EncodingWildcard = "*"
+)
+
+// SupportedEncodings lists the content encodings supported for file transfer.
+// The order matters - encodings are checked in order of preference.
+var SupportedEncodings = []string{
+	EncodingGzip,
+}
+
+// encodingWithQuality holds an encoding name and its quality value.
+type encodingWithQuality struct {
+	encoding string
+	quality  float64
+}
+
+// isSupportedEncoding checks if the given encoding is in the supported list.
+// Per RFC 7231, content-coding values are case-insensitive.
+func isSupportedEncoding(encoding string) bool {
+	return slices.Contains(SupportedEncodings, strings.ToLower(encoding))
+}
+
+// parseEncodingWithQuality parses an encoding value and extracts the quality.
+// Returns the encoding name (lowercased) and quality value (default 1.0 if not specified).
+// Per RFC 7231, content-coding values are case-insensitive.
+func parseEncodingWithQuality(value string) encodingWithQuality {
+	value = strings.TrimSpace(value)
+	quality := 1.0
+
+	if idx := strings.Index(value, ";"); idx != -1 {
+		params := value[idx+1:]
+		value = strings.TrimSpace(value[:idx])
+
+		// Parse q=X.X parameter
+		for param := range strings.SplitSeq(params, ";") {
+			param = strings.TrimSpace(param)
+			if strings.HasPrefix(strings.ToLower(param), "q=") {
+				if q, err := strconv.ParseFloat(param[2:], 64); err == nil {
+					quality = q
+				}
+			}
+		}
+	}
+
+	// Normalize encoding to lowercase per RFC 7231
+	return encodingWithQuality{encoding: strings.ToLower(value), quality: quality}
+}
+
+// parseEncoding extracts the encoding name from a header value, stripping quality.
+func parseEncoding(value string) string {
+	return parseEncodingWithQuality(value).encoding
+}
+
+// parseContentEncoding parses the Content-Encoding header and returns the encoding.
+// Returns an error if an unsupported encoding is specified.
+// If no Content-Encoding header is present, returns empty string.
+func parseContentEncoding(r *http.Request) (string, error) {
+	header := r.Header.Get("Content-Encoding")
+	if header == "" {
+		return EncodingIdentity, nil
+	}
+
+	encoding := parseEncoding(header)
+
+	if encoding == EncodingIdentity {
+		return EncodingIdentity, nil
+	}
+
+	if !isSupportedEncoding(encoding) {
+		return "", fmt.Errorf("unsupported Content-Encoding: %s, supported: %v", header, SupportedEncodings)
+	}
+
+	return encoding, nil
+}
+
+// getDecompressedBody returns a reader that decompresses the request body based on
+// Content-Encoding header. Returns the original body if no encoding is specified.
+// Returns an error if an unsupported encoding is specified.
+// The caller is responsible for closing both the returned ReadCloser and the
+// original request body (r.Body) separately.
+func getDecompressedBody(r *http.Request) (io.ReadCloser, error) {
+	encoding, err := parseContentEncoding(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if encoding == EncodingIdentity {
+		return r.Body, nil
+	}
+
+	switch encoding {
+	case EncodingGzip:
+		gzReader, err := gzip.NewReader(r.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gzip reader: %w", err)
+		}
+
+		return gzReader, nil
+	default:
+		// This shouldn't happen if isSupportedEncoding is correct
+		return nil, fmt.Errorf("encoding %s is supported but not implemented", encoding)
+	}
+}
+
+// Only the rejection expressions from PostFiles / handleRawUpload are used
+// here. This is not a replacement API, account lookup, body decoder test or
+// complete request ordering oracle.
+func headerRejection(fields []string) error {
+	r := &http.Request{Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}
+	for _, field := range fields[1:] {
+		kv := strings.SplitN(field, ":", 2)
+		r.Header.Add(string(unhex(kv[0])), string(unhex(kv[1])))
+	}
+	switch fields[0] {
+	case "E":
+		body, err := getDecompressedBody(r)
+		if err != nil {
+			return fmt.Errorf("error decompressing request body: %w", err)
+		}
+		body.Close()
+	case "C":
+		contentType := r.Header.Get("Content-Type")
+		mediaType, _, _ := mime.ParseMediaType(contentType)
+		if mediaType != "application/octet-stream" && !strings.HasPrefix(mediaType, "multipart/") {
+			return fmt.Errorf("unsupported content type: %s, expected multipart/form-data or application/octet-stream", contentType)
+		}
+	case "R":
+		return errors.New("path query parameter is required for raw body upload")
+	case "M":
+		metadata := extractMetadataHeaders(r.Header)
+		if err := ValidateMetadata(metadata); err != nil {
+			return fmt.Errorf("invalid metadata: %w", err)
+		}
+	}
+	panic("expected rejected input")
 }

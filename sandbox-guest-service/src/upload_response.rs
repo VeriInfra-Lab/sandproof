@@ -14,6 +14,8 @@ mod tests;
 
 mod errors;
 pub use errors::io_failure;
+mod rejection;
+pub use rejection::{Rejection, rejected};
 
 /// Result entries have their existing path/metadata budget. This separately
 /// bounds the escaped JSON payload and each retained transmission chunk.

@@ -39,33 +39,67 @@ pub fn check_headers(headers: &HeaderMap, limits: HeaderLimits) -> Result<(), Er
 /// # Errors
 /// Invalid metadata or aggregate payload, before copying any oversized value.
 pub fn metadata(headers: &HeaderMap) -> Result<BTreeMap<String, String>, Error> {
-    let mut values = BTreeMap::new();
-    let mut total = 0usize;
-    for name in headers.keys() {
-        let Some(key) = name
+    metadata_detailed(headers).map_err(|_| Error::InvalidMetadata)
+}
+
+/// Owned diagnostic contains only a selected normalized header key, never its
+/// value. The request owner must enforce the complete header budget first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetadataFault {
+    pub(crate) key: String,
+    pub(crate) reason: MetadataReason,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MetadataReason {
+    Entry(file_upload::MetadataViolation),
+    Total(usize),
+}
+
+fn entries(headers: &HeaderMap) -> impl Iterator<Item = (&str, &[u8])> {
+    headers.keys().filter_map(|name| {
+        let key = name
             .as_str()
             .strip_prefix("x-metadata-")
-            .filter(|key| !key.is_empty())
-        else {
-            continue;
-        };
-        let Some(value) = headers.get(name) else {
-            continue;
-        };
-        file_upload::validate_entry(key.as_bytes(), value.as_bytes())?;
+            .filter(|key| !key.is_empty())?;
+        Some((key, headers.get(name)?.as_bytes()))
+    })
+}
+
+/// Validate all entries before total-size rejection or value allocation. Go's
+/// map order is unspecified when several entries are invalid; any encountered
+/// entry failure precedes the aggregate-size failure.
+/// # Errors
+/// Invalid selected key/value or the exact stored-name/value total above 4096.
+pub fn metadata_detailed(headers: &HeaderMap) -> Result<BTreeMap<String, String>, MetadataFault> {
+    let mut total = 0usize;
+    for (key, value) in entries(headers) {
+        file_upload::validate_entry_detailed(key.as_bytes(), value).map_err(|reason| {
+            MetadataFault {
+                key: key.to_owned(),
+                reason: MetadataReason::Entry(reason),
+            }
+        })?;
+        // Every stored prefix is shorter than its original X-Metadata- field.
+        // Admitted complete-header bytes bound this sum before this call.
         total = total
-            .checked_add(9 + key.len())
-            .and_then(|n| n.checked_add(value.len()))
-            .filter(|n| *n <= 4096)
-            .ok_or(Error::InvalidMetadata)?;
-        values.insert(
-            key.to_owned(),
-            std::str::from_utf8(value.as_bytes())
-                .map_err(|_| Error::InvalidMetadata)?
-                .to_owned(),
-        );
+            .saturating_add(9 + key.len())
+            .saturating_add(value.len());
     }
-    Ok(values)
+    if total > 4096 {
+        return Err(MetadataFault {
+            key: String::new(),
+            reason: MetadataReason::Total(total),
+        });
+    }
+    Ok(entries(headers)
+        .map(|(key, value)| {
+            (
+                key.to_owned(),
+                // Detailed validation has established printable ASCII for every byte.
+                value.iter().map(|&byte| char::from(byte)).collect(),
+            )
+        })
+        .collect())
 }
 #[cfg(test)]
 mod tests;

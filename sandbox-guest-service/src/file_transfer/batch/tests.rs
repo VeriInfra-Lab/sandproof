@@ -4,6 +4,7 @@ mod multipart;
 mod response;
 mod upload;
 mod upload_errors;
+mod upload_headers;
 use crate::file_transfer::FileStreams;
 use crate::files::{FileContextLimits, FileSettings};
 use crate::{

@@ -28,10 +28,20 @@ pub async fn io_failure(
     owner: Owner,
 ) -> Result<Response, Error> {
     let status = StatusCode::from_u16(fault.status()).map_err(|_| Error::UnclassifiedFault)?;
-    let mut response = send(limits, deadline, owner, move || {
+    send_error(status, limits, deadline, owner, move || {
         payload(&fault, expected, limits.wire_bytes)
     })
-    .await?;
+    .await
+}
+
+pub(super) async fn send_error(
+    status: StatusCode,
+    limits: Limits,
+    deadline: Instant,
+    owner: Owner,
+    encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
+) -> Result<Response, Error> {
+    let mut response = send(limits, deadline, owner, encode).await?;
     *response.status_mut() = status;
     response.headers_mut().insert(
         "content-type",
@@ -144,7 +154,7 @@ fn payload(fault: &Fault, expected: Option<u64>, limit: usize) -> Result<Vec<u8>
     envelope(&parts, fault.status(), limit)
 }
 
-fn envelope(parts: &[&[u8]], status: u16, limit: usize) -> Result<Vec<u8>, Error> {
+pub(super) fn envelope(parts: &[&[u8]], status: u16, limit: usize) -> Result<Vec<u8>, Error> {
     let code = status.to_string();
     go_json::bounded(limit as u64, |put| {
         put(b"{\"code\":")?;

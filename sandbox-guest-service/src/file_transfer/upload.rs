@@ -3,6 +3,7 @@ use super::{
     BatchLimits, BatchReply, FileStreamError, FileStreams, GzipLimits, MultipartLimits,
     Reservation, UploadBodyError, timely,
 };
+use crate::upload_response::Rejection;
 use crate::{
     AccountPool, AccountSource, AuthPermit, ContextError, file_encoding, file_upload,
     files::FileSettings, upload_body::GzipBody,
@@ -45,6 +46,31 @@ pub enum UploadHttpError {
     Request(UploadRequestError),
     Response(crate::upload_response::Error),
 }
+
+enum Failure {
+    Request(UploadRequestError),
+    Rejected(Rejection),
+}
+impl From<UploadRequestError> for Failure {
+    fn from(error: UploadRequestError) -> Self {
+        Self::Request(error)
+    }
+}
+impl Failure {
+    fn legacy(self) -> UploadRequestError {
+        match self {
+            Self::Request(error) => error,
+            Self::Rejected(error) => match error {
+                Rejection::UnsupportedEncoding(_) => {
+                    UploadRequestError::Encoding(file_encoding::Error::Unsupported)
+                }
+                Rejection::UnsupportedContentType(_) => UploadRequestError::UnsupportedContentType,
+                Rejection::RawPathRequired => UploadRequestError::RawPathRequired,
+                Rejection::Metadata(_) => UploadRequestError::Headers(wire::Error::InvalidMetadata),
+            },
+        }
+    }
+}
 impl FileStreams {
     /// Caller has authenticated this request. Does not install a route or
     /// implement signing/query decoding, complete HTTP errors or serialization.
@@ -62,11 +88,12 @@ impl FileStreams {
         let reservation = self.upload_admission(&request.headers, limits)?;
         self.upload_request_reserved(auth, request, accounts, settings, limits, reservation)
             .await
+            .map_err(Failure::legacy)
     }
 
-    /// Send successes and actual file I/O faults under the original upload slot
-    /// and deadline. Other preflight/transport/component errors remain explicit
-    /// until their complete public contracts are connected; never fake a body.
+    /// Send successes, observed file I/O faults and supported header/dispatch
+    /// rejections under the original upload slot and deadline. Unmapped account,
+    /// codec/transport and component failures remain explicit.
     /// # Errors
     /// Unmapped request rejection, unknown I/O observation, response budget,
     /// expired original deadline or response delivery failure.
@@ -98,12 +125,12 @@ impl FileStreams {
                 .into_http_response(response)
                 .await
                 .map_err(UploadHttpError::Response),
-            Err(
+            Err(Failure::Request(
                 UploadRequestError::Transfer(FileStreamError::UploadFault(fault))
                 | UploadRequestError::Body(UploadBodyError::Transfer(FileStreamError::UploadFault(
                     fault,
                 ))),
-            ) => crate::upload_response::io_failure(
+            )) => crate::upload_response::io_failure(
                 fault,
                 expected,
                 response,
@@ -112,7 +139,15 @@ impl FileStreams {
             )
             .await
             .map_err(UploadHttpError::Response),
-            Err(error) => Err(UploadHttpError::Request(error)),
+            Err(Failure::Rejected(error)) => crate::upload_response::rejected(
+                error,
+                response,
+                reservation.deadline,
+                reservation.lease,
+            )
+            .await
+            .map_err(UploadHttpError::Response),
+            Err(Failure::Request(error)) => Err(UploadHttpError::Request(error)),
         }
     }
 
@@ -134,12 +169,24 @@ impl FileStreams {
         settings: &FileSettings,
         limits: UploadLimits,
         reservation: Reservation,
-    ) -> Result<BatchReply, UploadRequestError> {
+    ) -> Result<BatchReply, Failure> {
         let deadline = reservation.deadline;
         let auth = Arc::new(auth);
         let owner = Arc::new((Arc::clone(&auth), reservation.clone()));
-        let encoding = file_encoding::content(&request.headers, limits.encoding)
-            .map_err(UploadRequestError::Encoding)?;
+        let encoding =
+            file_encoding::content(&request.headers, limits.encoding).map_err(|error| {
+                if error == file_encoding::Error::Unsupported {
+                    Failure::Rejected(Rejection::UnsupportedEncoding(
+                        request
+                            .headers
+                            .get("content-encoding")
+                            .map_or(&[][..], |v| v.as_bytes())
+                            .to_vec(),
+                    ))
+                } else {
+                    Failure::Request(UploadRequestError::Encoding(error))
+                }
+            })?;
         let input = match encoding {
             file_encoding::Encoding::Identity => Input::Identity(request.body, request.expected),
             file_encoding::Encoding::Gzip => Input::Gzip(
@@ -165,8 +212,8 @@ impl FileStreams {
             .await
             .map_err(UploadRequestError::Context)?;
         timely(deadline, Ok(())).map_err(UploadRequestError::Transfer)?;
-        let metadata =
-            file_upload::metadata(&request.headers).map_err(UploadRequestError::Headers)?;
+        let metadata = file_upload::metadata_detailed(&request.headers)
+            .map_err(|error| Failure::Rejected(Rejection::Metadata(error)))?;
         let content_type = request
             .headers
             .get("content-type")
@@ -174,10 +221,12 @@ impl FileStreams {
         let kind =
             wire::kind(content_type, limits.headers.bytes).map_err(UploadRequestError::Headers)?;
         if kind == Kind::Unsupported {
-            return Err(UploadRequestError::UnsupportedContentType);
+            return Err(Failure::Rejected(Rejection::UnsupportedContentType(
+                content_type.to_vec(),
+            )));
         }
         if kind == Kind::Raw && request.path.is_none() {
-            return Err(UploadRequestError::RawPathRequired);
+            return Err(Failure::Rejected(Rejection::RawPathRequired));
         }
         let batch = self
             .upload_batch_reserved(
@@ -207,7 +256,7 @@ impl FileStreams {
             }
             (Kind::Unsupported, _) => unreachable!(),
         }
-        .map_err(UploadRequestError::Body)
+        .map_err(|error| Failure::Request(UploadRequestError::Body(error)))
     }
 }
 enum Input {

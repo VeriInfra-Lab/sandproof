@@ -3,6 +3,43 @@ use crate::file_download::tests::reference::{Reference, hex};
 use axum::http::{HeaderName, HeaderValue};
 use std::fmt::Write;
 #[test]
+fn metadata_entry_failures_precede_total_and_total_counts_every_valid_field() {
+    for reversed in [false, true] {
+        let mut headers = HeaderMap::new();
+        let mut pairs = [
+            (
+                "x-metadata-large",
+                HeaderValue::from_str(&"x".repeat(4096)).unwrap(),
+            ),
+            ("x-metadata-invalid", HeaderValue::from_static("ok\t")),
+        ];
+        if reversed {
+            pairs.reverse();
+        }
+        for (name, value) in pairs {
+            headers.insert(name, value);
+        }
+        assert_eq!(
+            metadata_detailed(&headers),
+            Err(MetadataFault {
+                key: "invalid".into(),
+                reason: MetadataReason::Entry(file_upload::MetadataViolation::ValueByte {
+                    byte: 9,
+                    offset: 2
+                }),
+            })
+        );
+        headers.insert("x-metadata-invalid", HeaderValue::from_static("fine"));
+        assert_eq!(
+            metadata_detailed(&headers),
+            Err(MetadataFault {
+                key: String::new(),
+                reason: MetadataReason::Total(4096 + 9 + 5 + 9 + 7 + 4),
+            })
+        );
+    }
+}
+#[test]
 fn metadata_uses_first_value_ignores_empty_key_and_checks_before_copying() {
     let mut headers = HeaderMap::new();
     headers.append("x-metadata-key", HeaderValue::from_static("first"));

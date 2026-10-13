@@ -28,6 +28,15 @@ pub enum Error {
     InvalidMetadata,
 }
 
+/// A validation observation without retaining an unbounded key or value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetadataViolation {
+    EmptyKey,
+    KeyLength,
+    KeyByte { byte: u8, offset: usize },
+    ValueByte { byte: u8, offset: usize },
+}
+
 /// Keep `ParseMediaType`'s returned type even on invalid optional parameters;
 /// conflicting duplicate parameters instead discard the type. Parameter bytes
 /// are opaque and never decoded just to choose raw versus multipart.
@@ -158,9 +167,31 @@ pub fn validate_metadata(values: &BTreeMap<String, String>) -> Result<(), Error>
 /// # Errors
 /// One invalid metadata key/value; aggregate validation is separate.
 pub fn validate_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
-    if key.is_empty() || key.len() > 246 || !key.iter().chain(value).all(|b| (32..=126).contains(b))
-    {
-        return Err(Error::InvalidMetadata);
+    validate_entry_detailed(key, value).map_err(|_| Error::InvalidMetadata)
+}
+
+/// Preserve the fixed key-length, key-byte, then value-byte validation order.
+/// # Errors
+/// The first invalid byte is an offset into the original bytes, not Unicode.
+pub fn validate_entry_detailed(key: &[u8], value: &[u8]) -> Result<(), MetadataViolation> {
+    if key.is_empty() {
+        return Err(MetadataViolation::EmptyKey);
+    }
+    if key.len() > 246 {
+        return Err(MetadataViolation::KeyLength);
+    }
+    for (bytes, key) in [(key, true), (value, false)] {
+        if let Some((offset, &byte)) = bytes
+            .iter()
+            .enumerate()
+            .find(|(_, b)| !(32..=126).contains(*b))
+        {
+            return Err(if key {
+                MetadataViolation::KeyByte { byte, offset }
+            } else {
+                MetadataViolation::ValueByte { byte, offset }
+            });
+        }
     }
     Ok(())
 }

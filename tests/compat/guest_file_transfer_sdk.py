@@ -14,12 +14,55 @@ import httpx
 
 from e2b import AsyncSandbox, Sandbox
 from e2b.exceptions import FileNotFoundException, InvalidArgumentException
+from e2b.sandbox_sync.filesystem.filesystem import _handle_filesystem_envd_api_exception
 from sdk_support import isolated_sdk_environment
 
 
 def arguments(url):
     return dict(api_url=url, sandbox_url=url, api_key='synthetic-local-only',
                 domain='example.invalid', debug=False, request_timeout=10, retries=0)
+
+
+def header_rejection_cases(root):
+    """Synthetic inputs rejected before file I/O; fixed SDK parses the errors.
+
+    Ordinary SDK writes validate metadata client-side and do not emit unsupported
+    encoding/media types. These requests therefore use a controlled HTTP client.
+    """
+    headers = {'x-access-token': 'fixture-token', 'content-type': 'application/octet-stream'}
+    path = {'path': f'{root}/header-rejected'}
+    yield path, {**headers, 'content-encoding': 'br'}, (
+        'error decompressing request body: unsupported Content-Encoding: br, supported: [gzip]')
+    yield path, {**headers, 'content-type': 'text/plain'}, (
+        'unsupported content type: text/plain, expected multipart/form-data or application/octet-stream')
+    yield {}, headers, 'path query parameter is required for raw body upload'
+    yield path, {**headers, 'x-metadata-note': 'x' * 4096}, (
+        'invalid metadata: total metadata size 4109 exceeds 4096 bytes')
+
+
+def assert_header_rejection(response, message):
+    assert response.status_code == 400, response.text
+    assert response.json() == {'code': 400, 'message': message}
+    assert response.content.endswith(b'\n')
+    assert response.headers['content-type'] == 'application/json; charset=utf-8'
+    assert response.headers['x-content-type-options'] == 'nosniff'
+    error = _handle_filesystem_envd_api_exception(response)
+    assert isinstance(error, InvalidArgumentException), error
+    assert str(error) == message
+
+
+def header_rejections_sync(url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for params, headers, message in header_rejection_cases(root):
+            response = client.post(f'{url}/files', params=params, headers=headers, content=b'never')
+            assert_header_rejection(response, message)
+
+
+async def header_rejections_async(url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for params, headers, message in header_rejection_cases(root):
+            response = await client.post(f'{url}/files', params=params, headers=headers, content=b'never')
+            assert_header_rejection(response, message)
 
 
 def payloads():
@@ -448,6 +491,7 @@ def run_sync(url, root):
     multipart_sync(sandbox, root)
     compressed_sync(sandbox, url, root)
     sdk_compressed_upload_sync(sandbox, root)
+    header_rejections_sync(url, root)
     upload_reply_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
     range_sync(url, root)
@@ -497,6 +541,7 @@ async def run_async(url, root):
     await multipart_async(sandbox, root)
     await compressed_async(sandbox, url, root)
     await sdk_compressed_upload_async(sandbox, root)
+    await header_rejections_async(url, root)
     await upload_reply_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
     await range_async(url, root)

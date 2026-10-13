@@ -1,5 +1,38 @@
 use super::*;
 #[test]
+fn detailed_metadata_checks_order_and_original_byte_offsets() {
+    assert_eq!(
+        validate_entry_detailed(b"", b"\xff"),
+        Err(MetadataViolation::EmptyKey)
+    );
+    assert_eq!(
+        validate_entry_detailed(&vec![0xff; 247], b"\0"),
+        Err(MetadataViolation::KeyLength)
+    );
+    assert_eq!(
+        validate_entry_detailed(b"a\xff", b"\0"),
+        Err(MetadataViolation::KeyByte {
+            byte: 255,
+            offset: 1
+        })
+    );
+    assert_eq!(
+        validate_entry_detailed(b"key", b"ok\xc3\xa9"),
+        Err(MetadataViolation::ValueByte {
+            byte: 195,
+            offset: 2
+        })
+    );
+    for byte in 0..=255u8 {
+        let result = validate_entry_detailed(b"key", &[byte]);
+        assert_eq!(result.is_ok(), (32..=126).contains(&byte));
+        assert_eq!(
+            validate_entry(b"key", &[byte]),
+            result.map_err(|_| Error::InvalidMetadata)
+        );
+    }
+}
+#[test]
 fn returned_type_distinguishes_bad_parameters_from_conflicting_duplicates() {
     for value in [
         b"APPLICATION/OCTET-STREAM".as_slice(),

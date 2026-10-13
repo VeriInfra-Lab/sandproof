@@ -12,13 +12,13 @@ use axum::{body::Body, response::Response};
 use http_body_util::BodyExt;
 use std::sync::atomic::Ordering;
 
-fn response_limits() -> Limits {
+pub(super) fn response_limits() -> Limits {
     Limits {
         wire_bytes: 4096,
         chunk_bytes: 7,
     }
 }
-async fn upload(
+pub(super) async fn upload(
     f: &Fixture,
     request: UploadRequest,
     limits: Limits,
@@ -34,7 +34,7 @@ async fn upload(
         )
         .await
 }
-async fn collect(mut body: Body) -> Vec<u8> {
+pub(super) async fn collect(mut body: Body) -> Vec<u8> {
     let mut bytes = Vec::new();
     while let Some(frame) = body.frame().await {
         bytes.extend_from_slice(&frame.unwrap().into_data().unwrap());
