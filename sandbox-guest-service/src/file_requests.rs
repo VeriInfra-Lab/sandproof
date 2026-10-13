@@ -98,6 +98,10 @@ pub struct Admitted {
     deadline: Instant,
 }
 impl Admitted {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn owner(&self) -> crate::owned_body::Owner {
+        self.lease.clone()
+    }
     #[must_use]
     pub const fn deadline(&self) -> Instant {
         self.deadline

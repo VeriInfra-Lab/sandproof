@@ -1,4 +1,4 @@
-//! Pinned SDK -> test-only HTTP adapter -> authorized real file streams.
+//! Pinned SDK -> loopback routing -> shared file HTTP service and real streams.
 //! Identity/gzip GET and raw/multipart POST; synthetic gzip uploads with SDK reads.
 //! This is not a production router or E03.
 #![cfg(all(target_os = "linux", feature = "sdk-contract-tests"))]
@@ -6,25 +6,22 @@ use axum::{
     Json, Router,
     body::Body,
     extract::State,
-    http::{HeaderMap, HeaderValue, Method, Request, StatusCode},
-    response::{IntoResponse, Response},
+    http::{HeaderValue, Method, Request},
+    response::Response,
     routing::{get, post},
 };
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
     file_mime::{Catalog, CatalogLimits},
-    filesystem::{
-        FileLimits,
-        transfer::{TransferIoError, TransferLimits},
-    },
+    filesystem::{FileLimits, transfer::TransferLimits},
 };
 use sandproof_guest_service::{
     AccountPool, InitLimits, Metadata, MetadataSource, ServiceError, Session, SystemAccounts,
-    file_download::{ContentType, DownloadError, IdentityRequest, Limits as DownloadLimits},
+    file_download::Limits as DownloadLimits,
+    file_http::{FileHttp, Settings as HttpSettings},
     file_transfer::{
-        AuthorizedUpload, BatchLimits, DownloadLimits as NegotiatedLimits, DownloadRequestError,
-        FileStreamError, FileStreams, GzipLimits, HttpBodyLimits, MultipartError, MultipartLimits,
-        UploadHttpError, UploadLimits, UploadRequestError,
+        BatchLimits, DownloadLimits as NegotiatedLimits, FileStreams, GzipLimits, HttpBodyLimits,
+        MultipartLimits, UploadLimits,
     },
     files::{FileContextLimits, FileSettings},
 };
@@ -51,12 +48,8 @@ impl MetadataSource for Meta {
     }
 }
 struct Fixture {
-    session: Session<Meta>,
-    requests: sandproof_guest_service::file_requests::FileRequests,
-    accounts: AccountPool<SystemAccounts>,
-    files: FileStreams,
     root: PathBuf,
-    mime: Arc<Catalog>,
+    endpoint: FileHttp<Meta, SystemAccounts, sandproof_guest_runtime::file_download::date::Utc>,
     seen: AtomicUsize,
     multipart_seen: AtomicUsize,
     gzip_seen: AtomicUsize,
@@ -69,190 +62,49 @@ async fn connect() -> Json<serde_json::Value> {
     )
 }
 
-fn failure(error: &FileStreamError) -> Response {
-    let status = match error {
-        FileStreamError::Operation(TransferIoError::NotFound) => StatusCode::NOT_FOUND,
-        FileStreamError::Operation(TransferIoError::InvalidArgument)
-        | FileStreamError::InvalidArgument => StatusCode::BAD_REQUEST,
-        FileStreamError::Operation(TransferIoError::InsufficientStorage) => {
-            StatusCode::INSUFFICIENT_STORAGE
-        }
-        FileStreamError::Operation(TransferIoError::ResourceExhausted)
-        | FileStreamError::ResourceExhausted => StatusCode::TOO_MANY_REQUESTS,
-        FileStreamError::DeadlineExceeded => StatusCode::GATEWAY_TIMEOUT,
-        _ => StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    (
-        status,
-        Json(serde_json::json!({"message":"file transfer failed"})),
-    )
-        .into_response()
-}
-
 async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> Response {
     fixture.seen.fetch_add(1, Ordering::SeqCst);
-    let admitted = fixture.requests.admit().expect("fixture request capacity");
-    let auth = match admitted
-        .authorize(
-            &fixture.session,
-            request.method(),
-            request.headers(),
-            request.uri().query().unwrap_or("").as_bytes(),
-        )
-        .await
+    // Test-only path precondition. The shared guest endpoint intentionally
+    // permits guest absolute paths and does not enforce this fixture tree.
+    if let Ok(query) = sandproof_guest_service::file_query::parse(
+        request.uri().query().unwrap_or("").as_bytes(),
+        sandproof_guest_service::file_query::QueryLimits {
+            raw_bytes: 65536,
+            fields: 128,
+        },
+    ) && let Some(path) = query.path
     {
-        Ok(auth) => auth,
-        Err(rejected) => return rejected.into_response().await.unwrap(),
-    };
-    // Only this loopback fixture constrains the test tree. Admission itself
-    // does not impose a new path policy or change multipart filename handling.
-    if let Some(path) = auth.path() {
+        let path = std::str::from_utf8(&path).unwrap();
         assert!(Path::new(path).starts_with(&fixture.root) && !path.contains(".."));
     }
-    if request.method() == Method::GET || request.method() == Method::HEAD {
-        // Count the original explicit gzip requests, including rejected files.
-        // Selection itself now follows stat inside the admitted download worker.
+    if request.method() == Method::POST {
         if request
             .headers()
-            .get("accept-encoding")
-            .is_some_and(|value| value == "gzip")
+            .get("content-encoding")
+            .is_some_and(|v| v == "gzip")
         {
-            fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
+            fixture.gzip_seen.fetch_add(1, Ordering::SeqCst);
         }
-        return download(&fixture, auth, request).await;
-    }
-    upload(&fixture, auth, request).await
-}
-
-async fn upload(
-    fixture: &Fixture,
-    auth: sandproof_guest_service::file_authorization::Authorization,
-    request: Request<Body>,
-) -> Response {
-    let (parts, body) = request.into_parts();
-    if parts
-        .headers
-        .get("content-encoding")
+        let content_type = request
+            .headers()
+            .get("content-type")
+            .map_or(&[][..], HeaderValue::as_bytes);
+        if sandproof_guest_runtime::file_upload::kind(content_type, 65536).unwrap()
+            == sandproof_guest_runtime::file_upload::Kind::Multipart
+        {
+            fixture.multipart_seen.fetch_add(1, Ordering::SeqCst);
+        }
+    } else if request
+        .headers()
+        .get("accept-encoding")
         .is_some_and(|v| v == "gzip")
     {
-        fixture.gzip_seen.fetch_add(1, Ordering::SeqCst);
+        fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
     }
-    let content_type = parts
-        .headers
-        .get("content-type")
-        .map_or(&[][..], HeaderValue::as_bytes);
-    if sandproof_guest_runtime::file_upload::kind(content_type, 65536).unwrap()
-        == sandproof_guest_runtime::file_upload::Kind::Multipart
-    {
-        fixture.multipart_seen.fetch_add(1, Ordering::SeqCst);
-    }
-    let expected = parts
-        .headers
-        .get("content-length")
-        .map(|v| v.to_str().unwrap().parse::<u64>().unwrap());
-    let result = fixture
-        .files
-        .upload_authorized(
-            AuthorizedUpload {
-                authorization: auth,
-                headers: parts.headers,
-                body,
-                expected,
-            },
-            &fixture.accounts,
-            &FileSettings {
-                daemon_workdir: fixture.root.to_str().unwrap().into(),
-                limits: FileContextLimits {
-                    path_bytes: 4096,
-                    username_bytes: 64,
-                    authorization_bytes: 256,
-                },
-            },
-            UploadLimits {
-                headers: sandproof_guest_service::file_upload::HeaderLimits {
-                    bytes: 65536,
-                    fields: 128,
-                },
-                encoding: sandproof_guest_service::file_encoding::Limits {
-                    header_bytes: 65536,
-                    items: 64,
-                },
-                gzip: gzip_limits(),
-                multipart: multipart_limits(),
-                batch: BatchLimits {
-                    files: 16,
-                    total_bytes: 8 << 20,
-                    retained_bytes: 65536,
-                },
-            },
-            sandproof_guest_service::upload_response::Limits {
-                wire_bytes: 1 << 20,
-                chunk_bytes: 4096,
-            },
-        )
-        .await;
-    let error = match result {
-        Ok(response) => return response,
-        Err(UploadHttpError::Request(error)) => error,
-        Err(UploadHttpError::Response(_)) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "upload response unavailable",
-            )
-                .into_response();
-        }
-    };
-    match error {
-        UploadRequestError::Body(error) => upload_response(error),
-        UploadRequestError::Transfer(error) => failure(&error),
-        UploadRequestError::GzipPreflight(error) => {
-            upload_response(MultipartError::GzipPreflight(error))
-        }
-        error => {
-            let status = if matches!(error, UploadRequestError::Context(_)) {
-                StatusCode::UNAUTHORIZED
-            } else {
-                StatusCode::BAD_REQUEST
-            };
-            (
-                status,
-                Json(serde_json::json!({"message":"upload request rejected"})),
-            )
-                .into_response()
-        }
-    }
-}
-
-fn upload_response(error: MultipartError) -> Response {
-    match error {
-        MultipartError::Transfer(error) => failure(&error),
-        MultipartError::GzipPreflight(
-            sandproof_guest_service::upload_body::GzipError::Header
-            | sandproof_guest_service::upload_body::GzipError::Truncated,
-        ) => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"message":"invalid gzip header"})),
-        )
-            .into_response(),
-        error => {
-            let status = if matches!(
-                error,
-                MultipartError::InputLimit
-                    | MultipartError::Decode(
-                        sandproof_guest_runtime::multipart::Error::ResourceExhausted
-                    )
-            ) {
-                StatusCode::PAYLOAD_TOO_LARGE
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            (
-                status,
-                Json(serde_json::json!({"message":"multipart transfer failed"})),
-            )
-                .into_response()
-        }
-    }
+    // Only this test opens a loopback listener. Inputs come from the pinned
+    // fixture and select this test's owned directory. All file handling uses
+    // the shared service; an unmapped error now visibly fails the fixture.
+    fixture.endpoint.handle(request).await.unwrap()
 }
 
 fn multipart_limits() -> MultipartLimits {
@@ -290,90 +142,6 @@ fn gzip_limits() -> GzipLimits {
         },
     }
 }
-async fn download(
-    fixture: &Fixture,
-    auth: sandproof_guest_service::file_authorization::Authorization,
-    request: Request<Body>,
-) -> Response {
-    let (parts, _) = request.into_parts();
-    let request = IdentityRequest {
-        method: parts.method,
-        headers: parts.headers,
-        response: HeaderMap::new(),
-        content_type: ContentType::Detect {
-            // The admitted request derives this from the actual query path.
-            original_path: String::new(),
-            catalog: Arc::clone(&fixture.mime),
-        },
-        disposition_path: None,
-        // Fixed only inside this synthetic test route; production must generate entropy.
-        boundary: Some("a".repeat(60)),
-    };
-    let limits = DownloadLimits {
-        request: sandproof_guest_runtime::file_download::Limits {
-            header_bytes: 65536,
-            items: 128,
-        },
-        response_header_bytes: 65536,
-        wire_bytes: 8 << 20,
-    };
-    match fixture
-        .files
-        .download_authorized(
-            auth,
-            request,
-            &fixture.accounts,
-            &FileSettings {
-                daemon_workdir: fixture.root.to_str().unwrap().into(),
-                limits: FileContextLimits {
-                    path_bytes: 4096,
-                    username_bytes: 64,
-                    authorization_bytes: 256,
-                },
-            },
-            NegotiatedLimits {
-                response: limits,
-                encoding: sandproof_guest_service::file_encoding::Limits {
-                    header_bytes: 65536,
-                    items: 128,
-                },
-                compressed_bytes: 10 << 20,
-            },
-            sandproof_guest_runtime::file_download::date::Utc,
-        )
-        .await
-    {
-        Ok(download) => download.into_response(),
-        Err(DownloadRequestError::Admission(error)) => failure(&error),
-        Err(DownloadRequestError::Download(error)) => download_failure(error),
-        Err(DownloadRequestError::Authorization(error)) => {
-            panic!("invalid fixture capability: {error:?}")
-        }
-        Err(DownloadRequestError::Context(_)) => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"message":"download context rejected"})),
-        )
-            .into_response(),
-    }
-}
-fn download_failure(error: DownloadError) -> Response {
-    let mut response = failure(&match error {
-        DownloadError::SourceNotFound => FileStreamError::Operation(TransferIoError::NotFound),
-        DownloadError::SourceInvalid => {
-            FileStreamError::Operation(TransferIoError::InvalidArgument)
-        }
-        DownloadError::ResourceExhausted => FileStreamError::ResourceExhausted,
-        DownloadError::DeadlineExceeded => FileStreamError::DeadlineExceeded,
-        _ => FileStreamError::Operation(TransferIoError::Internal),
-    });
-    if matches!(error, DownloadError::Open) {
-        response
-            .headers_mut()
-            .insert("vary", HeaderValue::from_static("Accept-Encoding"));
-    }
-    response
-}
-
 async fn fixture(root: PathBuf) -> Arc<Fixture> {
     let (username, _) = lookup_local_ownership(
         rustix::process::geteuid().as_raw(),
@@ -401,77 +169,129 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         )
         .await
         .unwrap();
-    Arc::new(Fixture {
-        session,
-        requests: sandproof_guest_service::file_requests::FileRequests::new(
-            sandproof_guest_service::file_requests::Limits {
-                in_flight: 4,
-                timeout: Duration::from_secs(30),
-                query: sandproof_guest_service::file_query::QueryLimits {
-                    raw_bytes: 65536,
+    let requests = sandproof_guest_service::file_requests::FileRequests::new(
+        sandproof_guest_service::file_requests::Limits {
+            in_flight: 4,
+            timeout: Duration::from_secs(30),
+            query: sandproof_guest_service::file_query::QueryLimits {
+                raw_bytes: 65536,
+                fields: 128,
+            },
+            authorization: sandproof_guest_service::file_authorization::Limits {
+                headers: sandproof_guest_service::file_upload::HeaderLimits {
+                    bytes: 65536,
                     fields: 128,
                 },
-                authorization: sandproof_guest_service::file_authorization::Limits {
-                    headers: sandproof_guest_service::file_upload::HeaderLimits {
-                        bytes: 65536,
-                        fields: 128,
-                    },
-                    query_bytes: 65536,
-                },
-                rejection: sandproof_guest_service::upload_response::Limits {
-                    wire_bytes: 65536,
-                    chunk_bytes: 4096,
-                },
+                query_bytes: 65536,
             },
-        )
-        .unwrap(),
-        accounts: AccountPool::local(
-            AccountLimits {
-                file_bytes: 65536,
-                groups: 128,
-            },
-            2,
-            Duration::from_secs(5),
-        )
-        .unwrap(),
-        files: FileStreams::new(
-            1,
-            TransferLimits {
-                file: FileLimits {
-                    path_bytes: 4096,
-                    entries: 16,
-                    retained_bytes: 65536,
-                    visited: 1024,
-                    xattr_bytes: 65536,
-                    account_bytes: 65536,
-                },
+            rejection: sandproof_guest_service::upload_response::Limits {
+                wire_bytes: 65536,
                 chunk_bytes: 4096,
-                total_bytes: 4 * 1024 * 1024,
             },
-            Duration::from_secs(30),
-        )
-        .unwrap(),
+        },
+    )
+    .unwrap();
+    let accounts = AccountPool::local(
+        AccountLimits {
+            file_bytes: 65536,
+            groups: 128,
+        },
+        2,
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let streams = FileStreams::new(
+        1,
+        TransferLimits {
+            file: FileLimits {
+                path_bytes: 4096,
+                entries: 16,
+                retained_bytes: 65536,
+                visited: 1024,
+                xattr_bytes: 65536,
+                account_bytes: 65536,
+            },
+            chunk_bytes: 4096,
+            total_bytes: 4 * 1024 * 1024,
+        },
+        Duration::from_secs(30),
+    )
+    .unwrap();
+    let endpoint = FileHttp::new(session, requests, streams, accounts, http_settings(&root));
+    Arc::new(Fixture {
         root,
-        // Controlled synthetic database; this is not the template's MIME state.
-        mime: Arc::new(
-            Catalog::from_sources(
-                [None; 2],
-                [None; 4],
-                CatalogLimits {
-                    input_bytes: 65536,
-                    line_bytes: 4096,
-                    entries: 1024,
-                    retained_bytes: 65536,
-                    value_bytes: 4096,
-                },
-            )
-            .unwrap(),
-        ),
+        endpoint,
         seen: AtomicUsize::new(0),
         multipart_seen: AtomicUsize::new(0),
         gzip_seen: AtomicUsize::new(0),
         gzip_download_seen: AtomicUsize::new(0),
     })
+}
+
+fn http_settings(root: &Path) -> HttpSettings<sandproof_guest_runtime::file_download::date::Utc> {
+    // Controlled synthetic database; this is not the template's MIME state.
+    let mime = Arc::new(
+        Catalog::from_sources(
+            [None; 2],
+            [None; 4],
+            CatalogLimits {
+                input_bytes: 65536,
+                line_bytes: 4096,
+                entries: 1024,
+                retained_bytes: 65536,
+                value_bytes: 4096,
+            },
+        )
+        .unwrap(),
+    );
+    HttpSettings {
+        files: FileSettings {
+            daemon_workdir: root.to_str().unwrap().into(),
+            limits: FileContextLimits {
+                path_bytes: 4096,
+                username_bytes: 64,
+                authorization_bytes: 256,
+            },
+        },
+        upload: UploadLimits {
+            headers: sandproof_guest_service::file_upload::HeaderLimits {
+                bytes: 65536,
+                fields: 128,
+            },
+            encoding: sandproof_guest_service::file_encoding::Limits {
+                header_bytes: 65536,
+                items: 64,
+            },
+            gzip: gzip_limits(),
+            multipart: multipart_limits(),
+            batch: BatchLimits {
+                files: 16,
+                total_bytes: 8 << 20,
+                retained_bytes: 65536,
+            },
+        },
+        download: NegotiatedLimits {
+            response: DownloadLimits {
+                request: sandproof_guest_runtime::file_download::Limits {
+                    header_bytes: 65536,
+                    items: 128,
+                },
+                response_header_bytes: 65536,
+                wire_bytes: 8 << 20,
+            },
+            encoding: sandproof_guest_service::file_encoding::Limits {
+                header_bytes: 65536,
+                items: 128,
+            },
+            compressed_bytes: 10 << 20,
+        },
+        upload_response: sandproof_guest_service::upload_response::Limits {
+            wire_bytes: 1 << 20,
+            chunk_bytes: 4096,
+        },
+        mime,
+        local: Arc::new(sandproof_guest_runtime::file_download::date::Utc),
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

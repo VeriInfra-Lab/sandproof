@@ -21,6 +21,8 @@ pub mod command;
 #[cfg(target_os = "linux")]
 mod execution;
 #[cfg(target_os = "linux")]
+pub mod file_http;
+#[cfg(target_os = "linux")]
 pub mod file_io;
 #[cfg(target_os = "linux")]
 pub mod file_transfer;

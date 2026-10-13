@@ -10,6 +10,7 @@ use sandproof_guest_runtime::file_download::{
 };
 use std::borrow::Cow;
 
+mod boundary;
 mod stream;
 pub use stream::{
     ContentType, Download, DownloadChunk, DownloadError, IdentityDownload, IdentityLimits,
@@ -31,6 +32,7 @@ pub enum Error {
     InvalidConfiguration,
     ResponseLimit,
     ArithmeticOverflow,
+    EntropyUnavailable,
 }
 impl From<wire::Error> for Error {
     fn from(error: wire::Error) -> Self {
@@ -172,10 +174,24 @@ impl AfterConditions {
     /// # Errors
     /// Range component budgets, response/wire budget or invalid boundary.
     pub fn finish(
-        mut self,
+        self,
         size: u64,
         content_type: HeaderValue,
         boundary: Option<&str>,
+    ) -> Result<ResponsePlan, Error> {
+        self.finish_with(size, content_type, || {
+            boundary
+                .filter(|value| value.len() == 60)
+                .map(str::to_owned)
+                .ok_or(Error::InvalidConfiguration)
+        })
+    }
+
+    fn finish_with(
+        mut self,
+        size: u64,
+        content_type: HeaderValue,
+        boundary: impl FnOnce() -> Result<String, Error>,
     ) -> Result<ResponsePlan, Error> {
         if !self.headers.contains_key("content-type") {
             self.headers.insert("content-type", content_type);
@@ -210,14 +226,14 @@ impl AfterConditions {
                 )
             }
             RangePlan::Partial(ranges) => {
-                let boundary = boundary
-                    .filter(|value| {
-                        value.len() == 60
-                            && value
-                                .bytes()
-                                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-                    })
-                    .ok_or(Error::InvalidConfiguration)?;
+                let boundary = boundary()?;
+                if boundary.len() != 60
+                    || !boundary
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                {
+                    return Err(Error::InvalidConfiguration);
+                }
                 let content_type = first(&self.headers, "content-type").to_vec();
                 self.headers.insert(
                     "content-type",
@@ -229,7 +245,7 @@ impl AfterConditions {
                     BodyPlan::Multipart {
                         ranges,
                         content_type,
-                        boundary: boundary.into(),
+                        boundary,
                         size,
                     },
                     None,

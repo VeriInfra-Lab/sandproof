@@ -84,6 +84,46 @@ async fn drain(mut download: IdentityDownload) -> (Vec<u8>, Option<DownloadError
         }
     }
 }
+
+#[tokio::test]
+async fn multipart_stream_generates_boundary_in_worker_and_matches_advertised_wire_length() {
+    let (guard, released) = owner();
+    let mut req = request("bytes=0-0,3-4");
+    req.boundary = None;
+    let download = Download::open(
+        || {
+            Ok((
+                Cursor::new(b"01234".to_vec()),
+                Timestamp::new(1, 0).unwrap(),
+            ))
+        },
+        req,
+        limits(),
+        Utc,
+        deadline(),
+        guard,
+    )
+    .await
+    .unwrap();
+    assert_eq!(download.status(), StatusCode::PARTIAL_CONTENT);
+    let boundary = download.headers()["content-type"]
+        .to_str()
+        .unwrap()
+        .strip_prefix("multipart/byteranges; boundary=")
+        .unwrap()
+        .to_owned();
+    assert_eq!(boundary.len(), 60);
+    let length: usize = download.headers()["content-length"]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let (bytes, error) = drain(download).await;
+    assert!(error.is_none());
+    assert_eq!(bytes.len(), length);
+    assert_eq!(bytes, format!("--{boundary}\r\nContent-Range: bytes 0-0/5\r\nContent-Type: application/octet-stream\r\n\r\n0\r\n--{boundary}\r\nContent-Range: bytes 3-4/5\r\nContent-Type: application/octet-stream\r\n\r\n34\r\n--{boundary}--\r\n").as_bytes());
+    signal(released).await;
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Event {
     Stat,

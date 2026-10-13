@@ -162,6 +162,48 @@ fn bounded_plan(
 }
 
 #[test]
+fn entropy_is_requested_only_for_actual_multipart_ranges_and_failure_is_explicit() {
+    for (range, multipart) in [
+        ("", false),
+        ("bad", false),
+        ("bytes=100-", false),
+        ("bytes=0-0", false),
+        ("bytes=0-0,3-4", true),
+    ] {
+        for method in [Method::GET, Method::HEAD] {
+            let mut headers = HeaderMap::new();
+            headers.insert("range", HeaderValue::from_static(range));
+            let Preparation::Continue(next) = prepare(
+                &method,
+                &headers,
+                initial(),
+                Timestamp::new(1, 0).unwrap(),
+                limits(),
+                &Utc,
+            )
+            .unwrap() else {
+                panic!()
+            };
+            let mut called = false;
+            let plan = next.finish_with(
+                5,
+                HeaderValue::from_static("application/octet-stream"),
+                || {
+                    called = true;
+                    Err(Error::EntropyUnavailable)
+                },
+            );
+            assert_eq!(called, multipart);
+            if multipart {
+                assert!(matches!(plan, Err(Error::EntropyUnavailable)));
+            } else {
+                assert!(plan.is_ok());
+            }
+        }
+    }
+}
+
+#[test]
 fn wire_budget_includes_mime_and_errors_and_header_budget_covers_generated_fields() {
     let range = "bytes=0-0,3-4";
     let length = bounded_plan(range, limits(), Some(BOUNDARY))

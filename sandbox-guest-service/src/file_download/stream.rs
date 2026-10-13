@@ -70,7 +70,9 @@ impl owned_body::Failure for DownloadError {
     }
 }
 
-/// The trusted boundary must be generated entropy, never request/path input.
+/// A supplied boundary is trusted test/generated entropy, never request/path
+/// input. None lazily obtains OS entropy only for a multipart range plan, inside
+/// the original blocking worker; failure stays explicit and retains its owner.
 pub struct IdentityRequest {
     pub method: Method,
     pub headers: HeaderMap,
@@ -221,7 +223,9 @@ fn prepare_identity<R: Read + Seek>(
             };
             let size = control.seek(&mut source, SeekFrom::End(0), DownloadError::LengthSeek)?;
             control.seek(&mut source, SeekFrom::Start(0), DownloadError::LengthSeek)?;
-            let plan = next.finish(size, content_type, request.boundary.as_deref())?;
+            let plan = next.finish_with(size, content_type, || {
+                request.boundary.map_or_else(super::boundary::generate, Ok)
+            })?;
             if plan.file_bytes > limits.file_bytes {
                 return Err(DownloadError::ResourceExhausted);
             }
