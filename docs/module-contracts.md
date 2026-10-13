@@ -423,7 +423,11 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 压缩输入最多保留一个已接受帧；每次消费请求才解下一块，前一块的全部 `Bytes` 副本释放前不预读。块持有原责任守卫，释放数据之后才确认消费；取消唤醒待处理 HTTP 读取和通道等待，已经进入的同步源轮询或系统调用仍持有守卫直到实际退出。预检失败与正文中途失败分开返回，错误不被 Body 包装成 EOF。raw 只有全部 gzip 段、校验、声明长度及真实 HTTP EOF 完成后才应用 metadata；multipart 已完成文件的 metadata 保留，之后 gzip/HTTP 失败仍使整批失败。缺少查询 path 的 raw 拒绝，显式空串仍按原路径规则处理。
 
-上述连接消费已授权、已解析账号/metadata 的批次，完整请求的鉴权、内容编码选择及账号/metadata 拒绝顺序尚须正式 HTTP 入口连接，不声明固定 Go 端点全等价。可移植传输所有权测试已有本地运行；实际 Linux 文件及扩展 SDK 回读组合待此候选实跑。库分配、调用方持有的源帧、MIME 缓冲及文件写入副本仍另计费；同一请求的两个阻塞任务不表示整个服务任务预算已经冻结。
+上述底层连接消费已授权、已解析账号/metadata 的批次；下述请求组件已连接内容编码、账户与 metadata 的拒绝顺序，完整鉴权/签名和正式 HTTP 入口仍待接通，不声明固定 Go 端点全等价。可移植传输所有权测试已有本地运行；实际 Linux 文件及扩展 SDK 回读组合待此候选实跑。库分配、调用方持有的源帧、MIME 缓冲及文件写入副本仍另计费；同一请求的两个阻塞任务不表示整个服务任务预算已经冻结。
+
+[上传请求组件](../sandbox-guest-service/src/file_transfer/upload.rs)接受原 AuthPermit、已解码的可选 username/path、HTTP HeaderMap 与带原始声明长度的 Body。完整头字段/字节预算包含重复和忽略字段，在复制前检查；随后一次准入，在同一原绝对期限内依次执行第一 Content-Encoding 选择、gzip 首头预检、账户查询、metadata 验证、Content-Type 选择和原上传批次。初始化已保证默认用户名非空；显式空用户名在 gzip 预检后拒绝。阻塞账户查询另占自身工作槽位，并持有原上传授权/容量直到实际退出；取消或等待超时不能提前归还，后续批次不二次准入、不重置期限。
+
+[上传头决策](../sandbox-guest-runtime/src/file_upload.rs)保留固定 Go ParseMediaType 的返回类型：普通畸形可选参数可保留 raw/multipart 类型，冲突的重复参数使类型无效。metadata 取规范化同名头的首值，忽略空后缀，复用真实写入的可打印 ASCII、键长和总量验证；原始头预算与保存后的 metadata 预算分开计算。raw 需要查询 path，multipart 继续用原边界解析器及完整文件名规则；非 UTF-8 multipart 参数仍明确拒绝。identity raw 也使用共用 HTTP 帧/长度/EOF 校验，失败保留已写前缀且不完成 metadata。固定 Go 有限头部对照已本地运行；实际 Linux 四种正文组合和账户阻塞取消待实跑。组件不承担查询解码、请求签名、完整上传错误 JSON 或响应序列化/发送，SDK 夹具的通用拒绝响应不代表正式错误合同。
 
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 

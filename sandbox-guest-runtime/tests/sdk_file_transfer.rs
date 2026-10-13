@@ -10,7 +10,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use futures_util::StreamExt;
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
     file_mime::{Catalog, CatalogLimits},
@@ -26,13 +25,13 @@ use sandproof_guest_service::{
     file_transfer::{
         BatchLimits, BatchReply, DownloadLimits as NegotiatedLimits, FileStreamError, FileStreams,
         GzipLimits, HttpBodyLimits, IdentityDownloadError, MultipartError, MultipartLimits,
+        UploadLimits, UploadRequest, UploadRequestError,
     },
     files::{FileContextLimits, FileSettings, HttpFileContext},
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha512};
 use std::{
-    collections::BTreeMap,
     path::{Path, PathBuf},
     process::Stdio,
     sync::{
@@ -111,23 +110,23 @@ async fn files(
         .authorize_headers(request.headers())
         .await
         .unwrap();
-    let selection = auth
-        .resolve_http_files(
-            params.username.as_deref(),
-            &fixture.accounts,
-            &FileSettings {
-                daemon_workdir: fixture.root.to_str().unwrap().into(),
-                limits: FileContextLimits {
-                    path_bytes: 4096,
-                    username_bytes: 64,
-                    authorization_bytes: 256,
-                },
-            },
-        )
-        .await
-        .unwrap();
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     if request.method() == Method::GET || request.method() == Method::HEAD {
+        let selection = auth
+            .resolve_http_files(
+                params.username.as_deref(),
+                &fixture.accounts,
+                &FileSettings {
+                    daemon_workdir: fixture.root.to_str().unwrap().into(),
+                    limits: FileContextLimits {
+                        path_bytes: 4096,
+                        username_bytes: 64,
+                        authorization_bytes: 256,
+                    },
+                },
+            )
+            .await
+            .unwrap();
         let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
         // Count the original explicit gzip requests, including rejected files.
         // Selection itself now follows stat inside the admitted download worker.
@@ -140,68 +139,95 @@ async fn files(
         }
         return download(&fixture, auth, context, request, params.path.unwrap()).await;
     }
+    upload(&fixture, auth, params, request).await
+}
+
+async fn upload(
+    fixture: &Fixture,
+    auth: AuthPermit,
+    params: Params,
+    request: Request<Body>,
+) -> Response {
     let (parts, body) = request.into_parts();
-    let gzip = parts
+    if parts
         .headers
         .get("content-encoding")
-        .map(|value| {
-            assert_eq!(value, "gzip");
-            fixture.gzip_seen.fetch_add(1, Ordering::SeqCst);
-        })
-        .is_some();
-    let content_type = parts.headers.get("content-type").unwrap().to_str().unwrap();
+        .is_some_and(|v| v == "gzip")
+    {
+        fixture.gzip_seen.fetch_add(1, Ordering::SeqCst);
+    }
+    let content_type = parts
+        .headers
+        .get("content-type")
+        .map_or(&[][..], HeaderValue::as_bytes);
+    if sandproof_guest_runtime::file_upload::kind(content_type, 65536).unwrap()
+        == sandproof_guest_runtime::file_upload::Kind::Multipart
+    {
+        fixture.multipart_seen.fetch_add(1, Ordering::SeqCst);
+    }
     let expected = parts
         .headers
         .get("content-length")
         .map(|v| v.to_str().unwrap().parse::<u64>().unwrap());
-    let mut metadata = BTreeMap::new();
-    for (key, value) in &parts.headers {
-        if let Some(key) = key.as_str().strip_prefix("x-metadata-") {
-            metadata
-                .entry(key.to_owned())
-                .or_insert_with(|| value.to_str().unwrap().to_owned());
-        }
-    }
-    if content_type == "application/octet-stream" && !gzip {
-        let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
-        return raw_upload(&fixture, auth, context, metadata, expected, body).await;
-    }
-    if content_type != "application/octet-stream" {
-        assert!(content_type.starts_with("multipart/form-data;"));
-        fixture.multipart_seen.fetch_add(1, Ordering::SeqCst);
-    }
-    let batch = fixture
+    let result = fixture
         .files
-        .upload_batch(
+        .upload_request(
             auth,
-            selection,
-            params.path.as_deref(),
-            metadata,
-            BatchLimits {
-                files: 16,
-                total_bytes: 8 << 20,
-                retained_bytes: 65536,
-            },
-        )
-        .unwrap();
-    let result = if gzip && content_type == "application/octet-stream" {
-        batch.receive_gzip_raw(body, expected, gzip_limits()).await
-    } else if gzip {
-        batch
-            .receive_gzip_multipart(
-                content_type,
+            UploadRequest {
+                username: params.username,
+                path: params.path,
+                headers: parts.headers,
                 body,
                 expected,
-                gzip_limits(),
-                multipart_limits(),
+            },
+            &fixture.accounts,
+            &FileSettings {
+                daemon_workdir: fixture.root.to_str().unwrap().into(),
+                limits: FileContextLimits {
+                    path_bytes: 4096,
+                    username_bytes: 64,
+                    authorization_bytes: 256,
+                },
+            },
+            UploadLimits {
+                headers: sandproof_guest_service::file_upload::HeaderLimits {
+                    bytes: 65536,
+                    fields: 128,
+                },
+                encoding: sandproof_guest_service::file_encoding::Limits {
+                    header_bytes: 65536,
+                    items: 64,
+                },
+                gzip: gzip_limits(),
+                multipart: multipart_limits(),
+                batch: BatchLimits {
+                    files: 16,
+                    total_bytes: 8 << 20,
+                    retained_bytes: 65536,
+                },
+            },
+        )
+        .await;
+    match result {
+        Ok(reply) => upload_response(Ok(reply)),
+        Err(UploadRequestError::Body(error)) => upload_response(Err(error)),
+        Err(UploadRequestError::Transfer(error)) => failure(error),
+        Err(UploadRequestError::GzipPreflight(error)) => {
+            upload_response(Err(MultipartError::GzipPreflight(error)))
+        }
+        Err(error) => {
+            let status = if matches!(error, UploadRequestError::Context(_)) {
+                StatusCode::UNAUTHORIZED
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (
+                status,
+                Json(serde_json::json!({"message":"upload request rejected"})),
             )
-            .await
-    } else {
-        batch
-            .receive_multipart(content_type, body, expected, multipart_limits())
-            .await
-    };
-    upload_response(result)
+                .into_response()
+        }
+    }
 }
 
 fn upload_response(result: Result<BatchReply, MultipartError>) -> Response {
@@ -342,39 +368,6 @@ fn download_failure(error: DownloadError) -> Response {
             .insert("vary", HeaderValue::from_static("Accept-Encoding"));
     }
     response
-}
-
-async fn raw_upload(
-    fixture: &Fixture,
-    auth: AuthPermit,
-    context: HttpFileContext,
-    metadata: BTreeMap<String, String>,
-    expected: Option<u64>,
-    body: Body,
-) -> Response {
-    let mut upload = match fixture
-        .files
-        .upload(auth, context, metadata, expected)
-        .await
-    {
-        Ok(upload) => upload,
-        Err(error) => return failure(error),
-    };
-    let mut input = body.into_data_stream();
-    while let Some(chunk) = input.next().await {
-        let Ok(chunk) = chunk else {
-            return failure(FileStreamError::Unavailable);
-        };
-        for part in chunk.chunks(upload.chunk_bytes()) {
-            if let Err(error) = upload.write(part).await {
-                return failure(error);
-            }
-        }
-    }
-    match upload.finish().await {
-        Ok(reply) => Json(vec![entry(reply.result())]).into_response(),
-        Err(error) => failure(error),
-    }
 }
 
 async fn fixture(root: PathBuf) -> Arc<Fixture> {

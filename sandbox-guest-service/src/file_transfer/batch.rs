@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 mod gzip;
 mod multipart;
+mod raw;
 #[cfg(test)]
 mod tests;
 pub use multipart::{MultipartError, MultipartLimits, UploadBodyError};
@@ -22,7 +23,7 @@ pub struct BatchLimits {
 }
 
 impl BatchLimits {
-    fn validate(self) -> Result<Self, FileStreamError> {
+    pub(super) fn validate(self) -> Result<Self, FileStreamError> {
         if self.files == 0
             || self.files > isize::MAX as usize / 256
             || self.retained_bytes == 0
@@ -57,10 +58,36 @@ impl FileStreams {
                 .map_err(FileStreamError::Context)?;
         }
         let (lease, deadline) = self.admit()?;
+        self.upload_batch_reserved(
+            Arc::new(auth),
+            selection,
+            query_path,
+            metadata,
+            limits,
+            Reservation { lease, deadline },
+        )
+    }
+
+    pub(super) fn upload_batch_reserved(
+        &self,
+        auth: Arc<AuthPermit>,
+        selection: HttpFileSelection,
+        query_path: Option<&str>,
+        metadata: BTreeMap<String, String>,
+        limits: BatchLimits,
+        reservation: Reservation,
+    ) -> Result<UploadBatch, FileStreamError> {
+        let limits = limits.validate()?;
+        validate_metadata(&metadata).map_err(FileStreamError::Operation)?;
+        if let Some(path) = query_path {
+            selection
+                .check_input(path)
+                .map_err(FileStreamError::Context)?;
+        }
         Ok(UploadBatch {
             streams: self.clone(),
-            auth: Arc::new(auth),
-            reservation: Reservation { lease, deadline },
+            auth,
+            reservation,
             selection,
             query_path: query_path.map(str::to_owned),
             metadata,

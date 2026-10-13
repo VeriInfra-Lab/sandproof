@@ -20,6 +20,7 @@ mod download;
 pub use download::DownloadLimits;
 mod gzip_download;
 mod identity_download;
+mod upload;
 pub use crate::upload_body::{GzipError, GzipLimits, HttpBodyLimits};
 pub use batch::{
     BatchFile, BatchLimits, BatchReply, MultipartError, MultipartLimits, UploadBatch,
@@ -27,6 +28,7 @@ pub use batch::{
 };
 pub use gzip_download::GzipDownload;
 pub use identity_download::IdentityDownloadError;
+pub use upload::{UploadLimits, UploadRequest, UploadRequestError};
 
 #[cfg(test)]
 mod tests;

@@ -7,6 +7,7 @@ mod format;
 mod sniff;
 #[cfg(target_os = "linux")]
 mod system;
+pub(crate) use catalog::lower;
 pub use catalog::{Catalog, CatalogLimits};
 pub use format::{basename, disposition, extension};
 pub use sniff::{SNIFF_BYTES, detect};

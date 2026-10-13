@@ -4,7 +4,7 @@ use axum::body::Body;
 use std::sync::Arc;
 
 impl UploadBatch {
-    fn fresh(&self) -> Result<(), UploadBodyError> {
+    pub(super) fn fresh(&self) -> Result<(), UploadBodyError> {
         if !self.ready || !self.results.is_empty() || self.received != 0 {
             Err(FileStreamError::InvalidArgument.into())
         } else {
@@ -36,12 +36,20 @@ impl UploadBatch {
     /// Header/decode/HTTP failures, missing path, original expiry, quotas or file
     /// I/O. Failed streams retain already written bytes without metadata finish.
     pub async fn receive_gzip_raw(
-        mut self,
+        self,
         body: Body,
         expected: Option<u64>,
         limits: GzipLimits,
     ) -> Result<BatchReply, UploadBodyError> {
-        let mut input = self.gzip_body(body, expected, limits).await?;
+        let input = self.gzip_body(body, expected, limits).await?;
+        self.receive_gzip_input(input).await
+    }
+
+    pub(in crate::file_transfer) async fn receive_gzip_input(
+        mut self,
+        mut input: GzipBody,
+    ) -> Result<BatchReply, UploadBodyError> {
+        self.fresh()?;
         if self.query_path.is_none() {
             return Err(FileStreamError::InvalidArgument.into());
         }

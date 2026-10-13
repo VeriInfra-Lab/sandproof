@@ -60,24 +60,7 @@ impl TransferLimits {
 /// # Errors
 /// Empty/oversized keys, non-printable bytes or more than 4096 stored bytes.
 pub fn validate_metadata(values: &BTreeMap<String, String>) -> Result<(), TransferIoError> {
-    let mut total = 0usize;
-    for (key, value) in values {
-        if key.is_empty()
-            || key.len() > 246
-            || !key
-                .bytes()
-                .chain(value.bytes())
-                .all(|b| (32..=126).contains(&b))
-        {
-            return Err(TransferIoError::InvalidArgument);
-        }
-        total = total
-            .checked_add(9 + key.len())
-            .and_then(|n| n.checked_add(value.len()))
-            .filter(|n| *n <= 4096)
-            .ok_or(TransferIoError::InvalidArgument)?;
-    }
-    Ok(())
+    crate::file_upload::validate_metadata(values).map_err(|_| TransferIoError::InvalidArgument)
 }
 
 /// Completed body/metadata work, not a durability or whole-batch transaction.

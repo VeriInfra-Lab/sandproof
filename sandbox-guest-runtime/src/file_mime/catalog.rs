@@ -190,7 +190,7 @@ impl Catalog {
         Ok(())
     }
 }
-fn lower(value: &str) -> String {
+pub(crate) fn lower(value: &str) -> String {
     value
         .chars()
         .map(|c| {

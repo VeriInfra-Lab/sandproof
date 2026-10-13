@@ -124,7 +124,7 @@ impl AuthPermit {
             settings.limits.username_bytes,
             settings.limits.authorization_bytes,
         )?;
-        let account = file_account(&name, accounts, settings).await?;
+        let account = file_account(&name, accounts, settings, None).await?;
         let path = |value: &str| self.file_path(value, &account, settings);
         let request = match request {
             Request::Stat(value) => Request::Stat(path(value)?),
@@ -180,7 +180,25 @@ impl AuthPermit {
     ) -> Result<HttpFileSelection, ContextError> {
         settings.validate()?;
         let name = username.unwrap_or(&self.defaults().user);
-        let account = file_account(name, accounts, settings).await?;
+        let account = file_account(name, accounts, settings, None).await?;
+        Ok(HttpFileSelection {
+            account,
+            workdir: self.defaults().workdir.clone(),
+            settings: settings.clone(),
+        })
+    }
+
+    pub(crate) async fn resolve_http_files_admitted<S: AccountSource>(
+        &self,
+        username: Option<&str>,
+        accounts: &AccountPool<S>,
+        settings: &FileSettings,
+        deadline: tokio::time::Instant,
+        owner: crate::owned_body::Owner,
+    ) -> Result<HttpFileSelection, ContextError> {
+        settings.validate()?;
+        let name = username.unwrap_or(&self.defaults().user);
+        let account = file_account(name, accounts, settings, Some((deadline, owner))).await?;
         Ok(HttpFileSelection {
             account,
             workdir: self.defaults().workdir.clone(),
@@ -230,6 +248,7 @@ async fn file_account<S: AccountSource>(
     name: &str,
     accounts: &AccountPool<S>,
     settings: &FileSettings,
+    admitted: Option<(tokio::time::Instant, crate::owned_body::Owner)>,
 ) -> Result<Account, ContextError> {
     if name.is_empty() || name.contains(['\0', '\n', '\r', ':']) {
         return Err(ContextError::Unauthenticated);
@@ -237,7 +256,14 @@ async fn file_account<S: AccountSource>(
     if name.len() > settings.limits.username_bytes {
         return Err(ContextError::ResourceExhausted);
     }
-    let account = accounts.lookup(name.to_owned()).await?;
+    let account = match admitted {
+        Some((deadline, owner)) => {
+            accounts
+                .lookup_admitted(name.to_owned(), deadline, owner)
+                .await?
+        }
+        None => accounts.lookup(name.to_owned()).await?,
+    };
     if account.name != name
         || account.home.contains('\0')
         || account.credentials.uid == u32::MAX

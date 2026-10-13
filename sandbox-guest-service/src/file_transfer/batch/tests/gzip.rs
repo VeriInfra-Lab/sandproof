@@ -11,7 +11,7 @@ use sandproof_guest_runtime::{
 };
 use std::{collections::BTreeMap, path::Path, sync::atomic::Ordering};
 
-fn gzip_limits() -> GzipLimits {
+pub(super) fn gzip_limits() -> GzipLimits {
     GzipLimits {
         http: HttpBodyLimits {
             total_bytes: 8192,
@@ -29,7 +29,7 @@ fn gzip_limits() -> GzipLimits {
         },
     }
 }
-fn encode(bytes: &[u8]) -> Vec<u8> {
+pub(super) fn encode(bytes: &[u8]) -> Vec<u8> {
     let mut codec = Encoder::new(
         bytes,
         EncodeLimits {
@@ -45,7 +45,7 @@ fn encode(bytes: &[u8]) -> Vec<u8> {
     }
     output
 }
-fn metadata(fixture: &Fixture, path: &Path) -> BTreeMap<String, String> {
+pub(super) fn metadata(fixture: &Fixture, path: &Path) -> BTreeMap<String, String> {
     let response = filesystem::execute(
         &Request::Stat(path.to_str().unwrap().into()),
         Ownership { uid: 0, gid: 0 },

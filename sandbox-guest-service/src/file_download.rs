@@ -16,7 +16,7 @@ pub use stream::{
     IdentityRequest, NegotiationLimits,
 };
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {

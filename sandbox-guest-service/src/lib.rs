@@ -6,6 +6,7 @@
 
 pub mod file_download;
 pub mod file_encoding;
+pub mod file_upload;
 mod owned_body;
 pub mod upload_body;
 

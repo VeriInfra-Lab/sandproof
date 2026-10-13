@@ -11,14 +11,15 @@ pub(crate) struct Reference {
 }
 impl Reference {
     pub(crate) fn new() -> Self {
-        let mut child = Command::new(
-            std::env::var_os("SANDPROOF_GUEST_DOWNLOAD_REFERENCE").expect("reference required"),
-        )
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap();
+        Self::from_env("SANDPROOF_GUEST_DOWNLOAD_REFERENCE")
+    }
+    pub(crate) fn from_env(name: &str) -> Self {
+        let mut child = Command::new(std::env::var_os(name).expect("reference required"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
         let input = child.stdin.take();
         let output = BufReader::new(child.stdout.take().unwrap());
         Self {
