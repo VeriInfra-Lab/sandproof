@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pinned SDK wire/gateway fixtures and guest codec with real commands; no VM/cloud.
+# Pinned SDK fixtures, real guest commands and init/MMDS components; no VM/cloud.
 set -euo pipefail
 
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -18,6 +18,9 @@ if [[ "$(uname -s)" == Linux ]]; then
   cargo clippy -p sandproof-guest-runtime --all-targets --features sdk-contract-tests --locked -- -D warnings
   cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_protocol -- --nocapture
   echo "SDK/guest codec with real commands passed through a test router; this is not a complete guest service or Go envd/KVM comparison."
+  cargo clippy -p sandproof-guest-service --all-targets --locked -- -D warnings
+  cargo test -p sandproof-guest-service --all-targets --locked
+  echo "Guest initialization/session and MMDS loopback components passed; command authorization integration and real Firecracker MMDS remain unverified."
 else
   echo "SDK/gateway composition checks not run: the gateway requires Linux."
 fi
