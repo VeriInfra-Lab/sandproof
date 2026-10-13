@@ -22,6 +22,7 @@ use sandproof_guest_runtime::protocol::{
 };
 use sandproof_guest_runtime::{
     CommandEvent, CommandProcess, LaunchObservation, LaunchSpec, ProcessLimits, ProcessSignal,
+    PtySize,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
@@ -71,7 +72,18 @@ async fn start(State(fixture): State<Arc<Fixture>>, headers: HeaderMap, body: By
         panic!("expected Start")
     };
     assert_eq!(request.stdin_enabled(), fixture.spec.stdin);
-    assert!(request.pty.is_none() && request.tag.is_none());
+    assert_eq!(
+        request.pty.as_ref().map(
+            |pty| pty
+                .size
+                .as_ref()
+                .map_or_else(PtySize::default, |size| PtySize::from_wire(
+                    size.cols, size.rows
+                ))
+        ),
+        fixture.spec.pty
+    );
+    assert!(request.tag.is_none());
     let config = request.process.unwrap();
     // The fixture accepts exactly its predetermined command, once. The codec
     // decodes requests but cannot itself authorize or execute arbitrary input.
@@ -191,6 +203,7 @@ async fn probe(asynchronous: bool, mode: &str) {
         "binary" | "truncated" => r"printf '\000\377A'; printf 'err' >&2; exit 17",
         "large" => "dd if=/dev/zero bs=8192 count=257 2>/dev/null",
         "signal" => "printf ready; exec /bin/cat",
+        "pty" => r"/usr/bin/stty raw -echo; printf '\000\377A'; printf 'err' >&2; exit 17",
         _ => panic!("unknown fixture"),
     };
     let completed = Arc::new(AtomicBool::new(false));
@@ -202,6 +215,7 @@ async fn probe(asynchronous: bool, mode: &str) {
             cwd: "/tmp".into(),
             env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
             stdin: mode == "signal",
+            pty: (mode == "pty").then_some(PtySize { cols: 91, rows: 37 }),
             credentials: None,
         },
         signal: mode == "signal",
@@ -240,7 +254,10 @@ async fn probe(asynchronous: bool, mode: &str) {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
-    let settings = serde_json::json!({"url": format!("http://{address}"), "asynchronous": asynchronous, "mode": mode, "request": {"process": {"cmd": fixture.spec.program, "args": fixture.spec.args, "cwd": fixture.spec.cwd, "envs": fixture.spec.env}, "stdin": fixture.spec.stdin}});
+    let mut settings = serde_json::json!({"url": format!("http://{address}"), "asynchronous": asynchronous, "mode": mode, "request": {"process": {"cmd": fixture.spec.program, "args": fixture.spec.args, "cwd": fixture.spec.cwd, "envs": fixture.spec.env}, "stdin": fixture.spec.stdin}});
+    if let Some(size) = fixture.spec.pty {
+        settings["request"]["pty"] = serde_json::json!({"size":size});
+    }
     sdk.stdin
         .take()
         .unwrap()
@@ -273,7 +290,7 @@ async fn probe(asynchronous: bool, mode: &str) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pinned_sdk_streams_real_command_events() {
     for asynchronous in [false, true] {
-        for mode in ["binary", "large", "signal", "truncated"] {
+        for mode in ["binary", "large", "signal", "truncated", "pty"] {
             probe(asynchronous, mode).await;
         }
     }

@@ -11,7 +11,7 @@ sdk-contract-tests = []
 [target.'cfg(target_os = "linux")'.dependencies]
 base64 = "=0.22.1"
 sandproof-guest-core = { path = "../sandbox-guest-core" }
-rustix = { version = "=1.1.5", features = ["process", "net", "thread", "fs"] }
+rustix = { version = "=1.1.5", features = ["process", "net", "thread", "fs", "pty", "termios"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.142"
 tempfile = "=3.23.0"

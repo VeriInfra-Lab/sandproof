@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use axum::http::HeaderMap;
 use sandproof_guest_core::{Channel, CommandIdentity};
-use sandproof_guest_runtime::{CommandControl, CommandInput, CommandProcess, ProcessSignal};
+use sandproof_guest_runtime::{
+    CommandControl, CommandInput, CommandProcess, ProcessSignal, PtySize,
+};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tokio::time::Instant;
 
@@ -323,6 +325,38 @@ impl ManagedCommand {
         identity: CommandIdentity,
         bytes: &[u8],
     ) -> Result<(), CommandError> {
+        self.write_channel(identity, bytes, false).await
+    }
+
+    /// Write terminal-channel bytes with the same independent input budget.
+    /// # Errors
+    /// Stale/wrong channel, closed input, oversized/overlapping write or I/O.
+    pub async fn write_pty(
+        &self,
+        identity: CommandIdentity,
+        bytes: &[u8],
+    ) -> Result<(), CommandError> {
+        self.write_channel(identity, bytes, true).await
+    }
+
+    /// Resize the original terminal independently of a blocked input writer.
+    /// # Errors
+    /// Stale/not-started/completed command, wrong channel or actual ioctl error.
+    pub fn resize_pty(&self, identity: CommandIdentity, size: PtySize) -> Result<(), CommandError> {
+        self.check(identity)?;
+        self.require_started()?;
+        self.shared
+            .control
+            .resize_pty(identity, size)
+            .map_err(|error| input_error(&error))
+    }
+
+    async fn write_channel(
+        &self,
+        identity: CommandIdentity,
+        bytes: &[u8],
+        pty: bool,
+    ) -> Result<(), CommandError> {
         self.check(identity)?;
         if bytes.len() > self.shared.limits.stdin_bytes {
             return Err(CommandError::ResourceExhausted);
@@ -340,7 +374,10 @@ impl ManagedCommand {
                 input.take();
                 Err(CommandError::ClosedInput)
             }
-            result = writer.write_input(identity, bytes) => result.map_err(|_| CommandError::Unavailable),
+            result = async {
+                if pty { writer.write_pty(identity, bytes).await }
+                else { writer.write_input(identity, bytes).await }
+            } => result.map_err(|error| input_error(&error)),
         }
     }
 
@@ -358,7 +395,7 @@ impl ManagedCommand {
         if let Some(input) = input.as_mut() {
             input
                 .close_input(identity)
-                .map_err(|_| CommandError::Unavailable)?;
+                .map_err(|error| input_error(&error))?;
         }
         Ok(())
     }
@@ -384,6 +421,13 @@ impl ManagedCommand {
         } else {
             Err(CommandError::StaleIdentity)
         }
+    }
+}
+
+fn input_error(error: &std::io::Error) -> CommandError {
+    match error.kind() {
+        std::io::ErrorKind::InvalidInput => CommandError::InvalidArgument,
+        _ => CommandError::Unavailable,
     }
 }
 

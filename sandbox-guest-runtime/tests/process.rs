@@ -68,6 +68,7 @@ fn shell(directory: &Path, script: &str, stdin: bool) -> LaunchSpec {
         cwd: directory.into(),
         env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
         stdin,
+        pty: None,
         credentials: None,
     }
 }

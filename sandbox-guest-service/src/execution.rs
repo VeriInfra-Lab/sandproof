@@ -8,9 +8,9 @@ use std::time::Duration;
 use axum::http::HeaderMap;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use sandproof_guest_runtime::LaunchSpec;
 use sandproof_guest_runtime::accounts::{Account, AccountError, AccountLimits, lookup_local_user};
 use sandproof_guest_runtime::protocol::StartRequest;
+use sandproof_guest_runtime::{LaunchSpec, PtySize};
 use tokio::sync::Semaphore;
 
 use crate::AuthPermit;
@@ -140,8 +140,8 @@ impl AuthPermit {
     /// Build a resolved launch from this exact authenticated defaults snapshot.
     /// Environment USER/HOME never select a kernel identity. No user code runs.
     /// # Errors
-    /// Invalid/oversized context, unknown account, source failure/deadline and
-    /// unsupported PTY are explicit errors; there is no fallback to daemon uid.
+    /// Invalid/oversized context, unknown account and source failure/deadline
+    /// are explicit errors; there is no fallback to daemon uid.
     pub async fn resolve_command<S: AccountSource>(
         &self,
         request: &StartRequest,
@@ -160,9 +160,6 @@ impl AuthPermit {
             || settings.daemon_path.contains('\0')
         {
             return Err(ContextError::InvalidArgument);
-        }
-        if request.pty.is_some() {
-            return Err(ContextError::Unimplemented);
         }
         let process = request
             .process
@@ -223,6 +220,11 @@ impl AuthPermit {
             cwd: cwd.into(),
             env,
             stdin: request.stdin_enabled(),
+            pty: request.pty.as_ref().map(|pty| {
+                pty.size.as_ref().map_or_else(PtySize::default, |size| {
+                    PtySize::from_wire(size.cols, size.rows)
+                })
+            }),
             credentials: Some(account.credentials),
         })
     }

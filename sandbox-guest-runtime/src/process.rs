@@ -6,12 +6,13 @@ use std::process::ExitStatus;
 use std::sync::Arc;
 
 use rustix::process::{Signal, pidfd_send_signal};
-use sandproof_guest_core::{Channel, CommandIdentity, CommandOutcome, CommandStream};
+use sandproof_guest_core::{Channel, CommandIdentity, CommandOutcome, CommandStream, OutputMode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 
-use crate::{LaunchSpec, ProcessLimits};
+use crate::pty::PtyMaster;
+use crate::{LaunchSpec, ProcessLimits, PtySize};
 
 mod preparation;
 pub use preparation::CommandPreparation;
@@ -28,9 +29,21 @@ pub enum ProcessSignal {
 pub struct CommandControl {
     identity: CommandIdentity,
     pidfd: Arc<OwnedFd>,
+    pty: Option<Arc<PtyMaster>>,
 }
 
 impl CommandControl {
+    /// Resize this original terminal without waiting for input/output locks.
+    /// # Errors
+    /// Stale identity, a pipe command or actual terminal ioctl failure.
+    pub fn resize_pty(&self, identity: CommandIdentity, size: PtySize) -> io::Result<()> {
+        check_identity(self.identity, identity)?;
+        self.pty
+            .as_ref()
+            .ok_or_else(|| invalid("not a PTY"))?
+            .resize(size)
+    }
+
     /// # Errors
     /// Rejects stale identity and actual kernel errors. Delivery is not exit.
     pub fn signal(&self, identity: CommandIdentity, signal: ProcessSignal) -> io::Result<()> {
@@ -67,7 +80,7 @@ pub enum CommandEvent {
         channel: Channel,
         bytes: Vec<u8>,
     },
-    /// Actual main-child wait plus both pipe EOFs and consumed output. This
+    /// Actual main-child wait plus pipe/terminal EOF and consumed output. This
     /// does not claim descendants stopped, or that a VM has been destroyed.
     End {
         code: i32,
@@ -75,13 +88,17 @@ pub enum CommandEvent {
     },
 }
 
-/// The single stdin writer, optionally separated from the output/wait owner.
-/// Keeping this handle in the command owner allows input and output to make
-/// progress concurrently. Dropping it closes stdin, so a request must borrow
-/// it rather than own it if disconnecting should leave stdin open.
+/// The single pipe/terminal input writer, separated from the output/wait owner.
+/// Dropping it closes pipe stdin or releases its terminal reference; requests
+/// borrow the owner-held handle so disconnect never implicitly closes input.
 pub struct CommandInput {
     identity: CommandIdentity,
-    stdin: Option<ChildStdin>,
+    port: Option<InputPort>,
+}
+
+enum InputPort {
+    Pipe(ChildStdin),
+    Pty(Arc<PtyMaster>),
 }
 
 impl CommandInput {
@@ -90,18 +107,35 @@ impl CommandInput {
     /// or cancelled write may already have delivered a prefix; never replay it.
     pub async fn write_input(&mut self, identity: CommandIdentity, bytes: &[u8]) -> io::Result<()> {
         check_identity(self.identity, identity)?;
-        self.stdin
-            .as_mut()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "closed stdin"))?
-            .write_all(bytes)
-            .await
+        match &mut self.port {
+            Some(InputPort::Pipe(stdin)) => stdin.write_all(bytes).await,
+            Some(InputPort::Pty(_)) => Err(invalid("PTY input requires the terminal channel")),
+            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed stdin")),
+        }
+    }
+
+    /// Write bytes to the original terminal, preserving partial-write semantics.
+    /// # Errors
+    /// Stale identity, a pipe command, closed terminal or actual write failure.
+    pub async fn write_pty(&mut self, identity: CommandIdentity, bytes: &[u8]) -> io::Result<()> {
+        check_identity(self.identity, identity)?;
+        match &self.port {
+            Some(InputPort::Pty(pty)) => pty.write_all(bytes).await,
+            Some(InputPort::Pipe(_)) => Err(invalid("pipe input requires the stdin channel")),
+            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed input")),
+        }
     }
 
     /// # Errors
-    /// Rejects stale identity. Repeated close of this original handle is safe.
+    /// Rejects stale identity and PTY input. Repeated pipe close is safe.
     pub fn close_input(&mut self, identity: CommandIdentity) -> io::Result<()> {
         check_identity(self.identity, identity)?;
-        self.stdin.take();
+        if matches!(self.port, Some(InputPort::Pty(_))) {
+            return Err(invalid(
+                "cannot close PTY stdin; send terminal input instead",
+            ));
+        }
+        self.port.take();
         Ok(())
     }
 }
@@ -115,6 +149,8 @@ pub struct CommandProcess {
     pidfd: Arc<OwnedFd>,
     stdout: Option<ChildStdout>,
     stderr: Option<ChildStderr>,
+    pty: Option<Arc<PtyMaster>>,
+    mode: OutputMode,
     stdin: Option<CommandInput>,
     gate: Option<UnixStream>,
     _gate_directory: tempfile::TempDir,
@@ -168,6 +204,7 @@ impl CommandProcess {
         CommandControl {
             identity: self.identity,
             pidfd: Arc::clone(&self.pidfd),
+            pty: self.pty.clone(),
         }
     }
 
@@ -244,6 +281,16 @@ impl CommandProcess {
         self.control().signal(identity, signal)
     }
 
+    /// # Errors
+    /// Rejects stale identity, an unreleased/pipe command or ioctl failure.
+    pub fn resize_pty(&self, identity: CommandIdentity, size: PtySize) -> io::Result<()> {
+        self.check_identity(identity)?;
+        if !matches!(self.launch, LaunchState::Released(_)) {
+            return Err(invalid("unreleased process"));
+        }
+        self.control().resize_pty(identity, size)
+    }
+
     /// Move the single stdin writer out so it can run concurrently with
     /// `next_event`, `wait_main`, or signalling. No duplicate writer is created.
     /// # Errors
@@ -253,11 +300,7 @@ impl CommandProcess {
         if !matches!(self.launch, LaunchState::Released(_)) {
             return Err(invalid("unreleased process"));
         }
-        if self
-            .stdin
-            .as_ref()
-            .is_none_or(|input| input.stdin.is_none())
-        {
+        if self.stdin.as_ref().is_none_or(|input| input.port.is_none()) {
             return Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
                 "closed or taken stdin",
@@ -279,6 +322,21 @@ impl CommandProcess {
             .as_mut()
             .ok_or_else(|| invalid("stdin writer was transferred"))?;
         input.write_input(identity, bytes).await
+    }
+
+    /// # Errors
+    /// Rejects stale identity, unreleased/pipe commands, a transferred writer
+    /// or an actual write error. Cancelled writes may have delivered a prefix.
+    pub async fn write_pty(&mut self, identity: CommandIdentity, bytes: &[u8]) -> io::Result<()> {
+        self.check_identity(identity)?;
+        if !matches!(self.launch, LaunchState::Released(_)) {
+            return Err(invalid("unreleased process"));
+        }
+        self.stdin
+            .as_mut()
+            .ok_or_else(|| invalid("input writer was transferred"))?
+            .write_pty(identity, bytes)
+            .await
     }
 
     /// # Errors
@@ -358,9 +416,10 @@ impl CommandProcess {
             }
             let mut stdout = vec![0; self.limits.chunk_bytes];
             let mut stderr = vec![0; self.limits.chunk_bytes];
+            let channel = self.primary_channel();
             tokio::select! {
-                result = read_pipe(&mut self.stdout, &mut stdout), if !self.stdout_eof => {
-                    if let Some(event) = self.observe_read(Channel::Stdout, stdout, result)? { return Ok(Some(event)); }
+                result = read_primary(&mut self.stdout, self.pty.as_deref(), &mut stdout), if !self.stdout_eof => {
+                    if let Some(event) = self.observe_read(channel, stdout, result)? { return Ok(Some(event)); }
                 }
                 result = read_pipe(&mut self.stderr, &mut stderr), if !self.stderr_eof => {
                     if let Some(event) = self.observe_read(Channel::Stderr, stderr, result)? { return Ok(Some(event)); }
@@ -386,9 +445,10 @@ impl CommandProcess {
             }
             let mut stdout = vec![0; self.limits.chunk_bytes];
             let mut stderr = vec![0; self.limits.chunk_bytes];
+            let channel = self.primary_channel();
             tokio::select! {
-                result = read_pipe(&mut self.stdout, &mut stdout), if !self.stdout_eof => {
-                    if !matches!(result, Ok(n) if n > 0) { self.close_output(Channel::Stdout); }
+                result = read_primary(&mut self.stdout, self.pty.as_deref(), &mut stdout), if !self.stdout_eof => {
+                    if !matches!(result, Ok(n) if n > 0) { self.close_output(channel); }
                     result?;
                 }
                 result = read_pipe(&mut self.stderr, &mut stderr), if !self.stderr_eof => {
@@ -410,7 +470,10 @@ impl CommandProcess {
                 self.stderr.take();
                 self.stderr_eof = true;
             }
-            Channel::Pty => {}
+            Channel::Pty => {
+                self.pty.take();
+                self.stdout_eof = true;
+            }
         }
     }
 
@@ -431,11 +494,6 @@ impl CommandProcess {
             }
         };
         if count == 0 {
-            match channel {
-                Channel::Stdout => self.stdout_eof = true,
-                Channel::Stderr => self.stderr_eof = true,
-                Channel::Pty => return Err(invalid("not a PTY")),
-            }
             self.close_output(channel);
             self.stream
                 .observe_eof(self.identity, channel)
@@ -465,6 +523,24 @@ impl CommandProcess {
 
     fn check_identity(&self, identity: CommandIdentity) -> io::Result<()> {
         check_identity(self.identity, identity)
+    }
+
+    fn primary_channel(&self) -> Channel {
+        match self.mode {
+            OutputMode::Pipes => Channel::Stdout,
+            OutputMode::Pty => Channel::Pty,
+        }
+    }
+}
+
+async fn read_primary(
+    pipe: &mut Option<ChildStdout>,
+    pty: Option<&PtyMaster>,
+    bytes: &mut [u8],
+) -> io::Result<usize> {
+    match pty {
+        Some(pty) => pty.read(bytes).await,
+        None => read_pipe(pipe, bytes).await,
     }
 }
 
