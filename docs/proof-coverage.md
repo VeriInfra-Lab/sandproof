@@ -250,7 +250,9 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 新增[流式文件 I/O](../sandbox-guest-runtime/src/filesystem/transfer.rs)和[传输所有权](../sandbox-guest-service/src/file_transfer.rs)已有单文件 Linux 组件及原 SDK 测试路由检查，未抽取或证明。原 `Transfer` 的输入/实际写入计费被接到真实 FD，但纯来宾核心源码未改，原抽取试验不覆盖这个连接。待证义务包括短写量到真实副作用、完整输入/元数据到成功、取消/期限与晚到回复、块释放到背压/容量、原授权到实际阻塞工作结束，以及打开后 FD 与可变路径的区别。xattr、内核读写、异步通道/取消和内存分配须逐项最小外部合同；历史控制器定理不能背书新增适配或整个 HTTP 服务。
 
-[顺序批量编排](../sandbox-guest-service/src/file_transfer/batch.rs)和一次账户/defaults 快照解析另增加请求级授权、容量及期限共享、排他 part 借用、路径判重、累计正文/结果预算、失败后不可继续和正常结束证据的自有连接。实现及测试入口已加入，Linux 批量回归待补，尚未证明；单文件测试或原纯核心结论不覆盖该组合，HTTP/MIME 解析及正式服务仍是后续义务。
+[顺序批量编排](../sandbox-guest-service/src/file_transfer/batch.rs)和一次账户/defaults 快照解析另增加请求级授权、容量及期限共享、排他 part 借用、路径判重、累计正文/结果预算、失败后不可继续和正常结束证据的自有连接。实现已有 Linux 批量回归，尚未证明；单文件测试或原纯核心结论不覆盖该组合，HTTP/MIME 解析及正式服务仍是后续义务。
+
+[增量 multipart/MIME 解码](../sandbox-guest-runtime/src/multipart/mod.rs)已有本地可移植测试和固定 Go 标准库对照，未抽取或证明。新增义务包括跨块边界与字节前缀、原始/解码计费、UTF-8/续段参数、错误后不可复用以及有效结束到批次成功的连接。明确拒绝 Go 可误作 EOF 成功的 MIME 头截断，不能沿用纯 `Transfer` 或历史控制器定理覆盖解析器。其与 HTTP 传输、账户授权、实际文件副作用及请求总预算的组合仍未实现/证明。
 
 ### 当前串行实现的模块交接
 

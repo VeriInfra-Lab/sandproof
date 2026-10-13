@@ -66,7 +66,19 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [原 SDK 文件传输组合](../sandbox-guest-runtime/tests/sdk_file_transfer.rs)与[同步/异步调用集](../tests/compat/guest_file_transfer_sdk.py)经一次性回环路由连接原授权、真实账号/路径解析和传输池，检查原始字节上传、普通/流式下载、大于块预算的内容、元数据替换、目录/缺失错误及先前成功写入不回滚。Linux `check-compat.sh` 已登记以上入口，已有原提交的 Linux 组件检查；可定向执行 `cargo test -p sandproof-guest-runtime --locked --test file_transfer`、`cargo test -p sandproof-guest-service --locked file_transfer::tests` 和 `cargo test -p sandproof-guest-runtime --features sdk-contract-tests --locked --test sdk_file_transfer -- --nocapture`。后续改动须重跑，交叉类型检查不能算运行通过。测试适配只支持 raw POST/identity GET，不代表正式路由、multipart、gzip、range/conditional、固定 Go HTTP 双端对照、E03 或 KVM 验收。
 
-新增[批量上传检查](../sandbox-guest-service/src/file_transfer/batch/tests.rs)覆盖单槽位顺序多文件、一次账户查询、元数据/结果保留、相对路径判重、查询空路径覆盖、合法空批次、取消中间文件、总量/数量/结果预算、后续文件失败与整批绝对期限。结果预算拒绝可发生在实际写完之后，测试要求文件保留而整批失败。Linux 基础及兼容入口中的 service 全测试会执行该组，也可定向 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests`；新增组尚待 Linux 运行验证。此处直接向组件交入已解码文件名和正文块，没有执行 multipart MIME 解析、网络请求或固定 Go HTTP 对照。
+新增[批量上传检查](../sandbox-guest-service/src/file_transfer/batch/tests.rs)覆盖单槽位顺序多文件、一次账户查询、元数据/结果保留、相对路径判重、查询空路径覆盖、合法空批次、取消中间文件、总量/数量/结果预算、后续文件失败与整批绝对期限。结果预算拒绝可发生在实际写完之后，测试要求文件保留而整批失败。Linux 基础及兼容入口中的 service 全测试会执行该组，也可定向 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests`；该组已有原提交的 Linux CI 运行验证，后续改动须重跑。此处直接向组件交入已解码文件名和正文块，没有执行 multipart MIME 解析、网络请求或固定 Go HTTP 对照。
+
+[multipart 解码检查](../sandbox-guest-runtime/src/multipart/tests.rs)可在 macOS/Linux 运行，覆盖逐块和全部切点、近似边界二进制、CRLF/LF、前导/尾随内容、空 part、逐字节截断、前一 part 结束后边界行失败、折叠/重复头、完整文件名、RFC 2231 跨续段 UTF-8、quoted-printable 的部分错误/4096 字节临界值，以及全部输入预算、错误后不可复用和大流中固定解析缓冲容量。执行 `cargo test -p sandproof-guest-runtime --locked --lib multipart`；普通 Linux 兼容入口已有 runtime lib 测试，因此会执行可移植组。该组件当前已有本地实跑，不代表 multipart HTTP 上传组合、文件效果、SDK multipart 或 Linux 全服务验收。
+
+[Go MIME 参考适配器](../tests/compat/guest_multipart_reference.go)仅调用固定 Go 1.26.8 标准库，不调用 envd HTTP/文件端点。它无需外部模块，必须使用经过校验的固定工具链；程序会拒绝其他版本。显式对照保存种子 0x311，以相同输入比较四种 Rust 分块下的文件名、正文前缀、part 完成与请求终态；MIME 头 EOF 的严格拒绝单独核对，其余差异使测试失败。普通 CI 不制备 Go，此参考组默认 ignored，不能把普通绿灯记为已运行；本地已显式运行该组。入口为：
+
+```sh
+CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -buildvcs=false \
+  -o /absolute/path/to/multipart-reference tests/compat/guest_multipart_reference.go
+SANDPROOF_GUEST_MULTIPART_REFERENCE=/absolute/path/to/multipart-reference \
+  cargo test -p sandproof-guest-runtime --locked --lib \
+  multipart::tests::fixed_go_multipart_reference -- --ignored --nocapture
+```
 
 [固定 Go 方法对照](../sandbox-guest-runtime/tests/file_reference.rs)为显式 opt-in，不执行时必须报未运行。以固定 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322`、该版要求的 Go 1.26.8 和锁定模块，采用 Go `-overlay` 把仓库[参考适配器](../tests/compat/guest_files_reference.go)映射为 `packages/envd/sandproof_files_reference.go`，使用 `CGO_ENABLED=0 GOTOOLCHAIN=local`、`build -mod=readonly -trimpath -buildvcs=false` 编译该虚拟文件。记录原源码/工具链与适配器二进制摘要，原 Go 源树须保持未改。该程序直接调用原文件服务方法，不启动 envd 主程序、MMDS、cgroup 或监听器。编译后显式运行：
 
@@ -97,7 +109,6 @@ SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
 组件入口包括[缓存差分](../controller-service/src/controller/cache_tests.rs)、[身份分配](../controller-service/src/controller/allocator_tests.rs)、[API 耗尽](../sandbox-api/tests/managed_port/allocators.rs)、[有界位置与维护](../sandbox-api/tests/managed_port/bounded_slots.rs)及[模板发布](../sandbox-api/tests/managed_port/publication.rs)。实际宿主观察不能仅由这些测试替身代替。
 
 #292 的[原子本地映射与事实组件](../controller-service/src/controller/internal_inbox/tests.rs)纳入 `scripts/check-distributed-contract.sh` 的原收件测试步骤：准入提交前后与两种未知提交结果均重开真实 SQLite，检查实例/租户映射、原配额、固定位置和编号同进退；模板修订/摘要/形状/owner、期限及配额拒绝不产生本地责任；多租户映射单射且重复请求不重分配。销毁收件与原核心终止同事务，准备动作回执丢失时也不得继续旧创建。原工作流的受控证据只用于组件测试：Ready 使用原发布时刻，事实提交前后故障可重建原结果；Destroyed/逻辑回收还不是 Cleaned，必须核对原 ConfirmRelease；该实例的终局确认及保留位置退休完成前，本地维护不能删掉映射依赖。旧收件格式明确拒绝且不修复。这些不是原应用执行组装、KVM 或两题通过的证据，实机仍按 DK 场景验收。
-
 
 [宿主应用执行组件](../sandbox-host-service/tests/durable_https/execution.rs)在原 ControllerApplication 和真实 SQLite 上验收创建/重复/重开、丢激活回执恢复、销毁先到、原数据许可即时撤销及排空、物理释放未知保留 Stopped、中心断线后的原到期处理；取消由明确宿主屏障控制，实际工作结束前入口许可不归还。[真实 Redis/HTTPS 组合](../sandbox-center-store/tests/redis_ledger.rs)再检查原本地执行事实已持久而中心丢回执/重启，重发原请求得到同一 VM/寿命，只有收到原 Cleaned 才释放中心额度。宿主物理动作在这些组件中受控，不能记为 KVM、SDK 生产入口或 DK 用例通过。
 
