@@ -1080,6 +1080,9 @@ version = "0.1.0"
 name = "sandproof-guest-runtime"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "base64",
+ "futures-util",
  "rustix",
  "sandproof-guest-core",
  "serde",

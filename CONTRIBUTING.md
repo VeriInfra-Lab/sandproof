@@ -95,6 +95,8 @@ python3 tools/check_commit_subject.py 'feat(service): 持久提交后派发任�
 
 开发者仍须执行上面的本地基础检查并在 PR 记录结果。普通 PR 不再自动运行完整 Rust 检查；[独立工作流](.github/workflows/rust-ci.yml)在合入 main/test 后或手动触发时运行同一基础检查，不作为 PR 必需状态。普通 PR 保留 SDK 合同、Harbor 工具、标题与分支规则四项自动检查。测试脚本不启动产品 VM，不访问 E2B 云服务，不使用付费模型，也不执行完整 Lean 验收。独立的 SDK 合同任务从固定公开提交安装 E2B Python SDK，只向本机回环服务发送合成请求；在 Linux 上还运行 SDK 经实际 Rust 网关体处理/转发代码访问合成 envd 的组合测试，不涉及管理鉴权或宿主 relay，不能代替真实控制器或虚拟机验收。规则检查只验证 issue 编号的格式，任务是否真实存在及关联准确仍需核对。
 
+Linux SDK 合同脚本还检查固定 SDK 经一次性回环测试路由访问 Rust 来宾编解码和当前账号的真实命令；路由仅接受预定测试命令。该组合不涉及正式来宾服务、管理鉴权、Go envd 双端对照或产品 VM，范围以[验收清单](docs/testing-plan.md)为准。
+
 ### 测试编写和结果纪律
 
 基础工具统一通过 `scripts/python-entry.sh` 选择 Python `>=3.12,<3.14`；可用 `SANDPROOF_PYTHON` 指定解释器，显式指定后不静默回退。版本或平台不满足时在 Cargo 构建和测试前报错。SDK/Harbor 仍用各自锁定的 uv 项目，不混用工具环境。
