@@ -1,8 +1,9 @@
 {
   "schema": 1,
-  "source_anchor": "39c3497c24ce0362e1ce6ab05d2d9fc5f0d4b260",
+  "source_anchor": "a45eef28f8259f4ab643a3acb82bf3aff8d48dbd",
   "source_identity": "verification/first-chain-linux-inputs.sha256",
   "target": "x86_64-unknown-linux-gnu",
+  "artifact_destination": "verification/aeneas/llbc/sandproof_first_chain.llbc",
   "features": [],
   "cfg": [
     "debug_assertions", "fmt_debug=\"full\"", "overflow_checks", "panic=\"unwind\"",
@@ -32,16 +33,16 @@
   "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)",
   "charon": {
     "revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
-    "binary_sha256": "732e75e80f113cb7d1a971eea9b97a64cd5742171d37e2fcae320b234dd06ff2",
-    "driver_sha256": "853946886339a191873a80ef1236f0a1874f5e51727053574dc9df558439ed6b"
+    "binary_sha256": "2603f720f0d26a4c77ae215485e2457029d69504dbd9d318a497ed866f21d4fd",
+    "driver_sha256": "428e5331f3a436daef97fb859056cd77453f00eaef1b526d432e42e7b46234cf"
   },
   "aeneas": {
     "revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
-    "binary_sha256": "5157acfd40145cdcc019889349e421800fa0d9a3e780eb4c809a8d0c523bb282"
+    "binary_sha256": "22b326476f854e19b52ca5a2acfd953fd186da7694cd10d8d008ed5502f7c46a"
   },
-  "ocaml": "5.3.0",
+  "ocaml": "5.2.1",
   "lean": "4.31.0",
   "compile_mode": ["lib", "not(test)"],
-  "external_contracts": ["A6-foundations-stdlib-string", "A6-option-discriminant", "toolchain-translation"],
-  "excludes": ["wire decoding", "expected durable request selection", "observation rank", "request admission", "physical evidence", "durable commits", "full lifecycle handler", "liveness"]
+  "external_contracts": ["A6-foundations-stdlib-string", "A6-foundations-stdlib-option-borrow", "A6-option-discriminant", "A6-backend-shared-equality-and-integers", "toolchain-translation"],
+  "excludes": ["wire decoding", "expected durable request selection", "complete center state update", "request admission", "physical evidence", "durable commits", "full lifecycle handler", "liveness"]
 }

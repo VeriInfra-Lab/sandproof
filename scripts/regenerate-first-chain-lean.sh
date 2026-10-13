@@ -12,6 +12,9 @@ test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
 LLBC=verification/aeneas/llbc/sandproof_first_chain.llbc
 DEST=verification/aeneas/first-chain
 mkdir -p "$(dirname "$LLBC")" "$DEST"
+mkdir -p artifacts
+PREVIOUS="$(mktemp -d artifacts/first-chain-extraction.XXXXXX)"
+if [[ -f "$LLBC" ]]; then mv "$LLBC" "$PREVIOUS/previous.llbc"; fi
 EXTRACTION_SYSROOT="$("$CHARON" toolchain-path)"
 CARGO_CACHE="${CARGO_HOME:-$HOME/.cargo}"
 # Source locations are meaningful, but private host/checkout prefixes are not.
@@ -20,8 +23,11 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=. --remap-path-prefix=$EXTRACTION_SYSRO
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
   --targets x86_64-unknown-linux-gnu \
   --start-from crate::identity_response --start-from crate::lifecycle_response \
-  --include sandproof_protocol --include 'core::option::_::eq' --dest-file "$LLBC" \
+  --start-from crate::operation_response \
+  --include sandproof_protocol --include sandproof_center_core \
+  --include 'core::option::_::eq' --dest-file "$LLBC" \
   -- --manifest-path verification/extract-first-chain/Cargo.toml --lib --locked --offline
+test -s "$LLBC"
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \
   -emit-json -namespace SandproofFirstChainRust -subdir SandproofFirstChain \
   -dest "$DEST" "$LLBC"

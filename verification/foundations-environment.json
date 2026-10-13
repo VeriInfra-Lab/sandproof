@@ -3,6 +3,8 @@
   "source_anchor": "882427adfae74ee3933244b3e5e3c983996e86a3",
   "source_identity": "verification/foundations-inputs.sha256",
   "target": "x86_64-unknown-linux-gnu",
+  "artifact_destination": "verification/aeneas/llbc/sandproof_foundations.llbc",
+  "driver_destination": "../../verification/aeneas/llbc/sandproof_foundations.llbc",
   "features": [],
   "cfg": [
     "debug_assertions",

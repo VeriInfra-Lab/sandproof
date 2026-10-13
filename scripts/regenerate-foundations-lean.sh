@@ -7,9 +7,14 @@ AENEAS="$TOOL_ROOT/aeneas/bin/aeneas"
 test "$(git -C "$TOOL_ROOT/aeneas" rev-parse HEAD)" = 505b6ca35217e7be5c96c3e2f8045edfbdf47291
 test "$(git -C "$TOOL_ROOT/aeneas/charon" rev-parse HEAD)" = b104e24fea7d721b71e6c39fd70f26ff20bc0980
 cd "$ROOT_DIR"
-LLBC="$ROOT_DIR/verification/aeneas/llbc/sandproof_foundations.llbc"
-DEST="$ROOT_DIR/verification/aeneas/foundations"
+LLBC=verification/aeneas/llbc/sandproof_foundations.llbc
+DEST=verification/aeneas/foundations
 mkdir -p "$(dirname "$LLBC")" "$DEST"
+# The single-target driver runs in the isolated Cargo package directory.
+# Keep its relative destination stable and require a newly emitted input.
+mkdir -p artifacts
+PREVIOUS="$(mktemp -d artifacts/foundations-extraction.XXXXXX)"
+if [[ -f "$LLBC" ]]; then mv "$LLBC" "$PREVIOUS/previous.llbc"; fi
 test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
 RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
 "$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
@@ -27,8 +32,9 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::retry_hint \
   --start-from crate::outcome_observation \
   --include sandproof_protocol --include sandproof_center_core \
-  --include sandbox_controller_core --dest-file "$LLBC" \
+  --include sandbox_controller_core --dest-file "../../$LLBC" \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline
+test -s "$LLBC"
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \
   -emit-json -namespace SandproofFoundationsRust -subdir SandproofFoundations \
   -dest "$DEST" "$LLBC"

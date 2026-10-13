@@ -41,6 +41,32 @@ def core.option.Option.Insts.CoreCmpPartialEqOption.eq
     | none => ok false
     | some r => cmpPartialEqInst.eq l r
 
+/-- [sandproof_center_core::decision::fact_rank]:
+    Source: './sandbox-center-core/src/decision.rs', lines 17:0-17:39
+    Name pattern: [sandproof_center_core::decision::fact_rank] -/
+@[rust_fun "sandproof_center_core::decision::fact_rank"]
+def sandproof_center_core.decision.fact_rank
+  (fact : sandproof_protocol.internal.lifecycle.LifecycleFact) :
+  Result Std.U8
+  := do
+  match fact with
+  | sandproof_protocol.internal.lifecycle.LifecycleFact.Recorded => ok 0#u8
+  | sandproof_protocol.internal.lifecycle.LifecycleFact.Ready _ _ _ => ok 2#u8
+  | sandproof_protocol.internal.lifecycle.LifecycleFact.Renewed _ => ok 2#u8
+  | sandproof_protocol.internal.lifecycle.LifecycleFact.Stopped => ok 1#u8
+  | sandproof_protocol.internal.lifecycle.LifecycleFact.Cleaned => ok 2#u8
+  | sandproof_protocol.internal.lifecycle.LifecycleFact.NotAccepted => ok 2#u8
+
+/-- [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get]:
+    Source: './sandbox-protocol/src/internal.rs', lines 53:4-53:33
+    Name pattern: [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get"]
+def sandproof_protocol.internal.PositiveCounter.get
+  (self : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
+  ok self
+
 /-- [sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq]:
     Source: './sandbox-protocol/src/lib.rs', lines 64:37-64:46
     Name pattern: [sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::NodeId, sandproof_protocol::NodeId>}::eq]
@@ -409,8 +435,175 @@ def sandproof_protocol.internal.lifecycle.LifecycleResponse.validate_for
       Unit (core.convert.FromSame sandproof_protocol.internal.InternalError)
       residual
 
+/-- [sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleFact> for sandproof_protocol::internal::lifecycle::LifecycleFact}::eq]:
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 120:29-120:38
+    Name pattern: [sandproof_protocol::internal::lifecycle::{core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleFact, sandproof_protocol::internal::lifecycle::LifecycleFact>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::lifecycle::{core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleFact, sandproof_protocol::internal::lifecycle::LifecycleFact>}::eq"]
+def
+  sandproof_protocol.internal.lifecycle.LifecycleFact.Insts.CoreCmpPartialEqLifecycleFact.eq
+  (self : sandproof_protocol.internal.lifecycle.LifecycleFact)
+  (other : sandproof_protocol.internal.lifecycle.LifecycleFact) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | sandproof_protocol.internal.lifecycle.LifecycleFact.Recorded => ok true
+    | sandproof_protocol.internal.lifecycle.LifecycleFact.Ready __self_0
+      __self_1 __self_2 =>
+      match other with
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Recorded => ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Ready __arg1_0
+        __arg1_1 __arg1_2 =>
+        let b ← lift (core.cmp.impls.PartialEqU64.eq __self_0 __arg1_0)
+        if b
+        then
+          let b1 ← lift (core.cmp.impls.PartialEqU64.eq __self_1 __arg1_1)
+          if b1
+          then lift (core.cmp.impls.PartialEqU64.eq __self_2 __arg1_2)
+          else ok false
+        else ok false
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Renewed _ =>
+        ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Stopped => ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Cleaned => ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.NotAccepted =>
+        ok true
+    | sandproof_protocol.internal.lifecycle.LifecycleFact.Renewed __self_0 =>
+      match other with
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Recorded => ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Ready _ _ _ =>
+        ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Renewed __arg1_0 =>
+        lift (core.cmp.impls.PartialEqU64.eq __self_0 __arg1_0)
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Stopped => ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.Cleaned => ok true
+      | sandproof_protocol.internal.lifecycle.LifecycleFact.NotAccepted =>
+        ok true
+    | sandproof_protocol.internal.lifecycle.LifecycleFact.Stopped => ok true
+    | sandproof_protocol.internal.lifecycle.LifecycleFact.Cleaned => ok true
+    | sandproof_protocol.internal.lifecycle.LifecycleFact.NotAccepted =>
+      ok true
+  else ok false
+
+/-- [sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse> for sandproof_protocol::internal::lifecycle::LifecycleResponse}::eq]:
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 139:23-139:32
+    Name pattern: [sandproof_protocol::internal::lifecycle::{core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse, sandproof_protocol::internal::lifecycle::LifecycleResponse>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::lifecycle::{core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse, sandproof_protocol::internal::lifecycle::LifecycleResponse>}::eq"]
+def
+  sandproof_protocol.internal.lifecycle.LifecycleResponse.Insts.CoreCmpPartialEqLifecycleResponse.eq
+  (self : sandproof_protocol.internal.lifecycle.LifecycleResponse)
+  (other : sandproof_protocol.internal.lifecycle.LifecycleResponse) :
+  Result Bool
+  := do
+  let b ←
+    sandproof_protocol.internal.ControlIdentity.Insts.CoreCmpPartialEqControlIdentity.eq
+      self.identity other.identity
+  if b
+  then
+    let b1 ←
+      sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq
+        self.observation_version other.observation_version
+    if b1
+    then
+      sandproof_protocol.internal.lifecycle.LifecycleFact.Insts.CoreCmpPartialEqLifecycleFact.eq
+        self.fact other.fact
+    else ok false
+  else ok false
+
+/-- Trait implementation: [sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse> for sandproof_protocol::internal::lifecycle::LifecycleResponse}]
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 139:23-139:32
+    Name pattern: [core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse, sandproof_protocol::internal::lifecycle::LifecycleResponse>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse, sandproof_protocol::internal::lifecycle::LifecycleResponse>"]
+def
+  sandproof_protocol.internal.lifecycle.LifecycleResponse.Insts.CoreCmpPartialEqLifecycleResponse
+  : core.cmp.PartialEq sandproof_protocol.internal.lifecycle.LifecycleResponse
+  sandproof_protocol.internal.lifecycle.LifecycleResponse := {
+  eq :=
+    sandproof_protocol.internal.lifecycle.LifecycleResponse.Insts.CoreCmpPartialEqLifecycleResponse.eq
+}
+
+/-- [sandproof_center_core::decision::{sandproof_center_core::model::Operation}::classify_response]:
+    Source: './sandbox-center-core/src/decision.rs', lines 37:4-41:51
+    Name pattern: [sandproof_center_core::decision::{sandproof_center_core::model::Operation}::classify_response]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_center_core::decision::{sandproof_center_core::model::Operation}::classify_response"]
+def sandproof_center_core.decision.Operation.classify_response
+  (self : sandproof_center_core.model.Operation)
+  (observed : Option sandproof_protocol.internal.PositiveCounter)
+  (response : sandproof_protocol.internal.lifecycle.LifecycleResponse) :
+  Result (core.result.Result sandproof_center_core.decision.ResponseDisposition
+    sandproof_center_core.model.DecisionError)
+  := do
+  let r ←
+    sandproof_protocol.internal.lifecycle.LifecycleResponse.validate_for
+      response self.request
+  match r with
+  | core.result.Result.Ok _ =>
+    let o ← core.option.Option.as_ref self.response
+    let b ←
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq
+        (core.cmp.PartialEqShared
+        sandproof_protocol.internal.lifecycle.LifecycleResponse.Insts.CoreCmpPartialEqLifecycleResponse)
+        o (some response)
+    if b
+    then
+      ok (core.result.Result.Ok
+        sandproof_center_core.decision.ResponseDisposition.Duplicate)
+    else
+      match observed with
+      | none =>
+        match self.response with
+        | none =>
+          ok (core.result.Result.Ok
+            sandproof_center_core.decision.ResponseDisposition.Advance)
+        | some prior =>
+          let i ← sandproof_center_core.decision.fact_rank response.fact
+          let i1 ← sandproof_center_core.decision.fact_rank prior.fact
+          if i <= i1
+          then
+            ok (core.result.Result.Err
+              sandproof_center_core.model.DecisionError.Stale)
+          else
+            ok (core.result.Result.Ok
+              sandproof_center_core.decision.ResponseDisposition.Advance)
+      | some version =>
+        let i ←
+          sandproof_protocol.internal.PositiveCounter.get
+            response.observation_version
+        let i1 ← sandproof_protocol.internal.PositiveCounter.get version
+        if i <= i1
+        then
+          ok (core.result.Result.Err
+            sandproof_center_core.model.DecisionError.Stale)
+        else
+          match self.response with
+          | none =>
+            ok (core.result.Result.Ok
+              sandproof_center_core.decision.ResponseDisposition.Advance)
+          | some prior =>
+            let i2 ← sandproof_center_core.decision.fact_rank response.fact
+            let i3 ← sandproof_center_core.decision.fact_rank prior.fact
+            if i2 <= i3
+            then
+              ok (core.result.Result.Err
+                sandproof_center_core.model.DecisionError.Stale)
+            else
+              ok (core.result.Result.Ok
+                sandproof_center_core.decision.ResponseDisposition.Advance)
+  | core.result.Result.Err _ =>
+    ok (core.result.Result.Err sandproof_center_core.model.DecisionError.Stale)
+
 /-- [sandproof_first_chain_extract::identity_response]:
-    Source: 'src/lib.rs', lines 8:0-13:1
+    Source: 'src/lib.rs', lines 10:0-15:1
     Visibility: public -/
 def identity_response
   (actual : sandproof_protocol.internal.ControlIdentity)
@@ -420,7 +613,7 @@ def identity_response
   sandproof_protocol.internal.ControlIdentity.validate_response actual expected
 
 /-- [sandproof_first_chain_extract::lifecycle_response]:
-    Source: 'src/lib.rs', lines 15:0-20:1
+    Source: 'src/lib.rs', lines 17:0-22:1
     Visibility: public -/
 def lifecycle_response
   (actual : sandproof_protocol.internal.lifecycle.LifecycleResponse)
@@ -429,5 +622,18 @@ def lifecycle_response
   := do
   sandproof_protocol.internal.lifecycle.LifecycleResponse.validate_for actual
     expected
+
+/-- [sandproof_first_chain_extract::operation_response]:
+    Source: 'src/lib.rs', lines 25:0-31:1
+    Visibility: public -/
+def operation_response
+  (operation : sandproof_center_core.model.Operation)
+  (observed : Option sandproof_protocol.internal.PositiveCounter)
+  (response : sandproof_protocol.internal.lifecycle.LifecycleResponse) :
+  Result (core.result.Result sandproof_center_core.decision.ResponseDisposition
+    sandproof_center_core.model.DecisionError)
+  := do
+  sandproof_center_core.decision.Operation.classify_response operation observed
+    response
 
 end SandproofFirstChainRust

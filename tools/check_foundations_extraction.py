@@ -50,6 +50,11 @@ def check(root, llbc, inventory):
     targets = {target['key'] for target in llbc['translated']['target_information']}
     if targets != {environment['target']}:
         raise ValueError('extraction target does not match the frozen environment')
+    destination = 'verification/aeneas/llbc/sandproof_foundations.llbc'
+    if (environment.get('artifact_destination') != destination
+            or environment.get('driver_destination') != '../../' + destination
+            or llbc['translated']['options']['dest_file'] != '../../' + destination):
+        raise ValueError('extraction artifact destination must be the frozen relative path')
     script = (root / 'scripts/regenerate-foundations-lean.sh').read_text()
     roots = re.findall(r'--start-from crate::([a-z0-9_]+)', script)
     source = (root / 'verification/extract-foundations/src/lib.rs').read_text()

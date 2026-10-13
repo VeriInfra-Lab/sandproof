@@ -18,6 +18,13 @@ class FoundationsExtractionTests(unittest.TestCase):
     def test_real_checked_roots_are_present(self):
         self.assertEqual(check(ROOT, self.llbc, self.inventory), 13)
 
+    def test_unfrozen_output_destination_is_rejected(self):
+        for destination in ('/different-checkout/output.llbc', 'unreviewed.llbc'):
+            llbc = copy.deepcopy(self.llbc)
+            llbc['translated']['options']['dest_file'] = destination
+            with self.assertRaisesRegex(ValueError, 'artifact destination'):
+                check(ROOT, llbc, self.inventory)
+
     def test_only_unordered_name_table_order_is_normalized(self):
         reordered = copy.deepcopy(self.llbc)
         reordered['translated']['short_names'].reverse()

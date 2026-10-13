@@ -13,7 +13,10 @@ except ModuleNotFoundError:
     from check_foundations_extraction import llbc_digest
 
 OPTION_EQ = 'core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq'
-EXTERNALS = {'alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq'}
+EXTERNALS = {
+    'alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq',
+    'core::option::{core::option::Option<T>}::as_ref',
+}
 CRATE = 'sandproof_first_chain_extract'
 DEST = Path('verification/aeneas/first-chain')
 ENVIRONMENT = Path('verification/first-chain-linux-environment.json')
@@ -27,11 +30,15 @@ def check(root, llbc, inventory):
     targets = {target['key'] for target in llbc['translated']['target_information']}
     if environment['target'] != 'x86_64-unknown-linux-gnu' or targets != {environment['target']}:
         raise ValueError('extraction target differs from the Linux environment')
+    destination = 'verification/aeneas/llbc/sandproof_first_chain.llbc'
+    if (environment.get('artifact_destination') != destination
+            or llbc['translated']['options']['dest_file'] != destination):
+        raise ValueError('extraction artifact destination must be the frozen relative path')
     script = (root / 'scripts/regenerate-first-chain-lean.sh').read_text()
     roots = re.findall(r'--start-from crate::([a-z0-9_]+)', script)
     public = re.findall(r'pub fn ([a-z0-9_]+)\(',
                         (root / 'verification/extract-first-chain/src/lib.rs').read_text())
-    if roots != ['identity_response', 'lifecycle_response'] or set(roots) != set(public):
+    if roots != ['identity_response', 'lifecycle_response', 'operation_response'] or set(roots) != set(public):
         raise ValueError('production-call roots and script disagree')
     if inventory.get('crate') != CRATE:
         raise ValueError('unexpected extraction crate')
@@ -101,11 +108,11 @@ def check(root, llbc, inventory):
         raise ValueError('global has no generated definition')
     owned_ids = {
         declaration['def_id'] for declaration in declarations.values()
-        if declaration['item_meta']['name'][0].get('Ident', [None])[0] in {CRATE, 'sandproof_protocol'}
+        if declaration['item_meta']['name'][0].get('Ident', [None])[0] in {CRATE, 'sandproof_protocol', 'sandproof_center_core'}
     }
     inventory_owned_ids = {
         function['def_id'] for function in functions
-        if function['rust_name'].startswith((CRATE + '::', 'sandproof_protocol::'))
+        if function['rust_name'].startswith((CRATE + '::', 'sandproof_protocol::', 'sandproof_center_core::'))
     }
     if owned_ids != inventory_owned_ids | initializer_ids:
         raise ValueError('owned LLBC function omitted or invented in the inventory')
@@ -113,7 +120,7 @@ def check(root, llbc, inventory):
         name = function['rust_name']
         if name in EXTERNALS:
             continue
-        if not name.startswith((CRATE + '::', 'sandproof_protocol::')) and name != OPTION_EQ:
+        if not name.startswith((CRATE + '::', 'sandproof_protocol::', 'sandproof_center_core::')) and name != OPTION_EQ:
             raise ValueError(f'unreviewed transparent dependency: {name}')
         body = declarations.get(function['def_id'], {}).get('body')
         if function['is_opaque'] or not isinstance(body, dict) or 'Structured' not in body:
@@ -180,7 +187,7 @@ def main(argv=None):
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'Linux first-chain extraction failed: {error}', file=sys.stderr)
         return 1
-    print(f'Linux first chain: {count} real roots, actual Option body, all owned bodies present; one reviewed String model.')
+    print(f'Linux first chain: {count} real roots, actual Option body, all owned bodies present; reviewed String/Option borrow models.')
     return 0
 
 

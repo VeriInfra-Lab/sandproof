@@ -22,6 +22,13 @@ class NetworkExtractionTests(unittest.TestCase):
     def test_real_roots_bodies_loops_globals_and_models_are_present(self):
         self.assertEqual(check(ROOT, self.llbc, self.inventory), len(ROOTS))
 
+    def test_unfrozen_output_destination_is_rejected(self):
+        for destination in ('/different-checkout/output.llbc', 'unreviewed.llbc'):
+            llbc = copy.deepcopy(self.llbc)
+            llbc['translated']['options']['dest_file'] = destination
+            with self.assertRaisesRegex(ValueError, 'artifact destination'):
+                check(ROOT, llbc, self.inventory)
+
     def test_only_unordered_short_name_order_is_normalized(self):
         reordered = copy.deepcopy(self.llbc)
         reordered['translated']['short_names'].reverse()

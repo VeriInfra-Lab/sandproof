@@ -1,10 +1,27 @@
 {
-  "aeneas_version": "505b6ca3",
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
   "charon_version": "0.1.254",
   "crate": "sandproof_first_chain_extract",
   "functions": [
     {
-      "def_id": 47,
+      "def_id": 32,
+      "lean_name": "core.option.Option.as_ref",
+      "lean_file": "SandproofFirstChain/FunsExternal_Template.lean",
+      "rust_name": "core::option::{core::option::Option<T>}::as_ref",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/option.rs",
+        "begin_line": 742,
+        "end_line": 742
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 54,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
       "lean_file": "SandproofFirstChain/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
@@ -21,7 +38,7 @@
       "reducible": false
     },
     {
-      "def_id": 29,
+      "def_id": 31,
       "lean_name": "SandproofFirstChainRust.core.option.Option.Insts.CoreCmpPartialEqOption.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
@@ -38,7 +55,41 @@
       "reducible": false
     },
     {
-      "def_id": 46,
+      "def_id": 34,
+      "lean_name": "SandproofFirstChainRust.sandproof_center_core.decision.fact_rank",
+      "lean_file": "SandproofFirstChain/Funs.lean",
+      "rust_name": "sandproof_center_core::decision::fact_rank",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-center-core/src/decision.rs",
+        "begin_line": 17,
+        "end_line": 17
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 33,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.PositiveCounter.get",
+      "lean_file": "SandproofFirstChain/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal.rs",
+        "begin_line": 53,
+        "end_line": 53
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 53,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
@@ -55,7 +106,7 @@
       "reducible": false
     },
     {
-      "def_id": 45,
+      "def_id": 52,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
@@ -72,7 +123,7 @@
       "reducible": false
     },
     {
-      "def_id": 43,
+      "def_id": 49,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
@@ -89,7 +140,7 @@
       "reducible": false
     },
     {
-      "def_id": 39,
+      "def_id": 45,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
@@ -106,7 +157,7 @@
       "reducible": false
     },
     {
-      "def_id": 31,
+      "def_id": 36,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.validate_node",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::validate_node",
@@ -123,7 +174,7 @@
       "reducible": false
     },
     {
-      "def_id": 30,
+      "def_id": 35,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.validate_version",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::validate_version",
@@ -140,7 +191,7 @@
       "reducible": false
     },
     {
-      "def_id": 24,
+      "def_id": 26,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.ControlIdentity.validate_node",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_node",
@@ -157,7 +208,7 @@
       "reducible": false
     },
     {
-      "def_id": 42,
+      "def_id": 48,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::OperationId> for sandproof_protocol::OperationId}::eq",
@@ -174,7 +225,7 @@
       "reducible": false
     },
     {
-      "def_id": 41,
+      "def_id": 47,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq",
@@ -191,7 +242,7 @@
       "reducible": false
     },
     {
-      "def_id": 40,
+      "def_id": 46,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
@@ -208,7 +259,7 @@
       "reducible": false
     },
     {
-      "def_id": 36,
+      "def_id": 41,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.ControlIdentity.Insts.CoreCmpPartialEqControlIdentity.eq",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::ControlIdentity> for sandproof_protocol::internal::ControlIdentity}::eq",
@@ -225,7 +276,7 @@
       "reducible": false
     },
     {
-      "def_id": 21,
+      "def_id": 22,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.ControlIdentity.validate_response",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::ControlIdentity}::validate_response",
@@ -242,7 +293,7 @@
       "reducible": false
     },
     {
-      "def_id": 22,
+      "def_id": 23,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleResponse.validate_for",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::LifecycleResponse}::validate_for",
@@ -259,12 +310,63 @@
       "reducible": false
     },
     {
+      "def_id": 50,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleFact.Insts.CoreCmpPartialEqLifecycleFact.eq",
+      "lean_file": "SandproofFirstChain/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleFact> for sandproof_protocol::internal::lifecycle::LifecycleFact}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 120,
+        "end_line": 120
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 44,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleResponse.Insts.CoreCmpPartialEqLifecycleResponse.eq",
+      "lean_file": "SandproofFirstChain/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse> for sandproof_protocol::internal::lifecycle::LifecycleResponse}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 139,
+        "end_line": 139
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofFirstChainRust.sandproof_center_core.decision.Operation.classify_response",
+      "lean_file": "SandproofFirstChain/Funs.lean",
+      "rust_name": "sandproof_center_core::decision::{sandproof_center_core::model::Operation}::classify_response",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-center-core/src/decision.rs",
+        "begin_line": 37,
+        "end_line": 41
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
       "def_id": 11,
       "lean_name": "SandproofFirstChainRust.identity_response",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_first_chain_extract::identity_response",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 8, "end_line": 13 },
+      "source": { "file": "src/lib.rs", "begin_line": 10, "end_line": 15 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -277,7 +379,20 @@
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_first_chain_extract::lifecycle_response",
       "is_local": true,
-      "source": { "file": "src/lib.rs", "begin_line": 15, "end_line": 20 },
+      "source": { "file": "src/lib.rs", "begin_line": 17, "end_line": 22 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofFirstChainRust.operation_response",
+      "lean_file": "SandproofFirstChain/Funs.lean",
+      "rust_name": "sandproof_first_chain_extract::operation_response",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 25, "end_line": 31 },
       "is_opaque": false,
       "can_fail": true,
       "can_diverge": false,
@@ -287,91 +402,55 @@
   ],
   "types": [
     {
-      "def_id": 26,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.Resources",
+      "def_id": 21,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleFact",
       "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::internal::lifecycle::Resources",
+      "rust_name": "sandproof_protocol::internal::lifecycle::LifecycleFact",
       "is_local": false,
       "source": {
         "file": "./sandbox-protocol/src/internal/lifecycle.rs",
-        "begin_line": 18,
-        "end_line": 18
+        "begin_line": 122,
+        "end_line": 122
+      }
+    },
+    {
+      "def_id": 10,
+      "lean_name": "SandproofFirstChainRust.sandproof_center_core.decision.ResponseDisposition",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_center_core::decision::ResponseDisposition",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-center-core/src/decision.rs",
+        "begin_line": 28,
+        "end_line": 28
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.InternalError",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::internal::InternalError",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal.rs",
+        "begin_line": 211,
+        "end_line": 211
+      }
+    },
+    {
+      "def_id": 9,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.PositiveCounter",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::internal::PositiveCounter",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal.rs",
+        "begin_line": 49,
+        "end_line": 49
       }
     },
     {
       "def_id": 25,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.ResourceId",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::ResourceId",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
-      }
-    },
-    {
-      "def_id": 19,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.CreateBinding",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::internal::lifecycle::CreateBinding",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
-        "begin_line": 63,
-        "end_line": 63
-      }
-    },
-    {
-      "def_id": 20,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.Intent",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::internal::lifecycle::Intent",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
-        "begin_line": 91,
-        "end_line": 91
-      }
-    },
-    {
-      "def_id": 14,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.OperationId",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::OperationId",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
-      }
-    },
-    {
-      "def_id": 13,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.SandboxId",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::SandboxId",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
-      }
-    },
-    {
-      "def_id": 12,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.TenantId",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::TenantId",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/lib.rs",
-        "begin_line": 66,
-        "end_line": 66
-      }
-    },
-    {
-      "def_id": 22,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.NodeId",
       "lean_file": "SandproofFirstChain/Types.lean",
       "rust_name": "sandproof_protocol::NodeId",
@@ -383,7 +462,7 @@
       }
     },
     {
-      "def_id": 21,
+      "def_id": 24,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.DeploymentId",
       "lean_file": "SandproofFirstChain/Types.lean",
       "rust_name": "sandproof_protocol::DeploymentId",
@@ -396,18 +475,6 @@
     },
     {
       "def_id": 15,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.PositiveCounter",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::internal::PositiveCounter",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 49,
-        "end_line": 49
-      }
-    },
-    {
-      "def_id": 11,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.NodeIdentity",
       "lean_file": "SandproofFirstChain/Types.lean",
       "rust_name": "sandproof_protocol::internal::NodeIdentity",
@@ -416,6 +483,42 @@
         "file": "./sandbox-protocol/src/internal.rs",
         "begin_line": 89,
         "end_line": 89
+      }
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.OperationId",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::OperationId",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 66,
+        "end_line": 66
+      }
+    },
+    {
+      "def_id": 17,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.SandboxId",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::SandboxId",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 66,
+        "end_line": 66
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.TenantId",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::TenantId",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 66,
+        "end_line": 66
       }
     },
     {
@@ -431,30 +534,6 @@
       }
     },
     {
-      "def_id": 6,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleRequest",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::internal::lifecycle::LifecycleRequest",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
-        "begin_line": 102,
-        "end_line": 102
-      }
-    },
-    {
-      "def_id": 18,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleFact",
-      "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::internal::lifecycle::LifecycleFact",
-      "is_local": false,
-      "source": {
-        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
-        "begin_line": 122,
-        "end_line": 122
-      }
-    },
-    {
       "def_id": 5,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleResponse",
       "lean_file": "SandproofFirstChain/Types.lean",
@@ -467,21 +546,93 @@
       }
     },
     {
-      "def_id": 4,
-      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.InternalError",
+      "def_id": 23,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.Intent",
       "lean_file": "SandproofFirstChain/Types.lean",
-      "rust_name": "sandproof_protocol::internal::InternalError",
+      "rust_name": "sandproof_protocol::internal::lifecycle::Intent",
       "is_local": false,
       "source": {
-        "file": "./sandbox-protocol/src/internal.rs",
-        "begin_line": 211,
-        "end_line": 211
+        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 91,
+        "end_line": 91
+      }
+    },
+    {
+      "def_id": 28,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.ResourceId",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::ResourceId",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/lib.rs",
+        "begin_line": 66,
+        "end_line": 66
+      }
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.Resources",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::internal::lifecycle::Resources",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 18,
+        "end_line": 18
+      }
+    },
+    {
+      "def_id": 22,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.CreateBinding",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::internal::lifecycle::CreateBinding",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 63,
+        "end_line": 63
+      }
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleRequest",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_protocol::internal::lifecycle::LifecycleRequest",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 102,
+        "end_line": 102
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "SandproofFirstChainRust.sandproof_center_core.model.Operation",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_center_core::model::Operation",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-center-core/src/model.rs",
+        "begin_line": 105,
+        "end_line": 105
+      }
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofFirstChainRust.sandproof_center_core.model.DecisionError",
+      "lean_file": "SandproofFirstChain/Types.lean",
+      "rust_name": "sandproof_center_core::model::DecisionError",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-center-core/src/model.rs",
+        "begin_line": 10,
+        "end_line": 10
       }
     }
   ],
   "globals": [
     {
-      "def_id": 10,
+      "def_id": 11,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.INTERNAL_PROTOCOL_VERSION",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION",
@@ -497,7 +648,7 @@
   "trait_decls": [],
   "trait_impls": [
     {
-      "def_id": 14,
+      "def_id": 15,
       "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity",
       "lean_file": "SandproofFirstChain/Funs.lean",
       "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}",
@@ -521,6 +672,21 @@
         "file": "./sandbox-protocol/src/internal.rs",
         "begin_line": 98,
         "end_line": 98
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofFirstChainRust.sandproof_protocol.internal.lifecycle.LifecycleResponse.Insts.CoreCmpPartialEqLifecycleResponse",
+      "lean_file": "SandproofFirstChain/Funs.lean",
+      "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::LifecycleResponse> for sandproof_protocol::internal::lifecycle::LifecycleResponse}",
+      "is_local": false,
+      "source": {
+        "file": "./sandbox-protocol/src/internal/lifecycle.rs",
+        "begin_line": 139,
+        "end_line": 139
       },
       "impl_trait_def_id": 6,
       "impl_trait_rust_name": "core::cmp::PartialEq",

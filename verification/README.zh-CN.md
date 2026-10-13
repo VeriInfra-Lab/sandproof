@@ -19,7 +19,7 @@ Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两�
 - `aeneas/generated/SandboxControllerCore/`：Aeneas 生成的 Lean 类型和函数；
 - `extract-foundations/`：仅调用生产函数的公共基础抽取根，不复制业务算法；
 - `aeneas/foundations/`：公共基础的生成语义和独立命名空间的最小库模型；
-- `extract-first-chain/`、`aeneas/first-chain/`：Linux 实际身份/生命周期回执检查根及其自然生成语义；
+- `extract-first-chain/`、`aeneas/first-chain/`：Linux 实际身份、生命周期回执检查及生产中心分类根；不代表完整中心状态更新已抽取或已证明；
 - `extract-network/` 与 `aeneas/network/`：共享当前完整 Rust 类型的真实调用根与固定库模型，包含网络判断/准入、World 克隆/初始化、纯可用标志切换与资源位置转换；保留原目录名，不表示完整控制器输入已覆盖；
 - `SandboxModel/Access/`：当前查询/相等/克隆、按序网络准入、完整状态保持及历史两模式策略嵌入；
 - `SandboxModel/Foundations/`：公共身份/数值、有限表查询与写入对应，以及可复用的有限扫描、值保持克隆和参数化修改范围引理；

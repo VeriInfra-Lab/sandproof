@@ -71,7 +71,7 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 
 真实标准库符合该可计算模型是显式外部条件，源级审查和边界对照测试不是标准库实现的形式化证明；不以自定义公理或不透明的成功模板消除自有义务。解析器接受 `0.0.0.0` 或私有地址也不意味着允许访问。自有 CIDR 掩码及合法性、固定平台禁止表、解析失败和非单地址请求的拒绝、平台禁止 → 用户允许 → 用户拒绝 → 默认联网值的短路顺序，仍由本批自有实现对应证明提供。真实宿主规则安装、动态宿主地址排除、全部出口覆盖和授权/当前实例绑定属于后续模块连接，不置于本库合同。本合同无 I/O、DNS 查询、规则安装或 Ready/Cleaned/Committed 证据，不扩大为整个标准库或网络实现已验证。
 
-#342 的 Linux 回执检查单独登记 [FunsExternal](../../verification/aeneas/first-chain/SandproofFirstChain/FunsExternal.lean)：字符串比较沿用上述完整字符串相等合同；另提供固定前端的 Option 逻辑枚举标签模型，None 为 0、Some 为 1。标签模型描述编译器中间表示，不承诺原生内存布局。Option 相等函数本身已从同版 Rust 标准库抽取真实函数体，并证明其 u64 实例对应完整可选值相等；不是外部相等公理。库标签/字符串、内置整数及翻译器的剩余可信责任仍显式保留，不能把这一局部定理称为标准库或编译器已验证。版本及摘要见 [Linux 环境清单](../../verification/first-chain-linux-environment.json)与[输入摘要](../../verification/first-chain-linux-inputs.sha256)，不覆盖 V0 的 Mac 清单。
+#342 的 Linux 回执检查及中心分类单独登记 [FunsExternal](../../verification/aeneas/first-chain/SandproofFirstChain/FunsExternal.lean)：字符串比较和 Option 共享借用沿用 V0 的完整相等/借用合同；另提供固定前端的 Option 逻辑枚举标签模型，None 为 0、Some 为 1。标签模型描述编译器中间表示，不承诺原生内存布局。Option 相等函数本身从同版 Rust 标准库抽取真实函数体；u64 以及完整回执的实际相等字典分别由对应定理连接，不用外部相等公理。中心事实等级、协议事实/回执相等和判定算法保留自有透明函数体；错误映射使用生产代码内的显式匹配，共享引用相等使用固定 Aeneas 后端的具体模型。库标签/字符串/借用、内置模型及翻译器的剩余可信责任仍显式保留，不能称标准库或编译器已验证。版本及摘要见 [Linux 环境清单](../../verification/first-chain-linux-environment.json)与[输入摘要](../../verification/first-chain-linux-inputs.sha256)；V0 环境由其冻结快照接入，不静默覆盖原记录。
 
 ## 精确条款
 

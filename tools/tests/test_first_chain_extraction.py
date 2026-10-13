@@ -15,10 +15,18 @@ class FirstChainExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/first-chain/translation.json').read_text())
 
     def test_real_linux_roots_and_option_body(self):
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 2)
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), 3)
+
+    def test_unfrozen_output_destination_is_rejected(self):
+        for destination in ('/different-checkout/output.llbc', 'unreviewed.llbc'):
+            llbc = copy.deepcopy(self.llbc)
+            llbc['translated']['options']['dest_file'] = destination
+            with self.assertRaisesRegex(ValueError, 'artifact destination'):
+                check(ROOT, llbc, self.inventory)
 
     def test_missing_root_or_option_cannot_pass(self):
-        for name in ('sandproof_first_chain_extract::lifecycle_response', OPTION_EQ):
+        for name in ('sandproof_first_chain_extract::lifecycle_response',
+                     'sandproof_first_chain_extract::operation_response', OPTION_EQ):
             inventory = copy.deepcopy(self.inventory)
             inventory['functions'] = [f for f in inventory['functions'] if f['rust_name'] != name]
             with self.assertRaisesRegex(ValueError, 'missing from inventory'):
@@ -31,10 +39,20 @@ class FirstChainExtractionTests(unittest.TestCase):
             check(ROOT, self.llbc, inventory)
 
     def test_nonroot_owned_function_cannot_disappear(self):
+        for name in ('sandproof_protocol::internal::validate_version',
+                     'sandproof_center_core::decision::fact_rank'):
+            inventory = copy.deepcopy(self.inventory)
+            inventory['functions'] = [f for f in inventory['functions'] if f['rust_name'] != name]
+            with self.assertRaisesRegex(ValueError, 'owned LLBC function omitted'):
+                check(ROOT, self.llbc, inventory)
+
+    def test_center_classifier_cannot_become_an_opaque_assumption(self):
         inventory = copy.deepcopy(self.inventory)
-        name = 'sandproof_protocol::internal::validate_version'
-        inventory['functions'] = [f for f in inventory['functions'] if f['rust_name'] != name]
-        with self.assertRaisesRegex(ValueError, 'owned LLBC function omitted'):
+        function = next(f for f in inventory['functions']
+                        if f['rust_name'].startswith('sandproof_center_core::')
+                        and f['rust_name'].endswith('::classify_response'))
+        function['is_opaque'] = True
+        with self.assertRaisesRegex(ValueError, 'unreviewed external surface'):
             check(ROOT, self.llbc, inventory)
 
     def test_protocol_constant_and_initializer_cannot_disappear(self):

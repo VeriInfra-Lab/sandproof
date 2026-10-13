@@ -9,3 +9,4 @@ publish = false
 
 [dependencies]
 sandproof-protocol = { path = "../../sandbox-protocol" }
+sandproof-center-core = { path = "../../sandbox-center-core" }
