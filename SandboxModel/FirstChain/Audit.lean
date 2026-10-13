@@ -1,53 +1,61 @@
 import SandboxModel.FirstChain.Scenarios
-import Lean.Util.CollectAxioms
-import Lean.Elab.Command
+import SandboxModel.FirstChain.Identity
+import SandboxModel.ProofAuditCommand
 
-/-! Enumerate this batch's actual proofs; not an implementation-coverage claim. -/
-open Lean Elab Command
+/-! Audit every declared first-chain theorem through the shared V0 checker.
+    Includes the extracted identity guard and conditional delivery contract;
+    full lifecycle response handling and system refinement remain open. -/
 
-run_cmd do
-  let names : Array Name := #[
-    ``SandboxModel.FirstChain.empty_safe,
-    ``SandboxModel.FirstChain.advance_safe,
-    ``SandboxModel.FirstChain.advance_fact_mono,
-    ``SandboxModel.FirstChain.advance_terminal_mono,
-    ``SandboxModel.FirstChain.potential_has_responsibility,
-    ``SandboxModel.FirstChain.release_requires_quiescence,
-    ``SandboxModel.FirstChain.terminal_blocks_receive,
-    ``SandboxModel.FirstChain.terminal_blocks_acquire,
-    ``SandboxModel.FirstChain.fence_blocks_effect,
-    ``SandboxModel.FirstChain.no_second_claim,
-    ``SandboxModel.FirstChain.initial_invariant,
-    ``SandboxModel.FirstChain.afterAction_invariant,
-    ``SandboxModel.FirstChain.step_invariant,
-    ``SandboxModel.FirstChain.reachable_invariant,
-    ``SandboxModel.FirstChain.reachable_responsibility,
-    ``SandboxModel.FirstChain.reachable_release,
-    ``SandboxModel.FirstChain.other_binding_unchanged,
-    ``SandboxModel.FirstChain.restart_not_dispatch_ready,
-    ``SandboxModel.FirstChain.step_terminal_mono,
-    ``SandboxModel.FirstChain.crash_center_preserves_records,
-    ``SandboxModel.FirstChain.crash_node_preserves_resources,
-    ``SandboxModel.FirstChain.startup_example,
-    ``SandboxModel.FirstChain.pending_is_not_failure,
-    ``SandboxModel.FirstChain.live_lease_blocks_release,
-    ``SandboxModel.FirstChain.completed_cleanup_example,
-    ``SandboxModel.FirstChain.terminal_first_rejects_late_create,
-    ``SandboxModel.FirstChain.stopped_does_not_mean_cleaned,
-    ``SandboxModel.FirstChain.lost_reply_and_crash_reachable,
-    ``SandboxModel.FirstChain.confirmed_write_reply_may_be_lost,
-    ``SandboxModel.FirstChain.premature_release_counterexample,
-    ``SandboxModel.FirstChain.invented_ready_counterexample,
-    ``SandboxModel.FirstChain.original_ready_recoverable,
-    ``SandboxModel.FirstChain.receipt_is_not_admission,
-    ``SandboxModel.FirstChain.retained_reference_blocks_release]
-  let allowed : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
-  for name in names do
-    match ← getConstInfo name with
-    | .thmInfo _ => pure ()
-    | _ => throwError "Expected theorem: {name}"
-    let dependencies ← collectAxioms name
-    for dependency in dependencies do
-      unless allowed.contains dependency do
-        throwError "Unapproved dependency {dependency} in {name}"
-  logInfo m!"Checked {names.size} first-chain model theorems; no Rust refinement claimed."
+#audit_controller_proof SandboxModel.FirstChain.empty_safe
+#audit_controller_proof SandboxModel.FirstChain.advance_safe
+#audit_controller_proof SandboxModel.FirstChain.advance_fact_mono
+#audit_controller_proof SandboxModel.FirstChain.advance_terminal_mono
+#audit_controller_proof SandboxModel.FirstChain.potential_has_responsibility
+#audit_controller_proof SandboxModel.FirstChain.release_requires_quiescence
+#audit_controller_proof SandboxModel.FirstChain.terminal_blocks_receive
+#audit_controller_proof SandboxModel.FirstChain.terminal_blocks_acquire
+#audit_controller_proof SandboxModel.FirstChain.fence_blocks_effect
+#audit_controller_proof SandboxModel.FirstChain.no_second_claim
+#audit_controller_proof SandboxModel.FirstChain.initial_invariant
+#audit_controller_proof SandboxModel.FirstChain.afterAction_invariant
+#audit_controller_proof SandboxModel.FirstChain.step_invariant
+#audit_controller_proof SandboxModel.FirstChain.reachable_invariant
+#audit_controller_proof SandboxModel.FirstChain.reachable_responsibility
+#audit_controller_proof SandboxModel.FirstChain.reachable_release
+#audit_controller_proof SandboxModel.FirstChain.other_binding_unchanged
+#audit_controller_proof SandboxModel.FirstChain.restart_not_dispatch_ready
+#audit_controller_proof SandboxModel.FirstChain.step_terminal_mono
+#audit_controller_proof SandboxModel.FirstChain.crash_center_preserves_records
+#audit_controller_proof SandboxModel.FirstChain.crash_node_preserves_resources
+#audit_controller_proof SandboxModel.FirstChain.startup_example
+#audit_controller_proof SandboxModel.FirstChain.pending_is_not_failure
+#audit_controller_proof SandboxModel.FirstChain.live_lease_blocks_release
+#audit_controller_proof SandboxModel.FirstChain.completed_cleanup_example
+#audit_controller_proof SandboxModel.FirstChain.terminal_first_rejects_late_create
+#audit_controller_proof SandboxModel.FirstChain.stopped_does_not_mean_cleaned
+#audit_controller_proof SandboxModel.FirstChain.lost_reply_and_crash_reachable
+#audit_controller_proof SandboxModel.FirstChain.confirmed_write_reply_may_be_lost
+#audit_controller_proof SandboxModel.FirstChain.premature_release_counterexample
+#audit_controller_proof SandboxModel.FirstChain.invented_ready_counterexample
+#audit_controller_proof SandboxModel.FirstChain.original_ready_recoverable
+#audit_controller_proof SandboxModel.FirstChain.receipt_is_not_admission
+#audit_controller_proof SandboxModel.FirstChain.retained_reference_blocks_release
+#audit_controller_proof SandboxModel.FirstChain.identity_acceptance_refines
+#audit_controller_proof SandboxModel.FirstChain.identity_acceptance_iff
+#audit_controller_proof SandboxModel.FirstChain.identity_preserves_full_binding
+#audit_controller_proof SandboxModel.FirstChain.identity_preserves_instance
+#audit_controller_proof SandboxModel.FirstChain.identity_preserves_operation_fields
+#audit_controller_proof SandboxModel.FirstChain.identity_mismatch_rejected
+#audit_controller_proof SandboxModel.FirstChain.identity_cross_instance_rejected
+#audit_controller_proof SandboxModel.FirstChain.identity_old_window_rejected
+#audit_controller_proof SandboxModel.FirstChain.identity_old_intent_rejected
+#audit_controller_proof SandboxModel.FirstChain.instance_key_survives_operation_change
+#audit_controller_proof SandboxModel.FirstChain.identity_self_acceptance
+#audit_controller_proof SandboxModel.FirstChain.identity_acceptance_nonempty
+#audit_controller_proof SandboxModel.FirstChain.identity_delivery_refines
+#audit_controller_proof SandboxModel.FirstChain.identity_delivery_invariant
+#audit_controller_proof SandboxModel.FirstChain.identity_delivery_reachable
+#audit_controller_proof SandboxModel.FirstChain.identity_delivery_rejection_keeps_state
+#audit_controller_proof SandboxModel.FirstChain.identity_delivery_preserves_other_instance
+#audit_controller_proof SandboxModel.FirstChain.identity_late_ready_cannot_update
+#audit_controller_proof SandboxModel.FirstChain.identity_delivery_release_quiescent
