@@ -1,0 +1,457 @@
+{
+  "aeneas_version": "505b6ca3",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_network_extract",
+  "functions": [
+    {
+      "def_id": 27,
+      "lean_name": "U32.Insts.CoreConvertFromIpv4Addr.from",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::net::ip_addr::{impl core::convert::From<core::net::ip_addr::Ipv4Addr> for u32}::from",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/ip_addr.rs",
+        "begin_line": 1308,
+        "end_line": 1308
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 35,
+      "lean_name": "core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError.from_str",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::net::parser::{impl core::str::traits::FromStr<core::net::parser::AddrParseError> for core::net::ip_addr::Ipv4Addr}::from_str",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/parser.rs",
+        "begin_line": 340,
+        "end_line": 340
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "core.str.Str.parse",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "core::str::{str}::parse",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/mod.rs",
+        "begin_line": 2782,
+        "end_line": 2782
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 42,
+      "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 350,
+        "end_line": 350
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 30,
+      "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+      "lean_file": "SandproofNetwork/FunsExternal_Template.lean",
+      "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/alloc/src/string.rs",
+        "begin_line": 2859,
+        "end_line": 2859
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 43,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 67,
+        "end_line": 67
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 41,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}::eq",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr.contains",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::Ipv4Cidr}::contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 107,
+        "end_line": 107
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains_loop.body",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::ipv4_list_contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 144,
+        "end_line": 151
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains"
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains_loop",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::ipv4_list_contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 144,
+        "end_line": 151
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains"
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.ipv4_list_contains",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::ipv4_list_contains",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 142,
+        "end_line": 142
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.platform_protected_ipv4",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::platform_protected_ipv4",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 136,
+        "end_line": 136
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed_loop.body",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 163,
+        "end_line": 168
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed"
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed_loop",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 163,
+        "end_line": 168
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed"
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.NetworkPolicy.destination_allowed",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::{sandbox_controller_core::model::NetworkPolicy}::destination_allowed",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 157,
+        "end_line": 157
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofNetworkRust.cidr_contains",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::cidr_contains",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 4, "end_line": 6 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofNetworkRust.protected_ipv4",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::protected_ipv4",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 8, "end_line": 10 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofNetworkRust.destination_allowed",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::destination_allowed",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 12, "end_line": 14 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofNetworkRust.parse_ipv4_bits",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandproof_network_extract::parse_ipv4_bits",
+      "is_local": true,
+      "source": { "file": "src/lib.rs", "begin_line": 16, "end_line": 21 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 8,
+      "lean_name": "core.net.ip_addr.Ipv4Addr",
+      "lean_file": "SandproofNetwork/TypesExternal_Template.lean",
+      "rust_name": "core::net::ip_addr::Ipv4Addr",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/ip_addr.rs",
+        "begin_line": 74,
+        "end_line": 74
+      }
+    },
+    {
+      "def_id": 9,
+      "lean_name": "core.net.parser.AddrParseError",
+      "lean_file": "SandproofNetwork/TypesExternal_Template.lean",
+      "rust_name": "core::net::parser::AddrParseError",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/parser.rs",
+        "begin_line": 487,
+        "end_line": 487
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Protocol",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Protocol",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 4,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Endpoint",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 76,
+        "end_line": 76
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Ipv4Cidr",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::Ipv4Cidr",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 99,
+        "end_line": 99
+      }
+    },
+    {
+      "def_id": 3,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.NetworkPolicy",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "sandbox_controller_core::model::NetworkPolicy",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 85,
+        "end_line": 85
+      }
+    }
+  ],
+  "globals": [
+    {
+      "def_id": 7,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.network.PLATFORM_DENY_IPV4",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::network::PLATFORM_DENY_IPV4",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/network.rs",
+        "begin_line": 9,
+        "end_line": 9
+      },
+      "can_fail": false
+    }
+  ],
+  "trait_decls": [
+    {
+      "def_id": 4,
+      "lean_name": "SandproofNetworkRust.core.str.traits.FromStr",
+      "lean_file": "SandproofNetwork/Types.lean",
+      "rust_name": "core::str::traits::FromStr",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/str/traits.rs",
+        "begin_line": 868,
+        "end_line": 868
+      }
+    }
+  ],
+  "trait_impls": [
+    {
+      "def_id": 6,
+      "lean_name": "SandproofNetworkRust.core.net.ip_addr.Ipv4Addr.Insts.CoreStrTraitsFromStrAddrParseError",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "core::net::parser::{impl core::str::traits::FromStr<core::net::parser::AddrParseError> for core::net::ip_addr::Ipv4Addr}",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/net/parser.rs",
+        "begin_line": 338,
+        "end_line": 338
+      },
+      "impl_trait_def_id": 4,
+      "impl_trait_rust_name": "core::str::traits::FromStr",
+      "impl_trait_is_builtin": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofNetworkRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint",
+      "lean_file": "SandproofNetwork/Funs.lean",
+      "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}",
+      "is_local": false,
+      "source": {
+        "file": "./controller-core/src/model.rs",
+        "begin_line": 74,
+        "end_line": 74
+      },
+      "impl_trait_def_id": 6,
+      "impl_trait_rust_name": "core::cmp::PartialEq",
+      "impl_trait_is_builtin": true
+    }
+  ]
+}

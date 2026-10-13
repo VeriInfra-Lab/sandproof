@@ -26,6 +26,7 @@ cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 bash scripts/verify-foundations.sh
+bash scripts/verify-network.sh
 scripts/regenerate-rust-lean.sh
 
 shasum -a 256 "${GENERATED_FILES[@]}" > "$AFTER_HASHES"

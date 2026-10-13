@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "source_anchor": "c7d1afd316d825442492c9012baf236def7d5984",
+  "source_identity": "verification/network-inputs.sha256",
+  "target": "aarch64-apple-darwin",
+  "features": [],
+  "roots": [
+    "cidr_contains",
+    "protected_ipv4",
+    "destination_allowed",
+    "parse_ipv4_bits"
+  ],
+  "cfg": [
+    "debug_assertions",
+    "fmt_debug=\"full\"",
+    "overflow_checks",
+    "panic=\"unwind\"",
+    "relocation_model=\"pic\"",
+    "target_abi=\"\"",
+    "target_arch=\"aarch64\"",
+    "target_endian=\"little\"",
+    "target_env=\"\"",
+    "target_family=\"unix\"",
+    "target_feature=\"aes\"",
+    "target_feature=\"crc\"",
+    "target_feature=\"dit\"",
+    "target_feature=\"dotprod\"",
+    "target_feature=\"dpb\"",
+    "target_feature=\"dpb2\"",
+    "target_feature=\"fcma\"",
+    "target_feature=\"fhm\"",
+    "target_feature=\"flagm\"",
+    "target_feature=\"flagm2\"",
+    "target_feature=\"fp16\"",
+    "target_feature=\"frintts\"",
+    "target_feature=\"jsconv\"",
+    "target_feature=\"lor\"",
+    "target_feature=\"lse\"",
+    "target_feature=\"lse2\"",
+    "target_feature=\"neon\"",
+    "target_feature=\"paca\"",
+    "target_feature=\"pacg\"",
+    "target_feature=\"pan\"",
+    "target_feature=\"pmuv3\"",
+    "target_feature=\"ras\"",
+    "target_feature=\"rcpc\"",
+    "target_feature=\"rcpc2\"",
+    "target_feature=\"rdm\"",
+    "target_feature=\"sb\"",
+    "target_feature=\"sha2\"",
+    "target_feature=\"sha3\"",
+    "target_feature=\"ssbs\"",
+    "target_feature=\"v8.1a\"",
+    "target_feature=\"v8.2a\"",
+    "target_feature=\"v8.3a\"",
+    "target_feature=\"v8.4a\"",
+    "target_feature=\"vh\"",
+    "target_has_atomic",
+    "target_has_atomic=\"128\"",
+    "target_has_atomic=\"16\"",
+    "target_has_atomic=\"32\"",
+    "target_has_atomic=\"64\"",
+    "target_has_atomic=\"8\"",
+    "target_has_atomic=\"ptr\"",
+    "target_has_atomic_load_store",
+    "target_has_atomic_load_store=\"128\"",
+    "target_has_atomic_load_store=\"16\"",
+    "target_has_atomic_load_store=\"32\"",
+    "target_has_atomic_load_store=\"64\"",
+    "target_has_atomic_load_store=\"8\"",
+    "target_has_atomic_load_store=\"ptr\"",
+    "target_has_atomic_primitive_alignment=\"128\"",
+    "target_has_atomic_primitive_alignment=\"16\"",
+    "target_has_atomic_primitive_alignment=\"32\"",
+    "target_has_atomic_primitive_alignment=\"64\"",
+    "target_has_atomic_primitive_alignment=\"8\"",
+    "target_has_atomic_primitive_alignment=\"ptr\"",
+    "target_has_reliable_f128",
+    "target_has_reliable_f16",
+    "target_has_reliable_f16_math",
+    "target_has_threads",
+    "target_object_format=\"mach-o\"",
+    "target_os=\"macos\"",
+    "target_pointer_width=\"64\"",
+    "target_thread_local",
+    "target_vendor=\"apple\"",
+    "ub_checks",
+    "unix"
+  ],
+  "rustflags": [
+    "--remap-path-prefix=<checkout>=."
+  ],
+  "production_compiler": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "extraction_compiler": "rustc 1.100.0-nightly (8fa1c96cf 2026-08-17)",
+  "extraction_frontend": "nightly-2026-08-18",
+  "compile_mode": [
+    "lib",
+    "not(test)"
+  ],
+  "charon": {
+    "revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+    "binary_sha256": "ea69c1c90e3fc2ca3420cb1303e0f2bb2b1c617fc97794d103746afe34308b40"
+  },
+  "aeneas": {
+    "revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+    "binary_sha256": "88e658a0876bb0911477f3743db148fc7e3c0db5840dde393876bd1767790466"
+  },
+  "lean": "4.31.0",
+  "standard_library": {
+    "production": {
+      "compiler_commit": "2d8144b7880597b6e6d3dfd63a9a9efae3f533d3",
+      "sources": {
+        "core/src/net/parser.rs": "49857a0f2d7bdfede62c5a33aef404bdc65ab6cefd7668e9ce52193aab95b600",
+        "core/src/net/ip_addr.rs": "e41b5cbaeeeb7892161d25dcd07cf2deb8a591d55c14ae5f4221db06c4a4cd1f",
+        "alloc/src/string.rs": "68d7464cc83b0064bac9b600b72b4feb7c90eb5efc92def549b7eb586c6537ed",
+        "core/src/str/mod.rs": "2c90ff097999f139148ef065c428c35a07807d8b38535ce5e2b43d65ad0deaae"
+      }
+    },
+    "extraction": {
+      "compiler_commit": "8fa1c96cfd489e4c27654c144ae871ce2c4db6c6",
+      "sources": {
+        "core/src/net/parser.rs": "e6f6b332a3cf5860c5e193f3496435ed0f1971e6ce0932df15ecd16688b61c3e",
+        "core/src/net/ip_addr.rs": "37ad9ed47863d58e0ce75a9e91c25c7fb104d02ac923c2eb8b9c7081149cc230",
+        "alloc/src/string.rs": "525acea77c51de51eae6457674dd6942adb5aca1580de26d2e25d24d8f0b5bb8",
+        "core/src/str/mod.rs": "f03f33d0e9c37226a2b31b112207b7e430a1e7e73b7d35fb2690b39da57645d5"
+      }
+    }
+  },
+  "external_contracts": [
+    "A6-network-stdlib",
+    "toolchain-translation"
+  ],
+  "library_scope": [
+    "String exact equality and UTF-8 bytes via deref",
+    "FromStr dictionary dispatch for str::parse",
+    "strict four-octet IPv4 parse, ordinary Err is not an outer execution failure",
+    "IPv4 to u32 is big-endian octet packing independent of host endianness",
+    "AddrParseError is an observational quotient only for Err wildcard matching"
+  ],
+  "excludes": [
+    "proof of Rust standard library or compiler implementation",
+    "SDK network normalization/sorting/deduplication",
+    "full controller egress authorization and state frame",
+    "host firewall/network isolation implementation",
+    "IPv6 and DNS policies",
+    "full controller acceptance"
+  ]
+}

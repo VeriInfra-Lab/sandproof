@@ -19,6 +19,7 @@ Aeneas 抽取得到的 Lean 语义。已有纯核心的一致性定理比较两�
 - `aeneas/generated/SandboxControllerCore/`：Aeneas 生成的 Lean 类型和函数；
 - `extract-foundations/`：仅调用生产函数的公共基础抽取根，不复制业务算法；
 - `aeneas/foundations/`：公共基础的生成语义和独立命名空间的最小库模型；
+- `extract-network/` 与 `aeneas/network/`：调用生产网络判断的抽取根、生成语义及固定 IPv4 库模型；
 - `SandboxModel/RustRefinement/`：生成语义与协议规范之间的表示关系和一致性证明。
 
 `FunsExternal.lean` 是少量 Rust 标准库函数的可计算模型。Aeneas 同时会
@@ -40,6 +41,8 @@ scripts/verify-controller.sh
 编译全部 Lean 定理，并拒绝 `sorry`、`admit` 或项目自定义 `axiom`。
 
 公共基础可独立执行 `bash scripts/verify-foundations.sh`：检查输入指纹、固定工具与平台、重新抽取一致性、真实入口/全部自有函数体、库模型范围、定理编译和实际依赖。冻结环境见 [foundations-environment.json](foundations-environment.json)，源码/模型/脚本/生成输入摘要见 [foundations-inputs.sha256](foundations-inputs.sha256)。独立模块检查不替代完整验收；完整入口仍执行原本地控制核心检查，不跳过其失败。独立工作区可用 `SANDPROOF_PROOF_TOOL_ROOT` 指向已有固定工具，修订和二进制摘要仍需匹配，不改变工具版本。
+
+网络判断可独立执行 `bash scripts/verify-network.sh`：额外检查真实循环/平台常量及初始化体、固定两版 Rust 标准库源码和最小外部接口。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，但不会因此跳过历史本地控制核心的一致性和全部证明检查；网络判断不等于出口授权或宿主防火墙已验证。
 
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
 见证明覆盖记录。已有纯核心定理不自动覆盖新增服务或真实持久化与执行。

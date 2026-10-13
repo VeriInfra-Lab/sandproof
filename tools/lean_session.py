@@ -28,15 +28,21 @@ def revision(arguments):
     if not path.is_relative_to(ROOT):
         raise ValueError("Proof files must remain inside this project.")
     sources = sorted((ROOT / "SandboxModel").rglob("*.lean"))
-    sources += sorted((ROOT / "verification/aeneas/generated").rglob("*.lean"))
+    # Include every extraction library, not just the historical controller.
+    sources += sorted((ROOT / "verification/aeneas").rglob("*.lean"))
     fingerprint = hashlib.sha256()
     for source in sources:
-        fingerprint.update(str(source.relative_to(ROOT)).encode())
-        fingerprint.update(source.read_bytes())
+        name = str(source.relative_to(ROOT)).encode()
+        # Frame each entry; raw path/content concatenation permits different
+        # file collections to have identical hash inputs without a SHA collision.
+        fingerprint.update(len(name).to_bytes(8, "big"))
+        fingerprint.update(name)
+        fingerprint.update(hashlib.sha256(source.read_bytes()).digest())
     return {
         "file_sha256": digest(path),
         "sources_sha256": fingerprint.hexdigest(),
         "toolchain": (ROOT / "lean-toolchain").read_text().strip(),
+        "lakefile_sha256": digest(ROOT / "lakefile.toml"),
         "manifest_sha256": digest(ROOT / "lake-manifest.json"),
         "server_version": importlib.metadata.version("lean-lsp-mcp"),
         "client_version": importlib.metadata.version("leanclient"),
