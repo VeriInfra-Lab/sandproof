@@ -50,13 +50,15 @@ fn real_metadata_preserves_link_attributes_and_target_type() {
     let file = dir.path().join("snow 雪 ");
     let link = dir.path().join("link");
     fs::write(&file, b"\x00\xffabc").unwrap();
-    fs::set_permissions(&file, fs::Permissions::from_mode(0o6750)).unwrap();
+    // Ordinary CI forbids creating SUID/SGID files. Special-bit formatting
+    // has fixed-Go unit vectors; the opt-in Go comparison also stats real bits.
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o750)).unwrap();
     symlink(file.file_name().unwrap(), &link).unwrap();
     let normal = stat(&file);
     let linked = stat(&link);
     assert_eq!(normal.size, 5);
     assert_eq!(normal.name, "snow 雪 ");
-    assert_eq!(normal.permissions, "ugrwxr-x---");
+    assert_eq!(normal.permissions, "-rwxr-x---");
     assert_eq!(linked.kind, FileType::File);
     assert_eq!(linked.mode, 0o750);
     assert_eq!(linked.permissions, "Lrwxrwxrwx");

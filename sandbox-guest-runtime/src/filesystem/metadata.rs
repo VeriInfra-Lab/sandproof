@@ -168,3 +168,27 @@ fn xattrs(path: &Path, limit: usize) -> Result<BTreeMap<String, String>, FileErr
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::permissions;
+
+    #[test]
+    fn permission_strings_match_fixed_go_mode_vectors_without_privileged_inodes() {
+        // Expected strings checked against Go 1.26.8 io/fs.FileMode.String.
+        // Creating SUID/SGID/device inodes is forbidden in ordinary CI; these
+        // vectors validate formatting, not actual kernel permission changes.
+        for (mode, expected) in [
+            (0o100_000, "----------"),
+            (0o106_750, "ugrwxr-x---"),
+            (0o041_777, "dtrwxrwxrwx"),
+            (0o026_666, "Dugcrw-rw-rw-"),
+            (0o060_640, "Drw-r-----"),
+            (0o010_600, "prw-------"),
+            (0o140_600, "Srw-------"),
+            (0o120_777, "Lrwxrwxrwx"),
+        ] {
+            assert_eq!(permissions(mode), expected, "mode {mode:o}");
+        }
+    }
+}
