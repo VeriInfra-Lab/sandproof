@@ -17,6 +17,15 @@ EXTERNALS = {
     "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
 }
 
+# A public root cannot disappear by removing it from both the Rust adapter and
+# extraction script. Each expansion is an explicit, reviewed coverage change.
+ROOTS = {
+    "counter_from_u64", "counter_next", "counter_value", "lane_current",
+    "store_get_copy", "store_put", "resource_add", "resource_positive",
+    "resource_fits", "create_binding_valid", "identity_response",
+    "retry_hint", "outcome_observation",
+}
+
 
 def llbc_digest(llbc):
     # Charon serializes its short-name HashMap as an unordered key/value list.
@@ -45,7 +54,8 @@ def check(root, llbc, inventory):
     roots = re.findall(r'--start-from crate::([a-z0-9_]+)', script)
     source = (root / 'verification/extract-foundations/src/lib.rs').read_text()
     public = re.findall(r'pub fn ([a-z0-9_]+)\(', source)
-    if not roots or len(roots) != len(set(roots)) or set(roots) != set(public):
+    if (len(roots) != len(set(roots)) or len(public) != len(set(public))
+            or set(roots) != ROOTS or set(public) != ROOTS):
         raise ValueError('free production-call roots and script disagree')
     functions = inventory['functions']
     # Aeneas emits the parent, loop wrapper and loop body under ONE Rust name.

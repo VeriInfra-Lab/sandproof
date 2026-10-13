@@ -16,6 +16,14 @@ def tableLookup [DecidableEq K] (key : K) : List (K × V) → Option V
   | [] => none
   | (stored, value) :: rest => if key = stored then some value else tableLookup key rest
 
+-- Replace the first matching row, or append one new row at the end. Later
+-- duplicate rows and list order remain visible; uniqueness is not assumed.
+def tablePut [DecidableEq K] (key : K) (value : V) : List (K × V) → List (K × V)
+  | [] => [(key, value)]
+  | (stored, old) :: rest =>
+    if stored = key then (stored, value) :: rest
+    else (stored, old) :: tablePut key value rest
+
 structure ResourceVector where
   instances : Nat
   cpu : Nat
