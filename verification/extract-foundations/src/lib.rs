@@ -22,6 +22,10 @@ pub fn lane_current(lane: &sandproof_center_core::RetentionLane) -> Option<Posit
     lane.current()
 }
 
+pub fn store_get_copy(store: &sandbox_controller_core::Store<u64, u64>, key: u64) -> Option<u64> {
+    store.get_copy(&key)
+}
+
 pub fn resource_add(left: Resources, right: Resources) -> Option<Resources> {
     left.checked_add(right)
 }

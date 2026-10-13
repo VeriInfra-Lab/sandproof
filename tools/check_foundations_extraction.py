@@ -48,9 +48,38 @@ def check(root, llbc, inventory):
     if not roots or len(roots) != len(set(roots)) or set(roots) != set(public):
         raise ValueError('free production-call roots and script disagree')
     functions = inventory['functions']
-    by_name = {f['rust_name']: f for f in functions}
-    if len(by_name) != len(functions):
+    # Aeneas emits the parent, loop wrapper and loop body under ONE Rust name.
+    # Keep parent names unique, validate the alias binding and paired loop roles;
+    # never collapse aliases silently or accept a metadata-only loop entry.
+    parents = [f for f in functions if 'loop' not in f]
+    by_name = {f['rust_name']: f for f in parents}
+    if len(by_name) != len(parents):
         raise ValueError('duplicate function inventory name')
+    lean_names = [f['lean_name'] for f in functions if f.get('lean_name')]
+    if len(lean_names) != len(set(lean_names)):
+        raise ValueError('duplicate Lean function inventory name')
+    loop_roles = {}
+    for function in functions:
+        if 'loop' not in function:
+            continue
+        parent = by_name.get(function['rust_name'])
+        loop = function['loop']
+        if (parent is None or parent['def_id'] != function['def_id']
+                or parent['lean_name'] != function.get('parent_lean_name')
+                or parent['lean_file'] != function['lean_file']
+                or function['is_opaque'] or parent['is_opaque']
+                or type(loop.get('id')) is not int or loop['id'] < 0
+                or not isinstance(loop.get('pos'), list)
+                or any(type(index) is not int or index < 0 for index in loop['pos'])
+                or type(loop.get('is_body')) is not bool):
+            raise ValueError('unbound or malformed loop inventory')
+        role = (function['rust_name'], loop['id'], tuple(loop['pos']))
+        roles = loop_roles.setdefault(role, set())
+        if loop['is_body'] in roles:
+            raise ValueError('duplicate loop inventory role')
+        roles.add(loop['is_body'])
+    if any(roles != {False, True} for roles in loop_roles.values()):
+        raise ValueError('loop wrapper or body missing from inventory')
     declarations = {f['def_id']: f for f in llbc['translated']['fun_decls'] if f is not None}
     ordered = set()
     for declaration in llbc['translated']['ordered_decls']:
@@ -65,12 +94,19 @@ def check(root, llbc, inventory):
             raise ValueError('unreviewed function-order schema')
     for function in functions:
         name = function['rust_name']
-        if name.startswith(('sandproof_protocol::', 'sandproof_center_core::', crate + '::')):
+        if name.startswith(('sandproof_protocol::', 'sandproof_center_core::',
+                            'sandbox_controller_core::', crate + '::')):
             body = declarations.get(function['def_id'], {}).get('body')
             if function['is_opaque'] or not isinstance(body, dict) or 'Structured' not in body:
                 raise ValueError(f'project-owned body missing: {name}')
             if function['def_id'] not in ordered:
                 raise ValueError(f'project-owned body omitted from order: {name}')
+            if function['lean_file'] != 'SandproofFoundations/Funs.lean':
+                raise ValueError(f'owned function has unexpected generated file: {name}')
+            generated = root / 'verification/aeneas/foundations' / function['lean_file']
+            lean_name = function['lean_name'].removeprefix('SandproofFoundationsRust.')
+            if not re.search(r'\bdef\s+' + re.escape(lean_name) + r'\b', generated.read_text()):
+                raise ValueError(f'owned loop/function has no generated definition: {name}')
     for name in roots:
         function = by_name.get(f'{crate}::{name}')
         if function is None or function['lean_file'] != 'SandproofFoundations/Funs.lean':

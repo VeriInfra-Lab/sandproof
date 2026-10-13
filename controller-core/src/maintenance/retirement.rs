@@ -215,10 +215,10 @@ fn owned_ids(world: &World, sandbox: SandboxId) -> OwnedIds {
             for slot in &plan.close_slots {
                 push_unique(&mut ids.slots, *slot);
             }
-            for source in [plan.restore_from, plan.target_snapshot]
-                .into_iter()
-                .flatten()
-            {
+            if let Some(source) = plan.restore_from {
+                push_unique(&mut ids.snapshots, source.snapshot);
+            }
+            if let Some(source) = plan.target_snapshot {
                 push_unique(&mut ids.snapshots, source.snapshot);
             }
         }
@@ -312,6 +312,27 @@ fn external_dependencies_closed(
     ids: &OwnedIds,
 ) -> bool {
     let workspace = record.workspace;
+    // Preserve the original table order and stop at its first failed check.
+    // Each traversal has one loop, avoiding the fixed translator's movement
+    // of later loops into an earlier loop's exit branch.
+    foreign_sandbox_dependencies_closed(world, sandbox, workspace, ids)
+        && foreign_ledger_dependencies_closed(world, sandbox, workspace, ids)
+        && foreign_plan_dependencies_closed(world, sandbox, ids)
+        && foreign_resource_indexes_closed(world, sandbox, ids)
+        && foreign_resource_links_closed(world, sandbox, workspace, ids)
+        && foreign_logical_dependencies_closed(world, sandbox, workspace, ids)
+        && foreign_stop_coverages_closed(world, sandbox)
+        && foreign_effect_dependencies_closed(world, sandbox, workspace, ids)
+        && foreign_effect_keys_closed(world, sandbox, workspace, ids)
+        && foreign_inflight_dependencies_closed(world, sandbox, workspace, ids)
+}
+
+fn foreign_sandbox_dependencies_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
     for (other, stored) in world.sandboxes.entries() {
         if *other != sandbox
             && (stored.workspace == workspace
@@ -319,16 +340,27 @@ fn external_dependencies_closed(
                 || stored
                     .net_slot
                     .is_some_and(|slot| ids.slots.contains(&slot))
-                || [stored.durable_snapshot, stored.restore_from]
-                    .into_iter()
-                    .flatten()
-                    .any(|source| ids.snapshots.contains(&source.snapshot))
+                || stored
+                    .durable_snapshot
+                    .is_some_and(|source| ids.snapshots.contains(&source.snapshot))
+                || stored
+                    .restore_from
+                    .is_some_and(|source| ids.snapshots.contains(&source.snapshot))
                 || authority_references(&stored.desired, sandbox, workspace, ids)
                 || authority_references(&stored.effective, sandbox, workspace, ids))
         {
             return false;
         }
     }
+    true
+}
+
+fn foreign_ledger_dependencies_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
     for (key, ledger) in world.operations.entries() {
         if key.sandbox != sandbox
             && (ledger.sandbox == sandbox || ledger_references(ledger, workspace, ids))
@@ -336,6 +368,10 @@ fn external_dependencies_closed(
             return false;
         }
     }
+    true
+}
+
+fn foreign_plan_dependencies_closed(world: &World, sandbox: SandboxId, ids: &OwnedIds) -> bool {
     for (key, plan) in world.operation_plans.entries() {
         if key.sandbox != sandbox
             && (plan.key.sandbox == sandbox
@@ -343,14 +379,20 @@ fn external_dependencies_closed(
                 || plan.slot.is_some_and(|slot| ids.slots.contains(&slot))
                 || plan.stop_vms.iter().any(|vm| ids.vms.contains(vm))
                 || plan.close_slots.iter().any(|slot| ids.slots.contains(slot))
-                || [plan.restore_from, plan.target_snapshot]
-                    .into_iter()
-                    .flatten()
-                    .any(|source| ids.snapshots.contains(&source.snapshot)))
+                || plan
+                    .restore_from
+                    .is_some_and(|source| ids.snapshots.contains(&source.snapshot))
+                || plan
+                    .target_snapshot
+                    .is_some_and(|source| ids.snapshots.contains(&source.snapshot)))
         {
             return false;
         }
     }
+    true
+}
+
+fn foreign_resource_indexes_closed(world: &World, sandbox: SandboxId, ids: &OwnedIds) -> bool {
     for (other, index) in world.resource_indexes.entries() {
         if *other != sandbox
             && (index.vms.iter().any(|vm| ids.vms.contains(vm))
@@ -363,6 +405,15 @@ fn external_dependencies_closed(
             return false;
         }
     }
+    true
+}
+
+fn foreign_resource_links_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
     if world
         .net_slots
         .entries()
@@ -383,6 +434,15 @@ fn external_dependencies_closed(
     {
         return false;
     }
+    true
+}
+
+fn foreign_logical_dependencies_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
     for (id, logical) in world.logical_effects.entries() {
         if id.command.sandbox() != sandbox
             && (origin_sandbox(logical) == sandbox
@@ -393,18 +453,52 @@ fn external_dependencies_closed(
             return false;
         }
     }
+    true
+}
+
+fn foreign_stop_coverages_closed(world: &World, sandbox: SandboxId) -> bool {
     if world.effects.entries().iter().any(|(id, status)| id.command().sandbox() != sandbox
         && matches!(status, EffectStatus::RetiredByStop(coverage) if coverage.operation.sandbox == sandbox)) {
         return false;
     }
-    for id in world
-        .effects
-        .entries()
-        .iter()
-        .map(|(id, _)| id)
-        .chain(world.effect_keys.iter())
-        .chain(world.inflight.iter())
-    {
+    true
+}
+
+fn foreign_effect_dependencies_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    for (id, _) in world.effects.entries() {
+        if id.command().sandbox() != sandbox && command_references(id.command(), workspace, ids) {
+            return false;
+        }
+    }
+    true
+}
+
+fn foreign_effect_keys_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    for id in &world.effect_keys {
+        if id.command().sandbox() != sandbox && command_references(id.command(), workspace, ids) {
+            return false;
+        }
+    }
+    true
+}
+
+fn foreign_inflight_dependencies_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    for id in &world.inflight {
         if id.command().sandbox() != sandbox && command_references(id.command(), workspace, ids) {
             return false;
         }
@@ -560,6 +654,20 @@ fn check_resources(
         return Err(RetirementReject::IdentityBarrierMissing);
     }
     let index = world.resource_index(sandbox);
+    check_reclaimed_vms(world, sandbox, record, &index)?;
+    check_vm_index_membership(world, sandbox, &index)?;
+    check_reclaimed_slots(world, sandbox, record, &index)?;
+    check_slot_index_membership(world, sandbox, &index)?;
+    check_reserved_vms(world, sandbox, record, ids)?;
+    check_reserved_slots(world, sandbox, record, ids)
+}
+
+fn check_reclaimed_vms(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    index: &crate::ResourceIndex,
+) -> Result<(), RetirementReject> {
     for (id, vm) in world.vms.entries() {
         if vm.sandbox == sandbox
             && (vm.owner != record.owner
@@ -570,11 +678,28 @@ fn check_resources(
             return Err(RetirementReject::ResourcesNotReclaimed);
         }
     }
+    Ok(())
+}
+
+fn check_vm_index_membership(
+    world: &World,
+    sandbox: SandboxId,
+    index: &crate::ResourceIndex,
+) -> Result<(), RetirementReject> {
     for id in &index.vms {
         if world.vms.get(id).is_none_or(|vm| vm.sandbox != sandbox) {
             return Err(RetirementReject::LedgerMismatch);
         }
     }
+    Ok(())
+}
+
+fn check_reclaimed_slots(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    index: &crate::ResourceIndex,
+) -> Result<(), RetirementReject> {
     for (id, slot) in world.net_slots.entries() {
         if slot.sandbox == sandbox
             && (slot.owner != record.owner
@@ -590,6 +715,14 @@ fn check_resources(
             return Err(RetirementReject::ResourcesNotReclaimed);
         }
     }
+    Ok(())
+}
+
+fn check_slot_index_membership(
+    world: &World,
+    sandbox: SandboxId,
+    index: &crate::ResourceIndex,
+) -> Result<(), RetirementReject> {
     for id in &index.slots {
         if world
             .net_slots
@@ -599,6 +732,15 @@ fn check_resources(
             return Err(RetirementReject::LedgerMismatch);
         }
     }
+    Ok(())
+}
+
+fn check_reserved_vms(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    ids: &OwnedIds,
+) -> Result<(), RetirementReject> {
     // Plans may reserve IDs without ever issuing a worker command. Absent rows
     // are safe only because all effect attempts are separately checked below.
     for vm in &ids.vms {
@@ -610,6 +752,15 @@ fn check_resources(
             return Err(RetirementReject::DependencyNotClosed);
         }
     }
+    Ok(())
+}
+
+fn check_reserved_slots(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+    ids: &OwnedIds,
+) -> Result<(), RetirementReject> {
     for slot in &ids.slots {
         if world
             .net_slots
@@ -839,11 +990,30 @@ fn check_effects(
     sandbox: SandboxId,
     record: &SandboxRecord,
 ) -> Result<(), RetirementReject> {
-    for id in world.effect_keys.iter().chain(world.inflight.iter()) {
+    check_effect_membership(world, sandbox, &world.effect_keys)?;
+    check_effect_membership(world, sandbox, &world.inflight)?;
+    check_logical_effects(world, sandbox, record)?;
+    check_effect_attempts(world, sandbox)
+}
+
+fn check_effect_membership(
+    world: &World,
+    sandbox: SandboxId,
+    ids: &[EffectId],
+) -> Result<(), RetirementReject> {
+    for id in ids {
         if id.command().sandbox() == sandbox && !world.effects.contains_key(id) {
             return Err(RetirementReject::LedgerMismatch);
         }
     }
+    Ok(())
+}
+
+fn check_logical_effects(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+) -> Result<(), RetirementReject> {
     for (logical_id, logical) in world.logical_effects.entries() {
         if logical_id.command.sandbox() != sandbox {
             continue;
@@ -889,6 +1059,17 @@ fn check_effects(
             return Err(RetirementReject::LedgerMismatch);
         }
     }
+    Ok(())
+}
+
+fn is_acknowledged_success(status: EffectStatus) -> bool {
+    matches!(
+        status,
+        EffectStatus::Acknowledged(EffectOutcome::Succeeded(_))
+    )
+}
+
+fn check_effect_attempts(world: &World, sandbox: SandboxId) -> Result<(), RetirementReject> {
     for (id, status) in world.effects.entries() {
         if id.command().sandbox() != sandbox {
             continue;
@@ -904,11 +1085,9 @@ fn check_effects(
             EffectStatus::Acknowledged(_) => {
                 // A successful prepare/abort must have materialized its exact
                 // reserved resources. Retired metadata cannot hide a lost row.
-                if matches!(
-                    status,
-                    EffectStatus::Acknowledged(EffectOutcome::Succeeded(_))
-                ) && let Command::PrepareVm { vm, slot, .. }
-                | Command::AbortPrepare { vm, slot, .. } = id.command()
+                if is_acknowledged_success(*status)
+                    && let Command::PrepareVm { vm, slot, .. }
+                    | Command::AbortPrepare { vm, slot, .. } = id.command()
                     && (!world.vms.contains_key(vm) || !world.net_slots.contains_key(slot))
                 {
                     return Err(RetirementReject::LedgerMismatch);
@@ -956,6 +1135,33 @@ fn check_certificate(
         || record.net_slot.is_some()
     {
         return Err(RetirementReject::NotTerminal);
+    }
+    Ok(())
+}
+
+fn retain_operation_results(
+    next: &mut World,
+    world: &World,
+    sandbox: SandboxId,
+    owner: TenantId,
+    expires_at: u64,
+) -> Result<(), RetirementReject> {
+    let retained = &mut next
+        .maintenance
+        .as_mut()
+        .ok_or(RetirementReject::Disabled)?
+        .retained;
+    for (key, ledger) in world.operations.entries() {
+        if key.sandbox == sandbox {
+            retained.put(
+                *key,
+                RetainedOperation {
+                    owner,
+                    ledger: ledger.clone(),
+                    expires_at,
+                },
+            );
+        }
     }
     Ok(())
 }
@@ -1105,23 +1311,13 @@ pub fn retire(world: &World, request: RetireRequest) -> Result<World, Retirement
     validate_terminal_cleanup(world, sandbox)?;
 
     let mut next = world.clone();
-    let retained = &mut next
-        .maintenance
-        .as_mut()
-        .ok_or(RetirementReject::Disabled)?
-        .retained;
-    for (key, ledger) in world.operations.entries() {
-        if key.sandbox == sandbox {
-            retained.put(
-                *key,
-                RetainedOperation {
-                    owner: record.owner,
-                    ledger: ledger.clone(),
-                    expires_at: request.retain_until,
-                },
-            );
-        }
-    }
+    retain_operation_results(
+        &mut next,
+        world,
+        sandbox,
+        record.owner,
+        request.retain_until,
+    )?;
     remove_details(&mut next, sandbox);
     Ok(next)
 }

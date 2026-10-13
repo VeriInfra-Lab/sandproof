@@ -17,6 +17,14 @@ set_option maxRecDepth 2048
 
 namespace SandproofFoundationsRust
 
+/-- [sandbox_controller_core::store::Store]
+    Source: './controller-core/src/store.rs', lines 6:0-6:22
+    Name pattern: [sandbox_controller_core::store::Store]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::store::Store"]
+structure sandbox_controller_core.store.Store (K : Type) (V : Type) where
+  entries : alloc.vec.Vec (K × V)
+
 /-- [sandproof_center_core::model::LanePhase]
     Source: './sandbox-center-core/src/model.rs', lines 369:0-369:18
     Name pattern: [sandproof_center_core::model::LanePhase]

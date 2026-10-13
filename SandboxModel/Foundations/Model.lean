@@ -10,6 +10,12 @@ def makeCounter (n : Nat) : Option Nat := if n = 0 then none else some n
 def nextCounter (n : Nat) : Option Nat :=
   if n < maxCounter then some (n + 1) else none
 
+-- First-match query semantics, including duplicate keys. Mutation/uniqueness
+-- and representation by an abstract map are separate module obligations.
+def tableLookup [DecidableEq K] (key : K) : List (K × V) → Option V
+  | [] => none
+  | (stored, value) :: rest => if key = stored then some value else tableLookup key rest
+
 structure ResourceVector where
   instances : Nat
   cpu : Nat

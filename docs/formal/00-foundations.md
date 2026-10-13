@@ -13,6 +13,7 @@
 | [共享类型](../../sandbox-protocol/src/internal.rs)、[高级操作](../../sandbox-protocol/src/internal/lifecycle.rs)、[窗口](../../sandbox-protocol/src/internal/window.rs) | 部署/节点/全局实例/操作/版本/位置/窗口的类型、完整相等与表示关系 |
 | [本地类型](../../controller-core/src/model.rs)、[编号](../../controller-core/src/ids.rs) | 本地 generation、epoch、逻辑工作、attempt 与全局编号明确分开 |
 | [中心保留位置](../../sandbox-center-core/src/model.rs)的 `RetentionLane::current` | 原退休高水位的严格后继及耗尽边界；退休推进、关闭与复用授权仍由 V1/V2/V3 提供 |
+| [有限表](../../controller-core/src/store.rs)的 `Store::get_copy` | 首次匹配查询与有限遍历终止；自有键比较、写入、删除、唯一性和修改范围分别实例化 |
 | [协议样例](../../sandbox-protocol/tests/contract_examples.rs)、[依赖锁](../../Cargo.lock) | 编解码/数值边界的固定输入，库模型版本登记 |
 | [抽取入口](../../scripts/regenerate-rust-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前本地入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
 
@@ -43,7 +44,7 @@
 
 首批：身份/有界算术/结果分类 → 一个 V1 纯决定的实际抽取 → V2 Lua 与 V3 编解码可行性检查 → 固定 `R_i` 和事件接口。先用最大值、参数冲突、未知提交各一个样例检查定义；既有样例能覆盖时不加重复测试。
 
-后续：容器查改与修改范围、序列化界限、窗口/代次比较、查询投影和流历史公共引理。下方 I2 的判定接口分别由 V7（normalize/page）、V5（lifetime）、V4（identity/publication/capacity）、V6（observation/release）、V8（transfer end）提供，V0 不复制其实现。
+后续：容器写入、删除与修改范围、序列化界限、窗口/代次比较、查询投影和流历史公共引理。查询接口使用独立的首次匹配语义，泛型键的相等合同由实际键类型的对应定理提供；不能把任意自有比较函数列为外部假设。下方 I2 的判定接口分别由 V7（normalize/page）、V5（lifetime）、V4（identity/publication/capacity）、V6（observation/release）、V8（transfer end）提供，V0 不复制其实现。
 
 ## 5 开工与完成条件
 

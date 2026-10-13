@@ -17,6 +17,7 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::counter_next \
   --start-from crate::counter_value \
   --start-from crate::lane_current \
+  --start-from crate::store_get_copy \
   --start-from crate::resource_add \
   --start-from crate::resource_positive \
   --start-from crate::resource_fits \
@@ -24,7 +25,8 @@ RUSTFLAGS="--remap-path-prefix=$ROOT_DIR=." \
   --start-from crate::identity_response \
   --start-from crate::retry_hint \
   --start-from crate::outcome_observation \
-  --include sandproof_protocol --include sandproof_center_core --dest-file "$LLBC" \
+  --include sandproof_protocol --include sandproof_center_core \
+  --include sandbox_controller_core --dest-file "$LLBC" \
   -- --manifest-path verification/extract-foundations/Cargo.toml --lib --locked --offline
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files \
   -emit-json -namespace SandproofFoundationsRust -subdir SandproofFoundations \

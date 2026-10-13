@@ -162,6 +162,12 @@ const fn stoppable_vm_status(status: VmStatus) -> bool {
     }
 }
 
+// Keep this value-only check separate from the worker's live plan/record
+// borrows. It is the same guard at the same short-circuit position.
+const fn operation_is_compensating(status: OperationStatus) -> bool {
+    matches!(status, OperationStatus::Compensating(_))
+}
+
 fn register_vm(world: &mut World, sandbox: SandboxId, vm: VmId) {
     let mut index = world.resource_index(sandbox);
     insert_unique(&mut index.vms, vm);
@@ -897,7 +903,7 @@ pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, Wor
             if record.phase != Phase::Revoking
                 || !record.terminal
                 || operation.kind != OperationKind::Create
-                || !matches!(operation.status, OperationStatus::Compensating(_))
+                || !operation_is_compensating(operation.status)
             {
                 return Err(WorkerReject::WrongPhase);
             }
@@ -1042,6 +1048,33 @@ mod tests {
     };
 
     const SID: SandboxId = SandboxId(11);
+
+    #[test]
+    fn compensation_guard_matches_original_for_every_status_and_failure() {
+        use crate::{FailureKind, OperationStatus};
+        let mut statuses = vec![
+            OperationStatus::Pending,
+            OperationStatus::OutcomeUnknown,
+            OperationStatus::Succeeded,
+        ];
+        for failure in [
+            FailureKind::Cancelled,
+            FailureKind::DeadlineExceeded,
+            FailureKind::ResourceFailure,
+            FailureKind::PolicyFailure,
+            FailureKind::StorageFailure,
+            FailureKind::InternalFailure,
+        ] {
+            statuses.push(OperationStatus::Compensating(failure));
+            statuses.push(OperationStatus::Failed(failure));
+        }
+        for status in statuses {
+            assert_eq!(
+                super::operation_is_compensating(status),
+                matches!(status, OperationStatus::Compensating(_))
+            );
+        }
+    }
     const OPERATION: OperationId = OperationId(19);
 
     fn created() -> World {

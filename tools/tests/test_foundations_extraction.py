@@ -15,7 +15,7 @@ class FoundationsExtractionTests(unittest.TestCase):
         cls.inventory = json.loads((ROOT / 'verification/aeneas/foundations/translation.json').read_text())
 
     def test_real_checked_roots_are_present(self):
-        self.assertEqual(check(ROOT, self.llbc, self.inventory), 11)
+        self.assertEqual(check(ROOT, self.llbc, self.inventory), 12)
 
     def test_only_unordered_name_table_order_is_normalized(self):
         reordered = copy.deepcopy(self.llbc)
@@ -41,25 +41,47 @@ class FoundationsExtractionTests(unittest.TestCase):
             check(ROOT, self.llbc, inventory)
         inventory = copy.deepcopy(self.inventory)
         next(f for f in inventory['functions'] if f['rust_name'].endswith('::counter_next'))['lean_file'] = 'missing.lean'
-        with self.assertRaisesRegex(ValueError, 'root was not generated'):
+        with self.assertRaisesRegex(ValueError, 'unexpected generated file'):
             check(ROOT, self.llbc, inventory)
 
     def test_owned_opacity_or_missing_body_is_rejected(self):
         for name in (
             'sandproof_foundations_extract::counter_next',
             'sandproof_center_core::model::{sandproof_center_core::model::RetentionLane}::current',
+            'sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy',
         ):
             with self.subTest(name=name):
                 inventory = copy.deepcopy(self.inventory)
-                function = next(f for f in inventory['functions'] if f['rust_name'] == name)
+                function = next(f for f in inventory['functions']
+                                if f['rust_name'] == name and 'loop' not in f)
                 function['is_opaque'] = True
-                with self.assertRaisesRegex(ValueError, 'owned body missing'):
+                with self.assertRaisesRegex(ValueError, 'owned body missing|malformed loop inventory'):
                     check(ROOT, self.llbc, inventory)
                 llbc = copy.deepcopy(self.llbc)
                 next(f for f in llbc['translated']['fun_decls']
                      if f and f['def_id'] == function['def_id'])['body'] = 'Opaque'
                 with self.assertRaisesRegex(ValueError, 'owned body missing'):
                     check(ROOT, llbc, self.inventory)
+
+    def test_loop_aliases_require_exact_parent_body_and_wrapper(self):
+        inventory = copy.deepcopy(self.inventory)
+        loops = [f for f in inventory['functions'] if 'loop' in f]
+        self.assertEqual(len(loops), 2)
+        inventory['functions'].remove(loops[0])
+        with self.assertRaisesRegex(ValueError, 'wrapper or body missing'):
+            check(ROOT, self.llbc, inventory)
+        inventory = copy.deepcopy(self.inventory)
+        next(f for f in inventory['functions'] if 'loop' in f)['parent_lean_name'] = 'wrong.parent'
+        with self.assertRaisesRegex(ValueError, 'unbound or malformed loop'):
+            check(ROOT, self.llbc, inventory)
+        inventory = copy.deepcopy(self.inventory)
+        inventory['functions'].append(copy.deepcopy(loops[0]))
+        with self.assertRaisesRegex(ValueError, 'duplicate Lean function'):
+            check(ROOT, self.llbc, inventory)
+        inventory = copy.deepcopy(self.inventory)
+        next(f for f in inventory['functions'] if 'loop' in f)['lean_name'] += '.missing'
+        with self.assertRaisesRegex(ValueError, 'no generated definition'):
+            check(ROOT, self.llbc, inventory)
 
     def test_unordered_body_and_new_external_are_rejected(self):
         llbc = copy.deepcopy(self.llbc)

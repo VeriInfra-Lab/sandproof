@@ -22,6 +22,63 @@ noncomputable section
 
 namespace SandproofFoundationsRust
 
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop body 0:
+    Source: './controller-core/src/store.rs', lines 66:8-73:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy]
+    Visibility: public -/
+@[rust_loop_body, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy"]
+def sandbox_controller_core.store.Store.get_copy_loop.body
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K)
+  (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (Option V))
+  := do
+  let i := alloc.vec.Vec.len self.entries
+  if index < i
+  then
+    let (t, t1) ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
+        self.entries index
+    let b ← core.cmp.impls.PartialEqShared.eq corecmpPartialEqInst t key
+    if b
+    then ok (done (some t1))
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else ok (done none)
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop 0:
+    Source: './controller-core/src/store.rs', lines 66:8-73:5
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy]
+    Visibility: public -/
+@[rust_loop, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy"]
+def sandbox_controller_core.store.Store.get_copy_loop
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : sandbox_controller_core.store.Store K V) (key : K)
+  (index : Std.Usize) :
+  Result (Option V)
+  := do
+  loop
+    (fun index1 => sandbox_controller_core.store.Store.get_copy_loop.body
+      corecmpPartialEqInst self key index1)
+    index
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]:
+    Source: './controller-core/src/store.rs', lines 64:4-64:48
+    Name pattern: [sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy]
+    Visibility: public -/
+@[reducible, rust_fun
+  "sandbox_controller_core::store::{sandbox_controller_core::store::Store<@K, @V>}::get_copy"]
+def sandbox_controller_core.store.Store.get_copy
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (coremarkerCopyInst : core.marker.Copy V)
+  (self : sandbox_controller_core.store.Store K V) (key : K) :
+  Result (Option V)
+  := do
+  sandbox_controller_core.store.Store.get_copy_loop corecmpPartialEqInst self
+    key 0#usize
+
 /-- [sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from]:
     Source: './sandbox-protocol/src/internal.rs', lines 71:4-71:56
     Name pattern: [sandproof_protocol::internal::{core::convert::TryFrom<sandproof_protocol::internal::PositiveCounter, u64, sandproof_protocol::internal::InternalError>}::try_from]
@@ -594,8 +651,19 @@ def lane_current
   := do
   sandproof_center_core.model.RetentionLane.current lane
 
-/-- [sandproof_foundations_extract::resource_add]:
+/-- [sandproof_foundations_extract::store_get_copy]:
     Source: 'src/lib.rs', lines 25:0-27:1
+    Visibility: public -/
+def store_get_copy
+  (store : sandbox_controller_core.store.Store Std.U64 Std.U64) (key : Std.U64)
+  :
+  Result (Option Std.U64)
+  := do
+  sandbox_controller_core.store.Store.get_copy core.cmp.PartialEqU64
+    core.marker.CopyU64 store key
+
+/-- [sandproof_foundations_extract::resource_add]:
+    Source: 'src/lib.rs', lines 29:0-31:1
     Visibility: public -/
 def resource_add
   (left : sandproof_protocol.internal.lifecycle.Resources)
@@ -605,14 +673,14 @@ def resource_add
   sandproof_protocol.internal.lifecycle.Resources.checked_add left right
 
 /-- [sandproof_foundations_extract::resource_positive]:
-    Source: 'src/lib.rs', lines 29:0-31:1
+    Source: 'src/lib.rs', lines 33:0-35:1
     Visibility: public -/
 def resource_positive
   (value : sandproof_protocol.internal.lifecycle.Resources) : Result Bool := do
   sandproof_protocol.internal.lifecycle.Resources.positive value
 
 /-- [sandproof_foundations_extract::resource_fits]:
-    Source: 'src/lib.rs', lines 33:0-35:1
+    Source: 'src/lib.rs', lines 37:0-39:1
     Visibility: public -/
 def resource_fits
   (value : sandproof_protocol.internal.lifecycle.Resources)
@@ -622,7 +690,7 @@ def resource_fits
   sandproof_protocol.internal.lifecycle.Resources.fits value limit
 
 /-- [sandproof_foundations_extract::create_binding_valid]:
-    Source: 'src/lib.rs', lines 37:0-39:1
+    Source: 'src/lib.rs', lines 41:0-43:1
     Visibility: public -/
 def create_binding_valid
   (value : sandproof_protocol.internal.lifecycle.CreateBinding) :
@@ -631,7 +699,7 @@ def create_binding_valid
   sandproof_protocol.internal.lifecycle.CreateBinding.is_valid value
 
 /-- [sandproof_foundations_extract::identity_response]:
-    Source: 'src/lib.rs', lines 41:0-46:1
+    Source: 'src/lib.rs', lines 45:0-50:1
     Visibility: public -/
 def identity_response
   (actual : sandproof_protocol.internal.ControlIdentity)
@@ -641,14 +709,14 @@ def identity_response
   sandproof_protocol.internal.ControlIdentity.validate_response actual expected
 
 /-- [sandproof_foundations_extract::retry_hint]:
-    Source: 'src/lib.rs', lines 48:0-50:1
+    Source: 'src/lib.rs', lines 52:0-54:1
     Visibility: public -/
 def retry_hint
   (outcome : sandproof_protocol.WorkOutcome Std.U64) : Result Bool := do
   sandproof_protocol.WorkOutcome.permits_new_attempt outcome
 
 /-- [sandproof_foundations_extract::outcome_observation]:
-    Source: 'src/lib.rs', lines 52:0-54:1
+    Source: 'src/lib.rs', lines 56:0-58:1
     Visibility: public -/
 def outcome_observation
   (outcome : sandproof_protocol.WorkOutcome Std.U64) :
