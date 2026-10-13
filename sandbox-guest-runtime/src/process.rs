@@ -2,16 +2,19 @@ use std::io;
 use std::os::fd::OwnedFd;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{ExitStatus, Stdio};
+use std::process::ExitStatus;
 use std::sync::Arc;
 
-use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
-use sandproof_guest_core::{Channel, CommandIdentity, CommandOutcome, CommandStream, OutputMode};
+use rustix::process::{Signal, pidfd_send_signal};
+use sandproof_guest_core::{Channel, CommandIdentity, CommandOutcome, CommandStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::net::UnixStream;
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 
 use crate::{LaunchSpec, ProcessLimits};
+
+mod preparation;
+pub use preparation::CommandPreparation;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProcessSignal {
@@ -103,18 +106,6 @@ impl CommandInput {
     }
 }
 
-struct PendingChild(Option<Child>);
-
-impl Drop for PendingChild {
-    fn drop(&mut self) {
-        if let Some(child) = &mut self.0 {
-            // Cancellation before gate release cannot execute user code. Tokio
-            // owns orphan reaping; this drop is not a cleanup-success receipt.
-            let _ = child.start_kill();
-        }
-    }
-}
-
 /// One owned process and pipe consumer, independent of an HTTP connection.
 /// All control calls use the retained pidfd; there is no lookup by raw PID.
 /// Drop stops an UNRELEASED helper. A released/unknown command is not killed by
@@ -162,103 +153,9 @@ impl CommandProcess {
         spec: &LaunchSpec,
         limits: ProcessLimits,
     ) -> io::Result<Self> {
-        let limits = limits.validate()?;
-        spec.validate()?;
-        if session == 0 || command == 0 || !worker.is_absolute() {
-            return Err(invalid("missing command or worker identity"));
-        }
-        let payload = encode(spec, limits.launch_bytes)?;
-        let directory = tempfile::Builder::new()
-            .prefix("guest-gate-")
-            .tempdir_in(private_directory)?;
-        let socket = directory.path().join("launch");
-        let listener = UnixListener::bind(&socket)?;
-        let child = Command::new(worker)
-            .arg("--gate")
-            .arg(&socket)
-            .arg("--limit")
-            .arg(limits.launch_bytes.to_string())
-            .env_clear()
-            .stdin(if spec.stdin {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-        let mut pending = PendingChild(Some(child));
-        let child = pending.0.as_mut().ok_or_else(|| invalid("missing child"))?;
-        let pid = child.id().ok_or_else(|| invalid("missing live PID"))?;
-        let kernel_pid = Pid::from_raw(i32::try_from(pid).map_err(|_| invalid("PID range"))?)
-            .ok_or_else(|| invalid("zero PID"))?;
-        let pidfd = pidfd_open(kernel_pid, PidfdFlags::empty())?;
-        let start_ticks = start_ticks(pid)?;
-        let identity = CommandIdentity {
-            session,
-            command,
-            pid,
-            start_ticks,
-        };
-        let gate = tokio::time::timeout(limits.handshake_timeout, async {
-            let (mut stream, _) = listener.accept().await?;
-            let peer = rustix::net::sockopt::socket_peercred(&stream)?;
-            if peer.pid != kernel_pid || peer.uid != rustix::process::geteuid() {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "wrong worker peer",
-                ));
-            }
-            let mut hello = [0; 4];
-            stream.read_exact(&mut hello).await?;
-            if &hello != crate::worker::HELLO || start_ticks != self::start_ticks(pid)? {
-                return Err(invalid("worker identity or protocol changed"));
-            }
-            let length = u32::try_from(payload.len()).map_err(|_| invalid("launch length"))?;
-            stream.write_all(&length.to_be_bytes()).await?;
-            stream.write_all(&payload).await?;
-            let mut ready = [0; 4];
-            stream.read_exact(&mut ready).await?;
-            if &ready != crate::worker::READY {
-                return Err(invalid("worker refused context"));
-            }
-            Ok(stream)
-        })
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "worker handshake"))??;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| invalid("missing stdout"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| invalid("missing stderr"))?;
-        // Child::wait closes a stdin still stored in Child. Retain it separately
-        // so observing exit never silently closes a user's interactive input.
-        let stdin = Some(CommandInput {
-            identity,
-            stdin: child.stdin.take(),
-        });
-        let stream = CommandStream::new(identity, OutputMode::Pipes, limits.chunk_bytes as u64)
-            .map_err(accounting)?;
-        Ok(Self {
-            child: pending.0.take().ok_or_else(|| invalid("missing child"))?,
-            pidfd: Arc::new(pidfd),
-            stdout: Some(stdout),
-            stderr: Some(stderr),
-            stdin,
-            gate: Some(gate),
-            _gate_directory: directory,
-            identity,
-            limits,
-            stream,
-            launch: LaunchState::Prepared,
-            stdout_eof: false,
-            stderr_eof: false,
-            waited: None,
-            end_delivered: false,
-        })
+        let mut preparation =
+            CommandPreparation::spawn(worker, private_directory, session, command, spec, limits)?;
+        preparation.finish().await
     }
 
     #[must_use]
