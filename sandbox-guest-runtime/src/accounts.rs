@@ -231,6 +231,78 @@ fn unsigned(value: &[u8]) -> Option<u32> {
     std::str::from_utf8(value).ok()?.parse().ok()
 }
 
+/// Display ownership as fixed pure-Go LookupId/LookupGroupId do. A missing or
+/// unreadable source falls back to numeric text; budget exhaustion is explicit.
+/// These names never authorize I/O or select execution credentials.
+/// # Errors
+/// Invalid limits, exhausted source budget or unrepresentable matched names.
+pub fn lookup_local_ownership(
+    uid: u32,
+    gid: u32,
+    file_bytes: usize,
+) -> Result<(String, String), AccountError> {
+    if file_bytes == 0 || file_bytes >= isize::MAX as usize {
+        return Err(AccountError::InvalidArgument);
+    }
+    let source = |path: &str| match read_regular(Path::new(path), file_bytes) {
+        Ok(bytes) => Ok(bytes),
+        Err(AccountError::Unavailable) => Ok(Vec::new()),
+        Err(error) => Err(error),
+    };
+    ownership_from_files(
+        uid,
+        gid,
+        &source("/etc/passwd")?,
+        &source("/etc/group")?,
+        file_bytes,
+    )
+}
+
+/// Same display parser for deterministic fixtures, without editing host /etc.
+/// # Errors
+/// Source budget exhaustion or a matched name that is not valid UTF-8.
+pub fn ownership_from_files(
+    uid: u32,
+    gid: u32,
+    passwd: &[u8],
+    group: &[u8],
+    file_bytes: usize,
+) -> Result<(String, String), AccountError> {
+    if file_bytes == 0 || file_bytes >= isize::MAX as usize {
+        return Err(AccountError::InvalidArgument);
+    }
+    if passwd.len() > file_bytes || group.len() > file_bytes {
+        return Err(AccountError::ResourceExhausted);
+    }
+    let find = |id: u32, bytes: &[u8], count: usize| -> Result<String, AccountError> {
+        let id = id.to_string();
+        for line in bytes.split(|b| *b == b'\n').map(trim_line) {
+            let fields: Vec<_> = line.splitn(count, |b| *b == b':').collect();
+            if fields.len() != count
+                || fields[0].is_empty()
+                || matches!(fields[0][0], b'#' | b'+' | b'-')
+                || fields[2] != id.as_bytes()
+            {
+                continue;
+            }
+            let numeric = |v: &[u8]| {
+                std::str::from_utf8(v)
+                    .ok()
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .is_some()
+            };
+            if !numeric(fields[2]) || (count == 7 && !numeric(fields[3])) {
+                continue;
+            }
+            return std::str::from_utf8(fields[0])
+                .map(str::to_owned)
+                .map_err(|_| AccountError::Unavailable);
+        }
+        Ok(id)
+    };
+    Ok((find(uid, passwd, 7)?, find(gid, group, 4)?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -58,6 +58,19 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [文件协议检查](../sandbox-guest-runtime/tests/file_protocol.rs)消费同一文件共享样例，核对重复/畸形消息、缺省/null、uint32 深度、int64 尺寸、可选链接字段、时间戳精度/边界和编码预算。[文件上下文测试](../sandbox-guest-service/src/files/tests.rs)覆盖 Basic 与 HTTP username 的分离、一次 Move 查询、默认值/环境不改变身份、词法路径、无效 UID 和展开后预算。Linux 兼容入口还运行[固定同步/异步 SDK 组合](../sandbox-guest-runtime/tests/sdk_files.rs)：原会话授权与路径解析接到文件编解码，核对各一元方法、大尺寸/纳秒/元数据/空列表/可选链接及超额错误。该测试只返回预定合成属性，没有实际 stat、目录修改或文件传输；真实文件权限、链接竞争、磁盘满、部分读写、Go 双端对照和 KVM 仍须独立执行。
 
+[一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。普通 Linux 基础检查与兼容入口执行这些组件。
+
+[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
+
+[固定 Go 方法对照](../sandbox-guest-runtime/tests/file_reference.rs)为显式 opt-in，不执行时必须报未运行。以固定 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322`、该版要求的 Go 1.26.8 和锁定模块，采用 Go `-overlay` 把仓库[参考适配器](../tests/compat/guest_files_reference.go)映射为 `packages/envd/sandproof_files_reference.go`，使用 `CGO_ENABLED=0 GOTOOLCHAIN=local`、`build -mod=readonly -trimpath -buildvcs=false` 编译该虚拟文件。记录原源码/工具链与适配器二进制摘要，原 Go 源树须保持未改。该程序直接调用原文件服务方法，不启动 envd 主程序、MMDS、cgroup 或监听器。编译后显式运行：
+
+```sh
+SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
+  cargo test -p sandproof-guest-runtime --locked --test file_reference -- --ignored --nocapture
+```
+
+对照在同一路径重建相同文件树，核对属性、错误和最终路径/类型/模式/字节或链接目标；读取时间戳预先固定且精确比较，新建目录返回的动态 mtime 不比较。空 metadata 的省略与空 map 统一，其他字段不宽松忽略。它是原 Go 方法到 Rust 端口的组件对照，不能替代 E03 同 SDK 的完整双端 HTTP 对照，也不核销权限矩阵、磁盘满、流式传输、进程/VM 重启和 KVM 验收。
+
 [初始化会话检查](../sandbox-guest-service/tests/session.rs)消费同一宿主初始化样例，检查默认值/环境替换、元数据身份、令牌原子更新、同令牌重试、旧授权拒绝、重启、恰好预算和取消后恢复。[HTTP 路由检查](../sandbox-guest-service/tests/http.rs)覆盖真实回环请求、慢正文、断流、共享槽位、重复鉴权头及错误脱敏；[MMDS 交换检查](../sandbox-guest-service/src/metadata/tests.rs)以实际 TCP 服务核对两次请求并接到初始化路由，拒绝重定向、畸形令牌/元数据及截断。屏障与可推进时钟控制取消/期限，服务端观察原连接 EOF，验证无遗留连接驱动。基础检查和 Linux SDK 合同脚本均运行这些组件；它们不是 Firecracker MMDS 实测、命令鉴权集成、固定 Go envd 双端对照或 KVM 验收。
 
 首批[命令/文件纯核心测试](../sandbox-guest-core/tests/completion.rs)由 workspace 基础检查发现，覆盖退出/双管道 EOF 的全部顺序、未消费输出、旧内部身份、持续输出的有限驻留、短写/截断和关闭失败；不启动真实进程或操作来宾文件。[固定协议样例](../tests/compat/guest-service-contract.json)由 [SDK schema 检查](../tests/compat/test_guest_service_contract.py)读取，核对命令、PTY、二进制输入、文件属性及编码。它们不是完整 Rust 服务的协议对照，尚未核销 #311 的 E01–E10。

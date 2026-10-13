@@ -246,6 +246,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 文件[一元编解码](../sandbox-guest-runtime/src/file_protocol.rs)及[授权路径解析](../sandbox-guest-service/src/files.rs)尚未抽取或证明。共享 JSON 解析/有界输出和 Basic/路径辅助函数供命令、文件两端复用，工程回归核对原命令行为；纯来宾核心未修改。字段缺省/精度、编码预算、账号选择、路径展开、授权快照到实际 I/O 的连接均须在 #101 后续证明，固定 SDK 与合成属性通过不证明真实文件操作、DAC、整个服务或系统正确。
 
+新增[真实一元文件端口](../sandbox-guest-runtime/src/filesystem/mod.rs)、账户显示反查及[阻塞文件所有权](../sandbox-guest-service/src/file_io.rs)只有工程回归与固定参考对照，尚未抽取或证明。链接解析与实际 inode/FD、Go 属性对应、遍历/暂存/结果预算、非原子副作用与错误、原授权到派发/完成、取消后容量及结果保留均是新增自有义务，不整体列为外部前提。系统调用、目录变更、xattr、线程池和序列化的实际连接另须最小外部合同。纯来宾核心和历史已证明 Rust 未改，旧定理不覆盖这些新增实现；组件对照也不证明 POSIX/ACL 隔离或整套部署系统。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。
