@@ -514,12 +514,19 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 178);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 12);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 12);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 190);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 18);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 24);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     for mode in ["sync", "async"] {
         assert!(!directory.path().join(mode).join("header-rejected").exists());
+        assert!(
+            !directory
+                .path()
+                .join(mode)
+                .join("gzip-header-rejected")
+                .exists()
+        );
         assert_eq!(
             std::fs::read(directory.path().join(mode).join("form/binary")).unwrap(),
             b"replace"

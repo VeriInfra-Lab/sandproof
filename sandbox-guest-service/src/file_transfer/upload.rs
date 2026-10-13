@@ -3,7 +3,7 @@ use super::{
     BatchLimits, BatchReply, FileStreamError, FileStreams, GzipLimits, MultipartLimits,
     Reservation, UploadBodyError, timely,
 };
-use crate::upload_response::Rejection;
+use crate::upload_response::{GzipHeaderError, Rejection};
 use crate::{
     AccountPool, AccountSource, AuthPermit, ContextError, file_encoding, file_upload,
     files::FileSettings, upload_body::GzipBody,
@@ -67,7 +67,15 @@ impl Failure {
                 Rejection::UnsupportedContentType(_) => UploadRequestError::UnsupportedContentType,
                 Rejection::RawPathRequired => UploadRequestError::RawPathRequired,
                 Rejection::Metadata(_) => UploadRequestError::Headers(wire::Error::InvalidMetadata),
+                Rejection::GzipHeader(error) => UploadRequestError::GzipPreflight(error.into()),
             },
+        }
+    }
+
+    fn gzip_preflight(error: crate::upload_body::GzipError) -> Self {
+        match GzipHeaderError::try_from(error) {
+            Ok(error) => Self::Rejected(Rejection::GzipHeader(error)),
+            Err(error) => Self::Request(UploadRequestError::GzipPreflight(error)),
         }
     }
 }
@@ -198,7 +206,7 @@ impl FileStreams {
                     owner.clone(),
                 )
                 .await
-                .map_err(UploadRequestError::GzipPreflight)?,
+                .map_err(Failure::gzip_preflight)?,
             ),
         };
         let selection = auth

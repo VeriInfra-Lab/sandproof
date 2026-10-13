@@ -395,6 +395,96 @@ fn unhex(text: &str) -> Vec<u8> {
 const BAD_DISTANCE: &str =
     "1f8b08000000000000ff2b284a4dcbac6007af50945a909a58929a82601497a601a50093e717f021000000";
 
+struct InterruptedOnce<'a> {
+    bytes: &'a [u8],
+    interrupted: bool,
+}
+impl BufRead for InterruptedOnce<'_> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if !std::mem::replace(&mut self.interrupted, true) {
+            return Err(io::ErrorKind::Interrupted.into());
+        }
+        Ok(self.bytes)
+    }
+    fn consume(&mut self, n: usize) {
+        self.bytes = &self.bytes[n..];
+    }
+}
+impl Read for InterruptedOnce<'_> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        let count = self.fill_buf()?.read(output)?;
+        self.consume(count);
+        Ok(count)
+    }
+}
+
+#[test]
+fn first_header_eof_probe_retries_interrupted_without_losing_data() {
+    let source = |bytes| InterruptedOnce {
+        bytes,
+        interrupted: false,
+    };
+    assert!(matches!(
+        Decoder::new(source(b""), limits(3)),
+        Err(Error::EmptyHeader)
+    ));
+    let bytes = encode(b"kept", 3);
+    let mut decoder = Decoder::new(source(&bytes), limits(3)).unwrap();
+    let mut output = Vec::new();
+    while let Some(chunk) = decoder.next_chunk().unwrap() {
+        output.extend(chunk);
+    }
+    assert_eq!(output, b"kept");
+}
+
+#[test]
+fn empty_first_header_requires_observed_eof_not_budget_or_transport_failure() {
+    assert!(matches!(
+        Decoder::new(&b""[..], limits(3)),
+        Err(Error::EmptyHeader)
+    ));
+    for bytes in [&b"\x1f"[..], &b"\x1f\x8b\x08\x08\0\0\0\0\0\xffname"[..]] {
+        assert!(matches!(
+            Decoder::new(bytes, limits(3)),
+            Err(Error::Truncated)
+        ));
+    }
+    assert!(matches!(
+        Decoder::new(Broken { remaining: b"" }, limits(3)),
+        Err(Error::Io(_))
+    ));
+    assert!(matches!(
+        Decoder::new(
+            &b"x"[..],
+            DecodeLimits {
+                encoded_bytes: 0,
+                ..limits(3)
+            }
+        ),
+        Err(Error::EncodedLimit)
+    ));
+    assert!(matches!(
+        Decoder::new(
+            &b""[..],
+            DecodeLimits {
+                header_bytes: 9,
+                ..limits(3)
+            }
+        ),
+        Err(Error::InvalidConfiguration)
+    ));
+    assert!(matches!(
+        Decoder::new(
+            &b""[..],
+            DecodeLimits {
+                encoded_bytes: 0,
+                ..limits(3)
+            }
+        ),
+        Err(Error::EmptyHeader)
+    ));
+}
+
 #[test]
 fn invalid_backreference_stops_at_the_go_prefix_without_zero_filling() {
     for chunk in [1, 3, 17, 1024] {

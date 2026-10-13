@@ -1,7 +1,7 @@
 //! Bounded public upload header/dispatch rejections from the fixed envd.
 //! Source: upload.go, encoding.go and filesystem/xattr.go at runtime
 //! f455fd58fa3f289e78ce1de690c35968d8d29322 (Apache-2.0, E2B-LICENSE).
-use super::{Error, Limits, Owner, Response, errors};
+use super::{Error, GzipHeaderError, Limits, Owner, Response, errors};
 use crate::file_upload::{MetadataFault, MetadataReason};
 use axum::http::StatusCode;
 use sandproof_guest_runtime::file_upload::MetadataViolation;
@@ -13,6 +13,7 @@ pub enum Rejection {
     UnsupportedContentType(Vec<u8>),
     RawPathRequired,
     Metadata(MetadataFault),
+    GzipHeader(GzipHeaderError),
 }
 
 /// Source bytes were retained only after complete request-header admission.
@@ -42,6 +43,10 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::GzipHeader(error) => parts.extend([
+            b"error decompressing request body: failed to create gzip reader: ".as_slice(),
+            error.message(),
+        ]),
         Rejection::UnsupportedEncoding(value) => parts.extend([
             b"error decompressing request body: unsupported Content-Encoding: ".as_slice(),
             value,

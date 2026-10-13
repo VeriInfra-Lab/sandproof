@@ -419,7 +419,7 @@ identity 下载持有原 FD 与打开后 seek 得到的初始长度，按块读�
 
 HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再切入固定解码块；声明 Content-Length 超额在当前文件打开前拒绝，观测长度不符也不能成功。尾随内容仍计入总量，HTTP trailers 另有字段/字节预算，重复 trailers 或其后的数据拒绝。必须同时取得 MIME End、实际 HTTP EOF 和声明长度一致才允许批次回执；仅看到结束标记仍持有原批次，随后断流、超额或原期限到达使整批失败。取消持有中的 future 不使已经派发的 I/O 提前归还授权/容量。该连接不新增监听器、不解析原请求认证/metadata 头、不处理 gzip，也不把已接受帧的长度上限当作 HTTP 库之前分配的内存证明；传输库、响应序列化/发送仍另行计费。实现和真实文件/SDK 组合入口已有原提交 Linux 组件证据，后续候选仍须重跑，完整基础和系统验收分别报告。
 
-[gzip 编解码组件](../sandbox-guest-runtime/src/gzip/mod.rs)提供阻塞 `BufRead` 到有界正文块的独立连接，现由下述上传及下载适配连接 HTTP/文件。解码构造先检查首个头部，调用者须在成功之后才打开或截断目标；逐段核对 DEFLATE 结束、CRC32 与模 2³² 长度，再检查下一段或真实源 EOF。空输入不能初始化，尾随非 gzip、截断、校验失败和源错误均不能成功；错误前已交出字节不回滚，错误后不可复用。头部只以固定栈缓冲检查并丢弃，不按额外字段长度分配；名称/注释的 512 字节含 NUL 上限、保留 flag 行为和多段语义遵循固定 Go reader。显式预算另限单次输入/输出块、全部编码/展开字节、每段头部字节及段数，无生产默认值；精确总量上限仍核对真实 EOF，最多一个私有探测字节不向调用者交付。
+[gzip 编解码组件](../sandbox-guest-runtime/src/gzip/mod.rs)提供阻塞 `BufRead` 到有界正文块的独立连接，现由下述上传及下载适配连接 HTTP/文件。解码构造先检查首个头部，调用者须在成功之后才打开或截断目标；逐段核对 DEFLATE 结束、CRC32 与模 2³² 长度，再检查下一段或真实源 EOF。空输入不能初始化，首头完全未读到字节的实际 EOF 记为 EmptyHeader，部分头的 EOF 仍为 Truncated，首读探测保留原 read_exact 的 Interrupted 重试；尾随非 gzip、截断、校验失败和源错误均不能成功；错误前已交出字节不回滚，错误后不可复用。头部只以固定栈缓冲检查并丢弃，不按额外字段长度分配；名称/注释的 512 字节含 NUL 上限、保留 flag 行为和多段语义遵循固定 Go reader。显式预算另限单次输入/输出块、全部编码/展开字节、每段头部字节及段数，无生产默认值；精确总量上限仍核对真实 EOF，最多一个私有探测字节不向调用者交付。
 
 编码单段 gzip，固定压缩级别、零时间戳及无名称/注释，按源真实 EOF 结束；源错误和预算超限不产生完成回执。不同 DEFLATE 实现的压缩字节不要求等同，解码结果须一致。只由 `Ok(None)` 表示完整成功，drop 仅为取消。调用者持有的源缓冲/未释放结果、固定压缩库工作区及 HTTP 分配须另计入服务预算；授权/容量仍须保留至实际阻塞工作结束，源读取须检查原绝对期限。固定 `flate2`/`zlib-rs`/`crc32fast` 的版本及摘要在 Cargo 锁内，库实现不在已证明范围；完整 HTTP 内容编码选择和生产启用仍待后续实现/验收。
 
@@ -441,9 +441,13 @@ HTTP 数据帧先检查单帧/整请求字节及帧数（包括空帧），再�
 
 upload_request_response 复用原首头预检与一次准入，将成功数组和实际文件故障交给同一有界发送器；故障在原 worker/batch 中移动，不新增 I/O 或重放。路径/属性的原预算、完整编码线长及输出块预算分别计费；生成错误载荷前先计算精确线长。原槽位/绝对期限覆盖处理与发送，直到最后 Bytes 副本释放；仍在运行的 I/O 自持原授权，实际完成后初始化可继续。编码或发送失败保留所有已发生的文件效果。每个响应至多新增一个阻塞发送任务，可与取消中的解压/文件析构重叠，但始终持有同一原槽位；全服务任务/库分配预算仍待冻结。FileStreamError、UploadBodyError、UploadRequestError 及包含它的 IdentityDownloadError 因拥有详细故障不再 Copy；调用方须借用或显式 clone，上传文件故障匹配 UploadFault，预算拒绝仍匹配 Operation 等原分类。SDK 夹具所有 POST 已连接这一入口；身份/查询/解码/传输拒绝的完整公开错误仍待连接，未匹配错误仍显式返回，不把夹具通用拒绝当正式合同。可移植原 Go 对照已运行，Linux 文件/SDK 错误组合待实跑。
 
-[上传头与模式拒绝](../sandbox-guest-service/src/upload_response/rejection.rs)复用同一 JSON 错误发送器，对不支持的 Content-Encoding、Content-Type、raw 缺失 path 和 HTTP metadata 校验失败返回固定 400 文本。仅在原完整头预算/一次准入通过后保留实际首字段字节；后续重复字段不替换首值，原始不透明字节按 Go JSON 规则转义。编码/账户/metadata/模式的已有处理顺序不变；其余预算、配置、账户、gzip 和 multipart 错误仍显式返回，不能套用这些四类错误。旧 upload_request 与 metadata 入口保留粗分类；内部详细失败供 upload_request_response 发送，不要求旧调用方迁移。
+[上传头与模式拒绝](../sandbox-guest-service/src/upload_response/rejection.rs)复用同一 JSON 错误发送器，对不支持的 Content-Encoding、Content-Type、raw 缺失 path 和 HTTP metadata 校验失败返回固定 400 文本。仅在原完整头预算/一次准入通过后保留实际首字段字节；后续重复字段不替换首值，原始不透明字节按 Go JSON 规则转义。编码/账户/metadata/模式的已有处理顺序不变；其余预算、配置、账户、gzip 正文和 multipart 错误仍显式返回，不能套用这些四类错误。旧 upload_request 与 metadata 入口保留粗分类；内部详细失败供 upload_request_response 发送，不要求旧调用方迁移。
 
 HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检查，记录规范化键与首个无效字节/原字节偏移，不保存整个无效值。所有条目先校验，再比较包含 user.e2b. 前缀的完整总大小；单条错误优先于总量超限，成功后才复制值。Go map 在多个无效条目时的首错误顺序不固定，本组件选择实际遇到的条目；不保证跨实现同一首键，对照使用单个无效条目或唯一总量错误。HTTP HeaderName 已限定 ASCII token，所以 %q 键引用只需外侧双引号。拒绝响应的原容量保留至最后字节副本释放，初始化可在实际前置工作结束后继续；不读取尚未进入正文阶段的 identity 输入或打开文件。可移植原方法/错误分支与真实 Go HTTP 对照已有本地运行，Linux 请求连接与合成头请求经固定 SDK 错误解析仍待实跑；不代表完整 PostFiles、正式监听器或 E03 验收。
+
+[gzip 首头拒绝](../sandbox-guest-service/src/upload_response/gzip_header.rs)仅在 GzipBody::open 的准备失败处连接公开响应：实际空输入、截断首头、无效魔数/压缩方法/名称长度/头 CRC 分别保留固定 Go 的 EOF、unexpected EOF、gzip: invalid header，再加原 getDecompressedBody/PostFiles 包装，返回原格式 400。读取仍受原 HTTP 声明长度、帧/压缩/首头预算及绝对期限约束；长度不符、源错误、预算和期限不能伪装成空输入。后续 gzip 段、DEFLATE、trailer 校验和及 multipart 正文错误不使用此首头映射。
+
+拒绝发生在账户查询、metadata 和文件打开之前，实际解码工作自持原授权至退出，响应保留原槽位直到最后字节副本释放。源/header/响应失败不重试、不改文件。runtime gzip::Error 与 service GzipError 新增 EmptyHeader，原来匹配空输入 Truncated 的调用方须显式处理 EmptyHeader；Rejection 新增 GzipHeader 分支。固定 Go 首头准备与 HTTP 错误对照已有本地运行，Linux 请求/授权与合成 gzip 输入经固定 SDK 错误解析待实跑；不代表完整压缩上传故障或端点验收。
 
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 

@@ -40,6 +40,16 @@ def header_rejection_cases(root):
         'invalid metadata: total metadata size 4109 exceeds 4096 bytes')
 
 
+def gzip_header_cases(root):
+    for media_type in ['application/octet-stream', 'multipart/form-data; boundary=G']:
+        for data, cause in [(b'', 'EOF'), (b'\x1f', 'unexpected EOF'),
+                            (b'invalid gzip header', 'gzip: invalid header')]:
+            yield ({'path': f'{root}/gzip-header-rejected'},
+                   {'x-access-token': 'fixture-token', 'content-type': media_type,
+                    'content-encoding': 'gzip'}, data,
+                   f'error decompressing request body: failed to create gzip reader: {cause}')
+
+
 def assert_header_rejection(response, message):
     assert response.status_code == 400, response.text
     assert response.json() == {'code': 400, 'message': message}
@@ -56,12 +66,18 @@ def header_rejections_sync(url, root):
         for params, headers, message in header_rejection_cases(root):
             response = client.post(f'{url}/files', params=params, headers=headers, content=b'never')
             assert_header_rejection(response, message)
+        for params, headers, data, message in gzip_header_cases(root):
+            response = client.post(f'{url}/files', params=params, headers=headers, content=data)
+            assert_header_rejection(response, message)
 
 
 async def header_rejections_async(url, root):
     async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
         for params, headers, message in header_rejection_cases(root):
             response = await client.post(f'{url}/files', params=params, headers=headers, content=b'never')
+            assert_header_rejection(response, message)
+        for params, headers, data, message in gzip_header_cases(root):
+            response = await client.post(f'{url}/files', params=params, headers=headers, content=data)
             assert_header_rejection(response, message)
 
 

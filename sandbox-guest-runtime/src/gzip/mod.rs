@@ -40,6 +40,7 @@ pub enum Error {
     DecodedLimit,
     HeaderLimit,
     MemberLimit,
+    EmptyHeader,
     Header,
     Deflate,
     Checksum,
@@ -123,6 +124,21 @@ impl<R: BufRead> Decoder<R> {
             limits.chunk_bytes,
             input::Limit::Encoded,
         );
+        // Go NewReader distinguishes zero members (io.EOF) from a partial
+        // first header (io.ErrUnexpectedEOF). Only observed EOF counts: source
+        // errors and exhausted budgets must remain failures of their own kind.
+        let empty = loop {
+            match input.fill_buf() {
+                // The original read_exact retried Interrupted. Peeking must
+                // preserve that behavior without consuming the first byte.
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error.into()),
+                Ok(bytes) => break bytes.is_empty(),
+            }
+        };
+        if empty {
+            return Err(Error::EmptyHeader);
+        }
         header::read(&mut input, limits.header_bytes)?;
         Ok(Self {
             input,

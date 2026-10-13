@@ -478,11 +478,25 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
-		case "P":
+		case "P", "G":
 			if server == nil {
 				server = referenceServer()
 			}
-			err := headerRejection(f[1:])
+			var err error
+			if f[0] == "P" {
+				err = headerRejection(f[1:])
+			} else {
+				r := &http.Request{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(unhex(f[1])))}
+				r.Header.Set("Content-Encoding", "gzip")
+				body, failure := getDecompressedBody(r)
+				if failure == nil {
+					body.Close()
+					fmt.Println("READY")
+					continue
+				}
+				// Original PostFiles wrapping, before user.Lookup or file effects.
+				err = fmt.Errorf("error decompressing request body: %w", failure)
+			}
 			request, failure := http.NewRequest("POST", server.URL, strings.NewReader(err.Error()))
 			if failure != nil {
 				panic(failure)
