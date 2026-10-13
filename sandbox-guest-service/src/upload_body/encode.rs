@@ -35,18 +35,27 @@ impl GzipBody {
         Self::start(deadline, owner, move |_, cancelled| {
             let source = open()?;
             check_active(deadline, &cancelled)?;
-            let reader = Reader {
-                inner: BufReader::with_capacity(limits.chunk_bytes, source),
-                cancelled,
-                deadline,
-            };
-            Encoder::new(reader, limits).map_err(GzipError::from)
+            encoder(source, limits, deadline, cancelled)
         })
         .await
     }
 }
 
-struct Reader<R> {
+pub(crate) fn encoder<R: Read>(
+    source: R,
+    limits: EncodeLimits,
+    deadline: Instant,
+    cancelled: watch::Receiver<bool>,
+) -> Result<Encoder<Reader<R>>, GzipError> {
+    let reader = Reader {
+        inner: BufReader::with_capacity(limits.chunk_bytes, source),
+        cancelled,
+        deadline,
+    };
+    Encoder::new(reader, limits).map_err(GzipError::from)
+}
+
+pub(crate) struct Reader<R> {
     inner: BufReader<R>,
     cancelled: watch::Receiver<bool>,
     deadline: Instant,

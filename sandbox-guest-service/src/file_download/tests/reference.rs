@@ -4,13 +4,13 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
-struct Reference {
+pub(crate) struct Reference {
     child: Child,
     input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
 }
 impl Reference {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut child = Command::new(
             std::env::var_os("SANDPROOF_GUEST_DOWNLOAD_REFERENCE").expect("reference required"),
         )
@@ -27,7 +27,7 @@ impl Reference {
             output,
         }
     }
-    fn check(&mut self, input: &str, observed: &str) {
+    pub(crate) fn check(&mut self, input: &str, observed: &str) {
         let writer = self.input.as_mut().unwrap();
         writeln!(writer, "{input}").unwrap();
         writer.flush().unwrap();
@@ -39,7 +39,7 @@ impl Reference {
             "oracle input {input}"
         );
     }
-    fn finish(&mut self) {
+    pub(crate) fn finish(&mut self) {
         drop(self.input.take());
         assert!(self.child.wait().unwrap().success());
     }
@@ -50,7 +50,7 @@ impl Drop for Reference {
         let _ = self.child.wait();
     }
 }
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut value, byte| {
         write!(value, "{byte:02x}").unwrap();

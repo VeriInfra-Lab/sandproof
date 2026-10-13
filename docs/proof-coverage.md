@@ -270,6 +270,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [下载 MIME](../sandbox-guest-runtime/src/file_mime/mod.rs)新增不可变数据库来源/优先级、Unicode 查表、原始 filename 编码、512 字节签名顺序及配置计费义务；[identity 执行](../sandbox-guest-service/src/file_download/stream.rs)新增条件先于嗅探、忽略读取错误但保留前缀、回绕失败与阻塞取消期间原守卫保留的组合义务。有限固定 Go 对照及本地组件通过只属工程证据，Linux 固定路径/原 FD 和模板来源验证尚待实跑。这些模块未抽取或证明；现有 multipart 参数解析仅开放 crate 内复用，算法未改，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 均未改，旧定理不覆盖新增路径。
 
+[协商下载](../sandbox-guest-service/src/file_download/stream/negotiated.rs)与[Linux 延迟打开](../sandbox-guest-runtime/src/filesystem/transfer.rs)新增 stat/选择/open 拒绝顺序、旧 metadata 与后续路径变化、单 worker 身份及期限、Vary 阶段、准备期错误响应和 gzip HEAD 消费/发送时机义务。可移植有限故障对照不代表真实 Linux 或完整端点验收；这些新增及重构代码均未抽取或证明。纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新的文件连接。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。

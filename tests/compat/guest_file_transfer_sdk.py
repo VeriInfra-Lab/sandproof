@@ -277,6 +277,53 @@ async def range_async(url, root):
             check_range(response, method, status, expected)
 
 
+def negotiated_requests():
+    # method, filename, repeated headers, status, gzip response, Vary, body
+    return [
+        ('GET', 'metadata', [('accept-encoding', 'GZIP')], 200, True, True, b'new'),
+        ('GET', 'metadata', [('accept-encoding', 'gzip;q=.4,identity;q=.9')], 200, False, True, b'new'),
+        ('GET', 'metadata', [('accept-encoding', 'gzip'), ('range', 'bytes=0-1')], 206, False, True, b'ne'),
+        ('GET', 'metadata', [('accept-encoding', 'gzip'), ('if-none-match', '*')], 304, False, True, b''),
+        ('GET', 'metadata', [('accept-encoding', 'identity;q=0')], 406, False, False, None),
+        ('GET', 'metadata', [('accept-encoding', 'gzip,identity;q=0'), ('range', 'bytes=0-1')], 406, False, True, None),
+        ('GET', 'missing', [('accept-encoding', 'identity;q=0')], 404, False, False, None),
+        ('GET', 'directory', [('accept-encoding', 'identity;q=0')], 400, False, False, None),
+        ('HEAD', 'metadata', [('accept-encoding', 'gzip')], 200, True, True, b''),
+        ('GET', 'metadata', [('accept-encoding', 'identity;q=0'), ('accept-encoding', 'gzip')], 406, False, False, None),
+    ]
+
+
+def check_negotiated(response, status, compressed, vary, expected):
+    assert response.status_code == status, (response.status_code, response.content)
+    assert (response.headers.get('content-encoding') == 'gzip') == compressed
+    assert response.headers.get('vary') == ('Accept-Encoding' if vary else None)
+    if expected is not None:
+        assert response.content == expected  # httpx decodes gzip automatically
+    if status == 406:
+        expected_message = ('identity encoding not acceptable for Range or conditional request' if vary
+                            else 'error parsing Accept-Encoding: no acceptable encoding found, supported: [gzip]')
+        assert response.json()['message'] == expected_message
+    if status >= 400:
+        assert 'content-disposition' not in response.headers
+    if compressed:
+        assert 'content-length' not in response.headers
+        assert response.headers['content-type'] == 'application/octet-stream'
+
+
+def negotiated_sync(url, root):
+    with httpx.Client(trust_env=False, timeout=10, headers={'x-access-token': 'fixture-token'}) as client:
+        for method, name, headers, status, compressed, vary, expected in negotiated_requests():
+            response = client.request(method, url + '/files', params={'path': f'{root}/{name}'}, headers=headers)
+            check_negotiated(response, status, compressed, vary, expected)
+
+
+async def negotiated_async(url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10, headers={'x-access-token': 'fixture-token'}) as client:
+        for method, name, headers, status, compressed, vary, expected in negotiated_requests():
+            response = await client.request(method, url + '/files', params={'path': f'{root}/{name}'}, headers=headers)
+            check_negotiated(response, status, compressed, vary, expected)
+
+
 def run_sync(url, root):
     sandbox = Sandbox.connect('probe-sandbox', **arguments(url))
     for name, data in payloads():
@@ -317,6 +364,7 @@ def run_sync(url, root):
     compressed_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
     range_sync(url, root)
+    negotiated_sync(url, root)
 
 
 async def run_async(url, root):
@@ -363,6 +411,7 @@ async def run_async(url, root):
     await compressed_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
     await range_async(url, root)
+    await negotiated_async(url, root)
 
 
 if __name__ == '__main__':

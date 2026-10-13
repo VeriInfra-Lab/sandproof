@@ -1,4 +1,5 @@
 use super::*;
+mod negotiation;
 use futures_util::FutureExt;
 use http_body_util::BodyExt;
 use sandproof_guest_runtime::file_download::{self as wire, date::Utc};
@@ -84,6 +85,8 @@ async fn drain(mut download: IdentityDownload) -> (Vec<u8>, Option<DownloadError
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Event {
+    Stat,
+    Open,
     Seek(SeekFrom),
     Read,
     Drop,

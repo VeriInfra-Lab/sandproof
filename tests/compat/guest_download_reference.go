@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -38,6 +39,29 @@ func local(name string, offset string) {
 		time.Local = time.FixedZone(string(decode(name)), int(integer(offset)))
 	}
 }
+
+type failingSeeker struct {
+	*bytes.Reader
+	calls, fail int
+}
+
+func (r *failingSeeker) Seek(offset int64, whence int) (int64, error) {
+	r.calls++
+	if r.calls == r.fail {
+		return 0, errors.New("private seek details")
+	}
+	return r.Reader.Seek(offset, whence)
+}
+func dump(result *httptest.ResponseRecorder) {
+	response := result.Result()
+	body := result.Body.Bytes()
+	fmt.Printf("%d", response.StatusCode)
+	for _, name := range []string{"Last-Modified", "Content-Range", "Accept-Ranges", "Content-Type", "Content-Length", "ETag", "Cache-Control", "Content-Encoding", "X-Content-Type-Options", "Vary", "Content-Disposition"} {
+		fmt.Printf("\t%x", response.Header.Get(name))
+	}
+	fmt.Printf("\t%x\n", body)
+	response.Body.Close()
+}
 func main() {
 	if runtime.Version() != "go1.26.8" {
 		panic("reference requires go1.26.8")
@@ -61,6 +85,25 @@ func main() {
 			} else {
 				fmt.Printf("%d\t%d\n", t.Unix(), t.Nanosecond())
 			}
+		case "F":
+			if len(f) != 4 {
+				panic("fault fields")
+			}
+			request := &http.Request{Method: f[3], Header: make(http.Header)}
+			result := httptest.NewRecorder()
+			for name, value := range map[string]string{"Vary": "Accept-Encoding", "Content-Disposition": "inline", "ETag": "tag", "Cache-Control": "private", "Content-Encoding": "gzip", "Content-Length": "999"} {
+				result.Header().Set(name, value)
+			}
+			if f[2] == "known" {
+				result.Header().Set("Content-Type", "application/octet-stream")
+			}
+			source := &failingSeeker{Reader: bytes.NewReader([]byte("01234")), fail: int(integer(f[1]))}
+			http.ServeContent(result, request, "no-extension", time.Unix(1, 0), source)
+			// httptest captures attempted HEAD writes; real net/http suppresses them.
+			if f[3] == "HEAD" {
+				result.Body.Reset()
+			}
+			dump(result)
 		case "P":
 			if len(f) != 14 {
 				panic("response fields")

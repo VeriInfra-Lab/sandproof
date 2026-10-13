@@ -1,5 +1,5 @@
 use super::*;
-mod reference;
+pub(crate) mod reference;
 use wire::date::Utc;
 const BOUNDARY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 fn limits() -> Limits {

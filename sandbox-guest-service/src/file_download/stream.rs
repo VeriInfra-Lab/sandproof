@@ -17,12 +17,19 @@ use std::{
 };
 use tokio::{sync::watch, time::Instant};
 
+mod negotiated;
+pub use negotiated::NegotiationLimits;
+pub type IdentityDownload = Download;
+
 #[cfg(test)]
 mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DownloadError {
     Plan(Error),
+    Negotiation(crate::file_encoding::DownloadError),
+    Gzip(crate::upload_body::GzipError),
+    Stat,
     Mime(file_mime::Error),
     InvalidConfiguration,
     SourceNotFound,
@@ -92,13 +99,13 @@ impl From<HeaderValue> for ContentType {
 
 /// Ready headers follow successful preparation and the initial single-range
 /// seek. The retained handle and all chunks keep the original guard alive.
-pub struct IdentityDownload {
+pub struct Download {
     status: StatusCode,
     headers: HeaderMap,
     body: OwnedBody<DownloadError>,
     _owner: Owner,
 }
-impl IdentityDownload {
+impl Download {
     /// Open and prepare on the same owned worker used for every seek/read.
     /// `open` returns the original descriptor and pre-open stat timestamp.
     /// Caller already owns admission/auth and a MIME-file snapshot; this is not
@@ -109,7 +116,7 @@ impl IdentityDownload {
     /// Later read/seek/short-read failures stay body errors, never HTTP EOF.
     pub async fn open<R, F, Z>(
         open: F,
-        mut request: IdentityRequest,
+        request: IdentityRequest,
         limits: IdentityLimits,
         local: Z,
         deadline: Instant,
@@ -129,87 +136,15 @@ impl IdentityDownload {
         }
         let ((status, headers), body) =
             OwnedBody::start(deadline, Arc::clone(&owner), move |_, cancel| {
-                let (mut source, modified) = open()?;
-                let control = Control { deadline, cancel };
-                control.check()?;
-                if let Some(path) = request.disposition_path {
-                    let value = file_mime::disposition(
-                        &path,
-                        limits.path_bytes,
-                        limits.plan.response_header_bytes,
-                    )
-                    .map_err(DownloadError::Mime)?;
-                    request.response.insert(
-                        "content-disposition",
-                        HeaderValue::from_bytes(&value)
-                            .map_err(|_| DownloadError::InvalidConfiguration)?,
-                    );
-                }
-                let head = request.method == Method::HEAD;
-                let plan = match prepare(
-                    &request.method,
-                    &request.headers,
-                    request.response,
+                let (source, modified) = open()?;
+                prepare_identity(
+                    source,
                     modified,
-                    limits.plan,
+                    request,
+                    limits,
                     &local,
-                )? {
-                    Preparation::Finished(plan) => plan,
-                    Preparation::Continue(next) => {
-                        let content_type = if next.headers.contains_key("content-type") {
-                            HeaderValue::from_static("")
-                        } else {
-                            resolve_type(&mut source, request.content_type, &control, limits)?
-                        };
-                        let size = control.seek(
-                            &mut source,
-                            SeekFrom::End(0),
-                            DownloadError::LengthSeek,
-                        )?;
-                        control.seek(&mut source, SeekFrom::Start(0), DownloadError::LengthSeek)?;
-                        let plan = next.finish(size, content_type, request.boundary.as_deref())?;
-                        if plan.file_bytes > limits.file_bytes {
-                            return Err(DownloadError::ResourceExhausted);
-                        }
-                        if let Some(start) = plan.required_seek {
-                            control.seek(
-                                &mut source,
-                                SeekFrom::Start(start),
-                                DownloadError::RangeSeek,
-                            )?;
-                        }
-                        plan
-                    }
-                };
-                let ResponsePlan {
-                    status,
-                    headers,
-                    mut body,
-                    ..
-                } = plan;
-                if head {
-                    body = BodyPlan::Empty;
-                }
-                let source = if matches!(body, BodyPlan::Empty | BodyPlan::Error(_)) {
-                    drop(source);
-                    None
-                } else {
-                    Some(source)
-                };
-                control.check()?;
-                let multi = matches!(body, BodyPlan::Multipart { .. });
-                Ok((
-                    (status, headers),
-                    Reader {
-                        source,
-                        body,
-                        index: 0,
-                        current: None,
-                        control,
-                        multi,
-                        chunk_bytes: limits.chunk_bytes,
-                    },
-                ))
+                    Control { deadline, cancel },
+                )
             })
             .await?;
         Ok(Self {
@@ -250,6 +185,105 @@ impl IdentityDownload {
         *response.headers_mut() = headers;
         response
     }
+}
+
+fn prepare_identity<R: Read + Seek>(
+    mut source: R,
+    modified: Timestamp,
+    mut request: IdentityRequest,
+    limits: IdentityLimits,
+    local: &impl LocalZone,
+    control: Control,
+) -> Result<((StatusCode, HeaderMap), Reader<R>), DownloadError> {
+    control.check()?;
+    set_disposition(&mut request, limits)?;
+    let head = request.method == Method::HEAD;
+    let plan = match prepare(
+        &request.method,
+        &request.headers,
+        request.response,
+        modified,
+        limits.plan,
+        local,
+    )? {
+        Preparation::Finished(plan) => plan,
+        Preparation::Continue(next) => {
+            let content_type = if next.headers.contains_key("content-type") {
+                HeaderValue::from_static("")
+            } else {
+                resolve_type(&mut source, request.content_type, &control, limits)?
+            };
+            let size = control.seek(&mut source, SeekFrom::End(0), DownloadError::LengthSeek)?;
+            control.seek(&mut source, SeekFrom::Start(0), DownloadError::LengthSeek)?;
+            let plan = next.finish(size, content_type, request.boundary.as_deref())?;
+            if plan.file_bytes > limits.file_bytes {
+                return Err(DownloadError::ResourceExhausted);
+            }
+            if let Some(start) = plan.required_seek {
+                control.seek(
+                    &mut source,
+                    SeekFrom::Start(start),
+                    DownloadError::RangeSeek,
+                )?;
+            }
+            plan
+        }
+    };
+    response_reader(source, plan, head, control, limits.chunk_bytes)
+}
+
+fn response_reader<R: Read + Seek>(
+    source: R,
+    plan: ResponsePlan,
+    head: bool,
+    control: Control,
+    chunk_bytes: usize,
+) -> Result<((StatusCode, HeaderMap), Reader<R>), DownloadError> {
+    let ResponsePlan {
+        status,
+        headers,
+        mut body,
+        ..
+    } = plan;
+    if head {
+        body = BodyPlan::Empty;
+    }
+    let source = if matches!(body, BodyPlan::Empty | BodyPlan::Error(_)) {
+        drop(source);
+        None
+    } else {
+        Some(source)
+    };
+    control.check()?;
+    let multi = matches!(body, BodyPlan::Multipart { .. });
+    Ok((
+        (status, headers),
+        Reader {
+            source,
+            body,
+            index: 0,
+            current: None,
+            control,
+            multi,
+            chunk_bytes,
+        },
+    ))
+}
+
+fn set_disposition(
+    request: &mut IdentityRequest,
+    limits: IdentityLimits,
+) -> Result<(), DownloadError> {
+    if let Some(path) = request.disposition_path.take() {
+        let value =
+            file_mime::disposition(&path, limits.path_bytes, limits.plan.response_header_bytes)
+                .map_err(DownloadError::Mime)?;
+        request.response.insert(
+            "content-disposition",
+            HeaderValue::from_bytes(&value).map_err(|_| DownloadError::InvalidConfiguration)?,
+        );
+    }
+    Ok(())
 }
 
 fn resolve_type(

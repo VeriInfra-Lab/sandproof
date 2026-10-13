@@ -16,6 +16,8 @@ use tokio::time::{Instant, timeout_at};
 use crate::{AuthPermit, files::HttpFileContext};
 
 mod batch;
+mod download;
+pub use download::DownloadLimits;
 mod gzip_download;
 mod identity_download;
 pub use crate::upload_body::{GzipError, GzipLimits, HttpBodyLimits};

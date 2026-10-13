@@ -13,7 +13,7 @@ use axum::{
 use futures_util::StreamExt;
 use sandproof_guest_runtime::{
     accounts::{AccountLimits, lookup_local_ownership},
-    file_mime::{self, Catalog, CatalogLimits},
+    file_mime::{Catalog, CatalogLimits},
     filesystem::{
         FileLimits,
         transfer::{TransferIoError, TransferLimits, UploadResult},
@@ -24,8 +24,8 @@ use sandproof_guest_service::{
     SystemAccounts,
     file_download::{ContentType, DownloadError, IdentityRequest, Limits as DownloadLimits},
     file_transfer::{
-        BatchLimits, BatchReply, FileStreamError, FileStreams, GzipLimits, HttpBodyLimits,
-        IdentityDownloadError, MultipartError, MultipartLimits,
+        BatchLimits, BatchReply, DownloadLimits as NegotiatedLimits, FileStreamError, FileStreams,
+        GzipLimits, HttpBodyLimits, IdentityDownloadError, MultipartError, MultipartLimits,
     },
     files::{FileContextLimits, FileSettings, HttpFileContext},
 };
@@ -129,15 +129,14 @@ async fn files(
     fixture.seen.fetch_add(1, Ordering::SeqCst);
     if request.method() == Method::GET || request.method() == Method::HEAD {
         let context = selection.resolve(params.path.as_deref().unwrap()).unwrap();
-        // Test-only selection for the SDK's explicit gzip=true option. The
-        // complete Go Accept-Encoding/range/conditional parser is separate.
+        // Count the original explicit gzip requests, including rejected files.
+        // Selection itself now follows stat inside the admitted download worker.
         if request
             .headers()
             .get("accept-encoding")
             .is_some_and(|value| value == "gzip")
         {
             fixture.gzip_download_seen.fetch_add(1, Ordering::SeqCst);
-            return gzip_download(&fixture, auth, context, params.path.unwrap()).await;
         }
         return download(&fixture, auth, context, request, params.path.unwrap()).await;
     }
@@ -276,40 +275,6 @@ fn gzip_limits() -> GzipLimits {
 fn entry(result: &UploadResult) -> serde_json::Value {
     serde_json::json!({"path":result.path,"name":Path::new(&result.path).file_name().unwrap().to_str().unwrap(),"type":"file","metadata":result.metadata})
 }
-async fn gzip_download(
-    fixture: &Fixture,
-    auth: AuthPermit,
-    context: HttpFileContext,
-    original_path: String,
-) -> Response {
-    let resolved_path = context.path.clone();
-    match fixture.files.download_gzip(auth, context, 10 << 20).await {
-        Ok(download) => Response::builder()
-            .status(200)
-            .header("content-encoding", "gzip")
-            // The gzip path never sniffs content, even for unknown extensions.
-            .header(
-                "content-type",
-                fixture
-                    .mime
-                    .lookup(file_mime::extension(&original_path))
-                    .unwrap()
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or("application/octet-stream"),
-            )
-            .header(
-                "content-disposition",
-                HeaderValue::from_bytes(
-                    &file_mime::disposition(resolved_path.as_bytes(), 4096, 8192).unwrap(),
-                )
-                .unwrap(),
-            )
-            .header("vary", "Accept-Encoding")
-            .body(download.into_body())
-            .unwrap(),
-        Err(error) => failure(error),
-    }
-}
 async fn download(
     fixture: &Fixture,
     auth: AuthPermit,
@@ -340,28 +305,59 @@ async fn download(
     };
     match fixture
         .files
-        .download_identity(
+        .download_negotiated(
             auth,
             context,
             request,
-            limits,
+            NegotiatedLimits {
+                response: limits,
+                encoding: sandproof_guest_service::file_encoding::Limits {
+                    header_bytes: 65536,
+                    items: 128,
+                },
+                compressed_bytes: 10 << 20,
+            },
             sandproof_guest_runtime::file_download::date::Utc,
         )
         .await
     {
         Ok(download) => download.into_response(),
         Err(IdentityDownloadError::Admission(error)) => failure(error),
-        Err(IdentityDownloadError::Download(error)) => failure(match error {
-            DownloadError::SourceNotFound => FileStreamError::Operation(TransferIoError::NotFound),
-            DownloadError::SourceInvalid => {
-                FileStreamError::Operation(TransferIoError::InvalidArgument)
-            }
-            DownloadError::ResourceExhausted => FileStreamError::ResourceExhausted,
-            DownloadError::DeadlineExceeded => FileStreamError::DeadlineExceeded,
-            _ => FileStreamError::Operation(TransferIoError::Internal),
-        }),
+        Err(IdentityDownloadError::Download(error)) => download_failure(error),
     }
 }
+fn download_failure(error: DownloadError) -> Response {
+    if let DownloadError::Negotiation(error) = error
+        && error.cause == sandproof_guest_service::file_encoding::Error::NotAcceptable
+    {
+        let mut response = (StatusCode::NOT_ACCEPTABLE, Json(serde_json::json!({
+                "message": if error.vary_accept_encoding { "identity encoding not acceptable for Range or conditional request" }
+                else { "error parsing Accept-Encoding: no acceptable encoding found, supported: [gzip]" }
+            }))).into_response();
+        if error.vary_accept_encoding {
+            response
+                .headers_mut()
+                .insert("vary", HeaderValue::from_static("Accept-Encoding"));
+        }
+        return response;
+    }
+    let mut response = failure(match error {
+        DownloadError::SourceNotFound => FileStreamError::Operation(TransferIoError::NotFound),
+        DownloadError::SourceInvalid => {
+            FileStreamError::Operation(TransferIoError::InvalidArgument)
+        }
+        DownloadError::ResourceExhausted => FileStreamError::ResourceExhausted,
+        DownloadError::DeadlineExceeded => FileStreamError::DeadlineExceeded,
+        _ => FileStreamError::Operation(TransferIoError::Internal),
+    });
+    if matches!(error, DownloadError::Open) {
+        response
+            .headers_mut()
+            .insert("vary", HeaderValue::from_static("Accept-Encoding"));
+    }
+    response
+}
+
 async fn raw_upload(
     fixture: &Fixture,
     auth: AuthPermit,
@@ -529,10 +525,10 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 132);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 152);
     assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 12);
     assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 8);
-    assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 24);
+    assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     for mode in ["sync", "async"] {
         assert_eq!(
             std::fs::read(directory.path().join(mode).join("form/binary")).unwrap(),

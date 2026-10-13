@@ -3,7 +3,7 @@
 use sandproof_guest_runtime::filesystem::{
     FileLimits, Ownership,
     transfer::{
-        DownloadFile, DownloadSource, TransferIoError, TransferLimits, UploadFile,
+        DownloadFile, DownloadPath, DownloadSource, TransferIoError, TransferLimits, UploadFile,
         validate_metadata,
     },
 };
@@ -301,4 +301,25 @@ fn gzip_source_observes_growth_shrink_and_original_descriptor_without_length_see
         DownloadSource::open(root.path().join("missing").to_str().unwrap(), limits()),
         Err(TransferIoError::NotFound)
     ));
+}
+
+#[test]
+fn deferred_open_preserves_preopen_metadata_without_restat_or_inode_pinning() {
+    use std::os::unix::fs::MetadataExt;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("source");
+    fs::write(&path, b"old").unwrap();
+    let pending = DownloadPath::inspect(path.to_str().unwrap().into(), limits()).unwrap();
+    let old_inode = pending.metadata().ino();
+    fs::rename(&path, root.path().join("old")).unwrap();
+    fs::write(&path, b"replacement").unwrap();
+    assert_ne!(fs::metadata(&path).unwrap().ino(), old_inode);
+    let (mut source, metadata) = pending.open().unwrap();
+    assert_eq!(metadata.ino(), old_inode);
+    let mut bytes = Vec::new();
+    source.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"replacement");
+    let pending = DownloadPath::inspect(path.to_str().unwrap().into(), limits()).unwrap();
+    fs::remove_file(&path).unwrap();
+    assert!(matches!(pending.open(), Err(TransferIoError::Internal)));
 }

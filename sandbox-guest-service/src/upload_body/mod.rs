@@ -2,7 +2,7 @@
 //! Callers supply the original admission/authorization guard and deadline.
 //! One blocking codec, one accepted input buffer and one output chunk remain
 //! bounded separately from the source transport and fixed codec workspace.
-mod encode;
+pub(crate) mod encode;
 mod http;
 #[cfg(test)]
 mod tests;

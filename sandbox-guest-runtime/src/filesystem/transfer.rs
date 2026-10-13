@@ -254,21 +254,46 @@ impl DownloadSource {
     ) -> Result<(Self, fs::Metadata), TransferIoError> {
         let limits = limits.validate()?;
         limits.check_path(value)?;
-        let info = fs::metadata(value).map_err(|e| {
+        DownloadPath::inspect(value.to_owned(), limits)?.open()
+    }
+}
+/// Validated original path and pre-open metadata, kept across encoding choice.
+/// This does not pin an inode or claim a consistent filesystem snapshot.
+pub struct DownloadPath {
+    path: String,
+    metadata: fs::Metadata,
+}
+impl DownloadPath {
+    /// # Errors
+    /// Path/budget, stat or directory rejection. Does not open the file body.
+    pub fn inspect(path: String, limits: TransferLimits) -> Result<Self, TransferIoError> {
+        let limits = limits.validate()?;
+        limits.check_path(&path)?;
+        let metadata = fs::metadata(&path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 TransferIoError::NotFound
             } else {
                 TransferIoError::Internal
             }
         })?;
-        if info.is_dir() {
+        if metadata.is_dir() {
             return Err(TransferIoError::InvalidArgument);
         }
-        File::open(value)
-            .map(|file| (Self(file), info))
+        Ok(Self { path, metadata })
+    }
+    #[must_use]
+    pub const fn metadata(&self) -> &fs::Metadata {
+        &self.metadata
+    }
+    /// # Errors
+    /// Original-path open failure. Does not restat even after replacement.
+    pub fn open(self) -> Result<(DownloadSource, fs::Metadata), TransferIoError> {
+        File::open(&self.path)
+            .map(|file| (DownloadSource(file), self.metadata))
             .map_err(|_| TransferIoError::Internal)
     }
 }
+
 impl Read for DownloadSource {
     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
         self.0.read(output)

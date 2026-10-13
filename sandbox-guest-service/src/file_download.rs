@@ -1,6 +1,6 @@
 //! Staged identity download plans and owned execution; no production listener.
 //! The pure prepare/finish stages plan reads. `IdentityDownload` executes them
-//! for an already-known MIME type under the caller's original guard/deadline.
+//! under the caller's original guard/deadline, with optional MIME discovery.
 // Adapted from Go 1.26.8 net/http/fs.go (Copyright 2009 The Go Authors).
 // BSD license: ../../sandbox-guest-runtime/src/multipart/GO-LICENSE.
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -11,7 +11,8 @@ use sandproof_guest_runtime::file_download::{
 
 mod stream;
 pub use stream::{
-    ContentType, DownloadChunk, DownloadError, IdentityDownload, IdentityLimits, IdentityRequest,
+    ContentType, Download, DownloadChunk, DownloadError, IdentityDownload, IdentityLimits,
+    IdentityRequest, NegotiationLimits,
 };
 #[cfg(test)]
 mod tests;
@@ -275,40 +276,54 @@ impl AfterConditions {
                     .map_err(|_| Error::InvalidConfiguration)?,
             );
         }
-        for name in [
-            "cache-control",
-            "content-encoding",
-            "etag",
-            "last-modified",
-            "content-length",
-        ] {
-            self.headers.remove(name);
-        }
-        self.headers.insert(
-            "content-type",
-            HeaderValue::from_static("text/plain; charset=utf-8"),
-        );
-        self.headers.insert(
-            "x-content-type-options",
-            HeaderValue::from_static("nosniff"),
-        );
         let message = if no_overlap {
             b"invalid range: failed to overlap\n".as_slice()
         } else {
             b"invalid range\n"
         };
-        if message.len() as u64 > self.limits.wire_bytes {
-            return Err(Error::ResponseLimit);
-        }
-        header_budget(&self.headers, self.limits.response_header_bytes)?;
-        Ok(ResponsePlan {
-            status: StatusCode::RANGE_NOT_SATISFIABLE,
-            headers: self.headers,
-            body: BodyPlan::Error(message),
-            required_seek: None,
-            file_bytes: 0,
-        })
+        serve_error(
+            self.headers,
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            message,
+            self.limits,
+        )
     }
+}
+
+fn serve_error(
+    mut headers: HeaderMap,
+    status: StatusCode,
+    message: &'static [u8],
+    limits: Limits,
+) -> Result<ResponsePlan, Error> {
+    for name in [
+        "cache-control",
+        "content-encoding",
+        "etag",
+        "last-modified",
+        "content-length",
+    ] {
+        headers.remove(name);
+    }
+    headers.insert(
+        "content-type",
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    if message.len() as u64 > limits.wire_bytes {
+        return Err(Error::ResponseLimit);
+    }
+    header_budget(&headers, limits.response_header_bytes)?;
+    Ok(ResponsePlan {
+        status,
+        headers,
+        body: BodyPlan::Error(message),
+        required_seek: None,
+        file_bytes: 0,
+    })
 }
 
 impl BodyPlan {
