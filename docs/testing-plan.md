@@ -42,6 +42,10 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 ### 持久化、身份与有界运行
 
+#311 来宾替换先复用 S02/S03/S11/S12：固定同步/异步 SDK 对固定 envd 与 Rust 实现执行同一合同样例，区分主进程退出、管道结束、输出排空、请求超时和 VM 停止；保留 stdin/PTY、非零退出、部分文件写入、断线/重启/旧 PID 及预算边界。真实模板切换还须通过 S01/S04/S05/S09/S13 的相关路径和原身份清理，不用组件样例代替实机。
+
+首批[命令/文件纯核心测试](../sandbox-guest-core/tests/completion.rs)由 workspace 基础检查发现，覆盖退出/双管道 EOF 的全部顺序、未消费输出、旧内部身份、持续输出的有限驻留、短写/截断和关闭失败；不启动真实进程或操作来宾文件。[固定协议样例](../tests/compat/guest-service-contract.json)由 [SDK schema 检查](../tests/compat/test_guest_service_contract.py)读取，核对命令、PTY、二进制输入、文件属性及编码。它们不是完整 Rust 服务的协议对照，尚未核销 #311 的 E01–E10。
+
 请求入口（#290 R1）用[管理路由合同](../sandbox-api/tests/http_contract.rs)、[真实应用锁夹具](../sandbox-api/tests/managed_port/admission.rs)、[取消/回应期限测试](../sandbox-api/src/lib.rs)及 [Linux 网关端口夹具](../sandbox-host-service/src/data_gateway/port_tests.rs)验收：受控宿主持锁时请求满额即 429，不新增后端调用；有效/无效数据令牌均受派发预算限制；控制及后台名额保留；HTTP 取消、回应期限耗尽后阻塞工作继续占额，实际结束/异常退出才释放。固定 SDK 的既有 429 映射与重试检查仍须通过，重试不意味着客户端具备幂等键。以上为真实 SQLite/HTTP 加受控宿主的组件证据，不是 KVM 性能或完整拒绝服务防护证明；远程部署还须验收模块合同列出的 TLS 前端约束。
 
 - 接受意图及 outbox 先提交，再执行外部动作；提交前故障不得产生 VM。启动成功而回执未落盘时，重启认出原 VM，不创建替代身份。
