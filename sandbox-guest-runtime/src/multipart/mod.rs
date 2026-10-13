@@ -15,7 +15,9 @@ mod quoted_printable;
 mod tests;
 pub use headers::{BoundaryError, BoundaryRejection, Part, boundary, boundary_detailed};
 pub(crate) use headers::{MediaError, media_type};
-pub use quoted_printable::{Decoded, QuotedPrintable};
+pub use quoted_printable::{
+    Decoded, DecodedDetailed, QuotedPrintable, QuotedPrintableError, QuotedPrintableReadError,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {

@@ -21,6 +21,7 @@ pub struct MultipartLimits {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
+    QuotedPrintable(multipart::QuotedPrintableError),
     MultipartHeaders(multipart::HeaderError),
     MultipartRead(multipart::FramingError),
     MultipartSetup(multipart::BoundaryRejection),
@@ -62,6 +63,14 @@ impl From<multipart::ReadError> for MultipartError {
             multipart::ReadError::Decode(error) => Self::Decode(error),
             multipart::ReadError::Headers(error) => Self::MultipartHeaders(error),
             multipart::ReadError::Framing(error) => Self::MultipartRead(error),
+        }
+    }
+}
+impl From<multipart::QuotedPrintableReadError> for MultipartError {
+    fn from(error: multipart::QuotedPrintableReadError) -> Self {
+        match error {
+            multipart::QuotedPrintableReadError::Decode(error) => Self::Decode(error),
+            multipart::QuotedPrintableReadError::Encoding(error) => Self::QuotedPrintable(error),
         }
     }
 }
@@ -144,13 +153,20 @@ async fn receive_file(
                     .err()
                     .unwrap_or(MultipartError::Decode(multipart::Error::Truncated));
                 if let Some(qp) = &mut qp {
-                    let prefix = qp.abort(multipart::Error::Truncated);
+                    let prefix = qp.abort_detailed(multipart::Error::Truncated);
                     write_bytes(&mut file, &prefix.bytes).await?;
-                    // The quoted-printable reader can fail before observing its
-                    // upstream EOF. Preserve that precedence, not a false MIME
-                    // truncation response for a malformed encoded line.
-                    if prefix.error == Some(multipart::Error::Malformed) {
-                        return Err(multipart::Error::Malformed.into());
+                    // Only actual source failure or the MIME reader's body
+                    // truncation can finish a QP line as a failed read. Local
+                    // length/budget/deadline failures keep their own identity.
+                    if (input.source_failed
+                        || matches!(
+                            error,
+                            MultipartError::MultipartRead(multipart::FramingError::BodyTruncated)
+                        ))
+                        && let Some(multipart::QuotedPrintableReadError::Encoding(observed)) =
+                            prefix.error
+                    {
+                        return Err(MultipartError::QuotedPrintable(observed));
                     }
                 }
                 return Err(error);
@@ -159,7 +175,7 @@ async fn receive_file(
         match event {
             Event::Data(bytes) => {
                 if let Some(qp) = &mut qp {
-                    let output = qp.feed(&bytes);
+                    let output = qp.feed_detailed(&bytes);
                     write_bytes(&mut file, &output.bytes).await?;
                     if let Some(error) = output.error {
                         return Err(error.into());
@@ -170,7 +186,7 @@ async fn receive_file(
             }
             Event::PartEnd => {
                 if let Some(mut qp) = qp {
-                    let output = qp.finish();
+                    let output = qp.finish_detailed();
                     write_bytes(&mut file, &output.bytes).await?;
                     if let Some(error) = output.error {
                         return Err(error.into());
@@ -219,6 +235,7 @@ struct Input {
     limits: MultipartLimits,
     deadline: Instant,
     eof: bool,
+    source_failed: bool,
 }
 impl Input {
     fn new(
@@ -250,10 +267,12 @@ impl Input {
             limits,
             deadline,
             eof: false,
+            source_failed: false,
         })
     }
 
     async fn next(&mut self) -> Result<Option<Event>, MultipartError> {
+        self.source_failed = false;
         loop {
             timely(self.deadline, Ok(()))?;
             if let Some(event) = self.decoder.next_event_detailed()? {
@@ -280,6 +299,7 @@ impl Input {
                                 | GzipError::Deflate
                         ) =>
                 {
+                    self.source_failed = true;
                     // An actual reader failure ends the physical/logical header
                     // in Go. Local HTTP length/limit/deadline failures do not.
                     if let Some(observed) = self.decoder.fail_input() {

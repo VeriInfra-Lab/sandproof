@@ -11,6 +11,7 @@ mod upload_headers;
 mod upload_mime_headers;
 mod upload_multipart;
 mod upload_multipart_setup;
+mod upload_quoted_printable;
 use crate::file_transfer::FileStreams;
 use crate::files::{FileContextLimits, FileSettings};
 use crate::{

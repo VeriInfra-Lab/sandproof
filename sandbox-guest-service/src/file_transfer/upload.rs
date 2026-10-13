@@ -68,9 +68,11 @@ impl Failure {
                 Rejection::RawPathRequired => UploadRequestError::RawPathRequired,
                 Rejection::Metadata(_) => UploadRequestError::Headers(wire::Error::InvalidMetadata),
                 Rejection::GzipHeader(error) => UploadRequestError::GzipPreflight(error.into()),
-                Rejection::MultipartHeaders(_) => UploadRequestError::Body(
-                    UploadBodyError::Decode(sandproof_guest_runtime::multipart::Error::Malformed),
-                ),
+                Rejection::QuotedPrintable(_) | Rejection::MultipartHeaders(_) => {
+                    UploadRequestError::Body(UploadBodyError::Decode(
+                        sandproof_guest_runtime::multipart::Error::Malformed,
+                    ))
+                }
                 Rejection::MultipartRead(error) => {
                     UploadRequestError::Body(UploadBodyError::Decode(error.coarse()))
                 }
@@ -99,6 +101,9 @@ impl Failure {
 
     fn body(error: UploadBodyError) -> Self {
         match error {
+            UploadBodyError::QuotedPrintable(error) => {
+                Self::Rejected(Rejection::QuotedPrintable(error))
+            }
             UploadBodyError::MultipartHeaders(error) => {
                 Self::Rejected(Rejection::MultipartHeaders(error))
             }

@@ -514,9 +514,9 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 272);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 72);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 54);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 320);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 96);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 66);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     for mode in ["sync", "async"] {
         for name in [
@@ -532,6 +532,7 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
             b"replace"
         );
         for (name, expected) in [
+            ("qp-file", b"prefix".as_slice()),
             ("duplicate", b"first".as_slice()),
             ("before-directory", b"first"),
             ("completed-first", b"done"),

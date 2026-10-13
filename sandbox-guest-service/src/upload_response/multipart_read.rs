@@ -1,7 +1,7 @@
 //! MIME framing observations, wrapped at the original upload read stage.
 use super::Error;
 use crate::go_json;
-use sandproof_guest_runtime::multipart::{FramingError, HeaderError};
+use sandproof_guest_runtime::multipart::{FramingError, HeaderError, QuotedPrintableError};
 mod quote;
 mod tables;
 #[cfg(test)]
@@ -45,6 +45,29 @@ pub(super) fn headers_payload(error: &HeaderError, limit: usize) -> Result<Vec<u
             b"error reading form: malformed MIME header line: ",
             Some(line),
         ),
+    };
+    encoded(prefix, line, limit)
+}
+pub(super) fn qp_payload(error: &QuotedPrintableError, limit: usize) -> Result<Vec<u8>, Error> {
+    let diagnostic;
+    let (prefix, line): (&[u8], Option<&[u8]>) = match error {
+        QuotedPrintableError::UnexpectedEof => (b"error writing file: unexpected EOF", None),
+        QuotedPrintableError::LineTooLong => (b"error writing file: bufio: buffer full", None),
+        QuotedPrintableError::InvalidSoftBreak(tail) => (
+            b"error writing file: quotedprintable: invalid bytes after =: ",
+            Some(tail),
+        ),
+        QuotedPrintableError::InvalidHex(byte) => {
+            diagnostic =
+                format!("error writing file: quotedprintable: invalid hex byte 0x{byte:02x}");
+            (diagnostic.as_bytes(), None)
+        }
+        QuotedPrintableError::InvalidUnescaped(byte) => {
+            diagnostic = format!(
+                "error writing file: quotedprintable: invalid unescaped byte 0x{byte:02x} in body"
+            );
+            (diagnostic.as_bytes(), None)
+        }
     };
     encoded(prefix, line, limit)
 }

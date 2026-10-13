@@ -192,6 +192,41 @@ async def framing_async(sandbox, url, root):
                 assert bytes(await sandbox.files.read(f'{root}/framing-file', format='bytes')) == expected
 
 
+def qp_cases(root):
+    # Synthetic encoded parts; the fixed SDK parses failures and reads prefixes.
+    for compressed in [False, True]:
+        head = (f'--B\r\nContent-Disposition: form-data; name="file"; filename="{root}/qp-file"\r\n'
+                'Content-Transfer-Encoding: quoted-printable\r\n\r\n').encode()
+        for data, closed, message in [
+            (b'prefix\x00tail', True, 'quotedprintable: invalid unescaped byte 0x00 in body'),
+            (b'prefix=\rX', True, 'quotedprintable: invalid hex byte 0x0d'),
+            (b'prefix==', True, 'unexpected EOF'),
+            (b'prefix=\r\r', True, 'quotedprintable: invalid bytes after =: "\\r\\r"'),
+            (b'prefix' + b' ' * 4091, True, 'bufio: buffer full'),
+            (b'prefix=', False, 'quotedprintable: invalid bytes after =: ""'),
+        ]:
+            wire = head + data + (b'\r\n--B--\r\n' if closed else b'')
+            yield ({'x-access-token': 'fixture-token', 'content-type': 'multipart/form-data; boundary=B',
+                    'content-encoding': 'gzip' if compressed else 'identity'},
+                   gzip.compress(wire) if compressed else wire, 'error writing file: ' + message)
+
+
+def qp_sync(sandbox, url, root):
+    with httpx.Client(trust_env=False, timeout=10) as client:
+        for headers, data, message in qp_cases(root):
+            response = client.post(f'{url}/files', headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
+            assert bytes(sandbox.files.read(f'{root}/qp-file', format='bytes')) == b'prefix'
+
+
+async def qp_async(sandbox, url, root):
+    async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
+        for headers, data, message in qp_cases(root):
+            response = await client.post(f'{url}/files', headers=headers, content=data)
+            assert_header_rejection(response, message, 500)
+            assert bytes(await sandbox.files.read(f'{root}/qp-file', format='bytes')) == b'prefix'
+
+
 def payloads():
     return [('empty', b''), ('binary', b'\x00\xffA\r\n'),
             ('large', bytes(range(256)) * 12289)]
@@ -669,6 +704,7 @@ def run_sync(url, root):
     sdk_compressed_upload_sync(sandbox, root)
     header_rejections_sync(url, root)
     framing_sync(sandbox, url, root)
+    qp_sync(sandbox, url, root)
     upload_reply_sync(sandbox, url, root)
     gzip_download_sync(sandbox, url, root)
     range_sync(url, root)
@@ -720,6 +756,7 @@ async def run_async(url, root):
     await sdk_compressed_upload_async(sandbox, root)
     await header_rejections_async(url, root)
     await framing_async(sandbox, url, root)
+    await qp_async(sandbox, url, root)
     await upload_reply_async(sandbox, url, root)
     await gzip_download_async(sandbox, url, root)
     await range_async(url, root)

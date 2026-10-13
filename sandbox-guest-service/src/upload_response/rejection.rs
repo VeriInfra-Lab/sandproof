@@ -10,6 +10,7 @@ use tokio::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
+    QuotedPrintable(sandproof_guest_runtime::multipart::QuotedPrintableError),
     MultipartHeaders(sandproof_guest_runtime::multipart::HeaderError),
     MultipartRead(sandproof_guest_runtime::multipart::FramingError),
     RawGzipBody(GzipReadError),
@@ -30,6 +31,7 @@ impl Rejection {
                 | Self::RawGzipBody(_)
                 | Self::MultipartRead(_)
                 | Self::MultipartHeaders(_)
+                | Self::QuotedPrintable(_)
         ) {
             StatusCode::INTERNAL_SERVER_ERROR
         } else {
@@ -61,6 +63,7 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::QuotedPrintable(error) => return super::multipart_read::qp_payload(error, limit),
         Rejection::MultipartHeaders(error) => return super::multipart_read::headers_payload(error, limit),
         Rejection::MultipartRead(error) => return super::multipart_read::payload(error, limit),
         Rejection::RawGzipBody(error) => parts.extend([b"error writing file: ".as_slice(), error.message()]),

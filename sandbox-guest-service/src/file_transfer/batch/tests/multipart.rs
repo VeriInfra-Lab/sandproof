@@ -168,7 +168,9 @@ async fn decoding_or_final_boundary_failure_keeps_previous_and_partial_files() {
             b"prefix\x7fbad\r\n--B--",
             b"prefix",
             true,
-            MultipartError::Decode(Error::Malformed),
+            MultipartError::QuotedPrintable(
+                sandproof_guest_runtime::multipart::QuotedPrintableError::InvalidUnescaped(127),
+            ),
         ),
         (
             b"prefix\r\n--B broken\r\n",

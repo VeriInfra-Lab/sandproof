@@ -139,23 +139,16 @@ async fn next_part_failures_follow_completed_file_or_ignored_field() {
 }
 
 #[tokio::test]
-async fn qp_header_transport_and_budget_errors_are_not_labeled_as_framing() {
+async fn header_transport_and_budget_errors_are_not_labeled_as_framing() {
     let root = tempfile::tempdir().unwrap();
     let f = Fixture::new(root.path()).await;
-    for (bytes, expected) in [
-        (b"--B\r\n".to_vec(), DecodeError::TruncatedHeaders),
-        (partial("file", b"prefix=", true), DecodeError::Malformed),
-    ] {
-        assert!(
-            matches!(upload(&f, form(&bytes, false), response_limits()).await,
-            Err(UploadHttpError::Request(UploadRequestError::Body(UploadBodyError::Decode(error)))) if error == expected)
-        );
-        quiesce(&f).await;
-    }
-    assert_eq!(
-        std::fs::read(root.path().join("partial")).unwrap(),
-        b"prefix"
-    );
+    assert!(matches!(
+        upload(&f, form(b"--B\r\n", false), response_limits()).await,
+        Err(UploadHttpError::Request(UploadRequestError::Body(
+            UploadBodyError::Decode(DecodeError::TruncatedHeaders)
+        )))
+    ));
+    quiesce(&f).await;
     let mut req = form(b"", false);
     req.body = Body::from_stream(futures_util::stream::iter([Err::<Bytes, _>(
         std::io::Error::other("source"),

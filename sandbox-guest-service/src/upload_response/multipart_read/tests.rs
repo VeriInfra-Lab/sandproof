@@ -1,12 +1,15 @@
 use super::*;
 mod headers;
+mod quoted_printable;
 use crate::{
     file_download::tests::reference::{Reference, hex},
     upload_response::{Limits, Rejection, rejected},
 };
 use axum::http::HeaderValue;
 use http_body_util::BodyExt;
-use sandproof_guest_runtime::multipart::{Decoder, Event, Limits as WireLimits, ReadError};
+use sandproof_guest_runtime::multipart::{
+    Decoder, Event, Limits as WireLimits, QuotedPrintable, QuotedPrintableReadError, ReadError,
+};
 use std::{fmt::Write, sync::Arc, time::Duration};
 use tokio::time::Instant;
 
@@ -104,27 +107,43 @@ fn cases() -> Vec<Vec<u8>> {
 
 // Portable decoder consumer records only file-reader observations. Linux tests
 // separately exercise the actual batch, metadata and original admission.
-fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<ReadError>) {
+fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<Rejection>) {
     let mut decoder = Decoder::new("B", limits(chunk)).unwrap();
     let mut source = input.chunks(chunk);
     let mut writes: Vec<(Vec<u8>, bool)> = Vec::new();
     let mut file = false;
     let mut eof = false;
+    let mut qp: Option<QuotedPrintable> = None;
     let error = loop {
         match decoder.next_event_detailed() {
             Ok(Some(Event::Part(part))) => {
                 file = part.name.as_deref() == Some("file");
-                assert!(!part.quoted_printable);
+                qp = (file && part.quoted_printable).then(|| QuotedPrintable::new(chunk).unwrap());
                 if file {
                     writes.push((Vec::new(), false));
                 }
             }
             Ok(Some(Event::Data(bytes))) => {
                 if file {
-                    writes.last_mut().unwrap().0.extend(bytes);
+                    if let Some(qp) = &mut qp {
+                        let output = qp.feed_detailed(&bytes);
+                        writes.last_mut().unwrap().0.extend(output.bytes);
+                        if let Some(error) = output.error {
+                            break Some(qp_rejection(error));
+                        }
+                    } else {
+                        writes.last_mut().unwrap().0.extend(bytes);
+                    }
                 }
             }
             Ok(Some(Event::PartEnd)) => {
+                if let Some(mut qp) = qp.take() {
+                    let output = qp.finish_detailed();
+                    writes.last_mut().unwrap().0.extend(output.bytes);
+                    if let Some(error) = output.error {
+                        break Some(qp_rejection(error));
+                    }
+                }
                 if file {
                     writes.last_mut().unwrap().1 = true;
                 }
@@ -136,23 +155,35 @@ fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<
                 if let Some(bytes) = source.next() {
                     decoder.feed(bytes).unwrap();
                 } else if source_failure {
-                    break Some(
-                        decoder
-                            .fail_input()
-                            .expect("expected header diagnostic on source failure"),
-                    );
+                    if let Some(error) = decoder.fail_input() {
+                        break Some(mime_rejection(error));
+                    }
+                    let output = qp
+                        .as_mut()
+                        .expect("QP source-failure case")
+                        .abort_detailed(sandproof_guest_runtime::multipart::Error::Truncated);
+                    writes.last_mut().unwrap().0.extend(output.bytes);
+                    break Some(qp_rejection(output.error.unwrap()));
                 } else {
                     eof = true;
                     decoder.end_input();
                 }
             }
             Err(ReadError::Framing(error)) => {
-                break Some(ReadError::Framing(match error {
+                if let Some(qp) = &mut qp {
+                    let output =
+                        qp.abort_detailed(sandproof_guest_runtime::multipart::Error::Truncated);
+                    writes.last_mut().unwrap().0.extend(output.bytes);
+                    if let Some(error @ QuotedPrintableReadError::Encoding(_)) = output.error {
+                        break Some(qp_rejection(error));
+                    }
+                }
+                break Some(Rejection::MultipartRead(match error {
                     FramingError::BodyTruncated if !file => FramingError::NextPartEof,
                     error => error,
                 }));
             }
-            Err(error @ ReadError::Headers(_)) => break Some(error),
+            Err(error @ ReadError::Headers(_)) => break Some(mime_rejection(error)),
             Err(error) => panic!("unmapped {error:?} for {}", hex(input)),
         }
     };
@@ -161,6 +192,20 @@ fn observe(input: &[u8], chunk: usize, source_failure: bool) -> (String, Option<
         write!(effects, "W:{}:{complete};", hex(&bytes)).unwrap();
     }
     (effects, error)
+}
+
+fn qp_rejection(error: QuotedPrintableReadError) -> Rejection {
+    match error {
+        QuotedPrintableReadError::Encoding(error) => Rejection::QuotedPrintable(error),
+        error @ QuotedPrintableReadError::Decode(_) => panic!("unmapped QP error: {error:?}"),
+    }
+}
+fn mime_rejection(error: ReadError) -> Rejection {
+    match error {
+        ReadError::Framing(error) => Rejection::MultipartRead(error),
+        ReadError::Headers(error) => Rejection::MultipartHeaders(error),
+        error @ ReadError::Decode(_) => panic!("unmapped MIME error: {error:?}"),
+    }
 }
 
 #[test]
@@ -234,11 +279,7 @@ async fn check_source(reference: &mut Reference, input: &[u8], chunk: usize, sou
     let (effects, error) = observe(input, chunk, source_failure);
     let suffix = if let Some(error) = error {
         let response = rejected(
-            match error {
-                ReadError::Framing(error) => Rejection::MultipartRead(error),
-                ReadError::Headers(error) => Rejection::MultipartHeaders(error),
-                ReadError::Decode(error) => panic!("unexpected component error {error:?}"),
-            },
+            error,
             Limits {
                 wire_bytes: 65536,
                 chunk_bytes: 37,

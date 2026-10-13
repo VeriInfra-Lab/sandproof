@@ -296,6 +296,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [MIME 头观察](../sandbox-guest-runtime/src/multipart/header_error.rs)新增完整物理/逻辑行确定时机、原验证顺序/折叠/键规范化、诊断源字节预算、真实源失败后已有头验证与本地长度/预算/期限事实分离、当前 Part 未创建及旧粗入口分类迁移的对应义务。原 Go/内存文件观察/HTTP 对照仅为工程证据，Linux 文件/SDK 与原响应责任连接待实跑。来宾适配未抽取或证明；纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖新诊断。
 
+[QP 诊断与前缀](../sandbox-guest-runtime/src/multipart/quoted_printable.rs)新增详细编码错误、固定物理行/后缀预算、源失败与本地检查事实分离、写入先于诊断、旧粗分类迁移及原响应责任的对应义务。Data/PartEnd 与 Go 同时返回字节/EOF 在满行读缓冲对齐处仍有明确差异，原方法对照不是通用精化关系或全端点证明。Linux 文件/metadata/SDK 连接待实跑；来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust、LLBC/Lean 未改，旧定理不覆盖该行为。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。
