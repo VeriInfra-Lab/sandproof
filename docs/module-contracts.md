@@ -401,6 +401,10 @@ envd 重启可丢失登记而原来宾进程仍在：按固定协议返回不可
 
 [流式文件端口](../sandbox-guest-runtime/src/filesystem/transfer.rs)已实现单文件正文的阻塞读写组件，已有 Linux 组件及固定 SDK 测试路由检查。上传先校验已知长度和元数据，再沿固定 envd 的父目录、已有文件 chown、truncate 和必要 fchown 顺序打开；跟随来宾链接，使用 daemon 凭据。按实际短写量推进原 `Transfer`；中断、超额、提前 EOF 或写入错误可留下已创建目录、归属变化和文件前缀，不重试、不回滚，不产生完整成功。完整输入后才通过原 FD 替换 `user.e2b.*`：清除未指定键，保留其他命名空间，元数据键/值遵守固定 printable ASCII 与 4096 字节合同；不支持 xattr 时沿用原忽略行为。回执元数据仍经原路径读取，路径并发替换不构成快照或 inode 身份保证；完成不表示 fsync 耐久提交。
 
+[上传详细 I/O 错误](../sandbox-guest-runtime/src/filesystem/transfer/upload.rs)保留原 open/write/finish 算法，新增 detailed 入口返回预算/输入拒绝或[结构化故障](../sandbox-guest-runtime/src/file_upload/fault.rs)。故障记录实际阶段、失败操作的路径、可选 Linux errno 和 xattr 原始名字节；父目录错误保留父路径，未知错误不编造 errno 或保存任意诊断字符串。路径拷贝受 path_bytes 约束，属性名受原 xattr 暂存或 metadata 键长约束；库分配仍另计。原接口显式降回粗分类，service 暂仍使用它，完整错误 JSON/正文所有权尚未接通。
+
+固定 processFile 的状态区分阶段：目标是目录为 400，open/write 的 ENOSPC 为 507，metadata 的 ENOSPC/EDQUOT 为 507，其余记录的 I/O 故障为 500；父目录创建 ENOSPC 和文件 open/write 的 EDQUOT 不升为 507。预算拒绝独立于这些内核错误。metadata 仍忽略不支持 xattr 和删除时已不存在的属性；短写后失败保留前缀并拒绝重放，零写单独记录。固定 Go 原函数受控故障状态对照已有本地运行；真实 Linux 路径/FD 故障检查待实跑，不代表磁盘满或完整 HTTP 端点验收。
+
 identity 下载持有原 FD 与打开后 seek 得到的初始长度，按块读取；后续增长不附加，提前 EOF 报不完整，文件并发修改不保证内容快照。[流式工作池](../sandbox-guest-service/src/file_transfer.rs)准入后才提交阻塞工作，授权保留至实际工作结束；等待超时或调用取消不提前归还原工作槽位。每个传输最多拥有一个正文块，上传需确认实际写入并释放该块后才接收下一块，下载需已交付块实际丢弃后才继续读。句柄、在途块和成功结果仍保留原槽位；取消中的读写使原句柄不可复用，工作者消失不能冒充正常 EOF。绝对期限覆盖打开、正文与收尾，过期的已就绪回复也不能返回成功；期限不强制中断内核阻塞调用，授权及容量可继续占用到它实际返回。
 
 [顺序批量上传组件](../sandbox-guest-service/src/file_transfer/batch.rs)为整个请求保留同一授权、一次账户/defaults 快照、一个池槽位及原绝对期限；每个文件共享原预留，不因文件数量耗尽工作槽位或重置期限。完整文件名保留路径，存在的查询 `path`（包括空串）覆盖各文件名；按既有词法规则解析后，以结果路径原字符串判重，不声称识别硬链接/符号链接指向同一 inode。重复目标在再次打开前拒绝，先前成功文件保留。正在处理的文件独占借用批次，取消、丢弃、写入或结果预算失败后整批不可继续/成功；完整输入才允许相应 part/request finish，合法空批次返回空结果。调用方仍负责从原 HTTP 正文验证这些结束事实。

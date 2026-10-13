@@ -4,6 +4,9 @@
 // and shared/pkg/filesystem/xattr.go, Apache-2.0: file_encoding/E2B-LICENSE.
 use std::collections::BTreeMap;
 
+mod fault;
+pub use fault::{Fault, Stage};
+
 /// Completed body/metadata work, not a durability or whole-batch transaction.
 #[derive(Debug, PartialEq, Eq)]
 pub struct UploadResult {

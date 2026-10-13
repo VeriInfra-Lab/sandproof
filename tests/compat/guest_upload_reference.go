@@ -18,11 +18,206 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
+// Original processFile from packages/envd/internal/api/upload.go, blob
+// 765e8751ff6fd0901a603b48126ca8292a2e2fe0 at the fixed runtime commit above.
+// Only logger type and I/O namespace calls are substituted; status/error
+// branches remain original. Fault injection checks status classification, not
+// actual disk-full behavior, kernel I/O, or a complete envd HTTP response.
+var ErrNoDiskSpace = errors.New("not enough disk space available")
+
+func processFile(r *http.Request, path string, part io.Reader, uid, gid int, metadata map[string]string, logger oracleLogger) (int, error) {
+	logger.Debug().
+		Str("path", path).
+		Msg("File processing")
+
+	err := oracleEnsureDirs(filepath.Dir(path), uid, gid)
+	if err != nil {
+		err := fmt.Errorf("error ensuring directories: %w", err)
+
+		return http.StatusInternalServerError, err
+	}
+
+	canBePreChowned := false
+	stat, err := oracleStat(path)
+	if err != nil && !os.IsNotExist(err) {
+		errMsg := fmt.Errorf("error getting file info: %w", err)
+
+		return http.StatusInternalServerError, errMsg
+	} else if err == nil {
+		if stat.IsDir() {
+			err := fmt.Errorf("path is a directory: %s", path)
+
+			return http.StatusBadRequest, err
+		}
+		canBePreChowned = true
+	}
+
+	hasBeenChowned := false
+	if canBePreChowned {
+		err = oracleChown(path, uid, gid)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				err = fmt.Errorf("error changing file ownership: %w", err)
+
+				return http.StatusInternalServerError, err
+			}
+		} else {
+			hasBeenChowned = true
+		}
+	}
+
+	file, err := oracleOpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	if err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			err = fmt.Errorf("not enough inodes available: %w", err)
+
+			return http.StatusInsufficientStorage, err
+		}
+
+		err := fmt.Errorf("error opening file: %w", err)
+
+		return http.StatusInternalServerError, err
+	}
+
+	defer file.Close()
+
+	if !hasBeenChowned {
+		err = file.Chown(uid, gid)
+		if err != nil {
+			err := fmt.Errorf("error changing file ownership: %w", err)
+
+			return http.StatusInternalServerError, err
+		}
+	}
+
+	_, err = file.ReadFrom(part)
+	if err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			err = ErrNoDiskSpace
+			if r.ContentLength > 0 {
+				err = fmt.Errorf("attempted to write %d bytes: %w", r.ContentLength, err)
+			}
+
+			return http.StatusInsufficientStorage, err
+		}
+
+		err = fmt.Errorf("error writing file: %w", err)
+
+		return http.StatusInternalServerError, err
+	}
+
+	// Always (re)write metadata, even with an empty/nil map, so that
+	// overwriting a file replaces its full metadata set: keys absent from
+	// this request are cleared (O_TRUNC truncates the body but preserves
+	// xattrs from a prior upload).
+	if err := oracleWriteMetadata(file, metadata); err != nil {
+		switch {
+		case oracleIsXattrUnsupported(err):
+			// Filesystem doesn't support xattrs. ext4 (the sandbox rootfs)
+			// always supports them; this branch only triggers for virtual
+			// filesystems such as /sys and /proc that the upload API also
+			// supports. The file body was already persisted, so we log and
+			// continue; the response EntryInfo reads xattrs back from disk
+			// so it won't falsely claim metadata was persisted.
+			logger.Warn().Str("path", path).Err(err).Msg("filesystem does not support xattrs; metadata not persisted")
+		case errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT):
+			return http.StatusInsufficientStorage, fmt.Errorf("not enough space for file metadata: %w", err)
+		default:
+			return http.StatusInternalServerError, fmt.Errorf("error writing file metadata: %w", err)
+		}
+	}
+
+	return http.StatusNoContent, nil
+}
+
 const MetadataXattrPrefix = "user.e2b."
+
+// Controlled observations only; these shims perform no filesystem mutation.
+// Translate Linux errno identity for a reference built on macOS as well.
+var oracleStage string
+var oracleFailure error
+
+type oracleErrno int
+
+func (e oracleErrno) Error() string { return fmt.Sprintf("injected Linux errno %d", e) }
+func (e oracleErrno) Is(target error) bool {
+	return (e == 28 && target == syscall.ENOSPC) ||
+		(e == 122 && target == syscall.EDQUOT)
+}
+
+type oracleLogger struct{}
+
+func (l oracleLogger) Debug() oracleLogger             { return l }
+func (l oracleLogger) Warn() oracleLogger              { return l }
+func (l oracleLogger) Str(string, string) oracleLogger { return l }
+func (l oracleLogger) Err(error) oracleLogger          { return l }
+func (oracleLogger) Msg(string)                        {}
+func oracleEnsureDirs(string, int, int) error {
+	if strings.HasPrefix(oracleStage, "Parent") {
+		return oracleFailure
+	}
+	return nil
+}
+
+type oracleInfo struct{ os.FileInfo }
+
+func (oracleInfo) IsDir() bool { return oracleStage == "Directory" }
+func oracleStat(string) (os.FileInfo, error) {
+	if oracleStage == "Stat" {
+		return nil, oracleFailure
+	}
+	if oracleStage == "FileChown" {
+		return nil, os.ErrNotExist
+	}
+	return oracleInfo{}, nil
+}
+func oracleChown(string, int, int) error {
+	if oracleStage == "Chown" {
+		return oracleFailure
+	}
+	return nil
+}
+
+type oracleFile struct{}
+
+func oracleOpenFile(string, int, os.FileMode) (*oracleFile, error) {
+	if oracleStage == "Open" {
+		return nil, oracleFailure
+	}
+	return &oracleFile{}, nil
+}
+func (*oracleFile) Close() error { return nil }
+func (*oracleFile) Chown(int, int) error {
+	if oracleStage == "FileChown" {
+		return oracleFailure
+	}
+	return nil
+}
+func (*oracleFile) ReadFrom(io.Reader) (int64, error) {
+	if oracleStage == "Write" {
+		return 0, oracleFailure
+	}
+	if oracleStage == "WriteZero" {
+		return 0, io.ErrShortWrite
+	}
+	return 4, nil
+}
+func oracleWriteMetadata(*oracleFile, map[string]string) error {
+	if strings.HasPrefix(oracleStage, "Metadata") {
+		return oracleFailure
+	}
+	return nil
+}
+func oracleIsXattrUnsupported(err error) bool {
+	return errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP)
+}
+
 const MaxMetadataKeyLen = 255 - len(MetadataXattrPrefix)
 const MaxMetadataTotalLen = 4096
 
@@ -146,6 +341,18 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
+		case "F":
+			oracleStage = f[1]
+			n, err := strconv.Atoi(f[2])
+			if err != nil {
+				panic(err)
+			}
+			oracleFailure = oracleErrno(n)
+			status, err := processFile(&http.Request{ContentLength: 4}, "/file", strings.NewReader("body"), 0, 0, nil, oracleLogger{})
+			if err == nil {
+				panic("expected injected failure")
+			}
+			fmt.Println(status)
 		case "R":
 			if server == nil {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

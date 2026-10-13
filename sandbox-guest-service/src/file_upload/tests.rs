@@ -47,6 +47,50 @@ fn next(seed: &mut u64) -> u64 {
 }
 #[test]
 #[ignore = "requires explicit fixed Go upload reference"]
+fn upload_fault_status_matches_original_process_file() {
+    use sandproof_guest_runtime::{
+        file_download::LinuxErrno,
+        file_upload::{Fault, Stage},
+    };
+    let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
+    let mut cases = 0;
+    for stage in [
+        Stage::ParentStat,
+        Stage::ParentNotDirectory,
+        Stage::ParentCreate,
+        Stage::ParentChown,
+        Stage::Stat,
+        Stage::Directory,
+        Stage::Chown,
+        Stage::Open,
+        Stage::FileChown,
+        Stage::Write,
+        Stage::WriteZero,
+        Stage::MetadataList,
+        Stage::MetadataRemove,
+        Stage::MetadataSet,
+    ] {
+        // Ordinary I/O, permissions, disk full and quota. No injected ENOENT
+        // or unsupported-xattr error that the original operation ignores.
+        for errno in [5, 13, 28, 122] {
+            let fault = Fault {
+                stage,
+                path: b"/file".to_vec(),
+                errno: Some(LinuxErrno(errno)),
+                attribute: None,
+            };
+            reference.check(
+                &format!("F\t{stage:?}\t{errno}"),
+                &fault.status().to_string(),
+            );
+            cases += 1;
+        }
+    }
+    reference.finish();
+    eprintln!("Fixed Go processFile: {cases} injected phase/errno status cases.");
+}
+#[test]
+#[ignore = "requires explicit fixed Go upload reference"]
 fn fixed_go_upload_selection_and_metadata_match_original_methods() {
     let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
     let bases = [

@@ -11,6 +11,109 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
 
+#[test]
+fn upload_open_failures_preserve_phase_actual_path_and_errno() {
+    use sandproof_guest_runtime::{
+        file_download::LinuxErrno,
+        file_upload::{Fault, Stage},
+        filesystem::transfer::UploadError,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let parent_file = root.path().join("parent");
+    fs::write(&parent_file, b"unchanged").unwrap();
+    let cycle = root.path().join("cycle");
+    std::os::unix::fs::symlink("cycle", &cycle).unwrap();
+    let dangling = root.path().join("dangling");
+    std::os::unix::fs::symlink("missing/target", &dangling).unwrap();
+    let nul = root.path().join("nul\0");
+    for (input, observed, stage, errno) in [
+        (
+            root.path().to_owned(),
+            root.path().to_owned(),
+            Stage::Directory,
+            None,
+        ),
+        (
+            parent_file.join("child"),
+            parent_file.clone(),
+            Stage::ParentNotDirectory,
+            None,
+        ),
+        (
+            cycle.clone(),
+            cycle.clone(),
+            Stage::Stat,
+            Some(LinuxErrno(40)),
+        ),
+        (
+            cycle.join("child"),
+            cycle,
+            Stage::ParentStat,
+            Some(LinuxErrno(40)),
+        ),
+        (dangling.clone(), dangling, Stage::Open, Some(LinuxErrno(2))),
+        (nul.clone(), nul, Stage::Stat, Some(LinuxErrno(22))),
+    ] {
+        let error = UploadFile::open_detailed(
+            input.to_str().unwrap().into(),
+            owner(),
+            BTreeMap::new(),
+            None,
+            limits(),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            error,
+            UploadError::Fault(Fault {
+                stage,
+                path: observed.as_os_str().as_encoded_bytes().to_vec(),
+                errno,
+                attribute: None,
+            })
+        );
+        let legacy = UploadFile::open(
+            input.to_str().unwrap().into(),
+            owner(),
+            BTreeMap::new(),
+            None,
+            limits(),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(legacy, error.into_legacy());
+    }
+    assert_eq!(fs::read(parent_file).unwrap(), b"unchanged");
+    assert!(!root.path().join("missing").exists());
+}
+
+#[test]
+fn detailed_upload_budget_rejection_precedes_directory_creation_and_truncation() {
+    use sandproof_guest_runtime::filesystem::transfer::UploadError;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("existing");
+    fs::write(&path, b"original").unwrap();
+    let mut limited = limits();
+    limited.file.visited = 1;
+    for target in [path.clone(), root.path().join("new/child")] {
+        let error = UploadFile::open_detailed(
+            target.to_str().unwrap().into(),
+            owner(),
+            BTreeMap::new(),
+            None,
+            limited,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            error,
+            UploadError::Rejected(TransferIoError::ResourceExhausted)
+        );
+    }
+    assert_eq!(fs::read(path).unwrap(), b"original");
+    assert!(!root.path().join("new").exists());
+}
+
 fn limits() -> TransferLimits {
     TransferLimits {
         file: FileLimits {
