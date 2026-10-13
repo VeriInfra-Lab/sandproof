@@ -20,6 +20,8 @@ mod spec;
 pub mod worker;
 
 #[cfg(target_os = "linux")]
-pub use process::{CommandEvent, CommandInput, CommandProcess, LaunchObservation, ProcessSignal};
+pub use process::{
+    CommandControl, CommandEvent, CommandInput, CommandProcess, LaunchObservation, ProcessSignal,
+};
 #[cfg(target_os = "linux")]
 pub use spec::{Credentials, LaunchSpec, ProcessLimits};

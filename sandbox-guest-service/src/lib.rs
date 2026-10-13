@@ -5,6 +5,8 @@
 //! separate obligations; health does not certify authorization or readiness.
 
 #[cfg(target_os = "linux")]
+pub mod command;
+#[cfg(target_os = "linux")]
 mod execution;
 #[cfg(target_os = "linux")]
 mod http;

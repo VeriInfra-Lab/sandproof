@@ -3,6 +3,7 @@ use std::os::fd::OwnedFd;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::{ExitStatus, Stdio};
+use std::sync::Arc;
 
 use rustix::process::{Pid, PidfdFlags, Signal, pidfd_open, pidfd_send_signal};
 use sandproof_guest_core::{Channel, CommandIdentity, CommandOutcome, CommandStream, OutputMode};
@@ -16,6 +17,28 @@ use crate::{LaunchSpec, ProcessLimits};
 pub enum ProcessSignal {
     Terminate,
     Kill,
+}
+
+/// Retained kernel identity, usable while the pipe/wait owner is busy. Clones
+/// share one pidfd; they never resolve a public PID or adopt another process.
+#[derive(Clone)]
+pub struct CommandControl {
+    identity: CommandIdentity,
+    pidfd: Arc<OwnedFd>,
+}
+
+impl CommandControl {
+    /// # Errors
+    /// Rejects stale identity and actual kernel errors. Delivery is not exit.
+    pub fn signal(&self, identity: CommandIdentity, signal: ProcessSignal) -> io::Result<()> {
+        check_identity(self.identity, identity)?;
+        let signal = match signal {
+            ProcessSignal::Terminate => Signal::TERM,
+            ProcessSignal::Kill => Signal::KILL,
+        };
+        pidfd_send_signal(&*self.pidfd, signal)?;
+        Ok(())
+    }
 }
 
 /// The gate reports exec errors via its close-on-exec socket. EOF is only an
@@ -98,9 +121,9 @@ impl Drop for PendingChild {
 /// drop; the future service must retain this owner while requests disconnect.
 pub struct CommandProcess {
     child: Child,
-    pidfd: OwnedFd,
-    stdout: ChildStdout,
-    stderr: ChildStderr,
+    pidfd: Arc<OwnedFd>,
+    stdout: Option<ChildStdout>,
+    stderr: Option<ChildStderr>,
     stdin: Option<CommandInput>,
     gate: Option<UnixStream>,
     _gate_directory: tempfile::TempDir,
@@ -117,7 +140,7 @@ pub struct CommandProcess {
 impl Drop for CommandProcess {
     fn drop(&mut self) {
         if !matches!(self.launch, LaunchState::Released(_)) {
-            let _ = pidfd_send_signal(&self.pidfd, Signal::KILL);
+            let _ = pidfd_send_signal(&*self.pidfd, Signal::KILL);
         }
     }
 }
@@ -221,9 +244,9 @@ impl CommandProcess {
             .map_err(accounting)?;
         Ok(Self {
             child: pending.0.take().ok_or_else(|| invalid("missing child"))?,
-            pidfd,
-            stdout,
-            stderr,
+            pidfd: Arc::new(pidfd),
+            stdout: Some(stdout),
+            stderr: Some(stderr),
             stdin,
             gate: Some(gate),
             _gate_directory: directory,
@@ -241,6 +264,14 @@ impl CommandProcess {
     #[must_use]
     pub const fn identity(&self) -> CommandIdentity {
         self.identity
+    }
+
+    #[must_use]
+    pub fn control(&self) -> CommandControl {
+        CommandControl {
+            identity: self.identity,
+            pidfd: Arc::clone(&self.pidfd),
+        }
     }
 
     #[must_use]
@@ -313,13 +344,7 @@ impl CommandProcess {
     /// Rejects stale identity or a kernel signal failure. Signal delivery is
     /// not evidence of exit and does not kill an entire descendant tree.
     pub fn signal(&self, identity: CommandIdentity, signal: ProcessSignal) -> io::Result<()> {
-        self.check_identity(identity)?;
-        let signal = match signal {
-            ProcessSignal::Terminate => Signal::TERM,
-            ProcessSignal::Kill => Signal::KILL,
-        };
-        pidfd_send_signal(&self.pidfd, signal)?;
-        Ok(())
+        self.control().signal(identity, signal)
     }
 
     /// Move the single stdin writer out so it can run concurrently with
@@ -437,14 +462,58 @@ impl CommandProcess {
             let mut stdout = vec![0; self.limits.chunk_bytes];
             let mut stderr = vec![0; self.limits.chunk_bytes];
             tokio::select! {
-                result = self.stdout.read(&mut stdout), if !self.stdout_eof => {
+                result = read_pipe(&mut self.stdout, &mut stdout), if !self.stdout_eof => {
                     if let Some(event) = self.observe_read(Channel::Stdout, stdout, result)? { return Ok(Some(event)); }
                 }
-                result = self.stderr.read(&mut stderr), if !self.stderr_eof => {
+                result = read_pipe(&mut self.stderr, &mut stderr), if !self.stderr_eof => {
                     if let Some(event) = self.observe_read(Channel::Stderr, stderr, result)? { return Ok(Some(event)); }
                 }
                 result = self.child.wait(), if self.waited.is_none() => { self.observe_wait(result?)?; }
             }
+        }
+    }
+
+    /// Drain a released command after an unknown launch or stream failure.
+    /// Discarded bytes never become a complete public stream. The caller must
+    /// retain that failure and separately enforce any execution deadline.
+    /// # Errors
+    /// Actual read/wait errors remain errors. A failed pipe is closed; another
+    /// call can drain the other pipe and retry wait, without rerunning user code.
+    pub async fn discard_and_wait(&mut self) -> io::Result<ExitStatus> {
+        if !matches!(self.launch, LaunchState::Released(_)) {
+            return Err(invalid("unreleased process"));
+        }
+        loop {
+            if self.stdout_eof && self.stderr_eof {
+                return self.wait_main().await;
+            }
+            let mut stdout = vec![0; self.limits.chunk_bytes];
+            let mut stderr = vec![0; self.limits.chunk_bytes];
+            tokio::select! {
+                result = read_pipe(&mut self.stdout, &mut stdout), if !self.stdout_eof => {
+                    if !matches!(result, Ok(n) if n > 0) { self.close_output(Channel::Stdout); }
+                    result?;
+                }
+                result = read_pipe(&mut self.stderr, &mut stderr), if !self.stderr_eof => {
+                    if !matches!(result, Ok(n) if n > 0) { self.close_output(Channel::Stderr); }
+                    result?;
+                }
+                result = self.child.wait(), if self.waited.is_none() => { self.observe_wait(result?)?; }
+            }
+        }
+    }
+
+    fn close_output(&mut self, channel: Channel) {
+        match channel {
+            Channel::Stdout => {
+                self.stdout.take();
+                self.stdout_eof = true;
+            }
+            Channel::Stderr => {
+                self.stderr.take();
+                self.stderr_eof = true;
+            }
+            Channel::Pty => {}
         }
     }
 
@@ -457,6 +526,7 @@ impl CommandProcess {
         let count = match result {
             Ok(count) => count,
             Err(error) => {
+                self.close_output(channel);
                 self.stream
                     .fail(self.identity, sandproof_guest_core::StreamFailure::Read)
                     .map_err(accounting)?;
@@ -469,6 +539,7 @@ impl CommandProcess {
                 Channel::Stderr => self.stderr_eof = true,
                 Channel::Pty => return Err(invalid("not a PTY")),
             }
+            self.close_output(channel);
             self.stream
                 .observe_eof(self.identity, channel)
                 .map_err(accounting)?;
@@ -497,6 +568,16 @@ impl CommandProcess {
 
     fn check_identity(&self, identity: CommandIdentity) -> io::Result<()> {
         check_identity(self.identity, identity)
+    }
+}
+
+async fn read_pipe<P: tokio::io::AsyncRead + Unpin>(
+    pipe: &mut Option<P>,
+    bytes: &mut [u8],
+) -> io::Result<usize> {
+    match pipe {
+        Some(pipe) => pipe.read(bytes).await,
+        None => Ok(0),
     }
 }
 
