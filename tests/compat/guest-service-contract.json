@@ -317,7 +317,7 @@
     {
       "id": "file-upload",
       "method": "POST",
-      "path": "/files?path=%2Ftmp%2Fsample.bin&user=ubuntu",
+      "path": "/files?path=%2Ftmp%2Fsample.bin&username=ubuntu",
       "content_type": "application/octet-stream",
       "body_base64": "AP9BCg==",
       "status": 200
@@ -325,7 +325,7 @@
     {
       "id": "file-download",
       "method": "GET",
-      "path": "/files?path=%2Ftmp%2Fsample.bin&user=ubuntu",
+      "path": "/files?path=%2Ftmp%2Fsample.bin&username=ubuntu",
       "status": 200,
       "body_base64": "AP9BCg=="
     },
