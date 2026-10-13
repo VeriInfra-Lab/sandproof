@@ -27,6 +27,13 @@ def core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_r
   | none => .ok none
   | some impossible => nomatch impossible
 
+@[simp, rust_fun "core::result::{core::result::Result<@T, @E>}::ok"]
+def core.result.Result.ok {T E : Type} (value : core.result.Result T E) :
+    Result (Option T) :=
+  match value with
+  | .Ok result => .ok (some result)
+  | .Err _ => .ok none
+
 @[simp, rust_fun "alloc::string::{core::cmp::PartialEq<alloc::string::String, alloc::string::String>}::eq"]
 def alloc.string.String.Insts.CoreCmpPartialEqString.eq
     (left right : String) : Result Bool := .ok (decide (left = right))

@@ -202,6 +202,45 @@ fn finished() -> World {
     cleanup(&destroy(&world, SID), SID)
 }
 
+#[test]
+fn split_ledger_checks_keep_count_and_ledger_before_plan_rejection() {
+    let mut world = finished();
+    let record = world.sandbox_record(SID).unwrap().clone();
+    assert_eq!(check_ledgers(&world, SID, &record), Ok(2));
+    let key = OperationKey {
+        sandbox: SID,
+        operation: OperationId(1),
+    };
+    let mut plan = world.operation_plan(key).unwrap().clone();
+    plan.restore_from = Some(RestoreSource {
+        snapshot: SnapshotId(99),
+        manifest: SnapshotManifestRef {
+            digest: ManifestDigest(1),
+        },
+    });
+    world.operation_plans.put(key, plan);
+    assert_eq!(
+        check_ledgers(&world, SID, &record),
+        Err(RetirementReject::SnapshotHistoryUnsupported)
+    );
+    let mut ledger = world.operations.get(&key).unwrap().clone();
+    ledger.operation.epoch = record.epoch + 1;
+    world.operations.put(key, ledger);
+    let before = world.clone();
+    assert_eq!(
+        check_ledgers(&world, SID, &record),
+        Err(RetirementReject::LedgerMismatch)
+    );
+    assert_eq!(world, before);
+    // Current-ledger validation must still precede both traversal helpers.
+    let mut changed_record = record;
+    changed_record.current_operation = None;
+    assert_eq!(
+        check_ledgers(&world, SID, &changed_record),
+        Err(RetirementReject::LedgerMismatch)
+    );
+}
+
 fn request(world: &World, sid: SandboxId) -> RetireRequest {
     let record = world.sandbox_record(sid).unwrap();
     let operation = record.current_operation.unwrap().id;

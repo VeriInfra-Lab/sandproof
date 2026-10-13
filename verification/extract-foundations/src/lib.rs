@@ -18,6 +18,10 @@ pub fn counter_value(value: PositiveCounter) -> u64 {
     value.get()
 }
 
+pub fn lane_current(lane: &sandproof_center_core::RetentionLane) -> Option<PositiveCounter> {
+    lane.current()
+}
+
 pub fn resource_add(left: Resources, right: Resources) -> Option<Resources> {
     left.checked_add(right)
 }

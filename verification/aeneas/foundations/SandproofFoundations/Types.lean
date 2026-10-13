@@ -17,54 +17,15 @@ set_option maxRecDepth 2048
 
 namespace SandproofFoundationsRust
 
-/-- [sandproof_protocol::internal::lifecycle::Resources]
-    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 18:0-18:20
-    Name pattern: [sandproof_protocol::internal::lifecycle::Resources]
+/-- [sandproof_center_core::model::LanePhase]
+    Source: './sandbox-center-core/src/model.rs', lines 369:0-369:18
+    Name pattern: [sandproof_center_core::model::LanePhase]
     Visibility: public -/
-@[rust_type "sandproof_protocol::internal::lifecycle::Resources"]
-structure sandproof_protocol.internal.lifecycle.Resources where
-  instances : Std.U64
-  cpu : Std.U64
-  memory_bytes : Std.U64
-  disk_bytes : Std.U64
-
-/-- [sandproof_protocol::ResourceId]
-    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
-    Name pattern: [sandproof_protocol::ResourceId]
-    Visibility: public -/
-@[reducible, rust_type "sandproof_protocol::ResourceId"]
-def sandproof_protocol.ResourceId := String
-
-/-- [sandproof_protocol::internal::lifecycle::CreateBinding]
-    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 63:0-63:24
-    Name pattern: [sandproof_protocol::internal::lifecycle::CreateBinding]
-    Visibility: public -/
-@[rust_type "sandproof_protocol::internal::lifecycle::CreateBinding"]
-structure sandproof_protocol.internal.lifecycle.CreateBinding where
-  template_revision : sandproof_protocol.ResourceId
-  template_digest : Array Std.U8 32#usize
-  resources : sandproof_protocol.internal.lifecycle.Resources
-  options : alloc.vec.Vec Std.U8
-  startup_deadline_ms : Std.U64
-  timeout_ms : Std.U64
-  max_lifetime_ms : Std.U64
-
-/-- [sandproof_protocol::internal::PositiveCounter]
-    Source: './sandbox-protocol/src/internal.rs', lines 49:0-49:26
-    Name pattern: [sandproof_protocol::internal::PositiveCounter]
-    Visibility: public -/
-@[reducible, rust_type "sandproof_protocol::internal::PositiveCounter"]
-def sandproof_protocol.internal.PositiveCounter := Std.U64
-
-/-- [sandproof_protocol::internal::InternalError]
-    Source: './sandbox-protocol/src/internal.rs', lines 211:0-211:22
-    Name pattern: [sandproof_protocol::internal::InternalError]
-    Visibility: public -/
-@[discriminant isize, rust_type "sandproof_protocol::internal::InternalError"]
-inductive sandproof_protocol.internal.InternalError where
-| InvalidCounter : sandproof_protocol.internal.InternalError
-| UnsupportedVersion : sandproof_protocol.internal.InternalError
-| BindingMismatch : sandproof_protocol.internal.InternalError
+@[discriminant isize, rust_type "sandproof_center_core::model::LanePhase"]
+inductive sandproof_center_core.model.LanePhase where
+| Open : sandproof_center_core.model.LanePhase
+| ClosePending : sandproof_center_core.model.LanePhase
+| Exhausted : sandproof_center_core.model.LanePhase
 
 /-- [sandproof_protocol::NodeId]
     Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
@@ -79,6 +40,13 @@ def sandproof_protocol.NodeId := String
     Visibility: public -/
 @[reducible, rust_type "sandproof_protocol::DeploymentId"]
 def sandproof_protocol.DeploymentId := String
+
+/-- [sandproof_protocol::internal::PositiveCounter]
+    Source: './sandbox-protocol/src/internal.rs', lines 49:0-49:26
+    Name pattern: [sandproof_protocol::internal::PositiveCounter]
+    Visibility: public -/
+@[reducible, rust_type "sandproof_protocol::internal::PositiveCounter"]
+def sandproof_protocol.internal.PositiveCounter := Std.U64
 
 /-- [sandproof_protocol::internal::NodeIdentity]
     Source: './sandbox-protocol/src/internal.rs', lines 89:0-89:23
@@ -125,6 +93,88 @@ structure sandproof_protocol.internal.ControlIdentity where
   intent_version : sandproof_protocol.internal.PositiveCounter
   retention_slot : Std.U16
   request_window : sandproof_protocol.internal.PositiveCounter
+
+/-- [sandproof_protocol::internal::lifecycle::LifecycleFact]
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 122:0-122:22
+    Name pattern: [sandproof_protocol::internal::lifecycle::LifecycleFact]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandproof_protocol::internal::lifecycle::LifecycleFact"]
+inductive sandproof_protocol.internal.lifecycle.LifecycleFact where
+| Recorded : sandproof_protocol.internal.lifecycle.LifecycleFact
+| Ready :
+  Std.U64 →
+  Std.U64 →
+  Std.U64 →
+  sandproof_protocol.internal.lifecycle.LifecycleFact
+| Renewed : Std.U64 → sandproof_protocol.internal.lifecycle.LifecycleFact
+| Stopped : sandproof_protocol.internal.lifecycle.LifecycleFact
+| Cleaned : sandproof_protocol.internal.lifecycle.LifecycleFact
+| NotAccepted : sandproof_protocol.internal.lifecycle.LifecycleFact
+
+/-- [sandproof_protocol::internal::lifecycle::LifecycleResponse]
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 141:0-141:28
+    Name pattern: [sandproof_protocol::internal::lifecycle::LifecycleResponse]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::internal::lifecycle::LifecycleResponse"]
+structure sandproof_protocol.internal.lifecycle.LifecycleResponse where
+  identity : sandproof_protocol.internal.ControlIdentity
+  observation_version : sandproof_protocol.internal.PositiveCounter
+  fact : sandproof_protocol.internal.lifecycle.LifecycleFact
+
+/-- [sandproof_center_core::model::RetentionLane]
+    Source: './sandbox-center-core/src/model.rs', lines 377:0-377:24
+    Name pattern: [sandproof_center_core::model::RetentionLane]
+    Visibility: public -/
+@[rust_type "sandproof_center_core::model::RetentionLane"]
+structure sandproof_center_core.model.RetentionLane where
+  node : sandproof_protocol.internal.NodeIdentity
+  retention_slot : Std.U16
+  retired_through : Std.U64
+  phase : sandproof_center_core.model.LanePhase
+  last_retired : Option sandproof_protocol.internal.lifecycle.LifecycleResponse
+
+/-- [sandproof_protocol::internal::InternalError]
+    Source: './sandbox-protocol/src/internal.rs', lines 211:0-211:22
+    Name pattern: [sandproof_protocol::internal::InternalError]
+    Visibility: public -/
+@[discriminant isize, rust_type "sandproof_protocol::internal::InternalError"]
+inductive sandproof_protocol.internal.InternalError where
+| InvalidCounter : sandproof_protocol.internal.InternalError
+| UnsupportedVersion : sandproof_protocol.internal.InternalError
+| BindingMismatch : sandproof_protocol.internal.InternalError
+
+/-- [sandproof_protocol::internal::lifecycle::Resources]
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 18:0-18:20
+    Name pattern: [sandproof_protocol::internal::lifecycle::Resources]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::internal::lifecycle::Resources"]
+structure sandproof_protocol.internal.lifecycle.Resources where
+  instances : Std.U64
+  cpu : Std.U64
+  memory_bytes : Std.U64
+  disk_bytes : Std.U64
+
+/-- [sandproof_protocol::ResourceId]
+    Source: './sandbox-protocol/src/lib.rs', lines 66:8-66:33
+    Name pattern: [sandproof_protocol::ResourceId]
+    Visibility: public -/
+@[reducible, rust_type "sandproof_protocol::ResourceId"]
+def sandproof_protocol.ResourceId := String
+
+/-- [sandproof_protocol::internal::lifecycle::CreateBinding]
+    Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 63:0-63:24
+    Name pattern: [sandproof_protocol::internal::lifecycle::CreateBinding]
+    Visibility: public -/
+@[rust_type "sandproof_protocol::internal::lifecycle::CreateBinding"]
+structure sandproof_protocol.internal.lifecycle.CreateBinding where
+  template_revision : sandproof_protocol.ResourceId
+  template_digest : Array Std.U8 32#usize
+  resources : sandproof_protocol.internal.lifecycle.Resources
+  options : alloc.vec.Vec Std.U8
+  startup_deadline_ms : Std.U64
+  timeout_ms : Std.U64
+  max_lifetime_ms : Std.U64
 
 /-- [sandproof_protocol::FailureCode]
     Source: './sandbox-protocol/src/lib.rs', lines 225:0-225:20

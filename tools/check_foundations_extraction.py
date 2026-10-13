@@ -12,6 +12,7 @@ EXTERNALS = {
     "core::option::{core::option::Option<T>}::as_ref",
     "core::option::{impl core::ops::try_trait::Try for core::option::Option<T>}::branch",
     "core::option::{impl core::ops::try_trait::FromResidual<core::option::Option<core::convert::Infallible>> for core::option::Option<T>}::from_residual",
+    "core::result::{core::result::Result<T, E>}::ok",
     "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
     "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
 }
@@ -64,7 +65,7 @@ def check(root, llbc, inventory):
             raise ValueError('unreviewed function-order schema')
     for function in functions:
         name = function['rust_name']
-        if name.startswith(('sandproof_protocol::', crate + '::')):
+        if name.startswith(('sandproof_protocol::', 'sandproof_center_core::', crate + '::')):
             body = declarations.get(function['def_id'], {}).get('body')
             if function['is_opaque'] or not isinstance(body, dict) or 'Structured' not in body:
                 raise ValueError(f'project-owned body missing: {name}')
@@ -129,7 +130,7 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'V0 extraction audit failed: {error}', file=sys.stderr)
         return 1
-    print(f'V0 extraction: {count} real roots, all owned bodies present, five reviewed external models.')
+    print(f'V0 extraction: {count} real roots, all owned bodies present, {len(EXTERNALS)} reviewed external models.')
     return 0
 
 

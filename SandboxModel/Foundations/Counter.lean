@@ -48,6 +48,19 @@ theorem counter_exhausted :
   simp [counter_next, sandproof_protocol.internal.PositiveCounter.checked_next,
     sandproof_protocol.internal.PositiveCounter.get, Aeneas.Std.lift, he]
 
+theorem counter_success_is_strict_successor (value next : U64)
+    (h : counter_next value = .ok (.Ok next)) :
+    CounterRep next (value.val + 1) ∧ value.val < next.val := by
+  obtain ⟨out, he, hr⟩ := checked_counter_refines value
+  have ho : out = .Ok next := by simpa [h] using he.symm
+  rw [ho] at hr
+  simp only [counterResultView, nextCounter] at hr
+  split at hr
+  · simp only [Option.some.injEq] at hr
+    simp only [CounterRep, validCounter, maxCounter]
+    scalar_tac
+  · simp at hr
+
 theorem counter_value_refines (value : U64) : counter_value value = .ok value := by rfl
 
 theorem counter_value_roundtrip (value : U64) (h : 0 < value.val) :

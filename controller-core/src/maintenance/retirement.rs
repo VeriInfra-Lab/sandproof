@@ -450,6 +450,18 @@ fn check_ledgers(
     {
         return Err(RetirementReject::LedgerMismatch);
     }
+    let count = check_historical_ledgers(world, sandbox, record)?;
+    check_plan_ledgers(world, sandbox)?;
+    Ok(count)
+}
+
+// Preserve the original ledger-before-plan order and each first rejection.
+// Keep sequential early-return traversals in separate extraction functions.
+fn check_historical_ledgers(
+    world: &World,
+    sandbox: SandboxId,
+    record: &SandboxRecord,
+) -> Result<usize, RetirementReject> {
     let mut count = 0;
     for (key, ledger) in world.operations.entries() {
         if key.sandbox != sandbox {
@@ -487,6 +499,10 @@ fn check_ledgers(
         }
         count += 1;
     }
+    Ok(count)
+}
+
+fn check_plan_ledgers(world: &World, sandbox: SandboxId) -> Result<(), RetirementReject> {
     for (key, plan) in world.operation_plans.entries() {
         if key.sandbox == sandbox {
             if plan.key != *key || world.operations.get(key).is_none() {
@@ -497,7 +513,7 @@ fn check_ledgers(
             }
         }
     }
-    Ok(count)
+    Ok(())
 }
 
 fn check_resources(

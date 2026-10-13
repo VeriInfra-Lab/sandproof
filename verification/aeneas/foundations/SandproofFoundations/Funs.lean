@@ -22,6 +22,46 @@ noncomputable section
 
 namespace SandproofFoundationsRust
 
+/-- [sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from]:
+    Source: './sandbox-protocol/src/internal.rs', lines 71:4-71:56
+    Name pattern: [sandproof_protocol::internal::{core::convert::TryFrom<sandproof_protocol::internal::PositiveCounter, u64, sandproof_protocol::internal::InternalError>}::try_from]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_protocol::internal::{core::convert::TryFrom<sandproof_protocol::internal::PositiveCounter, u64, sandproof_protocol::internal::InternalError>}::try_from"]
+def
+  sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from
+  (value : Std.U64) :
+  Result (core.result.Result sandproof_protocol.internal.PositiveCounter
+    sandproof_protocol.internal.InternalError)
+  := do
+  if value = 0#u64
+  then
+    ok (core.result.Result.Err
+      sandproof_protocol.internal.InternalError.InvalidCounter)
+  else ok (core.result.Result.Ok value)
+
+/-- [sandproof_center_core::model::{sandproof_center_core::model::RetentionLane}::current]:
+    Source: './sandbox-center-core/src/model.rs', lines 394:4-394:52
+    Name pattern: [sandproof_center_core::model::{sandproof_center_core::model::RetentionLane}::current]
+    Visibility: public -/
+@[rust_fun
+  "sandproof_center_core::model::{sandproof_center_core::model::RetentionLane}::current"]
+def sandproof_center_core.model.RetentionLane.current
+  (self : sandproof_center_core.model.RetentionLane) :
+  Result (Option sandproof_protocol.internal.PositiveCounter)
+  := do
+  let o ← lift (U64.checked_add self.retired_through 1#u64)
+  let cf ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r ←
+      sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from
+        val
+    core.result.Result.ok r
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+      sandproof_protocol.internal.PositiveCounter residual
+
 /-- [sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES]
     Source: './sandbox-protocol/src/internal/lifecycle.rs', lines 6:0-6:34
     Name pattern: [sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES]
@@ -188,24 +228,6 @@ def
 def sandproof_protocol.internal.PositiveCounter.get
   (self : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
   ok self
-
-/-- [sandproof_protocol::internal::{impl core::convert::TryFrom<u64, sandproof_protocol::internal::InternalError> for sandproof_protocol::internal::PositiveCounter}::try_from]:
-    Source: './sandbox-protocol/src/internal.rs', lines 71:4-71:56
-    Name pattern: [sandproof_protocol::internal::{core::convert::TryFrom<sandproof_protocol::internal::PositiveCounter, u64, sandproof_protocol::internal::InternalError>}::try_from]
-    Visibility: public -/
-@[rust_fun
-  "sandproof_protocol::internal::{core::convert::TryFrom<sandproof_protocol::internal::PositiveCounter, u64, sandproof_protocol::internal::InternalError>}::try_from"]
-def
-  sandproof_protocol.internal.PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from
-  (value : Std.U64) :
-  Result (core.result.Result sandproof_protocol.internal.PositiveCounter
-    sandproof_protocol.internal.InternalError)
-  := do
-  if value = 0#u64
-  then
-    ok (core.result.Result.Err
-      sandproof_protocol.internal.InternalError.InvalidCounter)
-  else ok (core.result.Result.Ok value)
 
 /-- [sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::checked_next]:
     Source: './sandbox-protocol/src/internal.rs', lines 60:4-60:60
@@ -563,8 +585,17 @@ def counter_value
   (value : sandproof_protocol.internal.PositiveCounter) : Result Std.U64 := do
   sandproof_protocol.internal.PositiveCounter.get value
 
-/-- [sandproof_foundations_extract::resource_add]:
+/-- [sandproof_foundations_extract::lane_current]:
     Source: 'src/lib.rs', lines 21:0-23:1
+    Visibility: public -/
+def lane_current
+  (lane : sandproof_center_core.model.RetentionLane) :
+  Result (Option sandproof_protocol.internal.PositiveCounter)
+  := do
+  sandproof_center_core.model.RetentionLane.current lane
+
+/-- [sandproof_foundations_extract::resource_add]:
+    Source: 'src/lib.rs', lines 25:0-27:1
     Visibility: public -/
 def resource_add
   (left : sandproof_protocol.internal.lifecycle.Resources)
@@ -574,14 +605,14 @@ def resource_add
   sandproof_protocol.internal.lifecycle.Resources.checked_add left right
 
 /-- [sandproof_foundations_extract::resource_positive]:
-    Source: 'src/lib.rs', lines 25:0-27:1
+    Source: 'src/lib.rs', lines 29:0-31:1
     Visibility: public -/
 def resource_positive
   (value : sandproof_protocol.internal.lifecycle.Resources) : Result Bool := do
   sandproof_protocol.internal.lifecycle.Resources.positive value
 
 /-- [sandproof_foundations_extract::resource_fits]:
-    Source: 'src/lib.rs', lines 29:0-31:1
+    Source: 'src/lib.rs', lines 33:0-35:1
     Visibility: public -/
 def resource_fits
   (value : sandproof_protocol.internal.lifecycle.Resources)
@@ -591,7 +622,7 @@ def resource_fits
   sandproof_protocol.internal.lifecycle.Resources.fits value limit
 
 /-- [sandproof_foundations_extract::create_binding_valid]:
-    Source: 'src/lib.rs', lines 33:0-35:1
+    Source: 'src/lib.rs', lines 37:0-39:1
     Visibility: public -/
 def create_binding_valid
   (value : sandproof_protocol.internal.lifecycle.CreateBinding) :
@@ -600,7 +631,7 @@ def create_binding_valid
   sandproof_protocol.internal.lifecycle.CreateBinding.is_valid value
 
 /-- [sandproof_foundations_extract::identity_response]:
-    Source: 'src/lib.rs', lines 37:0-42:1
+    Source: 'src/lib.rs', lines 41:0-46:1
     Visibility: public -/
 def identity_response
   (actual : sandproof_protocol.internal.ControlIdentity)
@@ -610,14 +641,14 @@ def identity_response
   sandproof_protocol.internal.ControlIdentity.validate_response actual expected
 
 /-- [sandproof_foundations_extract::retry_hint]:
-    Source: 'src/lib.rs', lines 44:0-46:1
+    Source: 'src/lib.rs', lines 48:0-50:1
     Visibility: public -/
 def retry_hint
   (outcome : sandproof_protocol.WorkOutcome Std.U64) : Result Bool := do
   sandproof_protocol.WorkOutcome.permits_new_attempt outcome
 
 /-- [sandproof_foundations_extract::outcome_observation]:
-    Source: 'src/lib.rs', lines 48:0-50:1
+    Source: 'src/lib.rs', lines 52:0-54:1
     Visibility: public -/
 def outcome_observation
   (outcome : sandproof_protocol.WorkOutcome Std.U64) :

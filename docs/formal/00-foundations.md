@@ -12,6 +12,7 @@
 |---|---|
 | [共享类型](../../sandbox-protocol/src/internal.rs)、[高级操作](../../sandbox-protocol/src/internal/lifecycle.rs)、[窗口](../../sandbox-protocol/src/internal/window.rs) | 部署/节点/全局实例/操作/版本/位置/窗口的类型、完整相等与表示关系 |
 | [本地类型](../../controller-core/src/model.rs)、[编号](../../controller-core/src/ids.rs) | 本地 generation、epoch、逻辑工作、attempt 与全局编号明确分开 |
+| [中心保留位置](../../sandbox-center-core/src/model.rs)的 `RetentionLane::current` | 原退休高水位的严格后继及耗尽边界；退休推进、关闭与复用授权仍由 V1/V2/V3 提供 |
 | [协议样例](../../sandbox-protocol/tests/contract_examples.rs)、[依赖锁](../../Cargo.lock) | 编解码/数值边界的固定输入，库模型版本登记 |
 | [抽取入口](../../scripts/regenerate-rust-lean.sh)、[验收入口](../../scripts/verify-controller.sh) | 当前本地入口与拟新增入口分开登记，不声称现有脚本已抽取所有 crate |
 
