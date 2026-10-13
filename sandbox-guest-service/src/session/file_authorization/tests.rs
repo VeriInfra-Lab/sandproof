@@ -92,6 +92,52 @@ async fn pending<T>(mut future: Pin<&mut impl Future<Output = T>>) {
 }
 
 #[tokio::test]
+async fn admitted_lock_wait_is_bounded_and_cancel_or_timeout_releases_request_capacity() {
+    use crate::file_requests::{
+        Error as RequestError, FileRequests,
+        tests::{full, limits as request_limits},
+    };
+    let session = session().await;
+    let requests = FileRequests::new(request_limits()).unwrap();
+    let headers = headers(b"token");
+    let locked = session.shared.current.write().await;
+    let admitted = requests.admit().unwrap();
+    let mut waiting =
+        Box::pin(admitted.authorize(&session, &axum::http::Method::GET, &headers, b"path=/file"));
+    pending(waiting.as_mut()).await;
+    full(&requests);
+    drop(waiting);
+    let admitted = requests.admit().unwrap();
+    let deadline = admitted.deadline();
+    let mut waiting =
+        Box::pin(admitted.authorize(&session, &axum::http::Method::GET, &headers, b"path=/file"));
+    pending(waiting.as_mut()).await;
+    tokio::time::pause();
+    tokio::time::advance(deadline.duration_since(Instant::now()) + Duration::from_secs(1)).await;
+    let rejected = waiting.await.err().unwrap();
+    assert_eq!(
+        rejected.error(),
+        &RequestError::Authorization(Error::DeadlineExceeded)
+    );
+    full(&requests);
+    drop(rejected);
+    drop(locked);
+    tokio::time::resume();
+    // Neither cancelled nor expired lock waits retained a reader/capability.
+    session
+        .initialize(br#"{"accessToken":"token","defaultUser":"updated"}"#)
+        .await
+        .unwrap();
+    let auth = requests
+        .admit()
+        .unwrap()
+        .authorize(&session, &axum::http::Method::GET, &headers, b"path=/file")
+        .await
+        .unwrap();
+    assert_eq!(auth.defaults().user, "updated");
+}
+
+#[tokio::test]
 async fn token_priority_and_empty_header_fallback_keep_original_validation_order() {
     let s = session().await;
     let mut q = query();

@@ -194,7 +194,7 @@ impl FileStreams {
         limits: UploadLimits,
         response: crate::upload_response::Limits,
     ) -> Result<axum::response::Response, UploadHttpError> {
-        let (auth, query, deadline) = request
+        let (auth, query, origin) = request
             .authorization
             .take(crate::file_authorization::Operation::Write)
             .map_err(|error| UploadHttpError::Request(UploadRequestError::Authorization(error)))?;
@@ -213,7 +213,7 @@ impl FileStreams {
             settings,
             limits,
             response,
-            Some(deadline),
+            Some(origin),
         )
         .await
     }
@@ -225,7 +225,7 @@ impl FileStreams {
         settings: &FileSettings,
         limits: UploadLimits,
         response: crate::upload_response::Limits,
-        original: Option<tokio::time::Instant>,
+        original: Option<crate::file_authorization::Origin>,
     ) -> Result<axum::response::Response, UploadHttpError> {
         let (auth, request) = start;
         let reservation = self
@@ -277,7 +277,7 @@ impl FileStreams {
         &self,
         headers: &HeaderMap,
         limits: UploadLimits,
-        original: Option<tokio::time::Instant>,
+        original: Option<crate::file_authorization::Origin>,
     ) -> Result<Reservation, UploadRequestError> {
         file_upload::check_headers(headers, limits.headers).map_err(UploadRequestError::Headers)?;
         let (lease, deadline) = self

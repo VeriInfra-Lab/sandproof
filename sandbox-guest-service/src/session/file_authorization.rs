@@ -129,6 +129,7 @@ impl<M: MetadataSource> Session<M> {
             query,
             operation,
             deadline,
+            request_owner: None,
         })
     }
 }

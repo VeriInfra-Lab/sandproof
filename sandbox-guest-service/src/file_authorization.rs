@@ -70,6 +70,13 @@ pub struct Authorization {
     pub(crate) query: TextQuery,
     pub(crate) operation: Operation,
     pub(crate) deadline: Instant,
+    pub(crate) request_owner: Option<Owner>,
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) struct Origin {
+    pub deadline: Instant,
+    pub owner: Option<Owner>,
 }
 impl Authorization {
     #[must_use]
@@ -96,14 +103,21 @@ impl Authorization {
     pub(crate) fn take(
         self,
         operation: Operation,
-    ) -> Result<(AuthPermit, TextQuery, Instant), Error> {
+    ) -> Result<(AuthPermit, TextQuery, Origin), Error> {
         if self.operation != operation {
             return Err(Error::WrongOperation);
         }
         if Instant::now() >= self.deadline {
             return Err(Error::DeadlineExceeded);
         }
-        Ok((self.auth, self.query, self.deadline))
+        Ok((
+            self.auth,
+            self.query,
+            Origin {
+                deadline: self.deadline,
+                owner: self.request_owner,
+            },
+        ))
     }
 }
 

@@ -83,7 +83,9 @@ SANDPROOF_GUEST_AUTH_REFERENCE=/absolute/path/to/auth-reference \
   session::file_authorization -- --include-ignored --nocapture
 ```
 
-新增 Linux [下载许可组合](../sandbox-guest-service/src/file_transfer/download/tests/request/authorization.rs)和[上传许可组合](../sandbox-guest-service/src/file_transfer/batch/tests/authorization.rs)检查错误操作/到期先于账户和文件效果、原 query 到实际路径/用户、鉴权期限不在正文重新起算，以及在途下载字节保留原槽位；这些实际执行待补。固定同步/异步 SDK 文件测试路由全部迁移到文件专用许可，另用原 download_url/upload_url 生成签名，仅将 URL origin 改到自有回环夹具，经原查询访问 raw/multipart 上传及下载，检查修改路径/用户/操作、过期、错令牌及令牌优先的 401 文本；这是新增 Linux 组合入口，未执行不得计为通过，不代表公开直连模式、中心/宿主签名 URL 转发、E03 或 KVM 验收。
+[文件请求准入检查](../sandbox-guest-service/src/file_requests/tests.rs)覆盖共享池无排队、非法预算、头/查询预算及绑定先于鉴权、专用许可持续占额、400/401 错误对象/正文/最后字节副本的所有权、超时与编码失败后的原名额释放。[会话鉴权检查](../sandbox-guest-service/src/session/file_authorization/tests.rs)另用实际写锁和可推进时钟检查取消/到期的鉴权等待释放原容量且不遗留读者。可移植定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_requests` 及上述会话定向入口。它不代表套接字/请求头读取、正式拒绝策略或系统内存峰值已经验收。
+
+新增 Linux [下载许可组合](../sandbox-guest-service/src/file_transfer/download/tests/request/authorization.rs)和[上传许可组合](../sandbox-guest-service/src/file_transfer/batch/tests/authorization.rs)检查错误操作/到期先于账户和文件效果、原 query 到实际路径/用户、鉴权期限不在正文重新起算，以及在途下载字节保留原槽位；入口请求名额另随阻塞账户查询取消、上传成功/拒绝的最后响应副本和下载原期限保留，这些实际执行待补。固定同步/异步 SDK 文件测试路由全部经共用请求准入取得文件专用许可，另用原 download_url/upload_url 生成签名，仅将 URL origin 改到自有回环夹具，经原查询访问 raw/multipart 上传及下载，检查修改路径/用户/操作、过期、错令牌及令牌优先的 401 文本；这是新增 Linux 组合入口，未执行不得计为通过，不代表公开直连模式、中心/宿主签名 URL 转发、E03 或 KVM 验收。
 
 [一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。普通 Linux 基础检查与兼容入口执行这些组件。
 

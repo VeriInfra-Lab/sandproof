@@ -79,7 +79,7 @@ impl FileStreams {
         if http.method != axum::http::Method::GET && http.method != axum::http::Method::HEAD {
             return Err(DownloadRequestError::Authorization(Error::WrongOperation));
         }
-        let (auth, query, deadline) = authorization
+        let (auth, query, origin) = authorization
             .take(Operation::Read)
             .map_err(DownloadRequestError::Authorization)?;
         self.download_request_before(
@@ -95,7 +95,7 @@ impl FileStreams {
             settings,
             limits,
             local,
-            Some(deadline),
+            Some(origin),
         )
         .await
     }
@@ -107,7 +107,7 @@ impl FileStreams {
         settings: &FileSettings,
         limits: DownloadLimits,
         local: Z,
-        original: Option<tokio::time::Instant>,
+        original: Option<crate::file_authorization::Origin>,
     ) -> Result<Download, DownloadRequestError> {
         let (auth, mut request) = start;
         let (lease, deadline) = self

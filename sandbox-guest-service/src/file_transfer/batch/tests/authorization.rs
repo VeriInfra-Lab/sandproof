@@ -1,38 +1,33 @@
 use super::*;
-use crate::file_authorization::{
-    Authorization, Error as AuthError, Limits as AuthLimits, Operation,
+use crate::file_authorization::{Authorization, Error as AuthError, Operation};
+use crate::file_requests::{
+    FileRequests,
+    tests::{full, limits as request_limits, released},
 };
 use crate::file_transfer::{AuthorizedUpload, UploadHttpError, UploadRequestError};
 use axum::{body::Body, http::HeaderMap};
 use http_body_util::BodyExt;
-use sandproof_guest_runtime::file_query::Query;
 
-async fn authorize(fixture: &Fixture, op: Operation) -> Authorization {
+async fn authorize(fixture: &Fixture, op: Operation) -> (Authorization, FileRequests) {
     let mut headers = HeaderMap::new();
     headers.insert("x-access-token", "token".parse().unwrap());
-    fixture
-        .session
-        .authorize_file(
-            &headers,
-            Query {
-                path: Some(b"~/bound".to_vec()),
-                username: None,
-                signature: None,
-                signature_expiration: None,
-            },
-            op,
-            AuthLimits {
-                headers: crate::file_upload::HeaderLimits {
-                    bytes: 4096,
-                    fields: 16,
-                },
-                query_bytes: 4096,
-            },
-            tokio::time::Instant::now() + Duration::from_secs(10),
-        )
-        .await
+    let mut limits = request_limits();
+    limits.timeout = Duration::from_secs(10);
+    let requests = FileRequests::new(limits).unwrap();
+    let method = if op == Operation::Read {
+        axum::http::Method::GET
+    } else {
+        axum::http::Method::POST
+    };
+    let auth = requests
+        .admit()
         .unwrap()
+        .authorize(&fixture.session, &method, &headers, b"path=~/bound")
+        .await
+        .unwrap();
+    (auth, requests)
 }
+
 fn request(auth: Authorization) -> AuthorizedUpload {
     let req = upload::request(b"written", false, "application/octet-stream", None);
     AuthorizedUpload {
@@ -50,10 +45,42 @@ fn response_limits() -> crate::upload_response::Limits {
 }
 
 #[tokio::test]
+async fn upload_header_rejection_keeps_request_slot_through_last_response_clone() {
+    let root = tempfile::tempdir().unwrap();
+    let fixture = Fixture::new(root.path()).await;
+    let (auth, requests) = authorize(&fixture, Operation::Write).await;
+    let mut req = request(auth);
+    req.headers
+        .insert("content-type", "text/plain".parse().unwrap());
+    let response = fixture
+        .streams
+        .upload_authorized(
+            req,
+            &fixture.accounts,
+            &fixture.settings,
+            upload::settings(),
+            response_limits(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    let mut body = response.into_body();
+    let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    let retained = bytes.clone();
+    drop(bytes);
+    drop(body);
+    full(&requests);
+    assert!(!root.path().join("bound").exists());
+    drop(retained);
+    released(&requests).await;
+    multipart::quiesce(&fixture).await;
+}
+
+#[tokio::test]
 async fn upload_only_consumes_write_capability_and_uses_its_immutable_path() {
     let root = tempfile::tempdir().unwrap();
     let fixture = Fixture::new(root.path()).await;
-    let auth = authorize(&fixture, Operation::Read).await;
+    let (auth, requests) = authorize(&fixture, Operation::Read).await;
     assert!(matches!(
         fixture
             .streams
@@ -69,9 +96,10 @@ async fn upload_only_consumes_write_capability_and_uses_its_immutable_path() {
             AuthError::WrongOperation
         )))
     ));
+    drop(requests.admit().unwrap());
     assert_eq!(fixture.calls.load(Ordering::SeqCst), 0);
     assert!(!root.path().join("bound").exists());
-    let auth = authorize(&fixture, Operation::Write).await;
+    let (auth, requests) = authorize(&fixture, Operation::Write).await;
     let mut body = fixture
         .streams
         .upload_authorized(
@@ -84,9 +112,13 @@ async fn upload_only_consumes_write_capability_and_uses_its_immutable_path() {
         .await
         .unwrap()
         .into_body();
-    while let Some(frame) = body.frame().await {
-        drop(frame.unwrap());
-    }
+    let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    let retained = bytes.clone();
+    drop(bytes);
+    drop(body);
+    full(&requests);
+    drop(retained);
+    released(&requests).await;
     assert_eq!(
         std::fs::read(root.path().join("bound")).unwrap(),
         b"written"
@@ -99,7 +131,7 @@ async fn upload_only_consumes_write_capability_and_uses_its_immutable_path() {
 async fn upload_body_wait_cannot_restart_authenticated_request_deadline() {
     let root = tempfile::tempdir().unwrap();
     let fixture = Fixture::new(root.path()).await;
-    let auth = authorize(&fixture, Operation::Write).await;
+    let (auth, requests) = authorize(&fixture, Operation::Write).await;
     let mut req = request(auth);
     req.expected = None;
     let started = Arc::new(tokio::sync::Notify::new());
@@ -126,5 +158,6 @@ async fn upload_body_wait_cannot_restart_authenticated_request_deadline() {
     ));
     tokio::time::resume();
     multipart::quiesce(&fixture).await;
+    released(&requests).await;
     assert_eq!(std::fs::read(root.path().join("bound")).unwrap(), b"");
 }

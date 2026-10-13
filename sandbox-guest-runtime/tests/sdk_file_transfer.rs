@@ -52,6 +52,7 @@ impl MetadataSource for Meta {
 }
 struct Fixture {
     session: Session<Meta>,
+    requests: sandproof_guest_service::file_requests::FileRequests,
     accounts: AccountPool<SystemAccounts>,
     files: FileStreams,
     root: PathBuf,
@@ -89,80 +90,25 @@ fn failure(error: &FileStreamError) -> Response {
 }
 
 async fn files(State(fixture): State<Arc<Fixture>>, request: Request<Body>) -> Response {
-    use sandproof_guest_service::file_authorization::{Error, Limits, Operation};
     fixture.seen.fetch_add(1, Ordering::SeqCst);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    // Generated query binding precedes handler authorization and all account/
-    // file effects. This fixture supplies an owner, not production admission.
-    let params = match sandproof_guest_service::file_query::parse(
-        request.uri().query().unwrap_or("").as_bytes(),
-        sandproof_guest_service::file_query::QueryLimits {
-            raw_bytes: 65536,
-            fields: 128,
-        },
-    ) {
-        Ok(params) => params,
-        Err(error) => {
-            return sandproof_guest_service::file_query::rejected(
-                error,
-                sandproof_guest_service::file_query::ResponseLimits {
-                    wire_bytes: 65536,
-                    chunk_bytes: 4096,
-                },
-                deadline,
-                Arc::new(()),
-            )
-            .await
-            .unwrap();
-        }
-    };
-    // Python constructs every query/full multipart filename under this owned
-    // tree. This loopback fixture is not a production route or path policy.
-    if let Some(path) = params
-        .path
-        .as_ref()
-        .map(|p| std::str::from_utf8(p).unwrap())
-    {
-        assert!(Path::new(path).starts_with(&fixture.root) && !path.contains(".."));
-    }
-    let operation = if request.method() == Method::POST {
-        Operation::Write
-    } else {
-        Operation::Read
-    };
-    let auth = match fixture
-        .session
-        .authorize_file(
+    let admitted = fixture.requests.admit().expect("fixture request capacity");
+    let auth = match admitted
+        .authorize(
+            &fixture.session,
+            request.method(),
             request.headers(),
-            params,
-            operation,
-            Limits {
-                headers: sandproof_guest_service::file_upload::HeaderLimits {
-                    bytes: 65536,
-                    fields: 128,
-                },
-                query_bytes: 65536,
-            },
-            deadline,
+            request.uri().query().unwrap_or("").as_bytes(),
         )
         .await
     {
         Ok(auth) => auth,
-        Err(Error::Denied(denial)) => {
-            return sandproof_guest_service::file_authorization::rejected(
-                denial,
-                sandproof_guest_service::upload_response::Limits {
-                    wire_bytes: 65536,
-                    chunk_bytes: 4096,
-                },
-                deadline,
-                Arc::new(()),
-            )
-            .await
-            .unwrap();
-        }
-        Err(error) => panic!("unmapped fixture authorization: {error:?}"),
+        Err(rejected) => return rejected.into_response().await.unwrap(),
     };
+    // Only this loopback fixture constrains the test tree. Admission itself
+    // does not impose a new path policy or change multipart filename handling.
+    if let Some(path) = auth.path() {
+        assert!(Path::new(path).starts_with(&fixture.root) && !path.contains(".."));
+    }
     if request.method() == Method::GET || request.method() == Method::HEAD {
         // Count the original explicit gzip requests, including rejected files.
         // Selection itself now follows stat inside the admitted download worker.
@@ -457,6 +403,28 @@ async fn fixture(root: PathBuf) -> Arc<Fixture> {
         .unwrap();
     Arc::new(Fixture {
         session,
+        requests: sandproof_guest_service::file_requests::FileRequests::new(
+            sandproof_guest_service::file_requests::Limits {
+                in_flight: 4,
+                timeout: Duration::from_secs(30),
+                query: sandproof_guest_service::file_query::QueryLimits {
+                    raw_bytes: 65536,
+                    fields: 128,
+                },
+                authorization: sandproof_guest_service::file_authorization::Limits {
+                    headers: sandproof_guest_service::file_upload::HeaderLimits {
+                        bytes: 65536,
+                        fields: 128,
+                    },
+                    query_bytes: 65536,
+                },
+                rejection: sandproof_guest_service::upload_response::Limits {
+                    wire_bytes: 65536,
+                    chunk_bytes: 4096,
+                },
+            },
+        )
+        .unwrap(),
         accounts: AccountPool::local(
             AccountLimits {
                 file_bytes: 65536,

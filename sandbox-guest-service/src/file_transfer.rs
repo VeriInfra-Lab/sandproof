@@ -51,6 +51,9 @@ pub enum FileStreamError {
 
 struct Lease {
     _slot: OwnedSemaphorePermit,
+    // The pre-auth request slot follows the transfer through workers/results
+    // and all byte clones; dropping an HTTP waiter cannot return it early.
+    _request: Option<crate::owned_body::Owner>,
 }
 
 #[derive(Clone)]
@@ -98,17 +101,25 @@ impl FileStreams {
 
     fn admit_before(
         &self,
-        original: Option<Instant>,
+        original: Option<crate::file_authorization::Origin>,
     ) -> Result<(Arc<Lease>, Instant), FileStreamError> {
         let deadline = Instant::now()
             .checked_add(self.timeout)
             .ok_or(FileStreamError::InvalidArgument)?;
-        let deadline = original.map_or(deadline, |original| original.min(deadline));
+        let deadline = original
+            .as_ref()
+            .map_or(deadline, |original| original.deadline.min(deadline));
         timely(deadline, Ok(()))?;
         let permit = Arc::clone(&self.slots)
             .try_acquire_owned()
             .map_err(|_| FileStreamError::ResourceExhausted)?;
-        Ok((Arc::new(Lease { _slot: permit }), deadline))
+        Ok((
+            Arc::new(Lease {
+                _slot: permit,
+                _request: original.and_then(|origin| origin.owner),
+            }),
+            deadline,
+        ))
     }
 
     /// Caller supplies the context resolved under this exact authorization.

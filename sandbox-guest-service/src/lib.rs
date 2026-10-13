@@ -8,6 +8,7 @@ pub mod file_authorization;
 pub mod file_download;
 pub mod file_encoding;
 pub mod file_query;
+pub mod file_requests;
 pub mod file_upload;
 mod go_json;
 mod go_quote;

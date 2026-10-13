@@ -30,6 +30,18 @@ pub struct Limits {
     pub wire_bytes: usize,
     pub chunk_bytes: usize,
 }
+impl Limits {
+    pub(crate) fn validate(self) -> Result<Self, Error> {
+        if self.wire_bytes == 0
+            || self.chunk_bytes == 0
+            || self.wire_bytes > isize::MAX as usize / 16
+            || self.chunk_bytes > isize::MAX as usize / 16
+        {
+            return Err(Error::InvalidConfiguration);
+        }
+        Ok(self)
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     InvalidConfiguration,
@@ -77,13 +89,7 @@ pub(crate) async fn send(
     owner: Owner,
     encode: impl FnOnce() -> Result<Vec<u8>, Error> + Send + 'static,
 ) -> Result<Response, Error> {
-    if limits.wire_bytes == 0
-        || limits.chunk_bytes == 0
-        || limits.wire_bytes > isize::MAX as usize / 16
-        || limits.chunk_bytes > isize::MAX as usize / 16
-    {
-        return Err(Error::InvalidConfiguration);
-    }
+    let limits = limits.validate()?;
     let (length, body) = OwnedBody::start(deadline, owner, move |_, _| {
         let bytes = encode()?;
         Ok((

@@ -1,6 +1,52 @@
 use super::*;
 use crate::file_authorization::{Error as AuthError, Limits as AuthLimits, Operation};
+use crate::file_requests::{
+    FileRequests,
+    tests::{full, limits as request_limits, released},
+};
 use sandproof_guest_runtime::file_query::Query;
+
+#[tokio::test]
+async fn cancelled_account_wait_keeps_request_capacity_until_blocking_lookup_exits() {
+    let root = tempfile::tempdir().unwrap();
+    let session = session().await;
+    let streams = pool();
+    let requests = FileRequests::new(request_limits()).unwrap();
+    let settings = settings(root.path());
+    let gate = Arc::new(Gate::default());
+    let release = Release(Arc::clone(&gate));
+    let (accounts, names) = accounts(root.path(), Some(Arc::clone(&gate)), Duration::from_secs(5));
+    let mut headers = HeaderMap::new();
+    headers.insert("x-access-token", "token".parse().unwrap());
+    let auth = requests
+        .admit()
+        .unwrap()
+        .authorize(&session, &Method::GET, &headers, b"path=never")
+        .await
+        .unwrap();
+    let mut download = Box::pin(streams.download_authorized(
+        auth,
+        http_request("", "identity"),
+        &accounts,
+        &settings,
+        limits(),
+        Utc,
+    ));
+    tokio::select! {
+        () = gate.started.notified() => {},
+        result = &mut download => panic!("lookup did not wait: {:?}", result.err()),
+    }
+    drop(download);
+    full(&requests);
+    assert_eq!(names.lock().unwrap().len(), 1);
+    let mut rotation =
+        Box::pin(session.initialize(br#"{"accessToken":"token","defaultUser":"bob"}"#));
+    assert!(rotation.as_mut().now_or_never().is_none());
+    drop(release);
+    released(&requests).await;
+    rotation.await.unwrap();
+    quiesce(&streams).await;
+}
 
 #[tokio::test]
 async fn capability_operation_and_original_deadline_reject_before_account_or_file() {
@@ -93,24 +139,17 @@ async fn download_uses_bound_path_and_user_and_keeps_original_auth_deadline_in_b
     let (accounts, names) = accounts(root.path(), None, Duration::from_secs(5));
     let mut headers = HeaderMap::new();
     headers.insert("x-access-token", "token".parse().unwrap());
-    let auth = session
-        .authorize_file(
+    let mut request_limits = request_limits();
+    request_limits.timeout = Duration::from_secs(10);
+    let requests = FileRequests::new(request_limits).unwrap();
+    let auth = requests
+        .admit()
+        .unwrap()
+        .authorize(
+            &session,
+            &Method::GET,
             &headers,
-            Query {
-                path: Some(b"~/file".to_vec()),
-                username: Some(b"explicit".to_vec()),
-                signature: None,
-                signature_expiration: None,
-            },
-            Operation::Read,
-            AuthLimits {
-                headers: crate::file_upload::HeaderLimits {
-                    bytes: 4096,
-                    fields: 16,
-                },
-                query_bytes: 4096,
-            },
-            tokio::time::Instant::now() + Duration::from_secs(10),
+            b"path=~/file&username=explicit",
         )
         .await
         .unwrap();
@@ -137,6 +176,8 @@ async fn download_uses_bound_path_and_user_and_keeps_original_auth_deadline_in_b
     tokio::time::resume();
     drop(download);
     assert_eq!(streams.slots.available_permits(), 0);
+    full(&requests);
     drop(bytes);
+    released(&requests).await;
     quiesce(&streams).await;
 }
