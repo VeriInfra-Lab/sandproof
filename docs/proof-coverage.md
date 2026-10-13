@@ -265,3 +265,23 @@ R3/R5 的结构整理不新增定理：共享宿主合同只是原声明的唯�
 `scripts/verify-controller.sh` 检查 Rust、重新抽取一致性、所有项目证明文件和未完成证明；`verification/ProofAudit.lean` 审查真实定理传递依赖，只允许 Lean 标准逻辑基础。编译文件数、抽取函数数、局部成功或 CI 绿灯都不是全输入证明覆盖。
 
 `controller-service` 已接入纯控制核心的创建、销毁、状态发布与真实宿主回执；`sandbox-api`、`sandbox-node` 和 `sandbox-server` 新增持久寿命/配额、鉴权、网关、实际磁盘余量检查和实机测试。这些新增服务代码**没有** Rust→Lean 对应证明；现有定理只覆盖原先明确列出的纯核心输入，不自动扩展到 SQLite、时钟、令牌、Linux 网络空间、HTTP 转发或 Firecracker。特别是自有授权、持久化决策、worker 资格和恢复逻辑不能整体放入“适配器正确”假设；需要逐项列出外部原语合同并继续做对应证明。未知回执对账、重启恢复、完整容量保证和长期完成性仍是开放义务。
+
+## V9 首链责任投影模型
+
+归 #342/#101。实现定位基线为 `9eeb815054a0b37d17bff831c23ea34004122892`，本批**不修改、不抽取新增生产 Rust，也不声称实际实现对应已完成**。模型源为 [Record](../SandboxModel/FirstChain/Record.lean)、[System](../SandboxModel/FirstChain/System.lean)、[Scenarios](../SandboxModel/FirstChain/Scenarios.lean)，实际依赖审计为 [Audit](../SandboxModel/FirstChain/Audit.lean)；固定 `lean-toolchain` 的 Lean 4.31.0 与未改变的 `lake-manifest.json`，只依赖标准库。本批不导入未合入的 V0 成果；不重新定义其身份、数值或编码实现。
+
+| 交付 | 已证明结论及边界 |
+|---|---|
+| 抽象初态、单步及有限可达执行 | `initial_invariant`、`advance_safe`、`step_invariant`、`reachable_invariant`；登记节点列表和实例绑定类型均为参数，不限定一台或两台机器。真实初始化、故障微步骤及有限预算的对应仍待证 |
+| 持久责任与释放 | `reachable_responsibility`：可能物理效果保留中心/节点责任且两端未释额；`reachable_release`：中心释放前，节点终止/围栏/停止/清理、零持有者及零引用成立。布尔事实和计数是模型投影，不是实际资源证据或总容量上界 |
+| 终止、修改范围及消息 | 中心/节点终止的局部单调、禁止迟到创建/新本地许可/越过围栏的效果、单次抽象认领、其他绑定记录不变；在途事实可重复/延迟/丢失但不伪造。未证明实际全参数拒绝、物理唯一 VM、位置复用或 TLS/两端授权接线 |
+| 故障及非空见证 | 已就绪但丢回执后中心崩溃仍可达；写生效而回复未知不清责任；重启不直接恢复派发资格。`original_ready_recoverable` 证明有条件地**存在**原结果恢复路径，不是公平执行最终完成性 |
+| 定义审查场景 | 正常启动/清理确认、只收件不得执行、停止不等于清理、连接或引用阻止释放、终止先到、假就绪及提前释额反例；一般安全结论不依赖只枚举这些场景 |
+
+34 项模型定理进入 `bash scripts/verify-first-chain.sh` 的实际编译和依赖审计；仅允许 Lean 标准逻辑依赖，无占位或自定义公理。通过 sandbox-lean 的同一服务客户端隔离试验后编译正式文件；工具试验与本批构建相互区分。现有完整入口会发现 `SandboxModel/FirstChain` 下全部文件，未修改旧完整检查或排除失败根。
+
+本批可移植基础检查通过：固定真实 Redis、Rust 工作区测试/格式/静态检查、文档及 838 项工具测试；7 项既有平台跳过，131 项 Linux 专属工具场景未运行，不计为 Linux/KVM 验收。无生产行为变化，未运行 SDK 实机、KVM 或题集。
+
+完整 `scripts/verify-controller.sh` 的 Rust 检查通过，随后固定 Aeneas 在定位基线的 `controller-core/src/publication.rs` 第 156–182 行报 `Returns inside of nested loops are not supported yet`，退出 2；**整体证明验收未通过**。失败生成的本工作树 LLBC 留作实验产物，正式历史产物未改动；不引入 V0 的在途重构来绕过隔离。该既有抽取/历史对应差距由 V0/#337 的适用批次处理后，再重跑整套验收。
+
+首链的真实事件清单与未解提供方统一见 [V9 第一批组合审查](formal/09-system-composition.md#41-342-第一批组合审查与责任投影模型)。FC-ID/COMMIT/EVIDENCE/DRAIN/INIT/EXTEND/IMPLEMENT 均未由本批实例化；有限重试、失败终局、期限、窗口/退休/复用、完整输入拒绝及 Rust/系统精化仍开放。`Safe` 不作为转换守卫，模型性质不是假设“实际实现服从模型”得到的实现结论；类型参数化也不是 V0 交接已完成。本批完成不关闭 #342、V1–V8 或 #101。
