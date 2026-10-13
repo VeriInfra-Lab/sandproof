@@ -21,6 +21,7 @@ pub struct MultipartLimits {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadBodyError {
+    MissingFilename,
     Transfer(FileStreamError),
     Decode(multipart::Error),
     Transport,
@@ -86,7 +87,7 @@ impl UploadBatch {
                     } else {
                         part.filename
                             .as_deref()
-                            .ok_or(FileStreamError::InvalidArgument)?
+                            .ok_or(UploadBodyError::MissingFilename)?
                     };
                     let file = self.start_file(filename, None).await?;
                     receive_file(&mut input, file, part.quoted_printable).await?;

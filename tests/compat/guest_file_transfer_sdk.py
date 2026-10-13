@@ -50,6 +50,24 @@ def gzip_header_cases(root):
                    f'error decompressing request body: failed to create gzip reader: {cause}')
 
 
+def missing_filename_cases():
+    # Original SDK writes always supply a filename; these inputs are synthetic.
+    data = (b'--N\r\nContent-Disposition: form-data; name="ignored"\r\n\r\ndiscard\r\n'
+            b'--N\r\nContent-Disposition: form-data; name="file"\r\n\r\nnever\r\n--N--\r\n')
+    for compressed in [False, True]:
+        yield ({'x-access-token': 'fixture-token', 'content-type': 'multipart/form-data; boundary=N',
+                'content-encoding': 'gzip' if compressed else 'identity'},
+               gzip.compress(data) if compressed else data)
+
+
+def duplicate_message(path, previous=()):
+    message = (f"you cannot upload multiple files to the same path '{path}' in one upload request, "
+               'only the first specified file was uploaded')
+    if len(previous) > 1:
+        message += ', also the following files were uploaded: ' + ', '.join(previous)
+    return message
+
+
 def assert_header_rejection(response, message):
     assert response.status_code == 400, response.text
     assert response.json() == {'code': 400, 'message': message}
@@ -69,6 +87,10 @@ def header_rejections_sync(url, root):
         for params, headers, data, message in gzip_header_cases(root):
             response = client.post(f'{url}/files', params=params, headers=headers, content=data)
             assert_header_rejection(response, message)
+        for headers, data in missing_filename_cases():
+            response = client.post(f'{url}/files', headers=headers, content=data)
+            assert_header_rejection(response, 'error getting multipart custom part file name: '
+                                    'filename not found in Content-Disposition header')
 
 
 async def header_rejections_async(url, root):
@@ -79,6 +101,10 @@ async def header_rejections_async(url, root):
         for params, headers, data, message in gzip_header_cases(root):
             response = await client.post(f'{url}/files', params=params, headers=headers, content=data)
             assert_header_rejection(response, message)
+        for headers, data in missing_filename_cases():
+            response = await client.post(f'{url}/files', headers=headers, content=data)
+            assert_header_rejection(response, 'error getting multipart custom part file name: '
+                                    'filename not found in Content-Disposition header')
 
 
 def payloads():
@@ -299,6 +325,8 @@ def multipart_sync(sandbox, root):
         except InvalidArgumentException as error:
             if second == f'{root}/directory':
                 assert str(error) == f'path is a directory: {second}'
+            else:
+                assert str(error) == duplicate_message(first)
         else:
             raise AssertionError('failed multipart batch reported success')
         assert bytes(sandbox.files.read(first, format='bytes')) == b'first'
@@ -308,6 +336,24 @@ def multipart_sync(sandbox, root):
             pass
         else:
             raise AssertionError('multipart processed a later file after failure')
+    paths = [f'{form}/{name}' for name in ['completed-first', 'completed-z', 'completed-a']]
+    later = f'{form}/after-completed'
+    try:
+        sandbox.files.write_files([{'path': path, 'data': b'done'} for path in paths]
+                                  + [{'path': paths[0], 'data': b'overwrite'},
+                                     {'path': later, 'data': b'never'}], use_octet_stream=False)
+    except InvalidArgumentException as error:
+        assert str(error) == duplicate_message(paths[0], paths[1:])
+    else:
+        raise AssertionError('duplicate after completed files reported success')
+    for path in paths:
+        assert bytes(sandbox.files.read(path, format='bytes')) == b'done'
+    try:
+        sandbox.files.read(later, format='bytes')
+    except FileNotFoundException:
+        pass
+    else:
+        raise AssertionError('multipart continued after duplicate')
     assert sandbox.files.write_files([], use_octet_stream=False) == []
 
 
@@ -337,6 +383,8 @@ async def multipart_async(sandbox, root):
         except InvalidArgumentException as error:
             if second == f'{root}/directory':
                 assert str(error) == f'path is a directory: {second}'
+            else:
+                assert str(error) == duplicate_message(first)
         else:
             raise AssertionError('failed multipart batch reported success')
         assert bytes(await sandbox.files.read(first, format='bytes')) == b'first'
@@ -346,6 +394,24 @@ async def multipart_async(sandbox, root):
             pass
         else:
             raise AssertionError('multipart processed a later file after failure')
+    paths = [f'{form}/{name}' for name in ['completed-first', 'completed-z', 'completed-a']]
+    later = f'{form}/after-completed'
+    try:
+        await sandbox.files.write_files([{'path': path, 'data': b'done'} for path in paths]
+                                        + [{'path': paths[0], 'data': b'overwrite'},
+                                           {'path': later, 'data': b'never'}], use_octet_stream=False)
+    except InvalidArgumentException as error:
+        assert str(error) == duplicate_message(paths[0], paths[1:])
+    else:
+        raise AssertionError('duplicate after completed files reported success')
+    for path in paths:
+        assert bytes(await sandbox.files.read(path, format='bytes')) == b'done'
+    try:
+        await sandbox.files.read(later, format='bytes')
+    except FileNotFoundException:
+        pass
+    else:
+        raise AssertionError('multipart continued after duplicate')
     assert await sandbox.files.write_files([], use_octet_stream=False) == []
 
 

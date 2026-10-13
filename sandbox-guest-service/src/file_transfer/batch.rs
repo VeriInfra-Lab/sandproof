@@ -146,7 +146,19 @@ impl UploadBatch {
             .iter()
             .any(|result| result.path == context.path)
         {
-            return Err(FileStreamError::InvalidArgument);
+            // Move retained paths, discard metadata, and keep the batch poisoned.
+            // Strings remain within retained_bytes; vector bookkeeping is bounded
+            // by files. Duplicate and later targets are never opened.
+            let previous = std::mem::take(&mut self.results)
+                .into_iter()
+                .filter_map(|result| (result.path != context.path).then_some(result.path))
+                .collect();
+            return Err(FileStreamError::DuplicatePath(
+                crate::file_upload::DuplicatePath {
+                    path: context.path,
+                    previous,
+                },
+            ));
         }
         let upload = self
             .streams

@@ -286,6 +286,8 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [gzip 首头错误](../sandbox-guest-service/src/upload_response/gzip_header.rs)新增真实零字节 EOF 与截断/源/预算失败的区分、首头阶段到固定错误包装及原响应责任的连接义务。编码器及正文解码/校验算法未改变；这些来宾适配未抽取或证明，有限 Go 首头/HTTP 对照不证明完整 gzip 上传，Linux 请求/授权和 SDK 解析组合待实跑。纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖该新增错误分类。
 
+[multipart 路径拒绝](../sandbox-guest-service/src/file_transfer/batch.rs)及错误响应新增完成路径的移动/顺序/排除规则、重复前预算与文件未打开、filename 闸门、两遍迭代编码预算及原响应责任的义务。有限原 resolvePath/CustomPart 与 HTTP 对照只属工程证据；路径展开使用注入观察，Linux 文件副作用/授权/SDK 组合待实跑。来宾适配未抽取或证明，纯来宾核心、历史已证明 Rust 与 LLBC/Lean 未改，旧定理不覆盖新增错误分类和发送。
+
 ### 当前串行实现的模块交接
 
 #262 B8 的代码定位基线为 `beb46514cc1b99d1731616e9d5bd8f4dd143270a`。以下是实际实现的输入、输出和待证明连接，不是新增规约或已完成定理；后续 #101 证明批次必须重新冻结实际源码、抽取产物和工具链。本批保持原管理锁、单控制进程租约、派发顺序和 SQLite，不改产品行为。跨实例有限并行另列 [P2 待办 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，不作为本次重构的前置条件。

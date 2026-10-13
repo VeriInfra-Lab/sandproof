@@ -126,6 +126,10 @@ SANDPROOF_GUEST_UPLOAD_REFERENCE=/absolute/path/to/upload-reference \
 
 [Linux gzip 首头请求连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_gzip_header.rs)核对 raw/multipart 首头拒绝先于账户/metadata/文件，原容量/期限/初始化和最后副本释放，以及传输/预算不被伪装成 EOF；入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_gzip_header`，已交叉检查，实际运行待补。SDK 驱动另加合成空/截断/损坏 gzip raw/multipart 请求，经原错误解析器核对异常文本并由 Rust 检查目标未创建；不记作原 SDK 压缩器产生的输入，该 Linux 组合也待实跑。
 
+[multipart 路径拒绝对照](../sandbox-guest-service/src/upload_response/rejection/tests.rs)使用上传 Go 参考 B 操作：复制固定原 resolvePath 与 CustomPart 方法，仅替换命名空间，路径展开注入已解析观察，不调用真实账户/文件系统；缺失文件名经原 FormName 闸门和原 MIME 参数解析。比较完整 400/HTTP 头/JSON，覆盖完成列表中各重复位置、其他路径数量 0–4 与原 >1 列表阈值、完成顺序、Unicode/转义和 2048 字节头边界。沿用上述 upload_response::rejection 显式 Go 入口，已有本地运行，不代表完整原路由或 Linux 路径展开。
+
+[Linux multipart 路径拒绝连接](../sandbox-guest-service/src/file_transfer/batch/tests/upload_multipart.rs)覆盖 identity/gzip 的词法重复、先前文件保留/后项不处理、缺失文件名与查询空串覆盖、详细旧入口迁移、原槽位/最后字节副本/期限/初始化、响应预算失败和文件数量拒绝优先级；入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload_multipart`，已交叉检查，实际运行待补。固定同步/异步 SDK 驱动增加原 write_files 重复路径的精确异常与已完成顺序检查；另用合成 identity/gzip 无 filename 表单经原 SDK 错误解析器验证，不能记作 SDK write 发出的输入。Linux SDK 组合仍待实跑。
+
 [上传顺序检查](../sandbox-guest-service/src/file_transfer/batch/tests/upload.rs)连接原授权、实际账户池与临时文件，覆盖编码/首头/用户名/metadata/媒体类型/path 的拒绝优先级，raw/multipart × identity/gzip 四种组合的一次准入/一次账户查询、首 metadata 值和 raw 短正文前缀。条件变量屏障与可推进时钟核对账户查询取消/超时后原授权和上传槽位仍保留，实际查询退出后才允许初始化及容量复用。定向入口 `cargo test -p sandproof-guest-service --locked file_transfer::batch::tests::upload`；Linux service 全测试包含该组，已交叉检查，实际运行待补。固定 SDK 文件夹具所有 POST 已改接同一组件，原 raw/multipart 与合成 gzip 回读组合须在此候选重跑；无正式监听器、签名/完整上传错误 JSON、特权身份切换或 KVM 通过声明。
 
 [上传回执检查](../sandbox-guest-service/src/upload_response/tests.rs)纳入可移植 service lib，覆盖空批次、空 metadata 省略、字段/键顺序、Go 转义、精确响应线长、无效预算、原期限、逐块背压和响应丢弃后最后 Bytes 副本占额，已有本地运行。原上传 Go 参考适配器新增生成类型的成功数组与固定 PostFiles 的写头/正文调用，通过真实本机 HTTP/1.1 服务核对状态、Content-Type、Content-Length、nosniff 缺省和完整正文；含 2047/2048/2049 字节边界、控制/HTML/Unicode 字符及多文件。参考仅发送合成内存响应，不访问实际文件或启动完整 envd；运行后关闭自己的回环服务。显式入口为：

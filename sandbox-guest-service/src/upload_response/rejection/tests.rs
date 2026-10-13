@@ -17,6 +17,11 @@ fn limits() -> Limits {
 fn rejection_wire_size_is_checked_after_escaping_before_allocation() {
     for error in [
         Rejection::RawPathRequired,
+        Rejection::MissingFilename,
+        Rejection::DuplicatePath(DuplicatePath {
+            path: "雪'\"<&>\u{2028}".into(),
+            previous: vec!["/two\n".into(), "/three\t".into()],
+        }),
         Rejection::UnsupportedEncoding(b"br<&\xff".to_vec()),
         Rejection::UnsupportedContentType(b"text/\"<\xe2\x80\xa8".to_vec()),
     ] {
@@ -236,4 +241,73 @@ async fn compare(reference: &mut Reference, input: &str, error: Rejection) {
     }
     write!(output, "\t{}", hex(&bytes)).unwrap();
     reference.check(input, &output);
+}
+
+#[tokio::test]
+#[ignore = "requires explicit fixed Go upload reference and local loopback HTTP"]
+async fn fixed_go_resolve_path_rejection_status_headers_and_text_match() {
+    let mut reference = Reference::from_env("SANDPROOF_GUEST_UPLOAD_REFERENCE");
+    let mut cases = 0;
+    for disposition in [
+        "form-data; name=file",
+        "FORM-DATA; NAME=\"file\"",
+        "form-data; name=file; other=value",
+        "form-data; name*=UTF-8''file",
+        "form-data; name*0=fi; name*1=le",
+    ] {
+        compare(
+            &mut reference,
+            &format!("B\tN\t{}", hex(disposition.as_bytes())),
+            Rejection::MissingFilename,
+        )
+        .await;
+        cases += 1;
+    }
+    for path in [
+        "/file",
+        "",
+        "雪/é\u{2028}\u{2029}",
+        "/'\"\\<&>",
+        "/\n\r\t\u{1}",
+    ] {
+        for count in 0..5 {
+            let previous: Vec<String> = (0..count).map(|n| format!("/other/{n}{path}")).collect();
+            for position in 0..=count {
+                let mut input = format!("B\tD\t{}", hex(path.as_bytes()));
+                let mut completed = previous.clone();
+                completed.insert(position, path.into());
+                for path in completed {
+                    write!(input, "\t{}", hex(path.as_bytes())).unwrap();
+                }
+                compare(
+                    &mut reference,
+                    &input,
+                    Rejection::DuplicatePath(DuplicatePath {
+                        path: path.into(),
+                        previous: previous.clone(),
+                    }),
+                )
+                .await;
+                cases += 1;
+            }
+        }
+    }
+    for length in [2047, 2048, 2049, 4096] {
+        let mut error = DuplicatePath {
+            path: String::new(),
+            previous: vec![],
+        };
+        let overhead = duplicate_payload(&error, 65536).unwrap().len();
+        error.path = "x".repeat(length - overhead);
+        let path = hex(error.path.as_bytes());
+        compare(
+            &mut reference,
+            &format!("B\tD\t{path}\t{path}"),
+            Rejection::DuplicatePath(error),
+        )
+        .await;
+        cases += 1;
+    }
+    reference.finish();
+    eprintln!("Fixed Go multipart resolvePath rejections: {cases} status/header/JSON cases.");
 }

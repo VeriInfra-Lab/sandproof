@@ -10,6 +10,26 @@ pub struct HeaderLimits {
     pub fields: usize,
 }
 
+/// Observed duplicate after sequential file completions. The batch moves its
+/// already bounded paths here; no file is reopened or replayed for diagnostics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DuplicatePath {
+    pub(crate) path: String,
+    pub(crate) previous: Vec<String>,
+}
+impl DuplicatePath {
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Other completed paths, excluding the duplicate target, in upload order.
+    #[must_use]
+    pub fn previous(&self) -> &[String] {
+        &self.previous
+    }
+}
+
 /// Check the complete map, including repeated/ignored fields, before cloning.
 /// # Errors
 /// Invalid configuration or exceeded accepted-header budget.

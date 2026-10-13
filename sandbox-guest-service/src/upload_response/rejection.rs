@@ -1,14 +1,16 @@
-//! Bounded public upload header/dispatch rejections from the fixed envd.
+//! Bounded public upload header/dispatch/part rejections from the fixed envd.
 //! Source: upload.go, encoding.go and filesystem/xattr.go at runtime
 //! f455fd58fa3f289e78ce1de690c35968d8d29322 (Apache-2.0, E2B-LICENSE).
 use super::{Error, GzipHeaderError, Limits, Owner, Response, errors};
-use crate::file_upload::{MetadataFault, MetadataReason};
+use crate::file_upload::{DuplicatePath, MetadataFault, MetadataReason};
 use axum::http::StatusCode;
 use sandproof_guest_runtime::file_upload::MetadataViolation;
 use tokio::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rejection {
+    DuplicatePath(DuplicatePath),
+    MissingFilename,
     UnsupportedEncoding(Vec<u8>),
     UnsupportedContentType(Vec<u8>),
     RawPathRequired,
@@ -16,7 +18,7 @@ pub enum Rejection {
     GzipHeader(GzipHeaderError),
 }
 
-/// Source bytes were retained only after complete request-header admission.
+/// Source bytes were retained under admitted header/part/result budgets.
 /// Like I/O errors, rejected uploads keep the original slot/deadline through
 /// response bytes and do not acquire a replacement authorization or slot.
 /// # Errors
@@ -43,6 +45,8 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
     let byte_text;
     let offset_text;
     match error {
+        Rejection::DuplicatePath(error) => return duplicate_payload(error, limit),
+        Rejection::MissingFilename => parts.push(b"error getting multipart custom part file name: filename not found in Content-Disposition header"),
         Rejection::GzipHeader(error) => parts.extend([
             b"error decompressing request body: failed to create gzip reader: ".as_slice(),
             error.message(),
@@ -95,7 +99,33 @@ fn payload(error: &Rejection, limit: usize) -> Result<Vec<u8>, Error> {
             }
         }
     }
-    errors::envelope(&parts, 400, limit)
+    errors::envelope(&parts.iter().copied(), 400, limit)
+}
+
+fn duplicate_payload(error: &DuplicatePath, limit: usize) -> Result<Vec<u8>, Error> {
+    // Stream pieces through both bounded passes; do not allocate a joined message.
+    let prefix = [
+        b"you cannot upload multiple files to the same path '".as_slice(),
+        error.path.as_bytes(),
+        b"' in one upload request, only the first specified file was uploaded",
+    ];
+    // Fixed resolvePath deliberately omits exactly one other completed file.
+    let previous = error
+        .previous
+        .iter()
+        .enumerate()
+        .filter(|_| error.previous.len() > 1)
+        .flat_map(|(index, path)| {
+            [
+                if index == 0 {
+                    b", also the following files were uploaded: ".as_slice()
+                } else {
+                    b", "
+                },
+                path.as_bytes(),
+            ]
+        });
+    errors::envelope(&prefix.into_iter().chain(previous), 400, limit)
 }
 
 #[cfg(test)]

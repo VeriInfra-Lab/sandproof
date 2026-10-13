@@ -13,9 +13,12 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -463,6 +466,119 @@ func uploadSuccess(fields []string, server *httptest.Server) {
 	dumpUpload(response)
 }
 
+// Original resolvePath from fixed upload.go (blob 765e8751ff6fd0901a603b48126ca8292a2e2fe0).
+// Only utils/permissions call namespaces change. Expansion returns an injected,
+// already resolved observation: no account/path expansion or filesystem claim.
+type UploadSuccess []EntryInfo
+type PostFilesParams struct{ Path *string }
+
+func oracleExpandAndResolve(path string, _ *user.User, _ *string) (string, error) {
+	return path, nil
+}
+func resolvePath(part *multipart.Part, paths *UploadSuccess, u *user.User, defaultPath *string, params PostFilesParams) (string, error) {
+	var pathToResolve string
+
+	if params.Path != nil {
+		pathToResolve = *params.Path
+	} else {
+		var err error
+		customPart := NewCustomPart(part)
+		pathToResolve, err = customPart.FileNameWithPath()
+		if err != nil {
+			return "", fmt.Errorf("error getting multipart custom part file name: %w", err)
+		}
+	}
+
+	filePath, err := oracleExpandAndResolve(pathToResolve, u, defaultPath)
+	if err != nil {
+		return "", fmt.Errorf("error resolving path: %w", err)
+	}
+
+	for _, entry := range *paths {
+		if entry.Path == filePath {
+			var alreadyUploaded []string
+			for _, uploadedFile := range *paths {
+				if uploadedFile.Path != filePath {
+					alreadyUploaded = append(alreadyUploaded, uploadedFile.Path)
+				}
+			}
+
+			errMsg := fmt.Errorf("you cannot upload multiple files to the same path '%s' in one upload request, only the first specified file was uploaded", filePath)
+
+			if len(alreadyUploaded) > 1 {
+				errMsg = fmt.Errorf("%w, also the following files were uploaded: %v", errMsg, strings.Join(alreadyUploaded, ", "))
+			}
+
+			return "", errMsg
+		}
+	}
+
+	return filePath, nil
+}
+
+// Original internal/utils/multipart.go (blob a03bfd94669b1be2fb0ac814be0b6fbd22f150bb).
+type CustomPart struct {
+	*multipart.Part
+}
+
+// FileNameWithPath returns the filename parameter of the Part's Content-Disposition header.
+// This method borrows from the original FileName method implementation but returns the full
+// filename without using `filepath.Base`.
+func (p *CustomPart) FileNameWithPath() (string, error) {
+	dispositionParams, err := p.parseContentDisposition()
+	if err != nil {
+		return "", err
+	}
+	filename, ok := dispositionParams["filename"]
+	if !ok {
+		return "", errors.New("filename not found in Content-Disposition header")
+	}
+
+	return filename, nil
+}
+
+func (p *CustomPart) parseContentDisposition() (map[string]string, error) {
+	v := p.Header.Get("Content-Disposition")
+	_, dispositionParams, err := mime.ParseMediaType(v)
+	if err != nil {
+		return nil, err
+	}
+
+	return dispositionParams, nil
+}
+
+// NewCustomPart creates a new CustomPart from a multipart.Part
+func NewCustomPart(part *multipart.Part) *CustomPart {
+	return &CustomPart{Part: part}
+}
+
+func multipartRejection(fields []string) error {
+	paths := UploadSuccess{}
+	var params PostFilesParams
+	part := &multipart.Part{Header: make(textproto.MIMEHeader)}
+	switch fields[0] {
+	case "D":
+		path := string(unhex(fields[1]))
+		params.Path = &path
+		for _, value := range fields[2:] {
+			paths = append(paths, EntryInfo{Path: string(unhex(value))})
+		}
+	case "N":
+		part.Header.Set("Content-Disposition", string(unhex(fields[1])))
+		// Original handlePart gate precedes resolvePath and custom filename.
+		if part.FormName() != "file" {
+			panic("expected file part")
+		}
+	default:
+		panic("multipart operation")
+	}
+	_, err := resolvePath(part, &paths, nil, nil, params)
+	if err == nil {
+		panic("expected multipart rejection")
+	}
+	return err
+}
+
 func main() {
 	if runtime.Version() != "go1.26.8" {
 		panic("requires go1.26.8")
@@ -478,13 +594,15 @@ func main() {
 	for input.Scan() {
 		f := strings.Split(input.Text(), "\t")
 		switch f[0] {
-		case "P", "G":
+		case "P", "G", "B":
 			if server == nil {
 				server = referenceServer()
 			}
 			var err error
 			if f[0] == "P" {
 				err = headerRejection(f[1:])
+			} else if f[0] == "B" {
+				err = multipartRejection(f[1:])
 			} else {
 				r := &http.Request{Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(unhex(f[1])))}
 				r.Header.Set("Content-Encoding", "gzip")

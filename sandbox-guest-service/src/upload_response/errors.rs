@@ -151,16 +151,20 @@ fn payload(fault: &Fault, expected: Option<u64>, limit: usize) -> Result<Vec<u8>
         }
         parts.extend([b": ".as_slice(), errno.as_bytes()]);
     }
-    envelope(&parts, fault.status(), limit)
+    envelope(&parts.iter().copied(), fault.status(), limit)
 }
 
-pub(super) fn envelope(parts: &[&[u8]], status: u16, limit: usize) -> Result<Vec<u8>, Error> {
+pub(super) fn envelope<'a>(
+    parts: &(impl Iterator<Item = &'a [u8]> + Clone),
+    status: u16,
+    limit: usize,
+) -> Result<Vec<u8>, Error> {
     let code = status.to_string();
     go_json::bounded(limit as u64, |put| {
         put(b"{\"code\":")?;
         put(code.as_bytes())?;
         put(b",\"message\":\"")?;
-        for part in parts {
+        for part in parts.clone() {
             go_json::string_content(part, put)?;
         }
         put(b"\"}\n")

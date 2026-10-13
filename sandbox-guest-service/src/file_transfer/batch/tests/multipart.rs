@@ -101,7 +101,7 @@ async fn query_override_missing_filename_empty_forms_and_duplicate_effects() {
             .await
             .receive_multipart(CONTENT_TYPE, body(&input, 7), None, wire_limits())
             .await,
-        Err(MultipartError::Transfer(FileStreamError::InvalidArgument))
+        Err(MultipartError::MissingFilename)
     ));
     assert!(!root.path().join("default").exists());
     let reply = fixture
@@ -128,7 +128,9 @@ async fn query_override_missing_filename_empty_forms_and_duplicate_effects() {
             .await
             .receive_multipart(CONTENT_TYPE, body(&input, 7), None, wire_limits())
             .await,
-        Err(MultipartError::Transfer(FileStreamError::InvalidArgument))
+        Err(MultipartError::Transfer(FileStreamError::DuplicatePath(error)))
+            if error.path() == root.path().join("first").to_str().unwrap()
+                && error.previous().is_empty()
     ));
     quiesce(&fixture).await;
     assert_eq!(std::fs::read(root.path().join("first")).unwrap(), b"one");

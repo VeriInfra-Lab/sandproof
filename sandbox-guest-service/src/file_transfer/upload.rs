@@ -68,6 +68,12 @@ impl Failure {
                 Rejection::RawPathRequired => UploadRequestError::RawPathRequired,
                 Rejection::Metadata(_) => UploadRequestError::Headers(wire::Error::InvalidMetadata),
                 Rejection::GzipHeader(error) => UploadRequestError::GzipPreflight(error.into()),
+                Rejection::MissingFilename => {
+                    UploadRequestError::Body(UploadBodyError::MissingFilename)
+                }
+                Rejection::DuplicatePath(error) => UploadRequestError::Body(
+                    UploadBodyError::Transfer(FileStreamError::DuplicatePath(error)),
+                ),
             },
         }
     }
@@ -76,6 +82,16 @@ impl Failure {
         match GzipHeaderError::try_from(error) {
             Ok(error) => Self::Rejected(Rejection::GzipHeader(error)),
             Err(error) => Self::Request(UploadRequestError::GzipPreflight(error)),
+        }
+    }
+
+    fn body(error: UploadBodyError) -> Self {
+        match error {
+            UploadBodyError::MissingFilename => Self::Rejected(Rejection::MissingFilename),
+            UploadBodyError::Transfer(FileStreamError::DuplicatePath(error)) => {
+                Self::Rejected(Rejection::DuplicatePath(error))
+            }
+            other => Self::Request(UploadRequestError::Body(other)),
         }
     }
 }
@@ -99,7 +115,7 @@ impl FileStreams {
             .map_err(Failure::legacy)
     }
 
-    /// Send successes, observed file I/O faults and supported header/dispatch
+    /// Send successes, observed file I/O faults and supported header/dispatch/part
     /// rejections under the original upload slot and deadline. Unmapped account,
     /// codec/transport and component failures remain explicit.
     /// # Errors
@@ -264,7 +280,7 @@ impl FileStreams {
             }
             (Kind::Unsupported, _) => unreachable!(),
         }
-        .map_err(|error| Failure::Request(UploadRequestError::Body(error)))
+        .map_err(Failure::body)
     }
 }
 enum Input {

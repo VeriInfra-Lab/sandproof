@@ -514,9 +514,9 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 190);
-    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 18);
-    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 24);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 204);
+    assert_eq!(fixture.multipart_seen.load(Ordering::SeqCst), 24);
+    assert_eq!(fixture.gzip_seen.load(Ordering::SeqCst), 26);
     assert_eq!(fixture.gzip_download_seen.load(Ordering::SeqCst), 30);
     for mode in ["sync", "async"] {
         assert!(!directory.path().join(mode).join("header-rejected").exists());
@@ -534,13 +534,16 @@ async fn pinned_sdk_uses_real_owned_raw_and_multipart_transfers() {
         for (name, expected) in [
             ("duplicate", b"first".as_slice()),
             ("before-directory", b"first"),
+            ("completed-first", b"done"),
+            ("completed-z", b"done"),
+            ("completed-a", b"done"),
         ] {
             assert_eq!(
                 std::fs::read(directory.path().join(mode).join("form").join(name)).unwrap(),
                 expected
             );
         }
-        for name in ["after-duplicate", "after-directory"] {
+        for name in ["after-duplicate", "after-directory", "after-completed"] {
             assert!(!directory.path().join(mode).join("form").join(name).exists());
         }
         assert_eq!(

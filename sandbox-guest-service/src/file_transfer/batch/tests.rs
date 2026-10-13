@@ -6,6 +6,7 @@ mod upload;
 mod upload_errors;
 mod upload_gzip_header;
 mod upload_headers;
+mod upload_multipart;
 use crate::file_transfer::FileStreams;
 use crate::files::{FileContextLimits, FileSettings};
 use crate::{
@@ -201,7 +202,9 @@ async fn resolved_duplicate_rejects_before_truncate_and_preserves_prior_files() 
     part.finish().await.unwrap();
     assert!(matches!(
         batch.start_file("file", None).await,
-        Err(FileStreamError::InvalidArgument)
+        Err(FileStreamError::DuplicatePath(error))
+            if error.path() == root.path().join("file").to_str().unwrap()
+                && error.previous().is_empty()
     ));
     assert!(matches!(batch.finish(), Err(FileStreamError::Unavailable)));
     assert_eq!(std::fs::read(root.path().join("file")).unwrap(), b"one");
@@ -220,7 +223,9 @@ async fn query_override_including_empty_ignores_filename_and_detects_duplicates(
     assert!(root.path().join("default").is_file());
     assert!(matches!(
         batch.start_file("different", Some(0)).await,
-        Err(FileStreamError::InvalidArgument)
+        Err(FileStreamError::DuplicatePath(error))
+            if error.path() == root.path().join("default").to_str().unwrap()
+                && error.previous().is_empty()
     ));
     drop(batch);
     let slot = fixture.streams.slots.acquire().await.unwrap();

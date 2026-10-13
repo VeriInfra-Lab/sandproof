@@ -449,6 +449,10 @@ HTTP metadata 的详细观察复用 runtime 的键长→键字节→值字节检
 
 拒绝发生在账户查询、metadata 和文件打开之前，实际解码工作自持原授权至退出，响应保留原槽位直到最后字节副本释放。源/header/响应失败不重试、不改文件。runtime gzip::Error 与 service GzipError 新增 EmptyHeader，原来匹配空输入 Truncated 的调用方须显式处理 EmptyHeader；Rejection 新增 GzipHeader 分支。固定 Go 首头准备与 HTTP 错误对照已有本地运行，Linux 请求/授权与合成 gzip 输入经固定 SDK 错误解析待实跑；不代表完整压缩上传故障或端点验收。
 
+[multipart 路径拒绝](../sandbox-guest-service/src/file_transfer/batch.rs)在原文件数量/总量/期限检查与路径展开后检测重复，打开目标之前返回固定 400。错误观察移走已有结果中的路径，不重读文件、不复制 metadata，保留原完成顺序并排除重复目标；其余路径超过 1 个时才按原 resolvePath 加入错误消息，恰好 1 个仍省略。已有字符串受 retained_bytes 约束，临时源/目标向量的描述符由 files 约束；序列化使用可重复迭代器先计算转义后线长，不预先分配 joined 消息。响应仍占原槽位、使用原绝对期限；编码/交付失败不撤销已完成文件。
+
+仅 name=file、没有查询 path 且缺少 filename 的 part 返回原 CustomPart 的缺失文件名 400；未知字段仍忽略，显式查询 path（包括空串）仍覆盖 filename。FileStreamError 新增 DuplicatePath，UploadBodyError 新增 MissingFilename，Rejection 新增对应两种分支；旧 upload_request 也返回这两个细分类，调用方须更新穷尽匹配，不再将它们全部视为 InvalidArgument。其他解析/传输/预算错误保持明确分类。固定原 resolvePath/CustomPart 与 HTTP 输出对照已有本地运行；Linux 文件效果、槽位/期限与原 SDK 批次/合成缺失文件名解析组合待实跑，不能记作完整 multipart 或端点验收。
+
 [gzip 下载连接](../sandbox-guest-service/src/file_transfer/gzip_download.rs)在原文件池单次准入后，把授权、容量和原绝对期限交给同一个打开/编码阻塞任务。[实际 EOF 文件源](../sandbox-guest-runtime/src/filesystem/transfer.rs)共用原路径/stat/open 错误检查，跟随来宾链接并保留原 FD，但不 seek、不以 stat 大小截断或预检总量。这对应固定 Go gzip 路径的 `io.Copy`：读取前发生的增长可以进入响应，缩短成为实际 EOF，替换路径不切换到新文件；不承诺并发内容快照。identity 仍保留初始 seek 长度行为。
 
 [阻塞编码连接](../sandbox-guest-service/src/upload_body/encode.rs)与上传共用按需消费、Bytes 最后副本释放和取消通道。打开成功不预读正文；每个请求只有一个编码 worker、一个显式块大小的源缓冲和一个交付块，压缩库工作区及 HTTP 分配另计。原始/压缩字节预算独立，缓冲可预读至一个源块，超出累计消费预算不能成功。每次源填充前后及缓冲消费时均检查原期限/取消；已进入的 open/read/destructor 不能被超时强制终止，其原守卫保留至真正返回。句柄、worker 与已交出块分别保留原容量，Bytes 副本还保留原授权；没有 Content-Length 或重新准入。
