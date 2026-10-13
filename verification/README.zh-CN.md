@@ -47,6 +47,8 @@ scripts/verify-controller.sh
 
 公共基础可独立执行 `bash scripts/verify-foundations.sh`：检查输入指纹、固定工具与平台、重新抽取一致性、真实入口/全部自有函数体、库模型范围、定理编译和实际依赖。冻结环境见 [foundations-environment.json](foundations-environment.json)，源码/模型/脚本/生成输入摘要见 [foundations-inputs.sha256](foundations-inputs.sha256)。独立模块检查不替代完整验收；完整入口仍执行原本地控制核心检查，不跳过其失败。独立工作区可用 `SANDPROOF_PROOF_TOOL_ROOT` 指向已有固定工具，修订和二进制摘要仍需匹配，不改变工具版本。
 
+公共基础及共享状态的 Charon 输出参数使用项目内固定相对路径，保留该参数在完整 LLBC 摘要中的检查；源码位置仍由原 `--remap-path-prefix` 绑定。换工作目录不应只因输出路径而产生差异，错误或绝对输出路径仍拒绝。摘要仅规范化无序 `short_names` 表，不删除路径或其它有序输入字段。
+
 模块范围按 [V0 计划](../docs/formal/00-foundations.md#范围和模块验收)区分：公共模块的一批检查成功不表示 V0 全部交付；完整入口被历史控制器迁移阻断也不使历史业务证明成为 V0 的完成条件。完整入口始终保留，局部/整套结果分别登记。
 
 共享当前状态的局部集合可独立执行 `bash scripts/verify-network.sh`：检查真实查询/名单循环、平台常量及初始化体、固定两版 Rust 标准库源码、最小外部接口，以及 Network、Access、Local 三个证明审计。环境见 [network-environment.json](network-environment.json)，输入摘要见 [network-inputs.sha256](network-inputs.sha256)，库条件见[依赖登记](../docs/formal/dependencies.md#a6-网络地址库模型使用登记)。完整入口包含此模块，但不会因此跳过历史本地控制核心的一致性和全部证明检查；局部准入/位置证明不等于统一控制器分派、可达状态围栏、物理清理或宿主防火墙已验证。冻结的 V0/共享状态验收目标为 x86_64 Linux；目标、工具二进制或 cfg 不匹配即拒绝，不静默按本机平台重写清单。

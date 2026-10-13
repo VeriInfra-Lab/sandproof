@@ -7,7 +7,9 @@ AENEAS="$TOOL_ROOT/aeneas/bin/aeneas"
 test "$(git -C "$TOOL_ROOT/aeneas" rev-parse HEAD)" = 505b6ca35217e7be5c96c3e2f8045edfbdf47291
 test "$(git -C "$TOOL_ROOT/aeneas/charon" rev-parse HEAD)" = b104e24fea7d721b71e6c39fd70f26ff20bc0980
 cd "$ROOT_DIR"
-LLBC="$ROOT_DIR/verification/aeneas/llbc/sandproof_network.llbc"
+# Charon records this option in the LLBC. Keep it project-relative so moving
+# the checkout does not change the source-bound digest; retain the field.
+LLBC="verification/aeneas/llbc/sandproof_network.llbc"
 DEST="$ROOT_DIR/verification/aeneas/network"
 mkdir -p "$(dirname "$LLBC")" "$DEST"
 test -z "${RUSTFLAGS:-}" && test -z "${CARGO_ENCODED_RUSTFLAGS:-}"
