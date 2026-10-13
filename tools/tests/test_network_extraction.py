@@ -51,8 +51,8 @@ class NetworkExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'root was not generated'):
             check(ROOT, self.llbc, inventory)
 
-    def test_current_mutating_roots_cannot_disappear(self):
-        for name in ('runtime_crash', 'runtime_recover', 'slot_transition'):
+    def test_current_state_and_input_roots_cannot_disappear(self):
+        for name in ('runtime_crash', 'runtime_recover', 'slot_transition', 'runtime', 'controller_input'):
             with self.subTest(root=name):
                 inventory = copy.deepcopy(self.inventory)
                 inventory['functions'] = [function for function in inventory['functions']

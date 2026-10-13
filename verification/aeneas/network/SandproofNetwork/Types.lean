@@ -64,12 +64,61 @@ inductive sandbox_controller_core.model.Actor where
   sandbox_controller_core.model.Actor
 | SystemController : sandbox_controller_core.model.Actor
 
+/-- [sandbox_controller_core::ids::NetSlotId]
+    Source: './controller-core/src/ids.rs', lines 5:8-5:34
+    Name pattern: [sandbox_controller_core::ids::NetSlotId]
+    Visibility: public -/
+@[reducible, rust_type "sandbox_controller_core::ids::NetSlotId"]
+def sandbox_controller_core.ids.NetSlotId := Std.U64
+
+/-- [sandbox_controller_core::ids::VmId]
+    Source: './controller-core/src/ids.rs', lines 5:8-5:34
+    Name pattern: [sandbox_controller_core::ids::VmId]
+    Visibility: public -/
+@[reducible, rust_type "sandbox_controller_core::ids::VmId"]
+def sandbox_controller_core.ids.VmId := Std.U64
+
 /-- [sandbox_controller_core::ids::SandboxId]
     Source: './controller-core/src/ids.rs', lines 5:8-5:34
     Name pattern: [sandbox_controller_core::ids::SandboxId]
     Visibility: public -/
 @[reducible, rust_type "sandbox_controller_core::ids::SandboxId"]
 def sandbox_controller_core.ids.SandboxId := Std.U64
+
+/-- [sandbox_controller_core::auxiliary::AccessInput]
+    Source: './controller-core/src/auxiliary.rs', lines 7:0-7:20
+    Name pattern: [sandbox_controller_core::auxiliary::AccessInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::auxiliary::AccessInput"]
+inductive sandbox_controller_core.auxiliary.AccessInput where
+| Exec :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.auxiliary.AccessInput
+| FileRead :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.auxiliary.AccessInput
+| FileWrite :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.auxiliary.AccessInput
+| Ingress :
+  sandbox_controller_core.model.Actor →
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.auxiliary.AccessInput
+| Egress :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.model.Endpoint →
+  sandbox_controller_core.auxiliary.AccessInput
 
 /-- [sandbox_controller_core::auxiliary::AuxiliaryEvent]
     Source: './controller-core/src/auxiliary.rs', lines 16:0-16:23
@@ -197,13 +246,6 @@ inductive sandbox_controller_core.model.NetworkPolicy where
   alloc.vec.Vec sandbox_controller_core.model.Ipv4Cidr →
   sandbox_controller_core.model.NetworkPolicy
 
-/-- [sandbox_controller_core::ids::VmId]
-    Source: './controller-core/src/ids.rs', lines 5:8-5:34
-    Name pattern: [sandbox_controller_core::ids::VmId]
-    Visibility: public -/
-@[reducible, rust_type "sandbox_controller_core::ids::VmId"]
-def sandbox_controller_core.ids.VmId := Std.U64
-
 /-- [sandbox_controller_core::model::NetSlot]
     Source: './controller-core/src/model.rs', lines 531:0-531:18
     Name pattern: [sandbox_controller_core::model::NetSlot]
@@ -315,13 +357,6 @@ structure sandbox_controller_core.model.RestoreSource where
   "sandbox_controller_core::model::WorkspaceApiAccess"]
 inductive sandbox_controller_core.model.WorkspaceApiAccess where
 | ManagedReadWrite : sandbox_controller_core.model.WorkspaceApiAccess
-
-/-- [sandbox_controller_core::ids::NetSlotId]
-    Source: './controller-core/src/ids.rs', lines 5:8-5:34
-    Name pattern: [sandbox_controller_core::ids::NetSlotId]
-    Visibility: public -/
-@[reducible, rust_type "sandbox_controller_core::ids::NetSlotId"]
-def sandbox_controller_core.ids.NetSlotId := Std.U64
 
 /-- [sandbox_controller_core::model::Authority]
     Source: './controller-core/src/model.rs', lines 201:0-201:18
@@ -885,6 +920,230 @@ structure sandbox_controller_core.auxiliary.AuxiliaryDecision where
   event : sandbox_controller_core.auxiliary.AuxiliaryEvent
   next : sandbox_controller_core.model.World
 
+/-- [sandbox_controller_core::scheduler::SchedulerInput]
+    Source: './controller-core/src/scheduler.rs', lines 47:0-47:23
+    Name pattern: [sandbox_controller_core::scheduler::SchedulerInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::scheduler::SchedulerInput"]
+inductive sandbox_controller_core.scheduler.SchedulerInput where
+| ReserveStartup :
+  sandbox_controller_core.model.OperationKey →
+  sandbox_controller_core.scheduler.SchedulerInput
+| ReservePauseSnapshot :
+  sandbox_controller_core.model.OperationKey →
+  sandbox_controller_core.scheduler.SchedulerInput
+| DispatchPrepare :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.scheduler.SchedulerInput
+| SealSnapshot :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.SnapshotId →
+  sandbox_controller_core.model.SnapshotManifestRef →
+  sandbox_controller_core.scheduler.SchedulerInput
+| CommitSnapshot :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.ids.SnapshotId →
+  sandbox_controller_core.scheduler.SchedulerInput
+| StopVm :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.scheduler.SchedulerInput
+| AbortPrepare :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.scheduler.SchedulerInput
+| CleanupVm :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.VmId →
+  sandbox_controller_core.scheduler.SchedulerInput
+| CleanupSlot :
+  sandbox_controller_core.ids.SandboxId →
+  Std.U64 →
+  sandbox_controller_core.ids.NetSlotId →
+  sandbox_controller_core.scheduler.SchedulerInput
+
+/-- [sandbox_controller_core::request::CompensationRequest]
+    Source: './controller-core/src/request.rs', lines 97:0-97:30
+    Name pattern: [sandbox_controller_core::request::CompensationRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::CompensationRequest"]
+structure sandbox_controller_core.request.CompensationRequest where
+  sandbox : sandbox_controller_core.ids.SandboxId
+  failure : sandbox_controller_core.model.FailureKind
+  evidence : Option sandbox_controller_core.model.EffectId
+
+/-- [sandbox_controller_core::request::QueryRequest]
+    Source: './controller-core/src/request.rs', lines 89:0-89:23
+    Name pattern: [sandbox_controller_core::request::QueryRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::QueryRequest"]
+structure sandbox_controller_core.request.QueryRequest where
+  actor : sandbox_controller_core.model.Actor
+  sandbox : sandbox_controller_core.ids.SandboxId
+  operation : sandbox_controller_core.ids.OperationId
+
+/-- [sandbox_controller_core::request::ReplayRequest]
+    Source: './controller-core/src/request.rs', lines 79:0-79:24
+    Name pattern: [sandbox_controller_core::request::ReplayRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::ReplayRequest"]
+structure sandbox_controller_core.request.ReplayRequest where
+  actor : sandbox_controller_core.model.Actor
+  sandbox : sandbox_controller_core.ids.SandboxId
+  operation : sandbox_controller_core.ids.OperationId
+  kind : sandbox_controller_core.model.OperationKind
+  input : sandbox_controller_core.model.OperationInput
+
+/-- [sandbox_controller_core::request::KillRequest]
+    Source: './controller-core/src/request.rs', lines 71:0-71:22
+    Name pattern: [sandbox_controller_core::request::KillRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::KillRequest"]
+structure sandbox_controller_core.request.KillRequest where
+  actor : sandbox_controller_core.model.Actor
+  sandbox : sandbox_controller_core.ids.SandboxId
+  operation : sandbox_controller_core.ids.OperationId
+
+/-- [sandbox_controller_core::request::ResumeRequest]
+    Source: './controller-core/src/request.rs', lines 63:0-63:24
+    Name pattern: [sandbox_controller_core::request::ResumeRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::ResumeRequest"]
+structure sandbox_controller_core.request.ResumeRequest where
+  actor : sandbox_controller_core.model.Actor
+  sandbox : sandbox_controller_core.ids.SandboxId
+  operation : sandbox_controller_core.ids.OperationId
+
+/-- [sandbox_controller_core::request::PauseRequest]
+    Source: './controller-core/src/request.rs', lines 55:0-55:23
+    Name pattern: [sandbox_controller_core::request::PauseRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::PauseRequest"]
+structure sandbox_controller_core.request.PauseRequest where
+  actor : sandbox_controller_core.model.Actor
+  sandbox : sandbox_controller_core.ids.SandboxId
+  operation : sandbox_controller_core.ids.OperationId
+
+/-- [sandbox_controller_core::request::CreateRequest]
+    Source: './controller-core/src/request.rs', lines 43:0-43:24
+    Name pattern: [sandbox_controller_core::request::CreateRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::request::CreateRequest"]
+structure sandbox_controller_core.request.CreateRequest where
+  actor : sandbox_controller_core.model.Actor
+  owner : sandbox_controller_core.ids.TenantId
+  sandbox : sandbox_controller_core.ids.SandboxId
+  workspace : sandbox_controller_core.ids.FsId
+  file_policy : sandbox_controller_core.model.FilePolicyRef
+  policy : sandbox_controller_core.model.NetworkPolicy
+  operation : sandbox_controller_core.ids.OperationId
+
+/-- [sandbox_controller_core::request::Request]
+    Source: './controller-core/src/request.rs', lines 105:0-105:16
+    Name pattern: [sandbox_controller_core::request::Request]
+    Visibility: public -/
+@[discriminant isize, rust_type "sandbox_controller_core::request::Request"]
+inductive sandbox_controller_core.request.Request where
+| Create :
+  sandbox_controller_core.request.CreateRequest →
+  sandbox_controller_core.request.Request
+| Pause :
+  sandbox_controller_core.request.PauseRequest →
+  sandbox_controller_core.request.Request
+| Resume :
+  sandbox_controller_core.request.ResumeRequest →
+  sandbox_controller_core.request.Request
+| Kill :
+  sandbox_controller_core.request.KillRequest →
+  sandbox_controller_core.request.Request
+| Replay :
+  sandbox_controller_core.request.ReplayRequest →
+  sandbox_controller_core.request.Request
+| Query :
+  sandbox_controller_core.request.QueryRequest →
+  sandbox_controller_core.request.Request
+| Compensate :
+  sandbox_controller_core.request.CompensationRequest →
+  sandbox_controller_core.request.Request
+
+/-- [sandbox_controller_core::recovery_monitor::RuntimeInput]
+    Source: './controller-core/src/recovery_monitor.rs', lines 7:0-7:21
+    Name pattern: [sandbox_controller_core::recovery_monitor::RuntimeInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::recovery_monitor::RuntimeInput"]
+inductive sandbox_controller_core.recovery_monitor.RuntimeInput where
+| Crash : sandbox_controller_core.recovery_monitor.RuntimeInput
+| Recover : sandbox_controller_core.recovery_monitor.RuntimeInput
+| DuplicateOrLateDelivery :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.recovery_monitor.RuntimeInput
+
+/-- [sandbox_controller_core::publication::PublicationInput]
+    Source: './controller-core/src/publication.rs', lines 11:0-11:25
+    Name pattern: [sandbox_controller_core::publication::PublicationInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::publication::PublicationInput"]
+inductive sandbox_controller_core.publication.PublicationInput where
+| Running :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.publication.PublicationInput
+| Paused :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.model.RestoreSource →
+  sandbox_controller_core.publication.PublicationInput
+| Destroyed :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.publication.PublicationInput
+| Failed :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.model.FailureKind →
+  sandbox_controller_core.publication.PublicationInput
+
+/-- [sandbox_controller_core::maintenance::MaintenanceLimits]
+    Source: './controller-core/src/maintenance.rs', lines 19:0-19:28
+    Name pattern: [sandbox_controller_core::maintenance::MaintenanceLimits]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::maintenance::MaintenanceLimits"]
+structure sandbox_controller_core.maintenance.MaintenanceLimits where
+  max_retained_results : Std.U64
+  max_host_slots : Std.U64
+  windows : sandbox_controller_core.maintenance.windows.WindowLimits
+
+/-- [sandbox_controller_core::maintenance::windows::WindowInput]
+    Source: './controller-core/src/maintenance/windows.rs', lines 278:0-278:20
+    Name pattern: [sandbox_controller_core::maintenance::windows::WindowInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::maintenance::windows::WindowInput"]
+inductive sandbox_controller_core.maintenance.windows.WindowInput where
+| Issue :
+  sandbox_controller_core.ids.TenantId →
+  Std.U64 →
+  Std.U64 →
+  sandbox_controller_core.maintenance.windows.WindowInput
+| Close :
+  sandbox_controller_core.ids.TenantId →
+  sandbox_controller_core.maintenance.windows.WindowId →
+  Std.U64 →
+  sandbox_controller_core.maintenance.windows.WindowInput
+| AdvanceTime :
+  Std.U64 →
+  sandbox_controller_core.maintenance.windows.WindowInput
+| Admit :
+  sandbox_controller_core.ids.TenantId →
+  sandbox_controller_core.maintenance.windows.WindowId →
+  Std.U64 →
+  sandbox_controller_core.maintenance.windows.WindowInput
+
 /-- [sandbox_controller_core::maintenance::slots::SlotInput]
     Source: './controller-core/src/maintenance/slots.rs', lines 37:0-37:18
     Name pattern: [sandbox_controller_core::maintenance::slots::SlotInput]
@@ -909,6 +1168,140 @@ inductive sandbox_controller_core.maintenance.slots.SlotInput where
   sandbox_controller_core.maintenance.slots.HostSlotId →
   sandbox_controller_core.maintenance.slots.HostBinding →
   sandbox_controller_core.maintenance.slots.SlotInput
+
+/-- [sandbox_controller_core::maintenance::retirement::QuiescenceStatus]
+    Source: './controller-core/src/maintenance/retirement.rs', lines 19:0-19:25
+    Name pattern: [sandbox_controller_core::maintenance::retirement::QuiescenceStatus]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::maintenance::retirement::QuiescenceStatus"]
+inductive sandbox_controller_core.maintenance.retirement.QuiescenceStatus where
+| Unconfirmed : sandbox_controller_core.maintenance.retirement.QuiescenceStatus
+| Confirmed : sandbox_controller_core.maintenance.retirement.QuiescenceStatus
+
+/-- [sandbox_controller_core::maintenance::retirement::QuiescenceCertificate]
+    Source: './controller-core/src/maintenance/retirement.rs', lines 29:0-29:32
+    Name pattern: [sandbox_controller_core::maintenance::retirement::QuiescenceCertificate]
+    Visibility: public -/
+@[rust_type
+  "sandbox_controller_core::maintenance::retirement::QuiescenceCertificate"]
+structure sandbox_controller_core.maintenance.retirement.QuiescenceCertificate
+  where
+  sandbox : sandbox_controller_core.ids.SandboxId
+  owner : sandbox_controller_core.ids.TenantId
+  epoch : Std.U64
+  operation : sandbox_controller_core.ids.OperationId
+  workspace : sandbox_controller_core.ids.FsId
+  worker_drained :
+    sandbox_controller_core.maintenance.retirement.QuiescenceStatus
+  data_connections_drained :
+    sandbox_controller_core.maintenance.retirement.QuiescenceStatus
+  host_resources_reclaimed :
+    sandbox_controller_core.maintenance.retirement.QuiescenceStatus
+  external_pins_released :
+    sandbox_controller_core.maintenance.retirement.QuiescenceStatus
+
+/-- [sandbox_controller_core::maintenance::retirement::RetireRequest]
+    Source: './controller-core/src/maintenance/retirement.rs', lines 47:0-47:24
+    Name pattern: [sandbox_controller_core::maintenance::retirement::RetireRequest]
+    Visibility: public -/
+@[rust_type "sandbox_controller_core::maintenance::retirement::RetireRequest"]
+structure sandbox_controller_core.maintenance.retirement.RetireRequest where
+  sandbox : sandbox_controller_core.ids.SandboxId
+  owner : sandbox_controller_core.ids.TenantId
+  epoch : Std.U64
+  operation : sandbox_controller_core.ids.OperationId
+  retain_until : Std.U64
+  quiescence :
+    sandbox_controller_core.maintenance.retirement.QuiescenceCertificate
+
+/-- [sandbox_controller_core::maintenance::MaintenanceInput]
+    Source: './controller-core/src/maintenance.rs', lines 39:0-39:25
+    Name pattern: [sandbox_controller_core::maintenance::MaintenanceInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::maintenance::MaintenanceInput"]
+inductive sandbox_controller_core.maintenance.MaintenanceInput where
+| Enable :
+  sandbox_controller_core.maintenance.MaintenanceLimits →
+  Std.U64 →
+  sandbox_controller_core.maintenance.MaintenanceInput
+| Retire :
+  sandbox_controller_core.maintenance.retirement.RetireRequest →
+  sandbox_controller_core.maintenance.MaintenanceInput
+| ExpireResults :
+  Std.U64 →
+  sandbox_controller_core.maintenance.MaintenanceInput
+| Slot :
+  sandbox_controller_core.maintenance.slots.SlotInput →
+  sandbox_controller_core.maintenance.MaintenanceInput
+| Window :
+  sandbox_controller_core.maintenance.windows.WindowInput →
+  sandbox_controller_core.maintenance.MaintenanceInput
+
+/-- [sandbox_controller_core::effect::EffectInput]
+    Source: './controller-core/src/effect.rs', lines 8:0-8:20
+    Name pattern: [sandbox_controller_core::effect::EffectInput]
+    Visibility: public -/
+@[discriminant isize, rust_type "sandbox_controller_core::effect::EffectInput"]
+inductive sandbox_controller_core.effect.EffectInput where
+| Dispatch :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.effect.EffectInput
+| Receipt :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.EffectOutcome →
+  sandbox_controller_core.effect.EffectInput
+| Timeout :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.effect.EffectInput
+| Retry :
+  sandbox_controller_core.model.LogicalEffectId →
+  sandbox_controller_core.model.FailureKind →
+  sandbox_controller_core.effect.EffectInput
+| FinalizeFailure :
+  sandbox_controller_core.model.LogicalEffectId →
+  sandbox_controller_core.model.FailureKind →
+  sandbox_controller_core.effect.EffectInput
+| RetireActivation :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.effect.EffectInput
+
+/-- [sandbox_controller_core::controller::ControllerInput]
+    Source: './controller-core/src/controller.rs', lines 17:0-17:24
+    Name pattern: [sandbox_controller_core::controller::ControllerInput]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::controller::ControllerInput"]
+inductive sandbox_controller_core.controller.ControllerInput where
+| Maintenance :
+  sandbox_controller_core.maintenance.MaintenanceInput →
+  sandbox_controller_core.controller.ControllerInput
+| Request :
+  sandbox_controller_core.request.Request →
+  sandbox_controller_core.controller.ControllerInput
+| Effect :
+  sandbox_controller_core.effect.EffectInput →
+  sandbox_controller_core.controller.ControllerInput
+| Scheduler :
+  sandbox_controller_core.scheduler.SchedulerInput →
+  sandbox_controller_core.controller.ControllerInput
+| Worker :
+  sandbox_controller_core.model.EffectId →
+  sandbox_controller_core.controller.ControllerInput
+| Publication :
+  sandbox_controller_core.publication.PublicationInput →
+  sandbox_controller_core.controller.ControllerInput
+| RpcTimeout :
+  sandbox_controller_core.ids.SandboxId →
+  sandbox_controller_core.controller.ControllerInput
+| Access :
+  sandbox_controller_core.auxiliary.AccessInput →
+  sandbox_controller_core.controller.ControllerInput
+| Runtime :
+  sandbox_controller_core.recovery_monitor.RuntimeInput →
+  sandbox_controller_core.controller.ControllerInput
 
 /-- [sandbox_controller_core::maintenance::slots::SlotReject]
     Source: './controller-core/src/maintenance/slots.rs', lines 65:0-65:19

@@ -67,3 +67,18 @@ pub fn slot_transition(
 ) -> Result<HostSlotRecord, SlotReject> {
     sandbox_controller_core::maintenance::slots::reduce_slot(previous, input)
 }
+
+/// Preserve the real public input type in the shared current-state extraction.
+/// This is a representation boundary, not a second controller dispatcher.
+pub fn controller_input(
+    input: sandbox_controller_core::ControllerInput,
+) -> sandbox_controller_core::ControllerInput {
+    input
+}
+
+pub fn runtime(
+    world: &World,
+    input: sandbox_controller_core::recovery_monitor::RuntimeInput,
+) -> Result<RuntimeDecision, RuntimeReject> {
+    sandbox_controller_core::recovery_monitor::handle_runtime(world, input)
+}
