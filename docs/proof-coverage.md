@@ -254,7 +254,9 @@ SQLite 原子事务、Linux/pidfd/文件系统观察、Firecracker/jailer 及密
 
 [增量 multipart/MIME 解码](../sandbox-guest-runtime/src/multipart/mod.rs)已有本地可移植测试和固定 Go 标准库对照，未抽取或证明。新增义务包括跨块边界与字节前缀、原始/解码计费、UTF-8/续段参数、错误后不可复用以及有效结束到批次成功的连接。明确拒绝 Go 可误作 EOF 成功的 MIME 头截断，不能沿用纯 `Transfer` 或历史控制器定理覆盖解析器。其与 HTTP 传输、账户授权、实际文件副作用及请求总预算的组合见下项，尚未证明。
 
-[multipart 到上传批次的连接](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)已实现，新增真实文件/固定 SDK 组合等待 Linux 运行。它增加原授权/容量/期限跨 parser、HTTP frame 和实际 I/O 的所有权链；End 与 HTTP EOF/长度的联合判据、QP 错误前缀、未知字段/尾部预算以及取消后的资源保留均是新的自有义务。该组合未抽取或证明，之前解码器/单文件/批次测试和 `Transfer` 抽取不能代为背书；HTTP 库的先行分配和响应序列化/发送仍须最小外部合同及独立计费。
+[multipart 到上传批次的连接](../sandbox-guest-service/src/file_transfer/batch/multipart.rs)已实现，真实文件/固定 SDK 组合已有原提交 Linux 组件证据，后续候选仍须重跑。它增加原授权/容量/期限跨 parser、HTTP frame 和实际 I/O 的所有权链；End 与 HTTP EOF/长度的联合判据、QP 错误前缀、未知字段/尾部预算以及取消后的资源保留均是新的自有义务。该组合未抽取或证明，之前解码器/单文件/批次测试和 `Transfer` 抽取不能代为背书；HTTP 库的先行分配和响应序列化/发送仍须最小外部合同及独立计费。
+
+[gzip 编解码组件](../sandbox-guest-runtime/src/gzip/mod.rs)新增头部预检、DEFLATE/CRC32 外部库连接、逐段结束与真实源 EOF、编码/展开预算及失败前缀义务。已有本地组件和固定 Go 对照，未接 HTTP/文件 worker、未抽取或证明；`flate2`/`zlib-rs`/`crc32fast` 及调用者缓冲/期限/授权所有权仍须外部合同和组合连接。原纯来宾核心及历史已证明 Rust 未改变，旧定理不覆盖本模块或依赖实现。
 
 ### 当前串行实现的模块交接
 

@@ -14,6 +14,7 @@ pub mod file_protocol;
 #[cfg(target_os = "linux")]
 pub mod filesystem;
 
+pub mod gzip;
 pub mod multipart;
 
 #[cfg(target_os = "linux")]
