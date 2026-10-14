@@ -212,6 +212,56 @@ async fn drain(mut body: Body) -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn final_rpc_bytes_release_both_pools_without_an_http_eof_poll() {
+    for encoding in ["identity", "gzip"] {
+        for method in ["MakeDir", "Stat"] {
+            let root = tempfile::tempdir().unwrap();
+            let f = fixture(root.path(), 65536).await;
+            let mut input = request(method, Body::from(r#"{"path":"missing"}"#));
+            input
+                .headers_mut()
+                .insert("accept-encoding", encoding.parse().unwrap());
+            let response = f.http.handle(input).await.unwrap();
+            assert_eq!(
+                response.status(),
+                if method == "MakeDir" { 200 } else { 404 }
+            );
+            let length: usize = response.headers()["content-length"]
+                .to_str()
+                .unwrap()
+                .parse()
+                .unwrap();
+            let mut body = response.into_body();
+            let mut received = 0;
+            let last = loop {
+                let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+                received += bytes.len();
+                assert!(received <= length);
+                if received == length {
+                    break bytes;
+                }
+            };
+            let copy = last.clone();
+            drop(last);
+            full(&f);
+            file_full(&f).await;
+            drop(copy);
+            released(&f).await;
+            // Retain the finished response body, as a known-length transport
+            // may do. Both original slots must already be available.
+            let follow_up = f
+                .http
+                .handle(request("Stat", Body::from(r#"{"path":"."}"#)))
+                .await
+                .unwrap();
+            assert_eq!(follow_up.status(), 200);
+            drain(follow_up.into_body()).await;
+            drop(body);
+        }
+    }
+}
+
+#[tokio::test]
 async fn all_five_methods_use_real_io_and_canonical_json_charset() {
     let root = tempfile::tempdir().unwrap();
     let f = fixture(root.path(), 65536).await;

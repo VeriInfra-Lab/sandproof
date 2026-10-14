@@ -64,7 +64,11 @@ impl FileStreams {
             query_path,
             metadata,
             limits,
-            Reservation { lease, deadline },
+            Reservation {
+                lease,
+                deadline,
+                settlement: None,
+            },
         )
     }
 
@@ -248,6 +252,12 @@ pub struct BatchReply {
 }
 
 impl BatchReply {
+    // A completed result retains capacity, but is not an active file/decoder.
+    // Keep the reservation private to the batch module.
+    pub(super) fn release_result_receipt(&mut self) {
+        self.reservation.settlement.take();
+    }
+
     #[must_use]
     pub fn results(&self) -> &[UploadResult] {
         &self.results

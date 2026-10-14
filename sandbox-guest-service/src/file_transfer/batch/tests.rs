@@ -17,6 +17,7 @@ mod upload_multipart_setup;
 mod upload_path;
 mod upload_quoted_printable;
 mod upload_read_boundaries;
+mod upload_settlement;
 use crate::file_transfer::FileStreams;
 use crate::files::{FileContextLimits, FileSettings};
 use crate::{

@@ -105,6 +105,50 @@ async fn success_uses_bounded_file_json_for_each_shape_and_header_length_boundar
 }
 
 #[tokio::test]
+async fn known_length_rpc_reply_releases_on_last_bytes_without_an_extra_eof_poll() {
+    for encoding in [Encoding::Identity, Encoding::Gzip] {
+        for chunk_bytes in [1, 65536] {
+            let (records, slots) = retain(Records::Empty);
+            let response = send_with_encoding(
+                records,
+                view,
+                Limits {
+                    chunk_bytes,
+                    ..limits()
+                },
+                deadline(),
+                encoding,
+            )
+            .await
+            .unwrap();
+            let length: usize = response.headers()["content-length"]
+                .to_str()
+                .unwrap()
+                .parse()
+                .unwrap();
+            let mut body = response.into_body();
+            let mut received = 0;
+            let last = loop {
+                let bytes = body.frame().await.unwrap().unwrap().into_data().unwrap();
+                received += bytes.len();
+                assert!(received <= length);
+                if received == length {
+                    break bytes;
+                }
+            };
+            let copy = last.clone();
+            drop(last);
+            assert_eq!(slots.available_permits(), 0);
+            drop(copy);
+            // A Content-Length-aware HTTP transport need not poll body EOF.
+            // Keep the body alive, with no cancellation or clock advance.
+            released(slots).await;
+            drop(body);
+        }
+    }
+}
+
+#[tokio::test]
 async fn backpressure_retains_records_and_permit_until_last_copy_is_released() {
     let (records, slots) = retain(Records::One(entry()));
     let expected = file_protocol::encode_response(view(&records), 65536).unwrap();

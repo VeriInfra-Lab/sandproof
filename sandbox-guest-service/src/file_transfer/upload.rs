@@ -251,43 +251,51 @@ impl FileStreams {
             .upload_admission(&request.headers, limits, original)
             .map_err(UploadHttpError::Request)?;
         let expected = request.expected;
+        let (settlement, mut settled) = tokio::sync::watch::channel(());
+        let mut work = reservation.clone();
+        work.settlement = Some(settlement);
         let result = self
-            .upload_request_reserved(
-                auth,
-                request,
-                accounts,
-                settings,
-                limits,
-                reservation.clone(),
-            )
+            .upload_request_reserved(auth, request, accounts, settings, limits, work)
             .await;
         match result {
-            Ok(reply) => reply
-                .into_http_response(response)
-                .await
-                .map_err(UploadHttpError::Response),
+            Ok(mut reply) => {
+                // The completed result is not a live worker. Keep its original
+                // lease for response bytes, but do not wait on our own receipt.
+                reply.release_result_receipt();
+                settle(reservation.deadline, &mut settled).await?;
+                reply
+                    .into_http_response(response)
+                    .await
+                    .map_err(UploadHttpError::Response)
+            }
             Err(Failure::Request(
                 UploadRequestError::Transfer(FileStreamError::UploadFault(fault))
                 | UploadRequestError::Body(UploadBodyError::Transfer(FileStreamError::UploadFault(
                     fault,
                 ))),
-            )) => crate::upload_response::io_failure(
-                fault,
-                expected,
-                response,
-                reservation.deadline,
-                reservation.lease,
-            )
-            .await
-            .map_err(UploadHttpError::Response),
-            Err(Failure::Rejected(error)) => crate::upload_response::rejected(
-                error,
-                response,
-                reservation.deadline,
-                reservation.lease,
-            )
-            .await
-            .map_err(UploadHttpError::Response),
+            )) => {
+                settle(reservation.deadline, &mut settled).await?;
+                crate::upload_response::io_failure(
+                    fault,
+                    expected,
+                    response,
+                    reservation.deadline,
+                    reservation.lease,
+                )
+                .await
+                .map_err(UploadHttpError::Response)
+            }
+            Err(Failure::Rejected(error)) => {
+                settle(reservation.deadline, &mut settled).await?;
+                crate::upload_response::rejected(
+                    error,
+                    response,
+                    reservation.deadline,
+                    reservation.lease,
+                )
+                .await
+                .map_err(UploadHttpError::Response)
+            }
             Err(Failure::Request(error)) => Err(UploadHttpError::Request(error)),
         }
     }
@@ -302,7 +310,11 @@ impl FileStreams {
         let (lease, deadline) = self
             .admit_before(original)
             .map_err(UploadRequestError::Transfer)?;
-        Ok(Reservation { lease, deadline })
+        Ok(Reservation {
+            lease,
+            deadline,
+            settlement: None,
+        })
     }
 
     async fn upload_request_reserved<S: AccountSource>(
@@ -412,4 +424,20 @@ impl FileStreams {
 enum Input {
     Identity(Body, Option<u64>),
     Gzip(GzipBody),
+}
+
+async fn settle(
+    deadline: tokio::time::Instant,
+    settled: &mut tokio::sync::watch::Receiver<()>,
+) -> Result<(), UploadHttpError> {
+    let result = tokio::time::timeout_at(deadline, settled.changed())
+        .await
+        .map_err(|_| UploadHttpError::Response(crate::upload_response::Error::DeadlineExceeded))?;
+    if result.is_ok() {
+        return Err(UploadHttpError::Response(
+            crate::upload_response::Error::Unavailable,
+        ));
+    }
+    super::timely(deadline, Ok(()))
+        .map_err(|_| UploadHttpError::Response(crate::upload_response::Error::DeadlineExceeded))
 }

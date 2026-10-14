@@ -1,7 +1,10 @@
 //! Bounded JSON unary replies, charged to their already admitted records.
 //! Fixed account/header rejections share the same owned JSON response transport.
 //! Request admission and protocol negotiation remain separate.
-use crate::owned_body::{self, OwnedBody, Owner, Payload};
+use crate::{
+    finite_body,
+    owned_body::{self, Owner},
+};
 use axum::{
     http::{HeaderValue, StatusCode},
     response::Response,
@@ -171,16 +174,17 @@ async fn send_encoded_with_encoding(
         {
             return Err(Error::InvalidConfiguration);
         }
-        let (length, body) = OwnedBody::start(deadline, Arc::clone(&owner), move |_, cancelled| {
+        let payload = finite_body::prepare(deadline, Arc::clone(&owner), move |cancelled| {
             let bytes = encode()?;
             let bytes = match encoding {
                 Encoding::Identity => bytes,
                 Encoding::Gzip => compression::compress(&bytes, limits, deadline, &cancelled)?,
             };
-            Ok((bytes.len(), Payload::new(bytes, limits.chunk_bytes)))
+            Ok(bytes)
         })
         .await?;
-        let mut response = Response::new(body.into_body());
+        let length = payload.length();
+        let mut response = Response::new(payload.into_body(limits.chunk_bytes, deadline, false));
         *response.status_mut() = status;
         response
             .headers_mut()

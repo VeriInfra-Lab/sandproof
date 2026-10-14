@@ -12,6 +12,7 @@ pub mod file_requests;
 pub mod file_rpc_requests;
 pub mod file_rpc_response;
 pub mod file_upload;
+mod finite_body;
 mod go_json;
 mod go_quote;
 mod owned_body;

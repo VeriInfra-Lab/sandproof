@@ -291,17 +291,21 @@ impl CenterState {
         tenant: Option<&TenantId>,
         node: Option<&NodeIdentity>,
     ) -> Option<Resources> {
-        self.sandboxes
-            .iter()
-            .filter(|s| !s.released)
-            .filter_map(|s| s.operations.first())
-            .filter(|op| {
-                tenant.is_none_or(|t| &op.request.identity.tenant_id == t)
-                    && node.is_none_or(|n| &op.request.identity.node == n)
-            })
-            .try_fold(Resources::ZERO, |sum, op| {
-                sum.checked_add(op.request.create.resources)
-            })
+        let mut sum = Resources::ZERO;
+        for sandbox in &self.sandboxes {
+            if sandbox.released {
+                continue;
+            }
+            let Some(op) = sandbox.operations.first() else {
+                continue;
+            };
+            if tenant.is_none_or(|t| &op.request.identity.tenant_id == t)
+                && node.is_none_or(|n| &op.request.identity.node == n)
+            {
+                sum = sum.checked_add(op.request.create.resources)?;
+            }
+        }
+        Some(sum)
     }
     /// Explicit physical/time/config input; no heartbeat-based release or rebind.
     /// # Errors
