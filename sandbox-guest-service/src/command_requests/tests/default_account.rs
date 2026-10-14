@@ -48,7 +48,7 @@ async fn selected_start_keeps_default_observation_format_and_capacity_without_sp
             "application/connect+json",
             "application/connect+json; charset=utf-8",
         ] {
-            for payload in [b"{}".as_slice(), br#"{"process":{"cmd":"/bin/true"}}"#] {
+            for payload in [b"".as_slice(), b"{}", br#"{"process":{"cmd":"/bin/true"}}"#] {
                 let before = calls.load(Ordering::SeqCst);
                 let ready = selected_start(&pool, &session, &accounts, content_type, payload).await;
                 assert_eq!(calls.load(Ordering::SeqCst), before);

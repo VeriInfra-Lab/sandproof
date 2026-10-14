@@ -74,6 +74,7 @@ func main() {
 	registerCommandRequests(mux)
 	registerCommandAccounts(mux)
 	registerDefaultAccounts(mux)
+	registerFramedCommandRequests(mux)
 	// The envd account failure observation is controlled here. Both wrappers
 	// below are the original authn/Connect implementation, not a replacement.
 	mux.Handle("/fixture.Filesystem/Explicit", authn.NewMiddleware(func(_ context.Context, req authn.Request) (any, error) {
@@ -171,6 +172,8 @@ func main() {
 			Error  bool
 		}
 		switch mode {
+		case "F":
+			target, body = framedCommandRequestEndpoint(data)
 		case "D":
 			target, body = commandDefaultAccountPath, []byte{0, 0, 0, 0, 2, '{', '}'}
 		case "Y":
@@ -234,6 +237,9 @@ func main() {
 		if mode == "D" {
 			commandDefaultAccountHeaders(req, data)
 		}
+		if mode == "F" {
+			req.Header.Set("Content-Type", "application/connect+json")
+		}
 		if mode == "G" || mode == "Z" {
 			req.Header.Del("Accept-Encoding")
 			for _, value := range compression.Accept {
@@ -296,6 +302,13 @@ func main() {
 		}
 		if mode == "V" {
 			fmt.Fprintln(out, commandHeaderObservation(res, responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
+		}
+		if mode == "F" {
+			fmt.Fprintln(out, framedCommandRequestObservation(res, responseBody))
 			if err := out.Flush(); err != nil {
 				panic(err)
 			}

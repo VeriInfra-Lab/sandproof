@@ -243,6 +243,45 @@ fn framed_requests_require_exact_length_flags_and_single_message() {
     );
 }
 
+#[test]
+fn complete_zero_length_stream_message_preserves_protobuf_defaults_only() {
+    for method in ["Start", "Connect"] {
+        let zero = frame(b"");
+        let expected = decode_request(method, &frame(b"{}"), 2).unwrap();
+        assert_eq!(decode_request(method, &zero, 1), Ok(expected));
+        assert_eq!(
+            decode_request(method, &zero, 0),
+            Err(ProtocolError::ResourceExhausted)
+        );
+        for end in 0..5 {
+            assert_eq!(
+                decode_request(method, &zero[..end], 1),
+                Err(ProtocolError::InvalidArgument)
+            );
+        }
+        for flag in [1, 2, 3, 128] {
+            let mut invalid = zero.clone();
+            invalid[0] = flag;
+            assert_eq!(
+                decode_request(method, &invalid, 1),
+                Err(ProtocolError::InvalidArgument)
+            );
+        }
+        let mut multiple = zero.clone();
+        multiple.extend(&zero);
+        assert_eq!(
+            decode_request(method, &multiple, 1),
+            Err(ProtocolError::InvalidArgument)
+        );
+    }
+    for method in ["List", "SendInput", "CloseStdin", "SendSignal", "Update"] {
+        assert_eq!(
+            decode_request(method, b"", 1),
+            Err(ProtocolError::InvalidArgument)
+        );
+    }
+}
+
 fn unpack(bytes: &[u8], flag: u8) -> Value {
     assert_eq!(bytes[0], flag);
     assert_eq!(

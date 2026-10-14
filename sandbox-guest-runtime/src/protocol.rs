@@ -274,6 +274,8 @@ struct Empty {}
 /// require exactly one uncompressed Connect envelope, including its full
 /// declared length; unary methods use unframed JSON. Extra envelopes, flags,
 /// compression and trailing bytes are never silently discarded.
+/// A complete zero-length standard envelope is the protobuf default message,
+/// as in Connect's stream decoder; an absent envelope is still malformed.
 ///
 /// # Errors
 /// Returns a payload-free protocol error on invalid framing/JSON, unknown
@@ -298,7 +300,11 @@ pub fn decode_request(
         if header[0] != 0 || body.len().checked_sub(5) != Some(size) {
             return Err(ProtocolError::InvalidArgument);
         }
-        &body[5..]
+        if size == 0 {
+            b"{}".as_slice()
+        } else {
+            &body[5..]
+        }
     } else {
         if body.len() > max_message_bytes {
             return Err(ProtocolError::ResourceExhausted);

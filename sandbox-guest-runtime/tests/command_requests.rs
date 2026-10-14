@@ -247,8 +247,75 @@ impl Reference {
     fn finish(mut self) {
         drop(self.input);
         assert!(self.child.wait().unwrap().success());
-        eprintln!("{} original command JSON observations matched", self.count);
+        eprintln!(
+            "{} original command request observations matched",
+            self.count
+        );
     }
+}
+
+impl Reference {
+    fn check_frame(&mut self, method: &str, body: &[u8]) {
+        let record = serde_json::to_vec(&json!({"Method":method,"Body":hex(body)})).unwrap();
+        writeln!(self.input, "F\t{}", hex(&record)).unwrap();
+        self.input.flush().unwrap();
+        let mut line = String::new();
+        assert!(self.output.read_line(&mut line).unwrap() > 0);
+        let result = decode_request(method, body, 1 << 20);
+        if line.starts_with("ERR\t") {
+            // Acceptance only: public framing error code/text is a separate
+            // pending adapter, not equivalent to this payload-free category.
+            assert!(result.is_err(), "{method} {body:?}: {line}");
+        } else {
+            let canonical = unhex(line.trim_end().strip_prefix("OK\t").unwrap());
+            let expected = decode(method, &canonical, 1 << 20).unwrap();
+            assert_eq!(result, Ok(expected), "{method} {body:?}");
+        }
+        self.count += 1;
+    }
+}
+
+#[test]
+#[ignore = "requires explicit pinned Go server-stream request reference"]
+fn fixed_go_stream_requests_match_empty_message_acceptance_and_decoded_fields() {
+    fn frame(bytes: &[u8]) -> Vec<u8> {
+        let mut body = vec![0];
+        body.extend(u32::try_from(bytes.len()).unwrap().to_be_bytes());
+        body.extend(bytes);
+        body
+    }
+    let mut reference = Reference::new();
+    for method in ["Start", "Connect"] {
+        for flag in 0..=u8::MAX {
+            let mut zero = frame(b"");
+            zero[0] = flag;
+            reference.check_frame(method, &zero);
+        }
+        for payload in [
+            b"{}".as_slice(),
+            b"null",
+            b"[]",
+            b" ",
+            b"{",
+            br#"{"process":{"pid":17,"cmd":"/bin/true"}}"#,
+        ] {
+            reference.check_frame(method, &frame(payload));
+        }
+        let valid = frame(b"{}");
+        for end in 0..valid.len() {
+            reference.check_frame(method, &valid[..end]);
+        }
+        let mut multiple = frame(b"");
+        multiple.extend(frame(b""));
+        reference.check_frame(method, &multiple);
+        let mut multiple = valid.clone();
+        multiple.extend(&valid);
+        reference.check_frame(method, &multiple);
+        let mut trailing = valid;
+        trailing.push(0);
+        reference.check_frame(method, &trailing);
+    }
+    reference.finish();
 }
 
 #[test]

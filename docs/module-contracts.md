@@ -381,6 +381,8 @@ live 只取已启动未终结的原控制句柄，connectable 另允许保留期
 
 [命令 JSON 输入](../sandbox-guest-runtime/src/protocol/request_json.rs)按固定 Connect DiscardUnknown 忽略合法未知字段及未知枚举名称；未知数字枚举保留为 i32，由实际命令操作拒绝，未知字段不会重命名成可执行字段。已知字段重复即使首次为 null 仍拒绝，envs 的重复解码键与 null 值拒绝；oneof 的 null 不占分支。PID/PTY uint32 与 signal i32 使用精确十进制、小数及指数转换，不经浮点舍入；信号的数字字符串属于未知枚举名称，不能转换成数字信号。共用预扫描在忽略字段前验证全部字符串及含顶层的 10,000 层容器界；裸 e/E 按原整数词法处理，带符号无数字指数在未知字段中丢弃、已知整数中拒绝。命令使用非整数哨兵，与文件 uint32/字符串所用负整数哨兵分离，不能把无效 signal 变成合法 -1；按需副本等长，原正文预算先行。bytes 依原解析字符串是否含 -/_ 选择字母表、依去除 CR/LF 前字节长度选择 padding，再忽略 CR/LF 并接受非零未使用尾位；空格及其他畸形编码仍拒绝。输入规范化不放宽帧数/flags/原长度约束，也不授予任何执行权限；公开 JSON 错误全文仍待命令路由接通。
 
+命令 Start/Connect 的完整 flags=0、长度=0 消息帧按固定 Connect 解析为默认 protobuf 请求；缺失整个消息、截断首部/载荷及多个数据消息仍拒绝。一元空 JSON 正文不沿此默认规则。当前单帧解码器尚未接入原 Connect 可接受的后续 EOS 元数据帧，压缩和完整帧错误映射亦待后续；不能从空帧修正宣称流协议已全部对齐。
+
 [命令请求准入与 PID 分派](../sandbox-guest-service/src/command_requests.rs)增加独立请求池：在 token、Basic 账户等待和正文读取前无队列占额，保存原绝对期限；逐项头部、单帧/总字节、帧数及 trailers 先限额，再收集单个已选定的 identity JSON 请求。Start/Connect 保留原五字节 envelope，不能把压缩帧当 JSON。显式 Basic 账户先于协议解码查询，缺省/畸形 Basic 的默认账户查询留给 Start；账户来源仍由可信装配提供。阻塞查询和 JSON 解码取消后，原授权与请求名额持续到实际闭包退出；账户池自己的期限只能缩短原期限，调用方提供的已评估协议期限也只能缩短原期限。Ready 保留不可替换的原请求、授权和已选账户。
 
 [命令 token 错误响应](../sandbox-guest-service/src/command_requests/http/authorization.rs)由 Admitted::authenticate_http 保留原方法，执行同一头预算及 Session 鉴权；仅真实 Authorization(Unauthenticated) 消费为外层 API 的 401、数字 code/message JSON、UTF-8 类型、nosniff 和末尾换行。它在 Basic、方法/压缩/版本/期限解释和正文读取之前，不沿 Connect 流或 gzip 规则；未初始化及重复 token 的本地拒绝政策不变。HEAD 同样检查完整载荷限额，保留长度头后抑制正文。共享原文件 token 发送器，不复制错误文本；编码/到期失败和最后字节副本保留原请求名额、分类及期限，完成的鉴权不继续占读锁。头预算、原期限等其他错误保持未分类，不伪装为 token 拒绝；没有新增公开路由或初始化入口。
