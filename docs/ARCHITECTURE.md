@@ -67,7 +67,13 @@ E2B 对照使用其 [runtime 架构文档](https://github.com/e2b-dev/runtime/bl
 
 envd 在 VM 内执行用户进程、信号与文件操作；来宾及来宾 root 不可信，来宾文件路径不是宿主路径。我们不重新实现完整 POSIX/ACL，也不证明来宾系统或虚拟化逃逸不存在。
 
+现役模板复用固定 envd；自主替换由 [#311](https://github.com/ningZhang-cs/sandproof/issues/311) 推进，不作为当前 V1 发布前置。首个 [sandproof-guest-core](../sandbox-guest-core/src/lib.rs) 仅实现命令订阅完成判定和文件传输计费，不含服务监听、进程启动或文件 I/O，不能部署为 envd。后续协议/执行适配使用这些原函数，保持纯决定与系统调用边界；公开路线仍经中心与宿主网关。尚待冻结的 PID 复用策略见[模块合同](module-contracts.md)，抽取试验及未证明范围见[覆盖记录](proof-coverage.md)。
+
 持续命令输出使用有界在途缓冲、分块、并发和背压，不设累计字节上限；执行期限不等于字节上限。文件、一元回复和宿主辅助命令各有有限预算。取消、撤销、实际退出与排空责任见[模块合同](module-contracts.md)。
+
+[sandproof-guest-runtime](../sandbox-guest-runtime/src/lib.rs) 已增加独立 Linux 进程端口：私有 worker 放行、真实 pidfd/管道/PTY/wait 与原纯核心连接。它已有当前账号的组件测试与独立特权身份验收入口，另有文件编解码、授权路径与真实一元文件操作组件；尚无公开监听、持久 PID 注册、完整 SDK 命令或文件传输服务，未安装到任何模板；这些端口不承担中心、宿主或 VM 生命周期职责。
+
+[sandproof-guest-service](../sandbox-guest-service/src/lib.rs) 承接来宾 HTTP 编排，当前提供受保护初始化、默认上下文快照及固定 MMDS 客户端。授权上下文组件可按本地账户构造完整 worker 上下文，数值身份在单线程 worker 内切换。独立准备任务持有原 worker 与预留额度，取消后实际 wait 才归还；登记确认后移交执行任务，后者持有原进程、执行期限和有界订阅，断线不撤销执行，未知结果不重执行。一元文件池持有原授权至阻塞 I/O 结束，结果保留期间继续占额；等待取消不终止已派发系统调用。公开登记、正式命令/文件路由与生产监听器尚未接通。它不负责中心/宿主权限；完整认证、预算与执行组合仍须验收，细节维护在[模块合同](module-contracts.md)。
 
 宿主通过 Linux 网络空间、TAP 和防火墙强制禁网及静态 IPv4 规则，不依赖来宾自觉。公网需部署显式开启，平台禁区始终生效。DNS 也是出站通道，固定 DNS 地址不等于查询内容过滤。域名策略、IPv6 放行、运行时网络切换、任意服务端口公开不在当前版本。
 

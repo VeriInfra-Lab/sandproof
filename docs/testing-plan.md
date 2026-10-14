@@ -42,6 +42,41 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 ### 持久化、身份与有界运行
 
+来宾账户/上下文的[纯判定与阻塞查询测试](../sandbox-guest-service/src/execution/tests.rs)覆盖 Basic 用户选择、home/目录、环境优先级、预算和未知账户；屏障与可推进时钟验证取消/超时不会提前返还仍在运行的查询额度。[真实 worker 组合](../sandbox-guest-runtime/tests/context.rs)从初始化令牌许可解析上下文后执行真实命令，核对完整环境、数值身份、目录和私有 socket 回收；USER/HOME 覆盖不成为 UID/GID。普通检查及 SDK 脚本执行这些场景，但当前账号的成功不能证明 root 到普通账号的切换。
+
+单独的[特权身份组件验收](../tests/guest_credentials.py)要求已复核的精确提交、worker SHA-256，以及新 mount/PID namespace 的 root PID 1 和独立 proc。入口将原二进制核对后复制到本轮 root 独占文件再执行，只创建/清理自己的临时目录与子进程，不修改宿主账号。分别使用管道与 PTY 检查真实/有效/保存/fs UID/GID、附加组、能力、普通账号的组文件访问、root 文件拒绝及不能恢复 root；PTY 另核对三个终端描述符及主进程的独立会话。另以私有用户命名空间制造 setgroups/GID/UID 失败，验证没有用户副作用。它不由普通 CI 自动获取特权执行，结果单独绑定提交和 worker 摘要，不代表 KVM、完整来宾服务或抵抗来宾 root 的隔离证明。
+
+[命令所有权检查](../sandbox-guest-runtime/tests/owner.rs)使用真实 worker、管道和 pidfd，覆盖多线程初始订阅先于输出、二进制/非零退出与 End 顺序、断线/重连不关闭 stdin、阻塞输入与持续输出下的原执行期限、单个慢订阅失败、在途块到实际额度释放、全部客户端句柄丢弃后的继续管理、预过期无副作用、exec 失败和启动结果未知不重执行。SIGSTOP/waitid、实际输出和可推进时钟建立顺序；真实 I/O 段使用正常时钟，避免假时钟抢跑子进程。丢弃未轮询任务验证 `owner_lost` 和未决额度保留；不将它当作真实 envd 服务强制重启/PID 复用验收。普通基础检查和 Linux SDK 脚本执行这些组件，公开注册/错误映射、保留 TTL、整机内存峰值及 KVM 仍单独验收。
+
+[准备与登记交接检查](../sandbox-guest-runtime/tests/preparation.rs)同样纳入上述两条入口：真实 worker 验证登记确认前无用户副作用、同一额度移交、授权轮换等待至派发、确认接受前后取消的不同语义及丢失回复不重执行。受控握手 socket 与可推进时钟覆盖握手取消、坏协议、绝对登记期限；实际 pidfd/wait 核对中止后退出、私有 gate 回收及容量恢复。测试主动提前 wait 自己的原 child，验证管理者缺失回执时保持 `CleanupUnknown` 和占额；关闭管理 runtime 区分确定未 spawn 与可能已有 child 的责任。没有模拟强制 PID 复用、Linux D 状态、故障文件系统、完整服务重启、Go envd 双端对照或 KVM；这些不由组件绿灯核销。
+
+#311 来宾替换先复用 S02/S03/S11/S12：固定同步/异步 SDK 对固定 envd 与 Rust 实现执行同一合同样例，区分主进程退出、管道结束、输出排空、请求超时和 VM 停止；保留 stdin/PTY、非零退出、部分文件写入、断线/重启/旧 PID 及预算边界。真实模板切换还须通过 S01/S04/S05/S09/S13 的相关路径和原身份清理，不用组件样例代替实机。
+
+[PTY 实进程检查](../sandbox-guest-runtime/tests/pty.rs)通过真实终端核对登记前无副作用、主 PID/session/三个标准描述符、窗口尺寸及 SIGWINCH、原字节大块双向传输、错误输入通道、CloseStdin 拒绝和 canonical Ctrl+D。取消输入保留实际前缀，放行诊断丢失保持未知且不重执行；终端 EOF 先于主进程退出时不得 End。管理组件覆盖断线/重连、输入堵塞时独立 resize、原期限及挂断后的收尾，防止满终端输入上的就绪忙转。SIGSTOP/waitid、受控 socket 和可推进时钟建立观察顺序。基础检查和 Linux 兼容脚本均运行该组；固定 SDK 另核对 PTY 字节回调和非零退出，不代替 Go 双端对照、全部公开 PTY 路由、后代/整机压力或 KVM。
+
+[Rust 命令编解码检查](../sandbox-guest-runtime/tests/protocol.rs)消费原共享样例，覆盖字段存在性、非法/多重选择器、二进制字节、畸形/多余帧及每消息预算。[SDK/真实进程组合](../sandbox-guest-runtime/tests/sdk_protocol.rs)由 Linux `check-compat.sh` 运行：固定同步/异步 SDK 经一次性回环测试路由启动当前账号的真实 worker/命令，检查管道二进制/非零、大输出、信号退出、PTY 原字节/非零及 SDK 终端回调，以及 End 帧截断后实际 `CommandHandle.wait()` 报错。测试路由只接受各场景预先确定的一条命令，无公开登记/鉴权；检查实际主进程退出、输出排空和私有 socket 回收。它不是正式 Rust HTTP 服务、固定 Go envd 双端对照、全部命令操作、PTY 一元操作的 SDK 对照、降权或 KVM 证据。
+
+[文件协议检查](../sandbox-guest-runtime/tests/file_protocol.rs)消费同一文件共享样例，核对重复/畸形消息、缺省/null、uint32 深度、int64 尺寸、可选链接字段、时间戳精度/边界和编码预算。[文件上下文测试](../sandbox-guest-service/src/files/tests.rs)覆盖 Basic 与 HTTP username 的分离、一次 Move 查询、默认值/环境不改变身份、词法路径、无效 UID 和展开后预算。Linux 兼容入口还运行[固定同步/异步 SDK 组合](../sandbox-guest-runtime/tests/sdk_files.rs)：原会话授权与路径解析接到文件编解码，核对各一元方法、大尺寸/纳秒/元数据/空列表/可选链接及超额错误。该测试只返回预定合成属性，没有实际 stat、目录修改或文件传输；真实文件权限、链接竞争、磁盘满、部分读写、Go 双端对照和 KVM 仍须独立执行。
+
+[一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。普通 Linux 基础检查与兼容入口执行这些组件。
+
+[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
+
+[固定 Go 方法对照](../sandbox-guest-runtime/tests/file_reference.rs)为显式 opt-in，不执行时必须报未运行。以固定 runtime `f455fd58fa3f289e78ce1de690c35968d8d29322`、该版要求的 Go 1.26.8 和锁定模块，采用 Go `-overlay` 把仓库[参考适配器](../tests/compat/guest_files_reference.go)映射为 `packages/envd/sandproof_files_reference.go`，使用 `CGO_ENABLED=0 GOTOOLCHAIN=local`、`build -mod=readonly -trimpath -buildvcs=false` 编译该虚拟文件。记录原源码/工具链与适配器二进制摘要，原 Go 源树须保持未改。该程序直接调用原文件服务方法，不启动 envd 主程序、MMDS、cgroup 或监听器。编译后显式运行：
+
+```sh
+SANDPROOF_GUEST_GO_FILES_REFERENCE=/absolute/path/to/pinned-reference-adapter \
+  cargo test -p sandproof-guest-runtime --locked --test file_reference -- --ignored --nocapture
+```
+
+对照在同一路径重建相同文件树，核对属性、错误和最终路径/类型/模式/字节或链接目标；读取时间戳预先固定且精确比较，新建目录返回的动态 mtime 不比较。空 metadata 的省略与空 map 统一，其他字段不宽松忽略。它是原 Go 方法到 Rust 端口的组件对照，不能替代 E03 同 SDK 的完整双端 HTTP 对照，也不核销权限矩阵、磁盘满、流式传输、进程/VM 重启和 KVM 验收。
+
+[初始化会话检查](../sandbox-guest-service/tests/session.rs)消费同一宿主初始化样例，检查默认值/环境替换、元数据身份、令牌原子更新、同令牌重试、旧授权拒绝、重启、恰好预算和取消后恢复。[HTTP 路由检查](../sandbox-guest-service/tests/http.rs)覆盖真实回环请求、慢正文、断流、共享槽位、重复鉴权头及错误脱敏；[MMDS 交换检查](../sandbox-guest-service/src/metadata/tests.rs)以实际 TCP 服务核对两次请求并接到初始化路由，拒绝重定向、畸形令牌/元数据及截断。屏障与可推进时钟控制取消/期限，服务端观察原连接 EOF，验证无遗留连接驱动。基础检查和 Linux SDK 合同脚本均运行这些组件；它们不是 Firecracker MMDS 实测、命令鉴权集成、固定 Go envd 双端对照或 KVM 验收。
+
+首批[命令/文件纯核心测试](../sandbox-guest-core/tests/completion.rs)由 workspace 基础检查发现，覆盖退出/双管道 EOF 的全部顺序、未消费输出、旧内部身份、持续输出的有限驻留、短写/截断和关闭失败；不启动真实进程或操作来宾文件。[固定协议样例](../tests/compat/guest-service-contract.json)由 [SDK schema 检查](../tests/compat/test_guest_service_contract.py)读取，核对命令、PTY、二进制输入、文件属性及编码。它们不是完整 Rust 服务的协议对照，尚未核销 #311 的 E01–E10。
+
+[Linux 进程端口测试](../sandbox-guest-runtime/tests/process.rs)使用真实私有 worker、pidfd、管道和命令，核对放行前无用户副作用、当前主进程 PID、原字节/非零退出、超过单块预算的持续输出、消费前不得 End、stdin 取消与关闭、独立输入句柄的大块双向传输、后代持管道时主进程退出、旧内部身份与 exec 失败。SIGSTOP + waitid 建立已观察的暂停点，验证放行回复取消仍可能执行一次但绝不再次放行，以及取消输入后的实际前缀；不使用随机 sleep 建立顺序。这是普通 Linux 当前账号的组件检查，不是 E2B 对照、账号降权、强制 PID 复用、服务重启、整机资源压力或 KVM 验收。
+
 请求入口（#290 R1）用[管理路由合同](../sandbox-api/tests/http_contract.rs)、[真实应用锁夹具](../sandbox-api/tests/managed_port/admission.rs)、[取消/回应期限测试](../sandbox-api/src/lib.rs)及 [Linux 网关端口夹具](../sandbox-host-service/src/data_gateway/port_tests.rs)验收：受控宿主持锁时请求满额即 429，不新增后端调用；有效/无效数据令牌均受派发预算限制；控制及后台名额保留；HTTP 取消、回应期限耗尽后阻塞工作继续占额，实际结束/异常退出才释放。固定 SDK 的既有 429 映射与重试检查仍须通过，重试不意味着客户端具备幂等键。以上为真实 SQLite/HTTP 加受控宿主的组件证据，不是 KVM 性能或完整拒绝服务防护证明；远程部署还须验收模块合同列出的 TLS 前端约束。
 
 - 接受意图及 outbox 先提交，再执行外部动作；提交前故障不得产生 VM。启动成功而回执未落盘时，重启认出原 VM，不创建替代身份。
