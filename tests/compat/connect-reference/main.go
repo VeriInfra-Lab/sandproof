@@ -158,6 +158,7 @@ func main() {
 		target, body := path, data
 		var compression struct {
 			Accept []string
+			Sent   []string
 			Data   string
 			Error  bool
 		}
@@ -168,7 +169,7 @@ func main() {
 			target, body = "/fixture.Filesystem/Default", []byte("{}")
 		case "X":
 			target = "/fixture.Filesystem/Expand"
-		case "G":
+		case "G", "Z":
 			if err := json.Unmarshal(data, &compression); err != nil {
 				panic(err)
 			}
@@ -191,10 +192,13 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Connect-Protocol-Version", "1")
 		req.Header.Set("Accept-Encoding", "identity")
-		if mode == "G" {
+		if mode == "G" || mode == "Z" {
 			req.Header.Del("Accept-Encoding")
 			for _, value := range compression.Accept {
 				req.Header.Add("Accept-Encoding", value)
+			}
+			for _, value := range compression.Sent {
+				req.Header.Add("Content-Encoding", value)
 			}
 		}
 		if mode == "C" {
@@ -237,7 +241,7 @@ func main() {
 		if err := res.Body.Close(); err != nil {
 			panic(err)
 		}
-		if mode == "G" {
+		if mode == "G" || mode == "Z" {
 			// Compare semantic gzip completion, never DEFLATE implementation bytes.
 			if length := res.Header.Get("Content-Length"); length != "" {
 				if length != strconv.Itoa(len(responseBody)) {
@@ -258,6 +262,15 @@ func main() {
 					panic(err)
 				}
 			}
+		}
+		if mode == "Z" {
+			// Successful original Connect request decompression + response selection.
+			// Passthrough codec isolates this from protobuf parsing/file methods.
+			fmt.Fprintf(out, "%d\t%s\t%s\n", res.StatusCode, hex.EncodeToString([]byte(res.Header.Get("Content-Encoding"))), hex.EncodeToString(responseBody))
+			if err := out.Flush(); err != nil {
+				panic(err)
+			}
+			continue
 		}
 		if mode == "C" {
 			selected := "OTHER"

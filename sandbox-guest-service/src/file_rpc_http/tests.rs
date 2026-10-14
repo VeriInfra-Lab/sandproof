@@ -298,7 +298,7 @@ async fn route_auth_protocol_and_account_rejections_do_not_read_body_or_mutate_f
             }
             4 => {
                 req.headers_mut()
-                    .insert("content-encoding", "gzip".parse().unwrap());
+                    .insert("content-encoding", "GZIP".parse().unwrap());
             }
             5 => {
                 req.headers_mut()
@@ -627,5 +627,6 @@ mod reference;
 
 mod directory;
 mod gzip;
+mod gzip_request;
 mod path;
 mod remove;

@@ -11,7 +11,7 @@ fn gzip_request(method: &str, value: &serde_json::Value) -> Request<Body> {
     );
     req
 }
-fn decoded(bytes: &[u8]) -> serde_json::Value {
+pub(super) fn decoded(bytes: &[u8]) -> serde_json::Value {
     let mut decoder = Decoder::new(
         bytes,
         DecodeLimits {

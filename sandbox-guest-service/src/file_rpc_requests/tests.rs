@@ -15,6 +15,7 @@ use std::{
     task::{Context, Poll},
 };
 
+pub(crate) mod gzip;
 mod headers;
 
 struct Meta;

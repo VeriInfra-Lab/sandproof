@@ -1,11 +1,11 @@
-//! Unary file admission, token wait and bounded identity JSON body decoding.
+//! Unary file admission, token wait and bounded identity/gzip JSON decoding.
 //! This is a component of the future RPC handler, not protocol negotiation or
 //! Basic account middleware. Linux `FilePool::prepare_rpc` supplies the explicit
 //! account preflight; the caller must still select the supported route/codec.
 use crate::{
     AuthPermit, MetadataSource, ServiceError, Session,
     file_upload::{self, HeaderLimits},
-    owned_body::Owner,
+    owned_body::{self, Owner},
     upload_body::{GzipError, HttpBodyLimits, Input},
 };
 use axum::{
@@ -18,11 +18,13 @@ use sandproof_guest_runtime::{
 };
 use std::{fmt, sync::Arc, time::Duration};
 use tokio::{
-    sync::{OwnedSemaphorePermit, Semaphore},
+    sync::{OwnedSemaphorePermit, Semaphore, watch},
     time::{Instant, timeout_at},
 };
 
+mod compression;
 mod selection;
+pub use compression::CompressionStage;
 mod timeout;
 mod version;
 pub use selection::SelectionError;
@@ -34,7 +36,8 @@ pub use version::InvalidVersion;
 pub(crate) mod tests;
 
 /// No production defaults. Capacity includes retained headers, accepted frames,
-/// collected JSON, decoding work, decoded records and downstream response work.
+/// collected wire bytes, expanded JSON, decoding work, decoded records and
+/// downstream response work. Wire and expanded payloads have the same separate cap.
 /// Socket/header parsing and allocations before this boundary are separate.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -200,13 +203,14 @@ impl Authenticated {
     }
 
     /// Decode a selected POST unary JSON file method after Basic middleware and
-    /// HTTP/codec/compression selection (identity request; response is separate).
+    /// HTTP/codec/compression selection (identity or gzip; response is separate).
     /// The trusted HTTP framing layer supplies the unconsumed Body; an exact
     /// size hint is its length, never a reparse of Content-Length. Applies the
     /// fixed Connect timeout now, capped by the admission's original deadline.
     /// # Errors
     /// Invalid version/timeout, body length/frame/trailer/transport failures, malformed
-    /// JSON, unknown method, expiry or lost decoder. No file effects occur here.
+    /// JSON, gzip header/body failures, unknown method, expiry or lost decoder.
+    /// No file effects occur here.
     pub async fn decode(self, method: &str, body: Body) -> Result<Decoded, Failure> {
         let mut deadline = self.admitted.deadline;
         let owner: Owner = self.admitted.lease.clone();
@@ -253,12 +257,23 @@ impl Authenticated {
             }
             drop(input);
             check_deadline(deadline)?;
+            let compressed = selection::is_gzip_request(&self.headers);
+            let (signal, cancelled) = watch::channel(false);
             let task = tokio::task::spawn_blocking(move || {
-                check_deadline(deadline)?;
+                owned_body::check_active::<Error>(deadline, &cancelled)?;
+                if compressed {
+                    payload = compression::expand(
+                        &payload,
+                        limit,
+                        self.admitted.limits.body.frame_bytes,
+                        deadline,
+                        &cancelled,
+                    )?;
+                }
                 let request = file_protocol::decode_request(method, &payload, limit)
                     .map_err(Error::Protocol)?;
                 drop(payload);
-                check_deadline(deadline)?;
+                owned_body::check_active::<Error>(deadline, &cancelled)?;
                 Ok(Decoded {
                     request,
                     authenticated: self,
@@ -269,6 +284,7 @@ impl Authenticated {
                 .await
                 .map_err(|_| Error::DeadlineExceeded)?
                 .map_err(|_| Error::Unavailable)??;
+            drop(signal); // Cancellation/timeout also drops it; worker retains self.
             check_deadline(deadline)?;
             Ok(decoded)
         }
@@ -331,8 +347,26 @@ pub enum Error {
     BodyLimit,
     Transport,
     Protocol(ProtocolError),
+    Compression {
+        stage: CompressionStage,
+        error: GzipError,
+    },
     Unavailable,
 }
+impl owned_body::Failure for Error {
+    fn deadline() -> Self {
+        Self::DeadlineExceeded
+    }
+    fn unavailable() -> Self {
+        Self::Unavailable
+    }
+}
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("file RPC request failed")
+    }
+}
+impl std::error::Error for Error {}
 /// Only observed version/timeout diagnostics have fixed RPC responses.
 /// Other classifications remain unmapped; no automatic replay.
 pub struct Failure {

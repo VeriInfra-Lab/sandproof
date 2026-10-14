@@ -53,14 +53,25 @@ struct Fixture {
     rejected: AtomicUsize,
     header_rejected: AtomicUsize,
     gzip_responses: AtomicUsize,
+    gzip_requests: AtomicUsize,
     username: String,
 }
 
 async fn rpc(State(fixture): State<Arc<Fixture>>, request: HttpRequest<Body>) -> Response {
-    let wants_gzip = request
+    let gzip_request = request
         .headers()
-        .get("accept-encoding")
-        .is_some_and(|v| v == "gzip,identity");
+        .get("content-encoding")
+        .is_some_and(|v| v == "gzip");
+    if gzip_request {
+        assert_eq!(request.headers()["accept-encoding"], "gzip,identity");
+        fixture.gzip_requests.fetch_add(1, Ordering::SeqCst);
+    }
+    let wants_gzip = gzip_request
+        || request
+            .headers()
+            .get("accept-encoding")
+            .is_some_and(|v| v == "gzip,identity");
+
     let request = match fixture.http.prepare(request).await.unwrap() {
         Prepared::Ready(ready) => ready,
         Prepared::Response(response) => {
@@ -272,6 +283,7 @@ async fn new_fixture(root: PathBuf) -> Arc<Fixture> {
         rejected: AtomicUsize::new(0),
         header_rejected: AtomicUsize::new(0),
         gzip_responses: AtomicUsize::new(0),
+        gzip_requests: AtomicUsize::new(0),
         username,
     })
 }
@@ -357,8 +369,9 @@ async fn pinned_sdk_uses_real_owned_unary_filesystem() {
         .unwrap()
         .unwrap();
     assert!(status.expect("file SDK deadline").unwrap().success());
-    assert_eq!(fixture.seen.load(Ordering::SeqCst), 58);
-    assert_eq!(fixture.gzip_responses.load(Ordering::SeqCst), 2);
+    assert_eq!(fixture.seen.load(Ordering::SeqCst), 62);
+    assert_eq!(fixture.gzip_responses.load(Ordering::SeqCst), 4);
+    assert_eq!(fixture.gzip_requests.load(Ordering::SeqCst), 4);
     for client in ["sync", "async"] {
         assert!(!directory.path().join(client).join("path-refused").exists());
     }

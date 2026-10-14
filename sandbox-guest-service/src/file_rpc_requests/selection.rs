@@ -1,10 +1,11 @@
+use axum::http::HeaderMap;
 #[cfg(any(target_os = "linux", test))]
-use axum::http::{HeaderMap, Method};
+use axum::http::Method;
 #[cfg(any(target_os = "linux", test))]
 use sandproof_guest_runtime::file_protocol::JsonContentType;
 
-/// No public status is inferred here: fixed Connect also supports formats and
-/// request compression that this JSON component has not yet connected.
+/// No public status is inferred here: other formats and the fixed unsupported
+/// compression error response have not yet been connected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SelectionError {
     Method,
@@ -27,21 +28,26 @@ pub(super) fn select(
             .get(field)
             .map_or(b"".as_slice(), |value| value.as_bytes())
     };
-    if !matches!(first("content-encoding"), b"" | b"identity") {
+    if !matches!(first("content-encoding"), b"" | b"identity" | b"gzip") {
         return Err(SelectionError::RequestCompression);
     }
     Ok(codec)
+}
+
+pub(super) fn is_gzip_request(headers: &HeaderMap) -> bool {
+    headers.get("content-encoding").is_some_and(|v| v == "gzip")
 }
 
 #[cfg(any(target_os = "linux", test))]
 pub(crate) fn response_encoding(headers: &HeaderMap) -> crate::file_rpc_response::Encoding {
     // Original Connect splits only on comma or ASCII space, not tabs or Unicode
     // whitespace. It compares exact names and does not interpret HTTP q weights.
-    if headers
-        .get("accept-encoding")
-        .map_or(b"".as_slice(), |v| v.as_bytes())
-        .split(|c| matches!(c, b',' | b' '))
-        .any(|name| name == b"gzip")
+    if is_gzip_request(headers)
+        || headers
+            .get("accept-encoding")
+            .map_or(b"".as_slice(), |v| v.as_bytes())
+            .split(|c| matches!(c, b',' | b' '))
+            .any(|name| name == b"gzip")
     {
         crate::file_rpc_response::Encoding::Gzip
     } else {
@@ -67,8 +73,24 @@ mod tests {
         );
         assert_eq!(
             select(&Method::POST, &headers, Some(JsonContentType::Json)),
-            Err(SelectionError::RequestCompression)
+            Ok(JsonContentType::Json)
         );
+        for value in ["identity", "br", "gzip;q=0", ""] {
+            headers.insert("accept-encoding", value.parse().unwrap());
+            assert_eq!(
+                response_encoding(&headers),
+                crate::file_rpc_response::Encoding::Gzip
+            );
+        }
+        for value in ["GZIP", "gzip,identity", "gzip;q=1", "br"] {
+            headers.insert("content-encoding", value.parse().unwrap());
+            headers.append("content-encoding", "gzip".parse().unwrap());
+            assert_eq!(
+                select(&Method::POST, &headers, Some(JsonContentType::Json)),
+                Err(SelectionError::RequestCompression)
+            );
+            assert!(!is_gzip_request(&headers));
+        }
         headers.insert("content-encoding", "identity".parse().unwrap());
         headers.append("content-encoding", "gzip".parse().unwrap());
         assert_eq!(
